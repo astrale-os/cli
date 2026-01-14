@@ -1,0 +1,48 @@
+{
+  "name": "@astrale-os/cli",
+  "version": "0.1.0",
+  "description": "Astrale CLI - init, dev, build, and create commands",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "bin": {
+    "astrale": "./bin/astrale.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "astrale",
+    "cli",
+    "webos"
+  ],
+  "author": "Astrale",
+  "license": "MIT",
+  "dependencies": {
+    "@astrale-os/kernel-client-ws": "workspace:*",
+    "@astrale-os/datastore-client": "workspace:*",
+    "@astrale-os/kernel-api": "workspace:*",
+    "@astrale-os/kernel-core": "workspace:*",
+    "@astrale-os/sdk-app": "workspace:*",
+    "@astrale-os/shell-transport": "workspace:*",
+    "commander": "^13.0.0",
+    "esbuild": "^0.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.1",
+    "@types/react-dom": "^19.2.1",
+    "typescript": "^5.8.3"
+  }
+}
