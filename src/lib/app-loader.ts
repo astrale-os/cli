@@ -4,14 +4,14 @@
  * Dynamically loads and serializes an app definition from the entry file.
  */
 
-import type { SerializedApp, SerializedEndpoint } from "@astrale-os/sdk-app"
-import * as fs from "fs"
-import path from "path"
+import type { SerializedApp, SerializedEndpoint } from '@astrale-os/sdk-app'
+import * as fs from 'fs'
+import path from 'path'
 import {
   parseProjectEndpointJSDocs,
   findEndpointFiles,
   type EndpointJSDocMap,
-} from "./jsdoc-parser"
+} from './jsdoc-parser'
 
 type SkeletonNode = {
   name: string
@@ -76,10 +76,10 @@ type AppDefinition = {
 function isAppDefinition(value: unknown): value is AppDefinition {
   return (
     value !== null &&
-    typeof value === "object" &&
-    "serialize" in value &&
-    "appdata" in value &&
-    typeof (value as { serialize: unknown }).serialize === "function"
+    typeof value === 'object' &&
+    'serialize' in value &&
+    'appdata' in value &&
+    typeof (value as { serialize: unknown }).serialize === 'function'
   )
 }
 
@@ -88,12 +88,12 @@ function isAppDefinition(value: unknown): value is AppDefinition {
  */
 function findAppDefinition(appModule: Record<string, unknown>): AppDefinition | null {
   // Check common export names first
-  for (const name of ["App", "app", "default"]) {
+  for (const name of ['App', 'app', 'default']) {
     const candidate = appModule[name]
     if (isAppDefinition(candidate)) return candidate
 
     // Check nested default.app pattern
-    if (name === "default" && candidate && typeof candidate === "object") {
+    if (name === 'default' && candidate && typeof candidate === 'object') {
       const nested = (candidate as Record<string, unknown>).app
       if (isAppDefinition(nested)) return nested
     }
@@ -101,7 +101,7 @@ function findAppDefinition(appModule: Record<string, unknown>): AppDefinition | 
 
   // Scan all exports
   for (const [key, value] of Object.entries(appModule)) {
-    if (key !== "__esModule" && isAppDefinition(value)) {
+    if (key !== '__esModule' && isAppDefinition(value)) {
       return value
     }
   }
@@ -114,12 +114,12 @@ function findAppDefinition(appModule: Record<string, unknown>): AppDefinition | 
 // ─────────────────────────────────────────────────────────────────────────────
 
 const APP_CANDIDATES = [
-  "src/schema.ts",
-  "src/app.ts",
-  "schema.ts",
-  "app.ts",
-  "src/index.ts",
-  "index.ts",
+  'src/schema.ts',
+  'src/app.ts',
+  'schema.ts',
+  'app.ts',
+  'src/index.ts',
+  'index.ts',
 ]
 
 /**
@@ -173,7 +173,7 @@ export async function loadAppFromDirectory(projectDir: string): Promise<LoadedAp
 
   if (!loadedApp) {
     throw new Error(
-      `Could not find app definition in ${projectDir}.\nLooked for: ${APP_CANDIDATES.join(", ")}`,
+      `Could not find app definition in ${projectDir}.\nLooked for: ${APP_CANDIDATES.join(', ')}`,
     )
   }
 
@@ -196,7 +196,7 @@ function findProjectDir(fromPath: string): string | null {
   const root = path.parse(dir).root
 
   while (dir !== root) {
-    if (fs.existsSync(path.join(dir, ".astrale", "config.json"))) {
+    if (fs.existsSync(path.join(dir, '.astrale', 'config.json'))) {
       return dir
     }
     dir = path.dirname(dir)
@@ -211,11 +211,11 @@ function findProjectDir(fromPath: string): string | null {
  */
 async function importEndpointFiles(projectDir: string): Promise<void> {
   const dirsToScan = [
-    path.join(projectDir, "src"),
-    path.join(projectDir, "backend", "src"),
-    path.join(projectDir, "worker", "src"),
-    path.join(projectDir, "..", "backend", "src"), // Monorepo structure
-    path.join(projectDir, "..", "worker", "src"),
+    path.join(projectDir, 'src'),
+    path.join(projectDir, 'backend', 'src'),
+    path.join(projectDir, 'worker', 'src'),
+    path.join(projectDir, '..', 'backend', 'src'), // Monorepo structure
+    path.join(projectDir, '..', 'worker', 'src'),
   ]
 
   for (const dir of dirsToScan) {

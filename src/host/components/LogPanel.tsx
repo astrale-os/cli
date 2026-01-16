@@ -2,28 +2,28 @@
  * Log Panel Component
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef } from 'react'
 
-import type { LogEntry } from "../types";
+import type { LogEntry } from '../types'
 
 interface LogPanelProps {
-  logs: LogEntry[];
-  onClear: () => void;
+  logs: LogEntry[]
+  onClear: () => void
 }
 
 function formatTime(date: Date): string {
-  return date.toISOString().split("T")[1]?.slice(0, 12) ?? "";
+  return date.toISOString().split('T')[1]?.slice(0, 12) ?? ''
 }
 
 export function LogPanel({ logs, onClear }: LogPanelProps) {
-  const contentRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom
   useEffect(() => {
     if (contentRef.current) {
-      contentRef.current.scrollTop = contentRef.current.scrollHeight;
+      contentRef.current.scrollTop = contentRef.current.scrollHeight
     }
-  }, [logs]);
+  }, [logs])
 
   return (
     <div className="log-panel">
@@ -38,8 +38,8 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
           <div
             style={{
               padding: 20,
-              textAlign: "center",
-              color: "var(--text-muted)",
+              textAlign: 'center',
+              color: 'var(--text-muted)',
             }}
           >
             No logs yet
@@ -54,5 +54,5 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
         )}
       </div>
     </div>
-  );
+  )
 }

@@ -2,7 +2,7 @@
  * Host App Types
  */
 
-export type LogLevel = "debug" | "info" | "success" | "warning" | "error"
+export type LogLevel = 'debug' | 'info' | 'success' | 'warning' | 'error'
 
 export interface LogEntry {
   id: string
@@ -46,7 +46,7 @@ export interface AppManifest {
   appdata: AppAppdataScopes
 }
 
-export type BundleResult = { mode: "url"; url: string } | { mode: "source"; grant: unknown }
+export type BundleResult = { mode: 'url'; url: string } | { mode: 'source'; grant: unknown }
 
 export interface AppdataModule {
   moduleId: string
@@ -71,7 +71,7 @@ export interface WindowInfo {
   createdAt: Date
 }
 
-export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error"
+export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 export interface ShellState {
   backgroundWorkers: Record<string, unknown>

@@ -5,9 +5,9 @@
  * Uses TypeScript's compiler API to parse source files.
  */
 
-import * as ts from "typescript"
-import * as fs from "fs"
-import * as path from "path"
+import * as ts from 'typescript'
+import * as fs from 'fs'
+import * as path from 'path'
 
 // =============================================================================
 // Types
@@ -48,7 +48,7 @@ function extractJSDoc(node: ts.Node, sourceFile: ts.SourceFile): EndpointJSDocIn
     const commentText = fullText.slice(comment.pos, comment.end)
 
     // Check if it's a JSDoc comment (starts with /**)
-    if (commentText.startsWith("/**")) {
+    if (commentText.startsWith('/**')) {
       const parsed = parseJSDocComment(commentText)
       result.documentation = parsed.documentation
       if (parsed.deprecated !== undefined) {
@@ -69,12 +69,12 @@ function parseJSDocComment(comment: string): EndpointJSDocInfo {
   const result: EndpointJSDocInfo = {}
 
   // Remove comment markers: /** ... */
-  let content = comment.slice(3, -2)
+  const content = comment.slice(3, -2)
 
   // Split into lines and clean up
-  const lines = content.split("\n").map((line) => {
+  const lines = content.split('\n').map((line) => {
     // Remove leading asterisks and whitespace
-    return line.replace(/^\s*\*\s?/, "").trim()
+    return line.replace(/^\s*\*\s?/, '').trim()
   })
 
   const docLines: string[] = []
@@ -82,14 +82,14 @@ function parseJSDocComment(comment: string): EndpointJSDocInfo {
 
   for (const line of lines) {
     // Check for @deprecated tag
-    if (line.startsWith("@deprecated")) {
-      const message = line.slice("@deprecated".length).trim()
+    if (line.startsWith('@deprecated')) {
+      const message = line.slice('@deprecated'.length).trim()
       deprecated = message || true
       continue
     }
 
     // Skip other tags
-    if (line.startsWith("@")) {
+    if (line.startsWith('@')) {
       continue
     }
 
@@ -100,12 +100,12 @@ function parseJSDocComment(comment: string): EndpointJSDocInfo {
   }
 
   // Trim trailing empty lines
-  while (docLines.length > 0 && docLines[docLines.length - 1] === "") {
+  while (docLines.length > 0 && docLines[docLines.length - 1] === '') {
     docLines.pop()
   }
 
   if (docLines.length > 0) {
-    result.documentation = docLines.join("\n")
+    result.documentation = docLines.join('\n')
   }
 
   if (deprecated !== undefined) {
@@ -127,14 +127,14 @@ function parseJSDocComment(comment: string): EndpointJSDocInfo {
  */
 function isEndpointCall(
   node: ts.CallExpression,
-): { type: "worker" | "backend"; name: string; version: number } | null {
+): { type: 'worker' | 'backend'; name: string; version: number } | null {
   // Check for property access like App.workerEndpoint
   if (!ts.isPropertyAccessExpression(node.expression)) {
     return null
   }
 
   const methodName = node.expression.name.text
-  if (methodName !== "workerEndpoint" && methodName !== "backendEndpoint") {
+  if (methodName !== 'workerEndpoint' && methodName !== 'backendEndpoint') {
     return null
   }
 
@@ -151,10 +151,10 @@ function isEndpointCall(
     if (!ts.isPropertyAssignment(prop)) continue
     const propName = prop.name.getText()
 
-    if (propName === "name" && ts.isStringLiteral(prop.initializer)) {
+    if (propName === 'name' && ts.isStringLiteral(prop.initializer)) {
       name = prop.initializer.text
     }
-    if (propName === "version" && ts.isNumericLiteral(prop.initializer)) {
+    if (propName === 'version' && ts.isNumericLiteral(prop.initializer)) {
       version = parseInt(prop.initializer.text, 10)
     }
   }
@@ -164,7 +164,7 @@ function isEndpointCall(
   }
 
   return {
-    type: methodName === "workerEndpoint" ? "worker" : "backend",
+    type: methodName === 'workerEndpoint' ? 'worker' : 'backend',
     name,
     version,
   }
@@ -202,7 +202,7 @@ export function parseEndpointJSDocs(filePath: string): EndpointJSDocMap {
     return results
   }
 
-  const content = fs.readFileSync(filePath, "utf-8")
+  const content = fs.readFileSync(filePath, 'utf-8')
   const sourceFile = ts.createSourceFile(filePath, content, ts.ScriptTarget.Latest, true)
 
   function visit(node: ts.Node) {
@@ -268,14 +268,14 @@ export function findEndpointFiles(dirPath: string): string[] {
 
       if (entry.isDirectory()) {
         // Skip node_modules and hidden directories
-        if (entry.name === "node_modules" || entry.name.startsWith(".")) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) {
           continue
         }
         scan(fullPath)
       } else if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) {
         // Check if file might contain endpoints
-        const content = fs.readFileSync(fullPath, "utf-8")
-        if (content.includes("workerEndpoint") || content.includes("backendEndpoint")) {
+        const content = fs.readFileSync(fullPath, 'utf-8')
+        if (content.includes('workerEndpoint') || content.includes('backendEndpoint')) {
           results.push(fullPath)
         }
       }
@@ -293,15 +293,15 @@ export function findEndpointFiles(dirPath: string): string[] {
  * @returns Map of versioned endpoint names to their JSDoc info
  */
 export function parseProjectEndpointJSDocs(projectDir: string): EndpointJSDocMap {
-  const srcDir = path.join(projectDir, "src")
+  const srcDir = path.join(projectDir, 'src')
   const endpointFiles = findEndpointFiles(srcDir)
 
   // Also check root level files
-  const rootFiles = ["schema.ts", "app.ts", "index.ts"].map((f) => path.join(projectDir, f))
+  const rootFiles = ['schema.ts', 'app.ts', 'index.ts'].map((f) => path.join(projectDir, f))
   for (const f of rootFiles) {
     if (fs.existsSync(f)) {
-      const content = fs.readFileSync(f, "utf-8")
-      if (content.includes("workerEndpoint") || content.includes("backendEndpoint")) {
+      const content = fs.readFileSync(f, 'utf-8')
+      if (content.includes('workerEndpoint') || content.includes('backendEndpoint')) {
         endpointFiles.push(f)
       }
     }

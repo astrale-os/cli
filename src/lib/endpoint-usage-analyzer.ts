@@ -5,11 +5,11 @@
  * Uses TypeScript's compiler API to find ctx.apps.X.Y.Z() patterns.
  */
 
-import * as ts from "typescript"
-import * as fs from "fs"
-import * as path from "path"
+import * as ts from 'typescript'
+import * as fs from 'fs'
+import * as path from 'path'
 
-import type { EndpointMaps } from "./apps-generator"
+import type { EndpointMaps } from './apps-generator'
 
 // =============================================================================
 // Types
@@ -68,7 +68,7 @@ function extractPropertyChain(node: ts.CallExpression): PropertyChain | null {
     current.expression.kind === ts.SyntaxKind.ThisKeyword
   ) {
     parts.unshift(current.name.text)
-    parts.unshift("this")
+    parts.unshift('this')
     return { parts, callNode: node }
   }
 
@@ -83,7 +83,7 @@ function parseAppsAccess(chain: PropertyChain): { localName: string; accessPath:
   const { parts } = chain
 
   // Find "apps" in the chain
-  const appsIndex = parts.findIndex((p) => p === "apps")
+  const appsIndex = parts.findIndex((p) => p === 'apps')
   if (appsIndex === -1) return null
 
   // Must have at least: apps.localName.worker|backend.namespace.method
@@ -95,7 +95,7 @@ function parseAppsAccess(chain: PropertyChain): { localName: string; accessPath:
   if (!localName || !serviceType || !namespace || !method) return null
 
   // Service type must be "worker" or "backend"
-  if (serviceType !== "worker" && serviceType !== "backend") return null
+  if (serviceType !== 'worker' && serviceType !== 'backend') return null
 
   // Build access path: "worker.threads.create"
   const accessPath = `${serviceType}.${namespace}.${method}`
@@ -198,7 +198,7 @@ function visitSourceFile(
           getLineNumber(node),
         )
         if (usage) {
-          if ("error" in usage) {
+          if ('error' in usage) {
             errors.push(usage.error)
           } else {
             usages.push(usage)
@@ -225,7 +225,7 @@ function trackVariableDeclaration(node: ts.VariableDeclaration, tracker: Variabl
   if (ts.isIdentifier(node.name) && ts.isPropertyAccessExpression(init)) {
     const chain = extractChainFromExpression(init)
     if (chain) {
-      const appsIndex = chain.findIndex((p) => p === "apps")
+      const appsIndex = chain.findIndex((p) => p === 'apps')
       if (appsIndex !== -1 && chain.length > appsIndex + 1) {
         const localName = chain[appsIndex + 1]!
         const depth = chain.length - appsIndex - 2 // How many levels after localName
@@ -239,7 +239,7 @@ function trackVariableDeclaration(node: ts.VariableDeclaration, tracker: Variabl
     const chain = extractChainFromExpression(init)
     if (chain) {
       const lastPart = chain[chain.length - 1]
-      if (lastPart === "apps") {
+      if (lastPart === 'apps') {
         // Destructuring from ctx.apps
         for (const element of node.name.elements) {
           if (ts.isBindingElement(element) && ts.isIdentifier(element.name)) {
@@ -312,7 +312,7 @@ function resolveEndpointUsage(
 
     const [serviceType, namespace, method] = remainingPath
     if (!serviceType || !namespace || !method) return null
-    if (serviceType !== "worker" && serviceType !== "backend") return null
+    if (serviceType !== 'worker' && serviceType !== 'backend') return null
 
     const accessPath = `${serviceType}.${namespace}.${method}`
     return resolveFromAccessPath(localName, accessPath, endpointMaps, appDeclarations, file, line)
@@ -356,8 +356,8 @@ function resolveFromAccessPath(
   }
 
   // Parse slug from declaration (handle "slug@version" format)
-  const slug = targetSlug.includes("@")
-    ? targetSlug.slice(0, targetSlug.lastIndexOf("@"))
+  const slug = targetSlug.includes('@')
+    ? targetSlug.slice(0, targetSlug.lastIndexOf('@'))
     : targetSlug
 
   return {
@@ -393,10 +393,10 @@ export function analyzeEndpointUsages(
   const sourceFiles = findSourceFiles(projectDir)
 
   for (const filePath of sourceFiles) {
-    const content = fs.readFileSync(filePath, "utf-8")
+    const content = fs.readFileSync(filePath, 'utf-8')
 
     // Quick check: skip files that don't reference apps
-    if (!content.includes(".apps.") && !content.includes("ctx.apps")) {
+    if (!content.includes('.apps.') && !content.includes('ctx.apps')) {
       continue
     }
 
@@ -431,28 +431,28 @@ function findSourceFiles(dirPath: string): string[] {
       if (entry.isDirectory()) {
         // Skip node_modules, .astrale, and hidden directories
         if (
-          entry.name === "node_modules" ||
-          entry.name === ".astrale" ||
-          entry.name.startsWith(".")
+          entry.name === 'node_modules' ||
+          entry.name === '.astrale' ||
+          entry.name.startsWith('.')
         ) {
           continue
         }
         scan(fullPath)
       } else if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name)) {
         // Skip declaration files
-        if (entry.name.endsWith(".d.ts")) continue
+        if (entry.name.endsWith('.d.ts')) continue
         results.push(fullPath)
       }
     }
   }
 
   // Scan src directory
-  scan(path.join(dirPath, "src"))
+  scan(path.join(dirPath, 'src'))
 
   // Also scan root level files
   const rootFiles = fs.readdirSync(dirPath, { withFileTypes: true })
   for (const entry of rootFiles) {
-    if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith(".d.ts")) {
+    if (entry.isFile() && /\.(ts|tsx)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
       results.push(path.join(dirPath, entry.name))
     }
   }

@@ -4,12 +4,12 @@
  * Creates a new application in the kernel and sets up .astrale/config.json
  */
 
-import type { AvatarId, ModuleId, SpaceId } from "@astrale-os/kernel-core"
-import { Command } from "commander"
+import type { AvatarId, ModuleId } from '@astrale-os/kernel-core'
+import { Command } from 'commander'
 
-import { type AstraleConfig, getConfigPath, saveConfig } from "../lib/config"
-import { generateAppKeyPair } from "../lib/crypto"
-import { createKernelClient } from "../lib/kernel"
+import { type AstraleConfig, getConfigPath, saveConfig } from '../lib/config'
+import { generateAppKeyPair } from '../lib/crypto'
+import { createKernelClient } from '../lib/kernel'
 
 export type InitOptions = {
   title: string
@@ -43,7 +43,7 @@ export async function runInit(options: InitOptions): Promise<void> {
     const parentId = options.parentId ?? options.avatarId
 
     if (!parentId) {
-      throw new Error("Parent ID is required. Use --parent-id to specify where to create the app.")
+      throw new Error('Parent ID is required. Use --parent-id to specify where to create the app.')
     }
 
     console.log(`[astrale] Creating application...`)
@@ -67,7 +67,7 @@ export async function runInit(options: InitOptions): Promise<void> {
       endpoints: result.endpoints,
       kernelUrl: options.kernelUrl,
       kernelRpcUrl: options.kernelRpcUrl,
-      datastoreUrl: "http://127.0.0.1:3002/v1/datastore",
+      datastoreUrl: 'http://127.0.0.1:3002/v1/datastore',
       avatarId: options.avatarId,
       token: options.token,
       privateKey: keyPair.privateKeyPem,
@@ -85,14 +85,14 @@ export async function runInit(options: InitOptions): Promise<void> {
   }
 }
 
-export const initCommand = new Command("init")
-  .description("Initialize a new Astrale app in the kernel")
-  .requiredOption("--title <name>", "Application title")
-  .requiredOption("--kernel-url <url>", "Kernel WebSocket URL (e.g., ws://localhost:8081)")
-  .requiredOption("--kernel-rpc-url <url>", "Kernel RPC URL (e.g., http://localhost:8083)")
-  .requiredOption("--avatar-id <id>", "Avatar ID for authenticated calls")
-  .requiredOption("--token <token>", "Authentication token")
-  .option("--parent-id <id>", "Parent module ID (defaults to avatar)")
+export const initCommand = new Command('init')
+  .description('Initialize a new Astrale app in the kernel')
+  .requiredOption('--title <name>', 'Application title')
+  .requiredOption('--kernel-url <url>', 'Kernel WebSocket URL (e.g., ws://localhost:8081)')
+  .requiredOption('--kernel-rpc-url <url>', 'Kernel RPC URL (e.g., http://localhost:8083)')
+  .requiredOption('--avatar-id <id>', 'Avatar ID for authenticated calls')
+  .requiredOption('--token <token>', 'Authentication token')
+  .option('--parent-id <id>', 'Parent module ID (defaults to avatar)')
   .action(async (opts) => {
     try {
       await runInit({
@@ -104,7 +104,7 @@ export const initCommand = new Command("init")
         parentId: opts.parentId as ModuleId | undefined,
       })
     } catch (err) {
-      console.error("[astrale] Init failed:", err instanceof Error ? err.message : err)
+      console.error('[astrale] Init failed:', err instanceof Error ? err.message : err)
       process.exit(1)
     }
   })

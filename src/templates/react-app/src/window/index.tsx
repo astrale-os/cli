@@ -2,10 +2,10 @@
  * Window Entry
  */
 
-import { initWindow } from "@astrale/react"
+import { initWindow } from '@astrale/react'
 
-import { App } from "../schema"
-import { Main } from "./app"
+import { App } from '../schema'
+import { Main } from './app'
 
 const { render } = initWindow({ app: App })
 

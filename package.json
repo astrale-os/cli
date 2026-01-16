@@ -1,26 +1,39 @@
 {
   "name": "@astrale-os/cli",
   "version": "0.1.0",
-  "description": "Astrale CLI - init, dev, build, and create commands",
+  "description": "Astrale CLI - init, dev, build, and create commands for Astrale WebOS applications",
   "type": "module",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
-    "astrale": "./bin/astrale.ts"
+    "astrale": "./dist/bin/astrale.js"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
-    "dist",
-    "bin",
-    "src"
+    "dist"
   ],
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/astrale-os/cli.git"
+  },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch",
+    "clean": "rm -rf dist *.tsbuildinfo",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "keywords": [
     "astrale",
@@ -30,19 +43,46 @@
   "author": "Astrale",
   "license": "MIT",
   "dependencies": {
-    "@astrale-os/kernel-client-ws": ">=0.1.0 <1.0.0",
     "@astrale-os/datastore-client": ">=1.0.0 <2.0.0",
-    "@astrale-os/kernel-api": ">=0.1.0 <1.0.0",
-    "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
-    "@astrale-os/sdk-app": ">=0.1.0 <1.0.0",
-    "@astrale-os/shell-transport": ">=0.1.0 <1.0.0",
-    "commander": "^13.0.0",
-    "esbuild": "^0.25.0"
+    "@astrale-os/kernel-api": ">=0.0.0 <1.0.0",
+    "@astrale-os/kernel-client-ws": ">=0.0.0 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.0.0 <1.0.0",
+    "@astrale-os/sdk-app": ">=0.0.0 <1.0.0",
+    "@astrale-os/shell-transport": ">=0.0.0 <1.0.0",
+    "commander": ">=13.0.0 <14.0.0",
+    "esbuild": ">=0.25.0 <1.0.0"
   },
   "devDependencies": {
+    "@astrale/commitlint-config": "jsr:@astrale/commitlint-config@^1.0.0",
+    "@astrale/eslint-config": "jsr:@astrale/eslint-config@^1.0.0",
+    "@astrale/prettier-config": "jsr:@astrale/prettier-config@^1.0.0",
+    "@astrale/typescript-config": "jsr:@astrale/typescript-config@^1.0.0",
+    "@commitlint/cli": "^20.3.1",
+    "@commitlint/config-conventional": "^20.3.1",
+    "@eslint/js": "^9.18.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
-    "typescript": "^5.8.3"
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.21.0"
+  },
+  "prettier": "@astrale/prettier-config",
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  },
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://npm.pkg.github.com"
   }
 }
