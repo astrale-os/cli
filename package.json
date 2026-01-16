@@ -30,12 +30,12 @@
   "author": "Astrale",
   "license": "MIT",
   "dependencies": {
-    "@astrale-os/kernel-client-ws": "workspace:*",
-    "@astrale-os/datastore-client": "workspace:*",
-    "@astrale-os/kernel-api": "workspace:*",
-    "@astrale-os/kernel-core": "workspace:*",
-    "@astrale-os/sdk-app": "workspace:*",
-    "@astrale-os/shell-transport": "workspace:*",
+    "@astrale-os/kernel-client-ws": ">=0.1.0 <1.0.0",
+    "@astrale-os/datastore-client": ">=1.0.0 <2.0.0",
+    "@astrale-os/kernel-api": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
+    "@astrale-os/sdk-app": ">=0.1.0 <1.0.0",
+    "@astrale-os/shell-transport": ">=0.1.0 <1.0.0",
     "commander": "^13.0.0",
     "esbuild": "^0.25.0"
   },
