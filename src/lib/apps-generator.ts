@@ -5,13 +5,13 @@
  * Creates .astrale/apps/ directory with TypeScript files for each dependency.
  */
 
-import { execSync } from "node:child_process"
-import { mkdir, writeFile } from "node:fs/promises"
-import path from "node:path"
+import { execSync } from 'node:child_process'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 
-import type { AppDiscoverResult, SerializedEndpointWithSchema } from "@astrale-os/kernel-api/system"
+import type { AppDiscoverResult, SerializedEndpointWithSchema } from '@astrale-os/kernel-api/system'
 
-import type { KernelClient } from "./kernel"
+import type { KernelClient } from './kernel'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -63,7 +63,7 @@ export async function generateApps(
 
   // Generate index file with module augmentation for automatic ctx.apps typing
   await writeFile(
-    path.join(outputDir, "index.ts"),
+    path.join(outputDir, 'index.ts'),
     generateIndexCode(appSlug, appDeclarations, generated),
   )
 
@@ -78,7 +78,7 @@ export async function generateApps(
 // ─────────────────────────────────────────────────────────────────────────────
 
 function parseDeclaration(declaration: string): { slug: string; version?: string } {
-  const atIndex = declaration.lastIndexOf("@")
+  const atIndex = declaration.lastIndexOf('@')
   if (atIndex > 0) {
     return {
       slug: declaration.slice(0, atIndex),
@@ -129,14 +129,14 @@ function generateAppApiCode(
   // Generate types for worker endpoints
   if (workerEndpoints.size > 0) {
     lines.push(`// Worker Endpoints`)
-    lines.push(...generateNamespaceTypes(pascalName, "Worker", workerEndpoints))
+    lines.push(...generateNamespaceTypes(pascalName, 'Worker', workerEndpoints))
     lines.push(``)
   }
 
   // Generate types for backend endpoints
   if (backendEndpoints.size > 0) {
     lines.push(`// Backend Endpoints`)
-    lines.push(...generateNamespaceTypes(pascalName, "Backend", backendEndpoints))
+    lines.push(...generateNamespaceTypes(pascalName, 'Backend', backendEndpoints))
     lines.push(``)
   }
 
@@ -155,18 +155,18 @@ function generateAppApiCode(
   lines.push(`export function create${pascalName}Api(call: CallFn): ${pascalName}Api {`)
   lines.push(`  return {`)
   if (workerEndpoints.size > 0) {
-    lines.push(...generateNamespaceImplLines(slug, "worker", workerEndpoints, 4))
+    lines.push(...generateNamespaceImplLines(slug, 'worker', workerEndpoints, 4))
     if (backendEndpoints.size > 0) {
-      lines[lines.length - 1] += ","
+      lines[lines.length - 1] += ','
     }
   }
   if (backendEndpoints.size > 0) {
-    lines.push(...generateNamespaceImplLines(slug, "backend", backendEndpoints, 4))
+    lines.push(...generateNamespaceImplLines(slug, 'backend', backendEndpoints, 4))
   }
   lines.push(`  }`)
   lines.push(`}`)
 
-  return { code: lines.join("\n"), endpointMap }
+  return { code: lines.join('\n'), endpointMap }
 }
 
 function generateNamespaceTypes(
@@ -183,7 +183,7 @@ function generateNamespaceTypes(
     for (const ep of eps) {
       const methodName = getMethodName(ep.baseName, namespace)
       const inputType = jsonSchemaToTypeString(ep.inputSchema)
-      const outputType = ep.outputSchema ? jsonSchemaToTypeString(ep.outputSchema) : "unknown"
+      const outputType = ep.outputSchema ? jsonSchemaToTypeString(ep.outputSchema) : 'unknown'
       lines.push(`  ${methodName}(params: ${inputType}): Promise<${outputType}>`)
     }
     lines.push(`}`)
@@ -202,12 +202,12 @@ function generateNamespaceTypes(
 
 function generateNamespaceImplLines(
   slug: string,
-  type: "worker" | "backend",
+  type: 'worker' | 'backend',
   endpoints: EndpointsByNamespace,
   indent: number,
 ): string[] {
   const lines: string[] = []
-  const spaces = " ".repeat(indent)
+  const spaces = ' '.repeat(indent)
   const namespacesArray = Array.from(endpoints.entries())
 
   lines.push(`${spaces}${type}: {`)
@@ -221,13 +221,13 @@ function generateNamespaceImplLines(
     for (let j = 0; j < eps.length; j++) {
       const ep = eps[j]!
       const methodName = getMethodName(ep.baseName, namespace)
-      const comma = j < eps.length - 1 ? "," : ""
+      const comma = j < eps.length - 1 ? ',' : ''
       lines.push(
         `${spaces}    ${methodName}: (params) => call("${slug}", "${ep.name}", params)${comma}`,
       )
     }
 
-    lines.push(`${spaces}  }${isLastNamespace ? "" : ","}`)
+    lines.push(`${spaces}  }${isLastNamespace ? '' : ','}`)
   }
 
   lines.push(`${spaces}}`)
@@ -293,7 +293,7 @@ function generateIndexCode(
   lines.push(`  }`)
   lines.push(`}`)
 
-  return lines.join("\n")
+  return lines.join('\n')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -303,9 +303,9 @@ function generateIndexCode(
 async function formatGeneratedFiles(outputDir: string): Promise<void> {
   try {
     execSync(`prettier --write "${outputDir}/*.ts"`, {
-      stdio: "pipe",
+      stdio: 'pipe',
     })
-  } catch (err) {
+  } catch {
     // Silently ignore prettier errors - formatting is optional
   }
 }
@@ -320,8 +320,8 @@ function groupEndpointsByNamespace(
   const grouped = new Map<string, SerializedEndpointWithSchema[]>()
 
   for (const endpoint of Object.values(endpoints)) {
-    const parts = endpoint.baseName.split(".")
-    const namespace = parts.length > 1 ? parts[0]! : "default"
+    const parts = endpoint.baseName.split('.')
+    const namespace = parts.length > 1 ? parts[0]! : 'default'
 
     if (!grouped.has(namespace)) {
       grouped.set(namespace, [])
@@ -333,79 +333,79 @@ function groupEndpointsByNamespace(
 }
 
 function getMethodName(baseName: string, namespace: string): string {
-  const parts = baseName.split(".")
+  const parts = baseName.split('.')
   if (parts.length > 1 && parts[0] === namespace) {
-    return parts.slice(1).join("_")
+    return parts.slice(1).join('_')
   }
-  return baseName.replace(/\./g, "_")
+  return baseName.replace(/\./g, '_')
 }
 
 function toPascalCase(str: string): string {
   return str
     .split(/[-_]/)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join("")
+    .join('')
 }
 
 function jsonSchemaToTypeString(schema: Record<string, unknown> | undefined): string {
-  if (!schema) return "unknown"
+  if (!schema) return 'unknown'
 
   const type = schema.type as string | undefined
 
   // Handle empty schema {} (represents "any" from unrepresentable transforms)
   // Default to string since most transforms (moduleId, typeId, etc.) are branded strings
-  if (!type && Object.keys(schema).filter((k) => k !== "$schema").length === 0) {
-    return "string"
+  if (!type && Object.keys(schema).filter((k) => k !== '$schema').length === 0) {
+    return 'string'
   }
 
   // Handle anyOf (used for nullable types like z.string().nullable())
   const anyOf = schema.anyOf as Array<Record<string, unknown>> | undefined
   if (anyOf) {
     const types = anyOf.map((s) => jsonSchemaToTypeString(s))
-    return types.join(" | ")
+    return types.join(' | ')
   }
 
   // Handle oneOf (similar to anyOf)
   const oneOf = schema.oneOf as Array<Record<string, unknown>> | undefined
   if (oneOf) {
     const types = oneOf.map((s) => jsonSchemaToTypeString(s))
-    return types.join(" | ")
+    return types.join(' | ')
   }
 
-  if (type === "object") {
+  if (type === 'object') {
     const properties = schema.properties as Record<string, Record<string, unknown>> | undefined
-    if (!properties) return "Record<string, unknown>"
+    if (!properties) return 'Record<string, unknown>'
 
     const required = new Set((schema.required as string[]) ?? [])
     const props = Object.entries(properties).map(([key, propSchema]) => {
-      const optional = required.has(key) ? "" : "?"
+      const optional = required.has(key) ? '' : '?'
       // Handle empty property schema (from transforms like moduleId())
       const propType = jsonSchemaToTypeString(propSchema)
       return `${key}${optional}: ${propType}`
     })
 
-    return `{ ${props.join("; ")} }`
+    return `{ ${props.join('; ')} }`
   }
 
-  if (type === "array") {
+  if (type === 'array') {
     const items = schema.items as Record<string, unknown> | undefined
     return `Array<${jsonSchemaToTypeString(items)}>`
   }
 
-  if (type === "string") return "string"
-  if (type === "number" || type === "integer") return "number"
-  if (type === "boolean") return "boolean"
-  if (type === "null") return "null"
+  if (type === 'string') return 'string'
+  if (type === 'number' || type === 'integer') return 'number'
+  if (type === 'boolean') return 'boolean'
+  if (type === 'null') return 'null'
 
   if (Array.isArray(type)) {
-    return type.map((t) => jsonSchemaToTypeString({ type: t })).join(" | ")
+    return type.map((t) => jsonSchemaToTypeString({ type: t })).join(' | ')
   }
 
   // Handle empty property schema (no type field, just empty object)
   // Default to string since most transforms (moduleId, typeId, etc.) are branded strings
   if (Object.keys(schema).length === 0) {
-    return "string"
+    return 'string'
   }
 
-  return "unknown"
+  return 'unknown'
 }

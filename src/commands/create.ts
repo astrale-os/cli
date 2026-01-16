@@ -4,10 +4,10 @@
  * Scaffolds a new Astrale app from a template.
  */
 
-import { Command } from "commander"
-import { mkdir, readdir, readFile, writeFile } from "fs/promises"
-import path from "path"
-import { fileURLToPath } from "url"
+import { Command } from 'commander'
+import { mkdir, readdir, readFile, writeFile } from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
 
 export type CreateOptions = {
   name: string
@@ -15,7 +15,7 @@ export type CreateOptions = {
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const TEMPLATES_DIR = path.join(__dirname, "..", "templates")
+const TEMPLATES_DIR = path.join(__dirname, '..', 'templates')
 
 async function copyDir(
   src: string,
@@ -33,7 +33,7 @@ async function copyDir(
     if (entry.isDirectory()) {
       await copyDir(srcPath, destPath, replacements)
     } else {
-      let content = await readFile(srcPath, "utf-8")
+      let content = await readFile(srcPath, 'utf-8')
 
       // Apply replacements
       for (const [key, value] of Object.entries(replacements)) {
@@ -76,11 +76,11 @@ export async function runCreate(options: CreateOptions): Promise<void> {
   }
 
   // Copy template with replacements
-  const appSlug = options.name.toLowerCase().replace(/[^a-z0-9-]/g, "-")
+  const appSlug = options.name.toLowerCase().replace(/[^a-z0-9-]/g, '-')
   const appName = options.name
-    .split("-")
+    .split('-')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ")
+    .join(' ')
 
   await copyDir(templateDir, targetDir, {
     APP_NAME: appName,
@@ -98,10 +98,10 @@ export async function runCreate(options: CreateOptions): Promise<void> {
   console.log(`  astrale dev src/worker.ts --iframe-entry src/window/index.tsx`)
 }
 
-export const createCommand = new Command("create")
-  .description("Create a new Astrale app from a template")
-  .argument("<name>", "App name (will be used as directory name)")
-  .option("-t, --template <name>", "Template to use", "react-app")
+export const createCommand = new Command('create')
+  .description('Create a new Astrale app from a template')
+  .argument('<name>', 'App name (will be used as directory name)')
+  .option('-t, --template <name>', 'Template to use', 'react-app')
   .action(async (name, opts) => {
     try {
       await runCreate({
@@ -109,7 +109,7 @@ export const createCommand = new Command("create")
         template: opts.template,
       })
     } catch (err) {
-      console.error("[astrale] Create failed:", err instanceof Error ? err.message : err)
+      console.error('[astrale] Create failed:', err instanceof Error ? err.message : err)
       process.exit(1)
     }
   })

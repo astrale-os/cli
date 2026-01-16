@@ -2,14 +2,14 @@
  * Host App Main Component
  */
 
-import { Header, LogPanel, StatusBar, WindowPanel } from "./components"
-import { useConfig, useLogs, useShell } from "./hooks"
+import { Header, LogPanel, StatusBar, WindowPanel } from './components'
+import { useConfig, useLogs, useShell } from './hooks'
 
 function LoadingScreen({ message }: { message?: string }) {
   return (
     <div className="loading">
       <div className="loading-spinner" />
-      <div>{message ?? "Loading..."}</div>
+      <div>{message ?? 'Loading...'}</div>
     </div>
   )
 }
@@ -38,11 +38,11 @@ export function App() {
 
   // Configuration error state
   if (configError || !config) {
-    return <ErrorScreen message={configError ?? "No configuration found"} />
+    return <ErrorScreen message={configError ?? 'No configuration found'} />
   }
 
   // Shell initialization in progress
-  if (shell.status === "connecting") {
+  if (shell.status === 'connecting') {
     return (
       <div className="host-app">
         <Header config={config} manifest={shell.manifest} />
@@ -57,7 +57,7 @@ export function App() {
   }
 
   // Shell initialization error
-  if (shell.status === "error") {
+  if (shell.status === 'error') {
     return (
       <div className="host-app">
         <Header config={config} manifest={shell.manifest} />
@@ -71,7 +71,7 @@ export function App() {
     )
   }
 
-  const isInitialized = shell.status === "connected"
+  const isInitialized = shell.status === 'connected'
 
   return (
     <div className="host-app">

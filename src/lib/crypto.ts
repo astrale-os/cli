@@ -4,7 +4,7 @@
  * Generates and manages ECDSA P-256 keypairs for app identity.
  */
 
-const ALGORITHM = { name: "ECDSA", namedCurve: "P-256" } as const
+const ALGORITHM = { name: 'ECDSA', namedCurve: 'P-256' } as const
 
 export interface AppKeyPair {
   /** Public key in JWK format (stored in kernel) */
@@ -17,11 +17,11 @@ export interface AppKeyPair {
  * Generate a new ECDSA P-256 keypair for app identity.
  */
 export async function generateAppKeyPair(): Promise<AppKeyPair> {
-  const keyPair = await crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"])
+  const keyPair = await crypto.subtle.generateKey(ALGORITHM, true, ['sign', 'verify'])
 
-  const publicKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey)
-  const privateKeyPkcs8 = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey)
-  const privateKeyPem = arrayBufferToPem(privateKeyPkcs8, "PRIVATE KEY")
+  const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey)
+  const privateKeyPkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey)
+  const privateKeyPem = arrayBufferToPem(privateKeyPkcs8, 'PRIVATE KEY')
 
   return {
     publicKeyJwk,
@@ -33,9 +33,9 @@ export async function generateAppKeyPair(): Promise<AppKeyPair> {
  * Convert ArrayBuffer to PEM format.
  */
 function arrayBufferToPem(buffer: ArrayBuffer, label: string): string {
-  const base64 = Buffer.from(buffer).toString("base64")
+  const base64 = Buffer.from(buffer).toString('base64')
   const lines = base64.match(/.{1,64}/g) ?? []
-  return `-----BEGIN ${label}-----\n${lines.join("\n")}\n-----END ${label}-----`
+  return `-----BEGIN ${label}-----\n${lines.join('\n')}\n-----END ${label}-----`
 }
 
 /**
@@ -43,11 +43,11 @@ function arrayBufferToPem(buffer: ArrayBuffer, label: string): string {
  */
 export async function importPrivateKey(pem: string): Promise<CryptoKey> {
   const pemContents = pem
-    .replace(/-----BEGIN PRIVATE KEY-----/, "")
-    .replace(/-----END PRIVATE KEY-----/, "")
-    .replace(/\s/g, "")
+    .replace(/-----BEGIN PRIVATE KEY-----/, '')
+    .replace(/-----END PRIVATE KEY-----/, '')
+    .replace(/\s/g, '')
 
-  const binaryKey = Buffer.from(pemContents, "base64")
+  const binaryKey = Buffer.from(pemContents, 'base64')
 
-  return crypto.subtle.importKey("pkcs8", binaryKey, ALGORITHM, false, ["sign"])
+  return crypto.subtle.importKey('pkcs8', binaryKey, ALGORITHM, false, ['sign'])
 }

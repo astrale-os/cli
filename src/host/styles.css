@@ -24,7 +24,9 @@
   padding: 0;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
 }
 
@@ -113,13 +115,25 @@ body {
   background: var(--text-muted);
 }
 
-.status-dot.connected { background: var(--success); }
-.status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
-.status-dot.error { background: var(--error); }
+.status-dot.connected {
+  background: var(--success);
+}
+.status-dot.connecting {
+  background: var(--warning);
+  animation: pulse 1s infinite;
+}
+.status-dot.error {
+  background: var(--error);
+}
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Panels */
@@ -281,11 +295,21 @@ body {
   margin-right: 6px;
 }
 
-.log-info { color: var(--info); }
-.log-success { color: var(--success); }
-.log-warning { color: var(--warning); }
-.log-error { color: var(--error); }
-.log-debug { color: var(--text-muted); }
+.log-info {
+  color: var(--info);
+}
+.log-success {
+  color: var(--success);
+}
+.log-warning {
+  color: var(--warning);
+}
+.log-error {
+  color: var(--error);
+}
+.log-debug {
+  color: var(--text-muted);
+}
 
 /* Buttons */
 .btn {
@@ -418,7 +442,9 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Error */

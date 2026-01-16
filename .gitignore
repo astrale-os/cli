@@ -5,7 +5,10 @@ node_modules
 dist
 *.tsbuildinfo
 
-# Environment
+# Test coverage
+coverage
+
+# Environment files
 .env
 .env.*
 !.env.example
@@ -16,13 +19,20 @@ dist
 *.swp
 *.swo
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
 
 # Logs
 *.log
+npm-debug.log*
+pnpm-debug.log*
 
 # Cache
 .eslintcache
+.prettiercache
 *.cache
+.turbo
+
+# Local files
+*.local

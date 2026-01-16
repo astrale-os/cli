@@ -2,4 +2,4 @@
  * Endpoints Index
  */
 
-export { createItem, deleteItem, listItems } from "./items"
+export { createItem, deleteItem, listItems } from './items'

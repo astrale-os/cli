@@ -4,9 +4,14 @@
  * Handles reading/writing .astrale/config.json
  */
 
-import { ApplicationId, AvatarId, ModuleId, SpaceId } from "@astrale-os/kernel-core"
-import { mkdir, readFile, writeFile } from "fs/promises"
-import path from "path"
+import {
+  type ApplicationId,
+  type AvatarId,
+  type ModuleId,
+  type SpaceId,
+} from '@astrale-os/kernel-core'
+import { mkdir, readFile, writeFile } from 'fs/promises'
+import path from 'path'
 
 export interface AstraleConfig {
   /** Application ID from kernel */
@@ -57,8 +62,8 @@ export interface AstraleConfig {
   privateKey?: string
 }
 
-const CONFIG_DIR = ".astrale"
-const CONFIG_FILE = "config.json"
+const CONFIG_DIR = '.astrale'
+const CONFIG_FILE = 'config.json'
 
 /**
  * Find the project root by looking for .astrale/config.json
@@ -70,7 +75,7 @@ export async function findProjectRoot(startDir: string): Promise<string | null> 
   while (dir !== root) {
     const configPath = path.join(dir, CONFIG_DIR, CONFIG_FILE)
     try {
-      await readFile(configPath, "utf-8")
+      await readFile(configPath, 'utf-8')
       return dir
     } catch {
       dir = path.dirname(dir)
@@ -86,19 +91,19 @@ export async function loadConfig(projectDir: string): Promise<AstraleConfig> {
   const configPath = path.join(projectDir, CONFIG_DIR, CONFIG_FILE)
 
   try {
-    const content = await readFile(configPath, "utf-8")
+    const content = await readFile(configPath, 'utf-8')
     const config = JSON.parse(content) as Partial<AstraleConfig>
 
     if (!config.appId) {
-      throw new Error("Missing required field: appId")
+      throw new Error('Missing required field: appId')
     }
     if (!config.kernelUrl) {
-      throw new Error("Missing required field: kernelUrl")
+      throw new Error('Missing required field: kernelUrl')
     }
 
     return config as AstraleConfig
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       throw new Error(
         `No .astrale/config.json found in ${projectDir}.\n` +
           `Run 'astrale app create' to initialize a new app, or create the config manually.`,
@@ -116,7 +121,7 @@ export async function saveConfig(projectDir: string, config: AstraleConfig): Pro
   const configPath = path.join(configDir, CONFIG_FILE)
 
   await mkdir(configDir, { recursive: true })
-  await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8")
+  await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
 }
 
 /**

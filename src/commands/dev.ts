@@ -4,26 +4,26 @@
  * Watches for changes, rebuilds instantly, and deploys to kernel.
  */
 
-import type { ApplicationId } from "@astrale-os/kernel-core"
-import type { AppDevelopResult } from "@astrale-os/kernel-api"
-import { Command } from "commander"
-import esbuild, { type BuildContext, type Plugin } from "esbuild"
-import { mkdir, readFile } from "fs/promises"
-import path from "path"
+import type { ApplicationId } from '@astrale-os/kernel-core'
+import type { AppDevelopResult } from '@astrale-os/kernel-api'
+import { Command } from 'commander'
+import esbuild, { type BuildContext, type Plugin } from 'esbuild'
+import { mkdir, readFile } from 'fs/promises'
+import path from 'path'
 
 import {
   extractBootstrapData,
   loadAppDefinition,
   loadAppFromDirectory,
   type LoadedApp,
-} from "../lib/app-loader"
-import { generateApps, type EndpointMaps } from "../lib/apps-generator"
-import { analyzeEndpointUsages } from "../lib/endpoint-usage-analyzer"
-import { type AstraleConfig } from "../lib/config"
-import { createDevServer, type DevServer } from "../lib/dev-server"
-import { createWorkerBuildOptions, formatSize, getBundleSize } from "../lib/esbuild"
-import { createKernelClient, type KernelClient } from "../lib/kernel"
-import { loadProject, printProjectInfo, resolvePaths } from "../lib/project"
+} from '../lib/app-loader'
+import { generateApps, type EndpointMaps } from '../lib/apps-generator'
+import { analyzeEndpointUsages } from '../lib/endpoint-usage-analyzer'
+import { type AstraleConfig } from '../lib/config'
+import { createDevServer, type DevServer } from '../lib/dev-server'
+import { createWorkerBuildOptions, formatSize, getBundleSize } from '../lib/esbuild'
+import { createKernelClient, type KernelClient } from '../lib/kernel'
+import { loadProject, printProjectInfo, resolvePaths } from '../lib/project'
 
 export type DevOptions = {
   entry: string
@@ -71,14 +71,14 @@ type DependencyAnalysis = {
 }
 
 async function analyzeDependencies(state: DevState): Promise<DependencyAnalysis> {
-  const result: DependencyAnalysis = { dependencies: [], appsInfo: "", errors: [] }
+  const result: DependencyAnalysis = { dependencies: [], appsInfo: '', errors: [] }
 
   const declaredApps = state.app?.serialized.apps
   if (!declaredApps || Object.keys(declaredApps).length === 0 || !state.client) {
     return result
   }
 
-  const appsDir = path.join(state.projectRoot, ".astrale", "apps")
+  const appsDir = path.join(state.projectRoot, '.astrale', 'apps')
   const appSlug = state.app!.serialized.app.slug
   const appsResult = await generateApps(appSlug, declaredApps, state.client, appsDir)
 
@@ -109,11 +109,11 @@ type UploadStats = {
 }
 
 async function uploadArtifacts(state: DevState, result: AppDevelopResult): Promise<UploadStats> {
-  const stats: UploadStats = { workerBytes: 0, bootstrapInfo: "", endpointDocsInfo: "" }
+  const stats: UploadStats = { workerBytes: 0, bootstrapInfo: '', endpointDocsInfo: '' }
 
   // Upload worker bundle
   if (result.workerBundleGrant && state.config?.workerBundleId) {
-    const workerCode = await readFile(state.outFile, "utf-8")
+    const workerCode = await readFile(state.outFile, 'utf-8')
     const uploadResult = await state.client!.uploadWorkerBundle(
       state.config.workerBundleId,
       workerCode,
@@ -191,7 +191,7 @@ async function deployToKernel(state: DevState): Promise<void> {
 
 function devPlugin(state: DevState): Plugin {
   return {
-    name: "dev-plugin",
+    name: 'dev-plugin',
     setup(build) {
       let startTime: number
 
@@ -275,7 +275,7 @@ export async function runDev(options: DevOptions): Promise<void> {
 
   if (shouldServe && ctx.config?.workerUrl) {
     console.log(`\n[astrale] Starting dev servers...`)
-    const configPath = path.join(ctx.projectRoot, ".astrale", "config.json")
+    const configPath = path.join(ctx.projectRoot, '.astrale', 'config.json')
     state.devServer = await createDevServer({
       workerUrl: ctx.config.workerUrl,
       uiUrl: ctx.config.uiUrl,
@@ -304,7 +304,7 @@ export async function runDev(options: DevOptions): Promise<void> {
     const declaredApps = state.app.serialized.apps
     if (Object.keys(declaredApps).length > 0) {
       console.log(`\n[astrale] Generating app APIs...`)
-      const appsDir = path.join(state.projectRoot, ".astrale", "apps")
+      const appsDir = path.join(state.projectRoot, '.astrale', 'apps')
       const appSlug = state.app.serialized.app.slug
       const appsResult = await generateApps(appSlug, declaredApps, state.client, appsDir)
       if (appsResult.generated.length > 0) {
@@ -330,14 +330,14 @@ export async function runDev(options: DevOptions): Promise<void> {
 
   const esbuildCtx: BuildContext = await esbuild.context({
     ...buildOptions,
-    logLevel: "warning",
+    logLevel: 'warning',
   })
 
   await esbuildCtx.rebuild()
   await esbuildCtx.watch()
 
-  process.on("SIGINT", async () => {
-    console.log("\n\nShutting down...")
+  process.on('SIGINT', async () => {
+    console.log('\n\nShutting down...')
     await esbuildCtx.dispose()
     await state.devServer?.stop()
     state.client?.disconnect()
@@ -345,19 +345,19 @@ export async function runDev(options: DevOptions): Promise<void> {
   })
 }
 
-export const devCommand = new Command("dev")
-  .description("Start development server with hot reload")
-  .argument("<entry>", "Worker entry file (e.g., src/worker.ts)")
-  .option("--outdir <dir>", "Output directory", "dist")
-  .option("--outfile <name>", "Output filename", "worker.js")
-  .option("--app-id <id>", "Override appId from .astrale/config.json")
-  .option("--app <path>", "Path to app definition file (e.g., core/src/app.ts)")
-  .option("--kernel-url <url>", "Override kernel URL from .astrale/config.json")
-  .option("--no-deploy", "Skip kernel deployment (watch only)")
-  .option("--iframe-entry <path>", "Iframe entry file (e.g., src/window/index.tsx)")
-  .option("--iframe-html <path>", "Iframe HTML template")
-  .option("--host-port <port>", "Host app port", "7017")
-  .option("--no-serve", "Skip local dev servers")
+export const devCommand = new Command('dev')
+  .description('Start development server with hot reload')
+  .argument('<entry>', 'Worker entry file (e.g., src/worker.ts)')
+  .option('--outdir <dir>', 'Output directory', 'dist')
+  .option('--outfile <name>', 'Output filename', 'worker.js')
+  .option('--app-id <id>', 'Override appId from .astrale/config.json')
+  .option('--app <path>', 'Path to app definition file (e.g., core/src/app.ts)')
+  .option('--kernel-url <url>', 'Override kernel URL from .astrale/config.json')
+  .option('--no-deploy', 'Skip kernel deployment (watch only)')
+  .option('--iframe-entry <path>', 'Iframe entry file (e.g., src/window/index.tsx)')
+  .option('--iframe-html <path>', 'Iframe HTML template')
+  .option('--host-port <port>', 'Host app port', '7017')
+  .option('--no-serve', 'Skip local dev servers')
   .action(async (entry, opts) => {
     try {
       await runDev({
@@ -374,7 +374,7 @@ export const devCommand = new Command("dev")
         noServe: opts.serve === false,
       })
     } catch (err) {
-      console.error("[astrale] Dev failed:", err instanceof Error ? err.message : err)
+      console.error('[astrale] Dev failed:', err instanceof Error ? err.message : err)
       process.exit(1)
     }
   })

@@ -4,7 +4,7 @@
  * Shared utilities for build, dev, and init scripts.
  */
 
-import type { ApplicationId, AvatarId, ModuleId } from "@astrale-os/kernel-core"
+import type { ApplicationId, AvatarId, ModuleId } from '@astrale-os/kernel-core'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -63,18 +63,18 @@ function parseRawArgs(args: string[]): {
     const arg = args[i]
     if (!arg) continue
 
-    if (arg.startsWith("--")) {
+    if (arg.startsWith('--')) {
       const key = arg.slice(2)
       const next = args[i + 1]
 
       // Boolean flags or flags without values
-      if (!next || next.startsWith("--")) {
+      if (!next || next.startsWith('--')) {
         flags[key] = true
       } else {
         flags[key] = next
         i++
       }
-    } else if (!arg.startsWith("-")) {
+    } else if (!arg.startsWith('-')) {
       positional.push(arg)
     }
   }
@@ -87,18 +87,18 @@ export function parseBuildArgs(args: string[]): BuildOptions {
   const entry = positional[0]
 
   if (!entry) {
-    throw new Error("Entry path is required")
+    throw new Error('Entry path is required')
   }
 
   return {
     entry,
-    outdir: (flags["outdir"] as string) ?? "dist",
-    outfile: (flags["outfile"] as string) ?? "worker.js",
-    minify: !!flags["minify"],
-    sourcemap: !!flags["sourcemap"],
-    appId: flags["app-id"] as ApplicationId | undefined,
-    kernelUrl: flags["kernel-url"] as string | undefined,
-    noDeploy: !!flags["no-deploy"],
+    outdir: (flags['outdir'] as string) ?? 'dist',
+    outfile: (flags['outfile'] as string) ?? 'worker.js',
+    minify: !!flags['minify'],
+    sourcemap: !!flags['sourcemap'],
+    appId: flags['app-id'] as ApplicationId | undefined,
+    kernelUrl: flags['kernel-url'] as string | undefined,
+    noDeploy: !!flags['no-deploy'],
   }
 }
 
@@ -107,38 +107,38 @@ export function parseDevArgs(args: string[]): DevOptions {
   const entry = positional[0]
 
   if (!entry) {
-    throw new Error("Entry path is required")
+    throw new Error('Entry path is required')
   }
 
   return {
     entry,
-    outdir: (flags["outdir"] as string) ?? "dist",
-    outfile: (flags["outfile"] as string) ?? "worker.js",
-    appId: flags["app-id"] as ApplicationId | undefined,
-    kernelUrl: flags["kernel-url"] as string | undefined,
-    noDeploy: !!flags["no-deploy"],
-    iframeEntry: flags["iframe-entry"] as string | undefined,
-    iframeHtml: flags["iframe-html"] as string | undefined,
-    hostPort: parseInt(flags["host-port"] as string, 10),
-    noServe: !!flags["no-serve"],
+    outdir: (flags['outdir'] as string) ?? 'dist',
+    outfile: (flags['outfile'] as string) ?? 'worker.js',
+    appId: flags['app-id'] as ApplicationId | undefined,
+    kernelUrl: flags['kernel-url'] as string | undefined,
+    noDeploy: !!flags['no-deploy'],
+    iframeEntry: flags['iframe-entry'] as string | undefined,
+    iframeHtml: flags['iframe-html'] as string | undefined,
+    hostPort: parseInt(flags['host-port'] as string, 10),
+    noServe: !!flags['no-serve'],
   }
 }
 
 export function parseInitArgs(args: string[]): InitOptions {
   const { flags } = parseRawArgs(args)
 
-  const title = flags["title"] as string | undefined
-  const kernelUrl = flags["kernel-url"] as string | undefined
-  const kernelRpcUrl = flags["kernel-rpc-url"] as string | undefined
-  const avatarId = flags["avatar-id"] as string | undefined
-  const token = flags["token"] as string | undefined
-  const parentId = flags["parent-id"] as string | undefined
+  const title = flags['title'] as string | undefined
+  const kernelUrl = flags['kernel-url'] as string | undefined
+  const kernelRpcUrl = flags['kernel-rpc-url'] as string | undefined
+  const avatarId = flags['avatar-id'] as string | undefined
+  const token = flags['token'] as string | undefined
+  const parentId = flags['parent-id'] as string | undefined
 
-  if (!title) throw new Error("--title is required")
-  if (!kernelUrl) throw new Error("--kernel-url is required")
-  if (!kernelRpcUrl) throw new Error("--kernel-rpc-url is required")
-  if (!avatarId) throw new Error("--avatar-id is required")
-  if (!token) throw new Error("--token is required")
+  if (!title) throw new Error('--title is required')
+  if (!kernelUrl) throw new Error('--kernel-url is required')
+  if (!kernelRpcUrl) throw new Error('--kernel-rpc-url is required')
+  if (!avatarId) throw new Error('--avatar-id is required')
+  if (!token) throw new Error('--token is required')
 
   return {
     title,
@@ -155,7 +155,7 @@ export function parseInitArgs(args: string[]): InitOptions {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function isHelpRequested(args: string[]): boolean {
-  return args.length === 0 || args[0] === "--help" || args[0] === "-h"
+  return args.length === 0 || args[0] === '--help' || args[0] === '-h'
 }
 
 export function showHelp(help: string): never {

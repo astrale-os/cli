@@ -2,11 +2,11 @@
  * Main App Component
  */
 
-import { useEndpoint, useReady, useWindow } from "@astrale/react"
-import { useState } from "react"
+import { useEndpoint, useReady, useWindow } from '@astrale/react'
+import { useState } from 'react'
 
-import type { WindowState } from "../state"
-import type { Item } from "../types"
+import type { WindowState } from '../state'
+import type { Item } from '../types'
 
 export function Main() {
   const ready = useReady()
@@ -25,24 +25,24 @@ export function Main() {
 
 function AppContent() {
   const { state, patch } = useWindow<WindowState>()
-  const [title, setTitle] = useState("")
-  const [content, setContent] = useState("")
+  const [title, setTitle] = useState('')
+  const [content, setContent] = useState('')
 
   const { data, loading, refetch } = useEndpoint<{ items: Item[] }, { limit: number }>(
-    "items.list",
+    'items.list',
     { limit: 20 },
   )
 
   const { mutate: createItem, loading: creating } = useEndpoint<
     { id: string },
     { title: string; content: string }
-  >("items.create")
+  >('items.create')
 
   const handleCreate = async () => {
     if (!title.trim()) return
     await createItem({ title: title.trim(), content: content.trim() })
-    setTitle("")
-    setContent("")
+    setTitle('')
+    setContent('')
     refetch()
   }
 
@@ -68,7 +68,7 @@ function AppContent() {
           style={styles.input}
         />
         <button onClick={handleCreate} disabled={creating} style={styles.button}>
-          {creating ? "Creating..." : "Create"}
+          {creating ? 'Creating...' : 'Create'}
         </button>
       </div>
 
@@ -94,25 +94,25 @@ function AppContent() {
 
 const styles: Record<string, React.CSSProperties> = {
   loading: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    height: "100vh",
-    fontFamily: "system-ui, sans-serif",
-    color: "#888",
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100vh',
+    fontFamily: 'system-ui, sans-serif',
+    color: '#888',
   },
   container: {
     padding: 20,
-    fontFamily: "system-ui, sans-serif",
+    fontFamily: 'system-ui, sans-serif',
     maxWidth: 600,
-    margin: "0 auto",
+    margin: '0 auto',
   },
   title: {
-    margin: "0 0 20px 0",
+    margin: '0 0 20px 0',
   },
   form: {
-    display: "flex",
+    display: 'flex',
     gap: 8,
     marginBottom: 20,
   },
@@ -120,37 +120,37 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     padding: 8,
     borderRadius: 4,
-    border: "1px solid #ccc",
+    border: '1px solid #ccc',
   },
   button: {
-    padding: "8px 16px",
+    padding: '8px 16px',
     borderRadius: 4,
-    border: "none",
-    background: "#0066cc",
-    color: "#fff",
-    cursor: "pointer",
+    border: 'none',
+    background: '#0066cc',
+    color: '#fff',
+    cursor: 'pointer',
   },
   list: {
-    display: "flex",
-    flexDirection: "column",
+    display: 'flex',
+    flexDirection: 'column',
     gap: 8,
   },
   item: {
     padding: 12,
     borderRadius: 4,
-    border: "1px solid #eee",
-    cursor: "pointer",
+    border: '1px solid #eee',
+    cursor: 'pointer',
   },
   itemSelected: {
-    background: "#f0f7ff",
-    borderColor: "#0066cc",
+    background: '#f0f7ff',
+    borderColor: '#0066cc',
   },
   itemContent: {
-    margin: "4px 0 0 0",
-    color: "#666",
+    margin: '4px 0 0 0',
+    color: '#666',
     fontSize: 14,
   },
   muted: {
-    color: "#888",
+    color: '#888',
   },
 }

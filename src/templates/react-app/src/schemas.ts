@@ -4,7 +4,7 @@
  * Reusable schemas for metadata and data.
  */
 
-import { z } from "zod"
+import { z } from 'zod'
 
 // Example: Item metadata
 export const ItemMeta = z.object({

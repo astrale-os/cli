@@ -2,7 +2,7 @@
  * Header Component
  */
 
-import type { AppConfig, AppManifest } from "../types"
+import type { AppConfig, AppManifest } from '../types'
 
 interface HeaderProps {
   config: AppConfig | null
@@ -28,7 +28,7 @@ export function Header({ config, manifest }: HeaderProps) {
       </div>
       <div className="header-actions">
         {config && (
-          <span className="mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          <span className="mono" style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {config.appId.slice(0, 16)}...
           </span>
         )}

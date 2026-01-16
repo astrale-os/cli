@@ -6,24 +6,21 @@
  */
 
 export interface WorkerApp {
-  appId: string;
-  workerUrl: string;
-  metadata?: unknown;
+  appId: string
+  workerUrl: string
+  metadata?: unknown
 }
 
 export interface WorkerInstance {
-  appId: string;
-  status: string;
-  startedAt: string;
-  lastActivityAt: string;
-  metadata: unknown;
-  terminate: () => Promise<void>;
+  appId: string
+  status: string
+  startedAt: string
+  lastActivityAt: string
+  metadata: unknown
+  terminate: () => Promise<void>
 }
 
-export type WorkerFactory = (opts: {
-  app: WorkerApp;
-  port: MessagePort;
-}) => Promise<WorkerInstance>;
+export type WorkerFactory = (opts: { app: WorkerApp; port: MessagePort }) => Promise<WorkerInstance>
 
 /**
  * Creates a worker factory for browser environments.
@@ -35,45 +32,43 @@ export type WorkerFactory = (opts: {
 export function createBrowserWorkerFactory(
   wrapControl: (msg: { type: string; payload: unknown }) => unknown,
   initPortType: string,
-  onLog?: (message: string, level: "info" | "error") => void,
+  onLog?: (message: string, level: 'info' | 'error') => void,
 ): WorkerFactory {
   return async ({ app, port }) => {
-    onLog?.(`Creating worker for ${app.appId}`, "info");
+    onLog?.(`Creating worker for ${app.appId}`, 'info')
 
     // Create a Blob URL that imports the worker script
     // This works around cross-origin restrictions for Web Workers
-    const workerCode = `import "${app.workerUrl}";`;
-    const blob = new Blob([workerCode], { type: "application/javascript" });
-    const blobUrl = URL.createObjectURL(blob);
+    const workerCode = `import "${app.workerUrl}";`
+    const blob = new Blob([workerCode], { type: 'application/javascript' })
+    const blobUrl = URL.createObjectURL(blob)
 
-    let worker: Worker;
+    let worker: Worker
     try {
-      worker = new Worker(blobUrl, { type: "module" });
+      worker = new Worker(blobUrl, { type: 'module' })
     } finally {
       // Revoke the blob URL after worker is created (worker keeps reference)
-      URL.revokeObjectURL(blobUrl);
+      URL.revokeObjectURL(blobUrl)
     }
 
     // Transfer the MessagePort to the worker
-    worker.postMessage(wrapControl({ type: initPortType, payload: {} }), [
-      port,
-    ]);
-    onLog?.("Port transferred to worker", "info");
+    worker.postMessage(wrapControl({ type: initPortType, payload: {} }), [port])
+    onLog?.('Port transferred to worker', 'info')
 
     worker.onerror = (err) => {
-      onLog?.(`Worker error: ${err.message}`, "error");
-    };
+      onLog?.(`Worker error: ${err.message}`, 'error')
+    }
 
     return {
       appId: app.appId,
-      status: "ready",
+      status: 'ready',
       startedAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
       metadata: app.metadata ?? {},
       terminate: async () => {
-        worker.terminate();
-        onLog?.(`Worker ${app.appId} terminated`, "info");
+        worker.terminate()
+        onLog?.(`Worker ${app.appId} terminated`, 'info')
       },
-    };
-  };
+    }
+  }
 }

@@ -4,8 +4,8 @@
  * Unified client for all kernel operations (init, build, dev).
  */
 
-import { DatastoreClient } from "@astrale-os/datastore-client"
-import type { BootstrapDataGrant, EditModuleResultWithBackend } from "@astrale-os/kernel-api"
+import { DatastoreClient } from '@astrale-os/datastore-client'
+import type { BootstrapDataGrant, EditModuleResultWithBackend } from '@astrale-os/kernel-api'
 import type {
   AppBuildResult,
   AppCreateResult,
@@ -13,10 +13,10 @@ import type {
   AppDiscoverResult,
   DevelopmentConfig,
   EndpointGrant,
-} from "@astrale-os/kernel-api/system"
-import type { AvatarId, ModuleId, SpaceId } from "@astrale-os/kernel-core"
-import { SYSTEM_APPS } from "@astrale-os/kernel-core"
-import type { SerializedApp, SerializedEndpoints } from "@astrale-os/sdk-app"
+} from '@astrale-os/kernel-api/system'
+import type { AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
+import { SYSTEM_APPS } from '@astrale-os/kernel-core'
+import type { SerializedApp, SerializedEndpoints } from '@astrale-os/sdk-app'
 
 const APPMGR_APP_ID = SYSTEM_APPS.APPS.id
 
@@ -62,7 +62,7 @@ export class KernelClient {
   }
 
   async connect(): Promise<void> {
-    const { KernelWSClient } = await import("@astrale-os/kernel-client-ws")
+    const { KernelWSClient } = await import('@astrale-os/kernel-client-ws')
     const client = new KernelWSClient({
       wsUrl: this.config.kernelUrl,
       token: this.config.token,
@@ -72,7 +72,7 @@ export class KernelClient {
     })
 
     if (this.config.persistent && this.config.onDisconnect) {
-      client.on("disconnected", this.config.onDisconnect)
+      client.on('disconnected', this.config.onDisconnect)
     }
 
     await client.connect()
@@ -86,7 +86,7 @@ export class KernelClient {
 
   private ensureConnected(): void {
     if (!this.wsClient) {
-      throw new Error("KernelClient not connected. Call connect() first.")
+      throw new Error('KernelClient not connected. Call connect() first.')
     }
   }
 
@@ -101,7 +101,7 @@ export class KernelClient {
   ): Promise<AppCreateResult> {
     this.ensureConnected()
     return this.wsClient!.callSystem(
-      "appmgr.create",
+      'appmgr.create',
       {
         parentId,
         publicKeyJwk: publicKeyJwk ? JSON.stringify(publicKeyJwk) : undefined,
@@ -113,22 +113,22 @@ export class KernelClient {
 
   async develop(schema: SerializedApp, config: DevelopmentConfig): Promise<AppDevelopResult> {
     this.ensureConnected()
-    return this.wsClient!.callSystem("appmgr.develop", { schema, config }, this.ctx)
+    return this.wsClient!.callSystem('appmgr.develop', { schema, config }, this.ctx)
   }
 
   async build(parentId: ModuleId, schema: SerializedApp): Promise<AppBuildResult> {
     this.ensureConnected()
-    return this.wsClient!.callSystem("appmgr.build", { parentId, schema }, this.ctx)
+    return this.wsClient!.callSystem('appmgr.build', { parentId, schema }, this.ctx)
   }
 
   async resolveApplication(slug: string): Promise<{ appId: string; slug: string }> {
     this.ensureConnected()
-    return this.wsClient!.callSystem("appmgr.resolve", { slug }, this.ctx)
+    return this.wsClient!.callSystem('appmgr.resolve', { slug }, this.ctx)
   }
 
   async discoverApplication(appId: string, version?: string): Promise<AppDiscoverResult> {
     this.ensureConnected()
-    return this.wsClient!.callSystem("appmgr.discover", { appId, version }, this.ctx)
+    return this.wsClient!.callSystem('appmgr.discover', { appId, version }, this.ctx)
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -141,13 +141,13 @@ export class KernelClient {
   ): Promise<EditModuleResultWithBackend> {
     this.ensureConnected()
     return this.wsClient!.call(
-      "module.edit",
+      'module.edit',
       {
         moduleId,
         metadata: options.contentType
-          ? { contentType: options.contentType, name: "worker.js" }
+          ? { contentType: options.contentType, name: 'worker.js' }
           : undefined,
-        backend: options.backend ?? "kv",
+        backend: options.backend ?? 'kv',
       },
       this.ctx,
     )
@@ -162,8 +162,8 @@ export class KernelClient {
     code: string | Uint8Array,
   ): Promise<{ bytes: number }> {
     const editResult = await this.editModule(workerBundleId, {
-      contentType: "application/javascript",
-      backend: "kv",
+      contentType: 'application/javascript',
+      backend: 'kv',
     })
     const writeResult = await this.datastore.writeObject({
       grant: editResult.datastoreGrant,
@@ -210,7 +210,7 @@ export class KernelClient {
     let count = 0
 
     for (const { name, type, grant } of grants) {
-      const endpointContainer = type === "worker" ? endpoints.worker : endpoints.backend
+      const endpointContainer = type === 'worker' ? endpoints.worker : endpoints.backend
       const endpoint = endpointContainer[name]
 
       if (!endpoint?.documentation) continue
