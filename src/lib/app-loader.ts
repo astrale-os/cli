@@ -145,42 +145,39 @@ export async function loadAppDefinition(entryPath: string): Promise<LoadedApp> {
     )
   }
 
-  return {
-    serialized: app.serialize(),
-    appdata: app.appdata,
-    slug: app.serialize().app.slug,
-    name: app.serialize().app.name,
-  }
+  const serialized = app.serialize()
+  return { serialized, appdata: app.appdata, slug: serialized.app.slug, name: serialized.app.name }
 }
 
 /**
  * Load app definition by searching common file locations in a project directory.
  */
-export async function loadAppFromDirectory(projectDir: string): Promise<LoadedApp> {
+export async function loadAppFromDirectory(
+  projectDir: string,
+  appPath?: string,
+): Promise<LoadedApp> {
   let loadedApp: LoadedApp | null = null
-
-  for (const candidate of APP_CANDIDATES) {
-    const appPath = path.join(projectDir, candidate)
-    if (!fs.existsSync(appPath)) continue
-
-    try {
-      loadedApp = await loadAppDefinition(appPath)
-      break
-    } catch {
-      // Try next candidate
+  if (appPath) {
+    loadedApp = await loadAppDefinition(path.resolve(projectDir, appPath))
+  } else {
+    for (const candidate of APP_CANDIDATES) {
+      const candidatePath = path.join(projectDir, candidate)
+      if (!fs.existsSync(candidatePath)) continue
+      try {
+        loadedApp = await loadAppDefinition(candidatePath)
+        break
+      } catch {
+        // Try next candidate
+      }
     }
   }
-
   if (!loadedApp) {
     throw new Error(
       `Could not find app definition in ${projectDir}.\nLooked for: ${APP_CANDIDATES.join(', ')}`,
     )
   }
-
-  // Enrich endpoints with JSDoc documentation
   const jsdocMap = parseProjectEndpointJSDocs(projectDir)
   loadedApp.serialized = enrichEndpointsWithJSDocs(loadedApp.serialized, jsdocMap)
-
   return loadedApp
 }
 

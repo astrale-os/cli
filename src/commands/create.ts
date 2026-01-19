@@ -92,9 +92,8 @@ export async function runCreate(options: CreateOptions): Promise<void> {
   console.log(`\nNext steps:`)
   console.log(`  cd ${options.name}`)
   console.log(`  pnpm install`)
-  console.log(
-    `  astrale init --title "${appName}" --kernel-url ws://localhost:8081 --avatar-id $AVATAR_ID --token $TOKEN`,
-  )
+  console.log(`  astrale auth login`)
+  console.log(`  astrale init --title "${appName}"`)
   console.log(`  astrale dev src/worker.ts --iframe-entry src/window/index.tsx`)
 }
 

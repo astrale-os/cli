@@ -6,14 +6,14 @@ import { resolveConfig } from '../lib/global-config'
 import { createKernelClient } from '../lib/kernel'
 
 export type InitOptions = {
-  title: string
+  title?: string
   profile?: string
   parentId?: ModuleId
 }
 
 export async function runInit(options: InitOptions): Promise<void> {
   console.log(`[astrale] Initializing new application...`)
-  console.log(`  Title: ${options.title}`)
+  if (options.title) console.log(`  Title: ${options.title}`)
   const resolved = await resolveConfig(options.profile)
   console.log(`  Profile: ${resolved.profile}`)
   console.log(`  Kernel WS: ${resolved.kernelWsUrl}`)
@@ -26,7 +26,7 @@ export async function runInit(options: InitOptions): Promise<void> {
   const client = await createKernelClient({
     kernelWsUrl: resolved.kernelWsUrl,
     avatarId: resolved.avatarId,
-    token: resolved.token,
+    accessToken: resolved.accessToken,
   })
   try {
     const parentId = options.parentId ?? resolved.avatarId
@@ -65,7 +65,7 @@ export async function runInit(options: InitOptions): Promise<void> {
 
 export const initCommand = new Command('init')
   .description('Initialize a new Astrale app in the kernel')
-  .requiredOption('--title <name>', 'Application title')
+  .option('--title <name>', 'Application title (for display only)')
   .option('--profile <name>', 'Profile to use (default: active profile)')
   .option('--parent-id <id>', 'Parent module ID (defaults to avatar)')
   .action(async (opts) => {

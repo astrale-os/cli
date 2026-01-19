@@ -43,14 +43,18 @@
   "author": "Astrale",
   "license": "MIT",
   "dependencies": {
+    "@napi-rs/keyring": "^1.1.6",
     "@astrale-os/datastore-client": ">=1.0.0 <2.0.0",
     "@astrale-os/kernel-api": ">=0.0.0 <1.0.0",
     "@astrale-os/kernel-client-ws": ">=0.0.0 <1.0.0",
     "@astrale-os/kernel-core": ">=0.0.0 <1.0.0",
     "@astrale-os/sdk-app": ">=0.0.0 <1.0.0",
     "@astrale-os/shell-transport": ">=0.0.0 <1.0.0",
+    "boxen": "^8.0.1",
+    "chalk": "^5.6.2",
     "commander": ">=13.0.0 <14.0.0",
-    "esbuild": ">=0.25.0 <1.0.0"
+    "esbuild": ">=0.25.0 <1.0.0",
+    "ora": "^9.0.0"
   },
   "devDependencies": {
     "@astrale/commitlint-config": "jsr:@astrale/commitlint-config@^1.0.0",

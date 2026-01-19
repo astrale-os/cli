@@ -150,7 +150,7 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
       log('Connecting to kernel to load app manifest...', 'info')
       const kernelClient = new KernelWSClientBundle.KernelWSClient({
         wsUrl: config.kernelUrl,
-        token: config.token,
+        token: config.accessToken,
         autoConnect: true,
         reconnect: false,
       })
@@ -201,7 +201,7 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
         {
           kernel: {
             wsUrl: config.kernelUrl,
-            token: config.token,
+            token: config.accessToken,
             avatarId: config.avatarId,
             autoConnect: true,
           },

@@ -1,9 +1,11 @@
 import type { ApplicationId } from '@astrale-os/kernel-core'
+import type { SerializedApp } from '@astrale-os/sdk-app'
 import { Command } from 'commander'
 import esbuild from 'esbuild'
 import { mkdir, readFile } from 'fs/promises'
-import { createWorkerBuildOptions, formatSize, getBundleSize } from '../lib/esbuild'
 import { extractBootstrapData } from '../lib/app-loader'
+import { type FullConfig } from '../lib/config'
+import { createWorkerBuildOptions, formatSize, getBundleSize } from '../lib/esbuild'
 import { createKernelClient } from '../lib/kernel'
 import { loadProject, printProjectInfo, resolvePaths } from '../lib/project'
 
@@ -54,7 +56,7 @@ export async function runBuild(options: BuildOptions): Promise<void> {
       kernelWsUrl: ctx.config.kernelWsUrl,
       datastoreUrl: ctx.config.datastoreUrl,
       avatarId: ctx.config.avatarId,
-      token: ctx.config.token,
+      accessToken: ctx.config.accessToken,
     })
     try {
       const { schema, workerUrl, uiUrl } = prepareDeploymentConfig(
@@ -133,10 +135,10 @@ export const buildCommand = new Command('build')
   })
 
 function prepareDeploymentConfig(
-  originalSchema: any,
-  config: any,
+  originalSchema: SerializedApp,
+  config: FullConfig,
   isProduction: boolean,
-): { schema: any; workerUrl?: string; uiUrl?: string } {
+): { schema: SerializedApp; workerUrl?: string; uiUrl?: string } {
   if (isProduction) {
     const uiUrl =
       originalSchema.app.ui.mode === 'url' ? (config.uiUrl ?? originalSchema.app.ui.url) : undefined
