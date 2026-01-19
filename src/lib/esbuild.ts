@@ -3,6 +3,8 @@
  */
 
 import type { BuildOptions, Plugin } from 'esbuild'
+import { existsSync } from 'fs'
+import { createRequire } from 'module'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -22,15 +24,25 @@ export const WORKSPACE_PACKAGES: Record<string, string> = {
   '@astrale-os/datastore-client': path.join(repoRoot, 'clients/datastore-ts/src/index.ts'),
 }
 
+const cliRequire = createRequire(import.meta.url)
+
 export function createWorkspaceResolverPlugin(
   packageMap: Record<string, string> = WORKSPACE_PACKAGES,
 ): Plugin {
   return {
     name: 'workspace-resolver',
     setup(build) {
-      build.onResolve({ filter: /^@astrale\// }, (args) => {
-        const resolved = packageMap[args.path]
-        return resolved ? { path: resolved } : null
+      build.onResolve({ filter: /^@astrale-os\// }, (args) => {
+        const localPath = packageMap[args.path]
+        if (localPath && existsSync(localPath)) {
+          return { path: localPath }
+        }
+        try {
+          const resolved = cliRequire.resolve(args.path)
+          return { path: resolved }
+        } catch {
+          return null
+        }
       })
     },
   }

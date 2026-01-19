@@ -108,7 +108,8 @@ export async function runDev(options: DevOptions): Promise<void> {
         `[astrale] Failed to connect to kernel:`,
         err instanceof Error ? err.message : err,
       )
-      console.log(`  Continuing without deployment...`)
+      console.log(`  ⚠ Host app will not work without kernel connection.`)
+      console.log(`  Try: astrale space create <name> && astrale init`)
     }
   }
   await mkdir(outPath, { recursive: true })
@@ -124,6 +125,9 @@ export async function runDev(options: DevOptions): Promise<void> {
       iframeHtml: options.iframeHtml,
       projectRoot: ctx.projectRoot,
       configPath,
+      kernelUrl: ctx.config.kernelWsUrl,
+      datastoreUrl: ctx.config.datastoreUrl,
+      accessToken: ctx.config.accessToken,
       onWorkerChange: () => {},
     })
     await state.devServer.start()

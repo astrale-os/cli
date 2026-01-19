@@ -23,6 +23,12 @@ importers:
       '@astrale-os/sdk-app':
         specifier: '>=0.0.0 <1.0.0'
         version: 0.2.1
+      '@astrale-os/shell-core':
+        specifier: '>=0.0.0 <1.0.0'
+        version: 0.2.1
+      '@astrale-os/shell-runtime':
+        specifier: '>=0.0.0 <1.0.0'
+        version: 0.2.0
       '@astrale-os/shell-transport':
         specifier: '>=0.0.0 <1.0.0'
         version: 0.2.0
@@ -108,6 +114,9 @@ packages:
   '@astrale-os/kernel-api@0.3.0':
     resolution: {integrity: sha512-YhJ9eP0XKp+CMhPp+zp/abZEij+R2kf4RQkd+aYJx7wlh73ZTgxgicp/hr8fHjwKjt/931y/0QL5S0wngez6zA==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-api/0.3.0/a21a0920e7ef06ff805849e33ff0f648d70b18eb}
 
+  '@astrale-os/kernel-client-ws@0.2.0':
+    resolution: {integrity: sha512-/2SMMLh+nQUT/yQdaOaRxRc7dLWFWtwnEXGRPq5iuy+6xlAJa+wac4Z+2PWvj/eCDmcFpwOZMs4o6po8MmCr+g==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-client-ws/0.2.0/3743d4eb025a4af42e422b80fe2e44730c831eaf}
+
   '@astrale-os/kernel-client-ws@0.4.0':
     resolution: {integrity: sha512-caJkYsbkOIqv1Q+eC8bBjuct3/tCOOqCmze5e9Hv/8C9Zfc5sL+DgGJdER4BhxyWefuQxQp1N+9nVAYHbK4dGg==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-client-ws/0.4.0/0d3790933e6d5f4929cea3f2aba423b3aa2ab082}
 
@@ -120,8 +129,17 @@ packages:
   '@astrale-os/sdk-app@0.2.1':
     resolution: {integrity: sha512-8+ypXwNb8Rb8MgR75d1/fHhlxYK+puFPauNyYRq8NZ6mrwFns2Z/t5f9U5uHRnqvcBenCG8At7f8AWTED8p0jQ==, tarball: https://npm.pkg.github.com/download/@astrale-os/sdk-app/0.2.1/98986385bc674c5b9f1a6eb70563b7a1d1f25f06}
 
+  '@astrale-os/shell-core@0.2.0':
+    resolution: {integrity: sha512-6hbGp3vzWj+1yK1GRXWHHajWUwd/z9/O5yAI1SkjaZo8alVS5C+iwNEp0j2x8+nTlkGI5YTq5YcCiZk+O2Evcg==, tarball: https://npm.pkg.github.com/download/@astrale-os/shell-core/0.2.0/7afc5ddaeafe3894dfc50516dae0293485258038}
+
+  '@astrale-os/shell-core@0.2.1':
+    resolution: {integrity: sha512-fNE3V/lip1t/+wMKXIKOlSdlZF5mjanTLMMrpXEPV/WNP0YktoKOtxkvKDb2KgZMVysUKFmwE+la+EZJhGAJ8w==, tarball: https://npm.pkg.github.com/download/@astrale-os/shell-core/0.2.1/de956cbd5d4eaa6766e397db624a8227819bf331}
+
   '@astrale-os/shell-protocol@0.2.0':
     resolution: {integrity: sha512-DfnYr24V3O2Zpf0cZjXBjOOrFj/0yxbK9B3PbrqOeoNoljSN/mcl5BkcweZzOcJJf+H/QD5o5N4GNwtcboCoGw==, tarball: https://npm.pkg.github.com/download/@astrale-os/shell-protocol/0.2.0/5a253527609594910bd590c2f998dde85d7b2c98}
+
+  '@astrale-os/shell-runtime@0.2.0':
+    resolution: {integrity: sha512-lbNOpc4wGxCbUIqNBRAh+qBWdo6gzLY9Fft95q67Qz8/fxzqoOSwXiP95ZbHFpYFI6DGzsME0JRwt4oYieZWfQ==, tarball: https://npm.pkg.github.com/download/@astrale-os/shell-runtime/0.2.0/4de03ba1c4d161363651cbc8f45203965cddfdaf}
 
   '@astrale-os/shell-transport@0.2.0':
     resolution: {integrity: sha512-QgRwcvuE/hIVOqm0sTXRzQpEmLy9Yel1X2HUndYbuNkZNGn9M2eosZ1TMgUncP8DmT5G7HZH8PVzvbGjCvu4kQ==, tarball: https://npm.pkg.github.com/download/@astrale-os/shell-transport/0.2.0/9d8f61f77d5c3cf87d25777a490d501f4499a8fc}
@@ -1493,6 +1511,15 @@ snapshots:
       '@astrale-os/kernel-core': 0.3.0
       zod: 3.25.76
 
+  '@astrale-os/kernel-client-ws@0.2.0':
+    dependencies:
+      '@astrale-os/kernel-api': 0.1.0
+      '@astrale-os/kernel-core': 0.1.0
+      ws: 8.19.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@astrale-os/kernel-client-ws@0.4.0':
     dependencies:
       '@astrale-os/kernel-api': 0.3.0
@@ -1516,10 +1543,44 @@ snapshots:
       zod: 4.3.5
       zod-to-json-schema: 3.25.1(zod@4.3.5)
 
+  '@astrale-os/shell-core@0.2.0':
+    dependencies:
+      '@astrale-os/kernel-api': 0.1.0
+      '@astrale-os/kernel-client-ws': 0.2.0
+      '@astrale-os/kernel-core': 0.1.0
+      '@astrale-os/shell-transport': 0.2.0
+      '@tanstack/store': 0.8.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
+  '@astrale-os/shell-core@0.2.1':
+    dependencies:
+      '@astrale-os/kernel-api': 0.1.0
+      '@astrale-os/kernel-client-ws': 0.2.0
+      '@astrale-os/kernel-core': 0.1.0
+      '@astrale-os/shell-transport': 0.2.0
+      '@tanstack/store': 0.8.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@astrale-os/shell-protocol@0.2.0':
     dependencies:
       '@astrale-os/kernel-api': 0.1.0
       '@astrale-os/kernel-core': 0.1.0
+
+  '@astrale-os/shell-runtime@0.2.0':
+    dependencies:
+      '@astrale-os/datastore-client': 1.2.1
+      '@astrale-os/kernel-api': 0.1.0
+      '@astrale-os/kernel-client-ws': 0.2.0
+      '@astrale-os/kernel-core': 0.1.0
+      '@astrale-os/shell-core': 0.2.0
+      '@tanstack/store': 0.8.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   '@astrale-os/shell-transport@0.2.0':
     dependencies:

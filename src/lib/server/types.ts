@@ -7,6 +7,9 @@ export interface DevServerConfig {
   iframeHtml?: string
   projectRoot: string
   configPath: string
+  kernelUrl?: string
+  datastoreUrl?: string
+  accessToken?: string
   onWorkerChange?: () => void
   onIframeChange?: () => void
 }
