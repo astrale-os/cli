@@ -17,7 +17,7 @@ export interface AppConfig {
   kernelUrl: string
   datastoreUrl: string
   avatarId: string
-  token: string
+  accessToken: string
   workerUrl: string
   uiUrl: string
   typesContainerId?: string

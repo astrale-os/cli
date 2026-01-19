@@ -8,35 +8,35 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const sdksRoot = path.resolve(__dirname, '../../..')
+const repoRoot = path.resolve(sdksRoot, '..')
 
-/**
- * Plugin to resolve @astrale/* workspace packages
- */
-export function workspaceResolverPlugin(): Plugin {
-  const repoRoot = path.resolve(sdksRoot, '..')
-  const packageMap: Record<string, string> = {
-    '@astrale-os/sdk-worker': path.join(sdksRoot, 'worker/index.ts'),
-    '@astrale-os/sdk-app': path.join(sdksRoot, 'app/index.ts'),
-    '@astrale-os/shell-transport': path.join(repoRoot, 'shell/transport/src/index.ts'),
-    '@astrale-os/shell-protocol': path.join(repoRoot, 'shell/protocol/src/index.ts'),
-    '@astrale-os/kernel-core': path.join(repoRoot, 'kernel/core/index.ts'),
-    '@astrale-os/kernel-client-ws': path.join(repoRoot, 'clients/kernel-ws-ts/src/index.ts'),
-    '@astrale-os/datastore-client': path.join(repoRoot, 'clients/datastore-ts/src/index.ts'),
-  }
+export const WORKSPACE_PACKAGES: Record<string, string> = {
+  '@astrale-os/sdk-worker': path.join(sdksRoot, 'worker/index.ts'),
+  '@astrale-os/sdk-app': path.join(sdksRoot, 'app/index.ts'),
+  '@astrale-os/shell-transport': path.join(repoRoot, 'shell/transport/src/index.ts'),
+  '@astrale-os/shell-protocol': path.join(repoRoot, 'shell/protocol/src/index.ts'),
+  '@astrale-os/shell-runtime': path.join(repoRoot, 'shell/runtime/index.ts'),
+  '@astrale-os/shell-core': path.join(repoRoot, 'shell/core/src/index.ts'),
+  '@astrale-os/kernel-core': path.join(repoRoot, 'kernel/core/index.ts'),
+  '@astrale-os/kernel-client-ws': path.join(repoRoot, 'clients/kernel-ws-ts/src/index.ts'),
+  '@astrale-os/datastore-client': path.join(repoRoot, 'clients/datastore-ts/src/index.ts'),
+}
 
+export function createWorkspaceResolverPlugin(
+  packageMap: Record<string, string> = WORKSPACE_PACKAGES,
+): Plugin {
   return {
     name: 'workspace-resolver',
     setup(build) {
       build.onResolve({ filter: /^@astrale\// }, (args) => {
         const resolved = packageMap[args.path]
-        if (resolved) {
-          return { path: resolved }
-        }
-        return null
+        return resolved ? { path: resolved } : null
       })
     },
   }
 }
+
+export const workspaceResolverPlugin = createWorkspaceResolverPlugin
 
 export interface WorkerBuildConfig {
   entryPath: string

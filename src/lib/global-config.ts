@@ -1,7 +1,10 @@
 import type { AvatarId } from '@astrale-os/kernel-core'
-import { mkdir, readFile, writeFile } from 'fs/promises'
+import { Entry } from '@napi-rs/keyring'
+import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
 import os from 'os'
 import path from 'path'
+
+const KEYRING_SERVICE = 'astrale-cli'
 
 export interface ProfileConfig {
   kernelWsUrl: string
@@ -16,7 +19,8 @@ export interface GlobalConfig {
 
 export interface ProfileAuth {
   avatarId: AvatarId
-  token: string
+  accessToken: string
+  refreshToken: string
 }
 
 export type AuthConfig = Record<string, ProfileAuth>
@@ -82,19 +86,40 @@ export async function saveGlobalConfig(config: GlobalConfig): Promise<void> {
 }
 
 export async function loadAuth(): Promise<AuthConfig> {
+  try {
+    const entry = new Entry(KEYRING_SERVICE, 'auth')
+    const stored = entry.getPassword()
+    if (stored) return JSON.parse(stored) as AuthConfig
+  } catch {
+    // Keychain not available or failed, fall back to file
+  }
   const authPath = getAuthPath()
   try {
     const content = await readFile(authPath, 'utf-8')
     return JSON.parse(content) as AuthConfig
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {}
-    }
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
     throw err
   }
 }
 
+async function cleanupFileAuth(): Promise<void> {
+  try {
+    await unlink(getAuthPath())
+  } catch {
+    // File doesn't exist or can't be deleted, ignore
+  }
+}
+
 export async function saveAuth(auth: AuthConfig): Promise<void> {
+  try {
+    const entry = new Entry(KEYRING_SERVICE, 'auth')
+    entry.setPassword(JSON.stringify(auth))
+    await cleanupFileAuth() // Remove file-based auth if keychain succeeds (migration)
+    return
+  } catch {
+    // Keychain not available, fall back to file storage
+  }
   const configDir = getConfigDir()
   const authPath = getAuthPath()
   await mkdir(configDir, { recursive: true })
@@ -147,7 +172,18 @@ export async function setProfileAuth(profileName: string, auth: ProfileAuth): Pr
 export async function clearProfileAuth(profileName: string): Promise<void> {
   const authConfig = await loadAuth()
   delete authConfig[profileName]
-  await saveAuth(authConfig)
+  if (Object.keys(authConfig).length === 0) {
+    // No more profiles, clear everything
+    try {
+      const entry = new Entry(KEYRING_SERVICE, 'auth')
+      entry.deletePassword()
+    } catch {
+      // Keychain not available or failed
+    }
+    await cleanupFileAuth()
+  } else {
+    await saveAuth(authConfig)
+  }
 }
 
 export async function listProfiles(): Promise<
@@ -159,7 +195,7 @@ export async function listProfiles(): Promise<
     name,
     config,
     isActive: name === globalConfig.activeProfile,
-    isAuthenticated: !!auth[name]?.token,
+    isAuthenticated: !!auth[name]?.accessToken,
   }))
 }
 
@@ -169,21 +205,25 @@ export interface ResolvedConfig {
   kernelRpcUrl: string
   datastoreUrl: string
   avatarId: AvatarId
-  token: string
+  accessToken: string
 }
 
 export async function resolveConfig(profileOverride?: string): Promise<ResolvedConfig> {
+  const { getValidAccessToken } = await import('./workos-auth')
   const profile = await getProfileConfig(profileOverride)
   const auth = await getProfileAuth(profile.name)
   if (!auth) {
     throw new Error(`Not authenticated for profile "${profile.name}". Run: astrale auth login`)
   }
+  const accessToken = await getValidAccessToken(auth, async (newAuth) => {
+    await setProfileAuth(profile.name, newAuth)
+  })
   return {
     profile: profile.name,
     kernelWsUrl: profile.kernelWsUrl,
     kernelRpcUrl: profile.kernelRpcUrl,
     datastoreUrl: profile.datastoreUrl,
     avatarId: auth.avatarId,
-    token: auth.token,
+    accessToken,
   }
 }

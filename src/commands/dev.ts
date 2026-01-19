@@ -1,21 +1,13 @@
 import type { ApplicationId } from '@astrale-os/kernel-core'
-import type { AppDevelopResult } from '@astrale-os/kernel-api'
 import { Command } from 'commander'
 import esbuild, { type BuildContext, type Plugin } from 'esbuild'
-import { mkdir, readFile } from 'fs/promises'
+import { mkdir } from 'fs/promises'
 import path from 'path'
-import {
-  extractBootstrapData,
-  loadAppDefinition,
-  loadAppFromDirectory,
-  type LoadedApp,
-} from '../lib/app-loader'
-import { generateApps, type EndpointMaps } from '../lib/apps-generator'
-import { analyzeEndpointUsages } from '../lib/endpoint-usage-analyzer'
-import { type FullConfig } from '../lib/config'
+import { generateApps } from '../lib/apps-generator'
+import { deployToKernel, type DeployerState } from '../lib/deployer'
 import { createDevServer, type DevServer } from '../lib/dev-server'
 import { createWorkerBuildOptions, formatSize, getBundleSize } from '../lib/esbuild'
-import { createKernelClient, type KernelClient } from '../lib/kernel'
+import { createKernelClient } from '../lib/kernel'
 import { loadProject, printProjectInfo, resolvePaths } from '../lib/project'
 
 export type DevOptions = {
@@ -32,109 +24,11 @@ export type DevOptions = {
   appPath?: string
 }
 
-let buildCount = 0
+const DEFAULT_HOST_PORT = 7017
 
-interface DevState {
-  projectRoot: string
-  outFile: string
-  config: FullConfig | null
-  client: KernelClient | null
-  app: LoadedApp | null
+interface DevState extends DeployerState {
+  buildCount: number
   devServer: DevServer | null
-  appPath?: string
-  endpointMaps: EndpointMaps
-}
-
-async function loadApp(state: DevState): Promise<LoadedApp> {
-  if (state.appPath) return loadAppDefinition(path.resolve(state.projectRoot, state.appPath))
-  return loadAppFromDirectory(state.projectRoot)
-}
-
-type DependencyAnalysis = {
-  dependencies: Array<{ targetSlug: string; endpoint: string }>
-  appsInfo: string
-  errors: string[]
-}
-
-async function analyzeDependencies(state: DevState): Promise<DependencyAnalysis> {
-  const result: DependencyAnalysis = { dependencies: [], appsInfo: '', errors: [] }
-  const declaredApps = state.app?.serialized.apps
-  if (!declaredApps || Object.keys(declaredApps).length === 0 || !state.client) return result
-  const appsDir = path.join(state.projectRoot, '.astrale', 'apps')
-  const appSlug = state.app!.serialized.app.slug
-  const appsResult = await generateApps(appSlug, declaredApps, state.client, appsDir)
-  if (appsResult.generated.length > 0)
-    result.appsInfo = `, ${appsResult.generated.length} app APIs generated`
-  result.errors.push(...appsResult.errors)
-  state.endpointMaps = appsResult.endpointMaps
-  const analysis = analyzeEndpointUsages(state.projectRoot, appsResult.endpointMaps, declaredApps)
-  result.dependencies = analysis.usages.map((u) => ({
-    targetSlug: u.targetSlug,
-    endpoint: u.endpoint,
-  }))
-  result.errors.push(...analysis.errors)
-  if (result.dependencies.length > 0)
-    result.appsInfo += `, ${result.dependencies.length} cross-app calls detected`
-  return result
-}
-
-type UploadStats = { workerBytes: number; bootstrapInfo: string; endpointDocsInfo: string }
-
-async function uploadArtifacts(state: DevState, result: AppDevelopResult): Promise<UploadStats> {
-  const stats: UploadStats = { workerBytes: 0, bootstrapInfo: '', endpointDocsInfo: '' }
-  if (result.workerBundleGrant && state.config?.workerBundleId) {
-    const workerCode = await readFile(state.outFile, 'utf-8')
-    const uploadResult = await state.client!.uploadWorkerBundle(
-      state.config.workerBundleId,
-      workerCode,
-    )
-    stats.workerBytes = uploadResult.bytes
-  }
-  if (result.bootstrapDataGrants && result.bootstrapDataGrants.length > 0 && state.app) {
-    const bootstrapDataMap = extractBootstrapData(state.app.appdata)
-    const bootstrapResult = await state.client!.uploadBootstrapData(
-      result.bootstrapDataGrants,
-      bootstrapDataMap,
-    )
-    stats.bootstrapInfo = `, ${bootstrapResult.count} bootstrap items (${formatSize(bootstrapResult.bytes)})`
-  }
-  if (result.endpointGrants && result.endpointGrants.length > 0 && state.app) {
-    const endpointDocsResult = await state.client!.uploadEndpointDocs(
-      result.endpointGrants,
-      state.app.serialized.endpoints,
-    )
-    if (endpointDocsResult.count > 0)
-      stats.endpointDocsInfo = `, ${endpointDocsResult.count} endpoint docs (${formatSize(endpointDocsResult.bytes)})`
-  }
-  return stats
-}
-
-async function deployToKernel(state: DevState): Promise<void> {
-  if (!state.client || !state.config) return
-  try {
-    state.app = await loadApp(state)
-    const { dependencies, appsInfo, errors } = await analyzeDependencies(state)
-    for (const error of errors) console.warn(`  ⚠ ${error}`)
-    const result = await state.client.develop(state.app.serialized, {
-      appId: state.config.appId,
-      typesContainerId: state.config.typesContainerId,
-      workerBundleId: state.config.workerBundleId,
-      uiBundleId: state.config.uiBundleId,
-      sourceBundleId: state.config.sourceBundleId,
-      workerUrl: state.config.workerUrl,
-      uiUrl: state.config.uiUrl,
-      bootstrap: state.config.bootstrap,
-      remoteAppdata: state.config.remoteAppdata,
-      endpoints: state.config.endpoints,
-      dependencies,
-    })
-    const stats = await uploadArtifacts(state, result)
-    console.log(
-      `  ↑ Deployed (${formatSize(stats.workerBytes)} worker${stats.bootstrapInfo}${stats.endpointDocsInfo}${appsInfo})`,
-    )
-  } catch (err) {
-    console.error(`  ⚠ Deploy failed:`, err instanceof Error ? err.message : err)
-  }
 }
 
 function devPlugin(state: DevState): Plugin {
@@ -147,13 +41,13 @@ function devPlugin(state: DevState): Plugin {
       })
       build.onEnd(async (result) => {
         const duration = (performance.now() - startTime).toFixed(0)
-        buildCount++
+        state.buildCount++
         if (result.errors.length > 0) {
-          console.log(`\n✗ Build #${buildCount} failed (${duration}ms)`)
+          console.log(`\n✗ Build #${state.buildCount} failed (${duration}ms)`)
           return
         }
         const size = getBundleSize(result.metafile)
-        console.log(`\n✓ Build #${buildCount} (${duration}ms) → ${formatSize(size)}`)
+        console.log(`\n✓ Build #${state.buildCount} (${duration}ms) → ${formatSize(size)}`)
         await deployToKernel(state)
       })
     },
@@ -175,6 +69,7 @@ export async function runDev(options: DevOptions): Promise<void> {
     appPath: options.appPath,
   })
   const state: DevState = {
+    buildCount: 0,
     projectRoot: ctx.projectRoot,
     outFile,
     config: ctx.config,
@@ -192,7 +87,7 @@ export async function runDev(options: DevOptions): Promise<void> {
         kernelWsUrl: ctx.config.kernelWsUrl,
         datastoreUrl: ctx.config.datastoreUrl,
         avatarId: ctx.config.avatarId,
-        token: ctx.config.token,
+        accessToken: ctx.config.accessToken,
         persistent: true,
         onDisconnect: (reason) => {
           console.log(`\n⚠ Kernel disconnected: ${reason}`)
@@ -277,10 +172,14 @@ export const devCommand = new Command('dev')
   .option('--no-deploy', 'Skip kernel deployment (watch only)')
   .option('--iframe-entry <path>', 'Iframe entry file (e.g., src/window/index.tsx)')
   .option('--iframe-html <path>', 'Iframe HTML template')
-  .option('--host-port <port>', 'Host app port', '7017')
+  .option('--host-port <port>', 'Host app port', String(DEFAULT_HOST_PORT))
   .option('--no-serve', 'Skip local dev servers')
   .action(async (entry, opts) => {
     try {
+      const hostPort = parseInt(opts.hostPort, 10)
+      if (isNaN(hostPort) || hostPort < 1 || hostPort > 65535) {
+        throw new Error(`Invalid port: ${opts.hostPort}. Must be a number between 1 and 65535.`)
+      }
       await runDev({
         entry,
         outdir: opts.outdir,
@@ -291,7 +190,7 @@ export const devCommand = new Command('dev')
         noDeploy: opts.deploy === false,
         iframeEntry: opts.iframeEntry,
         iframeHtml: opts.iframeHtml,
-        hostPort: parseInt(opts.hostPort, 10),
+        hostPort,
         noServe: opts.serve === false,
       })
     } catch (err) {

@@ -1,18 +1,16 @@
 // App loading
 export { loadAppDefinition, loadAppFromDirectory, type LoadedApp } from './app-loader'
 
-// CLI
+// Deployer
 export {
-  type BuildOptions,
-  type DevOptions,
-  HELP,
-  type InitOptions,
-  isHelpRequested,
-  parseBuildArgs,
-  parseDevArgs,
-  parseInitArgs,
-  showHelp,
-} from './cli'
+  analyzeDependencies,
+  deployToKernel,
+  type DeployerState,
+  type DependencyAnalysis,
+  loadApp,
+  uploadArtifacts,
+  type UploadStats,
+} from './deployer'
 
 // Config
 export {
@@ -31,9 +29,11 @@ export { createDevServer, type DevServer, type DevServerConfig } from './dev-ser
 // Esbuild
 export {
   createWorkerBuildOptions,
+  createWorkspaceResolverPlugin,
   formatSize,
   getBundleSize,
   type WorkerBuildConfig,
+  WORKSPACE_PACKAGES,
   workspaceResolverPlugin,
 } from './esbuild'
 
@@ -49,11 +49,13 @@ export {
 
 // Project
 export {
+  AppLoadError,
   type ConfigOverrides,
   loadProject,
   type LoadProjectOptions,
   printProjectInfo,
   type ProjectContext,
+  ProjectNotFoundError,
   type ResolvedPaths,
   resolvePaths,
 } from './project'

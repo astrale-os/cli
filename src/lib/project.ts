@@ -1,7 +1,7 @@
 import type { ApplicationId } from '@astrale-os/kernel-core'
 import path from 'path'
-import { loadAppDefinition, loadAppFromDirectory, type LoadedApp } from './app-loader'
-import { type FullConfig, findProjectRoot, getConfigPath, loadFullConfig } from './config'
+import { loadAppFromDirectory, type LoadedApp } from './app-loader'
+import { findProjectRoot, getConfigPath, loadFullConfig, type FullConfig } from './config'
 
 export interface ProjectContext {
   projectRoot: string
@@ -21,15 +21,26 @@ export interface LoadProjectOptions {
   appPath?: string
 }
 
+export class ProjectNotFoundError extends Error {
+  constructor() {
+    super(
+      `No .astrale/config.json found. Run 'astrale init' first, or use --no-deploy to skip kernel deployment.`,
+    )
+    this.name = 'ProjectNotFoundError'
+  }
+}
+
+export class AppLoadError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AppLoadError'
+  }
+}
+
 export async function loadProject(options: LoadProjectOptions = {}): Promise<ProjectContext> {
   const { requireConfig = true, loadApp = false, overrides = {}, appPath } = options
   const projectRoot = await findProjectRoot(process.cwd())
-  if (!projectRoot && requireConfig) {
-    console.error(
-      `[astrale] No .astrale/config.json found.\n  Run 'astrale init' first, or use --no-deploy to skip kernel deployment.`,
-    )
-    process.exit(1)
-  }
+  if (!projectRoot && requireConfig) throw new ProjectNotFoundError()
   const ctx: ProjectContext = { projectRoot: projectRoot ?? process.cwd(), config: null, app: null }
   if (projectRoot) {
     const fullConfig = await loadFullConfig(projectRoot, overrides.profile)
@@ -40,18 +51,8 @@ export async function loadProject(options: LoadProjectOptions = {}): Promise<Pro
       ),
     }
   }
-  if (loadApp) ctx.app = await loadAppDefinitionSafe(ctx.projectRoot, appPath)
+  if (loadApp) ctx.app = await loadAppFromDirectory(ctx.projectRoot, appPath)
   return ctx
-}
-
-async function loadAppDefinitionSafe(projectRoot: string, appPath?: string): Promise<LoadedApp> {
-  try {
-    if (appPath) return await loadAppDefinition(path.resolve(projectRoot, appPath))
-    return await loadAppFromDirectory(projectRoot)
-  } catch (err) {
-    console.error(`[astrale] Failed to load app:`, err instanceof Error ? err.message : err)
-    process.exit(1)
-  }
 }
 
 export function printProjectInfo(ctx: ProjectContext): void {

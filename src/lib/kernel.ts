@@ -8,17 +8,19 @@ import type {
   DevelopmentConfig,
   EndpointGrant,
 } from '@astrale-os/kernel-api/system'
+import type { KernelWSClient } from '@astrale-os/kernel-client-ws'
 import type { AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
 import { SYSTEM_APPS } from '@astrale-os/kernel-core'
 import type { SerializedApp, SerializedEndpoints } from '@astrale-os/sdk-app'
 
 const APPMGR_APP_ID = SYSTEM_APPS.APPS.id
+const MAX_RECONNECT_RETRIES = 10
 
 export interface KernelClientConfig {
   kernelWsUrl: string
   datastoreUrl?: string
   avatarId: AvatarId
-  token: string
+  accessToken: string
   persistent?: boolean
   onDisconnect?: (reason: string) => void
 }
@@ -34,7 +36,7 @@ export type {
 }
 
 export class KernelClient {
-  private wsClient: any = null
+  private wsClient: KernelWSClient | null = null
   private config: KernelClientConfig
   private datastore: DatastoreClient
 
@@ -47,14 +49,19 @@ export class KernelClient {
     return { avatarId: this.config.avatarId, appId: APPMGR_APP_ID }
   }
 
+  private get ws(): KernelWSClient {
+    if (!this.wsClient) throw new Error('KernelClient not connected. Call connect() first.')
+    return this.wsClient
+  }
+
   async connect(): Promise<void> {
     const { KernelWSClient } = await import('@astrale-os/kernel-client-ws')
     const client = new KernelWSClient({
       wsUrl: this.config.kernelWsUrl,
-      token: this.config.token,
+      token: this.config.accessToken,
       autoConnect: true,
       reconnect: this.config.persistent ?? false,
-      maxRetries: this.config.persistent ? 10 : undefined,
+      maxRetries: this.config.persistent ? MAX_RECONNECT_RETRIES : undefined,
     })
     if (this.config.persistent && this.config.onDisconnect) {
       client.on('disconnected', this.config.onDisconnect)
@@ -68,49 +75,54 @@ export class KernelClient {
     this.wsClient = null
   }
 
-  private ensureConnected(): void {
-    if (!this.wsClient) throw new Error('KernelClient not connected. Call connect() first.')
-  }
-
   async createApp(
     parentId: ModuleId | AvatarId | SpaceId,
     config?: Partial<DevelopmentConfig>,
     publicKeyJwk?: JsonWebKey,
   ): Promise<AppCreateResult> {
-    this.ensureConnected()
-    return this.wsClient!.callSystem(
+    return this.ws.callSystem(
       'appmgr.create',
       { parentId, publicKeyJwk: publicKeyJwk ? JSON.stringify(publicKeyJwk) : undefined, config },
       this.ctx,
-    )
+    ) as Promise<AppCreateResult>
   }
 
   async develop(schema: SerializedApp, config: DevelopmentConfig): Promise<AppDevelopResult> {
-    this.ensureConnected()
-    return this.wsClient!.callSystem('appmgr.develop', { schema, config }, this.ctx)
+    return this.ws.callSystem(
+      'appmgr.develop',
+      { schema, config },
+      this.ctx,
+    ) as Promise<AppDevelopResult>
   }
 
   async build(parentId: ModuleId, schema: SerializedApp): Promise<AppBuildResult> {
-    this.ensureConnected()
-    return this.wsClient!.callSystem('appmgr.build', { parentId, schema }, this.ctx)
+    return this.ws.callSystem(
+      'appmgr.build',
+      { parentId, schema },
+      this.ctx,
+    ) as Promise<AppBuildResult>
   }
 
   async resolveApplication(slug: string): Promise<{ appId: string; slug: string }> {
-    this.ensureConnected()
-    return this.wsClient!.callSystem('appmgr.resolve', { slug }, this.ctx)
+    return this.ws.callSystem('appmgr.resolve', { slug }, this.ctx) as Promise<{
+      appId: string
+      slug: string
+    }>
   }
 
   async discoverApplication(appId: string, version?: string): Promise<AppDiscoverResult> {
-    this.ensureConnected()
-    return this.wsClient!.callSystem('appmgr.discover', { appId, version }, this.ctx)
+    return this.ws.callSystem(
+      'appmgr.discover',
+      { appId, version },
+      this.ctx,
+    ) as Promise<AppDiscoverResult>
   }
 
   async editModule(
     moduleId: ModuleId,
     options: { contentType?: string; backend?: string } = {},
   ): Promise<EditModuleResultWithBackend> {
-    this.ensureConnected()
-    return this.wsClient!.call(
+    return this.ws.call(
       'module.edit',
       {
         moduleId,
@@ -120,7 +132,7 @@ export class KernelClient {
         backend: options.backend ?? 'kv',
       },
       this.ctx,
-    )
+    ) as Promise<EditModuleResultWithBackend>
   }
 
   async uploadWorkerBundle(
@@ -143,48 +155,34 @@ export class KernelClient {
     grants: BootstrapDataGrant[],
     dataMap: Map<string, unknown>,
   ): Promise<{ count: number; bytes: number }> {
-    let totalBytes = 0
-    let count = 0
-    for (const { path, grant } of grants) {
+    const uploads = grants.flatMap(({ path, grant }) => {
       const data = dataMap.get(path)
       if (data === undefined) {
         console.warn(`[astrale] Bootstrap data not found for path: ${path}`)
-        continue
+        return []
       }
       const storageUri = grant.objects[0]?.uri
-      if (!storageUri) continue
-      const writeResult = await this.datastore.writeObject({
-        grant,
-        storageUri,
-        data: JSON.stringify(data),
-      })
-      totalBytes += writeResult.bytes
-      count++
-    }
-    return { count, bytes: totalBytes }
+      if (!storageUri) return []
+      return [this.datastore.writeObject({ grant, storageUri, data: JSON.stringify(data) })]
+    })
+    const results = await Promise.all(uploads)
+    return { count: results.length, bytes: results.reduce((sum, r) => sum + r.bytes, 0) }
   }
 
   async uploadEndpointDocs(
     grants: EndpointGrant[],
     endpoints: SerializedEndpoints,
   ): Promise<{ count: number; bytes: number }> {
-    let totalBytes = 0
-    let count = 0
-    for (const { name, type, grant } of grants) {
+    const uploads = grants.flatMap(({ name, type, grant }) => {
       const endpointContainer = type === 'worker' ? endpoints.worker : endpoints.backend
       const endpoint = endpointContainer[name]
-      if (!endpoint?.documentation) continue
+      if (!endpoint?.documentation) return []
       const storageUri = grant.objects[0]?.uri
-      if (!storageUri) continue
-      const writeResult = await this.datastore.writeObject({
-        grant,
-        storageUri,
-        data: endpoint.documentation,
-      })
-      totalBytes += writeResult.bytes
-      count++
-    }
-    return { count, bytes: totalBytes }
+      if (!storageUri) return []
+      return [this.datastore.writeObject({ grant, storageUri, data: endpoint.documentation })]
+    })
+    const results = await Promise.all(uploads)
+    return { count: results.length, bytes: results.reduce((sum, r) => sum + r.bytes, 0) }
   }
 }
 
