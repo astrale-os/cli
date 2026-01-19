@@ -60,9 +60,15 @@ interface AppRegistration {
   types?: AppManifest['types']
 }
 
+interface SessionInfo {
+  userId: string
+  avatarsAndSpaces: Array<{ avatarId: string; spaceId: string }>
+}
+
 interface KernelWSClient {
   connect: () => Promise<void>
   disconnect: () => void
+  waitForSessionInfo: (timeoutMs?: number) => Promise<SessionInfo>
   callSystem: (
     method: string,
     params: unknown,
@@ -158,7 +164,21 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
       await kernelClient.connect()
       log('Kernel connected', 'success')
 
-      const ctx = { avatarId: config.avatarId, appId: APPMGR_APP_ID }
+      const sessionInfo = await kernelClient.waitForSessionInfo()
+      const avatarMapping = sessionInfo.avatarsAndSpaces.find((m) => m.spaceId === config.spaceId)
+      if (!avatarMapping) {
+        log(
+          `No avatar found for space ${config.spaceId}. Try: astrale space create <name> && astrale init`,
+          'error',
+        )
+        setStatus('error')
+        kernelClient.disconnect()
+        return
+      }
+      const avatarId = avatarMapping.avatarId
+      log(`Using avatar ${avatarId}`, 'debug')
+
+      const ctx = { avatarId, appId: APPMGR_APP_ID }
       const loadResult = (await kernelClient.callSystem(
         'appmgr.load',
         { appId: config.appId },
@@ -202,7 +222,7 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
           kernel: {
             wsUrl: config.kernelUrl,
             token: config.accessToken,
-            avatarId: config.avatarId,
+            avatarId,
             autoConnect: true,
           },
           adapter,

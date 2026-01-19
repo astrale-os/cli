@@ -107,7 +107,15 @@ export async function createHostServer(config: DevServerConfig): Promise<HostSer
 
   let configJson = '{}'
   try {
-    configJson = await readFile(config.configPath, 'utf-8')
+    const rawConfig = await readFile(config.configPath, 'utf-8')
+    const parsed = JSON.parse(rawConfig)
+    const mergedConfig = {
+      ...parsed,
+      kernelUrl: config.kernelUrl,
+      datastoreUrl: config.datastoreUrl,
+      accessToken: config.accessToken,
+    }
+    configJson = JSON.stringify(mergedConfig)
   } catch {
     console.warn('  Warning: Could not load config.json')
   }
