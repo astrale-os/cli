@@ -1,61 +1,46 @@
-/**
- * astrale init
- *
- * Creates a new application in the kernel and sets up .astrale/config.json
- */
-
-import type { AvatarId, ModuleId } from '@astrale-os/kernel-core'
+import type { ModuleId } from '@astrale-os/kernel-core'
 import { Command } from 'commander'
-
 import { type AstraleConfig, getConfigPath, saveConfig } from '../lib/config'
 import { generateAppKeyPair } from '../lib/crypto'
+import { resolveConfig } from '../lib/global-config'
 import { createKernelClient } from '../lib/kernel'
 
 export type InitOptions = {
   title: string
-  kernelUrl: string
-  kernelRpcUrl: string
-  avatarId: AvatarId
-  token: string
+  profile?: string
   parentId?: ModuleId
 }
 
 export async function runInit(options: InitOptions): Promise<void> {
   console.log(`[astrale] Initializing new application...`)
-  console.log(`  Title:      ${options.title}`)
-  console.log(`  Kernel WS:  ${options.kernelUrl}`)
-  console.log(`  Kernel RPC: ${options.kernelRpcUrl}`)
-  console.log(`  Avatar:     ${options.avatarId}`)
-
-  // Generate keypair for app identity
+  console.log(`  Title: ${options.title}`)
+  const resolved = await resolveConfig(options.profile)
+  console.log(`  Profile: ${resolved.profile}`)
+  console.log(`  Kernel WS: ${resolved.kernelWsUrl}`)
+  console.log(`  Kernel RPC: ${resolved.kernelRpcUrl}`)
+  console.log(`  Avatar: ${resolved.avatarId}`)
   console.log(`\n[astrale] Generating app keypair...`)
   const keyPair = await generateAppKeyPair()
   console.log(`  ✓ Keypair generated (ECDSA P-256)`)
-
   console.log(`\n[astrale] Connecting to kernel...`)
   const client = await createKernelClient({
-    kernelUrl: options.kernelUrl,
-    avatarId: options.avatarId,
-    token: options.token,
+    kernelWsUrl: resolved.kernelWsUrl,
+    avatarId: resolved.avatarId,
+    token: resolved.token,
   })
-
   try {
-    const parentId = options.parentId ?? options.avatarId
-
-    if (!parentId) {
+    const parentId = options.parentId ?? resolved.avatarId
+    if (!parentId)
       throw new Error('Parent ID is required. Use --parent-id to specify where to create the app.')
-    }
-
     console.log(`[astrale] Creating application...`)
     const result = await client.createApp(parentId, undefined, keyPair.publicKeyJwk)
-
     console.log(`  ✓ Application created`)
     console.log(`  App ID: ${result.appId}`)
     console.log(`  Worker URL: ${result.workerUrl}`)
     console.log(`  UI URL: ${result.uiUrl}`)
-
     const config: AstraleConfig = {
       appId: result.appId,
+      profile: resolved.profile,
       typesContainerId: result.typesContainerId,
       workerBundleId: result.workerBundleId,
       uiBundleId: result.uiBundleId,
@@ -65,17 +50,10 @@ export async function runInit(options: InitOptions): Promise<void> {
       bootstrap: result.bootstrap,
       remoteAppdata: result.remoteAppdata,
       endpoints: result.endpoints,
-      kernelUrl: options.kernelUrl,
-      kernelRpcUrl: options.kernelRpcUrl,
-      datastoreUrl: 'http://127.0.0.1:3002/v1/datastore',
-      avatarId: options.avatarId,
-      token: options.token,
       privateKey: keyPair.privateKeyPem,
     }
-
     const projectDir = process.cwd()
     await saveConfig(projectDir, config)
-
     console.log(`\n✓ Config saved to ${getConfigPath(projectDir)}`)
     console.log(`\nNext steps:`)
     console.log(`  1. Run 'astrale build' to build and deploy`)
@@ -88,19 +66,13 @@ export async function runInit(options: InitOptions): Promise<void> {
 export const initCommand = new Command('init')
   .description('Initialize a new Astrale app in the kernel')
   .requiredOption('--title <name>', 'Application title')
-  .requiredOption('--kernel-url <url>', 'Kernel WebSocket URL (e.g., ws://localhost:8081)')
-  .requiredOption('--kernel-rpc-url <url>', 'Kernel RPC URL (e.g., http://localhost:8083)')
-  .requiredOption('--avatar-id <id>', 'Avatar ID for authenticated calls')
-  .requiredOption('--token <token>', 'Authentication token')
+  .option('--profile <name>', 'Profile to use (default: active profile)')
   .option('--parent-id <id>', 'Parent module ID (defaults to avatar)')
   .action(async (opts) => {
     try {
       await runInit({
         title: opts.title,
-        kernelUrl: opts.kernelUrl,
-        kernelRpcUrl: opts.kernelRpcUrl,
-        avatarId: opts.avatarId as AvatarId,
-        token: opts.token,
+        profile: opts.profile,
         parentId: opts.parentId as ModuleId | undefined,
       })
     } catch (err) {

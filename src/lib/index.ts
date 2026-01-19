@@ -17,10 +17,11 @@ export {
 // Config
 export {
   type AstraleConfig,
+  type FullConfig,
   findProjectRoot,
   getConfigPath,
   loadConfig,
-  loadConfigWithOverrides,
+  loadFullConfig,
   saveConfig,
 } from './config'
 

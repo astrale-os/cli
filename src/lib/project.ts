@@ -1,119 +1,67 @@
-/**
- * Project Context
- *
- * Handles loading project configuration and app definitions.
- */
-
 import type { ApplicationId } from '@astrale-os/kernel-core'
 import path from 'path'
-
 import { loadAppDefinition, loadAppFromDirectory, type LoadedApp } from './app-loader'
-import {
-  type AstraleConfig,
-  findProjectRoot,
-  getConfigPath,
-  loadConfigWithOverrides,
-} from './config'
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
+import { type FullConfig, findProjectRoot, getConfigPath, loadFullConfig } from './config'
 
 export interface ProjectContext {
   projectRoot: string
-  config: AstraleConfig | null
+  config: FullConfig | null
   app: LoadedApp | null
 }
 
 export interface ConfigOverrides {
   appId?: ApplicationId
-  kernelUrl?: string
+  profile?: string
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Project Loading
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface LoadProjectOptions {
-  /** Fail if no config found (default: true) */
   requireConfig?: boolean
-  /** Load app definition (default: false) */
   loadApp?: boolean
-  /** Config overrides from CLI */
   overrides?: ConfigOverrides
-  /** Custom path to app definition file */
   appPath?: string
 }
 
-/**
- * Load project context from current directory.
- * Finds .astrale/config.json and optionally loads app definition.
- */
 export async function loadProject(options: LoadProjectOptions = {}): Promise<ProjectContext> {
   const { requireConfig = true, loadApp = false, overrides = {}, appPath } = options
-
   const projectRoot = await findProjectRoot(process.cwd())
-
   if (!projectRoot && requireConfig) {
     console.error(
-      `[sdk-worker] No .astrale/config.json found.\n` +
-        `  Run with --no-deploy to skip kernel deployment, or run 'worker-init' first.`,
+      `[astrale] No .astrale/config.json found.\n  Run 'astrale init' first, or use --no-deploy to skip kernel deployment.`,
     )
     process.exit(1)
   }
-
-  const ctx: ProjectContext = {
-    projectRoot: projectRoot ?? process.cwd(),
-    config: null,
-    app: null,
-  }
-
+  const ctx: ProjectContext = { projectRoot: projectRoot ?? process.cwd(), config: null, app: null }
   if (projectRoot) {
-    ctx.config = await loadConfigWithOverrides(projectRoot, overrides)
+    const fullConfig = await loadFullConfig(projectRoot, overrides.profile)
+    ctx.config = {
+      ...fullConfig,
+      ...Object.fromEntries(
+        Object.entries(overrides).filter(([k, v]) => v !== undefined && k !== 'profile'),
+      ),
+    }
   }
-
-  if (loadApp) {
-    ctx.app = await loadAppDefinitionSafe(ctx.projectRoot, appPath)
-  }
-
+  if (loadApp) ctx.app = await loadAppDefinitionSafe(ctx.projectRoot, appPath)
   return ctx
 }
 
-/**
- * Load app definition with error handling
- */
 async function loadAppDefinitionSafe(projectRoot: string, appPath?: string): Promise<LoadedApp> {
   try {
-    if (appPath) {
-      const fullPath = path.resolve(projectRoot, appPath)
-      return await loadAppDefinition(fullPath)
-    }
+    if (appPath) return await loadAppDefinition(path.resolve(projectRoot, appPath))
     return await loadAppFromDirectory(projectRoot)
   } catch (err) {
-    console.error(`[sdk-worker] Failed to load app:`, err instanceof Error ? err.message : err)
+    console.error(`[astrale] Failed to load app:`, err instanceof Error ? err.message : err)
     process.exit(1)
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Display Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function printProjectInfo(ctx: ProjectContext): void {
   if (!ctx.config) return
-
-  console.log(`[sdk-worker] Config: ${getConfigPath(ctx.projectRoot)}`)
+  console.log(`[astrale] Config: ${getConfigPath(ctx.projectRoot)}`)
   console.log(`  App ID:  ${ctx.config.appId}`)
-  console.log(`  Kernel:  ${ctx.config.kernelUrl}`)
-
-  if (ctx.app) {
-    console.log(`  App:     ${ctx.app.name} (${ctx.app.slug})`)
-  }
+  console.log(`  Profile: ${ctx.config.profile}`)
+  console.log(`  Kernel:  ${ctx.config.kernelWsUrl}`)
+  if (ctx.app) console.log(`  App:     ${ctx.app.name} (${ctx.app.slug})`)
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Path Utilities
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface ResolvedPaths {
   entryPath: string

@@ -1,43 +1,10 @@
-/**
- * astrale start
- *
- * One-command dev workflow: loads env, inits if needed, then runs dev.
- */
-
-import type { AvatarId, ModuleId } from '@astrale-os/kernel-core'
+import type { ModuleId } from '@astrale-os/kernel-core'
 import { Command } from 'commander'
-import { existsSync, readFileSync } from 'fs'
 import path from 'path'
-
 import { findProjectRoot } from '../lib/config'
+import { getActiveProfile, getProfileAuth, getProfileConfig } from '../lib/global-config'
 import { runDev, type DevOptions } from './dev'
 import { runInit, type InitOptions } from './init'
-
-function loadDevEnv(projectDir: string): boolean {
-  const envPaths = [
-    path.join(projectDir, '.dev', 'kernel-dev-env.sh'),
-    path.join(projectDir, '..', '.dev', 'kernel-dev-env.sh'),
-    path.join(projectDir, '..', '..', '.dev', 'kernel-dev-env.sh'),
-  ]
-  for (const envPath of envPaths) {
-    if (existsSync(envPath)) {
-      const content = readFileSync(envPath, 'utf-8')
-      const lines = content.split('\n')
-      for (const line of lines) {
-        const match = line.match(/^export\s+([A-Z_]+)=(.*)$/)
-        if (match) {
-          const [, key, value] = match
-          if (key && value && !process.env[key]) {
-            process.env[key] = value.replace(/^["']|["']$/g, '')
-          }
-        }
-      }
-      console.log(`[astrale] Loaded dev env from ${envPath}`)
-      return true
-    }
-  }
-  return false
-}
 
 export type StartOptions = {
   entry: string
@@ -49,33 +16,26 @@ export type StartOptions = {
   hostPort: number
   noServe: boolean
   parentId?: ModuleId
+  profile?: string
 }
 
 export async function runStart(options: StartOptions): Promise<void> {
   const projectDir = process.cwd()
-  loadDevEnv(projectDir)
-  const wsUrl = process.env.WS_URL
-  const rpcUrl = process.env.RPC_URL
-  const avatarId = process.env.AVATAR_ID
-  const token = process.env.TOKEN
-  if (!wsUrl || !rpcUrl || !avatarId || !token) {
-    console.error('[astrale] Missing dev environment variables (WS_URL, RPC_URL, AVATAR_ID, TOKEN)')
-    console.error('  Make sure .dev/kernel-dev-env.sh exists in a parent directory')
-    console.error('  Or run: source ../../.dev/kernel-dev-env.sh')
+  const profileName = options.profile ?? (await getActiveProfile())
+  const profile = await getProfileConfig(profileName)
+  const auth = await getProfileAuth(profileName)
+  if (!auth) {
+    console.error(`[astrale] Not authenticated for profile "${profileName}".`)
+    console.error(`  Run: astrale auth login`)
     process.exit(1)
   }
+  console.log(`[astrale] Using profile: ${profileName}`)
+  console.log(`  Kernel: ${profile.kernelWsUrl}`)
   const existingProject = await findProjectRoot(projectDir)
   if (!existingProject) {
-    console.log('[astrale] No .astrale/config.json found, initializing...')
+    console.log('\n[astrale] No .astrale/config.json found, initializing...')
     const title = options.title || path.basename(projectDir)
-    const initOptions: InitOptions = {
-      title,
-      kernelUrl: wsUrl,
-      kernelRpcUrl: rpcUrl,
-      avatarId: avatarId as AvatarId,
-      token,
-      parentId: options.parentId,
-    }
+    const initOptions: InitOptions = { title, profile: profileName, parentId: options.parentId }
     await runInit(initOptions)
     console.log('')
   } else {
@@ -85,7 +45,7 @@ export async function runStart(options: StartOptions): Promise<void> {
     entry: options.entry,
     outdir: options.outdir,
     outfile: options.outfile,
-    kernelUrl: wsUrl,
+    profile: profileName,
     noDeploy: false,
     iframeEntry: options.iframeEntry,
     iframeHtml: options.iframeHtml,
@@ -96,11 +56,12 @@ export async function runStart(options: StartOptions): Promise<void> {
 }
 
 export const startCommand = new Command('start')
-  .description('Start dev workflow: load env, init if needed, then dev')
+  .description('Start dev workflow: init if needed, then dev')
   .argument('<entry>', 'Worker entry file (e.g., src/worker.ts)')
   .option('--title <name>', 'Application title (defaults to directory name)')
   .option('--outdir <dir>', 'Output directory', 'dist')
   .option('--outfile <name>', 'Output filename', 'worker.js')
+  .option('--profile <name>', 'Profile to use')
   .option('--iframe-entry <path>', 'Iframe entry file (e.g., src/window/index.tsx)')
   .option('--iframe-html <path>', 'Iframe HTML template')
   .option('--host-port <port>', 'Host app port', '7017')
@@ -113,6 +74,7 @@ export const startCommand = new Command('start')
         title: opts.title,
         outdir: opts.outdir,
         outfile: opts.outfile,
+        profile: opts.profile,
         iframeEntry: opts.iframeEntry,
         iframeHtml: opts.iframeHtml,
         hostPort: parseInt(opts.hostPort, 10),

@@ -1,9 +1,3 @@
-/**
- * Kernel Client for SDK CLI
- *
- * Unified client for all kernel operations (init, build, dev).
- */
-
 import { DatastoreClient } from '@astrale-os/datastore-client'
 import type { BootstrapDataGrant, EditModuleResultWithBackend } from '@astrale-os/kernel-api'
 import type {
@@ -20,12 +14,8 @@ import type { SerializedApp, SerializedEndpoints } from '@astrale-os/sdk-app'
 
 const APPMGR_APP_ID = SYSTEM_APPS.APPS.id
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────────────────────────
-
 export interface KernelClientConfig {
-  kernelUrl: string
+  kernelWsUrl: string
   datastoreUrl?: string
   avatarId: AvatarId
   token: string
@@ -42,10 +32,6 @@ export type {
   DevelopmentConfig,
   EndpointGrant,
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Kernel Client
-// ─────────────────────────────────────────────────────────────────────────────
 
 export class KernelClient {
   private wsClient: any = null
@@ -64,17 +50,15 @@ export class KernelClient {
   async connect(): Promise<void> {
     const { KernelWSClient } = await import('@astrale-os/kernel-client-ws')
     const client = new KernelWSClient({
-      wsUrl: this.config.kernelUrl,
+      wsUrl: this.config.kernelWsUrl,
       token: this.config.token,
       autoConnect: true,
       reconnect: this.config.persistent ?? false,
       maxRetries: this.config.persistent ? 10 : undefined,
     })
-
     if (this.config.persistent && this.config.onDisconnect) {
       client.on('disconnected', this.config.onDisconnect)
     }
-
     await client.connect()
     this.wsClient = client
   }
@@ -85,14 +69,8 @@ export class KernelClient {
   }
 
   private ensureConnected(): void {
-    if (!this.wsClient) {
-      throw new Error('KernelClient not connected. Call connect() first.')
-    }
+    if (!this.wsClient) throw new Error('KernelClient not connected. Call connect() first.')
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Appmgr Operations
-  // ─────────────────────────────────────────────────────────────────────────
 
   async createApp(
     parentId: ModuleId | AvatarId | SpaceId,
@@ -102,11 +80,7 @@ export class KernelClient {
     this.ensureConnected()
     return this.wsClient!.callSystem(
       'appmgr.create',
-      {
-        parentId,
-        publicKeyJwk: publicKeyJwk ? JSON.stringify(publicKeyJwk) : undefined,
-        config,
-      },
+      { parentId, publicKeyJwk: publicKeyJwk ? JSON.stringify(publicKeyJwk) : undefined, config },
       this.ctx,
     )
   }
@@ -131,10 +105,6 @@ export class KernelClient {
     return this.wsClient!.callSystem('appmgr.discover', { appId, version }, this.ctx)
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Module Operations
-  // ─────────────────────────────────────────────────────────────────────────
-
   async editModule(
     moduleId: ModuleId,
     options: { contentType?: string; backend?: string } = {},
@@ -152,10 +122,6 @@ export class KernelClient {
       this.ctx,
     )
   }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Bundle & Data Upload
-  // ─────────────────────────────────────────────────────────────────────────
 
   async uploadWorkerBundle(
     workerBundleId: ModuleId,
@@ -179,17 +145,14 @@ export class KernelClient {
   ): Promise<{ count: number; bytes: number }> {
     let totalBytes = 0
     let count = 0
-
     for (const { path, grant } of grants) {
       const data = dataMap.get(path)
       if (data === undefined) {
         console.warn(`[astrale] Bootstrap data not found for path: ${path}`)
         continue
       }
-
       const storageUri = grant.objects[0]?.uri
       if (!storageUri) continue
-
       const writeResult = await this.datastore.writeObject({
         grant,
         storageUri,
@@ -198,7 +161,6 @@ export class KernelClient {
       totalBytes += writeResult.bytes
       count++
     }
-
     return { count, bytes: totalBytes }
   }
 
@@ -208,16 +170,12 @@ export class KernelClient {
   ): Promise<{ count: number; bytes: number }> {
     let totalBytes = 0
     let count = 0
-
     for (const { name, type, grant } of grants) {
       const endpointContainer = type === 'worker' ? endpoints.worker : endpoints.backend
       const endpoint = endpointContainer[name]
-
       if (!endpoint?.documentation) continue
-
       const storageUri = grant.objects[0]?.uri
       if (!storageUri) continue
-
       const writeResult = await this.datastore.writeObject({
         grant,
         storageUri,
@@ -226,14 +184,9 @@ export class KernelClient {
       totalBytes += writeResult.bytes
       count++
     }
-
     return { count, bytes: totalBytes }
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Factory
-// ─────────────────────────────────────────────────────────────────────────────
 
 export async function createKernelClient(config: KernelClientConfig): Promise<KernelClient> {
   const client = new KernelClient(config)

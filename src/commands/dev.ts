@@ -1,16 +1,9 @@
-/**
- * astrale dev
- *
- * Watches for changes, rebuilds instantly, and deploys to kernel.
- */
-
 import type { ApplicationId } from '@astrale-os/kernel-core'
 import type { AppDevelopResult } from '@astrale-os/kernel-api'
 import { Command } from 'commander'
 import esbuild, { type BuildContext, type Plugin } from 'esbuild'
 import { mkdir, readFile } from 'fs/promises'
 import path from 'path'
-
 import {
   extractBootstrapData,
   loadAppDefinition,
@@ -19,7 +12,7 @@ import {
 } from '../lib/app-loader'
 import { generateApps, type EndpointMaps } from '../lib/apps-generator'
 import { analyzeEndpointUsages } from '../lib/endpoint-usage-analyzer'
-import { type AstraleConfig } from '../lib/config'
+import { type FullConfig } from '../lib/config'
 import { createDevServer, type DevServer } from '../lib/dev-server'
 import { createWorkerBuildOptions, formatSize, getBundleSize } from '../lib/esbuild'
 import { createKernelClient, type KernelClient } from '../lib/kernel'
@@ -30,7 +23,7 @@ export type DevOptions = {
   outdir: string
   outfile: string
   appId?: ApplicationId
-  kernelUrl?: string
+  profile?: string
   noDeploy: boolean
   iframeEntry?: string
   iframeHtml?: string
@@ -44,7 +37,7 @@ let buildCount = 0
 interface DevState {
   projectRoot: string
   outFile: string
-  config: AstraleConfig | null
+  config: FullConfig | null
   client: KernelClient | null
   app: LoadedApp | null
   devServer: DevServer | null
@@ -52,15 +45,8 @@ interface DevState {
   endpointMaps: EndpointMaps
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Deploy Helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function loadApp(state: DevState): Promise<LoadedApp> {
-  if (state.appPath) {
-    const appPath = path.resolve(state.projectRoot, state.appPath)
-    return loadAppDefinition(appPath)
-  }
+  if (state.appPath) return loadAppDefinition(path.resolve(state.projectRoot, state.appPath))
   return loadAppFromDirectory(state.projectRoot)
 }
 
@@ -72,46 +58,30 @@ type DependencyAnalysis = {
 
 async function analyzeDependencies(state: DevState): Promise<DependencyAnalysis> {
   const result: DependencyAnalysis = { dependencies: [], appsInfo: '', errors: [] }
-
   const declaredApps = state.app?.serialized.apps
-  if (!declaredApps || Object.keys(declaredApps).length === 0 || !state.client) {
-    return result
-  }
-
+  if (!declaredApps || Object.keys(declaredApps).length === 0 || !state.client) return result
   const appsDir = path.join(state.projectRoot, '.astrale', 'apps')
   const appSlug = state.app!.serialized.app.slug
   const appsResult = await generateApps(appSlug, declaredApps, state.client, appsDir)
-
-  if (appsResult.generated.length > 0) {
+  if (appsResult.generated.length > 0)
     result.appsInfo = `, ${appsResult.generated.length} app APIs generated`
-  }
   result.errors.push(...appsResult.errors)
   state.endpointMaps = appsResult.endpointMaps
-
   const analysis = analyzeEndpointUsages(state.projectRoot, appsResult.endpointMaps, declaredApps)
   result.dependencies = analysis.usages.map((u) => ({
     targetSlug: u.targetSlug,
     endpoint: u.endpoint,
   }))
   result.errors.push(...analysis.errors)
-
-  if (result.dependencies.length > 0) {
+  if (result.dependencies.length > 0)
     result.appsInfo += `, ${result.dependencies.length} cross-app calls detected`
-  }
-
   return result
 }
 
-type UploadStats = {
-  workerBytes: number
-  bootstrapInfo: string
-  endpointDocsInfo: string
-}
+type UploadStats = { workerBytes: number; bootstrapInfo: string; endpointDocsInfo: string }
 
 async function uploadArtifacts(state: DevState, result: AppDevelopResult): Promise<UploadStats> {
   const stats: UploadStats = { workerBytes: 0, bootstrapInfo: '', endpointDocsInfo: '' }
-
-  // Upload worker bundle
   if (result.workerBundleGrant && state.config?.workerBundleId) {
     const workerCode = await readFile(state.outFile, 'utf-8')
     const uploadResult = await state.client!.uploadWorkerBundle(
@@ -120,8 +90,6 @@ async function uploadArtifacts(state: DevState, result: AppDevelopResult): Promi
     )
     stats.workerBytes = uploadResult.bytes
   }
-
-  // Upload bootstrap data
   if (result.bootstrapDataGrants && result.bootstrapDataGrants.length > 0 && state.app) {
     const bootstrapDataMap = extractBootstrapData(state.app.appdata)
     const bootstrapResult = await state.client!.uploadBootstrapData(
@@ -130,39 +98,23 @@ async function uploadArtifacts(state: DevState, result: AppDevelopResult): Promi
     )
     stats.bootstrapInfo = `, ${bootstrapResult.count} bootstrap items (${formatSize(bootstrapResult.bytes)})`
   }
-
-  // Upload endpoint documentation
   if (result.endpointGrants && result.endpointGrants.length > 0 && state.app) {
     const endpointDocsResult = await state.client!.uploadEndpointDocs(
       result.endpointGrants,
       state.app.serialized.endpoints,
     )
-    if (endpointDocsResult.count > 0) {
+    if (endpointDocsResult.count > 0)
       stats.endpointDocsInfo = `, ${endpointDocsResult.count} endpoint docs (${formatSize(endpointDocsResult.bytes)})`
-    }
   }
-
   return stats
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main Deploy Function
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function deployToKernel(state: DevState): Promise<void> {
   if (!state.client || !state.config) return
-
   try {
-    // 1. Load app definition
     state.app = await loadApp(state)
-
-    // 2. Analyze dependencies BEFORE develop (avoids second call)
     const { dependencies, appsInfo, errors } = await analyzeDependencies(state)
-    for (const error of errors) {
-      console.warn(`  ⚠ ${error}`)
-    }
-
-    // 3. Kernel develop() upload
+    for (const error of errors) console.warn(`  ⚠ ${error}`)
     const result = await state.client.develop(state.app.serialized, {
       appId: state.config.appId,
       typesContainerId: state.config.typesContainerId,
@@ -176,11 +128,7 @@ async function deployToKernel(state: DevState): Promise<void> {
       endpoints: state.config.endpoints,
       dependencies,
     })
-
-    // 4. Upload artifacts
     const stats = await uploadArtifacts(state, result)
-
-    // 5. Log result
     console.log(
       `  ↑ Deployed (${formatSize(stats.workerBytes)} worker${stats.bootstrapInfo}${stats.endpointDocsInfo}${appsInfo})`,
     )
@@ -194,23 +142,18 @@ function devPlugin(state: DevState): Plugin {
     name: 'dev-plugin',
     setup(build) {
       let startTime: number
-
       build.onStart(() => {
         startTime = performance.now()
       })
-
       build.onEnd(async (result) => {
         const duration = (performance.now() - startTime).toFixed(0)
         buildCount++
-
         if (result.errors.length > 0) {
           console.log(`\n✗ Build #${buildCount} failed (${duration}ms)`)
           return
         }
-
         const size = getBundleSize(result.metafile)
         console.log(`\n✓ Build #${buildCount} (${duration}ms) → ${formatSize(size)}`)
-
         await deployToKernel(state)
       })
     },
@@ -223,17 +166,14 @@ export async function runDev(options: DevOptions): Promise<void> {
     options.outdir,
     options.outfile,
   )
-
   const shouldDeploy = !options.noDeploy
   const shouldServe = !options.noServe
-
   const ctx = await loadProject({
     requireConfig: shouldDeploy,
     loadApp: shouldDeploy,
-    overrides: { appId: options.appId, kernelUrl: options.kernelUrl },
+    overrides: { appId: options.appId, profile: options.profile },
     appPath: options.appPath,
   })
-
   const state: DevState = {
     projectRoot: ctx.projectRoot,
     outFile,
@@ -244,14 +184,12 @@ export async function runDev(options: DevOptions): Promise<void> {
     appPath: options.appPath,
     endpointMaps: {},
   }
-
   if (shouldDeploy && ctx.config) {
     printProjectInfo(ctx)
-
     console.log(`\n[astrale] Connecting to kernel...`)
     try {
       state.client = await createKernelClient({
-        kernelUrl: ctx.config.kernelUrl,
+        kernelWsUrl: ctx.config.kernelWsUrl,
         datastoreUrl: ctx.config.datastoreUrl,
         avatarId: ctx.config.avatarId,
         token: ctx.config.token,
@@ -270,9 +208,7 @@ export async function runDev(options: DevOptions): Promise<void> {
       console.log(`  Continuing without deployment...`)
     }
   }
-
   await mkdir(outPath, { recursive: true })
-
   if (shouldServe && ctx.config?.workerUrl) {
     console.log(`\n[astrale] Starting dev servers...`)
     const configPath = path.join(ctx.projectRoot, '.astrale', 'config.json')
@@ -288,18 +224,14 @@ export async function runDev(options: DevOptions): Promise<void> {
       onWorkerChange: () => {},
     })
     await state.devServer.start()
-
     console.log(`\n🚀 Dev environment ready!`)
     console.log(`   Open ${state.devServer.hostUrl} in your browser\n`)
   } else if (shouldServe && !ctx.config?.workerUrl) {
     console.log(`\n[astrale] Skipping dev servers (no workerUrl in config)`)
   }
-
   console.log(`\n[astrale] Starting worker watcher...`)
   console.log(`  Entry:  ${entryPath}`)
   console.log(`  Output: ${outFile}`)
-
-  // Pre-generate app APIs before first build (so imports resolve)
   if (state.client && state.app?.serialized.apps) {
     const declaredApps = state.app.serialized.apps
     if (Object.keys(declaredApps).length > 0) {
@@ -307,19 +239,14 @@ export async function runDev(options: DevOptions): Promise<void> {
       const appsDir = path.join(state.projectRoot, '.astrale', 'apps')
       const appSlug = state.app.serialized.app.slug
       const appsResult = await generateApps(appSlug, declaredApps, state.client, appsDir)
-      if (appsResult.generated.length > 0) {
+      if (appsResult.generated.length > 0)
         console.log(`  ✓ Generated ${appsResult.generated.length} app API(s)`)
-      }
-      if (appsResult.errors.length > 0) {
+      if (appsResult.errors.length > 0)
         console.warn(`  ⚠ App API generation errors:`, appsResult.errors)
-      }
-      // Store endpoint maps for static analysis
       state.endpointMaps = appsResult.endpointMaps
     }
   }
-
   console.log(`\nWatching for changes... (Ctrl+C to stop)\n`)
-
   const buildOptions = createWorkerBuildOptions({
     entryPath,
     outFile,
@@ -327,15 +254,9 @@ export async function runDev(options: DevOptions): Promise<void> {
     sourcemap: true,
     plugins: [devPlugin(state)],
   })
-
-  const esbuildCtx: BuildContext = await esbuild.context({
-    ...buildOptions,
-    logLevel: 'warning',
-  })
-
+  const esbuildCtx: BuildContext = await esbuild.context({ ...buildOptions, logLevel: 'warning' })
   await esbuildCtx.rebuild()
   await esbuildCtx.watch()
-
   process.on('SIGINT', async () => {
     console.log('\n\nShutting down...')
     await esbuildCtx.dispose()
@@ -352,7 +273,7 @@ export const devCommand = new Command('dev')
   .option('--outfile <name>', 'Output filename', 'worker.js')
   .option('--app-id <id>', 'Override appId from .astrale/config.json')
   .option('--app <path>', 'Path to app definition file (e.g., core/src/app.ts)')
-  .option('--kernel-url <url>', 'Override kernel URL from .astrale/config.json')
+  .option('--profile <name>', 'Profile to use')
   .option('--no-deploy', 'Skip kernel deployment (watch only)')
   .option('--iframe-entry <path>', 'Iframe entry file (e.g., src/window/index.tsx)')
   .option('--iframe-html <path>', 'Iframe HTML template')
@@ -366,7 +287,7 @@ export const devCommand = new Command('dev')
         outfile: opts.outfile,
         appId: opts.appId as ApplicationId | undefined,
         appPath: opts.app,
-        kernelUrl: opts.kernelUrl,
+        profile: opts.profile,
         noDeploy: opts.deploy === false,
         iframeEntry: opts.iframeEntry,
         iframeHtml: opts.iframeHtml,
