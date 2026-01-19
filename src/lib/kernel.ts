@@ -1,5 +1,6 @@
 import { DatastoreClient } from '@astrale-os/datastore-client'
 import type { BootstrapDataGrant, EditModuleResultWithBackend } from '@astrale-os/kernel-api'
+import type { SpaceCreateResult } from '@astrale-os/kernel-api/system'
 import type {
   AppBuildResult,
   AppCreateResult,
@@ -8,18 +9,19 @@ import type {
   DevelopmentConfig,
   EndpointGrant,
 } from '@astrale-os/kernel-api/system'
-import type { KernelWSClient } from '@astrale-os/kernel-client-ws'
+import type { KernelWSClient, SessionInfo } from '@astrale-os/kernel-client-ws'
 import type { AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
 import { SYSTEM_APPS } from '@astrale-os/kernel-core'
 import type { SerializedApp, SerializedEndpoints } from '@astrale-os/sdk-app'
 
 const APPMGR_APP_ID = SYSTEM_APPS.APPS.id
 const MAX_RECONNECT_RETRIES = 10
+export const DEFAULT_BACKEND = 'kv'
 
 export interface KernelClientConfig {
   kernelWsUrl: string
   datastoreUrl?: string
-  avatarId: AvatarId
+  avatarId?: AvatarId
   accessToken: string
   persistent?: boolean
   onDisconnect?: (reason: string) => void
@@ -33,25 +35,41 @@ export type {
   BootstrapDataGrant,
   DevelopmentConfig,
   EndpointGrant,
+  SessionInfo,
 }
 
 export class KernelClient {
   private wsClient: KernelWSClient | null = null
   private config: KernelClientConfig
   private datastore: DatastoreClient
+  private _avatarId: AvatarId | null = null
 
   constructor(config: KernelClientConfig) {
     this.config = config
+    this._avatarId = config.avatarId ?? null
     this.datastore = new DatastoreClient()
   }
 
   private get ctx() {
-    return { avatarId: this.config.avatarId, appId: APPMGR_APP_ID }
+    if (!this._avatarId) throw new Error('AvatarId not set. Call setAvatarId() first.')
+    return { avatarId: this._avatarId, appId: APPMGR_APP_ID }
   }
 
   private get ws(): KernelWSClient {
     if (!this.wsClient) throw new Error('KernelClient not connected. Call connect() first.')
     return this.wsClient
+  }
+
+  get avatarId(): AvatarId | null {
+    return this._avatarId
+  }
+
+  setAvatarId(avatarId: AvatarId): void {
+    this._avatarId = avatarId
+  }
+
+  getSessionInfo(): SessionInfo | null {
+    return this.wsClient?.sessionInfo ?? null
   }
 
   async connect(): Promise<void> {
@@ -67,6 +85,7 @@ export class KernelClient {
       client.on('disconnected', this.config.onDisconnect)
     }
     await client.connect()
+    await client.waitForSessionInfo(10000)
     this.wsClient = client
   }
 
@@ -75,16 +94,40 @@ export class KernelClient {
     this.wsClient = null
   }
 
+  async createSpace(name: string): Promise<SpaceCreateResult> {
+    return this.ws.callSystem('spaces.create', { name }, {} as any) as Promise<SpaceCreateResult>
+  }
+
+  async listSpaces(): Promise<{ spaces: Array<{ spaceId: SpaceId; name: string }> }> {
+    return this.ws.callSystem('spaces.list', {}, {} as any) as Promise<{
+      spaces: Array<{ spaceId: SpaceId; name: string }>
+    }>
+  }
+
+  async createAvatar(
+    spaceId: SpaceId,
+    username: string,
+    isFirstAvatar: boolean,
+  ): Promise<{ avatarId: AvatarId; spaceId: SpaceId }> {
+    return this.ws.callSystem(
+      'avatars.create',
+      { spaceId, username, isFirstAvatar },
+      {} as any,
+    ) as Promise<{ avatarId: AvatarId; spaceId: SpaceId }>
+  }
+
   async createApp(
     parentId: ModuleId | AvatarId | SpaceId,
+
     config?: Partial<DevelopmentConfig>,
     publicKeyJwk?: JsonWebKey,
   ): Promise<AppCreateResult> {
-    return this.ws.callSystem(
-      'appmgr.create',
-      { parentId, publicKeyJwk: publicKeyJwk ? JSON.stringify(publicKeyJwk) : undefined, config },
-      this.ctx,
-    ) as Promise<AppCreateResult>
+    const params = {
+      parentId,
+      publicKeyJwk: publicKeyJwk ? JSON.stringify(publicKeyJwk) : undefined,
+      config,
+    }
+    return this.ws.callSystem('appmgr.create', params, this.ctx) as Promise<AppCreateResult>
   }
 
   async develop(schema: SerializedApp, config: DevelopmentConfig): Promise<AppDevelopResult> {
@@ -129,7 +172,7 @@ export class KernelClient {
         metadata: options.contentType
           ? { contentType: options.contentType, name: 'worker.js' }
           : undefined,
-        backend: options.backend ?? 'kv',
+        backend: options.backend ?? DEFAULT_BACKEND,
       },
       this.ctx,
     ) as Promise<EditModuleResultWithBackend>

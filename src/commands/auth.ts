@@ -1,4 +1,3 @@
-import type { AvatarId } from '@astrale-os/kernel-core'
 import boxen from 'boxen'
 import chalk from 'chalk'
 import { exec } from 'child_process'
@@ -93,7 +92,7 @@ async function interactiveLogin(profileName: string): Promise<WorkOSAuthResult> 
     cleanup()
     spinner.succeed(chalk.green('Successfully logged in!'))
     return {
-      avatarId: tokens.user.id as AvatarId,
+      userId: tokens.user.id,
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       user: tokens.user,
@@ -109,14 +108,15 @@ export async function runLogin(profileName?: string): Promise<void> {
   const profile = profileName ?? (await getActiveProfile())
   try {
     const result = await interactiveLogin(profile)
-    await setProfileAuth(profile, {
-      avatarId: result.avatarId,
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
-    })
     const displayName = result.user.first_name
       ? `${result.user.first_name} ${result.user.last_name || ''}`.trim()
       : result.user.email
+    await setProfileAuth(profile, {
+      userId: result.userId,
+      displayName,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    })
     console.log(
       chalk.dim(`  Logged in as ${chalk.bold(displayName)} on profile ${chalk.bold(profile)}\n`),
     )
@@ -139,16 +139,16 @@ async function runLogout(profileName?: string): Promise<void> {
 
 async function runStatus(): Promise<void> {
   const profiles = await listProfiles()
-  console.log(chalk.dim(`\n  Profile       Status              Avatar`))
+  console.log(chalk.dim(`\n  Profile       Status              User`))
   console.log(chalk.dim(`  ─────────────────────────────────────────────────`))
   for (const p of profiles) {
     const marker = p.isActive ? chalk.cyan('*') : ' '
     const statusText = p.isAuthenticated
       ? chalk.green('authenticated')
       : chalk.dim('not authenticated')
-    const auth = p.isAuthenticated ? ((await getProfileAuth(p.name))?.avatarId ?? '') : ''
-    const avatarShort = auth ? auth.slice(0, 20) + (auth.length > 20 ? '...' : '') : chalk.dim('-')
-    console.log(`${marker} ${p.name.padEnd(12)} ${statusText.padEnd(30)} ${avatarShort}`)
+    const auth = p.isAuthenticated ? ((await getProfileAuth(p.name))?.userId ?? '') : ''
+    const userShort = auth ? auth.slice(0, 20) + (auth.length > 20 ? '...' : '') : chalk.dim('-')
+    console.log(`${marker} ${p.name.padEnd(12)} ${statusText.padEnd(30)} ${userShort}`)
   }
   console.log('')
 }

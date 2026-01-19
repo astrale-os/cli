@@ -1,6 +1,9 @@
 // App loading
 export { loadAppDefinition, loadAppFromDirectory, type LoadedApp } from './app-loader'
 
+// CLI utilities
+export { withKernelClient, type ClientContext, type WithClientOptions } from './cli-utils'
+
 // Deployer
 export {
   analyzeDependencies,
@@ -43,6 +46,7 @@ export {
   type AppCreateResult,
   type AppDevelopResult,
   createKernelClient,
+  DEFAULT_BACKEND,
   KernelClient,
   type KernelClientConfig,
 } from './kernel'

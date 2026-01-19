@@ -1,4 +1,4 @@
-import type { AvatarId } from '@astrale-os/kernel-core'
+import type { SpaceId } from '@astrale-os/kernel-core'
 import { Entry } from '@napi-rs/keyring'
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
 import os from 'os'
@@ -10,6 +10,7 @@ export interface ProfileConfig {
   kernelWsUrl: string
   kernelRpcUrl: string
   datastoreUrl: string
+  activeSpaceId?: SpaceId
 }
 
 export interface GlobalConfig {
@@ -18,7 +19,8 @@ export interface GlobalConfig {
 }
 
 export interface ProfileAuth {
-  avatarId: AvatarId
+  userId: string
+  displayName: string
   accessToken: string
   refreshToken: string
 }
@@ -204,7 +206,9 @@ export interface ResolvedConfig {
   kernelWsUrl: string
   kernelRpcUrl: string
   datastoreUrl: string
-  avatarId: AvatarId
+  userId: string
+  displayName: string
+  activeSpaceId?: SpaceId
   accessToken: string
 }
 
@@ -215,6 +219,9 @@ export async function resolveConfig(profileOverride?: string): Promise<ResolvedC
   if (!auth) {
     throw new Error(`Not authenticated for profile "${profile.name}". Run: astrale auth login`)
   }
+  if (!auth.userId || !auth.displayName) {
+    throw new Error(`Profile "${profile.name}" has outdated auth format. Run: astrale auth login`)
+  }
   const accessToken = await getValidAccessToken(auth, async (newAuth) => {
     await setProfileAuth(profile.name, newAuth)
   })
@@ -223,7 +230,28 @@ export async function resolveConfig(profileOverride?: string): Promise<ResolvedC
     kernelWsUrl: profile.kernelWsUrl,
     kernelRpcUrl: profile.kernelRpcUrl,
     datastoreUrl: profile.datastoreUrl,
-    avatarId: auth.avatarId,
+    userId: auth.userId,
+    displayName: auth.displayName,
+    activeSpaceId: profile.activeSpaceId,
     accessToken,
   }
+}
+
+export async function setActiveSpaceId(profileName: string, spaceId: SpaceId): Promise<void> {
+  const config = await loadGlobalConfig()
+  const profile = config.profiles[profileName]
+  if (!profile) {
+    throw new Error(`Profile "${profileName}" does not exist.`)
+  }
+  config.profiles[profileName] = { ...profile, activeSpaceId: spaceId }
+  await saveGlobalConfig(config)
+}
+
+export async function clearActiveSpaceId(profileName: string): Promise<void> {
+  const config = await loadGlobalConfig()
+  const profile = config.profiles[profileName]
+  if (!profile) return
+  const { activeSpaceId: _, ...rest } = profile
+  config.profiles[profileName] = rest as ProfileConfig
+  await saveGlobalConfig(config)
 }

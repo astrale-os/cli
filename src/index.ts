@@ -17,6 +17,8 @@ export {
   clearProfileAuth,
   listProfiles,
   resolveConfig,
+  setActiveSpaceId,
+  clearActiveSpaceId,
   type GlobalConfig,
   type ProfileConfig,
   type ProfileAuth,

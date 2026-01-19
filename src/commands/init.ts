@@ -1,9 +1,23 @@
-import type { ModuleId } from '@astrale-os/kernel-core'
+import type { AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
+import chalk from 'chalk'
 import { Command } from 'commander'
+import { existsSync } from 'fs'
+import { createInterface } from 'readline'
 import { type AstraleConfig, getConfigPath, saveConfig } from '../lib/config'
 import { generateAppKeyPair } from '../lib/crypto'
-import { resolveConfig } from '../lib/global-config'
-import { createKernelClient } from '../lib/kernel'
+import { resolveConfig, setActiveSpaceId } from '../lib/global-config'
+import { KernelClient } from '../lib/kernel'
+
+async function promptConfirm(message: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  return new Promise((resolve) => {
+    rl.question(message, (answer) => {
+      rl.close()
+      const normalized = answer.trim().toLowerCase()
+      resolve(normalized === '' || normalized === 'y' || normalized === 'yes')
+    })
+  })
+}
 
 export type InitOptions = {
   title?: string
@@ -11,27 +25,83 @@ export type InitOptions = {
   parentId?: ModuleId
 }
 
+function resolveAvatarFromSession(
+  sessionInfo: { avatarsAndSpaces: Array<{ avatarId: string; spaceId: string }> },
+  activeSpaceId: SpaceId | undefined,
+): { avatarId: AvatarId; spaceId: SpaceId; autoSelected: boolean } {
+  const { avatarsAndSpaces } = sessionInfo
+  if (avatarsAndSpaces.length === 0) {
+    throw new Error('No spaces available. Create one first with: astrale space create <name>')
+  }
+  if (activeSpaceId) {
+    const mapping = avatarsAndSpaces.find((m) => m.spaceId === activeSpaceId)
+    if (mapping) {
+      return {
+        avatarId: mapping.avatarId as AvatarId,
+        spaceId: mapping.spaceId as SpaceId,
+        autoSelected: false,
+      }
+    }
+  }
+  if (avatarsAndSpaces.length === 1) {
+    const only = avatarsAndSpaces[0]!
+    return {
+      avatarId: only.avatarId as AvatarId,
+      spaceId: only.spaceId as SpaceId,
+      autoSelected: true,
+    }
+  }
+  const spaceList = avatarsAndSpaces.map((m) => m.spaceId).join(', ')
+  throw new Error(
+    `Multiple spaces available but none selected. Run: astrale space select <id>\nAvailable: ${spaceList}`,
+  )
+}
+
 export async function runInit(options: InitOptions): Promise<void> {
+  const projectDir = process.cwd()
+  const configPath = getConfigPath(projectDir)
+  if (existsSync(configPath)) {
+    console.log(chalk.yellow(`\n⚠ Existing config found at ${configPath}`))
+    console.log(chalk.dim(`  This will create a new app and replace the existing config.\n`))
+    const confirmed = await promptConfirm(chalk.white(`Continue? [Y/n] `))
+    if (!confirmed) {
+      console.log(chalk.dim(`\nInit cancelled.\n`))
+      return
+    }
+    console.log('')
+  }
   console.log(`[astrale] Initializing new application...`)
   if (options.title) console.log(`  Title: ${options.title}`)
   const resolved = await resolveConfig(options.profile)
   console.log(`  Profile: ${resolved.profile}`)
   console.log(`  Kernel WS: ${resolved.kernelWsUrl}`)
   console.log(`  Kernel RPC: ${resolved.kernelRpcUrl}`)
-  console.log(`  Avatar: ${resolved.avatarId}`)
   console.log(`\n[astrale] Generating app keypair...`)
   const keyPair = await generateAppKeyPair()
   console.log(`  ✓ Keypair generated (ECDSA P-256)`)
   console.log(`\n[astrale] Connecting to kernel...`)
-  const client = await createKernelClient({
+  const client = new KernelClient({
     kernelWsUrl: resolved.kernelWsUrl,
-    avatarId: resolved.avatarId,
     accessToken: resolved.accessToken,
   })
+  await client.connect()
   try {
-    const parentId = options.parentId ?? resolved.avatarId
-    if (!parentId)
-      throw new Error('Parent ID is required. Use --parent-id to specify where to create the app.')
+    const sessionInfo = client.getSessionInfo()
+    if (!sessionInfo) {
+      throw new Error('Failed to get session info from kernel')
+    }
+    const { avatarId, spaceId, autoSelected } = resolveAvatarFromSession(
+      sessionInfo,
+      resolved.activeSpaceId,
+    )
+    if (autoSelected) {
+      await setActiveSpaceId(resolved.profile, spaceId)
+      console.log(`  Auto-selected space: ${spaceId}`)
+    }
+    console.log(`  Space: ${spaceId}`)
+    console.log(`  Avatar: ${avatarId}`)
+    client.setAvatarId(avatarId)
+    const parentId = options.parentId ?? spaceId
     console.log(`[astrale] Creating application...`)
     const result = await client.createApp(parentId, undefined, keyPair.publicKeyJwk)
     console.log(`  ✓ Application created`)
@@ -41,6 +111,7 @@ export async function runInit(options: InitOptions): Promise<void> {
     const config: AstraleConfig = {
       appId: result.appId,
       profile: resolved.profile,
+      spaceId,
       typesContainerId: result.typesContainerId,
       workerBundleId: result.workerBundleId,
       uiBundleId: result.uiBundleId,
@@ -52,9 +123,8 @@ export async function runInit(options: InitOptions): Promise<void> {
       endpoints: result.endpoints,
       privateKey: keyPair.privateKeyPem,
     }
-    const projectDir = process.cwd()
     await saveConfig(projectDir, config)
-    console.log(`\n✓ Config saved to ${getConfigPath(projectDir)}`)
+    console.log(`\n✓ Config saved to ${configPath}`)
     console.log(`\nNext steps:`)
     console.log(`  1. Run 'astrale build' to build and deploy`)
     console.log(`  2. Run 'astrale dev' for hot-reload development`)
@@ -67,7 +137,7 @@ export const initCommand = new Command('init')
   .description('Initialize a new Astrale app in the kernel')
   .option('--title <name>', 'Application title (for display only)')
   .option('--profile <name>', 'Profile to use (default: active profile)')
-  .option('--parent-id <id>', 'Parent module ID (defaults to avatar)')
+  .option('--parent-id <id>', 'Parent module ID (defaults to space)')
   .action(async (opts) => {
     try {
       await runInit({

@@ -1,4 +1,3 @@
-import type { AvatarId } from '@astrale-os/kernel-core'
 import type { ProfileAuth } from './global-config'
 
 export const WORKOS_CLIENT_ID = process.env.WORKOS_CLIENT_ID || 'client_01KC29HET5F3QAQ8GNTPZ7F320'
@@ -38,7 +37,7 @@ export interface TokenResponse {
 }
 
 export interface WorkOSAuthResult {
-  avatarId: AvatarId
+  userId: string
   accessToken: string
   refreshToken: string
   user: WorkOSUser

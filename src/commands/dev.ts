@@ -1,4 +1,4 @@
-import type { ApplicationId } from '@astrale-os/kernel-core'
+import type { AvatarId, ApplicationId } from '@astrale-os/kernel-core'
 import { Command } from 'commander'
 import esbuild, { type BuildContext, type Plugin } from 'esbuild'
 import { mkdir } from 'fs/promises'
@@ -7,7 +7,7 @@ import { generateApps } from '../lib/apps-generator'
 import { deployToKernel, type DeployerState } from '../lib/deployer'
 import { createDevServer, type DevServer } from '../lib/dev-server'
 import { createWorkerBuildOptions, formatSize, getBundleSize } from '../lib/esbuild'
-import { createKernelClient } from '../lib/kernel'
+import { KernelClient } from '../lib/kernel'
 import { loadProject, printProjectInfo, resolvePaths } from '../lib/project'
 
 export type DevOptions = {
@@ -83,10 +83,9 @@ export async function runDev(options: DevOptions): Promise<void> {
     printProjectInfo(ctx)
     console.log(`\n[astrale] Connecting to kernel...`)
     try {
-      state.client = await createKernelClient({
+      const client = new KernelClient({
         kernelWsUrl: ctx.config.kernelWsUrl,
         datastoreUrl: ctx.config.datastoreUrl,
-        avatarId: ctx.config.avatarId,
         accessToken: ctx.config.accessToken,
         persistent: true,
         onDisconnect: (reason) => {
@@ -94,6 +93,15 @@ export async function runDev(options: DevOptions): Promise<void> {
           console.log(`  Reconnecting...`)
         },
       })
+      await client.connect()
+      const sessionInfo = client.getSessionInfo()
+      if (!sessionInfo) throw new Error('Failed to get session info')
+      const spaceId = ctx.config.spaceId
+      if (!spaceId) throw new Error('No spaceId in config. Re-run: astrale init')
+      const mapping = sessionInfo.avatarsAndSpaces.find((m) => m.spaceId === spaceId)
+      if (!mapping) throw new Error(`Space ${spaceId} not found for this user`)
+      client.setAvatarId(mapping.avatarId as AvatarId)
+      state.client = client
       console.log(`  ✓ Connected`)
     } catch (err) {
       console.error(

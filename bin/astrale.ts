@@ -9,6 +9,7 @@ import { createCommand } from '../src/commands/create'
 import { devCommand } from '../src/commands/dev'
 import { initCommand } from '../src/commands/init'
 import { profileCommand } from '../src/commands/profile'
+import { spaceCommand } from '../src/commands/space'
 import { startCommand } from '../src/commands/start'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -22,6 +23,7 @@ program
 
 program.addCommand(authCommand)
 program.addCommand(profileCommand)
+program.addCommand(spaceCommand)
 program.addCommand(initCommand)
 program.addCommand(devCommand)
 program.addCommand(buildCommand)
