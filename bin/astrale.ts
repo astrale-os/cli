@@ -20,6 +20,9 @@ program
   .name('astrale')
   .description('Astrale CLI - build, develop, and deploy Astrale apps')
   .version(pkg.version)
+  .action(() => {
+    program.help({ error: false })
+  })
 
 program.addCommand(authCommand)
 program.addCommand(profileCommand)
