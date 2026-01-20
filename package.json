@@ -1,6 +1,6 @@
 {
   "name": "@astrale-os/cli",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Astrale CLI - init, dev, build, and create commands for Astrale WebOS applications",
   "type": "module",
   "main": "./src/index.ts",
