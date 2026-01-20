@@ -49,7 +49,7 @@ export function App() {
         <StatusBar
           status={shell.status}
           shellState={shell.shellState}
-          kernelUrl={config.kernelUrl}
+          kernelWsUrl={config.kernelWsUrl}
         />
         <LoadingScreen message="Connecting to kernel and initializing shell..." />
       </div>
@@ -64,7 +64,7 @@ export function App() {
         <StatusBar
           status={shell.status}
           shellState={shell.shellState}
-          kernelUrl={config.kernelUrl}
+          kernelWsUrl={config.kernelWsUrl}
         />
         <ErrorScreen message="Failed to initialize shell. Check logs for details." />
       </div>
@@ -76,7 +76,11 @@ export function App() {
   return (
     <div className="host-app">
       <Header config={config} manifest={shell.manifest} />
-      <StatusBar status={shell.status} shellState={shell.shellState} kernelUrl={config.kernelUrl} />
+      <StatusBar
+        status={shell.status}
+        shellState={shell.shellState}
+        kernelWsUrl={config.kernelWsUrl}
+      />
       <div className="main-content">
         <WindowPanel
           config={config}

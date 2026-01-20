@@ -15,7 +15,7 @@ export interface LogEntry {
 export interface AppConfig {
   appId: string
   spaceId: string
-  kernelUrl: string
+  kernelWsUrl: string
   datastoreUrl: string
   accessToken: string
   workerUrl: string
