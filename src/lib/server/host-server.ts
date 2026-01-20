@@ -105,8 +105,6 @@ export async function createHostServer(config: DevServerConfig): Promise<HostSer
     state.htmlContent = `<!DOCTYPE html><html><head><title>Dev Host</title></head><body><div id="root"></div><script type="module" src="/host/bundle.js"></script></body></html>`
   }
 
-  const configJson = JSON.stringify(config.hostConfig)
-
   state.server = http.createServer(async (req, res): Promise<void> => {
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
@@ -127,7 +125,7 @@ export async function createHostServer(config: DevServerConfig): Promise<HostSer
 
     if (pathname === '/config.json') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
-      res.end(configJson)
+      res.end(JSON.stringify(config.hostConfig))
       return
     }
 

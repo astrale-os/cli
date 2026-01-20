@@ -88,5 +88,9 @@ export async function createDevServer(config: DevServerConfig): Promise<DevServe
         for (const client of iframeState.sseClients) client.end()
       }
     },
+
+    updateToken(token: string) {
+      config.hostConfig.accessToken = token
+    },
   }
 }
