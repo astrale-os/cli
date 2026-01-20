@@ -115,7 +115,6 @@ export async function runDev(options: DevOptions): Promise<void> {
   await mkdir(outPath, { recursive: true })
   if (shouldServe && ctx.config?.workerUrl) {
     console.log(`\n[astrale] Starting dev servers...`)
-    const configPath = path.join(ctx.projectRoot, '.astrale', 'config.json')
     state.devServer = await createDevServer({
       workerUrl: ctx.config.workerUrl,
       uiUrl: ctx.config.uiUrl,
@@ -124,10 +123,21 @@ export async function runDev(options: DevOptions): Promise<void> {
       iframeEntry: options.iframeEntry,
       iframeHtml: options.iframeHtml,
       projectRoot: ctx.projectRoot,
-      configPath,
-      kernelUrl: ctx.config.kernelWsUrl,
-      datastoreUrl: ctx.config.datastoreUrl,
-      accessToken: ctx.config.accessToken,
+      hostConfig: {
+        appId: ctx.config.appId,
+        spaceId: ctx.config.spaceId ?? '',
+        kernelWsUrl: ctx.config.kernelWsUrl,
+        datastoreUrl: ctx.config.datastoreUrl,
+        accessToken: ctx.config.accessToken,
+        workerUrl: ctx.config.workerUrl,
+        uiUrl: ctx.config.uiUrl ?? '',
+        typesContainerId: ctx.config.typesContainerId,
+        bundleWorkerId: ctx.config.workerBundleId,
+        bundleUiId: ctx.config.uiBundleId,
+        bundleSourceId: ctx.config.sourceBundleId,
+        bootstrap: ctx.config.bootstrap,
+        remoteAppdata: ctx.config.remoteAppdata,
+      },
       onWorkerChange: () => {},
     })
     await state.devServer.start()

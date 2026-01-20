@@ -7,10 +7,10 @@ import type { ConnectionStatus, ShellState } from '../types'
 interface StatusBarProps {
   status: ConnectionStatus
   shellState: ShellState | null
-  kernelUrl: string
+  kernelWsUrl: string
 }
 
-export function StatusBar({ status, shellState, kernelUrl }: StatusBarProps) {
+export function StatusBar({ status, shellState, kernelWsUrl }: StatusBarProps) {
   const workerCount = shellState ? Object.keys(shellState.backgroundWorkers).length : 0
   const tokenCount = shellState ? Object.keys(shellState.appTokens).length : 0
   const windowCount = shellState ? Object.keys(shellState.windows).length : 0
@@ -32,7 +32,7 @@ export function StatusBar({ status, shellState, kernelUrl }: StatusBarProps) {
       </div>
       <div className="status-item">
         <span style={{ color: 'var(--text-muted)' }}>Kernel:</span>
-        <span className="mono">{kernelUrl}</span>
+        <span className="mono">{kernelWsUrl}</span>
       </div>
       <div className="status-item">
         <span style={{ color: 'var(--text-muted)' }}>Workers:</span>

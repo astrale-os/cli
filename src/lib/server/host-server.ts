@@ -105,20 +105,7 @@ export async function createHostServer(config: DevServerConfig): Promise<HostSer
     state.htmlContent = `<!DOCTYPE html><html><head><title>Dev Host</title></head><body><div id="root"></div><script type="module" src="/host/bundle.js"></script></body></html>`
   }
 
-  let configJson = '{}'
-  try {
-    const rawConfig = await readFile(config.configPath, 'utf-8')
-    const parsed = JSON.parse(rawConfig)
-    const mergedConfig = {
-      ...parsed,
-      kernelUrl: config.kernelUrl,
-      datastoreUrl: config.datastoreUrl,
-      accessToken: config.accessToken,
-    }
-    configJson = JSON.stringify(mergedConfig)
-  } catch {
-    console.warn('  Warning: Could not load config.json')
-  }
+  const configJson = JSON.stringify(config.hostConfig)
 
   state.server = http.createServer(async (req, res): Promise<void> => {
     res.setHeader('Access-Control-Allow-Origin', '*')

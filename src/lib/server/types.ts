@@ -1,3 +1,19 @@
+export interface HostAppConfig {
+  appId: string
+  spaceId: string
+  kernelWsUrl: string
+  datastoreUrl: string
+  accessToken: string
+  workerUrl: string
+  uiUrl: string
+  typesContainerId?: string
+  bundleWorkerId?: string
+  bundleUiId?: string
+  bundleSourceId?: string
+  bootstrap?: { avatar: string; space: string; global: string }
+  remoteAppdata?: { avatar: string; space: string; global: string }
+}
+
 export interface DevServerConfig {
   workerUrl: string
   uiUrl?: string
@@ -6,10 +22,7 @@ export interface DevServerConfig {
   iframeEntry?: string
   iframeHtml?: string
   projectRoot: string
-  configPath: string
-  kernelUrl?: string
-  datastoreUrl?: string
-  accessToken?: string
+  hostConfig: HostAppConfig
   onWorkerChange?: () => void
   onIframeChange?: () => void
 }
