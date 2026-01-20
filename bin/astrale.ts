@@ -1,8 +1,11 @@
 #!/usr/bin/env npx tsx
+import './env'
+
 import { Command, program } from 'commander'
 import { readFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
+
 import { authCommand, runLogin } from '../src/commands/auth'
 import { buildCommand } from '../src/commands/build'
 import { createCommand } from '../src/commands/create'
