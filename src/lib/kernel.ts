@@ -13,6 +13,7 @@ import type { KernelWSClient, SessionInfo } from '@astrale-os/kernel-client-ws'
 import type { AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
 import { SYSTEM_APPS } from '@astrale-os/kernel-core'
 import type { SerializedApp, SerializedEndpoints } from '@astrale-os/sdk-app'
+import { TokenRefreshManager } from './token-refresh-manager'
 
 const APPMGR_APP_ID = SYSTEM_APPS.APPS.id
 const MAX_RECONNECT_RETRIES = 10
@@ -25,6 +26,9 @@ export interface KernelClientConfig {
   accessToken: string
   persistent?: boolean
   onDisconnect?: (reason: string) => void
+  profileName?: string
+  onTokenRefresh?: (newToken: string) => void
+  onTokenRefreshError?: (error: Error) => void
 }
 
 export type {
@@ -43,11 +47,26 @@ export class KernelClient {
   private config: KernelClientConfig
   private datastore: DatastoreClient
   private _avatarId: AvatarId | null = null
+  private tokenManager: TokenRefreshManager | null = null
 
   constructor(config: KernelClientConfig) {
     this.config = config
     this._avatarId = config.avatarId ?? null
     this.datastore = new DatastoreClient()
+
+    if (config.profileName && config.persistent) {
+      this.tokenManager = new TokenRefreshManager({
+        profileName: config.profileName,
+        onRefresh: (token) => {
+          console.log('  \u21bb Token refreshed')
+          config.onTokenRefresh?.(token)
+        },
+        onError: (error) => {
+          console.error('  \u26a0 Token refresh failed:', error.message)
+          config.onTokenRefreshError?.(error)
+        },
+      })
+    }
   }
 
   private get ctx() {
@@ -74,9 +93,20 @@ export class KernelClient {
 
   async connect(): Promise<void> {
     const { KernelWSClient } = await import('@astrale-os/kernel-client-ws')
+
+    let getToken: () => string | Promise<string>
+
+    if (this.tokenManager) {
+      await this.tokenManager.start()
+      getToken = () => this.tokenManager!.getToken()
+    } else {
+      const token = this.config.accessToken
+      getToken = () => token
+    }
+
     const client = new KernelWSClient({
       wsUrl: this.config.kernelWsUrl,
-      token: this.config.accessToken,
+      getToken,
       autoConnect: true,
       reconnect: this.config.persistent ?? false,
       maxRetries: this.config.persistent ? MAX_RECONNECT_RETRIES : undefined,
@@ -90,6 +120,7 @@ export class KernelClient {
   }
 
   disconnect(): void {
+    this.tokenManager?.stop()
     this.wsClient?.disconnect()
     this.wsClient = null
   }

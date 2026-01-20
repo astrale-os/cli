@@ -30,7 +30,7 @@ export type AuthConfig = Record<string, ProfileAuth>
 const DEFAULT_PROFILES: Record<string, ProfileConfig> = {
   local: {
     kernelWsUrl: 'ws://localhost:8081',
-    kernelRpcUrl: 'http://localhost:8083',
+    kernelRpcUrl: 'http://localhost:8083/rpc',
     datastoreUrl: 'http://127.0.0.1:3002/v1/datastore',
   },
   staging: {

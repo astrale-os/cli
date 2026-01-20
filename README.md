@@ -78,7 +78,7 @@ astrale profile set <name>      # Switch active profile
 Default profiles:
 | Profile | Kernel WS | Kernel RPC |
 |---------|-----------|------------|
-| local | ws://localhost:8081 | http://localhost:8083 |
+| local | ws://localhost:8081 | http://localhost:8083/rpc |
 | staging | wss://kernel.staging.astrale.ai/ws | https://kernel.staging.astrale.ai/rpc |
 | prod | wss://kernel.astrale.ai/ws | https://kernel.astrale.ai/rpc |
 
