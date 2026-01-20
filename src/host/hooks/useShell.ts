@@ -152,6 +152,13 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
     log('Starting initialization...', 'info')
 
     try {
+      // Validate config has accessToken
+      if (!config.accessToken) {
+        log('Error: accessToken is missing from config. Re-run: astrale auth login', 'error')
+        setStatus('error')
+        return
+      }
+
       // Step 1: Load app manifest from kernel
       log('Connecting to kernel to load app manifest...', 'info')
       const kernelClient = new KernelWSClientBundle.KernelWSClient({

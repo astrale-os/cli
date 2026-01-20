@@ -122,6 +122,12 @@ export async function runDev(options: DevOptions): Promise<void> {
   }
   await mkdir(outPath, { recursive: true })
   if (shouldServe && ctx.config?.workerUrl) {
+    if (!ctx.config.accessToken) {
+      console.error(`[astrale] Error: accessToken is missing from config.`)
+      console.log(`  This usually means authentication failed or expired.`)
+      console.log(`  Run: astrale auth login --profile ${ctx.config.profile}`)
+      process.exit(1)
+    }
     console.log(`\n[astrale] Starting dev servers...`)
     state.devServer = await createDevServer({
       workerUrl: ctx.config.workerUrl,

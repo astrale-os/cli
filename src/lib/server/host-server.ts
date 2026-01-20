@@ -124,6 +124,9 @@ export async function createHostServer(config: DevServerConfig): Promise<HostSer
     }
 
     if (pathname === '/config.json') {
+      if (!config.hostConfig.accessToken) {
+        console.warn('[host-server] Warning: hostConfig.accessToken is undefined!')
+      }
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' })
       res.end(JSON.stringify(config.hostConfig))
       return
