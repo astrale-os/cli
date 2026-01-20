@@ -93,6 +93,9 @@ export async function runDev(options: DevOptions): Promise<void> {
           console.log(`\n⚠ Kernel disconnected: ${reason}`)
           console.log(`  Reconnecting...`)
         },
+        onTokenRefresh: (newToken) => {
+          state.devServer?.updateToken(newToken)
+        },
         onTokenRefreshError: (error) => {
           console.error(`\n⚠ Token refresh failed: ${error.message}`)
           console.log(`  Run 'astrale auth login' to re-authenticate`)

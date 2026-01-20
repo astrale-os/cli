@@ -33,4 +33,5 @@ export interface DevServer {
   hostUrl: string
   start(): Promise<void>
   stop(): Promise<void>
+  updateToken(token: string): void
 }
