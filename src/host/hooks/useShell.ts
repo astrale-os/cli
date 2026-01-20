@@ -17,7 +17,7 @@ declare const ShellBundle: {
     config: {
       kernel: {
         wsUrl: string
-        token: string
+        getToken: () => string | Promise<string>
         avatarId: string
         autoConnect: boolean
       }
@@ -35,7 +35,7 @@ declare const ShellBundle: {
 declare const KernelWSClientBundle: {
   KernelWSClient: new (config: {
     wsUrl: string
-    token: string
+    getToken: () => string | Promise<string>
     autoConnect?: boolean
     reconnect?: boolean
   }) => KernelWSClient
@@ -156,7 +156,7 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
       log('Connecting to kernel to load app manifest...', 'info')
       const kernelClient = new KernelWSClientBundle.KernelWSClient({
         wsUrl: config.kernelUrl,
-        token: config.accessToken,
+        getToken: () => config.accessToken,
         autoConnect: true,
         reconnect: false,
       })
@@ -221,7 +221,7 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
         {
           kernel: {
             wsUrl: config.kernelUrl,
-            token: config.accessToken,
+            getToken: () => config.accessToken,
             avatarId,
             autoConnect: true,
           },

@@ -88,9 +88,14 @@ export async function runDev(options: DevOptions): Promise<void> {
         datastoreUrl: ctx.config.datastoreUrl,
         accessToken: ctx.config.accessToken,
         persistent: true,
+        profileName: ctx.config.profile,
         onDisconnect: (reason) => {
           console.log(`\n⚠ Kernel disconnected: ${reason}`)
           console.log(`  Reconnecting...`)
+        },
+        onTokenRefreshError: (error) => {
+          console.error(`\n⚠ Token refresh failed: ${error.message}`)
+          console.log(`  Run 'astrale auth login' to re-authenticate`)
         },
       })
       await client.connect()
