@@ -101,7 +101,7 @@ export async function runInit(options: InitOptions): Promise<void> {
     console.log(`  Space: ${spaceId}`)
     console.log(`  Avatar: ${avatarId}`)
     client.setAvatarId(avatarId)
-    const parentId = options.parentId ?? spaceId
+    const parentId = options.parentId ?? avatarId
     console.log(`[astrale] Creating application...`)
     const result = await client.createApp(parentId, undefined, keyPair.publicKeyJwk)
     console.log(`  ✓ Application created`)
@@ -137,7 +137,7 @@ export const initCommand = new Command('init')
   .description('Initialize a new Astrale app in the kernel')
   .option('--title <name>', 'Application title (for display only)')
   .option('--profile <name>', 'Profile to use (default: active profile)')
-  .option('--parent-id <id>', 'Parent module ID (defaults to space)')
+  .option('--parent-id <id>', 'Parent module ID (defaults to avatar)')
   .action(async (opts) => {
     try {
       await runInit({
