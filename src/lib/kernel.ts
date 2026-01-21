@@ -1,5 +1,5 @@
 import { DatastoreClient } from '@astrale-os/datastore-client'
-import type { BootstrapDataGrant, EditModuleResultWithBackend } from '@astrale-os/kernel-api'
+import type { BootstrapDataGrant, EditModuleResultWithStorage } from '@astrale-os/kernel-api'
 import type { SpaceCreateResult } from '@astrale-os/kernel-api/system'
 import type {
   AppBuildResult,
@@ -17,7 +17,6 @@ import { TokenRefreshManager } from './token-refresh-manager'
 
 const APPMGR_APP_ID = SYSTEM_APPS.APPS.id
 const MAX_RECONNECT_RETRIES = 10
-export const DEFAULT_BACKEND = 'kv'
 
 export interface KernelClientConfig {
   kernelWsUrl: string
@@ -194,8 +193,8 @@ export class KernelClient {
 
   async editModule(
     moduleId: ModuleId,
-    options: { contentType?: string; backend?: string } = {},
-  ): Promise<EditModuleResultWithBackend> {
+    options: { contentType?: string; storage?: boolean } = {},
+  ): Promise<EditModuleResultWithStorage> {
     return this.ws.call(
       'module.edit',
       {
@@ -203,10 +202,10 @@ export class KernelClient {
         metadata: options.contentType
           ? { contentType: options.contentType, name: 'worker.js' }
           : undefined,
-        backend: options.backend ?? DEFAULT_BACKEND,
+        storage: options.storage,
       },
       this.ctx,
-    ) as Promise<EditModuleResultWithBackend>
+    ) as Promise<EditModuleResultWithStorage>
   }
 
   async uploadWorkerBundle(
@@ -215,7 +214,7 @@ export class KernelClient {
   ): Promise<{ bytes: number }> {
     const editResult = await this.editModule(workerBundleId, {
       contentType: 'application/javascript',
-      backend: 'kv',
+      storage: true,
     })
     const writeResult = await this.datastore.writeObject({
       grant: editResult.datastoreGrant,

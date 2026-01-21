@@ -46,7 +46,6 @@ export {
   type AppCreateResult,
   type AppDevelopResult,
   createKernelClient,
-  DEFAULT_BACKEND,
   KernelClient,
   type KernelClientConfig,
 } from './kernel'
