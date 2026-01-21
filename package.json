@@ -54,7 +54,7 @@
     "@astrale-os/shell-core": ">=0.0.0 <1.0.0",
     "@astrale-os/shell-runtime": ">=0.0.0 <1.0.0",
     "@astrale-os/shell-transport": ">=0.0.0 <1.0.0",
-    "@astrale-os/ui": "workspace:*",
+    "@astrale-os/ui": ">=0.0.0 <1.0.0",
     "@napi-rs/keyring": "^1.1.6",
     "@tailwindcss/postcss": "^4.0.0",
     "boxen": "^8.0.1",
