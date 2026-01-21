@@ -27,7 +27,7 @@
     "url": "git+https://github.com/astrale-os/cli.git"
   },
   "scripts": {
-    "preinstall": "node -e \"const p=require('path'),f=require('fs'),d=p.resolve(__dirname);if(process.env.INIT_CWD!==d)process.exit(0);if(process.env.ALLOW_SUBMODULE_INSTALL)process.exit(0);const w=p.dirname(d);if(f.existsSync(p.join(w,'.astrale-workspace'))){console.error('\\n⚠️  WARNING: Installing in a submodule will use PUBLISHED packages, not local dev versions.\\n   Run from workspace root instead:\\n   cd '+w+' && pnpm install\\n\\n   To bypass: ALLOW_SUBMODULE_INSTALL=1 pnpm install\\n');process.exit(1)}\"",
+    "preinstall": "node -e \"const p=require('path'),f=require('fs');if(f.existsSync(p.join(process.env.INIT_CWD,'.astrale-workspace')))process.exit(0);if(process.env.ALLOW_SUBMODULE_INSTALL)process.exit(0);console.error('\\n⚠️  WARNING: Running pnpm install directly in this package will use PUBLISHED packages, not local dev versions.\\n\\n   Run from workspace root instead:\\n   cd <workspace-root> && pnpm install\\n\\n   To bypass: ALLOW_SUBMODULE_INSTALL=1 pnpm install\\n');process.exit(1)\"",
     "build": "tsc",
     "clean": "rm -rf dist *.tsbuildinfo",
     "typecheck": "tsc --noEmit",
