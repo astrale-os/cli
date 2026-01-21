@@ -44,8 +44,9 @@ body,
   height: 100%;
 }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica,
-    Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
   background: #000000; /* Deep black background for the "desktop" feel */
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
