@@ -81,7 +81,7 @@
   },
   "prettier": "@astrale/prettier-config",
   "lint-staged": {
-    "*.{ts,tsx}": [
+    "*.{js,cjs,mjs,ts,tsx}": [
       "eslint --fix",
       "prettier --write"
     ],
