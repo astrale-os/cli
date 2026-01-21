@@ -48,7 +48,7 @@ export function createDedupeReactPlugin(projectRoot: string): Plugin {
  * Creates an esbuild plugin that processes CSS through PostCSS with Tailwind CSS.
  * CSS output is stored in the provided object for later retrieval.
  */
-export function createPostCSSPlugin(projectRoot: string, cssOutput: { code: string }): Plugin {
+export function createPostCSSPlugin(_projectRoot: string, cssOutput: { code: string }): Plugin {
   const processor = postcss([tailwindcss()])
 
   return {

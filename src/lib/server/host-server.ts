@@ -136,7 +136,7 @@ export async function createHostServer(config: DevServerConfig): Promise<HostSer
   ;(async () => {
     try {
       const watcher = watch(path.join(hostDir, 'styles.css'), {
-        signal: state.cssWatchAbort.signal,
+        signal: state.cssWatchAbort!.signal,
       })
       for await (const event of watcher) {
         if (event.eventType === 'change') await rebuildCss()
