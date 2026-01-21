@@ -1,7 +1,9 @@
 import type { Plugin } from 'esbuild'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { createRequire } from 'module'
 import path from 'path'
+import postcss from 'postcss'
+import tailwindcss from '@tailwindcss/postcss'
 
 export const LIVE_RELOAD_SCRIPT = `<script>
 (function() {
@@ -38,6 +40,49 @@ export function createDedupeReactPlugin(projectRoot: string): Plugin {
           return resolved ? { path: resolved } : null
         })
       }
+    },
+  }
+}
+
+/**
+ * Creates an esbuild plugin that processes CSS through PostCSS with Tailwind CSS.
+ * CSS output is stored in the provided object for later retrieval.
+ */
+export function createPostCSSPlugin(projectRoot: string, cssOutput: { code: string }): Plugin {
+  const processor = postcss([tailwindcss()])
+
+  return {
+    name: 'postcss-tailwind',
+    setup(build) {
+      // Handle CSS imports in JS/TS files
+      build.onLoad({ filter: /\.css$/ }, async (args) => {
+        const source = readFileSync(args.path, 'utf-8')
+
+        try {
+          const result = await processor.process(source, {
+            from: args.path,
+            to: args.path,
+          })
+
+          // Store the processed CSS for serving separately at /iframe-bundle.css
+          cssOutput.code = result.css
+
+          // Return empty JS - the CSS is served separately and linked in HTML
+          return {
+            contents: '/* CSS processed by PostCSS/Tailwind - served at /iframe-bundle.css */',
+            loader: 'js',
+          }
+        } catch (error) {
+          return {
+            errors: [
+              {
+                text: `PostCSS error: ${error instanceof Error ? error.message : String(error)}`,
+                location: { file: args.path },
+              },
+            ],
+          }
+        }
+      })
     },
   }
 }

@@ -1,7 +1,3 @@
-/**
- * Host App Main Component
- */
-
 import { Header, LogPanel, StatusBar, WindowPanel } from './components'
 import { useConfig, useLogs, useShell } from './hooks'
 
@@ -17,9 +13,10 @@ function LoadingScreen({ message }: { message?: string }) {
 function ErrorScreen({ message }: { message: string }) {
   return (
     <div className="error-screen">
-      <h2>⚠️ Error</h2>
-      <p className="error-message">{message}</p>
-      <p className="error-hint">
+      <div style={{ fontSize: 32 }}>⚠️</div>
+      <h2>Error</h2>
+      <p>{message}</p>
+      <p style={{ fontSize: 13, opacity: 0.6 }}>
         Make sure you've run <code>worker-init</code> and the kernel is running.
       </p>
     </div>
@@ -31,17 +28,22 @@ export function App() {
   const logs = useLogs()
   const shell = useShell(config, logs)
 
-  // Configuration loading state
   if (configLoading) {
-    return <LoadingScreen message="Loading configuration..." />
+    return (
+      <div className="host-app">
+        <LoadingScreen message="Loading configuration..." />
+      </div>
+    )
   }
 
-  // Configuration error state
   if (configError || !config) {
-    return <ErrorScreen message={configError ?? 'No configuration found'} />
+    return (
+      <div className="host-app">
+        <ErrorScreen message={configError ?? 'No configuration found'} />
+      </div>
+    )
   }
 
-  // Shell initialization in progress
   if (shell.status === 'connecting') {
     return (
       <div className="host-app">
@@ -56,7 +58,6 @@ export function App() {
     )
   }
 
-  // Shell initialization error
   if (shell.status === 'error') {
     return (
       <div className="host-app">
@@ -70,8 +71,6 @@ export function App() {
       </div>
     )
   }
-
-  const isInitialized = shell.status === 'connected'
 
   return (
     <div className="host-app">
@@ -90,7 +89,7 @@ export function App() {
           onOpenWindow={shell.openWindow}
           onCloseWindow={shell.closeWindow}
           registerIframeRef={shell.registerIframeRef}
-          disabled={!isInitialized}
+          disabled={shell.status !== 'connected'}
         />
         <LogPanel logs={logs.logs} onClear={logs.clear} />
       </div>

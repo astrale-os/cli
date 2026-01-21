@@ -1,11 +1,5 @@
-/**
- * Window Panel Component
- *
- * Manages app windows and iframe display.
- */
-
-import { useState } from 'react'
-
+import { useState, useEffect, useCallback } from 'react'
+import { cn, WINDOW_BORDER_RADIUS } from '@astrale-os/ui'
 import type { IframeRef } from '../lib/shell-adapter'
 import type { AppConfig, WindowInfo } from '../types'
 
@@ -30,79 +24,92 @@ export function WindowPanel({
   disabled,
 }: WindowPanelProps) {
   const [selectedWindow, setSelectedWindow] = useState<string | null>(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const toggleFullscreen = useCallback(() => setIsFullscreen((prev) => !prev), [])
 
-  // Auto-select first window if none selected
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isFullscreen) setIsFullscreen(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isFullscreen])
+
   const activeWindow =
     selectedWindow && windows.find((w) => w.nodeId === selectedWindow)
       ? selectedWindow
       : (windows[0]?.nodeId ?? null)
-
-  // Get all windows that need iframes (either in windows list or pending)
   const allWindowIds = new Set([...windows.map((w) => w.nodeId), ...pendingIframes.keys()])
 
   return (
-    <div className="window-panel">
+    <div className={cn('window-panel', isFullscreen && 'fullscreen')}>
       <div className="window-controls">
         <button className="btn btn-primary" onClick={onOpenWindow} disabled={disabled}>
           <span>🪟</span>
           <span>Open Window</span>
         </button>
-
         {windows.length > 0 && (
           <div className="window-tabs">
             {windows.map((win) => (
-              <div
+              <button
                 key={win.nodeId}
-                className={`window-tab ${activeWindow === win.nodeId ? 'active' : ''}`}
+                className={cn('window-tab', activeWindow === win.nodeId && 'active')}
                 onClick={() => setSelectedWindow(win.nodeId)}
               >
-                <span className="truncate" style={{ maxWidth: 100 }}>
-                  {win.nodeId.slice(-8)}
-                </span>
-                <button
-                  className="window-tab-close"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onCloseWindow(win.nodeId)
-                    if (selectedWindow === win.nodeId) {
-                      setSelectedWindow(null)
-                    }
-                  }}
-                >
-                  ×
-                </button>
-              </div>
+                {win.nodeId.slice(-8)}
+              </button>
             ))}
           </div>
         )}
       </div>
 
-      <div className="iframe-container">
-        {allWindowIds.size === 0 ? (
+      {allWindowIds.size === 0 ? (
+        <div className="iframe-container">
           <div className="iframe-empty">
             <div className="iframe-empty-icon">🖼️</div>
             <div>No windows open</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              Click "Open Window" to start
-            </div>
+            <div className="iframe-empty-hint">Click "Open Window" to start</div>
           </div>
-        ) : (
-          Array.from(allWindowIds).map((nodeId) => {
-            const pending = pendingIframes.get(nodeId)
-            const src = pending?.src ?? config.uiUrl
-
-            return (
-              <iframe
-                key={nodeId}
-                ref={(el) => registerIframeRef(nodeId, el)}
-                src={src}
-                title={`Window ${nodeId}`}
-                className={activeWindow === nodeId ? '' : 'hidden'}
+        </div>
+      ) : (
+        <div
+          className="window-chrome"
+          style={{ borderRadius: isFullscreen ? 0 : WINDOW_BORDER_RADIUS }}
+        >
+          <div className="window-titlebar">
+            <div className="window-traffic-lights">
+              <button
+                className="traffic-light close"
+                onClick={() => activeWindow && onCloseWindow(activeWindow)}
+                title="Close"
               />
-            )
-          })
-        )}
-      </div>
+              <button className="traffic-light minimize" disabled title="Minimize" />
+              <button
+                className="traffic-light maximize"
+                onClick={toggleFullscreen}
+                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              />
+            </div>
+            <div className="window-title">{activeWindow?.slice(-8)}</div>
+          </div>
+          <div className="iframe-container">
+            {Array.from(allWindowIds).map((nodeId) => {
+              const pending = pendingIframes.get(nodeId)
+              const src = pending?.src ?? config.uiUrl
+              return (
+                <iframe
+                  key={nodeId}
+                  ref={(el) => registerIframeRef(nodeId, el)}
+                  src={src}
+                  title={`Window ${nodeId}`}
+                  className={activeWindow !== nodeId ? 'hidden' : ''}
+                  allow="clipboard-write"
+                />
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

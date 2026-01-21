@@ -4,12 +4,13 @@ import { readFile } from 'fs/promises'
 import http from 'http'
 import path from 'path'
 import type { DevServerConfig } from './types'
-import { createDedupeReactPlugin, LIVE_RELOAD_SCRIPT } from './utils'
+import { createDedupeReactPlugin, createPostCSSPlugin, LIVE_RELOAD_SCRIPT } from './utils'
 
 export interface IframeServerState {
   server: http.Server
   esbuildCtx: BuildContext | null
   bundleCode: string
+  bundleCss: string
   sseClients: Set<http.ServerResponse>
 }
 
@@ -18,19 +19,35 @@ export async function createIframeServer(config: DevServerConfig): Promise<Ifram
     server: null!,
     esbuildCtx: null,
     bundleCode: '',
+    bundleCss: '',
     sseClients: new Set(),
   }
 
   if (config.iframeEntry) {
     const entryPath = path.resolve(config.projectRoot, config.iframeEntry)
 
+    // Shared object for CSS output from PostCSS plugin
+    const cssOutput = { code: '' }
+
     const liveReloadPlugin: Plugin = {
       name: 'live-reload',
       setup(build) {
         build.onEnd(async (result) => {
           if (result.errors.length === 0 && result.outputFiles?.[0]) {
+            // Take the first output file as JS bundle (CSS is handled separately by PostCSS plugin)
             state.bundleCode = result.outputFiles[0].text
-            console.log(`  ↻ Iframe rebuilt (${(state.bundleCode.length / 1024).toFixed(1)}KB)`)
+
+            // CSS comes from the PostCSS plugin
+            if (cssOutput.code) {
+              state.bundleCss = cssOutput.code
+            }
+
+            const jsSize = (state.bundleCode.length / 1024).toFixed(1)
+            const cssSize = state.bundleCss
+              ? ` + ${(state.bundleCss.length / 1024).toFixed(1)}KB CSS`
+              : ''
+            console.log(`  ↻ Iframe rebuilt (${jsSize}KB${cssSize})`)
+
             for (const client of state.sseClients) client.write('data: reload\n\n')
             config.onIframeChange?.()
           }
@@ -48,16 +65,21 @@ export async function createIframeServer(config: DevServerConfig): Promise<Ifram
       jsx: 'automatic',
       jsxImportSource: 'react',
       define: { 'process.env.NODE_ENV': '"development"' },
-      plugins: [createDedupeReactPlugin(config.projectRoot), liveReloadPlugin],
+      plugins: [
+        createDedupeReactPlugin(config.projectRoot),
+        createPostCSSPlugin(config.projectRoot, cssOutput),
+        liveReloadPlugin,
+      ],
     })
 
     const result = await state.esbuildCtx.rebuild()
     if (result.outputFiles?.[0]) state.bundleCode = result.outputFiles[0].text
+    if (cssOutput.code) state.bundleCss = cssOutput.code
   }
 
   let iframeHtml = `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>App</title></head>
+<html class="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>App</title><link rel="stylesheet" href="/iframe-bundle.css"></head>
 <body><div id="root"></div><script type="module" src="/iframe-bundle.js"></script></body>
 </html>`
 
@@ -103,6 +125,12 @@ export async function createIframeServer(config: DevServerConfig): Promise<Ifram
     if (pathname === '/iframe-bundle.js') {
       res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' })
       res.end(state.bundleCode)
+      return
+    }
+
+    if (pathname === '/iframe-bundle.css') {
+      res.writeHead(200, { 'Content-Type': 'text/css', 'Cache-Control': 'no-cache' })
+      res.end(state.bundleCss)
       return
     }
 

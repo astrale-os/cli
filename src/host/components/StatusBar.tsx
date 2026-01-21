@@ -1,7 +1,3 @@
-/**
- * Status Bar Component
- */
-
 import type { ConnectionStatus, ShellState } from '../types'
 
 interface StatusBarProps {
@@ -28,23 +24,23 @@ export function StatusBar({ status, shellState, kernelWsUrl }: StatusBarProps) {
     <div className="status-bar">
       <div className="status-item">
         <span className={`status-dot ${status}`} />
-        <span>{statusLabel}</span>
+        <span className="status-label">{statusLabel}</span>
       </div>
       <div className="status-item">
-        <span style={{ color: 'var(--text-muted)' }}>Kernel:</span>
-        <span className="mono">{kernelWsUrl}</span>
+        <span>Kernel:</span>
+        <span className="status-value">{kernelWsUrl}</span>
       </div>
       <div className="status-item">
-        <span style={{ color: 'var(--text-muted)' }}>Workers:</span>
-        <span>{workerCount}</span>
+        <span>Workers:</span>
+        <span className="count-badge">{workerCount}</span>
       </div>
       <div className="status-item">
-        <span style={{ color: 'var(--text-muted)' }}>Tokens:</span>
-        <span>{tokenCount}</span>
+        <span>Tokens:</span>
+        <span className="count-badge">{tokenCount}</span>
       </div>
       <div className="status-item">
-        <span style={{ color: 'var(--text-muted)' }}>Windows:</span>
-        <span>{windowCount}</span>
+        <span>Windows:</span>
+        <span className="count-badge">{windowCount}</span>
       </div>
     </div>
   )
