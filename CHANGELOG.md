@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/astrale-os/cli/compare/cli-v0.3.0...cli-v0.3.1) (2026-01-22)
+
+
+### Bug Fixes
+
+* resolve TypeScript errors in host-server and utils ([f1a5b23](https://github.com/astrale-os/cli/commit/f1a5b23bcd7cd6b5bb0ae91f51dd50c9e71c9b7a))
+
 ## [0.3.0](https://github.com/astrale-os/cli/compare/cli-v0.2.0...cli-v0.3.0) (2026-01-21)
 
 
