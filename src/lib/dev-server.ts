@@ -50,7 +50,7 @@ async function listenWithFallback(
 
 export async function createDevServer(config: DevServerConfig): Promise<DevServer> {
   const workerPort = parseInt(new URL(config.workerUrl).port || '80', 10)
-  const hostUrl = `http://localhost:${config.hostPort}`
+  let hostUrl = `http://localhost:${config.hostPort}`
   const workerServer = createWorkerServer(config)
   const hasIframe = !!(config.iframeEntry && config.uiUrl)
   const iframePort = hasIframe ? parseInt(new URL(config.uiUrl!).port || '80', 10) : null
@@ -59,21 +59,33 @@ export async function createDevServer(config: DevServerConfig): Promise<DevServe
   console.log('\n[sdk-worker] Building host app...')
   const hostState = await createHostServer(config)
 
-  return {
+  const devServer: DevServer = {
     workerUrl: config.workerUrl,
     iframeUrl: config.uiUrl ?? null,
     hostUrl,
 
     async start() {
       const actualHostPort = await listenWithFallback(hostState.server, config.hostPort, 'host')
-      const actualHostUrl =
-        actualHostPort === config.hostPort ? hostUrl : `http://localhost:${actualHostPort}`
-      console.log(`  Host:    ${actualHostUrl}`)
-      await listenWithFallback(workerServer, workerPort, 'worker')
-      console.log(`  Worker:  ${config.workerUrl}`)
+      if (actualHostPort !== config.hostPort) {
+        hostUrl = `http://localhost:${actualHostPort}`
+        devServer.hostUrl = hostUrl
+      }
+      console.log(`  Host:    ${hostUrl}`)
+      const actualWorkerPort = await listenWithFallback(workerServer, workerPort, 'worker')
+      if (actualWorkerPort !== workerPort) {
+        const actualWorkerUrl = `http://localhost:${actualWorkerPort}`
+        config.hostConfig.workerUrl = actualWorkerUrl
+        devServer.workerUrl = actualWorkerUrl
+      }
+      console.log(`  Worker:  ${devServer.workerUrl}`)
       if (iframeState && config.uiUrl && iframePort) {
-        await listenWithFallback(iframeState.server, iframePort, 'iframe')
-        console.log(`  Iframe:  ${config.uiUrl}`)
+        const actualIframePort = await listenWithFallback(iframeState.server, iframePort, 'iframe')
+        if (actualIframePort !== iframePort) {
+          const actualIframeUrl = `http://localhost:${actualIframePort}`
+          config.hostConfig.uiUrl = actualIframeUrl
+          devServer.iframeUrl = actualIframeUrl
+        }
+        console.log(`  Iframe:  ${devServer.iframeUrl}`)
         await iframeState.esbuildCtx?.watch()
       }
     },
@@ -93,4 +105,5 @@ export async function createDevServer(config: DevServerConfig): Promise<DevServe
       config.hostConfig.accessToken = token
     },
   }
+  return devServer
 }
