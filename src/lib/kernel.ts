@@ -1,6 +1,6 @@
 import { DatastoreClient } from '@astrale-os/datastore-client'
 import type { BootstrapDataGrant, EditModuleResultWithStorage } from '@astrale-os/kernel-api'
-import type { SpaceCreateResult } from '@astrale-os/kernel-api/system'
+import type { SpaceCreateResult } from '@astrale-os/kernel-api/namespaces'
 import type {
   AppBuildResult,
   AppCreateResult,
@@ -8,19 +8,18 @@ import type {
   AppDiscoverResult,
   DevelopmentConfig,
   EndpointGrant,
-} from '@astrale-os/kernel-api/system'
-import type { KernelWSClient, SessionInfo } from '@astrale-os/kernel-client-ws'
-import type { AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
-import { SYSTEM_APPS } from '@astrale-os/kernel-core'
+} from '@astrale-os/kernel-api/namespaces'
+import type { CallIdentity, KernelWSClient } from '@astrale-os/kernel-client-ws'
+import type { AvatarId, IdentityId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
+import { selfGrant } from '@astrale-os/kernel-core'
 import type { SerializedApp, SerializedEndpoints } from '@astrale-os/sdk-app'
 import { TokenRefreshManager } from './token-refresh-manager'
 
-const APPMGR_APP_ID = SYSTEM_APPS.APPS.id
 const MAX_RECONNECT_RETRIES = 10
 
 export interface KernelClientConfig {
   kernelWsUrl: string
-  datastoreUrl?: string
+  datastoreUrl: string
   avatarId?: AvatarId
   accessToken: string
   persistent?: boolean
@@ -38,7 +37,6 @@ export type {
   BootstrapDataGrant,
   DevelopmentConfig,
   EndpointGrant,
-  SessionInfo,
 }
 
 export class KernelClient {
@@ -51,7 +49,7 @@ export class KernelClient {
   constructor(config: KernelClientConfig) {
     this.config = config
     this._avatarId = config.avatarId ?? null
-    this.datastore = new DatastoreClient()
+    this.datastore = new DatastoreClient({ baseUrl: config.datastoreUrl })
 
     if (config.profileName && config.persistent) {
       this.tokenManager = new TokenRefreshManager({
@@ -68,9 +66,10 @@ export class KernelClient {
     }
   }
 
-  private get ctx() {
-    if (!this._avatarId) throw new Error('AvatarId not set. Call setAvatarId() first.')
-    return { avatarId: this._avatarId, appId: APPMGR_APP_ID }
+  private get identity(): CallIdentity | undefined {
+    if (!this._avatarId) return undefined
+    const principal = this._avatarId as string as IdentityId
+    return { principal, grant: selfGrant(principal) }
   }
 
   private get ws(): KernelWSClient {
@@ -84,10 +83,6 @@ export class KernelClient {
 
   setAvatarId(avatarId: AvatarId): void {
     this._avatarId = avatarId
-  }
-
-  getSessionInfo(): SessionInfo | null {
-    return this.wsClient?.sessionInfo ?? null
   }
 
   async connect(): Promise<void> {
@@ -114,7 +109,6 @@ export class KernelClient {
       client.on('disconnected', this.config.onDisconnect)
     }
     await client.connect()
-    await client.waitForSessionInfo(10000)
     this.wsClient = client
   }
 
@@ -125,11 +119,11 @@ export class KernelClient {
   }
 
   async createSpace(name: string): Promise<SpaceCreateResult> {
-    return this.ws.callSystem('spaces.create', { name }, {} as any) as Promise<SpaceCreateResult>
+    return this.ws.call('spaces.create', { name }) as Promise<SpaceCreateResult>
   }
 
   async listSpaces(): Promise<{ spaces: Array<{ spaceId: SpaceId; name: string }> }> {
-    return this.ws.callSystem('spaces.list', {}, {} as any) as Promise<{
+    return this.ws.call('spaces.list', {}) as Promise<{
       spaces: Array<{ spaceId: SpaceId; name: string }>
     }>
   }
@@ -139,10 +133,9 @@ export class KernelClient {
     username: string,
     isFirstAvatar: boolean,
   ): Promise<{ avatarId: AvatarId; spaceId: SpaceId }> {
-    return this.ws.callSystem(
+    return this.ws.call(
       'avatars.create',
       { spaceId, username, isFirstAvatar },
-      {} as any,
     ) as Promise<{ avatarId: AvatarId; spaceId: SpaceId }>
   }
 
@@ -157,37 +150,37 @@ export class KernelClient {
       publicKeyJwk: publicKeyJwk ? JSON.stringify(publicKeyJwk) : undefined,
       config,
     }
-    return this.ws.callSystem('appmgr.create', params, this.ctx) as Promise<AppCreateResult>
+    return this.ws.call('appmgr.create', params, this.identity) as Promise<AppCreateResult>
   }
 
   async develop(schema: SerializedApp, config: DevelopmentConfig): Promise<AppDevelopResult> {
-    return this.ws.callSystem(
+    return this.ws.call(
       'appmgr.develop',
       { schema, config },
-      this.ctx,
+      this.identity,
     ) as Promise<AppDevelopResult>
   }
 
   async build(parentId: ModuleId, schema: SerializedApp): Promise<AppBuildResult> {
-    return this.ws.callSystem(
+    return this.ws.call(
       'appmgr.build',
       { parentId, schema },
-      this.ctx,
+      this.identity,
     ) as Promise<AppBuildResult>
   }
 
   async resolveApplication(slug: string): Promise<{ appId: string; slug: string }> {
-    return this.ws.callSystem('appmgr.resolve', { slug }, this.ctx) as Promise<{
+    return this.ws.call('appmgr.resolve', { slug }, this.identity) as Promise<{
       appId: string
       slug: string
     }>
   }
 
   async discoverApplication(appId: string, version?: string): Promise<AppDiscoverResult> {
-    return this.ws.callSystem(
+    return this.ws.call(
       'appmgr.discover',
       { appId, version },
-      this.ctx,
+      this.identity,
     ) as Promise<AppDiscoverResult>
   }
 
@@ -204,8 +197,8 @@ export class KernelClient {
           : undefined,
         storage: options.storage,
       },
-      this.ctx,
-    ) as Promise<EditModuleResultWithStorage>
+      this.identity,
+    ) as Promise<EditModuleResultWithStorage> // narrowed from EditModuleResult
   }
 
   async uploadWorkerBundle(

@@ -60,23 +60,15 @@ interface AppRegistration {
   types?: AppManifest['types']
 }
 
-interface SessionInfo {
-  userId: string
-  avatarsAndSpaces: Array<{ avatarId: string; spaceId: string }>
-}
-
 interface KernelWSClient {
   connect: () => Promise<void>
   disconnect: () => void
-  waitForSessionInfo: (timeoutMs?: number) => Promise<SessionInfo>
-  callSystem: (
+  call: (
     method: string,
-    params: unknown,
-    ctx: { avatarId: string; appId: string },
+    params: Record<string, unknown>,
+    identity?: { principal: string; grant: unknown },
   ) => Promise<unknown>
 }
-
-const APPMGR_APP_ID = 'astrale.ai/appmgr'
 
 export interface UseShellResult {
   // State
@@ -171,25 +163,21 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
       await kernelClient.connect()
       log('Kernel connected', 'success')
 
-      const sessionInfo = await kernelClient.waitForSessionInfo()
-      const avatarMapping = sessionInfo.avatarsAndSpaces.find((m) => m.spaceId === config.spaceId)
-      if (!avatarMapping) {
+      const avatarId = config.avatarId
+      if (!avatarId) {
         log(
-          `No avatar found for space ${config.spaceId}. Try: astrale space create <name> && astrale init`,
+          `No avatarId in config. Try: astrale space create <name> && astrale init`,
           'error',
         )
         setStatus('error')
         kernelClient.disconnect()
         return
       }
-      const avatarId = avatarMapping.avatarId
       log(`Using avatar ${avatarId}`, 'debug')
 
-      const ctx = { avatarId, appId: APPMGR_APP_ID }
-      const loadResult = (await kernelClient.callSystem(
+      const loadResult = (await kernelClient.call(
         'appmgr.load',
         { appId: config.appId },
-        ctx,
       )) as AppManifest
 
       kernelClient.disconnect()

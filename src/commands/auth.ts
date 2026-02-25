@@ -13,7 +13,7 @@ import {
 import {
   pollForTokens,
   requestDeviceAuthorization,
-  type WorkOSAuthResult,
+  type WorkOSAuthenticated,
 } from '../lib/workos-auth'
 
 function openBrowser(url: string): void {
@@ -26,7 +26,7 @@ function hyperlink(text: string, url: string): string {
   return `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`
 }
 
-async function interactiveLogin(profileName: string): Promise<WorkOSAuthResult> {
+async function interactiveLogin(profileName: string): Promise<WorkOSAuthenticated> {
   const deviceAuth = await requestDeviceAuthorization()
   const urlLink = hyperlink(
     chalk.white(deviceAuth.verification_uri_complete),

@@ -1,4 +1,4 @@
-import type { SpaceId } from '@astrale-os/kernel-core'
+import type { AvatarId, SpaceId } from '@astrale-os/kernel-core'
 import { Entry } from '@napi-rs/keyring'
 import { mkdir, readFile, unlink, writeFile } from 'fs/promises'
 import os from 'os'
@@ -11,6 +11,7 @@ export interface ProfileConfig {
   kernelRpcUrl: string
   datastoreUrl: string
   activeSpaceId?: SpaceId
+  activeAvatarId?: AvatarId
 }
 
 export interface GlobalConfig {
@@ -209,6 +210,7 @@ export interface ResolvedConfig {
   userId: string
   displayName: string
   activeSpaceId?: SpaceId
+  activeAvatarId?: AvatarId
   accessToken: string
 }
 
@@ -233,17 +235,26 @@ export async function resolveConfig(profileOverride?: string): Promise<ResolvedC
     userId: auth.userId,
     displayName: auth.displayName,
     activeSpaceId: profile.activeSpaceId,
+    activeAvatarId: profile.activeAvatarId,
     accessToken,
   }
 }
 
-export async function setActiveSpaceId(profileName: string, spaceId: SpaceId): Promise<void> {
+export async function setActiveSpaceId(
+  profileName: string,
+  spaceId: SpaceId,
+  avatarId?: AvatarId,
+): Promise<void> {
   const config = await loadGlobalConfig()
   const profile = config.profiles[profileName]
   if (!profile) {
     throw new Error(`Profile "${profileName}" does not exist.`)
   }
-  config.profiles[profileName] = { ...profile, activeSpaceId: spaceId }
+  config.profiles[profileName] = {
+    ...profile,
+    activeSpaceId: spaceId,
+    ...(avatarId ? { activeAvatarId: avatarId } : {}),
+  }
   await saveGlobalConfig(config)
 }
 

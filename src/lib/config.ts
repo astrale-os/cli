@@ -1,4 +1,4 @@
-import type { ApplicationId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
+import type { ApplicationId, AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import path from 'path'
 import { resolveConfig, type ResolvedConfig } from './global-config'
@@ -16,6 +16,7 @@ export interface AstraleConfig {
   remoteAppdata?: { avatar: ModuleId; space: ModuleId; global: ModuleId }
   endpoints?: { containerId: ModuleId; workerContainerId: ModuleId; backendContainerId: ModuleId }
   spaceId?: SpaceId
+  avatarId?: AvatarId
   privateKey?: string
 }
 

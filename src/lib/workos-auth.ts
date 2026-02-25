@@ -36,7 +36,7 @@ export interface TokenResponse {
   authentication_method: string
 }
 
-export interface WorkOSAuthResult {
+export interface WorkOSAuthenticated {
   userId: string
   accessToken: string
   refreshToken: string

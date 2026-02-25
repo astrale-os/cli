@@ -1,4 +1,4 @@
-import type { ApplicationId, AvatarId } from '@astrale-os/kernel-core'
+import type { ApplicationId } from '@astrale-os/kernel-core'
 import type { SerializedApp } from '@astrale-os/sdk-app'
 import { Command } from 'commander'
 import esbuild from 'esbuild'
@@ -52,19 +52,15 @@ export async function runBuild(options: BuildOptions): Promise<void> {
   if (options.sourcemap) console.log(`  Sourcemap: yes`)
   if (shouldDeploy && ctx.config && ctx.app) {
     console.log(`\n[astrale] Deploying to kernel...`)
+    if (!ctx.config.spaceId) throw new Error('No spaceId in config. Re-run: astrale init')
+    if (!ctx.config.avatarId) throw new Error('No avatarId in config. Re-run: astrale init')
     const client = new KernelClient({
       kernelWsUrl: ctx.config.kernelWsUrl,
       datastoreUrl: ctx.config.datastoreUrl,
       accessToken: ctx.config.accessToken,
+      avatarId: ctx.config.avatarId,
     })
     await client.connect()
-    const sessionInfo = client.getSessionInfo()
-    if (!sessionInfo) throw new Error('Failed to get session info')
-    const spaceId = ctx.config.spaceId
-    if (!spaceId) throw new Error('No spaceId in config. Re-run: astrale init')
-    const mapping = sessionInfo.avatarsAndSpaces.find((m) => m.spaceId === spaceId)
-    if (!mapping) throw new Error(`Space ${spaceId} not found for this user`)
-    client.setAvatarId(mapping.avatarId as AvatarId)
     try {
       const { schema, workerUrl, uiUrl } = prepareDeploymentConfig(
         ctx.app.serialized,

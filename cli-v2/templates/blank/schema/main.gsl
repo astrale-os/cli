@@ -1,0 +1,14 @@
+-- {{APP_NAME}} Schema
+
+extend "kernel.gsl" { Identity }
+
+interface Timestamped {
+  createdAt: Timestamp = now(),
+  updatedAt: Timestamp?
+}
+
+class Item: Timestamped {
+  name: String,
+
+  fn displayName(): String,
+}

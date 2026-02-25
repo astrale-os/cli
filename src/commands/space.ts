@@ -1,4 +1,4 @@
-import type { SpaceId } from '@astrale-os/kernel-core'
+import type { AvatarId, SpaceId } from '@astrale-os/kernel-core'
 import chalk from 'chalk'
 import { Command } from 'commander'
 import { withKernelClient } from '../lib/cli-utils'
@@ -47,8 +47,10 @@ async function runCreate(name: string, profileName?: string): Promise<void> {
     console.log(chalk.dim(`\n[astrale] Creating space "${name}"...`))
     const result = await client.createSpace(name)
     console.log(chalk.green(`✓ Space created: ${result.spaceId}`))
+    let avatarId: AvatarId | undefined
     try {
       const avatar = await client.createAvatar(result.spaceId, config.displayName, true)
+      avatarId = avatar.avatarId
       console.log(chalk.green(`✓ Avatar created: ${avatar.avatarId}`))
     } catch (avatarErr) {
       console.log(
@@ -60,7 +62,7 @@ async function runCreate(name: string, profileName?: string): Promise<void> {
         chalk.dim(`  You may need to create an avatar manually for space: ${result.spaceId}`),
       )
     }
-    await setActiveSpaceId(config.profile, result.spaceId)
+    await setActiveSpaceId(config.profile, result.spaceId, avatarId)
     console.log(chalk.dim(`  Auto-selected as active space\n`))
   })
 }

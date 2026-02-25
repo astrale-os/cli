@@ -33,13 +33,10 @@ export async function withKernelClient<T>(
     let avatarId: AvatarId | undefined
     let spaceId: SpaceId | undefined
     if (options.requireAvatar) {
-      const sessionInfo = client.getSessionInfo()
-      if (!sessionInfo) throw new Error('Failed to get session info from kernel')
       spaceId = config.activeSpaceId
       if (!spaceId) throw new Error('No space selected. Run: astrale space select <id>')
-      const mapping = sessionInfo.avatarsAndSpaces.find((m) => m.spaceId === spaceId)
-      if (!mapping) throw new Error(`Space ${spaceId} not found for this user`)
-      avatarId = mapping.avatarId as AvatarId
+      avatarId = config.activeAvatarId
+      if (!avatarId) throw new Error('No avatar configured. Run: astrale space create <name>')
       client.setAvatarId(avatarId)
     }
     return await fn({ client, config, avatarId, spaceId })

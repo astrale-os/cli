@@ -5,7 +5,7 @@ import { existsSync } from 'fs'
 import { createInterface } from 'readline'
 import { type AstraleConfig, getConfigPath, saveConfig } from '../lib/config'
 import { generateAppKeyPair } from '../lib/crypto'
-import { resolveConfig, setActiveSpaceId } from '../lib/global-config'
+import { resolveConfig } from '../lib/global-config'
 import { KernelClient } from '../lib/kernel'
 
 async function promptConfirm(message: string): Promise<boolean> {
@@ -25,36 +25,17 @@ export type InitOptions = {
   parentId?: ModuleId
 }
 
-function resolveAvatarFromSession(
-  sessionInfo: { avatarsAndSpaces: Array<{ avatarId: string; spaceId: string }> },
+function resolveActiveIdentity(
   activeSpaceId: SpaceId | undefined,
-): { avatarId: AvatarId; spaceId: SpaceId; autoSelected: boolean } {
-  const { avatarsAndSpaces } = sessionInfo
-  if (avatarsAndSpaces.length === 0) {
-    throw new Error('No spaces available. Create one first with: astrale space create <name>')
+  activeAvatarId: AvatarId | undefined,
+): { avatarId: AvatarId; spaceId: SpaceId } {
+  if (!activeSpaceId) {
+    throw new Error('No space selected. Run: astrale space create <name>')
   }
-  if (activeSpaceId) {
-    const mapping = avatarsAndSpaces.find((m) => m.spaceId === activeSpaceId)
-    if (mapping) {
-      return {
-        avatarId: mapping.avatarId as AvatarId,
-        spaceId: mapping.spaceId as SpaceId,
-        autoSelected: false,
-      }
-    }
+  if (!activeAvatarId) {
+    throw new Error('No avatar configured for active space. Run: astrale space create <name>')
   }
-  if (avatarsAndSpaces.length === 1) {
-    const only = avatarsAndSpaces[0]!
-    return {
-      avatarId: only.avatarId as AvatarId,
-      spaceId: only.spaceId as SpaceId,
-      autoSelected: true,
-    }
-  }
-  const spaceList = avatarsAndSpaces.map((m) => m.spaceId).join(', ')
-  throw new Error(
-    `Multiple spaces available but none selected. Run: astrale space select <id>\nAvailable: ${spaceList}`,
-  )
+  return { avatarId: activeAvatarId, spaceId: activeSpaceId }
 }
 
 export async function runInit(options: InitOptions): Promise<void> {
@@ -86,18 +67,10 @@ export async function runInit(options: InitOptions): Promise<void> {
   })
   await client.connect()
   try {
-    const sessionInfo = client.getSessionInfo()
-    if (!sessionInfo) {
-      throw new Error('Failed to get session info from kernel')
-    }
-    const { avatarId, spaceId, autoSelected } = resolveAvatarFromSession(
-      sessionInfo,
+    const { avatarId, spaceId } = resolveActiveIdentity(
       resolved.activeSpaceId,
+      resolved.activeAvatarId,
     )
-    if (autoSelected) {
-      await setActiveSpaceId(resolved.profile, spaceId)
-      console.log(`  Auto-selected space: ${spaceId}`)
-    }
     console.log(`  Space: ${spaceId}`)
     console.log(`  Avatar: ${avatarId}`)
     client.setAvatarId(avatarId)
@@ -112,6 +85,7 @@ export async function runInit(options: InitOptions): Promise<void> {
       appId: result.appId,
       profile: resolved.profile,
       spaceId,
+      avatarId,
       typesContainerId: result.typesContainerId,
       workerBundleId: result.workerBundleId,
       uiBundleId: result.uiBundleId,

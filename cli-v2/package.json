@@ -1,0 +1,33 @@
+{
+  "name": "@astrale-os/kernel-cli",
+  "version": "0.1.0",
+  "description": "Astrale CLI — scaffold, develop, and deploy kernel distributions",
+  "type": "module",
+  "bin": {
+    "astrale": "./bin/astrale.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@astrale-os/kernel-playground": "workspace:*",
+    "@astrale-os/kernel-runtime": "workspace:*",
+    "@astrale-os/kernel-server": "workspace:*",
+    "@astrale-os/kernel-toolkit": "workspace:*",
+    "@astrale/typegraph-adapter-falkordb": "workspace:*",
+    "@astrale/typegraph-codegen": "workspace:*",
+    "chalk": "^5.6.2",
+    "commander": "^13.0.0",
+    "hono": "^4.6.20"
+  },
+  "devDependencies": {
+    "@astrale/typescript-config": "jsr:@astrale/typescript-config@^1.0.0",
+    "@types/bun": "^1.2.0",
+    "@types/node": "^22.0.0"
+  }
+}

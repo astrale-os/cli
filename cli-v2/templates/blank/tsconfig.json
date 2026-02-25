@@ -1,0 +1,9 @@
+{
+  "extends": "@astrale/typescript-config/library",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": ["."],
+  "exclude": ["node_modules"]
+}

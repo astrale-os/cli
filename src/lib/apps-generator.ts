@@ -9,7 +9,7 @@ import { execSync } from 'node:child_process'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import type { AppDiscoverResult, SerializedEndpointWithSchema } from '@astrale-os/kernel-api/system'
+import type { AppDiscoverResult, SerializedEndpointWithSchema } from '@astrale-os/kernel-api/namespaces'
 
 import type { KernelClient } from './kernel'
 
