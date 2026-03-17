@@ -1,8 +1,4 @@
-import type { GraphDbPreset } from '@astrale-os/kernel-toolkit/presets'
-
 export interface AstraleConfig {
-  /** Graph DB preset. Default: 'falkordb' */
-  preset?: GraphDbPreset
   /** Graph name in the database. Default: directory name */
   graphName?: string
   /** FalkorDB host. Default: 'localhost' */

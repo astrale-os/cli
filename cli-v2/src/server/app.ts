@@ -1,15 +1,14 @@
 import { Hono } from 'hono'
 import { join } from 'node:path'
 
-import type { Kernel } from '@astrale-os/kernel-api'
-import type { GraphAdapter } from '@astrale/typegraph-client'
+import type { KernelRuntime, GraphAdapter } from '@astrale-os/kernel-runtime'
 import { createWsRoute, websocket } from '@astrale-os/kernel-server/hono/ws'
 import { queryGraphState } from '@astrale-os/kernel-toolkit/telemetry'
 
 import { resolvePlaygroundDir, MIME_TYPES } from './playground'
 
 export interface DevServerOptions {
-  kernel: Kernel
+  kernel: KernelRuntime
   graphAdapter: GraphAdapter
   distribution: { name: string; version?: string; schema: unknown }
   operationCount: number
@@ -44,10 +43,7 @@ export function startDevServer(options: DevServerOptions, port: number): DevServ
       const state = await queryGraphState(graphAdapter)
       return c.json(state)
     } catch (e) {
-      return c.json(
-        { error: e instanceof Error ? e.message : 'Failed to query graph state' },
-        500,
-      )
+      return c.json({ error: e instanceof Error ? e.message : 'Failed to query graph state' }, 500)
     }
   })
   app.get('/ws', createWsRoute(kernel))
@@ -65,7 +61,9 @@ export function startDevServer(options: DevServerOptions, port: number): DevServ
       viteAvailable = false
     }
     // Re-check every 10s so it picks up Vite starting/stopping
-    setTimeout(() => { viteAvailable = null }, 10_000)
+    setTimeout(() => {
+      viteAvailable = null
+    }, 10_000)
     return viteAvailable
   }
 
