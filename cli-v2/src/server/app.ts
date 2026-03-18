@@ -11,7 +11,7 @@ export interface DevServerOptions {
   kernel: KernelRuntime
   graphAdapter: GraphAdapter
   distribution: { name: string; version?: string; schema: unknown }
-  operationCount: number
+  refsCount: number
 }
 
 export interface DevServerHandle {
@@ -24,7 +24,7 @@ export interface DevServerHandle {
  * playground routes. Returns a server handle.
  */
 export function startDevServer(options: DevServerOptions, port: number): DevServerHandle {
-  const { kernel, graphAdapter, distribution, operationCount } = options
+  const { kernel, graphAdapter, distribution, refsCount } = options
 
   const playgroundDir = resolvePlaygroundDir()
   const app = new Hono()
@@ -35,7 +35,7 @@ export function startDevServer(options: DevServerOptions, port: number): DevServ
     c.json({
       name: distribution.name,
       version: distribution.version ?? '0.0.0',
-      operations: operationCount,
+      refs: refsCount,
     }),
   )
   app.get('/api/graph-state', async (c) => {

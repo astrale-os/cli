@@ -32,7 +32,7 @@ async function runDev(opts: DevOptions): Promise<void> {
       kernel: session.kernel,
       graphAdapter: session.graphAdapter,
       distribution: dist.config,
-      operationCount: session.operationCount,
+      refsCount: session.refsCount,
     },
     wsPort,
   )

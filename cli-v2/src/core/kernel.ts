@@ -8,7 +8,7 @@ import type { ResolvedConfig } from '../lib/config'
 export interface DevKernelSession {
   kernel: KernelRuntime
   graphAdapter: GraphAdapter
-  operationCount: number
+  refsCount: number
   shutdown: () => Promise<void>
 }
 
@@ -48,7 +48,7 @@ export async function bootDevKernel(options: BootDevKernelOptions): Promise<DevK
   return {
     kernel: session.runtime,
     graphAdapter: session.adapter,
-    operationCount: 0,
+    refsCount: 0,
     shutdown: () => session.close(),
   }
 }
