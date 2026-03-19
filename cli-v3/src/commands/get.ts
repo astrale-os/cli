@@ -1,17 +1,13 @@
-import chalk from 'chalk'
 import { KernelWSClient } from '@astrale-os/kernel-client-ws'
 import { readConfig } from '../lib/config'
 import { signAs } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
 import { log, spinner } from '../lib/log'
 import { getDefault, getIdentity } from '../lib/identity'
-import { formatElapsed } from '../lib/format'
 import { output } from '../lib/output'
 import { resolveWsUrl } from '../lib/target'
 
-const QUERY_METHOD = '/kernel.astrale.ai/Root/query'
-
-type QueryOptions = {
+type GetOptions = {
   raw?: boolean
   json?: boolean
   remote?: string
@@ -20,7 +16,7 @@ type QueryOptions = {
   as?: string
 }
 
-export async function queryCommand(cypher: string, opts: QueryOptions): Promise<void> {
+export async function getCommand(path: string, opts: GetOptions): Promise<void> {
   const isTTY = process.stdout.isTTY ?? false
   const isRaw = opts.raw || opts.json || !isTTY
 
@@ -44,33 +40,29 @@ export async function queryCommand(cypher: string, opts: QueryOptions): Promise<
     requestTimeout: parseInt(opts.timeout ?? '30000', 10),
   })
 
-  const spin = !isRaw ? spinner('Running query...') : null
-  const startTime = performance.now()
+  const spin = !isRaw ? spinner(`Getting ${path}...`) : null
+  // target:method notation — kernel resolves node class and finds get()
+  const targetPath = path.startsWith('@') ? path : path
+  const method = `${targetPath}:get`
 
   try {
     await client.connect()
-    const result = await client.call(QUERY_METHOD, { cypher }, credential)
-    const elapsed = performance.now() - startTime
-
+    const result = await client.call(method, {}, credential)
     await client.close()
 
-    spin?.succeed(`Query completed in ${chalk.dim(formatElapsed(elapsed))}`)
+    spin?.succeed(`Node ${path}`)
     if (!isRaw) console.log('')
     output(result, opts)
     process.exit(0)
   } catch (error) {
     await client.close().catch(() => {})
-
-    if (!isRaw && spin) spin.fail('Query failed')
-
+    if (!isRaw && spin) spin.fail('Failed')
     if (error instanceof Error) {
       if (isRaw) {
         process.stderr.write(JSON.stringify({ error: error.name, message: error.message }) + '\n')
       } else {
         log.error(error.message)
       }
-    } else {
-      log.error(String(error))
     }
     process.exit(1)
   }

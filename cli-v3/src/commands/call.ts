@@ -5,7 +5,8 @@ import { signAs } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
 import { log, spinner } from '../lib/log'
 import { getDefault, getIdentity } from '../lib/identity'
-import { highlightJson, formatElapsed } from '../lib/format'
+import { formatElapsed } from '../lib/format'
+import { output } from '../lib/output'
 import { resolveWsUrl } from '../lib/target'
 
 type CallOptions = {
@@ -67,13 +68,9 @@ export async function callCommand(
 
     await client.close()
 
-    if (isRaw) {
-      process.stdout.write(JSON.stringify(result, null, 2) + '\n')
-    } else {
-      spin?.succeed(`${method} ${chalk.dim(`completed in ${formatElapsed(elapsed)}`)}`)
-      console.log('')
-      console.log(highlightJson(JSON.stringify(result, null, 2)))
-    }
+    spin?.succeed(`${method} ${chalk.dim(`completed in ${formatElapsed(elapsed)}`)}`)
+    if (!isRaw) console.log('')
+    output(result, opts)
     process.exit(0)
   } catch (error) {
     await client.close().catch(() => {})

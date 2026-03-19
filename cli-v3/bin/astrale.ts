@@ -66,6 +66,7 @@ program
   .argument('<method>', 'Full operation path (e.g., /manager.astrale.ai/KernelInstance/list)')
   .argument('[params...]', 'Params as key=value pairs')
   .option('-d, --data <json>', 'Params as JSON string')
+  .option('--format <type>', 'Output format: yaml (default) or json')
   .option('--raw', 'Output raw JSON (no colors)')
   .option('--json', 'Alias for --raw')
   .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
@@ -78,6 +79,38 @@ program
   })
 
 program
+  .command('get')
+  .description('Get a node by path or ID')
+  .argument('<path>', 'Node path (/domain/Class) or ID (@nodeId)')
+  .option('--format <type>', 'Output format: yaml (default) or json')
+  .option('--raw', 'Output raw JSON')
+  .option('--json', 'Alias for --raw')
+  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
+  .option('-i, --instance <id>', 'Target a local kernel instance')
+  .option('--timeout <ms>', 'Request timeout in ms', '30000')
+  .option('--as <identity>', 'Call as a specific identity')
+  .action(async (path, opts) => {
+    const { getCommand } = await import('../src/commands/get')
+    await getCommand(path, opts)
+  })
+
+program
+  .command('ls')
+  .description('List children of a node')
+  .argument('<path>', 'Node path (/domain/Class) or ID (@nodeId)')
+  .option('--format <type>', 'Output format: yaml (default) or json')
+  .option('--raw', 'Output raw JSON')
+  .option('--json', 'Alias for --raw')
+  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
+  .option('-i, --instance <id>', 'Target a local kernel instance')
+  .option('--timeout <ms>', 'Request timeout in ms', '30000')
+  .option('--as <identity>', 'Call as a specific identity')
+  .action(async (path, opts) => {
+    const { lsCommand } = await import('../src/commands/ls')
+    await lsCommand(path, opts)
+  })
+
+program
   .command('logs')
   .description('View kernel event journal')
   .option('-t, --tail', 'Live stream new events')
@@ -86,6 +119,7 @@ program
   .option('--since <time>', 'Show events since (e.g., 5m, 1h, ISO timestamp)')
   .option('--principal <name>', 'Filter by identity')
   .option('--trace <id>', 'Filter by trace/operation ID')
+  .option('--timing', 'Show per-step timing breakdown')
   .option('--raw', 'Output raw NDJSON')
   .option('--json', 'Alias for --raw')
   .action(async (opts) => {
@@ -97,6 +131,7 @@ program
   .command('query')
   .description('Run a read-only Cypher query against the kernel graph')
   .argument('<cypher>', 'Cypher query string')
+  .option('--format <type>', 'Output format: yaml (default) or json')
   .option('--raw', 'Output raw JSON (no colors)')
   .option('--json', 'Alias for --raw')
   .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
