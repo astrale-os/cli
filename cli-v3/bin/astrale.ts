@@ -34,11 +34,30 @@ program
   })
 
 program
+  .command('restart')
+  .description('Restart the Astrale manager')
+  .option('--foreground', 'Run in foreground (used by daemon)')
+  .action(async (opts) => {
+    const { restartCommand } = await import('../src/commands/restart')
+    await restartCommand(opts)
+  })
+
+program
   .command('status')
   .description('Show the status of the Astrale manager')
   .action(async () => {
     const { statusCommand } = await import('../src/commands/status')
     await statusCommand()
+  })
+
+program
+  .command('reset')
+  .description('Clear and reboot a kernel instance (wipes all graph data)')
+  .option('-i, --instance <id>', 'Target instance (defaults to first)')
+  .option('-y, --yes', 'Skip confirmation prompt')
+  .action(async (opts) => {
+    const { resetCommand } = await import('../src/commands/reset')
+    await resetCommand(opts)
   })
 
 program
@@ -61,7 +80,7 @@ program
 program
   .command('logs')
   .description('View kernel event journal')
-  .option('-f, --follow', 'Live stream new events')
+  .option('-t, --tail', 'Live stream new events')
   .option('-n <count>', 'Number of entries to show', '20')
   .option('--topic <pattern>', 'Filter by topic glob (e.g., op:*:failed)')
   .option('--since <time>', 'Show events since (e.g., 5m, 1h, ISO timestamp)')

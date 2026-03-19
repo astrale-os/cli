@@ -22,7 +22,7 @@ type JournalEntry = {
 }
 
 type LogsOptions = {
-  follow?: boolean
+  tail?: boolean
   n?: string
   topic?: string
   since?: string
@@ -46,10 +46,20 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
 
   const sinceMs = opts.since ? parseSince(opts.since) : undefined
 
-  if (opts.follow) {
-    await followMode(isRaw, { topic: opts.topic, since: sinceMs, principal: opts.principal, trace: opts.trace })
+  if (opts.tail) {
+    await tailStreamMode(isRaw, {
+      topic: opts.topic,
+      since: sinceMs,
+      principal: opts.principal,
+      trace: opts.trace,
+    })
   } else {
-    await tailMode(limit, isRaw, { topic: opts.topic, since: sinceMs, principal: opts.principal, trace: opts.trace })
+    await tailMode(limit, isRaw, {
+      topic: opts.topic,
+      since: sinceMs,
+      principal: opts.principal,
+      trace: opts.trace,
+    })
   }
 }
 
@@ -76,9 +86,9 @@ async function tailMode(limit: number, isRaw: boolean, filter: Filter): Promise<
   }
 }
 
-// ── Follow mode (live stream) ───────────────────────────────
+// ── Tail stream mode (live stream) ──────────────────────────
 
-async function followMode(isRaw: boolean, filter: Filter): Promise<void> {
+async function tailStreamMode(isRaw: boolean, filter: Filter): Promise<void> {
   // First print recent entries
   const recent: JournalEntry[] = []
   for await (const entry of scanFile()) {
@@ -92,18 +102,21 @@ async function followMode(isRaw: boolean, filter: Filter): Promise<void> {
 
   let lastSeq = recent.length > 0 ? recent[recent.length - 1].seq : 0
 
-  // Watch for new entries
-  const watcher = watch(JOURNAL_PATH)
-  process.on('SIGINT', () => { watcher.close(); process.exit(0) })
-
-  for await (const _event of watcher) {
-    for await (const entry of scanFile()) {
-      if (entry.seq <= lastSeq) continue
-      lastSeq = entry.seq
-      if (!matchesFilter(entry, filter)) continue
-      printEntry(entry, isRaw)
-    }
-  }
+  // Watch for new entries using callback-based API (async iteration not supported in Bun)
+  return new Promise((_resolve, _reject) => {
+    const watcher = watch(JOURNAL_PATH, async () => {
+      for await (const entry of scanFile()) {
+        if (entry.seq <= lastSeq) continue
+        lastSeq = entry.seq
+        if (!matchesFilter(entry, filter)) continue
+        printEntry(entry, isRaw)
+      }
+    })
+    process.on('SIGINT', () => {
+      watcher.close()
+      process.exit(0)
+    })
+  })
 }
 
 // ── File scanner ────────────────────────────────────────────
@@ -116,9 +129,13 @@ async function* scanFile(): AsyncIterable<JournalEntry> {
       if (!line.trim()) continue
       try {
         yield JSON.parse(line) as JournalEntry
-      } catch { /* skip malformed */ }
+      } catch {
+        /* skip malformed */
+      }
     }
-  } catch { /* file doesn't exist */ }
+  } catch {
+    /* file doesn't exist */
+  }
 }
 
 // ── Filtering ───────────────────────────────────────────────
