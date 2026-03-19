@@ -71,9 +71,7 @@ program
     await queryCommand(cypher, opts)
   })
 
-const identity = program
-  .command('identity')
-  .description('Manage CLI identities')
+const identity = program.command('identity').description('Manage CLI identities')
 
 identity
   .command('create')

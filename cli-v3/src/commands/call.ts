@@ -39,9 +39,7 @@ export async function callCommand(
 
   let credential: string
   try {
-    const identity = opts.as
-      ? await getIdentity(opts.as)
-      : await getDefault()
+    const identity = opts.as ? await getIdentity(opts.as) : await getDefault()
     credential = await signAs(identity.subject, KEYS_DIR, { issuer: config.issuer })
   } catch (e) {
     log.error(e instanceof Error ? e.message : 'No auth keys found. Run `astrale init` first.')
@@ -144,7 +142,11 @@ function parseKeyValue(pairs: string[]): Record<string, unknown> {
 
 function coerceValue(raw: string): unknown {
   if ((raw.startsWith('{') && raw.endsWith('}')) || (raw.startsWith('[') && raw.endsWith(']'))) {
-    try { return JSON.parse(raw) } catch { /* fall through */ }
+    try {
+      return JSON.parse(raw)
+    } catch {
+      /* fall through */
+    }
   }
   if (raw === 'true') return true
   if (raw === 'false') return false
@@ -169,7 +171,9 @@ function formatError(error: unknown, isRaw: boolean, wsUrl: string): void {
 
   if (name === 'ConnectionError') {
     if (isRaw) {
-      process.stderr.write(JSON.stringify({ error: 'CONNECTION_ERROR', message: error.message }) + '\n')
+      process.stderr.write(
+        JSON.stringify({ error: 'CONNECTION_ERROR', message: error.message }) + '\n',
+      )
     } else {
       log.error(`Could not connect to ${chalk.bold(wsUrl)}`)
       log.dim('  Is the kernel running? Try: astrale status')
@@ -189,9 +193,13 @@ function formatError(error: unknown, isRaw: boolean, wsUrl: string): void {
   }
 
   if (name === 'ValidationError') {
-    const errors = (error as { errors?: Array<{ path: string[]; code: string; message: string }> }).errors ?? []
+    const errors =
+      (error as { errors?: Array<{ path: string[]; code: string; message: string }> }).errors ?? []
     if (isRaw) {
-      process.stderr.write(JSON.stringify({ error: 'VALIDATION_ERROR', message: error.message, details: errors }) + '\n')
+      process.stderr.write(
+        JSON.stringify({ error: 'VALIDATION_ERROR', message: error.message, details: errors }) +
+          '\n',
+      )
     } else {
       log.error('Validation Error')
       for (const e of errors) {
@@ -202,9 +210,14 @@ function formatError(error: unknown, isRaw: boolean, wsUrl: string): void {
   }
 
   if (name === 'InvariantViolationError') {
-    const errors = (error as { errors?: Array<{ code: string; message: string; context?: unknown }> }).errors ?? []
+    const errors =
+      (error as { errors?: Array<{ code: string; message: string; context?: unknown }> }).errors ??
+      []
     if (isRaw) {
-      process.stderr.write(JSON.stringify({ error: 'INVARIANT_VIOLATION', message: error.message, details: errors }) + '\n')
+      process.stderr.write(
+        JSON.stringify({ error: 'INVARIANT_VIOLATION', message: error.message, details: errors }) +
+          '\n',
+      )
     } else {
       log.error('Invariant Violation')
       for (const e of errors) {

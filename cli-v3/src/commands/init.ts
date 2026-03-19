@@ -31,9 +31,9 @@ export async function initCommand(): Promise<void> {
   // ── Interactive prompts ────────────────────────────────────
 
   const rl = createInterface({ input: stdin, output: stdout })
-  const managerPort = parseInt(await rl.question('Manager port [4400]: ') || '4400', 10)
-  const uiPort = parseInt(await rl.question('UI port [4300]: ') || '4300', 10)
-  const falkorPort = parseInt(await rl.question('FalkorDB port [6379]: ') || '6379', 10)
+  const managerPort = parseInt((await rl.question('Manager port [4400]: ')) || '4400', 10)
+  const uiPort = parseInt((await rl.question('UI port [4300]: ')) || '4300', 10)
+  const falkorPort = parseInt((await rl.question('FalkorDB port [6379]: ')) || '6379', 10)
   const graphName = (await rl.question('Graph name [astrale-manager]: ')) || 'astrale-manager'
   rl.close()
 

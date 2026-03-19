@@ -34,9 +34,7 @@ export async function identityListCommand(): Promise<void> {
     const identity = store.identities[name]
     const isDefault = name === store.default
     const marker = isDefault ? chalk.green(' *') : ''
-    const subject = identity.subject !== name
-      ? chalk.dim(` (subject: ${identity.subject})`)
-      : ''
+    const subject = identity.subject !== name ? chalk.dim(` (subject: ${identity.subject})`) : ''
     console.log(`  ${chalk.bold(name)}${subject}${marker}`)
   }
 }

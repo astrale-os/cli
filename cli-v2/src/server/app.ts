@@ -60,8 +60,6 @@ export function startDevServer(options: DevServerOptions, port: number): DevServ
       return c.json({
         domainId: String(result.domainId),
         refsMapping: result.refsMapping,
-        nodesCreated: result.pushResult.nodesCreated,
-        nodesDeleted: result.pushResult.nodesDeleted,
       })
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : 'Failed to install domain' }, 500)

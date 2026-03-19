@@ -32,7 +32,10 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
     startUI(config)
     log.info(`Playground UI on http://localhost:${config.uiPort}`)
 
-    const cleanup = () => { stopUI(); process.exit(0) }
+    const cleanup = () => {
+      stopUI()
+      process.exit(0)
+    }
     process.on('SIGINT', cleanup)
     process.on('SIGTERM', cleanup)
   } else {
@@ -43,21 +46,18 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
     const managerErr = openSync(join(LOGS_DIR, 'manager.stderr.log'), 'a')
 
     // Spawn manager as detached process using the same entry point
-    const managerProc = Bun.spawn(
-      ['bun', 'run', process.argv[1], 'start', '--foreground'],
-      {
-        stdout: managerOut,
-        stderr: managerErr,
-        env: { ...process.env },
-      },
-    )
+    const managerProc = Bun.spawn(['bun', 'run', process.argv[1], 'start', '--foreground'], {
+      stdout: managerOut,
+      stderr: managerErr,
+      env: { ...process.env },
+    })
 
     // Unref so parent can exit — Bun.spawn doesn't have unref/detach,
     // so we write PID and let the process run
     await writeFile(MANAGER_PID_PATH, String(managerProc.pid))
 
     // Give it a moment to boot
-    await new Promise(r => setTimeout(r, 2000))
+    await new Promise((r) => setTimeout(r, 2000))
 
     // Check it's still alive
     try {

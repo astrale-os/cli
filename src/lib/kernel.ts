@@ -133,10 +133,10 @@ export class KernelClient {
     username: string,
     isFirstAvatar: boolean,
   ): Promise<{ avatarId: AvatarId; spaceId: SpaceId }> {
-    return this.ws.call(
-      'avatars.create',
-      { spaceId, username, isFirstAvatar },
-    ) as Promise<{ avatarId: AvatarId; spaceId: SpaceId }>
+    return this.ws.call('avatars.create', { spaceId, username, isFirstAvatar }) as Promise<{
+      avatarId: AvatarId
+      spaceId: SpaceId
+    }>
   }
 
   async createApp(

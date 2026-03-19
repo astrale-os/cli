@@ -17,10 +17,7 @@ async function isManagerRunning(): Promise<{ running: boolean; pid?: number }> {
 export async function statusCommand(): Promise<void> {
   const config = await readConfig()
 
-  const [manager, falkorUp] = await Promise.all([
-    isManagerRunning(),
-    isFalkorRunning(COMPOSE_PATH),
-  ])
+  const [manager, falkorUp] = await Promise.all([isManagerRunning(), isFalkorRunning(COMPOSE_PATH)])
 
   console.log('')
   log.info('Astrale Status\n')

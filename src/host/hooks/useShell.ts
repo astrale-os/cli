@@ -165,20 +165,16 @@ export function useShell(config: AppConfig | null, logs: UseLogsResult): UseShel
 
       const avatarId = config.avatarId
       if (!avatarId) {
-        log(
-          `No avatarId in config. Try: astrale space create <name> && astrale init`,
-          'error',
-        )
+        log(`No avatarId in config. Try: astrale space create <name> && astrale init`, 'error')
         setStatus('error')
         kernelClient.disconnect()
         return
       }
       log(`Using avatar ${avatarId}`, 'debug')
 
-      const loadResult = (await kernelClient.call(
-        'appmgr.load',
-        { appId: config.appId },
-      )) as AppManifest
+      const loadResult = (await kernelClient.call('appmgr.load', {
+        appId: config.appId,
+      })) as AppManifest
 
       kernelClient.disconnect()
 

@@ -12,10 +12,7 @@
     "consistent-type-imports": "warn",
     "no-console": "off",
     "prefer-const": "error",
-    "eqeqeq": [
-      "error",
-      "always"
-    ]
+    "eqeqeq": ["error", "always"]
   },
   "ignorePatterns": [
     "**/dist/**",

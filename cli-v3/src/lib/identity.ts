@@ -46,7 +46,9 @@ export async function deleteIdentity(name: string): Promise<void> {
     throw new Error(`Identity "${name}" not found`)
   }
   if (store.default === name) {
-    throw new Error(`Cannot delete the default identity "${name}". Switch default first with: astrale identity use <other>`)
+    throw new Error(
+      `Cannot delete the default identity "${name}". Switch default first with: astrale identity use <other>`,
+    )
   }
   delete store.identities[name]
   await writeIdentities(store)
@@ -65,7 +67,9 @@ export async function getDefault(): Promise<Identity & { name: string }> {
   const store = await readIdentities()
   const identity = store.identities[store.default]
   if (!identity) {
-    throw new Error(`Default identity "${store.default}" not found. Run: astrale identity create ${store.default}`)
+    throw new Error(
+      `Default identity "${store.default}" not found. Run: astrale identity create ${store.default}`,
+    )
   }
   return { ...identity, name: store.default }
 }

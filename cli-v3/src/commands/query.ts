@@ -17,10 +17,7 @@ type QueryOptions = {
   as?: string
 }
 
-export async function queryCommand(
-  cypher: string,
-  opts: QueryOptions,
-): Promise<void> {
+export async function queryCommand(cypher: string, opts: QueryOptions): Promise<void> {
   const isTTY = process.stdout.isTTY ?? false
   const isRaw = opts.raw || opts.json || !isTTY
 
@@ -29,9 +26,7 @@ export async function queryCommand(
 
   let credential: string
   try {
-    const identity = opts.as
-      ? await getIdentity(opts.as)
-      : await getDefault()
+    const identity = opts.as ? await getIdentity(opts.as) : await getDefault()
     credential = await signAs(identity.subject, KEYS_DIR, { issuer: config.issuer })
   } catch (e) {
     log.error(e instanceof Error ? e.message : 'No auth keys found. Run `astrale init` first.')
