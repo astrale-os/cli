@@ -1,0 +1,45 @@
+{
+  "$schema": "../node_modules/oxlint/configuration_schema.json",
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "no-explicit-any": "warn",
+    "consistent-type-imports": "warn",
+    "no-console": "off",
+    "prefer-const": "error",
+    "eqeqeq": [
+      "error",
+      "always"
+    ]
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/coverage/**",
+    "src/templates/**/*",
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "**/__tests__/**/*.ts",
+        "**/*.test.ts",
+        "**/*.perf.ts",
+        "**/*.bench.ts",
+        "**/*.spec.ts"
+      ],
+      "rules": {
+        "no-explicit-any": "off",
+        "no-unused-vars": "off",
+        "no-console": "off"
+      }
+    }
+  ]
+}

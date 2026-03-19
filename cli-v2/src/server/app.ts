@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { KernelRuntime, GraphAdapter } from '@astrale-os/kernel-runtime'
 import { createWsRoute, websocket } from '@astrale-os/kernel-server/hono/ws'
 import { queryGraphState } from '@astrale-os/kernel-toolkit/telemetry'
+import { SAMPLE_DOMAINS, getSampleDomain } from '@astrale-os/kernel-toolkit/sample-domains'
 
 import { resolvePlaygroundDir, MIME_TYPES } from './playground'
 
@@ -44,6 +45,26 @@ export function startDevServer(options: DevServerOptions, port: number): DevServ
       return c.json(state)
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : 'Failed to query graph state' }, 500)
+    }
+  })
+  app.get('/api/domains', (c) =>
+    c.json(SAMPLE_DOMAINS.map((d) => ({ name: d.name, description: d.description }))),
+  )
+  app.post('/api/install-domain', async (c) => {
+    try {
+      const { domain } = await c.req.json<{ domain: string }>()
+      const sample = getSampleDomain(domain)
+      if (!sample) return c.json({ error: `Unknown domain: ${domain}` }, 400)
+      const spec = sample.build()
+      const result = await kernel.graph.installDomain(spec)
+      return c.json({
+        domainId: String(result.domainId),
+        refsMapping: result.refsMapping,
+        nodesCreated: result.pushResult.nodesCreated,
+        nodesDeleted: result.pushResult.nodesDeleted,
+      })
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : 'Failed to install domain' }, 500)
     }
   })
   app.get('/ws', createWsRoute(kernel))

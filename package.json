@@ -32,8 +32,8 @@
     "build": "tsc",
     "clean": "rm -rf dist *.tsbuildinfo",
     "typecheck": "tsc --noEmit",
-    "lint": "pnpm exec eslint .",
-    "lint:fix": "pnpm exec eslint . --fix",
+    "lint": "oxlint -c oxlint.json .",
+    "lint:fix": "oxlint --fix -c oxlint.json .",
     "format": "pnpm exec prettier --write .",
     "format:check": "pnpm exec prettier --check .",
     "prepare": "husky"
@@ -78,6 +78,7 @@
     "@types/react-dom": "^19.2.1",
     "eslint": "~9.39.2",
     "eslint-config-prettier": "~10.1.8",
+    "oxlint": "latest",
     "husky": "~9.1.7",
     "lint-staged": "~16.2.7",
     "prettier": "~3.8.0",
@@ -87,7 +88,7 @@
   "prettier": "@astrale/prettier-config",
   "lint-staged": {
     "*.{js,cjs,mjs,ts,tsx}": [
-      "eslint --fix",
+      "oxlint --fix -c oxlint.json",
       "prettier --write"
     ],
     "*.{json,yml,yaml}": [
