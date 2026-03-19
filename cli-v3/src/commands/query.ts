@@ -6,13 +6,15 @@ import { KEYS_DIR } from '../lib/paths'
 import { log, spinner } from '../lib/log'
 import { getDefault, getIdentity } from '../lib/identity'
 import { highlightJson, formatElapsed } from '../lib/format'
+import { resolveWsUrl } from '../lib/target'
 
 const QUERY_METHOD = '/kernel.astrale.ai/Root/query'
 
 type QueryOptions = {
   raw?: boolean
   json?: boolean
-  kernel?: string
+  remote?: string
+  instance?: string
   timeout?: string
   as?: string
 }
@@ -22,7 +24,7 @@ export async function queryCommand(cypher: string, opts: QueryOptions): Promise<
   const isRaw = opts.raw || opts.json || !isTTY
 
   const config = await readConfig()
-  const wsUrl = opts.kernel ?? `ws://localhost:${config.managerPort}/ws`
+  const wsUrl = await resolveWsUrl(opts, config)
 
   let credential: string
   try {

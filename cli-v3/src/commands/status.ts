@@ -23,7 +23,7 @@ export async function statusCommand(): Promise<void> {
   log.info('Astrale Status\n')
 
   if (manager.running) {
-    log.success(`Manager:   running (PID ${manager.pid}) — ws://localhost:${config.managerPort}/ws`)
+    log.success(`Manager:   running (PID ${manager.pid}) — ws://localhost:${config.managerPort}/mngt/ws`)
   } else {
     log.warn('Manager:   stopped')
   }

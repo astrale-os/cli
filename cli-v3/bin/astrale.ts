@@ -49,7 +49,8 @@ program
   .option('-d, --data <json>', 'Params as JSON string')
   .option('--raw', 'Output raw JSON (no colors)')
   .option('--json', 'Alias for --raw')
-  .option('--kernel <url>', 'Override kernel WebSocket URL')
+  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
+  .option('-i, --instance <id>', 'Target a local kernel instance')
   .option('--timeout <ms>', 'Request timeout in ms', '30000')
   .option('--as <identity>', 'Call as a specific identity')
   .action(async (method, params, opts) => {
@@ -58,17 +59,81 @@ program
   })
 
 program
+  .command('logs')
+  .description('View kernel event journal')
+  .option('-f, --follow', 'Live stream new events')
+  .option('-n <count>', 'Number of entries to show', '20')
+  .option('--topic <pattern>', 'Filter by topic glob (e.g., op:*:failed)')
+  .option('--since <time>', 'Show events since (e.g., 5m, 1h, ISO timestamp)')
+  .option('--principal <name>', 'Filter by identity')
+  .option('--trace <id>', 'Filter by trace/operation ID')
+  .option('--raw', 'Output raw NDJSON')
+  .option('--json', 'Alias for --raw')
+  .action(async (opts) => {
+    const { logsCommand } = await import('../src/commands/logs')
+    await logsCommand(opts)
+  })
+
+program
   .command('query')
   .description('Run a read-only Cypher query against the kernel graph')
   .argument('<cypher>', 'Cypher query string')
   .option('--raw', 'Output raw JSON (no colors)')
   .option('--json', 'Alias for --raw')
-  .option('--kernel <url>', 'Override kernel WebSocket URL')
+  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
+  .option('-i, --instance <id>', 'Target a local kernel instance')
   .option('--timeout <ms>', 'Request timeout in ms', '30000')
   .option('--as <identity>', 'Call as a specific identity')
   .action(async (cypher, opts) => {
     const { queryCommand } = await import('../src/commands/query')
     await queryCommand(cypher, opts)
+  })
+
+const target = program.command('target').description('Manage kernel connection targets')
+
+target
+  .command('create')
+  .description('Create a named target')
+  .argument('<name>', 'Target name')
+  .option('--url <ws-url>', 'WebSocket URL')
+  .option('--instance <id>', 'Local kernel instance ID')
+  .action(async (name, opts) => {
+    const { targetCreateCommand } = await import('../src/commands/target')
+    await targetCreateCommand(name, opts)
+  })
+
+target
+  .command('list')
+  .description('List all targets')
+  .action(async () => {
+    const { targetListCommand } = await import('../src/commands/target')
+    await targetListCommand()
+  })
+
+target
+  .command('use')
+  .description('Set the default target')
+  .argument('<name>', 'Target name')
+  .action(async (name) => {
+    const { targetUseCommand } = await import('../src/commands/target')
+    await targetUseCommand(name)
+  })
+
+target
+  .command('whoami')
+  .description('Show the current default target')
+  .action(async () => {
+    const { targetWhoamiCommand } = await import('../src/commands/target')
+    await targetWhoamiCommand()
+  })
+
+target
+  .command('delete')
+  .description('Delete a target')
+  .argument('<name>', 'Target name')
+  .action(async (name) => {
+    const { targetDeleteCommand } = await import('../src/commands/target')
+    await targetDeleteCommand(name)
   })
 
 const identity = program.command('identity').description('Manage CLI identities')

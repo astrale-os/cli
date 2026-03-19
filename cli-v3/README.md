@@ -20,7 +20,9 @@ astrale stop                # Stop the manager daemon
 astrale status              # Show manager, FalkorDB, and UI status
 astrale call <method> [...] # Call a kernel operation
 astrale query <cypher>      # Run a read-only Cypher query
+astrale logs [options]      # View kernel event journal
 astrale identity <cmd>      # Manage CLI identities
+astrale target <cmd>        # Manage kernel connection targets
 ```
 
 ### `astrale call`
@@ -54,7 +56,8 @@ astrale call /manager.astrale.ai/KernelInstance/list --as alice
 |------|-------------|
 | `-d, --data <json>` | Params as JSON string |
 | `--raw` / `--json` | Plain JSON output (no colors) |
-| `--kernel <url>` | Override kernel WS URL |
+| `-r, --remote <name-or-url>` | Named target or full WS URL |
+| `-i, --instance <id>` | Target a local kernel instance |
 | `--timeout <ms>` | Request timeout (default: 30000) |
 | `--as <identity>` | Call as a specific identity |
 
@@ -78,6 +81,22 @@ astrale query "MATCH (n:Operation) RETURN n.name" --raw | jq '.[].name'
 
 Write queries (`CREATE`, `DELETE`, `SET`, `MERGE`) are rejected.
 
+### `astrale logs`
+
+View the kernel event journal. All operation and system events are persisted to `~/.astrale/logs/events.ndjson`.
+
+```bash
+astrale logs                              # Tail last 20 events
+astrale logs -n 50                        # Last 50
+astrale logs -f                           # Live stream (follow)
+astrale logs --topic "op:*:failed"        # Filter by topic glob
+astrale logs --topic "op:*:completed"     # All completions
+astrale logs --since 5m                   # Last 5 minutes
+astrale logs --principal alice            # Filter by identity
+astrale logs --trace <operationId>        # All events in a trace
+astrale logs --raw | jq                   # Pipe-friendly NDJSON
+```
+
 ### `astrale identity`
 
 Manage CLI identities. The kernel resolves identity by `(issuer, subject)` — different identities use different JWT subjects signed with the same keypair.
@@ -89,6 +108,33 @@ astrale identity create alice                # Create identity (subject = name)
 astrale identity create admin --subject sys  # Custom subject
 astrale identity use alice                   # Set default identity
 astrale identity delete bob                  # Delete identity (not the default)
+```
+
+### `astrale target`
+
+Manage kernel connection targets. By default, the CLI connects to the local manager (`/mngt/ws`). Targets let you save named connections to remote kernels or local instances.
+
+```bash
+astrale target list                                          # List all (* = default)
+astrale target whoami                                        # Show current default
+astrale target create staging --url ws://staging:4400/mngt/ws  # Named remote
+astrale target create dev --instance dev-kernel               # Named local instance
+astrale target use staging                                   # Set default target
+astrale target delete staging                                # Delete target
+```
+
+Use `-r` or `-i` on `call`/`query` to target a specific kernel:
+
+```bash
+# Named target
+astrale call /some.domain/Op/list -r staging
+
+# Full URL override
+astrale call /some.domain/Op/list -r ws://custom:4400/mngt/ws
+
+# Local instance by ID
+astrale call /some.domain/Op/list -i dev-kernel
+astrale query "MATCH (n) RETURN count(n)" -i dev-kernel
 ```
 
 ## What `init` does
@@ -119,6 +165,7 @@ astrale identity delete bob                  # Delete identity (not the default)
   data/                  # FalkorDB volume
   logs/                  # Daemon stdout/stderr
   identities.json        # CLI identities (name → subject)
+  targets.json           # Connection targets (name → url/instance)
   docker-compose.yml     # FalkorDB service
   kernels.json           # Persisted child kernel metadata
 ```

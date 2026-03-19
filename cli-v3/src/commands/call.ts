@@ -6,12 +6,14 @@ import { KEYS_DIR } from '../lib/paths'
 import { log, spinner } from '../lib/log'
 import { getDefault, getIdentity } from '../lib/identity'
 import { highlightJson, formatElapsed } from '../lib/format'
+import { resolveWsUrl } from '../lib/target'
 
 type CallOptions = {
   data?: string
   raw?: boolean
   json?: boolean
-  kernel?: string
+  remote?: string
+  instance?: string
   timeout?: string
   as?: string
 }
@@ -33,9 +35,9 @@ export async function callCommand(
     process.exit(1)
   }
 
-  // ── Load config + auth ──────────────────────────────────
+  // ── Load config + target ────────────────────────────────
   const config = await readConfig()
-  const wsUrl = opts.kernel ?? `ws://localhost:${config.managerPort}/ws`
+  const wsUrl = await resolveWsUrl(opts, config)
 
   let credential: string
   try {

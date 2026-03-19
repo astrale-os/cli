@@ -81,7 +81,7 @@ export async function initCommand(): Promise<void> {
   console.log('')
   log.success('Setup complete — starting manager + UI...\n')
   log.dim(`  UI:       http://localhost:${config.uiPort}`)
-  log.dim(`  WS:       ws://localhost:${config.managerPort}/ws`)
+  log.dim(`  WS:       ws://localhost:${config.managerPort}/mngt/ws`)
   log.dim(`  Graph:    ${config.graphName}`)
   console.log('')
 
