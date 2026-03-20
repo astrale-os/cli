@@ -7,13 +7,12 @@ import { log, spinner } from '../lib/log'
 import { getDefault, getIdentity } from '../lib/identity'
 import { formatElapsed } from '../lib/format'
 import { output } from '../lib/output'
-import { resolveWsUrl } from '../lib/target'
+import { resolveWsUrl } from '../lib/instance'
 
 type CallOptions = {
   data?: string
   raw?: boolean
   json?: boolean
-  remote?: string
   instance?: string
   timeout?: string
   as?: string

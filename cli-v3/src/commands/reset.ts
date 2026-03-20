@@ -6,6 +6,7 @@ import { KEYS_DIR } from '../lib/paths'
 import { log, spinner } from '../lib/log'
 import { getDefault } from '../lib/identity'
 import { formatElapsed } from '../lib/format'
+import { resolveInstanceId } from '../lib/instance'
 
 type ResetOptions = {
   instance?: string
@@ -82,7 +83,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
       process.exit(1)
     }
 
-    const targetId = opts.instance ?? instances[0].id
+    const targetId = (await resolveInstanceId(opts, config)) ?? instances[0].id
 
     const instance = instances.find((i) => i.id === targetId)
     if (!instance) {

@@ -2,8 +2,11 @@ import chalk from 'chalk'
 import { createReadStream, watch } from 'node:fs'
 import { access } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
-import { JOURNAL_PATH } from '../lib/paths'
+import { JOURNAL_PATH, LOGS_DIR } from '../lib/paths'
+import { join } from 'node:path'
 import { log } from '../lib/log'
+import { readConfig } from '../lib/config'
+import { resolveInstanceId } from '../lib/instance'
 
 type JournalEntry = {
   seq: number
@@ -31,6 +34,7 @@ type LogsOptions = {
   timing?: boolean
   raw?: boolean
   json?: boolean
+  instance?: string
 }
 
 type DisplayOpts = { timing?: boolean }
@@ -40,11 +44,21 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
   const limit = parseInt(opts.n ?? '20', 10)
   const display: DisplayOpts = { timing: opts.timing }
 
+  const config = await readConfig()
+  const instanceId = await resolveInstanceId(opts, config)
+  const journalPath = instanceId
+    ? join(LOGS_DIR, instanceId, 'events.ndjson')
+    : JOURNAL_PATH
+
   try {
-    await access(JOURNAL_PATH)
+    await access(journalPath)
   } catch {
-    log.error(`No journal found at ${JOURNAL_PATH}`)
-    log.dim('  Is the kernel running? Events are recorded when the manager is active.')
+    log.error(`No journal found at ${journalPath}`)
+    if (instanceId) {
+      log.dim(`  Is instance "${instanceId}" booted? Instance logs are recorded when the instance is running.`)
+    } else {
+      log.dim('  Is the kernel running? Events are recorded when the manager is active.')
+    }
     process.exit(1)
   }
 
@@ -57,9 +71,9 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
   }
 
   if (opts.tail) {
-    await tailStreamMode(isRaw, display, filter)
+    await tailStreamMode(journalPath, isRaw, display, filter)
   } else {
-    await tailMode(limit, isRaw, display, filter)
+    await tailMode(journalPath, limit, isRaw, display, filter)
   }
 }
 
@@ -68,6 +82,7 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
 type Filter = { topic?: string; since?: number; principal?: string; trace?: string }
 
 async function tailMode(
+  journalPath: string,
   limit: number,
   isRaw: boolean,
   display: DisplayOpts,
@@ -75,7 +90,7 @@ async function tailMode(
 ): Promise<void> {
   const entries: JournalEntry[] = []
 
-  for await (const entry of scanFile()) {
+  for await (const entry of scanFile(journalPath)) {
     if (!matchesFilter(entry, filter)) continue
     entries.push(entry)
     if (entries.length > limit) entries.shift()
@@ -93,9 +108,9 @@ async function tailMode(
 
 // ── Tail stream mode (live stream) ──────────────────────────
 
-async function tailStreamMode(isRaw: boolean, display: DisplayOpts, filter: Filter): Promise<void> {
+async function tailStreamMode(journalPath: string, isRaw: boolean, display: DisplayOpts, filter: Filter): Promise<void> {
   const recent: JournalEntry[] = []
-  for await (const entry of scanFile()) {
+  for await (const entry of scanFile(journalPath)) {
     if (!matchesFilter(entry, filter)) continue
     recent.push(entry)
     if (recent.length > 10) recent.shift()
@@ -107,8 +122,8 @@ async function tailStreamMode(isRaw: boolean, display: DisplayOpts, filter: Filt
   let lastSeq = recent.length > 0 ? recent[recent.length - 1].seq : 0
 
   return new Promise((_resolve, _reject) => {
-    const watcher = watch(JOURNAL_PATH, async () => {
-      for await (const entry of scanFile()) {
+    const watcher = watch(journalPath, async () => {
+      for await (const entry of scanFile(journalPath)) {
         if (entry.seq <= lastSeq) continue
         lastSeq = entry.seq
         if (!matchesFilter(entry, filter)) continue
@@ -124,9 +139,9 @@ async function tailStreamMode(isRaw: boolean, display: DisplayOpts, filter: Filt
 
 // ── File scanner ────────────────────────────────────────────
 
-async function* scanFile(): AsyncIterable<JournalEntry> {
+async function* scanFile(path: string): AsyncIterable<JournalEntry> {
   try {
-    const stream = createReadStream(JOURNAL_PATH, { encoding: 'utf-8' })
+    const stream = createReadStream(path, { encoding: 'utf-8' })
     const rl = createInterface({ input: stream, crlfDelay: Infinity })
     for await (const line of rl) {
       if (!line.trim()) continue

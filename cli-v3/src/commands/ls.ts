@@ -5,12 +5,11 @@ import { KEYS_DIR } from '../lib/paths'
 import { log, spinner } from '../lib/log'
 import { getDefault, getIdentity } from '../lib/identity'
 import { output } from '../lib/output'
-import { resolveWsUrl } from '../lib/target'
+import { resolveWsUrl } from '../lib/instance'
 
 type LsOptions = {
   raw?: boolean
   json?: boolean
-  remote?: string
   instance?: string
   timeout?: string
   as?: string

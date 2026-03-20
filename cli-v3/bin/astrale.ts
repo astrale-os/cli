@@ -7,6 +7,7 @@ program
   .name('astrale')
   .description('Astrale system CLI — manage your local Astrale installation')
   .version('0.1.0')
+  .action(() => { program.help() })
 
 program
   .command('init')
@@ -61,6 +62,15 @@ program
   })
 
 program
+  .command('use')
+  .description('Set the active kernel instance')
+  .argument('<name>', 'Instance name (auto-registers as local if not known)')
+  .action(async (name) => {
+    const { useCommand } = await import('../src/commands/use')
+    await useCommand(name)
+  })
+
+program
   .command('call')
   .description('Call a kernel operation')
   .argument('<method>', 'Full operation path (e.g., /manager.astrale.ai/KernelInstance/list)')
@@ -69,8 +79,7 @@ program
   .option('--format <type>', 'Output format: yaml (default) or json')
   .option('--raw', 'Output raw JSON (no colors)')
   .option('--json', 'Alias for --raw')
-  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
-  .option('-i, --instance <id>', 'Target a local kernel instance')
+  .option('-i, --instance <name>', 'Target a specific instance (overrides active)')
   .option('--timeout <ms>', 'Request timeout in ms', '30000')
   .option('--as <identity>', 'Call as a specific identity')
   .action(async (method, params, opts) => {
@@ -85,8 +94,7 @@ program
   .option('--format <type>', 'Output format: yaml (default) or json')
   .option('--raw', 'Output raw JSON')
   .option('--json', 'Alias for --raw')
-  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
-  .option('-i, --instance <id>', 'Target a local kernel instance')
+  .option('-i, --instance <name>', 'Target a specific instance (overrides active)')
   .option('--timeout <ms>', 'Request timeout in ms', '30000')
   .option('--as <identity>', 'Call as a specific identity')
   .action(async (path, opts) => {
@@ -101,8 +109,7 @@ program
   .option('--format <type>', 'Output format: yaml (default) or json')
   .option('--raw', 'Output raw JSON')
   .option('--json', 'Alias for --raw')
-  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
-  .option('-i, --instance <id>', 'Target a local kernel instance')
+  .option('-i, --instance <name>', 'Target a specific instance (overrides active)')
   .option('--timeout <ms>', 'Request timeout in ms', '30000')
   .option('--as <identity>', 'Call as a specific identity')
   .action(async (path, opts) => {
@@ -122,6 +129,7 @@ program
   .option('--timing', 'Show per-step timing breakdown')
   .option('--raw', 'Output raw NDJSON')
   .option('--json', 'Alias for --raw')
+  .option('-i, --instance <name>', 'Show logs for a specific instance (overrides active)')
   .action(async (opts) => {
     const { logsCommand } = await import('../src/commands/logs')
     await logsCommand(opts)
@@ -134,8 +142,7 @@ program
   .option('--format <type>', 'Output format: yaml (default) or json')
   .option('--raw', 'Output raw JSON (no colors)')
   .option('--json', 'Alias for --raw')
-  .option('-r, --remote <name-or-url>', 'Named target or full WS URL')
-  .option('-i, --instance <id>', 'Target a local kernel instance')
+  .option('-i, --instance <name>', 'Target a specific instance (overrides active)')
   .option('--timeout <ms>', 'Request timeout in ms', '30000')
   .option('--as <identity>', 'Call as a specific identity')
   .action(async (cypher, opts) => {
@@ -143,51 +150,41 @@ program
     await queryCommand(cypher, opts)
   })
 
-const target = program.command('target').description('Manage kernel connection targets')
+const instance = program.command('instance').description('Manage kernel instances')
 
-target
-  .command('create')
-  .description('Create a named target')
-  .argument('<name>', 'Target name')
-  .option('--url <ws-url>', 'WebSocket URL')
-  .option('--instance <id>', 'Local kernel instance ID')
-  .action(async (name, opts) => {
-    const { targetCreateCommand } = await import('../src/commands/target')
-    await targetCreateCommand(name, opts)
-  })
-
-target
+instance
   .command('list')
-  .description('List all targets')
+  .description('List all registered instances')
   .action(async () => {
-    const { targetListCommand } = await import('../src/commands/target')
-    await targetListCommand()
+    const { instanceListCommand } = await import('../src/commands/instance')
+    await instanceListCommand()
   })
 
-target
-  .command('use')
-  .description('Set the default target')
-  .argument('<name>', 'Target name')
+instance
+  .command('add')
+  .description('Register a kernel instance')
+  .argument('<name>', 'Instance name')
+  .option('--url <ws-url>', 'WebSocket URL (for remote instances)')
+  .action(async (name, opts) => {
+    const { instanceAddCommand } = await import('../src/commands/instance')
+    await instanceAddCommand(name, opts)
+  })
+
+instance
+  .command('remove')
+  .description('Remove a registered instance')
+  .argument('<name>', 'Instance name')
   .action(async (name) => {
-    const { targetUseCommand } = await import('../src/commands/target')
-    await targetUseCommand(name)
+    const { instanceRemoveCommand } = await import('../src/commands/instance')
+    await instanceRemoveCommand(name)
   })
 
-target
-  .command('whoami')
-  .description('Show the current default target')
+instance
+  .command('active')
+  .description('Show the currently active instance')
   .action(async () => {
-    const { targetWhoamiCommand } = await import('../src/commands/target')
-    await targetWhoamiCommand()
-  })
-
-target
-  .command('delete')
-  .description('Delete a target')
-  .argument('<name>', 'Target name')
-  .action(async (name) => {
-    const { targetDeleteCommand } = await import('../src/commands/target')
-    await targetDeleteCommand(name)
+    const { instanceActiveCommand } = await import('../src/commands/instance')
+    await instanceActiveCommand()
   })
 
 const identity = program.command('identity').description('Manage CLI identities')
