@@ -37,7 +37,10 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
   const identity = await getDefault()
   const credential = await signAs(identity.subject, KEYS_DIR, { issuer: config.issuer })
 
-  let managerSession: { close: () => Promise<void> } | null = null
+  let managerSession: {
+    close: () => Promise<void>
+    serve: (opts: { port: number }) => void
+  } | null = null
 
   // If manager is not running, start it and keep it alive after reset
   if (!(await isManagerRunning(wsUrl))) {
@@ -55,7 +58,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
       falkorPort: config.falkorPort,
       auth,
     })
-    ;(managerSession as any).serve({ port: config.managerPort })
+    managerSession.serve({ port: config.managerPort })
   }
 
   const client = new KernelWSClient({

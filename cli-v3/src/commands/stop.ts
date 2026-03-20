@@ -15,8 +15,8 @@ export async function stopCommand(): Promise<void> {
     // Kill the process tree (manager + UI child)
     process.kill(pid, 'SIGTERM')
     log.success(`Manager stopped (PID ${pid})`)
-  } catch (e: any) {
-    if (e.code === 'ESRCH') {
+  } catch (e: unknown) {
+    if (e instanceof Error && 'code' in e && e.code === 'ESRCH') {
       log.info(`Manager was not running (stale PID ${pid})`)
     } else {
       throw e
