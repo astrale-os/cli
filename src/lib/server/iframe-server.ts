@@ -23,6 +23,8 @@ export async function createIframeServer(config: DevServerConfig): Promise<Ifram
     sseClients: new Set(),
   }
 
+  let iframeReloadTimeout: ReturnType<typeof setTimeout> | null = null
+
   if (config.iframeEntry) {
     const entryPath = path.resolve(config.projectRoot, config.iframeEntry)
 
@@ -48,7 +50,10 @@ export async function createIframeServer(config: DevServerConfig): Promise<Ifram
               : ''
             console.log(`  ↻ Iframe rebuilt (${jsSize}KB${cssSize})`)
 
-            for (const client of state.sseClients) client.write('data: reload\n\n')
+            if (iframeReloadTimeout) clearTimeout(iframeReloadTimeout)
+            iframeReloadTimeout = setTimeout(() => {
+              for (const client of state.sseClients) client.write('data: reload\n\n')
+            }, 300)
             config.onIframeChange?.()
           }
         })

@@ -8,7 +8,15 @@ import tailwindcss from '@tailwindcss/postcss'
 export const LIVE_RELOAD_SCRIPT = `<script>
 (function() {
   const es = new EventSource('/__dev/events');
-  es.onmessage = e => e.data === 'reload' && location.reload();
+  const PAGE_LOAD_TIME = Date.now();
+  const COOLDOWN = 2000;
+  let reloadTimer = null;
+  es.onmessage = function(e) {
+    if (e.data !== 'reload') return;
+    if (Date.now() - PAGE_LOAD_TIME < COOLDOWN) return;
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(() => location.reload(), 100);
+  };
 })();
 </script>`
 

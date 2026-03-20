@@ -1,27 +1,60 @@
 import { readFile, unlink } from 'node:fs/promises'
+import { execSync } from 'node:child_process'
 import { MANAGER_PID_PATH } from '../lib/paths'
+import { readConfig } from '../lib/config'
 import { log } from '../lib/log'
 
-export async function stopCommand(): Promise<void> {
-  let pid: number
+function killPid(pid: number): boolean {
   try {
-    pid = parseInt(await readFile(MANAGER_PID_PATH, 'utf-8'), 10)
-  } catch {
-    log.error('No running manager found (no PID file)')
-    return
-  }
-
-  try {
-    // Kill the process tree (manager + UI child)
-    process.kill(pid, 'SIGTERM')
-    log.success(`Manager stopped (PID ${pid})`)
+    return true
   } catch (e: unknown) {
-    if (e instanceof Error && 'code' in e && e.code === 'ESRCH') {
-      log.info(`Manager was not running (stale PID ${pid})`)
+    if (e instanceof Error && 'code' in e && e.code === 'ESRCH') return false
+    throw e
+  }
+}
+
+function findPidsByPort(port: number): number[] {
+  try {
+    const out = execSync(`lsof -i :${port} -t`, { encoding: 'utf-8' })
+    return out
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((s) => parseInt(s, 10))
+  } catch {
+    return []
+  }
+}
+
+export async function stopCommand(): Promise<void> {
+  const config = await readConfig()
+  let killed = false
+
+  // 1. Try PID file
+  try {
+    const pid = parseInt(await readFile(MANAGER_PID_PATH, 'utf-8'), 10)
+    if (killPid(pid)) {
+      log.success(`Manager stopped (PID ${pid})`)
+      killed = true
     } else {
-      throw e
+      log.info(`Manager was not running (stale PID ${pid})`)
     }
+  } catch {
+    // No PID file
   }
 
   await unlink(MANAGER_PID_PATH).catch(() => {})
+
+  // 2. Fallback: kill any process still holding the manager port
+  const portPids = findPidsByPort(config.managerPort)
+  for (const pid of portPids) {
+    if (killPid(pid)) {
+      log.success(`Killed lingering process on port ${config.managerPort} (PID ${pid})`)
+      killed = true
+    }
+  }
+
+  if (!killed) {
+    log.info('No running manager found')
+  }
 }

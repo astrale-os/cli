@@ -41,8 +41,12 @@ export async function createHostServer(config: DevServerConfig): Promise<HostSer
   const repoRoot = getRepoRoot(__dirname)
   const workspacePlugin = createWorkspaceResolverPlugin()
 
+  let reloadTimeout: ReturnType<typeof setTimeout> | null = null
   const notifyReload = () => {
-    for (const client of state.sseClients) client.write('data: reload\n\n')
+    if (reloadTimeout) clearTimeout(reloadTimeout)
+    reloadTimeout = setTimeout(() => {
+      for (const client of state.sseClients) client.write('data: reload\n\n')
+    }, 300)
   }
 
   const rebuildCss = async () => {
