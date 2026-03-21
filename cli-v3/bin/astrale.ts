@@ -127,6 +127,7 @@ program
   .option('--principal <name>', 'Filter by identity')
   .option('--trace <id>', 'Filter by trace/operation ID')
   .option('--timing', 'Show per-step timing breakdown')
+  .option('-v, --verbose', 'Show all events including :started phases')
   .option('--raw', 'Output raw NDJSON')
   .option('--json', 'Alias for --raw')
   .option('-i, --instance <name>', 'Show logs for a specific instance (overrides active)')

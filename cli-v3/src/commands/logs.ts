@@ -32,6 +32,7 @@ type LogsOptions = {
   principal?: string
   trace?: string
   timing?: boolean
+  verbose?: boolean
   raw?: boolean
   json?: boolean
   instance?: string
@@ -46,16 +47,16 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
 
   const config = await readConfig()
   const instanceId = await resolveInstanceId(opts, config)
-  const journalPath = instanceId
-    ? join(LOGS_DIR, instanceId, 'events.ndjson')
-    : JOURNAL_PATH
+  const journalPath = instanceId ? join(LOGS_DIR, instanceId, 'events.ndjson') : JOURNAL_PATH
 
   try {
     await access(journalPath)
   } catch {
     log.error(`No journal found at ${journalPath}`)
     if (instanceId) {
-      log.dim(`  Is instance "${instanceId}" booted? Instance logs are recorded when the instance is running.`)
+      log.dim(
+        `  Is instance "${instanceId}" booted? Instance logs are recorded when the instance is running.`,
+      )
     } else {
       log.dim('  Is the kernel running? Events are recorded when the manager is active.')
     }
@@ -68,6 +69,7 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
     since: sinceMs,
     principal: opts.principal,
     trace: opts.trace,
+    verbose: opts.verbose,
   }
 
   if (opts.tail) {
@@ -79,7 +81,13 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
 
 // ── Tail mode (read last N entries) ─────────────────────────
 
-type Filter = { topic?: string; since?: number; principal?: string; trace?: string }
+type Filter = {
+  topic?: string
+  since?: number
+  principal?: string
+  trace?: string
+  verbose?: boolean
+}
 
 async function tailMode(
   journalPath: string,
@@ -108,7 +116,12 @@ async function tailMode(
 
 // ── Tail stream mode (live stream) ──────────────────────────
 
-async function tailStreamMode(journalPath: string, isRaw: boolean, display: DisplayOpts, filter: Filter): Promise<void> {
+async function tailStreamMode(
+  journalPath: string,
+  isRaw: boolean,
+  display: DisplayOpts,
+  filter: Filter,
+): Promise<void> {
   const recent: JournalEntry[] = []
   for await (const entry of scanFile(journalPath)) {
     if (!matchesFilter(entry, filter)) continue
@@ -159,6 +172,7 @@ async function* scanFile(path: string): AsyncIterable<JournalEntry> {
 // ── Filtering ───────────────────────────────────────────────
 
 function matchesFilter(entry: JournalEntry, filter: Filter): boolean {
+  if (!filter.verbose && entry.event.topic.endsWith(':started')) return false
   if (filter.since && entry.event.metadata.timestamp < filter.since) return false
   if (filter.principal && !entry.event.metadata.principal?.includes(filter.principal)) return false
   if (filter.trace && entry.event.metadata.traceId !== filter.trace) return false
