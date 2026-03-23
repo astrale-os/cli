@@ -6,6 +6,7 @@ import { log } from '../lib/log'
 
 function killPid(pid: number): boolean {
   try {
+    process.kill(pid, 'SIGTERM')
     return true
   } catch (e: unknown) {
     if (e instanceof Error && 'code' in e && e.code === 'ESRCH') return false
