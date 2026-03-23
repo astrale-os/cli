@@ -45,10 +45,7 @@ export async function writeInstances(store: InstanceStore): Promise<void> {
 
 // ─── Instance management ────────────────────────────────────
 
-export async function addInstance(
-  name: string,
-  opts: { url?: string },
-): Promise<InstanceEntry> {
+export async function addInstance(name: string, opts: { url?: string }): Promise<InstanceEntry> {
   const store = await readInstances()
   const entry: InstanceEntry = { ...opts, createdAt: new Date().toISOString() }
   store.instances[name] = entry
@@ -62,7 +59,9 @@ export async function removeInstance(name: string): Promise<void> {
     throw new Error(`Instance "${name}" not found`)
   }
   if (store.active === name) {
-    throw new Error(`Cannot remove the active instance "${name}". Switch first with: astrale use <other>`)
+    throw new Error(
+      `Cannot remove the active instance "${name}". Switch first with: astrale use <other>`,
+    )
   }
   delete store.instances[name]
   await writeInstances(store)

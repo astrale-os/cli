@@ -49,7 +49,7 @@ export async function lsCommand(path: string, opts: LsOptions): Promise<void> {
     const result = await client.call(method, {}, credential)
     await client.close()
 
-    const items = Array.isArray(result) ? result : (result as { items?: unknown[] })?.items ?? []
+    const items = Array.isArray(result) ? result : ((result as { items?: unknown[] })?.items ?? [])
     spin?.succeed(`Children of ${path} (${Array.isArray(items) ? items.length : '?'})`)
     if (!isRaw) console.log('')
     output(result, opts)

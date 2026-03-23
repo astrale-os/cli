@@ -2,12 +2,12 @@
   "name": "@astrale-os/astrale",
   "version": "0.1.0",
   "description": "Astrale system CLI — install, daemon, key management for local Astrale lifecycle",
-  "type": "module",
   "bin": {
     "astrale": "./bin/astrale.ts"
   },
+  "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
     "@astrale-os/kernel-client-ws": "workspace:*",
@@ -22,6 +22,7 @@
   "devDependencies": {
     "@types/bun": "^1.1.16",
     "@types/node": "^22.0.0",
-    "typescript": "~5.9.3"
+    "@typescript/native-preview": "latest",
+    "typescript": "~6.0.1-rc"
   }
 }

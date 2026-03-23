@@ -2,6 +2,22 @@
   "name": "@astrale-os/cli",
   "version": "0.3.0",
   "description": "Astrale CLI - init, dev, build, and create commands for Astrale WebOS applications",
+  "keywords": [
+    "astrale",
+    "cli",
+    "webos"
+  ],
+  "license": "MIT",
+  "author": "Astrale",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/astrale-os/cli.git"
+  },
+  "files": [
+    "dist",
+    "src",
+    "bin"
+  ],
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -11,37 +27,29 @@
       "import": "./src/index.ts"
     }
   },
-  "files": [
-    "dist",
-    "src",
-    "bin"
-  ],
-  "packageManager": "pnpm@10.28.0",
-  "engines": {
-    "node": ">=22"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/astrale-os/cli.git"
+  "publishConfig": {
+    "access": "restricted",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "registry": "https://npm.pkg.github.com",
+    "types": "./dist/index.d.ts"
   },
   "scripts": {
     "preinstall": "node .check-workspace.cjs",
-    "build": "tsc",
+    "build": "tsgo",
     "clean": "rm -rf dist *.tsbuildinfo",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit",
     "lint": "oxlint -c oxlint.json .",
     "lint:fix": "oxlint --fix -c oxlint.json .",
-    "format": "pnpm exec prettier --write .",
-    "format:check": "pnpm exec prettier --check .",
+    "format": "pnpm exec oxfmt --write .",
+    "format:check": "pnpm exec oxfmt --check .",
     "prepare": "husky"
   },
-  "keywords": [
-    "astrale",
-    "cli",
-    "webos"
-  ],
-  "author": "Astrale",
-  "license": "MIT",
   "dependencies": {
     "@astrale-os/datastore-client": ">=1.0.0 <2.0.0",
     "@astrale-os/kernel-api": ">=0.0.0 <1.0.0",
@@ -64,39 +72,30 @@
   },
   "devDependencies": {
     "@astrale/commitlint-config": "jsr:@astrale/commitlint-config@~2.0.0",
-    "@astrale/prettier-config": "jsr:@astrale/prettier-config@~2.0.0",
     "@astrale/typescript-config": "jsr:@astrale/typescript-config@~1.1.0",
     "@commitlint/cli": "~20.3.1",
     "@commitlint/config-conventional": "~20.3.1",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.1",
     "@types/react-dom": "^19.2.1",
-    "oxlint": "latest",
+    "@typescript/native-preview": "latest",
     "husky": "~9.1.7",
     "lint-staged": "~16.2.7",
-    "prettier": "~3.8.0",
-    "typescript": "~5.9.3"
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "typescript": "~6.0.1-rc"
   },
-  "prettier": "@astrale/prettier-config",
   "lint-staged": {
     "*.{js,cjs,mjs,ts,tsx}": [
       "oxlint --fix -c oxlint.json",
-      "prettier --write"
+      "oxfmt --write"
     ],
     "*.{json,yml,yaml}": [
-      "prettier --write"
+      "oxfmt --write"
     ]
   },
-  "publishConfig": {
-    "access": "restricted",
-    "registry": "https://npm.pkg.github.com",
-    "main": "./dist/index.js",
-    "types": "./dist/index.d.ts",
-    "exports": {
-      ".": {
-        "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
-      }
-    }
-  }
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@10.28.0"
 }

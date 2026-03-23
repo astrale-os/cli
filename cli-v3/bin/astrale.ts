@@ -7,7 +7,9 @@ program
   .name('astrale')
   .description('Astrale system CLI — manage your local Astrale installation')
   .version('0.1.0')
-  .action(() => { program.help() })
+  .action(() => {
+    program.help()
+  })
 
 program
   .command('init')

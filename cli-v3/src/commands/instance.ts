@@ -5,12 +5,7 @@ import { signAs } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
 import { getDefault } from '../lib/identity'
 import { log } from '../lib/log'
-import {
-  readInstances,
-  addInstance,
-  removeInstance,
-  getActive,
-} from '../lib/instance'
+import { readInstances, addInstance, removeInstance, getActive } from '../lib/instance'
 
 type ManagerInstance = { id: string; status: string; label?: string }
 
@@ -47,7 +42,10 @@ export async function instanceListCommand(): Promise<void> {
   const discovered = await discoverLocalInstances()
 
   // Merge: discovered local instances that aren't in the store
-  const merged = new Map<string, { url?: string; status?: string; source: 'store' | 'discovered' }>()
+  const merged = new Map<
+    string,
+    { url?: string; status?: string; source: 'store' | 'discovered' }
+  >()
 
   for (const [name, entry] of Object.entries(store.instances)) {
     merged.set(name, { url: entry.url, source: 'store' })
@@ -83,10 +81,7 @@ export async function instanceListCommand(): Promise<void> {
   }
 }
 
-export async function instanceAddCommand(
-  name: string,
-  opts: { url?: string },
-): Promise<void> {
+export async function instanceAddCommand(name: string, opts: { url?: string }): Promise<void> {
   try {
     const entry = await addInstance(name, opts)
     if (entry.url) {
