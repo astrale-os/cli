@@ -1,126 +1,116 @@
-import type { AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
-import chalk from 'chalk'
-import { Command } from 'commander'
-import { existsSync } from 'fs'
-import { createInterface } from 'readline'
-import { type AstraleConfig, getConfigPath, saveConfig } from '../lib/config'
-import { generateAppKeyPair } from '../lib/crypto'
-import { resolveConfig } from '../lib/global-config'
-import { KernelClient } from '../lib/kernel'
+import { mkdir } from 'node:fs/promises'
+import { createInterface } from 'node:readline/promises'
+import { stdin, stdout } from 'node:process'
+import { ASTRALE_HOME, KEYS_DIR, DATA_DIR, LOGS_DIR, COMPOSE_PATH } from '../lib/paths'
+import { writeConfig, configExists, type AstraleConfig } from '../lib/config'
+import { resolveAuth } from '../lib/keys'
+import { writeComposeFile, startFalkor } from '../lib/docker'
+import { log, spinner } from '../lib/log'
+import { startCommand } from './start'
 
-async function promptConfirm(message: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout })
-  return new Promise((resolve) => {
-    rl.question(message, (answer) => {
-      rl.close()
-      const normalized = answer.trim().toLowerCase()
-      resolve(normalized === '' || normalized === 'y' || normalized === 'yes')
-    })
-  })
-}
+export async function initCommand(): Promise<void> {
+  log.info('Astrale init — setting up your local installation\n')
 
-export type InitOptions = {
-  title?: string
-  profile?: string
-  parentId?: ModuleId
-}
+  // ── Pre-flight checks ──────────────────────────────────────
 
-function resolveActiveIdentity(
-  activeSpaceId: SpaceId | undefined,
-  activeAvatarId: AvatarId | undefined,
-): { avatarId: AvatarId; spaceId: SpaceId } {
-  if (!activeSpaceId) {
-    throw new Error('No space selected. Run: astrale space create <name>')
-  }
-  if (!activeAvatarId) {
-    throw new Error('No avatar configured for active space. Run: astrale space create <name>')
-  }
-  return { avatarId: activeAvatarId, spaceId: activeSpaceId }
-}
+  await checkDocker()
+  await checkBun()
 
-export async function runInit(options: InitOptions): Promise<void> {
-  const projectDir = process.cwd()
-  const configPath = getConfigPath(projectDir)
-  if (existsSync(configPath)) {
-    console.log(chalk.yellow(`\n⚠ Existing config found at ${configPath}`))
-    console.log(chalk.dim(`  This will create a new app and replace the existing config.\n`))
-    const confirmed = await promptConfirm(chalk.white(`Continue? [Y/n] `))
-    if (!confirmed) {
-      console.log(chalk.dim(`\nInit cancelled.\n`))
+  // ── Detect existing install ────────────────────────────────
+
+  if (await configExists()) {
+    const rl = createInterface({ input: stdin, output: stdout })
+    const answer = await rl.question('Existing installation detected. Overwrite? [y/N] ')
+    rl.close()
+    if (answer.toLowerCase() !== 'y') {
+      log.info('Aborted.')
       return
     }
-    console.log('')
   }
-  console.log(`[astrale] Initializing new application...`)
-  if (options.title) console.log(`  Title: ${options.title}`)
-  const resolved = await resolveConfig(options.profile)
-  console.log(`  Profile: ${resolved.profile}`)
-  console.log(`  Kernel WS: ${resolved.kernelWsUrl}`)
-  console.log(`  Kernel RPC: ${resolved.kernelRpcUrl}`)
-  console.log(`\n[astrale] Generating app keypair...`)
-  const keyPair = await generateAppKeyPair()
-  console.log(`  ✓ Keypair generated (ECDSA P-256)`)
-  console.log(`\n[astrale] Connecting to kernel...`)
-  const client = new KernelClient({
-    kernelWsUrl: resolved.kernelWsUrl,
-    accessToken: resolved.accessToken,
-  })
-  await client.connect()
+
+  // ── Interactive prompts ────────────────────────────────────
+
+  const rl = createInterface({ input: stdin, output: stdout })
+  const managerPort = parseInt((await rl.question('Manager port [4400]: ')) || '4400', 10)
+  const uiPort = parseInt((await rl.question('UI port [4300]: ')) || '4300', 10)
+  const falkorPort = parseInt((await rl.question('FalkorDB port [6379]: ')) || '6379', 10)
+  const graphName = (await rl.question('Graph name [astrale-manager]: ')) || 'astrale-manager'
+  rl.close()
+
+  const config: AstraleConfig = {
+    managerPort,
+    uiPort,
+    falkorPort,
+    graphName,
+    issuer: 'https://manager.astrale.ai',
+  }
+
+  // ── Scaffold dirs ──────────────────────────────────────────
+
+  let s = spinner('Creating directories...')
+  await mkdir(ASTRALE_HOME, { recursive: true })
+  await mkdir(KEYS_DIR, { recursive: true })
+  await mkdir(DATA_DIR, { recursive: true })
+  await mkdir(LOGS_DIR, { recursive: true })
+  s.succeed('Directories created')
+
+  // ── Generate keys ──────────────────────────────────────────
+
+  s = spinner('Generating keypair...')
+  await resolveAuth(KEYS_DIR, { issuer: config.issuer, subject: 'manager' })
+  s.succeed('Keypair generated')
+
+  // ── Write config ───────────────────────────────────────────
+
+  await writeConfig(config)
+  log.success('Config written')
+
+  // ── Write compose file ─────────────────────────────────────
+
+  await writeComposeFile(COMPOSE_PATH, { falkorPort })
+  log.success('Docker compose file written')
+
+  // ── Start FalkorDB ─────────────────────────────────────────
+
+  s = spinner('Starting FalkorDB...')
+  await startFalkor(COMPOSE_PATH)
+  s.succeed('FalkorDB is running')
+
+  // ── Start manager + UI ─────────────────────────────────────
+
+  console.log('')
+  log.success('Setup complete — starting manager + UI...\n')
+  log.dim(`  UI:       http://localhost:${config.uiPort}`)
+  log.dim(`  WS:       ws://localhost:${config.managerPort}/mngt/ws`)
+  log.dim(`  Graph:    ${config.graphName}`)
+  console.log('')
+
+  await startCommand({ foreground: true })
+}
+
+async function checkDocker(): Promise<void> {
   try {
-    const { avatarId, spaceId } = resolveActiveIdentity(
-      resolved.activeSpaceId,
-      resolved.activeAvatarId,
-    )
-    console.log(`  Space: ${spaceId}`)
-    console.log(`  Avatar: ${avatarId}`)
-    client.setAvatarId(avatarId)
-    const parentId = options.parentId ?? avatarId
-    console.log(`[astrale] Creating application...`)
-    const result = await client.createApp(parentId, undefined, keyPair.publicKeyJwk)
-    console.log(`  ✓ Application created`)
-    console.log(`  App ID: ${result.appId}`)
-    console.log(`  Worker URL: ${result.workerUrl}`)
-    console.log(`  UI URL: ${result.uiUrl}`)
-    const config: AstraleConfig = {
-      appId: result.appId,
-      profile: resolved.profile,
-      spaceId,
-      avatarId,
-      typesContainerId: result.typesContainerId,
-      workerBundleId: result.workerBundleId,
-      uiBundleId: result.uiBundleId,
-      sourceBundleId: result.sourceBundleId,
-      workerUrl: result.workerUrl,
-      uiUrl: result.uiUrl,
-      bootstrap: result.bootstrap,
-      remoteAppdata: result.remoteAppdata,
-      endpoints: result.endpoints,
-      privateKey: keyPair.privateKeyPem,
-    }
-    await saveConfig(projectDir, config)
-    console.log(`\n✓ Config saved to ${configPath}`)
-    console.log(`\nNext steps:`)
-    console.log(`  1. Run 'astrale build' to build and deploy`)
-    console.log(`  2. Run 'astrale dev' for hot-reload development`)
-  } finally {
-    client.disconnect()
+    const proc = Bun.spawn(['docker', 'info'], { stdout: 'pipe', stderr: 'pipe' })
+    const code = await proc.exited
+    if (code !== 0) throw new Error()
+    log.success('Docker is running')
+  } catch {
+    log.error('Docker is not running. Please install and start Docker first.')
+    log.dim('  https://docs.docker.com/get-docker/')
+    process.exit(1)
   }
 }
 
-export const initCommand = new Command('init')
-  .description('Initialize a new Astrale app in the kernel')
-  .option('--title <name>', 'Application title (for display only)')
-  .option('--profile <name>', 'Profile to use (default: active profile)')
-  .option('--parent-id <id>', 'Parent module ID (defaults to avatar)')
-  .action(async (opts) => {
-    try {
-      await runInit({
-        title: opts.title,
-        profile: opts.profile,
-        parentId: opts.parentId as ModuleId | undefined,
-      })
-    } catch (err) {
-      console.error('[astrale] Init failed:', err instanceof Error ? err.message : err)
-      process.exit(1)
-    }
-  })
+async function checkBun(): Promise<void> {
+  try {
+    const proc = Bun.spawn(['bun', '--version'], { stdout: 'pipe', stderr: 'pipe' })
+    const code = await proc.exited
+    if (code !== 0) throw new Error()
+    const version = await new Response(proc.stdout).text()
+    log.success(`Bun ${version.trim()} detected`)
+  } catch {
+    log.error('Bun is not installed. Please install Bun first.')
+    log.dim('  curl -fsSL https://bun.sh/install | bash')
+    process.exit(1)
+  }
+}

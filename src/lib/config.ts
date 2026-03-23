@@ -1,81 +1,42 @@
-import type { ApplicationId, AvatarId, ModuleId, SpaceId } from '@astrale-os/kernel-core'
-import { mkdir, readFile, writeFile } from 'fs/promises'
-import path from 'path'
-import { resolveConfig, type ResolvedConfig } from './global-config'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { CONFIG_PATH } from './paths'
 
-export interface AstraleConfig {
-  appId: ApplicationId
-  profile: string
-  typesContainerId?: ModuleId
-  workerBundleId?: ModuleId
-  uiBundleId?: ModuleId
-  sourceBundleId?: ModuleId
-  workerUrl?: string
-  uiUrl?: string
-  bootstrap?: { avatar: ModuleId; space: ModuleId; global: ModuleId }
-  remoteAppdata?: { avatar: ModuleId; space: ModuleId; global: ModuleId }
-  endpoints?: { containerId: ModuleId; workerContainerId: ModuleId; backendContainerId: ModuleId }
-  spaceId?: SpaceId
-  avatarId?: AvatarId
-  privateKey?: string
+export type AstraleConfig = {
+  managerPort: number
+  falkorPort: number
+  uiPort: number
+  graphName: string
+  issuer: string
 }
 
-export interface FullConfig extends AstraleConfig, ResolvedConfig {}
-
-const CONFIG_DIR = '.astrale'
-const CONFIG_FILE = 'config.json'
-
-export async function findProjectRoot(startDir: string): Promise<string | null> {
-  let dir = startDir
-  const root = path.parse(dir).root
-  while (dir !== root) {
-    const configPath = path.join(dir, CONFIG_DIR, CONFIG_FILE)
-    try {
-      await readFile(configPath, 'utf-8')
-      return dir
-    } catch {
-      dir = path.dirname(dir)
-    }
-  }
-  return null
+const DEFAULTS: AstraleConfig = {
+  managerPort: 4400,
+  falkorPort: 6379,
+  uiPort: 4300,
+  graphName: 'astrale-manager',
+  issuer: 'https://manager.astrale.ai',
 }
 
-export async function loadConfig(projectDir: string): Promise<AstraleConfig> {
-  const configPath = path.join(projectDir, CONFIG_DIR, CONFIG_FILE)
+export async function readConfig(): Promise<AstraleConfig> {
   try {
-    const content = await readFile(configPath, 'utf-8')
-    const config = JSON.parse(content) as Partial<AstraleConfig>
-    if (!config.appId) throw new Error('Missing required field: appId')
-    if (!config.profile) throw new Error('Missing required field: profile')
-    return config as AstraleConfig
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      throw new Error(
-        `No .astrale/config.json found in ${projectDir}.\nRun 'astrale init' to initialize a new app.`,
-      )
-    }
-    throw err
+    const raw = await readFile(CONFIG_PATH, 'utf-8')
+    return { ...DEFAULTS, ...JSON.parse(raw) }
+  } catch {
+    return DEFAULTS
   }
 }
 
-export async function saveConfig(projectDir: string, config: AstraleConfig): Promise<void> {
-  const configDir = path.join(projectDir, CONFIG_DIR)
-  const configPath = path.join(configDir, CONFIG_FILE)
-  await mkdir(configDir, { recursive: true })
-  await writeFile(configPath, JSON.stringify(config, null, 2) + '\n', 'utf-8')
+export async function writeConfig(config: AstraleConfig): Promise<void> {
+  await mkdir(dirname(CONFIG_PATH), { recursive: true })
+  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n')
 }
 
-export async function loadFullConfig(
-  projectDir: string,
-  profileOverride?: string,
-): Promise<FullConfig> {
-  const projectConfig = await loadConfig(projectDir)
-  const resolved = await resolveConfig(profileOverride ?? projectConfig.profile)
-  return { ...projectConfig, ...resolved }
+export async function configExists(): Promise<boolean> {
+  try {
+    await readFile(CONFIG_PATH)
+    return true
+  } catch {
+    return false
+  }
 }
-
-export function getConfigPath(projectDir: string): string {
-  return path.join(projectDir, CONFIG_DIR, CONFIG_FILE)
-}
-
-export { resolveConfig, type ResolvedConfig }

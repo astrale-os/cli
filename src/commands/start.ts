@@ -1,88 +1,71 @@
-import type { ModuleId } from '@astrale-os/kernel-core'
-import { Command } from 'commander'
-import path from 'path'
-import { findProjectRoot } from '../lib/config'
-import { getActiveProfile, getProfileAuth, getProfileConfig } from '../lib/global-config'
-import { runDev, type DevOptions } from './dev'
-import { runInit, type InitOptions } from './init'
+import { readConfig } from '../lib/config'
+import { resolveAuth } from '../lib/keys'
+import { KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from '../lib/paths'
+import { log } from '../lib/log'
+import { writeFile, mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { openSync } from 'node:fs'
 
-export type StartOptions = {
-  entry: string
-  title?: string
-  outdir: string
-  outfile: string
-  iframeEntry?: string
-  iframeHtml?: string
-  hostPort: number
-  noServe: boolean
-  parentId?: ModuleId
-  profile?: string
-}
+export async function startCommand(opts: { foreground?: boolean }): Promise<void> {
+  const config = await readConfig()
 
-export async function runStart(options: StartOptions): Promise<void> {
-  const projectDir = process.cwd()
-  const profileName = options.profile ?? (await getActiveProfile())
-  const profile = await getProfileConfig(profileName)
-  const auth = await getProfileAuth(profileName)
-  if (!auth) {
-    console.error(`[astrale] Not authenticated for profile "${profileName}".`)
-    console.error(`  Run: astrale auth login`)
-    process.exit(1)
-  }
-  console.log(`[astrale] Using profile: ${profileName}`)
-  console.log(`  Kernel: ${profile.kernelWsUrl}`)
-  const existingProject = await findProjectRoot(projectDir)
-  if (!existingProject) {
-    console.log('\n[astrale] No .astrale/config.json found, initializing...')
-    const title = options.title || path.basename(projectDir)
-    const initOptions: InitOptions = { title, profile: profileName, parentId: options.parentId }
-    await runInit(initOptions)
-    console.log('')
+  if (opts.foreground) {
+    const auth = await resolveAuth(KEYS_DIR, {
+      issuer: config.issuer,
+      subject: 'manager',
+    })
+
+    const { ManagerSession } = await import('@astrale-os/kernel-toolkit/manager')
+
+    const manager = await ManagerSession.boot({
+      graphName: config.graphName,
+      falkorPort: config.falkorPort,
+      auth,
+    })
+
+    manager.serve({ port: config.managerPort })
+
+    log.info(`Manager running on ws://localhost:${config.managerPort}/mngt/ws`)
+
+    const { startUI, stopUI } = await import('../lib/ui')
+    startUI(config)
+    log.info(`Playground UI on http://localhost:${config.uiPort}`)
+
+    const cleanup = async () => {
+      stopUI()
+      await manager.close()
+      process.exit(0)
+    }
+    process.on('SIGINT', cleanup)
+    process.on('SIGTERM', cleanup)
   } else {
-    console.log(`[astrale] Found existing config at ${existingProject}`)
-  }
-  const devOptions: DevOptions = {
-    entry: options.entry,
-    outdir: options.outdir,
-    outfile: options.outfile,
-    profile: profileName,
-    noDeploy: false,
-    iframeEntry: options.iframeEntry,
-    iframeHtml: options.iframeHtml,
-    hostPort: options.hostPort,
-    noServe: options.noServe,
-  }
-  await runDev(devOptions)
-}
+    await mkdir(LOGS_DIR, { recursive: true })
 
-export const startCommand = new Command('start')
-  .description('Start dev workflow: init if needed, then dev')
-  .argument('<entry>', 'Worker entry file (e.g., src/worker.ts)')
-  .option('--title <name>', 'Application title (defaults to directory name)')
-  .option('--outdir <dir>', 'Output directory', 'dist')
-  .option('--outfile <name>', 'Output filename', 'worker.js')
-  .option('--profile <name>', 'Profile to use')
-  .option('--iframe-entry <path>', 'Iframe entry file (e.g., src/window/index.tsx)')
-  .option('--iframe-html <path>', 'Iframe HTML template')
-  .option('--host-port <port>', 'Host app port', '7017')
-  .option('--no-serve', 'Skip local dev servers')
-  .option('--parent-id <id>', 'Parent module ID for init')
-  .action(async (entry, opts) => {
+    const managerOut = openSync(join(LOGS_DIR, 'manager.stdout.log'), 'a')
+    const managerErr = openSync(join(LOGS_DIR, 'manager.stderr.log'), 'a')
+
+    const managerProc = Bun.spawn(['bun', 'run', process.argv[1], 'start', '--foreground'], {
+      stdout: managerOut,
+      stderr: managerErr,
+      env: { ...process.env },
+    })
+
+    await writeFile(MANAGER_PID_PATH, String(managerProc.pid))
+    await new Promise((r) => setTimeout(r, 2000))
+
     try {
-      await runStart({
-        entry,
-        title: opts.title,
-        outdir: opts.outdir,
-        outfile: opts.outfile,
-        profile: opts.profile,
-        iframeEntry: opts.iframeEntry,
-        iframeHtml: opts.iframeHtml,
-        hostPort: parseInt(opts.hostPort, 10),
-        noServe: opts.serve === false,
-        parentId: opts.parentId as ModuleId | undefined,
-      })
-    } catch (err) {
-      console.error('[astrale] Start failed:', err instanceof Error ? err.message : err)
+      process.kill(managerProc.pid, 0)
+    } catch {
+      log.error('Manager failed to start. Check logs:')
+      log.dim(`  ${join(LOGS_DIR, 'manager.stderr.log')}`)
       process.exit(1)
     }
-  })
+
+    log.success('Astrale started in background')
+    log.dim(`  Manager: ws://localhost:${config.managerPort}/mngt/ws`)
+    log.dim(`  UI:      http://localhost:${config.uiPort}`)
+    log.dim(`  PIDs:    manager=${managerProc.pid}`)
+    log.dim(`  Logs:    ${LOGS_DIR}`)
+    log.info('Run `astrale stop` to stop')
+  }
+}
