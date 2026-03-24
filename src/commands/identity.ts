@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { log } from '../lib/log'
+
 import {
   readIdentities,
   createIdentity,
@@ -7,6 +7,7 @@ import {
   setDefault,
   getDefault,
 } from '../lib/identity'
+import { log } from '../lib/log'
 
 export async function identityCreateCommand(
   name: string,

@@ -1,12 +1,13 @@
-import chalk from 'chalk'
 import { KernelWSClient } from '@astrale-os/kernel-client-ws'
+import chalk from 'chalk'
+
 import { readConfig } from '../lib/config'
-import { signAs, resolveAuth } from '../lib/keys'
-import { KEYS_DIR } from '../lib/paths'
-import { log, spinner } from '../lib/log'
-import { getDefault } from '../lib/identity'
 import { formatElapsed } from '../lib/format'
+import { getDefault } from '../lib/identity'
 import { resolveInstanceId } from '../lib/instance'
+import { signAs, resolveAuth } from '../lib/keys'
+import { log, spinner } from '../lib/log'
+import { KEYS_DIR } from '../lib/paths'
 
 type ResetOptions = {
   instance?: string

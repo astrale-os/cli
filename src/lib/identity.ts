@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+
 import { IDENTITIES_PATH } from './paths'
 
 export type Identity = { subject: string; createdAt: string }

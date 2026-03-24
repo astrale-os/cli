@@ -1,7 +1,9 @@
 import { writeFile, unlink, mkdir } from 'node:fs/promises'
-import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 import type { AstraleConfig } from './config'
+
 import { ASTRALE_HOME, LOGS_DIR } from './paths'
 
 const LAUNCHD_LABEL = 'ai.astrale.manager'

@@ -1,12 +1,13 @@
 import chalk from 'chalk'
 import { createReadStream, watch } from 'node:fs'
 import { access } from 'node:fs/promises'
-import { createInterface } from 'node:readline'
-import { JOURNAL_PATH, LOGS_DIR } from '../lib/paths'
 import { join } from 'node:path'
-import { log } from '../lib/log'
+import { createInterface } from 'node:readline'
+
 import { readConfig } from '../lib/config'
 import { resolveInstanceId } from '../lib/instance'
+import { log } from '../lib/log'
+import { JOURNAL_PATH, LOGS_DIR } from '../lib/paths'
 
 type JournalEntry = {
   seq: number

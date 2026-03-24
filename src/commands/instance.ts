@@ -1,11 +1,12 @@
-import chalk from 'chalk'
 import { KernelWSClient } from '@astrale-os/kernel-client-ws'
+import chalk from 'chalk'
+
 import { readConfig } from '../lib/config'
-import { signAs } from '../lib/keys'
-import { KEYS_DIR } from '../lib/paths'
 import { getDefault } from '../lib/identity'
-import { log } from '../lib/log'
 import { readInstances, addInstance, removeInstance, getActive } from '../lib/instance'
+import { signAs } from '../lib/keys'
+import { log } from '../lib/log'
+import { KEYS_DIR } from '../lib/paths'
 
 type ManagerInstance = { id: string; status: string; label?: string }
 

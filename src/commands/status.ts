@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises'
+
 import { readConfig } from '../lib/config'
 import { isFalkorRunning } from '../lib/docker'
-import { COMPOSE_PATH, MANAGER_PID_PATH } from '../lib/paths'
 import { log } from '../lib/log'
+import { COMPOSE_PATH, MANAGER_PID_PATH } from '../lib/paths'
 
 async function isManagerRunning(): Promise<{ running: boolean; pid?: number }> {
   try {

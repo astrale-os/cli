@@ -1,6 +1,6 @@
-import { stopCommand } from './stop'
-import { startCommand } from './start'
 import { log } from '../lib/log'
+import { startCommand } from './start'
+import { stopCommand } from './stop'
 
 export async function restartCommand(opts: { foreground?: boolean }): Promise<void> {
   log.info('Stopping manager…')

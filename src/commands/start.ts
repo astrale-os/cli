@@ -1,10 +1,11 @@
-import { readConfig } from '../lib/config'
-import { resolveAuth } from '../lib/keys'
-import { KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from '../lib/paths'
-import { log } from '../lib/log'
+import { openSync } from 'node:fs'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { openSync } from 'node:fs'
+
+import { readConfig } from '../lib/config'
+import { resolveAuth } from '../lib/keys'
+import { log } from '../lib/log'
+import { KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from '../lib/paths'
 
 export async function startCommand(opts: { foreground?: boolean }): Promise<void> {
   const config = await readConfig()

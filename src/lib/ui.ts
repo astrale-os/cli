@@ -1,4 +1,5 @@
 import type { Subprocess } from 'bun'
+
 import type { AstraleConfig } from './config'
 
 let uiProcess: Subprocess | null = null

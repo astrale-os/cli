@@ -1,8 +1,9 @@
-import { readFile, unlink } from 'node:fs/promises'
 import { execSync } from 'node:child_process'
-import { MANAGER_PID_PATH } from '../lib/paths'
+import { readFile, unlink } from 'node:fs/promises'
+
 import { readConfig } from '../lib/config'
 import { log } from '../lib/log'
+import { MANAGER_PID_PATH } from '../lib/paths'
 
 function killPid(pid: number): boolean {
   try {

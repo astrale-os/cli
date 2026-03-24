@@ -1,8 +1,10 @@
+import type { GenerateAuthResult } from '@astrale-os/kernel-toolkit/presets'
+
+import { generateKeyPair, exportJWK, importJWK, SignJWT } from 'jose'
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, mkdir, rename, access } from 'node:fs/promises'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
-import { generateKeyPair, exportJWK, importJWK, SignJWT } from 'jose'
-import type { GenerateAuthResult } from '@astrale-os/kernel-toolkit/presets'
+
 import { KEYS_DIR } from './paths'
 
 const PRIVATE_KEY_FILE = 'manager.private.jwk'

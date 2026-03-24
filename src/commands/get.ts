@@ -1,11 +1,12 @@
 import { KernelWSClient } from '@astrale-os/kernel-client-ws'
+
 import { readConfig } from '../lib/config'
-import { signAs } from '../lib/keys'
-import { KEYS_DIR } from '../lib/paths'
-import { log, spinner } from '../lib/log'
 import { getDefault, getIdentity } from '../lib/identity'
-import { output } from '../lib/output'
 import { resolveWsUrl } from '../lib/instance'
+import { signAs } from '../lib/keys'
+import { log, spinner } from '../lib/log'
+import { output } from '../lib/output'
+import { KEYS_DIR } from '../lib/paths'
 
 type GetOptions = {
   raw?: boolean

@@ -1,5 +1,5 @@
-import { log } from '../lib/log'
 import { setActive, getInstance } from '../lib/instance'
+import { log } from '../lib/log'
 
 export async function useCommand(name: string): Promise<void> {
   try {

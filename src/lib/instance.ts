@@ -1,7 +1,9 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { INSTANCES_PATH } from './paths'
+
 import type { AstraleConfig } from './config'
+
+import { INSTANCES_PATH } from './paths'
 
 // ─── Types ──────────────────────────────────────────────────
 

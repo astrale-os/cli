@@ -1,11 +1,12 @@
 import { mkdir } from 'node:fs/promises'
-import { createInterface } from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
-import { ASTRALE_HOME, KEYS_DIR, DATA_DIR, LOGS_DIR, COMPOSE_PATH } from '../lib/paths'
+import { createInterface } from 'node:readline/promises'
+
 import { writeConfig, configExists, type AstraleConfig } from '../lib/config'
-import { resolveAuth } from '../lib/keys'
 import { writeComposeFile, startFalkor } from '../lib/docker'
+import { resolveAuth } from '../lib/keys'
 import { log, spinner } from '../lib/log'
+import { ASTRALE_HOME, KEYS_DIR, DATA_DIR, LOGS_DIR, COMPOSE_PATH } from '../lib/paths'
 import { startCommand } from './start'
 
 export async function initCommand(): Promise<void> {
