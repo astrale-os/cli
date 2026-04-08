@@ -8,19 +8,49 @@ export type OutputOpts = {
 }
 
 /**
+ * Determine if output should be raw (machine-readable).
+ */
+export function isRawOutput(opts?: Pick<OutputOpts, 'raw' | 'json'>): boolean {
+  return !!(opts?.raw || opts?.json) || !(process.stdout.isTTY ?? false)
+}
+
+/**
  * Write structured data to stdout in the appropriate format.
  *
- * - `--raw` / `--json` / non-TTY → raw JSON (machine-readable)
- * - `--format json` → highlighted JSON
- * - default (TTY) → highlighted YAML
+ * Precedence:
+ * - `--raw` / `--json` → plain JSON, no colors (machine-readable)
+ * - explicit `--format yaml|json` → honor regardless of TTY, colors only on TTY
+ * - default on TTY → highlighted YAML
+ * - default on non-TTY → plain JSON
  */
 export function output(data: unknown, opts: OutputOpts): void {
-  if (opts.raw || opts.json || !process.stdout.isTTY) {
+  if (opts.raw || opts.json) {
     process.stdout.write(JSON.stringify(data, null, 2) + '\n')
     return
   }
-  const format = opts.format ?? 'yaml'
-  console.log(format === 'json' ? highlightJson(data) : highlightYaml(data))
+
+  const isTTY = process.stdout.isTTY ?? false
+
+  if (opts.format === 'json') {
+    const rendered = isTTY ? highlightJson(data) : JSON.stringify(data, null, 2)
+    process.stdout.write(rendered + '\n')
+    return
+  }
+
+  if (opts.format === 'yaml') {
+    const rendered = isTTY
+      ? highlightYaml(data)
+      : yamlStringify(data, { indent: 2, lineWidth: 120 }).trimEnd()
+    process.stdout.write(rendered + '\n')
+    return
+  }
+
+  // Default: TTY → highlighted YAML, non-TTY → plain JSON
+  if (isTTY) {
+    process.stdout.write(highlightYaml(data) + '\n')
+  } else {
+    process.stdout.write(JSON.stringify(data, null, 2) + '\n')
+  }
 }
 
 // ── YAML ───────────────────────────────────────────────────

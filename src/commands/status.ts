@@ -1,32 +1,53 @@
-import { readFile } from 'node:fs/promises'
-
 import { readConfig } from '../lib/config'
 import { isFalkorRunning } from '../lib/docker'
 import { log } from '../lib/log'
-import { COMPOSE_PATH, MANAGER_PID_PATH } from '../lib/paths'
+import { detectManagerState } from '../lib/manager-state'
+import { output } from '../lib/output'
+import { COMPOSE_PATH } from '../lib/paths'
 
-async function isManagerRunning(): Promise<{ running: boolean; pid?: number }> {
-  try {
-    const pid = parseInt(await readFile(MANAGER_PID_PATH, 'utf-8'), 10)
-    process.kill(pid, 0) // signal 0 = check alive
-    return { running: true, pid }
-  } catch {
-    return { running: false }
-  }
-}
-
-export async function statusCommand(): Promise<void> {
+export async function statusCommand(opts?: { raw?: boolean; json?: boolean }): Promise<void> {
+  const isRaw = opts?.raw || opts?.json || !(process.stdout.isTTY ?? false)
   const config = await readConfig()
 
-  const [manager, falkorUp] = await Promise.all([isManagerRunning(), isFalkorRunning(COMPOSE_PATH)])
+  const [manager, falkorUp] = await Promise.all([
+    detectManagerState(config),
+    isFalkorRunning(COMPOSE_PATH),
+  ])
+
+  const managerUrl = `http://localhost:${config.managerPort}/mngt`
+
+  if (isRaw) {
+    output(
+      {
+        manager: {
+          running: manager.running,
+          pid: manager.pid ?? null,
+          port: config.managerPort,
+          url: managerUrl,
+          source: manager.source,
+        },
+        falkor: {
+          running: falkorUp,
+          port: config.falkorPort,
+        },
+        ui: {
+          running: manager.running,
+          port: config.uiPort,
+          url: manager.running ? `http://localhost:${config.uiPort}` : null,
+        },
+        graphName: config.graphName,
+      },
+      opts ?? {},
+    )
+    return
+  }
 
   console.log('')
   log.info('Astrale Status\n')
 
   if (manager.running) {
-    log.success(
-      `Manager:   running (PID ${manager.pid}) — ws://localhost:${config.managerPort}/mngt/ws`,
-    )
+    const pidPart = manager.pid !== undefined ? ` (PID ${manager.pid})` : ''
+    log.success(`Manager:   running${pidPart} — ${managerUrl}`)
   } else {
     log.warn('Manager:   stopped')
   }

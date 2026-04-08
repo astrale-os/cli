@@ -1,14 +1,27 @@
 import { openSync } from 'node:fs'
-import { writeFile, mkdir } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { readConfig } from '../lib/config'
 import { resolveAuth } from '../lib/keys'
 import { log } from '../lib/log'
-import { KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from '../lib/paths'
+import { detectManagerState, removeManagerPid, writeManagerPid } from '../lib/manager-state'
+import { KEYS_DIR, LOGS_DIR } from '../lib/paths'
 
 export async function startCommand(opts: { foreground?: boolean }): Promise<void> {
   const config = await readConfig()
+
+  // Refuse to start a second manager if one is already live.
+  const existing = await detectManagerState(config)
+  if (existing.running) {
+    log.warn(
+      `Manager is already running on port ${config.managerPort}${
+        existing.pid !== undefined ? ` (PID ${existing.pid})` : ''
+      }`,
+    )
+    log.dim('  Run `astrale stop` first if you want to restart.')
+    return
+  }
 
   if (opts.foreground) {
     const auth = await resolveAuth(KEYS_DIR, {
@@ -21,20 +34,28 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
     const manager = await ManagerSession.boot({
       graphName: config.graphName,
       falkorPort: config.falkorPort,
+      port: config.managerPort,
       auth,
     })
 
-    manager.serve({ port: config.managerPort })
+    manager.serve()
 
-    log.info(`Manager running on ws://localhost:${config.managerPort}/mngt/ws`)
+    // Record our PID so other CLI commands (status, reset, stop) can find us.
+    await writeManagerPid(process.pid)
+
+    log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
 
     const { startUI, stopUI } = await import('../lib/ui')
     startUI(config)
     log.info(`Playground UI on http://localhost:${config.uiPort}`)
 
+    let shuttingDown = false
     const cleanup = async () => {
+      if (shuttingDown) return
+      shuttingDown = true
       stopUI()
       await manager.close()
+      await removeManagerPid()
       process.exit(0)
     }
     process.on('SIGINT', cleanup)
@@ -45,14 +66,20 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
     const managerOut = openSync(join(LOGS_DIR, 'manager.stdout.log'), 'a')
     const managerErr = openSync(join(LOGS_DIR, 'manager.stderr.log'), 'a')
 
-    const managerProc = Bun.spawn(['bun', 'run', process.argv[1], 'start', '--foreground'], {
+    // Use Bun.main — the actual entry point resolved by the runtime — rather
+    // than process.argv[1], which may be a shim path after a global install
+    // that `bun run` can't execute directly.
+    const entry = Bun.main || process.argv[1]
+
+    const managerProc = Bun.spawn(['bun', 'run', entry, 'start', '--foreground'], {
       stdout: managerOut,
       stderr: managerErr,
+      stdin: 'ignore',
       env: { ...process.env },
     })
 
-    await writeFile(MANAGER_PID_PATH, String(managerProc.pid))
-    await new Promise((r) => setTimeout(r, 2000))
+    // Wait briefly for the child to either become ready or die.
+    await new Promise((r) => setTimeout(r, 2_000))
 
     try {
       process.kill(managerProc.pid, 0)
@@ -62,10 +89,18 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
       process.exit(1)
     }
 
+    // Confirm the manager is actually serving, not just alive.
+    const state = await detectManagerState(config)
+    if (!state.running) {
+      log.error('Manager process started but is not responding on the HTTP port. Check logs:')
+      log.dim(`  ${join(LOGS_DIR, 'manager.stderr.log')}`)
+      process.exit(1)
+    }
+
     log.success('Astrale started in background')
-    log.dim(`  Manager: ws://localhost:${config.managerPort}/mngt/ws`)
+    log.dim(`  Manager: http://localhost:${config.managerPort}/mngt`)
     log.dim(`  UI:      http://localhost:${config.uiPort}`)
-    log.dim(`  PIDs:    manager=${managerProc.pid}`)
+    log.dim(`  PID:     ${managerProc.pid}`)
     log.dim(`  Logs:    ${LOGS_DIR}`)
     log.info('Run `astrale stop` to stop')
   }

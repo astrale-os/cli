@@ -1,29 +1,34 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { z } from 'zod'
 
+import { log } from './log'
 import { CONFIG_PATH } from './paths'
 
-export type AstraleConfig = {
-  managerPort: number
-  falkorPort: number
-  uiPort: number
-  graphName: string
-  issuer: string
-}
+export const AstraleConfigSchema = z.object({
+  managerPort: z.number().int().positive().default(4400),
+  falkorPort: z.number().int().positive().default(6379),
+  uiPort: z.number().int().positive().default(4300),
+  graphName: z.string().default('astrale-manager'),
+  // The manager kernel signs tokens with its own base URL as the `iss`
+  // claim. The CLI must sign matching tokens or the JWKS lookup fails.
+  // Default assumes the stock localhost manager — override via config.json
+  // if the manager runs elsewhere.
+  issuer: z.string().url().default('http://localhost:4400/mngt'),
+})
 
-const DEFAULTS: AstraleConfig = {
-  managerPort: 4400,
-  falkorPort: 6379,
-  uiPort: 4300,
-  graphName: 'astrale-manager',
-  issuer: 'https://manager.astrale.ai',
-}
+export type AstraleConfig = z.infer<typeof AstraleConfigSchema>
+
+const DEFAULTS: AstraleConfig = AstraleConfigSchema.parse({})
 
 export async function readConfig(): Promise<AstraleConfig> {
   try {
     const raw = await readFile(CONFIG_PATH, 'utf-8')
-    return { ...DEFAULTS, ...JSON.parse(raw) }
-  } catch {
+    return AstraleConfigSchema.parse(JSON.parse(raw))
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      log.warn(`Invalid config at ${CONFIG_PATH} — using defaults`)
+    }
     return DEFAULTS
   }
 }

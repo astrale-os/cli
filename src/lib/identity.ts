@@ -1,10 +1,22 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { z } from 'zod'
 
+import { log } from './log'
 import { IDENTITIES_PATH } from './paths'
 
-export type Identity = { subject: string; createdAt: string }
-export type IdentityStore = { default: string; identities: Record<string, Identity> }
+export const IdentitySchema = z.object({
+  subject: z.string(),
+  createdAt: z.string(),
+})
+
+export const IdentityStoreSchema = z.object({
+  default: z.string(),
+  identities: z.record(z.string(), IdentitySchema),
+})
+
+export type Identity = z.infer<typeof IdentitySchema>
+export type IdentityStore = z.infer<typeof IdentityStoreSchema>
 
 const SEED: IdentityStore = {
   default: 'manager',
@@ -16,8 +28,11 @@ const SEED: IdentityStore = {
 export async function readIdentities(): Promise<IdentityStore> {
   try {
     const raw = await readFile(IDENTITIES_PATH, 'utf-8')
-    return { ...SEED, ...JSON.parse(raw) }
-  } catch {
+    return IdentityStoreSchema.parse(JSON.parse(raw))
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      log.warn(`Invalid identities at ${IDENTITIES_PATH} — using defaults`)
+    }
     return { ...SEED }
   }
 }

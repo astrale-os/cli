@@ -1,21 +1,26 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { z } from 'zod'
 
 import type { AstraleConfig } from './config'
 
+import { log } from './log'
 import { INSTANCES_PATH } from './paths'
 
-// ─── Types ──────────────────────────────────────────────────
+// ─── Schemas ─────────────────────────────────────────────────
 
-export type InstanceEntry = {
-  url?: string // remote instances have a URL; local ones don't (resolved via manager port)
-  createdAt: string
-}
+export const InstanceEntrySchema = z.object({
+  url: z.string().optional(),
+  createdAt: z.string(),
+})
 
-export type InstanceStore = {
-  active: string
-  instances: Record<string, InstanceEntry>
-}
+export const InstanceStoreSchema = z.object({
+  active: z.string(),
+  instances: z.record(z.string(), InstanceEntrySchema),
+})
+
+export type InstanceEntry = z.infer<typeof InstanceEntrySchema>
+export type InstanceStore = z.infer<typeof InstanceStoreSchema>
 
 // ─── Seed ───────────────────────────────────────────────────
 
@@ -24,7 +29,7 @@ function seed(config?: AstraleConfig): InstanceStore {
   return {
     active: 'manager',
     instances: {
-      manager: { url: `ws://localhost:${port}/mngt/ws`, createdAt: new Date().toISOString() },
+      manager: { url: `http://localhost:${port}/mngt`, createdAt: new Date().toISOString() },
     },
   }
 }
@@ -34,8 +39,11 @@ function seed(config?: AstraleConfig): InstanceStore {
 export async function readInstances(config?: AstraleConfig): Promise<InstanceStore> {
   try {
     const raw = await readFile(INSTANCES_PATH, 'utf-8')
-    return { ...seed(config), ...JSON.parse(raw) }
-  } catch {
+    return InstanceStoreSchema.parse(JSON.parse(raw))
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      log.warn(`Invalid instances at ${INSTANCES_PATH} — using defaults`)
+    }
     return seed(config)
   }
 }
@@ -70,13 +78,12 @@ export async function removeInstance(name: string): Promise<void> {
 }
 
 /**
- * Set the active instance. Auto-registers as local if not known.
+ * Set the active instance. Throws if the instance is not registered.
  */
 export async function setActive(name: string): Promise<void> {
   const store = await readInstances()
   if (!store.instances[name]) {
-    // Auto-register as local instance
-    store.instances[name] = { createdAt: new Date().toISOString() }
+    throw new Error(`Instance "${name}" not found. Run: astrale instance add ${name}`)
   }
   store.active = name
   await writeInstances(store)
@@ -103,10 +110,13 @@ export async function getInstance(name: string, config?: AstraleConfig): Promise
 // ─── Resolution ─────────────────────────────────────────────
 
 /**
- * Resolve the WS URL from CLI options and config.
- * Priority: --instance flag > active instance > manager fallback
+ * Resolve the kernel HTTP base URL from CLI options and config.
+ * Priority: --instance flag > active instance > manager fallback.
+ *
+ * The new kernel client takes an HTTP URL and lazily upgrades to WS as
+ * needed, so we no longer publish a `ws://…/ws` endpoint.
  */
-export async function resolveWsUrl(
+export async function resolveKernelUrl(
   opts: { instance?: string },
   config: AstraleConfig,
 ): Promise<string> {
@@ -114,12 +124,12 @@ export async function resolveWsUrl(
     const store = await readInstances(config)
     const entry = store.instances[opts.instance]
     if (entry?.url) return entry.url
-    return `ws://localhost:${config.managerPort}/${opts.instance}/ws`
+    return `http://localhost:${config.managerPort}/${opts.instance}`
   }
 
   const active = await getActive(config)
   if (active.url) return active.url
-  return `ws://localhost:${config.managerPort}/${active.name}/ws`
+  return `http://localhost:${config.managerPort}/${active.name}`
 }
 
 /**

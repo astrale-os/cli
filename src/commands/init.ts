@@ -7,7 +7,6 @@ import { writeComposeFile, startFalkor } from '../lib/docker'
 import { resolveAuth } from '../lib/keys'
 import { log, spinner } from '../lib/log'
 import { ASTRALE_HOME, KEYS_DIR, DATA_DIR, LOGS_DIR, COMPOSE_PATH } from '../lib/paths'
-import { startCommand } from './start'
 
 export async function initCommand(): Promise<void> {
   log.info('Astrale init — setting up your local installation\n')
@@ -43,7 +42,11 @@ export async function initCommand(): Promise<void> {
     uiPort,
     falkorPort,
     graphName,
-    issuer: 'https://manager.astrale.ai',
+    // The manager signs tokens with its own base URL as the issuer, and the
+    // CLI must sign JWTs with that same value for the manager's JWKS lookup
+    // to succeed. Derive it from the manager port instead of hardcoding a
+    // placeholder.
+    issuer: `http://localhost:${managerPort}/mngt`,
   }
 
   // ── Scaffold dirs ──────────────────────────────────────────
@@ -77,16 +80,17 @@ export async function initCommand(): Promise<void> {
   await startFalkor(COMPOSE_PATH)
   s.succeed('FalkorDB is running')
 
-  // ── Start manager + UI ─────────────────────────────────────
+  // ── Done ──────────────────────────────────────────────────
 
   console.log('')
-  log.success('Setup complete — starting manager + UI...\n')
+  log.success('Setup complete\n')
+  log.dim(`  Manager:  http://localhost:${config.managerPort}/mngt`)
   log.dim(`  UI:       http://localhost:${config.uiPort}`)
-  log.dim(`  WS:       ws://localhost:${config.managerPort}/mngt/ws`)
   log.dim(`  Graph:    ${config.graphName}`)
   console.log('')
-
-  await startCommand({ foreground: true })
+  log.info('Next steps:')
+  log.dim('  astrale start     # start the manager in the background')
+  log.dim('  astrale status    # check status')
 }
 
 async function checkDocker(): Promise<void> {

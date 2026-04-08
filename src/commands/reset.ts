@@ -1,12 +1,15 @@
-import { KernelWSClient } from '@astrale-os/kernel-client-ws'
+import type { ManagerSession } from '@astrale-os/kernel-toolkit/manager'
+
+import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
 import chalk from 'chalk'
 
+import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
 import { formatElapsed } from '../lib/format'
-import { getDefault } from '../lib/identity'
 import { resolveInstanceId } from '../lib/instance'
-import { signAs, resolveAuth } from '../lib/keys'
+import { resolveAuth } from '../lib/keys'
 import { log, spinner } from '../lib/log'
+import { detectManagerState, removeManagerPid, writeManagerPid } from '../lib/manager-state'
 import { KEYS_DIR } from '../lib/paths'
 
 type ResetOptions = {
@@ -14,37 +17,16 @@ type ResetOptions = {
   yes?: boolean
 }
 
-async function isManagerRunning(wsUrl: string): Promise<boolean> {
-  const client = new KernelWSClient({
-    wsUrl,
-    autoConnect: false,
-    reconnect: false,
-    maxRetries: 0,
-    requestTimeout: 3_000,
-  })
-  try {
-    await client.connect()
-    await client.close()
-    return true
-  } catch {
-    return false
-  }
-}
-
 export async function resetCommand(opts: ResetOptions): Promise<void> {
   const config = await readConfig()
-  const wsUrl = `ws://localhost:${config.managerPort}/mngt/ws`
+  const url = `http://localhost:${config.managerPort}/mngt`
 
-  const identity = await getDefault()
-  const credential = await signAs(identity.subject, KEYS_DIR, { issuer: config.issuer })
+  const credential = await resolveCredential({}, config)
 
-  let managerSession: {
-    close: () => Promise<void>
-    serve: (opts: { port: number }) => void
-  } | null = null
+  let managerSession: ManagerSession | null = null
 
   // If manager is not running, start it and keep it alive after reset
-  if (!(await isManagerRunning(wsUrl))) {
+  if (!(await detectManagerState(config)).running) {
     log.info('Manager not running, starting...')
 
     const auth = await resolveAuth(KEYS_DIR, {
@@ -57,22 +39,16 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
     managerSession = await ManagerSession.boot({
       graphName: config.graphName,
       falkorPort: config.falkorPort,
+      port: config.managerPort,
       auth,
     })
-    managerSession.serve({ port: config.managerPort })
+    managerSession.serve()
+    await writeManagerPid(process.pid)
   }
 
-  const client = new KernelWSClient({
-    wsUrl,
-    autoConnect: false,
-    reconnect: false,
-    maxRetries: 0,
-    requestTimeout: 30_000,
-  })
+  const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
 
   try {
-    await client.connect()
-
     // List instances to find the target
     const instances = (await client.call(
       '/manager.astrale.ai/KernelInstance/list',
@@ -82,7 +58,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
 
     if (instances.length === 0) {
       log.error('No kernel instances found')
-      await client.close()
+      client.disconnect()
       if (managerSession) await managerSession.close()
       process.exit(1)
     }
@@ -93,7 +69,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
     if (!instance) {
       log.error(`Instance "${targetId}" not found`)
       log.dim(`  Available: ${instances.map((i) => i.id).join(', ')}`)
-      await client.close()
+      client.disconnect()
       if (managerSession) await managerSession.close()
       process.exit(1)
     }
@@ -105,7 +81,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
       const answer = await readLine()
       if (answer.toLowerCase() !== 'y') {
         log.info('Aborted')
-        await client.close()
+        client.disconnect()
         if (managerSession) await managerSession.close()
         process.exit(0)
       }
@@ -128,18 +104,20 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
     const elapsed = performance.now() - startTime
     spin.succeed(`Instance "${targetId}" reset ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
 
-    await client.close()
+    client.disconnect()
 
     if (managerSession) {
+      const session = managerSession
       const { startUI, stopUI } = await import('../lib/ui')
       startUI(config)
 
-      log.info(`Manager running on ws://localhost:${config.managerPort}/mngt/ws`)
+      log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
       log.info(`Playground UI on http://localhost:${config.uiPort}`)
       log.info('Press Ctrl+C to stop')
       const cleanup = async () => {
         stopUI()
-        await managerSession!.close()
+        await session.close()
+        await removeManagerPid()
         process.exit(0)
       }
       process.on('SIGINT', cleanup)
@@ -148,7 +126,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
       process.exit(0)
     }
   } catch (error) {
-    await client.close().catch(() => {})
+    client.disconnect()
     if (managerSession) await managerSession.close().catch(() => {})
     log.error(error instanceof Error ? error.message : String(error))
     process.exit(1)

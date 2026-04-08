@@ -23,7 +23,7 @@ export async function persistAuth(
   keysDir: string = KEYS_DIR,
   opts?: AuthOptions,
 ): Promise<GenerateAuthResult> {
-  const issuer = opts?.issuer ?? 'https://manager.astrale.ai'
+  const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const subject = opts?.subject ?? 'manager'
   const kid = opts?.kid ?? `${subject}-key`
 
@@ -56,7 +56,7 @@ export async function loadAuth(
   keysDir: string = KEYS_DIR,
   opts?: AuthOptions,
 ): Promise<GenerateAuthResult> {
-  const issuer = opts?.issuer ?? 'https://manager.astrale.ai'
+  const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const subject = opts?.subject ?? 'manager'
 
   const privateJwk = JSON.parse(await readFile(join(keysDir, PRIVATE_KEY_FILE), 'utf-8'))
@@ -96,7 +96,7 @@ export async function signAs(
   keysDir: string = KEYS_DIR,
   opts?: { issuer?: string },
 ): Promise<string> {
-  const issuer = opts?.issuer ?? 'https://manager.astrale.ai'
+  const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const privateJwk = JSON.parse(await readFile(join(keysDir, PRIVATE_KEY_FILE), 'utf-8'))
   const kid = privateJwk.kid ?? `${subject}-key`
   const privateKey = await importJWK(privateJwk, 'ES256')

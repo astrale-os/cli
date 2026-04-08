@@ -1,28 +1,16 @@
-import { KernelWSClient } from '@astrale-os/kernel-client-ws'
 import chalk from 'chalk'
 
-import { readConfig } from '../lib/config'
+import type { CallCommandOpts } from '../kernel'
+
+import { withKernelClient, formatKernelError } from '../kernel'
 import { formatElapsed } from '../lib/format'
-import { getDefault, getIdentity } from '../lib/identity'
-import { resolveWsUrl } from '../lib/instance'
-import { signAs } from '../lib/keys'
 import { log, spinner } from '../lib/log'
 import { output } from '../lib/output'
-import { KEYS_DIR } from '../lib/paths'
-
-type CallOptions = {
-  data?: string
-  raw?: boolean
-  json?: boolean
-  instance?: string
-  timeout?: string
-  as?: string
-}
 
 export async function callCommand(
   method: string,
   rawParams: string[],
-  opts: CallOptions,
+  opts: CallCommandOpts,
 ): Promise<void> {
   const isTTY = process.stdout.isTTY ?? false
   const isRaw = opts.raw || opts.json || !isTTY
@@ -36,55 +24,30 @@ export async function callCommand(
     process.exit(1)
   }
 
-  // ── Load config + target ────────────────────────────────
-  const config = await readConfig()
-  const wsUrl = await resolveWsUrl(opts, config)
-
-  let credential: string
-  try {
-    const identity = opts.as ? await getIdentity(opts.as) : await getDefault()
-    credential = await signAs(identity.subject, KEYS_DIR, { issuer: config.issuer })
-  } catch (e) {
-    log.error(e instanceof Error ? e.message : 'No auth keys found. Run `astrale init` first.')
-    process.exit(1)
-  }
-
   // ── Connect, call, disconnect ───────────────────────────
-  const client = new KernelWSClient({
-    wsUrl,
-    autoConnect: false,
-    reconnect: false,
-    maxRetries: 0,
-    requestTimeout: parseInt(opts.timeout ?? '30000', 10),
-  })
-
   const spin = !isRaw ? spinner(`Calling ${method}...`) : null
   const startTime = performance.now()
 
   try {
-    await client.connect()
-    const result = await client.call(method, params, credential)
+    const result = await withKernelClient(opts, (ctx) =>
+      ctx.client.call(method, params, ctx.credential),
+    )
     const elapsed = performance.now() - startTime
-
-    await client.close()
 
     spin?.succeed(`${method} ${chalk.dim(`completed in ${formatElapsed(elapsed)}`)}`)
     if (!isRaw) console.log('')
     output(result, opts)
     process.exit(0)
   } catch (error) {
-    await client.close().catch(() => {})
-
     if (!isRaw && spin) spin.fail('Call failed')
-
-    formatError(error, isRaw, wsUrl)
+    formatKernelError(error, isRaw, undefined, opts.debug)
     process.exit(1)
   }
 }
 
 // ── Param parsing ───────────────────────────────────────────
 
-async function parseParams(
+export async function parseParams(
   rawParams: string[],
   dataFlag?: string,
 ): Promise<Record<string, unknown>> {
@@ -125,7 +88,7 @@ async function readStdin(): Promise<string | null> {
   return text || null
 }
 
-function parseKeyValue(pairs: string[]): Record<string, unknown> {
+export function parseKeyValue(pairs: string[]): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const pair of pairs) {
     const eqIdx = pair.indexOf('=')
@@ -139,7 +102,7 @@ function parseKeyValue(pairs: string[]): Record<string, unknown> {
   return result
 }
 
-function coerceValue(raw: string): unknown {
+export function coerceValue(raw: string): unknown {
   if ((raw.startsWith('{') && raw.endsWith('}')) || (raw.startsWith('[') && raw.endsWith(']'))) {
     try {
       return JSON.parse(raw)
@@ -152,97 +115,4 @@ function coerceValue(raw: string): unknown {
   if (raw === 'null') return null
   if (raw !== '' && !isNaN(Number(raw))) return Number(raw)
   return raw
-}
-
-// ── Error formatting ────────────────────────────────────────
-
-function formatError(error: unknown, isRaw: boolean, wsUrl: string): void {
-  if (!(error instanceof Error)) {
-    if (isRaw) {
-      process.stderr.write(JSON.stringify({ error: 'UNKNOWN', message: String(error) }) + '\n')
-    } else {
-      log.error(String(error))
-    }
-    return
-  }
-
-  const name = error.name
-
-  if (name === 'ConnectionError') {
-    if (isRaw) {
-      process.stderr.write(
-        JSON.stringify({ error: 'CONNECTION_ERROR', message: error.message }) + '\n',
-      )
-    } else {
-      log.error(`Could not connect to ${chalk.bold(wsUrl)}`)
-      log.dim('  Is the kernel running? Try: astrale status')
-    }
-    return
-  }
-
-  if (name === 'TimeoutError') {
-    const timeoutMs = (error as { timeoutMs?: number }).timeoutMs
-    if (isRaw) {
-      process.stderr.write(JSON.stringify({ error: 'TIMEOUT', message: error.message }) + '\n')
-    } else {
-      log.error(`Request timed out after ${timeoutMs ?? '?'}ms`)
-      log.dim('  Try increasing with --timeout')
-    }
-    return
-  }
-
-  if (name === 'ValidationError') {
-    const errors =
-      (error as { errors?: Array<{ path: string[]; code: string; message: string }> }).errors ?? []
-    if (isRaw) {
-      process.stderr.write(
-        JSON.stringify({ error: 'VALIDATION_ERROR', message: error.message, details: errors }) +
-          '\n',
-      )
-    } else {
-      log.error('Validation Error')
-      for (const e of errors) {
-        console.log(chalk.red(`  ${e.path.join('.')}: ${e.message} (${chalk.dim(e.code)})`))
-      }
-    }
-    return
-  }
-
-  if (name === 'InvariantViolationError') {
-    const errors =
-      (error as { errors?: Array<{ code: string; message: string; context?: unknown }> }).errors ??
-      []
-    if (isRaw) {
-      process.stderr.write(
-        JSON.stringify({ error: 'INVARIANT_VIOLATION', message: error.message, details: errors }) +
-          '\n',
-      )
-    } else {
-      log.error('Invariant Violation')
-      for (const e of errors) {
-        console.log(chalk.red(`  ${e.code}: ${e.message}`))
-        if (e.context) {
-          console.log(chalk.dim(`    ${JSON.stringify(e.context)}`))
-        }
-      }
-    }
-    return
-  }
-
-  if (name === 'KernelError') {
-    const code = (error as { code?: string }).code ?? 'UNKNOWN'
-    if (isRaw) {
-      process.stderr.write(JSON.stringify({ error: code, message: error.message }) + '\n')
-    } else {
-      log.error(`${chalk.bold(code)}: ${error.message}`)
-    }
-    return
-  }
-
-  // Fallback
-  if (isRaw) {
-    process.stderr.write(JSON.stringify({ error: 'UNKNOWN', message: error.message }) + '\n')
-  } else {
-    log.error(error.message)
-  }
 }
