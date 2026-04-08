@@ -1,17 +1,19 @@
 import { readConfig } from '../lib/config'
 import { isFalkorRunning } from '../lib/docker'
 import { log } from '../lib/log'
-import { detectManagerState } from '../lib/manager-state'
-import { output } from '../lib/output'
+import { detectManagerState, probeHttp } from '../lib/manager-state'
+import { isRawOutput, output } from '../lib/output'
 import { COMPOSE_PATH } from '../lib/paths'
 
 export async function statusCommand(opts?: { raw?: boolean; json?: boolean }): Promise<void> {
-  const isRaw = opts?.raw || opts?.json || !(process.stdout.isTTY ?? false)
+  const isRaw = isRawOutput(opts)
   const config = await readConfig()
 
-  const [manager, falkorUp] = await Promise.all([
+  const uiUrl = `http://localhost:${config.uiPort}`
+  const [manager, falkorUp, uiUp] = await Promise.all([
     detectManagerState(config),
     isFalkorRunning(COMPOSE_PATH),
+    probeHttp(uiUrl),
   ])
 
   const managerUrl = `http://localhost:${config.managerPort}/mngt`
@@ -31,9 +33,9 @@ export async function statusCommand(opts?: { raw?: boolean; json?: boolean }): P
           port: config.falkorPort,
         },
         ui: {
-          running: manager.running,
+          running: uiUp,
           port: config.uiPort,
-          url: manager.running ? `http://localhost:${config.uiPort}` : null,
+          url: uiUp ? uiUrl : null,
         },
         graphName: config.graphName,
       },
@@ -58,8 +60,10 @@ export async function statusCommand(opts?: { raw?: boolean; json?: boolean }): P
     log.warn('FalkorDB:  stopped')
   }
 
-  if (manager.running) {
-    log.success(`UI:        http://localhost:${config.uiPort}`)
+  if (uiUp) {
+    log.success(`UI:        ${uiUrl}`)
+  } else {
+    log.warn(`UI:        not responding (${uiUrl})`)
   }
 
   log.dim(`  Graph:    ${config.graphName}`)

@@ -4,7 +4,7 @@ import type { CommandDefinition } from '../../command'
 
 import { getActive } from '../../lib/instance'
 import { log } from '../../lib/log'
-import { output } from '../../lib/output'
+import { isRawOutput, output } from '../../lib/output'
 
 export default {
   name: 'active',
@@ -15,7 +15,7 @@ export default {
   ],
   action: async (opts: { raw?: boolean; json?: boolean }) => {
     try {
-      const isRaw = opts?.raw || opts?.json || !(process.stdout.isTTY ?? false)
+      const isRaw = isRawOutput(opts)
       const active = await getActive()
 
       if (isRaw) {

@@ -3,10 +3,9 @@ import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { readConfig } from '../lib/config'
-import { resolveAuth } from '../lib/keys'
 import { log } from '../lib/log'
-import { detectManagerState, removeManagerPid, writeManagerPid } from '../lib/manager-state'
-import { KEYS_DIR, LOGS_DIR } from '../lib/paths'
+import { bootManagerSession, detectManagerState, removeManagerPid } from '../lib/manager-state'
+import { LOGS_DIR } from '../lib/paths'
 
 export async function startCommand(opts: { foreground?: boolean }): Promise<void> {
   const config = await readConfig()
@@ -24,25 +23,8 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
   }
 
   if (opts.foreground) {
-    const auth = await resolveAuth(KEYS_DIR, {
-      issuer: config.issuer,
-      subject: 'manager',
-    })
-
-    const { ManagerSession } = await import('@astrale-os/kernel-toolkit/manager')
-
-    const manager = await ManagerSession.boot({
-      graphName: config.graphName,
-      falkorPort: config.falkorPort,
-      port: config.managerPort,
-      auth,
-    })
-
+    const manager = await bootManagerSession(config)
     manager.serve()
-
-    // Record our PID so other CLI commands (status, reset, stop) can find us.
-    await writeManagerPid(process.pid)
-
     log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
 
     const { startUI, stopUI } = await import('../lib/ui')

@@ -5,15 +5,14 @@ import type { CallCommandOpts } from '../kernel'
 import { withKernelClient, formatKernelError } from '../kernel'
 import { formatElapsed } from '../lib/format'
 import { log, spinner } from '../lib/log'
-import { output } from '../lib/output'
+import { isRawOutput, output } from '../lib/output'
 
 export async function callCommand(
-  method: string,
+  path: string,
   rawParams: string[],
   opts: CallCommandOpts,
 ): Promise<void> {
-  const isTTY = process.stdout.isTTY ?? false
-  const isRaw = opts.raw || opts.json || !isTTY
+  const isRaw = isRawOutput(opts)
 
   // ── Parse params ────────────────────────────────────────
   let params: Record<string, unknown>
@@ -25,16 +24,16 @@ export async function callCommand(
   }
 
   // ── Connect, call, disconnect ───────────────────────────
-  const spin = !isRaw ? spinner(`Calling ${method}...`) : null
+  const spin = !isRaw ? spinner(`Calling ${path}...`) : null
   const startTime = performance.now()
 
   try {
     const result = await withKernelClient(opts, (ctx) =>
-      ctx.client.call(method, params, ctx.credential),
+      ctx.client.call(path, params, ctx.credential),
     )
     const elapsed = performance.now() - startTime
 
-    spin?.succeed(`${method} ${chalk.dim(`completed in ${formatElapsed(elapsed)}`)}`)
+    spin?.succeed(`${path} ${chalk.dim(`completed in ${formatElapsed(elapsed)}`)}`)
     if (!isRaw) console.log('')
     output(result, opts)
     process.exit(0)

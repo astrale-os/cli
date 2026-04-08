@@ -1,8 +1,11 @@
+import type { ManagerSession } from '@astrale-os/kernel-toolkit/manager'
+
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 
 import type { AstraleConfig } from './config'
 
-import { MANAGER_PID_PATH } from './paths'
+import { resolveAuth } from './keys'
+import { KEYS_DIR, MANAGER_PID_PATH } from './paths'
 
 export type ManagerState = {
   running: boolean
@@ -70,11 +73,34 @@ async function readManagerPid(): Promise<number | undefined> {
 }
 
 /**
- * Probe the manager HTTP endpoint. Any HTTP response (even 4xx/5xx) counts
- * as "running" — we only care that a server is listening on the port and
+ * Boot a `ManagerSession` from CLI config and persist the manager PID.
+ *
+ * Centralizes the boot recipe shared by `astrale start --foreground` and
+ * `astrale reset` (which auto-starts the manager if needed). Caller is
+ * responsible for `serve()`, UI startup, and SIGINT cleanup.
+ */
+export async function bootManagerSession(config: AstraleConfig): Promise<ManagerSession> {
+  const auth = await resolveAuth(KEYS_DIR, {
+    issuer: config.issuer,
+    subject: 'manager',
+  })
+  const { ManagerSession } = await import('@astrale-os/kernel-toolkit/manager')
+  const session = await ManagerSession.boot({
+    graphName: config.graphName,
+    falkorPort: config.falkorPort,
+    port: config.managerPort,
+    auth,
+  })
+  await writeManagerPid(process.pid)
+  return session
+}
+
+/**
+ * Probe an HTTP endpoint. Any HTTP response (even 4xx/5xx) counts as
+ * "running" — we only care that a server is listening on the port and
  * speaking HTTP.
  */
-async function probeHttp(url: string, timeoutMs = 1_500): Promise<boolean> {
+export async function probeHttp(url: string, timeoutMs = 1_500): Promise<boolean> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {

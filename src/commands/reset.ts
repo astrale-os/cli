@@ -7,10 +7,8 @@ import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
 import { formatElapsed } from '../lib/format'
 import { resolveInstanceId } from '../lib/instance'
-import { resolveAuth } from '../lib/keys'
 import { log, spinner } from '../lib/log'
-import { detectManagerState, removeManagerPid, writeManagerPid } from '../lib/manager-state'
-import { KEYS_DIR } from '../lib/paths'
+import { bootManagerSession, detectManagerState, removeManagerPid } from '../lib/manager-state'
 
 type ResetOptions = {
   instance?: string
@@ -28,22 +26,8 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
   // If manager is not running, start it and keep it alive after reset
   if (!(await detectManagerState(config)).running) {
     log.info('Manager not running, starting...')
-
-    const auth = await resolveAuth(KEYS_DIR, {
-      issuer: config.issuer,
-      subject: 'manager',
-    })
-
-    const { ManagerSession } = await import('@astrale-os/kernel-toolkit/manager')
-
-    managerSession = await ManagerSession.boot({
-      graphName: config.graphName,
-      falkorPort: config.falkorPort,
-      port: config.managerPort,
-      auth,
-    })
+    managerSession = await bootManagerSession(config)
     managerSession.serve()
-    await writeManagerPid(process.pid)
   }
 
   const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
@@ -57,7 +41,12 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
     )) as Array<{ id: string; status: string }>
 
     if (instances.length === 0) {
-      log.error('No kernel instances found')
+      log.error('No sub-kernel instances registered with the manager')
+      log.dim('  `astrale reset` only resets sub-instances. To reset the manager itself,')
+      log.dim('  stop it, clear the FalkorDB graph, and start again:')
+      log.dim('    astrale stop')
+      log.dim(`    redis-cli -p ${config.falkorPort} GRAPH.DELETE ${config.graphName}`)
+      log.dim('    astrale start')
       client.disconnect()
       if (managerSession) await managerSession.close()
       process.exit(1)

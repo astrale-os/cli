@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import { readConfig } from '../lib/config'
 import { resolveInstanceId } from '../lib/instance'
 import { log } from '../lib/log'
+import { isRawOutput } from '../lib/output'
 import { JOURNAL_PATH, LOGS_DIR } from '../lib/paths'
 
 type JournalEntry = {
@@ -42,7 +43,7 @@ type LogsOptions = {
 type DisplayOpts = { timing?: boolean }
 
 export async function logsCommand(opts: LogsOptions): Promise<void> {
-  const isRaw = opts.raw || opts.json || !(process.stdout.isTTY ?? false)
+  const isRaw = isRawOutput(opts)
   const limit = parseInt(opts.n ?? '20', 10)
   const display: DisplayOpts = { timing: opts.timing }
 

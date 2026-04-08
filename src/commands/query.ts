@@ -5,12 +5,12 @@ import type { KernelCommandOpts } from '../kernel'
 import { withKernelClient, formatKernelError } from '../kernel'
 import { formatElapsed } from '../lib/format'
 import { spinner } from '../lib/log'
-import { output } from '../lib/output'
+import { isRawOutput, output } from '../lib/output'
 
 const QUERY_METHOD = '/kernel.astrale.ai/Root/query'
 
 export async function queryCommand(cypher: string, opts: KernelCommandOpts): Promise<void> {
-  const isRaw = opts.raw || opts.json || !(process.stdout.isTTY ?? false)
+  const isRaw = isRawOutput(opts)
   const spin = !isRaw ? spinner('Running query...') : null
   const startTime = performance.now()
 

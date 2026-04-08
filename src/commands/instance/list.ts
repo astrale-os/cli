@@ -7,7 +7,7 @@ import { resolveCredential } from '../../kernel/auth'
 import { readConfig } from '../../lib/config'
 import { readInstances } from '../../lib/instance'
 import { log } from '../../lib/log'
-import { output } from '../../lib/output'
+import { isRawOutput, output } from '../../lib/output'
 
 type ManagerInstance = { id: string; status: string; label?: string }
 
@@ -50,7 +50,7 @@ export default {
     { flags: '--json', description: 'Alias for --raw' },
   ],
   action: async (opts: { raw?: boolean; json?: boolean }) => {
-    const isRaw = opts?.raw || opts?.json || !(process.stdout.isTTY ?? false)
+    const isRaw = isRawOutput(opts)
     const store = await readInstances()
     const { instances: discovered, error: discoveryError } = await discoverLocalInstances()
 

@@ -8,7 +8,22 @@ import { resolveAuth } from '../lib/keys'
 import { log, spinner } from '../lib/log'
 import { ASTRALE_HOME, KEYS_DIR, DATA_DIR, LOGS_DIR, COMPOSE_PATH } from '../lib/paths'
 
-export async function initCommand(): Promise<void> {
+export type InitOptions = {
+  managerPort?: string
+  uiPort?: string
+  falkorPort?: string
+  graphName?: string
+  yes?: boolean
+}
+
+const DEFAULTS = {
+  managerPort: 4400,
+  uiPort: 4300,
+  falkorPort: 6379,
+  graphName: 'astrale-manager',
+}
+
+export async function initCommand(opts: InitOptions = {}): Promise<void> {
   log.info('Astrale init — setting up your local installation\n')
 
   // ── Pre-flight checks ──────────────────────────────────────
@@ -18,7 +33,7 @@ export async function initCommand(): Promise<void> {
 
   // ── Detect existing install ────────────────────────────────
 
-  if (await configExists()) {
+  if ((await configExists()) && !opts.yes) {
     const rl = createInterface({ input: stdin, output: stdout })
     const answer = await rl.question('Existing installation detected. Overwrite? [y/N] ')
     rl.close()
@@ -28,14 +43,22 @@ export async function initCommand(): Promise<void> {
     }
   }
 
-  // ── Interactive prompts ────────────────────────────────────
+  // ── Resolve config: flags > prompts > defaults ─────────────
 
-  const rl = createInterface({ input: stdin, output: stdout })
-  const managerPort = parseInt((await rl.question('Manager port [4400]: ')) || '4400', 10)
-  const uiPort = parseInt((await rl.question('UI port [4300]: ')) || '4300', 10)
-  const falkorPort = parseInt((await rl.question('FalkorDB port [6379]: ')) || '6379', 10)
-  const graphName = (await rl.question('Graph name [astrale-manager]: ')) || 'astrale-manager'
-  rl.close()
+  const managerPort = await resolveValue(
+    'Manager port',
+    opts.managerPort,
+    DEFAULTS.managerPort,
+    opts.yes,
+  )
+  const uiPort = await resolveValue('UI port', opts.uiPort, DEFAULTS.uiPort, opts.yes)
+  const falkorPort = await resolveValue(
+    'FalkorDB port',
+    opts.falkorPort,
+    DEFAULTS.falkorPort,
+    opts.yes,
+  )
+  const graphName = await resolveString('Graph name', opts.graphName, DEFAULTS.graphName, opts.yes)
 
   const config: AstraleConfig = {
     managerPort,
@@ -91,6 +114,36 @@ export async function initCommand(): Promise<void> {
   log.info('Next steps:')
   log.dim('  astrale start     # start the manager in the background')
   log.dim('  astrale status    # check status')
+}
+
+/** Resolve a numeric option: explicit flag wins; otherwise prompt unless --yes. */
+async function resolveValue(
+  label: string,
+  flag: string | undefined,
+  defaultValue: number,
+  noninteractive?: boolean,
+): Promise<number> {
+  if (flag !== undefined) return parseInt(flag, 10)
+  if (noninteractive) return defaultValue
+  const rl = createInterface({ input: stdin, output: stdout })
+  const answer = await rl.question(`${label} [${defaultValue}]: `)
+  rl.close()
+  return parseInt(answer || String(defaultValue), 10)
+}
+
+/** Resolve a string option: explicit flag wins; otherwise prompt unless --yes. */
+async function resolveString(
+  label: string,
+  flag: string | undefined,
+  defaultValue: string,
+  noninteractive?: boolean,
+): Promise<string> {
+  if (flag !== undefined) return flag
+  if (noninteractive) return defaultValue
+  const rl = createInterface({ input: stdin, output: stdout })
+  const answer = await rl.question(`${label} [${defaultValue}]: `)
+  rl.close()
+  return answer || defaultValue
 }
 
 async function checkDocker(): Promise<void> {

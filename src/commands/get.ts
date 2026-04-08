@@ -2,10 +2,10 @@ import type { KernelCommandOpts } from '../kernel'
 
 import { withKernelClient, formatKernelError } from '../kernel'
 import { spinner } from '../lib/log'
-import { output } from '../lib/output'
+import { isRawOutput, output } from '../lib/output'
 
 export async function getCommand(path: string, opts: KernelCommandOpts): Promise<void> {
-  const isRaw = opts.raw || opts.json || !(process.stdout.isTTY ?? false)
+  const isRaw = isRawOutput(opts)
   const spin = !isRaw ? spinner(`Getting ${path}...`) : null
   const method = `${path}:get`
 

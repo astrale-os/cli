@@ -39,7 +39,9 @@ export async function persistAuth(
   await atomicWrite(join(keysDir, PRIVATE_KEY_FILE), JSON.stringify(privateJwk, null, 2))
   await atomicWrite(join(keysDir, PUBLIC_KEY_FILE), JSON.stringify(publicJwk, null, 2))
 
-  const credential = await new SignJWT({})
+  const credential = await new SignJWT({
+    grant: { v: 1, expr: { kind: 'identity', self: true } },
+  })
     .setProtectedHeader({ alg: 'ES256', kid })
     .setIssuer(issuer)
     .setSubject(subject)
@@ -65,7 +67,9 @@ export async function loadAuth(
 
   const privateKey = await importJWK(privateJwk, 'ES256')
 
-  const credential = await new SignJWT({})
+  const credential = await new SignJWT({
+    grant: { v: 1, expr: { kind: 'identity', self: true } },
+  })
     .setProtectedHeader({ alg: 'ES256', kid })
     .setIssuer(issuer)
     .setSubject(subject)
@@ -101,7 +105,7 @@ export async function signAs(
   const kid = privateJwk.kid ?? `${subject}-key`
   const privateKey = await importJWK(privateJwk, 'ES256')
 
-  return new SignJWT({})
+  return new SignJWT({ grant: { v: 1, expr: { kind: 'identity', self: true } } })
     .setProtectedHeader({ alg: 'ES256', kid })
     .setIssuer(issuer)
     .setSubject(subject)

@@ -18,9 +18,16 @@ program
 registerCommand(program, {
   name: 'init',
   description: 'Set up a new Astrale installation',
-  action: async () => {
+  options: [
+    { flags: '--manager-port <port>', description: 'Manager HTTP port (default: 4400)' },
+    { flags: '--ui-port <port>', description: 'Playground UI port (default: 4300)' },
+    { flags: '--falkor-port <port>', description: 'FalkorDB port (default: 6379)' },
+    { flags: '--graph-name <name>', description: 'Graph name (default: astrale-manager)' },
+    { flags: '-y, --yes', description: 'Skip prompts and accept defaults / overwrite' },
+  ],
+  action: async (opts) => {
     const { initCommand } = await import('../src/commands/init')
-    await initCommand()
+    await initCommand(opts as Parameters<typeof initCommand>[0])
   },
 })
 
@@ -90,7 +97,10 @@ registerCommand(program, {
 })
 
 const kernelOptions = [
-  { flags: '--format <type>', description: 'Output format: yaml (default) or json' },
+  {
+    flags: '--format <type>',
+    description: 'Output format: yaml or json (default: yaml in TTY, json when piped)',
+  },
   { flags: '--raw', description: 'Output raw JSON (no colors)' },
   { flags: '--json', description: 'Alias for --raw' },
   { flags: '-i, --instance <name>', description: 'Target a specific instance (overrides active)' },
@@ -104,15 +114,15 @@ registerCommand(program, {
   description: 'Call a kernel operation',
   arguments: [
     {
-      name: 'method',
-      description: 'Full operation path (e.g., /manager.astrale.ai/KernelInstance/list)',
+      name: 'path',
+      description: 'Operation path (e.g., /manager.astrale.ai/KernelInstance/list or /node:method)',
     },
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
   options: [{ flags: '-d, --data <json>', description: 'Params as JSON string' }, ...kernelOptions],
-  action: async (method, params, opts) => {
+  action: async (path, params, opts) => {
     const { callCommand } = await import('../src/commands/call')
-    await callCommand(method as string, params as string[], opts)
+    await callCommand(path as string, params as string[], opts)
   },
 })
 
@@ -131,10 +141,13 @@ registerCommand(program, {
   name: 'ls',
   description: 'List children of a node',
   arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
-  options: kernelOptions,
+  options: [
+    { flags: '-l, --long', description: 'Full node dump (default: compact)' },
+    ...kernelOptions,
+  ],
   action: async (path, opts) => {
     const { lsCommand } = await import('../src/commands/ls')
-    await lsCommand(path as string, opts)
+    await lsCommand(path as string, opts as Parameters<typeof lsCommand>[1])
   },
 })
 

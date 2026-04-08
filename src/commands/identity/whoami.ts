@@ -4,7 +4,7 @@ import type { CommandDefinition } from '../../command'
 
 import { getDefault } from '../../lib/identity'
 import { log } from '../../lib/log'
-import { output } from '../../lib/output'
+import { isRawOutput, output } from '../../lib/output'
 
 export default {
   name: 'whoami',
@@ -15,7 +15,7 @@ export default {
   ],
   action: async (opts: { raw?: boolean; json?: boolean }) => {
     try {
-      const isRaw = opts?.raw || opts?.json || !(process.stdout.isTTY ?? false)
+      const isRaw = isRawOutput(opts)
       const identity = await getDefault()
 
       if (isRaw) {
