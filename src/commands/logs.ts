@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { createReadStream, watch } from 'node:fs'
+import { createReadStream, statSync, watch } from 'node:fs'
 import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
@@ -35,21 +35,22 @@ type LogsOptions = {
   trace?: string
   timing?: boolean
   verbose?: boolean
+  compact?: boolean
   raw?: boolean
   json?: boolean
   instance?: string
 }
 
-type DisplayOpts = { timing?: boolean }
+type DisplayOpts = { timing?: boolean; compact?: boolean }
 
 export async function logsCommand(opts: LogsOptions): Promise<void> {
   const isRaw = isRawOutput(opts)
-  const limit = parsePositiveInt(opts.n ?? '20', '-n')
+  const limit = parsePositiveInt(opts.n ?? '20')
   if (limit === null) {
     log.error(`Invalid -n value "${opts.n}" — expected a positive integer`)
     process.exit(1)
   }
-  const display: DisplayOpts = { timing: opts.timing }
+  const display: DisplayOpts = { timing: opts.timing, compact: opts.compact }
 
   const config = await readConfig()
   const instanceId = await resolveInstanceId(opts, config)
@@ -69,7 +70,17 @@ export async function logsCommand(opts: LogsOptions): Promise<void> {
     process.exit(1)
   }
 
-  const sinceMs = opts.since ? parseSince(opts.since) : undefined
+  let sinceMs: number | undefined
+  if (opts.since) {
+    const parsed = parseSince(opts.since)
+    if (parsed === null) {
+      log.error(
+        `Invalid --since value "${opts.since}" — expected duration (5m, 1h, 2d) or ISO timestamp`,
+      )
+      process.exit(1)
+    }
+    sinceMs = parsed
+  }
   const filter: Filter = {
     topic: opts.topic,
     since: sinceMs,
@@ -128,6 +139,7 @@ async function tailStreamMode(
   display: DisplayOpts,
   filter: Filter,
 ): Promise<void> {
+  // Initial scan: show last 10 matching entries
   const recent: JournalEntry[] = []
   for await (const entry of scanFile(journalPath)) {
     if (!matchesFilter(entry, filter)) continue
@@ -138,16 +150,36 @@ async function tailStreamMode(
     printEntry(entry, isRaw, display)
   }
 
-  let lastSeq = recent.length > 0 ? recent[recent.length - 1].seq : 0
+  // Track byte offset so we only read new data on each change
+  let lastByteOffset = statSync(journalPath).size
+  let reading = false
+  let dirty = false
+
+  const readNewEntries = async () => {
+    reading = true
+    try {
+      do {
+        dirty = false
+        for await (const entry of scanFile(journalPath, lastByteOffset)) {
+          if (!matchesFilter(entry, filter)) continue
+          printEntry(entry, isRaw, display)
+        }
+        lastByteOffset = statSync(journalPath).size
+      } while (dirty)
+    } catch {
+      /* file may have been removed */
+    } finally {
+      reading = false
+    }
+  }
 
   return new Promise((_resolve, _reject) => {
     const watcher = watch(journalPath, async () => {
-      for await (const entry of scanFile(journalPath)) {
-        if (entry.seq <= lastSeq) continue
-        lastSeq = entry.seq
-        if (!matchesFilter(entry, filter)) continue
-        printEntry(entry, isRaw, display)
+      if (reading) {
+        dirty = true
+        return
       }
+      await readNewEntries()
     })
     process.on('SIGINT', () => {
       watcher.close()
@@ -158,17 +190,25 @@ async function tailStreamMode(
 
 // ── File scanner ────────────────────────────────────────────
 
-async function* scanFile(path: string): AsyncIterable<JournalEntry> {
+async function* scanFile(path: string, startByte?: number): AsyncIterable<JournalEntry> {
   try {
-    const stream = createReadStream(path, { encoding: 'utf-8' })
+    const stream = createReadStream(path, { encoding: 'utf-8', start: startByte })
     const rl = createInterface({ input: stream, crlfDelay: Infinity })
+    const mayBePartial = startByte !== undefined && startByte > 0
+    let isFirst = true
     for await (const line of rl) {
       if (!line.trim()) continue
       try {
         yield JSON.parse(line) as JournalEntry
       } catch {
-        /* skip malformed */
+        // When resuming mid-file, the first chunk is likely a partial line — skip it.
+        // But if it's not the first line, this is a genuinely malformed entry.
+        if (isFirst && mayBePartial) {
+          // Expected: partial leftover from byte offset resume
+        }
+        // Either way, skip unparseable lines
       }
+      isFirst = false
     }
   } catch {
     /* file doesn't exist */
@@ -213,6 +253,11 @@ function printEntry(entry: JournalEntry, isRaw: boolean, display: DisplayOpts): 
     return
   }
 
+  if (display.compact) {
+    printCompactEntry(entry)
+    return
+  }
+
   const { event } = entry
   const ts = formatTimestamp(event.metadata.timestamp)
   const topic = colorTopic(event.topic)
@@ -222,6 +267,22 @@ function printEntry(entry: JournalEntry, isRaw: boolean, display: DisplayOpts): 
   const detail = formatDetail(event.topic, event.payload, display)
 
   console.log(`${chalk.dim(ts)}  ${topic}  ${principal}  ${detail}`)
+}
+
+function printCompactEntry(entry: JournalEntry): void {
+  const { event } = entry
+  const ts = formatTimestamp(event.metadata.timestamp)
+  const p = event.payload as Record<string, unknown> | undefined
+  const duration = p && typeof p.durationMs === 'number' ? `${p.durationMs}ms` : ''
+  let result = ''
+  if (p?.result !== undefined) {
+    const s = JSON.stringify(p.result)
+    result = s.length > 60 ? s.slice(0, 60) + '...' : s
+  } else if (p?.error) {
+    const err = p.error as { message?: string; code?: string }
+    result = err.message ?? err.code ?? 'error'
+  }
+  process.stdout.write(`${ts}\t${event.topic}\t${duration}\t${result}\n`)
 }
 
 function formatTimestamp(ms: number): string {
@@ -297,13 +358,13 @@ function formatTiming(timing: Record<string, number>): string {
  * Silent `NaN` fallbacks on garbage input previously caused `-n abc` to
  * dump the entire journal.
  */
-function parsePositiveInt(value: string, _flag: string): number | null {
+function parsePositiveInt(value: string): number | null {
   if (!/^\d+$/.test(value)) return null
   const n = Number.parseInt(value, 10)
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
-function parseSince(since: string): number {
+function parseSince(since: string): number | null {
   const match = since.match(/^(\d+)(s|m|h|d)$/)
   if (match) {
     const [, num, unit] = match
@@ -312,5 +373,5 @@ function parseSince(since: string): number {
   }
   const ts = Date.parse(since)
   if (!isNaN(ts)) return ts
-  return 0
+  return null
 }

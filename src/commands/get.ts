@@ -1,26 +1,29 @@
 import type { KernelCommandOpts } from '../kernel'
 
-import { withKernelClient, formatKernelError } from '../kernel'
-import { spinner } from '../lib/log'
-import { isRawOutput, output } from '../lib/output'
+import { runKernelCommand } from '../kernel'
+import { output } from '../lib/output'
 
-export async function getCommand(path: string, opts: KernelCommandOpts): Promise<void> {
-  const isRaw = isRawOutput(opts)
-  const spin = !isRaw ? spinner(`Getting ${path}...`) : null
-  const method = `${path}:get`
+type GetOpts = KernelCommandOpts & { long?: boolean }
 
-  try {
-    const result = await withKernelClient(opts, (ctx) =>
-      ctx.client.call(method, {}, ctx.credential),
-    )
+const INTERNAL_KEYS = new Set(['__labels', 'classId'])
 
-    spin?.succeed(`Node ${path}`)
-    if (!isRaw) console.log('')
-    output(result, opts)
-    process.exit(0)
-  } catch (error) {
-    if (!isRaw && spin) spin.fail('Failed')
-    formatKernelError(error, isRaw, undefined, opts.debug)
-    process.exit(1)
+export async function getCommand(path: string, opts: GetOpts): Promise<void> {
+  await runKernelCommand({
+    opts,
+    label: `Node ${path}`,
+    fn: (ctx) => ctx.client.call(`${path}:get`, {}, ctx.credential),
+    format: (result, fmtOpts) => {
+      output(opts.long ? result : cleanNode(result), fmtOpts)
+    },
+  })
+}
+
+function cleanNode(data: unknown): unknown {
+  if (!data || typeof data !== 'object') return data
+  const result: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+    if (INTERNAL_KEYS.has(k)) continue
+    result[k] = v
   }
+  return result
 }

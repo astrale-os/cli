@@ -8,6 +8,7 @@ export type CommandOption = {
   flags: string
   description: string
   default?: string
+  choices?: string[]
 }
 
 export type CommandDefinition = {

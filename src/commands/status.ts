@@ -2,10 +2,10 @@ import { readConfig } from '../lib/config'
 import { isFalkorRunning } from '../lib/docker'
 import { log } from '../lib/log'
 import { detectManagerState, probeHttp } from '../lib/manager-state'
-import { isRawOutput, output } from '../lib/output'
+import { type OutputOpts, isRawOutput, output } from '../lib/output'
 import { COMPOSE_PATH } from '../lib/paths'
 
-export async function statusCommand(opts?: { raw?: boolean; json?: boolean }): Promise<void> {
+export async function statusCommand(opts?: OutputOpts): Promise<void> {
   const isRaw = isRawOutput(opts)
   const config = await readConfig()
 
@@ -18,32 +18,33 @@ export async function statusCommand(opts?: { raw?: boolean; json?: boolean }): P
 
   const managerUrl = `http://localhost:${config.managerPort}/mngt`
 
-  if (isRaw) {
-    output(
-      {
-        manager: {
-          running: manager.running,
-          pid: manager.pid ?? null,
-          port: config.managerPort,
-          url: managerUrl,
-          source: manager.source,
-        },
-        falkor: {
-          running: falkorUp,
-          port: config.falkorPort,
-        },
-        ui: {
-          running: uiUp,
-          port: config.uiPort,
-          url: uiUp ? uiUrl : null,
-        },
-        graphName: config.graphName,
-      },
-      opts ?? {},
-    )
+  const data = {
+    manager: {
+      running: manager.running,
+      pid: manager.pid ?? null,
+      port: config.managerPort,
+      url: managerUrl,
+      source: manager.source,
+    },
+    falkor: {
+      running: falkorUp,
+      port: config.falkorPort,
+    },
+    ui: {
+      running: uiUp,
+      port: config.uiPort,
+      url: uiUp ? uiUrl : null,
+    },
+    graphName: config.graphName,
+  }
+
+  // Structured output: --raw, --json, --format, or piped
+  if (isRaw || opts?.format) {
+    output(data, opts ?? {})
     return
   }
 
+  // Pretty TTY output
   console.log('')
   log.info('Astrale Status\n')
 

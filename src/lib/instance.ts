@@ -22,6 +22,29 @@ export const InstanceStoreSchema = z.object({
 export type InstanceEntry = z.infer<typeof InstanceEntrySchema>
 export type InstanceStore = z.infer<typeof InstanceStoreSchema>
 
+// ─── Validation ─────────────────────────────────────────────
+
+const NAME_RE = /^[a-zA-Z0-9_.-]+$/
+
+export function validateName(name: string, entity: string): void {
+  if (!name || !NAME_RE.test(name)) {
+    throw new Error(
+      `Invalid ${entity.toLowerCase()} name "${name}" — must be non-empty and contain only letters, digits, hyphens, underscores, and dots`,
+    )
+  }
+}
+
+function validateUrl(url: string): void {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('not http(s)')
+    }
+  } catch {
+    throw new Error(`Invalid URL "${url}" — expected a valid http:// or https:// URL`)
+  }
+}
+
 // ─── Seed ───────────────────────────────────────────────────
 
 function seed(config?: AstraleConfig): InstanceStore {
@@ -56,7 +79,14 @@ export async function writeInstances(store: InstanceStore): Promise<void> {
 // ─── Instance management ────────────────────────────────────
 
 export async function addInstance(name: string, opts: { url?: string }): Promise<InstanceEntry> {
+  validateName(name, 'Instance')
   const store = await readInstances()
+  if (store.instances[name]) {
+    throw new Error(
+      `Instance "${name}" already exists. Remove it first with: astrale instance remove ${name}`,
+    )
+  }
+  if (opts.url) validateUrl(opts.url)
   const entry: InstanceEntry = { ...opts, createdAt: new Date().toISOString() }
   store.instances[name] = entry
   await writeInstances(store)

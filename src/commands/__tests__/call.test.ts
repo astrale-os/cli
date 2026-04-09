@@ -36,6 +36,14 @@ describe('coerceValue', () => {
     expect(coerceValue('')).toBe('')
     expect(coerceValue('some text')).toBe('some text')
   })
+
+  test('preserves hex, octal, and exotic numeric strings as strings', () => {
+    expect(coerceValue('0x1f')).toBe('0x1f')
+    expect(coerceValue('0o77')).toBe('0o77')
+    expect(coerceValue('0b101')).toBe('0b101')
+    expect(coerceValue('1e308')).toBe('1e308')
+    expect(coerceValue('Infinity')).toBe('Infinity')
+  })
 })
 
 describe('parseKeyValue', () => {

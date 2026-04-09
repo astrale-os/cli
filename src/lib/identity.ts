@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
+import { validateName } from './instance'
 import { log } from './log'
 import { IDENTITIES_PATH } from './paths'
 
@@ -18,11 +19,13 @@ export const IdentityStoreSchema = z.object({
 export type Identity = z.infer<typeof IdentitySchema>
 export type IdentityStore = z.infer<typeof IdentityStoreSchema>
 
-const SEED: IdentityStore = {
-  default: 'manager',
-  identities: {
-    manager: { subject: 'manager', createdAt: new Date().toISOString() },
-  },
+function seed(): IdentityStore {
+  return {
+    default: 'manager',
+    identities: {
+      manager: { subject: 'manager', createdAt: new Date().toISOString() },
+    },
+  }
 }
 
 export async function readIdentities(): Promise<IdentityStore> {
@@ -33,7 +36,7 @@ export async function readIdentities(): Promise<IdentityStore> {
     if (e instanceof z.ZodError) {
       log.warn(`Invalid identities at ${IDENTITIES_PATH} — using defaults`)
     }
-    return { ...SEED }
+    return seed()
   }
 }
 
@@ -43,6 +46,7 @@ export async function writeIdentities(store: IdentityStore): Promise<void> {
 }
 
 export async function createIdentity(name: string, subject?: string): Promise<Identity> {
+  validateName(name, 'Identity')
   const store = await readIdentities()
   if (store.identities[name]) {
     throw new Error(`Identity "${name}" already exists`)

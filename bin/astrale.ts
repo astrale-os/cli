@@ -9,6 +9,7 @@ program
   .name('astrale')
   .description('Astrale system CLI — manage your local Astrale installation')
   .version('0.1.0')
+  .showSuggestionAfterError(true)
   .action(() => {
     program.help()
   })
@@ -64,12 +65,17 @@ registerCommand(program, {
   name: 'status',
   description: 'Show the status of the Astrale manager',
   options: [
+    {
+      flags: '--format <type>',
+      description: 'Output format (default: yaml in TTY, json when piped)',
+      choices: ['yaml', 'json'],
+    },
     { flags: '--raw', description: 'Output raw JSON' },
     { flags: '--json', description: 'Alias for --raw' },
   ],
   action: async (opts) => {
     const { statusCommand } = await import('../src/commands/status')
-    await statusCommand(opts as { raw?: boolean; json?: boolean })
+    await statusCommand(opts as Parameters<typeof statusCommand>[0])
   },
 })
 
@@ -88,18 +94,33 @@ registerCommand(program, {
 
 registerCommand(program, {
   name: 'use',
-  description: 'Set the active kernel instance',
-  arguments: [{ name: 'name', description: 'Registered instance name' }],
+  description: 'Set the active kernel instance (no args: show current)',
+  aliases: ['switch'],
+  arguments: [{ name: 'name', description: 'Registered instance name', required: false }],
   action: async (name) => {
     const { useCommand } = await import('../src/commands/use')
-    await useCommand(name as string)
+    await useCommand(name as string | undefined)
+  },
+})
+
+registerCommand(program, {
+  name: 'whoami',
+  description: 'Show the current default identity (alias for identity whoami)',
+  options: [
+    { flags: '--raw', description: 'Output raw JSON' },
+    { flags: '--json', description: 'Alias for --raw' },
+  ],
+  action: async (opts) => {
+    const mod = await import('../src/commands/identity/whoami')
+    await mod.default.action(opts as { raw?: boolean; json?: boolean })
   },
 })
 
 const kernelOptions = [
   {
     flags: '--format <type>',
-    description: 'Output format: yaml or json (default: yaml in TTY, json when piped)',
+    description: 'Output format (default: yaml in TTY, json when piped)',
+    choices: ['yaml', 'json'],
   },
   { flags: '--raw', description: 'Output raw JSON (no colors)' },
   { flags: '--json', description: 'Alias for --raw' },
@@ -119,7 +140,12 @@ registerCommand(program, {
     },
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
-  options: [{ flags: '-d, --data <json>', description: 'Params as JSON string' }, ...kernelOptions],
+  options: [
+    { flags: '-d, --data <json>', description: 'Params as JSON string' },
+    { flags: '--describe', description: 'Show operation schema without executing' },
+    { flags: '--dry-run', description: 'Show what would be sent without executing' },
+    ...kernelOptions,
+  ],
   action: async (path, params, opts) => {
     const { callCommand } = await import('../src/commands/call')
     await callCommand(path as string, params as string[], opts)
@@ -130,10 +156,13 @@ registerCommand(program, {
   name: 'get',
   description: 'Get a node by path or ID',
   arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
-  options: kernelOptions,
+  options: [
+    { flags: '-l, --long', description: 'Include all internal fields (__labels, classId)' },
+    ...kernelOptions,
+  ],
   action: async (path, opts) => {
     const { getCommand } = await import('../src/commands/get')
-    await getCommand(path as string, opts)
+    await getCommand(path as string, opts as Parameters<typeof getCommand>[1])
   },
 })
 
@@ -143,6 +172,13 @@ registerCommand(program, {
   arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
   options: [
     { flags: '-l, --long', description: 'Full node dump (default: compact)' },
+    { flags: '-q, --quiet', description: 'One path per line (unix-pipeable)' },
+    { flags: '-R, --recursive', description: 'List recursively (tree view)' },
+    { flags: '--count', description: 'Print only the number of children' },
+    {
+      flags: '--filter <kind>',
+      description: 'Filter children by class or label (e.g., Class, Syscall)',
+    },
     ...kernelOptions,
   ],
   action: async (path, opts) => {
@@ -152,12 +188,27 @@ registerCommand(program, {
 })
 
 registerCommand(program, {
+  name: 'describe',
+  description: 'Describe a node: its kind, operations, children, and schemas',
+  arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
+  options: kernelOptions,
+  action: async (path, opts) => {
+    const { describeCommand } = await import('../src/commands/describe')
+    await describeCommand(path as string, opts)
+  },
+})
+
+registerCommand(program, {
   name: 'logs',
   description: 'View kernel event journal',
   options: [
     { flags: '-t, --tail', description: 'Live stream new events' },
     { flags: '-n <count>', description: 'Number of entries to show', default: '20' },
-    { flags: '--topic <pattern>', description: 'Filter by topic glob (e.g., op:*:failed)' },
+    {
+      flags: '--topic <pattern>',
+      description:
+        'Filter by topic glob (* matches one segment, ** matches rest. e.g., op:*:failed, sys:**)',
+    },
     {
       flags: '--since <time>',
       description: 'Show events since (e.g., 5m, 1h, ISO timestamp)',
@@ -165,6 +216,10 @@ registerCommand(program, {
     { flags: '--principal <name>', description: 'Filter by identity' },
     { flags: '--trace <id>', description: 'Filter by trace/operation ID' },
     { flags: '--timing', description: 'Show per-step timing breakdown' },
+    {
+      flags: '-c, --compact',
+      description: 'Tab-separated summary (timestamp, topic, duration, result)',
+    },
     { flags: '-v, --verbose', description: 'Show all events including :started phases' },
     { flags: '--raw', description: 'Output raw NDJSON' },
     { flags: '--json', description: 'Alias for --raw' },
@@ -214,5 +269,31 @@ registerGroup(program, {
     (await import('../src/commands/identity/delete')).default,
   ],
 })
+
+// ── Help text enhancements ───────────────────────────────────
+
+program.addHelpText(
+  'after',
+  `
+Command groups:
+  Lifecycle     init, start, stop, restart, status, reset
+  Graph         ls, get, call, query, describe, logs
+  Management    instance, identity, use
+
+Path syntax:
+  /domain/Class/method    Navigate to a Syscall node (static operation)
+  /domain/Class:method    Call a method on a node instance
+  @nodeId                 Reference a node by its ID
+
+Examples:
+  $ astrale ls /
+  $ astrale call /manager.astrale.ai/KernelInstance/list
+  $ astrale call /manager.astrale.ai/KernelInstance/register id=my-inst graphName=my-graph
+  $ astrale get /kernel.astrale.ai/Domain
+  $ astrale describe /manager.astrale.ai/KernelInstance
+  $ astrale logs --topic 'op:*:failed' -n 10
+  $ astrale query 'MATCH (n) RETURN n LIMIT 5'
+`,
+)
 
 program.parse()

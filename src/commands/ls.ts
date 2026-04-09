@@ -1,12 +1,18 @@
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../kernel'
+import type { KernelCommandOpts, ClientContext } from '../kernel'
 
-import { withKernelClient, formatKernelError } from '../kernel'
+import { runKernelCommand, extractItems, withKernelClient, formatKernelError } from '../kernel'
 import { spinner } from '../lib/log'
 import { isRawOutput, output } from '../lib/output'
 
-type LsOpts = KernelCommandOpts & { long?: boolean }
+type LsOpts = KernelCommandOpts & {
+  long?: boolean
+  quiet?: boolean
+  recursive?: boolean
+  count?: boolean
+  filter?: string
+}
 
 type Item = {
   id?: string
@@ -16,29 +22,66 @@ type Item = {
 }
 
 export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
+  if (opts.recursive) {
+    return recursiveLs(path, opts)
+  }
+
+  await runKernelCommand({
+    opts,
+    label: `Children of ${path}`,
+    fn: (ctx) => ctx.client.call(`${path}:listChildren`, {}, ctx.credential),
+    format: (result, fmtOpts, isRaw) => {
+      let items = extractItems<Item>(result)
+
+      if (opts.filter) {
+        const f = opts.filter.toLowerCase()
+        items = items.filter(
+          (i) =>
+            i.class?.toLowerCase().includes(f) || i.__labels?.some((l) => l.toLowerCase() === f),
+        )
+      }
+
+      if (opts.count) {
+        process.stdout.write(String(items.length) + '\n')
+      } else if (opts.quiet) {
+        for (const item of items) {
+          process.stdout.write(itemPath(path, item) + '\n')
+        }
+      } else if (opts.long || fmtOpts.format) {
+        output(result, fmtOpts)
+      } else if (isRaw) {
+        output(items.map(stripInternalFields), fmtOpts)
+      } else {
+        printCompact(items)
+      }
+    },
+  })
+}
+
+// ── Recursive tree ──────────────────────────────────────────
+
+const MAX_DEPTH = 5
+const MAX_NODES = 200
+
+async function recursiveLs(path: string, opts: LsOpts): Promise<void> {
   const isRaw = isRawOutput(opts)
-  const spin = !isRaw ? spinner(`Listing ${path}...`) : null
-  const method = `${path}:listChildren`
+  const spin = !isRaw ? spinner(`Listing ${path} recursively...`) : null
 
   try {
-    const result = await withKernelClient(opts, (ctx) =>
-      ctx.client.call(method, {}, ctx.credential),
-    )
+    await withKernelClient(opts, async (ctx) => {
+      const counter = { count: 0 }
+      const tree = await buildTree(ctx, path, 0, counter)
+      spin?.succeed(`Tree of ${path}`)
+      if (!isRaw) console.log('')
 
-    const items: Item[] = Array.isArray(result)
-      ? (result as Item[])
-      : ((result as { items?: Item[] })?.items ?? [])
-    spin?.succeed(`Children of ${path} (${items.length})`)
-    if (!isRaw) console.log('')
-
-    // Compact view only when the user hasn't asked for the full dump
-    // (--long, --raw, --json, --format ...) or when we're piped.
-    if (isRaw || opts.long || opts.format) {
-      output(result, opts)
-    } else {
-      printCompact(items)
-    }
-    process.exit(0)
+      if (isRaw || opts.long || opts.format) {
+        output(tree, opts)
+      } else if (opts.quiet) {
+        printTreeQuiet(tree, path)
+      } else {
+        printTree(tree, '')
+      }
+    })
   } catch (error) {
     if (!isRaw && spin) spin.fail('Failed')
     formatKernelError(error, isRaw, undefined, opts.debug)
@@ -46,7 +89,67 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
   }
 }
 
-/** Compact one-line-per-child view: `slug   class   id`. */
+type TreeNode = Item & { children?: TreeNode[] }
+
+async function buildTree(
+  ctx: ClientContext,
+  path: string,
+  depth: number,
+  counter: { count: number },
+): Promise<TreeNode[]> {
+  if (depth >= MAX_DEPTH || counter.count >= MAX_NODES) return []
+  try {
+    const result = await ctx.client.call(`${path}:listChildren`, {}, ctx.credential)
+    const items = extractItems<Item>(result)
+
+    const nodes: TreeNode[] = []
+    for (const item of items) {
+      if (counter.count >= MAX_NODES) break
+      counter.count++
+      const childPath = item.slug ? `${path === '/' ? '' : path}/${item.slug}` : null
+      const node: TreeNode = { ...item }
+      if (childPath) {
+        node.children = await buildTree(ctx, childPath, depth + 1, counter)
+      }
+      nodes.push(node)
+    }
+    return nodes
+  } catch {
+    return []
+  }
+}
+
+// ── Formatting ──────────────────────────────────────────────
+
+function itemPath(parent: string, item: Item): string {
+  return item.slug ? `${parent === '/' ? '' : parent}/${item.slug}` : (item.id ?? '')
+}
+
+function printTree(nodes: TreeNode[], prefix: string): void {
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i]
+    const isLast = i === nodes.length - 1
+    const connector = isLast ? '└── ' : '├── '
+    const childPrefix = isLast ? '    ' : '│   '
+
+    const cls = chalk.dim(shortClass(node))
+    console.log(`${prefix}${connector}${chalk.cyan(node.slug ?? node.id ?? '?')}  ${cls}`)
+
+    if (node.children && node.children.length > 0) {
+      printTree(node.children, prefix + childPrefix)
+    }
+  }
+}
+
+function printTreeQuiet(nodes: TreeNode[], parentPath: string): void {
+  for (const node of nodes) {
+    process.stdout.write(itemPath(parentPath, node) + '\n')
+    if (node.children) {
+      printTreeQuiet(node.children, itemPath(parentPath, node))
+    }
+  }
+}
+
 function printCompact(items: Item[]): void {
   if (items.length === 0) {
     console.log(chalk.dim('  (empty)'))
@@ -67,4 +170,24 @@ function shortClass(item: Item): string {
     if (last) return last
   }
   return item.__labels?.[item.__labels.length - 1] ?? '?'
+}
+
+const INTERNAL_FIELDS = new Set(['__labels', 'classId', 'code', 'url', 'protocol'])
+
+function stripInternalFields(item: Item): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(item)) {
+    if (INTERNAL_FIELDS.has(k)) continue
+    if (k === 'properties' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
+      const props: Record<string, unknown> = {}
+      for (const [pk, pv] of Object.entries(v)) {
+        if (pk === 'code' || pk === 'inputSchema' || pk === 'outputSchema') continue
+        props[pk] = pv
+      }
+      result[k] = props
+    } else {
+      result[k] = v
+    }
+  }
+  return result
 }

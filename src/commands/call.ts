@@ -1,18 +1,20 @@
-import chalk from 'chalk'
-
 import type { CallCommandOpts } from '../kernel'
 
-import { withKernelClient, formatKernelError } from '../kernel'
-import { formatElapsed } from '../lib/format'
-import { log, spinner } from '../lib/log'
-import { isRawOutput, output } from '../lib/output'
+import { runKernelCommand } from '../kernel'
+import { log } from '../lib/log'
+import { output } from '../lib/output'
+
+type CallOpts = CallCommandOpts & { describe?: boolean; dryRun?: boolean }
 
 export async function callCommand(
   path: string,
   rawParams: string[],
-  opts: CallCommandOpts,
+  opts: CallOpts,
 ): Promise<void> {
-  const isRaw = isRawOutput(opts)
+  // ── Describe mode: show schema without executing ────────
+  if (opts.describe) {
+    return describeOperation(path, opts)
+  }
 
   // ── Parse params ────────────────────────────────────────
   let params: Record<string, unknown>
@@ -23,24 +25,43 @@ export async function callCommand(
     process.exit(1)
   }
 
-  // ── Connect, call, disconnect ───────────────────────────
-  const spin = !isRaw ? spinner(`Calling ${path}...`) : null
-  const startTime = performance.now()
+  // ── Dry-run: show what would be sent ─────────────────────
+  if (opts.dryRun) {
+    output({ method: path, params }, opts)
+    return
+  }
 
+  // ── Execute ────────────────────────────────────────────
+  await runKernelCommand({
+    opts,
+    label: path,
+    fn: (ctx) => ctx.client.call(path, params, ctx.credential),
+  })
+}
+
+async function describeOperation(path: string, opts: CallOpts): Promise<void> {
+  const getPath = path.replace(/:([^/]+)$/, '/$1')
+  await runKernelCommand<Record<string, unknown>>({
+    opts,
+    label: `Schema for ${path}`,
+    fn: (ctx) =>
+      ctx.client.call(`${getPath}:get`, {}, ctx.credential) as Promise<Record<string, unknown>>,
+    format: (node, fmtOpts) => {
+      const props = (node.properties ?? node) as Record<string, unknown>
+      const schema: Record<string, unknown> = {}
+      if (props.inputSchema) schema.input = tryParseJson(props.inputSchema)
+      if (props.outputSchema) schema.output = tryParseJson(props.outputSchema)
+      output(Object.keys(schema).length > 0 ? schema : node, fmtOpts)
+    },
+  })
+}
+
+function tryParseJson(value: unknown): unknown {
+  if (typeof value !== 'string') return value
   try {
-    const result = await withKernelClient(opts, (ctx) =>
-      ctx.client.call(path, params, ctx.credential),
-    )
-    const elapsed = performance.now() - startTime
-
-    spin?.succeed(`${path} ${chalk.dim(`completed in ${formatElapsed(elapsed)}`)}`)
-    if (!isRaw) console.log('')
-    output(result, opts)
-    process.exit(0)
-  } catch (error) {
-    if (!isRaw && spin) spin.fail('Call failed')
-    formatKernelError(error, isRaw, undefined, opts.debug)
-    process.exit(1)
+    return JSON.parse(value)
+  } catch {
+    return value
   }
 }
 
@@ -112,6 +133,6 @@ export function coerceValue(raw: string): unknown {
   if (raw === 'true') return true
   if (raw === 'false') return false
   if (raw === 'null') return null
-  if (raw !== '' && !isNaN(Number(raw))) return Number(raw)
+  if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw)
   return raw
 }

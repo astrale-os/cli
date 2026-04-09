@@ -17,7 +17,14 @@ type InvariantError = { code: string; message: string; context?: unknown }
  * When `debug` is true, additional diagnostic information (class name, full
  * error chain, attached url/details) is printed after the user-facing line.
  */
-export function formatKernelError(error: unknown, isRaw: boolean, url = '', debug = false): void {
+export function formatKernelError(
+  error: unknown,
+  isRaw: boolean,
+  urlArg = '',
+  debug = false,
+): void {
+  const url =
+    urlArg || (error instanceof Error ? ((error as Error & { url?: string }).url ?? '') : '')
   // Handle AstraleError (AuthError, ConfigError, etc.) with structured hints
   if (error instanceof AstraleError) {
     if (isRaw) {
@@ -87,22 +94,30 @@ export function formatKernelError(error: unknown, isRaw: boolean, url = '', debu
       }
       break
 
-    case 'NotFoundError':
-      if (isRaw) writeRaw({ error: 'NOT_FOUND', message: error.message })
+    case 'NotFoundError': {
+      const cleanMsg = stripMethodSuffix(error.message)
+      if (isRaw) writeRaw({ error: 'NOT_FOUND', message: cleanMsg })
       else {
-        log.error(`Not found: ${error.message}`)
+        log.error(`Not found: ${cleanMsg}`)
         log.dim('  Check the path/ID and that the instance is booted')
       }
       break
+    }
 
     case 'ValidationError': {
       const errors = (error as { errors?: FieldError[] }).errors ?? []
       if (isRaw) writeRaw({ error: 'VALIDATION_ERROR', message: error.message, details: errors })
       else {
         log.error('Validation Error')
-        for (const e of errors) {
-          console.log(chalk.red(`  ${e.path.join('.')}: ${e.message} (${chalk.dim(e.code)})`))
+        if (errors.length > 0) {
+          for (const e of errors) {
+            console.log(chalk.red(`  ${e.path.join('.')}: ${e.message} (${chalk.dim(e.code)})`))
+          }
+        } else {
+          // Server often sends details in message but empty errors array
+          console.log(chalk.red(`  ${error.message}`))
         }
+        log.dim('  Use `astrale call <path> --describe` to see the expected schema')
       }
       break
     }
@@ -135,6 +150,11 @@ export function formatKernelError(error: unknown, isRaw: boolean, url = '', debu
   }
 
   if (debug) printDebug(error, url)
+}
+
+/** Strip internal `:methodName` suffixes from paths in error messages (e.g., "/path:listChildren" → "/path") */
+function stripMethodSuffix(msg: string): string {
+  return msg.replace(/(\/[^"\s:]+):([a-zA-Z]\w*)/g, '$1')
 }
 
 function writeRaw(payload: Record<string, unknown>): void {

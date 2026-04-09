@@ -80,7 +80,7 @@ export default {
       const items = Array.from(merged.entries()).map(([name, info]) => ({
         name,
         url: info.url ?? null,
-        status: info.status ?? null,
+        status: info.status ?? 'unknown',
         active: name === store.active,
       }))
       output({ active: store.active, instances: items }, opts)

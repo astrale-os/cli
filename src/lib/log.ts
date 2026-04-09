@@ -71,10 +71,12 @@ function cappedStream(target: NodeJS.WriteStream, maxBytes: number): NodeJS.Writ
   })
 }
 
+const IS_CI = !!(process.env.CI || process.env.CONTINUOUS_INTEGRATION || process.env.NO_SPINNER)
+
 export function spinner(text: string): Ora {
   const target = process.stderr
 
-  if (!target.writable) {
+  if (!target.writable || IS_CI) {
     return ora({ text, isEnabled: false })
   }
 

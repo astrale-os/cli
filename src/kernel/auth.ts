@@ -17,6 +17,10 @@ export async function resolveCredential(
     const identity = opts.as ? await getIdentity(opts.as) : await getDefault()
     return await signAs(identity.subject, KEYS_DIR, { issuer: config.issuer })
   } catch (e) {
-    throw new AuthError(e instanceof Error ? e.message : 'Failed to resolve credentials')
+    const message = e instanceof Error ? e.message : 'Failed to resolve credentials'
+    const hint = opts.as
+      ? `Check identity name. Available identities: astrale identity list`
+      : 'Run `astrale identity create <name>` or `astrale init` to set up keys'
+    throw new AuthError(message, hint)
   }
 }

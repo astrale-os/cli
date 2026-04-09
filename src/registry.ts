@@ -1,4 +1,4 @@
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 
 import type { CommandDefinition, CommandGroup } from './command'
 
@@ -21,7 +21,12 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
 
   if (def.options) {
     for (const opt of def.options) {
-      if (opt.default !== undefined) {
+      if (opt.choices) {
+        const o = new Option(opt.flags, opt.description)
+        o.choices(opt.choices)
+        if (opt.default !== undefined) o.default(opt.default)
+        cmd.addOption(o)
+      } else if (opt.default !== undefined) {
         cmd.option(opt.flags, opt.description, opt.default)
       } else {
         cmd.option(opt.flags, opt.description)

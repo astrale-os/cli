@@ -1,8 +1,14 @@
-import { setActive, getInstance } from '../lib/instance'
+import { getActive, setActive, getInstance } from '../lib/instance'
 import { log } from '../lib/log'
 
-export async function useCommand(name: string): Promise<void> {
+export async function useCommand(name?: string): Promise<void> {
   try {
+    if (!name) {
+      const active = await getActive()
+      const detail = active.url ?? 'local'
+      console.log(`${active.name} (${detail})`)
+      return
+    }
     await setActive(name)
     const entry = await getInstance(name)
     const detail = entry.url ? entry.url : 'local'
