@@ -2,9 +2,12 @@ import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
 
 import type { KernelCommandOpts } from './types'
 
+import { AstraleError } from '../errors'
 import { readConfig } from '../lib/config'
 import { resolveKernelUrl } from '../lib/instance'
 import { resolveCredential } from './auth'
+
+const DEFAULT_TIMEOUT_MS = 30_000
 
 export type ClientContext = {
   client: KernelClient<FnMap>
@@ -28,7 +31,7 @@ export async function withKernelClient<T>(
 
   const client = new KernelClient<FnMap>({
     url,
-    requestTimeout: parseInt(opts.timeout ?? '30000', 10),
+    requestTimeout: resolveTimeoutMs(opts.timeout),
   })
 
   try {
@@ -41,4 +44,22 @@ export async function withKernelClient<T>(
     if (error instanceof Error) (error as Error & { url?: string }).url = url
     throw error
   }
+}
+
+function resolveTimeoutMs(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_TIMEOUT_MS
+  if (!/^\d+$/.test(raw)) {
+    throw new AstraleError(
+      'INVALID_FLAG',
+      `Invalid --timeout value "${raw}" — expected a positive integer (milliseconds)`,
+    )
+  }
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new AstraleError(
+      'INVALID_FLAG',
+      `Invalid --timeout value "${raw}" — must be a positive integer`,
+    )
+  }
+  return n
 }

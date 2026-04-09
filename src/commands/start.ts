@@ -1,4 +1,4 @@
-import { openSync } from 'node:fs'
+import { closeSync, openSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -59,6 +59,13 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
       stdin: 'ignore',
       env: { ...process.env },
     })
+
+    // Hand the log fds off to the child: closing them here is required so
+    // the parent's event loop doesn't keep them alive. Likewise unref the
+    // child handle so the parent can exit as soon as this function returns.
+    closeSync(managerOut)
+    closeSync(managerErr)
+    managerProc.unref()
 
     // Wait briefly for the child to either become ready or die.
     await new Promise((r) => setTimeout(r, 2_000))

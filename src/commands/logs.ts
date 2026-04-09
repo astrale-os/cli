@@ -44,7 +44,11 @@ type DisplayOpts = { timing?: boolean }
 
 export async function logsCommand(opts: LogsOptions): Promise<void> {
   const isRaw = isRawOutput(opts)
-  const limit = parseInt(opts.n ?? '20', 10)
+  const limit = parsePositiveInt(opts.n ?? '20', '-n')
+  if (limit === null) {
+    log.error(`Invalid -n value "${opts.n}" — expected a positive integer`)
+    process.exit(1)
+  }
   const display: DisplayOpts = { timing: opts.timing }
 
   const config = await readConfig()
@@ -285,7 +289,19 @@ function formatTiming(timing: Record<string, number>): string {
     .join(' ')
 }
 
-// ── Time parsing ────────────────────────────────────────────
+// ── Value parsing ───────────────────────────────────────────
+
+/**
+ * Parse a positive integer from a user-supplied flag value.
+ * Returns null for any value that isn't a strictly positive finite integer.
+ * Silent `NaN` fallbacks on garbage input previously caused `-n abc` to
+ * dump the entire journal.
+ */
+function parsePositiveInt(value: string, _flag: string): number | null {
+  if (!/^\d+$/.test(value)) return null
+  const n = Number.parseInt(value, 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
 
 function parseSince(since: string): number {
   const match = since.match(/^(\d+)(s|m|h|d)$/)
