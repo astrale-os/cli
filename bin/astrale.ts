@@ -124,6 +124,10 @@ const kernelOptions = [
   },
   { flags: '--raw', description: 'Output raw JSON (no colors)' },
   { flags: '--json', description: 'Alias for --raw' },
+  {
+    flags: '--url <url>',
+    description: 'Target a kernel URL directly (overrides instance resolution)',
+  },
   { flags: '-i, --instance <name>', description: 'Target a specific instance (overrides active)' },
   { flags: '--timeout <ms>', description: 'Request timeout in ms', default: '30000' },
   { flags: '--as <identity>', description: 'Call as a specific identity' },
@@ -270,6 +274,17 @@ registerGroup(program, {
   ],
 })
 
+registerGroup(program, {
+  name: 'graph',
+  description: 'Manage FalkorDB graphs',
+  commands: [
+    (await import('../src/commands/graph/list')).default,
+    (await import('../src/commands/graph/prune')).default,
+    (await import('../src/commands/graph/rm')).default,
+    (await import('../src/commands/graph/df')).default,
+  ],
+})
+
 // ── Help text enhancements ───────────────────────────────────
 
 program.addHelpText(
@@ -279,6 +294,7 @@ Command groups:
   Lifecycle     init, start, stop, restart, status, reset
   Graph         ls, get, call, query, describe, logs
   Management    instance, identity, use
+  Storage       graph list, graph prune, graph rm, graph df
 
 Path syntax:
   /domain/Class/method    Navigate to a Syscall node (static operation)

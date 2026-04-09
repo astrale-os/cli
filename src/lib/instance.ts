@@ -147,9 +147,11 @@ export async function getInstance(name: string, config?: AstraleConfig): Promise
  * needed, so we no longer publish a `ws://…/ws` endpoint.
  */
 export async function resolveKernelUrl(
-  opts: { instance?: string },
+  opts: { url?: string; instance?: string },
   config: AstraleConfig,
 ): Promise<string> {
+  if (opts.url) return opts.url
+
   if (opts.instance) {
     const store = await readInstances(config)
     const entry = store.instances[opts.instance]

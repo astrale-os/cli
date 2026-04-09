@@ -84,6 +84,15 @@ astrale call /manager.astrale.ai/KernelInstance/list
 | `astrale instance remove <name>` | Remove an instance (`--force` to skip cleanup) |
 | `astrale instance active` | Show the currently active instance |
 
+### Graph Storage
+
+| Command | Description |
+|---------|-------------|
+| `astrale graph list` | List all FalkorDB graphs with status (in-use, orphaned, manager) |
+| `astrale graph prune` | Remove orphaned graphs (`--all` for stopped instances too) |
+| `astrale graph rm <name>` | Delete a specific graph (`--force` to override protections) |
+| `astrale graph df` | Show graph usage and reclaimable space |
+
 ### Identity Management
 
 | Command | Description |
@@ -148,6 +157,14 @@ Graph commands (`ls`, `get`, `call`, `query`, `describe`) share these options:
 | `-c, --compact` | Tab-separated summary for piping |
 | `--timing` | Show per-step timing breakdown |
 
+### `graph prune` extras
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Also remove graphs for stopped/registered instances |
+| `--include-manager` | Include the manager graph (dangerous, double confirmation) |
+| `--dry-run` | Show what would be removed without deleting |
+
 ## Examples
 
 ```bash
@@ -180,6 +197,15 @@ astrale query 'MATCH (n:Domain) RETURN n.slug, n.id'
 
 # Use a specific identity
 astrale call /kernel.astrale.ai/Root/query --as admin cypher='MATCH (n) RETURN count(n)'
+
+# See what FalkorDB graphs exist and which are orphaned
+astrale graph df
+
+# Clean up orphaned graphs
+astrale graph prune
+
+# Delete a specific graph
+astrale graph rm old-test-graph
 ```
 
 ## Configuration
