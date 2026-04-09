@@ -31,6 +31,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
   }
 
   const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
+  let spin: ReturnType<typeof spinner> | null = null
 
   try {
     // List instances to find the target
@@ -76,7 +77,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
       }
     }
 
-    const spin = spinner(`Resetting instance "${targetId}"...`)
+    spin = spinner(`Resetting instance "${targetId}"...`)
     const startTime = performance.now()
 
     // If instance is stopped, boot it first so reboot can proceed
@@ -115,6 +116,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
       process.exit(0)
     }
   } catch (error) {
+    spin?.fail('Reset failed')
     client.disconnect()
     if (managerSession) await managerSession.close().catch(() => {})
     log.error(error instanceof Error ? error.message : String(error))
