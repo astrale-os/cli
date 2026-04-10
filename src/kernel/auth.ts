@@ -10,9 +10,10 @@ import { KEYS_DIR } from '../lib/paths'
  * Uses --as identity if provided, otherwise the default identity.
  */
 export async function resolveCredential(
-  opts: { as?: string },
+  opts: { as?: string; creds?: string },
   config: AstraleConfig,
 ): Promise<string> {
+  if (opts.creds) return opts.creds
   try {
     const identity = opts.as ? await getIdentity(opts.as) : await getDefault()
     return await signAs(identity.subject, KEYS_DIR, { issuer: config.issuer })

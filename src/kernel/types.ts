@@ -5,6 +5,7 @@ export type KernelCommandOpts = OutputOpts & {
   instance?: string
   timeout?: string
   as?: string
+  creds?: string
   debug?: boolean
 }
 

@@ -1,14 +1,16 @@
 import type { ManagerSession } from '@astrale-os/kernel-toolkit/manager'
 
 import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
+import { clearGraph } from '@astrale/typegraph-adapter-falkordb'
 import chalk from 'chalk'
 
 import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
 import { formatElapsed } from '../lib/format'
-import { resolveInstanceId } from '../lib/instance'
+import { getActive, resolveInstanceId } from '../lib/instance'
 import { log, spinner } from '../lib/log'
 import { bootManagerSession, detectManagerState, removeManagerPid } from '../lib/manager-state'
+import { stopCommand } from './stop'
 
 type ResetOptions = {
   instance?: string
@@ -17,13 +19,147 @@ type ResetOptions = {
 
 export async function resetCommand(opts: ResetOptions): Promise<void> {
   const config = await readConfig()
-  const url = `http://localhost:${config.managerPort}/mngt`
+  const active = await getActive(config)
+  const targetName = opts.instance ?? active.name
 
+  // Detect whether we're targeting the manager
+  const isManager = targetName === 'manager' || active.url?.endsWith('/mngt')
+
+  if (isManager && !opts.instance) {
+    return resetManager(config, opts)
+  }
+
+  if (isManager && opts.instance === 'manager') {
+    return resetManager(config, opts)
+  }
+
+  // Check for remote instance (has url, not manager)
+  if (active.url && !opts.instance) {
+    log.error(`Cannot reset remote instance "${active.name}"`)
+    log.dim('  Remote instances must be reset from their host machine')
+    process.exit(1)
+  }
+
+  return resetSubInstance(config, opts)
+}
+
+// ── Manager reset ──────────────────────────────────────────────
+
+async function resetManager(
+  config: Awaited<ReturnType<typeof readConfig>>,
+  opts: ResetOptions,
+): Promise<void> {
+  const url = `http://localhost:${config.managerPort}/mngt`
   const credential = await resolveCredential({}, config)
 
   let managerSession: ManagerSession | null = null
 
-  // If manager is not running, start it and keep it alive after reset
+  if (!(await detectManagerState(config)).running) {
+    log.info('Manager not running, starting...')
+    managerSession = await bootManagerSession(config)
+    managerSession.serve()
+  }
+
+  const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
+
+  try {
+    // List sub-instances to warn user
+    const instances = (await client.call(
+      '/manager.astrale.ai/KernelInstance/list',
+      {},
+      credential,
+    )) as Array<{ id: string; status: string }>
+
+    // Confirm
+    if (!opts.yes) {
+      const msg =
+        instances.length > 0
+          ? `This will reset the manager and delete all ${instances.length} registered sub-instance(s). Continue? [y/N] `
+          : 'This will reset the manager and clear all its data. Continue? [y/N] '
+      process.stdout.write(chalk.yellow(msg))
+      const answer = await readLine()
+      if (answer.toLowerCase() !== 'y') {
+        log.info('Aborted')
+        client.disconnect()
+        if (managerSession) await managerSession.close()
+        process.exit(0)
+      }
+    }
+
+    const startTime = performance.now()
+
+    // Remove all sub-instances (stop + clear graph + delete from store)
+    for (const instance of instances) {
+      const spin = spinner(`Removing instance "${instance.id}"...`)
+      await client.call(
+        '/manager.astrale.ai/KernelInstance/remove',
+        { id: instance.id },
+        credential,
+      )
+      spin.succeed(`Removed instance "${instance.id}"`)
+    }
+
+    client.disconnect()
+
+    // Stop the manager
+    const spin = spinner('Stopping manager...')
+    if (managerSession) {
+      await managerSession.close()
+      managerSession = null
+      await removeManagerPid()
+    } else {
+      await stopCommand()
+    }
+    spin.succeed('Manager stopped')
+
+    // Clear the manager graph
+    const spin2 = spinner('Clearing manager graph...')
+    await clearGraph({ graphName: config.graphName, port: config.falkorPort })
+    spin2.succeed('Manager graph cleared')
+
+    // Restart the manager
+    const spin3 = spinner('Restarting manager...')
+    managerSession = await bootManagerSession(config)
+    managerSession.serve()
+    spin3.succeed('Manager restarted')
+
+    const elapsed = performance.now() - startTime
+    log.success(`Manager reset ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
+
+    const session = managerSession
+    const { startUI, stopUI } = await import('../lib/ui')
+    startUI(config)
+
+    log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
+    log.info(`Playground UI on http://localhost:${config.uiPort}`)
+    log.info('Press Ctrl+C to stop')
+    const cleanup = async () => {
+      stopUI()
+      await session.close()
+      await removeManagerPid()
+      process.exit(0)
+    }
+    process.on('SIGINT', cleanup)
+    process.on('SIGTERM', cleanup)
+  } catch (error) {
+    client.disconnect()
+    if (managerSession) await managerSession.close().catch(() => {})
+    log.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+}
+
+// ── Sub-instance reset ─────────────────────────────────────────
+
+async function resetSubInstance(
+  config: Awaited<ReturnType<typeof readConfig>>,
+  opts: ResetOptions,
+): Promise<void> {
+  const url = `http://localhost:${config.managerPort}/mngt`
+  const credential = await resolveCredential({}, config)
+
+  let managerSession: ManagerSession | null = null
+
   if (!(await detectManagerState(config)).running) {
     log.info('Manager not running, starting...')
     managerSession = await bootManagerSession(config)
@@ -34,7 +170,6 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
   let spin: ReturnType<typeof spinner> | null = null
 
   try {
-    // List instances to find the target
     const instances = (await client.call(
       '/manager.astrale.ai/KernelInstance/list',
       {},
@@ -43,11 +178,7 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
 
     if (instances.length === 0) {
       log.error('No sub-kernel instances registered with the manager')
-      log.dim('  `astrale reset` only resets sub-instances. To reset the manager itself,')
-      log.dim('  stop it, clear the FalkorDB graph, and start again:')
-      log.dim('    astrale stop')
-      log.dim(`    redis-cli -p ${config.falkorPort} GRAPH.DELETE ${config.graphName}`)
-      log.dim('    astrale start')
+      log.dim('  To reset the manager itself, run: astrale reset -i manager')
       client.disconnect()
       if (managerSession) await managerSession.close()
       process.exit(1)
@@ -123,6 +254,8 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
     process.exit(1)
   }
 }
+
+// ── Helpers ────────────────────────────────────────────────────
 
 function readLine(): Promise<string> {
   return new Promise((resolve) => {
