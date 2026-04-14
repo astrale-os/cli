@@ -85,10 +85,11 @@ registerCommand(program, {
   options: [
     { flags: '-i, --instance <id>', description: 'Target instance (defaults to active)' },
     { flags: '-y, --yes', description: 'Skip confirmation prompt' },
+    { flags: '--hard', description: 'Full wipe: delete all FalkorDB graphs and reset local state' },
   ],
   action: async (opts) => {
     const { resetCommand } = await import('../src/commands/reset')
-    await resetCommand(opts as { instance?: string; yes?: boolean })
+    await resetCommand(opts as { instance?: string; yes?: boolean; hard?: boolean })
   },
 })
 
@@ -258,7 +259,7 @@ registerGroup(program, {
   commands: [
     (await import('../src/commands/instance/list')).default,
     (await import('../src/commands/instance/add')).default,
-    (await import('../src/commands/instance/remove')).default,
+    (await import('../src/commands/instance/delete')).default,
     (await import('../src/commands/instance/active')).default,
   ],
 })
@@ -286,6 +287,20 @@ registerGroup(program, {
   ],
 })
 
+registerGroup(program, {
+  name: 'domain',
+  description: 'Manage kernel domains',
+  commands: [
+    {
+      ...(await import('../src/commands/domain/install')).default,
+      options: [
+        ...((await import('../src/commands/domain/install')).default.options ?? []),
+        ...kernelOptions,
+      ],
+    },
+  ],
+})
+
 // ── Help text enhancements ───────────────────────────────────
 
 program.addHelpText(
@@ -296,6 +311,7 @@ Command groups:
   Graph         ls, get, call, query, describe, logs
   Management    instance, identity, use
   Storage       graph list, graph prune, graph rm, graph df
+  Domains       domain install
 
 Path syntax:
   /domain/Class/method    Navigate to a Syscall node (static operation)

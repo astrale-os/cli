@@ -1,8 +1,9 @@
 import type { ManagerSession } from '@astrale-os/kernel-toolkit/manager'
 
 import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
-import { clearGraph } from '@astrale/typegraph-adapter-falkordb'
+import { clearGraph, deleteGraph, listGraphs } from '@astrale/typegraph-adapter-falkordb'
 import chalk from 'chalk'
+import { unlink } from 'node:fs/promises'
 
 import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
@@ -10,14 +11,20 @@ import { formatElapsed } from '../lib/format'
 import { getActive, resolveInstanceId } from '../lib/instance'
 import { log, spinner } from '../lib/log'
 import { bootManagerSession, detectManagerState, removeManagerPid } from '../lib/manager-state'
+import { INSTANCES_PATH, JOURNAL_PATH, MANAGER_PID_PATH, UI_PID_PATH } from '../lib/paths'
 import { stopCommand } from './stop'
 
 type ResetOptions = {
   instance?: string
   yes?: boolean
+  hard?: boolean
 }
 
 export async function resetCommand(opts: ResetOptions): Promise<void> {
+  if (opts.hard) {
+    const config = await readConfig()
+    return resetHard(config, opts)
+  }
   const config = await readConfig()
   const active = await getActive(config)
   const targetName = opts.instance ?? active.name
@@ -92,7 +99,7 @@ async function resetManager(
     for (const instance of instances) {
       const spin = spinner(`Removing instance "${instance.id}"...`)
       await client.call(
-        '/manager.astrale.ai/KernelInstance/remove',
+        '/manager.astrale.ai/KernelInstance/delete',
         { id: instance.id },
         credential,
       )
@@ -253,6 +260,90 @@ async function resetSubInstance(
     log.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
   }
+}
+
+// ── Hard reset ────────────────────────────────────────────────
+
+async function resetHard(
+  config: Awaited<ReturnType<typeof readConfig>>,
+  opts: ResetOptions,
+): Promise<void> {
+  if (!opts.yes) {
+    process.stdout.write(
+      chalk.red('This will DELETE all FalkorDB graphs and reset all local state. Continue? [y/N] '),
+    )
+    const answer = await readLine()
+    if (answer.toLowerCase() !== 'y') {
+      log.info('Aborted')
+      process.exit(0)
+    }
+  }
+
+  const startTime = performance.now()
+
+  // Stop manager & UI if running
+  const state = await detectManagerState(config)
+  if (state.running) {
+    const spin = spinner('Stopping manager...')
+    await stopCommand()
+    spin.succeed('Manager stopped')
+  }
+
+  try {
+    const { stopUI } = await import('../lib/ui')
+    stopUI()
+  } catch {
+    // UI not running
+  }
+
+  // Delete all FalkorDB graphs
+  try {
+    const graphs = await listGraphs({ port: config.falkorPort })
+    if (graphs.length > 0) {
+      const spin = spinner(`Deleting ${graphs.length} graph(s)...`)
+      for (const graphName of graphs) {
+        await deleteGraph({ graphName, port: config.falkorPort })
+      }
+      spin.succeed(`Deleted ${graphs.length} graph(s): ${graphs.join(', ')}`)
+    } else {
+      log.info('No graphs to delete')
+    }
+  } catch (error) {
+    log.error(`Failed to delete graphs: ${error instanceof Error ? error.message : String(error)}`)
+    process.exit(1)
+  }
+
+  // Remove local state files
+  const stateFiles = [INSTANCES_PATH, MANAGER_PID_PATH, UI_PID_PATH, JOURNAL_PATH]
+  for (const file of stateFiles) {
+    await unlink(file).catch(() => {})
+  }
+  log.dim('  Local state files cleared')
+
+  // Restart manager + UI
+  const spin = spinner('Restarting manager...')
+  const managerSession = await bootManagerSession(config)
+  managerSession.serve()
+  spin.succeed('Manager restarted')
+
+  const elapsed = performance.now() - startTime
+  log.success(`Hard reset complete ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
+
+  const { startUI, stopUI } = await import('../lib/ui')
+  startUI(config)
+
+  log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
+  log.info(`Playground UI on http://localhost:${config.uiPort}`)
+  log.info('Press Ctrl+C to stop')
+
+  const cleanup = async () => {
+    stopUI()
+    await managerSession.close()
+    await removeManagerPid()
+    process.exit(0)
+  }
+  process.on('SIGINT', cleanup)
+  process.on('SIGTERM', cleanup)
 }
 
 // ── Helpers ────────────────────────────────────────────────────

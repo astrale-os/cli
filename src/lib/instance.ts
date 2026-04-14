@@ -156,12 +156,12 @@ export async function resolveKernelUrl(
     const store = await readInstances(config)
     const entry = store.instances[opts.instance]
     if (entry?.url) return entry.url
-    return `http://localhost:${config.managerPort}/${opts.instance}`
+    return `http://localhost:${config.managerPort}/mgt/${opts.instance}`
   }
 
   const active = await getActive(config)
   if (active.url) return active.url
-  return `http://localhost:${config.managerPort}/${active.name}`
+  return `http://localhost:${config.managerPort}/mgt/${active.name}`
 }
 
 /**
