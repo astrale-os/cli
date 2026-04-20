@@ -30,7 +30,7 @@ export async function buildIdentityBinding(
   privateJwk: Record<string, unknown>,
 ): Promise<IdentityBinding> {
   const slug = extractDomainSlug(spec)
-  const paths = collectFunctionPaths(spec, slug)
+  const subs = collectFunctionSubs(spec, slug)
 
   const { d: _d, p: _p, q: _q, dp: _dp, dq: _dq, qi: _qi, ...publicJwk } = privateJwk
 
@@ -38,7 +38,7 @@ export async function buildIdentityBinding(
   const kid = privateJwk.kid as string
   const key = await importJWK(privateJwk, alg)
 
-  const credential = await new SignJWT({ subs: paths })
+  const credential = await new SignJWT({ subs })
     .setProtectedHeader({ alg, kid })
     .setIssuer(slug)
     .setSubject(slug)
@@ -64,8 +64,16 @@ function extractDomainSlug(spec: Spec): string {
   return (domainNode.properties.origin as string) ?? domainNode.slug
 }
 
-function collectFunctionPaths(spec: Spec, slug: string): string[] {
-  const paths: string[] = []
+/**
+ * Collect function subs as domain-relative paths (e.g. `/Class/method`).
+ *
+ * Per RFC 7519 `sub` is scoped to `iss`, so the kernel's
+ * `stripDomainPrefix` (kernel/runtime/domains/identity.ts) expects
+ * relative paths — not absolute. Both sides must match exactly.
+ */
+function collectFunctionSubs(spec: Spec, slug: string): string[] {
+  const prefix = `/${slug}`
+  const subs: string[] = []
   for (const edge of spec.edges) {
     const cls = rawStr(edge.class)
     if (cls !== '/kernel.astrale.ai/method_of' && cls !== '/kernel.astrale.ai/method_of/self')
@@ -73,8 +81,8 @@ function collectFunctionPaths(spec: Spec, slug: string): string[] {
     const source = rawStr(edge.source)
     if (!source) continue
     const absolute = source.startsWith('./') ? '/' + source.slice(2) : source
-    if (!absolute.startsWith(`/${slug}/`)) continue
-    paths.push(absolute)
+    if (!absolute.startsWith(`${prefix}/`)) continue
+    subs.push(absolute.slice(prefix.length))
   }
-  return paths
+  return subs
 }

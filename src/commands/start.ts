@@ -92,5 +92,9 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
     log.dim(`  PID:     ${managerProc.pid}`)
     log.dim(`  Logs:    ${LOGS_DIR}`)
     log.info('Run `astrale stop` to stop')
+    // Bun caches kernel modules for the manager's lifetime; edits to
+    // `kernel/**` only take effect after a restart. Silent before this
+    // phase — see DX.md C11.
+    log.warn('Kernel source changes require `astrale restart` — the manager caches modules on boot')
   }
 }
