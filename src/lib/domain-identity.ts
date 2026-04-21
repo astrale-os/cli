@@ -50,6 +50,9 @@ export async function buildIdentityBinding(
   return { credential, publicKey: { jwk: publicJwk } }
 }
 
+const DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
+const METHOD_OF_CLASS = '/:kernel.astrale.ai:class.method_of'
+
 function rawStr(value: string | { raw: string } | undefined): string | undefined {
   if (!value) return undefined
   return typeof value === 'string' ? value : value.raw
@@ -58,7 +61,7 @@ function rawStr(value: string | { raw: string } | undefined): string | undefined
 function extractDomainSlug(spec: Spec): string {
   const domainNode = spec.nodes.find((n) => {
     const cls = rawStr(n.class)
-    return cls === '/kernel.astrale.ai/Domain' || cls === '/kernel.astrale.ai/Domain/self'
+    return cls === DOMAIN_CLASS || cls === `${DOMAIN_CLASS}/self`
   })
   if (!domainNode) throw new Error('No Domain node found in spec')
   return (domainNode.properties.origin as string) ?? domainNode.slug
@@ -76,8 +79,7 @@ function collectFunctionSubs(spec: Spec, slug: string): string[] {
   const subs: string[] = []
   for (const edge of spec.edges) {
     const cls = rawStr(edge.class)
-    if (cls !== '/kernel.astrale.ai/method_of' && cls !== '/kernel.astrale.ai/method_of/self')
-      continue
+    if (cls !== METHOD_OF_CLASS && cls !== `${METHOD_OF_CLASS}/self`) continue
     const source = rawStr(edge.source)
     if (!source) continue
     const absolute = source.startsWith('./') ? '/' + source.slice(2) : source

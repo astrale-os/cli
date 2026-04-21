@@ -9,7 +9,7 @@ import { buildIdentityBinding, loadPrivateJwk } from '../../lib/domain-identity'
 import { log } from '../../lib/log'
 import { output } from '../../lib/output'
 
-type InstallResult = { domainId: string; refsMapping: Record<string, string> }
+type InstallResult = { domainId: string; origin: string }
 
 type SpecMeta = {
   baseDomain?: string
@@ -23,7 +23,7 @@ type SpecFile = {
   edges?: unknown
 }
 
-const KERNEL_DOMAIN_CLASS = '/kernel.astrale.ai/Domain'
+const KERNEL_DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
 
 function rawStr(value: unknown): string | undefined {
   if (typeof value === 'string') return value
@@ -129,7 +129,7 @@ export default {
       label: `Installing domain from ${specFile}`,
       fn: (ctx) =>
         ctx.client.call(
-          '/kernel.astrale.ai/Root/installDomain',
+          '/kernel.astrale.ai/class.Root/installDomain',
           { spec: specPayload, identity },
           ctx.credential,
         ) as Promise<InstallResult>,
@@ -138,11 +138,8 @@ export default {
           output(result, fmtOpts)
           return
         }
-        log.success(`Domain installed: ${result.domainId}`)
-        const refCount = Object.keys(result.refsMapping).length
-        if (refCount > 0) {
-          log.dim(`  ${refCount} ref(s) mapped`)
-        }
+        log.success(`Domain installed: ${result.origin}`)
+        log.dim(`  domainId: ${result.domainId}`)
       },
     })
   },
