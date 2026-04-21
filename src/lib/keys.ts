@@ -1,4 +1,4 @@
-import type { GenerateAuthResult } from '@astrale-os/kernel-toolkit/presets'
+import type { AuthBinding } from '@astrale-os/kernel-toolkit/presets'
 
 import { generateKeyPair, exportJWK, importJWK, SignJWT } from 'jose'
 import { randomUUID } from 'node:crypto'
@@ -22,7 +22,7 @@ type AuthOptions = {
 export async function persistAuth(
   keysDir: string = KEYS_DIR,
   opts?: AuthOptions,
-): Promise<GenerateAuthResult> {
+): Promise<AuthBinding> {
   const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const subject = opts?.subject ?? 'manager'
   const kid = opts?.kid ?? `${subject}-key`
@@ -57,7 +57,7 @@ export async function persistAuth(
 export async function loadAuth(
   keysDir: string = KEYS_DIR,
   opts?: AuthOptions,
-): Promise<GenerateAuthResult> {
+): Promise<AuthBinding> {
   const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const subject = opts?.subject ?? 'manager'
 
@@ -85,7 +85,7 @@ export async function loadAuth(
 export async function resolveAuth(
   keysDir: string = KEYS_DIR,
   opts?: AuthOptions,
-): Promise<GenerateAuthResult> {
+): Promise<AuthBinding> {
   if (await keysExist(keysDir)) {
     return loadAuth(keysDir, opts)
   }

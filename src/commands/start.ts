@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { readConfig } from '../lib/config'
 import { log } from '../lib/log'
-import { bootManagerSession, detectManagerState, removeManagerPid } from '../lib/manager-state'
+import { startManager, detectManagerState, removeManagerPid } from '../lib/manager-state'
 import { LOGS_DIR } from '../lib/paths'
 
 export async function startCommand(opts: { foreground?: boolean }): Promise<void> {
@@ -23,8 +23,7 @@ export async function startCommand(opts: { foreground?: boolean }): Promise<void
   }
 
   if (opts.foreground) {
-    const manager = await bootManagerSession(config)
-    manager.serve()
+    const manager = await startManager(config)
     log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
 
     const { startUI, stopUI } = await import('../lib/ui')

@@ -1,7 +1,7 @@
-import type { ManagerSession } from '@astrale-os/kernel-toolkit/manager'
+import type { Kernel } from '@astrale-os/kernel-toolkit'
 
+import { clearGraph, deleteGraph, listGraphs } from '@astrale-os/kernel-adapters/falkordb'
 import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
-import { clearGraph, deleteGraph, listGraphs } from '@astrale/typegraph-adapter-falkordb'
 import chalk from 'chalk'
 import { unlink } from 'node:fs/promises'
 
@@ -10,7 +10,7 @@ import { readConfig } from '../lib/config'
 import { formatElapsed } from '../lib/format'
 import { getActive, resolveInstanceId } from '../lib/instance'
 import { log, spinner } from '../lib/log'
-import { bootManagerSession, detectManagerState, removeManagerPid } from '../lib/manager-state'
+import { startManager, detectManagerState, removeManagerPid } from '../lib/manager-state'
 import { INSTANCES_PATH, JOURNAL_PATH, MANAGER_PID_PATH, UI_PID_PATH } from '../lib/paths'
 import { stopCommand } from './stop'
 
@@ -59,12 +59,11 @@ async function resetManager(
   const url = `http://localhost:${config.managerPort}/mngt`
   const credential = await resolveCredential({}, config)
 
-  let managerSession: ManagerSession | null = null
+  let managerSession: Kernel | null = null
 
   if (!(await detectManagerState(config)).running) {
     log.info('Manager not running, starting...')
-    managerSession = await bootManagerSession(config)
-    managerSession.serve()
+    managerSession = await startManager(config)
   }
 
   const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
@@ -72,7 +71,7 @@ async function resetManager(
   try {
     // List sub-instances to warn user
     const instances = (await client.call(
-      '/manager.astrale.ai/KernelInstance/list',
+      '/manager.astrale.ai/class.KernelInstance/list',
       {},
       credential,
     )) as Array<{ id: string; status: string }>
@@ -99,7 +98,7 @@ async function resetManager(
     for (const instance of instances) {
       const spin = spinner(`Removing instance "${instance.id}"...`)
       await client.call(
-        '/manager.astrale.ai/KernelInstance/delete',
+        '/manager.astrale.ai/class.KernelInstance/delete',
         { id: instance.id },
         credential,
       )
@@ -126,8 +125,7 @@ async function resetManager(
 
     // Restart the manager
     const spin3 = spinner('Restarting manager...')
-    managerSession = await bootManagerSession(config)
-    managerSession.serve()
+    managerSession = await startManager(config)
     spin3.succeed('Manager restarted')
 
     const elapsed = performance.now() - startTime
@@ -165,12 +163,11 @@ async function resetSubInstance(
   const url = `http://localhost:${config.managerPort}/mngt`
   const credential = await resolveCredential({}, config)
 
-  let managerSession: ManagerSession | null = null
+  let managerSession: Kernel | null = null
 
   if (!(await detectManagerState(config)).running) {
     log.info('Manager not running, starting...')
-    managerSession = await bootManagerSession(config)
-    managerSession.serve()
+    managerSession = await startManager(config)
   }
 
   const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
@@ -178,7 +175,7 @@ async function resetSubInstance(
 
   try {
     const instances = (await client.call(
-      '/manager.astrale.ai/KernelInstance/list',
+      '/manager.astrale.ai/class.KernelInstance/list',
       {},
       credential,
     )) as Array<{ id: string; status: string }>
@@ -220,11 +217,15 @@ async function resetSubInstance(
 
     // If instance is stopped, boot it first so reboot can proceed
     if (instance.status === 'stopped' || instance.status === 'registered') {
-      await client.call('/manager.astrale.ai/KernelInstance/boot', { id: targetId }, credential)
+      await client.call(
+        '/manager.astrale.ai/class.KernelInstance/boot',
+        { id: targetId },
+        credential,
+      )
     }
 
     await client.call(
-      '/manager.astrale.ai/KernelInstance/reboot',
+      '/manager.astrale.ai/class.KernelInstance/reboot',
       { id: targetId, clear: true },
       credential,
     )
@@ -322,8 +323,7 @@ async function resetHard(
 
   // Restart manager + UI
   const spin = spinner('Restarting manager...')
-  const managerSession = await bootManagerSession(config)
-  managerSession.serve()
+  const managerSession = await startManager(config)
   spin.succeed('Manager restarted')
 
   const elapsed = performance.now() - startTime

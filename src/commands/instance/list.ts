@@ -24,7 +24,7 @@ async function discoverLocalInstances(): Promise<{
     client = new KernelClient<FnMap>({ url, requestTimeout: 5_000 })
 
     const instances = (await client.call(
-      '/manager.astrale.ai/KernelInstance/list',
+      '/manager.astrale.ai/class.KernelInstance/list',
       {},
       credential,
     )) as ManagerInstance[]

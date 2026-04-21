@@ -40,12 +40,11 @@ export async function callCommand(
 }
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {
-  const getPath = path.replace(/:([^/]+)$/, '/$1')
   await runKernelCommand<Record<string, unknown>>({
     opts,
     label: `Schema for ${path}`,
     fn: (ctx) =>
-      ctx.client.call(`${getPath}:get`, {}, ctx.credential) as Promise<Record<string, unknown>>,
+      ctx.client.call(`${path}::get`, {}, ctx.credential) as Promise<Record<string, unknown>>,
     format: (node, fmtOpts) => {
       const props = (node.properties ?? node) as Record<string, unknown>
       const schema: Record<string, unknown> = {}

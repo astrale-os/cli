@@ -38,7 +38,7 @@ export default {
     })
     try {
       const credential = await resolveCredential({}, config)
-      await client.call('/manager.astrale.ai/KernelInstance/delete', { id: name }, credential)
+      await client.call('/manager.astrale.ai/class.KernelInstance/delete', { id: name }, credential)
       log.success(`Unregistered "${name}" from manager`)
       deletedSomewhere = true
     } catch (e) {

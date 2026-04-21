@@ -57,7 +57,12 @@ This means:
 
 An "identity" in the CLI is a local keyring entry — a name, a subject, and credential material. It is not tied to any specific kernel. The same identity can be trusted by zero, one, or many kernels independently. Identities are portable: copying an identity directory to another machine is sufficient to use that identity on the new machine.
 
-Kernel trust is a separate, kernel-side concern. An identity being "registered" with kernel K means K has been configured to accept credentials from that identity — this is kernel state, not CLI state.
+Kernel trust is a separate, kernel-side concern. How an identity becomes "known" to a kernel depends on the credential source:
+
+- **IdP identities** are auto-provisioned: if the kernel trusts the issuer, presenting a valid JWT is sufficient — the kernel creates the identity node on first authentication.
+- **Key identities** require explicit registration by a privileged identity (e.g., the system identity) that creates the identity node and publishes the key.
+
+In both cases, this is kernel state, not CLI state.
 
 ### 2.3 The kernel is agnostic about IdPs
 
@@ -221,7 +226,7 @@ The active instance is stored in `config.json` and can be overridden per-call wi
 
 ### 5.4 Identity commands (local keyring management)
 
-The CLI's `identity` subcommand is deliberately minimal. It manages **local keyring state only**: generating/importing keys, listing them, showing them, deleting them. Everything that affects kernel state (registration, revocation, rotation, lookup) is done by calling a kernel syscall directly via `astrale call`. The CLI does not wrap those calls behind dedicated commands.
+The CLI's `identity` subcommand is deliberately minimal. It manages **local keyring state only**: generating/importing keys, listing them, showing them, deleting them.
 
 | Command | Description |
 |---|---|
@@ -234,16 +239,13 @@ The CLI's `identity` subcommand is deliberately minimal. It manages **local keyr
 | `astrale identity delete <name>` | Remove the local entry entirely. Does not touch any kernel. |
 | `astrale identity rename <old> <new>` | Rename a local keyring entry. Local-only. |
 
-**Registration is not a CLI command.** To register an identity with a kernel, the user calls the kernel syscall directly:
+**How identities become known to a kernel — the two paths:**
 
-```bash
-astrale call /kernel.astrale.ai/Identity/registerIdentity --data '{
-  "publicKey": { ... },
-  "token":     "eyJ..."
-}' --instance <instance>
-```
+- **IdP identities** need no explicit registration. If the kernel's provisioning policy trusts the IdP's issuer, the identity is auto-provisioned on first authenticated call. The CLI just presents the IdP token and the kernel does the rest. See §8.3.
 
-The CLI helps construct the `token` parameter (see §6.4 on the thumbprint-based issuer scheme) but does not wrap the call. Same for `rotate`, `revoke`, `lookup`, `extend`, `constrain`, `exclude`, etc. — they are all existing kernel syscalls on `/kernel.astrale.ai/Identity/…` and the CLI simply exposes `astrale call` as the universal entry point.
+- **Key identities** require a privileged identity to sponsor them. The `registerIdentity` syscall demands that the caller already be authenticated with EDIT permission on the target identity node — which means the node must already exist (in `creating` status) and the caller must have created it. In practice this means: an admin (or the system identity) creates the identity node via `createNode`, then calls `registerIdentity` on it with the user's public key. On a local dev server, `astrale server init` handles this automatically via the server's root key.
+
+Identity management operations on the kernel side (`extend`, `constrain`, `exclude`, `grantPerm`, `revokePerm`, etc.) are kernel syscalls on `/kernel.astrale.ai/Identity/…` invoked via `astrale call`.
 
 **Rules:**
 
@@ -373,8 +375,8 @@ Only `(K, R, C) = (1, 1, 1)` is a fully usable state for making calls. All other
 | 010 | remote-only | another machine holds the key | transfer key file, then `import` |
 | 001 | ghost config | broken | delete and re-create |
 | 110 | trusted but not wired | key + registered, no local CLI entry | `identity import` |
-| 101 | local only | in keyring, no kernel trust | `call /Identity/registerIdentity` or `login` |
-| 011 | lost key | config + trust but key missing | generate a new keypair and call `registerIdentity` with it |
+| 101 | local only | in keyring, no kernel trust | IdP: just call the kernel (auto-provisioned on first auth). Key: ask an admin to register, or use `server init` locally. |
+| 011 | lost key | config + trust but key missing | generate a new keypair and have it registered again |
 | 111 | healthy | fully usable | normal operation |
 
 For IdP identities, "K" is "valid refresh token on disk" rather than "private key on disk" — but the model is identical. An expired refresh token with no re-login flows through is equivalent to a missing K bit.
@@ -439,91 +441,81 @@ For IdP identities, "K" is "valid refresh token on disk" rather than "private ke
 
 The `knownInstances` cache is a **hint**, not a source of truth. It drives `identity list` display and helps produce actionable errors ("this identity used to work on prod; last seen 3 days ago"). The kernel is always the authority on whether a credential is currently accepted.
 
-### 6.4 Issuer identifiers and the registration flow
+### 6.4 The two paths to kernel trust
 
-When a `key`-source identity is registered with a kernel, the kernel needs an `iss` value to attach to the identity node and to use when verifying future tokens. The CLI derives this deterministically from the public key so that the same key always produces the same `iss` on the same instance, without any central coordinator.
+An identity becomes "known" to a kernel through one of two paths, depending on its credential source. The paths are fundamentally different in who initiates, what permissions are required, and what the kernel does.
+
+#### Path A — IdP identities: auto-provisioned on first call
+
+For IdP-backed identities, the CLI does nothing special beyond presenting the IdP-issued JWT. The kernel handles everything:
+
+1. JWT arrives with `(iss, sub)` from an external IdP (e.g., WorkOS, Google)
+2. Kernel verifies the signature against the IdP's JWKS (discovered via `<iss>/.well-known/openid-configuration`)
+3. Kernel looks up `(iss, sub)` in its identity store — no match found
+4. Kernel evaluates its **provisioning policy** (see §8.3): is this issuer allowed?
+5. If allowed → kernel auto-provisions an identity node and completes authentication
+6. If denied → kernel returns an auth error
+
+From the CLI's perspective, the first `astrale call` after `astrale login` either succeeds (identity was auto-provisioned) or fails (issuer not trusted). There is no explicit registration step. The CLI's `knownInstances` cache records "first successful call" as the moment the identity became known to that kernel.
+
+#### Path B — Key identities: sponsored by a privileged identity
+
+For key identities, the `registerIdentity` syscall is the mechanism — but it **cannot be called by the key being registered**. The syscall's authorization requirements are:
+
+- **USE** permission on the `registerIdentity` syscall node
+- **EDIT** permission on the target identity node
+- **USE** permission on the node's class
+
+This means the identity node must **already exist** (in `creating` status), and the **caller** must be an already-authenticated identity with EDIT permission on it. The key holder cannot bootstrap themselves.
+
+The typical flow requires a privileged sponsor — either an admin or the system identity:
+
+1. Sponsor calls `createNode` to create an identity node under the appropriate class
+2. Sponsor calls `registerIdentity` on that node, passing the new user's `publicKey` and a bootstrap credential signed by the new user's private key
+3. Kernel verifies the bootstrap credential's signature against the supplied `publicKey` (not against any JWKS — the key is right there in the request)
+4. Kernel computes `thumbprint` = RFC 7638 JWK Thumbprint of `publicKey`
+5. Kernel constructs `iss = <kernelIssuer>/iss/<thumbprint>` and publishes the issuer via `authPort.publishIssuer(iss, publicKey)`
+6. Kernel updates the identity node with `(iss, sub, publicKey)`
+7. Sponsor calls `grantPerm` to give the new identity initial permissions
+
+On a local dev server, `astrale server init` handles steps 1-7 automatically using the server's root key (the `__SYSTEM__` identity has all privileges). The user never calls `registerIdentity` directly.
+
+#### Case C — kernel-generated keys (not CLI-visible)
+
+The kernel generates keypairs internally for system/root identities at bootstrap time. `iss = <kernelIssuer>`, `sub = nodeId`. This is entirely kernel-internal and not a path the CLI ever uses.
+
+#### Issuer identifiers for key identities
+
+When a `key`-source identity is registered, the kernel derives its `iss` deterministically from the public key:
 
 **The thumbprint is the RFC 7638 JWK Thumbprint of the public key** — a base64url-encoded SHA-256 digest over a canonical JSON representation of the key. This is a well-specified, standard, collision-resistant fingerprint that every JWK library can compute.
 
-The full `iss` URL for a registered key identity is built at registration time against the target kernel instance:
-
 ```
-iss = <instance-base-url>/iss/<thumbprint>/.well-known
+iss = <kernelIssuer>/iss/<thumbprint>
 ```
 
 Example:
 
 ```
-iss = https://kernel.prod.eu.astrale.ai/iss/NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs/.well-known
+iss = https://kernel.prod.eu.astrale.ai/iss/NzbLsXh8uDCcd-6MNwXF4W_7noWXFZAfHkxZsRGC9Xs
 ```
 
-The same public key registered against a different kernel instance gets a different `iss` (different base URL) but the same `thumbprint` segment. This lets the kernel publish a per-identity OIDC-style discovery document at that URL while keeping the fingerprint portable across deployments.
-
-#### The three kernel-side registration cases
-
-These are the three shapes `Identity/registerIdentity` handles on the kernel side. The CLI is involved only in Cases 1 and 2; Case 3 is internal to the kernel.
-
-**Case 1 — external IdP (e.g., WorkOS, Google)**
-- Input: `null` (no public key)
-- The CLI presents a token obtained via `astrale login`
-- Kernel verifies the token against the external IdP's JWKS (discovered at `<iss>/.well-known`)
-- Kernel updates the identity node with `(iss, sub)` from the token's claims
-
-**Case 2 — user-held key (the `key` source path)**
-- Input: `publicKey` (the user's JWK)
-- The CLI mints a bootstrap JWT signed by the private key. The `iss` claim can be a placeholder (`"self"` or similar) — it is ignored by the kernel.
-- Kernel verifies the token's signature against the supplied `publicKey` directly (it does not look up any JWKS — the key is right there in the request)
-- **Kernel** computes `thumbprint` = RFC 7638 thumbprint of `publicKey`
-- **Kernel** constructs `iss = <instance-base-url>/iss/<thumbprint>/.well-known`
-- Kernel publishes the issuer via `authPort.publishIssuer(iss, publicKey)` so future tokens from this key verify against the kernel's own discovery
-- Kernel updates the identity node with `(iss, sub, publicKey)`
-- Kernel returns success (no payload beyond acknowledgement)
-
-**Case 3 — kernel-generated keys**
-- Input: `null`
-- The kernel generates the keypair internally (for system/root identities)
-- `iss = self`, `sub = nodeId`
-- Not a CLI-visible path
-
-#### Why the kernel computes the thumbprint, not the CLI
-
-Earlier drafts of this document had the CLI compute `thumbprint` and construct the `iss` URL before signing the bootstrap token. That was wrong in two ways:
-
-1. **Authority.** The kernel owns its own URL namespace (`<instance-base>/...`). It should be the sole authority constructing URLs under that namespace. Having the CLI pre-compute the URL and the kernel trust-or-validate it is strictly worse than the kernel computing it itself — there's no attack surface, no validation step, no drift between CLI and kernel logic.
-
-2. **Attack surface.** If the kernel trusts whatever `iss` the CLI puts in the bootstrap token, an attacker could register with a crafted `iss` pointing somewhere unexpected. By ignoring the token's `iss` and deriving the real one from the public key itself, the kernel makes that class of abuse impossible.
-
-The CLI's bootstrap token just needs to be a valid signature over any claims body — the kernel is verifying "does the holder of this public key possess the corresponding private key," nothing more. The `iss` claim is decorative in the bootstrap token.
+The kernel is the sole authority constructing this URL. The `iss` claim in the bootstrap token is **ignored** — the kernel verifies only that the holder of the public key possesses the corresponding private key, then derives the real `iss` from the key itself. This prevents clients from dictating the kernel's URL namespace.
 
 #### Reconstructing `iss` on the CLI side
 
-The kernel does not return the assigned `iss` in its registration response. Both sides apply the same deterministic rule:
+The kernel returns `{ iss, sub }` from `registerIdentity`. However, even without the response, both sides can apply the same deterministic rule:
 
 ```
-iss = <instance-base-url>/iss/<RFC 7638 thumbprint of publicKey>/.well-known
+iss = <kernelIssuer>/iss/<RFC 7638 thumbprint of publicKey>
 ```
 
-The CLI already has everything it needs to compute this independently:
+The CLI computes this using the public key, the thumbprint (cached at `identity generate` time in `meta.json`), and the kernel issuer (from instance metadata). This is the **one cross-component convention** between CLI and kernel: the URL template `<kernelIssuer>/iss/<thumbprint>`. A stable, documented rule that both sides implement.
 
-- The public key (`public.jwk`)
-- The thumbprint (cached at `identity generate` time in `meta.json`)
-- The instance base URL (from `instances.json`)
-- The path convention (compiled into the CLI)
+#### Why the kernel computes the thumbprint, not the CLI
 
-So after a successful registration, the CLI reconstructs the `iss` locally and stores it in `meta.json`. All subsequent JWTs from this identity use the reconstructed `iss`, which the kernel will accept because the kernel published at the same URL using the same rule.
-
-This is the **one cross-component convention** between CLI and kernel: the URL template `<base>/iss/<thumbprint>/.well-known`. It is a stable, documented rule that both sides implement. Not returned at runtime, not negotiated — just a shared constant.
-
-#### What the CLI does in Case 2
-
-1. Load the identity's public JWK from `~/.astrale/identities/<name>/public.jwk`
-2. Sign a bootstrap JWT `{ iss: "self", sub, iat, exp }` with the private key (the `iss` claim is a placeholder)
-3. Call `astrale call /kernel.astrale.ai/Identity/registerIdentity --data '{"publicKey": ..., "token": "..."}'`
-4. On success, reconstruct `iss = <instance-base>/iss/<thumbprint>/.well-known` locally (using the thumbprint computed at `identity generate` time and the instance base URL from `instances.json`)
-5. Store the reconstructed `iss` in `meta.json` alongside the existing `thumbprint` field
-6. All subsequent JWTs for this identity use the stored `iss`
-
-Users who want to do this entirely by hand can, since each step is standard JWT work.
+1. **Authority.** The kernel owns its own URL namespace. It should be the sole authority constructing URLs under that namespace.
+2. **Attack surface.** If the kernel trusted whatever `iss` the CLI puts in the bootstrap token, an attacker could register with a crafted `iss` pointing somewhere unexpected. By ignoring the token's `iss` and deriving the real one from the public key itself, the kernel makes that class of abuse impossible.
 
 ### 6.5 One identity = (one key OR one IdP session) + one subject
 
@@ -637,7 +629,7 @@ The CLI ships with one or more pre-configured IdPs baked into the binary. These 
 
 ## 8. Kernel-side contract
 
-This section lists what the kernel must expose for the CLI to work. It is intentionally minimal: almost everything the CLI needs is already implemented as kernel syscalls on `/kernel.astrale.ai/Identity/…` and is invoked via `astrale call`. The CLI does not wrap those syscalls — it passes through to them.
+This section lists what the kernel must expose for the CLI to work. The kernel's authentication layer has three responsibilities: verify JWTs, resolve identities, and auto-provision identities from trusted issuers.
 
 ### 8.1 Trusted issuers introspection (optional, nice UX)
 
@@ -649,7 +641,7 @@ An operation — e.g., `auth.trustedIssuers` — that returns the list of `iss` 
   "issuers": [
     "https://auth.astrale.ai",
     "https://api.workos.com/sso/workos/corp",
-    "https://kernel.prod.eu.astrale.ai/iss/*"   // pattern for self-registered key identities
+    "https://kernel.prod.eu.astrale.ai/iss/*"   // pattern for registered key identities
   ]
 }
 ```
@@ -660,25 +652,57 @@ This is **read-only**. It is a pure UX aid — the kernel is still the final aut
 
 The kernel's auth layer dispatches JWT verification based on the `iss` claim:
 
-- `iss = <external IdP URL>` (Case 1 of §6.4) → kernel fetches the IdP's JWKS via OIDC discovery at `<iss>/.well-known/...`, verifies the signature, checks `aud`
-- `iss = <instance-base>/iss/<thumbprint>/.well-known` (Case 2 of §6.4) → kernel looks up the public key it published at registration time via `authPort.publishIssuer`, verifies the signature against that key
-- `iss = self` (Case 3 of §6.4) → kernel-internal identities; not a CLI-visible path
+- `iss = <external IdP URL>` (Path A of §6.4) → kernel fetches the IdP's JWKS via OIDC discovery at `<iss>/.well-known/...`, verifies the signature, checks `aud`
+- `iss = <kernelIssuer>/iss/<thumbprint>` (Path B of §6.4) → kernel looks up the public key it published at registration time via `authPort.publishIssuer`, verifies the signature against that key
+- `iss = <kernelIssuer>` (Case C of §6.4) → kernel-internal identities; not a CLI-visible path
 
-Both external and self-published cases end in the same place: a verified `(iss, sub)` that the kernel maps to an identity node.
+All cases end in the same place: a verified `(iss, sub)` that the kernel maps to an identity node.
 
-### 8.3 Registration iss computation (kernel-side)
+### 8.3 Auto-provisioning (identity creation on first auth)
 
-For Case 2 (`Identity/registerIdentity` with a `publicKey`), the kernel is the sole authority for computing the assigned `iss`:
+After JWT verification succeeds, the kernel resolves `(iss, sub)` to an identity node. If no identity node exists, the kernel evaluates its **provisioning policy** to decide whether to create one automatically.
 
-1. Verify the bootstrap token's signature against the supplied `publicKey` (not against any JWKS)
-2. Compute `thumbprint` = RFC 7638 JWK Thumbprint of `publicKey`
-3. Construct `iss = <instance-base>/iss/<thumbprint>/.well-known` using its own base URL
-4. Publish via `authPort.publishIssuer(iss, publicKey)`
-5. Persist `iss` on the identity node
+The provisioning pipeline:
+
+1. **Policy evaluation** — the `ProvisioningPolicyEvaluator` matches rules against `(issuer, subject, claims)`. First matching rule's `effect` wins; falls back to `defaultDecision`.
+2. **Identity creation** — if policy allows, the identity store creates a new identity node with `(iss, sub)` properties.
+3. **Permissions** — a provisioned identity starts with **no permissions**. The provisioning policy (or a post-provisioning hook) determines what initial permissions to grant.
+
+The provisioning policy is configured per-kernel at deployment time. It controls which issuers are allowed to auto-provision identities. Example shapes:
+
+```jsonc
+// Allow everything (development default)
+{ "defaultDecision": "allow" }
+
+// Allow only specific issuers
+{
+  "defaultDecision": "deny",
+  "rules": [
+    { "issuer": { "equals": "https://auth.astrale.ai" }, "effect": "allow" },
+    { "issuer": { "equals": "https://id.corp.com" }, "effect": "allow" }
+  ]
+}
+```
+
+**Current implementation status:** the provisioning infrastructure (policy evaluator, trust store, provisioning store) is fully implemented in the runtime. The in-memory adapter provisions identities correctly. The graph-backed (Cypher) adapter's `provisionIdentity()` is not yet implemented — it returns `null`, meaning auto-provisioning does not yet work against the real graph backend. This is a separate kernel-side work item (see §12.8).
+
+This is the critical kernel-side contract for the CLI: **if the kernel's provisioning policy trusts an issuer, presenting a valid JWT from that issuer is sufficient to become a known identity.** The CLI does not need an explicit registration step for IdP-backed identities.
+
+### 8.4 Registration (key identities, kernel-side)
+
+For key identities registered via the `Identity/registerIdentity` syscall, the kernel:
+
+1. Verifies the bootstrap token's signature against the supplied `publicKey` (not against any JWKS)
+2. Computes `thumbprint` = RFC 7638 JWK Thumbprint of `publicKey`
+3. Constructs `iss = <kernelIssuer>/iss/<thumbprint>` using its own issuer URL
+4. Publishes via `authPort.publishIssuer(iss, publicKey)`
+5. Persists `iss`, `sub`, and `publicKey` on the identity node
 
 The `iss` claim in the bootstrap token is **ignored**. This prevents clients from dictating the kernel's URL namespace and makes the thumbprint the single source of truth for issuer identity.
 
-The kernel does not return the assigned `iss` in its response. The CLI reconstructs it by applying the same deterministic rule. Both sides share the URL template `<base>/iss/<thumbprint>/.well-known` as a documented convention — the one cross-component contract between CLI and kernel. See §6.4.
+The kernel returns `{ iss, sub }` from the syscall. The CLI also independently reconstructs `iss` by applying the same deterministic rule. Both sides share the URL template `<kernelIssuer>/iss/<thumbprint>` as a documented convention — the one cross-component contract between CLI and kernel. See §6.4.
+
+**Important:** this syscall requires the caller to be an already-authenticated identity with EDIT permission on the target identity node, and USE permission on the syscall and the node's class. The target node must already exist in `creating` status. See §6.4 Path B for the full flow.
 
 ---
 
@@ -693,19 +717,16 @@ astrale server start                  # local instance auto-registered as 'local
 astrale identity generate bryan       # new keypair under identities/bryan/
                                       # thumbprint = RFC 7638 thumbprint, computed locally at generate time
 
-# Registration is just a syscall — the CLI has no dedicated 'register' command.
-# The CLI signs a bootstrap JWT with a placeholder iss (the kernel ignores it
-# and derives the real iss from the public key), then calls the kernel syscall:
-astrale call /kernel.astrale.ai/Identity/registerIdentity \
-  --instance local \
-  --data '{"publicKey": <bryan public jwk>, "token": <bryan bootstrap jwt>}'
+# server init automatically registers the first identity using the system identity:
+# 1. __SYSTEM__ calls createNode to create an identity node in 'creating' status
+# 2. __SYSTEM__ calls registerIdentity on that node with bryan's public key
+# 3. __SYSTEM__ calls grantPerm to give bryan initial permissions
+# The user never calls registerIdentity directly.
 
-# On success, the CLI reconstructs iss = <local-base>/iss/<thumbprint>/.well-known
-# and stores it in meta.json. All subsequent tokens use that iss.
 astrale call /foo/bar key=value       # signs with bryan's key, iss = published one
 ```
 
-End state: one server running, one local instance, one identity registered. The kernel has published `https://<local-instance>/iss/<thumbprint>/.well-known` via `authPort.publishIssuer` (using its own computed thumbprint), and the CLI has independently reconstructed the same URL for future token signing.
+End state: one server running, one local instance, one key identity registered via the system identity. The kernel has published `<kernelIssuer>/iss/<thumbprint>` via `authPort.publishIssuer`, and the CLI has independently reconstructed the same URL for future token signing.
 
 ### 9.2 Client-only machine connecting to a hosted kernel via SSO
 
@@ -716,13 +737,16 @@ astrale instance use main
 astrale login --idp astrale-default --verify
 # → browser opens → user authenticates via hosted IdP
 # → tokens stored under identities/alice/
-# → verified against main: kernel auto-provisions identity
+# → --verify makes a test call to the kernel:
+#     kernel sees (iss, sub) from the IdP token → no matching identity
+#     → kernel evaluates provisioning policy → issuer trusted → auto-provisions
 # → "✓ logged in as alice@corp.com on main"
 
 astrale call /foo/bar
+# subsequent calls skip provisioning — identity already exists in the graph
 ```
 
-End state: no server, one instance, one IdP-backed identity. Nothing under `~/.astrale/server/`.
+End state: no server, one instance, one IdP-backed identity auto-provisioned by the kernel. Nothing under `~/.astrale/server/`. No explicit registration step was needed.
 
 ### 9.3 Client-only with corporate SSO (self-hosted kernel)
 
@@ -798,18 +822,21 @@ No re-registration needed: the issuer was already published by the kernel when a
 
 ### 9.6 Key rotation
 
-Rotation is a kernel syscall, not a CLI command. The typical flow is:
+Rotation requires a privileged identity to register the new key. The typical flow is:
 
 ```bash
 astrale identity generate alice-new                                 # new local keypair
-astrale call /kernel.astrale.ai/Identity/registerIdentity \
-  --instance prod \
-  --data '{"publicKey": <alice-new public>, "token": <alice-new self-signed>}'
-# (kernel publishes the new iss; old one still trusted until explicitly revoked)
+astrale identity export alice-new --public                          # hand the public key to the admin
+
+# An admin (or the system identity on a local server) performs:
+# 1. createNode to create a new identity node (or reuse the existing one if the kernel supports key update)
+# 2. registerIdentity on that node with alice-new's public key
+# 3. grantPerm to transfer permissions
+
 astrale identity delete alice                                       # drop the old local entry
 ```
 
-Rotation with grace periods, revocation semantics, etc. are handled entirely kernel-side via whatever identity operations already exist on `/kernel.astrale.ai/Identity/…`.
+Rotation with grace periods, revocation semantics, etc. are handled entirely kernel-side via identity operations on `/kernel.astrale.ai/Identity/…`.
 
 ### 9.7 Delete an identity locally
 
@@ -848,16 +875,24 @@ Every CLI error must tell the user (a) what went wrong, (b) why, and (c) what to
   Fix:    astrale login --idp workos --name alice-work
 ```
 
-**Kernel doesn't recognize identity:**
+**Kernel doesn't recognize identity (key):**
 ```
 ✘ Kernel 'prod' does not recognize identity 'alice'.
-  Reason: issuer https://kernel.prod.eu.astrale.ai/iss/NzbLs.../.well-known
+  Reason: issuer https://kernel.prod.eu.astrale.ai/iss/NzbLs...
           is not published on this kernel.
-  Fix:    register via the kernel syscall:
-            astrale call /kernel.astrale.ai/Identity/registerIdentity \
-              --instance prod \
-              --data '{"publicKey": ..., "token": ...}'
-          or ask an admin with the required permissions to do so.
+  Fix:    ask an admin to register your public key on this kernel,
+          or export it for them:
+            astrale identity export alice --public
+```
+
+**Kernel doesn't recognize identity (IdP — issuer not trusted):**
+```
+✘ Kernel 'prod' rejected identity 'alice-work'.
+  Reason: issuer https://api.workos.com/sso/workos/corp
+          is not in this kernel's provisioning policy.
+  Fix:    ask the kernel admin to add this issuer to the trusted list,
+          or use a different IdP:
+            astrale login --idp <trusted-idp> --instance prod
 ```
 
 **Name conflict on import:**
@@ -930,21 +965,27 @@ Coupling kernel auth to specific providers (WorkOS, Google) would require the ke
 
 A unified identity abstraction that spans `key` and `idp` credentials keeps the user's mental model simple: "who am I to the kernel?" has one answer. Allowing one identity to have multiple credential sources would require a selection UI on every call. Users who legitimately want both can maintain two identities. Keeping the taxonomy at exactly two values (rather than splitting IdP into interactive/machine/static subtypes) means new OAuth grant types or token flows become enum extensions on `grant`, not new source types.
 
-### 11.8 Why contexts are deferred
+### 11.8 Why key registration requires a privileged sponsor
+
+`registerIdentity` is a kernel syscall that requires EDIT permission on the target identity node, and the node must already exist in `creating` status. A key holder cannot register themselves because they don't exist in the graph yet — they have no permissions, and no identity node to register against. This is by design: the kernel's authorization model requires every mutation to be traceable to an authenticated principal. Self-registration would require an unauthenticated code path in the syscall dispatcher, which breaks the authorization model.
+
+IdP identities avoid this problem because auto-provisioning happens inside the kernel's authentication layer, before the authorization check — the kernel trusts the IdP and creates the identity as part of resolving the credential. Key identities have no external trust anchor, so they need an already-trusted sponsor.
+
+### 11.9 Why contexts are deferred
 
 The common case is "one instance, one identity" or "one identity across instances." Adding a context concept (kubectl-style named `(instance, identity)` tuples) is justified only when a user has two identities on one instance or needs to bundle per-endpoint overrides. Until that use case is demonstrated, `active instance + --as <identity>` is enough.
 
-### 11.9 Why stateless mode exists
+### 11.10 Why stateless mode exists
 
 CI runners, ephemeral containers, and scripts often cannot or should not write to `~/.astrale/`. Stateless mode (`--instance <url> --key <file>` / `--token <token>` / `--client-credentials`) lets the CLI be used without any on-disk state. It is the same code path as persistent mode, just without the storage.
 
-### 11.10 Why `audience` is instance-scoped, not IdP-scoped
+### 11.11 Why `audience` is instance-scoped, not IdP-scoped
 
 OAuth `audience` identifies *the resource a token is intended for*, not the authority that issued it. One IdP can legitimately issue tokens for many resources — a single WorkOS tenant can produce tokens for `kernel-prod` and `kernel-staging`, which are different audiences but share the same authentication authority.
 
 Putting `audience` in `client.json` would lock each IdP config to one audience, forcing users to maintain duplicate IdP entries per target instance. Putting it in `instances.json` matches the actual semantics: each instance declares what audience it expects, and `login` resolves that audience when requesting a token from any IdP. The `--audience` flag exists as an explicit override for edge cases.
 
-### 11.11 Why built-in IdPs are first-class
+### 11.12 Why built-in IdPs are first-class
 
 Users of the Astrale-hosted product should experience zero configuration friction. Shipping `astrale-default` as a built-in IdP means `astrale login` Just Works on a fresh install. Self-hosters add their own IdPs alongside without special-casing.
 
@@ -996,6 +1037,14 @@ These are intentionally out of scope for the first implementation of this design
 
 **Shape:** `expires_at` field on `key` identities; `rotate` auto-prompts when expiring soon; kernel-side policy can reject expired keys.
 
+### 12.8 Graph-backed auto-provisioning
+
+**Trigger:** deploying against the real graph backend (FalkorDB/Cypher) rather than the in-memory adapter.
+
+**Current state:** the provisioning infrastructure (policy evaluator, trust store, provisioning store) is fully implemented in the runtime, and the in-memory adapter provisions identities correctly. The Cypher `CypherIdentityStore.provisionIdentity()` is a stub that returns `null` — graph-backed provisioning requires creating nodes + composition edges + permission structure, not just a bare node. Until this is implemented, IdP auto-provisioning only works against the in-memory backend.
+
+**Shape:** implement `CypherIdentityStore.provisionIdentity()` to create an identity node in the graph with the correct class, parent edges, and initial permission structure. The provisioning policy evaluator and trust store are already wired up — only the graph write path is missing.
+
 ---
 
 ## Appendix A — Quick reference
@@ -1019,7 +1068,7 @@ astrale status
 astrale version
 ```
 
-Kernel-affecting identity operations (register, revoke, rotate, extend, constrain, exclude, lookup, etc.) are not dedicated CLI commands — they are kernel syscalls on `/kernel.astrale.ai/Identity/…` invoked directly via `astrale call`.
+Identity management operations (extend, constrain, exclude, grantPerm, revokePerm, etc.) are kernel syscalls on `/kernel.astrale.ai/Identity/…` invoked via `astrale call`. Registration of key identities requires a privileged caller (see §6.4 Path B). IdP identities are auto-provisioned — no explicit registration needed (see §6.4 Path A, §8.3).
 
 ### Directory quick reference
 
@@ -1036,8 +1085,8 @@ Kernel-affecting identity operations (register, revoke, rotate, extend, constrai
 ### JWT issuer → verifier dispatch
 
 ```
-iss = <external IdP URL>                          → kernel fetches JWKS via OIDC discovery
-iss = <instance-base>/iss/<thumbprint>/.well-known     → kernel uses the key published at registration
-iss = self                                        → kernel-internal identities
-iss = anything else                               → rejected
+iss = <external IdP URL>                     → kernel fetches JWKS via OIDC discovery; auto-provisions if trusted
+iss = <kernelIssuer>/iss/<thumbprint>        → kernel uses the key published at registration
+iss = <kernelIssuer>                         → kernel-internal identities
+iss = anything else                          → rejected
 ```

@@ -1,11 +1,12 @@
-import type { ManagerSession } from '@astrale-os/kernel-toolkit/manager'
+import type { Kernel } from '@astrale-os/kernel-toolkit'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 
 import type { AstraleConfig } from './config'
 
 import { resolveAuth } from './keys'
-import { KEYS_DIR, MANAGER_PID_PATH } from './paths'
+import { INSTANCES_PATH, KEYS_DIR, MANAGER_PID_PATH } from './paths'
 
 export type ManagerState = {
   running: boolean
@@ -73,26 +74,74 @@ async function readManagerPid(): Promise<number | undefined> {
 }
 
 /**
- * Boot a `ManagerSession` from CLI config and persist the manager PID.
+ * Start the Astrale manager kernel and bind HTTP.
  *
- * Centralizes the boot recipe shared by `astrale start --foreground` and
- * `astrale reset` (which auto-starts the manager if needed). Caller is
- * responsible for `serve()`, UI startup, and SIGINT cleanup.
+ * Composition:
+ *   - `storage: falkordb(...)` — manager's own graph (holds manager domain + child registry).
+ *   - `manager: inProcessManager(...)` — enables multi-instance mode. The driver
+ *     installs `ManagerSchema` (`KernelInstance/*`) into the manager graph and
+ *     mounts the multiplex routes (`/mngt` for manager dispatch, `/:id/` for
+ *     child direct access, `/mgt/:id/` for admin gateway, per-instance JWKS).
+ *   - `transports: [node()]` — single Node HTTP server hosting everything.
+ *
+ * The child `spawn` callback boots each sub-kernel with its own `falkordb`
+ * graph on-demand (lazy; only when `/:id/*` is hit or an explicit
+ * `KernelInstance/boot` call arrives).
  */
-export async function bootManagerSession(config: AstraleConfig): Promise<ManagerSession> {
+export async function startManager(config: AstraleConfig): Promise<Kernel> {
   const auth = await resolveAuth(KEYS_DIR, {
     issuer: config.issuer,
     subject: 'manager',
   })
-  const { ManagerSession } = await import('@astrale-os/kernel-toolkit/manager')
-  const session = await ManagerSession.boot({
-    graphName: config.graphName,
-    falkorPort: config.falkorPort,
-    port: config.managerPort,
+  const { Kernel, falkordb, inProcessManager, node, DiskInstanceStore } =
+    await import('@astrale-os/kernel-toolkit')
+  const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
+
+  const store = new DiskInstanceStore(dirname(INSTANCES_PATH))
+
+  const kernel = new Kernel({
+    mode: 'manager',
+    publicUrl: config.issuer,
+    id: 'manager',
     auth,
+    drivers: {
+      storage: falkordb({
+        graphName: config.graphName,
+        port: config.falkorPort,
+      }),
+      transports: [node()],
+      manager: inProcessManager({
+        store,
+        async spawn(_parent, cfg) {
+          const child = new Kernel({
+            publicUrl: cfg.issuer ?? `http://localhost:${config.managerPort}/${cfg.id}`,
+            id: cfg.id,
+            drivers: {
+              storage: falkordb({
+                graphName: cfg.graphName,
+                host: cfg.host,
+                port: cfg.port,
+              }),
+            },
+          })
+          await child.boot()
+          return {
+            kernel: child,
+            disposer: async () => {
+              await deleteGraph({
+                graphName: cfg.graphName,
+                host: cfg.host,
+                port: cfg.port,
+              })
+            },
+          }
+        },
+      }),
+    },
   })
+  await kernel.listen({ port: config.managerPort })
   await writeManagerPid(process.pid)
-  return session
+  return kernel
 }
 
 /**

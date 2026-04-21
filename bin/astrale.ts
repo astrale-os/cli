@@ -142,7 +142,8 @@ registerCommand(program, {
   arguments: [
     {
       name: 'path',
-      description: 'Operation path (e.g., /manager.astrale.ai/KernelInstance/list or /node:method)',
+      description:
+        'Operation path (e.g., /manager.astrale.ai/class.KernelInstance/list or /node::method)',
     },
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
@@ -314,16 +315,16 @@ Command groups:
   Domains       domain install
 
 Path syntax:
-  /domain/Class/method    Navigate to a Syscall node (static operation)
-  /domain/Class:method    Call a method on a node instance
-  @nodeId                 Reference a node by its ID
+  /domain/class.Name/method    Navigate to a Syscall node (static operation)
+  /domain/class.Name::method   Call a method on a node instance
+  @nodeId                      Reference a node by its ID
 
 Examples:
   $ astrale ls /
-  $ astrale call /manager.astrale.ai/KernelInstance/list
-  $ astrale call /manager.astrale.ai/KernelInstance/register id=my-inst graphName=my-graph
-  $ astrale get /kernel.astrale.ai/Domain
-  $ astrale describe /manager.astrale.ai/KernelInstance
+  $ astrale call /manager.astrale.ai/class.KernelInstance/list
+  $ astrale call /manager.astrale.ai/class.KernelInstance/register id=my-inst graphName=my-graph
+  $ astrale get /kernel.astrale.ai/class.Domain
+  $ astrale describe /manager.astrale.ai/class.KernelInstance
   $ astrale logs --topic 'op:*:failed' -n 10
   $ astrale query 'MATCH (n) RETURN n LIMIT 5'
 `,

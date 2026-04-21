@@ -2,7 +2,7 @@ import type { KernelCommandOpts } from '../kernel'
 
 import { runKernelCommand } from '../kernel'
 
-const QUERY_METHOD = '/kernel.astrale.ai/Root/query'
+const QUERY_METHOD = '/kernel.astrale.ai/class.Root/query'
 
 export async function queryCommand(cypher: string, opts: KernelCommandOpts): Promise<void> {
   await runKernelCommand({

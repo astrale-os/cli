@@ -152,9 +152,9 @@ export function formatKernelError(
   if (debug) printDebug(error, url)
 }
 
-/** Strip internal `:methodName` suffixes from paths in error messages (e.g., "/path:listChildren" → "/path") */
+/** Strip internal `::methodName` suffixes from paths in error messages (e.g., "/path::listChildren" → "/path") */
 function stripMethodSuffix(msg: string): string {
-  return msg.replace(/(\/[^"\s:]+):([a-zA-Z]\w*)/g, '$1')
+  return msg.replace(/(\/[^"\s:]+)::([a-zA-Z]\w*)/g, '$1')
 }
 
 function writeRaw(payload: Record<string, unknown>): void {

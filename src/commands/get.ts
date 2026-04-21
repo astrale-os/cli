@@ -11,7 +11,7 @@ export async function getCommand(path: string, opts: GetOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: `Node ${path}`,
-    fn: (ctx) => ctx.client.call(`${path}:get`, {}, ctx.credential),
+    fn: (ctx) => ctx.client.call(`${path}::get`, {}, ctx.credential),
     format: (result, fmtOpts) => {
       output(opts.long ? result : cleanNode(result), fmtOpts)
     },

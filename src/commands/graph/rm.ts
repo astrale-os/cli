@@ -110,7 +110,7 @@ async function findInstanceForGraph(
       config as Parameters<typeof resolveCredential>[1],
     )
     const instances = (await client.call(
-      '/manager.astrale.ai/KernelInstance/list',
+      '/manager.astrale.ai/class.KernelInstance/list',
       {},
       credential,
     )) as KernelInstance[]

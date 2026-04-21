@@ -1,10 +1,10 @@
-import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
 import {
   FalkorDBAdapter,
   listGraphs,
   deleteGraph,
   type FalkorDBConfig,
-} from '@astrale/typegraph-adapter-falkordb'
+} from '@astrale-os/kernel-adapters/falkordb'
+import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
 import chalk from 'chalk'
 
 import type { AstraleConfig } from './config'
@@ -98,7 +98,11 @@ async function discoverInstances(config: AstraleConfig): Promise<KernelInstance[
   const client = new KernelClient<FnMap>({ url, requestTimeout: 5_000 })
   try {
     const credential = await resolveCredential({}, config)
-    const result = await client.call('/manager.astrale.ai/KernelInstance/list', {}, credential)
+    const result = await client.call(
+      '/manager.astrale.ai/class.KernelInstance/list',
+      {},
+      credential,
+    )
     return result as KernelInstance[]
   } catch {
     return null
