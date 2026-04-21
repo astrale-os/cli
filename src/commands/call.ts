@@ -1,6 +1,6 @@
 import type { CallCommandOpts } from '../kernel'
 
-import { runKernelCommand } from '../kernel'
+import { lookupRemoteBinding, mintRemoteCredential, runKernelCommand } from '../kernel'
 import { log } from '../lib/log'
 import { output } from '../lib/output'
 
@@ -35,7 +35,18 @@ export async function callCommand(
   await runKernelCommand({
     opts,
     label: path,
-    fn: (ctx) => ctx.client.call(path, params, ctx.credential),
+    fn: async (ctx) => {
+      // Remote-bound functions live on an external worker; the kernel dispatch
+      // path never reaches them. Before calling, check for `binding.remoteUrl`
+      // and if present, mint a worker-scoped credential and override the URL
+      // so the envelope POSTs straight to the worker.
+      const binding = await lookupRemoteBinding(ctx.client, path, ctx.credential)
+      if (binding) {
+        const workerCreds = await mintRemoteCredential(ctx.client, binding.audience, ctx.credential)
+        return ctx.client.call(path, params, workerCreds, { url: binding.remoteUrl })
+      }
+      return ctx.client.call(path, params, ctx.credential)
+    },
   })
 }
 
