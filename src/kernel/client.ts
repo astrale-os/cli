@@ -32,6 +32,11 @@ export async function withKernelClient<T>(
   const client = new KernelClient<FnMap>({
     url,
     requestTimeout: resolveTimeoutMs(opts.timeout),
+    // CLI is short-lived and one-shot per command. Skip the WS upgrade
+    // (saves up to 5s on hangs) and disable HTTP retries (saves ~7s of
+    // exponential backoff on ECONNREFUSED / 5xx). The user can re-run.
+    defaultTransport: 'http',
+    retry: { maxAttempts: 1 },
   })
 
   try {

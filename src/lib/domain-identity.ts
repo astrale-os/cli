@@ -4,9 +4,9 @@ import { resolve } from 'node:path'
 
 type Spec = { nodes: SpecNode[]; edges: SpecEdge[] }
 type SpecNode = {
-  slug: string
+  path?: string
   class?: string | { raw: string }
-  properties: Record<string, unknown>
+  props: Record<string, unknown>
 }
 type SpecEdge = {
   class?: string | { raw: string }
@@ -52,6 +52,7 @@ export async function buildIdentityBinding(
 
 const DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
 const METHOD_OF_CLASS = '/:kernel.astrale.ai:class.method_of'
+const CLASS_NS_PREFIX = 'class.'
 
 function rawStr(value: string | { raw: string } | undefined): string | undefined {
   if (!value) return undefined
@@ -64,27 +65,36 @@ function extractDomainSlug(spec: Spec): string {
     return cls === DOMAIN_CLASS || cls === `${DOMAIN_CLASS}/self`
   })
   if (!domainNode) throw new Error('No Domain node found in spec')
-  return (domainNode.properties.origin as string) ?? domainNode.slug
+  const origin = domainNode.props?.origin
+  if (typeof origin === 'string' && origin.length > 0) return origin
+  const path = domainNode.path
+  if (typeof path === 'string' && path.startsWith('/')) return path.slice(1)
+  throw new Error('Domain node has no origin or path')
 }
 
 /**
- * Collect function subs as domain-relative paths (e.g. `/Class/method`).
- *
- * Per RFC 7519 `sub` is scoped to `iss`, so the kernel's
- * `stripDomainPrefix` (kernel/runtime/domains/identity.ts) expects
- * relative paths — not absolute. Both sides must match exactly.
+ * Collect expected function subs as absolute `MethodPath` strings
+ * (`/:origin:Member:method`). Must match what the kernel computes via
+ * `resolveMethodNodes` over `compiled.$.paths.absolute` — only methods
+ * declared by this domain's own classes, skipping inherited ones.
  */
-function collectFunctionSubs(spec: Spec, slug: string): string[] {
-  const prefix = `/${slug}`
-  const subs: string[] = []
+function collectFunctionSubs(spec: Spec, origin: string): string[] {
+  const selfSuffix = '/self'
+  const classPrefix = `/${origin}/${CLASS_NS_PREFIX}`
+  const subs = new Set<string>()
   for (const edge of spec.edges) {
     const cls = rawStr(edge.class)
     if (cls !== METHOD_OF_CLASS && cls !== `${METHOD_OF_CLASS}/self`) continue
+    const target = rawStr(edge.target)
     const source = rawStr(edge.source)
-    if (!source) continue
-    const absolute = source.startsWith('./') ? '/' + source.slice(2) : source
-    if (!absolute.startsWith(`${prefix}/`)) continue
-    subs.push(absolute.slice(prefix.length))
+    if (!target || !source) continue
+    if (!source.startsWith(classPrefix)) continue
+    if (!target.startsWith(classPrefix) || !target.endsWith(selfSuffix)) continue
+    const member = target.slice(classPrefix.length, target.length - selfSuffix.length)
+    if (!member) continue
+    const methodName = source.slice(source.lastIndexOf('/') + 1)
+    if (!methodName) continue
+    subs.add(`/:${origin}:${member}:${methodName}`)
   }
-  return subs
+  return [...subs]
 }

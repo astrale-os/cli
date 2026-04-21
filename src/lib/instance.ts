@@ -1,9 +1,12 @@
+import { KernelClient } from '@astrale-os/kernel-client'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
 import type { AstraleConfig } from './config'
 
+import { resolveCredential } from '../kernel/auth'
+import { readConfig } from './config'
 import { log } from './log'
 import { INSTANCES_PATH } from './paths'
 
@@ -108,15 +111,55 @@ export async function removeInstance(name: string): Promise<void> {
 }
 
 /**
- * Set the active instance. Throws if the instance is not registered.
+ * Set the active instance. If not in the local store, probe the manager
+ * (`KernelInstance/info`) — manager-hosted sub-instances aren't auto-listed
+ * locally but should be selectable by name once they exist.
  */
 export async function setActive(name: string): Promise<void> {
+  validateName(name, 'Instance')
   const store = await readInstances()
   if (!store.instances[name]) {
-    throw new Error(`Instance "${name}" not found. Run: astrale instance add ${name}`)
+    const found = await probeManagerInstance(name)
+    if (!found) {
+      throw new Error(
+        `Instance "${name}" not found locally or on the manager. ` +
+          `Run: astrale instance add ${name} — or register it via ` +
+          `astrale call /manager.astrale.ai/class.KernelInstance/register id=${name} graphName=...`,
+      )
+    }
+    // Persist a stub. URL stays undefined → resolveKernelUrl synthesizes
+    // `http://localhost:<managerPort>/mgt/<name>` like the --instance flag.
+    store.instances[name] = { createdAt: new Date().toISOString() }
   }
   store.active = name
   await writeInstances(store)
+}
+
+/**
+ * Returns true if the manager knows about an instance by this id.
+ * Silent on connection failure (manager down → treat as unknown, the
+ * caller surfaces a generic "not found" message).
+ */
+async function probeManagerInstance(name: string): Promise<boolean> {
+  try {
+    const config = await readConfig()
+    const credential = await resolveCredential({}, config)
+    const url = `http://localhost:${config.managerPort}/mngt`
+    const client = new KernelClient({
+      url,
+      requestTimeout: 5_000,
+      defaultTransport: 'http',
+      retry: { maxAttempts: 1 },
+    })
+    try {
+      await client.call('/manager.astrale.ai/class.KernelInstance/info', { id: name }, credential)
+      return true
+    } finally {
+      client.disconnect()
+    }
+  } catch {
+    return false
+  }
 }
 
 export async function getActive(config?: AstraleConfig): Promise<InstanceEntry & { name: string }> {

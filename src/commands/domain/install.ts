@@ -43,10 +43,12 @@ function extractDomainSlug(nodes: unknown[]): string | undefined {
     if (!node || typeof node !== 'object') continue
     const cls = rawStr((node as { class?: unknown }).class)
     if (cls !== KERNEL_DOMAIN_CLASS && cls !== `${KERNEL_DOMAIN_CLASS}/self`) continue
-    const props = (node as { properties?: { origin?: unknown } }).properties
+    const props = (node as { props?: { origin?: unknown } }).props
     const origin = typeof props?.origin === 'string' ? props.origin : undefined
-    const slug = (node as { slug?: unknown }).slug
-    return origin ?? (typeof slug === 'string' ? slug : undefined)
+    if (origin) return origin
+    const path = (node as { path?: unknown }).path
+    if (typeof path === 'string' && path.startsWith('/')) return path.slice(1)
+    return undefined
   }
   return undefined
 }
