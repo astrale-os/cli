@@ -1,12 +1,11 @@
 import type { Kernel } from '@astrale-os/kernel-toolkit'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
 
 import type { AstraleConfig } from './config'
 
 import { resolveAuth } from './keys'
-import { INSTANCES_PATH, KEYS_DIR, MANAGER_PID_PATH } from './paths'
+import { KEYS_DIR, MANAGER_PID_PATH } from './paths'
 
 export type ManagerState = {
   running: boolean
@@ -93,11 +92,8 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     issuer: config.issuer,
     subject: 'manager',
   })
-  const { Kernel, falkordb, inProcessManager, node, DiskInstanceStore } =
-    await import('@astrale-os/kernel-toolkit')
+  const { Kernel, falkordb, inProcessManager, node } = await import('@astrale-os/kernel-toolkit')
   const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
-
-  const store = new DiskInstanceStore(dirname(INSTANCES_PATH))
 
   const kernel = new Kernel({
     mode: 'manager',
@@ -111,7 +107,6 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
       }),
       transports: [node()],
       manager: inProcessManager({
-        store,
         async spawn(_parent, cfg) {
           const child = new Kernel({
             publicUrl: cfg.issuer ?? `http://localhost:${config.managerPort}/${cfg.id}`,
