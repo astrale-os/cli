@@ -43,7 +43,10 @@ export async function callCommand(
       const binding = await lookupRemoteBinding(ctx.client, path, ctx.credential)
       if (binding) {
         const workerCreds = await mintRemoteCredential(ctx.client, binding.audience, ctx.credential)
-        return ctx.client.call(path, params, workerCreds, { url: binding.remoteUrl })
+        const finalParams = binding.paramsInjection
+          ? { ...binding.paramsInjection, ...params }
+          : params
+        return ctx.client.call(binding.path, finalParams, workerCreds, { url: binding.remoteUrl })
       }
       return ctx.client.call(path, params, ctx.credential)
     },

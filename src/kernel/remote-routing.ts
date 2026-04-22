@@ -1,25 +1,32 @@
 import type { KernelClient, FnMap } from '@astrale-os/kernel-client'
 
+import { ClassPath, InstanceMethodPath } from '@astrale-os/kernel-core/domain'
+
 /**
  * Client-side routing of remote-bound kernel calls.
  *
  * A kernel Syscall whose Function carries `binding.remoteUrl` lives on an
- * external worker; the kernel dispatch path never invokes it. Before calling
- * such a method, the CLI needs to:
+ * external worker; the kernel dispatch path never invokes it. Before calling,
+ * the CLI must:
  *
- *   1. Discover the worker URL — via `::get` on the Syscall node.
- *   2. Derive the audience the worker expects — the domain slug is the first
- *      segment of the path (e.g. `/dist.localhost/…` → `dist.localhost`).
- *   3. Mint a delegation credential scoped to that audience (the default CLI
- *      credential targets the kernel's own issuer and would fail `verifyAudience`
- *      on the worker).
+ *   1. Find the Syscall node for the target method (via `::get`).
+ *   2. Read `binding.remoteUrl` off its Function props.
+ *   3. Derive the audience — the domain slug (first segment of the tree path).
+ *   4. Mint a delegation credential scoped to that audience.
  *
- * Both kernel hops (lookup + mint) happen before the worker call.
+ * For an instance-method form (`<node>::<method>`), the Syscall doesn't sit
+ * at `<node>::<method>` in the graph — it lives at `<domain>/class.<Class>/<method>`.
+ * The CLI resolves the source's class and rewrites the path; callers then
+ * POST to the worker with `_self = <source>` injected into params.
  */
 
 type SyscallNode = {
   __labels?: string[]
   props?: Record<string, unknown>
+}
+
+type NodeHead = {
+  class?: string
 }
 
 const BINDING_KEY = 'kernel.astrale.ai:interface.Function.property.binding'
@@ -29,6 +36,10 @@ export type RemoteBinding = {
   remoteUrl: string
   /** Audience the worker expects on inbound credentials (= domain slug). */
   audience: string
+  /** The path to send to the worker — may differ from the input when rewriting `::method`. */
+  path: string
+  /** Params to merge into the user's params (currently `_self` for instance-method dispatch). */
+  paramsInjection?: Record<string, unknown>
 }
 
 /**
@@ -43,13 +54,16 @@ export async function lookupRemoteBinding(
   path: string,
   credential: string,
 ): Promise<RemoteBinding | null> {
-  const audience = extractDomainSlug(path)
+  const resolved = await resolveSyscallPath(client, path, credential)
+  if (!resolved) return null
+
+  const audience = extractDomainSlug(resolved.syscallPath)
   if (!audience) return null
 
   let node: SyscallNode | null = null
   try {
     node = (await client.call(
-      `${path}::get` as never,
+      `${resolved.syscallPath}::get` as never,
       {} as never,
       credential,
     )) as SyscallNode | null
@@ -57,16 +71,55 @@ export async function lookupRemoteBinding(
     return null
   }
 
-  const props = node?.props
-  if (!props) return null
-
-  const bindingRaw = props[BINDING_KEY]
-  const binding = parseBinding(bindingRaw)
+  const binding = parseBinding(node?.props?.[BINDING_KEY])
   if (!binding || typeof binding.remoteUrl !== 'string' || binding.remoteUrl.length === 0) {
     return null
   }
 
-  return { remoteUrl: binding.remoteUrl, audience }
+  return {
+    remoteUrl: binding.remoteUrl,
+    audience,
+    path: resolved.syscallPath,
+    ...(resolved.selfRef !== undefined && { paramsInjection: { _self: resolved.selfRef } }),
+  }
+}
+
+/**
+ * Resolve the Syscall tree path (and `_self` when applicable) for a given
+ * method reference. For a plain class path, this is a pass-through. For an
+ * instance-method path, we fetch the source's class to reconstruct the
+ * Syscall's tree location.
+ */
+async function resolveSyscallPath(
+  client: KernelClient<FnMap>,
+  path: string,
+  credential: string,
+): Promise<{ syscallPath: string; selfRef?: string } | null> {
+  const instanceMethod = InstanceMethodPath.tryParse(path)
+  if (!instanceMethod) {
+    return { syscallPath: path }
+  }
+
+  const sourceRaw = instanceMethod.source.raw
+  let sourceNode: NodeHead | null = null
+  try {
+    sourceNode = (await client.call(
+      `${sourceRaw}::get` as never,
+      {} as never,
+      credential,
+    )) as NodeHead | null
+  } catch {
+    return null
+  }
+
+  const rawClass = sourceNode?.class
+  if (typeof rawClass !== 'string' || rawClass.length === 0) return null
+
+  const parsedClass = ClassPath.tryParse(rawClass)
+  if (!parsedClass) return null
+
+  const syscallPath = `/${parsedClass.domain}/class.${parsedClass.className}/${instanceMethod.methodName}`
+  return { syscallPath, selfRef: sourceRaw }
 }
 
 /**
