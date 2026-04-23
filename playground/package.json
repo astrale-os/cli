@@ -2,21 +2,15 @@
   "name": "@astrale-os/astrale-playground",
   "version": "0.1.0",
   "private": true,
-  "files": [
-    "dist",
-    "src/dist-path.ts"
-  ],
   "type": "module",
-  "exports": {
-    "./dist-path": "./src/dist-path.ts"
-  },
   "scripts": {
     "dev": "vite --port 3200",
     "build": "vite build",
     "typecheck": "tsgo --noEmit",
-    "serve": "vite preview"
+    "start": "node .output/server/index.mjs"
   },
   "dependencies": {
+    "@astrale-os/astrale": "workspace:*",
     "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
     "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
     "@astrale-os/kernel-toolkit": ">=0.1.0 <1.0.0",
@@ -24,8 +18,9 @@
     "@blaxel/core": "^0.2.78",
     "@cloudflare/workers-types": "^4.20250327.0",
     "@tailwindcss/vite": "^4.0.6",
-    "@tanstack/react-router": "^1.132.0",
-    "@tanstack/router-plugin": "^1.132.0",
+    "@tanstack/react-router": "~1.131.0",
+    "@tanstack/react-start": "~1.131.0",
+    "@tanstack/react-start-plugin": "~1.131.0",
     "@xyflow/react": "^12.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

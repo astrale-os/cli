@@ -5,7 +5,6 @@ import { join } from 'node:path'
 
 import type { AstraleConfig } from './config'
 
-import { API_TOKEN_ENV } from './api-token'
 import { isInContainer } from './env'
 import { resolveAuth } from './keys'
 import { JOURNAL_PATH, KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from './paths'
@@ -95,10 +94,9 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     issuer: config.issuer,
     subject: 'manager',
   })
-  const { Kernel, falkordb, inProcessManager, ndjsonJournal } =
+  const { Kernel, falkordb, inProcessManager, node, ndjsonJournal } =
     await import('@astrale-os/kernel-toolkit')
   const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
-  const { nodeWithUi } = await import('./ui-host')
 
   const kernel = new Kernel({
     mode: 'manager',
@@ -111,12 +109,7 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
         host: config.falkorHost,
         port: config.falkorPort,
       }),
-      transports: [
-        nodeWithUi({
-          credential: auth.credential,
-          apiToken: process.env[API_TOKEN_ENV] || undefined,
-        }),
-      ],
+      transports: [node()],
       observability: ndjsonJournal({ path: JOURNAL_PATH, tags: { kernel: 'manager' } }),
       manager: inProcessManager({
         async spawn(_parent, cfg) {

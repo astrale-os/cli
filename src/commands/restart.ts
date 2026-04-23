@@ -7,14 +7,11 @@ import { stopCommand } from './stop'
 
 type RestartOptions = {
   foreground?: boolean
-  uiDev?: boolean
   hostMode?: boolean
 }
 
 export async function restartCommand(opts: RestartOptions): Promise<void> {
-  const useHostMode = opts.hostMode === true || opts.uiDev === true
-
-  if (useHostMode) {
+  if (opts.hostMode === true) {
     log.info('Stopping manager…')
     await stopCommand({ hostMode: true })
     await new Promise((r) => setTimeout(r, 500))
@@ -23,9 +20,6 @@ export async function restartCommand(opts: RestartOptions): Promise<void> {
     return
   }
 
-  // Docker-mode: `docker compose restart manager` is the canonical way.
-  // If the service isn't already running (first boot), fall back to
-  // `startCommand` which does the full bring-up (build image + compose up).
   try {
     if (!(await isManagerRunning(COMPOSE_PATH))) {
       await startCommand(opts)
@@ -41,6 +35,12 @@ export async function restartCommand(opts: RestartOptions): Promise<void> {
       s.fail('Manager restart failed')
       throw e
     }
+
+    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
+    log.info(`  Playground: http://localhost:3200`)
+    log.info(`  GUI:        http://localhost:3400`)
+    log.dim(`  Logs:    astrale server logs -f`)
+    log.dim('  Stop:    astrale stop')
   } catch (e) {
     fatal(e)
   }

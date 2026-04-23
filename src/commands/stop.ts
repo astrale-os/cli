@@ -5,6 +5,7 @@ import { readConfig } from '../lib/config'
 import { composeStop, isManagerRunning } from '../lib/docker'
 import { log } from '../lib/log'
 import { COMPOSE_PATH, MANAGER_PID_PATH } from '../lib/paths'
+import { stopUis } from '../lib/ui'
 
 type StopOptions = {
   hostMode?: boolean
@@ -34,6 +35,9 @@ function findPidsByPort(port: number): number[] {
 }
 
 export async function stopCommand(opts: StopOptions = {}): Promise<void> {
+  // Always kill any detached UI dev servers the CLI spawned previously.
+  await stopUis()
+
   if (opts.hostMode) {
     await stopHostMode()
     return

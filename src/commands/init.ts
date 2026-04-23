@@ -2,7 +2,6 @@ import { mkdir } from 'node:fs/promises'
 import { stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline/promises'
 
-import { API_TOKEN_PARAM, generateApiToken } from '../lib/api-token'
 import { writeConfig, configExists, type AstraleConfig } from '../lib/config'
 import {
   assertDockerAvailable,
@@ -119,18 +118,16 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
 
   // ── Write compose file ─────────────────────────────────────
 
-  const apiToken = generateApiToken()
   await writeComposeFile(COMPOSE_PATH, {
     falkorPort,
     managerPort,
     graphName,
-    apiToken,
   })
   log.success('Docker compose file written')
 
-  // ── Start the stack (falkordb + manager) ───────────────────
+  // ── Start the stack (falkordb + manager + playground + gui) ─
 
-  s = spinner('Starting stack (falkordb + manager)...')
+  s = spinner('Starting stack...')
   await composeUp(COMPOSE_PATH)
   s.succeed('Stack is up')
 
@@ -138,9 +135,9 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
 
   console.log('')
   log.success('Setup complete\n')
-  log.dim(`  Manager:  http://localhost:${config.managerPort}/mngt`)
-  log.info(`  UI:       http://localhost:${config.managerPort}/?${API_TOKEN_PARAM}=${apiToken}`)
-  log.dim('  (token is regenerated on every `astrale start`)')
+  log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
+  log.info(`  Playground: http://localhost:3200`)
+  log.info(`  GUI:        http://localhost:3400`)
   log.dim(`  Graph:    ${config.graphName}`)
   console.log('')
   log.info('Next steps:')

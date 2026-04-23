@@ -36,9 +36,9 @@ export type DeployOpts = {
 }
 
 export type DeployResult = {
-  url: string
-  schemaHash: string
-  sdkCommit: string
+  url?: string
+  schemaHash?: string
+  sdkCommit?: string
   /** Non-fatal warnings (e.g. DNS miss, skipped drift check). */
   warnings: string[]
 }

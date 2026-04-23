@@ -2,7 +2,6 @@ import { closeSync, openSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { API_TOKEN_ENV, API_TOKEN_PARAM, generateApiToken } from '../lib/api-token'
 import { readConfig } from '../lib/config'
 import {
   assertDockerAvailable,
@@ -18,48 +17,49 @@ import {
 import { fatal, log, spinner } from '../lib/log'
 import { startManager, detectManagerState, removeManagerPid } from '../lib/manager-state'
 import { COMPOSE_PATH, LOGS_DIR } from '../lib/paths'
+import { spawnUis, stopUis } from '../lib/ui'
 
 type StartOptions = {
   foreground?: boolean
-  uiDev?: boolean
   hostMode?: boolean
+  noUi?: boolean
 }
 
 /**
  * Two run modes:
  *
- *   - **docker-mode** (default) — the manager runs as a container in the
- *     `~/.astrale/docker-compose.yml` stack. Source is bind-mounted from
- *     the workspace; `astrale restart` reloads it.
+ *   - **docker-mode** (default) — manager + playground + gui run as services
+ *     in the `~/.astrale/docker-compose.yml` stack. Each UI is a TanStack
+ *     Start server with Vite HMR, reading credentials straight from the
+ *     shared keys bind-mount. No API token; no `/api/auth` endpoint.
  *
- *   - **host-mode** (`--host-mode` or implied by `--ui-dev`) — the manager
- *     runs as a bun process on the host, tracked via a PID file. Needed
- *     for `--ui-dev` (Vite HMR doesn't cross the container boundary).
+ *   - **host-mode** (`--host-mode`) — the manager runs as a bun process on
+ *     the host, tracked via a PID file. UIs must be started separately
+ *     (e.g. `pnpm -C cli/playground dev`, `pnpm -C cli/gui dev`) — they read
+ *     keys from `~/.astrale/keys/` directly.
  */
 export async function startCommand(opts: StartOptions): Promise<void> {
   const config = await readConfig()
 
-  // `--ui-dev` requires host-mode for Vite HMR to work. Auto-enable it.
-  const useHostMode = opts.hostMode === true || opts.uiDev === true
-
-  if (useHostMode) {
+  if (opts.hostMode === true) {
     await startHostMode(config, opts)
     return
   }
 
   try {
-    await startDockerMode(config)
+    await startDockerMode(config, opts)
   } catch (e) {
     fatal(e)
   }
 }
 
-async function startDockerMode(config: Awaited<ReturnType<typeof readConfig>>): Promise<void> {
+async function startDockerMode(
+  config: Awaited<ReturnType<typeof readConfig>>,
+  opts: StartOptions,
+): Promise<void> {
   await assertDockerAvailable()
   await assertWorkspaceInstalled()
 
-  // `isManagerRunning` and `managerImageExists` are independent docker
-  // calls — running them in parallel cuts one sequential round-trip.
   const [running, imageExists] = await Promise.all([
     isManagerRunning(COMPOSE_PATH),
     managerImageExists(),
@@ -83,19 +83,13 @@ async function startDockerMode(config: Awaited<ReturnType<typeof readConfig>>): 
     }
   }
 
-  // Fresh API token for this launch — embedded in the compose env so the
-  // manager container picks it up, surfaced to the user as `?token=...`.
-  const apiToken = generateApiToken()
-
-  // Compose file present + up to date?
   await writeComposeFile(COMPOSE_PATH, {
     falkorPort: config.falkorPort,
     managerPort: config.managerPort,
     graphName: config.graphName,
-    apiToken,
   })
 
-  const s = spinner('Starting stack (falkordb + manager)...')
+  const s = spinner('Starting stack (falkordb + manager + playground + gui)...')
   try {
     await composeUp(COMPOSE_PATH)
     await waitManagerHealthy(`http://localhost:${config.managerPort}/mngt/`)
@@ -105,11 +99,24 @@ async function startDockerMode(config: Awaited<ReturnType<typeof readConfig>>): 
     throw e
   }
 
-  const uiUrl = `http://localhost:${config.managerPort}/?${API_TOKEN_PARAM}=${apiToken}`
+  // Auto-spawn the two UI dev servers on the host unless the user opts out
+  // with --no-ui. They run detached; their PIDs are recorded in
+  // ~/.astrale/ui.pids.json and killed by `astrale stop`.
+  if (opts.noUi !== true) {
+    await stopUis({ silent: true }) // cleanup stale PIDs from a previous run
+    await spawnUis()
+  }
+
   log.success('Astrale started')
-  log.dim(`  Manager: http://localhost:${config.managerPort}/mngt`)
-  log.info(`  UI:      ${uiUrl}`)
-  log.dim('  (token is regenerated on every start; bookmark above to authenticate)')
+  log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
+  if (opts.noUi) {
+    log.dim('  Playground: run `pnpm -C cli/playground dev` → http://localhost:3200')
+    log.dim('  GUI:        run `pnpm -C cli/gui dev`        → http://localhost:3400')
+  } else {
+    log.info(`  Playground: http://localhost:3200`)
+    log.info(`  GUI:        http://localhost:3400`)
+    log.dim(`  UI logs: ${LOGS_DIR}/{playground,gui}.stdout.log`)
+  }
   log.dim(`  Logs:    astrale server logs -f`)
   log.dim('  Stop:    astrale stop')
 }
@@ -130,35 +137,24 @@ async function startHostMode(
   }
 
   if (opts.foreground) {
-    // Inherit token from the parent (background launcher) when present —
-    // otherwise generate one so the foreground-only flow also gets a URL.
-    if (!process.env[API_TOKEN_ENV]) {
-      process.env[API_TOKEN_ENV] = generateApiToken()
-    }
-    const apiToken = process.env[API_TOKEN_ENV]!
-
     const manager = await startManager(config)
     log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
 
-    let stopUIFn: (() => void) | undefined
-    if (opts.uiDev) {
-      const { startUIDev, stopUI } = await import('../lib/ui')
-      startUIDev(config)
-      stopUIFn = stopUI
-      log.info(
-        `Playground UI (dev) on http://localhost:${config.uiPort}/?${API_TOKEN_PARAM}=${apiToken}`,
-      )
+    if (opts.noUi !== true) {
+      await stopUis({ silent: true })
+      await spawnUis()
+      log.info(`  Playground: http://localhost:3200`)
+      log.info(`  GUI:        http://localhost:3400`)
     } else {
-      log.info(
-        `Playground UI on http://localhost:${config.managerPort}/?${API_TOKEN_PARAM}=${apiToken}`,
-      )
+      log.dim('  Playground: run `pnpm -C cli/playground dev` → http://localhost:3200')
+      log.dim('  GUI:        run `pnpm -C cli/gui dev`        → http://localhost:3400')
     }
 
     let shuttingDown = false
     const cleanup = async () => {
       if (shuttingDown) return
       shuttingDown = true
-      stopUIFn?.()
+      await stopUis({ silent: true })
       await manager.close()
       await removeManagerPid()
       process.exit(0)
@@ -175,17 +171,10 @@ async function startHostMode(
 
   const entry = Bun.main || process.argv[1]
 
-  // Generate the token in the parent so it can be printed even though the
-  // child runs detached. Inherited via env.
-  const apiToken = generateApiToken()
-
-  const childArgs = ['bun', 'run', entry, 'start', '--foreground', '--host-mode']
-  if (opts.uiDev) childArgs.push('--ui-dev')
-  const managerProc = Bun.spawn(childArgs, {
+  const managerProc = Bun.spawn(['bun', 'run', entry, 'start', '--foreground', '--host-mode'], {
     stdout: managerOut,
     stderr: managerErr,
     stdin: 'ignore',
-    env: { ...process.env, [API_TOKEN_ENV]: apiToken },
   })
 
   closeSync(managerOut)
@@ -209,14 +198,22 @@ async function startHostMode(
     process.exit(1)
   }
 
+  if (opts.noUi !== true) {
+    await stopUis({ silent: true })
+    await spawnUis()
+  }
+
   log.success('Astrale started in background (host-mode)')
-  log.dim(`  Manager: http://localhost:${config.managerPort}/mngt`)
-  const uiHost = opts.uiDev ? config.uiPort : config.managerPort
-  const uiLabel = opts.uiDev ? 'UI dev' : 'UI    '
-  log.info(`  ${uiLabel}: http://localhost:${uiHost}/?${API_TOKEN_PARAM}=${apiToken}`)
-  log.dim('  (token is regenerated on every start; bookmark above to authenticate)')
+  log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
+  if (opts.noUi) {
+    log.dim('  Playground: run `pnpm -C cli/playground dev` → http://localhost:3200')
+    log.dim('  GUI:        run `pnpm -C cli/gui dev`        → http://localhost:3400')
+  } else {
+    log.info(`  Playground: http://localhost:3200`)
+    log.info(`  GUI:        http://localhost:3400`)
+    log.dim(`  UI logs: ${LOGS_DIR}/{playground,gui}.stdout.log`)
+  }
   log.dim(`  PID:     ${managerProc.pid}`)
   log.dim(`  Logs:    ${LOGS_DIR}`)
   log.info('Run `astrale stop --host-mode` to stop')
-  log.warn('Kernel source changes require `astrale restart` — the manager caches modules on boot')
 }

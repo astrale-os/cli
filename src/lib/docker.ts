@@ -3,7 +3,6 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { AstraleError } from '../errors'
-import { API_TOKEN_ENV } from './api-token'
 import { probeHttp } from './manager-state'
 import { COMPOSE_PATH, DATA_DIR, KEYS_DIR, LOGS_DIR } from './paths'
 
@@ -12,17 +11,11 @@ import { COMPOSE_PATH, DATA_DIR, KEYS_DIR, LOGS_DIR } from './paths'
 const CONTAINER_MANAGER_PORT = 4400
 
 // ─── Build context detection ───────────────────────────────────
-//
-// All three resolvers memoize their async result: `astrale start` calls
-// `managerImageRef` + `workspaceRoot` + `managerImageTag` (via
-// `writeComposeFile`) 3–5 times during a single bring-up. Caching the
-// promise avoids repeated realpath + stat + readFile syscalls.
 
 let cliRootPromise: Promise<string> | null = null
 let workspaceRootPromise: Promise<string> | null = null
 let managerImageTagPromise: Promise<string> | null = null
 
-/** CLI source root. When installed via `bun link` (dev), this is `<workspace>/cli`. */
 function cliRoot(): Promise<string> {
   if (!cliRootPromise) {
     const here = dirname(fileURLToPath(import.meta.url))
@@ -31,7 +24,6 @@ function cliRoot(): Promise<string> {
   return cliRootPromise
 }
 
-/** Workspace root — contains `cli/`, `kernel/`, `sdk/`, etc. */
 function workspaceRoot(): Promise<string> {
   if (!workspaceRootPromise) {
     workspaceRootPromise = (async () => {
@@ -52,7 +44,6 @@ function workspaceRoot(): Promise<string> {
   return workspaceRootPromise
 }
 
-/** CLI package.json version — used as the manager image tag. */
 export function managerImageTag(): Promise<string> {
   if (!managerImageTagPromise) {
     managerImageTagPromise = (async () => {
@@ -66,7 +57,6 @@ export function managerImageTag(): Promise<string> {
   return managerImageTagPromise
 }
 
-/** Full docker image reference (e.g. `astrale-os/manager:0.1.0`). */
 export async function managerImageRef(): Promise<string> {
   return `astrale-os/manager:${await managerImageTag()}`
 }
@@ -82,7 +72,6 @@ export async function buildManagerImage(opts: { noCache?: boolean } = {}): Promi
   await runInteractive(args)
 }
 
-/** Check whether the manager image is present locally. */
 export async function managerImageExists(): Promise<boolean> {
   try {
     const ref = await managerImageRef()
@@ -106,7 +95,6 @@ type ComposeInputs = {
   imageRef: string
   uid: number
   gid: number
-  apiToken: string
 }
 
 function composeYaml(inputs: ComposeInputs): string {
@@ -121,7 +109,6 @@ function composeYaml(inputs: ComposeInputs): string {
     imageRef,
     uid,
     gid,
-    apiToken,
   } = inputs
   const cPort = CONTAINER_MANAGER_PORT
   return `services:
@@ -155,7 +142,6 @@ function composeYaml(inputs: ComposeInputs): string {
       - ASTRALE_PUBLIC_URL=http://localhost:${managerPort}
       - ASTRALE_KEYS_DIR=/astrale/keys
       - ASTRALE_LOGS_DIR=/astrale/logs
-      - ${API_TOKEN_ENV}=${apiToken}
     volumes:
       - '${workspaceRoot}:/workspace:ro'
       - '${keysDir}:/astrale/keys:rw'
@@ -184,7 +170,6 @@ type WriteComposeOptions = {
   dataDir?: string
   keysDir?: string
   logsDir?: string
-  apiToken: string
 }
 
 export async function writeComposeFile(
@@ -199,10 +184,6 @@ export async function writeComposeFile(
   const uid = typeof process.getuid === 'function' ? process.getuid() : 0
   const gid = typeof process.getgid === 'function' ? process.getgid() : 0
 
-  if (!opts?.apiToken) {
-    throw new Error('writeComposeFile: apiToken is required')
-  }
-
   const content = composeYaml({
     falkorPort: opts?.falkorPort ?? 6379,
     managerPort: opts?.managerPort ?? 4400,
@@ -214,7 +195,6 @@ export async function writeComposeFile(
     imageRef,
     uid,
     gid,
-    apiToken: opts.apiToken,
   })
 
   await mkdir(dirname(composePath), { recursive: true })
@@ -231,152 +211,120 @@ export async function composeStop(composePath: string = COMPOSE_PATH): Promise<v
   await run(['docker', 'compose', '-f', composePath, 'stop'])
 }
 
+export async function composeDown(composePath: string = COMPOSE_PATH): Promise<void> {
+  await run(['docker', 'compose', '-f', composePath, 'down', '-v'])
+}
+
 export async function composeRestart(
-  service: 'manager' | 'falkordb' | null = null,
+  service: string,
   composePath: string = COMPOSE_PATH,
 ): Promise<void> {
-  const args = ['docker', 'compose', '-f', composePath, 'restart']
-  if (service) args.push(service)
-  await run(args)
+  await run(['docker', 'compose', '-f', composePath, 'restart', service])
 }
 
-export async function composeDown(
-  opts: { volumes?: boolean } = {},
+export interface ComposeServiceStatus {
+  readonly Service: string
+  readonly State: string
+  readonly Health?: string
+}
+
+export async function composePs(
   composePath: string = COMPOSE_PATH,
-): Promise<void> {
-  const args = ['docker', 'compose', '-f', composePath, 'down']
-  if (opts.volumes) args.push('-v')
-  await run(args)
-}
-
-type ComposeService = {
-  Name: string
-  Service: string
-  State: string
-  Health?: string
-  Status?: string
-}
-
-export async function composePs(composePath: string = COMPOSE_PATH): Promise<ComposeService[]> {
+): Promise<ComposeServiceStatus[]> {
   try {
-    const output = await run(['docker', 'compose', '-f', composePath, 'ps', '--format', 'json'])
-    if (!output.trim()) return []
-    // Recent docker compose outputs one JSON object per line.
-    const lines = output.trim().split('\n').filter(Boolean)
-    return lines
-      .map((line) => {
-        try {
-          return JSON.parse(line) as ComposeService
-        } catch {
-          return null
+    const proc = Bun.spawn(['docker', 'compose', '-f', composePath, 'ps', '--format', 'json'], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    const out = await new Response(proc.stdout).text()
+    await proc.exited
+    const services: ComposeServiceStatus[] = []
+    for (const line of out
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)) {
+      try {
+        const j = JSON.parse(line) as { Service?: string; State?: string; Health?: string }
+        if (j.Service) {
+          services.push({
+            Service: j.Service,
+            State: j.State ?? 'unknown',
+            Health: j.Health || undefined,
+          })
         }
-      })
-      .filter((x): x is ComposeService => x !== null)
+      } catch {
+        // ignore malformed line
+      }
+    }
+    return services
   } catch {
     return []
   }
 }
 
-export async function isManagerRunning(composePath: string = COMPOSE_PATH): Promise<boolean> {
-  const services = await composePs(composePath)
-  const manager = services.find((s) => s.Service === 'manager')
-  if (!manager) return false
-  return manager.State === 'running'
-}
-
-export async function isFalkorRunning(composePath: string = COMPOSE_PATH): Promise<boolean> {
-  const services = await composePs(composePath)
-  const falkor = services.find((s) => s.Service === 'falkordb')
-  if (!falkor) return false
-  return falkor.State === 'running'
-}
-
-export async function streamManagerLogs(
-  opts: { follow?: boolean; tail?: string } = {},
-  composePath: string = COMPOSE_PATH,
-): Promise<void> {
-  const args = ['docker', 'compose', '-f', composePath, 'logs', 'manager']
+export function streamManagerLogs(opts: {
+  readonly follow?: boolean
+  readonly tail?: string
+  readonly composePath?: string
+}): Promise<void> {
+  const args = ['docker', 'compose', '-f', opts.composePath ?? COMPOSE_PATH, 'logs', 'manager']
   if (opts.follow) args.push('-f')
   if (opts.tail) args.push('--tail', opts.tail)
-  await runInteractive(args)
+  return runInteractive(args)
 }
 
-/**
- * Poll the manager's HTTP endpoint until it responds, or timeout.
- * Uses the public port mapping (host side) since compose healthchecks
- * target the container-internal port.
- */
+// ─── Runtime helpers ──────────────────────────────────────────
+
+export async function isManagerRunning(composePath: string = COMPOSE_PATH): Promise<boolean> {
+  const services = await composePs(composePath)
+  return services.some((s) => s.Service === 'manager' && s.State === 'running')
+}
+
 export async function waitManagerHealthy(url: string, timeoutMs = 30_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (await probeHttp(url, 1_500)) return
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (await probeHttp(url)) return
     await new Promise((r) => setTimeout(r, 500))
   }
-  throw new Error(`Manager failed to become healthy within ${timeoutMs}ms at ${url}`)
+  throw new Error(`Manager did not become healthy within ${timeoutMs}ms`)
 }
 
-// ─── Preflight checks ─────────────────────────────────────────
+export async function assertDockerAvailable(): Promise<void> {
+  try {
+    await run(['docker', 'version'])
+  } catch {
+    throw new AstraleError(
+      'DOCKER_UNAVAILABLE',
+      'Docker is not available; run `docker --version` to verify.',
+    )
+  }
+}
 
-/**
- * Verify the host workspace has been `pnpm install`-ed. The manager
- * container bind-mounts `/workspace` read-only and resolves deps from
- * the host's `node_modules` — without it, bun fails with an opaque
- * module-not-found deep inside the mount.
- */
 export async function assertWorkspaceInstalled(): Promise<void> {
   const ws = await workspaceRoot()
   try {
-    await access(join(ws, 'node_modules', '.pnpm'))
+    await access(join(ws, 'node_modules'))
   } catch {
     throw new AstraleError(
-      'WORKSPACE_NOT_INSTALLED',
-      `Workspace dependencies are missing at ${ws}/node_modules. ` +
-        'Run `pnpm install` at the workspace root before `astrale start`.',
+      'NO_WORKSPACE_INSTALL',
+      `Workspace not installed at ${ws}. Run \`pnpm install\` first.`,
     )
   }
 }
 
-/**
- * Ensure `docker` + `docker compose` are available and the daemon
- * responds. Throws a clear AstraleError with an install hint otherwise.
- */
-export async function assertDockerAvailable(): Promise<void> {
-  try {
-    await run(['docker', 'version', '--format', '{{.Server.Version}}'])
-  } catch {
-    throw new AstraleError(
-      'DOCKER_UNAVAILABLE',
-      "Docker is not running or not installed. Install Docker Desktop or your distro's docker package, then retry.",
-    )
-  }
-  try {
-    await run(['docker', 'compose', 'version', '--short'])
-  } catch {
-    throw new AstraleError(
-      'DOCKER_UNAVAILABLE',
-      'Docker Compose v2 is missing. Update Docker Desktop or install the `docker-compose-plugin` package.',
-    )
+// ─── Shell helpers ────────────────────────────────────────────
+
+async function run(args: string[]): Promise<void> {
+  const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
+  const code = await proc.exited
+  if (code !== 0) {
+    const err = await new Response(proc.stderr).text()
+    throw new Error(`${args.join(' ')} failed (${code}): ${err}`)
   }
 }
 
-// ─── Internals ────────────────────────────────────────────────
-
-async function run(cmd: string[]): Promise<string> {
-  const proc = Bun.spawn(cmd, { stdout: 'pipe', stderr: 'pipe' })
-  const exitCode = await proc.exited
-  const stdout = await new Response(proc.stdout).text()
-  if (exitCode !== 0) {
-    const stderr = await new Response(proc.stderr).text()
-    throw new Error(`Command failed: ${cmd.join(' ')}\n${stderr || stdout}`)
-  }
-  return stdout
-}
-
-/** Run a command inheriting stdio (for interactive progress / logs). */
-async function runInteractive(cmd: string[]): Promise<void> {
-  const proc = Bun.spawn(cmd, { stdout: 'inherit', stderr: 'inherit', stdin: 'inherit' })
-  const exitCode = await proc.exited
-  if (exitCode !== 0) {
-    throw new Error(`Command failed (exit ${exitCode}): ${cmd.join(' ')}`)
-  }
+async function runInteractive(args: string[]): Promise<void> {
+  const proc = Bun.spawn(args, { stdout: 'inherit', stderr: 'inherit' })
+  const code = await proc.exited
+  if (code !== 0) throw new Error(`${args.join(' ')} failed (${code})`)
 }

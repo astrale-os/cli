@@ -33,6 +33,9 @@ import {
   slugVariants,
 } from '../../lib/domain-scaffold'
 
+const RESERVED_SLUGS = new Set(['minimal', 'minimal-remote'])
+const SLUG_RE = /^[a-z][a-z0-9-]{0,38}$/
+
 /**
  * Locate the source dir for a template name. Templates ship with the CLI
  * package under `cli/templates/<template>/`, so resolution is anchored to
@@ -64,14 +67,14 @@ export const cloudflareDomainPlatform: DomainPlatform = {
 
   async scaffold(opts: ScaffoldOpts): Promise<ScaffoldResult> {
     const { slug, template, targetDir, force = false } = opts
-    if (!/^[a-z][a-z0-9-]{0,38}$/.test(slug)) {
+    if (!SLUG_RE.test(slug)) {
       throw new AstraleError(
         'INVALID_SLUG',
         `Invalid slug "${slug}"`,
         'Use lowercase kebab-case, 1–39 chars, starting with a letter: [a-z][a-z0-9-]{0,38}',
       )
     }
-    if (slug === 'minimal' || slug === 'minimal-remote') {
+    if (RESERVED_SLUGS.has(slug)) {
       throw new AstraleError(
         'RESERVED_SLUG',
         `Slug "${slug}" is reserved (used by the scaffold template)`,
@@ -132,8 +135,11 @@ export const cloudflareDomainPlatform: DomainPlatform = {
     if (pkg.scripts?.[deployScriptName]) {
       // Defer to the domain's own deploy pipeline — preserves the
       // scaffold's drift-check + stamping contract verbatim.
-      const args = ['run', deployScriptName]
-      if (skipDriftCheck) args.push('--', '--skip-drift-check')
+      const args = [
+        'run',
+        deployScriptName,
+        ...(skipDriftCheck ? ['--', '--skip-drift-check'] : []),
+      ]
       const r = spawnSync('pnpm', args, { cwd: domainDir, stdio: 'inherit' })
       if (r.status !== 0) {
         throw new AstraleError(
@@ -141,14 +147,8 @@ export const cloudflareDomainPlatform: DomainPlatform = {
           `pnpm ${args.join(' ')} exited with status ${r.status}`,
         )
       }
-      // We don't re-parse the script output — the script itself printed
-      // URL / schemaHash / sdkCommit. Return a best-effort shape.
-      return {
-        url: '',
-        schemaHash: '',
-        sdkCommit: '',
-        warnings: skipDriftCheck ? ['drift check skipped'] : warnings,
-      }
+      // URL / schemaHash / sdkCommit are printed by the domain's own script.
+      return { warnings: skipDriftCheck ? ['drift check skipped'] : warnings }
     }
 
     // Generic fallback (template-less domain): build spec + wrangler deploy.
@@ -183,7 +183,7 @@ export const cloudflareDomainPlatform: DomainPlatform = {
     }
     if (skipDriftCheck) warnings.push('drift check skipped')
 
-    return { url: '', schemaHash: '', sdkCommit: '', warnings }
+    return { warnings }
   },
 }
 

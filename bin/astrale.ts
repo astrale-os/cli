@@ -20,6 +20,11 @@ program
     new Option('--log-level <level>', 'Log level').choices(['debug', 'info', 'warn', 'error']),
   )
   .addOption(new Option('--log-format <format>', 'Log output format').choices(['text', 'json']))
+  // Global overrides for kernel ops (§9.2). Sub-commands that don't use
+  // them ignore them silently — Commander merges global + command-local
+  // options into the action handler's opts argument.
+  .addOption(new Option('--as <identity>', 'Call as a specific identity (global override)'))
+  .addOption(new Option('-i, --instance <name>', 'Target a specific instance (global override)'))
   .action(() => {
     program.help()
   })
@@ -42,16 +47,16 @@ registerCommand(program, {
 
 registerCommand(program, {
   name: 'start',
-  description: 'Start the Astrale manager (docker-mode by default)',
+  description: 'Start the Astrale manager (docker-mode by default) + playground + gui dev servers',
   options: [
     { flags: '--foreground', description: 'Run in foreground (host-mode only)' },
     {
-      flags: '--ui-dev',
-      description: 'Vite HMR for playground UI (implies --host-mode)',
-    },
-    {
       flags: '--host-mode',
       description: 'Run the manager as a bun process on the host instead of docker',
+    },
+    {
+      flags: '--no-ui',
+      description: 'Skip spawning playground + gui dev servers (run them manually)',
     },
   ],
   action: async (opts) => {
@@ -81,12 +86,12 @@ registerCommand(program, {
   options: [
     { flags: '--foreground', description: 'Run in foreground (host-mode only)' },
     {
-      flags: '--ui-dev',
-      description: 'Vite HMR for playground UI (implies --host-mode)',
-    },
-    {
       flags: '--host-mode',
       description: 'Run the manager as a bun process on the host instead of docker',
+    },
+    {
+      flags: '--no-ui',
+      description: 'Skip spawning playground + gui dev servers (run them manually)',
     },
   ],
   action: async (opts) => {
@@ -132,7 +137,7 @@ registerCommand(program, {
 
 registerCommand(program, {
   name: 'use',
-  description: 'Set the active kernel instance (no args: show current)',
+  description: 'Deprecated alias — use `astrale instance use <name>` instead (kept for transition)',
   aliases: ['switch'],
   arguments: [{ name: 'name', description: 'Registered instance name', required: false }],
   options: [
@@ -143,6 +148,8 @@ registerCommand(program, {
     { flags: '--skip-jwks-check', description: 'Skip the /meta ↔ JWKS match check (§7)' },
   ],
   action: async (name, opts) => {
+    const { log } = await import('../src/lib/log')
+    log.warn('`astrale use` is deprecated — use `astrale instance use` instead.')
     const { useCommand } = await import('../src/commands/use')
     await useCommand(name as string | undefined, opts as Parameters<typeof useCommand>[1])
   },
@@ -306,16 +313,6 @@ registerCommand(program, {
   },
 })
 
-registerCommand(program, {
-  name: 'dev',
-  description: 'Dev macro: compose kernel+domain envs (§4.5, stubbed v1)',
-  arguments: [{ name: 'subcommand', description: 'up | down | status | logs', required: false }],
-  action: async (sub) => {
-    const { devCommand } = await import('../src/commands/dev')
-    await devCommand(sub as string | undefined)
-  },
-})
-
 registerGroup(program, {
   name: 'instance',
   description: 'Manage kernel instances (§4, §5, §6, §7)',
@@ -328,6 +325,7 @@ registerGroup(program, {
     (await import('../src/commands/instance/delete')).default,
     (await import('../src/commands/instance/status')).default,
     (await import('../src/commands/instance/active')).default,
+    (await import('../src/commands/instance/use')).default,
     {
       ...(await import('../src/commands/instance/install')).default,
       options: [
@@ -401,13 +399,7 @@ registerGroup(program, {
   name: 'domain',
   description: 'Manage kernel domains (§9)',
   commands: [
-    {
-      ...(await import('../src/commands/domain/install')).default,
-      options: [
-        ...((await import('../src/commands/domain/install')).default.options ?? []),
-        ...kernelOptions,
-      ],
-    },
+    (await import('../src/commands/domain/init')).default,
     (await import('../src/commands/domain/build')).default,
     (await import('../src/commands/domain/deploy')).default,
     (await import('../src/commands/domain/check')).default,
@@ -421,10 +413,9 @@ program.addHelpText(
 Command groups:
   Lifecycle     init, start, stop, restart, status, reset
   Graph         ls, get, call, query, describe, logs, token
-  Management    instance, identity, use, auth, tunnel
+  Management    instance, identity, auth, tunnel
   Storage       graph list, graph prune, graph rm, graph df
-  Domains       domain install, domain build, domain deploy, domain check, domain logs
-  Dev macro     dev [up|down|status|logs]
+  Domains       domain init, domain build, domain deploy, domain check, domain logs
 
 Path syntax:
   /domain/class.Name/method    Navigate to a Syscall node (static operation)

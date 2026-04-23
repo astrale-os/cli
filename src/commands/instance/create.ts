@@ -14,7 +14,7 @@ import { checkIssuerReachability } from '../../lib/meta'
 import { KEYS_DIR } from '../../lib/paths'
 import { bindTunnel, findTunnel, readTunnels } from '../../lib/tunnels'
 import { validateSlug } from '../../lib/validation'
-import domainInstall from '../domain/install'
+import instanceInstall from './install'
 
 function extractDomainOrigin(spec: {
   nodes?: Array<{ class?: unknown; props?: { origin?: unknown } }>
@@ -242,19 +242,19 @@ export default {
 
         if (opts.install) {
           log.info(`Installing domain spec "${opts.install}" on "${slug}"…`)
-          await domainInstall.action(opts.install, {
+          await instanceInstall.action(opts.install, {
             instance: slug,
             key: opts.key,
-          } as Parameters<typeof domainInstall.action>[1])
+          } as Parameters<typeof instanceInstall.action>[1])
         }
 
         if (opts.withDistribution) {
           const builtin = await resolveBuiltinDomain('distribution')
           log.info(`Installing builtin distribution domain on "${slug}"…`)
-          await domainInstall.action(builtin.specPath, {
+          await instanceInstall.action(builtin.specPath, {
             instance: slug,
             key: builtin.keyPath,
-          } as Parameters<typeof domainInstall.action>[1])
+          } as Parameters<typeof instanceInstall.action>[1])
 
           // Derive origin from the installed spec (read directly, no probe).
           const spec = JSON.parse(

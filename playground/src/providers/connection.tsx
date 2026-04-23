@@ -5,13 +5,12 @@ import { KernelSchema } from '@astrale-os/kernel-core'
 import { ManagerSchema } from '@astrale-os/kernel-toolkit/manager-schema'
 import { createContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
 
+import { getCredential } from '@/server/credentials'
+
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 export type { BindingMode } from '@astrale-os/kernel-client'
 
 const BINDING_STORAGE_KEY = 'astrale-playground:binding-mode'
-const API_TOKEN_STORAGE_KEY = 'astrale-playground:api-token'
-const API_TOKEN_PARAM = 'token'
-const API_TOKEN_HEADER = 'x-astrale-token'
 
 function loadBindingMode(): BindingMode {
   const stored = globalThis.localStorage?.getItem(BINDING_STORAGE_KEY)
@@ -24,21 +23,17 @@ function normalizeUrl(url: string): string {
 }
 
 /**
- * Extract the API token from the URL on first load, persist it to
- * sessionStorage, and strip it from the URL bar so it doesn't leak via
- * referrer/history. Falls back to a previously-stored token on reloads.
+ * Fetch an audience-scoped credential from the Start server function.
+ * Reads the manager's keys directly from the bind-mount — no browser token,
+ * no sessionStorage, no `/api/auth` endpoint.
  */
-function captureApiToken(): string | null {
-  if (typeof window === 'undefined') return null
-  const url = new URL(window.location.href)
-  const fromUrl = url.searchParams.get(API_TOKEN_PARAM)
-  if (fromUrl) {
-    window.sessionStorage?.setItem(API_TOKEN_STORAGE_KEY, fromUrl)
-    url.searchParams.delete(API_TOKEN_PARAM)
-    window.history.replaceState({}, '', url.toString())
-    return fromUrl
+async function fetchCredential(aud: string): Promise<string | null> {
+  try {
+    const res = await getCredential({ data: { aud } })
+    return res?.credential ?? null
+  } catch {
+    return null
   }
-  return window.sessionStorage?.getItem(API_TOKEN_STORAGE_KEY) ?? null
 }
 
 export type TypedKernel = SchemaTypedClient<typeof KernelSchema>
@@ -125,40 +120,48 @@ export function ConnectionProvider({
       }
 
       const httpUrl = normalizeUrl(rawUrl)
+      const aud = httpUrl.replace(/\/+$/, '')
       setUrl(httpUrl)
       setError(null)
       setStatus('connecting')
 
-      const client = new KernelClient({
-        url: httpUrl,
-        defaultTransport: 'ws',
-        requestTimeout: 30_000,
-      })
-      clientRef.current = client
-      const bound = client.as(() => credentialRef.current)
-      setKernel(bound.withSchema(KernelSchema))
-      setManager(bound.withSchema(ManagerSchema))
+      // Fetch a credential scoped to this target's audience BEFORE opening
+      // the client. Without this, the server returns only the manager's
+      // credential which gets rejected by child kernels (audience mismatch).
+      void fetchCredential(aud).then((credential) => {
+        if (credential) credentialRef.current = credential
 
-      bound
-        .call('__probe__' as never, {} as never)
-        .then(() => {
-          setStatus('connected')
-          loadSchemas(client)
+        const client = new KernelClient({
+          url: httpUrl,
+          defaultTransport: 'ws',
+          requestTimeout: 30_000,
         })
-        .catch((err: unknown) => {
-          const isTransportError =
-            err instanceof Error &&
-            (err.constructor.name === 'ConnectionError' ||
-              err.constructor.name === 'DisconnectedError' ||
-              err.constructor.name === 'TimeoutError')
-          if (isTransportError) {
-            setStatus('error')
-            setError(err instanceof Error ? err.message : 'Connection failed')
-          } else {
+        clientRef.current = client
+        const bound = client.as(() => credentialRef.current)
+        setKernel(bound.withSchema(KernelSchema))
+        setManager(bound.withSchema(ManagerSchema))
+
+        bound
+          .call('__probe__' as never, {} as never)
+          .then(() => {
             setStatus('connected')
             loadSchemas(client)
-          }
-        })
+          })
+          .catch((err: unknown) => {
+            const isTransportError =
+              err instanceof Error &&
+              (err.constructor.name === 'ConnectionError' ||
+                err.constructor.name === 'DisconnectedError' ||
+                err.constructor.name === 'TimeoutError')
+            if (isTransportError) {
+              setStatus('error')
+              setError(err instanceof Error ? err.message : 'Connection failed')
+            } else {
+              setStatus('connected')
+              loadSchemas(client)
+            }
+          })
+      })
     },
     [loadSchemas],
   )
@@ -199,33 +202,13 @@ export function ConnectionProvider({
     return !!schema?.binding?.route
   }, [])
 
-  // Fetch credential (best-effort); auto-connect to manager unless skipped.
-  // The manager is always mounted at /mngt/ via the Vite proxy — we connect
-  // unconditionally and let the client's transport-fallback surface errors.
-  // The launch URL embeds an API token (?token=...) which gates /api/auth;
-  // we capture it once into sessionStorage and present it on every fetch.
+  // Auto-connect to the manager unless skipped. Credential is fetched
+  // inside `connect()` scoped to the target audience — see `fetchCredential`.
   useEffect(() => {
-    if (status !== 'disconnected') return
-    const token = captureApiToken()
-    const headers: HeadersInit = token ? { [API_TOKEN_HEADER]: token } : {}
-    fetch('/api/auth', { headers })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((auth) => {
-        if (auth?.credential) credentialRef.current = auth.credential
-        else if (token) {
-          // Stale or rejected token — clear it so the user is prompted to
-          // re-open the URL with the current `?token=...`.
-          window.sessionStorage?.removeItem(API_TOKEN_STORAGE_KEY)
-          setError('API token rejected — re-open the URL printed by `astrale start`.')
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        setAuthReady(true)
-        if (!skipAutoConnect) {
-          connect(`http://${window.location.host}/mngt/`)
-        }
-      })
+    setAuthReady(true)
+    if (!skipAutoConnect) {
+      connect(`http://${window.location.host}/mngt/`)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup on unmount

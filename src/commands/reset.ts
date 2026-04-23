@@ -296,7 +296,7 @@ async function resetHardDocker(
   // Tear down containers + volumes. `-v` drops the falkordb data volume.
   const s1 = spinner('Stopping stack + removing volumes...')
   try {
-    await composeDown({ volumes: true }, COMPOSE_PATH)
+    await composeDown(COMPOSE_PATH)
     s1.succeed('Stack down, volumes removed')
   } catch (e) {
     s1.fail('Compose down failed')
@@ -350,12 +350,8 @@ async function resetHardHost(
     spin.succeed('Manager stopped')
   }
 
-  try {
-    const { stopUI } = await import('../lib/ui')
-    stopUI()
-  } catch {
-    // UI not running
-  }
+  // UIs are separate services (docker compose) / separate processes (host mode)
+  // and are cleaned up by `astrale stop` or by Ctrl+C on their dev runners.
 
   // Delete all FalkorDB graphs
   try {
