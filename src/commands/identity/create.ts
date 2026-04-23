@@ -1,20 +1,26 @@
 import type { CommandDefinition } from '../../command'
 
 import { createIdentity } from '../../lib/identity'
-import { log } from '../../lib/log'
+import { fatal, log } from '../../lib/log'
 
 export default {
   name: 'create',
   description: 'Create a new identity',
   arguments: [{ name: 'name', description: 'Identity name', required: true }],
-  options: [{ flags: '--subject <sub>', description: 'Custom subject (defaults to name)' }],
-  action: async (name: string, opts: { subject?: string }) => {
+  options: [
+    { flags: '--subject <sub>', description: 'Custom subject (defaults to name)' },
+    { flags: '--local', description: 'Local-only identity (default)' },
+    { flags: '--remote', description: 'Remote (cloud-synced) identity — requires cloud login' },
+  ],
+  action: async (name: string, opts: { subject?: string; local?: boolean; remote?: boolean }) => {
     try {
-      const identity = await createIdentity(name, opts.subject)
-      log.success(`Created identity "${name}" (subject: ${identity.subject})`)
+      const mode = opts.remote ? 'remote' : 'local'
+      const identity = await createIdentity(name, { subject: opts.subject, mode })
+      log.success(
+        `Created identity "${name}" (subject: ${identity.subject}, mode: ${identity.mode ?? mode})`,
+      )
     } catch (e) {
-      log.error(e instanceof Error ? e.message : String(e))
-      process.exit(1)
+      fatal(e)
     }
   },
 } satisfies CommandDefinition
