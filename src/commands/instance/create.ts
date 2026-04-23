@@ -59,14 +59,13 @@ export default {
     },
     { flags: '--tunnel <id>', description: 'Bind a machine tunnel (§4.6 tunneled mode)' },
     { flags: '--as <identity>', description: 'Identity to record as default (§2.4)' },
-    { flags: '--distroless', description: 'Skip distribution install (local-child only, §4.3)' },
+    {
+      flags: '--distroless',
+      description: 'Do not install the builtin distribution domain on the new instance',
+    },
     {
       flags: '--install <domain-spec>',
       description: 'Install a domain spec (path or builtin name) after boot (§9)',
-    },
-    {
-      flags: '--with-distribution',
-      description: 'Install the builtin distribution domain + bootstrap grants (§4.3)',
     },
     {
       flags: '-k, --key <path>',
@@ -92,7 +91,6 @@ export default {
       as?: string
       distroless?: boolean
       install?: string
-      withDistribution?: boolean
       key?: string
       skipJwksCheck?: boolean
       issuer?: string
@@ -106,12 +104,6 @@ export default {
         )
       }
       validateSlug(slug)
-      if (opts.as && opts.distroless) {
-        log.dim(
-          '  distroless instances have no admin path — only the auto-generated root identity.',
-        )
-        fatal(new Error('`--as <identity>` is incompatible with `--distroless` (§4.3)'))
-      }
 
       // §12 — tunnel bind resolved before boot; baked issuer depends on it.
       let tunnelHostname: string | undefined
@@ -213,13 +205,8 @@ export default {
           }
         }
 
-        let defaultIdentity = opts.as
-        if (!opts.distroless) {
-          defaultIdentity = opts.as ?? (await getDefault()).name
-          log.dim(
-            `  default identity: ${defaultIdentity} (admin enrollment on distribution must be done separately in v1)`,
-          )
-        }
+        const defaultIdentity = opts.as ?? (await getDefault()).name
+        log.dim(`  default identity: ${defaultIdentity}`)
 
         // `url`, `issuer`, `createdAt` live on the manager (`KernelInstance` node)
         // and are resolved via `resolveInstance` when needed. Only CLI-local
@@ -248,7 +235,7 @@ export default {
           } as Parameters<typeof instanceInstall.action>[1])
         }
 
-        if (opts.withDistribution) {
+        if (!opts.distroless) {
           const builtin = await resolveBuiltinDomain('distribution')
           log.info(`Installing builtin distribution domain on "${slug}"…`)
           await instanceInstall.action(builtin.specPath, {

@@ -12,7 +12,8 @@
       "@/*": ["./src/*"],
       "@kernel-domains/*": ["../../kernel/domains/*"]
     },
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node"]
   },
   "include": ["src"]
 }

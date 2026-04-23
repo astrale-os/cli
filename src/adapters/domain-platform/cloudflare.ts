@@ -5,13 +5,15 @@
  *   package) into the target dir, then runs the rename engine and
  *   file-path rename pass.
  *
- * deploy():  prefers the domain's own `<slug>-deploy.ts` script if it
- *   exists; otherwise runs `build:spec --domain <preset>` then `wrangler
- *   deploy` then SDK's `deployCheck` inline.
+ * deploy():  runs `buildSpec` → reads `sdk` HEAD + schema hash →
+ *   `wrangler deploy --define` → inline `deployCheck` (unless
+ *   `--skip-drift-check`). All logic lives in the CLI — domains no
+ *   longer ship a per-domain `<slug>-deploy.ts`.
  */
 
+import { deployCheck, hashSpecFile } from '@astrale-os/sdk/deploy'
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -31,7 +33,17 @@ import {
   renameFilesInTree,
   rewriteFilesContent,
   slugVariants,
+  writeWorkerKeysFile,
 } from '../../lib/domain-scaffold'
+import { domainUrl, loadDomainModule, type DomainEnv } from './cloudflare-helpers'
+import {
+  buildSpec as lifecycleBuildSpec,
+  devDown as lifecycleDevDown,
+  devStatus as lifecycleDevStatus,
+  devUp as lifecycleDevUp,
+  findSdk,
+  instancePrepare as lifecycleInstancePrepare,
+} from './cloudflare-lifecycle'
 
 const RESERVED_SLUGS = new Set(['minimal', 'minimal-remote'])
 const SLUG_RE = /^[a-z][a-z0-9-]{0,38}$/
@@ -98,16 +110,17 @@ export const cloudflareDomainPlatform: DomainPlatform = {
         : buildGenericRenameMap(slug)
     const touched = await rewriteFilesContent(targetDir, renameMap)
     const renamed = await renameFilesInTree(targetDir, renameMap)
+    const keysWritten = await writeWorkerKeysFile(targetDir, slug)
 
     const v = slugVariants(slug)
     const nextSteps = [
       `cd ${targetDir}`,
       `pnpm install   # run from workspace root`,
       `pnpm test      # in-process fixture smoke test`,
-      `pnpm infra:prepare --kernel local:standalone:inprocess --domain local:inprocess`,
+      `astrale domain dev up --kernel local:standalone:inprocess --domain local:inprocess`,
       `astrale domain deploy --skip-drift-check   # first deploy (soft-fail DNS-less)`,
       ``,
-      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths)`,
+      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths${keysWritten ? ', regenerated worker keypair' : ''})`,
       `Variants: kebab=${v.kebab} pascal=${v.pascal} camel=${v.camel} upper=${v.upperSnake}`,
     ]
 
@@ -124,67 +137,80 @@ export const cloudflareDomainPlatform: DomainPlatform = {
       )
     }
 
-    const pkg = JSON.parse(readFileSync(join(domainDir, 'package.json'), 'utf-8')) as {
-      name?: string
-      scripts?: Record<string, string>
-    }
-    const slug = (pkg.name ?? '').replace(/^@astrale-os\//, '').replace(/-domain$/, '')
-    const deployScriptName = `${slug}:deploy`
-    const warnings: string[] = []
-
-    if (pkg.scripts?.[deployScriptName]) {
-      // Defer to the domain's own deploy pipeline — preserves the
-      // scaffold's drift-check + stamping contract verbatim.
-      const args = [
-        'run',
-        deployScriptName,
-        ...(skipDriftCheck ? ['--', '--skip-drift-check'] : []),
-      ]
-      const r = spawnSync('pnpm', args, { cwd: domainDir, stdio: 'inherit' })
-      if (r.status !== 0) {
-        throw new AstraleError(
-          'DEPLOY_FAILED',
-          `pnpm ${args.join(' ')} exited with status ${r.status}`,
-        )
-      }
-      // URL / schemaHash / sdkCommit are printed by the domain's own script.
-      return { warnings: skipDriftCheck ? ['drift check skipped'] : warnings }
-    }
-
-    // Generic fallback (template-less domain): build spec + wrangler deploy.
-    const specPath = join(domainDir, 'spec.json')
-    if (!pkg.scripts?.['build:spec']) {
-      throw new AstraleError(
-        'NO_BUILD_SCRIPT',
-        `Domain "${slug}" has no "build:spec" script`,
-        'Add a build:spec entry to package.json, or use the minimal-remote template.',
-      )
-    }
-    const build = spawnSync('pnpm', ['build:spec', '--', '--domain', preset], {
-      cwd: domainDir,
-      stdio: 'inherit',
-    })
-    if (build.status !== 0) {
-      throw new AstraleError('BUILD_FAILED', `build:spec failed (exit ${build.status})`)
-    }
-    if (!existsSync(specPath)) {
-      throw new AstraleError('SPEC_MISSING', `spec.json not produced at ${specPath}`)
-    }
     const workerDir = join(domainDir, 'worker')
     if (!existsSync(workerDir)) {
-      throw new AstraleError('NO_WORKER_DIR', `Expected ${workerDir} to exist`)
+      throw new AstraleError(
+        'NO_WORKER_DIR',
+        `Expected ${workerDir} to exist`,
+        'Shape (b) umbrella domains have no worker and cannot be deployed.',
+      )
     }
-    const deploy = spawnSync('bunx', ['wrangler', 'deploy'], {
-      cwd: workerDir,
-      stdio: 'inherit',
-    })
-    if (deploy.status !== 0) {
-      throw new AstraleError('WRANGLER_FAILED', `wrangler deploy failed (exit ${deploy.status})`)
-    }
-    if (skipDriftCheck) warnings.push('drift check skipped')
 
-    return { warnings }
+    const { specPath } = await lifecycleBuildSpec({ domainDir, preset })
+
+    const { sdkDir } = findSdk(domainDir)
+    const sdkCommit = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd: sdkDir,
+      encoding: 'utf-8',
+    }).stdout.trim()
+    if (!sdkCommit) {
+      throw new AstraleError('NO_SDK_COMMIT', `Cannot read sdk/ HEAD at ${sdkDir}`)
+    }
+    const schemaHash = hashSpecFile(specPath)
+
+    const deployRes = spawnSync(
+      'bunx',
+      [
+        'wrangler',
+        'deploy',
+        '--define',
+        `SDK_COMMIT:"${sdkCommit}"`,
+        '--define',
+        `SCHEMA_HASH:"${schemaHash}"`,
+      ],
+      { cwd: workerDir, stdio: 'inherit' },
+    )
+    if (deployRes.status !== 0) {
+      throw new AstraleError(
+        'WRANGLER_FAILED',
+        `wrangler deploy failed (exit ${deployRes.status ?? 'null'})`,
+      )
+    }
+
+    const prodUrl = await resolveProdUrl(domainDir)
+    const warnings: string[] = []
+    if (skipDriftCheck) {
+      warnings.push(`drift check skipped (zone: ${prodUrl})`)
+      return { url: prodUrl, schemaHash, sdkCommit, warnings }
+    }
+    try {
+      await deployCheck({ url: prodUrl, expectedSchemaHash: schemaHash, sdkRepoPath: sdkDir })
+    } catch (e) {
+      const msg = (e as Error).message
+      const looksLikeDnsOrNetwork =
+        /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ETIMEDOUT|abort|fetch failed|getaddrinfo|Host not found|\b52[0-4]\b/i.test(
+          msg,
+        )
+      if (looksLikeDnsOrNetwork) {
+        warnings.push(
+          `post-deploy check skipped: ${prodUrl} unreachable (${msg}). DNS may not be provisioned yet — smoke-test on the *.workers.dev URL above, or rerun once DNS is live.`,
+        )
+        return { url: prodUrl, schemaHash, sdkCommit, warnings }
+      }
+      throw new AstraleError(
+        'DRIFT_CHECK_FAILED',
+        `post-deploy drift check failed: ${msg}`,
+        'schemaHash or sdkCommit mismatch — your local state does not match the worker. Use --skip-drift-check only for first-time deploys before DNS is live.',
+      )
+    }
+    return { url: prodUrl, schemaHash, sdkCommit, warnings }
   },
+
+  devUp: lifecycleDevUp,
+  devDown: lifecycleDevDown,
+  devStatus: lifecycleDevStatus,
+  instancePrepare: lifecycleInstancePrepare,
+  buildSpec: lifecycleBuildSpec,
 }
 
 function buildGenericRenameMap(slug: string): ReturnType<typeof buildMinimalRemoteRenameMap> {
@@ -193,4 +219,25 @@ function buildGenericRenameMap(slug: string): ReturnType<typeof buildMinimalRemo
     literals: [{ from: '__SLUG__', to: v.kebab }],
     wordBoundary: [],
   }
+}
+
+/**
+ * Derive the prod-preset worker URL from a domain's `envs.ts` export.
+ */
+async function resolveProdUrl(domainDir: string): Promise<string> {
+  const envsPath = join(domainDir, 'envs.ts')
+  if (!existsSync(envsPath)) {
+    throw new AstraleError('NO_ENVS', `Missing envs.ts at ${envsPath}`)
+  }
+  type EnvsMod = { domainEnvs?: Record<string, () => DomainEnv> }
+  const mod = await loadDomainModule<EnvsMod>(envsPath)
+  const prodFn = mod.domainEnvs?.['prod']
+  if (!prodFn) {
+    throw new AstraleError(
+      'NO_PROD_PRESET',
+      `envs.ts does not export a 'prod' preset`,
+      'Deploy requires a prod preset in domainEnvs.',
+    )
+  }
+  return domainUrl(prodFn())
 }

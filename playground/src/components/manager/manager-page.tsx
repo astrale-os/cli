@@ -14,6 +14,7 @@ import {
   Copy,
   MoreHorizontal,
   Info,
+  ExternalLink,
 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { type z } from 'zod'
@@ -279,7 +280,20 @@ function InstanceCard({
             {inst.error && <p className="text-xs text-red-500 mt-1 truncate">{inst.error}</p>}
           </div>
         </div>
-        <div className="flex-shrink-0 ml-4">
+        <div className="flex-shrink-0 ml-4 flex items-center gap-2">
+          {inst.status === 'ready' && (
+            <a
+              href={`http://localhost:3400/kernel/${inst.id}`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              title="Open shell demo for this instance"
+            >
+              Shell demo
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
           <InstanceMenu
             inst={inst}
             actionLoading={actionLoading}

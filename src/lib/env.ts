@@ -16,6 +16,13 @@ export type Paths = {
   tunnels: string
   tunnelsDir: string
   journal: string
+  domainsDir: string
+  /** Per-domain state dir: `~/.astrale/domains/<slug>/`. */
+  domainStateDir: (slug: string) => string
+  /** Per-domain `devUp`/`devDown` state file. */
+  domainState: (slug: string) => string
+  /** Per-domain dev log dir (wrangler.log, tunnel logs…). */
+  domainLogDir: (slug: string) => string
 }
 
 /**
@@ -34,6 +41,7 @@ function resolveHome(home?: string): string {
 
 export function createPaths(home?: string): Paths {
   const base = resolveHome(home)
+  const domainsDir = join(base, 'domains')
   return {
     home: base,
     keys: process.env.ASTRALE_KEYS_DIR ?? join(base, 'keys'),
@@ -49,6 +57,10 @@ export function createPaths(home?: string): Paths {
     tunnels: join(base, 'tunnels.json'),
     tunnelsDir: join(base, 'tunnels'),
     journal: join(process.env.ASTRALE_LOGS_DIR ?? join(base, 'logs'), 'events.ndjson'),
+    domainsDir,
+    domainStateDir: (slug: string) => join(domainsDir, slug),
+    domainState: (slug: string) => join(domainsDir, slug, 'state.json'),
+    domainLogDir: (slug: string) => join(domainsDir, slug, 'logs'),
   }
 }
 

@@ -1,3 +1,30 @@
-# The manager image does not COPY anything — workspace is bind-mounted
-# at runtime. Ignore everything so `docker build` ships an empty context.
-*
+# Docker build context is now the workspace root (see cli/docker/Dockerfile).
+# Exclude everything that bloats the context or leaks host-specific state:
+# - node_modules (host, wrong platform; pnpm install runs inside the image)
+# - build artifacts, caches, logs
+# - VCS history + editor junk
+
+**/node_modules
+**/dist
+**/build
+**/.next
+**/.turbo
+**/.wrangler
+**/.vite
+**/coverage
+**/*.tsbuildinfo
+**/.DS_Store
+**/spec.json
+**/*.log
+
+.git
+.github
+.vscode
+.idea
+
+# Local dev state
+.astrale
+.env.local
+**/.env
+**/.env.local
+**/.dev.vars

@@ -35,10 +35,13 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
 
       if (opts.filter) {
         const f = opts.filter.toLowerCase()
-        items = items.filter(
-          (i) =>
-            i.class?.toLowerCase().includes(f) || i.__labels?.some((l) => l.toLowerCase() === f),
-        )
+        items = items.filter((i) => {
+          // Match the kind name — last dotted segment of i.class (e.g. `/kernel.astrale.ai/class.Folder` → `Folder`).
+          const classTail = i.class?.split('/').pop() ?? ''
+          const kindName = classTail.split('.').pop()?.toLowerCase() ?? ''
+          const labelMatch = i.__labels?.some((l) => l.toLowerCase() === f) ?? false
+          return kindName === f || labelMatch
+        })
       }
 
       if (opts.count) {

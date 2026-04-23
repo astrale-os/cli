@@ -18,7 +18,15 @@ function PickerOverlay() {
   )
 }
 
-export function CockpitLayout({ label, onBack }: { label?: string; onBack?: () => void }) {
+export function CockpitLayout({
+  label,
+  onBack,
+  shellDemoUrl,
+}: {
+  label?: string
+  onBack?: () => void
+  shellDemoUrl?: string
+}) {
   const workspace = useWorkspace()
   const [paletteOpen, setPaletteOpen] = useState(false)
   useHotkeys(workspace, { onCommandPalette: () => setPaletteOpen(true) })
@@ -75,7 +83,12 @@ export function CockpitLayout({ label, onBack }: { label?: string; onBack?: () =
     <div className="flex h-screen w-screen bg-background text-foreground">
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <div className="flex-1 flex flex-col min-w-0">
-        <CommandBar onOpenPalette={() => setPaletteOpen(true)} label={label} onBack={onBack} />
+        <CommandBar
+          onOpenPalette={() => setPaletteOpen(true)}
+          label={label}
+          onBack={onBack}
+          shellDemoUrl={shellDemoUrl}
+        />
         <ResizablePanelGroup direction="horizontal" autoSaveId="cockpit-h">
           {/* Left panel: Workbench (Operations, Query, Console) */}
           <ResizablePanel

@@ -65,11 +65,31 @@ export async function managerImageRef(): Promise<string> {
 
 export async function buildManagerImage(opts: { noCache?: boolean } = {}): Promise<void> {
   const cli = await cliRoot()
+  const ws = await workspaceRoot()
   const ref = await managerImageRef()
+  // Build context is the workspace root (the Dockerfile COPY . picks up
+  // package.json + pnpm-lock.yaml + all sub-package.json files needed to
+  // `pnpm install` inside the image). The workspace `.dockerignore` keeps
+  // the context small (no node_modules, no .git, no dist).
+  //
+  // `GITHUB_TOKEN` (for `@astrale-os/*` on GitHub Packages) is passed as a
+  // BuildKit secret — never baked into image layers. The host's `~/.npmrc`
+  // references `${GITHUB_TOKEN}` at runtime; the Dockerfile reconstructs
+  // a token-embedded `.npmrc` inline for pnpm.
+  const token = process.env.GITHUB_TOKEN
+  if (!token) {
+    throw new AstraleError(
+      'MISSING_GITHUB_TOKEN',
+      'GITHUB_TOKEN env var is required to build the manager image (needed by pnpm ' +
+        'to fetch private @astrale-os/* packages from GitHub Packages). Set it to a ' +
+        'PAT with `read:packages` scope and retry.',
+    )
+  }
   const args = ['docker', 'build', '-t', ref, '-f', join(cli, 'docker', 'Dockerfile')]
+  args.push('--secret', 'id=github_token,env=GITHUB_TOKEN')
   if (opts.noCache) args.push('--no-cache')
-  args.push(cli)
-  await runInteractive(args)
+  args.push(ws)
+  await runInteractive(args, { env: { ...process.env, GITHUB_TOKEN: token } })
 }
 
 export async function managerImageExists(): Promise<boolean> {
@@ -144,6 +164,12 @@ function composeYaml(inputs: ComposeInputs): string {
       - ASTRALE_LOGS_DIR=/astrale/logs
     volumes:
       - '${workspaceRoot}:/workspace:ro'
+      # Anonymous volume overlays the host's /workspace/node_modules with
+      # the image's linux-arm64 (matching the container). Prevents native
+      # modules compiled for the host (e.g. esbuild darwin-arm64) from
+      # being loaded inside the linux container. Reset on \`docker compose
+      # down -v\` — needed after an image rebuild that bumps deps.
+      - '/workspace/node_modules'
       - '${keysDir}:/astrale/keys:rw'
       - '${logsDir}:/astrale/logs'
     user: '${uid}:${gid}'
@@ -323,8 +349,15 @@ async function run(args: string[]): Promise<void> {
   }
 }
 
-async function runInteractive(args: string[]): Promise<void> {
-  const proc = Bun.spawn(args, { stdout: 'inherit', stderr: 'inherit' })
+async function runInteractive(
+  args: string[],
+  opts: { env?: Record<string, string> } = {},
+): Promise<void> {
+  const proc = Bun.spawn(args, {
+    stdout: 'inherit',
+    stderr: 'inherit',
+    ...(opts.env ? { env: opts.env } : {}),
+  })
   const code = await proc.exited
   if (code !== 0) throw new Error(`${args.join(' ')} failed (${code})`)
 }

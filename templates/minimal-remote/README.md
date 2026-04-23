@@ -56,8 +56,8 @@ rewritten. What's left:
 
 3. **Install & test.** `pnpm install` at the workspace root (never in
    sub-packages). `pnpm test` runs the in-process smoke test. Then
-   `pnpm infra:prepare --kernel <k> --domain <d>` to wire the remote
-   integration path.
+   `astrale domain dev up --kernel <k> --domain <d>` to wire the remote
+   integration path (replaces the legacy `pnpm infra:prepare`).
 
 ## Links
 

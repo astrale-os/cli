@@ -4,10 +4,11 @@ import { resolve } from 'node:path'
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
+import { AstraleError } from '../../errors'
 import { runKernelCommand } from '../../kernel'
 import { isBuiltinDomainName, resolveBuiltinDomain } from '../../lib/builtin-domains'
 import { buildIdentityBinding, loadPrivateJwk } from '../../lib/domain-identity'
-import { log } from '../../lib/log'
+import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 
 type InstallResult = { domainId: string; origin: string }
@@ -130,11 +131,18 @@ export default {
 
     let identity: Awaited<ReturnType<typeof buildIdentityBinding>> | undefined
     if (resolvedKey) {
-      const privateJwk = await loadPrivateJwk(resolvedKey)
-      identity = await buildIdentityBinding(
-        spec as Parameters<typeof buildIdentityBinding>[0],
-        privateJwk,
-      )
+      try {
+        const privateJwk = await loadPrivateJwk(resolvedKey)
+        identity = await buildIdentityBinding(
+          spec as Parameters<typeof buildIdentityBinding>[0],
+          privateJwk,
+          resolvedKey,
+        )
+      } catch (e) {
+        // Pre-flight validation errors (bad JWK, mismatched pair) should
+        // surface as a clean error, not an uncaught Bun stack trace.
+        fatal(e)
+      }
       log.dim(`  Identity binding prepared (${identity.publicKey.jwk.kid ?? 'no kid'})`)
     }
 
@@ -144,12 +152,28 @@ export default {
     await runKernelCommand<InstallResult>({
       opts,
       label: `Installing domain from ${specFile}`,
-      fn: (ctx) =>
-        ctx.client.call(
-          '/kernel.astrale.ai/class.Root/installDomain',
-          { spec: specPayload, identity },
-          ctx.credential,
-        ) as Promise<InstallResult>,
+      fn: async (ctx) => {
+        try {
+          return (await ctx.client.call(
+            '/kernel.astrale.ai/class.Root/installDomain',
+            { spec: specPayload, identity },
+            ctx.credential,
+          )) as InstallResult
+        } catch (e) {
+          // Re-throw sig failures with the -k context so the user doesn't
+          // have to guess which key is being rejected. The kernel's generic
+          // `signature verification failed` has no pointer to the caller's
+          // file.
+          if (resolvedKey && isSignatureVerificationError(e)) {
+            throw new AstraleError(
+              'INVALID_IDENTITY_BINDING',
+              `Kernel rejected the identity binding derived from ${resolvedKey} — the private key's signature does not verify against the public half sent in the same file.`,
+              'Re-check that the `d` and `x` in your JWK form a real pair (derive the public from the private via jose.exportJWK and compare), or regenerate with `astrale domain init` / a fresh keygen.',
+            )
+          }
+          throw e
+        }
+      },
       format: (result, fmtOpts, isRaw) => {
         if (isRaw) {
           output(result, fmtOpts)
@@ -161,3 +185,14 @@ export default {
     })
   },
 } satisfies CommandDefinition
+
+function isSignatureVerificationError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const name = (e as { name?: unknown }).name
+  const msg = (e as { message?: unknown }).message
+  return (
+    name === 'AuthenticationError' &&
+    typeof msg === 'string' &&
+    /signature verification failed/i.test(msg)
+  )
+}

@@ -148,10 +148,14 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
           return {
             kernel: child,
             disposer: async () => {
+              // Use the manager's own falkor config — the child's stored
+              // `host` may be the CLI's default `localhost`, which doesn't
+              // resolve to FalkorDB when the manager runs in a container
+              // (compose service name is `falkordb`).
               await deleteGraph({
                 graphName: cfg.graphName,
-                host: cfg.host,
-                port: cfg.port,
+                host: config.falkorHost,
+                port: config.falkorPort,
               })
             },
           }

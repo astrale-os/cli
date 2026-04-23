@@ -2,7 +2,6 @@ import type { KernelCommandOpts } from '../kernel'
 
 import { runKernelCommand } from '../kernel'
 import { log } from '../lib/log'
-import { output } from '../lib/output'
 
 /**
  * `astrale token` — mint a fresh delegation token for the active instance
@@ -11,9 +10,13 @@ import { output } from '../lib/output'
 export type TokenOpts = KernelCommandOpts & {
   audience?: string
   ttl?: string
+  // `--for <identity>` is an alias of `--as` (reads better at mint-time).
+  // Promoted into opts.as before the credential resolver runs.
+  for?: string
 }
 
 export async function tokenCommand(opts: TokenOpts): Promise<void> {
+  if (opts.for && !opts.as) opts.as = opts.for
   await runKernelCommand<string>({
     opts,
     label: 'Minting delegation token',
@@ -34,7 +37,7 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
     },
     format: (token, fmtOpts, isRaw) => {
       if (isRaw) {
-        output(token, fmtOpts)
+        process.stdout.write(token + '\n')
         return
       }
       log.dim('  (delegation token — ES256, self-identity)')

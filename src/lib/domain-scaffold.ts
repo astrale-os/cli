@@ -6,8 +6,11 @@
  * `cli/templates/<template>/` into `<targetDir>/` without any manual edit.
  */
 
+import type { JWK } from 'jose'
 import { cp, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
+
+import { generateEd25519Jwk } from './keys'
 
 /** Paths that must never be copied into the new domain dir. */
 const DEFAULT_EXCLUDES = [
@@ -189,6 +192,53 @@ export async function renameFilesInTree(rootDir: string, map: RenameMap): Promis
     }
   }
   return renamed
+}
+
+/**
+ * Overwrite `worker/src/keys.ts` with a freshly-generated Ed25519 pair.
+ *
+ * Called after the scaffold copy + rename so the domain never ships the
+ * template's hardcoded pair — historical template had a `d`/`x` that don't
+ * form a valid keypair, breaking `instance install -k`. Silent no-op when
+ * the target file isn't there (non-remote templates).
+ */
+export async function writeWorkerKeysFile(targetDir: string, slug: string): Promise<boolean> {
+  const keysPath = join(targetDir, 'worker', 'src', 'keys.ts')
+  if (!(await pathExists(keysPath))) return false
+
+  const kid = `${slug}-worker-key`
+  const { privateJwk, publicJwk } = await generateEd25519Jwk(kid)
+  await writeFile(keysPath, renderKeysFile(slug, kid, privateJwk, publicJwk), 'utf-8')
+  return true
+}
+
+function renderKeysFile(slug: string, kid: string, privateJwk: JWK, publicJwk: JWK): string {
+  const fmtKey = (jwk: JWK, fields: readonly (keyof JWK)[]): string =>
+    fields
+      .filter((f) => jwk[f] !== undefined)
+      .map((f) => `  ${String(f)}: '${String(jwk[f])}',`)
+      .join('\n')
+
+  const privateFields = ['kty', 'crv', 'alg', 'd', 'x'] as const
+  const publicFields = ['kty', 'crv', 'alg', 'x'] as const
+
+  return `/**
+ * Ed25519 key pair for the ${slug} worker.
+ *
+ * Generated fresh at scaffold time by \`astrale domain init\` via
+ * \`generateEd25519Jwk\` (cli/src/lib/keys.ts). Rotate before shipping to
+ * real prod, and stop committing the file once rotation is automated.
+ */
+export const PRIVATE_JWK = {
+${fmtKey(privateJwk, privateFields)}
+  kid: '${kid}',
+} as const
+
+export const PUBLIC_JWK = {
+${fmtKey(publicJwk, publicFields)}
+  kid: '${kid}',
+} as const
+`
 }
 
 /** Convenience check — does `path` exist as a file or directory? */

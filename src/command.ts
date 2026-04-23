@@ -25,4 +25,6 @@ export type CommandGroup = {
   name: string
   description: string
   commands: CommandDefinition[]
+  /** Nested subgroups (one extra level of `astrale foo bar baz` nesting). */
+  subgroups?: CommandGroup[]
 }

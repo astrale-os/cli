@@ -20,11 +20,6 @@ program
     new Option('--log-level <level>', 'Log level').choices(['debug', 'info', 'warn', 'error']),
   )
   .addOption(new Option('--log-format <format>', 'Log output format').choices(['text', 'json']))
-  // Global overrides for kernel ops (§9.2). Sub-commands that don't use
-  // them ignore them silently — Commander merges global + command-local
-  // options into the action handler's opts argument.
-  .addOption(new Option('--as <identity>', 'Call as a specific identity (global override)'))
-  .addOption(new Option('-i, --instance <name>', 'Target a specific instance (global override)'))
   .action(() => {
     program.help()
   })
@@ -212,6 +207,7 @@ registerCommand(program, {
   options: [
     { flags: '--audience <aud>', description: 'Token audience (defaults to instance domain)' },
     { flags: '--ttl <sec>', description: 'TTL in seconds (default: 3600)' },
+    { flags: '--for <identity>', description: 'Mint the token for this identity (alias of --as)' },
     ...kernelOptions,
   ],
   action: async (opts) => {
@@ -259,7 +255,13 @@ registerCommand(program, {
   name: 'describe',
   description: 'Describe a node: its kind, operations, children, and schemas',
   arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
-  options: kernelOptions,
+  options: [
+    {
+      flags: '--no-schema',
+      description: 'Omit the serialized `schema` property (useful for Domain nodes, where it is multi-kB)',
+    },
+    ...kernelOptions,
+  ],
   action: async (path, opts) => {
     const { describeCommand } = await import('../src/commands/describe')
     await describeCommand(path as string, opts)
@@ -404,6 +406,18 @@ registerGroup(program, {
     (await import('../src/commands/domain/deploy')).default,
     (await import('../src/commands/domain/check')).default,
     (await import('../src/commands/domain/logs')).default,
+    (await import('../src/commands/domain/instance-prepare')).default,
+  ],
+  subgroups: [
+    {
+      name: 'dev',
+      description: 'Local dev infrastructure lifecycle (replaces `pnpm infra:prepare`/`infra:down`)',
+      commands: [
+        (await import('../src/commands/domain/dev/up')).default,
+        (await import('../src/commands/domain/dev/down')).default,
+        (await import('../src/commands/domain/dev/status')).default,
+      ],
+    },
   ],
 })
 

@@ -1,17 +1,17 @@
 /**
  * Ed25519 key pair for the minimal-remote worker.
  *
- * This is a SCAFFOLD key — fine to ship to `*.test.astrale.ai` for
- * iteration, but rotate it (and stop committing) before shipping to real prod.
- * Generate a fresh pair with `astrale identity create <name>` (see
- * astrale-cli skill) or any ES256 / EdDSA JWK generator.
+ * Placeholder key. `astrale domain init` overwrites this file at scaffold
+ * time via `writeWorkerKeysFile` (cli/src/lib/domain-scaffold.ts), so every
+ * generated domain gets its own fresh, internally-consistent pair. Still a
+ * dev key — rotate before real prod.
  */
 export const PRIVATE_JWK = {
   kty: 'OKP',
   crv: 'Ed25519',
   alg: 'EdDSA',
-  d: 'dJDtnOsWuhsUJWQ9ScBSxYJg6YXIlMs0lR5JMJgkk_8',
-  x: 'HgXZrlEH0oE13gIwqP5GmyRFv2GEICoHGeRvEPwFTv0',
+  d: 'oUqtLVXUXeHebjcZsVpNgcU5yrAPr996R-dTbZkutkI',
+  x: 'GkaTTc1CMPvRKHTjH4auDDFMdwdnn1yj2QvFBAzJfQ0',
   kid: 'minimal-remote-worker-key',
 } as const
 
@@ -19,6 +19,6 @@ export const PUBLIC_JWK = {
   kty: 'OKP',
   crv: 'Ed25519',
   alg: 'EdDSA',
-  x: 'HgXZrlEH0oE13gIwqP5GmyRFv2GEICoHGeRvEPwFTv0',
+  x: 'GkaTTc1CMPvRKHTjH4auDDFMdwdnn1yj2QvFBAzJfQ0',
   kid: 'minimal-remote-worker-key',
 } as const

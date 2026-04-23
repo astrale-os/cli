@@ -207,7 +207,7 @@ export function ConnectionProvider({
   useEffect(() => {
     setAuthReady(true)
     if (!skipAutoConnect) {
-      connect(`http://${window.location.host}/mngt/`)
+      connect('http://localhost:4400/mngt/')
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

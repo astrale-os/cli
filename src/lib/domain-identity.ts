@@ -1,6 +1,8 @@
-import { importJWK, SignJWT } from 'jose'
+import { exportJWK, importJWK, SignJWT } from 'jose'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+
+import { AstraleError } from '../errors'
 
 type Spec = { nodes: SpecNode[]; edges: SpecEdge[] }
 type SpecNode = {
@@ -28,6 +30,7 @@ export async function loadPrivateJwk(keyPath: string): Promise<Record<string, un
 export async function buildIdentityBinding(
   spec: Spec,
   privateJwk: Record<string, unknown>,
+  keyPath?: string,
 ): Promise<IdentityBinding> {
   const slug = extractDomainSlug(spec)
   const subs = collectFunctionSubs(spec, slug)
@@ -36,7 +39,13 @@ export async function buildIdentityBinding(
 
   const alg = privateJwk.alg as string
   const kid = privateJwk.kid as string
-  const key = await importJWK(privateJwk, alg)
+  // `extractable: true` lets us re-export the private JWK to derive its
+  // canonical public half and cross-check against the `x`/`y` shipped in
+  // the file — historical templates had mismatched public components which
+  // made every downstream `signature verification failed` impossible to
+  // diagnose from the error alone.
+  const key = await importJWK(privateJwk, alg, { extractable: true })
+  await assertKeyPairConsistent(key, publicJwk, keyPath)
 
   const credential = await new SignJWT({ subs })
     .setProtectedHeader({ alg, kid })
@@ -48,6 +57,40 @@ export async function buildIdentityBinding(
     .sign(key)
 
   return { credential, publicKey: { jwk: publicJwk } }
+}
+
+/**
+ * Cross-check the public components in the file against what can be
+ * derived from the private scalar. Catches broken pairs (`d` and `x` from
+ * two different keypairs) before they bubble up as a server-side
+ * `signature verification failed`.
+ */
+async function assertKeyPairConsistent(
+  key: Parameters<typeof exportJWK>[0],
+  fileJwk: Record<string, unknown>,
+  keyPath?: string,
+): Promise<void> {
+  let derived: Record<string, unknown>
+  try {
+    derived = (await exportJWK(key)) as Record<string, unknown>
+  } catch {
+    // exportJWK can only fail on non-extractable keys. We imported with
+    // `extractable: true` so this is effectively unreachable — swallow
+    // and let the downstream verify produce its own error if it hits one.
+    return
+  }
+  const publicFields = ['x', 'y', 'n', 'e'] as const
+  for (const field of publicFields) {
+    if (derived[field] === undefined) continue
+    if (fileJwk[field] !== undefined && fileJwk[field] !== derived[field]) {
+      const where = keyPath ? ` at ${keyPath}` : ''
+      throw new AstraleError(
+        'INVALID_KEY_PAIR',
+        `Private and public components don't match${where} — field \`${field}\` derived from \`d\` is "${String(derived[field])}" but the file says "${String(fileJwk[field])}".`,
+        'Regenerate the pair (e.g. delete worker/src/keys.ts and re-scaffold via `astrale domain init`), or replace both halves with a matching keypair.',
+      )
+    }
+  }
 }
 
 const DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'

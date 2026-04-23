@@ -66,6 +66,31 @@ export async function listIdentityKeys(keysDir: string = KEYS_DIR): Promise<stri
 }
 
 /**
+ * Generate a fresh Ed25519 keypair as plain JWKs (not persisted).
+ *
+ * Used by the domain scaffold to stamp worker key files with a real,
+ * internally-consistent pair — defense against drift between `d` and `x`
+ * (historical template copies had a mismatched `x`, making every scaffold
+ * inherit a broken pair). Same crypto as ES256 elsewhere in the CLI but
+ * EdDSA/Ed25519 matches the worker runtime convention.
+ */
+export async function generateEd25519Jwk(
+  kid: string,
+): Promise<{ privateJwk: JWK; publicJwk: JWK }> {
+  const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
+    crv: 'Ed25519',
+    extractable: true,
+  })
+  const privateJwk = await exportJWK(privateKey)
+  const publicJwk = await exportJWK(publicKey)
+  privateJwk.alg = 'EdDSA'
+  publicJwk.alg = 'EdDSA'
+  privateJwk.kid = kid
+  publicJwk.kid = kid
+  return { privateJwk, publicJwk }
+}
+
+/**
  * Generate a new keypair for `subject`, persist atomically with 0o600
  * perms, and return the JWKs + kid. Overwrites any existing keys.
  */

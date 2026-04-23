@@ -8,8 +8,7 @@ import { WindowsPanel } from '@/components/windows-panel'
 import { StandaloneShellProvider, useKernel, useShell } from '@/providers/shell'
 
 function instanceUrl(instanceId: string) {
-  if (typeof window === 'undefined') return `http://localhost:4400/${instanceId}/`
-  return `http://${window.location.host}/${instanceId}/`
+  return `http://localhost:4400/${instanceId}/`
 }
 
 function appUrl(appId: string) {
@@ -123,11 +122,21 @@ function InstancePage() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      <div>
-        <h2 className="text-lg font-semibold">Instance: {instanceId}</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Connected to <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{kernelUrl}</code>
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Instance: {instanceId}</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Connected to <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{kernelUrl}</code>
+          </p>
+        </div>
+        <a
+          href={`http://localhost:3200/kernel/${instanceId}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-xs text-primary hover:underline shrink-0"
+        >
+          Open in playground →
+        </a>
       </div>
 
       <section className="space-y-3">

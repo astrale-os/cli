@@ -56,18 +56,27 @@ function KernelPage() {
     )
   }
 
-  const wsUrl = `http://${window.location.host}/${id}/`
+  const wsUrl = `http://localhost:4400/${id}/`
+  const shellDemoUrl = `http://localhost:3400/kernel/${id}`
 
   return (
     <ConnectionProvider skipAutoConnect>
       <WorkspaceProvider>
-        <KernelCockpit wsUrl={wsUrl} label={label} />
+        <KernelCockpit wsUrl={wsUrl} label={label} shellDemoUrl={shellDemoUrl} />
       </WorkspaceProvider>
     </ConnectionProvider>
   )
 }
 
-function KernelCockpit({ wsUrl, label }: { wsUrl: string; label: string }) {
+function KernelCockpit({
+  wsUrl,
+  label,
+  shellDemoUrl,
+}: {
+  wsUrl: string
+  label: string
+  shellDemoUrl: string
+}) {
   const navigate = useNavigate()
   const connection = useConnection()
 
@@ -77,7 +86,13 @@ function KernelCockpit({ wsUrl, label }: { wsUrl: string; label: string }) {
     }
   }, [wsUrl, connection.authReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  return <CockpitLayout label={label} onBack={() => navigate({ to: '/' })} />
+  return (
+    <CockpitLayout
+      label={label}
+      onBack={() => navigate({ to: '/' })}
+      shellDemoUrl={shellDemoUrl}
+    />
+  )
 }
 
 export const Route = createFileRoute('/kernel/$id')({

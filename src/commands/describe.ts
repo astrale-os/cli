@@ -15,7 +15,10 @@ type NodeItem = {
 
 type DescribeResult = { node: NodeItem; children: NodeItem[] }
 
-export async function describeCommand(path: string, opts: KernelCommandOpts): Promise<void> {
+// Commander turns `--no-schema` into `schema: false`.
+type DescribeOpts = KernelCommandOpts & { schema?: boolean }
+
+export async function describeCommand(path: string, opts: DescribeOpts): Promise<void> {
   await runKernelCommand<DescribeResult>({
     opts,
     label: path,
@@ -33,13 +36,21 @@ export async function describeCommand(path: string, opts: KernelCommandOpts): Pr
       return { node, children }
     },
     format: (result, fmtOpts, isRaw) => {
+      const shown = opts.schema === false ? stripSchemaProp(result) : result
       if (isRaw) {
-        output(result, fmtOpts)
+        output(shown, fmtOpts)
         return
       }
-      printDescribe(result, path)
+      printDescribe(shown, path)
     },
   })
+}
+
+function stripSchemaProp(result: DescribeResult): DescribeResult {
+  const props = result.node.properties
+  if (!props || !('schema' in props)) return result
+  const { schema: _omitted, ...rest } = props
+  return { ...result, node: { ...result.node, properties: rest } }
 }
 
 // ── Pretty-print ────────────────────────────────────────────

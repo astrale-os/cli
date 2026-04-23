@@ -1,0 +1,558 @@
+/**
+ * Cloudflare DomainPlatform — lifecycle methods (dev up/down/status,
+ * instance prepare, build spec).
+ *
+ * Ports the logic previously split across per-domain `scripts/*.ts`
+ * templates. The CLI owns the state file (`~/.astrale/domains/<slug>/
+ * state.json`) so `devDown` only stops what `devUp` started. Domain
+ * customisation happens via an optional `lifecycle.ts` module exposing
+ * `config` (data) + `hooks` (code).
+ */
+
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-toolkit'
+import type {
+  DevState,
+  LifecycleContext,
+  LifecycleHooks,
+} from '@astrale-os/kernel-toolkit'
+
+import type {
+  BuildSpecOpts,
+  BuildSpecResult,
+  DevDownOpts,
+  DevDownResult,
+  DevStatusOpts,
+  DevUpOpts,
+  InstancePrepareOpts,
+  InstancePrepareResult,
+} from '../../ports/domain-platform'
+
+import { AstraleError } from '../../errors'
+import { resolveDomainDir } from '../../lib/domain-discovery'
+import { slugVariants } from '../../lib/domain-scaffold'
+import { paths } from '../../lib/env'
+import { log } from '../../lib/log'
+import {
+  assertRuntimeSecrets,
+  clearDevState,
+  domainUrl,
+  evalPreset,
+  isAstraleRunning,
+  isHttpOk,
+  isPidAlive,
+  killWranglerTree,
+  lifecycleConfig,
+  loadDomainModule,
+  preflightDns,
+  readDevState,
+  runHook,
+  schemeOf,
+  tunnelNameOf,
+  waitForUrl,
+  writeDevState,
+  writeDevVars,
+  type DevVars,
+  type DomainEnv,
+} from './cloudflare-helpers'
+
+// ── envs.ts loading ───────────────────────────────────────────────────
+
+type EnvsModule = {
+  domainEnvs: Record<string, () => DomainEnv>
+  readDomainPort?: () => number
+}
+
+async function loadDomainEnvs(domainDir: string): Promise<EnvsModule> {
+  const envsPath = join(domainDir, 'envs.ts')
+  if (!existsSync(envsPath)) {
+    throw new AstraleError('NO_ENVS', `Missing envs.ts at ${envsPath}`)
+  }
+  return loadDomainModule<EnvsModule>(envsPath)
+}
+
+function readDomainPort(envs: EnvsModule): number {
+  if (typeof envs.readDomainPort === 'function') {
+    try {
+      return envs.readDomainPort()
+    } catch {
+      // fall through to default
+    }
+  }
+  const raw = process.env.DOMAIN_PORT
+  if (raw) {
+    const n = Number.parseInt(raw, 10)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 8787
+}
+
+// ── DNS preflight plan ────────────────────────────────────────────────
+
+function buildDnsPreflight(
+  kernel: KernelEnv,
+  kernelName: string,
+  domainName: string,
+  domain: DomainEnv,
+): Parameters<typeof preflightDns>[0] {
+  const hosts: Parameters<typeof preflightDns>[0] = []
+  if (kernel.mode === 'standalone' && kernelName.endsWith(':tunneled')) {
+    hosts.push({ host: kernel.kernelDomain, kind: 'tunnel' })
+  }
+  if (kernel.mode === 'manager' && kernelName.endsWith(':tunneled') && kernel.instanceDomain) {
+    hosts.push({ host: kernel.instanceDomain.split('/')[0] ?? '', kind: 'tunnel' })
+  }
+  if (domainName === 'local:tunneled') {
+    hosts.push({ host: domain.domain, kind: 'tunnel' })
+  } else if (domainName === 'local:inprocess') {
+    hosts.push({ host: domain.domain, kind: 'local' })
+  }
+  return hosts
+}
+
+// ── Shared lifecycle context build ────────────────────────────────────
+
+function makeLifecycleContext(
+  resolved: { dir: string; slug: string },
+  state: DevState,
+): LifecycleContext {
+  return {
+    domainDir: resolved.dir,
+    slug: resolved.slug,
+    presets: state.presets,
+    state,
+    log: {
+      info: (msg) => log.info(msg),
+      warn: (msg) => log.warn(msg),
+      debug: (msg) => log.dim(msg),
+    },
+  }
+}
+
+// ── Main methods ──────────────────────────────────────────────────────
+
+export async function devUp(opts: DevUpOpts): Promise<DevState> {
+  const resolved = await resolveDomainDir(opts.domainDir)
+  const envs = await loadDomainEnvs(resolved.dir)
+
+  const kernel = evalPreset(kernelEnvs, opts.kernel, 'kernel')
+  const domain = evalPreset(envs.domainEnvs, opts.domain, 'domain')
+
+  const config = lifecycleConfig(resolved.lifecycle)
+  const hooks = (resolved.lifecycle?.hooks ?? {}) as LifecycleHooks
+  const tunnelName = tunnelNameOf(config)
+
+  const needsAstrale = kernel.mode === 'manager' && !opts.kernel.startsWith('remote:')
+  const needsCloudflared = opts.kernel.endsWith(':tunneled') || opts.domain === 'local:tunneled'
+  const needsLocalWorker = opts.domain === 'local:inprocess' || opts.domain === 'local:tunneled'
+
+  const state: DevState = {
+    presets: { kernel: opts.kernel, domain: opts.domain },
+    startedAt: new Date().toISOString(),
+    started: { astrale: false, cloudflared: null, wrangler: null },
+  }
+
+  const ctx = makeLifecycleContext(resolved, state)
+
+  log.step(`dev up — ${resolved.slug}`)
+  log.dim(`  kernel=${opts.kernel} domain=${opts.domain}`)
+  log.dim(`  plan:  astrale=${needsAstrale} cloudflared=${needsCloudflared} wrangler=${needsLocalWorker}`)
+
+  // Pre-flight.
+  await preflightDns(buildDnsPreflight(kernel, opts.kernel, opts.domain, domain))
+  assertRuntimeSecrets(config, resolved.lifecyclePath)
+  await runHook(hooks.preUp, ctx, 'preUp', resolved.lifecyclePath)
+
+  // Ensure astrale manager.
+  if (needsAstrale) {
+    if (isAstraleRunning()) {
+      log.dim('  astrale manager already running')
+    } else {
+      log.dim('  starting astrale manager…')
+      const r = spawnSync('astrale', ['start'], { stdio: 'inherit' })
+      if (r.status !== 0) throw new AstraleError('ASTRALE_START_FAILED', 'astrale start failed')
+      state.started.astrale = true
+    }
+  }
+
+  // Ensure cloudflared tunnel.
+  if (needsCloudflared) {
+    const status = spawnSync('astrale', ['tunnel', 'status', tunnelName], {
+      encoding: 'utf-8',
+      stdio: ['inherit', 'pipe', 'inherit'],
+    })
+    if (status.status === 0 && /running/i.test(status.stdout)) {
+      log.dim(`  tunnel ${tunnelName} already running`)
+    } else {
+      log.dim(`  starting tunnel ${tunnelName}…`)
+      const r = spawnSync('astrale', ['tunnel', 'start', tunnelName], { stdio: 'inherit' })
+      if (r.status !== 0) {
+        throw new AstraleError(
+          'TUNNEL_START_FAILED',
+          `astrale tunnel start ${tunnelName} failed`,
+          `If the tunnel isn't registered: astrale tunnel setup ${tunnelName}`,
+        )
+      }
+      state.started.cloudflared = { name: tunnelName }
+    }
+  }
+
+  // Ensure wrangler dev.
+  if (needsLocalWorker) {
+    const port = domain.port ?? readDomainPort(envs)
+    const localMeta = `http://localhost:${port}/meta`
+    if (await isHttpOk(localMeta)) {
+      log.dim(`  wrangler already serving on :${port}`)
+      // We didn't start it — leave state.wrangler null so we don't touch it on down.
+    } else {
+      const devVarsPath = join(resolved.dir, 'worker', '.dev.vars')
+      const prefix = slugVariants(resolved.slug).upperSnake
+      const baseVars: DevVars = {
+        WORKER_URL: domainUrl(domain),
+        BASE_DOMAIN: domain.domain,
+        [`${prefix}_WORKER_URL`]: domainUrl(domain),
+        [`${prefix}_BASE_DOMAIN`]: domain.domain,
+        ...config.extraDevVars,
+      }
+      const changed = writeDevVars(devVarsPath, baseVars)
+      if (changed) {
+        const { killed } = killWranglerTree(port)
+        if (killed > 0) log.dim(`  .dev.vars changed — killed ${killed} listener(s) on :${port}`)
+      }
+
+      const logDir = paths.domainLogDir(resolved.slug)
+      mkdirSync(logDir, { recursive: true })
+      const logFile = join(logDir, 'wrangler.log')
+      const workerDir = join(resolved.dir, 'worker')
+      if (!existsSync(workerDir)) {
+        throw new AstraleError(
+          'NO_WORKER_DIR',
+          `Expected ${workerDir} to exist`,
+          'Shape (b) domains have no worker; dev up only supports shape (a).',
+        )
+      }
+      const spawn = spawnSync(
+        'bash',
+        [
+          '-c',
+          `cd ${JSON.stringify(workerDir)} && nohup bunx wrangler dev --port ${port} > ${JSON.stringify(logFile)} 2>&1 &`,
+        ],
+        { stdio: 'inherit' },
+      )
+      if (spawn.status !== 0) {
+        throw new AstraleError('WRANGLER_SPAWN_FAILED', `wrangler dev spawn failed`)
+      }
+      await waitForUrl(localMeta, 30_000, 'wrangler')
+      // Re-discover the PID that ended up bound on :port.
+      const pid = findListenerPid(port) ?? 0
+      state.started.wrangler = { port, pid }
+      log.dim(`  wrangler ready on :${port} (pid=${pid}); logs=${logFile}`)
+    }
+
+    // If tunneled, wait for the tunnel to front the worker.
+    if (opts.domain === 'local:tunneled') {
+      const workerUrl = domainUrl(domain)
+      await waitForUrl(`${workerUrl}/meta`, 60_000, 'tunnel → worker')
+    }
+  }
+
+  await runHook(hooks.postUp, ctx, 'postUp', resolved.lifecyclePath)
+
+  writeDevState(paths.domainState(resolved.slug), state)
+  log.success(`dev up — ${resolved.slug} ready`)
+  return state
+}
+
+export async function devDown(opts: DevDownOpts): Promise<DevDownResult> {
+  const resolved = await resolveDomainDir(opts.domainDir)
+  const statePath = paths.domainState(resolved.slug)
+  const state = readDevState(statePath)
+  const hooks = (resolved.lifecycle?.hooks ?? {}) as LifecycleHooks
+
+  if (!state) {
+    log.info(`No state file for ${resolved.slug} — nothing to stop.`)
+    return { stopped: { astrale: false, cloudflared: null, wrangler: null } }
+  }
+
+  const ctx = makeLifecycleContext(resolved, state)
+
+  log.step(`dev down — ${resolved.slug}`)
+  await runHook(hooks.preDown, ctx, 'preDown', resolved.lifecyclePath)
+
+  const stopped: DevState['started'] = { astrale: false, cloudflared: null, wrangler: null }
+
+  if (state.started.wrangler) {
+    const { port, pid } = state.started.wrangler
+    const { killed } = killWranglerTree(port)
+    log.dim(`  stopped wrangler on :${port} (pid=${pid}, killed ${killed} listener(s))`)
+    stopped.wrangler = { port, pid }
+  }
+
+  if (state.started.cloudflared) {
+    const { name } = state.started.cloudflared
+    spawnSync('astrale', ['tunnel', 'stop', name], { stdio: 'ignore' })
+    log.dim(`  stopped tunnel ${name}`)
+    stopped.cloudflared = { name }
+  }
+
+  if (state.started.astrale) {
+    spawnSync('astrale', ['stop'], { stdio: 'ignore' })
+    log.dim('  stopped astrale manager')
+    stopped.astrale = true
+  } else {
+    log.dim('  astrale manager untouched (not started by dev up)')
+  }
+
+  await runHook(hooks.postDown, ctx, 'postDown', resolved.lifecyclePath)
+
+  clearDevState(statePath)
+  log.success(`dev down — ${resolved.slug} clean`)
+  return { stopped }
+}
+
+export async function devStatus(opts: DevStatusOpts): Promise<DevState | null> {
+  const resolved = await resolveDomainDir(opts.domainDir)
+  const state = readDevState(paths.domainState(resolved.slug))
+  if (!state) return null
+  // Validate persisted PID — surface stale state without mutating.
+  if (state.started.wrangler && state.started.wrangler.pid > 0) {
+    if (!isPidAlive(state.started.wrangler.pid)) {
+      state.started.wrangler = null
+    }
+  }
+  return state
+}
+
+// ── instancePrepare ───────────────────────────────────────────────────
+
+export async function instancePrepare(
+  opts: InstancePrepareOpts,
+): Promise<InstancePrepareResult> {
+  const resolved = await resolveDomainDir(opts.domainDir)
+  const envs = await loadDomainEnvs(resolved.dir)
+
+  const instanceId = opts.instanceId ?? 'test'
+  const kernel = evalPreset(kernelEnvs, opts.kernel, 'kernel')
+  const domain = evalPreset(envs.domainEnvs, opts.domain, 'domain')
+
+  validateSlug(domain.domain)
+  const aud = domain.domain
+  const domainUrlStr = domainUrl(domain)
+
+  if (kernel.mode === 'standalone') {
+    // Standalone: instance:prepare is a no-op. Return the same
+    // shell-exportable env block as the legacy script so callers can
+    // continue to `eval $(astrale domain instance prepare ...)`.
+    return {
+      instanceId: '',
+      domain: domain.domain,
+      domainUrl: domainUrlStr,
+      workerUrl: domainUrlStr,
+      controlUrl: `${schemeOf(kernel.kernelDomain)}://${kernel.kernelDomain}`,
+      iss: `${schemeOf(kernel.kernelDomain)}://${kernel.kernelDomain}`,
+    }
+  }
+
+  if (!isAstraleRunning()) {
+    throw new AstraleError(
+      'MANAGER_NOT_RUNNING',
+      'astrale manager is not running.',
+      `Start it: astrale start  (or: astrale domain dev up --kernel ${opts.kernel} --domain ${opts.domain})`,
+    )
+  }
+
+  // Rebuild the spec for this preset via the platform's own buildSpec.
+  await buildSpec({ domainDir: resolved.dir, preset: opts.domain })
+
+  const controlUrl = `${schemeOf(kernel.managerDomain)}://${kernel.managerDomain}`
+
+  if (kernel.instanceDomain) {
+    const pinnedId = kernel.instanceDomain.includes('/')
+      ? (kernel.instanceDomain.split('/').pop() ?? '')
+      : (kernel.instanceDomain.split('.')[0] ?? '')
+    if (pinnedId && pinnedId !== instanceId) {
+      throw new AstraleError(
+        'INSTANCE_ID_MISMATCH',
+        `instance id "${instanceId}" mismatches instanceDomain hint "${kernel.instanceDomain}" (pinned to "${pinnedId}")`,
+        `Either pass --instance ${pinnedId}, or reconfigure the tunnel for "${instanceId}".`,
+      )
+    }
+  }
+
+  const hint = kernel.instanceDomain
+    ? `${schemeOf(kernel.instanceDomain)}://${kernel.instanceDomain}`
+    : `${controlUrl}/${instanceId}`
+
+  runCli(['instance', 'delete', instanceId, '--force'], resolved.dir, { allowFail: true })
+  runCli(
+    ['instance', 'create', instanceId, '--local', '--issuer', hint, '--skip-jwks-check'],
+    resolved.dir,
+  )
+
+  const iss = await waitForInstanceReady(instanceId, hint)
+
+  runCli(['instance', 'install', join(resolved.dir, 'spec.json'), '-i', instanceId], resolved.dir)
+
+  const parent = `/${domain.domain}`
+  const token = runCli(
+    ['token', '--audience', aud, '--ttl', '3600', '--instance', instanceId, '--raw'],
+    resolved.dir,
+    { capture: true },
+  ).trim()
+
+  return {
+    instanceId,
+    domain: domain.domain,
+    domainUrl: domainUrlStr,
+    workerUrl: domainUrlStr,
+    controlUrl,
+    iss,
+    parent,
+    token,
+  }
+}
+
+function runCli(
+  args: string[],
+  cwd: string,
+  opts: { allowFail?: boolean; capture?: boolean } = {},
+): string {
+  const r = spawnSync('astrale', args, {
+    cwd,
+    env: process.env,
+    encoding: 'utf-8',
+    stdio: opts.capture ? ['inherit', 'pipe', 'inherit'] : ['inherit', 2, 'inherit'],
+  })
+  if (r.status !== 0 && !opts.allowFail) {
+    throw new AstraleError(
+      'ASTRALE_SUBCOMMAND_FAILED',
+      `astrale ${args.join(' ')} failed (exit ${r.status ?? 'null'})`,
+    )
+  }
+  return opts.capture ? r.stdout : ''
+}
+
+async function waitForInstanceReady(id: string, fallbackIss: string): Promise<string> {
+  const deadline = Date.now() + 30_000
+  let lastIss = fallbackIss
+  while (Date.now() < deadline) {
+    const r = spawnSync('astrale', ['instance', 'status', id, '--raw'], {
+      encoding: 'utf-8',
+      stdio: ['inherit', 'pipe', 'inherit'],
+    })
+    if (r.status === 0 && r.stdout.trim()) {
+      try {
+        const info = JSON.parse(r.stdout) as { issuer?: unknown; keys?: unknown }
+        if (typeof info.issuer === 'string') lastIss = info.issuer
+        if (Array.isArray(info.keys) && info.keys.length > 0) return lastIss
+      } catch {
+        // keep polling
+      }
+    }
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  throw new AstraleError(
+    'INSTANCE_NOT_READY',
+    `instance "${id}" not ready within 30s — JWKS unreachable`,
+    'Check tunnel + Transform Rule (see deploy.md / identity-model.md).',
+  )
+}
+
+function validateSlug(slug: string): void {
+  if (/[^a-zA-Z0-9.\-_]/.test(slug)) {
+    throw new AstraleError(
+      'UNSAFE_SLUG',
+      `domain slug "${slug}" is not path-safe`,
+      'schema.domain is used as a path prefix; encode ports via DomainEnv.port.',
+    )
+  }
+}
+
+// ── buildSpec ─────────────────────────────────────────────────────────
+
+export async function buildSpec(opts: BuildSpecOpts): Promise<BuildSpecResult> {
+  const resolved = await resolveDomainDir(opts.domainDir)
+  const envs = await loadDomainEnvs(resolved.dir)
+  const presetName = opts.preset ?? 'prod'
+  const domain = evalPreset(envs.domainEnvs, presetName, 'domain')
+
+  // The sdk's build-spec-cli reads env vars: <PREFIX>_BASE_DOMAIN /
+  // <PREFIX>_WORKER_URL where PREFIX depends on the template. We set a
+  // generic pair that the minimal-remote scaffold already consumes.
+  const domainModule = join(resolved.dir, 'domain.ts')
+  const outputPath = join(resolved.dir, 'spec.json')
+  if (!existsSync(domainModule)) {
+    throw new AstraleError(
+      'NO_DOMAIN_MODULE',
+      `Missing domain.ts at ${domainModule}`,
+      'buildSpec requires a `defineRemoteDomain()` export in domain.ts.',
+    )
+  }
+
+  const buildCli = findBuildSpecCli(resolved.dir)
+  // `domain.ts` expects `<UPPER_SNAKE>_BASE_DOMAIN` / `<UPPER_SNAKE>_WORKER_URL`
+  // (e.g. `NOTES_BASE_DOMAIN` for `notes`). The rename engine stamps the
+  // prefix at scaffold time; derive it from the slug the same way here.
+  const prefix = slugVariants(resolved.slug).upperSnake
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    [`${prefix}_BASE_DOMAIN`]: domain.domain,
+    [`${prefix}_WORKER_URL`]: domainUrl(domain),
+    // Generic forms — convenient for domains whose domain.ts/schema.ts
+    // read the unprefixed names (e.g. newer scaffolds).
+    BASE_DOMAIN: domain.domain,
+    WORKER_URL: domainUrl(domain),
+  }
+  const r = spawnSync('bun', ['run', buildCli, domainModule, outputPath], {
+    cwd: resolved.dir,
+    env,
+    stdio: 'inherit',
+  })
+  if (r.status !== 0) {
+    throw new AstraleError('BUILD_SPEC_FAILED', `build-spec failed (exit ${r.status ?? 'null'})`)
+  }
+  if (!existsSync(outputPath)) {
+    throw new AstraleError('SPEC_MISSING', `spec.json not produced at ${outputPath}`)
+  }
+  return { specPath: outputPath }
+}
+
+/**
+ * Locate the workspace-local sdk via its `build-spec-cli.ts`. Walks up
+ * from `startDir` up to 6 hops. Returns `{ sdkDir, buildSpecCli }` so
+ * deploy (needs sdkDir for `git rev-parse HEAD`) and buildSpec (needs
+ * the CLI path) share one walk.
+ */
+export function findSdk(startDir: string): { sdkDir: string; buildSpecCli: string } {
+  let dir = startDir
+  for (let i = 0; i < 6; i++) {
+    const sdkDir = join(dir, 'sdk')
+    const buildSpecCli = join(sdkDir, 'src', 'domain', 'build-spec-cli.ts')
+    if (existsSync(buildSpecCli)) return { sdkDir, buildSpecCli }
+    const parent = join(dir, '..')
+    if (parent === dir) break
+    dir = parent
+  }
+  throw new AstraleError(
+    'NO_SDK_DIR',
+    `Could not locate sdk/ upward from ${startDir}`,
+    'This command is workspace-local — run inside a checkout that ships the sdk.',
+  )
+}
+
+function findBuildSpecCli(startDir: string): string {
+  return findSdk(startDir).buildSpecCli
+}
+
+// ── Utility: find PID listening on port ───────────────────────────────
+
+function findListenerPid(port: number): number | null {
+  const r = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf-8' })
+  if (r.status !== 0) return null
+  const first = r.stdout.split('\n').filter(Boolean)[0]
+  const n = first ? Number.parseInt(first, 10) : NaN
+  return Number.isFinite(n) && n > 0 ? n : null
+}

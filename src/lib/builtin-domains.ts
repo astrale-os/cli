@@ -57,7 +57,7 @@ export async function resolveBuiltinDomain(name: BuiltinDomainName): Promise<Bui
   }
 
   const here = dirname(fileURLToPath(import.meta.url))
-  const monorepoRoot = resolve(here, '..', '..', '..', '..')
+  const monorepoRoot = resolve(here, '..', '..', '..')
   const monorepoSpec = join(monorepoRoot, 'kernel', 'domains', name, 'spec.json')
   const monorepoKey = join(monorepoRoot, 'kernel', 'domains', name, 'private-key.json')
   if ((await exists(monorepoSpec)) && (await exists(monorepoKey))) {

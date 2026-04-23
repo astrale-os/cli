@@ -108,13 +108,12 @@ async function startDockerMode(
   }
 
   log.success('Astrale started')
-  log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
   if (opts.noUi) {
-    log.dim('  Playground: run `pnpm -C cli/playground dev` → http://localhost:3200')
-    log.dim('  GUI:        run `pnpm -C cli/gui dev`        → http://localhost:3400')
+    log.dim(`  Manager: http://localhost:${config.managerPort}/mngt (API)`)
+    log.dim('  UIs:     run `pnpm -C cli/playground dev` + `pnpm -C cli/gui dev`')
   } else {
     log.info(`  Playground: http://localhost:3200`)
-    log.info(`  GUI:        http://localhost:3400`)
+    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
     log.dim(`  UI logs: ${LOGS_DIR}/{playground,gui}.stdout.log`)
   }
   log.dim(`  Logs:    astrale server logs -f`)
@@ -144,10 +143,8 @@ async function startHostMode(
       await stopUis({ silent: true })
       await spawnUis()
       log.info(`  Playground: http://localhost:3200`)
-      log.info(`  GUI:        http://localhost:3400`)
     } else {
-      log.dim('  Playground: run `pnpm -C cli/playground dev` → http://localhost:3200')
-      log.dim('  GUI:        run `pnpm -C cli/gui dev`        → http://localhost:3400')
+      log.dim('  UIs: run `pnpm -C cli/playground dev` + `pnpm -C cli/gui dev`')
     }
 
     let shuttingDown = false
@@ -204,13 +201,12 @@ async function startHostMode(
   }
 
   log.success('Astrale started in background (host-mode)')
-  log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
   if (opts.noUi) {
-    log.dim('  Playground: run `pnpm -C cli/playground dev` → http://localhost:3200')
-    log.dim('  GUI:        run `pnpm -C cli/gui dev`        → http://localhost:3400')
+    log.dim(`  Manager: http://localhost:${config.managerPort}/mngt (API)`)
+    log.dim('  UIs:     run `pnpm -C cli/playground dev` + `pnpm -C cli/gui dev`')
   } else {
     log.info(`  Playground: http://localhost:3200`)
-    log.info(`  GUI:        http://localhost:3400`)
+    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
     log.dim(`  UI logs: ${LOGS_DIR}/{playground,gui}.stdout.log`)
   }
   log.dim(`  PID:     ${managerProc.pid}`)

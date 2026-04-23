@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ExternalLink } from 'lucide-react'
 
 import type { BindingMode } from '@/providers/connection'
 
@@ -14,10 +14,12 @@ export function CommandBar({
   onOpenPalette,
   label,
   onBack,
+  shellDemoUrl,
 }: {
   onOpenPalette: () => void
   label?: string
   onBack?: () => void
+  shellDemoUrl?: string
 }) {
   const connection = useConnection()
 
@@ -79,7 +81,18 @@ export function CommandBar({
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Right section: palette shortcut */}
+      {/* Right section: shell demo link + palette shortcut */}
+      {shellDemoUrl && (
+        <a
+          href={shellDemoUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Shell demo
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      )}
       <span
         className="shrink-0 text-muted-foreground/60 cursor-pointer hover:text-foreground transition-colors"
         onClick={onOpenPalette}

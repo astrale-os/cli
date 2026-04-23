@@ -4,11 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:spec": "bun run scripts/build-spec.ts",
-    "infra:prepare": "bun run scripts/infra-prepare.ts",
-    "infra:down": "bun run scripts/infra-down.ts",
-    "instance:prepare": "bun run scripts/instance-prepare.ts",
-    "minimal-remote:deploy": "bun run scripts/minimal-remote-deploy.ts",
     "typecheck": "bunx tsgo --noEmit",
     "test": "bunx vitest run --config test/vitest.config.ts"
   },
