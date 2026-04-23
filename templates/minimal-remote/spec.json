@@ -1,0 +1,420 @@
+{
+  "meta": {
+    "baseDomain": "minimal.localhost",
+    "sdkCommit": "41b65f2",
+    "builtAt": "2026-04-23T09:26:02.302Z"
+  },
+  "nodes": [
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Named.property.name": "minimal.localhost",
+        "origin": "minimal.localhost",
+        "schema": "{\"version\":\"1.0\",\"domain\":\"minimal.localhost\",\"types\":{},\"interfaces\":{\"NoteOps\":{\"type\":\"interface\",\"name\":\"NoteOps\",\"extends\":[\"Node\"],\"properties\":{},\"methods\":{\"createNote\":{\"name\":\"createNote\",\"params\":{\"title\":{\"type\":\"string\"},\"body\":{\"type\":\"string\"}},\"returns\":{\"$nodeRef\":\"NoteOps\"},\"static\":true,\"inheritance\":\"default\"}}}},\"classes\":{\"Note\":{\"type\":\"node\",\"name\":\"Note\",\"implements\":[\"Node\",\"NoteOps\",\"Container\"],\"properties\":{\"title\":{\"type\":\"string\"},\"body\":{\"type\":\"string\"}},\"methods\":{}},\"references\":{\"type\":\"edge\",\"name\":\"references\",\"implements\":[\"Edge\"],\"endpoints\":[{\"name\":\"from_note\",\"types\":[\"Note\"]},{\"name\":\"to_note\",\"types\":[\"Note\"]}],\"properties\":{\"reason\":{\"type\":[\"string\",\"null\"]}},\"methods\":{}}},\"imports\":{\"Node\":{\"origin\":\"kernel.astrale.ai\",\"definition\":\"interface\"},\"Container\":{\"origin\":\"kernel.astrale.ai\",\"definition\":\"interface\"},\"Edge\":{\"origin\":\"kernel.astrale.ai\",\"definition\":\"interface\"}}}",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Domain",
+      "path": "/minimal.localhost"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Named.property.name": "interface.NoteOps",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/minimal.localhost/interface.NoteOps",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Folder",
+      "path": "/minimal.localhost/interface.NoteOps"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Named.property.name": "NoteOps",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/minimal.localhost/interface.NoteOps/self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Interface",
+      "path": "/minimal.localhost/interface.NoteOps/self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Named.property.name": "NoteOps.createNote",
+        "kernel.astrale.ai:interface.Function.property.ref": "interface.NoteOps.method.createNote",
+        "kernel.astrale.ai:interface.Function.property.inputSchema": "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"title\":{\"type\":\"string\"},\"body\":{\"type\":\"string\"}},\"required\":[\"title\",\"body\"],\"additionalProperties\":false}",
+        "kernel.astrale.ai:interface.Function.property.outputSchema": "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\"}",
+        "kernel.astrale.ai:interface.Function.property.isStatic": true,
+        "kernel.astrale.ai:interface.Function.property.output": "value",
+        "kernel.astrale.ai:interface.Function.property.code": "{\"authorize\":\"throw new Error(\\\"remote-only callable\\\")\",\"execute\":\"throw new Error(\\\"remote-only callable\\\")\"}",
+        "kernel.astrale.ai:interface.Function.property.inheritance": "default",
+        "kernel.astrale.ai:interface.Function.property.binding": "{\"remoteUrl\":\"http://minimal.localhost:8787\"}",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/minimal.localhost/interface.NoteOps/createNote",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Syscall",
+      "path": "/minimal.localhost/interface.NoteOps/createNote"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Named.property.name": "class.Note",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/minimal.localhost/class.Note",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Folder",
+      "path": "/minimal.localhost/class.Note"
+    },
+    {
+      "props": {
+        "type": "node",
+        "kernel.astrale.ai:interface.Named.property.name": "Note",
+        "propertyIndex": "{\"version\":1,\"byDomainOwner\":{\"minimal.localhost\":{\"Note\":{\"title\":{\"key\":\"minimal.localhost:class.Note.property.title\",\"propName\":\"title\",\"owner\":\"Note\",\"domain\":\"minimal.localhost\",\"private\":false,\"isAttribute\":true},\"body\":{\"key\":\"minimal.localhost:class.Note.property.body\",\"propName\":\"body\",\"owner\":\"Note\",\"domain\":\"minimal.localhost\",\"private\":false,\"isAttribute\":true}}},\"kernel.astrale.ai\":{\"Timestamped\":{\"createdAt\":{\"key\":\"kernel.astrale.ai:interface.Timestamped.property.createdAt\",\"propName\":\"createdAt\",\"owner\":\"Timestamped\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false},\"updatedAt\":{\"key\":\"kernel.astrale.ai:interface.Timestamped.property.updatedAt\",\"propName\":\"updatedAt\",\"owner\":\"Timestamped\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}},\"Remotable\":{\"externalId\":{\"key\":\"kernel.astrale.ai:interface.Remotable.property.externalId\",\"propName\":\"externalId\",\"owner\":\"Remotable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false},\"updatedAt\":{\"key\":\"kernel.astrale.ai:interface.Remotable.property.updatedAt\",\"propName\":\"updatedAt\",\"owner\":\"Remotable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false},\"onConflict\":{\"key\":\"kernel.astrale.ai:interface.Remotable.property.onConflict\",\"propName\":\"onConflict\",\"owner\":\"Remotable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}},\"Named\":{\"name\":{\"key\":\"kernel.astrale.ai:interface.Named.property.name\",\"propName\":\"name\",\"owner\":\"Named\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}},\"Descriptable\":{\"description\":{\"key\":\"kernel.astrale.ai:interface.Descriptable.property.description\",\"propName\":\"description\",\"owner\":\"Descriptable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}},\"Statused\":{\"status\":{\"key\":\"kernel.astrale.ai:interface.Statused.property.status\",\"propName\":\"status\",\"owner\":\"Statused\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}}}}}",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/minimal.localhost/class.Note/self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Class",
+      "path": "/minimal.localhost/class.Note/self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Named.property.name": "class.references",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/minimal.localhost/class.references",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Folder",
+      "path": "/minimal.localhost/class.references"
+    },
+    {
+      "props": {
+        "type": "edge",
+        "kernel.astrale.ai:interface.Named.property.name": "references",
+        "propertyIndex": "{\"version\":1,\"byDomainOwner\":{\"minimal.localhost\":{\"references\":{\"reason\":{\"key\":\"minimal.localhost:class.references.property.reason\",\"propName\":\"reason\",\"owner\":\"references\",\"domain\":\"minimal.localhost\",\"private\":false,\"isAttribute\":true}}},\"kernel.astrale.ai\":{\"Sluggable\":{\"slug\":{\"key\":\"kernel.astrale.ai:interface.Sluggable.property.slug\",\"propName\":\"slug\",\"owner\":\"Sluggable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}},\"Timestamped\":{\"createdAt\":{\"key\":\"kernel.astrale.ai:interface.Timestamped.property.createdAt\",\"propName\":\"createdAt\",\"owner\":\"Timestamped\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false},\"updatedAt\":{\"key\":\"kernel.astrale.ai:interface.Timestamped.property.updatedAt\",\"propName\":\"updatedAt\",\"owner\":\"Timestamped\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}},\"Remotable\":{\"externalId\":{\"key\":\"kernel.astrale.ai:interface.Remotable.property.externalId\",\"propName\":\"externalId\",\"owner\":\"Remotable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false},\"updatedAt\":{\"key\":\"kernel.astrale.ai:interface.Remotable.property.updatedAt\",\"propName\":\"updatedAt\",\"owner\":\"Remotable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false},\"onConflict\":{\"key\":\"kernel.astrale.ai:interface.Remotable.property.onConflict\",\"propName\":\"onConflict\",\"owner\":\"Remotable\",\"domain\":\"kernel.astrale.ai\",\"private\":false,\"isAttribute\":false}}}}}",
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/minimal.localhost/class.references/self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "__labels": [],
+      "class": "/:kernel.astrale.ai:class.Class",
+      "path": "/minimal.localhost/class.references/self"
+    }
+  ],
+  "edges": [
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost->:",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost",
+      "target": "/",
+      "slug": "minimal.localhost"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.installed_in-:minimal.localhost->:",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.installed_in",
+      "source": "/minimal.localhost",
+      "target": "/",
+      "slug": "minimal.localhost"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost:interface.NoteOps->:minimal.localhost",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost/interface.NoteOps",
+      "target": "/minimal.localhost",
+      "slug": "interface.NoteOps"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.of_domain-:minimal.localhost:interface.NoteOps:self->:minimal.localhost",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.of_domain",
+      "source": "/minimal.localhost/interface.NoteOps/self",
+      "target": "/minimal.localhost",
+      "slug": "interface.NoteOps"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost:interface.NoteOps:self->:minimal.localhost:interface.NoteOps",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost/interface.NoteOps/self",
+      "target": "/minimal.localhost/interface.NoteOps",
+      "slug": "self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.extends-:minimal.localhost:interface.NoteOps:self->:kernel.astrale.ai:interface.Node:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.extends",
+      "source": "/minimal.localhost/interface.NoteOps/self",
+      "target": "/kernel.astrale.ai/interface.Node/self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:minimal.localhost:interface.NoteOps:createNote->:minimal.localhost:interface.NoteOps:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/minimal.localhost/interface.NoteOps/createNote",
+      "target": "/minimal.localhost/interface.NoteOps/self",
+      "slug": "createNote"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost:interface.NoteOps:createNote->:minimal.localhost:interface.NoteOps",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost/interface.NoteOps/createNote",
+      "target": "/minimal.localhost/interface.NoteOps",
+      "slug": "createNote"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost:class.Note->:minimal.localhost",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost/class.Note",
+      "target": "/minimal.localhost",
+      "slug": "class.Note"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.of_domain-:minimal.localhost:class.Note:self->:minimal.localhost",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.of_domain",
+      "source": "/minimal.localhost/class.Note/self",
+      "target": "/minimal.localhost",
+      "slug": "class.Note"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost:class.Note:self->:minimal.localhost:class.Note",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost/class.Note/self",
+      "target": "/minimal.localhost/class.Note",
+      "slug": "self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.implements-:minimal.localhost:class.Note:self->:kernel.astrale.ai:interface.Node:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.implements",
+      "source": "/minimal.localhost/class.Note/self",
+      "target": "/kernel.astrale.ai/interface.Node/self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.implements-:minimal.localhost:class.Note:self->:minimal.localhost:interface.NoteOps:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.implements",
+      "source": "/minimal.localhost/class.Note/self",
+      "target": "/minimal.localhost/interface.NoteOps/self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.implements-:minimal.localhost:class.Note:self->:kernel.astrale.ai:interface.Container:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.implements",
+      "source": "/minimal.localhost/class.Note/self",
+      "target": "/kernel.astrale.ai/interface.Container/self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:init->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/init",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "init"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:createNode->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/createNode",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "createNode"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:get->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/get",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "get"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:update->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/update",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "update"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:delete->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/delete",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "delete"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:deleteNode->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/deleteNode",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "deleteNode"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:move->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/move",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "move"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:link->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/link",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "link"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:unlink->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/unlink",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "unlink"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:getLinks->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/getLinks",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "getLinks"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Node:getTree->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Node/getTree",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "getTree"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:minimal.localhost:interface.NoteOps:createNote->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/minimal.localhost/interface.NoteOps/createNote",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "createNote"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Container:listChildren->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Container/listChildren",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "listChildren"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.method_of-:kernel.astrale.ai:interface.Container:push->:minimal.localhost:class.Note:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.method_of",
+      "source": "/kernel.astrale.ai/interface.Container/push",
+      "target": "/minimal.localhost/class.Note/self",
+      "slug": "push"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost:class.references->:minimal.localhost",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost/class.references",
+      "target": "/minimal.localhost",
+      "slug": "class.references"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.of_domain-:minimal.localhost:class.references:self->:minimal.localhost",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.of_domain",
+      "source": "/minimal.localhost/class.references/self",
+      "target": "/minimal.localhost",
+      "slug": "class.references"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.has_parent-:minimal.localhost:class.references:self->:minimal.localhost:class.references",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.has_parent",
+      "source": "/minimal.localhost/class.references/self",
+      "target": "/minimal.localhost/class.references",
+      "slug": "self"
+    },
+    {
+      "props": {
+        "kernel.astrale.ai:interface.Remotable.property.externalId": "minimal.localhost-/:kernel.astrale.ai:class.implements-:minimal.localhost:class.references:self->:kernel.astrale.ai:interface.Edge:self",
+        "kernel.astrale.ai:interface.Remotable.property.onConflict": "merge"
+      },
+      "class": "/:kernel.astrale.ai:class.implements",
+      "source": "/minimal.localhost/class.references/self",
+      "target": "/kernel.astrale.ai/interface.Edge/self"
+    }
+  ]
+}

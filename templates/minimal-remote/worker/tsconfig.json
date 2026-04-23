@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "types": [],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@astrale-os/kernel-core": ["../../../core/index.ts"],
+      "@astrale-os/kernel-core/domain": ["../../../core/domain/index.ts"],
+      "@astrale-os/kernel-dsl": ["../../../dsl/src/index.ts"],
+      "@astrale-os/kernel-runtime": ["../../../runtime/index.ts"],
+      "@astrale-os/sdk": ["../../../../sdk/src/index.ts"],
+      "@astrale-os/sdk/server": ["../../../../sdk/src/server/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "../schema/**/*.ts", "../methods/**/*.ts"],
+  "exclude": ["node_modules"]
+}

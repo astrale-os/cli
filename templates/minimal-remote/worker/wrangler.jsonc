@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "minimal-remote-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-03-01",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "workers_dev": true,
+  // Uncomment when DNS for `minimal.test.astrale.ai` exists on the
+  // `astrale.ai` zone (see deploy.md → "Shipping to the shared
+  // `*.test.astrale.ai` zone"). Until then, `workers_dev: true` lets you
+  // deploy to the `*.workers.dev` subdomain for smoke testing.
+  // "routes": [
+  //   { "pattern": "minimal.test.astrale.ai/*", "zone_name": "astrale.ai" }
+  // ],
+  // The alias block is load-bearing — without it, wrangler resolves
+  // `@astrale-os/*` against the domain folder's node_modules (where the
+  // SDK bundle is CJS-flavoured) instead of source TS. Every entry
+  // below points at source-TS files so `wrangler dev` and `wrangler deploy`
+  // agree on one module graph.
+  "alias": {
+    "@astrale-os/sdk": "../../../../sdk/src/index.ts",
+    "@astrale-os/sdk/server": "../../../../sdk/src/server/index.ts",
+    "@astrale-os/kernel-core": "../../../core/index.ts",
+    "@astrale-os/kernel-core/domain": "../../../core/domain/index.ts",
+    "@astrale-os/kernel-dsl": "../../../dsl/src/index.ts",
+    "@astrale-os/kernel-runtime": "../../../runtime/index.ts"
+  }
+}

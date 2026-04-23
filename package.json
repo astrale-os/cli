@@ -15,11 +15,20 @@
   "bin": {
     "astrale": "./bin/astrale.ts"
   },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "tsconfig.json"
+  ],
   "type": "module",
+  "exports": {
+    "./keys": "./src/lib/keys.ts",
+    "./paths": "./src/lib/paths.ts"
+  },
   "scripts": {
     "preinstall": "node .check-workspace.cjs",
     "prepare": "husky",
-    "prepack": "pnpm --filter @astrale-os/astrale-playground build && pnpm --filter @astrale-os/astrale-gui build",
     "typecheck": "tsgo --noEmit",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
@@ -29,8 +38,6 @@
     "test:watch": "bun test --watch"
   },
   "dependencies": {
-    "@astrale-os/astrale-gui": "workspace:*",
-    "@astrale-os/astrale-playground": "workspace:*",
     "@astrale-os/kernel-adapters": ">=0.3.0 <1.0.0",
     "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
     "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",

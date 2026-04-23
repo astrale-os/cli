@@ -1,0 +1,28 @@
+{
+  "name": "@astrale-os/minimal-remote-domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:spec": "bun run scripts/build-spec.ts",
+    "infra:prepare": "bun run scripts/infra-prepare.ts",
+    "infra:down": "bun run scripts/infra-down.ts",
+    "instance:prepare": "bun run scripts/instance-prepare.ts",
+    "minimal-remote:deploy": "bun run scripts/minimal-remote-deploy.ts",
+    "typecheck": "bunx tsgo --noEmit",
+    "test": "bunx vitest run --config test/vitest.config.ts"
+  },
+  "dependencies": {
+    "@astrale-os/kernel-core": "workspace:*",
+    "@astrale-os/kernel-dsl": "workspace:*",
+    "@astrale-os/kernel-runtime": "workspace:*",
+    "@astrale-os/kernel-test": "workspace:*",
+    "@astrale-os/kernel-toolkit": "workspace:*",
+    "@astrale-os/sdk": ">=0.1.0 <1.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4",
+    "wrangler": "^4.0.0"
+  }
+}
