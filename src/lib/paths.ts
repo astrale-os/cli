@@ -10,4 +10,7 @@ export const MANAGER_PID_PATH = paths.managerPid
 export const UI_PID_PATH = paths.uiPid
 export const IDENTITIES_PATH = paths.identities
 export const INSTANCES_PATH = paths.instances
+export const MANAGER_CACHE_PATH = paths.managerCache
+export const TUNNELS_PATH = paths.tunnels
+export const TUNNELS_DIR = paths.tunnelsDir
 export const JOURNAL_PATH = paths.journal

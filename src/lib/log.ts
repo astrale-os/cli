@@ -1,6 +1,8 @@
 import chalk from 'chalk'
 import ora, { type Ora } from 'ora'
 
+import { AstraleError, NotImplementedError } from '../errors'
+
 export const log = {
   info: (msg: string) => console.log(chalk.blue('ℹ'), msg),
   success: (msg: string) => console.log(chalk.green('✔'), msg),
@@ -8,6 +10,19 @@ export const log = {
   error: (msg: string) => console.error(chalk.red('✖'), msg),
   step: (msg: string) => console.log(chalk.cyan('→'), msg),
   dim: (msg: string) => console.log(chalk.dim(msg)),
+}
+
+/** Report an error with hint (when present) and exit. */
+export function fatal(e: unknown): never {
+  const msg = e instanceof Error ? e.message : String(e)
+  log.error(msg)
+  if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
+  process.exit(1)
+}
+
+/** Shortcut for stub commands that aren't wired in v1 (§15). */
+export function fatalNotImplemented(feature: string, hint?: string): never {
+  fatal(new NotImplementedError(feature, hint))
 }
 
 /**

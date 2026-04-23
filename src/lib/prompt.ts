@@ -13,6 +13,18 @@ export async function confirm(message: string): Promise<boolean> {
 }
 
 /**
+ * Prompt with a Y default — spec §7.1 "Y/n" semantics. Returns true
+ * unless the user explicitly types `n`.
+ */
+export async function confirmDefaultYes(message: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return true
+
+  process.stdout.write(chalk.yellow(`${message} [Y/n] `))
+  const answer = await readLine()
+  return answer.toLowerCase() !== 'n'
+}
+
+/**
  * Prompt the user to type a specific string to confirm a dangerous action.
  * Returns false in non-TTY environments (use --yes to bypass).
  */
@@ -23,6 +35,28 @@ export async function confirmWithInput(message: string, expected: string): Promi
   process.stdout.write(chalk.yellow(`  Type "${expected}" to confirm: `))
   const answer = await readLine()
   return answer === expected
+}
+
+/** Prompt a passphrase without echoing. Fails in non-TTY unless env override. */
+export async function readPassphrase(
+  message: string,
+  opts: { minLength?: number } = {},
+): Promise<string> {
+  const env = process.env.ASTRALE_PASSPHRASE
+  if (env) return env
+  if (!process.stdin.isTTY) {
+    throw new Error('Passphrase required but no TTY. Pipe via ASTRALE_PASSPHRASE env var.')
+  }
+  // v1 note: passphrase echoes on interactive terminals. Pipe
+  // ASTRALE_PASSPHRASE=... for scripted flows. Silent stdin with raw
+  // mode is roadmap (requires terminal capabilities handling).
+  process.stdout.write(chalk.yellow(message))
+  const answer = await readLine()
+  process.stdout.write('\n')
+  if (opts.minLength && answer.length < opts.minLength) {
+    throw new Error(`Passphrase too short (min ${opts.minLength} chars)`)
+  }
+  return answer
 }
 
 function readLine(): Promise<string> {

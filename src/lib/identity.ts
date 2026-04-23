@@ -2,13 +2,18 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
-import { validateName } from './instance'
+import { persistKeypair, removeKeypair } from './keys'
 import { log } from './log'
 import { IDENTITIES_PATH } from './paths'
+import { RegistryModeSchema, validateName, type RegistryMode } from './validation'
 
 export const IdentitySchema = z.object({
   subject: z.string(),
   createdAt: z.string(),
+  // V3: `local` = machine-only, `remote` = mirrored via astrale cloud (§2.7).
+  mode: RegistryModeSchema.optional(),
+  /** JWK thumbprint of the identity keypair. Optional for legacy entries. */
+  kid: z.string().optional(),
 })
 
 export const IdentityStoreSchema = z.object({
@@ -23,7 +28,7 @@ function seed(): IdentityStore {
   return {
     default: 'manager',
     identities: {
-      manager: { subject: 'manager', createdAt: new Date().toISOString() },
+      manager: { subject: 'manager', createdAt: new Date().toISOString(), mode: 'local' },
     },
   }
 }
@@ -45,15 +50,26 @@ export async function writeIdentities(store: IdentityStore): Promise<void> {
   await writeFile(IDENTITIES_PATH, JSON.stringify(store, null, 2) + '\n')
 }
 
-export async function createIdentity(name: string, subject?: string): Promise<Identity> {
+export async function createIdentity(
+  name: string,
+  opts: { subject?: string; mode?: RegistryMode; skipKeygen?: boolean } = {},
+): Promise<Identity> {
   validateName(name, 'Identity')
   const store = await readIdentities()
   if (store.identities[name]) {
     throw new Error(`Identity "${name}" already exists`)
   }
+  const subject = opts.subject ?? name
+  let kid: string | undefined
+  if (!opts.skipKeygen) {
+    const result = await persistKeypair(subject)
+    kid = result.kid
+  }
   const identity: Identity = {
-    subject: subject ?? name,
+    subject,
     createdAt: new Date().toISOString(),
+    mode: opts.mode ?? 'local',
+    kid,
   }
   store.identities[name] = identity
   await writeIdentities(store)
@@ -62,7 +78,8 @@ export async function createIdentity(name: string, subject?: string): Promise<Id
 
 export async function deleteIdentity(name: string): Promise<void> {
   const store = await readIdentities()
-  if (!store.identities[name]) {
+  const entry = store.identities[name]
+  if (!entry) {
     throw new Error(`Identity "${name}" not found`)
   }
   if (store.default === name) {
@@ -70,6 +87,7 @@ export async function deleteIdentity(name: string): Promise<void> {
       `Cannot delete the default identity "${name}". Switch default first with: astrale identity use <other>`,
     )
   }
+  await removeKeypair(entry.subject)
   delete store.identities[name]
   await writeIdentities(store)
 }
@@ -101,4 +119,13 @@ export async function getIdentity(name: string): Promise<Identity> {
     throw new Error(`Identity "${name}" not found. Run: astrale identity create ${name}`)
   }
   return identity
+}
+
+/** Migrate an identity to a new registry mode (local ↔ remote, §2.7). */
+export async function setIdentityMode(name: string, mode: RegistryMode): Promise<void> {
+  const store = await readIdentities()
+  const entry = store.identities[name]
+  if (!entry) throw new Error(`Identity "${name}" not found`)
+  entry.mode = mode
+  await writeIdentities(store)
 }

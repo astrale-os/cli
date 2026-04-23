@@ -4,7 +4,7 @@ import type { KernelCommandOpts } from './types'
 
 import { AstraleError } from '../errors'
 import { readConfig } from '../lib/config'
-import { resolveKernelUrl } from '../lib/instance'
+import { getActive, resolveInstance } from '../lib/instance'
 import { resolveCredential } from './auth'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -26,8 +26,23 @@ export async function withKernelClient<T>(
   fn: (ctx: ClientContext) => Promise<T>,
 ): Promise<T> {
   const config = await readConfig()
-  const url = await resolveKernelUrl(opts, config)
-  const credential = await resolveCredential(opts, config)
+  // Ad-hoc `--url` — unknown kernel. Stamp the URL itself as audience,
+  // no slug for per-instance signing.
+  let url: string
+  let audience: string
+  let slug: string | undefined
+  if (opts.url && !opts.instance) {
+    url = opts.url
+    audience = opts.url
+    slug = undefined
+  } else {
+    const identifier = opts.instance ?? (await getActive(config)).name
+    const resolved = await resolveInstance(identifier, config)
+    url = opts.url ?? resolved.url
+    audience = resolved.issuer ?? resolved.url
+    slug = identifier
+  }
+  const credential = await resolveCredential(opts, config, audience, slug)
 
   const client = new KernelClient<FnMap>({
     url,

@@ -21,3 +21,125 @@ export class AuthError extends AstraleError {
     super('AUTH_ERROR', message, hint ?? 'Run `astrale init` to set up keys')
   }
 }
+
+// ── V3 typed errors (SPEC.md §4.6, §4.7, §5.1, §10, §11, §12) ─────────
+
+export class IssuerUnreachableError extends AstraleError {
+  constructor(url: string, hint?: string) {
+    super(
+      'ISSUER_UNREACHABLE',
+      `Issuer endpoint "${url}" not reachable`,
+      hint ?? 'Check the tunnel / proxy is up, or re-run `astrale start`',
+    )
+  }
+}
+
+export class ReservedSlugError extends AstraleError {
+  constructor(slug: string) {
+    super(
+      'RESERVED_SLUG',
+      `Slug "${slug}" is reserved`,
+      'Pick a different slug — "manager" is the machine-level manager',
+    )
+  }
+}
+
+export class IdentifierCollisionError extends AstraleError {
+  constructor(identifier: string, existingEntity: string) {
+    super(
+      'IDENTIFIER_COLLISION',
+      `Identifier "${identifier}" collides with existing ${existingEntity}`,
+      'Slug and name share the same CLI namespace (§4.7). Pick a unique value.',
+    )
+  }
+}
+
+export class CannotDeleteManagerError extends AstraleError {
+  constructor() {
+    super(
+      'CANNOT_DELETE_MANAGER',
+      'The local manager cannot be deleted',
+      'Use `astrale stop` to shut it down',
+    )
+  }
+}
+
+export class CapabilityMissingError extends AstraleError {
+  constructor(capability: string, adapter: string) {
+    super(
+      'CAPABILITY_MISSING',
+      `Adapter "${adapter}" does not support capability "${capability}"`,
+      'Choose a different adapter or avoid commands that require this capability',
+    )
+  }
+}
+
+export class LockTimeoutError extends AstraleError {
+  constructor(registry: string) {
+    super(
+      'LOCK_TIMEOUT',
+      `Timed out acquiring lock on registry "${registry}"`,
+      'Another CLI instance may be running — retry shortly',
+    )
+  }
+}
+
+export class CoupledMigrationRequiredError extends AstraleError {
+  constructor(entity: string, coupled: string) {
+    super(
+      'COUPLED_MIGRATION_REQUIRED',
+      `Cannot migrate "${entity}" alone — it is coupled to "${coupled}"`,
+      'Rerun with `--cascade` to migrate both, or `--force-decouple` to break the link',
+    )
+  }
+}
+
+export class TunnelNotConfiguredError extends AstraleError {
+  constructor() {
+    super(
+      'TUNNEL_NOT_CONFIGURED',
+      'No tunnel adapter is configured',
+      'Run `astrale tunnel setup` to configure a TunnelAdapter',
+    )
+  }
+}
+
+export class TunnelDnsUnresolvedError extends AstraleError {
+  constructor(hostname: string) {
+    super(
+      'TUNNEL_DNS_UNRESOLVED',
+      `Tunnel DNS did not resolve for "${hostname}"`,
+      'Verify your tunnel provider DNS is live before re-running `astrale tunnel setup`',
+    )
+  }
+}
+
+export class BuiltinDomainNotFoundError extends AstraleError {
+  constructor(name: string) {
+    super(
+      'BUILTIN_DOMAIN_NOT_FOUND',
+      `Builtin domain "${name}" could not be resolved`,
+      `Set ASTRALE_${name.toUpperCase()}_SPEC and ASTRALE_${name.toUpperCase()}_KEY, install @astrale-os/${name}-domain, or run from the monorepo.`,
+    )
+  }
+}
+
+export class IdentityKeyMissingError extends AstraleError {
+  constructor(subject: string) {
+    super(
+      'IDENTITY_KEY_MISSING',
+      `No private key on disk for identity "${subject}"`,
+      `Run \`astrale identity create ${subject}\` to generate one, or \`astrale init\` to bootstrap.`,
+    )
+  }
+}
+
+export class NotImplementedError extends AstraleError {
+  constructor(feature: string, hint?: string) {
+    super(
+      'NOT_IMPLEMENTED',
+      `"${feature}" is not implemented in v1`,
+      hint ?? 'Track the V3 spec implementation progress for updates',
+    )
+  }
+}

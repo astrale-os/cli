@@ -12,25 +12,61 @@ export type Paths = {
   uiPid: string
   identities: string
   instances: string
+  managerCache: string
+  tunnels: string
+  tunnelsDir: string
   journal: string
 }
 
+/**
+ * Resolve the Astrale home dir.
+ *
+ * Priority: `ASTRALE_HOME` env var (set by the container entrypoint) →
+ * explicit arg → `$HOME/.astrale`. The env override exists because inside
+ * the `manager` container the process UID has no `/etc/passwd` entry, so
+ * `os.homedir()` falls back to `/` — which produces `/.astrale` (root FS,
+ * not writable). The container sets `ASTRALE_HOME=/astrale` to match the
+ * bind-mounted layout.
+ */
+function resolveHome(home?: string): string {
+  return home ?? process.env.ASTRALE_HOME ?? join(homedir(), '.astrale')
+}
+
 export function createPaths(home?: string): Paths {
-  const base = home ?? join(homedir(), '.astrale')
+  const base = resolveHome(home)
   return {
     home: base,
-    keys: join(base, 'keys'),
-    logs: join(base, 'logs'),
-    data: join(base, 'data'),
+    keys: process.env.ASTRALE_KEYS_DIR ?? join(base, 'keys'),
+    logs: process.env.ASTRALE_LOGS_DIR ?? join(base, 'logs'),
+    data: process.env.ASTRALE_DATA_DIR ?? join(base, 'data'),
     config: join(base, 'config.json'),
     compose: join(base, 'docker-compose.yml'),
     managerPid: join(base, 'manager.pid'),
     uiPid: join(base, 'ui.pid'),
     identities: join(base, 'identities.json'),
     instances: join(base, 'instances.json'),
-    journal: join(base, 'logs', 'events.ndjson'),
+    managerCache: join(base, 'manager-cache.json'),
+    tunnels: join(base, 'tunnels.json'),
+    tunnelsDir: join(base, 'tunnels'),
+    journal: join(process.env.ASTRALE_LOGS_DIR ?? join(base, 'logs'), 'events.ndjson'),
   }
 }
 
 /** Default singleton used by all lib modules. */
 export const paths: Paths = createPaths()
+
+/** True when the CLI is running inside the `manager` docker-compose service. */
+export function isInContainer(): boolean {
+  return process.env.ASTRALE_IN_CONTAINER === '1'
+}
+
+/** Parse a positive-integer env var; throws with a clear label if malformed. */
+export function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error(`${name}="${raw}" is not a valid positive integer`)
+  }
+  return n
+}

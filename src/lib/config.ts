@@ -8,6 +8,11 @@ import { CONFIG_PATH } from './paths'
 export const AstraleConfigSchema = z.object({
   managerPort: z.number().int().positive().default(4400),
   falkorPort: z.number().int().positive().default(6379),
+  // FalkorDB hostname reachable by the manager process. On host-mode this
+  // is `localhost`; inside the `manager` docker-compose service the
+  // manager entrypoint overrides to the compose network alias `falkordb`
+  // via `ASTRALE_FALKOR_HOST`.
+  falkorHost: z.string().default('localhost'),
   uiPort: z.number().int().positive().default(4300),
   graphName: z.string().default('astrale-manager'),
   // The manager kernel signs tokens with its own base URL as the `iss`

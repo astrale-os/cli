@@ -7,10 +7,17 @@ export type OutputOpts = {
   format?: 'yaml' | 'json'
 }
 
+export type RawOutputOpts = Pick<OutputOpts, 'raw' | 'json'>
+
+export const RAW_OUTPUT_OPTIONS = [
+  { flags: '--raw', description: 'Output raw JSON (no colors)' },
+  { flags: '--json', description: 'Alias for --raw' },
+] as const
+
 /**
  * Determine if output should be raw (machine-readable).
  */
-export function isRawOutput(opts?: Pick<OutputOpts, 'raw' | 'json'>): boolean {
+export function isRawOutput(opts?: RawOutputOpts): boolean {
   return !!(opts?.raw || opts?.json) || !(process.stdout.isTTY ?? false)
 }
 
