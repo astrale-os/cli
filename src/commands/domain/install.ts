@@ -1,10 +1,11 @@
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
 import { runKernelCommand } from '../../kernel'
+import { isBuiltinDomainName, resolveBuiltinDomain } from '../../lib/builtin-domains'
 import { buildIdentityBinding, loadPrivateJwk } from '../../lib/domain-identity'
 import { log } from '../../lib/log'
 import { output } from '../../lib/output'
@@ -64,7 +65,21 @@ export default {
     },
   ],
   action: async (specFile: string, opts: KernelCommandOpts & { key?: string }) => {
-    const filePath = resolve(specFile)
+    // Builtin resolution: if specFile is not an existing path and matches a
+    // builtin name, resolve spec + key via resolveBuiltinDomain.
+    let filePath = resolve(specFile)
+    let resolvedKey = opts.key
+    const looksLikePath = specFile.includes('/') || specFile.endsWith('.json')
+    const fileExists = await access(filePath).then(
+      () => true,
+      () => false,
+    )
+    if (!fileExists && !looksLikePath && isBuiltinDomainName(specFile)) {
+      const builtin = await resolveBuiltinDomain(specFile)
+      filePath = builtin.specPath
+      resolvedKey = resolvedKey ?? builtin.keyPath
+      log.dim(`  builtin "${specFile}" resolved via ${builtin.source}`)
+    }
 
     let raw: string
     try {
@@ -114,8 +129,8 @@ export default {
     }
 
     let identity: Awaited<ReturnType<typeof buildIdentityBinding>> | undefined
-    if (opts.key) {
-      const privateJwk = await loadPrivateJwk(opts.key)
+    if (resolvedKey) {
+      const privateJwk = await loadPrivateJwk(resolvedKey)
       identity = await buildIdentityBinding(
         spec as Parameters<typeof buildIdentityBinding>[0],
         privateJwk,
