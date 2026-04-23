@@ -1,0 +1,3 @@
+# The manager image does not COPY anything — workspace is bind-mounted
+# at runtime. Ignore everything so `docker build` ships an empty context.
+*

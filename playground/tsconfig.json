@@ -1,0 +1,18 @@
+{
+  "extends": "@astrale/typescript-config/base",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "outDir": "dist",
+    "rootDir": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@kernel-domains/*": ["../../kernel/domains/*"]
+    },
+    "noEmit": true
+  },
+  "include": ["src"]
+}

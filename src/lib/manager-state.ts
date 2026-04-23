@@ -1,11 +1,14 @@
 import type { Kernel } from '@astrale-os/kernel-toolkit'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 
 import type { AstraleConfig } from './config'
 
+import { API_TOKEN_ENV } from './api-token'
+import { isInContainer } from './env'
 import { resolveAuth } from './keys'
-import { KEYS_DIR, MANAGER_PID_PATH } from './paths'
+import { JOURNAL_PATH, KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from './paths'
 
 export type ManagerState = {
   running: boolean
@@ -80,7 +83,7 @@ async function readManagerPid(): Promise<number | undefined> {
  *   - `manager: inProcessManager(...)` — enables multi-instance mode. The driver
  *     installs `ManagerSchema` (`KernelInstance/*`) into the manager graph and
  *     mounts the multiplex routes (`/mngt` for manager dispatch, `/:id/` for
- *     child direct access, `/mgt/:id/` for admin gateway, per-instance JWKS).
+ *     child direct access, per-instance JWKS).
  *   - `transports: [node()]` — single Node HTTP server hosting everything.
  *
  * The child `spawn` callback boots each sub-kernel with its own `falkordb`
@@ -92,8 +95,10 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     issuer: config.issuer,
     subject: 'manager',
   })
-  const { Kernel, falkordb, inProcessManager, node } = await import('@astrale-os/kernel-toolkit')
+  const { Kernel, falkordb, inProcessManager, ndjsonJournal } =
+    await import('@astrale-os/kernel-toolkit')
   const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
+  const { nodeWithUi } = await import('./ui-host')
 
   const kernel = new Kernel({
     mode: 'manager',
@@ -103,19 +108,46 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     drivers: {
       storage: falkordb({
         graphName: config.graphName,
+        host: config.falkorHost,
         port: config.falkorPort,
       }),
-      transports: [node()],
+      transports: [
+        nodeWithUi({
+          credential: auth.credential,
+          apiToken: process.env[API_TOKEN_ENV] || undefined,
+        }),
+      ],
+      observability: ndjsonJournal({ path: JOURNAL_PATH, tags: { kernel: 'manager' } }),
       manager: inProcessManager({
         async spawn(_parent, cfg) {
+          const childUrl = cfg.issuer ?? `http://localhost:${config.managerPort}/${cfg.id}`
+          // Load (or lazily generate) the per-instance keypair. The CLI
+          // pre-generates this at `astrale instance create`; for legacy
+          // instances registered without CLI keygen, `resolveAuth` falls
+          // back to a fresh keypair written on disk under the instance's
+          // id — subsequent calls with `-i <id>` then target this key.
+          const childAuth = await resolveAuth(KEYS_DIR, {
+            issuer: childUrl,
+            subject: cfg.id,
+          })
           const child = new Kernel({
-            publicUrl: cfg.issuer ?? `http://localhost:${config.managerPort}/${cfg.id}`,
+            publicUrl: childUrl,
             id: cfg.id,
+            auth: childAuth,
             drivers: {
+              // Children share the manager's FalkorDB connection. `cfg.host`
+              // is persisted at register time (often "localhost") but in
+              // docker-mode the manager reaches FalkorDB via the compose
+              // network alias (`falkordb`). The manager's `config.falkorHost`
+              // is the source of truth — inherit it here.
               storage: falkordb({
                 graphName: cfg.graphName,
-                host: cfg.host,
-                port: cfg.port,
+                host: config.falkorHost,
+                port: config.falkorPort,
+              }),
+              observability: ndjsonJournal({
+                path: join(LOGS_DIR, cfg.id, 'events.ndjson'),
+                tags: { kernel: cfg.id },
               }),
             },
           })
@@ -134,8 +166,20 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
       }),
     },
   })
-  await kernel.listen({ port: config.managerPort })
-  await writeManagerPid(process.pid)
+  // In container mode, bind to 0.0.0.0 so the Docker port mapping
+  // (127.0.0.1:4400→container:4400) can reach the listener. On host-mode
+  // the default (bun's localhost) is correct.
+  const container = isInContainer()
+  await kernel.listen({
+    port: config.managerPort,
+    ...(container ? { hostname: '0.0.0.0' } : {}),
+  })
+  // Skip the host PID file when running inside the `manager` container —
+  // the PID file is a host-mode concern (used by `astrale stop` to signal
+  // the bun process). In container mode, docker tracks the lifecycle.
+  if (!container) {
+    await writeManagerPid(process.pid)
+  }
   return kernel
 }
 

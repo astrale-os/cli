@@ -2,8 +2,16 @@ import { mkdir } from 'node:fs/promises'
 import { stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline/promises'
 
+import { API_TOKEN_PARAM, generateApiToken } from '../lib/api-token'
 import { writeConfig, configExists, type AstraleConfig } from '../lib/config'
-import { writeComposeFile, startFalkor } from '../lib/docker'
+import {
+  assertDockerAvailable,
+  buildManagerImage,
+  composeUp,
+  managerImageExists,
+  managerImageTag,
+  writeComposeFile,
+} from '../lib/docker'
 import { resolveAuth } from '../lib/keys'
 import { log, spinner } from '../lib/log'
 import { ASTRALE_HOME, KEYS_DIR, DATA_DIR, LOGS_DIR, COMPOSE_PATH } from '../lib/paths'
@@ -64,6 +72,7 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
     managerPort,
     uiPort,
     falkorPort,
+    falkorHost: 'localhost',
     graphName,
     // The manager signs tokens with its own base URL as the issuer, and the
     // CLI must sign JWTs with that same value for the manager's JWKS lookup
@@ -92,28 +101,52 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
   await writeConfig(config)
   log.success('Config written')
 
+  // ── Build manager image (if missing) ───────────────────────
+
+  if (!(await managerImageExists())) {
+    const tag = await managerImageTag()
+    s = spinner(`Building manager image astrale-os/manager:${tag}...`)
+    try {
+      await buildManagerImage()
+      s.succeed(`Built astrale-os/manager:${tag}`)
+    } catch (e) {
+      s.fail('Manager image build failed')
+      throw e
+    }
+  } else {
+    log.dim('  manager image already present — skipping build')
+  }
+
   // ── Write compose file ─────────────────────────────────────
 
-  await writeComposeFile(COMPOSE_PATH, { falkorPort })
+  const apiToken = generateApiToken()
+  await writeComposeFile(COMPOSE_PATH, {
+    falkorPort,
+    managerPort,
+    graphName,
+    apiToken,
+  })
   log.success('Docker compose file written')
 
-  // ── Start FalkorDB ─────────────────────────────────────────
+  // ── Start the stack (falkordb + manager) ───────────────────
 
-  s = spinner('Starting FalkorDB...')
-  await startFalkor(COMPOSE_PATH)
-  s.succeed('FalkorDB is running')
+  s = spinner('Starting stack (falkordb + manager)...')
+  await composeUp(COMPOSE_PATH)
+  s.succeed('Stack is up')
 
   // ── Done ──────────────────────────────────────────────────
 
   console.log('')
   log.success('Setup complete\n')
   log.dim(`  Manager:  http://localhost:${config.managerPort}/mngt`)
-  log.dim(`  UI:       http://localhost:${config.uiPort}`)
+  log.info(`  UI:       http://localhost:${config.managerPort}/?${API_TOKEN_PARAM}=${apiToken}`)
+  log.dim('  (token is regenerated on every `astrale start`)')
   log.dim(`  Graph:    ${config.graphName}`)
   console.log('')
   log.info('Next steps:')
-  log.dim('  astrale start     # start the manager in the background')
-  log.dim('  astrale status    # check status')
+  log.dim('  astrale status         # check status')
+  log.dim('  astrale server logs    # stream manager logs')
+  log.dim('  astrale stop           # stop the stack')
 }
 
 /** Resolve a numeric option: explicit flag wins; otherwise prompt unless --yes. */
@@ -148,12 +181,10 @@ async function resolveString(
 
 async function checkDocker(): Promise<void> {
   try {
-    const proc = Bun.spawn(['docker', 'info'], { stdout: 'pipe', stderr: 'pipe' })
-    const code = await proc.exited
-    if (code !== 0) throw new Error()
-    log.success('Docker is running')
+    await assertDockerAvailable()
+    log.success('Docker + compose detected')
   } catch {
-    log.error('Docker is not running. Please install and start Docker first.')
+    log.error('Docker or Docker Compose is not available. Install Docker Desktop first.')
     log.dim('  https://docs.docker.com/get-docker/')
     process.exit(1)
   }

@@ -7,17 +7,25 @@ import { unlink } from 'node:fs/promises'
 
 import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
+import { composeDown, composeUp, isManagerRunning, waitManagerHealthy } from '../lib/docker'
 import { formatElapsed } from '../lib/format'
 import { getActive, resolveInstanceId } from '../lib/instance'
 import { log, spinner } from '../lib/log'
 import { startManager, detectManagerState, removeManagerPid } from '../lib/manager-state'
-import { INSTANCES_PATH, JOURNAL_PATH, MANAGER_PID_PATH, UI_PID_PATH } from '../lib/paths'
+import {
+  COMPOSE_PATH,
+  INSTANCES_PATH,
+  JOURNAL_PATH,
+  MANAGER_PID_PATH,
+  UI_PID_PATH,
+} from '../lib/paths'
 import { stopCommand } from './stop'
 
 type ResetOptions = {
   instance?: string
   yes?: boolean
   hard?: boolean
+  hostMode?: boolean
 }
 
 export async function resetCommand(opts: ResetOptions): Promise<void> {
@@ -29,19 +37,13 @@ export async function resetCommand(opts: ResetOptions): Promise<void> {
   const active = await getActive(config)
   const targetName = opts.instance ?? active.name
 
-  // Detect whether we're targeting the manager
-  const isManager = targetName === 'manager' || active.url?.endsWith('/mngt')
-
-  if (isManager && !opts.instance) {
+  // `entry.url`/`entry.issuer` are no longer persisted for local-children
+  // — branch on `kind` instead.
+  if (targetName === 'manager' || active.kind === 'manager') {
     return resetManager(config, opts)
   }
 
-  if (isManager && opts.instance === 'manager') {
-    return resetManager(config, opts)
-  }
-
-  // Check for remote instance (has url, not manager)
-  if (active.url && !opts.instance) {
+  if (active.kind === 'bookmark' && !opts.instance) {
     log.error(`Cannot reset remote instance "${active.name}"`)
     log.dim('  Remote instances must be reset from their host machine')
     process.exit(1)
@@ -94,15 +96,18 @@ async function resetManager(
 
     const startTime = performance.now()
 
-    // Remove all sub-instances (stop + clear graph + delete from store)
-    for (const instance of instances) {
-      const spin = spinner(`Removing instance "${instance.id}"...`)
-      await client.call(
-        '/manager.astrale.ai/class.KernelInstance/delete',
-        { id: instance.id },
-        credential,
+    if (instances.length > 0) {
+      const spin = spinner(`Removing ${instances.length} instance(s)...`)
+      await Promise.all(
+        instances.map((instance) =>
+          client.call(
+            '/manager.astrale.ai/class.KernelInstance/delete',
+            { id: instance.id },
+            credential,
+          ),
+        ),
       )
-      spin.succeed(`Removed instance "${instance.id}"`)
+      spin.succeed(`Removed ${instances.length} instance(s)`)
     }
 
     client.disconnect()
@@ -132,14 +137,10 @@ async function resetManager(
     log.success(`Manager reset ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
 
     const session = managerSession
-    const { startUI, stopUI } = await import('../lib/ui')
-    startUI(config)
-
     log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-    log.info(`Playground UI on http://localhost:${config.uiPort}`)
+    log.info(`Playground UI on http://localhost:${config.managerPort}/`)
     log.info('Press Ctrl+C to stop')
     const cleanup = async () => {
-      stopUI()
       await session.close()
       await removeManagerPid()
       process.exit(0)
@@ -237,14 +238,10 @@ async function resetSubInstance(
 
     if (managerSession) {
       const session = managerSession
-      const { startUI, stopUI } = await import('../lib/ui')
-      startUI(config)
-
       log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-      log.info(`Playground UI on http://localhost:${config.uiPort}`)
+      log.info(`Playground UI on http://localhost:${config.managerPort}/`)
       log.info('Press Ctrl+C to stop')
       const cleanup = async () => {
-        stopUI()
         await session.close()
         await removeManagerPid()
         process.exit(0)
@@ -269,6 +266,69 @@ async function resetHard(
   config: Awaited<ReturnType<typeof readConfig>>,
   opts: ResetOptions,
 ): Promise<void> {
+  const dockerMode = !opts.hostMode && (await isManagerRunning(COMPOSE_PATH).catch(() => false))
+  if (dockerMode) {
+    await resetHardDocker(config, opts)
+  } else {
+    await resetHardHost(config, opts)
+  }
+}
+
+async function resetHardDocker(
+  config: Awaited<ReturnType<typeof readConfig>>,
+  opts: ResetOptions,
+): Promise<void> {
+  if (!opts.yes) {
+    process.stdout.write(
+      chalk.red(
+        'This will tear down the compose stack, DELETE all FalkorDB graphs (volume), and clear local state. Continue? [y/N] ',
+      ),
+    )
+    const answer = await readLine()
+    if (answer.toLowerCase() !== 'y') {
+      log.info('Aborted')
+      process.exit(0)
+    }
+  }
+
+  const startTime = performance.now()
+
+  // Tear down containers + volumes. `-v` drops the falkordb data volume.
+  const s1 = spinner('Stopping stack + removing volumes...')
+  try {
+    await composeDown({ volumes: true }, COMPOSE_PATH)
+    s1.succeed('Stack down, volumes removed')
+  } catch (e) {
+    s1.fail('Compose down failed')
+    throw e
+  }
+
+  // Clear CLI-side state that doesn't live in falkordb.
+  const stateFiles = [INSTANCES_PATH, MANAGER_PID_PATH, UI_PID_PATH, JOURNAL_PATH]
+  await Promise.all(stateFiles.map((file) => unlink(file).catch(() => {})))
+  log.dim('  Local state files cleared')
+
+  // Bring the stack back up — fresh falkordb + manager.
+  const s2 = spinner('Restarting stack...')
+  try {
+    await composeUp(COMPOSE_PATH)
+    await waitManagerHealthy(`http://localhost:${config.managerPort}/mngt/`)
+    s2.succeed('Stack is up')
+  } catch (e) {
+    s2.fail('Stack restart failed')
+    throw e
+  }
+
+  const elapsed = performance.now() - startTime
+  log.success(`Hard reset complete ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
+  log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
+  log.info(`Playground UI on http://localhost:${config.managerPort}/`)
+}
+
+async function resetHardHost(
+  config: Awaited<ReturnType<typeof readConfig>>,
+  opts: ResetOptions,
+): Promise<void> {
   if (!opts.yes) {
     process.stdout.write(
       chalk.red('This will DELETE all FalkorDB graphs and reset all local state. Continue? [y/N] '),
@@ -286,7 +346,7 @@ async function resetHard(
   const state = await detectManagerState(config)
   if (state.running) {
     const spin = spinner('Stopping manager...')
-    await stopCommand()
+    await stopCommand({ hostMode: true })
     spin.succeed('Manager stopped')
   }
 
@@ -302,9 +362,9 @@ async function resetHard(
     const graphs = await listGraphs({ port: config.falkorPort })
     if (graphs.length > 0) {
       const spin = spinner(`Deleting ${graphs.length} graph(s)...`)
-      for (const graphName of graphs) {
-        await deleteGraph({ graphName, port: config.falkorPort })
-      }
+      await Promise.all(
+        graphs.map((graphName) => deleteGraph({ graphName, port: config.falkorPort })),
+      )
       spin.succeed(`Deleted ${graphs.length} graph(s): ${graphs.join(', ')}`)
     } else {
       log.info('No graphs to delete')
@@ -314,11 +374,8 @@ async function resetHard(
     process.exit(1)
   }
 
-  // Remove local state files
   const stateFiles = [INSTANCES_PATH, MANAGER_PID_PATH, UI_PID_PATH, JOURNAL_PATH]
-  for (const file of stateFiles) {
-    await unlink(file).catch(() => {})
-  }
+  await Promise.all(stateFiles.map((file) => unlink(file).catch(() => {})))
   log.dim('  Local state files cleared')
 
   // Restart manager + UI
@@ -329,15 +386,11 @@ async function resetHard(
   const elapsed = performance.now() - startTime
   log.success(`Hard reset complete ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
 
-  const { startUI, stopUI } = await import('../lib/ui')
-  startUI(config)
-
   log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-  log.info(`Playground UI on http://localhost:${config.uiPort}`)
+  log.info(`Playground UI on http://localhost:${config.managerPort}/`)
   log.info('Press Ctrl+C to stop')
 
   const cleanup = async () => {
-    stopUI()
     await managerSession.close()
     await removeManagerPid()
     process.exit(0)

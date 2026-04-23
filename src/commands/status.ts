@@ -1,56 +1,77 @@
 import { readConfig } from '../lib/config'
-import { isFalkorRunning } from '../lib/docker'
+import { composePs } from '../lib/docker'
 import { log } from '../lib/log'
 import { detectManagerState, probeHttp } from '../lib/manager-state'
 import { type OutputOpts, isRawOutput, output } from '../lib/output'
 import { COMPOSE_PATH } from '../lib/paths'
 
+type ManagerMode = 'docker' | 'host' | 'none'
+
 export async function statusCommand(opts?: OutputOpts): Promise<void> {
   const isRaw = isRawOutput(opts)
   const config = await readConfig()
 
-  const uiUrl = `http://localhost:${config.uiPort}`
-  const [manager, falkorUp, uiUp] = await Promise.all([
+  const managerUrl = `http://localhost:${config.managerPort}/mngt`
+  const uiDevUrl = `http://localhost:${config.uiPort}`
+
+  const [manager, uiDevUp, services] = await Promise.all([
     detectManagerState(config),
-    isFalkorRunning(COMPOSE_PATH),
-    probeHttp(uiUrl),
+    probeHttp(uiDevUrl),
+    composePs(COMPOSE_PATH),
   ])
 
-  const managerUrl = `http://localhost:${config.managerPort}/mngt`
+  const managerService = services.find((s) => s.Service === 'manager')
+  const falkorService = services.find((s) => s.Service === 'falkordb')
+  const containerRunning = managerService?.State === 'running'
+  const falkorUp = falkorService?.State === 'running'
+
+  // Derive run mode:
+  //   - `docker`: the `manager` service is up in compose.
+  //   - `host`:   HTTP responds on manager port but compose service is not up.
+  //   - `none`:   manager not reachable.
+  const mode: ManagerMode = containerRunning ? 'docker' : manager.running ? 'host' : 'none'
+
+  const uiUrl = uiDevUp
+    ? uiDevUrl
+    : manager.running
+      ? `http://localhost:${config.managerPort}/`
+      : null
 
   const data = {
     manager: {
       running: manager.running,
+      mode,
       pid: manager.pid ?? null,
       port: config.managerPort,
       url: managerUrl,
       source: manager.source,
+      containerState: managerService?.State ?? null,
+      containerHealth: managerService?.Health ?? null,
     },
     falkor: {
       running: falkorUp,
       port: config.falkorPort,
     },
     ui: {
-      running: uiUp,
-      port: config.uiPort,
-      url: uiUp ? uiUrl : null,
+      running: uiUrl !== null,
+      mode: uiDevUp ? 'dev' : 'bundled',
+      url: uiUrl,
     },
     graphName: config.graphName,
   }
 
-  // Structured output: --raw, --json, --format, or piped
   if (isRaw || opts?.format) {
     output(data, opts ?? {})
     return
   }
 
-  // Pretty TTY output
   console.log('')
   log.info('Astrale Status\n')
 
   if (manager.running) {
     const pidPart = manager.pid !== undefined ? ` (PID ${manager.pid})` : ''
-    log.success(`Manager:   running${pidPart} — ${managerUrl}`)
+    const modeTag = mode === 'docker' ? ' [docker]' : mode === 'host' ? ' [host]' : ''
+    log.success(`Manager:   running${pidPart}${modeTag} — ${managerUrl}`)
   } else {
     log.warn('Manager:   stopped')
   }
@@ -61,10 +82,11 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
     log.warn('FalkorDB:  stopped')
   }
 
-  if (uiUp) {
-    log.success(`UI:        ${uiUrl}`)
+  if (uiUrl) {
+    const modeTag = uiDevUp ? ' (dev)' : ''
+    log.success(`UI:        ${uiUrl}${modeTag}`)
   } else {
-    log.warn(`UI:        not responding (${uiUrl})`)
+    log.warn('UI:        not available (manager stopped)')
   }
 
   log.dim(`  Graph:    ${config.graphName}`)

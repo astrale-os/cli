@@ -5,13 +5,16 @@ import type { AstraleConfig } from './config'
 let uiProcess: Subprocess | null = null
 
 /**
- * Start the backoffice playground-v2 dev server.
- * Spawns `pnpm --filter @astrale-os/kernel-playground dev --port <uiPort>`
- * with MANAGER_PORT set so the vite proxy targets the right kernel.
+ * Start the Vite dev server for the playground UI — **only used in dev mode**.
+ *
+ * In normal operation the UI is served by the manager HTTP server itself
+ * (see `ui-host.ts` / `nodeWithUi`). `startUIDev` spawns a Vite dev server
+ * with HMR so UI contributors can iterate on `cli/playground/` against the
+ * running manager.
  */
-export function startUI(config: AstraleConfig): Subprocess {
+export function startUIDev(config: AstraleConfig): Subprocess {
   uiProcess = Bun.spawn(
-    ['pnpm', '--filter', '@astrale-os/kernel-playground', 'dev', '--port', String(config.uiPort)],
+    ['pnpm', '--filter', '@astrale-os/astrale-playground', 'dev', '--port', String(config.uiPort)],
     {
       stdout: 'inherit',
       stderr: 'inherit',

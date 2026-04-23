@@ -1,0 +1,58 @@
+{
+  "name": "@astrale-os/astrale-playground",
+  "version": "0.1.0",
+  "private": true,
+  "files": [
+    "dist",
+    "src/dist-path.ts"
+  ],
+  "type": "module",
+  "exports": {
+    "./dist-path": "./src/dist-path.ts"
+  },
+  "scripts": {
+    "dev": "vite --port 3200",
+    "build": "vite build",
+    "typecheck": "tsgo --noEmit",
+    "serve": "vite preview"
+  },
+  "dependencies": {
+    "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-toolkit": ">=0.1.0 <1.0.0",
+    "@astrale-os/sdk": ">=0.1.0 <1.0.0",
+    "@blaxel/core": "^0.2.78",
+    "@cloudflare/workers-types": "^4.20250327.0",
+    "@tailwindcss/vite": "^4.0.6",
+    "@tanstack/react-router": "^1.132.0",
+    "@tanstack/router-plugin": "^1.132.0",
+    "@xyflow/react": "^12.6.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dagre": "^0.8.5",
+    "lucide-react": "^0.544.0",
+    "radix-ui": "^1.4.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-resizable-panels": "^2.1.0",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss": "^4.0.6",
+    "tw-animate-css": "^1.3.6",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@astrale/typescript-config": "jsr:@astrale/typescript-config@~1.1.0",
+    "@types/dagre": "^0.7.52",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@typescript/native-preview": "latest",
+    "@vitejs/plugin-react": "^5.0.4",
+    "jose": "^6.1.3",
+    "typescript": "~6.0.1-rc",
+    "vite": "^7.1.7"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
