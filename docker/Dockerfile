@@ -17,16 +17,16 @@
 # `cli/src/lib/docker.ts`). The `.dockerignore` inside the workspace keeps
 # the context small (no .git, no domain-level `node_modules`, no logs…).
 #
-# Any workspace-root `package.json` / `pnpm-lock.yaml` / sub-package
-# `package.json` change invalidates the deps layer. Source-only edits
-# don't trigger reinstall because no source is COPYed — pnpm only needs
-# the package manifests + lockfile.
+# Only manifests (package.json across the workspace), the lockfile, and
+# pnpm/npm config files are COPYed before `pnpm install`. Source-only
+# edits don't invalidate the deps layer — only manifest/lock/config
+# changes do.
 #
 # Dev-local only. A prod image (bundles source + pinned versions) is a
 # separate chantier.
 
-# syntax=docker/dockerfile:1.6
-# (enables BuildKit features like `--mount=type=secret`)
+# syntax=docker/dockerfile:1.7
+# (enables BuildKit features like `--mount=type=secret` and `COPY --parents`)
 
 # ── Stage 1: install deps for linux-<arch> ─────────────────────
 FROM oven/bun:1-slim AS deps
@@ -37,11 +37,13 @@ RUN bun install -g pnpm@10.28.0
 
 WORKDIR /build
 
-# Copy the full workspace (build context). The workspace's `.dockerignore`
-# must exclude `node_modules/`, `.git/`, `**/dist/`, etc. — otherwise the
-# image size balloons and the host's wrong-platform `node_modules/` leaks
-# in.
-COPY . .
+# Copy only what pnpm needs to resolve + install: every package.json in
+# the workspace (preserving directory structure via --parents), the
+# lockfile, workspace config, npmrc, pnpmfile hook, and the workspace
+# marker file that sub-package preinstalls reference. Source files are
+# not copied — the deps layer stays cached on source-only edits.
+COPY --parents ./**/package.json ./
+COPY pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.cjs .astrale-workspace ./
 
 # Frozen-lockfile install pins resolution to the host's lockfile, so
 # subpackage symlinks in the host's bind-mount keep resolving correctly
