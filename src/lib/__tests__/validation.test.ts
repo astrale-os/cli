@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { validateName } from '../instance'
+import { validateName } from '../validation'
 
 describe('validateName', () => {
   test('accepts valid names', () => {

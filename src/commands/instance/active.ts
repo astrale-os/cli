@@ -2,7 +2,7 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
 
-import { getActive } from '../../lib/instance'
+import { getActive, resolveInstance } from '../../lib/instance'
 import { log } from '../../lib/log'
 import { isRawOutput, output } from '../../lib/output'
 
@@ -16,15 +16,26 @@ export default {
   action: async (opts: { raw?: boolean; json?: boolean }) => {
     try {
       const isRaw = isRawOutput(opts)
-      const active = await getActive()
+      const { name } = await getActive()
+      // Manager is always derivable; bookmarks live in the entry; local-
+      // child needs the manager. If the manager is down and we have no
+      // cache, fall back to the name alone.
+      let url: string | null = null
+      let createdAt: string | null = null
+      try {
+        const resolved = await resolveInstance(name)
+        url = resolved.url
+        createdAt = resolved.createdAt ?? null
+      } catch {
+        /* MANAGER_UNREACHABLE */
+      }
 
       if (isRaw) {
-        output({ name: active.name, url: active.url ?? null, createdAt: active.createdAt }, opts)
+        output({ name, url, createdAt }, opts)
         return
       }
 
-      const detail = active.url ?? 'local'
-      console.log(`${chalk.bold(active.name)} (${detail})`)
+      console.log(`${chalk.bold(name)} (${url ?? 'local'})`)
     } catch (e) {
       log.error(e instanceof Error ? e.message : String(e))
       process.exit(1)

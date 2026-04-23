@@ -1,0 +1,34 @@
+import { z } from 'zod'
+
+import { ReservedSlugError } from '../errors'
+
+// Shared validators + schema fragments used by both instance and identity
+// registries — kept in a leaf module to avoid circular imports.
+
+const NAME_RE = /^[a-zA-Z0-9_.-]+$/
+// §4.7 — URL-safe slug.
+const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
+const RESERVED_SLUGS = new Set(['manager'])
+
+export { RESERVED_SLUGS }
+
+export function validateName(name: string, entity: string): void {
+  if (!name || !NAME_RE.test(name)) {
+    throw new Error(
+      `Invalid ${entity.toLowerCase()} name "${name}" — must be non-empty and contain only letters, digits, hyphens, underscores, and dots`,
+    )
+  }
+}
+
+export function validateSlug(slug: string): void {
+  if (!slug || !SLUG_RE.test(slug)) {
+    throw new Error(`Invalid slug "${slug}" — must match [a-z0-9][a-z0-9-]* (§4.7)`)
+  }
+  if (RESERVED_SLUGS.has(slug)) {
+    throw new ReservedSlugError(slug)
+  }
+}
+
+/** `local` = only this machine. `remote` = mirrored via astrale cloud (§2.7). */
+export const RegistryModeSchema = z.enum(['local', 'remote'])
+export type RegistryMode = z.infer<typeof RegistryModeSchema>

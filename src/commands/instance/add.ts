@@ -1,11 +1,16 @@
 import type { CommandDefinition } from '../../command'
 
 import { addInstance, setActive } from '../../lib/instance'
-import { log } from '../../lib/log'
+import { fatal, log } from '../../lib/log'
 
+/**
+ * Deprecated alias for `instance bookmark`. Kept to preserve scripts
+ * that predate V3 (e.g., older instance-prepare invocations). New usage
+ * should prefer `astrale instance bookmark`.
+ */
 export default {
   name: 'add',
-  description: 'Register a kernel instance',
+  description: '[deprecated] Alias for `instance bookmark`',
   arguments: [{ name: 'name', description: 'Instance name', required: true }],
   options: [
     { flags: '--url <http-url>', description: 'Kernel HTTP URL (for remote instances)' },
@@ -13,7 +18,13 @@ export default {
   ],
   action: async (name: string, opts: { url?: string; use?: boolean }) => {
     try {
-      const entry = await addInstance(name, opts)
+      log.warn('`instance add` is deprecated — use `instance bookmark` (§9.3)')
+      const entry = await addInstance(name, {
+        url: opts.url,
+        name,
+        kind: opts.url ? 'bookmark' : 'local-child',
+        mode: 'local',
+      })
       if (entry.url) {
         log.success(`Added instance "${name}" (${entry.url})`)
       } else {
@@ -24,8 +35,7 @@ export default {
         log.success(`Active instance: ${name}`)
       }
     } catch (e) {
-      log.error(e instanceof Error ? e.message : String(e))
-      process.exit(1)
+      fatal(e)
     }
   },
 } satisfies CommandDefinition

@@ -2,54 +2,82 @@ import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
 
 import type { CommandDefinition } from '../../command'
 
+import { CannotDeleteManagerError } from '../../errors'
 import { resolveCredential } from '../../kernel/auth'
 import { readConfig } from '../../lib/config'
-import { readInstances, removeInstance } from '../../lib/instance'
-import { log } from '../../lib/log'
+import {
+  invalidateManagerCache,
+  managerUrl,
+  readInstances,
+  removeInstance,
+  resolveInstanceKey,
+} from '../../lib/instance'
+import { removeKeypair } from '../../lib/keys'
+import { fatal, log } from '../../lib/log'
+import { readTunnels, unbindTunnel } from '../../lib/tunnels'
 
 export default {
   name: 'delete',
-  description: 'Delete a registered instance (local store + manager if reachable)',
-  arguments: [{ name: 'name', description: 'Instance name', required: true }],
+  description: 'Destructively delete a local or managed instance (§5)',
+  arguments: [{ name: 'name', description: 'Instance name (slug or name)', required: true }],
   options: [{ flags: '-f, --force', description: 'Skip manager-side cleanup on failure' }],
   action: async (name: string, cmdOpts: { force?: boolean }) => {
     const store = await readInstances()
-    const inLocal = name in store.instances
+    const key = resolveInstanceKey(store, name)
+    const entry = key ? store.instances[key] : undefined
 
+    // §5.1 refusals with actionable hints.
+    if (entry?.kind === 'manager' || key === 'manager') fatal(new CannotDeleteManagerError())
+    if (entry?.kind === 'bookmark') {
+      log.dim('  hint: use `astrale instance forget` to drop the reference (§5.1)')
+      fatal(new Error(`"${name}" is a bookmark — delete is destructive kernel-side.`))
+    }
+
+    const inLocal = key !== null
     let deletedSomewhere = false
 
-    if (inLocal) {
+    if (inLocal && key) {
       try {
-        await removeInstance(name)
-        log.success(`Deleted local instance "${name}"`)
+        // §12 — orphan tunnels are never auto-stopped; detach + warn.
+        const tunnels = await readTunnels()
+        for (const t of Object.values(tunnels.tunnels)) {
+          if (t.boundInstance === key) {
+            await unbindTunnel(t.name)
+            log.warn(`  tunnel "${t.name}" detached — stop it with: astrale tunnel stop ${t.name}`)
+          }
+        }
+        await removeInstance(key)
+        // Drop the per-instance keypair written at `instance create`. Left
+        // behind it would leak identity material for a slug the user could
+        // later reuse for a different instance.
+        if (entry?.kind === 'local-child') {
+          await removeKeypair(key)
+        }
+        log.success(`Deleted local instance "${key}"`)
         deletedSomewhere = true
       } catch (e) {
-        log.error(e instanceof Error ? e.message : String(e))
-        process.exit(1)
+        fatal(e)
       }
     }
 
-    // Also try to unregister from the manager — this is what makes
-    // discovered-only entries deletable.
     const config = await readConfig()
-    const client = new KernelClient<FnMap>({
-      url: `http://localhost:${config.managerPort}/mngt`,
-      requestTimeout: 5_000,
-    })
+    const client = new KernelClient<FnMap>({ url: managerUrl(config), requestTimeout: 5_000 })
     try {
       const credential = await resolveCredential({}, config)
-      await client.call('/manager.astrale.ai/class.KernelInstance/delete', { id: name }, credential)
-      log.success(`Unregistered "${name}" from manager`)
+      await client.call(
+        '/manager.astrale.ai/class.KernelInstance/delete',
+        { id: key ?? name },
+        credential,
+      )
+      log.success(`Unregistered "${key ?? name}" from manager`)
       deletedSomewhere = true
     } catch (e) {
-      // Discovered-only entries: this is the only place we'd ever delete them.
-      // For local-only entries (manager unreachable, instance never registered),
-      // a manager error is fine — the local deletion already happened.
       if (!inLocal && !cmdOpts.force) {
-        log.error(
-          `Instance "${name}" not found locally and manager unregister failed: ${e instanceof Error ? e.message : String(e)}`,
+        fatal(
+          new Error(
+            `Instance "${name}" not found locally and manager unregister failed: ${e instanceof Error ? e.message : String(e)}`,
+          ),
         )
-        process.exit(1)
       }
       if (cmdOpts.force) {
         log.warn(
@@ -61,9 +89,10 @@ export default {
       client.disconnect()
     }
 
-    if (!deletedSomewhere) {
-      log.error(`Instance "${name}" not found`)
-      process.exit(1)
-    }
+    // Bust the manager snapshot cache — any `astrale instance list` right
+    // after a delete must see the post-delete state, not a stale hit.
+    await invalidateManagerCache()
+
+    if (!deletedSomewhere) fatal(new Error(`Instance "${name}" not found`))
   },
 } satisfies CommandDefinition
