@@ -19,6 +19,7 @@
   "scripts": {
     "preinstall": "node .check-workspace.cjs",
     "prepare": "husky",
+    "prepack": "pnpm --filter @astrale-os/astrale-playground build && pnpm --filter @astrale-os/astrale-gui build",
     "typecheck": "tsgo --noEmit",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
@@ -28,11 +29,13 @@
     "test:watch": "bun test --watch"
   },
   "dependencies": {
+    "@astrale-os/astrale-gui": "workspace:*",
+    "@astrale-os/astrale-playground": "workspace:*",
     "@astrale-os/kernel-adapters": ">=0.3.0 <1.0.0",
     "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
     "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
-    "@astrale-os/kernel-playground": ">=0.1.0 <1.0.0",
     "@astrale-os/kernel-toolkit": ">=0.1.0 <1.0.0",
+    "@hono/node-server": "^1.19.9",
     "chalk": "^5.6.2",
     "commander": ">=13.0.0 <14.0.0",
     "jose": "^6.1.3",

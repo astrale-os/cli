@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 
+import { RAW_OUTPUT_OPTIONS } from '../src/lib/output'
 import { registerCommand, registerGroup } from '../src/registry'
 
 const program = new Command()
@@ -10,11 +11,18 @@ program
   .description('Astrale system CLI — manage your local Astrale installation')
   .version('0.1.0')
   .showSuggestionAfterError(true)
+  .addOption(new Option('--ci', 'Machine mode: no prompts, structured errors on stderr'))
+  .addOption(new Option('--no-prompt', 'Disable interactive prompts'))
+  .addOption(
+    new Option('--offline-ok', 'Tolerate offline state for commands that can operate locally'),
+  )
+  .addOption(
+    new Option('--log-level <level>', 'Log level').choices(['debug', 'info', 'warn', 'error']),
+  )
+  .addOption(new Option('--log-format <format>', 'Log output format').choices(['text', 'json']))
   .action(() => {
     program.help()
   })
-
-// ── Top-level commands ────────────────────────────────────────
 
 registerCommand(program, {
   name: 'init',
@@ -34,30 +42,56 @@ registerCommand(program, {
 
 registerCommand(program, {
   name: 'start',
-  description: 'Start the Astrale manager',
-  options: [{ flags: '--foreground', description: 'Run in foreground (used by daemon)' }],
+  description: 'Start the Astrale manager (docker-mode by default)',
+  options: [
+    { flags: '--foreground', description: 'Run in foreground (host-mode only)' },
+    {
+      flags: '--ui-dev',
+      description: 'Vite HMR for playground UI (implies --host-mode)',
+    },
+    {
+      flags: '--host-mode',
+      description: 'Run the manager as a bun process on the host instead of docker',
+    },
+  ],
   action: async (opts) => {
     const { startCommand } = await import('../src/commands/start')
-    await startCommand(opts as { foreground?: boolean })
+    await startCommand(opts as Parameters<typeof startCommand>[0])
   },
 })
 
 registerCommand(program, {
   name: 'stop',
-  description: 'Stop the Astrale manager',
-  action: async () => {
+  description: 'Stop the Astrale manager (both modes by default)',
+  options: [
+    {
+      flags: '--host-mode',
+      description: 'Only target the host-mode manager (skip docker)',
+    },
+  ],
+  action: async (opts) => {
     const { stopCommand } = await import('../src/commands/stop')
-    await stopCommand()
+    await stopCommand(opts as Parameters<typeof stopCommand>[0])
   },
 })
 
 registerCommand(program, {
   name: 'restart',
   description: 'Restart the Astrale manager',
-  options: [{ flags: '--foreground', description: 'Run in foreground (used by daemon)' }],
+  options: [
+    { flags: '--foreground', description: 'Run in foreground (host-mode only)' },
+    {
+      flags: '--ui-dev',
+      description: 'Vite HMR for playground UI (implies --host-mode)',
+    },
+    {
+      flags: '--host-mode',
+      description: 'Run the manager as a bun process on the host instead of docker',
+    },
+  ],
   action: async (opts) => {
     const { restartCommand } = await import('../src/commands/restart')
-    await restartCommand(opts as { foreground?: boolean })
+    await restartCommand(opts as Parameters<typeof restartCommand>[0])
   },
 })
 
@@ -70,8 +104,7 @@ registerCommand(program, {
       description: 'Output format (default: yaml in TTY, json when piped)',
       choices: ['yaml', 'json'],
     },
-    { flags: '--raw', description: 'Output raw JSON' },
-    { flags: '--json', description: 'Alias for --raw' },
+    ...RAW_OUTPUT_OPTIONS,
   ],
   action: async (opts) => {
     const { statusCommand } = await import('../src/commands/status')
@@ -86,10 +119,14 @@ registerCommand(program, {
     { flags: '-i, --instance <id>', description: 'Target instance (defaults to active)' },
     { flags: '-y, --yes', description: 'Skip confirmation prompt' },
     { flags: '--hard', description: 'Full wipe: delete all FalkorDB graphs and reset local state' },
+    {
+      flags: '--host-mode',
+      description: 'Reset the host-mode manager (default: docker-mode if detected)',
+    },
   ],
   action: async (opts) => {
     const { resetCommand } = await import('../src/commands/reset')
-    await resetCommand(opts as { instance?: string; yes?: boolean; hard?: boolean })
+    await resetCommand(opts as Parameters<typeof resetCommand>[0])
   },
 })
 
@@ -98,19 +135,23 @@ registerCommand(program, {
   description: 'Set the active kernel instance (no args: show current)',
   aliases: ['switch'],
   arguments: [{ name: 'name', description: 'Registered instance name', required: false }],
-  action: async (name) => {
+  options: [
+    {
+      flags: '--adopt-default',
+      description: 'Adopt instance default identity without prompt (§7.1)',
+    },
+    { flags: '--skip-jwks-check', description: 'Skip the /meta ↔ JWKS match check (§7)' },
+  ],
+  action: async (name, opts) => {
     const { useCommand } = await import('../src/commands/use')
-    await useCommand(name as string | undefined)
+    await useCommand(name as string | undefined, opts as Parameters<typeof useCommand>[1])
   },
 })
 
 registerCommand(program, {
   name: 'whoami',
   description: 'Show the current default identity (alias for identity whoami)',
-  options: [
-    { flags: '--raw', description: 'Output raw JSON' },
-    { flags: '--json', description: 'Alias for --raw' },
-  ],
+  options: [...RAW_OUTPUT_OPTIONS],
   action: async (opts) => {
     const mod = await import('../src/commands/identity/whoami')
     await mod.default.action(opts as { raw?: boolean; json?: boolean })
@@ -123,8 +164,7 @@ const kernelOptions = [
     description: 'Output format (default: yaml in TTY, json when piped)',
     choices: ['yaml', 'json'],
   },
-  { flags: '--raw', description: 'Output raw JSON (no colors)' },
-  { flags: '--json', description: 'Alias for --raw' },
+  ...RAW_OUTPUT_OPTIONS,
   {
     flags: '--url <url>',
     description: 'Target a kernel URL directly (overrides instance resolution)',
@@ -156,6 +196,20 @@ registerCommand(program, {
   action: async (path, params, opts) => {
     const { callCommand } = await import('../src/commands/call')
     await callCommand(path as string, params as string[], opts)
+  },
+})
+
+registerCommand(program, {
+  name: 'token',
+  description: 'Mint a fresh delegation token for the active instance + identity (§9)',
+  options: [
+    { flags: '--audience <aud>', description: 'Token audience (defaults to instance domain)' },
+    { flags: '--ttl <sec>', description: 'TTL in seconds (default: 3600)' },
+    ...kernelOptions,
+  ],
+  action: async (opts) => {
+    const { tokenCommand } = await import('../src/commands/token')
+    await tokenCommand(opts as Parameters<typeof tokenCommand>[0])
   },
 })
 
@@ -252,28 +306,74 @@ registerCommand(program, {
   },
 })
 
-// ── Command groups ────────────────────────────────────────────
+registerCommand(program, {
+  name: 'dev',
+  description: 'Dev macro: compose kernel+domain envs (§4.5, stubbed v1)',
+  arguments: [{ name: 'subcommand', description: 'up | down | status | logs', required: false }],
+  action: async (sub) => {
+    const { devCommand } = await import('../src/commands/dev')
+    await devCommand(sub as string | undefined)
+  },
+})
 
 registerGroup(program, {
   name: 'instance',
-  description: 'Manage kernel instances',
+  description: 'Manage kernel instances (§4, §5, §6, §7)',
   commands: [
     (await import('../src/commands/instance/list')).default,
+    (await import('../src/commands/instance/bookmark')).default,
+    (await import('../src/commands/instance/forget')).default,
+    (await import('../src/commands/instance/create')).default,
     (await import('../src/commands/instance/add')).default,
     (await import('../src/commands/instance/delete')).default,
+    (await import('../src/commands/instance/status')).default,
     (await import('../src/commands/instance/active')).default,
+    {
+      ...(await import('../src/commands/instance/install')).default,
+      options: [
+        ...((await import('../src/commands/instance/install')).default.options ?? []),
+        ...kernelOptions,
+      ],
+    },
   ],
 })
 
 registerGroup(program, {
   name: 'identity',
-  description: 'Manage CLI identities',
+  description: 'Manage CLI identities (§2)',
   commands: [
     (await import('../src/commands/identity/create')).default,
     (await import('../src/commands/identity/list')).default,
     (await import('../src/commands/identity/use')).default,
     (await import('../src/commands/identity/whoami')).default,
     (await import('../src/commands/identity/delete')).default,
+    (await import('../src/commands/identity/sync')).default,
+    (await import('../src/commands/identity/unsync')).default,
+    (await import('../src/commands/identity/export')).default,
+    (await import('../src/commands/identity/import')).default,
+  ],
+})
+
+registerGroup(program, {
+  name: 'auth',
+  description: 'Astrale cloud authentication (stubbed v1, §15)',
+  commands: [
+    (await import('../src/commands/auth/login')).default,
+    (await import('../src/commands/auth/logout')).default,
+    (await import('../src/commands/auth/status')).default,
+  ],
+})
+
+registerGroup(program, {
+  name: 'tunnel',
+  description: 'Machine-level tunnels (§12, cloudflared adapter)',
+  commands: [
+    (await import('../src/commands/tunnel/setup')).default,
+    (await import('../src/commands/tunnel/adopt')).default,
+    (await import('../src/commands/tunnel/start')).default,
+    (await import('../src/commands/tunnel/status')).default,
+    (await import('../src/commands/tunnel/list')).default,
+    (await import('../src/commands/tunnel/stop')).default,
   ],
 })
 
@@ -289,8 +389,17 @@ registerGroup(program, {
 })
 
 registerGroup(program, {
+  name: 'server',
+  description: 'Manager server lifecycle (docker image + container logs)',
+  commands: [
+    (await import('../src/commands/server/build')).default,
+    (await import('../src/commands/server/logs')).default,
+  ],
+})
+
+registerGroup(program, {
   name: 'domain',
-  description: 'Manage kernel domains',
+  description: 'Manage kernel domains (§9)',
   commands: [
     {
       ...(await import('../src/commands/domain/install')).default,
@@ -299,20 +408,23 @@ registerGroup(program, {
         ...kernelOptions,
       ],
     },
+    (await import('../src/commands/domain/build')).default,
+    (await import('../src/commands/domain/deploy')).default,
+    (await import('../src/commands/domain/check')).default,
+    (await import('../src/commands/domain/logs')).default,
   ],
 })
-
-// ── Help text enhancements ───────────────────────────────────
 
 program.addHelpText(
   'after',
   `
 Command groups:
   Lifecycle     init, start, stop, restart, status, reset
-  Graph         ls, get, call, query, describe, logs
-  Management    instance, identity, use
+  Graph         ls, get, call, query, describe, logs, token
+  Management    instance, identity, use, auth, tunnel
   Storage       graph list, graph prune, graph rm, graph df
-  Domains       domain install
+  Domains       domain install, domain build, domain deploy, domain check, domain logs
+  Dev macro     dev [up|down|status|logs]
 
 Path syntax:
   /domain/class.Name/method    Navigate to a Syscall node (static operation)
@@ -322,9 +434,10 @@ Path syntax:
 Examples:
   $ astrale ls /
   $ astrale call /manager.astrale.ai/class.KernelInstance/list
-  $ astrale call /manager.astrale.ai/class.KernelInstance/register id=my-inst graphName=my-graph
-  $ astrale get /kernel.astrale.ai/class.Domain
-  $ astrale describe /manager.astrale.ai/class.KernelInstance
+  $ astrale instance bookmark staging --url https://kernel.example.com
+  $ astrale instance create my-app --local --install ./dist/spec.json
+  $ astrale instance status staging
+  $ astrale token --audience dist.astrale.ai --ttl 3600
   $ astrale logs --topic 'op:*:failed' -n 10
   $ astrale query 'MATCH (n) RETURN n LIMIT 5'
 `,
