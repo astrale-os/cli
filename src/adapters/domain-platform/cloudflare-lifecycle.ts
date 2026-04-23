@@ -9,16 +9,12 @@
  * `config` (data) + `hooks` (code).
  */
 
+import type { DevState, LifecycleContext, LifecycleHooks } from '@astrale-os/kernel-toolkit'
+
+import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-toolkit'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-
-import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-toolkit'
-import type {
-  DevState,
-  LifecycleContext,
-  LifecycleHooks,
-} from '@astrale-os/kernel-toolkit'
 
 import type {
   BuildSpecOpts,
@@ -31,11 +27,12 @@ import type {
   InstancePrepareResult,
 } from '../../ports/domain-platform'
 
-import { AstraleError } from '../../errors'
+import { AstraleError, IssuerUnreachableError } from '../../errors'
 import { resolveDomainDir } from '../../lib/domain-discovery'
 import { slugVariants } from '../../lib/domain-scaffold'
 import { paths } from '../../lib/env'
 import { log } from '../../lib/log'
+import { checkIssuerReachability } from '../../lib/meta'
 import {
   assertRuntimeSecrets,
   clearDevState,
@@ -159,7 +156,9 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
 
   log.step(`dev up — ${resolved.slug}`)
   log.dim(`  kernel=${opts.kernel} domain=${opts.domain}`)
-  log.dim(`  plan:  astrale=${needsAstrale} cloudflared=${needsCloudflared} wrangler=${needsLocalWorker}`)
+  log.dim(
+    `  plan:  astrale=${needsAstrale} cloudflared=${needsCloudflared} wrangler=${needsLocalWorker}`,
+  )
 
   // Pre-flight.
   await preflightDns(buildDnsPreflight(kernel, opts.kernel, opts.domain, domain))
@@ -328,9 +327,7 @@ export async function devStatus(opts: DevStatusOpts): Promise<DevState | null> {
 
 // ── instancePrepare ───────────────────────────────────────────────────
 
-export async function instancePrepare(
-  opts: InstancePrepareOpts,
-): Promise<InstancePrepareResult> {
+export async function instancePrepare(opts: InstancePrepareOpts): Promise<InstancePrepareResult> {
   const resolved = await resolveDomainDir(opts.domainDir)
   const envs = await loadDomainEnvs(resolved.dir)
 
@@ -392,7 +389,7 @@ export async function instancePrepare(
     resolved.dir,
   )
 
-  const iss = await waitForInstanceReady(instanceId, hint)
+  const iss = await waitForInstanceReady(hint)
 
   runCli(['instance', 'install', join(resolved.dir, 'spec.json'), '-i', instanceId], resolved.dir)
 
@@ -435,28 +432,22 @@ function runCli(
   return opts.capture ? r.stdout : ''
 }
 
-async function waitForInstanceReady(id: string, fallbackIss: string): Promise<string> {
+async function waitForInstanceReady(url: string): Promise<string> {
   const deadline = Date.now() + 30_000
-  let lastIss = fallbackIss
+  let lastErr: Error | undefined
   while (Date.now() < deadline) {
-    const r = spawnSync('astrale', ['instance', 'status', id, '--raw'], {
-      encoding: 'utf-8',
-      stdio: ['inherit', 'pipe', 'inherit'],
-    })
-    if (r.status === 0 && r.stdout.trim()) {
-      try {
-        const info = JSON.parse(r.stdout) as { issuer?: unknown; keys?: unknown }
-        if (typeof info.issuer === 'string') lastIss = info.issuer
-        if (Array.isArray(info.keys) && info.keys.length > 0) return lastIss
-      } catch {
-        // keep polling
-      }
+    try {
+      const { issuer } = await checkIssuerReachability(url)
+      return issuer
+    } catch (e) {
+      if (!(e instanceof IssuerUnreachableError)) throw e
+      lastErr = e
     }
-    await new Promise((r) => setTimeout(r, 250))
+    await new Promise((r) => setTimeout(r, 500))
   }
   throw new AstraleError(
     'INSTANCE_NOT_READY',
-    `instance "${id}" not ready within 30s — JWKS unreachable`,
+    `instance at "${url}" not ready within 30s — ${lastErr?.message ?? 'JWKS unreachable'}`,
     'Check tunnel + Transform Rule (see deploy.md / identity-model.md).',
   )
 }
