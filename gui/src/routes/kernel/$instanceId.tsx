@@ -1,205 +1,215 @@
-import { capabilitiesMiddleware, loggingMiddleware, type IntentMessage } from '@astrale-os/shell'
 import { createFileRoute } from '@tanstack/react-router'
-import { Loader2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Loader2, X } from 'lucide-react'
+import { useCallback, useRef, useState } from 'react'
 
-import { MessageLog } from '@/components/message-log'
-import { WindowsPanel } from '@/components/windows-panel'
+import { NodeTree, type KernelNode } from '@/components/node-tree'
 import { StandaloneShellProvider, useKernel, useShell } from '@/providers/shell'
+
+type ResolvedView = {
+  id: string
+  path: string
+  url: string
+  name?: string
+  origin: 'self' | 'instance' | 'class'
+}
+
+type StagedView = {
+  node: KernelNode
+  view: ResolvedView
+}
 
 function instanceUrl(instanceId: string) {
   return `http://localhost:4400/${instanceId}/`
 }
 
-function appUrl(appId: string) {
-  // Build an absolute URL so the iframe and the expected origin check match.
-  // Gui is served by its own TanStack Start server at :3400, at root path.
-  if (typeof window === 'undefined') return `http://localhost:3400/app/${appId}`
-  return `${window.location.origin}/app/${appId}`
+// Propagate the kernel node id into the view URL as `?node=<id>` so static
+// views (no shell handshake) can self-identify their subject.
+function appendTargetNode(url: string, nodeId: string): string {
+  try {
+    const u = new URL(url)
+    u.searchParams.set('node', nodeId)
+    return u.toString()
+  } catch {
+    return url + (url.includes('?') ? '&' : '?') + `node=${encodeURIComponent(nodeId)}`
+  }
 }
 
-type OperationEntry = {
-  path: string
-  name?: string
-  class?: string
-}
+const RESOLVER_METHOD = '/dist-v2.localhost/class.View/resolve'
 
 function InstancePage() {
   const { instanceId } = Route.useParams()
-  const { shell, status, error, kernelUrl } = useShell()
+  const { status, error } = useShell()
   const kernel = useKernel()
-  const [operations, setOperations] = useState<OperationEntry[] | null>(null)
-  const [callError, setCallError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [capabilityViolations, setCapabilityViolations] = useState<number>(0)
+  const stageRef = useRef<HTMLDivElement | null>(null)
+  const [staged, setStaged] = useState<StagedView | null>(null)
+  const [statusMsg, setStatusMsg] = useState<string | null>(null)
+  const [picker, setPicker] = useState<{ node: KernelNode; views: ResolvedView[] } | null>(null)
+  const [resolving, setResolving] = useState(false)
 
-  const listOperations = useCallback(async () => {
-    if (!kernel) return
-    setLoading(true)
-    setCallError(null)
-    try {
-      const result = await kernel.call('/kernel.astrale.ai/interface.Function/list', {})
-      setOperations(result as OperationEntry[])
-    } catch (err) {
-      setCallError(err instanceof Error ? err.message : 'Call failed')
-    } finally {
-      setLoading(false)
-    }
-  }, [kernel])
+  const openView = useCallback((node: KernelNode, view: ResolvedView) => {
+    if (!stageRef.current) return
+    setStatusMsg(null)
+    const iframe = document.createElement('iframe')
+    iframe.src = view.origin === 'self' ? view.url : appendTargetNode(view.url, node.id)
+    iframe.style.width = '100%'
+    iframe.style.height = '100%'
+    iframe.style.border = '0'
+    iframe.sandbox.value = 'allow-scripts allow-same-origin'
+    stageRef.current.replaceChildren(iframe)
+    setStaged({ node, view })
+  }, [])
 
-  useEffect(() => {
-    if (status === 'ready') void listOperations()
-  }, [status, listOperations])
+  const onOpen = useCallback(
+    async (node: KernelNode) => {
+      if (!kernel) return
+      setPicker(null)
+      setStatusMsg(null)
+      setResolving(true)
+      try {
+        const views = (await kernel.call(RESOLVER_METHOD, { node: node.path })) as ResolvedView[]
+        if (views.length === 0) {
+          setStatusMsg(`No view available for ${node.path}`)
+          return
+        }
+        if (views.length === 1) {
+          openView(node, views[0]!)
+          return
+        }
+        setPicker({ node, views })
+      } catch (err) {
+        setStatusMsg(err instanceof Error ? err.message : 'View.resolve failed')
+      } finally {
+        setResolving(false)
+      }
+    },
+    [kernel, openView],
+  )
 
-  // Wire middleware (logging + capabilities) once when the shell is ready.
-  const middlewareWired = useMemo(() => new WeakSet<object>(), [])
-  useEffect(() => {
-    if (!shell || middlewareWired.has(shell)) return
-    middlewareWired.add(shell)
-
-    shell.use(loggingMiddleware())
-    shell.use(
-      capabilitiesMiddleware({
-        selfWindowId: 'root',
-        allowSelf: true,
-        lookup: (sender) => {
-          const win = shell.windows.get(sender)
-          return win?.capabilities
-        },
-        onViolation: () => setCapabilityViolations((v) => v + 1),
-      }),
-    )
-  }, [shell, middlewareWired])
-
-  // React to "open" intents coming from children — dispatch to its parent sink
-  // or handle locally. For the demo we just acknowledge with a receive back.
-  useEffect(() => {
-    if (!shell) return
-    return shell.children.on('intent', (fromWindowId, message: IntentMessage) => {
-      if (message.envelope.name !== 'open') return
-      const corr = message.envelope.correlationId
-      shell.children.send(fromWindowId, {
-        type: 'intent',
-        version: 1,
-        envelope: {
-          name: 'receive',
-          payload: {
-            data: {
-              handled: true,
-              nodeId: (message.envelope.payload as { nodeId?: string }).nodeId,
-            },
-            sourceIntent: 'open',
-          },
-          sender: { windowId: 'root' },
-          ...(corr ? { correlationId: corr } : {}),
-        },
-      })
-    })
-  }, [shell])
+  const closeStaged = useCallback(() => {
+    stageRef.current?.replaceChildren()
+    setStaged(null)
+  }, [])
 
   if (status === 'loading') {
     return (
-      <div className="flex items-center gap-2 text-muted-foreground">
+      <div className="h-full w-full flex items-center gap-2 text-muted-foreground p-4">
         <Loader2 className="w-4 h-4 animate-spin" />
         Connecting to <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{instanceId}</code>…
       </div>
     )
   }
-
   if (status === 'error') {
     return (
-      <div className="text-destructive">
+      <div className="p-4 text-destructive">
         <p className="font-medium">Connection failed</p>
         <p className="text-sm mt-1">{error}</p>
-        <p className="text-sm mt-2 text-muted-foreground">
-          Kernel URL: <code>{kernelUrl}</code>
-        </p>
       </div>
     )
   }
 
-  const iframeUrl = appUrl(`demo-${instanceId}`)
-
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">Instance: {instanceId}</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Connected to <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{kernelUrl}</code>
-          </p>
+    <div className="h-screen w-screen flex overflow-hidden">
+      <aside className="w-72 shrink-0 border-r border-border flex flex-col">
+        <div className="px-3 py-2 border-b border-border text-xs font-semibold flex items-center justify-between">
+          <span>Graph</span>
+          <code className="text-[10px] font-mono text-muted-foreground">{instanceId}</code>
         </div>
-        <a
-          href={`http://localhost:3200/kernel/${instanceId}`}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs text-primary hover:underline shrink-0"
-        >
-          Open in playground →
-        </a>
-      </div>
+        <div className="flex-1 overflow-auto">
+          {kernel && <NodeTree kernel={kernel} onOpen={onOpen} />}
+        </div>
+      </aside>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Operations</h3>
-          <button
-            onClick={listOperations}
-            disabled={loading}
-            className="px-3 py-1.5 text-xs font-medium bg-muted text-foreground rounded hover:bg-muted/80 disabled:opacity-50"
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
+      <main className="flex-1 flex flex-col relative">
+        <div className="px-3 py-2 border-b border-border text-xs flex items-center gap-3">
+          {staged ? (
+            <>
+              <span className="font-semibold truncate">{staged.view.name ?? staged.view.path}</span>
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                origin: {staged.view.origin}
+              </span>
+              <span className="text-muted-foreground truncate">for {staged.node.path}</span>
+              <button
+                onClick={closeStaged}
+                className="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-destructive"
+              >
+                <X className="w-3 h-3" />
+                Close
+              </button>
+            </>
+          ) : (
+            <span className="text-muted-foreground">
+              {resolving ? 'Resolving…' : 'Double-click a node in the tree to open it.'}
+            </span>
+          )}
         </div>
 
-        {callError && (
-          <div className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded">
-            {callError}
+        {statusMsg && (
+          <div className="px-3 py-2 text-xs text-amber-800 bg-amber-50 border-b border-amber-200">
+            {statusMsg}
           </div>
         )}
 
-        {operations && (
-          <div className="border border-border rounded-lg overflow-hidden">
-            <div className="px-4 py-2 bg-muted text-xs font-medium text-muted-foreground">
-              {operations.length} operations (Function/list)
-            </div>
-            <div className="max-h-[30vh] overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-muted">
-                  <tr className="text-left">
-                    <th className="px-4 py-2 font-medium">Path</th>
-                    <th className="px-4 py-2 font-medium">Class</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {operations.map((op) => (
-                    <tr key={op.path} className="border-t border-border">
-                      <td className="px-4 py-1.5 font-mono text-xs">{op.path}</td>
-                      <td className="px-4 py-1.5 text-xs text-muted-foreground">
-                        {op.class ?? '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <section className="space-y-3">
-          <WindowsPanel iframeUrl={iframeUrl} functionId={`demo-app:${instanceId}`} />
-          {capabilityViolations > 0 && (
-            <div className="text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded border border-amber-200">
-              Blocked intents: {capabilityViolations}
+        <div className="flex-1 bg-background relative overflow-hidden">
+          <div ref={stageRef} className="absolute inset-0" />
+          {!staged && !statusMsg && (
+            <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground pointer-events-none">
+              No view mounted.
             </div>
           )}
-        </section>
+        </div>
+      </main>
 
-        <section className="space-y-3">
-          <h3 className="text-sm font-semibold">Traffic</h3>
-          <MessageLog />
-        </section>
+      {picker && (
+        <Picker
+          node={picker.node}
+          views={picker.views}
+          onPick={(v) => {
+            setPicker(null)
+            void openView(picker.node, v)
+          }}
+          onCancel={() => setPicker(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function Picker({
+  node,
+  views,
+  onPick,
+  onCancel,
+}: {
+  node: KernelNode
+  views: ResolvedView[]
+  onPick(v: ResolvedView): void
+  onCancel(): void
+}) {
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/30">
+      <div className="bg-background border border-border rounded-lg shadow-xl w-[420px] p-4">
+        <div className="text-sm font-semibold">Choose a view</div>
+        <div className="text-xs text-muted-foreground mt-0.5 truncate">{node.path}</div>
+        <div className="mt-3 space-y-1">
+          {views.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => onPick(v)}
+              className="w-full text-left px-3 py-2 rounded border border-border hover:bg-muted"
+            >
+              <div className="text-sm font-medium">{v.name ?? v.path}</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                origin: {v.origin}
+              </div>
+              <div className="text-xs text-muted-foreground truncate mt-0.5">{v.url}</div>
+            </button>
+          ))}
+        </div>
+        <div className="mt-3 flex justify-end">
+          <button onClick={onCancel} className="text-xs px-3 py-1.5 rounded hover:bg-muted">
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -27,10 +27,10 @@ export const getCredential = createServerFn({ method: 'POST' })
         .split('/')
         .pop() ?? ''
     if (!subject) throw new Error('invalid audience: no subject in path')
+    // Fall back to the "manager" identity for child instances that don't
+    // have a dedicated keypair minted yet (dev convenience).
     const { privatePath } = keypairPaths(subject, KEYS_DIR)
-    if (!(await fileExists(privatePath))) {
-      throw new Error(`no keypair for subject "${subject}"`)
-    }
-    const bound = await loadAuth(KEYS_DIR, { issuer: data.aud, subject })
+    const effectiveSubject = (await fileExists(privatePath)) ? subject : 'manager'
+    const bound = await loadAuth(KEYS_DIR, { issuer: data.aud, subject: effectiveSubject })
     return { credential: bound.credential }
   })

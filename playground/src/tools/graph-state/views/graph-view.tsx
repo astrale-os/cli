@@ -26,7 +26,7 @@ export function GraphView() {
   const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(
     () => new Set(DEFAULT_HIDDEN_CLASSES),
   )
-  const [hiddenDomains, setHiddenDomains] = useState<Set<string>>(new Set())
+  const [hiddenDomains, setHiddenDomains] = useState<Set<string>>(() => new Set(['kernel']))
 
   const toggleClass = useCallback((className: string) => {
     setHiddenClasses((prev) => {
