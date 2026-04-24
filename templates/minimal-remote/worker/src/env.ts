@@ -7,4 +7,16 @@
 export interface Env {
   WORKER_URL: string
   MINIMAL_BASE_DOMAIN?: string
+  /**
+   * Workers Assets binding (wrangler `assets:` config). Serves the
+   * `../client/` Vite build output under `/ui/*`. See `src/index.ts`.
+   */
+  ASSETS: { fetch: (request: Request) => Promise<Response> }
+  /**
+   * Optional dev-only override. When set (via `.dev.vars` during
+   * `wrangler dev`), `/ui/*` requests are forwarded to this URL instead of
+   * the baked-in `ASSETS` bundle — typically `http://127.0.0.1:5173`
+   * running `vite dev` to get React HMR.
+   */
+  VIEW_DEV_URL?: string
 }

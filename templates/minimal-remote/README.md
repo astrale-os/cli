@@ -20,10 +20,18 @@ minimal-remote/
     note-ops.ts                 # impl of createNote on the NoteOps interface
     index.ts                    # defineMethods — impl goes in `interface:` bucket
   worker/
-    src/index.ts                # createRemoteServer wiring
+    src/index.ts                # createRemoteServer wiring + /ui/* dispatch
     src/env.ts / src/keys.ts
-    wrangler.jsonc              # routes commented out; alias stack is load-bearing
+    wrangler.jsonc              # routes commented out; alias + assets bindings load-bearing
     tsconfig.json
+    client/                     # React SPA for /ui/* views (shell handshake-capable)
+      package.json / vite.config.ts / tsconfig.json / index.html
+      src/main.tsx / src/app.tsx
+      src/providers/shell-provider.tsx  # handshake + setTarget intent listen
+      src/routes/$slug.tsx              # dispatch renderer by URL slug
+      src/renderers/default.tsx         # starter view — duplicate + specialize
+      src/lib/node.ts                   # useNode(shell, nodeId) + PROP keys
+      README.md                         # add-a-view guide + HMR setup
   scripts/
     build-spec.ts               # stamp spec.json for a preset
     infra-prepare.ts            # local services (astrale / cloudflared / wrangler dev)
@@ -54,10 +62,26 @@ rewritten. What's left:
    Watch out for `methods/index.ts` which re-exports `./note-ops.ts` —
    update the import if you rename the file, or `pnpm test` fails.
 
-3. **Install & test.** `pnpm install` at the workspace root (never in
+3. **Register the sub-packages in the workspace.** Add to
+   `pnpm-workspace.yaml` at the repo root (the `astrale domain init`
+   command doesn't edit the workspace file for you yet):
+
+   ```yaml
+   - 'kernel/domains/<slug>'
+   - 'kernel/domains/<slug>/worker'
+   - 'kernel/domains/<slug>/worker/client'
+   - 'kernel/domains/<slug>/test'
+   ```
+
+4. **Install & test.** `pnpm install` at the workspace root (never in
    sub-packages). `pnpm test` runs the in-process smoke test. Then
    `astrale domain dev up --kernel <k> --domain <d>` to wire the remote
    integration path (replaces the legacy `pnpm infra:prepare`).
+
+5. **(Optional) Tweak the SPA.** The worker ships with a React SPA at
+   `worker/client/` that renders `/ui/<slug>` views. The `default`
+   renderer dumps the target node's props — duplicate + rename for
+   domain-specific views. See `worker/client/README.md`.
 
 ## Links
 

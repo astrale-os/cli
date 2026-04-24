@@ -24,5 +24,16 @@
     "@astrale-os/kernel-core/domain": "../../../core/domain/index.ts",
     "@astrale-os/kernel-dsl": "../../../dsl/src/index.ts",
     "@astrale-os/kernel-runtime": "../../../runtime/index.ts"
+  },
+  // Workers Assets binding — serves the React SPA (`client/` → `dist-client/`)
+  // at `/ui/*`. SPA fallback returns `index.html` for deep URLs so TanStack
+  // Router can slug-route client-side.
+  // `run_worker_first: true` keeps the Worker's fetch handler in front so
+  // the RPC endpoint at `/` isn't shadowed by the assets root.
+  "assets": {
+    "directory": "./dist-client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
   }
 }

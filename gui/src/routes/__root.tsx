@@ -50,7 +50,13 @@ function RootComponent() {
           </span>
         )}
       </header>
-      <main className="flex-1 min-h-0 overflow-auto p-6">
+      <main
+        className={
+          instanceId
+            ? 'flex-1 min-h-0 overflow-hidden'
+            : 'flex-1 min-h-0 overflow-auto p-6'
+        }
+      >
         <Outlet />
       </main>
     </div>

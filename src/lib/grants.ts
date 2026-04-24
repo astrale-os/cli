@@ -7,27 +7,37 @@ const USE_PERM = 4
 
 /**
  * Bootstrap grants for the `distribution` domain — mirrors the grants
- * issued by `kernel/domains/distribution/test/e2e/setup.ts` (§4.3 admin
- * enrollment is tracked separately; this function only ensures the
- * installed domain is runnable).
+ * issued by `kernel/domains/distribution/test/e2e/setup.ts`.
  *
  * The grantees are the worker function paths themselves: when the Cloudflare
- * Worker runs a BlaxelComputer method, it needs USE on the kernel primitives
- * (Node.createNode/update/deleteNode/get/link) plus the domain root.
+ * Worker runs a method, it needs USE on the static namespace syscalls it
+ * invokes via `kernel.call(...)` plus the domain root. Instance syscalls
+ * (`@id::link`, `::get`, `::grantPerm`, `::extendIdentity`, …) dispatch
+ * based on per-node perms, not USE on a namespace path, so they don't need
+ * to appear here.
  */
 export async function grantDistributionBootstrap(
   client: KernelClient<FnMap>,
   credential: string,
   domainOrigin: string,
 ): Promise<void> {
-  const methods = ['init', 'list', 'delete', 'deployFunction', 'deleteFunction']
-  const workerFnPaths = methods.map((m) => `/${domainOrigin}/class.BlaxelComputer/${m}`)
+  const blaxelMethods = ['init', 'list', 'delete', 'deployFunction', 'deleteFunction']
+  const workerFnPaths = [
+    ...blaxelMethods.map((m) => `/${domainOrigin}/class.BlaxelComputer/${m}`),
+    `/${domainOrigin}/class.Distribution/init`,
+    `/${domainOrigin}/class.User/init`,
+    `/${domainOrigin}/class.User/desktops`,
+    `/${domainOrigin}/class.User/homes`,
+    `/${domainOrigin}/class.Desktop/items`,
+    `/${domainOrigin}/class.View/resolve`,
+  ]
   const primitives = [
     '/kernel.astrale.ai/interface.Node/createNode',
     '/kernel.astrale.ai/interface.Node/update',
     '/kernel.astrale.ai/interface.Node/deleteNode',
     '/kernel.astrale.ai/interface.Node/get',
     '/kernel.astrale.ai/interface.Node/link',
+    '/kernel.astrale.ai/class.Root/query',
     `/${domainOrigin}`,
   ]
 

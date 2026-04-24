@@ -7,11 +7,13 @@
     "dev": "vite --port 3400",
     "build": "vite build",
     "typecheck": "tsgo --noEmit",
+    "test": "bun test",
     "start": "node .output/server/index.mjs"
   },
   "dependencies": {
     "@astrale-os/astrale": "workspace:*",
     "@astrale-os/shell": "workspace:*",
+    "@astrale-os/ui-components": ">=0.0.0 <1.0.0",
     "@tailwindcss/vite": "^4.0.6",
     "@tanstack/react-router": "~1.131.0",
     "@tanstack/react-start": "~1.131.0",
@@ -24,6 +26,7 @@
   },
   "devDependencies": {
     "@astrale/typescript-config": "jsr:@astrale/typescript-config@~1.1.0",
+    "@types/bun": "^1.3.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

@@ -7,6 +7,10 @@
  * astrale-domain-dev skill (references/deploy.md) for the `/meta` contract
  * and deploy flow.
  *
+ * Views live under `/ui/*`: the worker delegates to the Workers Assets
+ * binding (serving the Vite build of `../client/`). In dev, setting
+ * `VIEW_DEV_URL` in `.dev.vars` forwards to `vite dev` for React HMR.
+ *
  * The production wiring is `../../domain.ts` (the RemoteDomain consumed by
  * `build-spec.ts` and installed into the kernel). Swap the stubs with real
  * handlers here (or build a worker-local `defineRemoteDomain<Env>()` with
@@ -55,6 +59,26 @@ function getApp(env: Env) {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url)
+
+    // Views live under `/ui/*`. See `client/README.md` for the dev loops.
+    //   - Default: Workers Assets serves the Vite build from `../dist-client/`.
+    //     Vite emits asset refs with `base: '/ui/'`; we strip `/ui` before
+    //     delegating so the files resolve from the assets root. SPA fallback
+    //     returns `index.html` for unmatched deep URLs (TanStack Router
+    //     takes over client-side).
+    //   - HMR: if `env.VIEW_DEV_URL` is set (`.dev.vars` override), forward
+    //     `/ui/*` to `vite dev` for React fast-refresh.
+    if (url.pathname === '/ui' || url.pathname.startsWith('/ui/')) {
+      if (env.VIEW_DEV_URL) {
+        const devBase = env.VIEW_DEV_URL.replace(/\/$/, '')
+        return fetch(new Request(`${devBase}${url.pathname}${url.search}`, request))
+      }
+      const stripped = url.pathname.replace(/^\/ui\/?/, '/')
+      const rewrittenUrl = new URL(stripped + url.search, url.origin)
+      return env.ASSETS.fetch(new Request(rewrittenUrl, request))
+    }
+
     const app = getApp(env)
     return app.fetch(request)
   },

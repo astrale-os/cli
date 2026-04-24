@@ -1,24 +1,9 @@
 @import 'tailwindcss';
 
-html,
-body {
-  height: 100%;
-  width: 100%;
-}
-
-body {
-  @apply m-0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
-    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
-}
-
+/*
+ * shadcn-compatible design tokens so Card/Button/etc from
+ * @astrale-os/ui-components render consistently.
+ */
 :root {
   --background: #fafafa;
   --foreground: #171717;
@@ -27,8 +12,8 @@ code {
   --border: #e5e5e5;
   --card: #ffffff;
   --card-foreground: #171717;
-  --primary: #2563eb;
-  --primary-foreground: #ffffff;
+  --primary: #171717;
+  --primary-foreground: #fafafa;
   --destructive: #ef4444;
   --ring: #d4d4d4;
   --radius: 0.5rem;
@@ -56,10 +41,9 @@ code {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground m-0;
   }
-  #app {
-    height: 100%;
-    width: 100%;
+  #root {
+    min-height: 100vh;
   }
 }

@@ -1,5 +1,5 @@
-import { access, readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { access, readdir, readFile } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
@@ -106,6 +106,25 @@ export default {
     const specSlug = extractDomainSlug(spec.nodes)
     const meta = spec.meta
 
+    // Auto-detect worker key for non-builtin domains when `-k` was not
+    // passed. Looks under `<specDir>/worker/keys/` — the convention used by
+    // `minimal-remote`-scaffolded domains. Missing key = silent install
+    // without identity binding, which causes OIDC discovery to take over
+    // for worker→kernel call-backs (and crash on bare-slug iss pre fetchJwksUri
+    // tolerance). Surfacing the match explicitly makes the intent visible.
+    if (!resolvedKey) {
+      const hint = meta?.baseDomain ?? specSlug
+      const autoKey = await autoDetectWorkerKey(dirname(filePath), hint)
+      if (autoKey) {
+        resolvedKey = autoKey
+        log.dim(`  Auto-detected worker key: ${autoKey}`)
+      } else {
+        log.warn(
+          '  No `-k` provided and no worker key auto-detected — installing without identity binding.',
+        )
+      }
+    }
+
     if (meta) {
       const stamp = [
         meta.baseDomain && `baseDomain=${meta.baseDomain}`,
@@ -195,4 +214,42 @@ function isSignatureVerificationError(e: unknown): boolean {
     typeof msg === 'string' &&
     /signature verification failed/i.test(msg)
   )
+}
+
+/**
+ * Locate a worker private-key JWK under `<specDir>/worker/keys/`.
+ *
+ * Resolution order:
+ *   1. `<baseDomain>-worker.jwk.json` (exact match — e.g. `dist-v2-worker.jwk.json`)
+ *   2. single `*.jwk.json` file in the directory
+ *
+ * Returns `null` when nothing obvious matches (ambiguous or missing) —
+ * the caller is expected to warn and proceed without an identity binding.
+ */
+async function autoDetectWorkerKey(
+  specDir: string,
+  baseDomain: string | undefined,
+): Promise<string | null> {
+  const keysDir = join(specDir, 'worker', 'keys')
+  let entries: string[]
+  try {
+    entries = await readdir(keysDir)
+  } catch {
+    return null
+  }
+  const jwks = entries.filter((n) => n.endsWith('.jwk.json'))
+  if (jwks.length === 0) return null
+
+  if (baseDomain) {
+    const exact = `${baseDomain}-worker.jwk.json`
+    if (jwks.includes(exact)) return join(keysDir, exact)
+  }
+
+  if (jwks.length === 1) return join(keysDir, jwks[0]!)
+
+  // Ambiguous — let the user pass `-k` explicitly.
+  log.warn(
+    `  Multiple .jwk.json candidates in ${keysDir}; not auto-picking — pass \`-k <path>\`.`,
+  )
+  return null
 }

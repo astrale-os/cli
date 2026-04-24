@@ -1,0 +1,28 @@
+{
+  "name": "@astrale-os/minimal-remote-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "dev:hmr": "vite",
+    "typecheck": "bunx tsgo --noEmit"
+  },
+  "dependencies": {
+    "@astrale-os/shell": "workspace:*",
+    "@astrale-os/ui-components": ">=0.0.0 <1.0.0",
+    "@tanstack/react-router": "~1.131.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.6",
+    "@tanstack/router-plugin": "~1.131.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "tailwindcss": "^4.0.6",
+    "vite": "^7.1.7"
+  }
+}

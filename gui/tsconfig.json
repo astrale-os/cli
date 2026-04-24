@@ -8,7 +8,7 @@
     "jsx": "react-jsx",
     "outDir": "dist",
     "rootDir": ".",
-    "types": ["node"],
+    "types": ["node", "bun"],
     "paths": {
       "@/*": ["./src/*"]
     },

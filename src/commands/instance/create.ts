@@ -61,7 +61,8 @@ export default {
     { flags: '--as <identity>', description: 'Identity to record as default (§2.4)' },
     {
       flags: '--distroless',
-      description: 'Do not install the builtin distribution domain on the new instance',
+      description:
+        'Do not install the builtin distribution domain (users, desktops, views, compute) on the new instance',
     },
     {
       flags: '--install <domain-spec>',
