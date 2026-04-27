@@ -86,11 +86,11 @@ export function OpForm({ op, onResult, defaultNodeId }: OpFormProps) {
         needsSelf && nodeId
           ? `${nodeId.startsWith('/') || nodeId.startsWith('@') ? nodeId : `@${nodeId}`}:${op.key}`
           : op.wireName
-      const routedFallback = bindingMode === 'routed' && !hasRouteBinding(method)
+      const routedFallback = bindingMode === 'auto' && !hasRouteBinding(method)
       const data = await call(method, params)
       onResult({ data, routedFallback })
     } catch (err) {
-      const routedFallback = bindingMode === 'routed' && !hasRouteBinding(op.wireName)
+      const routedFallback = bindingMode === 'auto' && !hasRouteBinding(op.wireName)
       onResult({ error: err instanceof Error ? err.message : 'Unknown error', routedFallback })
     } finally {
       setLoading(false)

@@ -1,4 +1,5 @@
-import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
+import { type FnMap } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 
 import type { CommandDefinition } from '../../command'
 
@@ -34,9 +35,12 @@ function extractDomainOrigin(spec: {
   return undefined
 }
 
-async function rollback(client: KernelClient<FnMap>, credential: string, slug: string) {
+async function rollback(client: ClientSession<FnMap>, _credential: string, slug: string) {
   try {
-    await client.call('/manager.astrale.ai/class.KernelInstance/delete', { id: slug }, credential)
+    await client.call(
+      '/manager.astrale.ai/class.KernelInstance/delete',
+      { id: slug },
+    )
     log.dim(`  rolled back — "${slug}" deleted on manager`)
   } catch {
     /* best effort */
@@ -129,7 +133,10 @@ export default {
       const config = await readConfig()
       const url0 = managerUrl(config)
       const credential = await resolveCredential({}, config)
-      const client = new KernelClient<FnMap>({ url: url0, requestTimeout: 10_000 })
+      const client = new ClientSession<FnMap>({
+        default: url0,
+        identity: credential,
+      })
 
       // Default child issuer/url for local-proxied mode (§4.6).
       // Children are mounted at `http://localhost:<port>/<slug>/` — NOT under
@@ -176,16 +183,17 @@ export default {
             label: opts.name,
             publicKey: instanceAuth.publicKey,
           },
-          credential,
         )
         registered = true
         log.info(`Booting "${slug}"…`)
-        await client.call('/manager.astrale.ai/class.KernelInstance/boot', { id: slug }, credential)
+        await client.call(
+          '/manager.astrale.ai/class.KernelInstance/boot',
+          { id: slug },
+        )
 
         const info = (await client.call(
           '/manager.astrale.ai/class.KernelInstance/info',
           { id: slug },
-          credential,
         )) as { issuer?: string; url?: string }
         const issuer = info.issuer ?? bakedIssuer
         const url = info.url ?? issuer
@@ -252,8 +260,11 @@ export default {
           }
           const origin = extractDomainOrigin(spec) ?? 'dist.astrale.ai'
 
-          const instanceClient = new KernelClient<FnMap>({ url, requestTimeout: 10_000 })
           const instanceCredential = await resolveCredential({}, config, url, slug)
+          const instanceClient = new ClientSession<FnMap>({
+            default: url,
+            identity: instanceCredential,
+          })
           try {
             await grantDistributionBootstrap(instanceClient, instanceCredential, origin)
             log.success(`Distribution ready on "${slug}" (origin=${origin})`)

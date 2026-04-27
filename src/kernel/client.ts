@@ -1,4 +1,5 @@
 import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 
 import type { KernelCommandOpts } from './types'
 
@@ -10,7 +11,8 @@ import { resolveCredential } from './auth'
 const DEFAULT_TIMEOUT_MS = 30_000
 
 export type ClientContext = {
-  client: KernelClient<FnMap>
+  /** High-level call surface — bound to `credential` via ClientSession.identity. */
+  client: ClientSession<FnMap>
   credential: string
   url: string
   config: Awaited<ReturnType<typeof readConfig>>
@@ -44,15 +46,24 @@ export async function withKernelClient<T>(
   }
   const credential = await resolveCredential(opts, config, audience, slug)
 
-  const client = new KernelClient<FnMap>({
-    url,
-    requestTimeout: resolveTimeoutMs(opts.timeout),
-    // CLI is short-lived and one-shot per command. Skip the WS upgrade
-    // (saves up to 5s on hangs) and disable HTTP retries (saves ~7s of
-    // exponential backoff on ECONNREFUSED / 5xx). The user can re-run.
-    defaultTransport: 'http',
-    retry: { maxAttempts: 1 },
+  // CLI is short-lived and one-shot per command. Skip the WS upgrade
+  // (saves up to 5s on hangs) and disable HTTP retries (saves ~7s of
+  // exponential backoff on ECONNREFUSED / 5xx). The user can re-run.
+  const requestTimeout = resolveTimeoutMs(opts.timeout)
+  const client = new ClientSession<FnMap>({
+    default: url,
+    identity: credential,
+    pool: {
+      clientFactory: (u) =>
+        new KernelClient<FnMap>({
+          url: u,
+          requestTimeout,
+          defaultTransport: 'http',
+          retry: { maxAttempts: 1 },
+        }),
+    },
   })
+  await client.ready()
 
   try {
     const result = await fn({ client, credential, url, config })

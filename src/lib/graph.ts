@@ -4,7 +4,8 @@ import {
   deleteGraph,
   type FalkorDBConfig,
 } from '@astrale-os/kernel-adapters/falkordb'
-import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
+import { type FnMap } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 import chalk from 'chalk'
 
 import type { AstraleConfig } from './config'
@@ -95,19 +96,22 @@ export async function removeGraph(config: AstraleConfig, graphName: string): Pro
 /** Try to fetch instance list from the manager. Returns null if unreachable. */
 async function discoverInstances(config: AstraleConfig): Promise<KernelInstance[] | null> {
   const url = `http://localhost:${config.managerPort}/mngt`
-  const client = new KernelClient<FnMap>({ url, requestTimeout: 5_000 })
+  const credential = await resolveCredential({}, config)
+  const session = new ClientSession<FnMap>({
+    default: url,
+    identity: credential,
+  })
   try {
-    const credential = await resolveCredential({}, config)
-    const result = await client.call(
+    const result = await session.call(
       '/manager.astrale.ai/class.KernelInstance/list',
       {},
-      credential,
+      { timeout: 5_000 },
     )
     return result as KernelInstance[]
   } catch {
     return null
   } finally {
-    client.disconnect()
+    session.disconnect()
   }
 }
 

@@ -241,6 +241,24 @@ export async function composeDown(composePath: string = COMPOSE_PATH): Promise<v
   await run(['docker', 'compose', '-f', composePath, 'down', '-v'])
 }
 
+/**
+ * Best-effort `docker rm -f <name>`. Returns true if the container existed
+ * and was removed, false if there was nothing to remove or docker is
+ * unreachable. Used by `astrale reset --hard` to mop up containers that
+ * may have been started outside compose (e.g. a manually-run FalkorDB).
+ */
+export async function forceRemoveContainer(name: string): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(['docker', 'rm', '-f', name], { stdout: 'pipe', stderr: 'pipe' })
+    const code = await proc.exited
+    return code === 0
+  } catch {
+    // ENOENT (no docker on PATH), spawn errors, etc. — caller treats this
+    // as "nothing to remove", which is the right semantic for reset.
+    return false
+  }
+}
+
 export async function composeRestart(
   service: string,
   composePath: string = COMPOSE_PATH,
@@ -254,16 +272,31 @@ export interface ComposeServiceStatus {
   readonly Health?: string
 }
 
-export async function composePs(
-  composePath: string = COMPOSE_PATH,
-): Promise<ComposeServiceStatus[]> {
+export interface ComposePsResult {
+  readonly services: ComposeServiceStatus[]
+  /** Set when the `docker compose ps` invocation itself failed (docker not on
+   * PATH, daemon not running, malformed compose file…). When present, callers
+   * should surface the issue rather than silently treating it as "no services". */
+  readonly error?: string
+}
+
+export async function composePs(composePath: string = COMPOSE_PATH): Promise<ComposePsResult> {
+  let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'>
   try {
-    const proc = Bun.spawn(['docker', 'compose', '-f', composePath, 'ps', '--format', 'json'], {
+    proc = Bun.spawn(['docker', 'compose', '-f', composePath, 'ps', '--format', 'json'], {
       stdout: 'pipe',
       stderr: 'pipe',
     })
+  } catch (e) {
+    return { services: [], error: e instanceof Error ? e.message : String(e) }
+  }
+  try {
     const out = await new Response(proc.stdout).text()
-    await proc.exited
+    const code = await proc.exited
+    if (code !== 0) {
+      const err = await new Response(proc.stderr).text()
+      return { services: [], error: `docker compose ps exit ${code}: ${err.trim()}` }
+    }
     const services: ComposeServiceStatus[] = []
     for (const line of out
       .split('\n')
@@ -282,9 +315,9 @@ export async function composePs(
         // ignore malformed line
       }
     }
-    return services
-  } catch {
-    return []
+    return { services }
+  } catch (e) {
+    return { services: [], error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -302,7 +335,7 @@ export function streamManagerLogs(opts: {
 // ─── Runtime helpers ──────────────────────────────────────────
 
 export async function isManagerRunning(composePath: string = COMPOSE_PATH): Promise<boolean> {
-  const services = await composePs(composePath)
+  const { services } = await composePs(composePath)
   return services.some((s) => s.Service === 'manager' && s.State === 'running')
 }
 

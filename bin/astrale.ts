@@ -118,7 +118,11 @@ registerCommand(program, {
   options: [
     { flags: '-i, --instance <id>', description: 'Target instance (defaults to active)' },
     { flags: '-y, --yes', description: 'Skip confirmation prompt' },
-    { flags: '--hard', description: 'Full wipe: delete all FalkorDB graphs and reset local state' },
+    {
+      flags: '--hard',
+      description:
+        'Fresh-install wipe: stop everything, remove containers, delete every Astrale state file (identities, keys, tunnels, FalkorDB data). Always succeeds even if services are dead.',
+    },
     {
       flags: '--host-mode',
       description: 'Reset the host-mode manager (default: docker-mode if detected)',

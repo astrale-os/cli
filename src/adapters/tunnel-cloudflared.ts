@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs'
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { TunnelAdapter, TunnelDescriptor, TunnelStatus } from '../ports/tunnel'
@@ -48,6 +48,40 @@ async function removePidFile(id: string): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Best-effort SIGTERM to every cloudflared pid recorded under TUNNELS_DIR.
+ * Used by `astrale reset --hard`. Tolerates missing dir, missing pids, and
+ * dead processes. Returns the number of pids signaled (i.e. live processes
+ * we asked to exit).
+ */
+export async function stopAllTunnels(): Promise<number> {
+  let entries: string[]
+  try {
+    entries = await readdir(TUNNELS_DIR)
+  } catch {
+    return 0
+  }
+  let signaled = 0
+  for (const entry of entries) {
+    if (!entry.endsWith('.pid')) continue
+    let raw: string
+    try {
+      raw = await readFile(join(TUNNELS_DIR, entry), 'utf-8')
+    } catch {
+      continue
+    }
+    const pid = Number.parseInt(raw.trim(), 10)
+    if (!Number.isFinite(pid) || pid <= 0) continue
+    try {
+      process.kill(pid, 'SIGTERM')
+      signaled++
+    } catch {
+      /* already dead or not ours */
+    }
+  }
+  return signaled
 }
 
 type CfTunnelListItem = { id: string; name: string }

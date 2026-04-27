@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 
 const BINDING_OPTIONS: { value: BindingMode; label: string }[] = [
   { value: 'envelope', label: 'Envelope' },
-  { value: 'routed', label: 'Routed' },
+  { value: 'auto', label: 'Auto' },
 ]
 
 export function CommandBar({

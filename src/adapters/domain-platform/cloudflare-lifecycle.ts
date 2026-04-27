@@ -35,6 +35,7 @@ import { log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
 import {
   assertRuntimeSecrets,
+  astraleArgv,
   clearDevState,
   domainUrl,
   evalPreset,
@@ -160,10 +161,12 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
     `  plan:  astrale=${needsAstrale} cloudflared=${needsCloudflared} wrangler=${needsLocalWorker}`,
   )
 
-  // Pre-flight.
+  // Pre-flight. Run `preUp` BEFORE the secrets assertion: a domain's preUp
+  // hook is the canonical place to populate runtime secrets (e.g. by sourcing
+  // `test/.env`), so checking secrets first defeats the purpose of the hook.
   await preflightDns(buildDnsPreflight(kernel, opts.kernel, opts.domain, domain))
-  assertRuntimeSecrets(config, resolved.lifecyclePath)
   await runHook(hooks.preUp, ctx, 'preUp', resolved.lifecyclePath)
+  assertRuntimeSecrets(config, resolved.lifecyclePath)
 
   // Ensure astrale manager.
   if (needsAstrale) {
@@ -171,7 +174,8 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
       log.dim('  astrale manager already running')
     } else {
       log.dim('  starting astrale manager…')
-      const r = spawnSync('astrale', ['start'], { stdio: 'inherit' })
+      const [bun, entry] = astraleArgv()
+      const r = spawnSync(bun, [entry, 'start'], { stdio: 'inherit' })
       if (r.status !== 0) throw new AstraleError('ASTRALE_START_FAILED', 'astrale start failed')
       state.started.astrale = true
     }
@@ -179,7 +183,8 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
 
   // Ensure cloudflared tunnel.
   if (needsCloudflared) {
-    const status = spawnSync('astrale', ['tunnel', 'status', tunnelName], {
+    const [bun, entry] = astraleArgv()
+    const status = spawnSync(bun, [entry, 'tunnel', 'status', tunnelName], {
       encoding: 'utf-8',
       stdio: ['inherit', 'pipe', 'inherit'],
     })
@@ -187,7 +192,7 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
       log.dim(`  tunnel ${tunnelName} already running`)
     } else {
       log.dim(`  starting tunnel ${tunnelName}…`)
-      const r = spawnSync('astrale', ['tunnel', 'start', tunnelName], { stdio: 'inherit' })
+      const r = spawnSync(bun, [entry, 'tunnel', 'start', tunnelName], { stdio: 'inherit' })
       if (r.status !== 0) {
         throw new AstraleError(
           'TUNNEL_START_FAILED',
@@ -233,11 +238,33 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
           'Shape (b) domains have no worker; dev up only supports shape (a).',
         )
       }
+      // Invoke the locally-installed wrangler binary via the user's login+
+      // interactive zsh, so the subshell sources `.zprofile`/`.zshrc` and gets
+      // a PATH that contains `node` (the wrangler shim does `exec node …`).
+      // `node` is typically installed by Homebrew/nvm/asdf and lives in dirs
+      // only added to PATH by interactive shell config. From a `bash -c`
+      // subshell with macOS-TCC-stripped env, those dirs aren't visible.
+      //
+      // Tried first:
+      //   - `bunx wrangler dev` — only a shell function on some setups
+      //     (safe-chain), invisible to subshells.
+      //   - `bun x wrangler dev` — bun's package runner fails with
+      //     `CouldntReadCurrentDirectory` under TCC.
+      //   - `bash -lc <wrangler shim>` — bash login doesn't source zsh's
+      //     `.zshrc`, so node still isn't on PATH for zsh users.
+      const wranglerBin = join(workerDir, 'node_modules', '.bin', 'wrangler')
+      if (!existsSync(wranglerBin)) {
+        throw new AstraleError(
+          'NO_WRANGLER',
+          `Expected ${wranglerBin} to exist`,
+          'Run `pnpm install` in the workspace root.',
+        )
+      }
       const spawn = spawnSync(
-        'bash',
+        '/bin/zsh',
         [
-          '-c',
-          `cd ${JSON.stringify(workerDir)} && nohup bunx wrangler dev --port ${port} > ${JSON.stringify(logFile)} 2>&1 &`,
+          '-lic',
+          `cd ${JSON.stringify(workerDir)} && nohup ${JSON.stringify(wranglerBin)} dev --port ${port} > ${JSON.stringify(logFile)} 2>&1 &`,
         ],
         { stdio: 'inherit' },
       )
@@ -292,13 +319,15 @@ export async function devDown(opts: DevDownOpts): Promise<DevDownResult> {
 
   if (state.started.cloudflared) {
     const { name } = state.started.cloudflared
-    spawnSync('astrale', ['tunnel', 'stop', name], { stdio: 'ignore' })
+    const [bun, entry] = astraleArgv()
+    spawnSync(bun, [entry, 'tunnel', 'stop', name], { stdio: 'ignore' })
     log.dim(`  stopped tunnel ${name}`)
     stopped.cloudflared = { name }
   }
 
   if (state.started.astrale) {
-    spawnSync('astrale', ['stop'], { stdio: 'ignore' })
+    const [bun, entry] = astraleArgv()
+    spawnSync(bun, [entry, 'stop'], { stdio: 'ignore' })
     log.dim('  stopped astrale manager')
     stopped.astrale = true
   } else {
@@ -417,7 +446,8 @@ function runCli(
   cwd: string,
   opts: { allowFail?: boolean; capture?: boolean } = {},
 ): string {
-  const r = spawnSync('astrale', args, {
+  const [bun, entry] = astraleArgv()
+  const r = spawnSync(bun, [entry, ...args], {
     cwd,
     env: process.env,
     encoding: 'utf-8',
@@ -541,9 +571,11 @@ function findBuildSpecCli(startDir: string): string {
 // ── Utility: find PID listening on port ───────────────────────────────
 
 function findListenerPid(port: number): number | null {
-  const r = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf-8' })
+  // Absolute path — see `cloudflare-helpers.ts` for why bare `lsof` fails
+  // under macOS TCC on `~/Documents/`.
+  const r = spawnSync('/usr/sbin/lsof', ['-ti', `:${port}`], { encoding: 'utf-8' })
   if (r.status !== 0) return null
-  const first = r.stdout.split('\n').filter(Boolean)[0]
+  const first = (r.stdout ?? '').split('\n').filter(Boolean)[0]
   const n = first ? Number.parseInt(first, 10) : NaN
   return Number.isFinite(n) && n > 0 ? n : null
 }

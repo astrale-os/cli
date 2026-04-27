@@ -23,11 +23,11 @@ export async function describeCommand(path: string, opts: DescribeOpts): Promise
     opts,
     label: path,
     fn: async (ctx) => {
-      const node = (await ctx.client.call(`${path}::get`, {}, ctx.credential)) as NodeItem
+      const node = (await ctx.client.call(`${path}::get`, {})) as NodeItem
 
       let children: NodeItem[] = []
       try {
-        const result = await ctx.client.call(`${path}::listChildren`, {}, ctx.credential)
+        const result = await ctx.client.call(`${path}::listChildren`, {})
         children = extractItems<NodeItem>(result)
       } catch {
         // Node may have no children (leaf node)

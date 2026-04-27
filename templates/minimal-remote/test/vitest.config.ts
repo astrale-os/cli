@@ -43,7 +43,7 @@ export default defineConfig({
       alias('@astrale-os/kernel-core', k('core/index.ts')),
       alias('@astrale-os/kernel-api', k('api/index.ts')),
       alias('@astrale-os/kernel-server', k('server/index.ts')),
-      alias('@astrale-os/kernel-client', k('clients/kernel-client/src/index.ts')),
+      alias('@astrale-os/kernel-client', k('client/src/index.ts')),
       alias('@astrale-os/kernel-test', k('test/src/index.ts')),
       alias('@astrale-os/kernel-toolkit', k('toolkit/src/index.ts')),
       alias('@astrale-os/kernel-runtime', k('runtime/index.ts')),

@@ -176,7 +176,6 @@ export default {
           return (await ctx.client.call(
             '/kernel.astrale.ai/class.Root/installDomain',
             { spec: specPayload, identity },
-            ctx.credential,
           )) as InstallResult
         } catch (e) {
           // Re-throw sig failures with the -k context so the user doesn't

@@ -8,6 +8,6 @@ export async function queryCommand(cypher: string, opts: KernelCommandOpts): Pro
   await runKernelCommand({
     opts,
     label: 'Query',
-    fn: (ctx) => ctx.client.call(QUERY_METHOD, { cypher }, ctx.credential),
+    fn: (ctx) => ctx.client.call(QUERY_METHOD, { cypher }),
   })
 }

@@ -1,4 +1,5 @@
-import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
+import { type FnMap } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 
 import type { CommandDefinition } from '../../command'
 
@@ -61,13 +62,16 @@ export default {
     }
 
     const config = await readConfig()
-    const client = new KernelClient<FnMap>({ url: managerUrl(config), requestTimeout: 5_000 })
+    const credential = await resolveCredential({}, config)
+    const client = new ClientSession<FnMap>({
+      default: managerUrl(config),
+      identity: credential,
+    })
     try {
-      const credential = await resolveCredential({}, config)
       await client.call(
         '/manager.astrale.ai/class.KernelInstance/delete',
         { id: key ?? name },
-        credential,
+        { timeout: 5_000 },
       )
       log.success(`Unregistered "${key ?? name}" from manager`)
       deletedSomewhere = true

@@ -29,7 +29,7 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: `Children of ${path}`,
-    fn: (ctx) => ctx.client.call(`${path}::listChildren`, {}, ctx.credential),
+    fn: (ctx) => ctx.client.call(`${path}::listChildren`, {}),
     format: (result, fmtOpts, isRaw) => {
       let items = extractItems<Item>(result)
 
@@ -102,7 +102,7 @@ async function buildTree(
 ): Promise<TreeNode[]> {
   if (depth >= MAX_DEPTH || counter.count >= MAX_NODES) return []
   try {
-    const result = await ctx.client.call(`${path}::listChildren`, {}, ctx.credential)
+    const result = await ctx.client.call(`${path}::listChildren`, {})
     const items = extractItems<Item>(result)
 
     const nodes: TreeNode[] = []

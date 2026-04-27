@@ -46,9 +46,12 @@ export async function callCommand(
         const finalParams = binding.paramsInjection
           ? { ...binding.paramsInjection, ...params }
           : params
-        return ctx.client.call(binding.path, finalParams, workerCreds, { url: binding.remoteUrl })
+        return ctx.client.call(binding.path, finalParams, {
+          url: binding.remoteUrl,
+          credential: workerCreds,
+        })
       }
-      return ctx.client.call(path, params, ctx.credential)
+      return ctx.client.call(path, params)
     },
   })
 }
@@ -58,7 +61,7 @@ async function describeOperation(path: string, opts: CallOpts): Promise<void> {
     opts,
     label: `Schema for ${path}`,
     fn: (ctx) =>
-      ctx.client.call(`${path}::get`, {}, ctx.credential) as Promise<Record<string, unknown>>,
+      ctx.client.call(`${path}::get`, {}) as Promise<Record<string, unknown>>,
     format: (node, fmtOpts) => {
       const props = (node.properties ?? node) as Record<string, unknown>
       const schema: Record<string, unknown> = {}

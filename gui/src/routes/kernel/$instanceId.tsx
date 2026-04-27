@@ -55,15 +55,43 @@ function instanceUrl(instanceId: string) {
 }
 
 /**
- * The View class lives in the installed `distribution` domain. Its slug is
- * runtime-determined (`dist.astrale.ai` in prod, `dist.localhost` in dev,
- * `dist.local-<tunnel>.astrale.ai` for tunneled setups). Derive it from the
- * clicked node's class ref `/:<domain>:class.<Name>` rather than hardcoding.
+ * Walk the kernel from root for the first node whose path ends with
+ * `/class.<className>`. Returns the full kernel path (e.g.
+ * `/dist.astrale.ai/class.View`) so callers can build method paths via
+ * `${path}/<method>` without reconstructing the domain.
+ *
+ * Generic by design: the View class lives in `distribution` today but may
+ * move, be renamed, or be served by a non-default domain (`dist.localhost`,
+ * `dist.local-<tunnel>.astrale.ai`, …). We don't hardcode any of that —
+ * we ask the kernel which domains exist and check each for the class.
+ *
+ * Note: in the kernel graph, a class definition is materialized as a
+ * `Folder` node named `class.<Name>` (its method nodes live inside).
+ * So the filter is on path suffix, not label.
+ *
+ * Lookups are one round-trip per domain, in parallel. Classes are direct
+ * children of their domain by convention (no further folder nesting), so
+ * we don't recurse — keeps the discovery cheap and predictable.
  */
-function resolverMethodFor(node: KernelNode): string | null {
-  const parts = node.class.split(':')
-  const domain = parts[1]
-  return domain ? `/${domain}/class.View/resolve` : null
+async function findClassPath(
+  kernel: NonNullable<ReturnType<typeof useKernel>>,
+  className: string,
+): Promise<string | null> {
+  const suffix = `/class.${className}`
+  const roots = (await kernel.call('/::listChildren', {})) as KernelNode[]
+  const domains = roots.filter((n) => n.__labels.includes('Domain'))
+  const domainChildren = await Promise.all(
+    domains.map((d) =>
+      (kernel.call(`${d.path}::listChildren`, {}) as Promise<KernelNode[]>).catch(
+        () => [] as KernelNode[],
+      ),
+    ),
+  )
+  for (const children of domainChildren) {
+    const cls = children.find((n) => n.path.endsWith(suffix))
+    if (cls) return cls.path
+  }
+  return null
 }
 
 function InstancePage() {
@@ -80,6 +108,10 @@ function InstancePage() {
   const [viewMode, setViewMode] = useState<ViewMode | null>(null)
   const [computedView, setComputedView] = useState<ComputedView | null>(null)
   const [treeRoots, setTreeRoots] = useState<TreeNode[] | null>(null)
+  // Path to `class.View`, resolved once on kernel ready (e.g.
+  // `/dist.astrale.ai/class.View`). `null` until the lookup completes;
+  // stays `null` if no installed domain exposes a View class.
+  const [viewClassPath, setViewClassPath] = useState<string | null>(null)
   const [isComputing, setIsComputing] = useState(false)
   const [autoExpand, setAutoExpand] = useState(false)
 
@@ -289,13 +321,16 @@ function InstancePage() {
       if (!kernel) return
       setPicker(null)
       setStatusMsg(null)
-      const resolverMethod = resolverMethodFor(node)
-      if (!resolverMethod) {
-        setStatusMsg(`Cannot determine View.resolve path for ${node.path}`)
+      if (!viewClassPath) {
+        setStatusMsg(
+          'No View class found on this kernel — install a domain that exposes one (e.g. `distribution`).',
+        )
         return
       }
       try {
-        const views = (await kernel.call(resolverMethod, { node: node.path })) as ResolvedView[]
+        const views = (await kernel.call(`${viewClassPath}/resolve`, {
+          node: node.path,
+        })) as ResolvedView[]
         if (views.length === 0) {
           setStatusMsg(`No view available for ${node.path}`)
           return
@@ -309,8 +344,23 @@ function InstancePage() {
         setStatusMsg(err instanceof Error ? err.message : 'View.resolve failed')
       }
     },
-    [kernel, openView],
+    [kernel, openView, viewClassPath],
   )
+
+  useEffect(() => {
+    if (!kernel || viewClassPath) return
+    let cancelled = false
+    void findClassPath(kernel, 'View')
+      .then((path) => {
+        if (!cancelled && path) setViewClassPath(path)
+      })
+      .catch(() => {
+        /* discovery failure is non-fatal; onOpen surfaces a helpful message */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [kernel, viewClassPath])
 
   const closeTab = useCallback(
     async (tabId: string) => {

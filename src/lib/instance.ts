@@ -1,4 +1,5 @@
 import { KernelClient } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 import { readFile, unlink, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
@@ -326,17 +327,24 @@ async function probeManagerInstance(name: string): Promise<boolean> {
     const config = await readConfig()
     const credential = await resolveCredential({}, config)
     const url = `http://localhost:${config.managerPort}/mngt`
-    const client = new KernelClient({
-      url,
-      requestTimeout: 5_000,
-      defaultTransport: 'http',
-      retry: { maxAttempts: 1 },
+    const session = new ClientSession({
+      default: url,
+      identity: credential,
+      pool: {
+        clientFactory: (u) =>
+          new KernelClient({
+            url: u,
+            requestTimeout: 5_000,
+            defaultTransport: 'http',
+            retry: { maxAttempts: 1 },
+          }),
+      },
     })
     try {
-      await client.call('/manager.astrale.ai/class.KernelInstance/info', { id: name }, credential)
+      await session.call('/manager.astrale.ai/class.KernelInstance/info', { id: name })
       return true
     } finally {
-      client.disconnect()
+      session.disconnect()
     }
   } catch {
     return false
@@ -426,17 +434,23 @@ export async function invalidateManagerCache(): Promise<void> {
 
 async function fetchManagerInstancesLive(config: AstraleConfig): Promise<ManagerInstance[]> {
   const credential = await resolveCredential({}, config)
-  const client = new KernelClient({
-    url: managerUrl(config),
-    requestTimeout: 5_000,
-    defaultTransport: 'http',
-    retry: { maxAttempts: 1 },
+  const session = new ClientSession({
+    default: managerUrl(config),
+    identity: credential,
+    pool: {
+      clientFactory: (u) =>
+        new KernelClient({
+          url: u,
+          requestTimeout: 5_000,
+          defaultTransport: 'http',
+          retry: { maxAttempts: 1 },
+        }),
+    },
   })
   try {
-    const result = (await client.call(
+    const result = (await session.call(
       '/manager.astrale.ai/class.KernelInstance/list',
       {},
-      credential,
     )) as ManagerInstance[]
     return result.map((r) => ({
       ...r,
@@ -446,7 +460,7 @@ async function fetchManagerInstancesLive(config: AstraleConfig): Promise<Manager
       url: r.url ?? r.issuer ?? `http://localhost:${config.managerPort}/${r.id}`,
     }))
   } finally {
-    client.disconnect()
+    session.disconnect()
   }
 }
 

@@ -1,4 +1,5 @@
-import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
+import { type FnMap } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 
 import type { CommandDefinition } from '../../command'
 
@@ -103,21 +104,24 @@ async function findInstanceForGraph(
   graphName: string,
 ): Promise<KernelInstance | null> {
   const url = `http://localhost:${config.managerPort}/mngt`
-  const client = new KernelClient<FnMap>({ url, requestTimeout: 5_000 })
+  const credential = await resolveCredential(
+    {},
+    config as Parameters<typeof resolveCredential>[1],
+  )
+  const session = new ClientSession<FnMap>({
+    default: url,
+    identity: credential,
+  })
   try {
-    const credential = await resolveCredential(
-      {},
-      config as Parameters<typeof resolveCredential>[1],
-    )
-    const instances = (await client.call(
+    const instances = (await session.call(
       '/manager.astrale.ai/class.KernelInstance/list',
       {},
-      credential,
+      { timeout: 5_000 },
     )) as KernelInstance[]
     return instances.find((i) => i.graphName === graphName) ?? null
   } catch {
     return null
   } finally {
-    client.disconnect()
+    session.disconnect()
   }
 }

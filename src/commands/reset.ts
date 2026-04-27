@@ -1,24 +1,41 @@
 import type { Kernel } from '@astrale-os/kernel-toolkit'
 
-import { clearGraph, deleteGraph, listGraphs } from '@astrale-os/kernel-adapters/falkordb'
-import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
+import { clearGraph } from '@astrale-os/kernel-adapters/falkordb'
+import { type FnMap } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 import chalk from 'chalk'
-import { unlink } from 'node:fs/promises'
+import { rm, rmdir } from 'node:fs/promises'
 
+import { stopAllTunnels } from '../adapters/tunnel-cloudflared'
 import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
-import { composeDown, composeUp, isManagerRunning, waitManagerHealthy } from '../lib/docker'
+import { composeDown, forceRemoveContainer } from '../lib/docker'
 import { formatElapsed } from '../lib/format'
 import { getActive, resolveInstanceId } from '../lib/instance'
 import { log, spinner } from '../lib/log'
-import { startManager, detectManagerState, removeManagerPid } from '../lib/manager-state'
 import {
+  detectManagerState,
+  forceStopManager,
+  removeManagerPid,
+  startManager,
+} from '../lib/manager-state'
+import {
+  ASTRALE_HOME,
   COMPOSE_PATH,
+  CONFIG_PATH,
+  DATA_DIR,
+  DOMAINS_DIR,
+  IDENTITIES_PATH,
   INSTANCES_PATH,
-  JOURNAL_PATH,
+  KEYS_DIR,
+  LOGS_DIR,
+  MANAGER_CACHE_PATH,
   MANAGER_PID_PATH,
+  TUNNELS_DIR,
+  TUNNELS_PATH,
   UI_PID_PATH,
 } from '../lib/paths'
+import { stopUis } from '../lib/ui'
 import { stopCommand } from './stop'
 
 type ResetOptions = {
@@ -30,8 +47,7 @@ type ResetOptions = {
 
 export async function resetCommand(opts: ResetOptions): Promise<void> {
   if (opts.hard) {
-    const config = await readConfig()
-    return resetHard(config, opts)
+    return resetHard(opts)
   }
   const config = await readConfig()
   const active = await getActive(config)
@@ -68,14 +84,17 @@ async function resetManager(
     managerSession = await startManager(config)
   }
 
-  const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
+  const client = new ClientSession<FnMap>({
+    default: url,
+    identity: credential,
+  })
 
   try {
     // List sub-instances to warn user
     const instances = (await client.call(
       '/manager.astrale.ai/class.KernelInstance/list',
       {},
-      credential,
+      { timeout: 30_000 },
     )) as Array<{ id: string; status: string }>
 
     // Confirm
@@ -103,7 +122,6 @@ async function resetManager(
           client.call(
             '/manager.astrale.ai/class.KernelInstance/delete',
             { id: instance.id },
-            credential,
           ),
         ),
       )
@@ -171,14 +189,17 @@ async function resetSubInstance(
     managerSession = await startManager(config)
   }
 
-  const client = new KernelClient<FnMap>({ url, requestTimeout: 30_000 })
+  const client = new ClientSession<FnMap>({
+    default: url,
+    identity: credential,
+  })
   let spin: ReturnType<typeof spinner> | null = null
 
   try {
     const instances = (await client.call(
       '/manager.astrale.ai/class.KernelInstance/list',
       {},
-      credential,
+      { timeout: 30_000 },
     )) as Array<{ id: string; status: string }>
 
     if (instances.length === 0) {
@@ -221,14 +242,12 @@ async function resetSubInstance(
       await client.call(
         '/manager.astrale.ai/class.KernelInstance/boot',
         { id: targetId },
-        credential,
       )
     }
 
     await client.call(
       '/manager.astrale.ai/class.KernelInstance/reboot',
       { id: targetId, clear: true },
-      credential,
     )
 
     const elapsed = performance.now() - startTime
@@ -262,26 +281,21 @@ async function resetSubInstance(
 
 // ── Hard reset ────────────────────────────────────────────────
 
-async function resetHard(
-  config: Awaited<ReturnType<typeof readConfig>>,
-  opts: ResetOptions,
-): Promise<void> {
-  const dockerMode = !opts.hostMode && (await isManagerRunning(COMPOSE_PATH).catch(() => false))
-  if (dockerMode) {
-    await resetHardDocker(config, opts)
-  } else {
-    await resetHardHost(config, opts)
-  }
-}
-
-async function resetHardDocker(
-  config: Awaited<ReturnType<typeof readConfig>>,
-  opts: ResetOptions,
-): Promise<void> {
+/**
+ * Restore this machine to a fresh-install state. Stops every Astrale
+ * process best-effort, removes the docker-compose stack and any stray
+ * containers, then wipes every CLI-owned path under `$ASTRALE_HOME` —
+ * including identities, keypairs, tunnel registrations, FalkorDB data,
+ * domain dev state. Never depends on a live FalkorDB or running manager.
+ *
+ * Idempotent: running twice is fine. Does not auto-restart anything;
+ * the user runs `astrale start` afterwards.
+ */
+async function resetHard(opts: ResetOptions): Promise<void> {
   if (!opts.yes) {
     process.stdout.write(
       chalk.red(
-        'This will tear down the compose stack, DELETE all FalkorDB graphs (volume), and clear local state. Continue? [y/N] ',
+        'This will WIPE every Astrale state file on this machine — manager, child instances, identities, keypairs, tunnel registrations, FalkorDB data — as if this were a fresh install. Continue? [y/N] ',
       ),
     )
     const answer = await readLine()
@@ -292,107 +306,94 @@ async function resetHardDocker(
   }
 
   const startTime = performance.now()
+  const stopped: string[] = []
+  const skipped: { path: string; reason: string }[] = []
 
-  // Tear down containers + volumes. `-v` drops the falkordb data volume.
-  const s1 = spinner('Stopping stack + removing volumes...')
+  // ── Phase 1: stop everything best-effort ─────────────────
+  // Order: kill children before parents so PID-file readers don't race.
+
+  // Each step is wrapped: a failure inside any helper (missing binary on
+  // PATH, spawn ENOENT, dead process race, etc.) must not abort the wipe.
+  const tryStep = async (label: string, fn: () => Promise<boolean>): Promise<void> => {
+    try {
+      if (await fn()) stopped.push(label)
+    } catch {
+      /* swallow — phase 2 will still run */
+    }
+  }
+
+  await tryStep('UIs', () => stopUis({ silent: true }))
+
   try {
+    const n = await stopAllTunnels()
+    if (n > 0) stopped.push(`${n} tunnel(s)`)
+  } catch {
+    /* swallow */
+  }
+
+  await tryStep('manager', () => forceStopManager())
+
+  // Compose stack — covers both falkordb and manager containers in one shot.
+  // If the compose file is missing or docker isn't installed, this is a no-op.
+  await tryStep('compose stack', async () => {
     await composeDown(COMPOSE_PATH)
-    s1.succeed('Stack down, volumes removed')
-  } catch (e) {
-    s1.fail('Compose down failed')
-    throw e
+    return true
+  })
+
+  // Stray containers — anything started outside compose (e.g. a manually-run
+  // FalkorDB) won't have been touched by composeDown.
+  for (const name of ['astrale-falkordb-1', 'astrale-manager-1']) {
+    await tryStep(`container ${name}`, () => forceRemoveContainer(name))
   }
 
-  // Clear CLI-side state that doesn't live in falkordb.
-  const stateFiles = [INSTANCES_PATH, MANAGER_PID_PATH, UI_PID_PATH, JOURNAL_PATH]
-  await Promise.all(stateFiles.map((file) => unlink(file).catch(() => {})))
-  log.dim('  Local state files cleared')
+  // ── Phase 2: wipe filesystem state ───────────────────────
+  // Each entry here is a path the CLI itself writes; we don't touch
+  // ~/.cloudflared/ or anything outside ASTRALE_HOME.
+  const wipeTargets = [
+    CONFIG_PATH,
+    IDENTITIES_PATH,
+    INSTANCES_PATH,
+    TUNNELS_PATH,
+    MANAGER_CACHE_PATH,
+    MANAGER_PID_PATH,
+    UI_PID_PATH,
+    COMPOSE_PATH,
+    KEYS_DIR,
+    TUNNELS_DIR,
+    LOGS_DIR,
+    DATA_DIR,
+    DOMAINS_DIR,
+  ]
 
-  // Bring the stack back up — fresh falkordb + manager.
-  const s2 = spinner('Restarting stack...')
-  try {
-    await composeUp(COMPOSE_PATH)
-    await waitManagerHealthy(`http://localhost:${config.managerPort}/mngt/`)
-    s2.succeed('Stack is up')
-  } catch (e) {
-    s2.fail('Stack restart failed')
-    throw e
-  }
-
-  const elapsed = performance.now() - startTime
-  log.success(`Hard reset complete ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
-  log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-  log.info(`Playground UI on http://localhost:${config.managerPort}/`)
-}
-
-async function resetHardHost(
-  config: Awaited<ReturnType<typeof readConfig>>,
-  opts: ResetOptions,
-): Promise<void> {
-  if (!opts.yes) {
-    process.stdout.write(
-      chalk.red('This will DELETE all FalkorDB graphs and reset all local state. Continue? [y/N] '),
-    )
-    const answer = await readLine()
-    if (answer.toLowerCase() !== 'y') {
-      log.info('Aborted')
-      process.exit(0)
+  let wiped = 0
+  for (const target of wipeTargets) {
+    try {
+      await rm(target, { recursive: true, force: true })
+      wiped++
+    } catch (e) {
+      skipped.push({ path: target, reason: e instanceof Error ? e.message : String(e) })
     }
   }
 
-  const startTime = performance.now()
+  // Cosmetic: remove ASTRALE_HOME itself if now empty. Don't recreate —
+  // the next CLI invocation lazy-inits whatever it needs. `rmdir` only
+  // succeeds on empty dirs, so this is safe even if a wipe target above
+  // failed and left children behind.
+  await rmdir(ASTRALE_HOME).catch(() => {})
 
-  // Stop manager & UI if running
-  const state = await detectManagerState(config)
-  if (state.running) {
-    const spin = spinner('Stopping manager...')
-    await stopCommand({ hostMode: true })
-    spin.succeed('Manager stopped')
-  }
-
-  // UIs are separate services (docker compose) / separate processes (host mode)
-  // and are cleaned up by `astrale stop` or by Ctrl+C on their dev runners.
-
-  // Delete all FalkorDB graphs
-  try {
-    const graphs = await listGraphs({ port: config.falkorPort })
-    if (graphs.length > 0) {
-      const spin = spinner(`Deleting ${graphs.length} graph(s)...`)
-      await Promise.all(
-        graphs.map((graphName) => deleteGraph({ graphName, port: config.falkorPort })),
-      )
-      spin.succeed(`Deleted ${graphs.length} graph(s): ${graphs.join(', ')}`)
-    } else {
-      log.info('No graphs to delete')
-    }
-  } catch (error) {
-    log.error(`Failed to delete graphs: ${error instanceof Error ? error.message : String(error)}`)
-    process.exit(1)
-  }
-
-  const stateFiles = [INSTANCES_PATH, MANAGER_PID_PATH, UI_PID_PATH, JOURNAL_PATH]
-  await Promise.all(stateFiles.map((file) => unlink(file).catch(() => {})))
-  log.dim('  Local state files cleared')
-
-  // Restart manager + UI
-  const spin = spinner('Restarting manager...')
-  const managerSession = await startManager(config)
-  spin.succeed('Manager restarted')
-
+  // ── Phase 3: report ──────────────────────────────────────
   const elapsed = performance.now() - startTime
   log.success(`Hard reset complete ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
-
-  log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-  log.info(`Playground UI on http://localhost:${config.managerPort}/`)
-  log.info('Press Ctrl+C to stop')
-
-  const cleanup = async () => {
-    await managerSession.close()
-    await removeManagerPid()
-    process.exit(0)
+  if (stopped.length > 0) log.info(`Stopped: ${stopped.join(', ')}`)
+  log.info(`Wiped ${wiped} path(s) under ${ASTRALE_HOME}`)
+  if (skipped.length > 0) {
+    log.warn(`Skipped ${skipped.length} path(s):`)
+    for (const s of skipped) log.dim(`  ${s.path}: ${s.reason}`)
   }
-  process.on('SIGINT', cleanup)
-  process.on('SIGTERM', cleanup)
+  log.dim(
+    'Not touched: ~/.cloudflared (cloudflared account/credentials), Cloudflare DNS records, remote distribution domain workers',
+  )
+  log.info('Run `astrale start` to bootstrap a new manager.')
 }
 
 // ── Helpers ────────────────────────────────────────────────────

@@ -14,3 +14,4 @@ export const MANAGER_CACHE_PATH = paths.managerCache
 export const TUNNELS_PATH = paths.tunnels
 export const TUNNELS_DIR = paths.tunnelsDir
 export const JOURNAL_PATH = paths.journal
+export const DOMAINS_DIR = paths.domainsDir

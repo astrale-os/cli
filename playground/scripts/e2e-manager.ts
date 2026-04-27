@@ -9,7 +9,7 @@
  * (start one with `astrale start`).
  */
 
-import { KernelClient } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 import { KernelSchema } from '@astrale-os/kernel-core'
 import { buildSpec } from '@astrale-os/sdk'
 import { distributionDomain } from '@kernel-domains/distribution/domain'
@@ -42,18 +42,16 @@ async function main(): Promise<void> {
   const credential = await mintCredential()
   console.log(`[e2e] minted credential (${credential.slice(0, 20)}...)`)
 
-  const client = new KernelClient({
-    url: MANAGER_URL,
-    defaultTransport: 'http',
-    requestTimeout: 10_000,
+  const session = new ClientSession({
+    default: MANAGER_URL,
+    identity: () => credential,
   })
-  const bound = client.as(() => credential)
-  const kernel = bound.withSchema(KernelSchema)
+  const kernel = session.withSchema(KernelSchema)
 
   // ── 1. List functions — smoke test the interface-method dispatch ──
   console.log('[e2e] calling /kernel.astrale.ai/interface.Function/list')
   try {
-    const fns = await bound.call('/kernel.astrale.ai/interface.Function/list' as never, {} as never)
+    const fns = await session.call('/kernel.astrale.ai/interface.Function/list', {})
     const count = Array.isArray(fns) ? fns.length : 'unknown-shape'
     console.log(`[e2e]   ✓ functions: ${count}`)
   } catch (err) {
@@ -76,10 +74,7 @@ async function main(): Promise<void> {
   // ── 2b. Fallback: raw absolute path form used in s27-dispatch-methods ──
   console.log('[e2e] raw call /kernel.astrale.ai/class.Root/installDomain')
   try {
-    const result = await bound.call(
-      '/kernel.astrale.ai/class.Root/installDomain' as never,
-      { spec } as never,
-    )
+    const result = await session.call('/kernel.astrale.ai/class.Root/installDomain', { spec })
     console.log(`[e2e]   ✓ installed (raw):`, result)
   } catch (err) {
     console.log(`[e2e]   ✗ install (raw) failed: ${(err as Error).message}`)
@@ -98,16 +93,15 @@ async function main(): Promise<void> {
 
   console.log('[e2e] raw call /kernel.astrale.ai/class.Root/query')
   try {
-    const rows = await bound.call(
-      '/kernel.astrale.ai/class.Root/query' as never,
-      { cypher: 'MATCH (n) RETURN count(n) AS total' } as never,
-    )
+    const rows = await session.call('/kernel.astrale.ai/class.Root/query', {
+      cypher: 'MATCH (n) RETURN count(n) AS total',
+    })
     console.log(`[e2e]   ✓ query (raw) result:`, rows)
   } catch (err) {
     console.log(`[e2e]   ✗ query (raw) failed: ${(err as Error).message}`)
   }
 
-  client.disconnect()
+  session.disconnect()
 }
 
 main().catch((err: Error) => {

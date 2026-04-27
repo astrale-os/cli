@@ -31,7 +31,6 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
           delegation: { kind: 'identity', self: true },
           ttl,
         },
-        ctx.credential,
       )) as string
       return result
     },

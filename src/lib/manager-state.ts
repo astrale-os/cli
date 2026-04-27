@@ -75,6 +75,38 @@ async function readManagerPid(): Promise<number | undefined> {
 }
 
 /**
+ * Best-effort kill of the host-mode manager process. Reads the PID file,
+ * sends SIGTERM, polls for exit up to ~2s, then SIGKILLs if still alive.
+ * Removes the PID file on the way out. Used by `astrale reset --hard`;
+ * never throws. Returns true if a live process was signaled.
+ */
+export async function forceStopManager(timeoutMs = 2_000): Promise<boolean> {
+  const pid = await readManagerPid()
+  await removeManagerPid()
+  if (pid === undefined) return false
+  try {
+    process.kill(pid, 'SIGTERM')
+  } catch {
+    return false
+  }
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return true
+    }
+    await new Promise((r) => setTimeout(r, 100))
+  }
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    /* exited between checks — fine */
+  }
+  return true
+}
+
+/**
  * Start the Astrale manager kernel and bind HTTP.
  *
  * Composition:

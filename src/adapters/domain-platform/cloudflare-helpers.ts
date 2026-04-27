@@ -43,10 +43,30 @@ export function domainUrl(env: DomainEnv): string {
   return `${schemeOf(env.domain)}://${hostOf(env)}`
 }
 
+// ── Self-spawn (absolute paths) ───────────────────────────────────────
+
+/**
+ * Build argv for re-invoking the current astrale CLI as a subprocess.
+ *
+ * Why not just `spawnSync('astrale', ...)`? Because under macOS TCC
+ * restrictions on `~/Documents/`, `process.env.PATH` arrives empty in bun,
+ * and any bare `astrale` lookup fails with ENOENT. The current process
+ * already knows the absolute paths of bun (`process.execPath`) and the
+ * astrale entrypoint (`process.argv[1]`), so we use those instead. Works
+ * regardless of TCC, PATH state, or shim presence.
+ */
+export function astraleArgv(): [string, string] {
+  const bun = process.execPath
+  const entry = process.argv[1]
+  if (!entry) throw new AstraleError('NO_ASTRALE_ENTRY', 'process.argv[1] is unset')
+  return [bun, entry]
+}
+
 // ── Service liveness ──────────────────────────────────────────────────
 
 export function isAstraleRunning(): boolean {
-  const r = spawnSync('astrale', ['status'], { encoding: 'utf-8' })
+  const [bun, entry] = astraleArgv()
+  const r = spawnSync(bun, [entry, 'status'], { encoding: 'utf-8' })
   if (r.status !== 0) return false
   try {
     const status = JSON.parse(r.stdout) as { manager?: { running?: boolean } }
@@ -79,18 +99,24 @@ export async function waitForUrl(url: string, timeoutMs: number, label: string):
 
 // ── Process lifecycle ─────────────────────────────────────────────────
 
+// Absolute paths for system utilities — `spawnSync` inherits the parent's
+// PATH, which is stripped to empty under macOS TCC on `~/Documents/`. Using
+// canonical BSD paths sidesteps PATH lookup entirely.
+const LSOF = '/usr/sbin/lsof'
+const KILL = '/bin/kill'
+const PKILL = '/usr/bin/pkill'
+
 /**
  * Kill a wrangler/workerd tree listening on `port`. Three passes — each
  * alone is insufficient. Returns the number of listeners found via lsof
  * on the first pass.
  */
 export function killWranglerTree(port: number): { killed: number } {
-  const pids = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf-8' })
-    .stdout.split('\n')
-    .filter(Boolean)
-  if (pids.length > 0) spawnSync('kill', ['-KILL', ...pids])
-  spawnSync('pkill', ['-9', '-f', 'wrangler.*dev --port'])
-  spawnSync('pkill', ['-9', '-f', 'workerd serve'])
+  const lsof = spawnSync(LSOF, ['-ti', `:${port}`], { encoding: 'utf-8' })
+  const pids = (lsof.stdout ?? '').split('\n').filter(Boolean)
+  if (pids.length > 0) spawnSync(KILL, ['-KILL', ...pids])
+  spawnSync(PKILL, ['-9', '-f', 'wrangler.*dev --port'])
+  spawnSync(PKILL, ['-9', '-f', 'workerd serve'])
   return { killed: pids.length }
 }
 

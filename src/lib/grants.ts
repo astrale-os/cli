@@ -1,4 +1,5 @@
-import type { FnMap, KernelClient } from '@astrale-os/kernel-client'
+import type { FnMap } from '@astrale-os/kernel-client'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 
 import { log } from './log'
 
@@ -17,8 +18,8 @@ const USE_PERM = 4
  * to appear here.
  */
 export async function grantDistributionBootstrap(
-  client: KernelClient<FnMap>,
-  credential: string,
+  client: ClientSession<FnMap>,
+  _credential: string,
   domainOrigin: string,
 ): Promise<void> {
   const blaxelMethods = ['init', 'list', 'delete', 'deployFunction', 'deleteFunction']
@@ -44,7 +45,10 @@ export async function grantDistributionBootstrap(
   let granted = 0
   for (const grantee of workerFnPaths) {
     for (const target of primitives) {
-      await client.call(`${grantee}::grantPerm`, { node: target, perms: USE_PERM }, credential)
+      await client.call(
+        `${grantee}::grantPerm`,
+        { node: target, perms: USE_PERM },
+      )
       granted++
     }
   }

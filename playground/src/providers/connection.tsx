@@ -1,6 +1,7 @@
-import type { FunctionSchema, SchemaTypedClient } from '@astrale-os/kernel-client'
+import type { FunctionSchema, Protocol } from '@astrale-os/kernel-client'
+import type { SchemaTypedClientSession } from '@astrale-os/kernel-client/session'
 
-import { KernelClient, type BindingMode } from '@astrale-os/kernel-client'
+import { ClientSession } from '@astrale-os/kernel-client/session'
 import { KernelSchema } from '@astrale-os/kernel-core'
 import { ManagerSchema } from '@astrale-os/kernel-toolkit/manager-schema'
 import { createContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
@@ -8,13 +9,14 @@ import { createContext, useState, useCallback, useRef, useEffect, type ReactNode
 import { getCredential } from '@/server/credentials'
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
-export type { BindingMode } from '@astrale-os/kernel-client'
+/** UI label for `Protocol` — kept as `BindingMode` for backward-compatible imports. */
+export type BindingMode = Protocol
 
 const BINDING_STORAGE_KEY = 'astrale-playground:binding-mode'
 
 function loadBindingMode(): BindingMode {
   const stored = globalThis.localStorage?.getItem(BINDING_STORAGE_KEY)
-  if (stored === 'envelope' || stored === 'routed') return stored
+  if (stored === 'envelope' || stored === 'auto') return stored
   return 'envelope'
 }
 
@@ -36,8 +38,8 @@ async function fetchCredential(aud: string): Promise<string | null> {
   }
 }
 
-export type TypedKernel = SchemaTypedClient<typeof KernelSchema>
-export type TypedManager = SchemaTypedClient<typeof ManagerSchema>
+export type TypedKernel = SchemaTypedClientSession<typeof KernelSchema>
+export type TypedManager = SchemaTypedClientSession<typeof ManagerSchema>
 
 export interface ConnectionContextValue {
   status: ConnectionStatus
@@ -81,20 +83,16 @@ export function ConnectionProvider({
   const [bindingMode, setBindingModeState] = useState<BindingMode>(loadBindingMode)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const clientRef = useRef<KernelClient<any> | null>(null)
+  const sessionRef = useRef<ClientSession<any> | null>(null)
   const credentialRef = useRef<string>('')
   const bindingModeRef = useRef<BindingMode>(bindingMode)
   const [kernel, setKernel] = useState<TypedKernel | null>(null)
   const [manager, setManager] = useState<TypedManager | null>(null)
 
-  const loadSchemas = useCallback((client: KernelClient<any>) => {
+  const loadSchemas = useCallback((session: ClientSession<any>, sessionUrl: string) => {
     // Fetch function schemas with binding info, best-effort
-    client
-      .call(
-        '/kernel.astrale.ai/interface.Function/list' as never,
-        {} as never,
-        credentialRef.current,
-      )
+    session
+      .call('/kernel.astrale.ai/interface.Function/list', {})
       .then((result: unknown) => {
         const entries = Array.isArray(result) ? result : (result as Record<string, unknown>)?.items
         if (!Array.isArray(entries)) return
@@ -103,9 +101,9 @@ export function ConnectionProvider({
         const schemas = (entries as FunctionSchema[]).filter((e) => e && e.binding)
         for (const e of schemas) {
           const binding = e.binding as Record<string, unknown>
-          if (binding.route && !binding.remoteUrl) binding.remoteUrl = client.url
+          if (binding.route && !binding.remoteUrl) binding.remoteUrl = sessionUrl
         }
-        if (schemas.length) client.load(schemas)
+        if (schemas.length) session.registry.load(schemas)
       })
       .catch(() => {
         /* schema loading is best-effort */
@@ -114,9 +112,9 @@ export function ConnectionProvider({
 
   const connect = useCallback(
     (rawUrl: string) => {
-      if (clientRef.current) {
-        clientRef.current.disconnect()
-        clientRef.current = null
+      if (sessionRef.current) {
+        sessionRef.current.disconnect()
+        sessionRef.current = null
       }
 
       const httpUrl = normalizeUrl(rawUrl)
@@ -126,26 +124,24 @@ export function ConnectionProvider({
       setStatus('connecting')
 
       // Fetch a credential scoped to this target's audience BEFORE opening
-      // the client. Without this, the server returns only the manager's
+      // the session. Without this, the server returns only the manager's
       // credential which gets rejected by child kernels (audience mismatch).
       void fetchCredential(aud).then((credential) => {
         if (credential) credentialRef.current = credential
 
-        const client = new KernelClient({
-          url: httpUrl,
-          defaultTransport: 'ws',
-          requestTimeout: 30_000,
+        const session = new ClientSession({
+          default: httpUrl,
+          identity: () => credentialRef.current,
         })
-        clientRef.current = client
-        const bound = client.as(() => credentialRef.current)
-        setKernel(bound.withSchema(KernelSchema))
-        setManager(bound.withSchema(ManagerSchema))
+        sessionRef.current = session
+        setKernel(session.withSchema(KernelSchema))
+        setManager(session.withSchema(ManagerSchema))
 
-        bound
-          .call('__probe__' as never, {} as never)
+        session
+          .call('__probe__', {}, { transport: 'ws', timeout: 30_000 })
           .then(() => {
             setStatus('connected')
-            loadSchemas(client)
+            loadSchemas(session, httpUrl)
           })
           .catch((err: unknown) => {
             const isTransportError =
@@ -158,7 +154,7 @@ export function ConnectionProvider({
               setError(err instanceof Error ? err.message : 'Connection failed')
             } else {
               setStatus('connected')
-              loadSchemas(client)
+              loadSchemas(session, httpUrl)
             }
           })
       })
@@ -167,9 +163,9 @@ export function ConnectionProvider({
   )
 
   const disconnect = useCallback(() => {
-    if (clientRef.current) {
-      clientRef.current.disconnect()
-      clientRef.current = null
+    if (sessionRef.current) {
+      sessionRef.current.disconnect()
+      sessionRef.current = null
     }
     setKernel(null)
     setManager(null)
@@ -179,11 +175,11 @@ export function ConnectionProvider({
   }, [])
 
   const call = useCallback(
-    <T = unknown>(method: string, params: Record<string, unknown>): Promise<T> => {
-      const client = clientRef.current
-      if (!client) return Promise.reject(new Error('Not connected'))
-      return client.call(method as never, params as never, credentialRef.current, {
-        via: bindingModeRef.current,
+    <T = unknown,>(method: string, params: Record<string, unknown>): Promise<T> => {
+      const session = sessionRef.current
+      if (!session) return Promise.reject(new Error('Not connected'))
+      return session.call(method, params, {
+        protocol: bindingModeRef.current,
       }) as Promise<T>
     },
     [],
@@ -196,9 +192,9 @@ export function ConnectionProvider({
   }, [])
 
   const hasRouteBinding = useCallback((method: string): boolean => {
-    const client = clientRef.current
-    if (!client) return false
-    const schema = client.describe(method)
+    const session = sessionRef.current
+    if (!session) return false
+    const schema = session.describe(method)
     return !!schema?.binding?.route
   }, [])
 
@@ -214,9 +210,9 @@ export function ConnectionProvider({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (clientRef.current) {
-        clientRef.current.disconnect()
-        clientRef.current = null
+      if (sessionRef.current) {
+        sessionRef.current.disconnect()
+        sessionRef.current = null
       }
     }
   }, [])

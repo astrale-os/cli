@@ -1,4 +1,5 @@
-import type { KernelClient, FnMap } from '@astrale-os/kernel-client'
+import type { FnMap } from '@astrale-os/kernel-client'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 
 import { ClassPath, InstanceMethodPath } from '@astrale-os/kernel-core/domain'
 
@@ -50,11 +51,11 @@ export type RemoteBinding = {
  * path against the kernel.
  */
 export async function lookupRemoteBinding(
-  client: KernelClient<FnMap>,
+  client: ClientSession<FnMap>,
   path: string,
-  credential: string,
+  _credential: string,
 ): Promise<RemoteBinding | null> {
-  const resolved = await resolveSyscallPath(client, path, credential)
+  const resolved = await resolveSyscallPath(client, path)
   if (!resolved) return null
 
   const audience = extractDomainSlug(resolved.syscallPath)
@@ -63,9 +64,8 @@ export async function lookupRemoteBinding(
   let node: SyscallNode | null = null
   try {
     node = (await client.call(
-      `${resolved.syscallPath}::get` as never,
-      {} as never,
-      credential,
+      `${resolved.syscallPath}::get`,
+      {},
     )) as SyscallNode | null
   } catch {
     return null
@@ -91,9 +91,8 @@ export async function lookupRemoteBinding(
  * Syscall's tree location.
  */
 async function resolveSyscallPath(
-  client: KernelClient<FnMap>,
+  client: ClientSession<FnMap>,
   path: string,
-  credential: string,
 ): Promise<{ syscallPath: string; selfRef?: string } | null> {
   const instanceMethod = InstanceMethodPath.tryParse(path)
   if (!instanceMethod) {
@@ -104,9 +103,8 @@ async function resolveSyscallPath(
   let sourceNode: NodeHead | null = null
   try {
     sourceNode = (await client.call(
-      `${sourceRaw}::get` as never,
-      {} as never,
-      credential,
+      `${sourceRaw}::get`,
+      {},
     )) as NodeHead | null
   } catch {
     return null
@@ -131,18 +129,18 @@ async function resolveSyscallPath(
  * worker inherits whatever grants the caller already has.
  */
 export async function mintRemoteCredential(
-  client: KernelClient<FnMap>,
+  client: ClientSession<FnMap>,
   audience: string,
   callerCredential: string,
 ): Promise<string> {
   const result = await client.call(
-    '@__system__::mintDelegationCredential' as never,
+    '@__system__::mintDelegationCredential',
     {
       audience,
       delegation: { kind: 'identity', self: true },
       ttl: 3600,
-    } as never,
-    callerCredential,
+    },
+    { credential: callerCredential },
   )
   if (typeof result !== 'string') {
     throw new Error(
