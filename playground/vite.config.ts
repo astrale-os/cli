@@ -28,7 +28,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
-      '@kernel-domains': fileURLToPath(new URL('../../kernel/domains', import.meta.url)),
+      '@domains': fileURLToPath(new URL('../../domains', import.meta.url)),
     },
   },
   server: {

@@ -3,7 +3,7 @@ import type { SchemaTypedClientSession } from '@astrale-os/kernel-client/session
 
 import { ClientSession } from '@astrale-os/kernel-client/session'
 import { KernelSchema } from '@astrale-os/kernel-core'
-import { ManagerSchema } from '@astrale-os/kernel-toolkit/manager-schema'
+import { ManagerSchema } from '@astrale-os/kernel-host/manager-schema'
 import { createContext, useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
 
 import { getCredential } from '@/server/credentials'
@@ -175,7 +175,7 @@ export function ConnectionProvider({
   }, [])
 
   const call = useCallback(
-    <T = unknown,>(method: string, params: Record<string, unknown>): Promise<T> => {
+    <T = unknown>(method: string, params: Record<string, unknown>): Promise<T> => {
       const session = sessionRef.current
       if (!session) return Promise.reject(new Error('Not connected'))
       return session.call(method, params, {

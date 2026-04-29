@@ -10,9 +10,9 @@
   "dependencies": {
     "@astrale-os/kernel-core": "workspace:*",
     "@astrale-os/kernel-dsl": "workspace:*",
+    "@astrale-os/kernel-host": "workspace:*",
     "@astrale-os/kernel-runtime": "workspace:*",
     "@astrale-os/kernel-test": "workspace:*",
-    "@astrale-os/kernel-toolkit": "workspace:*",
     "@astrale-os/sdk": ">=0.1.0 <1.0.0",
     "zod": "^4.3.6"
   },

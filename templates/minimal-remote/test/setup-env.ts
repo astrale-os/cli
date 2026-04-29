@@ -7,7 +7,7 @@
  * MINIMAL_KERNEL / MINIMAL_DOMAIN — they default to an in-process fixture
  * pair so `pnpm test` works with zero configuration.
  */
-import { kernelEnvs } from '@astrale-os/kernel-toolkit'
+import { kernelEnvs } from '@astrale-os/kernel-host'
 
 import { domainEnvs, type DomainEnvName } from '../envs.ts'
 

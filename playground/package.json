@@ -13,7 +13,7 @@
     "@astrale-os/astrale": "workspace:*",
     "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
     "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
-    "@astrale-os/kernel-toolkit": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-host": ">=0.1.0 <1.0.0",
     "@astrale-os/sdk": ">=0.1.0 <1.0.0",
     "@blaxel/core": "^0.2.78",
     "@cloudflare/workers-types": "^4.20250327.0",

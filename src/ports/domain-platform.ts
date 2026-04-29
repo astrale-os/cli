@@ -9,7 +9,7 @@
  * adapter, not in command handlers.
  */
 
-import type { DevState } from '@astrale-os/kernel-toolkit'
+import type { DevState } from '@astrale-os/kernel-host'
 
 export type ScaffoldOpts = {
   /** New domain slug, validated by the caller. */

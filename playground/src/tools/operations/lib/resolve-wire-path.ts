@@ -1,4 +1,8 @@
+import { K } from '@astrale-os/kernel-core'
+
 import type { BusinessGraph } from '@/tools/graph-state/lib/raw-to-business'
+
+const FUNCTION_REF_KEY = K.Function.ref.key
 
 /**
  * Result of resolving a Function's wire path from the graph.
@@ -24,7 +28,7 @@ export type WirePathResolution =
  * wire path — no `method_of` climb needed.
  */
 export function resolveWirePath(fnRef: string, graph: BusinessGraph): WirePathResolution {
-  const fnNode = graph.nodes.find((n) => n.properties.ref === fnRef)
+  const fnNode = graph.nodes.find((n) => n.properties[FUNCTION_REF_KEY] === fnRef)
   if (!fnNode) return { kind: 'missing-node', ref: fnRef }
   if (!fnNode.path) return { kind: 'missing-path', ref: fnRef, nodeId: fnNode.id }
   return { kind: 'ok', path: fnNode.path }

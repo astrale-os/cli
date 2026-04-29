@@ -7,19 +7,19 @@
  * a single bug fix.
  */
 
-import { spawnSync } from 'node:child_process'
-import { lookup } from 'node:dns/promises'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { pathToFileURL } from 'node:url'
-
 import type {
   DevState,
   LifecycleConfig,
   LifecycleContext,
   LifecycleHook,
   LifecycleModule,
-} from '@astrale-os/kernel-toolkit'
+} from '@astrale-os/kernel-host'
+
+import { spawnSync } from 'node:child_process'
+import { lookup } from 'node:dns/promises'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { AstraleError } from '../../errors'
 
@@ -318,9 +318,7 @@ export async function runHook(
  * callers can pull `domainEnvs` + `readDomainPort` (or equivalents)
  * without the CLI needing to depend on any specific domain package.
  */
-export async function loadDomainModule<T = Record<string, unknown>>(
-  absPath: string,
-): Promise<T> {
+export async function loadDomainModule<T = Record<string, unknown>>(absPath: string): Promise<T> {
   return (await import(pathToFileURL(absPath).href)) as T
 }
 

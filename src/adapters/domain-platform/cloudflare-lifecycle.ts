@@ -9,9 +9,9 @@
  * `config` (data) + `hooks` (code).
  */
 
-import type { DevState, LifecycleContext, LifecycleHooks } from '@astrale-os/kernel-toolkit'
+import type { DevState, LifecycleContext, LifecycleHooks } from '@astrale-os/kernel-host'
 
-import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-toolkit'
+import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-host'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'

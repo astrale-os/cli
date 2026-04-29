@@ -165,16 +165,6 @@ function propByName(
   return undefined
 }
 
-function flattenBareProps(props: Record<string, unknown> | undefined): Record<string, unknown> {
-  if (!props) return {}
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(props)) {
-    const m = k.match(PROP_KEY_RE)
-    if (m) out[m[2]] = v
-  }
-  return out
-}
-
 type GetTreeNode = {
   id: string
   class?: string
@@ -248,12 +238,16 @@ function kernelTreeToGraphState(result: {
 
   return {
     nodes: result.nodes.map((n) => ({
-      // Short-form keys the legacy downstream code reads:
-      ...flattenBareProps(n.props),
-      // Raw qualified props so inspectors can still show full-fidelity data:
+      // Properties pass through verbatim — fully-qualified keys are what
+      // storage actually holds, and the inspector should show that as-is.
+      // No bare-name shortcuts: storage is the source of truth.
       ...n.props,
       id: n.id,
       labels: n.__labels ?? [],
+      // Top-level structural fields synthesized for downstream consumers
+      // (display name, path tree, class resolution). These are NOT stored
+      // properties — they live alongside `properties` for UI ergonomics
+      // and must be excluded from any "stored properties" rendering.
       name: (propByName(n.props, 'Named', 'name') as string | undefined) ?? null,
       slug: slugByNodeId.get(n.id) ?? null,
       path: n.path ?? null,

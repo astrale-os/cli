@@ -52,9 +52,7 @@ function RootComponent() {
       </header>
       <main
         className={
-          instanceId
-            ? 'flex-1 min-h-0 overflow-hidden'
-            : 'flex-1 min-h-0 overflow-auto p-6'
+          instanceId ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 min-h-0 overflow-auto p-6'
         }
       >
         <Outlet />

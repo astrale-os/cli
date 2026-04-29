@@ -1,4 +1,4 @@
-import type { AuthBinding } from '@astrale-os/kernel-toolkit/presets'
+import type { AuthBinding } from '@astrale-os/kernel-host/presets'
 
 import { generateKeyPair, exportJWK, importJWK, SignJWT, type JWK } from 'jose'
 import { randomUUID } from 'node:crypto'

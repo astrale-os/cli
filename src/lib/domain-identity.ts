@@ -120,10 +120,15 @@ function extractDomainSlug(spec: Spec): string {
  * (`/:origin:Member:method`). Must match what the kernel computes via
  * `resolveMethodNodes` over `compiled.$.paths.absolute` — only methods
  * declared by this domain's own classes, skipping inherited ones.
+ *
+ * Edge target forms accepted:
+ *   - tree form:  `/<origin>/class.<member>/self` (legacy spec builder)
+ *   - typed form: `/:<origin>:class.<member>` (current spec builder)
  */
 function collectFunctionSubs(spec: Spec, origin: string): string[] {
   const selfSuffix = '/self'
-  const classPrefix = `/${origin}/${CLASS_NS_PREFIX}`
+  const treeOriginPrefix = `/${origin}/`
+  const typedOriginPrefix = `/:${origin}:`
   const subs = new Set<string>()
   for (const edge of spec.edges) {
     const cls = rawStr(edge.class)
@@ -131,10 +136,14 @@ function collectFunctionSubs(spec: Spec, origin: string): string[] {
     const target = rawStr(edge.target)
     const source = rawStr(edge.source)
     if (!target || !source) continue
-    if (!source.startsWith(classPrefix)) continue
-    if (!target.startsWith(classPrefix) || !target.endsWith(selfSuffix)) continue
-    const member = target.slice(classPrefix.length, target.length - selfSuffix.length)
-    if (!member) continue
+    if (!source.startsWith(treeOriginPrefix)) continue
+    let member: string | undefined
+    if (target.startsWith(treeOriginPrefix) && target.endsWith(selfSuffix)) {
+      member = target.slice(treeOriginPrefix.length, target.length - selfSuffix.length)
+    } else if (target.startsWith(typedOriginPrefix)) {
+      member = target.slice(typedOriginPrefix.length)
+    }
+    if (!member || !member.startsWith(CLASS_NS_PREFIX)) continue
     const methodName = source.slice(source.lastIndexOf('/') + 1)
     if (!methodName) continue
     subs.add(`/:${origin}:${member}:${methodName}`)

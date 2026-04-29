@@ -6,11 +6,11 @@
  * `envs.ts`. We walk up from `cwd` (bounded) to find one.
  */
 
+import type { LifecycleModule } from '@astrale-os/kernel-host'
+
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-
-import type { LifecycleModule } from '@astrale-os/kernel-toolkit'
 
 import { AstraleError } from '../errors'
 
@@ -106,9 +106,7 @@ function findDomainDir(start: string, maxHops = 6): string | null {
   return null
 }
 
-async function tryLoadLifecycle(
-  dir: string,
-): Promise<{ module?: LifecycleModule; path?: string }> {
+async function tryLoadLifecycle(dir: string): Promise<{ module?: LifecycleModule; path?: string }> {
   const candidates = [join(dir, 'lifecycle.ts'), join(dir, 'scripts', 'lifecycle.ts')]
   for (const path of candidates) {
     if (!existsSync(path)) continue

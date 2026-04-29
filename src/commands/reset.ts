@@ -1,4 +1,4 @@
-import type { Kernel } from '@astrale-os/kernel-toolkit'
+import type { Kernel } from '@astrale-os/kernel-host'
 
 import { clearGraph } from '@astrale-os/kernel-adapters/falkordb'
 import { type FnMap } from '@astrale-os/kernel-client'
@@ -119,10 +119,7 @@ async function resetManager(
       const spin = spinner(`Removing ${instances.length} instance(s)...`)
       await Promise.all(
         instances.map((instance) =>
-          client.call(
-            '/manager.astrale.ai/class.KernelInstance/delete',
-            { id: instance.id },
-          ),
+          client.call('/manager.astrale.ai/class.KernelInstance/delete', { id: instance.id }),
         ),
       )
       spin.succeed(`Removed ${instances.length} instance(s)`)
@@ -239,16 +236,13 @@ async function resetSubInstance(
 
     // If instance is stopped, boot it first so reboot can proceed
     if (instance.status === 'stopped' || instance.status === 'registered') {
-      await client.call(
-        '/manager.astrale.ai/class.KernelInstance/boot',
-        { id: targetId },
-      )
+      await client.call('/manager.astrale.ai/class.KernelInstance/boot', { id: targetId })
     }
 
-    await client.call(
-      '/manager.astrale.ai/class.KernelInstance/reboot',
-      { id: targetId, clear: true },
-    )
+    await client.call('/manager.astrale.ai/class.KernelInstance/reboot', {
+      id: targetId,
+      clear: true,
+    })
 
     const elapsed = performance.now() - startTime
     spin.succeed(`Instance "${targetId}" reset ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)

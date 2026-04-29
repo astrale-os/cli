@@ -1,4 +1,4 @@
-import type { Kernel } from '@astrale-os/kernel-toolkit'
+import type { Kernel } from '@astrale-os/kernel-host'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -127,7 +127,7 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     subject: 'manager',
   })
   const { Kernel, falkordb, inProcessManager, node, ndjsonJournal } =
-    await import('@astrale-os/kernel-toolkit')
+    await import('@astrale-os/kernel-host')
   const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
 
   const kernel = new Kernel({

@@ -1,4 +1,4 @@
-import { type KernelInstanceInfoSchema } from '@astrale-os/kernel-toolkit/manager-schema'
+import { type KernelInstanceInfoSchema } from '@astrale-os/kernel-host/manager-schema'
 import { useNavigate } from '@tanstack/react-router'
 import {
   Server,

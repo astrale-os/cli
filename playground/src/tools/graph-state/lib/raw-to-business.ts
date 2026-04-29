@@ -64,6 +64,21 @@ export interface GraphViewOptions {
 
 export const DISPLAY_NAME_KEYS = ['name'] as const
 
+// Fields synthesized by `kernelTreeToGraphState` alongside the real stored
+// properties. Excluded from BusinessNode.properties so the inspector renders
+// only what storage actually holds.
+const NON_PROPERTY_FIELDS: ReadonlySet<string> = new Set([
+  'id',
+  'labels',
+  '_labels',
+  'name',
+  'slug',
+  'path',
+  'classId',
+  'type',
+  'key',
+])
+
 export function resolveDisplayName(node: GraphStateNode): string {
   for (const key of DISPLAY_NAME_KEYS) {
     const val = node[key]
@@ -261,10 +276,14 @@ export function rawToBusiness(raw: GraphStateData, options: GraphViewOptions = {
     const className = nodeClassIndex.get(n.id) ?? null
     if (hiddenClasses && className && hiddenClasses.has(className)) continue
 
-    const { id: _id, labels: _labels, _labels: _l, ...rest } = n as Record<string, unknown>
+    // `properties` reflects what storage actually holds — exclude both the
+    // graph-shape fields (`id`, `labels`, `_labels`) and the structural fields
+    // synthesized by `kernelTreeToGraphState` (`name`, `slug`, `path`,
+    // `classId`, `type`, `key`), which are surfaced separately on BusinessNode.
     const properties: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(rest)) {
-      if (k !== 'n') properties[k] = v
+    for (const [k, v] of Object.entries(n)) {
+      if (NON_PROPERTY_FIELDS.has(k)) continue
+      properties[k] = v
     }
 
     graphNodes.push({

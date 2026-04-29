@@ -10,7 +10,7 @@
       "@astrale-os/kernel-dsl": ["../../dsl/src/index.ts"],
       "@astrale-os/kernel-runtime": ["../../runtime/index.ts"],
       "@astrale-os/kernel-test": ["../../test/src/index.ts"],
-      "@astrale-os/kernel-toolkit": ["../../toolkit/src/index.ts"],
+      "@astrale-os/kernel-host": ["../../host/src/index.ts"],
       "@astrale-os/sdk": ["../../../sdk/src/index.ts"],
       "@astrale-os/sdk/*": ["../../../sdk/src/*/index.ts"]
     }

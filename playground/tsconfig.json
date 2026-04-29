@@ -10,7 +10,7 @@
     "rootDir": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@kernel-domains/*": ["../../kernel/domains/*"]
+      "@domains/*": ["../../domains/*"]
     },
     "noEmit": true,
     "types": ["node"]

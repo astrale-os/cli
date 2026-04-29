@@ -1,9 +1,9 @@
 import type { RemoteDomain } from '@astrale-os/sdk'
 
 import { buildSpec } from '@astrale-os/sdk'
-import { claudeCodeDomain } from '@kernel-domains/claude-code-remote/claude-code-domain'
-import { gatewayDomain } from '@kernel-domains/claude-code-remote/gateway-domain'
-import { distributionDomain } from '@kernel-domains/distribution/domain'
+import { claudeCodeDomain } from '@domains/claude-code-remote/claude-code-domain'
+import { gatewayDomain } from '@domains/claude-code-remote/gateway-domain'
+import { distributionDomain } from '@domains/distribution/domain'
 
 export type SampleDomain = {
   name: string

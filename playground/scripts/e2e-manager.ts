@@ -12,7 +12,7 @@
 import { ClientSession } from '@astrale-os/kernel-client/session'
 import { KernelSchema } from '@astrale-os/kernel-core'
 import { buildSpec } from '@astrale-os/sdk'
-import { distributionDomain } from '@kernel-domains/distribution/domain'
+import { distributionDomain } from '@domains/distribution/domain'
 import { importJWK, SignJWT } from 'jose'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'

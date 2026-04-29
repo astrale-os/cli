@@ -63,10 +63,7 @@ export async function lookupRemoteBinding(
 
   let node: SyscallNode | null = null
   try {
-    node = (await client.call(
-      `${resolved.syscallPath}::get`,
-      {},
-    )) as SyscallNode | null
+    node = (await client.call(`${resolved.syscallPath}::get`, {})) as SyscallNode | null
   } catch {
     return null
   }
@@ -102,10 +99,7 @@ async function resolveSyscallPath(
   const sourceRaw = instanceMethod.source.raw
   let sourceNode: NodeHead | null = null
   try {
-    sourceNode = (await client.call(
-      `${sourceRaw}::get`,
-      {},
-    )) as NodeHead | null
+    sourceNode = (await client.call(`${sourceRaw}::get`, {})) as NodeHead | null
   } catch {
     return null
   }
