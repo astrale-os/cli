@@ -28,7 +28,7 @@ describe('minimal-remote', () => {
 
   it('createNote creates a Note and returns a ref', async () => {
     const { call, domain } = fx.ctx
-    const origin = domain.compiled.$.origin
+    const origin = domain.origin
 
     const res = await call(abs`/${origin}/interface.NoteOps/createNote`, {
       title: 'Hello',

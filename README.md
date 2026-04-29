@@ -228,7 +228,6 @@ Located at `~/.astrale/`:
 {
   "managerPort": 4400,
   "falkorPort": 6379,
-  "uiPort": 4300,
   "graphName": "astrale-manager",
   "issuer": "http://localhost:4400/mngt"
 }

@@ -29,7 +29,8 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
   const config = await readConfig()
 
   const managerUrl = `http://localhost:${config.managerPort}/mngt`
-  const uiDevUrl = `http://localhost:${config.uiPort}`
+  // GUI dev server port is hardcoded in `cli/gui/package.json` (`vite --port 3400`).
+  const uiDevUrl = 'http://localhost:3400'
 
   const [manager, uiDevUp, ps, falkorUp] = await Promise.all([
     detectManagerState(config),
@@ -100,7 +101,13 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
   if (manager.running) {
     const pidPart = manager.pid !== undefined ? ` (PID ${manager.pid})` : ''
     const modeTag =
-      mode === 'docker' ? ' [docker]' : mode === 'host' ? ' [host]' : mode === 'unknown' ? ' [mode unknown]' : ''
+      mode === 'docker'
+        ? ' [docker]'
+        : mode === 'host'
+          ? ' [host]'
+          : mode === 'unknown'
+            ? ' [mode unknown]'
+            : ''
     log.success(`Manager:   running${pidPart}${modeTag} — ${managerUrl}`)
   } else {
     log.warn('Manager:   stopped')

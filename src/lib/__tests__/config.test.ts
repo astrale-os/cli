@@ -7,7 +7,6 @@ describe('AstraleConfigSchema', () => {
     const result = AstraleConfigSchema.parse({
       managerPort: 5000,
       falkorPort: 7000,
-      uiPort: 5300,
       graphName: 'test-graph',
       issuer: 'https://test.astrale.ai',
     })
@@ -19,7 +18,6 @@ describe('AstraleConfigSchema', () => {
     const result = AstraleConfigSchema.parse({})
     expect(result.managerPort).toBe(4400)
     expect(result.falkorPort).toBe(6379)
-    expect(result.uiPort).toBe(4300)
     expect(result.graphName).toBe('astrale-manager')
     expect(result.issuer).toBe('http://localhost:4400/mngt')
   })

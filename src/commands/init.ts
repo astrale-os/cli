@@ -17,7 +17,6 @@ import { ASTRALE_HOME, KEYS_DIR, DATA_DIR, LOGS_DIR, COMPOSE_PATH } from '../lib
 
 export type InitOptions = {
   managerPort?: string
-  uiPort?: string
   falkorPort?: string
   graphName?: string
   yes?: boolean
@@ -25,7 +24,6 @@ export type InitOptions = {
 
 const DEFAULTS = {
   managerPort: 4400,
-  uiPort: 4300,
   falkorPort: 6379,
   graphName: 'astrale-manager',
 }
@@ -58,7 +56,6 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
     DEFAULTS.managerPort,
     opts.yes,
   )
-  const uiPort = await resolveValue('UI port', opts.uiPort, DEFAULTS.uiPort, opts.yes)
   const falkorPort = await resolveValue(
     'FalkorDB port',
     opts.falkorPort,
@@ -69,7 +66,6 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
 
   const config: AstraleConfig = {
     managerPort,
-    uiPort,
     falkorPort,
     falkorHost: 'localhost',
     graphName,

@@ -13,7 +13,6 @@ export const AstraleConfigSchema = z.object({
   // manager entrypoint overrides to the compose network alias `falkordb`
   // via `ASTRALE_FALKOR_HOST`.
   falkorHost: z.string().default('localhost'),
-  uiPort: z.number().int().positive().default(4300),
   graphName: z.string().default('astrale-manager'),
   // The manager kernel signs tokens with its own base URL as the `iss`
   // claim. The CLI must sign matching tokens or the JWKS lookup fails.

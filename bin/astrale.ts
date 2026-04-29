@@ -29,7 +29,6 @@ registerCommand(program, {
   description: 'Set up a new Astrale installation',
   options: [
     { flags: '--manager-port <port>', description: 'Manager HTTP port (default: 4400)' },
-    { flags: '--ui-port <port>', description: 'Playground UI port (default: 4300)' },
     { flags: '--falkor-port <port>', description: 'FalkorDB port (default: 6379)' },
     { flags: '--graph-name <name>', description: 'Graph name (default: astrale-manager)' },
     { flags: '-y, --yes', description: 'Skip prompts and accept defaults / overwrite' },
@@ -262,7 +261,8 @@ registerCommand(program, {
   options: [
     {
       flags: '--no-schema',
-      description: 'Omit the serialized `schema` property (useful for Domain nodes, where it is multi-kB)',
+      description:
+        'Omit the serialized `schema` property (useful for Domain nodes, where it is multi-kB)',
     },
     ...kernelOptions,
   ],
@@ -415,7 +415,8 @@ registerGroup(program, {
   subgroups: [
     {
       name: 'dev',
-      description: 'Local dev infrastructure lifecycle (replaces `pnpm infra:prepare`/`infra:down`)',
+      description:
+        'Local dev infrastructure lifecycle (replaces `pnpm infra:prepare`/`infra:down`)',
       commands: [
         (await import('../src/commands/domain/dev/up')).default,
         (await import('../src/commands/domain/dev/down')).default,

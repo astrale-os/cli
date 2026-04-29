@@ -33,7 +33,6 @@ const config: AstraleConfig = {
   managerPort,
   falkorPort,
   falkorHost,
-  uiPort: readPositiveIntEnv('ASTRALE_UI_PORT', 4300),
   graphName,
   issuer: `${publicUrl}/mngt`,
 }
