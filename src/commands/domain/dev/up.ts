@@ -12,10 +12,19 @@ type Opts = {
 
 export default {
   name: 'up',
-  description: 'Start local dev infrastructure for the current domain (wrangler + optional tunnel/manager)',
+  description:
+    'Start local dev infrastructure for the current domain (wrangler + optional tunnel/manager)',
   options: [
-    { flags: '--kernel <name>', description: 'Kernel preset (e.g. local:manager:inprocess)' },
-    { flags: '--domain <name>', description: 'Domain preset (e.g. local:inprocess)' },
+    {
+      flags: '--kernel <name>',
+      description: 'Kernel preset (default: local:manager:inprocess)',
+      default: 'local:manager:inprocess',
+    },
+    {
+      flags: '--domain <name>',
+      description: 'Domain preset (default: local:inprocess)',
+      default: 'local:inprocess',
+    },
     { flags: '--cwd <path>', description: 'Domain directory (default: current working directory)' },
     {
       flags: '--platform <id>',
@@ -25,9 +34,6 @@ export default {
   ],
   action: async (opts: Opts) => {
     try {
-      if (!opts.kernel || !opts.domain) {
-        throw new Error('both --kernel and --domain are required')
-      }
       const platform = resolveDomainPlatform(opts.platform)
       const state = await platform.devUp({
         domainDir: opts.cwd ?? process.cwd(),
