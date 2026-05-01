@@ -37,7 +37,7 @@ export async function buildIdentityBinding(
 
   const { d: _d, p: _p, q: _q, dp: _dp, dq: _dq, qi: _qi, ...publicJwk } = privateJwk
 
-  const alg = privateJwk.alg as string
+  const alg = inferAlg(privateJwk, keyPath)
   const kid = privateJwk.kid as string
   // `extractable: true` lets us re-export the private JWK to derive its
   // canonical public half and cross-check against the `x`/`y` shipped in
@@ -57,6 +57,28 @@ export async function buildIdentityBinding(
     .sign(key)
 
   return { credential, publicKey: { jwk: publicJwk } }
+}
+
+/**
+ * Resolve the JOSE algorithm to use with this key. Prefers `privateJwk.alg`
+ * when present, falls back to inferring from `crv`/`kty` so keys generated
+ * by older CLIs (which didn't stamp `alg`) keep working without manual
+ * editing — see META_TRACE #34. Throws a clean error if neither path
+ * resolves an algorithm.
+ */
+export function inferAlg(privateJwk: Record<string, unknown>, keyPath?: string): string {
+  const explicit = privateJwk.alg
+  if (typeof explicit === 'string' && explicit.length > 0) return explicit
+  const crv = privateJwk.crv
+  const kty = privateJwk.kty
+  if (kty === 'EC' && crv === 'P-256') return 'ES256'
+  if (kty === 'OKP' && crv === 'Ed25519') return 'EdDSA'
+  const where = keyPath ? ` at ${keyPath}` : ''
+  throw new AstraleError(
+    'INVALID_KEY_FILE',
+    `JWK${where} is missing both \`alg\` and a recognizable \`(kty, crv)\` pair — cannot pick a signing algorithm.`,
+    'Re-stamp the file with `"alg": "ES256"` (P-256 EC keys) or `"alg": "EdDSA"` (Ed25519 OKP keys), or regenerate via `astrale domain init` / `astrale identity create`.',
+  )
 }
 
 /**
@@ -95,7 +117,13 @@ async function assertKeyPairConsistent(
 
 const DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
 const METHOD_OF_CLASS = '/:kernel.astrale.ai:class.method_of'
-const CLASS_NS_PREFIX = 'class.'
+// Both buckets are valid `method_of` targets — Function methods can be hosted
+// on either a `class.X` or an `interface.X`. The kernel computes function
+// paths identically for both (`/:<origin>:<member>:<method>`), so the CLI
+// must emit subs for both kinds; emitting only `class.` silently drops
+// interface-hosted methods and the kernel rejects with
+// `subs missing function path "/:<origin>:interface.X:<method>"`.
+const MEMBER_NS_PREFIXES = ['class.', 'interface.'] as const
 
 function rawStr(value: string | { raw: string } | undefined): string | undefined {
   if (!value) return undefined
@@ -116,37 +144,58 @@ function extractDomainSlug(spec: Spec): string {
 }
 
 /**
+ * Extract `(member, method)` from a `method_of` edge endpoint that points
+ * at a Function. Accepts both wire forms emitted by the DSL builder over
+ * its lifetime:
+ *   - tree:  `/<origin>/<member>/<method>`  (segment separator `/`, legacy)
+ *   - typed: `/:<origin>:<member>:<method>` (segment separator `:`, current)
+ * Returns `undefined` when the prefix doesn't match this origin or when
+ * either member or method is empty.
+ */
+function parseFunctionEndpoint(
+  s: string,
+  treeOriginPrefix: string,
+  typedOriginPrefix: string,
+): { member: string; method: string } | undefined {
+  let tail: string
+  let sep: string
+  if (s.startsWith(treeOriginPrefix)) {
+    tail = s.slice(treeOriginPrefix.length)
+    sep = '/'
+  } else if (s.startsWith(typedOriginPrefix)) {
+    tail = s.slice(typedOriginPrefix.length)
+    sep = ':'
+  } else {
+    return undefined
+  }
+  const idx = tail.indexOf(sep)
+  if (idx <= 0 || idx === tail.length - 1) return undefined
+  return { member: tail.slice(0, idx), method: tail.slice(idx + 1) }
+}
+
+/**
  * Collect expected function subs as absolute `MethodPath` strings
  * (`/:origin:Member:method`). Must match what the kernel computes via
  * `resolveMethodNodes` over `compiled.$.paths.absolute` — only methods
- * declared by this domain's own classes, skipping inherited ones.
+ * declared by this domain's own classes/interfaces, skipping inherited ones.
  *
- * Edge target forms accepted:
- *   - tree form:  `/<origin>/class.<member>/self` (legacy spec builder)
- *   - typed form: `/:<origin>:class.<member>` (current spec builder)
+ * Both wire forms (tree + typed) are accepted on the source side; the
+ * source already encodes both member and method, so the target is
+ * checked only for class membership filter via `MEMBER_NS_PREFIXES`.
  */
-function collectFunctionSubs(spec: Spec, origin: string): string[] {
-  const selfSuffix = '/self'
+export function collectFunctionSubs(spec: Spec, origin: string): string[] {
   const treeOriginPrefix = `/${origin}/`
   const typedOriginPrefix = `/:${origin}:`
   const subs = new Set<string>()
   for (const edge of spec.edges) {
     const cls = rawStr(edge.class)
     if (cls !== METHOD_OF_CLASS && cls !== `${METHOD_OF_CLASS}/self`) continue
-    const target = rawStr(edge.target)
     const source = rawStr(edge.source)
-    if (!target || !source) continue
-    if (!source.startsWith(treeOriginPrefix)) continue
-    let member: string | undefined
-    if (target.startsWith(treeOriginPrefix) && target.endsWith(selfSuffix)) {
-      member = target.slice(treeOriginPrefix.length, target.length - selfSuffix.length)
-    } else if (target.startsWith(typedOriginPrefix)) {
-      member = target.slice(typedOriginPrefix.length)
-    }
-    if (!member || !member.startsWith(CLASS_NS_PREFIX)) continue
-    const methodName = source.slice(source.lastIndexOf('/') + 1)
-    if (!methodName) continue
-    subs.add(`/:${origin}:${member}:${methodName}`)
+    if (!source) continue
+    const parsed = parseFunctionEndpoint(source, treeOriginPrefix, typedOriginPrefix)
+    if (!parsed) continue
+    if (!MEMBER_NS_PREFIXES.some((p) => parsed.member.startsWith(p))) continue
+    subs.add(`/:${origin}:${parsed.member}:${parsed.method}`)
   }
   return [...subs]
 }

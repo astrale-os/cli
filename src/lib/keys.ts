@@ -108,6 +108,8 @@ export async function persistKeypair(
   const kid = opts?.kid ?? `${subject}-key-${randomUUID().slice(0, 8)}`
   publicJwk.kid = kid
   privateJwk.kid = kid
+  publicJwk.alg = 'ES256'
+  privateJwk.alg = 'ES256'
 
   await atomicWrite(privatePath, JSON.stringify(privateJwk, null, 2))
   await atomicWrite(publicPath, JSON.stringify(publicJwk, null, 2))
