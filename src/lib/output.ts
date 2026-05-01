@@ -29,8 +29,15 @@ export function isRawOutput(opts?: RawOutputOpts): boolean {
  * - explicit `--format yaml|json` → honor regardless of TTY, colors only on TTY
  * - default on TTY → highlighted YAML
  * - default on non-TTY → plain JSON
+ *
+ * Void-returning syscalls surface as `undefined` here; `JSON.stringify(undefined)`
+ * itself returns `undefined`, which would print the bare string `undefined` and
+ * break any caller doing `JSON.parse(stdout)`. Normalize to `null` (parseable
+ * JSON, valid YAML) at the entry so every formatter branch is consistent.
  */
 export function output(data: unknown, opts: OutputOpts): void {
+  if (data === undefined) data = null
+
   if (opts.raw || opts.json) {
     process.stdout.write(JSON.stringify(data, null, 2) + '\n')
     return
