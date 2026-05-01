@@ -13,7 +13,11 @@ export default {
   name: 'build',
   description: "Build the domain's spec.json for a given env preset (replaces `pnpm build:spec`)",
   options: [
-    { flags: '--preset <name>', description: 'Domain env preset (default: prod)', default: 'prod' },
+    {
+      flags: '--preset <name>',
+      description: 'Domain env preset (default: local:inprocess)',
+      default: 'local:inprocess',
+    },
     { flags: '--cwd <path>', description: 'Domain directory (default: current working directory)' },
     {
       flags: '--platform <id>',

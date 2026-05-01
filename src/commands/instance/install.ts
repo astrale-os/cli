@@ -62,7 +62,9 @@ export default {
   options: [
     {
       flags: '-k, --key <path>',
-      description: 'Path to a JWK private key file (.json) for identity binding',
+      description:
+        "Path to the domain worker's private JWK — the same key the worker signs callback JWTs with. " +
+        'Auto-detected from `<spec-dir>/worker/keys/` when omitted.',
     },
   ],
   action: async (specFile: string, opts: KernelCommandOpts & { key?: string }) => {
@@ -106,23 +108,28 @@ export default {
     const specSlug = extractDomainSlug(spec.nodes)
     const meta = spec.meta
 
-    // Auto-detect worker key for non-builtin domains when `-k` was not
-    // passed. Looks under `<specDir>/worker/keys/` — the convention used by
-    // `minimal-remote`-scaffolded domains. Missing key = silent install
-    // without identity binding, which causes OIDC discovery to take over
-    // for worker→kernel call-backs (and crash on bare-slug iss pre fetchJwksUri
-    // tolerance). Surfacing the match explicitly makes the intent visible.
-    if (!resolvedKey) {
-      const hint = meta?.baseDomain ?? specSlug
-      const autoKey = await autoDetectWorkerKey(dirname(filePath), hint)
-      if (autoKey) {
-        resolvedKey = autoKey
-        log.dim(`  Auto-detected worker key: ${autoKey}`)
-      } else {
-        log.warn(
-          '  No `-k` provided and no worker key auto-detected — installing without identity binding.',
-        )
-      }
+    // Always run auto-detection. Looks under `<specDir>/worker/keys/` — the
+    // convention used by `minimal-remote`-scaffolded domains.
+    //
+    // When the user passes `-k <path>` AND the convention also has a key,
+    // their explicit choice wins, but we warn loudly when those paths
+    // don't match — the `-k <manager.private.jwk>` mistake (META_TRACE #35)
+    // is invisible until callbacks fail with "Unrecognized credential
+    // format" hours later.
+    const hint = meta?.baseDomain ?? specSlug
+    const autoKey = await autoDetectWorkerKey(dirname(filePath), hint)
+    if (resolvedKey && autoKey && resolve(resolvedKey) !== resolve(autoKey)) {
+      log.warn(`  -k ${resolvedKey} differs from the auto-detected worker key ${autoKey}.`)
+      log.warn('  Using your -k. The kernel registers whichever pubkey signs this')
+      log.warn('  install as the function-identity pubkey, so callbacks signed by')
+      log.warn('  a different key will fail "Unrecognized credential format".')
+    } else if (!resolvedKey && autoKey) {
+      resolvedKey = autoKey
+      log.dim(`  Auto-detected worker key: ${autoKey}`)
+    } else if (!resolvedKey && !autoKey) {
+      log.warn(
+        '  No `-k` provided and no worker key auto-detected — installing without identity binding.',
+      )
     }
 
     if (meta) {
@@ -173,10 +180,10 @@ export default {
       label: `Installing domain from ${specFile}`,
       fn: async (ctx) => {
         try {
-          return (await ctx.client.call(
-            '/kernel.astrale.ai/class.Root/installDomain',
-            { spec: specPayload, identity },
-          )) as InstallResult
+          return (await ctx.client.call('/kernel.astrale.ai/class.Root/installDomain', {
+            spec: specPayload,
+            identity,
+          })) as InstallResult
         } catch (e) {
           // Re-throw sig failures with the -k context so the user doesn't
           // have to guess which key is being rejected. The kernel's generic
@@ -247,8 +254,6 @@ async function autoDetectWorkerKey(
   if (jwks.length === 1) return join(keysDir, jwks[0]!)
 
   // Ambiguous — let the user pass `-k` explicitly.
-  log.warn(
-    `  Multiple .jwk.json candidates in ${keysDir}; not auto-picking — pass \`-k <path>\`.`,
-  )
+  log.warn(`  Multiple .jwk.json candidates in ${keysDir}; not auto-picking — pass \`-k <path>\`.`)
   return null
 }
