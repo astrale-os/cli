@@ -16,9 +16,16 @@ import type { DomainEnv } from '@astrale-os/kernel-toolkit'
 
 import { readIntEnv, readStringEnv } from '@astrale-os/kernel-toolkit'
 
-/** Port where the local wrangler dev worker listens. Default 8787. */
+/**
+ * Port where the local wrangler dev worker listens. Default 8801.
+ *
+ * Picked off 8787 so a freshly-scaffolded domain doesn't collide with
+ * `distribution` (the canonical in-tree domain that owns 8787) on a
+ * developer machine running both. Override per-shell via `DOMAIN_PORT=…`
+ * if 8801 is also taken in your setup.
+ */
 export function readDomainPort(): number {
-  return readIntEnv('DOMAIN_PORT', 8787)
+  return readIntEnv('DOMAIN_PORT', 8801)
 }
 
 /** Cloudflare tunnel ID fronting the local worker (for `:tunneled`). */
@@ -41,9 +48,9 @@ export const domainEnvs = {
     domain: `minimal.local-${readTunnelId()}.astrale.ai`,
   }),
   /**
-   * Shared test-prod on Cloudflare (astrale.ai zone). `pnpm minimal-remote:deploy`
-   * ships here. Flip the slug to your real prod hostname when you graduate the
-   * domain out of the scaffold.
+   * Shared test-prod on Cloudflare (astrale.ai zone). `astrale domain deploy
+   * --preset prod` ships here. Flip the slug to your real prod hostname when
+   * you graduate the domain out of the scaffold.
    */
   prod: (): DomainEnv => ({
     domain: 'minimal.test.astrale.ai',

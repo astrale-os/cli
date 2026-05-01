@@ -32,12 +32,6 @@ minimal-remote/
       src/renderers/default.tsx         # starter view — duplicate + specialize
       src/lib/node.ts                   # useNode(shell, nodeId) + PROP keys
       README.md                         # add-a-view guide + HMR setup
-  scripts/
-    build-spec.ts               # stamp spec.json for a preset
-    infra-prepare.ts            # local services (astrale / cloudflared / wrangler dev)
-    instance-prepare.ts         # manager: register / boot / install / mint
-    minimal-remote-deploy.ts    # wrangler deploy + deployCheck inline
-    lib.ts                      # liveness / kill / preset eval helpers
   test/
     minimal-remote.test.ts      # domainFixture smoke test (in-process)
     setup-env.ts / vitest.config.ts / .env.example / tsconfig.json
@@ -74,11 +68,24 @@ rewritten. What's left:
    ```
 
 4. **Install & test.** `pnpm install` at the workspace root (never in
-   sub-packages). `pnpm test` runs the in-process smoke test. Then
-   `astrale domain dev up --kernel <k> --domain <d>` to wire the remote
-   integration path (replaces the legacy `pnpm infra:prepare`).
+   sub-packages). `pnpm test` runs the in-process smoke test.
 
-5. **(Optional) Tweak the SPA.** The worker ships with a React SPA at
+5. **Build, run, install — via the CLI.** All of these used to be
+   per-domain `pnpm` scripts under `scripts/`; they're now first-class
+   `astrale` subcommands:
+
+   | What | Command |
+   |---|---|
+   | Stamp `spec.json` for a preset | `astrale domain build [--preset <name>]` |
+   | Bring up local services (worker + tunnel) | `astrale domain dev up [--domain local:inprocess\|local:tunneled]` |
+   | Tear them back down | `astrale domain dev down` |
+   | Liveness check | `astrale domain dev status` |
+   | Prepare a child instance (register / boot / install / mint) | `astrale domain instance-prepare -i <instance>` |
+   | Deploy to Cloudflare | `astrale domain deploy [--preset prod]` |
+
+   Full lifecycle reference: the `astrale-domain-dev` skill.
+
+6. **(Optional) Tweak the SPA.** The worker ships with a React SPA at
    `worker/client/` that renders `/ui/<slug>` views. The `default`
    renderer dumps the target node's props — duplicate + rename for
    domain-specific views. See `worker/client/README.md`.
