@@ -7,7 +7,8 @@
  */
 
 import type { JWK } from 'jose'
-import { cp, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+
+import { cp, mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 
 import { generateEd25519Jwk } from './keys'
@@ -195,7 +196,13 @@ export async function renameFilesInTree(rootDir: string, map: RenameMap): Promis
 }
 
 /**
- * Overwrite `worker/src/keys.ts` with a freshly-generated Ed25519 pair.
+ * Overwrite `worker/src/keys.ts` with a freshly-generated Ed25519 pair AND
+ * mirror the private JWK to `worker/keys/<slug>.localhost-worker.jwk.json`
+ * so `astrale instance install` can auto-detect it (the auto-detect path
+ * looks for `<baseDomain>-worker.jwk.json`, and the local:inprocess preset's
+ * baseDomain is `<slug>.localhost`). Without the mirror the worker has a
+ * key but install can't find it — every freshly-scaffolded domain wedged
+ * at "No -k provided and no worker key auto-detected".
  *
  * Called after the scaffold copy + rename so the domain never ships the
  * template's hardcoded pair — historical template had a `d`/`x` that don't
@@ -209,6 +216,12 @@ export async function writeWorkerKeysFile(targetDir: string, slug: string): Prom
   const kid = `${slug}-worker-key`
   const { privateJwk, publicJwk } = await generateEd25519Jwk(kid)
   await writeFile(keysPath, renderKeysFile(slug, kid, privateJwk, publicJwk), 'utf-8')
+
+  const jwkDir = join(targetDir, 'worker', 'keys')
+  await mkdir(jwkDir, { recursive: true })
+  const jwkPath = join(jwkDir, `${slug}.localhost-worker.jwk.json`)
+  await writeFile(jwkPath, JSON.stringify(privateJwk, null, 2) + '\n', { mode: 0o600 })
+
   return true
 }
 
