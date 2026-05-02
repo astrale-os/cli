@@ -52,8 +52,15 @@ export const references = edgeClass(
 // Base domain is env-driven so tests and prod share one invariant:
 // schema.domain == worker issuer == identity-binding iss == kernel path
 // prefix. Flipping MINIMAL_BASE_DOMAIN reconfigures everything downstream.
+//
+// `process` is read at build time (build-spec runs on Node). The worker
+// bundle never executes this branch — Workers don't have `process` and
+// the WebWorker tsconfig lib doesn't declare it. Narrow access through
+// globalThis so both environments typecheck.
+type MaybeNodeGlobal = { process?: { env?: Record<string, string | undefined> } }
+const _maybeNode = globalThis as unknown as MaybeNodeGlobal
 export const MINIMAL_BASE_DOMAIN =
-  (typeof process !== 'undefined' && process.env?.MINIMAL_BASE_DOMAIN) || 'minimal.test.astrale.ai'
+  _maybeNode.process?.env?.MINIMAL_BASE_DOMAIN ?? 'minimal.test.astrale.ai'
 
 export const MinimalRemoteSchema = defineSchema(MINIMAL_BASE_DOMAIN, {
   interfaces: { NoteOps },

@@ -225,6 +225,29 @@ export async function writeWorkerKeysFile(targetDir: string, slug: string): Prom
   return true
 }
 
+/**
+ * Seed `worker/dist-client/index.html` with a one-line stub.
+ *
+ * `wrangler.jsonc` declares `assets.directory: ./dist-client`; without
+ * the directory existing, `wrangler dev` refuses to boot with
+ * "assets.directory does not exist" before the user has had a chance
+ * to run `pnpm build` in `worker/client/`. Shipping a stub lets the
+ * worker boot immediately on first `astrale domain dev up`; the stub
+ * is overwritten the moment the SPA build runs.
+ */
+export async function writeDistClientPlaceholder(targetDir: string): Promise<boolean> {
+  const distDir = join(targetDir, 'worker', 'dist-client')
+  await mkdir(distDir, { recursive: true })
+  const indexPath = join(distDir, 'index.html')
+  if (await pathExists(indexPath)) return false
+  await writeFile(
+    indexPath,
+    '<!doctype html><html><body>Run `pnpm build` in worker/client to populate the SPA.</body></html>\n',
+    'utf-8',
+  )
+  return true
+}
+
 function renderKeysFile(slug: string, kid: string, privateJwk: JWK, publicJwk: JWK): string {
   const fmtKey = (jwk: JWK, fields: readonly (keyof JWK)[]): string =>
     fields

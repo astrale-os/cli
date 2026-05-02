@@ -2,7 +2,7 @@
  * Per-domain env presets for the minimal-remote scaffold.
  *
  * Pick one via `MINIMAL_DOMAIN=<preset>`. Consumers derive `iss` / `url`
- * from `(domain, port)` at runtime via `@astrale-os/kernel-toolkit`'s
+ * from `(domain, port)` at runtime via `@astrale-os/kernel-host`'s
  * `schemeOf`, `hostOf`, `domainUrl` helpers. See the `astrale-domain-dev`
  * skill for the full identity model.
  *
@@ -12,9 +12,9 @@
  * Flip to your real prod slug when the domain is ready to ship to users.
  */
 
-import type { DomainEnv } from '@astrale-os/kernel-toolkit'
+import type { DomainEnv } from '@astrale-os/kernel-host'
 
-import { readIntEnv, readStringEnv } from '@astrale-os/kernel-toolkit'
+import { readIntEnv, readStringEnv } from '@astrale-os/kernel-host'
 
 /**
  * Port where the local wrangler dev worker listens. Default 8801.

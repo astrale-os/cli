@@ -1,5 +1,12 @@
 @import 'tailwindcss';
 
+/* Tailwind v4 only scans the consumer's source files for class usage by
+ * default — `@astrale-os/ui-components` lives in node_modules and would
+ * be skipped, so `Card`/`Badge`/`Button`/etc. ship unstyled. The @source
+ * directive pulls the library into the scan; the bundle goes from ~9KB
+ * (almost-empty) to ~95KB (full shadcn class set actually used). */
+@source "../node_modules/@astrale-os/ui-components/src/**/*.{ts,tsx}";
+
 /*
  * shadcn-compatible design tokens so Card/Button/etc from
  * @astrale-os/ui-components render consistently.

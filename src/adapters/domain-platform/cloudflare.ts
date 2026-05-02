@@ -33,6 +33,7 @@ import {
   renameFilesInTree,
   rewriteFilesContent,
   slugVariants,
+  writeDistClientPlaceholder,
   writeWorkerKeysFile,
 } from '../../lib/domain-scaffold'
 import { domainUrl, loadDomainModule, type DomainEnv } from './cloudflare-helpers'
@@ -111,6 +112,7 @@ export const cloudflareDomainPlatform: DomainPlatform = {
     const touched = await rewriteFilesContent(targetDir, renameMap)
     const renamed = await renameFilesInTree(targetDir, renameMap)
     const keysWritten = await writeWorkerKeysFile(targetDir, slug)
+    const distSeeded = await writeDistClientPlaceholder(targetDir)
 
     const v = slugVariants(slug)
     const nextSteps = [
@@ -120,7 +122,7 @@ export const cloudflareDomainPlatform: DomainPlatform = {
       `astrale domain dev up --kernel local:standalone:inprocess --domain local:inprocess`,
       `astrale domain deploy --skip-drift-check   # first deploy (soft-fail DNS-less)`,
       ``,
-      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths${keysWritten ? ', regenerated worker keypair' : ''})`,
+      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths${keysWritten ? ', regenerated worker keypair' : ''}${distSeeded ? ', seeded dist-client/' : ''})`,
       `Variants: kebab=${v.kebab} pascal=${v.pascal} camel=${v.camel} upper=${v.upperSnake}`,
     ]
 

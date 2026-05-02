@@ -12,22 +12,6 @@
   // "routes": [
   //   { "pattern": "minimal.test.astrale.ai/*", "zone_name": "astrale.ai" }
   // ],
-  // The alias block is load-bearing — without it, wrangler resolves
-  // `@astrale-os/*` against the domain folder's node_modules (where the
-  // SDK bundle is CJS-flavoured) instead of source TS. Every entry
-  // below points at source-TS files so `wrangler dev` and `wrangler deploy`
-  // agree on one module graph.
-  //
-  // Paths relative to this file (domains/<slug>/worker/wrangler.jsonc).
-  // Up 3 levels = workspace root, then into `kernel/` or `sdk/`.
-  "alias": {
-    "@astrale-os/sdk": "../../../sdk/src/index.ts",
-    "@astrale-os/sdk/server": "../../../sdk/src/server/index.ts",
-    "@astrale-os/kernel-core": "../../../kernel/core/index.ts",
-    "@astrale-os/kernel-core/domain": "../../../kernel/core/domain/index.ts",
-    "@astrale-os/kernel-dsl": "../../../kernel/dsl/src/index.ts",
-    "@astrale-os/kernel-runtime": "../../../kernel/runtime/index.ts"
-  },
   // Workers Assets binding — serves the React SPA (`client/` → `dist-client/`)
   // at `/ui/*`. SPA fallback returns `index.html` for deep URLs so TanStack
   // Router can slug-route client-side.
