@@ -71,16 +71,26 @@ async function startDockerMode(
     return
   }
 
-  if (!imageExists) {
-    const tag = await managerImageTag()
-    const s = spinner(`Building manager image astrale-os/manager:${tag}...`)
-    try {
-      await buildManagerImage()
-      s.succeed(`Built astrale-os/manager:${tag}`)
-    } catch (e) {
-      s.fail('Manager image build failed')
-      throw e
-    }
+  // Always invoke `docker build` so manifest/lockfile changes are picked up.
+  // The Dockerfile copies every package.json + pnpm-lock.yaml before
+  // `pnpm install`, so a no-op rebuild is a full cache hit (~2-5s). When
+  // the image already exists we run quietly — Docker's layer cache decides
+  // whether anything actually rebuilds. First-time builds stream progress
+  // since the deps install can take 30-60s.
+  const tag = await managerImageTag()
+  const buildSpinner = spinner(
+    imageExists
+      ? `Refreshing manager image astrale-os/manager:${tag}...`
+      : `Building manager image astrale-os/manager:${tag}...`,
+  )
+  try {
+    await buildManagerImage({ quiet: imageExists })
+    buildSpinner.succeed(
+      imageExists ? `Manager image up to date` : `Built astrale-os/manager:${tag}`,
+    )
+  } catch (e) {
+    buildSpinner.fail('Manager image build failed')
+    throw e
   }
 
   await writeComposeFile(COMPOSE_PATH, {

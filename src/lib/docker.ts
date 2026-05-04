@@ -63,7 +63,9 @@ export async function managerImageRef(): Promise<string> {
 
 // ─── Image build ──────────────────────────────────────────────
 
-export async function buildManagerImage(opts: { noCache?: boolean } = {}): Promise<void> {
+export async function buildManagerImage(
+  opts: { noCache?: boolean; quiet?: boolean } = {},
+): Promise<void> {
   const cli = await cliRoot()
   const ws = await workspaceRoot()
   const ref = await managerImageRef()
@@ -89,7 +91,12 @@ export async function buildManagerImage(opts: { noCache?: boolean } = {}): Promi
   args.push('--secret', 'id=github_token,env=GITHUB_TOKEN')
   if (opts.noCache) args.push('--no-cache')
   args.push(ws)
-  await runInteractive(args, { env: { ...process.env, GITHUB_TOKEN: token } })
+  const env = { ...process.env, GITHUB_TOKEN: token }
+  if (opts.quiet) {
+    await run(args, { env })
+  } else {
+    await runInteractive(args, { env })
+  }
 }
 
 export async function managerImageExists(): Promise<boolean> {
@@ -373,12 +380,22 @@ export async function assertWorkspaceInstalled(): Promise<void> {
 
 // ─── Shell helpers ────────────────────────────────────────────
 
-async function run(args: string[]): Promise<void> {
-  const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
+async function run(
+  args: string[],
+  opts: { env?: Record<string, string> } = {},
+): Promise<void> {
+  const proc = Bun.spawn(args, {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(opts.env ? { env: opts.env } : {}),
+  })
   const code = await proc.exited
   if (code !== 0) {
-    const err = await new Response(proc.stderr).text()
-    throw new Error(`${args.join(' ')} failed (${code}): ${err}`)
+    const [stdout, stderr] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ])
+    throw new Error(`${args.join(' ')} failed (${code}): ${stderr || stdout}`)
   }
 }
 
