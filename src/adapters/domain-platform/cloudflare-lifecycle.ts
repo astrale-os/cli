@@ -39,6 +39,7 @@ import {
   clearDevState,
   domainUrl,
   evalPreset,
+  hashDevVars,
   isAstraleRunning,
   isHttpOk,
   isPidAlive,
@@ -217,9 +218,39 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
         'Shape (b) domains have no worker; dev up only supports shape (a).',
       )
     }
-    if (await isHttpOk(localHealth)) {
+
+    const baseVars = buildBaseVars(domain, resolved.slug, config.extraDevVars)
+    const envHash = hashDevVars(baseVars)
+    const priorState = readDevState(paths.domainState(resolved.slug))
+    const priorWrangler = priorState?.started.wrangler ?? null
+    const envChanged = priorWrangler?.envHash !== undefined && priorWrangler.envHash !== envHash
+
+    if (envChanged) {
+      // Restart-on-env-change (META_TRACE #92): silently skipping when env
+      // diverges from the running wrangler is the worst-of-both — the new
+      // KERNEL_URL/AGENT_IMAGE/etc. is invisible until the next manual kill.
+      const { killed } = killWranglerTree(port)
+      log.dim(`  env changed — killed ${killed} listener(s) on :${port}, restarting wrangler`)
+      await ensureWranglerWorker({
+        domain,
+        slug: resolved.slug,
+        workerDir,
+        port,
+        localHealth,
+        baseVars,
+        envHash,
+        state,
+      })
+    } else if (await isHttpOk(localHealth)) {
       log.dim(`  wrangler already serving on :${port}`)
-      // We didn't start it — leave state.wrangler null so down doesn't touch it.
+      // If we previously started it AND the env still matches, carry the
+      // prior wrangler entry forward so the next dev up can keep detecting
+      // env drift. If priorWrangler is null we don't own this wrangler
+      // (externally started) — leave state.wrangler null so down doesn't
+      // touch it.
+      if (priorWrangler && priorWrangler.envHash === envHash && isPidAlive(priorWrangler.pid)) {
+        state.started.wrangler = priorWrangler
+      }
     } else {
       await ensureWranglerWorker({
         domain,
@@ -227,7 +258,8 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
         workerDir,
         port,
         localHealth,
-        extraDevVars: config.extraDevVars,
+        baseVars,
+        envHash,
         state,
       })
     }
@@ -375,6 +407,21 @@ export async function instancePrepare(opts: InstancePrepareOpts): Promise<Instan
   const iss = await waitForInstanceReady(hint)
 
   runCli(['instance', 'install', join(resolved.dir, 'spec.json'), '-i', instanceId], resolved.dir)
+
+  // Worker holds in-memory state (cached creds, registries) keyed off the
+  // pre-install graph. After `instance install` reseeds the domain, that
+  // state is stale; the worker doesn't auto-reload (META_TRACE #74). Kill
+  // the recorded wrangler tree so the next `dev up` (or first request)
+  // brings up a fresh worker against the new graph state. Only touches
+  // wrangler this lifecycle started.
+  const installedState = readDevState(paths.domainState(resolved.slug))
+  const ownedWrangler = installedState?.started.wrangler
+  if (ownedWrangler) {
+    const { killed } = killWranglerTree(ownedWrangler.port)
+    log.dim(`  post-install: killed ${killed} listener(s) on :${ownedWrangler.port}`)
+    installedState.started.wrangler = null
+    writeDevState(paths.domainState(resolved.slug), installedState)
+  }
 
   const parent = `/${domain.domain}`
   const token = runCli(
@@ -566,22 +613,30 @@ type WorkerSpawnArgs = {
   workerDir: string
   port: number
   localHealth: string
-  extraDevVars: Readonly<Record<string, string>> | undefined
+  baseVars: DevVars
+  envHash: string
   state: DevState
 }
 
-async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
-  const { domain, slug, workerDir, port, localHealth, extraDevVars, state } = args
-
-  const devVarsPath = join(workerDir, '.dev.vars')
+function buildBaseVars(
+  domain: DomainEnv,
+  slug: string,
+  extraDevVars: Readonly<Record<string, string>> | undefined,
+): DevVars {
   const prefix = slugVariants(slug).upperSnake
-  const baseVars: DevVars = {
+  return {
     WORKER_URL: domainUrl(domain),
     BASE_DOMAIN: domain.domain,
     [`${prefix}_WORKER_URL`]: domainUrl(domain),
     [`${prefix}_BASE_DOMAIN`]: domain.domain,
     ...extraDevVars,
   }
+}
+
+async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
+  const { domain: _domain, slug, workerDir, port, localHealth, baseVars, envHash, state } = args
+
+  const devVarsPath = join(workerDir, '.dev.vars')
   const changed = writeDevVars(devVarsPath, baseVars)
   if (changed) {
     const { killed } = killWranglerTree(port)
@@ -619,6 +674,6 @@ async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
   }
   await waitForUrl(localHealth, 30_000, 'wrangler')
   const pid = findListenerPid(port) ?? 0
-  state.started.wrangler = { port, pid }
+  state.started.wrangler = { port, pid, envHash }
   log.dim(`  wrangler ready on :${port} (pid=${pid}); logs=${logFile}`)
 }

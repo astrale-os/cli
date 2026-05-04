@@ -9,10 +9,12 @@ export const AstraleConfigSchema = z.object({
   managerPort: z.number().int().positive().default(4400),
   falkorPort: z.number().int().positive().default(6379),
   // FalkorDB hostname reachable by the manager process. On host-mode this
-  // is `localhost`; inside the `manager` docker-compose service the
-  // manager entrypoint overrides to the compose network alias `falkordb`
-  // via `ASTRALE_FALKOR_HOST`.
-  falkorHost: z.string().default('localhost'),
+  // is `127.0.0.1` — `localhost` resolves to `::1` (IPv6) first on macOS
+  // and OrbStack publishes FalkorDB on IPv4 only, so `localhost` would
+  // ECONNREFUSED on every connect (META_TRACE #20). Inside the `manager`
+  // docker-compose service the manager entrypoint overrides to the compose
+  // network alias `falkordb` via `ASTRALE_FALKOR_HOST`.
+  falkorHost: z.string().default('127.0.0.1'),
   graphName: z.string().default('astrale-manager'),
   // The manager kernel signs tokens with its own base URL as the `iss`
   // claim. The CLI must sign matching tokens or the JWKS lookup fails.

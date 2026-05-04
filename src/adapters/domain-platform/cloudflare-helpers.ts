@@ -16,6 +16,7 @@ import type {
 } from '@astrale-os/kernel-host'
 
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -219,6 +220,17 @@ function writeEnvFile(filePath: string, vars: DevVars): boolean {
 
 export function writeDevVars(devVarsPath: string, vars: DevVars): boolean {
   return writeEnvFile(devVarsPath, vars)
+}
+
+/**
+ * SHA-256 hash of a DevVars object with sorted keys. Used to detect when
+ * resolved env diverges from the running wrangler's recorded env so dev
+ * up can restart instead of skipping silently (META_TRACE #92).
+ */
+export function hashDevVars(vars: DevVars): string {
+  const sorted: Record<string, string> = {}
+  for (const k of Object.keys(vars).sort()) sorted[k] = vars[k]!
+  return createHash('sha256').update(JSON.stringify(sorted)).digest('hex')
 }
 
 // ── DNS preflight ─────────────────────────────────────────────────────

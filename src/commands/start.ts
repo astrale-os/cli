@@ -1,5 +1,6 @@
 import { closeSync, openSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
+import { createConnection } from 'node:net'
 import { join } from 'node:path'
 
 import { readConfig } from '../lib/config'
@@ -200,6 +201,21 @@ async function startHostMode(
 
   const state = await detectManagerState(config)
   if (!state.running) {
+    // Probe FalkorDB before pointing the user at manager logs — a
+    // FalkorDB-unreachable error otherwise looks like a manager crash
+    // (META_TRACE #20). The most common cause is `falkorHost: "localhost"`
+    // resolving to ::1 on macOS while OrbStack publishes IPv4-only.
+    const falkorReachable = await probeTcp(config.falkorHost, config.falkorPort, 1000)
+    if (!falkorReachable) {
+      log.error(
+        `Manager started but FalkorDB at ${config.falkorHost}:${config.falkorPort} is unreachable.`,
+      )
+      log.dim(
+        `  On macOS, "localhost" may resolve to ::1 first; set falkorHost to "127.0.0.1" in ~/.astrale/config.json.`,
+      )
+      log.dim(`  Manager logs: ${join(LOGS_DIR, 'manager.stderr.log')}`)
+      process.exit(1)
+    }
     log.error('Manager process started but is not responding on the HTTP port. Check logs:')
     log.dim(`  ${join(LOGS_DIR, 'manager.stderr.log')}`)
     process.exit(1)
@@ -222,4 +238,18 @@ async function startHostMode(
   log.dim(`  PID:     ${managerProc.pid}`)
   log.dim(`  Logs:    ${LOGS_DIR}`)
   log.info('Run `astrale stop --host-mode` to stop')
+}
+
+function probeTcp(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host, port })
+    const settle = (ok: boolean): void => {
+      socket.destroy()
+      resolve(ok)
+    }
+    socket.setTimeout(timeoutMs)
+    socket.once('connect', () => settle(true))
+    socket.once('timeout', () => settle(false))
+    socket.once('error', () => settle(false))
+  })
 }

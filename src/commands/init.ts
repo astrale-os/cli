@@ -67,7 +67,7 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
   const config: AstraleConfig = {
     managerPort,
     falkorPort,
-    falkorHost: 'localhost',
+    falkorHost: '127.0.0.1',
     graphName,
     // The manager signs tokens with its own base URL as the issuer, and the
     // CLI must sign JWTs with that same value for the manager's JWKS lookup
