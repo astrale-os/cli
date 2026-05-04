@@ -146,6 +146,7 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
   const needsAstrale = kernel.mode === 'manager' && !opts.kernel.startsWith('remote:')
   const needsCloudflared = opts.kernel.endsWith(':tunneled') || opts.domain === 'local:tunneled'
   const needsLocalWorker = opts.domain === 'local:inprocess' || opts.domain === 'local:tunneled'
+  const healthPath = config.healthPath ?? '/meta'
 
   const state: DevState = {
     presets: { kernel: opts.kernel, domain: opts.domain },
@@ -204,84 +205,37 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
     }
   }
 
-  // Ensure wrangler dev.
+  // Ensure wrangler worker.
   if (needsLocalWorker) {
     const port = domain.port ?? readDomainPort(envs)
-    const localMeta = `http://localhost:${port}/meta`
-    if (await isHttpOk(localMeta)) {
-      log.dim(`  wrangler already serving on :${port}`)
-      // We didn't start it — leave state.wrangler null so we don't touch it on down.
-    } else {
-      const devVarsPath = join(resolved.dir, 'worker', '.dev.vars')
-      const prefix = slugVariants(resolved.slug).upperSnake
-      const baseVars: DevVars = {
-        WORKER_URL: domainUrl(domain),
-        BASE_DOMAIN: domain.domain,
-        [`${prefix}_WORKER_URL`]: domainUrl(domain),
-        [`${prefix}_BASE_DOMAIN`]: domain.domain,
-        ...config.extraDevVars,
-      }
-      const changed = writeDevVars(devVarsPath, baseVars)
-      if (changed) {
-        const { killed } = killWranglerTree(port)
-        if (killed > 0) log.dim(`  .dev.vars changed — killed ${killed} listener(s) on :${port}`)
-      }
-
-      const logDir = paths.domainLogDir(resolved.slug)
-      mkdirSync(logDir, { recursive: true })
-      const logFile = join(logDir, 'wrangler.log')
-      const workerDir = join(resolved.dir, 'worker')
-      if (!existsSync(workerDir)) {
-        throw new AstraleError(
-          'NO_WORKER_DIR',
-          `Expected ${workerDir} to exist`,
-          'Shape (b) domains have no worker; dev up only supports shape (a).',
-        )
-      }
-      // Invoke the locally-installed wrangler binary via the user's login+
-      // interactive zsh, so the subshell sources `.zprofile`/`.zshrc` and gets
-      // a PATH that contains `node` (the wrangler shim does `exec node …`).
-      // `node` is typically installed by Homebrew/nvm/asdf and lives in dirs
-      // only added to PATH by interactive shell config. From a `bash -c`
-      // subshell with macOS-TCC-stripped env, those dirs aren't visible.
-      //
-      // Tried first:
-      //   - `bunx wrangler dev` — only a shell function on some setups
-      //     (safe-chain), invisible to subshells.
-      //   - `bun x wrangler dev` — bun's package runner fails with
-      //     `CouldntReadCurrentDirectory` under TCC.
-      //   - `bash -lc <wrangler shim>` — bash login doesn't source zsh's
-      //     `.zshrc`, so node still isn't on PATH for zsh users.
-      const wranglerBin = join(workerDir, 'node_modules', '.bin', 'wrangler')
-      if (!existsSync(wranglerBin)) {
-        throw new AstraleError(
-          'NO_WRANGLER',
-          `Expected ${wranglerBin} to exist`,
-          'Run `pnpm install` in the workspace root.',
-        )
-      }
-      const spawn = spawnSync(
-        '/bin/zsh',
-        [
-          '-lic',
-          `cd ${JSON.stringify(workerDir)} && nohup ${JSON.stringify(wranglerBin)} dev --port ${port} > ${JSON.stringify(logFile)} 2>&1 &`,
-        ],
-        { stdio: 'inherit' },
+    const localHealth = `http://localhost:${port}${healthPath}`
+    const workerDir = join(resolved.dir, 'worker')
+    if (!existsSync(workerDir)) {
+      throw new AstraleError(
+        'NO_WORKER_DIR',
+        `Expected ${workerDir} to exist`,
+        'Shape (b) domains have no worker; dev up only supports shape (a).',
       )
-      if (spawn.status !== 0) {
-        throw new AstraleError('WRANGLER_SPAWN_FAILED', `wrangler dev spawn failed`)
-      }
-      await waitForUrl(localMeta, 30_000, 'wrangler')
-      // Re-discover the PID that ended up bound on :port.
-      const pid = findListenerPid(port) ?? 0
-      state.started.wrangler = { port, pid }
-      log.dim(`  wrangler ready on :${port} (pid=${pid}); logs=${logFile}`)
+    }
+    if (await isHttpOk(localHealth)) {
+      log.dim(`  wrangler already serving on :${port}`)
+      // We didn't start it — leave state.wrangler null so down doesn't touch it.
+    } else {
+      await ensureWranglerWorker({
+        domain,
+        slug: resolved.slug,
+        workerDir,
+        port,
+        localHealth,
+        extraDevVars: config.extraDevVars,
+        state,
+      })
     }
 
     // If tunneled, wait for the tunnel to front the worker.
     if (opts.domain === 'local:tunneled') {
       const workerUrl = domainUrl(domain)
-      await waitForUrl(`${workerUrl}/meta`, 60_000, 'tunnel → worker')
+      await waitForUrl(`${workerUrl}${healthPath}`, 60_000, 'tunnel → worker')
     }
   }
 
@@ -570,12 +524,101 @@ function findBuildSpecCli(startDir: string): string {
 
 // ── Utility: find PID listening on port ───────────────────────────────
 
+/**
+ * Resolve the PID of the process listening on `port`. Filters with
+ * `-sTCP:LISTEN` so we get only sockets in LISTEN state. When the tsx
+ * CLI parent forks a child node process, both inherit the listening
+ * fd briefly — we expect to see exactly one PID after stabilisation.
+ * If lsof returns multiple, that's an unexpected state (orphan listener,
+ * fork still in progress, etc.); we warn and return the highest PID
+ * (most recently spawned, since PID allocation is monotonic within a
+ * session — accepts the rare PID-wraparound miss in exchange for a
+ * useful default that matches the wrangler/tsx happy path).
+ *
+ * Absolute path — see `cloudflare-helpers.ts` for why bare `lsof` fails
+ * under macOS TCC on `~/Documents/`.
+ */
 function findListenerPid(port: number): number | null {
-  // Absolute path — see `cloudflare-helpers.ts` for why bare `lsof` fails
-  // under macOS TCC on `~/Documents/`.
-  const r = spawnSync('/usr/sbin/lsof', ['-ti', `:${port}`], { encoding: 'utf-8' })
+  const r = spawnSync('/usr/sbin/lsof', ['-ti', `:${port}`, '-sTCP:LISTEN'], { encoding: 'utf-8' })
   if (r.status !== 0) return null
-  const first = (r.stdout ?? '').split('\n').filter(Boolean)[0]
-  const n = first ? Number.parseInt(first, 10) : NaN
-  return Number.isFinite(n) && n > 0 ? n : null
+  const pids = [
+    ...new Set(
+      (r.stdout ?? '')
+        .split('\n')
+        .map((s) => Number.parseInt(s, 10))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  ]
+  if (pids.length === 0) return null
+  if (pids.length > 1) {
+    log.warn(
+      `Multiple listeners on :${port}: [${pids.join(', ')}]. Recording highest; check for orphan processes.`,
+    )
+  }
+  return Math.max(...pids)
+}
+
+// ── Worker spawn helper ───────────────────────────────────────────────
+
+type WorkerSpawnArgs = {
+  domain: DomainEnv
+  slug: string
+  workerDir: string
+  port: number
+  localHealth: string
+  extraDevVars: Readonly<Record<string, string>> | undefined
+  state: DevState
+}
+
+async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
+  const { domain, slug, workerDir, port, localHealth, extraDevVars, state } = args
+
+  const devVarsPath = join(workerDir, '.dev.vars')
+  const prefix = slugVariants(slug).upperSnake
+  const baseVars: DevVars = {
+    WORKER_URL: domainUrl(domain),
+    BASE_DOMAIN: domain.domain,
+    [`${prefix}_WORKER_URL`]: domainUrl(domain),
+    [`${prefix}_BASE_DOMAIN`]: domain.domain,
+    ...extraDevVars,
+  }
+  const changed = writeDevVars(devVarsPath, baseVars)
+  if (changed) {
+    const { killed } = killWranglerTree(port)
+    if (killed > 0) log.dim(`  .dev.vars changed — killed ${killed} listener(s) on :${port}`)
+  }
+
+  const logDir = paths.domainLogDir(slug)
+  mkdirSync(logDir, { recursive: true })
+  const logFile = join(logDir, 'wrangler.log')
+
+  // Invoke the locally-installed wrangler binary via the user's login+
+  // interactive zsh, so the subshell sources `.zprofile`/`.zshrc` and gets
+  // a PATH that contains `node` (the wrangler shim does `exec node …`).
+  // `node` is typically installed by Homebrew/nvm/asdf and lives in dirs
+  // only added to PATH by interactive shell config. From a `bash -c`
+  // subshell with macOS-TCC-stripped env, those dirs aren't visible.
+  const wranglerBin = join(workerDir, 'node_modules', '.bin', 'wrangler')
+  if (!existsSync(wranglerBin)) {
+    throw new AstraleError(
+      'NO_WRANGLER',
+      `Expected ${wranglerBin} to exist`,
+      'Run `pnpm install` in the workspace root.',
+    )
+  }
+  const spawn = spawnSync(
+    '/bin/zsh',
+    [
+      '-lic',
+      `cd ${JSON.stringify(workerDir)} && nohup ${JSON.stringify(wranglerBin)} dev --port ${port} > ${JSON.stringify(logFile)} 2>&1 &`,
+    ],
+    { stdio: 'inherit' },
+  )
+  if (spawn.status !== 0) {
+    throw new AstraleError('WRANGLER_SPAWN_FAILED', `wrangler dev spawn failed`)
+  }
+  await waitForUrl(localHealth, 30_000, 'wrangler')
+  const pid = findListenerPid(port) ?? 0
+  state.started.wrangler = { port, pid }
+  log.dim(`  wrangler ready on :${port} (pid=${pid}); logs=${logFile}`)
 }
