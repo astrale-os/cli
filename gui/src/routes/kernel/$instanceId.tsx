@@ -2,12 +2,12 @@ import type { MountedWindow } from '@astrale-os/shell'
 
 import { Skeleton, Tabs, TabsList, TabsTrigger } from '@astrale-os/ui-components'
 import { createFileRoute } from '@tanstack/react-router'
-import { Loader2, PanelLeftClose, PanelLeftOpen, RefreshCw, X } from 'lucide-react'
+import { PanelLeftOpen, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 
 import { NodeTree, type KernelNode, type TreeNode } from '@/components/node-tree'
-import { TreeToolbar } from '@/components/tree-toolbar'
+import { TreeLegend, TreeToolbar } from '@/components/tree-toolbar'
 import {
   availableKindsFromEdges,
   computeFolderBadges,
@@ -427,66 +427,45 @@ function InstancePage() {
         </aside>
       ) : (
         <aside className="w-72 shrink-0 border-r border-border flex flex-col">
-          <div className="h-9 shrink-0 px-3 border-b border-border text-xs font-semibold flex items-center justify-between gap-2">
-            <span>Graph</span>
-            <code className="text-[10px] font-mono text-muted-foreground truncate flex-1">
-              {instanceId}
-            </code>
-            {viewMode && (
-              <button
-                onClick={handleRefresh}
-                disabled={!selectedNode || isComputing}
-                title={
-                  !selectedNode
-                    ? 'Select a node to refresh'
-                    : isComputing
-                      ? 'Computing…'
-                      : 'Refresh view'
-                }
-                className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:hover:bg-transparent"
-              >
-                {isComputing ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="w-3.5 h-3.5" />
-                )}
-              </button>
+          <TreeToolbar
+            mode={viewMode}
+            onModeChange={handleModeChange}
+            selectedIsIdentity={selectedIsIdentity}
+            autoExpand={autoExpand}
+            onAutoExpandToggle={handleAutoExpandToggle}
+            canAutoExpand={canAutoExpand}
+            onRefresh={handleRefresh}
+            refreshDisabled={!selectedNode || isComputing}
+            refreshTitle={
+              !selectedNode
+                ? 'Select a node to refresh'
+                : isComputing
+                  ? 'Computing…'
+                  : 'Refresh view'
+            }
+            isRefreshing={isComputing}
+            onCollapse={() => setSidebarCollapsed(true)}
+          />
+          <div className="flex-1 overflow-auto pt-2">
+            {kernel && (
+              <NodeTree
+                kernel={kernel}
+                onOpen={onOpen}
+                selectedNodeId={selectedNode?.id ?? null}
+                onSelect={setSelectedNode}
+                highlightMap={highlightMap}
+                folderBadgeMap={folderBadgeMap}
+                onRootsChange={setTreeRoots}
+                autoExpand={autoExpand}
+              />
             )}
-            <button
-              onClick={() => setSidebarCollapsed(true)}
-              title="Collapse graph panel"
-              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-            >
-              <PanelLeftClose className="w-3.5 h-3.5" />
-            </button>
           </div>
-          <div className="flex-1 overflow-auto">
-            <TreeToolbar
-              mode={viewMode}
-              onModeChange={handleModeChange}
-              selectedIsIdentity={selectedIsIdentity}
-              availableEdgeKinds={computedView?.availableEdgeKinds ?? []}
-              selectedEdgeKinds={computedView?.selectedEdgeKinds ?? new Set()}
-              onEdgeKindToggle={handleEdgeKindToggle}
-              autoExpand={autoExpand}
-              onAutoExpandToggle={handleAutoExpandToggle}
-              canAutoExpand={canAutoExpand}
-            />
-            <div className="pt-2">
-              {kernel && (
-                <NodeTree
-                  kernel={kernel}
-                  onOpen={onOpen}
-                  selectedNodeId={selectedNode?.id ?? null}
-                  onSelect={setSelectedNode}
-                  highlightMap={highlightMap}
-                  folderBadgeMap={folderBadgeMap}
-                  onRootsChange={setTreeRoots}
-                  autoExpand={autoExpand}
-                />
-              )}
-            </div>
-          </div>
+          <TreeLegend
+            mode={viewMode}
+            availableEdgeKinds={computedView?.availableEdgeKinds ?? []}
+            selectedEdgeKinds={computedView?.selectedEdgeKinds ?? new Set()}
+            onEdgeKindToggle={handleEdgeKindToggle}
+          />
         </aside>
       )}
 
@@ -569,17 +548,10 @@ function InstancePage() {
   )
 }
 
-function InstancePageSkeleton({ instanceId }: { instanceId: string }) {
+function InstancePageSkeleton({ instanceId: _instanceId }: { instanceId: string }) {
   return (
     <div className="h-full w-full flex overflow-hidden">
       <aside className="w-72 shrink-0 border-r border-border flex flex-col">
-        <div className="h-9 shrink-0 px-3 border-b border-border text-xs font-semibold flex items-center justify-between gap-2">
-          <span>Graph</span>
-          <code className="text-[10px] font-mono text-muted-foreground truncate flex-1">
-            {instanceId}
-          </code>
-          <Skeleton className="w-3.5 h-3.5 rounded" />
-        </div>
         <div className="flex-1 overflow-hidden">
           <div className="h-9 border-b border-border flex items-center gap-2 px-3">
             <Skeleton className="h-5 w-16 rounded" />
