@@ -182,9 +182,17 @@ type GetTreeEdge = {
   props?: Record<string, unknown>
 }
 
+// Advisory sidecar from `GraphData.aliases` — `[nodeId, typedPathRaw]`
+// pairs computed server-side by the get-tree adapter. The kernel is the
+// source of truth for which typed semantic Path each node is reachable
+// under (DomainPath/ClassPath/InterfacePath/MethodPath); the playground
+// only consumes them.
+type GetTreeAlias = readonly [string, string]
+
 function kernelTreeToGraphState(result: {
   nodes: GetTreeNode[]
   edges: GetTreeEdge[]
+  aliases?: ReadonlyArray<GetTreeAlias>
 }): GraphStateData {
   // Index meta-nodes: for every Class/Interface node, map its logical
   // abstract path (e.g. "/<domain>/class.Foo/self") → node.id, and also
@@ -211,11 +219,20 @@ function kernelTreeToGraphState(result: {
     if (shortName) classNodeIdByName.set(shortName, n.id)
   }
 
-  // Path → node UUID. Wire edges reference endpoints by absolute path
-  // (new format), but downstream code keys everything by node.id.
+  // Path → node UUID. `getTree` returns edge endpoints in mixed form: some
+  // are AbsolutePaths matching `node.path` directly, others are typed
+  // semantic Paths (DomainPath/ClassPath/InterfacePath/MethodPath). The
+  // adapter ships an advisory `aliases` sidecar — `[nodeId, typedRaw]`
+  // pairs — precisely so consumers can resolve either form to the same
+  // node without re-deriving the rule (which is layout-dependent and
+  // duplicated work). See `GraphData.aliases` doc in
+  // `kernel/core/graph/types.ts`.
   const nodeIdByPath = new Map<string, string>()
   for (const n of result.nodes) {
     if (n.path) nodeIdByPath.set(n.path, n.id)
+  }
+  for (const [nodeId, typedRaw] of result.aliases ?? []) {
+    nodeIdByPath.set(typedRaw, nodeId)
   }
   const toNodeId = (pathOrId: string): string => nodeIdByPath.get(pathOrId) ?? pathOrId
 
@@ -276,10 +293,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // `@__system__` addresses the root node; `::getTree` is the sealed
       // instance method on `kernel.astrale.ai:Node`. Depth/cap match the
       // adapter defaults — overflow surfaces as a KERNEL_ERROR partial.
-      const tree = await connection.call<{ nodes: GetTreeNode[]; edges: GetTreeEdge[] }>(
-        '@__system__::getTree',
-        { depth: 10, maxNodes: 10_000 },
-      )
+      const tree = await connection.call<{
+        nodes: GetTreeNode[]
+        edges: GetTreeEdge[]
+        aliases?: ReadonlyArray<GetTreeAlias>
+      }>('@__system__::getTree', { depth: 10, maxNodes: 10_000 })
       dispatch({ type: 'SET_GRAPH_STATE', data: kernelTreeToGraphState(tree) })
     } catch (e: unknown) {
       dispatch({
