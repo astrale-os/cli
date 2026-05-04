@@ -1,6 +1,6 @@
 import type { KernelClient } from '@astrale-os/shell'
 
-export type ViewMode = 'relations' | 'permissions' | 'inheritance'
+export type ViewMode = 'relations' | 'permissions'
 
 export type HighlightInfo =
   | { mode: 'relations'; kind: string }
@@ -25,6 +25,7 @@ export type ComputedView = {
   availableEdgeKinds?: string[]
   selectedEdgeKinds?: Set<string>
   edgeCache?: Edge[]
+  inheritanceMap?: Map<string, HighlightInfo>
 }
 
 const KERNEL_DOMAIN = 'kernel.astrale.ai'
@@ -193,6 +194,7 @@ export function computeRelations(
   pinnedPath: string,
   edges: Edge[],
   selectedKinds: Set<string>,
+  inheritanceMap?: Map<string, HighlightInfo>,
 ): Map<string, HighlightInfo> {
   const out = new Map<string, HighlightInfo>()
   for (const e of edges) {
@@ -204,6 +206,15 @@ export function computeRelations(
     // First-seen kind wins. A node reached via multiple kinds keeps its
     // initial color; legend stays coherent.
     if (!out.has(other)) out.set(other, { mode: 'relations', kind })
+  }
+  // Overlay the transitive inheritance chain (extends/implements) with
+  // depth-graded transparency. The chain at depth=1 covers the direct
+  // neighbors via those edges, so the depth-based style wins over the
+  // flat per-kind color for inheritance hops.
+  if (inheritanceMap && (selectedKinds.has('extends') || selectedKinds.has('implements'))) {
+    for (const [path, info] of inheritanceMap) {
+      out.set(path, info)
+    }
   }
   return out
 }

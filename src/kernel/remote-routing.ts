@@ -28,7 +28,15 @@ type SyscallNode = {
 
 type NodeHead = {
   class?: string
+  /** Class + every interface the class implements (domain-relative names). */
+  __labels?: string[]
 }
+
+/**
+ * Built-in kernel interfaces that never host domain-specific instance methods.
+ * Skipping them as candidates avoids a wasted round-trip per call.
+ */
+const KERNEL_INTERFACES = new Set(['Node', 'Container', 'Identity', 'Function', 'Edge'])
 
 const BINDING_KEY = 'kernel.astrale.ai:interface.Function.property.binding'
 
@@ -49,51 +57,69 @@ export type RemoteBinding = {
  * Returns `null` when the target isn't a Syscall, has no binding, or the
  * lookup fails for any reason — callers fall through to the normal envelope
  * path against the kernel.
+ *
+ * Iterates through candidate syscall paths (class-bucket first, then each
+ * interface the source's class implements) so instance methods declared on
+ * an interface — whose syscall lives at `/<domain>/interface.<Iface>/<method>`
+ * rather than on the class — also get the worker re-mint treatment.
  */
 export async function lookupRemoteBinding(
   client: ClientSession<FnMap>,
   path: string,
   _credential: string,
 ): Promise<RemoteBinding | null> {
-  const resolved = await resolveSyscallPath(client, path)
+  const resolved = await resolveSyscallCandidates(client, path)
   if (!resolved) return null
 
-  const audience = extractDomainSlug(resolved.syscallPath)
-  if (!audience) return null
+  for (const candidate of resolved.candidates) {
+    const audience = extractDomainSlug(candidate)
+    if (!audience) continue
 
-  let node: SyscallNode | null = null
-  try {
-    node = (await client.call(`${resolved.syscallPath}::get`, {})) as SyscallNode | null
-  } catch {
-    return null
+    let node: SyscallNode | null = null
+    try {
+      node = (await client.call(`${candidate}::get`, {})) as SyscallNode | null
+    } catch {
+      // Syscall doesn't exist at this candidate — try the next one.
+      continue
+    }
+    if (!node) continue
+
+    const binding = parseBinding(node.props?.[BINDING_KEY])
+    if (!binding || typeof binding.remoteUrl !== 'string' || binding.remoteUrl.length === 0) {
+      // Found the syscall but it has no remote binding — kernel handles it.
+      return null
+    }
+
+    return {
+      remoteUrl: binding.remoteUrl,
+      audience,
+      path: candidate,
+      ...(resolved.selfRef !== undefined && { paramsInjection: { _self: resolved.selfRef } }),
+    }
   }
 
-  const binding = parseBinding(node?.props?.[BINDING_KEY])
-  if (!binding || typeof binding.remoteUrl !== 'string' || binding.remoteUrl.length === 0) {
-    return null
-  }
-
-  return {
-    remoteUrl: binding.remoteUrl,
-    audience,
-    path: resolved.syscallPath,
-    ...(resolved.selfRef !== undefined && { paramsInjection: { _self: resolved.selfRef } }),
-  }
+  return null
 }
 
 /**
- * Resolve the Syscall tree path (and `_self` when applicable) for a given
- * method reference. For a plain class path, this is a pass-through. For an
- * instance-method path, we fetch the source's class to reconstruct the
- * Syscall's tree location.
+ * Resolve candidate Syscall tree paths (and `_self` when applicable) for a
+ * given method reference, in priority order:
+ *
+ *   1. Class-bucket: `/<domain>/class.<X>/<method>` (most methods).
+ *   2. Interface-bucket: `/<domain>/interface.<Iface>/<method>` for each
+ *      interface the source's class implements (per its `__labels`).
+ *
+ * For a plain class/interface path, this is a pass-through (one candidate).
+ * For an instance-method path (`<node>::<method>`), we fetch the source's
+ * class + labels to reconstruct candidates.
  */
-async function resolveSyscallPath(
+async function resolveSyscallCandidates(
   client: ClientSession<FnMap>,
   path: string,
-): Promise<{ syscallPath: string; selfRef?: string } | null> {
+): Promise<{ candidates: string[]; selfRef?: string } | null> {
   const instanceMethod = InstanceMethodPath.tryParse(path)
   if (!instanceMethod) {
-    return { syscallPath: path }
+    return { candidates: [path] }
   }
 
   const sourceRaw = instanceMethod.source.raw
@@ -104,14 +130,22 @@ async function resolveSyscallPath(
     return null
   }
 
-  const rawClass = sourceNode?.class
+  if (!sourceNode) return null
+  const rawClass = sourceNode.class
   if (typeof rawClass !== 'string' || rawClass.length === 0) return null
 
   const parsedClass = ClassPath.tryParse(rawClass)
   if (!parsedClass) return null
 
-  const syscallPath = `/${parsedClass.domain}/class.${parsedClass.className}/${instanceMethod.methodName}`
-  return { syscallPath, selfRef: sourceRaw }
+  const candidates: string[] = [
+    `/${parsedClass.domain}/class.${parsedClass.className}/${instanceMethod.methodName}`,
+  ]
+  for (const label of sourceNode.__labels ?? []) {
+    if (label === parsedClass.className) continue
+    if (KERNEL_INTERFACES.has(label)) continue
+    candidates.push(`/${parsedClass.domain}/interface.${label}/${instanceMethod.methodName}`)
+  }
+  return { candidates, selfRef: sourceRaw }
 }
 
 /**

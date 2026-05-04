@@ -14,12 +14,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
-import {
-  dotClassName,
-  rowClassName,
-  type BadgeInfo,
-  type HighlightInfo,
-} from './tree/view-model'
+import { dotClassName, rowClassName, type BadgeInfo, type HighlightInfo } from './tree/view-model'
 
 type KernelNode = {
   id: string
@@ -115,8 +110,10 @@ function TreeRow({
   const selectedCls = selected ? 'ring-1 ring-ring ring-inset' : ''
   return (
     <div
-      className={`group flex items-center gap-1.5 py-0.5 pr-2 text-xs cursor-pointer select-none ${hoverCls} ${highlightCls} ${selectedCls}`}
+      className={`group relative flex items-center gap-1.5 py-0.5 pr-2 text-xs cursor-pointer select-none ${hoverCls} ${highlightCls} ${selectedCls}`}
       style={indent}
+      role="treeitem"
+      tabIndex={0}
       onClick={(e) => {
         e.stopPropagation()
         onSelect(entry.node)
@@ -125,8 +122,25 @@ function TreeRow({
         e.stopPropagation()
         onOpen(entry.node)
       }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.stopPropagation()
+          onOpen(entry.node)
+        } else if (e.key === ' ' && expandable) {
+          e.preventDefault()
+          e.stopPropagation()
+          onToggle(entry)
+        }
+      }}
       title={entry.node.path}
     >
+      {showBadge && (
+        <span
+          className={`absolute left-1 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${dotClassName(badge)}`}
+          title="Contains a highlighted match"
+        />
+      )}
       {expandable ? (
         <button
           type="button"
@@ -148,12 +162,6 @@ function TreeRow({
       )}
       <IconFor node={entry.node} />
       <span className="truncate">{nameOf(entry.node)}</span>
-      {showBadge && (
-        <span
-          className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClassName(badge)}`}
-          title="Contains a highlighted match"
-        />
-      )}
       <span className="ml-auto text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100">
         {classShortName(entry.node.class)}
       </span>

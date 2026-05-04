@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@source '../../../ui/components/src/**/*.tsx';
 
 html,
 body {

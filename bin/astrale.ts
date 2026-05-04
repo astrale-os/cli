@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { Command, Option } from 'commander'
 
+import { KERNEL_PASSTHROUGH_OPTIONS } from '../src/kernel/options'
 import { RAW_OUTPUT_OPTIONS } from '../src/lib/output'
 import { registerCommand, registerGroup } from '../src/registry'
 
@@ -153,14 +154,14 @@ registerCommand(program, {
   },
 })
 
+// Verbatim alias of `identity whoami` — defer to the command-definition
+// module so options stay in sync.
+const whoamiMod = await import('../src/commands/identity/whoami')
 registerCommand(program, {
   name: 'whoami',
   description: 'Show the current default identity (alias for identity whoami)',
-  options: [...RAW_OUTPUT_OPTIONS],
-  action: async (opts) => {
-    const mod = await import('../src/commands/identity/whoami')
-    await mod.default.action(opts as { raw?: boolean; json?: boolean })
-  },
+  options: whoamiMod.default.options,
+  action: whoamiMod.default.action,
 })
 
 const kernelOptions = [
@@ -170,15 +171,7 @@ const kernelOptions = [
     choices: ['yaml', 'json'],
   },
   ...RAW_OUTPUT_OPTIONS,
-  {
-    flags: '--url <url>',
-    description: 'Target a kernel URL directly (overrides instance resolution)',
-  },
-  { flags: '-i, --instance <name>', description: 'Target a specific instance (overrides active)' },
-  { flags: '--timeout <ms>', description: 'Request timeout in ms', default: '30000' },
-  { flags: '--as <identity>', description: 'Call as a specific identity' },
-  { flags: '--creds <token>', description: 'Use a pre-signed credential (e.g. delegation token)' },
-  { flags: '--debug', description: 'Print full error diagnostics on failure' },
+  ...KERNEL_PASSTHROUGH_OPTIONS,
 ]
 
 registerCommand(program, {

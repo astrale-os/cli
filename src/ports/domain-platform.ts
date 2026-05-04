@@ -20,6 +20,13 @@ export type ScaffoldOpts = {
   targetDir: string
   /** Overwrite if targetDir exists. */
   force?: boolean
+  /**
+   * Internal-monorepo mode: also append the new package paths to the
+   * closest ancestor `pnpm-workspace.yaml` (and to
+   * `<workspaceRoot>/domains/pnpm-workspace.yaml` if present and distinct).
+   * Default `false` — the scaffold otherwise writes no yaml.
+   */
+  workspace?: boolean
 }
 
 export type ScaffoldResult = {

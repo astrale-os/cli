@@ -16,13 +16,14 @@ import { defineRemoteDomain, type SchemaMethodsImpl } from '@astrale-os/sdk'
 
 import { MinimalRemoteSchema } from './schema/schema.ts'
 
-// `build-spec.ts` resolves the worker URL from the selected preset and
-// sets MINIMAL_WORKER_URL before spawning the spec builder. Fall back to the
-// prod URL so ad-hoc `buildSpec(minimalRemoteDomain)` calls still stamp a
-// sensible remoteUrl.
-const WORKER_URL =
-  (typeof process !== 'undefined' && process.env?.MINIMAL_WORKER_URL) ||
-  'https://minimal.test.astrale.ai'
+// `build-spec.ts` sets MINIMAL_WORKER_URL from the active preset before
+// spawning the spec builder; fall back to prod so ad-hoc `buildSpec(...)`
+// calls still stamp a sensible remoteUrl. `process` exists at build (Node)
+// but not at runtime (Worker, lib: ["WebWorker"]) — narrow via globalThis
+// so both environments typecheck.
+type MaybeNodeGlobal = { process?: { env?: Record<string, string | undefined> } }
+const nodeGlobal = globalThis as unknown as MaybeNodeGlobal
+const WORKER_URL = nodeGlobal.process?.env?.MINIMAL_WORKER_URL ?? 'https://minimal.test.astrale.ai'
 
 // Never executed — real dispatch happens in the worker. The cast lets us
 // satisfy the typed `SchemaMethodsImpl` slot without reconstructing every

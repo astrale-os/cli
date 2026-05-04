@@ -17,6 +17,12 @@ type M<N extends string> = MethodImpl<typeof MinimalRemoteSchema, 'NoteOps', N>
 const NOTE_CLASS = ClassPath.parse(`/:${MINIMAL_BASE_DOMAIN}:class.Note`)
 
 const createNote: M<'createNote'> = {
+  // `authorize` is mandatory on every method (kernel-runtime's
+  // `validateHandlerShape` rejects handlers without it). For ops open to any
+  // authenticated caller, return `undefined` — the kernel still enforces
+  // `has_perm` on touched nodes independently. Tighten this when the
+  // method's auth model becomes specific (e.g. `({ self }) => [{ nodes: [self.path], perm: USE }]`).
+  authorize: async () => undefined,
   execute: async ({ kernel, params }) => {
     const slug = `note-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
     const created = await kernel.graph.createNode({

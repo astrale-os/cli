@@ -11,6 +11,7 @@ type Opts = {
   targetDir?: string
   force?: boolean
   platform?: string
+  workspace?: boolean
 }
 
 function defaultTargetDir(slug: string): string {
@@ -43,6 +44,11 @@ export default {
       description: 'DomainPlatform adapter id (default: cloudflare)',
       default: 'cloudflare',
     },
+    {
+      flags: '--workspace',
+      description:
+        'Internal monorepo: also register the new package in the closest pnpm-workspace.yaml (and in domains/pnpm-workspace.yaml if present)',
+    },
   ],
   action: async (slug: string, opts: Opts) => {
     try {
@@ -59,6 +65,7 @@ export default {
         template: opts.template ?? 'minimal-remote',
         targetDir,
         force: opts.force,
+        workspace: opts.workspace,
       })
 
       log.success(`Domain scaffolded at ${result.targetDir}`)

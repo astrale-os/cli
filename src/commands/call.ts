@@ -60,8 +60,7 @@ async function describeOperation(path: string, opts: CallOpts): Promise<void> {
   await runKernelCommand<Record<string, unknown>>({
     opts,
     label: `Schema for ${path}`,
-    fn: (ctx) =>
-      ctx.client.call(`${path}::get`, {}) as Promise<Record<string, unknown>>,
+    fn: (ctx) => ctx.client.call(`${path}::get`, {}) as Promise<Record<string, unknown>>,
     format: (node, fmtOpts) => {
       const props = (node.properties ?? node) as Record<string, unknown>
       const schema: Record<string, unknown> = {}
@@ -124,6 +123,12 @@ async function readStdin(): Promise<string | null> {
   return text || null
 }
 
+// Top-level param keys are identifier-shaped: letters, digits, underscore,
+// hyphen. No `:` (would catch httpie's `key:=value` syntax — not supported,
+// use `--data '{...}'` instead) and no `.` (qualified prop keys appear
+// inside nested objects, never as top-level CLI params).
+const PARAM_KEY_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/
+
 export function parseKeyValue(pairs: string[]): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const pair of pairs) {
@@ -133,6 +138,12 @@ export function parseKeyValue(pairs: string[]): Record<string, unknown> {
     }
     const key = pair.slice(0, eqIdx)
     const raw = pair.slice(eqIdx + 1)
+    if (!PARAM_KEY_RE.test(key)) {
+      const hint = key.endsWith(':')
+        ? ` (looks like httpie's "key:=value" syntax — Astrale CLI doesn't support it; use --data '{"${key.slice(0, -1)}":<value>}' for nested values)`
+        : ` (keys must be identifier-shaped: letters, digits, underscore, hyphen)`
+      throw new Error(`Invalid param key "${key}" in "${pair}"${hint}`)
+    }
     result[key] = coerceValue(raw)
   }
   return result

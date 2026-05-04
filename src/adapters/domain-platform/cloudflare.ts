@@ -36,6 +36,7 @@ import {
   writeDistClientPlaceholder,
   writeWorkerKeysFile,
 } from '../../lib/domain-scaffold'
+import { registerWorkspaceMember, type WorkspaceRegistration } from '../../lib/workspace-yaml'
 import { domainUrl, loadDomainModule, type DomainEnv } from './cloudflare-helpers'
 import {
   buildSpec as lifecycleBuildSpec,
@@ -79,7 +80,7 @@ export const cloudflareDomainPlatform: DomainPlatform = {
   id: 'cloudflare',
 
   async scaffold(opts: ScaffoldOpts): Promise<ScaffoldResult> {
-    const { slug, template, targetDir, force = false } = opts
+    const { slug, template, targetDir, force = false, workspace = false } = opts
     if (!SLUG_RE.test(slug)) {
       throw new AstraleError(
         'INVALID_SLUG',
@@ -114,6 +115,17 @@ export const cloudflareDomainPlatform: DomainPlatform = {
     const keysWritten = await writeWorkerKeysFile(targetDir, slug)
     const distSeeded = await writeDistClientPlaceholder(targetDir)
 
+    // Internal-monorepo mode: append the new package paths to the closest
+    // pnpm-workspace.yaml(s). Without this, `pnpm install` fails with
+    // ERR_PNPM_WORKSPACE_PKG_NOT_FOUND on the workspace:* deps.
+    const wsRegistration = workspace ? await registerWorkspaceMember(targetDir) : null
+
+    // If pnpm install has already linked workspace deps in this targetDir,
+    // run a quick `tsgo --noEmit` smoke. Catches template/kernel-runtime
+    // drift before the user's first edit. Skipped silently when deps aren't
+    // resolvable yet — the user runs `pnpm install` per the Next steps.
+    const smoke = runScaffoldTypecheckSmoke(targetDir)
+
     const v = slugVariants(slug)
     const nextSteps = [
       `cd ${targetDir}`,
@@ -122,9 +134,11 @@ export const cloudflareDomainPlatform: DomainPlatform = {
       `astrale domain dev up --kernel local:standalone:inprocess --domain local:inprocess`,
       `astrale domain deploy --skip-drift-check   # first deploy (soft-fail DNS-less)`,
       ``,
-      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths${keysWritten ? ', regenerated worker keypair' : ''}${distSeeded ? ', seeded dist-client/' : ''})`,
+      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths${keysWritten ? ', regenerated worker keypair' : ''}${distSeeded ? ', seeded dist-client/' : ''}${formatWorkspaceSuffix(wsRegistration)})`,
       `Variants: kebab=${v.kebab} pascal=${v.pascal} camel=${v.camel} upper=${v.upperSnake}`,
     ]
+    nextSteps.push(...formatWorkspaceRegistration(wsRegistration, targetDir))
+    nextSteps.push(...formatSmokeResult(smoke))
 
     return { targetDir, slug, nextSteps }
   },
@@ -215,12 +229,76 @@ export const cloudflareDomainPlatform: DomainPlatform = {
   buildSpec: lifecycleBuildSpec,
 }
 
+type SmokeResult = { status: 'ok' | 'failed' | 'skipped'; errors?: string[] }
+
+/**
+ * Advisory typecheck after scaffold. Skipped when workspace deps aren't
+ * linked yet — the user runs `pnpm install` first. Never throws; the
+ * scaffold itself has already succeeded by the time this runs.
+ */
+function runScaffoldTypecheckSmoke(targetDir: string): SmokeResult {
+  const depsLinked = existsSync(join(targetDir, 'node_modules', '@astrale-os', 'kernel-core'))
+  if (!depsLinked) return { status: 'skipped' }
+  const res = spawnSync('bunx', ['tsgo', '--noEmit'], {
+    cwd: targetDir,
+    encoding: 'utf-8',
+    timeout: 60_000,
+  })
+  if (res.status === 0) return { status: 'ok' }
+  const stdout = (res.stdout ?? '') + (res.stderr ?? '')
+  const errors = stdout
+    .split('\n')
+    .filter((l) => l.trim().length > 0)
+    .slice(0, 5)
+  return { status: 'failed', errors }
+}
+
+function formatWorkspaceRegistration(
+  reg: WorkspaceRegistration | null,
+  targetDir: string,
+): string[] {
+  if (!reg) return []
+  const lines: string[] = []
+  for (const update of reg.updated) {
+    const n = update.added.length
+    lines.push(`Registered in ${update.path} (+${n} ${n === 1 ? 'entry' : 'entries'})`)
+  }
+  for (const path of reg.alreadyPresent) {
+    lines.push(`Already registered in ${path} — nothing to add.`)
+  }
+  for (const warning of reg.warnings) {
+    lines.push(`⚠ ${warning}`)
+  }
+  if (lines.length === 0) {
+    lines.push(`No pnpm-workspace.yaml ancestor found above ${targetDir} — registration skipped.`)
+  }
+  return lines
+}
+
+function formatSmokeResult(smoke: SmokeResult): string[] {
+  if (smoke.status === 'ok') return [`Scaffold typechecks green (tsgo --noEmit).`]
+  if (smoke.status !== 'failed') return []
+  const errors = smoke.errors ?? []
+  return [
+    ``,
+    `⚠ Scaffold typecheck failed (first ${errors.length} errors):`,
+    ...errors.map((line) => `    ${line}`),
+    `  If you didn't modify the scaffold output, this is template / kernel-runtime drift — please report it.`,
+  ]
+}
+
 function buildGenericRenameMap(slug: string): ReturnType<typeof buildMinimalRemoteRenameMap> {
   const v = slugVariants(slug)
   return {
     literals: [{ from: '__SLUG__', to: v.kebab }],
     wordBoundary: [],
   }
+}
+
+function formatWorkspaceSuffix(reg: WorkspaceRegistration | null): string {
+  const total = reg?.updated.length ?? 0
+  if (total === 0) return ''
+  return `, registered in ${total} pnpm-workspace.yaml file${total === 1 ? '' : 's'}`
 }
 
 /**

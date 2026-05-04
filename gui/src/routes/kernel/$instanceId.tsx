@@ -114,6 +114,10 @@ function InstancePage() {
   const [viewClassPath, setViewClassPath] = useState<string | null>(null)
   const [isComputing, setIsComputing] = useState(false)
   const [autoExpand, setAutoExpand] = useState(false)
+  // Monotonic id stamped on each computeFor call. Async results that don't
+  // match the latest id are dropped — prevents a slow request for node A
+  // from overwriting a fresh one for node B when the user clicks fast.
+  const computeReqRef = useRef(0)
 
   const selectedIsIdentity = selectedNode?.__labels.includes('Identity') ?? false
 
@@ -128,6 +132,7 @@ function InstancePage() {
         computedView.pinnedPath,
         computedView.edgeCache,
         computedView.selectedEdgeKinds,
+        computedView.inheritanceMap,
       )
     }
     return computedView.highlightMap
@@ -147,35 +152,40 @@ function InstancePage() {
         setStatusMsg('Permissions view requires an Identity')
         return
       }
+      const reqId = ++computeReqRef.current
       setIsComputing(true)
       setStatusMsg(null)
       try {
         const pinnedPath = node.path
         const pinnedNodeId = node.id
         if (mode === 'relations') {
-          const edges = await fetchAllLinks(kernel, pinnedPath)
+          const [edges, inheritanceMap] = await Promise.all([
+            fetchAllLinks(kernel, pinnedPath),
+            computeInheritance(pinnedPath, kernel),
+          ])
+          if (reqId !== computeReqRef.current) return
           const availableEdgeKinds = availableKindsFromEdges(edges)
           const selectedEdgeKinds = new Set(availableEdgeKinds)
           setComputedView({
             mode: 'relations',
             pinnedNodeId,
             pinnedPath,
-            highlightMap: computeRelations(pinnedPath, edges, selectedEdgeKinds),
+            highlightMap: computeRelations(pinnedPath, edges, selectedEdgeKinds, inheritanceMap),
             availableEdgeKinds,
             selectedEdgeKinds,
             edgeCache: edges,
+            inheritanceMap,
           })
-        } else if (mode === 'permissions') {
-          const map = await computePermissions(pinnedPath, kernel)
-          setComputedView({ mode, pinnedNodeId, pinnedPath, highlightMap: map })
         } else {
-          const map = await computeInheritance(pinnedPath, kernel)
+          const map = await computePermissions(pinnedPath, kernel)
+          if (reqId !== computeReqRef.current) return
           setComputedView({ mode, pinnedNodeId, pinnedPath, highlightMap: map })
         }
       } catch (err) {
+        if (reqId !== computeReqRef.current) return
         setStatusMsg(err instanceof Error ? err.message : 'Compute failed')
       } finally {
-        setIsComputing(false)
+        if (reqId === computeReqRef.current) setIsComputing(false)
       }
     },
     [kernel],
@@ -186,19 +196,17 @@ function InstancePage() {
     void computeFor(viewMode, selectedNode)
   }, [computeFor, selectedNode, viewMode])
 
-  const handleModeChange = useCallback(
-    (mode: ViewMode | null) => {
-      setViewMode(mode)
-      if (!mode) {
-        setComputedView(null)
-        return
-      }
-      // Mode switch with a selected node auto-computes — the toolbar click
-      // is the user's explicit "show me this view now" gesture.
-      if (selectedNode) void computeFor(mode, selectedNode)
-    },
-    [computeFor, selectedNode],
-  )
+  // Re-run the active view whenever the pinned node or mode changes —
+  // covers both toolbar toggle and clicking another node in the tree.
+  useEffect(() => {
+    if (!selectedNode || !viewMode) return
+    void computeFor(viewMode, selectedNode)
+  }, [selectedNode, viewMode, computeFor])
+
+  const handleModeChange = useCallback((mode: ViewMode | null) => {
+    setViewMode(mode)
+    if (!mode) setComputedView(null)
+  }, [])
 
   const handleEdgeKindToggle = useCallback((kind: string) => {
     setComputedView((prev) => {
@@ -341,7 +349,19 @@ function InstancePage() {
         }
         setPicker({ node, views })
       } catch (err) {
-        setStatusMsg(err instanceof Error ? err.message : 'View.resolve failed')
+        const msg = err instanceof Error ? err.message : 'View.resolve failed'
+        // Connection-refused style failures usually mean the worker hosting
+        // View.resolve isn't running. The viewClassPath looks like
+        // `/dist.localhost/class.View`; the slug is the domain that ships
+        // the View class, and the user needs `astrale domain dev up` there.
+        if (/connect|fetch|ECONN|network|unreachable/i.test(msg)) {
+          const slug = viewClassPath.split('/').filter(Boolean)[0] ?? 'unknown'
+          setStatusMsg(
+            `View resolver in domain "${slug}" is unreachable — start its worker with \`astrale domain dev up\` in the directory of that domain. (${msg})`,
+          )
+        } else {
+          setStatusMsg(msg)
+        }
       }
     },
     [kernel, openView, viewClassPath],

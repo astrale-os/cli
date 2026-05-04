@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 const testDir = dirname(fileURLToPath(import.meta.url))
-const ws = resolve(testDir, '../../../..')
+// testDir = workspace/domains/<slug>/test → ../../.. = workspace.
+// If the domains/ folder is ever moved, update the depth here in lockstep.
+const ws = resolve(testDir, '../../..')
 
 // Kernel packages live in the workspace as source TS — vite needs aliases
 // to resolve them since they're not published npm packages.
@@ -43,6 +45,10 @@ export default defineConfig({
       alias('@astrale-os/kernel-core', k('core/index.ts')),
       alias('@astrale-os/kernel-api', k('api/index.ts')),
       alias('@astrale-os/kernel-server', k('server/index.ts')),
+      // kernel-client sub-path alias must precede the bare alias — vite
+      // doesn't fall back from `@astrale-os/kernel-client/session` to a
+      // sub-resolution when the bare alias points at a file path.
+      alias('@astrale-os/kernel-client/session', k('client/src/session/index.ts')),
       alias('@astrale-os/kernel-client', k('client/src/index.ts')),
       alias('@astrale-os/kernel-test', k('test/src/index.ts')),
       alias('@astrale-os/kernel-host', k('host/src/index.ts')),

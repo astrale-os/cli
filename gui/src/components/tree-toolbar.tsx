@@ -1,5 +1,5 @@
 import { Button, Checkbox, ToggleGroup, ToggleGroupItem } from '@astrale-os/ui-components'
-import { FolderTree, GitBranch, Link2, Shield } from 'lucide-react'
+import { FolderTree, Link2, Shield } from 'lucide-react'
 
 import { paletteKeyForEdgeKind, swatchClassName, type ViewMode } from './tree/view-model'
 
@@ -15,8 +15,11 @@ type TreeToolbarProps = {
   canAutoExpand: boolean
 }
 
+// Active state: subtle primary-color tint instead of the aggressive saturated
+// fill. The theme doesn't define `--accent`, so we can't rely on the
+// component default (`bg-accent`) — it would render as transparent.
 const activeToggleClass =
-  'data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/90 data-[state=on]:shadow-sm'
+  'data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/20'
 
 export function TreeToolbar({
   mode,
@@ -35,6 +38,7 @@ export function TreeToolbar({
         <ToggleGroup
           type="single"
           size="sm"
+          spacing={1}
           value={mode ?? ''}
           onValueChange={(v) => onModeChange(v ? (v as ViewMode) : null)}
         >
@@ -59,14 +63,6 @@ export function TreeToolbar({
           >
             <Shield className="w-3.5 h-3.5" />
           </ToggleGroupItem>
-          <ToggleGroupItem
-            value="inheritance"
-            title="Inheritance"
-            aria-label="Inheritance"
-            className={activeToggleClass}
-          >
-            <GitBranch className="w-3.5 h-3.5" />
-          </ToggleGroupItem>
         </ToggleGroup>
 
         {canAutoExpand && (
@@ -81,9 +77,7 @@ export function TreeToolbar({
             }
             aria-pressed={autoExpand}
             className={
-              autoExpand
-                ? 'ml-auto bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm'
-                : 'ml-auto'
+              autoExpand ? 'ml-auto bg-primary/10 text-primary hover:bg-primary/20' : 'ml-auto'
             }
           >
             <FolderTree className="w-3.5 h-3.5" />
