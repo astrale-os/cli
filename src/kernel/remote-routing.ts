@@ -150,7 +150,7 @@ export async function mintRemoteCredential(
  * `/dist.localhost/class.BlaxelComputer/init` → `dist.localhost`
  * Returns `null` for relative paths, id-anchored paths, or malformed input.
  */
-function extractDomainSlug(path: string): string | null {
+export function extractDomainSlug(path: string): string | null {
   if (!path.startsWith('/')) return null
   const rest = path.slice(1)
   const slash = rest.indexOf('/')

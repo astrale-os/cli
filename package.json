@@ -24,7 +24,8 @@
   "type": "module",
   "exports": {
     "./keys": "./src/lib/keys.ts",
-    "./paths": "./src/lib/paths.ts"
+    "./paths": "./src/lib/paths.ts",
+    "./kernel/remote-routing": "./src/kernel/remote-routing.ts"
   },
   "scripts": {
     "preinstall": "node .check-workspace.cjs",

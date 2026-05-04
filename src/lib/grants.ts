@@ -22,7 +22,7 @@ export async function grantDistributionBootstrap(
   _credential: string,
   domainOrigin: string,
 ): Promise<void> {
-  const blaxelMethods = ['init', 'list', 'delete', 'deployFunction', 'deleteFunction']
+  const blaxelMethods = ['init', 'list', 'delete', 'deployFunction', 'deleteFunction', 'codeServer']
   const workerFnPaths = [
     ...blaxelMethods.map((m) => `/${domainOrigin}/class.BlaxelComputer/${m}`),
     `/${domainOrigin}/class.Distribution/init`,
@@ -45,10 +45,7 @@ export async function grantDistributionBootstrap(
   let granted = 0
   for (const grantee of workerFnPaths) {
     for (const target of primitives) {
-      await client.call(
-        `${grantee}::grantPerm`,
-        { node: target, perms: USE_PERM },
-      )
+      await client.call(`${grantee}::grantPerm`, { node: target, perms: USE_PERM })
       granted++
     }
   }
