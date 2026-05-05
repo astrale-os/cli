@@ -340,6 +340,7 @@ registerGroup(program, {
   description: 'Manage CLI identities (§2)',
   commands: [
     (await import('../src/commands/identity/create')).default,
+    (await import('../src/commands/identity/register')).default,
     (await import('../src/commands/identity/list')).default,
     (await import('../src/commands/identity/use')).default,
     (await import('../src/commands/identity/whoami')).default,

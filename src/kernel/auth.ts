@@ -31,11 +31,16 @@ export async function resolveCredential(
 ): Promise<string> {
   if (opts.creds) return opts.creds
   try {
-    // Explicit `--as` wins: sign with that identity's key.
+    // Explicit `--as` wins: sign with that identity's key. When the identity
+    // has a registration record for the targeted instance (populated by
+    // `astrale identity register`), use the kernel-derived `(iss, sub)` so the
+    // JWT matches what the kernel published under its issuer store.
     if (opts.as) {
       const identity = await getIdentity(opts.as)
+      const registration = instanceSlug ? identity.registrations?.[instanceSlug] : undefined
       return await signAs(identity.subject, KEYS_DIR, {
-        issuer: config.issuer,
+        issuer: registration?.iss ?? config.issuer,
+        subject: registration?.sub,
         audience,
       })
     }

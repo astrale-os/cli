@@ -253,7 +253,7 @@ export async function resolveAuth(
 export async function signAs(
   subject: string,
   keysDir: string = KEYS_DIR,
-  opts?: { issuer?: string; audience?: string },
+  opts?: { issuer?: string; audience?: string; subject?: string },
 ): Promise<string> {
   const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const audience = opts?.audience ?? issuer
@@ -263,7 +263,7 @@ export async function signAs(
   return new SignJWT({ grant: { v: 1, expr: { kind: 'identity', self: true } } })
     .setProtectedHeader({ alg: 'ES256', kid })
     .setIssuer(issuer)
-    .setSubject(subject)
+    .setSubject(opts?.subject ?? subject)
     .setAudience(audience)
     .sign(privateKey)
 }

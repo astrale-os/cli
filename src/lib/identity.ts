@@ -7,6 +7,12 @@ import { log } from './log'
 import { IDENTITIES_PATH } from './paths'
 import { RegistryModeSchema, validateName, type RegistryMode } from './validation'
 
+export const RegistrationSchema = z.object({
+  iss: z.string(),
+  sub: z.string(),
+  registeredAt: z.string(),
+})
+
 export const IdentitySchema = z.object({
   subject: z.string(),
   createdAt: z.string(),
@@ -14,7 +20,16 @@ export const IdentitySchema = z.object({
   mode: RegistryModeSchema.optional(),
   /** JWK thumbprint of the identity keypair. Optional for legacy entries. */
   kid: z.string().optional(),
+  /**
+   * Cache of `(iss, sub)` pairs returned by `Identity::registerIdentity`,
+   * keyed by instance slug. Populated by `astrale identity register`; consulted
+   * by `resolveCredential` so `--as <name> -i <instance>` signs JWTs the kernel
+   * accepts.
+   */
+  registrations: z.record(z.string(), RegistrationSchema).optional(),
 })
+
+export type Registration = z.infer<typeof RegistrationSchema>
 
 export const IdentityStoreSchema = z.object({
   default: z.string(),
@@ -119,6 +134,19 @@ export async function getIdentity(name: string): Promise<Identity> {
     throw new Error(`Identity "${name}" not found. Run: astrale identity create ${name}`)
   }
   return identity
+}
+
+/** Record (or replace) the kernel-derived (iss, sub) pair for an identity on a target instance. */
+export async function setRegistration(
+  name: string,
+  instanceSlug: string,
+  registration: Registration,
+): Promise<void> {
+  const store = await readIdentities()
+  const entry = store.identities[name]
+  if (!entry) throw new Error(`Identity "${name}" not found`)
+  entry.registrations = { ...entry.registrations, [instanceSlug]: registration }
+  await writeIdentities(store)
 }
 
 /** Migrate an identity to a new registry mode (local ↔ remote, §2.7). */
