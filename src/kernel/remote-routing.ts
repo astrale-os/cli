@@ -47,8 +47,8 @@ export type RemoteBinding = {
   audience: string
   /** The path to send to the worker — may differ from the input when rewriting `::method`. */
   path: string
-  /** Params to merge into the user's params (currently `_self` for instance-method dispatch). */
-  paramsInjection?: Record<string, unknown>
+  /** Target-of-call for instance methods. Forwarded as `KernelRequest.self`. */
+  self?: string
 }
 
 /**
@@ -94,7 +94,7 @@ export async function lookupRemoteBinding(
       remoteUrl: binding.remoteUrl,
       audience,
       path: candidate,
-      ...(resolved.selfRef !== undefined && { paramsInjection: { _self: resolved.selfRef } }),
+      ...(resolved.selfRef !== undefined && { self: resolved.selfRef }),
     }
   }
 
