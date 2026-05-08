@@ -104,10 +104,7 @@ async function findInstanceForGraph(
   graphName: string,
 ): Promise<KernelInstance | null> {
   const url = `http://localhost:${config.managerPort}/mngt`
-  const credential = await resolveCredential(
-    {},
-    config as Parameters<typeof resolveCredential>[1],
-  )
+  const credential = await resolveCredential({}, config as Parameters<typeof resolveCredential>[1])
   const session = new ClientSession<FnMap>({
     default: url,
     identity: credential,

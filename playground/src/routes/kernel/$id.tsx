@@ -87,11 +87,7 @@ function KernelCockpit({
   }, [wsUrl, connection.authReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <CockpitLayout
-      label={label}
-      onBack={() => navigate({ to: '/' })}
-      shellDemoUrl={shellDemoUrl}
-    />
+    <CockpitLayout label={label} onBack={() => navigate({ to: '/' })} shellDemoUrl={shellDemoUrl} />
   )
 }
 

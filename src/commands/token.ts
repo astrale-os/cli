@@ -24,14 +24,11 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
       const audience = opts.audience ?? ''
       const parsedTtl = Number(opts.ttl)
       const ttl = Number.isFinite(parsedTtl) && parsedTtl > 0 ? parsedTtl : 3600
-      const result = (await ctx.client.call(
-        '@__system__::mintDelegationCredential',
-        {
-          audience,
-          delegation: { kind: 'identity', self: true },
-          ttl,
-        },
-      )) as string
+      const result = (await ctx.client.call('@__system__::mintDelegationCredential', {
+        audience,
+        delegation: { kind: 'identity', self: true },
+        ttl,
+      })) as string
       return result
     },
     format: (token, fmtOpts, isRaw) => {

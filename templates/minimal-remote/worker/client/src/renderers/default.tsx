@@ -53,9 +53,7 @@ export function DefaultRenderer({
               <Skeleton className="h-4 w-5/6" />
             </div>
           )}
-          {state.status === 'error' && (
-            <p className="text-destructive text-sm">{state.message}</p>
-          )}
+          {state.status === 'error' && <p className="text-destructive text-sm">{state.message}</p>}
           {state.status === 'ok' && (
             <section>
               <h2 className="text-sm font-medium text-foreground mb-2">Properties</h2>

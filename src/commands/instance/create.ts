@@ -37,10 +37,7 @@ function extractDomainOrigin(spec: {
 
 async function rollback(client: ClientSession<FnMap>, _credential: string, slug: string) {
   try {
-    await client.call(
-      '/manager.astrale.ai/class.KernelInstance/delete',
-      { id: slug },
-    )
+    await client.call('/manager.astrale.ai/class.KernelInstance/delete', { id: slug })
     log.dim(`  rolled back — "${slug}" deleted on manager`)
   } catch {
     /* best effort */
@@ -172,29 +169,22 @@ export default {
       let registered = false
       try {
         log.info(`Registering instance "${slug}" on manager…`)
-        await client.call(
-          '/manager.astrale.ai/class.KernelInstance/register',
-          {
-            id: slug,
-            graphName: `${slug}-graph`,
-            host: 'localhost',
-            port: config.falkorPort,
-            issuer: bakedIssuer,
-            label: opts.name,
-            publicKey: instanceAuth.publicKey,
-          },
-        )
+        await client.call('/manager.astrale.ai/class.KernelInstance/register', {
+          id: slug,
+          graphName: `${slug}-graph`,
+          host: 'localhost',
+          port: config.falkorPort,
+          issuer: bakedIssuer,
+          label: opts.name,
+          publicKey: instanceAuth.publicKey,
+        })
         registered = true
         log.info(`Booting "${slug}"…`)
-        await client.call(
-          '/manager.astrale.ai/class.KernelInstance/boot',
-          { id: slug },
-        )
+        await client.call('/manager.astrale.ai/class.KernelInstance/boot', { id: slug })
 
-        const info = (await client.call(
-          '/manager.astrale.ai/class.KernelInstance/info',
-          { id: slug },
-        )) as { issuer?: string; url?: string }
+        const info = (await client.call('/manager.astrale.ai/class.KernelInstance/info', {
+          id: slug,
+        })) as { issuer?: string; url?: string }
         const issuer = info.issuer ?? bakedIssuer
         const url = info.url ?? issuer
 

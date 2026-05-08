@@ -380,10 +380,7 @@ export async function assertWorkspaceInstalled(): Promise<void> {
 
 // ─── Shell helpers ────────────────────────────────────────────
 
-async function run(
-  args: string[],
-  opts: { env?: Record<string, string> } = {},
-): Promise<void> {
+async function run(args: string[], opts: { env?: Record<string, string> } = {}): Promise<void> {
   const proc = Bun.spawn(args, {
     stdout: 'pipe',
     stderr: 'pipe',

@@ -13,7 +13,8 @@ type Opts = {
 
 export default {
   name: 'instance-prepare',
-  description: 'Manager-mode bootstrap: rebuild spec, create child instance, install domain, mint delegation token',
+  description:
+    'Manager-mode bootstrap: rebuild spec, create child instance, install domain, mint delegation token',
   options: [
     { flags: '--kernel <name>', description: 'Kernel preset (e.g. local:manager:inprocess)' },
     { flags: '--domain <name>', description: 'Domain preset (e.g. local:inprocess)' },
