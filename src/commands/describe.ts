@@ -66,8 +66,8 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
   }
   console.log('')
 
-  const operations = children.filter(isSyscall)
-  const otherChildren = children.filter((c) => !isSyscall(c))
+  const operations = children.filter(isMethod)
+  const otherChildren = children.filter((c) => !isMethod(c))
 
   if (operations.length > 0) {
     console.log(`  ${chalk.bold('Operations:')}`)
@@ -95,8 +95,8 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
   }
 }
 
-function isSyscall(item: NodeItem): boolean {
-  return !!(item.__labels?.includes('Syscall') || item.class?.includes('Syscall'))
+function isMethod(item: NodeItem): boolean {
+  return !!(item.__labels?.includes('Method') || item.class?.includes('Method'))
 }
 
 function printProperties(node: NodeItem): void {

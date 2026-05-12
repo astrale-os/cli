@@ -21,7 +21,7 @@ import { ClassPath, InstanceMethodPath } from '@astrale-os/kernel-core/domain'
  * POST to the worker with `_self = <source>` injected into params.
  */
 
-type SyscallNode = {
+type MethodNode = {
   __labels?: string[]
   props?: Record<string, unknown>
 }
@@ -75,9 +75,9 @@ export async function lookupRemoteBinding(
     const audience = extractDomainSlug(candidate)
     if (!audience) continue
 
-    let node: SyscallNode | null = null
+    let node: MethodNode | null = null
     try {
-      node = (await client.call(`${candidate}::get`, {})) as SyscallNode | null
+      node = (await client.call(`${candidate}::get`, {})) as MethodNode | null
     } catch {
       // Syscall doesn't exist at this candidate — try the next one.
       continue
