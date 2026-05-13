@@ -4,9 +4,7 @@ import { ClientSession } from '@astrale-os/kernel-client/session'
 import type { CommandDefinition } from '../../command'
 
 import { resolveCredential } from '../../kernel/auth'
-import { resolveBuiltinDomain } from '../../lib/builtin-domains'
 import { readConfig } from '../../lib/config'
-import { grantDistributionBootstrap } from '../../lib/grants'
 import { getDefault } from '../../lib/identity'
 import { addInstance, managerUrl } from '../../lib/instance'
 import { resolveAuth } from '../../lib/keys'
@@ -16,24 +14,6 @@ import { KEYS_DIR } from '../../lib/paths'
 import { bindTunnel, findTunnel, readTunnels } from '../../lib/tunnels'
 import { validateSlug } from '../../lib/validation'
 import instanceInstall from './install'
-
-function extractDomainOrigin(spec: {
-  nodes?: Array<{ class?: unknown; props?: { origin?: unknown } }>
-}): string | undefined {
-  for (const node of spec.nodes ?? []) {
-    const rawCls = (node as { class?: unknown }).class
-    const clsStr =
-      typeof rawCls === 'string'
-        ? rawCls
-        : rawCls && typeof rawCls === 'object' && 'raw' in rawCls
-          ? String((rawCls as { raw: string }).raw)
-          : undefined
-    if (!clsStr?.startsWith('/:kernel.astrale.ai:class.Domain')) continue
-    const origin = node.props?.origin
-    if (typeof origin === 'string') return origin
-  }
-  return undefined
-}
 
 async function rollback(client: ClientSession<FnMap>, _credential: string, slug: string) {
   try {
@@ -180,7 +160,10 @@ export default {
         })
         registered = true
         log.info(`Booting "${slug}"…`)
-        await client.call('/manager.astrale.ai/class.KernelInstance/boot', { id: slug })
+        await client.call('/manager.astrale.ai/class.KernelInstance/boot', {
+          id: slug,
+          installDistribution: !opts.distroless,
+        })
 
         const info = (await client.call('/manager.astrale.ai/class.KernelInstance/info', {
           id: slug,
@@ -232,36 +215,6 @@ export default {
             instance: slug,
             key: opts.key,
           } as Parameters<typeof instanceInstall.action>[1])
-        }
-
-        if (!opts.distroless) {
-          const builtin = await resolveBuiltinDomain('distribution')
-          log.info(`Installing builtin distribution domain on "${slug}"…`)
-          await instanceInstall.action(builtin.specPath, {
-            instance: slug,
-            key: builtin.keyPath,
-          } as Parameters<typeof instanceInstall.action>[1])
-
-          // Derive origin from the installed spec (read directly, no probe).
-          const spec = JSON.parse(
-            await (await import('node:fs/promises')).readFile(builtin.specPath, 'utf-8'),
-          ) as {
-            nodes?: Array<{ class?: unknown; props?: { origin?: unknown } }>
-          }
-          const origin = extractDomainOrigin(spec) ?? 'dist.astrale.ai'
-
-          const instanceCredential = await resolveCredential({}, config, url, slug)
-          const instanceClient = new ClientSession<FnMap>({
-            default: url,
-            identity: instanceCredential,
-          })
-          try {
-            await grantDistributionBootstrap(instanceClient, instanceCredential, origin)
-            log.success(`Distribution ready on "${slug}" (origin=${origin})`)
-            log.dim('  Note: --as admin enrollment requires per-identity keys (§2.4 v2).')
-          } finally {
-            instanceClient.disconnect()
-          }
         }
       } catch (err) {
         if (registered) await rollback(client, credential, slug)

@@ -1,12 +1,15 @@
 import type { Kernel } from '@astrale-os/kernel-host'
+import type { JWK } from 'jose'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { AstraleConfig } from './config'
 
+import { resolveBuiltinDomain } from './builtin-domains'
 import { isInContainer } from './env'
 import { resolveAuth } from './keys'
+import { log } from './log'
 import { JOURNAL_PATH, KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from './paths'
 
 export type ManagerState = {
@@ -130,6 +133,13 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     await import('@astrale-os/kernel-host')
   const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
 
+  // Resolve the builtin distribution spec + worker key once at startup so
+  // the manager can install it on demand (e.g., when a UI client calls
+  // `KernelInstance.boot({ installDistribution: true })`). If resolution
+  // fails, the manager still starts — only requests asking for an install
+  // will surface a clean error at call time.
+  const builtinDomains = await loadBuiltinDomainsCatalog()
+
   const kernel = new Kernel({
     mode: 'manager',
     publicUrl: config.issuer,
@@ -144,6 +154,7 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
       transports: [node()],
       observability: ndjsonJournal({ path: JOURNAL_PATH, tags: { kernel: 'manager' } }),
       manager: inProcessManager({
+        builtinDomains,
         async spawn(_parent, cfg) {
           const childUrl = cfg.issuer ?? `http://localhost:${config.managerPort}/${cfg.id}`
           // Load (or lazily generate) the per-instance keypair. The CLI
@@ -203,6 +214,7 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     port: config.managerPort,
     ...(container ? { hostname: '0.0.0.0' } : {}),
   })
+
   // Skip the host PID file when running inside the `manager` container —
   // the PID file is a host-mode concern (used by `astrale stop` to signal
   // the bun process). In container mode, docker tracks the lifecycle.
@@ -210,6 +222,33 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     await writeManagerPid(process.pid)
   }
   return kernel
+}
+
+/**
+ * Resolve the distribution builtin (spec + worker key) and return it in
+ * the shape `inProcessManager` expects. Silently returns `undefined` when
+ * the builtin can't be resolved — the manager remains usable; only
+ * `boot({ installDistribution: true })` will reject with a clear error.
+ */
+async function loadBuiltinDomainsCatalog(): Promise<
+  { distribution?: { spec: Record<string, unknown>; workerKey: JWK } } | undefined
+> {
+  try {
+    const dist = await resolveBuiltinDomain('distribution')
+    const [specRaw, keyRaw] = await Promise.all([
+      readFile(dist.specPath, 'utf-8'),
+      readFile(dist.keyPath, 'utf-8'),
+    ])
+    return {
+      distribution: {
+        spec: JSON.parse(specRaw) as Record<string, unknown>,
+        workerKey: JSON.parse(keyRaw) as JWK,
+      },
+    }
+  } catch (err) {
+    log.dim(`  distribution builtin not loaded: ${(err as Error).message}`)
+    return undefined
+  }
 }
 
 /**
