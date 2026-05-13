@@ -1,4 +1,3 @@
-import { IssuerUnreachableError } from '../errors'
 import { getDefault, setDefault } from '../lib/identity'
 import {
   getActive,
@@ -32,18 +31,12 @@ export async function useCommand(name?: string, opts: UseOpts = {}): Promise<voi
     // throws — let `setActive` below handle the probe-and-persist path.
     const resolved = await resolveInstance(name).catch(() => null)
 
-    // §7 JWKS reachability — tunneled block, proxied warn.
+    // §7 JWKS reachability — fail loud; use --skip-jwks-check to bypass.
     if (!opts.skipJwksCheck && resolved?.url && resolved.issuer) {
-      const tunneled = !/\.astrale\.localhost(:\d+)?$/.test(resolved.issuer)
       try {
         await checkIssuerReachability(resolved.url, resolved.issuer)
       } catch (e) {
-        if (e instanceof IssuerUnreachableError && !tunneled) {
-          log.warn(`Issuer not reachable yet — ${e.message}`)
-          log.dim('  hint: `astrale start` (proxy may be down).')
-        } else {
-          fatal(e)
-        }
+        fatal(e)
       }
     }
 
