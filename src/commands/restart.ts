@@ -38,7 +38,7 @@ export async function restartCommand(opts: RestartOptions): Promise<void> {
 
     log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
     log.info(`  Playground: http://localhost:3200`)
-    log.info(`  GUI:        http://localhost:3400`)
+    log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
     log.dim(`  Logs:    astrale server logs -f`)
     log.dim('  Stop:    astrale stop')
   } catch (e) {

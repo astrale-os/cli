@@ -143,3 +143,13 @@ export class NotImplementedError extends AstraleError {
     )
   }
 }
+
+export class WorkspaceNotFoundError extends AstraleError {
+  constructor(startedFrom: string) {
+    super(
+      'WORKSPACE_NOT_FOUND',
+      `No pnpm-workspace.yaml found above ${startedFrom}`,
+      'Run `astrale start` from inside your Astrale checkout, or set ASTRALE_WORKSPACE to its root.',
+    )
+  }
+}

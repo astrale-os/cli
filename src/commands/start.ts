@@ -29,15 +29,16 @@ type StartOptions = {
 /**
  * Two run modes:
  *
- *   - **docker-mode** (default) — manager + playground + gui run as services
- *     in the `~/.astrale/docker-compose.yml` stack. Each UI is a TanStack
- *     Start server with Vite HMR, reading credentials straight from the
- *     shared keys bind-mount. No API token; no `/api/auth` endpoint.
+ *   - **docker-mode** (default) — manager + playground run as services in
+ *     the `~/.astrale/docker-compose.yml` stack. The playground is a
+ *     TanStack Start server with Vite HMR, reading credentials straight
+ *     from the shared keys bind-mount. The main GUI is launched separately
+ *     (`pnpm -C gui dev`).
  *
  *   - **host-mode** (`--host-mode`) — the manager runs as a bun process on
- *     the host, tracked via a PID file. UIs must be started separately
- *     (e.g. `pnpm -C cli/playground dev`, `pnpm -C cli/gui dev`) — they read
- *     keys from `~/.astrale/keys/` directly.
+ *     the host, tracked via a PID file. The playground must be started
+ *     separately (`pnpm -C cli/playground dev`); the GUI likewise
+ *     (`pnpm -C gui dev`). Both read keys from `~/.astrale/keys/` directly.
  */
 export async function startCommand(opts: StartOptions): Promise<void> {
   const config = await readConfig()
@@ -100,7 +101,7 @@ async function startDockerMode(
     graphName: config.graphName,
   })
 
-  const s = spinner('Starting stack (falkordb + manager + playground + gui)...')
+  const s = spinner('Starting stack (falkordb + manager + playground)...')
   try {
     await composeUp(COMPOSE_PATH)
     await waitManagerHealthy(`http://localhost:${config.managerPort}/mngt/`)
@@ -110,8 +111,8 @@ async function startDockerMode(
     throw e
   }
 
-  // Auto-spawn the two UI dev servers on the host unless the user opts out
-  // with --no-ui. They run detached; their PIDs are recorded in
+  // Auto-spawn the playground dev server on the host unless the user opts
+  // out with --no-ui. It runs detached; its PID is recorded in
   // ~/.astrale/ui.pids.json and killed by `astrale stop`.
   if (opts.noUi !== true) {
     await stopUis({ silent: true }) // cleanup stale PIDs from a previous run
@@ -120,13 +121,14 @@ async function startDockerMode(
 
   log.success('Astrale started')
   if (opts.noUi) {
-    log.dim(`  Manager: http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim('  UIs:     run `pnpm -C cli/playground dev` + `pnpm -C cli/gui dev`')
+    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
+    log.dim('  Playground: run `pnpm -C cli/playground dev`')
   } else {
     log.info(`  Playground: http://localhost:3200`)
     log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim(`  UI logs: ${LOGS_DIR}/{playground,gui}.stdout.log`)
+    log.dim(`  UI logs:    ${LOGS_DIR}/playground.stdout.log`)
   }
+  log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
   log.dim(`  Logs:    astrale server logs -f`)
   log.dim('  Stop:    astrale stop')
 }
@@ -155,8 +157,9 @@ async function startHostMode(
       await spawnUis()
       log.info(`  Playground: http://localhost:3200`)
     } else {
-      log.dim('  UIs: run `pnpm -C cli/playground dev` + `pnpm -C cli/gui dev`')
+      log.dim('  Playground: run `pnpm -C cli/playground dev`')
     }
+    log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
 
     let shuttingDown = false
     const cleanup = async () => {
@@ -228,13 +231,14 @@ async function startHostMode(
 
   log.success('Astrale started in background (host-mode)')
   if (opts.noUi) {
-    log.dim(`  Manager: http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim('  UIs:     run `pnpm -C cli/playground dev` + `pnpm -C cli/gui dev`')
+    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
+    log.dim('  Playground: run `pnpm -C cli/playground dev`')
   } else {
     log.info(`  Playground: http://localhost:3200`)
     log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim(`  UI logs: ${LOGS_DIR}/{playground,gui}.stdout.log`)
+    log.dim(`  UI logs:    ${LOGS_DIR}/playground.stdout.log`)
   }
+  log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
   log.dim(`  PID:     ${managerProc.pid}`)
   log.dim(`  Logs:    ${LOGS_DIR}`)
   log.info('Run `astrale stop --host-mode` to stop')

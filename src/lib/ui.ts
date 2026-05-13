@@ -1,51 +1,78 @@
-import { openSync } from 'node:fs'
+import { existsSync, openSync } from 'node:fs'
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { isAbsolute, join } from 'node:path'
 
+import { WorkspaceNotFoundError } from '../errors'
 import { log } from './log'
 import { LOGS_DIR, UI_PID_PATH } from './paths'
+import { findAllWorkspaceRoots } from './workspace-yaml'
 
 /**
- * UI (playground + gui) lifecycle on the host — the CLI spawns each vite
- * dev server as a detached background process, records their PIDs in
- * `~/.astrale/ui.pids.json`, and `astrale stop` reads the file to kill them.
+ * Playground UI lifecycle on the host — the CLI spawns the vite dev server
+ * as a detached background process, records its PID in
+ * `~/.astrale/ui.pids.json`, and `astrale stop` reads the file to kill it.
  *
  * The recorded PID is the pnpm wrapper, which spawns a vite child. We spawn
  * with `detached: true` so the wrapper becomes its own session/process-group
  * leader; on stop we signal the negative PID (`-pgid`) to take down the whole
  * group in one shot. Without this, pnpm exits but vite is reparented to
  * launchd/init and survives — re-binding the same dev port forever.
+ *
+ * The main GUI lives in a separate submodule and is launched independently
+ * by the user (`pnpm -C gui dev`); the CLI no longer manages its lifecycle.
  */
 
 export interface UiPids {
   readonly playground: number
-  readonly gui: number
 }
 
 /**
- * Ports the workspace's vite `dev` scripts hardcode (3200 playground, 3400
- * gui). Used as a defensive sweep target in `stopUis`, so zombies survive
- * neither pidfile teardown nor a CLI restart. Keep in sync with
- * `cli/playground/package.json` and `cli/gui/package.json`.
+ * Port the workspace's playground vite `dev` script hardcodes (3200).
+ * Used as a defensive sweep target in `stopUis`, so zombies survive neither
+ * pidfile teardown nor a CLI restart. Keep in sync with
+ * `cli/playground/package.json`.
  */
-const UI_DEV_PORTS = [3200, 3400] as const
+const UI_DEV_PORTS = [3200] as const
 
-function workspaceRoot(): string {
-  const here = dirname(fileURLToPath(import.meta.url))
-  // `cli/src/lib/ui.ts` → `cli/src/lib` → `cli/src` → `cli` → `workspace`
-  return resolve(here, '..', '..', '..')
+/**
+ * Locate the Astrale checkout that owns the playground package.
+ *
+ * Order:
+ *   1. `ASTRALE_WORKSPACE` env override (absolute path expected).
+ *   2. Walk up from `process.cwd()` looking for a `pnpm-workspace.yaml`.
+ *
+ * Resolving from `process.cwd()` (not `import.meta.url`) decouples *where the
+ * CLI lives* from *which repo it operates on* — same convention as `git` /
+ * `pnpm` / `cargo`. The previous `import.meta.url`-based approach broke when
+ * the CLI was installed globally: the resolved path landed inside the global
+ * `node_modules`, `pnpm --filter` matched nothing, and the UI spawn failed
+ * silently.
+ */
+export function workspaceRoot(): string {
+  const override = process.env.ASTRALE_WORKSPACE
+  if (override) {
+    if (!isAbsolute(override)) {
+      throw new WorkspaceNotFoundError(`ASTRALE_WORKSPACE=${override} (must be an absolute path)`)
+    }
+    if (!existsSync(join(override, 'pnpm-workspace.yaml'))) {
+      throw new WorkspaceNotFoundError(`${override} (set via ASTRALE_WORKSPACE)`)
+    }
+    return override
+  }
+
+  const start = process.cwd()
+  const closest = findAllWorkspaceRoots(start)[0]
+  if (closest) return closest
+  throw new WorkspaceNotFoundError(start)
 }
 
-/** Spawn the two vite dev servers detached, return their PIDs. */
+/** Spawn the playground vite dev server detached, return its PID. */
 export async function spawnUis(): Promise<UiPids> {
   const workspace = workspaceRoot()
   await mkdir(LOGS_DIR, { recursive: true })
 
   const playgroundOut = openSync(join(LOGS_DIR, 'playground.stdout.log'), 'a')
   const playgroundErr = openSync(join(LOGS_DIR, 'playground.stderr.log'), 'a')
-  const guiOut = openSync(join(LOGS_DIR, 'gui.stdout.log'), 'a')
-  const guiErr = openSync(join(LOGS_DIR, 'gui.stderr.log'), 'a')
 
   const playgroundProc = Bun.spawn(['pnpm', '--filter', '@astrale-os/astrale-playground', 'dev'], {
     cwd: workspace,
@@ -56,16 +83,7 @@ export async function spawnUis(): Promise<UiPids> {
   })
   playgroundProc.unref()
 
-  const guiProc = Bun.spawn(['pnpm', '--filter', '@astrale-os/astrale-gui', 'dev'], {
-    cwd: workspace,
-    stdout: guiOut,
-    stderr: guiErr,
-    stdin: 'ignore',
-    detached: true,
-  })
-  guiProc.unref()
-
-  const pids: UiPids = { playground: playgroundProc.pid, gui: guiProc.pid }
+  const pids: UiPids = { playground: playgroundProc.pid }
   await writeFile(UI_PID_PATH, JSON.stringify(pids, null, 2))
   return pids
 }

@@ -29,12 +29,13 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
   const config = await readConfig()
 
   const managerUrl = `http://localhost:${config.managerPort}/mngt`
-  // GUI dev server port is hardcoded in `cli/gui/package.json` (`vite --port 3400`).
-  const uiDevUrl = 'http://localhost:3400'
+  // External GUI dev server (run separately by the user via `pnpm -C gui dev`).
+  // Port hardcoded in `gui/package.json` (`vite --port 3400`).
+  const guiDevUrl = 'http://localhost:3400'
 
-  const [manager, uiDevUp, ps, falkorUp] = await Promise.all([
+  const [manager, guiDevUp, ps, falkorUp] = await Promise.all([
     detectManagerState(config),
-    probeHttp(uiDevUrl),
+    probeHttp(guiDevUrl),
     composePs(COMPOSE_PATH),
     // Reachability beats provenance: the user may run FalkorDB via compose,
     // a stand-alone `docker run`, a host-installed binary, or a remote
@@ -61,8 +62,8 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
         ? 'unknown'
         : 'host'
 
-  const uiUrl = uiDevUp
-    ? uiDevUrl
+  const guiUrl = guiDevUp
+    ? guiDevUrl
     : manager.running
       ? `http://localhost:${config.managerPort}/`
       : null
@@ -82,10 +83,10 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
       running: falkorUp,
       port: config.falkorPort,
     },
-    ui: {
-      running: uiUrl !== null,
-      mode: uiDevUp ? 'dev' : 'bundled',
-      url: uiUrl,
+    gui: {
+      running: guiUrl !== null,
+      mode: guiDevUp ? 'dev' : 'bundled',
+      url: guiUrl,
     },
     graphName: config.graphName,
   }
@@ -119,11 +120,11 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
     log.warn('FalkorDB:  stopped')
   }
 
-  if (uiUrl) {
-    const modeTag = uiDevUp ? ' (dev)' : ''
-    log.success(`UI:        ${uiUrl}${modeTag}`)
+  if (guiUrl) {
+    const modeTag = guiDevUp ? ' (dev)' : ''
+    log.success(`GUI:       ${guiUrl}${modeTag}`)
   } else {
-    log.warn('UI:        not available (manager stopped)')
+    log.warn('GUI:       not available (manager stopped; run `pnpm -C gui dev` for dev mode)')
   }
 
   log.dim(`  Graph:    ${config.graphName}`)

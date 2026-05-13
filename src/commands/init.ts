@@ -121,7 +121,7 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
   })
   log.success('Docker compose file written')
 
-  // ── Start the stack (falkordb + manager + playground + gui) ─
+  // ── Start the stack (falkordb + manager + playground) ──────
 
   s = spinner('Starting stack...')
   await composeUp(COMPOSE_PATH)
@@ -133,8 +133,8 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
   log.success('Setup complete\n')
   log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
   log.info(`  Playground: http://localhost:3200`)
-  log.info(`  GUI:        http://localhost:3400`)
-  log.dim(`  Graph:    ${config.graphName}`)
+  log.dim(`  Graph:      ${config.graphName}`)
+  log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
   console.log('')
   log.info('Next steps:')
   log.dim('  astrale status         # check status')
