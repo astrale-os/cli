@@ -9,7 +9,6 @@ export type Paths = {
   config: string
   compose: string
   managerPid: string
-  uiPid: string
   identities: string
   instances: string
   managerCache: string
@@ -50,7 +49,6 @@ export function createPaths(home?: string): Paths {
     config: join(base, 'config.json'),
     compose: join(base, 'docker-compose.yml'),
     managerPid: join(base, 'manager.pid'),
-    uiPid: join(base, 'ui.pid'),
     identities: join(base, 'identities.json'),
     instances: join(base, 'instances.json'),
     managerCache: join(base, 'manager-cache.json'),

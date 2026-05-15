@@ -6,5 +6,5 @@ export default defineConfig({
   rules: {
     'no-console': 'off',
   },
-  ignorePatterns: ['src/templates/**/*'],
+  ignorePatterns: ['templates/**/*'],
 })

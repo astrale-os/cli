@@ -1,3 +1,4 @@
+import type { CommandDefinition } from '../command'
 import type { CallCommandOpts } from '../kernel'
 
 import { lookupRemoteBinding, mintRemoteCredential, runKernelCommand } from '../kernel'
@@ -161,3 +162,39 @@ export function coerceValue(raw: string): unknown {
   if (/^-?\d+(\.\d+)?$/.test(raw)) return Number(raw)
   return raw
 }
+
+export default {
+  name: 'call',
+  description: 'Call a kernel operation',
+  afterHelpText: `
+Behavior:
+  Param priority (highest wins): --data > stdin > key=value > {}. If
+  both --data and key=value are given, key=value is ignored (warned).
+  Stdin is read only when piped (ignored on a TTY). --describe and
+  --dry-run short-circuit (no execution). Remote-bound functions
+  auto-mint a worker-scoped credential; --creds overrides it.
+
+Examples:
+  $ astrale call /manager.astrale.ai/class.KernelInstance/list
+  $ astrale call /blog.acme.com/class.Author/list limit=10
+  $ astrale call '@abc123::deactivate'
+  $ astrale call /dist.astrale.ai/class.Domain/install --creds "$TOKEN" \\
+      -d "$(cat spec.json)"
+`,
+  arguments: [
+    {
+      name: 'path',
+      description:
+        'Operation path (e.g., /manager.astrale.ai/class.KernelInstance/list or /node::method)',
+    },
+    { name: 'params...', description: 'Params as key=value pairs', required: false },
+  ],
+  options: [
+    { flags: '-d, --data <json>', description: 'Params as JSON string' },
+    { flags: '--describe', description: 'Show operation schema without executing' },
+    { flags: '--dry-run', description: 'Show what would be sent without executing' },
+  ],
+  action: async (path, params, opts) => {
+    await callCommand(path as string, params as string[], opts)
+  },
+} satisfies CommandDefinition

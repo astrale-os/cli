@@ -1,5 +1,5 @@
 {
-  "name": "@astrale-os/astrale-playground",
+  "name": "@astrale-os/deprecated-astrale-playground",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -8,6 +8,15 @@ import { addTunnel } from '../../lib/tunnels'
 export default {
   name: 'setup',
   description: 'Configure TunnelAdapter + DNS preflight (§12)',
+  afterHelpText: `
+Behavior:
+  Creates a fresh cloudflared tunnel and registers it. A tunnel
+  exposes a local port on the public Internet — only bind instances
+  serving intended content. DNS preflight must resolve.
+
+Examples:
+  $ astrale tunnel setup prod --hostname my.host.tld --route-dns
+`,
   arguments: [{ name: 'name', description: 'Tunnel name (local identifier)', required: true }],
   options: [
     {

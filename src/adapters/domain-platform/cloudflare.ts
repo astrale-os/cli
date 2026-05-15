@@ -36,15 +36,14 @@ import {
   writeDistClientPlaceholder,
   writeWorkerKeysFile,
 } from '../../lib/domain-scaffold'
-import { registerWorkspaceMember, type WorkspaceRegistration } from '../../lib/workspace-yaml'
 import { domainUrl, loadDomainModule, type DomainEnv } from './cloudflare-helpers'
 import {
   buildSpec as lifecycleBuildSpec,
   devDown as lifecycleDevDown,
   devStatus as lifecycleDevStatus,
   devUp as lifecycleDevUp,
-  findSdk,
   instancePrepare as lifecycleInstancePrepare,
+  resolveSdkFingerprint,
 } from './cloudflare-lifecycle'
 
 const RESERVED_SLUGS = new Set(['minimal', 'minimal-remote'])
@@ -80,7 +79,7 @@ export const cloudflareDomainPlatform: DomainPlatform = {
   id: 'cloudflare',
 
   async scaffold(opts: ScaffoldOpts): Promise<ScaffoldResult> {
-    const { slug, template, targetDir, force = false, workspace = false } = opts
+    const { slug, template, targetDir, force = false } = opts
     if (!SLUG_RE.test(slug)) {
       throw new AstraleError(
         'INVALID_SLUG',
@@ -115,11 +114,6 @@ export const cloudflareDomainPlatform: DomainPlatform = {
     const keysWritten = await writeWorkerKeysFile(targetDir, slug)
     const distSeeded = await writeDistClientPlaceholder(targetDir)
 
-    // Internal-monorepo mode: append the new package paths to the closest
-    // pnpm-workspace.yaml(s). Without this, `pnpm install` fails with
-    // ERR_PNPM_WORKSPACE_PKG_NOT_FOUND on the workspace:* deps.
-    const wsRegistration = workspace ? await registerWorkspaceMember(targetDir) : null
-
     // If pnpm install has already linked workspace deps in this targetDir,
     // run a quick `tsgo --noEmit` smoke. Catches template/kernel-runtime
     // drift before the user's first edit. Skipped silently when deps aren't
@@ -129,15 +123,14 @@ export const cloudflareDomainPlatform: DomainPlatform = {
     const v = slugVariants(slug)
     const nextSteps = [
       `cd ${targetDir}`,
-      `pnpm install   # run from workspace root`,
+      `pnpm install   # (monorepo: run at the workspace root instead)`,
       `pnpm test      # in-process fixture smoke test`,
       `astrale domain dev up --kernel local:standalone:inprocess --domain local:inprocess`,
       `astrale domain deploy --skip-drift-check   # first deploy (soft-fail DNS-less)`,
       ``,
-      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths${keysWritten ? ', regenerated worker keypair' : ''}${distSeeded ? ', seeded dist-client/' : ''}${formatWorkspaceSuffix(wsRegistration)})`,
+      `Template applied: ${template} (rewrote ${touched} files, renamed ${renamed} paths${keysWritten ? ', regenerated worker keypair' : ''}${distSeeded ? ', seeded dist-client/' : ''})`,
       `Variants: kebab=${v.kebab} pascal=${v.pascal} camel=${v.camel} upper=${v.upperSnake}`,
     ]
-    nextSteps.push(...formatWorkspaceRegistration(wsRegistration, targetDir))
     nextSteps.push(...formatSmokeResult(smoke))
 
     return { targetDir, slug, nextSteps }
@@ -164,14 +157,7 @@ export const cloudflareDomainPlatform: DomainPlatform = {
 
     const { specPath } = await lifecycleBuildSpec({ domainDir, preset })
 
-    const { sdkDir } = findSdk(domainDir)
-    const sdkCommit = spawnSync('git', ['rev-parse', '--short', 'HEAD'], {
-      cwd: sdkDir,
-      encoding: 'utf-8',
-    }).stdout.trim()
-    if (!sdkCommit) {
-      throw new AstraleError('NO_SDK_COMMIT', `Cannot read sdk/ HEAD at ${sdkDir}`)
-    }
+    const { sdkDir, sdkCommit, gitMode } = resolveSdkFingerprint(domainDir)
     const schemaHash = hashSpecFile(specPath)
 
     const deployRes = spawnSync(
@@ -200,7 +186,11 @@ export const cloudflareDomainPlatform: DomainPlatform = {
       return { url: prodUrl, schemaHash, sdkCommit, warnings }
     }
     try {
-      await deployCheck({ url: prodUrl, expectedSchemaHash: schemaHash, sdkRepoPath: sdkDir })
+      await deployCheck({
+        url: prodUrl,
+        expectedSchemaHash: schemaHash,
+        ...(gitMode ? { sdkRepoPath: sdkDir } : {}),
+      })
     } catch (e) {
       const msg = (e as Error).message
       const looksLikeDnsOrNetwork =
@@ -253,28 +243,6 @@ function runScaffoldTypecheckSmoke(targetDir: string): SmokeResult {
   return { status: 'failed', errors }
 }
 
-function formatWorkspaceRegistration(
-  reg: WorkspaceRegistration | null,
-  targetDir: string,
-): string[] {
-  if (!reg) return []
-  const lines: string[] = []
-  for (const update of reg.updated) {
-    const n = update.added.length
-    lines.push(`Registered in ${update.path} (+${n} ${n === 1 ? 'entry' : 'entries'})`)
-  }
-  for (const path of reg.alreadyPresent) {
-    lines.push(`Already registered in ${path} — nothing to add.`)
-  }
-  for (const warning of reg.warnings) {
-    lines.push(`⚠ ${warning}`)
-  }
-  if (lines.length === 0) {
-    lines.push(`No pnpm-workspace.yaml ancestor found above ${targetDir} — registration skipped.`)
-  }
-  return lines
-}
-
 function formatSmokeResult(smoke: SmokeResult): string[] {
   if (smoke.status === 'ok') return [`Scaffold typechecks green (tsgo --noEmit).`]
   if (smoke.status !== 'failed') return []
@@ -293,12 +261,6 @@ function buildGenericRenameMap(slug: string): ReturnType<typeof buildMinimalRemo
     literals: [{ from: '__SLUG__', to: v.kebab }],
     wordBoundary: [],
   }
-}
-
-function formatWorkspaceSuffix(reg: WorkspaceRegistration | null): string {
-  const total = reg?.updated.length ?? 0
-  if (total === 0) return ''
-  return `, registered in ${total} pnpm-workspace.yaml file${total === 1 ? '' : 's'}`
 }
 
 /**

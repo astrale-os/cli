@@ -1,5 +1,6 @@
 import chalk from 'chalk'
 
+import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts, ClientContext } from '../kernel'
 
 import { runKernelCommand, extractItems, withKernelClient, formatKernelError } from '../kernel'
@@ -194,3 +195,37 @@ function stripInternalFields(item: Item): Record<string, unknown> {
   }
   return result
 }
+
+export default {
+  name: 'ls',
+  description: 'List children of a node',
+  afterHelpText: `
+Behavior:
+  --filter matches a node KIND or label: Folder, Method, Domain. At a
+  domain's tree position the children are Folder nodes (class.X), not
+  Class — so --filter Class returns nothing; use --filter Folder, or
+  descend into class.<X> and --filter Method. -R tree view is TTY-only
+  (raw/JSON emits a flat list of direct children). -q prints bare ids
+  (no @ prefix). Note: ls /<domain> may report NOT_FOUND even when it
+  exists — use describe, or ls one of its children.
+
+Examples:
+  $ astrale ls /
+  $ astrale ls /kernel.astrale.ai --filter Folder
+  $ astrale ls / -q | sed 's/^/@/' | xargs -I{} astrale describe {}
+`,
+  arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
+  options: [
+    { flags: '-l, --long', description: 'Full node dump (default: compact)' },
+    { flags: '-q, --quiet', description: 'One path per line (unix-pipeable)' },
+    { flags: '-R, --recursive', description: 'List recursively (tree view)' },
+    { flags: '--count', description: 'Print only the number of children' },
+    {
+      flags: '--filter <kind>',
+      description: 'Filter children by kind or label (e.g., Folder, Method, Domain)',
+    },
+  ],
+  action: async (path, opts) => {
+    await lsCommand(path as string, opts as Parameters<typeof lsCommand>[1])
+  },
+} satisfies CommandDefinition

@@ -1,5 +1,6 @@
 import chalk from 'chalk'
 
+import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 
 import { runKernelCommand, extractItems } from '../kernel'
@@ -135,3 +136,29 @@ function formatInputSchema(properties?: Record<string, unknown>): string {
     return '{...}'
   }
 }
+
+export default {
+  name: 'describe',
+  description: 'Describe a node: its kind, operations, children, and schemas',
+  afterHelpText: `
+Behavior:
+  Raw node dump: full properties + children. For Domain nodes this
+  includes a multi-kB serialized 'schema' — use --no-schema, and pipe
+  to jq rather than reading by eye (it is not a curated summary).
+
+Examples:
+  $ astrale describe /kernel.astrale.ai
+  $ astrale describe /manager.astrale.ai --no-schema | jq .
+`,
+  arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
+  options: [
+    {
+      flags: '--no-schema',
+      description:
+        'Omit the serialized `schema` property (useful for Domain nodes, where it is multi-kB)',
+    },
+  ],
+  action: async (path, opts) => {
+    await describeCommand(path as string, opts as Parameters<typeof describeCommand>[1])
+  },
+} satisfies CommandDefinition

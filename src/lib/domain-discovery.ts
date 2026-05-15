@@ -9,6 +9,7 @@
 import type { LifecycleModule } from '@astrale-os/kernel-host'
 
 import { existsSync, readFileSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -82,6 +83,33 @@ export async function resolveDomainDir(cwdOverride?: string): Promise<ResolvedDo
 }
 
 /**
+ * Resolve every domain directory the `dev` commands should act on.
+ *
+ * Primary strategy: a recursive scan *down* from the cwd (or the
+ * `--cwd` override) — every domain found under it. This is what makes
+ * `astrale domain dev up` from a parent folder bring up the whole tree.
+ *
+ * Fallback: if nothing is found below, fall back to the legacy walk-*up*
+ * single-domain resolver so running from inside a domain (or one of its
+ * subfolders) still works. `resolveDomainDir` throws
+ * `AstraleError('NOT_IN_DOMAIN', …)` (with its hint) when neither
+ * strategy finds anything.
+ */
+export async function resolveDomainDirs(cwdOverride?: string): Promise<string[]> {
+  const start = cwdOverride
+    ? isAbsolute(cwdOverride)
+      ? cwdOverride
+      : resolve(process.cwd(), cwdOverride)
+    : process.cwd()
+
+  const found = await findDomainDirsUnder(start)
+  if (found.length > 0) return found
+
+  const resolved = await resolveDomainDir(start)
+  return [resolved.dir]
+}
+
+/**
  * Derive a kebab-case slug from a package.json `name`. Mirrors the
  * pattern used by the scaffold (`cli/src/lib/domain-scaffold.ts`) and
  * the template's `scripts/lib.ts#domainSlug`.
@@ -93,17 +121,85 @@ export function deriveSlug(pkgName: string): string {
     .trim()
 }
 
+/** A domain directory is any dir containing BOTH `package.json` and `envs.ts`. */
+function isDomainDir(dir: string): boolean {
+  return existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'envs.ts'))
+}
+
 function findDomainDir(start: string, maxHops = 6): string | null {
   let dir = start
   for (let i = 0; i <= maxHops; i++) {
-    if (existsSync(join(dir, 'package.json')) && existsSync(join(dir, 'envs.ts'))) {
-      return dir
-    }
+    if (isDomainDir(dir)) return dir
     const parent = dirname(dir)
     if (parent === dir) return null
     dir = parent
   }
   return null
+}
+
+/**
+ * Directory basenames the recursive scan never descends into. Skips
+ * dependency/build dirs (perf, no false positives) and `templates` so
+ * the CLI's own template domain isn't brought up when the scan starts
+ * from the workspace root.
+ */
+const DEFAULT_DISCOVERY_EXCLUDES = [
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  'coverage',
+  '.next',
+  '.wrangler',
+  'templates',
+]
+
+export type FindDomainDirsOpts = {
+  /** Max directory depth to descend from the root (root itself = depth 0). Default 5. */
+  maxDepth?: number
+  /** Directory basenames to never descend into. Defaults to {@link DEFAULT_DISCOVERY_EXCLUDES}. */
+  excludeDirs?: string[]
+}
+
+/**
+ * Recursively scan *down* from `root` for domain directories. Domains
+ * are never nested in one another, so descent stops as soon as a domain
+ * root matches. Excluded directory basenames are skipped; the scan is
+ * bounded by `maxDepth`. Symlinked directories are not followed — with
+ * `withFileTypes`, `entry.isDirectory()` is `false` for a symlink, so
+ * loops are structurally impossible (no visited-set needed). Unreadable
+ * directories are skipped silently. Returns absolute paths, deduped and
+ * sorted.
+ */
+export async function findDomainDirsUnder(
+  root: string,
+  opts: FindDomainDirsOpts = {},
+): Promise<string[]> {
+  const maxDepth = opts.maxDepth ?? 5
+  const excludes = new Set(opts.excludeDirs ?? DEFAULT_DISCOVERY_EXCLUDES)
+  const found: string[] = []
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    if (isDomainDir(dir)) {
+      found.push(dir)
+      return // domains are not nested — stop descending
+    }
+    if (depth >= maxDepth) return
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return // unreadable directory — skip this subtree
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue // skips files AND symlinks (no loop risk)
+      if (excludes.has(entry.name)) continue
+      await walk(join(dir, entry.name), depth + 1)
+    }
+  }
+
+  await walk(resolve(root), 0)
+  return [...new Set(found)].sort()
 }
 
 async function tryLoadLifecycle(dir: string): Promise<{ module?: LifecycleModule; path?: string }> {

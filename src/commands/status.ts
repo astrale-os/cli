@@ -1,10 +1,12 @@
 import { connect } from 'node:net'
 
+import type { CommandDefinition } from '../command'
+
 import { readConfig } from '../lib/config'
 import { composePs } from '../lib/docker'
 import { log } from '../lib/log'
-import { detectManagerState, probeHttp } from '../lib/manager-state'
-import { type OutputOpts, isRawOutput, output } from '../lib/output'
+import { detectManagerState } from '../lib/manager-state'
+import { RAW_OUTPUT_OPTIONS, type OutputOpts, isRawOutput, output } from '../lib/output'
 import { COMPOSE_PATH } from '../lib/paths'
 
 /** TCP probe — true if something accepts a connection on host:port. */
@@ -29,13 +31,9 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
   const config = await readConfig()
 
   const managerUrl = `http://localhost:${config.managerPort}/mngt`
-  // External GUI dev server (run separately by the user via `pnpm -C gui dev`).
-  // Port hardcoded in `gui/package.json` (`vite --port 3400`).
-  const guiDevUrl = 'http://localhost:3400'
 
-  const [manager, guiDevUp, ps, falkorUp] = await Promise.all([
+  const [manager, ps, falkorUp] = await Promise.all([
     detectManagerState(config),
-    probeHttp(guiDevUrl),
     composePs(COMPOSE_PATH),
     // Reachability beats provenance: the user may run FalkorDB via compose,
     // a stand-alone `docker run`, a host-installed binary, or a remote
@@ -62,12 +60,6 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
         ? 'unknown'
         : 'host'
 
-  const guiUrl = guiDevUp
-    ? guiDevUrl
-    : manager.running
-      ? `http://localhost:${config.managerPort}/`
-      : null
-
   const data = {
     manager: {
       running: manager.running,
@@ -82,11 +74,6 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
     falkor: {
       running: falkorUp,
       port: config.falkorPort,
-    },
-    gui: {
-      running: guiUrl !== null,
-      mode: guiDevUp ? 'dev' : 'bundled',
-      url: guiUrl,
     },
     graphName: config.graphName,
   }
@@ -120,13 +107,6 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
     log.warn('FalkorDB:  stopped')
   }
 
-  if (guiUrl) {
-    const modeTag = guiDevUp ? ' (dev)' : ''
-    log.success(`GUI:       ${guiUrl}${modeTag}`)
-  } else {
-    log.warn('GUI:       not available (manager stopped; run `pnpm -C gui dev` for dev mode)')
-  }
-
   log.dim(`  Graph:    ${config.graphName}`)
   log.dim(`  Config:   ~/.astrale/config.json`)
 
@@ -135,3 +115,19 @@ export async function statusCommand(opts?: OutputOpts): Promise<void> {
     log.info('Run `astrale start` to start the manager')
   }
 }
+
+export default {
+  name: 'status',
+  description: 'Show the status of the Astrale manager',
+  options: [
+    {
+      flags: '--format <type>',
+      description: 'Output format (default: yaml in TTY, json when piped)',
+      choices: ['yaml', 'json'],
+    },
+    ...RAW_OUTPUT_OPTIONS,
+  ],
+  action: async (opts) => {
+    await statusCommand(opts as Parameters<typeof statusCommand>[0])
+  },
+} satisfies CommandDefinition

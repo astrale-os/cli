@@ -6,6 +6,8 @@ import { ClientSession } from '@astrale-os/kernel-client/session'
 import chalk from 'chalk'
 import { rm, rmdir } from 'node:fs/promises'
 
+import type { CommandDefinition } from '../command'
+
 import { stopAllTunnels } from '../adapters/tunnel-cloudflared'
 import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
@@ -33,9 +35,7 @@ import {
   MANAGER_PID_PATH,
   TUNNELS_DIR,
   TUNNELS_PATH,
-  UI_PID_PATH,
 } from '../lib/paths'
-import { stopUis } from '../lib/ui'
 import { stopCommand } from './stop'
 
 type ResetOptions = {
@@ -153,7 +153,6 @@ async function resetManager(
 
     const session = managerSession
     log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-    log.info(`Playground UI on http://localhost:${config.managerPort}/`)
     log.info('Press Ctrl+C to stop')
     const cleanup = async () => {
       await session.close()
@@ -252,7 +251,6 @@ async function resetSubInstance(
     if (managerSession) {
       const session = managerSession
       log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-      log.info(`Playground UI on http://localhost:${config.managerPort}/`)
       log.info('Press Ctrl+C to stop')
       const cleanup = async () => {
         await session.close()
@@ -316,8 +314,6 @@ async function resetHard(opts: ResetOptions): Promise<void> {
     }
   }
 
-  await tryStep('UIs', () => stopUis({ silent: true }))
-
   try {
     const n = await stopAllTunnels()
     if (n > 0) stopped.push(`${n} tunnel(s)`)
@@ -350,7 +346,6 @@ async function resetHard(opts: ResetOptions): Promise<void> {
     TUNNELS_PATH,
     MANAGER_CACHE_PATH,
     MANAGER_PID_PATH,
-    UI_PID_PATH,
     COMPOSE_PATH,
     KEYS_DIR,
     TUNNELS_DIR,
@@ -406,3 +401,36 @@ function readLine(): Promise<string> {
     })
   })
 }
+
+export default {
+  name: 'reset',
+  description: 'Clear and reboot the active instance (wipes all graph data)',
+  afterHelpText: `
+Behavior:
+  Resets the active instance unless -i <id> is given; -i manager
+  resets the manager (deletes all child instances first). --hard is a
+  fresh-install wipe (stop everything, remove containers, delete all
+  ~/.astrale state) — always succeeds even if services are dead.
+  --host-mode targets the host-mode manager (default: docker-mode).
+
+Examples:
+  $ astrale reset -i staging -y
+  $ astrale reset --hard -y
+`,
+  options: [
+    { flags: '-i, --instance <id>', description: 'Target instance (defaults to active)' },
+    { flags: '-y, --yes', description: 'Skip confirmation prompt' },
+    {
+      flags: '--hard',
+      description:
+        'Fresh-install wipe: stop everything, remove containers, delete every Astrale state file (identities, keys, tunnels, FalkorDB data). Always succeeds even if services are dead.',
+    },
+    {
+      flags: '--host-mode',
+      description: 'Reset the host-mode manager (default: docker-mode if detected)',
+    },
+  ],
+  action: async (opts) => {
+    await resetCommand(opts as Parameters<typeof resetCommand>[0])
+  },
+} satisfies CommandDefinition

@@ -5,6 +5,11 @@ import { fatalNotImplemented } from '../../lib/log'
 export default {
   name: 'logs',
   description: 'Stream domain worker logs (stub — use adapter-specific tooling, §9)',
+  afterHelpText: `
+Behavior:
+  Stub (NotImplemented in v1) — use your worker platform's own log
+  tooling (e.g. \`wrangler tail\`) until this lands.
+`,
   options: [{ flags: '--follow', description: 'Follow logs' }],
   action: async () =>
     fatalNotImplemented(

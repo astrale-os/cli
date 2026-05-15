@@ -82,14 +82,13 @@ export function ConnectionProvider({
   const [authReady, setAuthReady] = useState(false)
   const [bindingMode, setBindingModeState] = useState<BindingMode>(loadBindingMode)
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sessionRef = useRef<ClientSession<any> | null>(null)
+  const sessionRef = useRef<ClientSession | null>(null)
   const credentialRef = useRef<string>('')
   const bindingModeRef = useRef<BindingMode>(bindingMode)
   const [kernel, setKernel] = useState<TypedKernel | null>(null)
   const [manager, setManager] = useState<TypedManager | null>(null)
 
-  const loadSchemas = useCallback((session: ClientSession<any>, sessionUrl: string) => {
+  const loadSchemas = useCallback((session: ClientSession, sessionUrl: string) => {
     // Fetch function schemas with binding info, best-effort
     session
       .call('/kernel.astrale.ai/interface.Function/list', {})

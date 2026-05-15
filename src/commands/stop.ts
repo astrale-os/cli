@@ -1,11 +1,12 @@
 import { execSync } from 'node:child_process'
 import { readFile, unlink } from 'node:fs/promises'
 
+import type { CommandDefinition } from '../command'
+
 import { readConfig } from '../lib/config'
 import { composeStop, isManagerRunning } from '../lib/docker'
 import { log } from '../lib/log'
 import { COMPOSE_PATH, MANAGER_PID_PATH } from '../lib/paths'
-import { stopUis } from '../lib/ui'
 
 type StopOptions = {
   hostMode?: boolean
@@ -35,9 +36,6 @@ function findPidsByPort(port: number): number[] {
 }
 
 export async function stopCommand(opts: StopOptions = {}): Promise<void> {
-  // Always kill any detached UI dev servers the CLI spawned previously.
-  await stopUis()
-
   if (opts.hostMode) {
     await stopHostMode()
     return
@@ -102,3 +100,25 @@ async function stopHostMode(opts: { silent?: boolean } = {}): Promise<boolean> {
   }
   return killed
 }
+
+export default {
+  name: 'stop',
+  description: 'Stop the Astrale manager (both modes by default)',
+  afterHelpText: `
+Behavior:
+  Stops both modes by default (docker compose stack + any host-mode
+  process). --host-mode targets only the host-mode manager.
+
+Examples:
+  $ astrale stop
+`,
+  options: [
+    {
+      flags: '--host-mode',
+      description: 'Only target the host-mode manager (skip docker)',
+    },
+  ],
+  action: async (opts) => {
+    await stopCommand(opts as Parameters<typeof stopCommand>[0])
+  },
+} satisfies CommandDefinition

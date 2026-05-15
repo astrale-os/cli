@@ -77,12 +77,15 @@ rewritten. What's left:
    | What | Command |
    |---|---|
    | Stamp `spec.json` for a preset | `astrale domain build [--preset <name>]` |
-   | Bring up local services (worker + tunnel) | `astrale domain dev up [--domain local:inprocess\|local:tunneled]` |
+   | Restart local services (worker + tunnel) — run from inside this domain to target just it | `astrale domain dev up [--domain local:inprocess\|local:tunneled]` |
    | Tear them back down | `astrale domain dev down` |
    | Liveness check | `astrale domain dev status` |
    | Prepare a child instance (register / boot / install / mint) | `astrale domain instance-prepare -i <instance>` |
    | Deploy to Cloudflare | `astrale domain deploy [--preset prod]` |
 
+   `dev up`/`down`/`status` scan the cwd recursively and act on every
+   domain found (restart-by-default for `up`: devDown+devUp each run),
+   falling back to the single enclosing domain when run from inside one.
    Full lifecycle reference: the `astrale-domain-dev` skill.
 
 6. **(Optional) Tweak the SPA.** The worker ships with a React SPA at

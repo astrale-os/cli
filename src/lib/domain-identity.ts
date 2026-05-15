@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 import { AstraleError } from '../errors'
+import { BINDING_KEY } from '../kernel/remote-routing'
 
 type Spec = { nodes: SpecNode[]; edges: SpecEdge[] }
 type SpecNode = {
@@ -124,6 +125,7 @@ const METHOD_OF_CLASS = '/:kernel.astrale.ai:class.method_of'
 // interface-hosted methods and the kernel rejects with
 // `subs missing function path "/:<origin>:interface.X:<method>"`.
 const MEMBER_NS_PREFIXES = ['class.', 'interface.'] as const
+const CORE_ANCHOR_SLUG = 'core'
 
 function rawStr(value: string | { raw: string } | undefined): string | undefined {
   if (!value) return undefined
@@ -174,10 +176,16 @@ function parseFunctionEndpoint(
 }
 
 /**
- * Collect expected function subs as absolute `MethodPath` strings
- * (`/:origin:Member:method`). Must match what the kernel computes via
- * `resolveMethodNodes` over `compiled.$.paths.absolute` — only methods
- * declared by this domain's own classes/interfaces, skipping inherited ones.
+ * Collect expected function subs. Must match what the kernel computes via
+ * `resolveCallableNodes` over `compiled.$.paths.absolute`. Two flavors:
+ *
+ *   1. Method paths (`/:origin:Member:method`) — derived from `method_of`
+ *      edges in the spec, filtered to this domain's own classes/interfaces
+ *      (skipping inherited refs).
+ *   2. Aux function paths (`/<origin>/core/<folder>/<slug>`) — derived
+ *      from spec nodes that carry a `Function.binding` prop and live
+ *      under the domain's core anchor. These are the auto-materialized
+ *      RemoteFunction / View nodes that `extendCore` produces.
  *
  * Both wire forms (tree + typed) are accepted on the source side; the
  * source already encodes both member and method, so the target is
@@ -187,6 +195,7 @@ export function collectFunctionSubs(spec: Spec, origin: string): string[] {
   const treeOriginPrefix = `/${origin}/`
   const typedOriginPrefix = `/:${origin}:`
   const subs = new Set<string>()
+
   for (const edge of spec.edges) {
     const cls = rawStr(edge.class)
     if (cls !== METHOD_OF_CLASS && cls !== `${METHOD_OF_CLASS}/self`) continue
@@ -197,5 +206,18 @@ export function collectFunctionSubs(spec: Spec, origin: string): string[] {
     if (!MEMBER_NS_PREFIXES.some((p) => parsed.member.startsWith(p))) continue
     subs.add(`/:${origin}:${parsed.member}:${parsed.method}`)
   }
+
+  // Mirror the kernel walker (`resolveCallableNodes`): a core node is a
+  // callable identity-bearing aux iff it has the `Function.binding` prop
+  // stamped by `extendCore.buildFunctionData`. Folders and other core
+  // nodes lack it and are skipped.
+  const coreAnchorPrefix = `/${origin}/${CORE_ANCHOR_SLUG}/`
+  for (const node of spec.nodes) {
+    const path = node.path
+    if (typeof path !== 'string' || !path.startsWith(coreAnchorPrefix)) continue
+    if (!node.props || !(BINDING_KEY in node.props)) continue
+    subs.add(path)
+  }
+
   return [...subs]
 }

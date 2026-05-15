@@ -64,6 +64,45 @@ describe('cloudflare scaffold — minimal-remote template', () => {
     }
     expect(pkg.name).toBe('@astrale-os/widget-shop-domain')
 
+    // Scaffolded domain must follow the standalone `domains/` idiom
+    // (see domains/notes): @astrale-os deps as external semver, never
+    // workspace:* (which only resolves inside the linked monorepo).
+    // Swept across EVERY package.json in the tree (root + worker +
+    // worker/client), deps AND devDeps — a single-file check is why a
+    // `shell: workspace:*` in worker/client once slipped through.
+    const pkgFiles = (await walkTextFiles(targetDir)).filter((f) => f.endsWith('/package.json'))
+    // Guard against a silent no-op if the template is ever restructured:
+    // the minimal-remote template ships exactly these three packages.
+    expect(
+      pkgFiles.length,
+      'expected root + worker + worker/client package.json',
+    ).toBeGreaterThanOrEqual(3)
+    for (const pkgFile of pkgFiles) {
+      const manifest = JSON.parse(await readFile(pkgFile, 'utf-8')) as {
+        dependencies?: Record<string, string>
+        devDependencies?: Record<string, string>
+      }
+      const deps = { ...manifest.dependencies, ...manifest.devDependencies }
+      for (const [dep, range] of Object.entries(deps)) {
+        if (dep.startsWith('@astrale-os/')) {
+          expect(
+            range,
+            `${dep} in ${pkgFile} must be a semver range, got "${range}"`,
+          ).not.toContain('workspace:')
+        }
+      }
+    }
+
+    // tsconfig must extend the domains base one level up (→ domains/
+    // tsconfig.base.json = @astrale/typescript-config/library), not the
+    // root base, and must NOT carry a vestigial kernel-source `paths` block.
+    const tsconfig = JSON.parse(await readFile(join(targetDir, 'tsconfig.json'), 'utf-8')) as {
+      extends: string
+      compilerOptions?: { paths?: unknown }
+    }
+    expect(tsconfig.extends).toBe('../tsconfig.base.json')
+    expect(tsconfig.compilerOptions?.paths).toBeUndefined()
+
     const keys = await readFile(join(targetDir, 'worker', 'src', 'keys.ts'), 'utf-8')
     expect(keys).not.toContain('minimal-remote-worker-key')
     expect(keys).toContain('widget-shop-worker-key')

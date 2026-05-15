@@ -1,3 +1,5 @@
+import type { CommandDefinition } from '../command'
+
 import { readConfig } from '../lib/config'
 import { composeRestart, isManagerRunning, waitManagerHealthy } from '../lib/docker'
 import { fatal, log, spinner } from '../lib/log'
@@ -37,11 +39,32 @@ export async function restartCommand(opts: RestartOptions): Promise<void> {
     }
 
     log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-    log.info(`  Playground: http://localhost:3200`)
-    log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
     log.dim(`  Logs:    astrale server logs -f`)
     log.dim('  Stop:    astrale stop')
   } catch (e) {
     fatal(e)
   }
 }
+
+export default {
+  name: 'restart',
+  description: 'Restart the Astrale manager',
+  afterHelpText: `
+Behavior:
+  Docker-mode by default. --host-mode stops then starts the host-mode
+  manager; --foreground applies to host-mode only.
+
+Examples:
+  $ astrale restart
+`,
+  options: [
+    { flags: '--foreground', description: 'Run in foreground (host-mode only)' },
+    {
+      flags: '--host-mode',
+      description: 'Run the manager as a bun process on the host instead of docker',
+    },
+  ],
+  action: async (opts) => {
+    await restartCommand(opts as Parameters<typeof restartCommand>[0])
+  },
+} satisfies CommandDefinition

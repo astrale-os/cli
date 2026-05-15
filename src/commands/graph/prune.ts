@@ -23,6 +23,16 @@ type PruneOpts = {
 export default {
   name: 'prune',
   description: 'Remove orphaned FalkorDB graphs',
+  afterHelpText: `
+Behavior:
+  Removes orphaned graphs. --all also removes graphs of
+  stopped/registered instances; --include-manager needs a double
+  confirm; --dry-run shows what would be removed without deleting.
+
+Examples:
+  $ astrale graph prune --dry-run
+  $ astrale graph prune --all
+`,
   options: [
     { flags: '--all', description: 'Also remove graphs for stopped/registered instances' },
     { flags: '--include-manager', description: 'Include the manager graph (dangerous)' },

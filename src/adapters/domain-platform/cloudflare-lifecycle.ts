@@ -13,8 +13,8 @@ import type { DevState, LifecycleContext, LifecycleHooks } from '@astrale-os/ker
 
 import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-host'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 
 import type {
   BuildSpecOpts,
@@ -418,7 +418,12 @@ export async function instancePrepare(opts: InstancePrepareOpts): Promise<Instan
   const ownedWrangler = installedState?.started.wrangler
   if (ownedWrangler) {
     const { killed } = killWranglerTree(ownedWrangler.port)
-    log.dim(`  post-install: killed ${killed} listener(s) on :${ownedWrangler.port}`)
+    if (killed > 0) {
+      log.info(
+        `post-install: killed ${killed} listener(s) on :${ownedWrangler.port} (worker cache was stale after install)`,
+      )
+      log.info(`Run \`astrale domain dev up\` to restart the worker before e2e tests.`)
+    }
     installedState.started.wrangler = null
     writeDevState(paths.domainState(resolved.slug), installedState)
   }
@@ -514,7 +519,7 @@ export async function buildSpec(opts: BuildSpecOpts): Promise<BuildSpecResult> {
     )
   }
 
-  const buildCli = findBuildSpecCli(resolved.dir)
+  const buildCli = resolveBuildSpecCli(resolved.dir)
   // `domain.ts` expects `<UPPER_SNAKE>_BASE_DOMAIN` / `<UPPER_SNAKE>_WORKER_URL`
   // (e.g. `NOTES_BASE_DOMAIN` for `notes`). The rename engine stamps the
   // prefix at scaffold time; derive it from the slug the same way here.
@@ -543,30 +548,95 @@ export async function buildSpec(opts: BuildSpecOpts): Promise<BuildSpecResult> {
 }
 
 /**
- * Locate the workspace-local sdk via its `build-spec-cli.ts`. Walks up
- * from `startDir` up to 6 hops. Returns `{ sdkDir, buildSpecCli }` so
- * deploy (needs sdkDir for `git rev-parse HEAD`) and buildSpec (needs
- * the CLI path) share one walk.
+ * Locate the `@astrale-os/sdk` install the *domain* resolves to. Walks up
+ * from `domainDir` for a `node_modules/@astrale-os/sdk`, then follows
+ * symlinks (pnpm stores the real package under `.pnpm/`). Returns the
+ * real package dir + parsed package.json. We read the install's own
+ * `exports` instead of `require.resolve` because the SDK declares only
+ * the `import` condition (no `require`), which `createRequire().resolve`
+ * cannot honour. Works standalone (npm install) and in-monorepo
+ * (pnpm-symlinked to the workspace sdk).
  */
-export function findSdk(startDir: string): { sdkDir: string; buildSpecCli: string } {
-  let dir = startDir
-  for (let i = 0; i < 6; i++) {
-    const sdkDir = join(dir, 'sdk')
-    const buildSpecCli = join(sdkDir, 'src', 'domain', 'build-spec-cli.ts')
-    if (existsSync(buildSpecCli)) return { sdkDir, buildSpecCli }
-    const parent = join(dir, '..')
+function resolveDomainSdk(domainDir: string): {
+  dir: string
+  pkg: { version?: string; exports?: Record<string, unknown> }
+} {
+  let dir = domainDir
+  for (let i = 0; i < 8; i++) {
+    const candidate = join(dir, 'node_modules', '@astrale-os', 'sdk')
+    if (existsSync(candidate)) {
+      const real = realpathSync(candidate)
+      const pkgPath = join(real, 'package.json')
+      if (existsSync(pkgPath)) {
+        return { dir: real, pkg: JSON.parse(readFileSync(pkgPath, 'utf-8')) }
+      }
+    }
+    const parent = dirname(dir)
     if (parent === dir) break
     dir = parent
   }
   throw new AstraleError(
-    'NO_SDK_DIR',
-    `Could not locate sdk/ upward from ${startDir}`,
-    'This command is workspace-local — run inside a checkout that ships the sdk.',
+    'NO_SDK',
+    `Could not find @astrale-os/sdk in node_modules from ${domainDir}`,
+    'Run `pnpm install` in the domain so `@astrale-os/sdk` is installed.',
   )
 }
 
-function findBuildSpecCli(startDir: string): string {
-  return findSdk(startDir).buildSpecCli
+/**
+ * Absolute path to the SDK's build-spec CLI, from the domain's own
+ * installed SDK. Resolves to `src/...ts` in-monorepo (symlinked workspace
+ * sdk) or `dist/...js` when installed from the registry — whichever the
+ * install's `exports['./domain/build-spec-cli']` points at. Handed to
+ * `bun run`; resolving the path does not execute it.
+ */
+export function resolveBuildSpecCli(domainDir: string): string {
+  const { dir, pkg } = resolveDomainSdk(domainDir)
+  const entry = pkg.exports?.['./domain/build-spec-cli']
+  const rel = typeof entry === 'string' ? entry : (entry as { import?: string } | undefined)?.import
+  if (!rel) {
+    throw new AstraleError(
+      'NO_SDK_BUILD_SPEC',
+      `@astrale-os/sdk at ${dir} does not export ./domain/build-spec-cli`,
+      'Upgrade @astrale-os/sdk to a version that ships the build-spec-cli export.',
+    )
+  }
+  const cli = join(dir, rel)
+  if (!existsSync(cli)) {
+    throw new AstraleError(
+      'NO_SDK_BUILD_SPEC',
+      `Resolved build-spec-cli not found: ${cli}`,
+      'The @astrale-os/sdk install looks incomplete — reinstall dependencies.',
+    )
+  }
+  return cli
+}
+
+/**
+ * Drift fingerprint for the domain's installed SDK. In a monorepo the SDK
+ * resolves (via pnpm symlink) to a git working tree → short HEAD
+ * (`gitMode: true`, so deploy can run the post-deploy git sdkCommit
+ * check). Standalone (npm install) it is not a git checkout → fall back
+ * to the installed package version (`gitMode: false`).
+ */
+export function resolveSdkFingerprint(domainDir: string): {
+  sdkDir: string
+  sdkCommit: string
+  gitMode: boolean
+} {
+  const { dir, pkg } = resolveDomainSdk(domainDir)
+  const head = spawnSync('git', ['-C', dir, 'rev-parse', '--short', 'HEAD'], {
+    encoding: 'utf-8',
+  })
+  if (head.status === 0) {
+    const sha = head.stdout.trim()
+    if (sha) return { sdkDir: dir, sdkCommit: sha, gitMode: true }
+  }
+  if (pkg.version) return { sdkDir: dir, sdkCommit: pkg.version, gitMode: false }
+  throw new AstraleError(
+    'NO_SDK_COMMIT',
+    `Cannot fingerprint @astrale-os/sdk at ${dir}`,
+    'Resolved SDK is neither a git checkout nor exposes a package.json version.',
+  )
 }
 
 // ── Utility: find PID listening on port ───────────────────────────────
@@ -658,7 +728,7 @@ async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
     throw new AstraleError(
       'NO_WRANGLER',
       `Expected ${wranglerBin} to exist`,
-      'Run `pnpm install` in the workspace root.',
+      'Run `pnpm install` in the domain (monorepo: at the workspace root).',
     )
   }
   const spawn = spawnSync(

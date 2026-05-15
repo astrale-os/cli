@@ -4,6 +4,8 @@ import { access } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 
+import type { CommandDefinition } from '../command'
+
 import { readConfig } from '../lib/config'
 import { resolveInstanceId } from '../lib/instance'
 import { log } from '../lib/log'
@@ -375,3 +377,52 @@ function parseSince(since: string): number | null {
   if (!isNaN(ts)) return ts
   return null
 }
+
+export default {
+  name: 'logs',
+  description: 'View kernel event journal',
+  afterHelpText: `
+Behavior:
+  Topic glob: * matches one segment, ** matches the rest
+  (e.g. op:*:failed, sys:**). -c (compact) is TTY-only — ignored in
+  --raw / piped output; for JSON pipelines use --raw and jq. There is
+  no --format flag; use --raw/--json or -c. --since takes 5m, 1h, 2d
+  or an ISO timestamp. Journal files: ~/.astrale/logs/events.ndjson
+  (manager), ~/.astrale/logs/<instance>/events.ndjson (child).
+
+Examples:
+  $ astrale logs --topic 'op:*:failed' -n 10
+  $ astrale logs --tail
+  $ astrale logs -i staging --since 1h --raw | jq .
+`,
+  options: [
+    { flags: '-t, --tail', description: 'Live stream new events' },
+    { flags: '-n <count>', description: 'Number of entries to show', default: '20' },
+    {
+      flags: '--topic <pattern>',
+      description:
+        'Filter by topic glob (* matches one segment, ** matches rest. e.g., op:*:failed, sys:**)',
+    },
+    {
+      flags: '--since <time>',
+      description: 'Show events since (e.g., 5m, 1h, ISO timestamp)',
+    },
+    { flags: '--principal <name>', description: 'Filter by identity' },
+    { flags: '--trace <id>', description: 'Filter by trace/operation ID' },
+    { flags: '--timing', description: 'Show per-step timing breakdown' },
+    {
+      flags: '-c, --compact',
+      description: 'Tab-separated summary (timestamp, topic, duration, result)',
+    },
+    { flags: '-v, --verbose', description: 'Show all events including :started phases' },
+    { flags: '--raw', description: 'Output raw NDJSON' },
+    { flags: '--json', description: 'Alias for --raw' },
+    {
+      flags: '-i, --instance <name>',
+      description: 'Show logs for a specific instance (overrides active)',
+    },
+  ],
+  action: async (opts) => {
+    await logsCommand(opts as LogsOptions)
+  },
+} satisfies CommandDefinition

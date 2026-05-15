@@ -43,13 +43,15 @@ describe('InstanceStoreSchema', () => {
     ).toThrow()
   })
 
-  test('rejects instance missing createdAt', () => {
-    expect(() =>
-      InstanceStoreSchema.parse({
-        active: 'm',
-        instances: { m: { url: 'http://test' } },
-      }),
-    ).toThrow()
+  test('accepts instance without createdAt (optional at schema level)', () => {
+    // `createdAt` is intentionally optional on InstanceEntrySchema: only
+    // `bookmark` entries persist it; `manager` / `local-child` derive it
+    // live and omit it from instances.json (see lib/instance.ts).
+    const result = InstanceStoreSchema.parse({
+      active: 'm',
+      instances: { m: { url: 'http://test' } },
+    })
+    expect(result.instances.m.createdAt).toBeUndefined()
   })
 
   test('accepts empty instances record', () => {

@@ -26,6 +26,13 @@ type KernelInstance = { id: string; graphName: string; status: string }
 export default {
   name: 'rm',
   description: 'Delete a specific FalkorDB graph',
+  afterHelpText: `
+Behavior:
+  Deletes one graph. -f forces deletion of an in-use graph.
+
+Examples:
+  $ astrale graph rm old-test-graph -y
+`,
   arguments: [{ name: 'name', description: 'Graph name to delete', required: true }],
   options: [
     { flags: '-y, --yes', description: 'Skip confirmation' },

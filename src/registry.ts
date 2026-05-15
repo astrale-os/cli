@@ -8,6 +8,8 @@ import type { CommandDefinition, CommandGroup } from './command'
 export function registerCommand(parent: Command, def: CommandDefinition): void {
   const cmd = parent.command(def.name).description(def.description)
 
+  if (def.summary) cmd.summary(def.summary)
+
   if (def.aliases) {
     for (const alias of def.aliases) cmd.alias(alias)
   }
@@ -35,6 +37,8 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
   }
 
   cmd.action(def.action)
+
+  if (def.afterHelpText) cmd.addHelpText('after', def.afterHelpText)
 }
 
 /**
@@ -43,6 +47,7 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
  */
 export function registerGroup(parent: Command, group: CommandGroup): void {
   const sub = parent.command(group.name).description(group.description)
+  if (group.summary) sub.summary(group.summary)
   for (const def of group.commands) {
     registerCommand(sub, def)
   }

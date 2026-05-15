@@ -1,3 +1,5 @@
+import type { CommandDefinition } from '../command'
+
 import { getDefault, setDefault } from '../lib/identity'
 import {
   getActive,
@@ -77,3 +79,21 @@ export async function useCommand(name?: string, opts: UseOpts = {}): Promise<voi
     fatal(e)
   }
 }
+
+export default {
+  name: 'use',
+  description: 'Deprecated alias — use `astrale instance use <name>` instead (kept for transition)',
+  aliases: ['switch'],
+  arguments: [{ name: 'name', description: 'Registered instance name', required: false }],
+  options: [
+    {
+      flags: '--adopt-default',
+      description: 'Adopt instance default identity without prompt (§7.1)',
+    },
+    { flags: '--skip-jwks-check', description: 'Skip the /meta ↔ JWKS match check (§7)' },
+  ],
+  action: async (name, opts) => {
+    log.warn('`astrale use` is deprecated — use `astrale instance use` instead.')
+    await useCommand(name as string | undefined, opts as Parameters<typeof useCommand>[1])
+  },
+} satisfies CommandDefinition

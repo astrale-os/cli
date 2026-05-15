@@ -6,6 +6,12 @@ import { fatal, log } from '../../lib/log'
 export default {
   name: 'forget',
   description: 'Drop a bookmark reference (never destructive kernel-side, §5)',
+  afterHelpText: `
+Behavior:
+  Drops a bookmark reference only — never touches the remote kernel.
+  To destructively remove a local/managed instance use
+  \`astrale instance delete\`.
+`,
   arguments: [{ name: 'name', description: 'Bookmark name (slug or name)', required: true }],
   action: async (name: string) => {
     try {

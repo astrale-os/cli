@@ -38,7 +38,8 @@ type NodeHead = {
  */
 const KERNEL_INTERFACES = new Set(['Node', 'Container', 'Identity', 'Function', 'Edge'])
 
-const BINDING_KEY = 'kernel.astrale.ai:interface.Function.property.binding'
+/** Kernel qualified-prop key for `Function.binding`. */
+export const BINDING_KEY = 'kernel.astrale.ai:interface.Function.property.binding'
 
 export type RemoteBinding = {
   /** Worker URL where the envelope should be POSTed. */

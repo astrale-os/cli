@@ -1,25 +1,29 @@
 # Astrale CLI
 
-Manage your local Astrale OS installation, explore the kernel graph, and call operations.
+`astrale` — the system CLI for Astrale OS. Drive a local **manager** kernel
+(Docker + FalkorDB), manage **instances** and **identities**, explore the kernel
+graph, and call operations.
+
+- Binary: `astrale`
+- Package: `@astrale-os/astrale`
 
 ## Installation
 
-### From GitHub Package Registry
-
-Add to your `~/.npmrc`:
+The `@astrale-os/*` packages are published to GitHub Packages. Add to your
+`~/.npmrc`:
 
 ```
 @astrale-os:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
 ```
 
-Then install:
+Then install globally:
 
 ```bash
-npm install -g @astrale-os/cli
+npm install -g @astrale-os/astrale
 ```
 
-### Local Development
+### Local development
 
 ```bash
 # From the workspace root
@@ -28,14 +32,14 @@ pnpm install
 # Run directly with Bun
 bun cli/bin/astrale.ts <command>
 
-# Or add an alias
+# Or alias it
 alias astrale="bun /path/to/cli/bin/astrale.ts"
 ```
 
 ## Quickstart
 
 ```bash
-# 1. Set up keys, config, and FalkorDB
+# 1. Set up keys, config, Docker, FalkorDB
 astrale init
 
 # 2. Start the manager
@@ -47,182 +51,68 @@ astrale status
 # 4. Explore the graph
 astrale ls /
 astrale describe /kernel.astrale.ai
-astrale call /manager.astrale.ai/KernelInstance/list
+astrale call /manager.astrale.ai/class.KernelInstance/list
+
+# 5. Boot a local child instance and target it
+astrale instance create my-app --local
+astrale instance use my-app
 ```
 
-## Commands
+## Command reference
 
-### Lifecycle
-
-| Command | Description |
-|---------|-------------|
-| `astrale init` | Set up a new Astrale installation (keys, config, Docker, FalkorDB) |
-| `astrale start` | Start the manager (background by default, `--foreground` for dev) |
-| `astrale stop` | Stop the manager |
-| `astrale restart` | Restart the manager |
-| `astrale status` | Show system status (manager, FalkorDB, UI) |
-| `astrale reset` | Clear and reboot a kernel instance (wipes graph data) |
-
-### Graph Exploration
-
-| Command | Description |
-|---------|-------------|
-| `astrale ls <path>` | List children of a node |
-| `astrale get <path>` | Get a node by path or ID |
-| `astrale call <path> [params...]` | Call a kernel operation |
-| `astrale describe <path>` | Describe a node: kind, operations, children, schemas |
-| `astrale query <cypher>` | Run a read-only Cypher query |
-| `astrale logs` | View kernel event journal |
-
-### Instance Management
-
-| Command | Description |
-|---------|-------------|
-| `astrale use <name>` | Set the active kernel instance |
-| `astrale instance list` | List all registered instances |
-| `astrale instance add <name>` | Register a kernel instance (`--url` for remote) |
-| `astrale instance remove <name>` | Remove an instance (`--force` to skip cleanup) |
-| `astrale instance active` | Show the currently active instance |
-
-### Graph Storage
-
-| Command | Description |
-|---------|-------------|
-| `astrale graph list` | List all FalkorDB graphs with status (in-use, orphaned, manager) |
-| `astrale graph prune` | Remove orphaned graphs (`--all` for stopped instances too) |
-| `astrale graph rm <name>` | Delete a specific graph (`--force` to override protections) |
-| `astrale graph df` | Show graph usage and reclaimable space |
-
-### Identity Management
-
-| Command | Description |
-|---------|-------------|
-| `astrale identity create <name>` | Create a new identity (`--subject` for custom sub) |
-| `astrale identity list` | List all identities |
-| `astrale identity use <name>` | Set the default identity |
-| `astrale identity whoami` | Show the current default identity |
-| `astrale identity delete <name>` | Delete an identity |
-
-## Path Syntax
-
-Astrale paths follow the pattern `/domain/Class/method`:
-
-```
-/kernel.astrale.ai              Domain node
-/kernel.astrale.ai/Root         Class node
-/manager.astrale.ai/KernelInstance/list   Syscall (operation) node
-```
-
-Two call syntaxes:
-- **Slash** (`/domain/Class/method`) — navigates to the Syscall node (static operations)
-- **Colon** (`/domain/Class:method`) — calls a method on an instance (instance methods)
-- **ID** (`@nodeId`) — reference a node by its ID
-
-## Common Options
-
-Graph commands (`ls`, `get`, `call`, `query`, `describe`) share these options:
-
-| Flag | Description |
-|------|-------------|
-| `--format yaml\|json` | Output format (default: YAML on TTY, JSON when piped) |
-| `--raw` / `--json` | Raw JSON output, no colors |
-| `-i, --instance <name>` | Target a specific instance |
-| `--timeout <ms>` | Request timeout (default: 30000) |
-| `--as <identity>` | Call as a specific identity |
-| `--debug` | Print full error diagnostics on failure |
-
-### `ls` extras
-
-| Flag | Description |
-|------|-------------|
-| `-l, --long` | Full node dump |
-| `-q, --quiet` | One path per line (unix-pipeable) |
-| `-R, --recursive` | Tree view (recursive) |
-
-### `call` extras
-
-| Flag | Description |
-|------|-------------|
-| `-d, --data <json>` | Params as JSON string |
-| `--describe` | Show operation schema without executing |
-
-### `logs` extras
-
-| Flag | Description |
-|------|-------------|
-| `-t, --tail` | Live stream new events |
-| `-n <count>` | Number of entries (default: 20) |
-| `--topic <pattern>` | Filter by topic glob (`*` = one segment, `**` = rest) |
-| `--since <time>` | Events since duration (5m, 1h) or ISO timestamp |
-| `-c, --compact` | Tab-separated summary for piping |
-| `--timing` | Show per-step timing breakdown |
-
-### `graph prune` extras
-
-| Flag | Description |
-|------|-------------|
-| `--all` | Also remove graphs for stopped/registered instances |
-| `--include-manager` | Include the manager graph (dangerous, double confirmation) |
-| `--dry-run` | Show what would be removed without deleting |
-
-## Examples
+The authoritative, always-current command surface is the built-in help —
+it is generated from the code, so it never drifts:
 
 ```bash
-# List root domains
-astrale ls /
-
-# Describe what operations a class supports
-astrale describe /manager.astrale.ai/KernelInstance
-
-# Call an operation with params
-astrale call /manager.astrale.ai/KernelInstance/register id=my-inst graphName=my-graph
-
-# Check what an operation expects before calling
-astrale call /manager.astrale.ai/KernelInstance/register --describe
-
-# Browse the graph recursively
-astrale ls / -R
-
-# Pipe paths into another command
-astrale ls / -q | xargs -I {} astrale get {}
-
-# View recent failed operations
-astrale logs --topic 'op:*:failed' -n 10
-
-# Live tail events
-astrale logs --tail
-
-# Run a Cypher query
-astrale query 'MATCH (n:Domain) RETURN n.slug, n.id'
-
-# Use a specific identity
-astrale call /kernel.astrale.ai/Root/query --as admin cypher='MATCH (n) RETURN count(n)'
-
-# See what FalkorDB graphs exist and which are orphaned
-astrale graph df
-
-# Clean up orphaned graphs
-astrale graph prune
-
-# Delete a specific graph
-astrale graph rm old-test-graph
+astrale --help                 # all commands + path syntax + examples
+astrale <command> --help       # flags and arguments for one command
+astrale instance --help        # a command group
 ```
+
+Command groups at a glance (run `--help` on any of them for details):
+
+| Group | What it covers |
+|-------|----------------|
+| Lifecycle | `init`, `start`, `stop`, `restart`, `status`, `reset` |
+| Graph | `ls`, `get`, `call`, `query`, `describe`, `logs`, `token` |
+| `instance` | Local children + remote bookmarks (create, bookmark, use, …) |
+| `identity` | CLI identities & delegation keypairs |
+| `auth` | Astrale cloud authentication (stubbed in v1) |
+| `tunnel` | Machine-level cloudflared tunnels |
+| `graph` | FalkorDB graph maintenance |
+| `server` | Manager Docker image + container logs |
+| `domain` | Domain lifecycle (`init`, `build`, `deploy`, `dev`, …) |
+
+### Path syntax (summary)
+
+```
+/domain                        Domain node
+/domain/class.Name             Class node
+/domain/class.Name/method      Static (class-level) Method  — single slash
+/domain/class.Name::method     Instance method dispatch     — double colon `::`
+@nodeId                        Reference a node by its ID
+```
+
+The `class.` / `interface.` prefix on the namespace segment is **required**.
+Instance-method dispatch uses **`::`** (double colon), never a single `:`.
+For the full conceptual model — instance resolution, token audience, the auth
+model — see the `astrale-cli` agent skill; for invariants and design rationale
+see [`SPEC.md`](./SPEC.md).
 
 ## Configuration
 
-### Global Config
+Everything lives under `~/.astrale/`:
 
-Located at `~/.astrale/`:
-
-| File | Purpose |
-|------|---------|
+| File / dir | Purpose |
+|------------|---------|
 | `config.json` | Ports, graph name, issuer URL |
-| `keys/` | ES256 keypair for JWT signing |
 | `identities.json` | Identity registry |
-| `instances.json` | Instance registry |
-| `logs/` | Event journals |
+| `instances.json` | Instance registry (`active` + registered instances) |
+| `keys/` | Per-identity ES256 keypairs |
+| `logs/` | Event journals (`events.ndjson`, per-instance subdirs) |
+| `data/` | FalkorDB volume |
 
-### Config Schema
+`config.json` schema:
 
 ```json
 {

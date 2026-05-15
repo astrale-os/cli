@@ -20,6 +20,12 @@ import { readTunnels, unbindTunnel } from '../../lib/tunnels'
 export default {
   name: 'delete',
   description: 'Destructively delete a local or managed instance (§5)',
+  afterHelpText: `
+Behavior:
+  Destructive: removes the instance kernel-side and from the local
+  registry. Refused on the manager (use \`astrale stop\`) and on
+  remote bookmarks (use \`astrale instance forget\`). -f forces.
+`,
   arguments: [{ name: 'name', description: 'Instance name (slug or name)', required: true }],
   options: [{ flags: '-f, --force', description: 'Skip manager-side cleanup on failure' }],
   action: async (name: string, cmdOpts: { force?: boolean }) => {

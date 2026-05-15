@@ -3,6 +3,8 @@ import { mkdir } from 'node:fs/promises'
 import { createConnection } from 'node:net'
 import { join } from 'node:path'
 
+import type { CommandDefinition } from '../command'
+
 import { readConfig } from '../lib/config'
 import {
   assertDockerAvailable,
@@ -18,27 +20,21 @@ import {
 import { fatal, log, spinner } from '../lib/log'
 import { startManager, detectManagerState, removeManagerPid } from '../lib/manager-state'
 import { COMPOSE_PATH, LOGS_DIR } from '../lib/paths'
-import { spawnUis, stopUis } from '../lib/ui'
 
 type StartOptions = {
   foreground?: boolean
   hostMode?: boolean
-  noUi?: boolean
 }
 
 /**
  * Two run modes:
  *
- *   - **docker-mode** (default) — manager + playground run as services in
- *     the `~/.astrale/docker-compose.yml` stack. The playground is a
- *     TanStack Start server with Vite HMR, reading credentials straight
- *     from the shared keys bind-mount. The main GUI is launched separately
- *     (`pnpm -C gui dev`).
+ *   - **docker-mode** (default) — manager + falkordb run as services in
+ *     the `~/.astrale/docker-compose.yml` stack.
  *
  *   - **host-mode** (`--host-mode`) — the manager runs as a bun process on
- *     the host, tracked via a PID file. The playground must be started
- *     separately (`pnpm -C cli/playground dev`); the GUI likewise
- *     (`pnpm -C gui dev`). Both read keys from `~/.astrale/keys/` directly.
+ *     the host, tracked via a PID file. Reads keys from `~/.astrale/keys/`
+ *     directly.
  */
 export async function startCommand(opts: StartOptions): Promise<void> {
   const config = await readConfig()
@@ -49,16 +45,13 @@ export async function startCommand(opts: StartOptions): Promise<void> {
   }
 
   try {
-    await startDockerMode(config, opts)
+    await startDockerMode(config)
   } catch (e) {
     fatal(e)
   }
 }
 
-async function startDockerMode(
-  config: Awaited<ReturnType<typeof readConfig>>,
-  opts: StartOptions,
-): Promise<void> {
+async function startDockerMode(config: Awaited<ReturnType<typeof readConfig>>): Promise<void> {
   await assertDockerAvailable()
   await assertWorkspaceInstalled()
 
@@ -101,7 +94,7 @@ async function startDockerMode(
     graphName: config.graphName,
   })
 
-  const s = spinner('Starting stack (falkordb + manager + playground)...')
+  const s = spinner('Starting stack (falkordb + manager)...')
   try {
     await composeUp(COMPOSE_PATH)
     await waitManagerHealthy(`http://localhost:${config.managerPort}/mngt/`)
@@ -111,24 +104,8 @@ async function startDockerMode(
     throw e
   }
 
-  // Auto-spawn the playground dev server on the host unless the user opts
-  // out with --no-ui. It runs detached; its PID is recorded in
-  // ~/.astrale/ui.pids.json and killed by `astrale stop`.
-  if (opts.noUi !== true) {
-    await stopUis({ silent: true }) // cleanup stale PIDs from a previous run
-    await spawnUis()
-  }
-
   log.success('Astrale started')
-  if (opts.noUi) {
-    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim('  Playground: run `pnpm -C cli/playground dev`')
-  } else {
-    log.info(`  Playground: http://localhost:3200`)
-    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim(`  UI logs:    ${LOGS_DIR}/playground.stdout.log`)
-  }
-  log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
+  log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
   log.dim(`  Logs:    astrale server logs -f`)
   log.dim('  Stop:    astrale stop')
 }
@@ -152,20 +129,10 @@ async function startHostMode(
     const manager = await startManager(config)
     log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
 
-    if (opts.noUi !== true) {
-      await stopUis({ silent: true })
-      await spawnUis()
-      log.info(`  Playground: http://localhost:3200`)
-    } else {
-      log.dim('  Playground: run `pnpm -C cli/playground dev`')
-    }
-    log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
-
     let shuttingDown = false
     const cleanup = async () => {
       if (shuttingDown) return
       shuttingDown = true
-      await stopUis({ silent: true })
       await manager.close()
       await removeManagerPid()
       process.exit(0)
@@ -224,21 +191,8 @@ async function startHostMode(
     process.exit(1)
   }
 
-  if (opts.noUi !== true) {
-    await stopUis({ silent: true })
-    await spawnUis()
-  }
-
   log.success('Astrale started in background (host-mode)')
-  if (opts.noUi) {
-    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim('  Playground: run `pnpm -C cli/playground dev`')
-  } else {
-    log.info(`  Playground: http://localhost:3200`)
-    log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-    log.dim(`  UI logs:    ${LOGS_DIR}/playground.stdout.log`)
-  }
-  log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
+  log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
   log.dim(`  PID:     ${managerProc.pid}`)
   log.dim(`  Logs:    ${LOGS_DIR}`)
   log.info('Run `astrale stop --host-mode` to stop')
@@ -257,3 +211,29 @@ function probeTcp(host: string, port: number, timeoutMs: number): Promise<boolea
     socket.once('error', () => settle(false))
   })
 }
+
+export default {
+  name: 'start',
+  description: 'Start the Astrale manager (docker-mode by default)',
+  afterHelpText: `
+Behavior:
+  Docker-mode by default (manager + FalkorDB as compose services).
+  --host-mode runs the manager as a bun process on the host, tracked
+  via a PID file. --foreground applies to host-mode only (blocks;
+  used by the daemon).
+
+Examples:
+  $ astrale start
+  $ astrale start --host-mode --foreground
+`,
+  options: [
+    { flags: '--foreground', description: 'Run in foreground (host-mode only)' },
+    {
+      flags: '--host-mode',
+      description: 'Run the manager as a bun process on the host instead of docker',
+    },
+  ],
+  action: async (opts) => {
+    await startCommand(opts as Parameters<typeof startCommand>[0])
+  },
+} satisfies CommandDefinition

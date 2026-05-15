@@ -48,14 +48,20 @@ async function main(): Promise<void> {
   })
   const kernel = session.withSchema(KernelSchema)
 
-  // ── 1. List functions — smoke test the interface-method dispatch ──
-  console.log('[e2e] calling /kernel.astrale.ai/interface.Function/list')
+  // ── 1. whoami — smoke test the interface-method dispatch ──
+  // Exercises the same interface-method dispatch path as any other call,
+  // but with a tiny payload and a meaningful result: whoami echoes back
+  // the caller's identity, so it doubles as a credential sanity check
+  // (we minted the credential for subject `manager` above).
+  console.log('[e2e] calling /kernel.astrale.ai/interface.Identity/whoami')
   try {
-    const fns = await session.call('/kernel.astrale.ai/interface.Function/list', {})
-    const count = Array.isArray(fns) ? fns.length : 'unknown-shape'
-    console.log(`[e2e]   ✓ functions: ${count}`)
+    const me = (await session.call('/kernel.astrale.ai/interface.Identity/whoami', {})) as {
+      id?: string
+      path?: string
+    }
+    console.log(`[e2e]   ✓ whoami: ${me?.path ?? me?.id ?? 'unknown-shape'}`)
   } catch (err) {
-    console.log(`[e2e]   ✗ list failed: ${(err as Error).message}`)
+    console.log(`[e2e]   ✗ whoami failed: ${(err as Error).message}`)
   }
 
   // ── 2. Install a sample domain via the typed proxy ──

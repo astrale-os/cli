@@ -8,11 +8,11 @@
     "test": "bunx vitest run --config test/vitest.config.ts"
   },
   "dependencies": {
-    "@astrale-os/kernel-core": "workspace:*",
-    "@astrale-os/kernel-dsl": "workspace:*",
-    "@astrale-os/kernel-host": "workspace:*",
-    "@astrale-os/kernel-runtime": "workspace:*",
-    "@astrale-os/kernel-test": "workspace:*",
+    "@astrale-os/kernel-core": ">=0.3.0 <1.0.0",
+    "@astrale-os/kernel-dsl": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-host": ">=0.5.0 <1.0.0",
+    "@astrale-os/kernel-runtime": ">=0.3.0 <1.0.0",
+    "@astrale-os/kernel-test": ">=0.1.0 <1.0.0",
     "@astrale-os/sdk": ">=0.1.0 <1.0.0",
     "zod": "^4.3.6"
   },

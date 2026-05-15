@@ -1,5 +1,4 @@
-import { existsSync } from 'node:fs'
-import { basename, dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import type { CommandDefinition } from '../../command'
 
@@ -11,17 +10,6 @@ type Opts = {
   targetDir?: string
   force?: boolean
   platform?: string
-  workspace?: boolean
-}
-
-function defaultTargetDir(slug: string): string {
-  const cwd = process.cwd()
-  const monorepoDomains = join(cwd, 'kernel', 'domains')
-  if (existsSync(monorepoDomains)) return join(monorepoDomains, slug)
-  if (basename(cwd) === 'domains' && basename(dirname(cwd)) === 'kernel') {
-    return join(cwd, slug)
-  }
-  return join(cwd, slug)
 }
 
 export default {
@@ -36,7 +24,7 @@ export default {
     },
     {
       flags: '--target-dir <path>',
-      description: 'Destination directory (default: kernel/domains/<slug>)',
+      description: 'Destination directory (default: ./<slug>)',
     },
     { flags: '--force', description: 'Overwrite if the target directory exists' },
     {
@@ -44,17 +32,12 @@ export default {
       description: 'DomainPlatform adapter id (default: cloudflare)',
       default: 'cloudflare',
     },
-    {
-      flags: '--workspace',
-      description:
-        'Internal monorepo: also register the new package in the closest pnpm-workspace.yaml (and in domains/pnpm-workspace.yaml if present)',
-    },
   ],
   action: async (slug: string, opts: Opts) => {
     try {
       const targetDir = opts.targetDir
         ? resolve(process.cwd(), opts.targetDir)
-        : defaultTargetDir(slug)
+        : join(process.cwd(), slug)
 
       const platform = resolveDomainPlatform(opts.platform)
       log.step(`Scaffolding domain "${slug}" from template "${opts.template}"`)
@@ -65,7 +48,6 @@ export default {
         template: opts.template ?? 'minimal-remote',
         targetDir,
         force: opts.force,
-        workspace: opts.workspace,
       })
 
       log.success(`Domain scaffolded at ${result.targetDir}`)

@@ -1,3 +1,4 @@
+import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 
 import { runKernelCommand } from '../kernel'
@@ -27,3 +28,24 @@ function cleanNode(data: unknown): unknown {
   }
   return result
 }
+
+export default {
+  name: 'get',
+  description: 'Get a node by path or ID',
+  afterHelpText: `
+Behavior:
+  Accepts a tree path (/domain/class.Name) or an id (@nodeId). -l adds
+  the internal fields (__labels, classId) hidden in the summary view.
+
+Examples:
+  $ astrale get /kernel.astrale.ai/class.Root
+  $ astrale get @abc123 -l
+`,
+  arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
+  options: [
+    { flags: '-l, --long', description: 'Include all internal fields (__labels, classId)' },
+  ],
+  action: async (path, opts) => {
+    await getCommand(path as string, opts as Parameters<typeof getCommand>[1])
+  },
+} satisfies CommandDefinition

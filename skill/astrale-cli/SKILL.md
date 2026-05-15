@@ -1,0 +1,287 @@
+---
+name: Astrale CLI
+description: Reference for the Astrale CLI (binary `astrale`, package `@astrale-os/astrale`) — CLI setup, kernel lifecycle, graph exploration and querying, calling kernel operations, instance management (local children + remote bookmarks), identity management, delegation tokens, tunnels, and FalkorDB graph maintenance. Use when the user asks about running the CLI, composing `astrale` invocations, authoring/reading paths, debugging the graph, managing local or remote kernel instances, or setting up an Astrale installation.
+---
+
+# Astrale CLI
+
+`astrale` is the system CLI for Astrale OS. It drives a local **manager** kernel
+(Docker + FalkorDB) and any **child instances** or **bookmarked remote
+instances** registered against it.
+
+> **The command surface lives in the code, not here.** `astrale --help` and
+> `astrale <cmd> --help` are generated from `cli/bin/astrale.ts` +
+> `cli/src/commands/`, so they never drift — that is the source of truth for
+> commands, flags, defaults, and per-command behavior (each command's `--help`
+> carries a `Behavior:` + `Examples:` block). This skill holds only the
+> **cross-cutting model** the help text cannot express: how things resolve,
+> what gets signed, the gotchas, and the recipes.
+
+- Binary: `astrale` · npm package: `@astrale-os/astrale` (repo is `astrale-os/cli` — package name ≠ repo name)
+- Runtime: Bun · framework: Commander.js · dev: `bun cli/bin/astrale.ts <command>`
+
+## Path syntax
+
+Clients address entities in the kernel graph via **Path**s.
+
+| Form | Grammar | Use when |
+|------|---------|---------|
+| Absolute path | `/domain` or `/domain/class.Name` or `/domain/interface.Name` | A Domain, a Class node, or an Interface node |
+| Static method | `/domain/class.Name/method` or `/domain/interface.Name/method` | A class- or interface-level (static) operation |
+| Instance method | `<nodePath>::method` (incl. `@id::method`) | A method on a node instance |
+| Id reference | `@nodeId` | Reference a node by UID |
+
+Load-bearing rules — true everywhere:
+
+- The **`class.` / `interface.` prefix is required** on the namespace segment:
+  `/manager.astrale.ai/class.KernelInstance/list`, never `.../KernelInstance/list`.
+- A static method declared on an Interface is **not** reachable via
+  `class.<ConcreteClass>/<method>` — the kernel looks it up by the declaring
+  namespace. Use `interface.<Name>` for interface-hosted statics.
+- Instance dispatch uses **double colon `::`**, never single `:`. `::get` and
+  `::listChildren` are the universal node methods (`get`/`ls`/`describe`
+  dispatch to them).
+
+Three concrete forms (origin `blog.acme.com`, installed at Root):
+
+```bash
+astrale call /blog.acme.com/class.Author/list                 # static on a Class
+astrale call /blog.acme.com/interface.NoteOps/createNote …    # static on an Interface
+astrale call /blog.acme.com/alice::deactivate                 # instance method (or @id::deactivate)
+```
+
+## Instance resolution
+
+Every kernel command picks its target in this order:
+
+**explicit `--url` > `-i/--instance <name>` > active instance
+(`~/.astrale/instances.json`) > local manager.**
+
+- Manager URL: `http://localhost:<managerPort>/mngt` (default port `4400`).
+- Child instances are addressed by **direct path-prefix**:
+  `http://localhost:<managerPort>/<slug>`. The child authenticates the caller
+  itself, so the real principal is preserved in its audit log.
+- Remote bookmarks are called directly at their stored `--url`.
+
+The active instance is a process-global file. In parallel/scripted flows pass
+`-i <instance>` on every command rather than relying on `astrale instance use`
+(see Gotchas).
+
+### Audience (token `aud` claim)
+
+The CLI signs a fresh JWT per call. The audience is **the target kernel's
+issuer, not the transport URL**:
+
+| Target | `aud` stamped |
+|---|---|
+| Manager (`/mngt`) | `config.issuer` (= `http://localhost:<port>/mngt`) |
+| `-i <child>` with stored `issuer` | that issuer (often a tunneled URL) |
+| `-i <child>` not in registry | resolved via `KernelInstance/info`, cached back |
+| `--url <arbitrary>` | the URL itself (pass `--creds` to override) |
+
+### Instance kinds
+
+| Kind | Meaning |
+|------|---------|
+| `manager` | The local manager itself |
+| `local-child` | A child kernel behind the local manager |
+| `bookmark` | A reference to a remote kernel (no local process) |
+| `managed-cloud` | Astrale-cloud-managed (v1: not wired; stubbed) |
+
+`astrale instance create` without `--local` is the managed-cloud path and is
+stubbed in v1 (fatal with hint). See `astrale instance --help`.
+
+## Auth model
+
+- Identity = `(issuer, subject)`. Each identity holds its own ES256 keypair
+  under `~/.astrale/keys/`.
+- The manager (and each child) publishes its JWKS at
+  `<issuer>/.well-known/jwks.json`.
+- `--as <name>` signs a fresh JWT (`iss`, `sub`, `aud`) per call; `--creds <jwt>`
+  passes a token you already minted (skips `--as` signing).
+- Whether an unknown `(issuer, subject)` is auto-created depends on the target
+  kernel's provisioning policy. The manager defaults to allow-all; a child may
+  be stricter.
+
+See `astrale identity --help` for identity/keypair management.
+
+## Delegation tokens
+
+`astrale token` mints a delegation credential against the active instance +
+identity (flags: `astrale token --help`). The result is a **two-layer
+envelope**: an outer JWT signed by the kernel's system key (`sub: __system__`)
+wrapping an inner ES256-signed delegation credential for the requested
+identity. Remote domain workers receive it via `--creds` and verify it against
+the issuer's JWKS. The token's `aud` must match the worker's expected audience
+or the worker rejects it.
+
+End-to-end — mint and call a remote worker:
+
+```bash
+export TOKEN=$(astrale token --audience dist.astrale.ai --raw)
+astrale call /dist.astrale.ai/class.BlaxelComputer/init name=test … \
+  --url https://dist.astrale.ai --creds "$TOKEN"
+```
+
+`astrale token` is a convenience wrapper over the universal syscall:
+
+```bash
+astrale call @__system__::mintDelegationCredential \
+  audience=<aud> delegation='{"kind":"identity","self":true}' ttl=3600 -i <instance> --raw
+```
+
+- `delegation={"kind":"identity","self":true}` = self-delegation (no subject
+  expansion).
+- `_self=<ref>` on a static path is equivalent to instance dispatch:
+  `/<domain>/class.X/<method> _self=<ref>` ≡ `@<nodeId>::<method>`. Accepted
+  `<ref>`: bare `<uuid>`, `@<uuid>`, or `/tree/path`. **Remote workers only
+  accept the `class.X + _self=` form** — bare `@<uuid>::method` doesn't resolve
+  the syscall on a worker.
+
+## Instance lifecycle gotchas
+
+- **No `uninstall` verb.** `instance install` does not replace existing
+  `Function.binding`s on re-install; the only way to remove an installed spec
+  is `astrale reset` (destroys the whole instance graph). When iterating on
+  schema in dev, `astrale reset` between installs.
+- **`instances.json:active` is a process-global shared file.** Concurrent
+  `instance:prepare` or parallel test runs can rewrite it under you. In
+  scripted/parallel flows pass `-i <instance>` on every command.
+- **`forget` vs `delete`**: `instance forget` drops a bookmark reference only
+  (never destructive); `instance delete` is destructive (kernel-side + local
+  registry). Each refuses the wrong target with an actionable hint.
+- **managed-cloud** create/auth is stubbed in v1.
+
+Prefer `astrale instance create --local <slug>` over hand-rolling
+`KernelInstance/{register,boot,info,stop,reboot,delete}` calls — it registers,
+boots, checks JWKS, stores the bookmark, and optionally installs a domain.
+
+## Manager lifecycle (docker-mode vs host-mode)
+
+`astrale start` runs **docker-mode by default**: manager + FalkorDB as services
+in `~/.astrale/docker-compose.yml`. `--host-mode` runs the manager as a bun
+process on the host (PID file); `--foreground` applies to **host-mode only**.
+`astrale stop` targets both modes by default. `astrale server build|logs`
+manage the manager Docker image / container logs. Flags & exact behavior:
+`astrale start|stop|restart|reset|server --help`.
+
+**UI**: the supported UI is the **GUI**, run separately
+(`pnpm -C gui dev` → http://localhost:3400); the CLI never manages its
+lifecycle. `containerHealth: unhealthy` can coexist with `running: true` (it is
+the Docker healthcheck probe state) — ignore it unless calls actually hang.
+
+## Domain dev workflow model
+
+The canonical domain lifecycle is
+`astrale domain dev | build | deploy | instance-prepare` (flags:
+`astrale domain --help`, `astrale domain dev up --help`).
+
+- `dev up` / `dev down` / `dev status` **recursively scan the cwd** for domain
+  dirs (each must have `package.json` + `envs.ts`) and act on **every** one;
+  they fall back to a walk-*up* single-domain resolver when run from inside a
+  domain or a subfolder.
+- `dev up` is **restart-by-default**: per domain it does `devDown` then `devUp`
+  every run (kill + respawn — not an idempotent skip), so env changes are
+  always picked up.
+- State is **per-slug** at `~/.astrale/domains/<slug>/state.json`; `dev up`
+  records exactly what it started and `dev down` stops only that — the global
+  manager is never killed if `dev up` didn't start it. `dev status --raw`
+  emits an array (one entry per domain).
+- `--kernel`/`--domain` are **preset selectors** applied uniformly to every
+  discovered domain (not a way to pick a domain). `instance-prepare` / `build`
+  / `deploy` stay single-domain.
+- Optional per-domain `lifecycle.ts` at the domain root exports `config`
+  (secrets, dev vars, tunnel name) and/or `hooks` (`preUp`, `postUp`,
+  `preDown`, `postDown`). Missing file → zero-config.
+
+`astrale instance install <spec.json>` lives under the `instance` group (it
+operates on an instance graph) — there is **no `astrale domain install`**.
+
+## Graph exploration gotchas
+
+- **`class.<Name>` materializes as a `Folder` node** (kind `Folder`, name
+  prefixed `class.`) whose children are the class's Methods. There is **no
+  `Class` node at that tree position** — the Class definition lives inside the
+  Domain's serialized `schema` prop. So `--filter Class` returns zero; use
+  `--filter Folder`, or descend into `class.<X>` and `--filter Method`.
+- `astrale ls /<domain>` may return `NOT_FOUND` even when the Domain exists
+  (known CLI inconsistency — `get`/`describe` resolve the same path). Use
+  `astrale describe /<domain>` or `astrale ls /<domain>/<child>`.
+- `describe` is a raw node-dump (full properties + children); for Domain nodes
+  it includes a multi-kB serialized `schema` — pipe to `jq`, use `--no-schema`.
+- `query` is read-only; the kernel rejects write keywords (`CREATE`, `DELETE`,
+  `SET`, `MERGE`, `REMOVE`, `DETACH`).
+
+## Logs semantics
+
+Journal files on disk:
+- Manager: `~/.astrale/logs/events.ndjson`
+- Child instance: `~/.astrale/logs/<instanceId>/events.ndjson`
+
+`logs` has **no `--format`** flag; for machine output use `--raw`/`--json` or
+`-c`. `-c` (compact) is a **TTY-only formatting flag** — silently ignored in
+`--raw` / non-TTY output (use `jq` for JSON pipelines). Topic glob: `*` matches
+one segment, `**` matches the rest. Flags: `astrale logs --help`.
+
+## Output / TTY behavior
+
+- TTY: spinner + syntax-highlighted YAML/JSON + timing info.
+- Non-TTY or `--raw`/`--json`: plain JSON to stdout, errors to stderr, no
+  colors. `--format <yaml|json>` defaults to yaml on TTY, json when piped.
+- `-R` (tree), `-q` (bare ids), `-c` (compact) are TTY-shaped: in `--raw`/
+  non-TTY mode `-R` emits a flat list of direct children — for scripted trees
+  use a Cypher `query` or recurse with `-q`.
+
+The common kernel options (`--format`, `--raw`/`--json`, `--url`,
+`-i/--instance`, `--timeout`, `--as`, `--creds`, `--debug`) are shared by
+`call`, `get`, `ls`, `describe`, `query`, `token`, `instance install`. Full
+list and per-command specifics: `astrale <cmd> --help`.
+
+## Configuration and storage
+
+Everything under `~/.astrale/`. `ASTRALE_HOME` is **not** currently read — the
+path is fixed.
+
+```
+~/.astrale/
+  config.json        { managerPort, falkorPort, graphName, issuer }
+  identities.json    { default, identities: { name: { subject, mode, kid, … } } }
+  instances.json     { active, instances: { name: { url?, kind, mode, issuer?, … } } }
+  tunnels.json       Registered tunnels (id, name, hostname, boundInstance)
+  keys/              Per-identity ES256 keypairs
+  data/              FalkorDB volume
+  docker-compose.yml FalkorDB + manager service definitions
+  logs/events.ndjson Manager event journal
+  logs/<id>/events.ndjson  Per-child journals
+  manager.pid        Host-mode manager daemon PID
+```
+
+| Service | Default | URL form |
+|---------|---------|----------|
+| Manager | `4400` (`managerPort`) | `http://localhost:4400/mngt` |
+| Child instances | same port | `http://localhost:4400/<slug>` |
+| FalkorDB | `6379` (`falkorPort`) | — |
+| GUI (run separately) | `3400` | `http://localhost:3400` |
+
+The local manager reserves the first path-segment `/mngt` for its management
+API; any other first path-segment is treated as a local-instance slug.
+
+## Errors and debugging
+
+The CLI surfaces typed errors with actionable hints (e.g.
+`TunnelNotConfiguredError`, `CannotDeleteManagerError`, `AuthError`,
+issuer/meta mismatches, slug validation, reserved-name collisions). Use
+`--debug` on any kernel command for full diagnostics, or `--log-level debug`
+globally. `auth` is stubbed in v1 (NotImplemented, cloud adapter pending).
+
+## Source map
+
+- Entry & top-level routing: `cli/bin/astrale.ts` (registers `default`
+  `CommandDefinition`s; merges shared kernel options at the registration site).
+- Commands: `cli/src/commands/` — one `export default … satisfies
+  CommandDefinition` per command (carrying `summary?` / `afterHelpText?`),
+  plus groups `instance/`, `identity/`, `auth/`, `tunnel/`, `graph/`,
+  `server/`, `domain/` (+ `domain/dev/`).
+- Registry/help wiring: `cli/src/registry.ts`, types in `cli/src/command.ts`.
+- Libs: `cli/src/lib/`. Kernel client plumbing: `cli/src/kernel/`.
+  Ports/adapters: `cli/src/ports/`, `cli/src/adapters/`.

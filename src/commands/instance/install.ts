@@ -58,6 +58,17 @@ function extractDomainSlug(nodes: unknown[]): string | undefined {
 export default {
   name: 'install',
   description: 'Install a compiled domain spec on the target instance (§9)',
+  afterHelpText: `
+Behavior:
+  Standalone command (there is no \`domain install\`). There is no
+  uninstall verb today and re-install does not replace existing
+  Function bindings — run \`astrale reset\` between installs when
+  iterating on schema in dev. Worker key auto-detected at
+  <specDir>/worker/keys/; -k overrides (a mismatch warns).
+
+Examples:
+  $ astrale instance install ./dist/spec.json -i staging --as alice
+`,
   arguments: [{ name: 'spec-file', description: 'Path to the spec.json file', required: true }],
   options: [
     {

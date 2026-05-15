@@ -1,19 +1,9 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "paths": {
-      "@astrale-os/kernel-core": ["../../core/index.ts"],
-      "@astrale-os/kernel-core/domain": ["../../core/domain/index.ts"],
-      "@astrale-os/kernel-dsl": ["../../dsl/src/index.ts"],
-      "@astrale-os/kernel-runtime": ["../../runtime/index.ts"],
-      "@astrale-os/kernel-test": ["../../test/src/index.ts"],
-      "@astrale-os/kernel-host": ["../../host/src/index.ts"],
-      "@astrale-os/sdk": ["../../../sdk/src/index.ts"],
-      "@astrale-os/sdk/*": ["../../../sdk/src/*/index.ts"]
-    }
+    "allowImportingTsExtensions": true
   },
   "include": ["envs.ts", "schema", "methods", "scripts", "test"],
   "exclude": ["node_modules", "worker"]

@@ -2,6 +2,8 @@ import { mkdir } from 'node:fs/promises'
 import { stdin, stdout } from 'node:process'
 import { createInterface } from 'node:readline/promises'
 
+import type { CommandDefinition } from '../command'
+
 import { writeConfig, configExists, type AstraleConfig } from '../lib/config'
 import {
   assertDockerAvailable,
@@ -121,7 +123,7 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
   })
   log.success('Docker compose file written')
 
-  // ── Start the stack (falkordb + manager + playground) ──────
+  // ── Start the stack (falkordb + manager) ──────────────────
 
   s = spinner('Starting stack...')
   await composeUp(COMPOSE_PATH)
@@ -132,9 +134,7 @@ export async function initCommand(opts: InitOptions = {}): Promise<void> {
   console.log('')
   log.success('Setup complete\n')
   log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)
-  log.info(`  Playground: http://localhost:3200`)
   log.dim(`  Graph:      ${config.graphName}`)
-  log.dim('  GUI:        run `pnpm -C gui dev` separately (http://localhost:3400)')
   console.log('')
   log.info('Next steps:')
   log.dim('  astrale status         # check status')
@@ -196,3 +196,27 @@ async function checkBun(): Promise<void> {
     process.exit(1)
   }
 }
+
+export default {
+  name: 'init',
+  description: 'Set up a new Astrale installation',
+  afterHelpText: `
+Behavior:
+  Interactive setup of keys, config, Docker and FalkorDB. Precedence:
+  explicit flags > prompts > defaults (managerPort 4400, falkorPort
+  6379, graphName astrale-manager). -y skips prompts (non-interactive).
+
+Examples:
+  $ astrale init
+  $ astrale init -y --manager-port 4400 --falkor-port 6379
+`,
+  options: [
+    { flags: '--manager-port <port>', description: 'Manager HTTP port (default: 4400)' },
+    { flags: '--falkor-port <port>', description: 'FalkorDB port (default: 6379)' },
+    { flags: '--graph-name <name>', description: 'Graph name (default: astrale-manager)' },
+    { flags: '-y, --yes', description: 'Skip prompts and accept defaults / overwrite' },
+  ],
+  action: async (opts) => {
+    await initCommand(opts as InitOptions)
+  },
+} satisfies CommandDefinition
