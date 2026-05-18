@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile, realpath, writeFile, mkdir, access } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -111,13 +112,14 @@ export async function buildManagerImage(
   // BuildKit secret — never baked into image layers. The host's `~/.npmrc`
   // references `${GITHUB_TOKEN}` at runtime; the Dockerfile reconstructs
   // a token-embedded `.npmrc` inline for pnpm.
-  const token = process.env.GITHUB_TOKEN
+  const token = process.env.GITHUB_TOKEN ?? (await readGithubTokenFromNpmrc())
   if (!token) {
     throw new AstraleError(
       'MISSING_GITHUB_TOKEN',
-      'GITHUB_TOKEN env var is required to build the manager image (needed by pnpm ' +
-        'to fetch private @astrale-os/* packages from GitHub Packages). Set it to a ' +
-        'PAT with `read:packages` scope and retry.',
+      'No GitHub Packages token found. Needed by pnpm inside the manager image ' +
+        'to fetch private @astrale-os/* packages. Either set `GITHUB_TOKEN` to a ' +
+        'PAT with `read:packages` scope, or add it to ~/.npmrc as:\n' +
+        '  //npm.pkg.github.com/:_authToken=ghp_yourTokenHere',
     )
   }
   const args = ['docker', 'build', '-t', ref, '-f', join(cli, 'docker', 'Dockerfile')]
@@ -492,4 +494,18 @@ async function runInteractive(
   })
   const code = await proc.exited
   if (code !== 0) throw new Error(`${args.join(' ')} failed (${code})`)
+}
+
+// Read the GitHub Packages token from ~/.npmrc when GITHUB_TOKEN env var is
+// unset — saves users from having to export it just for `astrale init`. The
+// same line (`//npm.pkg.github.com/:_authToken=…`) authenticates `pnpm install`
+// at the workspace root, so if their npmrc works for that, it works for this.
+async function readGithubTokenFromNpmrc(): Promise<string | null> {
+  try {
+    const npmrc = await readFile(join(homedir(), '.npmrc'), 'utf8')
+    const m = npmrc.match(/^\/\/npm\.pkg\.github\.com\/:_authToken=(.+)$/m)
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : null
+  } catch {
+    return null
+  }
 }
