@@ -1,6 +1,6 @@
 {
   "name": "@astrale-os/astrale",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Astrale system CLI — install, daemon, key management for local Astrale lifecycle",
   "keywords": [
     "astrale",

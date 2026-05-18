@@ -7,7 +7,7 @@ import { addTunnel } from '../../lib/tunnels'
 
 export default {
   name: 'setup',
-  description: 'Configure TunnelAdapter + DNS preflight (§12)',
+  description: 'Configure TunnelAdapter + DNS preflight',
   afterHelpText: `
 Behavior:
   Creates a fresh cloudflared tunnel and registers it. A tunnel
@@ -41,7 +41,7 @@ Examples:
       const hostname = opts.hostname ?? `${name}.local.astrale.ai`
 
       log.warn('  Public exposure: a tunnel exposes a local port on the Internet.')
-      log.dim('  Ensure the bound instance only serves content you intend to publish (§12).')
+      log.dim('  Ensure the bound instance only serves content you intend to publish.')
 
       const desc = await cloudflaredAdapter.create({ name, hostname })
       await addTunnel({

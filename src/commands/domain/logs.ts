@@ -4,7 +4,7 @@ import { fatalNotImplemented } from '../../lib/log'
 
 export default {
   name: 'logs',
-  description: 'Stream domain worker logs (stub — use adapter-specific tooling, §9)',
+  description: 'Stream domain worker logs (stub — use adapter-specific tooling)',
   afterHelpText: `
 Behavior:
   Stub (NotImplemented in v1) — use your worker platform's own log
@@ -14,6 +14,6 @@ Behavior:
   action: async () =>
     fatalNotImplemented(
       'astrale domain logs',
-      "Use the DomainPlatform adapter's own logs viewer (e.g. Cloudflare dashboard, §11).",
+      "Use the DomainPlatform adapter's own logs viewer (e.g. Cloudflare dashboard).",
     ),
 } satisfies CommandDefinition

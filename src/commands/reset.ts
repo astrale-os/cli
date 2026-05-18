@@ -4,6 +4,7 @@ import { clearGraph } from '@astrale-os/kernel-adapters/falkordb'
 import { type FnMap } from '@astrale-os/kernel-client'
 import { ClientSession } from '@astrale-os/kernel-client/session'
 import chalk from 'chalk'
+import { existsSync } from 'node:fs'
 import { rm, rmdir } from 'node:fs/promises'
 
 import type { CommandDefinition } from '../command'
@@ -280,16 +281,27 @@ async function resetSubInstance(
  * including identities, keypairs, tunnel registrations, FalkorDB data,
  * domain dev state. Never depends on a live FalkorDB or running manager.
  *
+ * In host-mode the user owns FalkorDB (BYO infra), so the wipe leaves it
+ * entirely alone — container, volume and on-disk data — and clears only
+ * CLI-owned filesystem state. We never kill a DB we didn't provision.
+ *
  * Idempotent: running twice is fine. Does not auto-restart anything;
  * the user runs `astrale start` afterwards.
  */
 async function resetHard(opts: ResetOptions): Promise<void> {
+  // Auto-detected: the manager PID file is written only by a host-mode
+  // manager (docker-mode tracks lifecycle via the container) and it's a
+  // plain file that survives a dead process, so reading it doesn't
+  // violate `--hard`'s "works even if services are dead" contract. The
+  // explicit flag is only needed for the residual case where a host-mode
+  // manager was cleanly stopped first (PID file already removed).
+  const keepDb = opts.hostMode === true || existsSync(MANAGER_PID_PATH)
+
   if (!opts.yes) {
-    process.stdout.write(
-      chalk.red(
-        'This will WIPE every Astrale state file on this machine — manager, child instances, identities, keypairs, tunnel registrations, FalkorDB data — as if this were a fresh install. Continue? [y/N] ',
-      ),
-    )
+    const msg = keepDb
+      ? 'This will WIPE every Astrale state file on this machine — manager, child instances, identities, keypairs, tunnel registrations. FalkorDB is left running (host-mode owns it). Continue? [y/N] '
+      : 'This will WIPE every Astrale state file on this machine — manager, child instances, identities, keypairs, tunnel registrations, FalkorDB data — as if this were a fresh install. Continue? [y/N] '
+    process.stdout.write(chalk.red(msg))
     const answer = await readLine()
     if (answer.toLowerCase() !== 'y') {
       log.info('Aborted')
@@ -323,16 +335,25 @@ async function resetHard(opts: ResetOptions): Promise<void> {
 
   await tryStep('manager', () => forceStopManager())
 
-  // Compose stack — covers both falkordb and manager containers in one shot.
-  // If the compose file is missing or docker isn't installed, this is a no-op.
-  await tryStep('compose stack', async () => {
-    await composeDown(COMPOSE_PATH)
-    return true
-  })
+  // Compose stack — `composeDown` keeps the node_modules volume (see its
+  // docstring); graph data is a host bind-mount wiped by the filesystem
+  // phase below, so the reset is still total. Skip in host-mode: the
+  // manager is a bun process (already killed above) and FalkorDB is the
+  // user's.
+  if (!keepDb) {
+    await tryStep('compose stack', async () => {
+      await composeDown(COMPOSE_PATH)
+      return true
+    })
+  }
 
-  // Stray containers — anything started outside compose (e.g. a manually-run
-  // FalkorDB) won't have been touched by composeDown.
-  for (const name of ['astrale-falkordb-1', 'astrale-manager-1']) {
+  // Stray containers — anything started outside compose won't have been
+  // touched by composeDown. In host-mode never remove the FalkorDB
+  // container: it's the user's DB, not ours to kill.
+  const strayContainers = keepDb
+    ? ['astrale-manager-1']
+    : ['astrale-falkordb-1', 'astrale-manager-1']
+  for (const name of strayContainers) {
     await tryStep(`container ${name}`, () => forceRemoveContainer(name))
   }
 
@@ -350,8 +371,10 @@ async function resetHard(opts: ResetOptions): Promise<void> {
     KEYS_DIR,
     TUNNELS_DIR,
     LOGS_DIR,
-    DATA_DIR,
     DOMAINS_DIR,
+    // DATA_DIR is the FalkorDB volume (`${dataDir}:/data`). Wipe its
+    // on-disk data only when we own the DB; host-mode keeps it.
+    ...(keepDb ? [] : [DATA_DIR]),
   ]
 
   let wiped = 0
@@ -379,10 +402,17 @@ async function resetHard(opts: ResetOptions): Promise<void> {
     log.warn(`Skipped ${skipped.length} path(s):`)
     for (const s of skipped) log.dim(`  ${s.path}: ${s.reason}`)
   }
+  if (keepDb) {
+    log.info('FalkorDB left untouched (host-mode owns it — container + data preserved).')
+  }
   log.dim(
     'Not touched: ~/.cloudflared (cloudflared account/credentials), Cloudflare DNS records, remote distribution domain workers',
   )
-  log.info('Run `astrale start` to bootstrap a new manager.')
+  log.info(
+    keepDb
+      ? 'Run `astrale start --host-mode` to bootstrap a new manager against your FalkorDB.'
+      : 'Run `astrale start` to bootstrap a new manager.',
+  )
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -411,7 +441,10 @@ Behavior:
   resets the manager (deletes all child instances first). --hard is a
   fresh-install wipe (stop everything, remove containers, delete all
   ~/.astrale state) — always succeeds even if services are dead.
-  --host-mode targets the host-mode manager (default: docker-mode).
+  --host-mode targets the host-mode manager (default: docker-mode);
+  with --hard it preserves FalkorDB (container + data), since host-mode
+  owns its own DB. host-mode is auto-detected from the manager PID file
+  — the flag is only needed if the manager was cleanly stopped first.
 
 Examples:
   $ astrale reset -i staging -y
@@ -423,11 +456,12 @@ Examples:
     {
       flags: '--hard',
       description:
-        'Fresh-install wipe: stop everything, remove containers, delete every Astrale state file (identities, keys, tunnels, FalkorDB data). Always succeeds even if services are dead.',
+        'Fresh-install wipe: stop everything, remove containers, delete every Astrale state file (identities, keys, tunnels, FalkorDB data). With --host-mode, FalkorDB is preserved. Always succeeds even if services are dead.',
     },
     {
       flags: '--host-mode',
-      description: 'Reset the host-mode manager (default: docker-mode if detected)',
+      description:
+        'Target the host-mode manager (default: docker-mode if detected). With --hard, preserves FalkorDB (auto-detected from the PID file; flag forces it).',
     },
   ],
   action: async (opts) => {

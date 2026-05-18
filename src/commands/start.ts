@@ -14,6 +14,8 @@ import {
   isManagerRunning,
   managerImageExists,
   managerImageTag,
+  nodeModulesVolumeName,
+  pruneStaleNodeModulesVolumes,
   waitManagerHealthy,
   writeComposeFile,
 } from '../lib/docker'
@@ -66,25 +68,25 @@ async function startDockerMode(config: Awaited<ReturnType<typeof readConfig>>): 
     return
   }
 
-  // Always invoke `docker build` so manifest/lockfile changes are picked up.
-  // The Dockerfile copies every package.json + pnpm-lock.yaml before
-  // `pnpm install`, so a no-op rebuild is a full cache hit (~2-5s). When
-  // the image already exists we run quietly — Docker's layer cache decides
-  // whether anything actually rebuilds. First-time builds stream progress
-  // since the deps install can take 30-60s.
+  // High-level progress: three labelled steps, no raw docker output. The
+  // detail stays hidden — only the first-ever build streams (the deps
+  // install is genuinely 30-60s and there's no other signal); refreshes
+  // run quiet behind the step label since they're a ~2s cache hit.
+
+  // ── Step 1/3 — manager image ───────────────────────────────
+  // `docker build` runs every start so manifest/lockfile changes are
+  // picked up; Docker's layer cache makes a no-op rebuild a fast hit.
   const tag = await managerImageTag()
-  const buildSpinner = spinner(
+  const s1 = spinner(
     imageExists
-      ? `Refreshing manager image astrale-os/manager:${tag}...`
-      : `Building manager image astrale-os/manager:${tag}...`,
+      ? `[1/3] Refreshing manager image (astrale-os/manager:${tag})...`
+      : `[1/3] Building manager image (astrale-os/manager:${tag}) — first build, this can take a minute...`,
   )
   try {
     await buildManagerImage({ quiet: imageExists })
-    buildSpinner.succeed(
-      imageExists ? `Manager image up to date` : `Built astrale-os/manager:${tag}`,
-    )
+    s1.succeed(`[1/3] Manager image ${imageExists ? 'up to date' : 'built'} (${tag})`)
   } catch (e) {
-    buildSpinner.fail('Manager image build failed')
+    s1.fail('[1/3] Manager image build failed')
     throw e
   }
 
@@ -94,15 +96,38 @@ async function startDockerMode(config: Awaited<ReturnType<typeof readConfig>>): 
     graphName: config.graphName,
   })
 
-  const s = spinner('Starting stack (falkordb + manager)...')
+  // ── Step 2/3 — start services ──────────────────────────────
+  const s2 = spinner('[2/3] Starting services (falkordb + manager)...')
   try {
     await composeUp(COMPOSE_PATH)
-    await waitManagerHealthy(`http://localhost:${config.managerPort}/mngt/`)
-    s.succeed('Stack is up')
+    s2.succeed('[2/3] Services started')
   } catch (e) {
-    s.fail('Stack failed to start')
+    s2.fail('[2/3] Services failed to start')
     throw e
   }
+
+  // ── Step 3/3 — wait for the manager to answer ──────────────
+  // Live elapsed counter so a slow boot doesn't look frozen.
+  const s3 = spinner('[3/3] Waiting for manager to be ready...')
+  try {
+    let lastSec = -1
+    await waitManagerHealthy(`http://localhost:${config.managerPort}/mngt/`, {
+      onTick: (ms) => {
+        const sec = Math.round(ms / 1000)
+        if (sec === lastSec) return
+        lastSec = sec
+        s3.text = `[3/3] Waiting for manager to be ready... (${sec}s)`
+      },
+    })
+    s3.succeed('[3/3] Manager is ready')
+  } catch (e) {
+    s3.fail('[3/3] Manager did not become ready in time')
+    throw e
+  }
+
+  // Reclaim disk from node_modules volumes left by older lockfiles.
+  // Best-effort, off the critical path — the stack is already up.
+  void pruneStaleNodeModulesVolumes(await nodeModulesVolumeName())
 
   log.success('Astrale started')
   log.dim(`  Manager:    http://localhost:${config.managerPort}/mngt (API)`)

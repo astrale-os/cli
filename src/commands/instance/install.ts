@@ -7,9 +7,14 @@ import type { KernelCommandOpts } from '../../kernel'
 import { AstraleError } from '../../errors'
 import { runKernelCommand } from '../../kernel'
 import { isBuiltinDomainName, resolveBuiltinDomain } from '../../lib/builtin-domains'
-import { buildIdentityBinding, loadPrivateJwk } from '../../lib/domain-identity'
+import {
+  buildIdentityBinding,
+  isSignatureVerificationError,
+  loadPrivateJwk,
+} from '../../lib/domain-identity'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
+import { extractDomainSlug } from '../../lib/spec'
 
 type InstallResult = { domainId: string; origin: string }
 
@@ -25,39 +30,9 @@ type SpecFile = {
   edges?: unknown
 }
 
-const KERNEL_DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
-
-function rawStr(value: unknown): string | undefined {
-  if (typeof value === 'string') return value
-  if (
-    value &&
-    typeof value === 'object' &&
-    'raw' in value &&
-    typeof (value as { raw: unknown }).raw === 'string'
-  ) {
-    return (value as { raw: string }).raw
-  }
-  return undefined
-}
-
-function extractDomainSlug(nodes: unknown[]): string | undefined {
-  for (const node of nodes) {
-    if (!node || typeof node !== 'object') continue
-    const cls = rawStr((node as { class?: unknown }).class)
-    if (cls !== KERNEL_DOMAIN_CLASS && cls !== `${KERNEL_DOMAIN_CLASS}/self`) continue
-    const props = (node as { props?: { origin?: unknown } }).props
-    const origin = typeof props?.origin === 'string' ? props.origin : undefined
-    if (origin) return origin
-    const path = (node as { path?: unknown }).path
-    if (typeof path === 'string' && path.startsWith('/')) return path.slice(1)
-    return undefined
-  }
-  return undefined
-}
-
 export default {
   name: 'install',
-  description: 'Install a compiled domain spec on the target instance (§9)',
+  description: 'Install a compiled domain spec on the target instance',
   afterHelpText: `
 Behavior:
   Standalone command (there is no \`domain install\`). There is no
@@ -221,17 +196,6 @@ Examples:
     })
   },
 } satisfies CommandDefinition
-
-function isSignatureVerificationError(e: unknown): boolean {
-  if (!e || typeof e !== 'object') return false
-  const name = (e as { name?: unknown }).name
-  const msg = (e as { message?: unknown }).message
-  return (
-    name === 'AuthenticationError' &&
-    typeof msg === 'string' &&
-    /signature verification failed/i.test(msg)
-  )
-}
 
 /**
  * Locate a worker private-key JWK under `<specDir>/worker/keys/`.

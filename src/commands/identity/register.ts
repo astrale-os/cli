@@ -68,7 +68,7 @@ export default {
   name: 'register',
   description:
     "Register a local identity with the target instance's kernel — publishes the public " +
-    'key under a thumbprint-derived issuer and caches the resolved (iss, sub) for future calls (DESIGN.md §6.4 Path B)',
+    'key under a thumbprint-derived issuer and caches the resolved (iss, sub) for future calls',
   arguments: [{ name: 'name', description: 'Identity name', required: true }],
   options: [
     {

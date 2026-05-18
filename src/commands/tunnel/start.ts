@@ -6,7 +6,7 @@ import { findTunnel, readTunnels } from '../../lib/tunnels'
 
 export default {
   name: 'start',
-  description: 'Start a tunnel in the background (§12)',
+  description: 'Start a tunnel in the background',
   arguments: [{ name: 'name', description: 'Tunnel name or id', required: true }],
   action: async (name: string) => {
     try {

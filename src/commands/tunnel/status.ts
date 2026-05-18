@@ -8,7 +8,7 @@ import { findTunnel, readTunnels } from '../../lib/tunnels'
 
 export default {
   name: 'status',
-  description: 'Show tunnel status + DNS preflight (§12)',
+  description: 'Show tunnel status + DNS preflight',
   arguments: [{ name: 'name', description: 'Tunnel name or id', required: false }],
   action: async (name?: string) => {
     try {

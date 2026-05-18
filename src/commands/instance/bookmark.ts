@@ -6,7 +6,7 @@ import { checkIssuerReachability } from '../../lib/meta'
 
 export default {
   name: 'bookmark',
-  description: 'Register a reference to an existing remote instance (§4.1)',
+  description: 'Register a reference to an existing remote instance',
   arguments: [{ name: 'name', description: 'Bookmark name (free, required)', required: true }],
   options: [
     { flags: '--url <url>', description: 'URL of the remote instance (required)' },
@@ -40,7 +40,7 @@ export default {
 
       // §2.7 default = remote; cloud sync is stubbed in v1 (§15).
       const mode = opts.local ? 'local' : 'remote'
-      if (!opts.local) log.dim('  (remote mode stored — cloud sync is a no-op in v1, §15)')
+      if (!opts.local) log.dim('  (remote mode stored — cloud sync is a no-op in v1)')
       const entry = await addInstance(name, {
         url: opts.url,
         name,

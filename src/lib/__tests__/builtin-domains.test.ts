@@ -56,3 +56,44 @@ describe('SPEC V3 — builtin domain resolver', () => {
     }
   })
 })
+
+describe('SPEC V3 — builtin domain resolver: manager-ui', () => {
+  let tmp = ''
+  // `name.toUpperCase()` keeps the hyphen → env keys carry it literally.
+  const SPEC_KEY = 'ASTRALE_MANAGER-UI_SPEC'
+  const KEY_KEY = 'ASTRALE_MANAGER-UI_KEY'
+  const saved: Record<string, string | undefined> = {}
+
+  beforeEach(async () => {
+    tmp = await mkdtemp(join(tmpdir(), 'astrale-builtin-mui-'))
+    saved.spec = process.env[SPEC_KEY]
+    saved.key = process.env[KEY_KEY]
+  })
+
+  afterEach(async () => {
+    delete process.env[SPEC_KEY]
+    delete process.env[KEY_KEY]
+    if (saved.spec !== undefined) process.env[SPEC_KEY] = saved.spec
+    if (saved.key !== undefined) process.env[KEY_KEY] = saved.key
+    await rm(tmp, { recursive: true, force: true })
+  })
+
+  test('isBuiltinDomainName accepts "manager-ui"', () => {
+    expect(isBuiltinDomainName('manager-ui')).toBe(true)
+    expect(isBuiltinDomainName('manager_ui')).toBe(false)
+  })
+
+  test('resolves manager-ui via the hyphenated env vars', async () => {
+    const specPath = join(tmp, 'spec.json')
+    const keyPath = join(tmp, 'key.json')
+    await writeFile(specPath, '{}')
+    await writeFile(keyPath, '{}')
+    process.env[SPEC_KEY] = specPath
+    process.env[KEY_KEY] = keyPath
+
+    const resolved = await resolveBuiltinDomain('manager-ui')
+    expect(resolved.source).toBe('env')
+    expect(resolved.specPath).toBe(specPath)
+    expect(resolved.keyPath).toBe(keyPath)
+  })
+})

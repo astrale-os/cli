@@ -8,7 +8,7 @@ import { RAW_OUTPUT_OPTIONS, isRawOutput, output, type RawOutputOpts } from '../
 
 export default {
   name: 'check',
-  description: 'Probe a domain or kernel: OIDC discovery + JWKS reachable (§11)',
+  description: 'Probe a domain or kernel: OIDC discovery + JWKS reachable',
   afterHelpText: `
 Behavior:
   A real reachability probe (not a stub): requires --url, fetches the

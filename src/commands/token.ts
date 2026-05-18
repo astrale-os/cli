@@ -45,7 +45,7 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
 
 export default {
   name: 'token',
-  description: 'Mint a fresh delegation token for the active instance + identity (§9)',
+  description: 'Mint a fresh delegation token for the active instance + identity',
   afterHelpText: `
 Behavior:
   Default ttl 3600s, audience empty. The result is a two-layer

@@ -14,7 +14,7 @@ type Opts = {
 
 export default {
   name: 'deploy',
-  description: 'Build spec + deploy worker + drift check (§9.1, §10)',
+  description: 'Build spec + deploy worker + drift check',
   options: [
     {
       flags: '--preset <name>',

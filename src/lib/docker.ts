@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFile, realpath, writeFile, mkdir, access } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,6 +62,38 @@ export async function managerImageRef(): Promise<string> {
   return `astrale-os/manager:${await managerImageTag()}`
 }
 
+let nodeModulesVolumePromise: Promise<string> | null = null
+
+/**
+ * Name of the Docker volume that overlays `/workspace/node_modules` with
+ * the image's platform-native deps.
+ *
+ * It is **named** (not anonymous) so it survives container recreation and
+ * `docker compose down` — a plain `astrale reset`/`restart` no longer
+ * forces a 1.8 GB re-seed. Correctness across dep bumps is kept by keying
+ * the name on a hash of `pnpm-lock.yaml`: when deps change the lockfile
+ * changes, so the volume name changes, so compose creates a fresh (empty)
+ * volume that Docker auto-seeds from the rebuilt image. Stale volumes from
+ * older lockfiles are pruned by {@link pruneStaleNodeModulesVolumes}.
+ */
+export function nodeModulesVolumeName(): Promise<string> {
+  if (!nodeModulesVolumePromise) {
+    nodeModulesVolumePromise = (async () => {
+      const ws = await workspaceRoot()
+      let hash = 'nolock'
+      try {
+        const lock = await readFile(join(ws, 'pnpm-lock.yaml'), 'utf-8')
+        hash = createHash('sha256').update(lock).digest('hex').slice(0, 12)
+      } catch {
+        // No lockfile (unexpected in a real workspace) — fall back to a
+        // stable name so the volume is still named, not anonymous.
+      }
+      return `astrale-node-modules-${hash}`
+    })()
+  }
+  return nodeModulesVolumePromise
+}
+
 // ─── Image build ──────────────────────────────────────────────
 
 export async function buildManagerImage(
@@ -120,6 +153,7 @@ type ComposeInputs = {
   logsDir: string
   workspaceRoot: string
   imageRef: string
+  nodeModulesVolume: string
   uid: number
   gid: number
 }
@@ -134,6 +168,7 @@ function composeYaml(inputs: ComposeInputs): string {
     logsDir,
     workspaceRoot,
     imageRef,
+    nodeModulesVolume,
     uid,
     gid,
   } = inputs
@@ -171,12 +206,12 @@ function composeYaml(inputs: ComposeInputs): string {
       - ASTRALE_LOGS_DIR=/astrale/logs
     volumes:
       - '${workspaceRoot}:/workspace:ro'
-      # Anonymous volume overlays the host's /workspace/node_modules with
-      # the image's linux-arm64 (matching the container). Prevents native
+      # Named volume overlays the host's /workspace/node_modules with the
+      # image's linux-arm64 deps (matching the container). Prevents native
       # modules compiled for the host (e.g. esbuild darwin-arm64) from
-      # being loaded inside the linux container. Reset on \`docker compose
-      # down -v\` — needed after an image rebuild that bumps deps.
-      - '/workspace/node_modules'
+      # being loaded inside the linux container. Name is lockfile-hashed —
+      # see nodeModulesVolumeName for why.
+      - '${nodeModulesVolume}:/workspace/node_modules'
       - '${keysDir}:/astrale/keys:rw'
       - '${logsDir}:/astrale/logs'
     user: '${uid}:${gid}'
@@ -191,6 +226,12 @@ function composeYaml(inputs: ComposeInputs): string {
       retries: 10
       start_period: 5s
     restart: unless-stopped
+
+volumes:
+  ${nodeModulesVolume}:
+    # Explicit name → no compose project prefix, so the lockfile-hash
+    # name is stable and matchable by pruneStaleNodeModulesVolumes.
+    name: ${nodeModulesVolume}
 `
 }
 
@@ -226,6 +267,7 @@ export async function writeComposeFile(
     logsDir: opts?.logsDir ?? LOGS_DIR,
     workspaceRoot: ws,
     imageRef,
+    nodeModulesVolume: await nodeModulesVolumeName(),
     uid,
     gid,
   })
@@ -244,8 +286,46 @@ export async function composeStop(composePath: string = COMPOSE_PATH): Promise<v
   await run(['docker', 'compose', '-f', composePath, 'stop'])
 }
 
+/**
+ * Tear down the stack (containers + network). Deliberately **without**
+ * `-v`: the only compose-managed volume is the lockfile-hashed
+ * `node_modules` overlay, kept on purpose (see {@link nodeModulesVolumeName}).
+ * FalkorDB data is a host bind-mount, wiped separately by `astrale reset`'s
+ * filesystem phase — so a reset is still total.
+ */
 export async function composeDown(composePath: string = COMPOSE_PATH): Promise<void> {
-  await run(['docker', 'compose', '-f', composePath, 'down', '-v'])
+  await run(['docker', 'compose', '-f', composePath, 'down'])
+}
+
+/**
+ * Remove `astrale-node-modules-*` volumes other than {@link keep}. These
+ * accumulate as the lockfile changes (one ~1.8 GB volume per dep set).
+ * Best-effort: silently skips volumes still in use or a missing docker.
+ * Safe to call while the stack is up — the in-use current volume can't be
+ * removed, and only stale (unreferenced) volumes are targeted anyway.
+ */
+export async function pruneStaleNodeModulesVolumes(keep: string): Promise<void> {
+  try {
+    const proc = Bun.spawn(
+      ['docker', 'volume', 'ls', '-q', '--filter', 'name=astrale-node-modules-'],
+      { stdout: 'pipe', stderr: 'ignore' },
+    )
+    const out = await new Response(proc.stdout).text()
+    if ((await proc.exited) !== 0) return
+    const stale = out
+      .split('\n')
+      .map((v) => v.trim())
+      .filter((v) => v && v !== keep)
+    for (const vol of stale) {
+      try {
+        await run(['docker', 'volume', 'rm', vol])
+      } catch {
+        // In use by another container, or already gone — leave it.
+      }
+    }
+  } catch {
+    // docker unreachable — nothing to prune.
+  }
 }
 
 /**
@@ -346,10 +426,15 @@ export async function isManagerRunning(composePath: string = COMPOSE_PATH): Prom
   return services.some((s) => s.Service === 'manager' && s.State === 'running')
 }
 
-export async function waitManagerHealthy(url: string, timeoutMs = 30_000): Promise<void> {
+export async function waitManagerHealthy(
+  url: string,
+  opts: { timeoutMs?: number; onTick?: (elapsedMs: number) => void } = {},
+): Promise<void> {
+  const timeoutMs = opts.timeoutMs ?? 30_000
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     if (await probeHttp(url)) return
+    opts.onTick?.(Date.now() - start)
     await new Promise((r) => setTimeout(r, 500))
   }
   throw new Error(`Manager did not become healthy within ${timeoutMs}ms`)

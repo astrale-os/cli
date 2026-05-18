@@ -19,7 +19,7 @@ import { readTunnels, unbindTunnel } from '../../lib/tunnels'
 
 export default {
   name: 'delete',
-  description: 'Destructively delete a local or managed instance (§5)',
+  description: 'Destructively delete a local or managed instance',
   afterHelpText: `
 Behavior:
   Destructive: removes the instance kernel-side and from the local
@@ -36,7 +36,7 @@ Behavior:
     // §5.1 refusals with actionable hints.
     if (entry?.kind === 'manager' || key === 'manager') fatal(new CannotDeleteManagerError())
     if (entry?.kind === 'bookmark') {
-      log.dim('  hint: use `astrale instance forget` to drop the reference (§5.1)')
+      log.dim('  hint: use `astrale instance forget` to drop the reference')
       fatal(new Error(`"${name}" is a bookmark — delete is destructive kernel-side.`))
     }
 

@@ -28,6 +28,23 @@ export async function loadPrivateJwk(keyPath: string): Promise<Record<string, un
   return JSON.parse(raw) as Record<string, unknown>
 }
 
+/**
+ * True when the kernel rejected an `installDomain` call because the
+ * identity binding's signature failed to verify — i.e. the private/public
+ * JWK halves don't match. Callers re-throw with a regenerate-the-keypair
+ * hint instead of leaking the raw `AuthenticationError`.
+ */
+export function isSignatureVerificationError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const name = (e as { name?: unknown }).name
+  const msg = (e as { message?: unknown }).message
+  return (
+    name === 'AuthenticationError' &&
+    typeof msg === 'string' &&
+    /signature verification failed/i.test(msg)
+  )
+}
+
 export async function buildIdentityBinding(
   spec: Spec,
   privateJwk: Record<string, unknown>,

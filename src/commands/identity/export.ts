@@ -15,7 +15,7 @@ import { readPassphrase } from '../../lib/prompt'
  */
 export default {
   name: 'export',
-  description: 'Export an identity keypair to disk (§9, optional --encrypt)',
+  description: 'Export an identity keypair to disk (optional --encrypt)',
   arguments: [
     { name: 'name', description: 'Identity name', required: true },
     { name: 'path', description: 'Output file path', required: true },

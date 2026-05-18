@@ -9,7 +9,7 @@ import { readTunnels } from '../../lib/tunnels'
 
 export default {
   name: 'list',
-  description: 'List registered tunnels (§12)',
+  description: 'List registered tunnels',
   options: [...RAW_OUTPUT_OPTIONS],
   action: async (opts: RawOutputOpts) => {
     try {

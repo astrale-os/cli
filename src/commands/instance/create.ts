@@ -26,20 +26,19 @@ async function rollback(client: ClientSession<FnMap>, _credential: string, slug:
 
 export default {
   name: 'create',
-  description:
-    'Create an instance (managed cloud by default, §4.2 — or local child with --local, §4.3)',
+  description: 'Create an instance (managed cloud by default — or local child with --local)',
   arguments: [
     { name: 'name', description: 'Instance slug (local) or display name (cloud)', required: true },
   ],
   options: [
-    { flags: '--local', description: 'Target the local manager (§4.3)' },
+    { flags: '--local', description: 'Target the local manager' },
     { flags: '--name <display>', description: 'Human-readable label (local child)' },
     {
       flags: '--config <name>',
-      description: 'Named instance config (built-in or user-defined, §4.5)',
+      description: 'Named instance config (built-in or user-defined)',
     },
-    { flags: '--tunnel <id>', description: 'Bind a machine tunnel (§4.6 tunneled mode)' },
-    { flags: '--as <identity>', description: 'Identity to record as default (§2.4)' },
+    { flags: '--tunnel <id>', description: 'Bind a machine tunnel (tunneled mode)' },
+    { flags: '--as <identity>', description: 'Identity to record as default' },
     {
       flags: '--distroless',
       description:
@@ -47,7 +46,7 @@ export default {
     },
     {
       flags: '--install <domain-spec>',
-      description: 'Install a domain spec (path or builtin name) after boot (§9)',
+      description: 'Install a domain spec (path or builtin name) after boot',
     },
     {
       flags: '-k, --key <path>',
@@ -55,7 +54,7 @@ export default {
     },
     {
       flags: '--skip-jwks-check',
-      description: 'Skip the post-create JWKS reachability check (§4.6)',
+      description: 'Skip the post-create JWKS reachability check',
     },
     {
       flags: '--issuer <url>',
@@ -82,7 +81,7 @@ export default {
       if (!opts.local) {
         fatalNotImplemented(
           'astrale instance create (managed cloud)',
-          'Use `--local <slug>` for the local-child path, or wait for the cloud adapter (§15).',
+          'Use `--local <slug>` for the local-child path, or wait for the cloud adapter.',
         )
       }
       validateSlug(slug)
@@ -100,9 +99,7 @@ export default {
           )
         }
         if (t!.boundInstance && t!.boundInstance !== slug) {
-          fatal(
-            new Error(`Tunnel "${opts.tunnel}" already bound to "${t!.boundInstance}" (1:1, §12)`),
-          )
+          fatal(new Error(`Tunnel "${opts.tunnel}" already bound to "${t!.boundInstance}" (1:1)`))
         }
         tunnelHostname = t!.hostname
       }
@@ -180,7 +177,7 @@ export default {
             )
           } catch (e) {
             log.error(`post-create JWKS check failed: ${(e as Error).message}`)
-            log.dim('  rolling back — issuer has no rescue path (§4.6).')
+            log.dim('  rolling back — issuer has no rescue path.')
             await rollback(client, credential, slug)
             registered = false
             process.exit(1)

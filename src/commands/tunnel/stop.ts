@@ -6,7 +6,7 @@ import { findTunnel, readTunnels } from '../../lib/tunnels'
 
 export default {
   name: 'stop',
-  description: 'Stop a running tunnel (idempotent, §12)',
+  description: 'Stop a running tunnel (idempotent)',
   arguments: [{ name: 'name', description: 'Tunnel name or id', required: true }],
   action: async (name: string) => {
     try {

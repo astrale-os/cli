@@ -569,3 +569,105 @@ Les entrées `mode: remote` sont miroir du state cloud — la CLI les rafraîchi
 ## 15. Notes d'intégration
 
 - **Astrale cloud = adapter stub en v1**. La surface CLI est définie, le flow managé passe par un adapter qui sera livré ultérieurement. Ne pas implémenter le backend cloud pour l'instant — se concentrer sur le chemin local (manager + instances locales + bookmarks remote de kernels deployés out-of-band).
+
+---
+
+## 16. Décisions de conception & rationale
+
+> Choix non triviaux qu'un changement futur ne doit pas révoquer à la légère.
+> (Rationale rapatrié de l'ancien `docs/DESIGN.md` V2, retrié pour V3 — seul ce
+> qui reste vrai est conservé ; le code reste la source de vérité.)
+
+### 16.1 Identités locales, portables, découplées des kernels
+
+Une identité = entrée de keyring **locale** (nom, subject, matériel de
+credential) ; elle n'est liée à aucun kernel. Le même identifiant peut être
+connu de zéro, un ou N kernels indépendamment, et copier le dossier identité
+suffit à l'utiliser ailleurs. Coupler l'identité à un kernel casserait la
+portabilité et brouillerait la sémantique d'état (« supprimer alice » si alice
+est sur trois kernels ?). La confiance kernel est un concern **séparé,
+kernel-side**.
+
+### 16.2 Le kernel est agnostique des IdP
+
+Le kernel détient une liste d'**issuers de confiance** + un vérifieur JWKS par
+issuer. Il ne connaît ni WorkOS, ni Google, ni aucun provider : il valide des
+signatures, vérifie les claims standard, mappe `(iss, sub)` → principal local.
+La CLI est le seul côté qui sait jouer les flows OIDC. CLI et kernel ne se
+rencontrent qu'au JWT. Conséquence : innovation auth côté CLI sans toucher au
+kernel.
+
+### 16.3 Schémas standard, zéro contrat auth maison
+
+Métadonnées IdP = **OpenID Connect Discovery 1.0** exact (`snake_case`),
+tokens = RFC 6749 / OIDC, thumbprint = **RFC 7638**. Inventer un schéma crée
+une douleur de migration pour zéro gain ; un `curl` de la discovery est
+consommable tel quel.
+
+### 16.4 Une source non ambiguë par valeur
+
+Noms d'identité : `--name` (user) ou `--verify` (kernel, source autoritaire) —
+**jamais** dérivés du nom de fichier (le filename est une métadonnée de
+stockage, pas d'identité). Instance/identité actives : config ou flags
+explicites, **jamais** de magie d'environnement. Deux sources en désaccord →
+la CLI **échoue bruyamment** plutôt que d'élire un gagnant.
+
+### 16.5 Les deux voies de confiance kernel (Path A / Path B)
+
+Une identité devient « connue » d'un kernel par l'une de deux voies, selon sa
+source de credential :
+
+- **Path A — identités IdP : auto-provisionnées.** Le JWT arrive avec
+  `(iss, sub)` d'un IdP externe ; le kernel vérifie la signature via la
+  discovery `<iss>/.well-known/...`, évalue sa **provisioning policy**, et
+  crée le nœud identité à la première authentification si l'issuer est de
+  confiance. Aucune étape d'enregistrement explicite côté CLI.
+- **Path B — identités à clé : sponsorisées.** `registerIdentity`
+  **ne peut pas** être self-call (il exige EDIT sur un nœud identité
+  pré-existant en statut `creating`). Un sponsor privilégié (admin ou
+  identité système ; `astrale server init` en local dev) crée le nœud puis
+  appelle `registerIdentity` avec la clé publique de l'utilisateur.
+
+**Convention d'issuer (contrat cross-composant unique CLI↔kernel)** : pour une
+identité à clé, l'issuer est dérivé **déterministiquement** de la clé :
+
+```
+iss = <kernelIssuer>/iss/<thumbprint RFC 7638 de la clé publique>
+```
+
+Le **kernel** (pas la CLI) calcule ce thumbprint et construit l'URL ; le `iss`
+du token bootstrap est **ignoré**. Raison : (1) **autorité** — le kernel est
+seul maître de son espace de noms d'URL ; (2) **surface d'attaque** — faire
+confiance à un `iss` fourni par le client permettrait d'enregistrer avec un
+`iss` falsifié. La CLI reconstruit le même `iss` indépendamment via la clé
+publique + le thumbprint caché à la génération + l'issuer kernel (depuis
+`/meta`, cf. §10).
+
+### 16.6 `audience` instance-scoped, pas IdP-scoped
+
+L'`audience` OAuth identifie *la ressource visée*, pas l'autorité émettrice :
+un même IdP émet légitimement pour `kernel-prod` et `kernel-staging`. Mettre
+l'audience dans la config IdP forcerait des entrées IdP dupliquées par
+instance. Elle vit donc dans `instances.json` (chaque instance déclare
+l'audience qu'elle attend) ; le flag `--audience` reste l'override edge-case.
+
+### 16.7 Mode stateless
+
+CI runners, conteneurs éphémères et scripts ne peuvent / ne doivent pas écrire
+`~/.astrale/`. Le mode stateless (`--url` + creds explicites) est le **même
+code path** que le mode persistant, sans le storage — pas une branche à part.
+
+### 16.8 Contextes différés
+
+Le cas commun est « une instance, une identité » ou « une identité sur N
+instances ». Un concept de contexte (tuples nommés `(instance, identité)`
+à la kubectl) n'est justifié que si un user a deux identités sur une instance.
+Tant que le besoin n'est pas démontré, `instance active + --as <identité>`
+suffit (cf. §2.5, dimensions orthogonales).
+
+### 16.9 Pas de rétro-compat avant 1.0
+
+La CLI est pré-1.0 : design propre > confort de migration. Quand un
+comportement change, l'ancien est retiré **net** (pas d'alias silencieux qui
+fait diverger la doc). C'est le principe sous-jacent aux suppressions du top-
+level `use` et de l'alias `instance add`.

@@ -53,7 +53,7 @@ function inferKind(entry: InstanceEntry, key: string): InstanceKind {
 
 export default {
   name: 'list',
-  description: 'List all registered instances (§6)',
+  description: 'List all registered instances',
   options: [
     { flags: '--local', description: 'Manager + local children only' },
     { flags: '--managed', description: 'Astrale cloud managed instances only' },
@@ -130,7 +130,8 @@ export default {
         existing.issuer ??= inst.issuer
       } else if (matches('local-child', undefined)) {
         // Kernel-side instance not yet bookmarked locally (e.g., registered
-        // directly via syscall). Surface it so the user can `astrale use` it.
+        // directly via syscall). Surface it so the user can
+        // `astrale instance use` it.
         merged.set(inst.id, {
           key: inst.id,
           label: inst.label,

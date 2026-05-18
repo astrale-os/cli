@@ -6,5 +6,5 @@ export default {
   name: 'logout',
   description: 'Logout from astrale cloud',
   action: async () =>
-    fatalNotImplemented('astrale auth logout', 'Astrale cloud adapter is stubbed in v1 (§15).'),
+    fatalNotImplemented('astrale auth logout', 'Astrale cloud adapter is stubbed in v1.'),
 } satisfies CommandDefinition

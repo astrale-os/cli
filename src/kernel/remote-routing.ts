@@ -193,7 +193,8 @@ export function extractDomainSlug(path: string): string | null {
   return slug.length > 0 ? slug : null
 }
 
-function parseBinding(raw: unknown): { remoteUrl?: unknown } | null {
+/** Parse a `Function.binding` prop value (JSON string or object form). */
+export function parseBinding(raw: unknown): { remoteUrl?: unknown } | null {
   if (typeof raw === 'string') {
     try {
       return JSON.parse(raw) as { remoteUrl?: unknown }

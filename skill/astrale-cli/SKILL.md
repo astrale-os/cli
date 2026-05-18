@@ -22,6 +22,9 @@ instances** registered against it.
 
 ## Path syntax
 
+> The table below **mirrors `astrale --help`** (the authoritative grammar). It
+> documents the *model*; `astrale --help` stays the source of truth for syntax.
+
 Clients address entities in the kernel graph via **Path**s.
 
 | Form | Grammar | Use when |
@@ -142,8 +145,10 @@ astrale call @__system__::mintDelegationCredential \
 
 - **No `uninstall` verb.** `instance install` does not replace existing
   `Function.binding`s on re-install; the only way to remove an installed spec
-  is `astrale reset` (destroys the whole instance graph). When iterating on
-  schema in dev, `astrale reset` between installs.
+  is `astrale reset` (**destructive and broad**: stops the containers *and*
+  wipes every CLI-owned path under `~/.astrale/` — not just the graph; see
+  `cli/src/commands/reset.ts:280`). When iterating on schema in dev,
+  `astrale reset` between installs.
 - **`instances.json:active` is a process-global shared file.** Concurrent
   `instance:prepare` or parallel test runs can rewrite it under you. In
   scripted/parallel flows pass `-i <instance>` on every command.
@@ -154,7 +159,10 @@ astrale call @__system__::mintDelegationCredential \
 
 Prefer `astrale instance create --local <slug>` over hand-rolling
 `KernelInstance/{register,boot,info,stop,reboot,delete}` calls — it registers,
-boots, checks JWKS, stores the bookmark, and optionally installs a domain.
+boots, checks JWKS, stores the bookmark, and optionally installs a domain. By
+default `create --local` **installs the builtin distribution domain** (users,
+desktops, views, compute) on the new instance; pass `--no-install-builtins`
+for a bare instance (ref: `cli/src/commands/instance/create.ts`).
 
 ## Manager lifecycle (docker-mode vs host-mode)
 
@@ -173,8 +181,10 @@ the Docker healthcheck probe state) — ignore it unless calls actually hang.
 ## Domain dev workflow model
 
 The canonical domain lifecycle is
-`astrale domain dev | build | deploy | instance-prepare` (flags:
-`astrale domain --help`, `astrale domain dev up --help`).
+`astrale domain init → dev → build → deploy → instance-prepare` (flags:
+`astrale domain --help`, `astrale domain dev up --help`). `domain check`
+probes a domain/kernel (OIDC discovery + JWKS reachable); `domain logs`
+streams worker logs (**stub** — adapter-specific tooling).
 
 - `dev up` / `dev down` / `dev status` **recursively scan the cwd** for domain
   dirs (each must have `package.json` + `envs.ts`) and act on **every** one;
@@ -214,6 +224,16 @@ operates on an instance graph) — there is **no `astrale domain install`**.
 
 ## Logs semantics
 
+Three distinct `logs` surfaces:
+
+| Command | Source | Status |
+|---|---|---|
+| `astrale logs` | Event journal (`~/.astrale/logs/*.ndjson`, manager + child) | OK |
+| `astrale server logs` | Manager Docker container logs | OK |
+| `astrale domain logs` | Domain worker logs | **stub** — adapter-specific tooling |
+
+The detail below is for `astrale logs` (the on-disk event journal).
+
 Journal files on disk:
 - Manager: `~/.astrale/logs/events.ndjson`
 - Child instance: `~/.astrale/logs/<instanceId>/events.ndjson`
@@ -239,12 +259,14 @@ list and per-command specifics: `astrale <cmd> --help`.
 
 ## Configuration and storage
 
-Everything under `~/.astrale/`. `ASTRALE_HOME` is **not** currently read — the
-path is fixed.
+Everything lives under `~/.astrale/` by default. `ASTRALE_HOME` is read as a
+*fallback* after the resolved home dir and is set by the container entrypoint
+(`ASTRALE_HOME=/astrale`, see `cli/src/lib/env.ts:38`). On a standard host
+install, leave it unset.
 
 ```
 ~/.astrale/
-  config.json        { managerPort, falkorPort, graphName, issuer }
+  config.json        { managerPort, falkorPort, graphName (default astrale-manager), issuer }
   identities.json    { default, identities: { name: { subject, mode, kid, … } } }
   instances.json     { active, instances: { name: { url?, kind, mode, issuer?, … } } }
   tunnels.json       Registered tunnels (id, name, hostname, boundInstance)
@@ -272,7 +294,10 @@ The CLI surfaces typed errors with actionable hints (e.g.
 `TunnelNotConfiguredError`, `CannotDeleteManagerError`, `AuthError`,
 issuer/meta mismatches, slug validation, reserved-name collisions). Use
 `--debug` on any kernel command for full diagnostics, or `--log-level debug`
-globally. `auth` is stubbed in v1 (NotImplemented, cloud adapter pending).
+globally. For JWKS/iss/aud issues, first reach for
+`astrale domain check --url <target>` — the dedicated OIDC discovery + JWKS
+reachability probe. `auth` is stubbed in v1 (NotImplemented, cloud adapter
+pending).
 
 ## Source map
 

@@ -14,7 +14,7 @@ type Opts = {
 
 export default {
   name: 'init',
-  description: 'Scaffold a new domain from a template (§9.1)',
+  description: 'Scaffold a new domain from a template',
   arguments: [{ name: 'slug', description: 'Domain slug (kebab-case)', required: true }],
   options: [
     {

@@ -26,7 +26,7 @@ function looksEncrypted(raw: string): boolean {
 
 export default {
   name: 'import',
-  description: 'Import an identity keypair envelope (§9, auto-detects JWE)',
+  description: 'Import an identity keypair envelope (auto-detects JWE)',
   arguments: [{ name: 'path', description: 'Envelope file path', required: true }],
   options: [
     {

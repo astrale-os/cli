@@ -5,7 +5,7 @@ import { fatal, log } from '../../lib/log'
 
 export default {
   name: 'forget',
-  description: 'Drop a bookmark reference (never destructive kernel-side, §5)',
+  description: 'Drop a bookmark reference (never destructive kernel-side)',
   afterHelpText: `
 Behavior:
   Drops a bookmark reference only — never touches the remote kernel.
@@ -20,7 +20,7 @@ Behavior:
       if (!key) fatal(new Error(`Instance "${name}" not found`))
       const entry = store.instances[key!]!
       if (entry.kind !== 'bookmark') {
-        log.dim('  hint: use `astrale instance delete` for destructive removal (§5.1)')
+        log.dim('  hint: use `astrale instance delete` for destructive removal')
         fatal(
           new Error(
             `"${name}" is a ${entry.kind ?? 'non-bookmark'} instance — forget only drops bookmarks.`,

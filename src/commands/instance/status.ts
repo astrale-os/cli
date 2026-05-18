@@ -10,7 +10,7 @@ import { RAW_OUTPUT_OPTIONS, isRawOutput, output, type RawOutputOpts } from '../
 
 export default {
   name: 'status',
-  description: 'Check a single instance: OIDC discovery + JWKS reachable (§10)',
+  description: 'Check a single instance: OIDC discovery + JWKS reachable',
   arguments: [{ name: 'name', description: 'Instance name (slug or name)', required: false }],
   options: [...RAW_OUTPUT_OPTIONS],
   action: async (name: string | undefined, opts: RawOutputOpts) => {

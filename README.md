@@ -93,8 +93,10 @@ Command groups at a glance (run `--help` on any of them for details):
 @nodeId                        Reference a node by its ID
 ```
 
-The `class.` / `interface.` prefix on the namespace segment is **required**.
-Instance-method dispatch uses **`::`** (double colon), never a single `:`.
+The block above is a **summary subset**; the full, authoritative path grammar
+is `astrale --help`. The `class.` / `interface.` prefix on the namespace
+segment is **required**. Instance-method dispatch uses **`::`** (double
+colon), never a single `:`.
 For the full conceptual model — instance resolution, token audience, the auth
 model — see the `astrale-cli` agent skill; for invariants and design rationale
 see [`SPEC.md`](./SPEC.md).
@@ -111,6 +113,9 @@ Everything lives under `~/.astrale/`:
 | `keys/` | Per-identity ES256 keypairs |
 | `logs/` | Event journals (`events.ndjson`, per-instance subdirs) |
 | `data/` | FalkorDB volume |
+| `tunnels.json` | Registered cloudflared tunnels |
+| `docker-compose.yml` | FalkorDB + manager service defs |
+| `manager.pid` | Host-mode manager daemon PID |
 
 `config.json` schema:
 

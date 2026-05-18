@@ -5,7 +5,7 @@ import { log } from '../../lib/log'
 
 export default {
   name: 'use',
-  description: 'Set the active CLI identity (§2.5)',
+  description: 'Set the active CLI identity',
   arguments: [{ name: 'name', description: 'Identity name', required: true }],
   action: async (name: string) => {
     try {

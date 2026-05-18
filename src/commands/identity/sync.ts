@@ -5,7 +5,7 @@ import { fatal, fatalNotImplemented, log } from '../../lib/log'
 
 export default {
   name: 'sync',
-  description: 'Migrate an identity local → remote (astrale cloud, §2.7)',
+  description: 'Migrate an identity local → remote (astrale cloud)',
   arguments: [{ name: 'name', description: 'Identity name', required: true }],
   options: [
     {
@@ -19,11 +19,11 @@ export default {
       if (!opts.force) {
         fatalNotImplemented(
           'identity sync (remote)',
-          'Cloud adapter is stubbed in v1 (§15). Use --force to pre-tag the identity locally.',
+          'Cloud adapter is stubbed in v1. Use --force to pre-tag the identity locally.',
         )
       }
       await setIdentityMode(name, 'remote')
-      log.warn(`Tagged "${name}" as remote locally (cloud sync stubbed in v1 — §15)`)
+      log.warn(`Tagged "${name}" as remote locally (cloud sync stubbed in v1)`)
       log.dim(`  subject=${identity.subject}`)
     } catch (e) {
       fatal(e)
