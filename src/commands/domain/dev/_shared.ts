@@ -5,6 +5,8 @@
  * picks this up as a command.
  */
 
+import type { DevState } from '@astrale-os/kernel-host'
+
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
@@ -17,6 +19,17 @@ export type DomainResult = {
   label: string
   ok: boolean
   error?: string
+  /**
+   * Parent-resolved wrangler port. Set by the multi-domain `dev up`
+   * fan-out so the recap can show the URL even for domains that *reuse*
+   * a sibling's wrangler (their own `state.wrangler` is null). Absent
+   * for `dev down` (legacy one-line rendering).
+   */
+  port?: number
+  /** Persisted dev state — drives the rich recap. Absent for `dev down`. */
+  state?: DevState
+  /** Tail of the most relevant log on failure (dimmed under the line). */
+  logTail?: string
 }
 
 /**
@@ -38,17 +51,48 @@ export function labelFor(dir: string): string {
   return basename(dir)
 }
 
-/** Print a `✔`/`✖` summary, one line per domain. */
-export function printSummary(title: string, results: DomainResult[]): void {
+/**
+ * One structured detail segment for a successful domain, derived from
+ * its persisted `DevState` + the parent-resolved port. `null` when there
+ * is no state to enrich from (legacy `dev down` path).
+ */
+function richDetail(r: DomainResult): string | null {
+  if (!r.state) return null
+  const w = r.state.started.wrangler
+  const port = w?.port ?? r.port
+  const url = port ? `http://localhost:${port}/meta` : '(no worker)'
+  // `state.wrangler` is set only when THIS domain owns the wrangler;
+  // a domain sharing a sibling's port has it null → "reused".
+  const pid = w ? `pid=${w.pid}` : 'reused'
+  return `${url}  ${pid}`
+}
+
+/**
+ * Print a `✔`/`✖` recap. With per-domain `state` (multi-domain `dev up`)
+ * it renders a structured block: optional shared-infra header, then
+ * URL/pid/owned-vs-reused per domain, plus a dimmed log tail on failure.
+ * Without `state` (e.g. `dev down`) it falls back to the legacy
+ * one-line-per-domain output — keeping `down.ts` unchanged.
+ */
+export function printSummary(
+  title: string,
+  results: DomainResult[],
+  headerLines: string[] = [],
+): void {
   const n = results.length
   log.step(`${title} (${n} domain${n === 1 ? '' : 's'})`)
+  for (const line of headerLines) log.dim(`  ${line}`)
   const width = Math.max(0, ...results.map((r) => r.label.length))
   for (const r of results) {
     const label = r.label.padEnd(width)
+    const detail = richDetail(r)
     if (r.ok) {
-      log.success(`${label}  ${r.dir}`)
+      log.success(detail ? `${label}  ${detail}` : `${label}  ${r.dir}`)
     } else {
       log.error(`${label}  ${r.dir} — ${r.error ?? 'failed'}`)
+      if (r.logTail) {
+        for (const line of r.logTail.split('\n')) log.dim(`      ${line}`)
+      }
     }
   }
 }

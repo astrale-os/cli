@@ -18,3 +18,10 @@ export function resolveDomainPlatform(id: string = 'cloudflare'): DomainPlatform
 }
 
 export { cloudflareDomainPlatform }
+export {
+  astraleArgv,
+  ensureAstraleManager,
+  needsAstraleManager,
+  readDevState,
+} from './cloudflare-helpers'
+export { resolveWorkerPort } from './cloudflare-lifecycle'

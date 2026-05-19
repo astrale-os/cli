@@ -15,14 +15,16 @@ import type {
   LifecycleModule,
 } from '@astrale-os/kernel-host'
 
+import { kernelEnvs } from '@astrale-os/kernel-host'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { lookup } from 'node:dns/promises'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { AstraleError } from '../../errors'
+import { log } from '../../lib/log'
 
 export const DEFAULT_TUNNEL_NAME = 'kernel-e2e'
 export const HOOK_TIMEOUT_MS = 30_000
@@ -119,6 +121,21 @@ export function killWranglerTree(port: number): { killed: number } {
 }
 
 /**
+ * Kill whatever is listening on `port` (port-scoped, no broad pkill).
+ * Used to free a domain's derived Vite dev port on `devDown`, and to
+ * clear a stale Vite before re-spawning on `devUp` (Vite's
+ * `--strictPort` would otherwise fail against a leftover listener).
+ * Functionally identical to `killWranglerTree` today; kept separate so
+ * the wrangler-specific doc/semantics stay intact (future dedupe).
+ */
+export function killPort(port: number): { killed: number } {
+  const lsof = spawnSync(LSOF, ['-ti', `:${port}`], { encoding: 'utf-8' })
+  const pids = (lsof.stdout ?? '').split('\n').filter(Boolean)
+  if (pids.length > 0) spawnSync(KILL, ['-KILL', ...pids])
+  return { killed: pids.length }
+}
+
+/**
  * Check whether a PID is alive without killing it (`kill 0`). Used by
  * `devStatus` to validate the persisted wrangler PID.
  */
@@ -128,6 +145,101 @@ export function isPidAlive(pid: number): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+// ── Client views (dev `/ui/*` serving) ────────────────────────────────
+
+/**
+ * Deterministic per-domain Vite dev port derived from the worker port.
+ * `+40000` keeps it clear of the worker range and the clients' own
+ * configured ports (5173/5273), and unique whenever worker ports are
+ * unique — so spawning Vite with `--port <this>` won't collide with a
+ * sibling domain. (Domains that already share a worker port — e.g.
+ * onepact-demo/manager-ui on 8801 — derive the same Vite port, which is
+ * fine: they already cannot run concurrently.)
+ */
+export function vitePortFor(workerPort: number): number {
+  return workerPort + 40_000
+}
+
+/**
+ * Deterministic per-domain wrangler inspector (devtools) port. Wrangler
+ * defaults it to 9229 — fine sequentially, but the parallel `dev up`
+ * fan-out starts several `wrangler dev` at once and they'd all fight for
+ * 9229 (`Address already in use 127.0.0.1:9230`). `+30000` keeps it
+ * clear of the worker range and the `+40000` Vite range, and unique per
+ * worker port (same-port domains serialise, so sharing it is fine).
+ */
+export function inspectorPortFor(workerPort: number): number {
+  return workerPort + 30_000
+}
+
+/**
+ * Effective views mode: `--views` CLI override wins, else the domain's
+ * `lifecycle.ts` `config.views`, else `'built'` (the safe default —
+ * fresh build every dev up, never a stale `dist-client/`). Explicit
+ * only; there is intentionally no filesystem auto-detect.
+ */
+export function effectiveViewsMode(
+  optsViews: 'built' | 'hmr' | undefined,
+  configViews: 'built' | 'hmr' | undefined,
+): 'built' | 'hmr' {
+  return optsViews ?? configViews ?? 'built'
+}
+
+/**
+ * True iff `clientDir/package.json` exists and declares the npm script
+ * `name`. Gates views handling on a *runnable* client: ai-gateway/notes
+ * have a `worker/` but no `client/`; bookshelf/project-tracker have a
+ * `worker/client/` containing only `node_modules` (no package.json).
+ */
+export function clientPkgHasScript(clientDir: string, name: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(clientDir, 'package.json'), 'utf-8')) as {
+      scripts?: Record<string, string>
+    }
+    return typeof pkg.scripts?.[name] === 'string'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * One-shot, BLOCKING `vite build` for the domain's client SPA. Runs
+ * every `dev up` in `'built'` mode (and as the HMR-from-config
+ * fallback) so `dist-client/` can never be a stale snapshot. Uses the
+ * locally-installed vite via the user's login+interactive zsh — same
+ * macOS-TCC PATH reasoning as `ensureWranglerWorker` (node lives in
+ * interactive-shell-only PATH dirs). Synchronous (no `nohup`/`&`): the
+ * build MUST finish before wrangler serves the freshly-written
+ * `dist-client/`. Caller owns `logFile` (keeps this module free of a
+ * `paths` import). Throws on a missing binary or non-zero exit.
+ */
+export function runClientBuild(clientDir: string, logFile: string): void {
+  const viteBin = join(clientDir, 'node_modules', '.bin', 'vite')
+  if (!existsSync(viteBin)) {
+    throw new AstraleError(
+      'NO_VITE',
+      `Expected ${viteBin} to exist`,
+      'Run `pnpm install` in the domain (monorepo: at the workspace root).',
+    )
+  }
+  mkdirSync(dirname(logFile), { recursive: true })
+  const r = spawnSync(
+    '/bin/zsh',
+    [
+      '-lic',
+      `cd ${JSON.stringify(clientDir)} && ${JSON.stringify(viteBin)} build > ${JSON.stringify(logFile)} 2>&1`,
+    ],
+    { stdio: 'inherit' },
+  )
+  if (r.status !== 0) {
+    throw new AstraleError(
+      'VITE_BUILD_FAILED',
+      `vite build failed (exit ${r.status ?? 'null'})`,
+      `See ${logFile}`,
+    )
   }
 }
 
@@ -159,6 +271,39 @@ export function evalPreset<T>(
       hint,
     )
   }
+}
+
+// ── Astrale manager (shared, idempotent) ─────────────────────────────
+
+/**
+ * Does the given kernel preset require a local astrale manager? Mirrors
+ * `devUp`'s gating (`kernel.mode === 'manager' && !remote:`) so the
+ * multi-domain orchestrator can ensure it once up front.
+ */
+export function needsAstraleManager(kernelPreset: string): boolean {
+  if (kernelPreset.startsWith('remote:')) return false
+  return evalPreset(kernelEnvs, kernelPreset, 'kernel').mode === 'manager'
+}
+
+/**
+ * Ensure the local astrale manager is running. Idempotent: a no-op when
+ * already up. Extracted from `devUp` so the multi-domain `dev up` can
+ * run it ONCE before fanning out — N parallel children racing
+ * check-then-act would otherwise each try `astrale start`.
+ *
+ * Returns `{ started: true }` only when this call started it (so the
+ * caller can record `state.started.astrale` for teardown symmetry).
+ */
+export function ensureAstraleManager(): { started: boolean } {
+  if (isAstraleRunning()) {
+    log.dim('  astrale manager already running')
+    return { started: false }
+  }
+  log.dim('  starting astrale manager…')
+  const [bun, entry] = astraleArgv()
+  const r = spawnSync(bun, [entry, 'start'], { stdio: 'inherit' })
+  if (r.status !== 0) throw new AstraleError('ASTRALE_START_FAILED', 'astrale start failed')
+  return { started: true }
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────

@@ -42,21 +42,28 @@ import {
   assertRuntimeSecrets,
   astraleArgv,
   clearDevState,
+  clientPkgHasScript,
   domainUrl,
+  effectiveViewsMode,
+  ensureAstraleManager,
   evalPreset,
   hashDevVars,
+  inspectorPortFor,
   isAstraleRunning,
   isHttpOk,
   isPidAlive,
+  killPort,
   killWranglerTree,
   lifecycleConfig,
   loadDomainModule,
   preflightDns,
   readDevState,
   resolveForwardedEnv,
+  runClientBuild,
   runHook,
   schemeOf,
   tunnelNameOf,
+  vitePortFor,
   waitForUrl,
   writeDevState,
   writeDevVars,
@@ -93,6 +100,19 @@ function readDomainPort(envs: EnvsModule): number {
     if (Number.isFinite(n) && n > 0) return n
   }
   return 8787
+}
+
+/**
+ * Resolve a domain's local wrangler port WITHOUT side effects — the same
+ * computation `devUp` does inline (`domain.port ?? readDomainPort`), as a
+ * standalone so the multi-domain `dev up` can group domains by port
+ * (domains sharing a port reuse one wrangler ⇒ must be serialised).
+ */
+export async function resolveWorkerPort(domainDir: string, domainPreset: string): Promise<number> {
+  const resolved = await resolveDomainDir(domainDir)
+  const envs = await loadDomainEnvs(resolved.dir)
+  const domain = evalPreset(envs.domainEnvs, domainPreset, 'domain')
+  return domain.port ?? readDomainPort(envs)
 }
 
 // ── DNS preflight plan ────────────────────────────────────────────────
@@ -176,17 +196,12 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
   await runHook(hooks.preUp, ctx, 'preUp', resolved.lifecyclePath)
   assertRuntimeSecrets(config, resolved.lifecyclePath)
 
-  // Ensure astrale manager.
+  // Ensure astrale manager. Idempotent — when the multi-domain `dev up`
+  // already ensured it once before fanning out, this is a fast no-op and
+  // `started` stays false (so the parent, not each child, owns teardown).
   if (needsAstrale) {
-    if (isAstraleRunning()) {
-      log.dim('  astrale manager already running')
-    } else {
-      log.dim('  starting astrale manager…')
-      const [bun, entry] = astraleArgv()
-      const r = spawnSync(bun, [entry, 'start'], { stdio: 'inherit' })
-      if (r.status !== 0) throw new AstraleError('ASTRALE_START_FAILED', 'astrale start failed')
-      state.started.astrale = true
-    }
+    const { started } = ensureAstraleManager()
+    state.started.astrale = started
   }
 
   // Ensure cloudflared tunnel.
@@ -225,7 +240,52 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
       )
     }
 
-    const baseVars = buildBaseVars(domain, resolved.slug, config)
+    // ── Views: how the worker serves /ui/* in local dev ──────────────
+    // built (default): a fresh one-shot `vite build` every dev up so
+    // `dist-client/` is never a stale snapshot. hmr: spawn the client's
+    // Vite dev server + set VIEW_DEV_URL so the worker proxies /ui/* to
+    // live Vite. Only for domains with a runnable client; ai-gateway /
+    // notes (no client/) and the bookshelf/project-tracker stubs (no
+    // client package.json) fall through as a total no-op.
+    const clientDir = join(workerDir, 'client')
+    let viewDevUrl: string | undefined
+    let assetsRebuilt = false
+    if (clientPkgHasScript(clientDir, 'build')) {
+      const mode = effectiveViewsMode(opts.views, config.views)
+      const vitePort = vitePortFor(port)
+      const buildLog = join(paths.domainLogDir(resolved.slug), 'vite-build.log')
+      if (mode === 'hmr') {
+        const r = await tryViteHmr({ slug: resolved.slug, clientDir, vitePort })
+        if (r.ok) {
+          viewDevUrl = r.url
+          log.dim(`  views=hmr — Vite dev on :${vitePort}, worker proxies /ui/*`)
+        } else if (opts.views === 'hmr') {
+          // Forced via --views hmr → hard error for THIS domain. The
+          // `up.ts` loop try/catches per domain and continues the rest.
+          throw new AstraleError(
+            'VITE_HMR_FAILED',
+            `views=hmr requested for ${resolved.slug} but Vite dev did not come up: ${r.why}`,
+            'Fix the client, or run `astrale domain dev up --views built` for this domain.',
+          )
+        } else {
+          // From config.views — loud warning + fresh built fallback so
+          // the domain still works and the trap stays dead.
+          log.warn(
+            `${resolved.slug}: config.views='hmr' but Vite dev failed (${r.why}). Falling back to a fresh built bundle (no HMR).`,
+          )
+          runClientBuild(clientDir, buildLog)
+          assetsRebuilt = true
+        }
+      } else {
+        // built (also the default). Fresh one-shot build every dev up →
+        // deterministically kills the stale-dist-client trap.
+        log.dim(`  views=built — fresh vite build → dist-client/`)
+        runClientBuild(clientDir, buildLog)
+        assetsRebuilt = true
+      }
+    }
+
+    const baseVars = buildBaseVars(domain, resolved.slug, config, viewDevUrl)
     const envHash = hashDevVars(baseVars)
     const priorState = readDevState(paths.domainState(resolved.slug))
     const priorWrangler = priorState?.started.wrangler ?? null
@@ -247,7 +307,12 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
         envHash,
         state,
       })
-    } else if (await isHttpOk(localHealth)) {
+    } else if (!assetsRebuilt && (await isHttpOk(localHealth))) {
+      // NOTE the `!assetsRebuilt` guard: a fresh `vite build` changes
+      // `dist-client/` but NOT `envHash` (which hashes `.dev.vars`
+      // only). Without this guard we'd skip here and wrangler would keep
+      // serving the OLD asset snapshot — the exact stale-bundle trap. A
+      // rebuilt-assets run must fall through to ensureWranglerWorker.
       log.dim(`  wrangler already serving on :${port}`)
       // If we previously started it AND the env still matches, carry the
       // prior wrangler entry forward so the next dev up can keep detecting
@@ -258,6 +323,16 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
         state.started.wrangler = priorWrangler
       }
     } else {
+      if (assetsRebuilt && (await isHttpOk(localHealth))) {
+        // Assets just rebuilt, env unchanged, wrangler already up → it's
+        // serving the stale snapshot. writeDevVars sees no change so its
+        // own kill won't fire; kill here so ensureWranglerWorker
+        // respawns against the fresh dist-client/.
+        const { killed } = killWranglerTree(port)
+        log.dim(
+          `  assets rebuilt — killed ${killed} listener(s) on :${port}, restarting to pick up new dist-client/`,
+        )
+      }
       await ensureWranglerWorker({
         domain,
         slug: resolved.slug,
@@ -306,6 +381,14 @@ export async function devDown(opts: DevDownOpts): Promise<DevDownResult> {
     const { port, pid } = state.started.wrangler
     const { killed } = killWranglerTree(port)
     log.dim(`  stopped wrangler on :${port} (pid=${pid}, killed ${killed} listener(s))`)
+    // Free the derived Vite dev port (HMR mode). Derived from the worker
+    // port — no DevState field needed. No-op if nothing's listening
+    // (built mode, or HMR never spawned).
+    const vitePort = vitePortFor(port)
+    const { killed: viteKilled } = killPort(vitePort)
+    if (viteKilled > 0) {
+      log.dim(`  stopped vite dev on :${vitePort} (killed ${viteKilled} listener(s))`)
+    }
     stopped.wrangler = { port, pid }
   }
 
@@ -694,7 +777,8 @@ type WorkerSpawnArgs = {
   state: DevState
 }
 
-// Merge order is significant: CLI-derived base vars first, then
+// Merge order is significant: CLI-derived base vars first (incl. an
+// optional VIEW_DEV_URL for HMR-mode view serving), then
 // `forwardEnv`/`forwardEnvOptional` resolved from process.env (post
 // preUp), then `extraDevVars` literals last so an explicit literal
 // still wins (e.g. ai-gateway pins BASE_DOMAIN over the preset value).
@@ -702,6 +786,7 @@ function buildBaseVars(
   domain: DomainEnv,
   slug: string,
   config: LifecycleConfig | undefined,
+  viewDevUrl?: string,
 ): DevVars {
   const prefix = slugVariants(slug).upperSnake
   return {
@@ -709,6 +794,7 @@ function buildBaseVars(
     BASE_DOMAIN: domain.domain,
     [`${prefix}_WORKER_URL`]: domainUrl(domain),
     [`${prefix}_BASE_DOMAIN`]: domain.domain,
+    ...(viewDevUrl ? { VIEW_DEV_URL: viewDevUrl } : {}),
     ...resolveForwardedEnv(config),
     ...config?.extraDevVars,
   }
@@ -746,7 +832,11 @@ async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
     '/bin/zsh',
     [
       '-lic',
-      `cd ${JSON.stringify(workerDir)} && nohup ${JSON.stringify(wranglerBin)} dev --port ${port} > ${JSON.stringify(logFile)} 2>&1 &`,
+      // Wrap the `&` in a subshell so the interactive (`-i`) zsh never
+      // registers a job → no `[1] <pid>` monitor line and no
+      // `zsh: jobs SIGHUPed` warning leaking to the terminal. The
+      // process still detaches (nohup + subshell exits → reparented).
+      `( cd ${JSON.stringify(workerDir)} && nohup ${JSON.stringify(wranglerBin)} dev --port ${port} --inspector-port ${inspectorPortFor(port)} > ${JSON.stringify(logFile)} 2>&1 & )`,
     ],
     { stdio: 'inherit' },
   )
@@ -757,4 +847,55 @@ async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
   const pid = findListenerPid(port) ?? 0
   state.started.wrangler = { port, pid, envHash }
   log.dim(`  wrangler ready on :${port} (pid=${pid}); logs=${logFile}`)
+}
+
+type ViteHmrArgs = {
+  slug: string
+  clientDir: string
+  vitePort: number
+}
+
+/**
+ * Spawn the client's Vite dev server (detached via zsh-nohup-&, same
+ * macOS-TCC PATH reasoning as `ensureWranglerWorker`) on `vitePort` with
+ * `--strictPort`, then health-wait `http://127.0.0.1:<vitePort>/ui/`.
+ * Returns ok/why instead of throwing — the caller maps a failure to a
+ * hard error (forced `--views hmr`) or a fresh-built fallback (config
+ * `views: 'hmr'`).
+ */
+async function tryViteHmr(
+  args: ViteHmrArgs,
+): Promise<{ ok: true; url: string } | { ok: false; why: string }> {
+  const { slug, clientDir, vitePort } = args
+  const viteBin = join(clientDir, 'node_modules', '.bin', 'vite')
+  if (!existsSync(viteBin)) {
+    return { ok: false, why: `vite binary missing at ${viteBin} (run \`pnpm install\`)` }
+  }
+  // Clear any stale listener first — `--strictPort` would otherwise make
+  // the spawn fail against a leftover Vite from a crashed run.
+  killPort(vitePort)
+
+  const logDir = paths.domainLogDir(slug)
+  mkdirSync(logDir, { recursive: true })
+  const logFile = join(logDir, 'vite-dev.log')
+  const spawn = spawnSync(
+    '/bin/zsh',
+    [
+      '-lic',
+      // Subshell-wrapped `&` — see the wrangler spawn: keeps the
+      // interactive zsh's job-control `[1] <pid>` noise off the terminal.
+      `( cd ${JSON.stringify(clientDir)} && nohup ${JSON.stringify(viteBin)} --port ${vitePort} --strictPort > ${JSON.stringify(logFile)} 2>&1 & )`,
+    ],
+    { stdio: 'inherit' },
+  )
+  if (spawn.status !== 0) {
+    return { ok: false, why: `vite dev spawn failed (see ${logFile})` }
+  }
+  const url = `http://127.0.0.1:${vitePort}`
+  try {
+    await waitForUrl(`${url}/ui/`, 30_000, 'vite dev')
+  } catch (e) {
+    return { ok: false, why: `${e instanceof Error ? e.message : String(e)} (see ${logFile})` }
+  }
+  return { ok: true, url }
 }
