@@ -9,7 +9,12 @@
  * `config` (data) + `hooks` (code).
  */
 
-import type { DevState, LifecycleContext, LifecycleHooks } from '@astrale-os/kernel-host'
+import type {
+  DevState,
+  LifecycleConfig,
+  LifecycleContext,
+  LifecycleHooks,
+} from '@astrale-os/kernel-host'
 
 import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-host'
 import { spawnSync } from 'node:child_process'
@@ -48,6 +53,7 @@ import {
   loadDomainModule,
   preflightDns,
   readDevState,
+  resolveForwardedEnv,
   runHook,
   schemeOf,
   tunnelNameOf,
@@ -219,7 +225,7 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
       )
     }
 
-    const baseVars = buildBaseVars(domain, resolved.slug, config.extraDevVars)
+    const baseVars = buildBaseVars(domain, resolved.slug, config)
     const envHash = hashDevVars(baseVars)
     const priorState = readDevState(paths.domainState(resolved.slug))
     const priorWrangler = priorState?.started.wrangler ?? null
@@ -688,10 +694,14 @@ type WorkerSpawnArgs = {
   state: DevState
 }
 
+// Merge order is significant: CLI-derived base vars first, then
+// `forwardEnv`/`forwardEnvOptional` resolved from process.env (post
+// preUp), then `extraDevVars` literals last so an explicit literal
+// still wins (e.g. ai-gateway pins BASE_DOMAIN over the preset value).
 function buildBaseVars(
   domain: DomainEnv,
   slug: string,
-  extraDevVars: Readonly<Record<string, string>> | undefined,
+  config: LifecycleConfig | undefined,
 ): DevVars {
   const prefix = slugVariants(slug).upperSnake
   return {
@@ -699,7 +709,8 @@ function buildBaseVars(
     BASE_DOMAIN: domain.domain,
     [`${prefix}_WORKER_URL`]: domainUrl(domain),
     [`${prefix}_BASE_DOMAIN`]: domain.domain,
-    ...extraDevVars,
+    ...resolveForwardedEnv(config),
+    ...config?.extraDevVars,
   }
 }
 

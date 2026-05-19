@@ -53,6 +53,15 @@ export type DevUpOpts = {
   kernel: string
   /** Domain preset name (e.g. `local:inprocess`). */
   domain: string
+  /**
+   * How the worker serves its `/ui/*` SPA.
+   * - `'auto'` (default): HMR when the domain ships a runnable
+   *   `worker/client` (a `dev:hmr` script) — Vite dev server proxied
+   *   live, no stale `dist-client/` trap; otherwise the built bundle.
+   * - `'built'`: force the wrangler-assets `dist-client/` bundle.
+   * - `'hmr'`: force the Vite dev server (errors if no runnable client).
+   */
+  views?: 'auto' | 'built' | 'hmr'
 }
 
 export type DevDownOpts = {
