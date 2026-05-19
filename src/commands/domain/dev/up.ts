@@ -16,8 +16,8 @@ import {
 import { mapBounded } from '../../../lib/concurrency'
 import { resolveDomainDirs } from '../../../lib/domain-discovery'
 import { paths } from '../../../lib/env'
-import { fatal, log } from '../../../lib/log'
-import { type DomainResult, labelFor, printSummary } from './_shared'
+import { fatal, log, spinner } from '../../../lib/log'
+import { type DomainResult, labelFor, printResults, printSummary } from './_shared'
 
 type Opts = {
   kernel: string
@@ -92,11 +92,11 @@ function runChild(dir: string, opts: Opts): Promise<DomainResult> {
     child.stderr?.on('data', (d: Buffer) => (buf += d))
     child.on('error', (e) => resolve({ dir, label, ok: false, error: e.message }))
     child.on('close', (code) => {
+      // Silent: the parent updates a single spinner; the only persistent
+      // output is the consolidated header + per-domain recap.
       if (code === 0) {
-        log.success(label)
         resolve({ dir, label, ok: true })
       } else {
-        log.error(`${label} — exit ${code ?? '?'}`)
         resolve({
           dir,
           label,
@@ -183,16 +183,16 @@ export default {
     // ── Multi-domain fan-out ────────────────────────────────────────
     // 1. Ensure shared infra ONCE — kills the cold-start race (N parallel
     //    children racing check-then-act would each try `astrale start`).
-    const headerLines: string[] = []
+    //    Quiet: the status is folded into the consolidated header below.
+    let managerPart = ''
     if (needsAstraleManager(opts.kernel)) {
       try {
-        const { started } = ensureAstraleManager()
-        headerLines.push(`astrale manager: ${started ? 'started' : 'already running'}`)
+        const { started } = ensureAstraleManager({ quiet: true })
+        managerPart = started ? 'manager started' : 'manager up'
       } catch (e) {
         fatal(e)
       }
     }
-    headerLines.push(`kernel=${opts.kernel}  domain=${opts.domain}`)
 
     // 2. Group by resolved wrangler port. Domains sharing a port reuse
     //    one wrangler ⇒ must be serialised relative to each other; an
@@ -210,15 +210,22 @@ export default {
     const groupList = [...groups.values()]
 
     // 3. Port-groups in parallel (bounded); sequential within a group.
+    //    Live progress = one self-erasing spinner, nothing else.
+    const total = dirs.length
     const bound = Math.min(groupList.length, os.availableParallelism?.() ?? 4)
-    log.step(
-      `dev up — ${dirs.length} domains across ${groupList.length} port-group${groupList.length === 1 ? '' : 's'} (≤${bound} in parallel)`,
-    )
+    const spin = spinner(`dev up — 0/${total} ready`)
+    let done = 0
     const perGroup = await mapBounded(groupList, bound, async (group) => {
       const out: DomainResult[] = []
-      for (const dir of group) out.push(await runChild(dir, opts))
+      for (const dir of group) {
+        const r = await runChild(dir, opts)
+        done++
+        spin.text = `dev up — ${done}/${total} ready · ${r.label}`
+        out.push(r)
+      }
       return out
     })
+    spin.stop()
 
     // 4. Flatten back to discovery order for a stable, enriched recap.
     const byDir = new Map<string, DomainResult>()
@@ -228,7 +235,17 @@ export default {
       return enrich(r, ports[i] ?? null)
     })
 
-    printSummary('dev up', results, headerLines)
+    // One consolidated header: count · parallelism · manager · presets.
+    // "groups" only shown when something is actually serialised
+    // (groupList < total) — otherwise the grouping is invisible noise.
+    const parts = [
+      `${total} domains`,
+      groupList.length < total ? `${groupList.length} groups ∥${bound}` : `∥${bound}`,
+      ...(managerPart ? [managerPart] : []),
+      `kernel=${opts.kernel} domain=${opts.domain}`,
+    ]
+    log.step(`dev up — ${parts.join(' · ')}`)
+    printResults(results)
     if (results.some((r) => !r.ok)) process.exit(1)
   },
 } satisfies CommandDefinition

@@ -152,12 +152,11 @@ export function isPidAlive(pid: number): boolean {
 
 /**
  * Deterministic per-domain Vite dev port derived from the worker port.
- * `+40000` keeps it clear of the worker range and the clients' own
- * configured ports (5173/5273), and unique whenever worker ports are
- * unique — so spawning Vite with `--port <this>` won't collide with a
- * sibling domain. (Domains that already share a worker port — e.g.
- * onepact-demo/manager-ui on 8801 — derive the same Vite port, which is
- * fine: they already cannot run concurrently.)
+ * `+40000` keeps it clear of the worker range, and unique whenever
+ * worker ports are unique — so spawning Vite with `--port <this>` won't
+ * collide with a sibling domain. Worker ports are now centrally unique
+ * per domain (each domain's `envs.ts` readDomainPort default), so every
+ * derived Vite port is unique too and domains can run concurrently.
  */
 export function vitePortFor(workerPort: number): number {
   return workerPort + 40_000
@@ -169,7 +168,7 @@ export function vitePortFor(workerPort: number): number {
  * fan-out starts several `wrangler dev` at once and they'd all fight for
  * 9229 (`Address already in use 127.0.0.1:9230`). `+30000` keeps it
  * clear of the worker range and the `+40000` Vite range, and unique per
- * worker port (same-port domains serialise, so sharing it is fine).
+ * worker port (worker ports are centrally unique per domain).
  */
 export function inspectorPortFor(workerPort: number): number {
   return workerPort + 30_000
@@ -294,12 +293,12 @@ export function needsAstraleManager(kernelPreset: string): boolean {
  * Returns `{ started: true }` only when this call started it (so the
  * caller can record `state.started.astrale` for teardown symmetry).
  */
-export function ensureAstraleManager(): { started: boolean } {
+export function ensureAstraleManager(opts: { quiet?: boolean } = {}): { started: boolean } {
   if (isAstraleRunning()) {
-    log.dim('  astrale manager already running')
+    if (!opts.quiet) log.dim('  astrale manager already running')
     return { started: false }
   }
-  log.dim('  starting astrale manager…')
+  if (!opts.quiet) log.dim('  starting astrale manager…')
   const [bun, entry] = astraleArgv()
   const r = spawnSync(bun, [entry, 'start'], { stdio: 'inherit' })
   if (r.status !== 0) throw new AstraleError('ASTRALE_START_FAILED', 'astrale start failed')

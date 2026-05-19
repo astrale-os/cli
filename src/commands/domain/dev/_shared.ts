@@ -68,20 +68,13 @@ function richDetail(r: DomainResult): string | null {
 }
 
 /**
- * Print a `✔`/`✖` recap. With per-domain `state` (multi-domain `dev up`)
- * it renders a structured block: optional shared-infra header, then
- * URL/pid/owned-vs-reused per domain, plus a dimmed log tail on failure.
- * Without `state` (e.g. `dev down`) it falls back to the legacy
- * one-line-per-domain output — keeping `down.ts` unchanged.
+ * Render one `✔`/`✖` line per domain (no title/header). With per-domain
+ * `state` it's the rich form (URL/pid/owned-vs-reused + dimmed log tail
+ * on failure); without it (legacy `dev down`) the plain `dir` form.
+ * The multi-domain `dev up` calls this directly under its own
+ * consolidated header line.
  */
-export function printSummary(
-  title: string,
-  results: DomainResult[],
-  headerLines: string[] = [],
-): void {
-  const n = results.length
-  log.step(`${title} (${n} domain${n === 1 ? '' : 's'})`)
-  for (const line of headerLines) log.dim(`  ${line}`)
+export function printResults(results: DomainResult[]): void {
   const width = Math.max(0, ...results.map((r) => r.label.length))
   for (const r of results) {
     const label = r.label.padEnd(width)
@@ -95,4 +88,20 @@ export function printSummary(
       }
     }
   }
+}
+
+/**
+ * `printResults` preceded by a `→ title (n domains)` step line and
+ * optional dimmed header lines. Used by `dev down` and the single-domain
+ * `dev up` path; the multi-domain fan-out builds its own header instead.
+ */
+export function printSummary(
+  title: string,
+  results: DomainResult[],
+  headerLines: string[] = [],
+): void {
+  const n = results.length
+  log.step(`${title} (${n} domain${n === 1 ? '' : 's'})`)
+  for (const line of headerLines) log.dim(`  ${line}`)
+  printResults(results)
 }
