@@ -74,20 +74,28 @@ function richDetail(r: DomainResult): string | null {
  * The multi-domain `dev up` calls this directly under its own
  * consolidated header line.
  */
-export function printResults(results: DomainResult[]): void {
-  const width = Math.max(0, ...results.map((r) => r.label.length))
-  for (const r of results) {
-    const label = r.label.padEnd(width)
-    const detail = richDetail(r)
-    if (r.ok) {
-      log.success(detail ? `${label}  ${detail}` : `${label}  ${r.dir}`)
-    } else {
-      log.error(`${label}  ${r.dir} — ${r.error ?? 'failed'}`)
-      if (r.logTail) {
-        for (const line of r.logTail.split('\n')) log.dim(`      ${line}`)
-      }
+/**
+ * Render a single domain's `✔`/`✖` line (label padded to `width`),
+ * plus a dimmed log tail on failure. Used both by `printResults` (batch)
+ * and by the multi-domain `dev up` which streams each line the moment
+ * its domain settles.
+ */
+export function printResultLine(r: DomainResult, width: number): void {
+  const label = r.label.padEnd(width)
+  const detail = richDetail(r)
+  if (r.ok) {
+    log.success(detail ? `${label}  ${detail}` : `${label}  ${r.dir}`)
+  } else {
+    log.error(`${label}  ${r.dir} — ${r.error ?? 'failed'}`)
+    if (r.logTail) {
+      for (const line of r.logTail.split('\n')) log.dim(`      ${line}`)
     }
   }
+}
+
+export function printResults(results: DomainResult[]): void {
+  const width = Math.max(0, ...results.map((r) => r.label.length))
+  for (const r of results) printResultLine(r, width)
 }
 
 /**

@@ -16,7 +16,7 @@ import {
 import { mapBounded } from '../../../lib/concurrency'
 import { resolveDomainDirs } from '../../../lib/domain-discovery'
 import { paths } from '../../../lib/env'
-import { fatal, log, spinner } from '../../../lib/log'
+import { fatal, log } from '../../../lib/log'
 import { type DomainResult, labelFor, printResults, printSummary } from './_shared'
 
 type Opts = {
@@ -61,14 +61,40 @@ function enrich(r: DomainResult, port: number | null): DomainResult {
 }
 
 /**
+ * Minimal in-place progress line. NO ora / Proxy / cursor library —
+ * just `\r` rewrites of one line, and only when stdout is a real TTY (a
+ * pipe / CI / non-interactive run gets nothing and the recap alone).
+ * Children are spawned `detached`, so an interactive child shell can't
+ * steal the tty and SIGTTOU us mid-render.
+ */
+function startTicker(total: number): { tick: (done: number) => void; stop: () => void } {
+  if (!process.stdout.isTTY) return { tick: () => {}, stop: () => {} }
+  const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+  let frame = 0
+  let done = 0
+  const id = setInterval(() => {
+    frame = (frame + 1) % frames.length
+    process.stdout.write(`\r${frames[frame]} dev up — ${done}/${total} ready\x1b[K`)
+  }, 80)
+  return {
+    tick: (d) => {
+      done = d
+    },
+    stop: () => {
+      clearInterval(id)
+      process.stdout.write('\r\x1b[K')
+    },
+  }
+}
+
+/**
  * Run one domain as a child `astrale domain dev up --cwd <dir>`. The
  * child resolves to exactly that one domain (discovery stops at the
  * first match) → hits the in-process single-domain path → never fans
  * out again (recursion-safe). Output is buffered and only surfaced via
  * the recap; live wrangler/vite output already goes to log files.
  */
-function runChild(dir: string, opts: Opts): Promise<DomainResult> {
-  const label = labelFor(dir)
+function runChild(dir: string, label: string, opts: Opts): Promise<DomainResult> {
   const [bun, entry] = astraleArgv()
   const args = [
     entry,
@@ -86,14 +112,23 @@ function runChild(dir: string, opts: Opts): Promise<DomainResult> {
     ...(opts.views ? ['--views', opts.views] : []),
   ]
   return new Promise<DomainResult>((resolve) => {
-    const child = spawn(bun, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    // detached: true → the child gets its own session (setsid) with NO
+    // controlling terminal. `devUp` spawns an *interactive* `zsh -lic`
+    // (needed for the macOS-TCC PATH workaround); an interactive shell
+    // calls tcsetpgrp() to grab the controlling tty. Without isolation
+    // the concurrent children steal the foreground from this parent, and
+    // the parent's ora spinner then writes to a backgrounded tty →
+    // SIGTTOU → `astrale` itself suspends ("suspended (tty output)").
+    // Own session = no tty to steal. stdio is piped (not inherited), so
+    // we still capture everything and `close` still fires.
+    const child = spawn(bun, args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true })
     let buf = ''
     child.stdout?.on('data', (d: Buffer) => (buf += d))
     child.stderr?.on('data', (d: Buffer) => (buf += d))
     child.on('error', (e) => resolve({ dir, label, ok: false, error: e.message }))
     child.on('close', (code) => {
-      // Silent: the parent updates a single spinner; the only persistent
-      // output is the consolidated header + per-domain recap.
+      // Silent here: the group worker prints this domain's line (via
+      // printResultLine) the moment runChild resolves.
       if (code === 0) {
         resolve({ dir, label, ok: true })
       } else {
@@ -200,6 +235,8 @@ export default {
     const ports = await Promise.all(
       dirs.map((dir) => resolveWorkerPort(dir, opts.domain).catch(() => null)),
     )
+    const portByDir = new Map<string, number | null>(dirs.map((dir, i) => [dir, ports[i] ?? null]))
+    const labelByDir = new Map<string, string>(dirs.map((dir) => [dir, labelFor(dir)]))
     const groups = new Map<string, string[]>()
     dirs.forEach((dir, i) => {
       const key = ports[i] === null ? `solo:${dir}` : `port:${ports[i]}`
@@ -208,36 +245,12 @@ export default {
       else groups.set(key, [dir])
     })
     const groupList = [...groups.values()]
-
-    // 3. Port-groups in parallel (bounded); sequential within a group.
-    //    Live progress = one self-erasing spinner, nothing else.
     const total = dirs.length
     const bound = Math.min(groupList.length, os.availableParallelism?.() ?? 4)
-    const spin = spinner(`dev up — 0/${total} ready`)
-    let done = 0
-    const perGroup = await mapBounded(groupList, bound, async (group) => {
-      const out: DomainResult[] = []
-      for (const dir of group) {
-        const r = await runChild(dir, opts)
-        done++
-        spin.text = `dev up — ${done}/${total} ready · ${r.label}`
-        out.push(r)
-      }
-      return out
-    })
-    spin.stop()
 
-    // 4. Flatten back to discovery order for a stable, enriched recap.
-    const byDir = new Map<string, DomainResult>()
-    for (const g of perGroup) for (const r of g) byDir.set(r.dir, r)
-    const results = dirs.map((dir, i) => {
-      const r = byDir.get(dir) ?? { dir, label: labelFor(dir), ok: false, error: 'no result' }
-      return enrich(r, ports[i] ?? null)
-    })
-
-    // One consolidated header: count · parallelism · manager · presets.
-    // "groups" only shown when something is actually serialised
-    // (groupList < total) — otherwise the grouping is invisible noise.
+    // 3. Consolidated header up front — everything in it is known before
+    //    the fan-out. "groups" shown only when something is actually
+    //    serialised (groupList < total), else it's invisible noise.
     const parts = [
       `${total} domains`,
       groupList.length < total ? `${groupList.length} groups ∥${bound}` : `∥${bound}`,
@@ -245,6 +258,35 @@ export default {
       `kernel=${opts.kernel} domain=${opts.domain}`,
     ]
     log.step(`dev up — ${parts.join(' · ')}`)
+
+    // 4. Port-groups in parallel (bounded), sequential within a group.
+    //    A single self-erasing progress line ticks while they run; the
+    //    sorted per-domain recap prints once everything has settled.
+    const ticker = startTicker(total)
+    let done = 0
+    const perGroup = await mapBounded(groupList, bound, async (group) => {
+      const out: DomainResult[] = []
+      for (const dir of group) {
+        const label = labelByDir.get(dir) ?? labelFor(dir)
+        const r = enrich(await runChild(dir, label, opts), portByDir.get(dir) ?? null)
+        ticker.tick(++done)
+        out.push(r)
+      }
+      return out
+    })
+    ticker.stop()
+
+    // Recap in discovery order (stable), not completion order.
+    const byDir = new Map(perGroup.flat().map((r) => [r.dir, r]))
+    const results = dirs.map(
+      (dir) =>
+        byDir.get(dir) ?? {
+          dir,
+          label: labelByDir.get(dir) ?? labelFor(dir),
+          ok: false,
+          error: 'no result',
+        },
+    )
     printResults(results)
     if (results.some((r) => !r.ok)) process.exit(1)
   },
