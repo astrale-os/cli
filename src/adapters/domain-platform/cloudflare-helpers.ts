@@ -105,19 +105,16 @@ export async function waitForUrl(url: string, timeoutMs: number, label: string):
 // canonical BSD paths sidesteps PATH lookup entirely.
 const LSOF = '/usr/sbin/lsof'
 const KILL = '/bin/kill'
-const PKILL = '/usr/bin/pkill'
 
 /**
- * Kill a wrangler/workerd tree listening on `port`. Three passes — each
- * alone is insufficient. Returns the number of listeners found via lsof
- * on the first pass.
+ * Kill the wrangler/workerd process(es) listening on `port`. Port-scoped:
+ * does NOT touch siblings on other ports — the previous global `pkill -f
+ * workerd serve` fallback killed every other domain's worker on the host.
  */
 export function killWranglerTree(port: number): { killed: number } {
   const lsof = spawnSync(LSOF, ['-ti', `:${port}`], { encoding: 'utf-8' })
   const pids = (lsof.stdout ?? '').split('\n').filter(Boolean)
   if (pids.length > 0) spawnSync(KILL, ['-KILL', ...pids])
-  spawnSync(PKILL, ['-9', '-f', 'wrangler.*dev --port'])
-  spawnSync(PKILL, ['-9', '-f', 'workerd serve'])
   return { killed: pids.length }
 }
 
