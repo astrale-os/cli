@@ -12,7 +12,12 @@ import type { CommandDefinition } from '../command'
 import { stopAllTunnels } from '../adapters/tunnel-cloudflared'
 import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
-import { composeDown, forceRemoveContainer } from '../lib/docker'
+import {
+  composeDown,
+  composeStopService,
+  forceRemoveContainer,
+  isManagerRunning,
+} from '../lib/docker'
 import { formatElapsed } from '../lib/format'
 import { getActive, resolveInstanceId } from '../lib/instance'
 import { log, spinner } from '../lib/log'
@@ -128,12 +133,18 @@ async function resetManager(
 
     client.disconnect()
 
-    // Stop the manager
+    // Stop the manager — docker-mode: stop ONLY the `manager` service so
+    // FalkorDB stays up for `clearGraph` below. The old `stopCommand()`
+    // path called `composeStop` without a service arg, which stopped the
+    // whole stack (manager + falkordb) and made `clearGraph` fail every
+    // time. Host-mode / salvage still goes through `stopCommand()`.
     const spin = spinner('Stopping manager...')
     if (managerSession) {
       await managerSession.close()
       managerSession = null
       await removeManagerPid()
+    } else if (await isManagerRunning(COMPOSE_PATH)) {
+      await composeStopService('manager', COMPOSE_PATH)
     } else {
       await stopCommand()
     }

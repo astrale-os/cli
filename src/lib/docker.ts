@@ -355,6 +355,13 @@ export async function composeRestart(
   await run(['docker', 'compose', '-f', composePath, 'restart', service])
 }
 
+export async function composeStopService(
+  service: string,
+  composePath: string = COMPOSE_PATH,
+): Promise<void> {
+  await run(['docker', 'compose', '-f', composePath, 'stop', service])
+}
+
 export interface ComposeServiceStatus {
   readonly Service: string
   readonly State: string
