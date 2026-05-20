@@ -1,6 +1,6 @@
 import type { Kernel } from '@astrale-os/kernel-host'
 
-import { clearGraph } from '@astrale-os/kernel-adapters/falkordb'
+import { clearGraph, deleteGraph, listGraphs } from '@astrale-os/kernel-adapters/falkordb'
 import { type FnMap } from '@astrale-os/kernel-client'
 import { ClientSession } from '@astrale-os/kernel-client/session'
 import chalk from 'chalk'
@@ -310,7 +310,7 @@ async function resetHard(opts: ResetOptions): Promise<void> {
 
   if (!opts.yes) {
     const msg = keepDb
-      ? 'This will WIPE every Astrale state file on this machine — manager, child instances, identities, keypairs, tunnel registrations. FalkorDB is left running (host-mode owns it). Continue? [y/N] '
+      ? 'This will WIPE every Astrale state file on this machine — manager, child instances, identities, keypairs, tunnel registrations — and drop all Astrale graphs from FalkorDB. The FalkorDB container is left running (host-mode owns it). Continue? [y/N] '
       : 'This will WIPE every Astrale state file on this machine — manager, child instances, identities, keypairs, tunnel registrations, FalkorDB data — as if this were a fresh install. Continue? [y/N] '
     process.stdout.write(chalk.red(msg))
     const answer = await readLine()
@@ -345,6 +345,24 @@ async function resetHard(opts: ResetOptions): Promise<void> {
   }
 
   await tryStep('manager', () => forceStopManager())
+
+  try {
+    const cfg = await readConfig()
+    const all = await listGraphs({ host: cfg.falkorHost, port: cfg.falkorPort })
+    const ours = all.filter((g) => g === cfg.graphName || g.endsWith('-graph'))
+    let dropped = 0
+    for (const name of ours) {
+      try {
+        await deleteGraph({ graphName: name, host: cfg.falkorHost, port: cfg.falkorPort })
+        dropped++
+      } catch {
+        /* per-graph swallow — keep going through the list */
+      }
+    }
+    if (dropped > 0) stopped.push(`${dropped} graph(s)`)
+  } catch {
+    /* FalkorDB unreachable — nothing to drop */
+  }
 
   // Compose stack — `composeDown` keeps the node_modules volume (see its
   // docstring); graph data is a host bind-mount wiped by the filesystem
@@ -414,7 +432,7 @@ async function resetHard(opts: ResetOptions): Promise<void> {
     for (const s of skipped) log.dim(`  ${s.path}: ${s.reason}`)
   }
   if (keepDb) {
-    log.info('FalkorDB left untouched (host-mode owns it — container + data preserved).')
+    log.info('FalkorDB container left running (host-mode owns it); Astrale graphs dropped.')
   }
   log.dim(
     'Not touched: ~/.cloudflared (cloudflared account/credentials), Cloudflare DNS records, remote distribution domain workers',
