@@ -95,7 +95,7 @@ Examples:
     const meta = spec.meta
 
     // Always run auto-detection. Looks under `<specDir>/worker/keys/` — the
-    // convention used by `minimal-remote`-scaffolded domains.
+    // convention every scaffolded domain uses (see `astrale domain init`).
     //
     // When the user passes `-k <path>` AND the convention also has a key,
     // their explicit choice wins, but we warn loudly when those paths

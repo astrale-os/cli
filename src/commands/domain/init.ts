@@ -19,8 +19,8 @@ export default {
   options: [
     {
       flags: '--template <name>',
-      description: 'Template to clone (default: minimal-remote)',
-      default: 'minimal-remote',
+      description: 'Template to clone (default: default)',
+      default: 'default',
     },
     {
       flags: '--target-dir <path>',
@@ -45,7 +45,7 @@ export default {
 
       const result = await platform.scaffold({
         slug,
-        template: opts.template ?? 'minimal-remote',
+        template: opts.template ?? 'default',
         targetDir,
         force: opts.force,
       })

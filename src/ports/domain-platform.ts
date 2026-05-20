@@ -14,7 +14,10 @@ import type { DevState } from '@astrale-os/kernel-host'
 export type ScaffoldOpts = {
   /** New domain slug, validated by the caller. */
   slug: string
-  /** Template name (v1: 'minimal-remote'). Lives under `cli/templates/<template>/`. */
+  /**
+   * Template name (e.g. 'default', 'minimal'). Default is 'default'. Lives
+   * under `cli/templates/<template>/`. Per-template README is canonical.
+   */
   template: string
   /** Destination directory (absolute). */
   targetDir: string
@@ -54,14 +57,18 @@ export type DevUpOpts = {
   /** Domain preset name (e.g. `local:inprocess`). */
   domain: string
   /**
-   * How the worker serves its `/ui/*` SPA.
-   * - `'auto'` (default): HMR when the domain ships a runnable
-   *   `worker/client` (a `dev:hmr` script) — Vite dev server proxied
-   *   live, no stale `dist-client/` trap; otherwise the built bundle.
-   * - `'built'`: force the wrangler-assets `dist-client/` bundle.
-   * - `'hmr'`: force the Vite dev server (errors if no runnable client).
+   * Per-invocation override of the domain's `lifecycle.ts`
+   * `config.views`. Effective mode = `opts.views ?? config.views ??
+   * 'built'` (explicit only — no filesystem auto-detect). Only
+   * consulted when the domain has a runnable client
+   * (`worker/client/package.json`).
+   * - `'built'`: fresh one-shot `vite build` every dev up; wrangler
+   *   serves `dist-client/`. Kills the stale-bundle trap.
+   * - `'hmr'`: live Vite dev server, worker proxies `/ui/*` to it.
+   *   Forcing this makes a Vite-bringup failure a hard error for the
+   *   domain (vs the config-driven loud-fallback-to-built).
    */
-  views?: 'auto' | 'built' | 'hmr'
+  views?: 'built' | 'hmr'
 }
 
 export type DevDownOpts = {

@@ -186,6 +186,13 @@ The canonical domain lifecycle is
 probes a domain/kernel (OIDC discovery + JWKS reachable); `domain logs`
 streams worker logs (**stub** — adapter-specific tooling).
 
+- `domain init <slug>` scaffolds from `cli/templates/<name>/`. Default is
+  `default` (full feature set: Interface + Class methods, View,
+  RemoteFunction, core, lifecycle; depends on `@astrale-os/distribution-
+  domain`). `--template minimal` is the bare alternative (no cross-domain
+  dep). Each template's `README.md` is canonical. Reserved slugs:
+  `astrale-domain` (the placeholder stem), `minimal`, `default`.
+
 - `dev up` / `dev down` / `dev status` **recursively scan the cwd** for domain
   dirs (each must have `package.json` + `envs.ts`) and act on **every** one;
   they fall back to a walk-*up* single-domain resolver when run from inside a

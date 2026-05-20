@@ -27,7 +27,7 @@ import type {
 
 import { AstraleError } from '../../errors'
 import {
-  buildMinimalRemoteRenameMap,
+  buildScaffoldRenameMap,
   copyTemplate,
   pathExists,
   renameFilesInTree,
@@ -46,7 +46,12 @@ import {
   resolveSdkFingerprint,
 } from './cloudflare-lifecycle'
 
-const RESERVED_SLUGS = new Set(['minimal', 'minimal-remote'])
+// Reserved: the placeholder stem (`astrale-domain` would make the rename a
+// no-op and ship a broken in-place-named domain) + the template names
+// themselves (to avoid the slug == template-name footgun). Stable set,
+// template-agnostic — adding a future template requires no change unless
+// its name should also be reserved.
+const RESERVED_SLUGS = new Set(['astrale-domain', 'minimal', 'default'])
 const SLUG_RE = /^[a-z][a-z0-9-]{0,38}$/
 
 /**
@@ -105,10 +110,7 @@ export const cloudflareDomainPlatform: DomainPlatform = {
     }
 
     await copyTemplate(templateDir, targetDir)
-    const renameMap =
-      template === 'minimal-remote'
-        ? buildMinimalRemoteRenameMap(slug)
-        : buildGenericRenameMap(slug)
+    const renameMap = buildScaffoldRenameMap(slug)
     const touched = await rewriteFilesContent(targetDir, renameMap)
     const renamed = await renameFilesInTree(targetDir, renameMap)
     const keysWritten = await writeWorkerKeysFile(targetDir, slug)
@@ -253,14 +255,6 @@ function formatSmokeResult(smoke: SmokeResult): string[] {
     ...errors.map((line) => `    ${line}`),
     `  If you didn't modify the scaffold output, this is template / kernel-runtime drift — please report it.`,
   ]
-}
-
-function buildGenericRenameMap(slug: string): ReturnType<typeof buildMinimalRemoteRenameMap> {
-  const v = slugVariants(slug)
-  return {
-    literals: [{ from: '__SLUG__', to: v.kebab }],
-    wordBoundary: [],
-  }
 }
 
 /**

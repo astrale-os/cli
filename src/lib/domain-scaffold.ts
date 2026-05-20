@@ -37,12 +37,8 @@ const BINARY_EXT = new Set([
   '.gz',
 ])
 
-export type RenameMap = {
-  /** Literal substitutions applied in order. */
-  literals: Array<{ from: string; to: string }>
-  /** Word-boundary substitutions (\bword\b) applied after literals. */
-  wordBoundary: Array<{ from: string; to: string }>
-}
+/** Flat literal substitutions applied in order. */
+export type RenameMap = Array<{ from: string; to: string }>
 
 /**
  * Derive PascalCase/camelCase variants from a kebab-case slug.
@@ -62,31 +58,29 @@ export function slugVariants(slug: string): {
 }
 
 /**
- * Build the default rename map for the `minimal-remote` template.
- * Every identifier that appears verbatim in the template maps to its
- * slug-derived equivalent.
+ * Build the rename map applied to every scaffold template.
+ *
+ * All templates use the same placeholder stem `astrale-domain` so a single
+ * builder handles all of them; adding a new template under
+ * `cli/templates/<name>/` requires zero changes here. Specific FQDNs precede
+ * the bare-kebab rule so `astrale-domain.test.astrale.ai` isn't first mangled
+ * to `<kebab>.test.astrale.ai` by the catch-all.
  */
-export function buildMinimalRemoteRenameMap(slug: string): RenameMap {
+export function buildScaffoldRenameMap(slug: string): RenameMap {
   const v = slugVariants(slug)
-  return {
-    literals: [
-      // Folder + package name (must precede the bare `minimal` rule).
-      { from: 'minimal-remote', to: v.kebab },
-      // FQDNs and hostnames.
-      { from: 'minimal.test.astrale.ai', to: `${v.kebab}.test.astrale.ai` },
-      { from: 'minimal.astrale.ai', to: `${v.kebab}.astrale.ai` },
-      { from: 'minimal.localhost', to: `${v.kebab}.localhost` },
-      // Env-var prefix.
-      { from: 'MINIMAL_', to: `${v.upperSnake}_` },
-      // PascalCase / camelCase identifiers (template-specific).
-      { from: 'MinimalRemoteSchema', to: `${v.pascal}Schema` },
-      { from: 'minimalRemoteDomain', to: `${v.camel}Domain` },
-    ],
-    wordBoundary: [
-      // Last pass — bare `minimal` inside comments, slugs, etc.
-      { from: 'minimal', to: v.kebab },
-    ],
-  }
+  return [
+    // PascalCase / camelCase identifiers.
+    { from: 'AstraleDomainSchema', to: `${v.pascal}Schema` },
+    { from: 'astraleDomainDef', to: `${v.camel}Def` },
+    // FQDNs (precede the bare-kebab catch-all).
+    { from: 'astrale-domain.test.astrale.ai', to: `${v.kebab}.test.astrale.ai` },
+    { from: 'astrale-domain.astrale.ai', to: `${v.kebab}.astrale.ai` },
+    { from: 'astrale-domain.localhost', to: `${v.kebab}.localhost` },
+    // Env-var prefix.
+    { from: 'ASTRALE_DOMAIN_', to: `${v.upperSnake}_` },
+    // Catch-all: folder names, package names, prose, ClassPath strings.
+    { from: 'astrale-domain', to: v.kebab },
+  ]
 }
 
 /** Filter predicate used by fs.cp. */
@@ -117,12 +111,8 @@ export async function copyTemplate(srcDir: string, destDir: string): Promise<voi
 /** Apply a rename map to the text content of a single file. */
 export function applyRenameToText(text: string, map: RenameMap): string {
   let out = text
-  for (const { from, to } of map.literals) {
+  for (const { from, to } of map) {
     if (out.includes(from)) out = out.split(from).join(to)
-  }
-  for (const { from, to } of map.wordBoundary) {
-    const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    out = out.replace(new RegExp(`\\b${escaped}\\b`, 'g'), to)
   }
   return out
 }
@@ -183,7 +173,7 @@ export async function renameFilesInTree(rootDir: string, map: RenameMap): Promis
   for (const path of all) {
     const base = path.slice(dirname(path).length + 1)
     let newBase = base
-    for (const { from, to } of map.literals) {
+    for (const { from, to } of map) {
       if (newBase.includes(from)) newBase = newBase.split(from).join(to)
     }
     if (newBase !== base) {

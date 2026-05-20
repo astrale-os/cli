@@ -596,8 +596,9 @@ export async function buildSpec(opts: BuildSpecOpts): Promise<BuildSpecResult> {
   const domain = evalPreset(envs.domainEnvs, presetName, 'domain')
 
   // The sdk's build-spec-cli reads env vars: <PREFIX>_BASE_DOMAIN /
-  // <PREFIX>_WORKER_URL where PREFIX depends on the template. We set a
-  // generic pair that the minimal-remote scaffold already consumes.
+  // <PREFIX>_WORKER_URL where PREFIX is the slug's upper-snake form. We set
+  // a slug-derived <UPPER_SNAKE>_ pair plus generic BASE_DOMAIN/WORKER_URL
+  // that every scaffold template consumes.
   const domainModule = join(resolved.dir, 'domain.ts')
   const outputPath = join(resolved.dir, 'spec.json')
   if (!existsSync(domainModule)) {
