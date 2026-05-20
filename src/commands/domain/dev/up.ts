@@ -1,6 +1,7 @@
 import type { CommandDefinition } from '../../../command'
 
 import { resolveDomainPlatform } from '../../../adapters/domain-platform'
+import { AstraleError } from '../../../errors'
 import { resolveDomainDirs } from '../../../lib/domain-discovery'
 import { fatal, log } from '../../../lib/log'
 import { type DomainResult, labelFor, printSummary } from './_shared'
@@ -58,6 +59,7 @@ export default {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
         log.error(`${label}: ${msg}`)
+        if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
         results.push({ dir, label, ok: false, error: msg })
         // continue with the remaining domains
       }
