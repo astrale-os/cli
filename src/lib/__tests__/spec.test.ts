@@ -42,10 +42,10 @@ describe('spec — findFirstRemoteUrl', () => {
       { class: '/:kernel.astrale.ai:class.Folder', props: {} },
       {
         path: '/manager-ui.astrale.ai/core/views/console',
-        props: { [BINDING_KEY]: '{"remoteUrl":"http://localhost:8801/views/console"}' },
+        props: { [BINDING_KEY]: '{"remoteUrl":"http://localhost:8844/views/console"}' },
       },
     ]
-    expect(findFirstRemoteUrl(nodes)).toBe('http://localhost:8801/views/console')
+    expect(findFirstRemoteUrl(nodes)).toBe('http://localhost:8844/views/console')
   })
 
   test('accepts the object form of the binding prop', () => {

@@ -12,6 +12,7 @@ import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 import { KEYS_DIR } from '../../lib/paths'
+import { KERNEL_DOMAIN_CLASS } from '../../lib/spec'
 
 const KERNEL_NODE_CREATE = '/kernel.astrale.ai/interface.Node/createNode'
 
@@ -41,10 +42,7 @@ async function defaultClassPath(): Promise<string> {
   }
   for (const node of spec.nodes ?? []) {
     const cls = typeof node.class === 'string' ? node.class : node.class?.raw
-    if (
-      cls?.startsWith('/:kernel.astrale.ai:class.Domain') &&
-      typeof node.props?.origin === 'string'
-    ) {
+    if (cls?.startsWith(KERNEL_DOMAIN_CLASS) && typeof node.props?.origin === 'string') {
       return `/:${node.props.origin}:class.User`
     }
   }

@@ -9,10 +9,10 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PlaygroundRouteImport } from './routes/playground'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as KernelIdRouteImport } from './routes/kernel/$id'
 import { Route as KernelRemoteSlugRouteImport } from './routes/kernel/remote/$slug'
-import { Route as PlaygroundRouteImport } from './routes/playground'
 
 const PlaygroundRoute = PlaygroundRouteImport.update({
   id: '/playground',

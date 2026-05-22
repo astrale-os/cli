@@ -1,10 +1,9 @@
 import type { FnMap } from '@astrale-os/kernel-client'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
 
-import { log } from './log'
+import { USE } from '@astrale-os/kernel-core'
 
-// kernel/core/auth/permissions/semantic.ts — bit 2.
-const USE_PERM = 4
+import { log } from './log'
 
 /**
  * Bootstrap grants for the `distribution` domain — mirrors the grants
@@ -45,7 +44,7 @@ export async function grantDistributionBootstrap(
   let granted = 0
   for (const grantee of workerFnPaths) {
     for (const target of primitives) {
-      await client.call(`${grantee}::grantPerm`, { node: target, perms: USE_PERM })
+      await client.call(`${grantee}::grantPerm`, { node: target, perms: USE })
       granted++
     }
   }
