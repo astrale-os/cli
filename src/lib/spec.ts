@@ -54,7 +54,7 @@ export function extractDomainSlug(nodes: unknown[]): string | undefined {
 /**
  * First `remoteUrl` found across the spec nodes' `Function.binding` prop.
  * For manager-ui this is the single console View
- * (`http://localhost:8801/views/console`). `undefined` when no node
+ * (`http://localhost:8844/views/console`). `undefined` when no node
  * carries a binding.
  */
 export function findFirstRemoteUrl(nodes: unknown[]): string | undefined {

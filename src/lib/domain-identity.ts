@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 
 import { AstraleError } from '../errors'
 import { BINDING_KEY } from '../kernel/remote-routing'
+import { KERNEL_DOMAIN_CLASS } from './spec'
 
 type Spec = { nodes: SpecNode[]; edges: SpecEdge[] }
 type SpecNode = {
@@ -133,7 +134,6 @@ async function assertKeyPairConsistent(
   }
 }
 
-const DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
 const METHOD_OF_CLASS = '/:kernel.astrale.ai:class.method_of'
 // Both buckets are valid `method_of` targets — Function methods can be hosted
 // on either a `class.X` or an `interface.X`. The kernel computes function
@@ -152,7 +152,7 @@ function rawStr(value: string | { raw: string } | undefined): string | undefined
 function extractDomainSlug(spec: Spec): string {
   const domainNode = spec.nodes.find((n) => {
     const cls = rawStr(n.class)
-    return cls === DOMAIN_CLASS || cls === `${DOMAIN_CLASS}/self`
+    return cls === KERNEL_DOMAIN_CLASS || cls === `${KERNEL_DOMAIN_CLASS}/self`
   })
   if (!domainNode) throw new Error('No Domain node found in spec')
   const origin = domainNode.props?.origin
