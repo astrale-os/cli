@@ -15,38 +15,31 @@ astrale domain init <slug> --template minimal
 
 - One Interface (`NoteOps`) with one static method (`createNote`).
 - One Class (`Note`) implementing the interface + `KernelSchema.interfaces.Container`.
-- One edge class (`references`).
-- A Cloudflare Worker (`worker/`) wired through `createRemoteServer`.
-- A React SPA (`worker/client/`) for `/ui/*` views, shell-handshake capable.
+- A Cloudflare Worker (`worker/`) wired through `createRemoteServer`, with a
+  real `createNote` impl that creates a Note via `kernel.call`.
 - An in-process fixture test.
 
-**No `@astrale-os/distribution-domain` dependency.** This template stands
-alone.
+No `View`, no `RemoteFunction`, no edge class, no SPA — the smallest shape that
+works end-to-end. **No `@astrale-os/distribution-domain` dependency.** This
+template stands alone. (The `default` template adds all of the above.)
 
 ## Shape
 
 ```
 <slug>/
   envs.ts                       # local:inprocess / local:tunneled / prod presets
+  domain.ts                     # defineRemoteDomain + the real createNote impl
   schema/
-    schema.ts                   # Note + NoteOps + references
+    schema.ts                   # Note + NoteOps
     index.ts
   methods/
-    note-ops.ts                 # impl of createNote on the NoteOps interface
+    note-ops.ts                 # in-process fixture impl of createNote
     index.ts                    # defineMethods — impl goes in `interface:` bucket
   worker/
-    src/index.ts                # createRemoteServer wiring + /ui/* dispatch
+    src/index.ts                # createRemoteServer wiring (serves domain.ts)
     src/env.ts / src/keys.ts
-    wrangler.jsonc              # routes commented out; alias + assets bindings load-bearing
+    wrangler.jsonc              # routes commented out; no assets binding (no SPA)
     tsconfig.json
-    client/                     # React SPA for /ui/* views (shell handshake-capable)
-      package.json / vite.config.ts / tsconfig.json / index.html
-      src/main.tsx / src/app.tsx
-      src/providers/shell-provider.tsx  # handshake + setTarget intent listen
-      src/routes/$slug.tsx              # dispatch renderer by URL slug
-      src/renderers/default.tsx         # starter view — duplicate + specialize
-      src/lib/node.ts                   # useNode(shell, nodeId) + PROP keys
-      README.md                         # add-a-view guide + HMR setup
   test/
     <slug>.test.ts              # domainFixture smoke test (in-process)
     setup-env.ts / vitest.config.ts / .env.example / tsconfig.json
@@ -64,10 +57,10 @@ What's left:
    EdDSA pair — fine for `*.test.astrale.ai` iteration, **not** for real
    prod. Rotate before shipping.
 
-2. **Model your domain.** The template ships `Note` / `NoteOps` /
-   `references` as a placeholder example. Rename or replace once you have
-   real types. If you rename `methods/note-ops.ts`, update the re-export
-   in `methods/index.ts` or `pnpm test` fails.
+2. **Model your domain.** The template ships `Note` / `NoteOps` as a
+   placeholder example. Rename or replace once you have real types. If you
+   rename `methods/note-ops.ts`, update the re-export in `methods/index.ts`
+   (and the worker impl in `domain.ts`) or `pnpm test` fails.
 
 3. **Register the sub-packages.** Add to `pnpm-workspace.yaml` at the
    workspace root (the CLI doesn't edit it for you yet):
@@ -75,7 +68,6 @@ What's left:
    ```yaml
    - 'domains/<slug>'
    - 'domains/<slug>/worker'
-   - 'domains/<slug>/worker/client'
    - 'domains/<slug>/test'
    ```
 
@@ -96,11 +88,6 @@ What's left:
    `dev up`/`down`/`status` scan the cwd recursively and act on every
    domain found (restart-by-default for `up`). Full lifecycle reference:
    the `astrale-domain-dev` skill.
-
-6. **(Optional) Tweak the SPA.** The worker ships with a React SPA at
-   `worker/client/` that renders `/ui/<slug>` views. The `default`
-   renderer dumps the target node's props — duplicate + rename for
-   domain-specific views. See `worker/client/README.md`.
 
 ## When to use `minimal` vs `default`
 

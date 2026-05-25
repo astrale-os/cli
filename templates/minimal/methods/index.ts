@@ -11,8 +11,9 @@ import { NoteOpsMethods } from './note-ops.ts'
  *
  * This file is the in-process wiring consumed by `domainFixture({ schema,
  * methods })` (see test/astrale-domain.test.ts). The production remote
- * wiring lives in `../domain.ts` (via `defineRemoteDomain` + stubs) and is
- * what `scripts/build-spec.ts` and `worker/src/index.ts` consume.
+ * wiring lives in `../domain.ts` (via `defineRemoteDomain` with the real
+ * `createNote` impl — minimal has no worker-local stub split) and is what
+ * `astrale domain build` and `worker/src/index.ts` consume.
  */
 export const methods = defineMethods(AstraleDomainSchema, {
   interface: {

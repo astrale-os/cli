@@ -216,16 +216,27 @@ export async function writeWorkerKeysFile(targetDir: string, slug: string): Prom
 }
 
 /**
- * Seed `worker/dist-client/index.html` with a one-line stub.
+ * Seed `worker/dist-client/index.html` with a one-line stub — but only when
+ * the scaffolded `worker/wrangler.jsonc` declares an `assets` binding.
  *
- * `wrangler.jsonc` declares `assets.directory: ./dist-client`; without
- * the directory existing, `wrangler dev` refuses to boot with
- * "assets.directory does not exist" before the user has had a chance
- * to run `pnpm build` in `worker/client/`. Shipping a stub lets the
- * worker boot immediately on first `astrale domain dev up`; the stub
- * is overwritten the moment the SPA build runs.
+ * That binding sets `assets.directory: ./dist-client`; without the directory
+ * existing, `wrangler dev` refuses to boot with "assets.directory does not
+ * exist" before the user has run `pnpm build` in `worker/client/`. Shipping a
+ * stub lets the worker boot immediately on first `astrale domain dev up`; the
+ * stub is overwritten the moment the SPA build runs.
+ *
+ * Templates without an `assets` binding (e.g. `minimal`, which ships no SPA)
+ * get no placeholder. Gating on the binding — rather than the template name —
+ * keeps this template-agnostic.
  */
 export async function writeDistClientPlaceholder(targetDir: string): Promise<boolean> {
+  const wranglerPath = join(targetDir, 'worker', 'wrangler.jsonc')
+  if (!(await pathExists(wranglerPath))) return false
+  // Match a real `"assets":` key (line-anchored), not a mention inside a `//`
+  // comment — JSONC tolerates comments and trailing commas, so don't parse.
+  const wrangler = await readFile(wranglerPath, 'utf-8')
+  if (!/^\s*"assets"\s*:/m.test(wrangler)) return false
+
   const distDir = join(targetDir, 'worker', 'dist-client')
   await mkdir(distDir, { recursive: true })
   const indexPath = join(distDir, 'index.html')

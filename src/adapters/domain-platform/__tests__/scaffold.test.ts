@@ -81,13 +81,15 @@ for (const { name: template, expectsDistDep } of TEMPLATES) {
       // Scaffolded domain must follow the standalone `domains/` idiom:
       // @astrale-os deps as external semver, never `workspace:*` (which
       // only resolves inside the linked monorepo). Swept across EVERY
-      // package.json in the tree (root + worker + worker/client), deps
-      // AND devDeps.
+      // package.json in the tree, deps AND devDeps. `default` ships a SPA
+      // (root + worker + worker/client = 3); `minimal` has no SPA (root +
+      // worker = 2).
       const pkgFiles = (await walkTextFiles(targetDir)).filter((f) => f.endsWith('/package.json'))
+      const minPkgFiles = template === 'minimal' ? 2 : 3
       expect(
         pkgFiles.length,
-        'expected root + worker + worker/client package.json',
-      ).toBeGreaterThanOrEqual(3)
+        `expected at least ${minPkgFiles} package.json files for ${template}`,
+      ).toBeGreaterThanOrEqual(minPkgFiles)
 
       let distDepCount = 0
       const SEMVER_RE = /^>=.*<1\.0\.0$/

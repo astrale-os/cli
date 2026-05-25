@@ -5,7 +5,7 @@ import { NoteMethods, NoteOpsMethods } from './note-ops.ts'
 
 /**
  * Assembly — `createNote` is declared on the `NoteOps` interface, so its
- * impl goes under `interface:`. `addTag` is declared on the `Note` class,
+ * impl goes under `interface:`. `reference` is declared on the `Note` class,
  * so its impl goes under `class: { Note: … }`. See astrale-domain-dev →
  * schema-and-functions.md → "Assembly" for the bucket rule.
  *

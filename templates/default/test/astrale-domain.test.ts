@@ -4,7 +4,7 @@
  * Uses `domainFixture` in standalone in-process mode: it spins up a fresh
  * FalkorDB graph (via testcontainers), installs the compiled schema, and
  * exercises both `NoteOps.createNote` (interface-hosted, static) and
- * `Note.addTag` (class-hosted, instance).
+ * `Note.reference` (class-hosted, instance — creates a `references` edge).
  *
  * No worker, no tunnel, no wrangler — this is the fastest feedback loop for
  * iterating on schema + methods. Once this passes, move on to
@@ -32,24 +32,34 @@ describe('astrale-domain', () => {
     const res = (await call(abs`/${origin}/interface.NoteOps/createNote`, {
       title: 'Hello',
       body: 'World',
-    })) as { path: string }
+    })) as { id: string; path: string }
 
-    expect(res).toBeDefined()
+    expect(res.id).toBeTruthy()
     expect(res.path).toContain(origin)
   })
 
-  it('addTag (class-hosted, instance) uses self.path', async () => {
-    const { call, domain } = fx.ctx
+  it('reference (class-hosted, instance) creates a real references edge', async () => {
+    const { call, domain, expectEdge } = fx.ctx
     const origin = domain.origin
 
-    const note = (await call(abs`/${origin}/interface.NoteOps/createNote`, {
-      title: 'Taggable',
-      body: 'Body',
-    })) as { path: string }
+    const a = (await call(abs`/${origin}/interface.NoteOps/createNote`, {
+      title: 'A',
+      body: 'source',
+    })) as { id: string; path: string }
+    const b = (await call(abs`/${origin}/interface.NoteOps/createNote`, {
+      title: 'B',
+      body: 'target',
+    })) as { id: string; path: string }
 
-    const tagged = (await call(abs`${note.path}::addTag`, { tag: 'urgent' })) as { path: string }
+    // Instance dispatch on Note A — address it by `@<id>` (`abs` is for
+    // absolute paths only and rejects the `::method` suffix). Links A → B.
+    const res = (await call(`@${a.id}::reference`, { target: b.path })) as { linked: string }
+    expect(res.linked).toBe(b.path)
 
-    expect(tagged.path).toContain(note.path)
-    expect(tagged.path).toContain('tag-urgent')
+    // The instance method created a real `references` edge A → B. (The smoke
+    // test runs under the system credential, so `reference`'s USE requirement
+    // is satisfied — see methods/note-ops.ts and s07-permissions.test.ts for
+    // the denied path.)
+    await expectEdge(a.path, 'references', b.path).toExist()
   })
 })

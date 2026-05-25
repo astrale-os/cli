@@ -53,7 +53,7 @@ const stub = { execute: async () => undefined, remoteUrl: WORKER_URL } as any
 
 const stubs: SchemaMethodsImpl<typeof AstraleDomainSchema> = {
   class: {
-    Note: { addTag: stub },
+    Note: { reference: stub },
   },
   interface: {
     NoteOps: { createNote: stub },

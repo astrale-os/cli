@@ -30,11 +30,12 @@ describe('astrale-domain', () => {
     const { call, domain } = fx.ctx
     const origin = domain.origin
 
-    const res = await call(abs`/${origin}/interface.NoteOps/createNote`, {
+    const res = (await call(abs`/${origin}/interface.NoteOps/createNote`, {
       title: 'Hello',
       body: 'World',
-    })
+    })) as { id: string; path: string }
 
-    expect(res).toBeDefined()
+    expect(res.id).toBeTruthy()
+    expect(res.path).toContain(origin)
   })
 })

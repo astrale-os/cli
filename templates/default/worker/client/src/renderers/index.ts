@@ -21,5 +21,7 @@ export type Renderer = ComponentType<RendererProps>
  * render a 404.
  */
 export const RENDERERS: Record<string, Renderer> = {
-  default: DefaultRenderer,
+  // Keyed by the `/ui/<slug>` segment. The `ui-note` View redirects to
+  // `/ui/note` (see worker/src/index.ts), so the renderer lives under `note`.
+  note: DefaultRenderer,
 }
