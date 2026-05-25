@@ -16,6 +16,7 @@ import {
 import { mapBounded } from '../../../lib/concurrency'
 import { resolveDomainDirs } from '../../../lib/domain-discovery'
 import { paths } from '../../../lib/env'
+import { followLogs } from '../../../lib/follow-logs'
 import { fatal, log } from '../../../lib/log'
 import { type DomainResult, labelFor, printResults, printSummary } from './_shared'
 
@@ -25,6 +26,36 @@ type Opts = {
   cwd?: string
   platform?: string
   views?: 'built' | 'hmr'
+  follow?: boolean
+}
+
+const FOLLOW_STOP_NOTE =
+  'log follow stopped — worker(s) still running · `astrale domain dev down` to stop'
+
+/** Wrangler log path for a domain (slug = its dev-up label). */
+function wranglerLog(label: string): string {
+  return join(paths.domainLogDir(label), 'wrangler.log')
+}
+
+/**
+ * With `--follow`, stream the logs of every domain that came up, until Ctrl-C.
+ * Follows the live (ok) ones even when a sibling failed — the failure is
+ * already in the recap above, and one bad domain shouldn't suppress watching
+ * the rest. No-op without `--follow` or when nothing came up. The fan-out's
+ * children are never passed `--follow`, so only the top-level invocation
+ * attaches the stream.
+ *
+ * Call sites place this BEFORE the failure-exit: with `--follow` it blocks
+ * until Ctrl-C; without it, this returns and the `exit(1)`-on-failure fires.
+ */
+async function followLive(opts: Opts, results: DomainResult[]): Promise<void> {
+  if (!opts.follow) return
+  const live = results.filter((r) => r.ok)
+  if (live.length === 0) return
+  await followLogs(
+    live.map((r) => ({ label: r.label, file: wranglerLog(r.label) })),
+    FOLLOW_STOP_NOTE,
+  )
 }
 
 /** Last non-empty line of captured child output — the surfaced error. */
@@ -109,6 +140,8 @@ function runChild(dir: string, label: string, opts: Opts): Promise<DomainResult>
     opts.domain,
     '--platform',
     opts.platform ?? 'cloudflare',
+    // Note: `--follow` is intentionally NOT forwarded — only the top-level
+    // invocation streams; children just start their worker and return.
     ...(opts.views ? ['--views', opts.views] : []),
   ]
   return new Promise<DomainResult>((resolve) => {
@@ -146,7 +179,7 @@ function runChild(dir: string, label: string, opts: Opts): Promise<DomainResult>
 export default {
   name: 'up',
   description:
-    'Restart local dev infrastructure for every domain found under the cwd (wrangler + optional tunnel/manager). Falls back to the single enclosing domain when run from inside one.',
+    'Restart local dev infrastructure for every domain found under the cwd (wrangler + optional tunnel/manager). Falls back to the single enclosing domain when run from inside one. Pass --follow to then stream the worker log(s) live.',
   options: [
     {
       flags: '--kernel <name>',
@@ -171,6 +204,11 @@ export default {
       flags: '--views <mode>',
       description:
         "How the worker serves its /ui/* SPA: 'built' (fresh vite build) | 'hmr' (live Vite dev server). Overrides each domain's lifecycle.ts config.views; default is per-domain config, else built.",
+    },
+    {
+      flags: '-f, --follow',
+      description:
+        'After starting, stream the worker log(s) live until Ctrl-C (the worker keeps running).',
     },
   ],
   action: async (opts: Opts) => {
@@ -211,6 +249,7 @@ export default {
         }
       }
       printSummary('dev up', results)
+      await followLive(opts, results)
       if (results.some((r) => !r.ok)) process.exit(1)
       return
     }
@@ -288,6 +327,7 @@ export default {
         },
     )
     printResults(results)
+    await followLive(opts, results)
     if (results.some((r) => !r.ok)) process.exit(1)
   },
 } satisfies CommandDefinition
