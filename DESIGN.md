@@ -458,9 +458,9 @@ Chaque kernel (et domaine installé) expose `GET /meta`. **Shape stable dev ↔ 
 
 **Consommés par** les children du manager local via `instance create --tunnel <id>` ou `config.tunnel` (cf. §4.6). Un tunnel machine peut servir d'autres besoins hors surface CLI, mais côté CLI **seuls les children du manager local** le consomment. Binding **1:1** : un tunnel est attaché à une instance à la fois.
 
-**Défaut** : out-of-process. La CLI ne spawn pas de tunnel — elle lit l'ID configuré, dérive les hostnames, préflight DNS, affiche un hint actionnable sinon.
+**Consommation out-of-process** : `instance create --tunnel <id>` ne spawn rien — il lit le tunnel du registre, dérive les hostnames, préflight DNS. La **gestion** est explicite : `tunnel setup` crée le tunnel, `tunnel start` le lance en background via l'adapter, `tunnel ingress add` édite ses routes.
 
-`**TunnelAdapter` opt-in** : `cloudflareTunnel`, `ngrok`, `tailscaleFunnel`, custom. Configuré user-level. Absence d'adapter configuré lors d'un usage → `TunnelNotConfiguredError`.
+**`TunnelAdapter` résolu via `resolveTunnelAdapter()`** (parité avec `resolveDomainPlatform`) : `cloudflared` (v1) ; `ngrok` / `tailscale` en roadmap. Sélection via `--adapter <id>`, jamais l'adapter concret (règle oxlint). Contrat neutre = routage **http(s) hostname→service** : un `adopt` portant un service non-http (tcp/ssh/…), un `originRequest` ou `warp-routing` est refusé (`TunnelUnsupportedConfigError`). Binaire adapter indisponible → `TunnelNotConfiguredError`.
 
 **DNS preflight obligatoire** à `tunnel setup` : DNS non résolvable → `TunnelDnsUnresolvedError`.
 

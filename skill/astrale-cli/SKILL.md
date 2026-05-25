@@ -306,30 +306,50 @@ API; any other first path-segment is treated as a local-instance slug.
 
 ## Tunnel model
 
-For astrale-managed tunnels (`astrale tunnel setup` / `adopt` / `start`):
+For astrale-managed tunnels (`astrale tunnel setup` / `adopt` / `start` /
+`stop` / `status` / `ingress add` / `ingress list`):
 
+- **Adapter-agnostic.** Commands resolve a `TunnelAdapter` via
+  `resolveTunnelAdapter()` (parity with `resolveDomainPlatform`) — never the
+  concrete adapter, and an oxlint rule enforces that. `cloudflared` is the v1
+  adapter; `--adapter <id>` on `setup`/`adopt` selects one.
 - **Registry first.** `~/.astrale/tunnels.json` is the source of truth for
   ingress (`tunnels[name].ingress: [{hostname, service, path?}]`). Mutate
   with `astrale tunnel ingress add` / `adopt`, not by hand-editing yaml.
+  Writes are schema-validated, so the registry can never persist a state
+  that won't re-read.
+- **http(s) only.** astrale's contract is http(s) `hostname → service`
+  routing; `--service` is validated as an http(s) URL.
+- **Adopt is strict.** `adopt` imports a tunnel's existing http(s) ingress;
+  a tunnel whose `~/.cloudflared/config.yml` carries a non-http(s) service
+  (tcp/ssh/…), a per-rule **or** top-level `originRequest`, or `warp-routing`
+  is **refused** (`TunnelUnsupportedConfigError`) — no partial import, no
+  silent route loss. Primary hostname = `--hostname`, else the first concrete
+  (non-wildcard) ingress hostname.
 - **Generated config on start.** `tunnel start` renders
   `~/.astrale/tunnels/<id>.yml` from the registry and spawns
-  `cloudflared tunnel run <id> --config <path>`. The user's
+  `cloudflared tunnel --config <path> run <id>`. The user's
   `~/.cloudflared/config.yml` is never read or written by astrale.
-- **Ingress is a list.** Wildcards (e.g. `*.fn.dist.…`) are preserved.
-  A catch-all `service: http_status:404` is always appended last
-  (cloudflared requirement).
+  `protocol: http2` is forced (reliable behind firewalls/NAT that drop QUIC);
+  the `credentials-file` is written into the generated config, auto-resolved
+  from `~/.cloudflared/<id>.json` when present (absent → warn; token-auth via
+  `TUNNEL_TOKEN` still works).
+- **Ingress is a list.** Wildcards (e.g. `*.fn.dist.…`) are preserved; a
+  catch-all `service: http_status:404` is always appended last (cloudflared
+  requirement).
 - **Failure modes.** A corrupt `tunnels.json` throws
-  `TunnelRegistryInvalidError` rather than silently re-seeding. Unknown
-  tunnel id/name → `TunnelNotFoundError`. Missing `--credentials-file`
-  is autoresolved from `~/.cloudflared/<id>.json` when present (warn
-  on absence; token-auth via `TUNNEL_TOKEN` env still works).
+  `TunnelRegistryInvalidError` rather than silently re-seeding. An unknown
+  tunnel id/name → `TunnelNotFoundError` on `start`/`ingress`; `stop` and
+  `status` are idempotent (warn / skip).
 
 ## Errors and debugging
 
 The CLI surfaces typed errors with actionable hints (e.g.
 `TunnelNotConfiguredError`, `TunnelRegistryInvalidError` (loud failure on
 corrupt `tunnels.json` — no silent seed), `TunnelNotFoundError`,
-`CannotDeleteManagerError`, `AuthError`, issuer/meta mismatches, slug
+`TunnelUnsupportedConfigError` (adopt refused — non-http(s) service /
+`originRequest` / `warp-routing`), `CannotDeleteManagerError`, `AuthError`,
+issuer/meta mismatches, slug
 validation, reserved-name collisions). Use `--debug` on any kernel command
 for full diagnostics, or `--log-level debug` globally. For JWKS/iss/aud issues, first reach for
 `astrale domain check --url <target>` — the dedicated OIDC discovery + JWKS
