@@ -1,5 +1,5 @@
 /**
- * DomainPlatform port (SPEC §11). Concrete adapters plug into this
+ * DomainPlatform port (DESIGN §11). Concrete adapters plug into this
  * contract: cloudflare (v1), blaxel (roadmap).
  *
  * An adapter handles the concrete build/deploy pipeline for a domain

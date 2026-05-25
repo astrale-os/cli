@@ -16,7 +16,7 @@ export const RegistrationSchema = z.object({
 export const IdentitySchema = z.object({
   subject: z.string(),
   createdAt: z.string(),
-  // V3: `local` = machine-only, `remote` = mirrored via astrale cloud (§2.7).
+  // `local` = machine-only, `remote` = mirrored via astrale cloud (§2.7).
   mode: RegistryModeSchema.optional(),
   /** JWK thumbprint of the identity keypair. Optional for legacy entries. */
   kid: z.string().optional(),

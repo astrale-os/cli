@@ -1,7 +1,12 @@
-# Astrale CLI — Spécification V3
+# Astrale CLI — Design & Invariants
 
-> Niveau conceptuel : invariants, contrats, surface CLI.
-> **Source de vérité** : le code ets la source de vérité, ce doc est outdated maius à conserver pour la clarté de la vision et des invariants. Toute ambiguïté ou question doit être résolue en faveur du code.
+> Niveau conceptuel : **vision, invariants, contrats, rationale de design**. Doc **non-normatif**.
+> **Source de vérité** : le code. Ce doc est *outdated by design* — il capture l'intention et le « pourquoi », pas l'état exact. Toute ambiguïté se résout en faveur du code.
+> - **Surface CLI** (commandes, flags) → `astrale --help` (source de vérité, test-enforced via `help-contract.test.ts`).
+> - **Référence d'usage** → skill `astrale-cli`.
+> - **Vision & invariants** (ce fichier) → voir §16 *Décisions de conception* en particulier.
+>
+> **Maintenance / niveau** : on reste **conceptuel** — invariants, contrats, rationale. On **refuse** ici l'implem, le pseudo-code, l'anticipation prématurée, l'overengineering. Une édition est bonne si elle clarifie un invariant existant ou comble un trou conceptuel réel ; mauvaise si elle ajoute de l'implem ou un cas trop spécifique. Cible : zéro incohérence interne, trous conceptuels majeurs comblés, aucune dérive vers l'implem.
 
 ---
 
@@ -188,11 +193,11 @@ astrale instance create <name>
 - Authentification à astrale cloud requise (identité `astrale cloud` active).
 - L'**identité root** de l'instance est **créée et scellée côté astrale cloud** — jamais exposée à la CLI.
 - L'identité `astrale cloud` est automatiquement enregistrée comme `admin` dans le domaine `distribution` de l'instance créée.
-- Pas de `--as`, pas de `--root`, pas de `--distroless` — le modèle managé est **fermé** en v1.
+- Pas de `--as`, pas de `--root`, pas de `--distroless` — le modèle managé est volontairement **fermé** (minimal).
 
 **Flow** : CLI → astrale cloud → provisionne l'instance, installe `distribution`, boot, scelle l'identité root cloud-side, enregistre l'identité cloud comme `admin`. L'instance est ensuite listable via `astrale instance list` ou `--managed`.
 
-**Note implémentation** : l'intégration astrale cloud passe par un **adapter stub en v1** — surface CLI définie, flow non opérationnel tant que l'adapter réel n'est pas livré.
+**Note implémentation** : l'intégration astrale cloud passe par un **adapter stub** (état actuel) — surface CLI définie, flow non opérationnel tant que l'adapter réel n'est pas livré.
 
 ### 4.3 Instance locale (child du manager local)
 
@@ -255,7 +260,7 @@ Chaque instance a un **issuer** (URL d'où est servi `/.well-known/jwks.json`), 
 | **tunneled**         | URL publique du tunnel (ex. `https://<slug>.<tunnel-host>`) | Partout où le DNS résout |
 
 
-**Proxy machine-level** : composant lifecycle-collé au manager (`astrale start` lance, `astrale stop` coupe). Écoute `:4444`, route `<slug>.astrale.localhost` → `<manager-url>/<instance-id>`. Utilise le TLD `.localhost` (RFC 6761, loopback garanti, zéro `/etc/hosts`). Port `:4444` fixe v1 (évite les ports privilégiés 80/443).
+**Proxy machine-level** : composant lifecycle-collé au manager (`astrale start` lance, `astrale stop` coupe). Écoute `:4444`, route `<slug>.astrale.localhost` → `<manager-url>/<instance-id>`. Utilise le TLD `.localhost` (RFC 6761, loopback garanti, zéro `/etc/hosts`). Port `:4444` fixe (évite les ports privilégiés 80/443).
 
 **Manager** : slug réservé `manager` → `http://manager.astrale.localhost:4444` (redirige vers le manager directement). Utiliser `manager` comme nom d'instance → `ReservedSlugError`.
 
@@ -263,9 +268,9 @@ Chaque instance a un **issuer** (URL d'où est servi `/.well-known/jwks.json`), 
 
 **Post-create check (invariant)** : après boot, la CLI `GET <issuer>/.well-known/jwks.json` et match `kid` ↔ `/meta.kid`. Échec → `IssuerUnreachableError` ou `IssuerKidMismatchError` + rollback destructif.
 
-**Switch de mode** : non supporté v1 — changer l'issuer invalide tous les tokens émis. Recreate l'instance.
+**Switch de mode** : non supporté — changer l'issuer invalide tous les tokens émis. Recreate l'instance.
 
-> **Roadmap v2** : issuer stable cross-toggle via domaine Astrale-owned (`*.local.astrale.ai`) + DNS override local — permet d'activer/désactiver le tunnel sans recréer l'instance. Hors scope v1 (nécessite ownership DNS + routing cloud + DNS override machine).
+> **Roadmap** : issuer stable cross-toggle via domaine Astrale-owned (`*.local.astrale.ai`) + DNS override local — permet d'activer/désactiver le tunnel sans recréer l'instance. Hors scope actuel (nécessite ownership DNS + routing cloud + DNS override machine).
 
 ### 4.7 Identifiants CLI (slug & name)
 
@@ -374,7 +379,7 @@ Identité active : "<current>". Switcher aussi l'identité ? [Y/n]
 
 ## 8. Notes d'implémentation (kernel-side)
 
-> Cette section oriente le code kernel pour supporter la V3, pas un invariant CLI utilisateur.
+> Cette section oriente le code kernel pour supporter ce design, pas un invariant CLI utilisateur.
 
 - **Supprimer le port `instances`** actuellement utilisé par le manager.
 - **Stocker les instances dans le graph** (as first-class nodes / edges).
@@ -384,90 +389,14 @@ Identité active : "<current>". Switcher aussi l'identité ? [Y/n]
 
 ## 9. Surface CLI
 
-### 9.1 Namespaces
-
-```bash
-# Manager local lifecycle
-astrale start                                    # lance le manager local
-astrale stop                                     # éteint le manager local
-astrale status                                   # état du manager local
-
-# Auth (astrale cloud)
-astrale auth login                               # login cloud + import des identités remote du compte
-astrale auth logout                              # logout cloud
-astrale auth status                              # identité cloud active
-
-# Identités
-astrale identity create <name> [--local]         # crée une identité (défaut: remote si cloud logged-in, sinon local)
-astrale identity list
-astrale identity use <name>                      # change l'identité active
-astrale identity whoami                          # identité active
-astrale identity delete <name>                   # local-only (n'invalide pas les tokens émis)
-astrale identity export <name> <path>            # keypair chiffrée
-astrale identity import <path>
-astrale identity sync <name>                  # local → remote
-astrale identity unsync <name>                   # remote → local (refusé si utilisée comme défaut d'un bookmark remote)
-
-# Instances (cf. §4.7 pour slug vs name)
-# Note : sur les ops (use/delete/status/...), `<name>` placeholder = n'importe quel identifiant CLI (slug ou name).
-astrale instance create <name>                                             # managée astrale cloud (défaut) — name requis
-astrale instance create <slug> --local [--name <s>] [--config <c>] [--tunnel <id>] [--as <id>] [--distroless] [--install <domain-spec>]
-astrale instance bookmark <name> --url <url> [--as <id>] [--local]         # défaut: bookmark cloud (sync), name requis
-astrale instance list [--local|--managed|--bookmarked|--bookmarked-local|--bookmarked-cloud]
-astrale instance use <name>                                                # cf. §7 (prompt identité)
-astrale instance delete <name>                                             # destructif (local child ou managée)
-astrale instance forget <name>                                             # drop bookmark (remote uniquement)
-astrale instance status <name>                                             # ping + /meta
-astrale instance install <domain-spec> [--instance <name>]                 # installe un domaine sur l'instance
-astrale instance bookmark sync <name>                                   # bookmark local → cloud
-astrale instance bookmark unsync <name>                                    # bookmark cloud → local
-
-# Opérations sur l'instance active (= kernel adressable)
-astrale call <path> [args...]
-astrale query <path>
-astrale ls <path>
-astrale get <path>
-astrale describe <path>
-astrale logs                                     # trace des ops graph sur l'instance active
-astrale token                                    # delegation token frais
-
-# Domaines (package lifecycle)
-astrale domain init [name]
-astrale domain build [--preset <p>]
-astrale domain deploy [--staged] [--promote]
-astrale domain check [--url <url>]
-astrale domain logs [--follow]
-
-# Dev macro
-astrale dev [up|down|status|logs]                # zero-arg ≡ `dev up`
-
-# Tunnels (cf. §12)
-astrale tunnel setup                             # configure TunnelAdapter + DNS preflight
-astrale tunnel status
-astrale tunnel list
-astrale tunnel stop                              # teardown idempotent
-```
-
-> **Note** : `astrale domain install` est **supprimé** au profit de `astrale instance install <domain-spec>`. Un domaine ne « vit » pas tout seul — il est toujours installé *sur une instance*. Le flag `--install <domain-spec>` permet l'install directement au `instance create`.
-
-### 9.2 Flags globaux
-
-- `--as <identity>` — override l'identité active pour la commande courante.
-- `--instance <name>` — override l'instance active pour la commande courante.
-- `--log-level` / `--log-format`
-- `--ci` — mode machine (pas de prompt, erreurs structurées sur stderr).
-- `--no-prompt`, `--offline-ok`
-- `--help`, `--version`
-
-### 9.3 Principes de nommage
-
-- `**create`** — provisionne une nouvelle entité (instance, identity).
-- `**bookmark`** — ajoute une référence à une entité existante distante (local ou cloud).
-- `**forget**` — drop une référence. Jamais destructif kernel-side.
-- `**delete**` — destructif kernel-side. Confirmation TTY, refuse sur cibles invalides.
-- `**use**` — change l'entité active dans un registre (instance / identity).
-- `**list**` — lecture agrégée (jamais de mutation).
-- `**promote` / `demote**` — migration local ↔ remote.
+> **La surface (commandes, sous-commandes, flags) n'est PAS spécifiée ici.** Elle vit dans
+> `astrale --help` — source de vérité unique, **test-enforced** (`help-contract.test.ts` vérifie
+> que `--help` ne fuite aucun ancrage `§` et que le skill `astrale-cli` en est le miroir exact).
+> Pour la référence d'usage : skill `astrale-cli`. Pour les *conventions* de nommage des verbes
+> (`create` / `bookmark` / `forget` / `delete` …), voir §16.10.
+>
+> *Une liste de commandes a déjà vécu ici ; elle a divergé du `--help` réel et a été retirée
+> pour éviter une seconde source de vérité contradictoire.*
 
 ---
 
@@ -557,25 +486,27 @@ Les entrées `mode: remote` sont miroir du state cloud — la CLI les rafraîchi
 
 ---
 
-## 14. Hors scope V1
+## 14. Hors scope
 
-- Révocation active de tokens (TTL court fait foi).
-- Windows natif.
-- Offline mode complet (au-delà de `--offline-ok`).
-- Multi-user sur machine partagée (ACL).
+> Frontières délibérées — décisions de *ne pas* faire (pas un backlog daté).
+
+- **Révocation active de tokens** : non — on s'appuie sur des TTL courts (le TTL fait foi).
+- **Multi-user sur machine partagée (ACL)** : non — single-user assumé.
+- **Offline mode complet** : non couvert au-delà de `--offline-ok`.
+- **Windows natif** : non supporté.
 
 ---
 
 ## 15. Notes d'intégration
 
-- **Astrale cloud = adapter stub en v1**. La surface CLI est définie, le flow managé passe par un adapter qui sera livré ultérieurement. Ne pas implémenter le backend cloud pour l'instant — se concentrer sur le chemin local (manager + instances locales + bookmarks remote de kernels deployés out-of-band).
+- **Astrale cloud = adapter stub** (état actuel). La surface CLI est définie, le flow managé passe par un adapter qui sera livré ultérieurement. Ne pas implémenter le backend cloud pour l'instant — se concentrer sur le chemin local (manager + instances locales + bookmarks remote de kernels deployés out-of-band).
 
 ---
 
 ## 16. Décisions de conception & rationale
 
 > Choix non triviaux qu'un changement futur ne doit pas révoquer à la légère.
-> (Rationale rapatrié de l'ancien `docs/DESIGN.md` V2, retrié pour V3 — seul ce
+> (Rationale rapatrié d'un ancien `docs/DESIGN.md`, retrié — seul ce
 > qui reste vrai est conservé ; le code reste la source de vérité.)
 
 ### 16.1 Identités locales, portables, découplées des kernels
@@ -670,4 +601,20 @@ suffit (cf. §2.5, dimensions orthogonales).
 La CLI est pré-1.0 : design propre > confort de migration. Quand un
 comportement change, l'ancien est retiré **net** (pas d'alias silencieux qui
 fait diverger la doc). C'est le principe sous-jacent aux suppressions du top-
-level `use` et de l'alias `instance add`.
+level `use`, de l'alias `instance add`, et de `astrale domain install` (au
+profit de `astrale instance install <domain-spec>` — un domaine ne « vit » pas
+seul, il est toujours installé *sur une instance* ; le flag `--install` permet
+l'install directement au `instance create`).
+
+### 16.10 Conventions de nommage des verbes
+
+Les verbes de commande portent une sémantique stable (le `--help` est la
+surface, mais ces conventions sont l'intention sous-jacente) :
+
+- **`create`** — provisionne une nouvelle entité (instance, identity).
+- **`bookmark`** — ajoute une référence à une entité distante existante (local ou cloud).
+- **`forget`** — drop une référence. **Jamais** destructif kernel-side (cf. §5).
+- **`delete`** — destructif kernel-side. Confirmation TTY, refuse sur cibles invalides (cf. §5).
+- **`use`** — change l'entité active dans un registre (instance / identity).
+- **`list`** — lecture agrégée, jamais de mutation.
+- **`sync` / `unsync`** — migration local ↔ remote (cf. §2.7).

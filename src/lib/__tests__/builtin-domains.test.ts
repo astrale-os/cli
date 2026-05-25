@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { BuiltinDomainNotFoundError } from '../../errors'
 import { isBuiltinDomainName, resolveBuiltinDomain } from '../builtin-domains'
 
-describe('SPEC V3 — builtin domain resolver', () => {
+describe('DESIGN — builtin domain resolver', () => {
   let tmp = ''
   const savedEnv: Record<string, string | undefined> = {}
 
@@ -57,7 +57,7 @@ describe('SPEC V3 — builtin domain resolver', () => {
   })
 })
 
-describe('SPEC V3 — builtin domain resolver: manager-ui', () => {
+describe('DESIGN — builtin domain resolver: manager-ui', () => {
   let tmp = ''
   // `name.toUpperCase()` keeps the hyphen → env keys carry it literally.
   const SPEC_KEY = 'ASTRALE_MANAGER-UI_SPEC'

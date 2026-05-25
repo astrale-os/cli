@@ -31,7 +31,7 @@ const baseStore = InstanceStoreSchema.parse({
   },
 })
 
-describe('SPEC V3 — §4.7 slug + namespace', () => {
+describe('DESIGN — §4.7 slug + namespace', () => {
   test('validateSlug accepts URL-safe slugs', () => {
     expect(() => validateSlug('foo')).not.toThrow()
     expect(() => validateSlug('foo-bar')).not.toThrow()
@@ -75,7 +75,7 @@ describe('SPEC V3 — §4.7 slug + namespace', () => {
   })
 })
 
-describe('SPEC V3 — §7 resolver', () => {
+describe('DESIGN — §7 resolver', () => {
   test('resolveInstanceKey matches by key', () => {
     expect(resolveInstanceKey(baseStore, 'staging')).toBe('staging')
   })
@@ -93,7 +93,7 @@ describe('SPEC V3 — §7 resolver', () => {
   })
 })
 
-describe('SPEC V3 — backward compat registry', () => {
+describe('DESIGN — backward compat registry', () => {
   test('legacy store without kind/slug/mode parses', () => {
     const legacy = InstanceStoreSchema.parse({
       active: 'old',

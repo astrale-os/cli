@@ -99,7 +99,7 @@ segment is **required**. Instance-method dispatch uses **`::`** (double
 colon), never a single `:`.
 For the full conceptual model — instance resolution, token audience, the auth
 model — see the `astrale-cli` agent skill; for invariants and design rationale
-see [`SPEC.md`](./SPEC.md).
+see [`DESIGN.md`](./DESIGN.md).
 
 ## Configuration
 

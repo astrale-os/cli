@@ -13,7 +13,7 @@ export async function confirm(message: string): Promise<boolean> {
 }
 
 /**
- * Prompt with a Y default — spec §7.1 "Y/n" semantics. Returns true
+ * Prompt with a Y default — design §7.1 "Y/n" semantics. Returns true
  * unless the user explicitly types `n`.
  */
 export async function confirmDefaultYes(message: string): Promise<boolean> {

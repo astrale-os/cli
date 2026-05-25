@@ -1,5 +1,5 @@
 /**
- * TunnelAdapter port (SPEC §11, §12). Concrete adapters plug into this
+ * TunnelAdapter port (DESIGN §11, §12). Concrete adapters plug into this
  * contract: cloudflared (v1), ngrok / tailscale (roadmap).
  */
 

@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { IdentityKeyMissingError } from '../../errors'
 import { keypairPaths, listIdentityKeys, persistKeypair, removeKeypair, signAs } from '../keys'
 
-describe('SPEC V3 — per-identity keys', () => {
+describe('DESIGN — per-identity keys', () => {
   let tmp = ''
   const savedStrict = process.env.ASTRALE_STRICT_IDENTITIES
 

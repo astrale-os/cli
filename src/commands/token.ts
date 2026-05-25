@@ -6,7 +6,7 @@ import { log } from '../lib/log'
 
 /**
  * `astrale token` — mint a fresh delegation token for the active instance
- * + active identity (§9). Shortcut over the mintDelegationCredential call.
+ * + active identity (§2.5). Shortcut over the mintDelegationCredential call.
  */
 export type TokenOpts = KernelCommandOpts & {
   audience?: string
