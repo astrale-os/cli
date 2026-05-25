@@ -285,24 +285,27 @@ export function needsAstraleManager(kernelPreset: string): boolean {
 }
 
 /**
- * Ensure the local astrale manager is running. Idempotent: a no-op when
- * already up. Extracted from `devUp` so the multi-domain `dev up` can
- * run it ONCE before fanning out — N parallel children racing
- * check-then-act would otherwise each try `astrale start`.
+ * Assert the local astrale manager is running. Throws when it isn't —
+ * callers no longer auto-start it. Auto-start silently forced docker-mode
+ * (`astrale start` without `--host-mode`) and its token-gated image
+ * rebuild; failing fast lets the caller pick the mode explicitly:
+ * `astrale start --host-mode` (local dev) or `astrale start` (docker).
  *
- * Returns `{ started: true }` only when this call started it (so the
- * caller can record `state.started.astrale` for teardown symmetry).
+ * Safe to call once before a multi-domain fan-out: a quiet no-op when the
+ * manager is up; when it's down every child would throw the same error, so
+ * the parent surfaces it once up front.
  */
-export function ensureAstraleManager(opts: { quiet?: boolean } = {}): { started: boolean } {
+export function requireAstraleManager(opts: { quiet?: boolean; kernelPreset?: string } = {}): void {
   if (isAstraleRunning()) {
     if (!opts.quiet) log.dim('  astrale manager already running')
-    return { started: false }
+    return
   }
-  if (!opts.quiet) log.dim('  starting astrale manager…')
-  const [bun, entry] = astraleArgv()
-  const r = spawnSync(bun, [entry, 'start'], { stdio: 'inherit' })
-  if (r.status !== 0) throw new AstraleError('ASTRALE_START_FAILED', 'astrale start failed')
-  return { started: true }
+  const preset = opts.kernelPreset ? ` (kernel preset '${opts.kernelPreset}' is manager-mode)` : ''
+  throw new AstraleError(
+    'MANAGER_NOT_RUNNING',
+    `Manager not running${preset}.`,
+    "Start it first, then re-run: 'astrale start --host-mode' (local dev, no Docker) or 'astrale start' (docker, needs GITHUB_TOKEN).",
+  )
 }
 
 // ── Secrets ───────────────────────────────────────────────────────────

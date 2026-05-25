@@ -45,11 +45,9 @@ import {
   clientPkgHasScript,
   domainUrl,
   effectiveViewsMode,
-  ensureAstraleManager,
   evalPreset,
   hashDevVars,
   inspectorPortFor,
-  isAstraleRunning,
   isHttpOk,
   isPidAlive,
   killPort,
@@ -58,6 +56,7 @@ import {
   loadDomainModule,
   preflightDns,
   readDevState,
+  requireAstraleManager,
   resolveForwardedEnv,
   runClientBuild,
   runHook,
@@ -196,12 +195,12 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
   await runHook(hooks.preUp, ctx, 'preUp', resolved.lifecyclePath)
   assertRuntimeSecrets(config, resolved.lifecyclePath)
 
-  // Ensure astrale manager. Idempotent — when the multi-domain `dev up`
-  // already ensured it once before fanning out, this is a fast no-op and
-  // `started` stays false (so the parent, not each child, owns teardown).
+  // Require the astrale manager — `dev up` no longer auto-starts it, so a
+  // down manager fails fast here (the multi-domain `dev up` asserts the
+  // same thing once before fanning out). `state.started.astrale` stays
+  // false: we never start it, so `dev down` never stops it.
   if (needsAstrale) {
-    const { started } = ensureAstraleManager()
-    state.started.astrale = started
+    requireAstraleManager({ kernelPreset: opts.kernel })
   }
 
   // Ensure cloudflared tunnel.
@@ -457,13 +456,7 @@ export async function instancePrepare(opts: InstancePrepareOpts): Promise<Instan
     }
   }
 
-  if (!isAstraleRunning()) {
-    throw new AstraleError(
-      'MANAGER_NOT_RUNNING',
-      'astrale manager is not running.',
-      `Start it: astrale start  (or: astrale domain dev up --kernel ${opts.kernel} --domain ${opts.domain})`,
-    )
-  }
+  requireAstraleManager({ kernelPreset: opts.kernel })
 
   // Rebuild the spec for this preset via the platform's own buildSpec.
   await buildSpec({ domainDir: resolved.dir, preset: opts.domain })

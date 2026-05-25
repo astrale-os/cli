@@ -7,9 +7,9 @@ import type { CommandDefinition } from '../../../command'
 
 import {
   astraleArgv,
-  ensureAstraleManager,
   needsAstraleManager,
   readDevState,
+  requireAstraleManager,
   resolveDomainPlatform,
   resolveWorkerPort,
 } from '../../../adapters/domain-platform'
@@ -255,14 +255,14 @@ export default {
     }
 
     // ── Multi-domain fan-out ────────────────────────────────────────
-    // 1. Ensure shared infra ONCE — kills the cold-start race (N parallel
-    //    children racing check-then-act would each try `astrale start`).
+    // 1. Assert shared infra ONCE — `dev up` no longer auto-starts the
+    //    manager, so a down manager fails fast here (once, not per child).
     //    Quiet: the status is folded into the consolidated header below.
     let managerPart = ''
     if (needsAstraleManager(opts.kernel)) {
       try {
-        const { started } = ensureAstraleManager({ quiet: true })
-        managerPart = started ? 'manager started' : 'manager up'
+        requireAstraleManager({ quiet: true, kernelPreset: opts.kernel })
+        managerPart = 'manager up'
       } catch (e) {
         fatal(e)
       }
