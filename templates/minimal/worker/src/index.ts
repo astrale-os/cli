@@ -1,23 +1,21 @@
 /**
  * Minimal remote worker.
  *
- * Serves the `astraleDomainDef` (schema + stub handlers) behind
- * `createRemoteServer` and exports the default fetch handler. `/meta` is
- * auto-mounted by the SDK — never route it yourself. See the
- * astrale-domain-dev skill (references/deploy.md) for the `/meta` contract
+ * Serves `astraleDomainDef` (schema + the real `createNote` impl authored in
+ * `../../domain.ts`) behind `createRemoteServer` and exports the default fetch
+ * handler. `/meta` is auto-mounted by the SDK — never route it yourself. See
+ * the astrale-domain-dev skill (references/deploy.md) for the `/meta` contract
  * and deploy flow.
  *
- * Views live under `/ui/*`: the worker delegates to the Workers Assets
- * binding (serving the Vite build of `../client/`). In dev, setting
- * `VIEW_DEV_URL` in `.dev.vars` forwards to `vite dev` for React HMR.
+ * No views: the minimal template ships no `View` (that needs the
+ * `@astrale-os/distribution-domain` dependency), so there is no `/ui/*` surface
+ * and no SPA. Switch to the `default` template when you need a View.
  *
- * The production wiring is `../../domain.ts` (the RemoteDomain consumed by
- * `build-spec.ts` and installed into the kernel). Swap the stubs with real
- * handlers here (or build a worker-local `defineRemoteDomain<Env>()` with
- * Env-typed methods like `distribution/worker/src/index.ts`) once this
- * domain does more than /meta smoke.
+ * Self-fetch JWKS interceptor mirrors default/distribution — Cloudflare Workers
+ * can't self-fetch, so credential verification (which fetches the domain's own
+ * JWKS) is short-circuited here.
  */
-import { createRemoteServer } from '@astrale-os/sdk/server'
+import { createRemoteServer, requireEnv } from '@astrale-os/sdk/server'
 
 import type { Env } from './env.ts'
 
@@ -29,20 +27,32 @@ import { PRIVATE_JWK } from './keys.ts'
 declare const SDK_COMMIT: string | undefined
 declare const SCHEMA_HASH: string | undefined
 
-let cachedUrl: string | null = null
-let cachedApp: { fetch: (req: Request) => Response | Promise<Response> } | null = null
+function derivePublicJwk(privateKey: JsonWebKey): Record<string, unknown> {
+  const { d: _d, p: _p, q: _q, dp: _dp, dq: _dq, qi: _qi, ...pub } = privateKey
+  return pub
+}
 
-function getApp(env: Env) {
-  const workerUrl = env.WORKER_URL
-  const baseDomain = env.ASTRALE_DOMAIN_BASE_DOMAIN ?? 'astrale-domain.test.astrale.ai'
-  if (cachedApp && cachedUrl === workerUrl) return cachedApp
+const publicJwk = derivePublicJwk(PRIVATE_JWK)
+const jwksPayload = JSON.stringify({ keys: [publicJwk] })
+
+type App = { fetch: (req: Request) => Response | Promise<Response> }
+let cache: { url: string; issuer: string; app: App } | null = null
+
+function getApp(env: Env): App {
+  const url = env.WORKER_URL
+  const baseDomain = requireEnv(
+    env,
+    'ASTRALE_DOMAIN_BASE_DOMAIN',
+    'set in .dev.vars locally or as a worker secret in prod',
+  )
+  if (cache && cache.url === url && cache.issuer === baseDomain) return cache.app
 
   const sdkCommit = typeof SDK_COMMIT === 'string' ? SDK_COMMIT : undefined
   const schemaHash = typeof SCHEMA_HASH === 'string' ? SCHEMA_HASH : undefined
   const { app } = createRemoteServer({
     domain: astraleDomainDef,
     deps: env,
-    url: workerUrl,
+    url,
     issuer: baseDomain,
     privateKey: PRIVATE_JWK,
     meta: {
@@ -52,33 +62,30 @@ function getApp(env: Env) {
     },
   })
 
-  cachedUrl = workerUrl
-  cachedApp = app
+  cache = { url, issuer: baseDomain, app }
   return app
 }
 
+const originalFetch = globalThis.fetch
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  if (cache) {
+    const candidates = [
+      `https://${cache.issuer}/.well-known/jwks.json`,
+      `${cache.url}/.well-known/jwks.json`,
+    ]
+    if (candidates.includes(url)) {
+      return new Response(jwksPayload, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+  return originalFetch(input, init)
+}) as typeof fetch
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url)
-
-    // Views live under `/ui/*`. See `client/README.md` for the dev loops.
-    //   - Default: Workers Assets serves the Vite build from `../dist-client/`.
-    //     Vite emits asset refs with `base: '/ui/'`; we strip `/ui` before
-    //     delegating so the files resolve from the assets root. SPA fallback
-    //     returns `index.html` for unmatched deep URLs (TanStack Router
-    //     takes over client-side).
-    //   - HMR: if `env.VIEW_DEV_URL` is set (`.dev.vars` override), forward
-    //     `/ui/*` to `vite dev` for React fast-refresh.
-    if (url.pathname === '/ui' || url.pathname.startsWith('/ui/')) {
-      if (env.VIEW_DEV_URL) {
-        const devBase = env.VIEW_DEV_URL.replace(/\/$/, '')
-        return fetch(new Request(`${devBase}${url.pathname}${url.search}`, request))
-      }
-      const stripped = url.pathname.replace(/^\/ui\/?/, '/')
-      const rewrittenUrl = new URL(stripped + url.search, url.origin)
-      return env.ASSETS.fetch(new Request(rewrittenUrl, request))
-    }
-
     const app = getApp(env)
     return app.fetch(request)
   },

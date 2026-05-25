@@ -7,7 +7,7 @@
  */
 import type { MethodImpl } from '@astrale-os/kernel-runtime'
 
-import { AbsolutePath } from '@astrale-os/kernel-core'
+import { AbsolutePath, K } from '@astrale-os/kernel-core'
 import { ClassPath } from '@astrale-os/kernel-core/domain'
 
 import { ASTRALE_DOMAIN_BASE_DOMAIN, type AstraleDomainSchema } from '../schema/schema.ts'
@@ -15,6 +15,7 @@ import { ASTRALE_DOMAIN_BASE_DOMAIN, type AstraleDomainSchema } from '../schema/
 type M<N extends string> = MethodImpl<typeof AstraleDomainSchema, 'NoteOps', N>
 
 const NOTE_CLASS = ClassPath.parse(`/:${ASTRALE_DOMAIN_BASE_DOMAIN}:class.Note`)
+const NAME_KEY = K.Named.name.key
 
 const createNote: M<'createNote'> = {
   // `authorize` is mandatory on every method (kernel-runtime's
@@ -25,16 +26,15 @@ const createNote: M<'createNote'> = {
   authorize: async () => undefined,
   execute: async ({ kernel, params }) => {
     const slug = `note-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+    const path = `/${ASTRALE_DOMAIN_BASE_DOMAIN}/${slug}`
     const created = await kernel.graph.createNode({
       class: NOTE_CLASS,
-      path: AbsolutePath.parse(`/${ASTRALE_DOMAIN_BASE_DOMAIN}/${slug}`),
-      props: { title: params.title, body: params.body },
+      path: AbsolutePath.parse(path),
+      props: { [NAME_KEY]: params.title, title: params.title, body: params.body },
     })
-    // createNode returns a NodeResult; callers treat the return as a ref to
-    // the new Note. The `returns: ref(SELF)` contract accepts the kernel's
-    // native ref shape.
-    // oxlint-disable-next-line no-explicit-any
-    return created as any
+    // `createNote` returns a `NoteRef` `{ id, path }` (see schema/schema.ts).
+    // Mirrors domains/contract.
+    return { id: created.id, path }
   },
 }
 

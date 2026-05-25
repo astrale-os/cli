@@ -1,23 +1,25 @@
 /**
  * Minimal remote-domain schema.
  *
- * Intentionally the smallest thing that exercises every domain concern:
+ * Intentionally the smallest thing that exercises a domain end-to-end:
  *   - one Class (`Note`) with two own props,
- *   - one Interface (`NoteOps`) with one static method that creates a Note,
- *   - one Edge class (`references`) linking Note → Note.
+ *   - one Interface (`NoteOps`) with one static method that creates a Note.
  *
- * Everything beyond this — additional classes, inheritance, streams,
+ * Everything beyond this — additional classes, edges, inheritance, streams,
  * complex auth expressions — is domain-specific. Start here, grow from here.
+ * (The `default` template showcases an edge class, an instance method, and a
+ * real `authorize` expression.)
  */
-import {
-  defineSchema,
-  edgeClass,
-  KernelSchema,
-  nodeClass,
-  nodeInterface,
-} from '@astrale-os/kernel-core'
-import { fn, ref, SELF } from '@astrale-os/kernel-dsl'
+import { defineSchema, KernelSchema, nodeClass, nodeInterface } from '@astrale-os/kernel-core'
+import { fn } from '@astrale-os/kernel-dsl'
 import { z } from 'zod'
+
+/**
+ * Return shape for "I created a node" methods. Remote methods return a plain
+ * `{ id, path }` ref — NOT `ref(SELF)`, whose full-Node value doesn't
+ * round-trip over the worker wire. Mirrors domains/contract's `NodeRef`.
+ */
+const NoteRef = z.object({ id: z.string(), path: z.string() })
 
 /**
  * Interface hosting the sole static op. Because `createNote` is declared on
@@ -29,7 +31,7 @@ export const NoteOps = nodeInterface({
     createNote: fn({
       static: true,
       params: { title: z.string(), body: z.string() },
-      returns: ref(SELF),
+      returns: NoteRef,
     }),
   },
 })
@@ -42,12 +44,6 @@ export const Note = nodeClass({
   },
   methods: {},
 })
-
-export const references = edgeClass(
-  { as: 'from_note', types: [Note] },
-  { as: 'to_note', types: [Note] },
-  { props: { reason: z.string().optional() } },
-)
 
 // Base domain is env-driven so tests and prod share one invariant:
 // schema.domain == worker issuer == identity-binding iss == kernel path
@@ -64,6 +60,6 @@ export const ASTRALE_DOMAIN_BASE_DOMAIN =
 
 export const AstraleDomainSchema = defineSchema(ASTRALE_DOMAIN_BASE_DOMAIN, {
   interfaces: { NoteOps },
-  classes: { Note, references },
+  classes: { Note },
   imports: [KernelSchema],
 })

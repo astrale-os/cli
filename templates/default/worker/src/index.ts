@@ -6,7 +6,7 @@
  * node). The real work happens here: a worker-local `defineRemoteDomain<Env>()`
  * wired with:
  *   - `workerMethods`         — real impls for `NoteOps.createNote` (interface)
- *                                and `Note.addTag` (class instance).
+ *                                and `Note.reference` (class instance).
  *   - `views.ui-note`         — inline HTML iframe (template stub).
  *   - `remoteFunctions.count` — uses the `kernel` field on `RemoteFunctionContext`
  *                                to count Notes under the domain origin.
@@ -37,15 +37,6 @@ declare const SCHEMA_HASH: string | undefined
 
 const { View, view_for, RemoteFunction } = DistributionSchema.classes
 
-const NOTE_IFRAME_HTML = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Note</title>
-<style>body{font-family:system-ui,sans-serif;padding:1.5rem;color:#222}</style>
-</head><body>
-<h2>Note view — template stub</h2>
-<p>This iframe is served by the <code>ui-note</code> View. Replace this
-HTML with the real Note renderer (see <code>client/</code> for a React SPA).</p>
-</body></html>`
-
 function buildDomain(workerUrl: string) {
   return defineRemoteDomain<Env>()({
     schema: WorkerSchema,
@@ -58,7 +49,11 @@ function buildDomain(workerUrl: string) {
       'ui-note': defineView({
         auth: 'public',
         viewFor: selfOf(Note),
-        render: ({ c }) => c.html(NOTE_IFRAME_HTML),
+        // Redirect to the SPA route `/ui/note` (served from the Workers Assets
+        // binding). Same convention as domains/distribution/views.ts. The SPA
+        // renderer is registered under the `note` slug in
+        // client/src/renderers/index.ts.
+        render: ({ c }) => c.redirect('/ui/note'),
       }),
     },
 
@@ -69,9 +64,10 @@ function buildDomain(workerUrl: string) {
         outputSchema: z.object({ count: z.number() }),
         execute: async ({ kernel }) => {
           if (!kernel) throw new Error('count requires a kernel credential')
-          // Real impl would call `kernel.call(...)` to list children of the
-          // domain origin and count Notes. Stubbed to keep the template wire
-          // small; swap in the real listing once your CRUD methods are in.
+          // Stub: demonstrates that `RemoteFunctionContext` carries a `kernel`
+          // client. A real impl would `kernel.call(`${origin}::getTree`, {
+          // depth: 1 })` and count nodes whose class is `Note` — omitted here
+          // (needs the origin path + a maxNodes cap) to keep the wire small.
           return { count: 0 }
         },
       }),

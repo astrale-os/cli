@@ -8,8 +8,12 @@ common feature in one minimal, working domain:
   emits subs for `interface.X:M` since the `MEMBER_NS_PREFIXES` fix, so
   this works end-to-end).
 - One **Class** (`Note`) implementing the interface + `Container`, with
-  one class-hosted **instance method** (`addTag`) that uses `self.path`.
-- One **edge class** (`references`) linking `Note` → `Note`.
+  one class-hosted **instance method** (`reference`) that uses `self.path`
+  to create a real edge to another Note, and a real `authorize` returning
+  `[{ nodes: [self.path], perm: USE }]` (the kernel-runtime permission shape).
+- One **edge class** (`references`) linking `Note` → `Note` — actually
+  created at runtime by `reference` (worker uses `kernel.call('…::link')`,
+  fixture uses `kernel.graph.createEdge`).
 - One **`core.ts`** — install-time genesis data via `defineCore` + `node()`.
 - One **`lifecycle.ts`** — zero-config stub exposing `extraDevVars`.
 - One **`View`** (`ui-note`) — auto-materialized from the `views:` map in
@@ -23,8 +27,8 @@ common feature in one minimal, working domain:
   parallel `defineRemoteDomain<Env>()` for real impls.
 - A **React SPA** (`worker/client/`) served at `/ui/*`, shell-handshake
   capable.
-- An in-process **fixture test** that exercises both the interface-hosted
-  static method and the class-hosted instance method.
+- An in-process **fixture test** that exercises `createNote` and asserts
+  the real `references` edge created by `reference` (via `expectEdge`).
 
 If you want fewer concepts and no cross-domain dependency, use
 `astrale domain init <slug> --template minimal`.
@@ -47,7 +51,7 @@ use the `minimal` template instead — no cross-domain dep.
   core.ts                       # defineCore — genesis nodes
   domain.ts                     # defineRemoteDomain + views + remoteFunctions + core
   schema/
-    schema.ts                   # NoteOps + Note(createNote, addTag) + references
+    schema.ts                   # NoteOps + Note(createNote, reference) + references
     index.ts
   methods/
     note-ops.ts                 # in-process fixture impls (interface + class)
@@ -60,7 +64,7 @@ use the `minimal` template instead — no cross-domain dep.
     tsconfig.json
     client/                     # React SPA for /ui/* views (shell handshake-capable)
   test/
-    <slug>.test.ts              # domainFixture smoke test (createNote + addTag)
+    <slug>.test.ts              # domainFixture smoke test (createNote + reference/expectEdge)
     setup-env.ts / vitest.config.ts / .env.example / tsconfig.json
   package.json                  # depends on @astrale-os/distribution-domain (semver)
   tsconfig.json
@@ -97,7 +101,7 @@ What's left:
 
 5. **Install & test.** `pnpm install` at the workspace root (never in
    sub-packages). `pnpm test` runs the in-process smoke test (exercises
-   both `createNote` and `addTag`).
+   `createNote` and `reference`, asserting the `references` edge).
 
 6. **Build, run, install — via the CLI.**
 

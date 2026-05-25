@@ -1,4 +1,3 @@
-import { DistributionSchema } from '@astrale-os/distribution-domain/schema'
 /**
  * Default remote-domain schema — demonstrates the full Astrale feature set:
  * Interface + Class with both static and instance methods + edge + View +
@@ -10,9 +9,9 @@ import { DistributionSchema } from '@astrale-os/distribution-domain/schema'
  *     `class.X:M` and `interface.X:M` (see `cli/src/lib/domain-identity.ts`),
  *     so interface-hosted methods work end-to-end.
  *   - Class `Note` implements `[NoteOps, KernelSchema.interfaces.Container]`,
- *     inheriting `createNote` (static) and adding `addTag` (instance — uses
- *     `self.path` to scope the operation to a specific Note).
- *   - Edge `references` linking Note → Note.
+ *     inheriting `createNote` (static) and adding `reference` (instance — uses
+ *     `self.path` to create a real `references` edge to another Note).
+ *   - Edge `references` linking Note → Note — created at runtime by `reference`.
  *
  * `View` (`ui-note`) and `RemoteFunction` (`count`) are NOT declared here —
  * they are auto-materialized by the SDK from the `views` / `remoteFunctions`
@@ -20,6 +19,7 @@ import { DistributionSchema } from '@astrale-os/distribution-domain/schema'
  * `view_for`, and `RemoteFunction` classes from the `distribution` domain
  * (imported below).
  */
+import { DistributionSchema } from '@astrale-os/distribution-domain/schema'
 import {
   defineSchema,
   edgeClass,
@@ -27,8 +27,15 @@ import {
   nodeClass,
   nodeInterface,
 } from '@astrale-os/kernel-core'
-import { fn, ref, SELF } from '@astrale-os/kernel-dsl'
+import { fn } from '@astrale-os/kernel-dsl'
 import { z } from 'zod'
+
+/**
+ * Return shape for "I created a node" methods. Remote methods return a plain
+ * `{ id, path }` ref — NOT `ref(SELF)`, whose full-Node value doesn't
+ * round-trip over the worker wire. Mirrors domains/contract's `NodeRef`.
+ */
+const NoteRef = z.object({ id: z.string(), path: z.string() })
 
 /**
  * Interface hosting the static op. Static op → `self` is `undefined`; get
@@ -40,15 +47,16 @@ export const NoteOps = nodeInterface({
     createNote: fn({
       static: true,
       params: { title: z.string(), body: z.string() },
-      returns: ref(SELF),
+      returns: NoteRef,
     }),
   },
 })
 
 /**
- * `addTag` is class-hosted and non-static — its impl receives `self`, a
- * `WithNodeId<MethodSelf<…>>` that exposes the target node's `path`. Use it
- * to scope per-instance work (e.g. `self.path.append('tag-' + name)`).
+ * `reference` is class-hosted and non-static — its impl receives `self`, a
+ * `WithNodeId<MethodSelf<…>>` that exposes the target node's `path`. It uses
+ * `self.path` as the edge source to link this Note to another via the
+ * `references` edge class (see methods/note-ops.ts).
  */
 export const Note = nodeClass({
   implements: [NoteOps, KernelSchema.interfaces.Container],
@@ -57,9 +65,9 @@ export const Note = nodeClass({
     body: z.string(),
   },
   methods: {
-    addTag: fn({
-      params: { tag: z.string() },
-      returns: z.object({ path: z.string() }),
+    reference: fn({
+      params: { target: z.string() },
+      returns: z.object({ linked: z.string() }),
     }),
   },
 })
