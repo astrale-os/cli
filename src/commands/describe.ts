@@ -1,3 +1,4 @@
+import { ClassPath } from '@astrale-os/kernel-core/domain'
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../command'
@@ -10,7 +11,6 @@ type NodeItem = {
   id?: string
   slug?: string
   class?: string
-  __labels?: string[]
   properties?: Record<string, unknown>
 }
 
@@ -57,8 +57,7 @@ function stripSchemaProp(result: DescribeResult): DescribeResult {
 // ── Pretty-print ────────────────────────────────────────────
 
 function printDescribe({ node, children }: DescribeResult, path: string): void {
-  const labels = node.__labels ?? []
-  const kind = labels[labels.length - 1] ?? 'Node'
+  const kind = classNameOf(node) ?? 'Node'
   const slug = node.properties?.slug ?? node.slug ?? path.split('/').pop()
   console.log(`  ${chalk.bold.cyan(String(slug))} ${chalk.dim(`(${kind})`)}`)
 
@@ -84,8 +83,7 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
   if (otherChildren.length > 0) {
     console.log(`  ${chalk.bold('Children:')}`)
     for (const child of otherChildren) {
-      const childKind =
-        child.__labels?.[child.__labels.length - 1] ?? child.class?.split('/').pop() ?? '?'
+      const childKind = classNameOf(child) ?? '?'
       console.log(`    ${chalk.cyan(child.slug ?? '?')}  ${chalk.dim(childKind)}`)
     }
     console.log('')
@@ -96,8 +94,13 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
   }
 }
 
+/** Short class name from the contract field `class` (a serialized ClassPath). */
+function classNameOf(item: NodeItem): string | undefined {
+  return item.class ? (ClassPath.tryParse(item.class)?.className ?? undefined) : undefined
+}
+
 function isMethod(item: NodeItem): boolean {
-  return !!(item.__labels?.includes('Method') || item.class?.includes('Method'))
+  return classNameOf(item) === 'Method'
 }
 
 function printProperties(node: NodeItem): void {
