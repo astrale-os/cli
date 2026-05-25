@@ -276,7 +276,16 @@ install, leave it unset.
   config.json        { managerPort, falkorPort, graphName (default astrale-manager), issuer }
   identities.json    { default, identities: { name: { subject, mode, kid, … } } }
   instances.json     { active, instances: { name: { url?, kind, mode, issuer?, … } } }
-  tunnels.json       Registered tunnels (id, name, hostname, boundInstance)
+  tunnels.json       Registry: tunnels[name] = { id, name, hostname,
+                     ingress[], boundInstance? }. Source of truth for
+                     astrale-managed tunnels — `tunnel start` renders
+                     tunnels/<id>.yml from this every spawn; the user's
+                     `~/.cloudflared/config.yml` is never touched.
+  tunnels/<id>.yml   Per-tunnel cloudflared config, regenerated on every
+                     `tunnel start`. Do not hand-edit — mutate via
+                     `astrale tunnel ingress add`.
+  tunnels/<id>.pid   Background cloudflared PID file.
+  tunnels/<id>.log   Background cloudflared logs.
   keys/              Per-identity ES256 keypairs
   data/              FalkorDB volume
   docker-compose.yml FalkorDB + manager service definitions
@@ -295,13 +304,34 @@ install, leave it unset.
 The local manager reserves the first path-segment `/mngt` for its management
 API; any other first path-segment is treated as a local-instance slug.
 
+## Tunnel model
+
+For astrale-managed tunnels (`astrale tunnel setup` / `adopt` / `start`):
+
+- **Registry first.** `~/.astrale/tunnels.json` is the source of truth for
+  ingress (`tunnels[name].ingress: [{hostname, service, path?}]`). Mutate
+  with `astrale tunnel ingress add` / `adopt`, not by hand-editing yaml.
+- **Generated config on start.** `tunnel start` renders
+  `~/.astrale/tunnels/<id>.yml` from the registry and spawns
+  `cloudflared tunnel run <id> --config <path>`. The user's
+  `~/.cloudflared/config.yml` is never read or written by astrale.
+- **Ingress is a list.** Wildcards (e.g. `*.fn.dist.…`) are preserved.
+  A catch-all `service: http_status:404` is always appended last
+  (cloudflared requirement).
+- **Failure modes.** A corrupt `tunnels.json` throws
+  `TunnelRegistryInvalidError` rather than silently re-seeding. Unknown
+  tunnel id/name → `TunnelNotFoundError`. Missing `--credentials-file`
+  is autoresolved from `~/.cloudflared/<id>.json` when present (warn
+  on absence; token-auth via `TUNNEL_TOKEN` env still works).
+
 ## Errors and debugging
 
 The CLI surfaces typed errors with actionable hints (e.g.
-`TunnelNotConfiguredError`, `CannotDeleteManagerError`, `AuthError`,
-issuer/meta mismatches, slug validation, reserved-name collisions). Use
-`--debug` on any kernel command for full diagnostics, or `--log-level debug`
-globally. For JWKS/iss/aud issues, first reach for
+`TunnelNotConfiguredError`, `TunnelRegistryInvalidError` (loud failure on
+corrupt `tunnels.json` — no silent seed), `TunnelNotFoundError`,
+`CannotDeleteManagerError`, `AuthError`, issuer/meta mismatches, slug
+validation, reserved-name collisions). Use `--debug` on any kernel command
+for full diagnostics, or `--log-level debug` globally. For JWKS/iss/aud issues, first reach for
 `astrale domain check --url <target>` — the dedicated OIDC discovery + JWKS
 reachability probe. `auth` is stubbed in v1 (NotImplemented, cloud adapter
 pending).

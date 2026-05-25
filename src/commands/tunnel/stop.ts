@@ -1,6 +1,6 @@
 import type { CommandDefinition } from '../../command'
 
-import { cloudflaredAdapter } from '../../adapters/tunnel-cloudflared'
+import { resolveTunnelAdapter } from '../../adapters/tunnel'
 import { fatal, log } from '../../lib/log'
 import { findTunnel, readTunnels } from '../../lib/tunnels'
 
@@ -16,7 +16,7 @@ export default {
         log.warn(`Tunnel "${name}" not registered — nothing to stop.`)
         return
       }
-      await cloudflaredAdapter.stop(entry.id)
+      await resolveTunnelAdapter(entry.adapter).stop(entry.id)
       log.success(`Stopped tunnel "${entry.name}"`)
     } catch (e) {
       fatal(e)

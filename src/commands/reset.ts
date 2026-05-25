@@ -9,7 +9,6 @@ import { rm, rmdir } from 'node:fs/promises'
 
 import type { CommandDefinition } from '../command'
 
-import { stopAllTunnels } from '../adapters/tunnel-cloudflared'
 import { resolveCredential } from '../kernel/auth'
 import { readConfig } from '../lib/config'
 import {
@@ -42,6 +41,7 @@ import {
   TUNNELS_DIR,
   TUNNELS_PATH,
 } from '../lib/paths'
+import { stopAllTunnels } from '../lib/tunnel-process'
 import { stopCommand } from './stop'
 
 type ResetOptions = {

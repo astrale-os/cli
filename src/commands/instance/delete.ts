@@ -15,7 +15,7 @@ import {
 } from '../../lib/instance'
 import { removeKeypair } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
-import { readTunnels, unbindTunnel } from '../../lib/tunnels'
+import { detachInstanceTunnels } from '../../lib/tunnels'
 
 export default {
   name: 'delete',
@@ -45,13 +45,14 @@ Behavior:
 
     if (inLocal && key) {
       try {
-        // §12 — orphan tunnels are never auto-stopped; detach + warn.
-        const tunnels = await readTunnels()
-        for (const t of Object.values(tunnels.tunnels)) {
-          if (t.boundInstance === key) {
-            await unbindTunnel(t.name)
-            log.warn(`  tunnel "${t.name}" detached — stop it with: astrale tunnel stop ${t.name}`)
-          }
+        // §12 — orphan tunnels are never auto-stopped; detach + warn. Best-effort:
+        // a broken/unreadable tunnel registry must not block the deletion.
+        const { detached, error } = await detachInstanceTunnels(key)
+        for (const n of detached) {
+          log.warn(`  tunnel "${n}" detached — stop it with: astrale tunnel stop ${n}`)
+        }
+        if (error) {
+          log.warn(`  tunnel detach skipped (registry unreadable): ${error}`)
         }
         await removeInstance(key)
         // Drop the per-instance keypair written at `instance create`. Left

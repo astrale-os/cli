@@ -16,6 +16,7 @@ import {
   RegistryModeSchema,
   validateName,
   validateSlug,
+  validateUrl,
   type RegistryMode,
 } from './validation'
 
@@ -27,7 +28,7 @@ export function managerUrl(config: { managerPort: number }): string {
 // ─── Schemas ─────────────────────────────────────────────────
 
 /**
- * V3 instance kinds (§4).
+ * Instance kinds (§4).
  *   - manager        : the local manager instance (reserved slug "manager")
  *   - local-child    : child instance of the local manager
  *   - managed-cloud  : instance provisioned by astrale cloud (managed)
@@ -44,7 +45,7 @@ export const InstanceEntrySchema = z.object({
   url: z.string().optional(),
   issuer: z.string().optional(),
   createdAt: z.string().optional(),
-  // V3 extensions — all optional for backward compat on legacy registries.
+  // Extensions — all optional for backward compat on legacy registries.
   slug: z.string().optional(),
   name: z.string().optional(),
   kind: InstanceKindSchema.optional(),
@@ -59,19 +60,6 @@ export const InstanceStoreSchema = z.object({
 
 export type InstanceEntry = z.infer<typeof InstanceEntrySchema>
 export type InstanceStore = z.infer<typeof InstanceStoreSchema>
-
-// ─── Validation ─────────────────────────────────────────────
-
-function validateUrl(url: string): void {
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      throw new Error('not http(s)')
-    }
-  } catch {
-    throw new Error(`Invalid URL "${url}" — expected a valid http:// or https:// URL`)
-  }
-}
 
 // ─── Seed ───────────────────────────────────────────────────
 

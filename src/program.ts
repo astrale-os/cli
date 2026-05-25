@@ -134,7 +134,7 @@ export async function buildProgram(): Promise<Command> {
 
   registerGroup(program, {
     name: 'tunnel',
-    description: 'Machine-level cloudflared tunnels',
+    description: 'Machine-level tunnels (hostname → local service)',
     commands: [
       (await import('./commands/tunnel/setup')).default,
       (await import('./commands/tunnel/adopt')).default,
@@ -142,6 +142,16 @@ export async function buildProgram(): Promise<Command> {
       (await import('./commands/tunnel/status')).default,
       (await import('./commands/tunnel/list')).default,
       (await import('./commands/tunnel/stop')).default,
+    ],
+    subgroups: [
+      {
+        name: 'ingress',
+        description: 'Manage hostname → local service routing for a tunnel',
+        commands: [
+          (await import('./commands/tunnel/ingress/add')).default,
+          (await import('./commands/tunnel/ingress/list')).default,
+        ],
+      },
     ],
   })
 

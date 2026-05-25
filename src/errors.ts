@@ -22,7 +22,7 @@ export class AuthError extends AstraleError {
   }
 }
 
-// ── V3 typed errors (SPEC.md §4.6, §4.7, §5.1, §10, §11, §12) ─────────
+// ── Typed errors (DESIGN.md §4.6, §4.7, §5.1, §10, §11, §12) ─────────
 
 export class IssuerUnreachableError extends AstraleError {
   constructor(url: string, hint?: string) {
@@ -114,6 +114,36 @@ export class TunnelDnsUnresolvedError extends AstraleError {
   }
 }
 
+export class TunnelRegistryInvalidError extends AstraleError {
+  constructor(path: string, cause: string) {
+    super(
+      'TUNNEL_REGISTRY_INVALID',
+      `Cannot parse tunnel registry at ${path}: ${cause}`,
+      'Inspect the file, back it up, then delete it to start fresh. Re-register existing tunnels with `astrale tunnel adopt <name>`.',
+    )
+  }
+}
+
+export class TunnelNotFoundError extends AstraleError {
+  constructor(nameOrId: string) {
+    super(
+      'TUNNEL_NOT_FOUND',
+      `Tunnel "${nameOrId}" not found in registry`,
+      'Run `astrale tunnel list` to see registered tunnels, or `astrale tunnel setup <name>` / `astrale tunnel adopt <name>` to add one.',
+    )
+  }
+}
+
+export class TunnelUnsupportedConfigError extends AstraleError {
+  constructor(name: string, reasons: string[]) {
+    super(
+      'TUNNEL_UNSUPPORTED_CONFIG',
+      `Tunnel "${name}" has routes astrale cannot manage:\n  - ${reasons.join('\n  - ')}`,
+      'astrale only manages http(s) hostname→service routing. Run this tunnel directly with cloudflared, or remove the unsupported routes before adopting.',
+    )
+  }
+}
+
 export class BuiltinDomainNotFoundError extends AstraleError {
   constructor(name: string) {
     super(
@@ -139,7 +169,7 @@ export class NotImplementedError extends AstraleError {
     super(
       'NOT_IMPLEMENTED',
       `"${feature}" is not implemented in v1`,
-      hint ?? 'Track the V3 spec implementation progress for updates',
+      hint ?? 'Track the design implementation progress for updates',
     )
   }
 }

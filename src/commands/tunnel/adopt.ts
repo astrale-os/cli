@@ -1,88 +1,38 @@
-import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-
 import type { CommandDefinition } from '../../command'
 
-import { hasCloudflared, runCloudflared } from '../../lib/cloudflared'
+import { ADAPTER_NAME, resolveTunnelAdapter } from '../../adapters/tunnel'
 import { fatal, log } from '../../lib/log'
-import { addTunnel, readTunnels } from '../../lib/tunnels'
-
-type CfTunnelListItem = { id: string; name: string }
-
-/**
- * Parse the ingress hostnames out of a `~/.cloudflared/config.yml` body.
- *
- * Minimal YAML parser — we only care about `hostname:` lines under
- * `ingress:`, and we skip wildcard entries (`*.foo`). cloudflared
- * configs rarely nest anything exotic, so a line-based pass is safer
- * than pulling in a full YAML dep just for one command.
- *
- * Exported for testing.
- */
-export function parseCloudflaredIngress(raw: string): string[] {
-  const hostnames: string[] = []
-  let inIngress = false
-  for (const rawLine of raw.split('\n')) {
-    const line = rawLine.replace(/#.*$/, '') // strip comments
-    if (/^ingress:\s*$/.test(line)) {
-      inIngress = true
-      continue
-    }
-    if (inIngress && /^[a-zA-Z]/.test(line)) {
-      // new top-level key — leave ingress block
-      inIngress = false
-    }
-    if (!inIngress) continue
-    const m = /^\s*-?\s*hostname:\s*["']?([^"'\s]+)["']?\s*$/.exec(line)
-    if (m && m[1] && !m[1].startsWith('*')) {
-      hostnames.push(m[1])
-    }
-  }
-  return hostnames
-}
-
-async function readCloudflaredIngress(): Promise<string[]> {
-  const path = join(homedir(), '.cloudflared', 'config.yml')
-  try {
-    const raw = await readFile(path, 'utf-8')
-    return parseCloudflaredIngress(raw)
-  } catch {
-    return []
-  }
-}
-
-async function listCloudflaredTunnels(): Promise<CfTunnelListItem[]> {
-  const r = runCloudflared(['tunnel', 'list', '--output', 'json'])
-  if (r.status !== 0) {
-    throw new Error(`cloudflared tunnel list failed: ${r.stderr || r.stdout}`)
-  }
-  try {
-    return JSON.parse(r.stdout) as CfTunnelListItem[]
-  } catch {
-    throw new Error('cloudflared tunnel list returned non-JSON output')
-  }
-}
+import { addIngressHint, addTunnel, readTunnels } from '../../lib/tunnels'
 
 export default {
   name: 'adopt',
-  description:
-    'Register an existing cloudflared tunnel (created outside the CLI) in the astrale registry',
-  arguments: [{ name: 'name', description: 'Existing cloudflared tunnel name', required: true }],
+  description: 'Register an existing tunnel (created outside the CLI) in the astrale registry',
+  afterHelpText: `
+Behavior:
+  Imports the tunnel's existing http(s) ingress rules into the astrale
+  registry. After adoption, ~/.astrale/tunnels.json is the source of
+  truth — mutate it via \`astrale tunnel ingress add\`. Tunnels with
+  non-http(s) routes (tcp/ssh/…) or per-rule provider options are
+  refused: astrale only manages http(s) hostname→service routing.
+
+Examples:
+  $ astrale tunnel adopt my-existing-tunnel
+  $ astrale tunnel adopt my-existing-tunnel --hostname my.public.host
+`,
+  arguments: [{ name: 'name', description: 'Existing tunnel name', required: true }],
   options: [
     {
       flags: '--hostname <host>',
       description:
-        'Hostname to bind. Required if `~/.cloudflared/config.yml` contains multiple ingress entries',
+        'Primary hostname for the registry. Inferred from the imported ingress when omitted.',
     },
+    { flags: '--adapter <id>', description: 'Tunnel adapter (default: cloudflared)' },
   ],
-  action: async (name: string, opts: { hostname?: string }) => {
+  action: async (name: string, opts: { hostname?: string; adapter?: string }) => {
     try {
-      if (!hasCloudflared()) {
-        log.dim(
-          '  install: `brew install cloudflared` (macOS) or https://github.com/cloudflare/cloudflared',
-        )
-        fatal(new Error('cloudflared not found on PATH'))
+      const adapter = resolveTunnelAdapter(opts.adapter ?? ADAPTER_NAME)
+      if (!(await adapter.isAvailable())) {
+        fatal(new Error(`Tunnel adapter "${adapter.name}" is not available on this machine.`))
       }
 
       const existing = await readTunnels()
@@ -94,50 +44,37 @@ export default {
         )
       }
 
-      const cfTunnels = await listCloudflaredTunnels()
-      const match = cfTunnels.find((t) => t.name === name)
-      if (!match) {
-        const known = cfTunnels.map((t) => t.name).join(', ') || '(none)'
+      // importExisting throws TunnelUnsupportedConfigError on non-http(s) /
+      // originRequest routes — astrale refuses partial imports.
+      const { descriptor, ingress, suggestedHostname } = await adapter.importExisting(name)
+
+      const hostname = opts.hostname ?? suggestedHostname
+      if (!hostname) {
         fatal(
           new Error(
-            `cloudflared has no tunnel named "${name}". Known tunnels: ${known}. ` +
-              `To create a new one: astrale tunnel setup ${name}`,
+            ingress.length === 0
+              ? `Cannot infer hostname: imported tunnel has no http(s) ingress. Pass --hostname <host>.`
+              : `Imported ingress has only wildcard hostnames. Pass --hostname <host> for the registry's primary hostname.`,
           ),
         )
       }
 
-      let hostname = opts.hostname
-      if (!hostname) {
-        const ingress = await readCloudflaredIngress()
-        if (ingress.length === 0) {
-          fatal(
-            new Error(
-              `Cannot infer hostname: ~/.cloudflared/config.yml has no ingress. ` +
-                `Pass --hostname <host> explicitly.`,
-            ),
-          )
-        }
-        if (ingress.length > 1) {
-          fatal(
-            new Error(
-              `Multiple ingress hostnames found in ~/.cloudflared/config.yml (${ingress.join(', ')}). ` +
-                `Pass --hostname <host> to pick one.`,
-            ),
-          )
-        }
-        hostname = ingress[0]!
-      }
-
       await addTunnel({
-        id: match!.id,
-        name: match!.name,
-        adapter: 'cloudflared',
+        id: descriptor.id,
+        name: descriptor.name,
+        adapter: descriptor.adapter,
         hostname,
         createdAt: new Date().toISOString(),
+        ingress,
       })
 
-      log.success(`Adopted tunnel "${name}" (id=${match!.id})`)
+      log.success(`Adopted tunnel "${name}" (id=${descriptor.id})`)
       log.dim(`  hostname: ${hostname}`)
+      if (ingress.length > 0) {
+        log.dim(`  ingress: ${ingress.length} rule(s) imported`)
+      } else {
+        log.dim(`  no ingress imported — run \`${addIngressHint(name)}\``)
+      }
       log.dim(`  Next: astrale tunnel start ${name}`)
     } catch (e) {
       fatal(e)

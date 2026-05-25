@@ -1,21 +1,23 @@
 import type { CommandDefinition } from '../../command'
 
-import { cloudflaredAdapter } from '../../adapters/tunnel-cloudflared'
+import { ADAPTER_NAME, resolveTunnelAdapter } from '../../adapters/tunnel'
 import { TunnelNotConfiguredError } from '../../errors'
 import { fatal, log } from '../../lib/log'
-import { addTunnel } from '../../lib/tunnels'
+import { addIngressHint, addTunnel } from '../../lib/tunnels'
+import { validateUrl } from '../../lib/validation'
 
 export default {
   name: 'setup',
   description: 'Configure TunnelAdapter + DNS preflight',
   afterHelpText: `
 Behavior:
-  Creates a fresh cloudflared tunnel and registers it. A tunnel
-  exposes a local port on the public Internet — only bind instances
-  serving intended content. DNS preflight must resolve.
+  Creates a fresh tunnel and registers it. A tunnel exposes a local
+  port on the public Internet — only bind instances serving intended
+  content. DNS preflight must resolve.
 
 Examples:
-  $ astrale tunnel setup prod --hostname my.host.tld --route-dns
+  $ astrale tunnel setup prod --hostname my.host.tld --service http://localhost:8811 --route-dns
+  $ astrale tunnel setup dev  --hostname dev.local.astrale.ai  # no service yet — add later
 `,
   arguments: [{ name: 'name', description: 'Tunnel name (local identifier)', required: true }],
   options: [
@@ -23,53 +25,69 @@ Examples:
       flags: '--hostname <host>',
       description: 'Public hostname (default: <name>.local.astrale.ai)',
     },
-    { flags: '--route-dns', description: 'Auto-run `cloudflared tunnel route dns` after create' },
+    {
+      flags: '--service <url>',
+      description:
+        'Local service URL to route the public hostname to (e.g. http://localhost:8811). Without this, the tunnel runs but returns 404 — add routes later via `astrale tunnel ingress add`.',
+    },
+    { flags: '--route-dns', description: 'Auto-register DNS for the hostname after create' },
     { flags: '--skip-preflight', description: 'Skip DNS preflight (allow unresolved hostname)' },
+    { flags: '--adapter <id>', description: 'Tunnel adapter (default: cloudflared)' },
   ],
   action: async (
     name: string,
-    opts: { hostname?: string; routeDns?: boolean; skipPreflight?: boolean },
+    opts: {
+      hostname?: string
+      service?: string
+      routeDns?: boolean
+      skipPreflight?: boolean
+      adapter?: string
+    },
   ) => {
     try {
-      if (!(await cloudflaredAdapter.isAvailable())) {
-        log.dim(
-          '  install: `brew install cloudflared` (macOS) or https://github.com/cloudflare/cloudflared',
-        )
+      const adapterId = opts.adapter ?? ADAPTER_NAME
+      const adapter = resolveTunnelAdapter(adapterId)
+      if (!(await adapter.isAvailable())) {
+        if (adapterId === 'cloudflared') {
+          log.dim(
+            '  install: `brew install cloudflared` (macOS) or https://github.com/cloudflare/cloudflared',
+          )
+        }
         fatal(new TunnelNotConfiguredError())
       }
 
       const hostname = opts.hostname ?? `${name}.local.astrale.ai`
+      if (opts.service) validateUrl(opts.service)
 
       log.warn('  Public exposure: a tunnel exposes a local port on the Internet.')
       log.dim('  Ensure the bound instance only serves content you intend to publish.')
 
-      const desc = await cloudflaredAdapter.create({ name, hostname })
+      const desc = await adapter.create({ name, hostname, routeDns: opts.routeDns })
+      const ingress = opts.service ? [{ hostname, service: opts.service }] : []
       await addTunnel({
         id: desc.id,
         name: desc.name,
         adapter: desc.adapter,
         hostname,
         createdAt: new Date().toISOString(),
+        ingress,
       })
       log.success(`Created tunnel "${name}" (id=${desc.id})`)
       log.dim(`  hostname: ${hostname}`)
-
-      if (opts.routeDns) {
-        log.info('Routing DNS via cloudflared (requires a zone owned in CF)…')
-        const { runCloudflared } = await import('../../lib/cloudflared')
-        const r = runCloudflared(['tunnel', 'route', 'dns', desc.id, hostname])
-        if (r.status !== 0) {
-          log.warn(`route dns failed: ${r.stderr || r.stdout}`)
-        } else {
-          log.success(`DNS route registered for ${hostname}`)
-        }
+      if (opts.service) {
+        log.dim(`  routes to: ${opts.service}`)
       } else {
-        log.dim(`  Next: cloudflared tunnel route dns ${desc.id} ${hostname}`)
+        log.warn(
+          `  No --service mapped — tunnel will return 404 on every request until you add routes via \`${addIngressHint(name)}\`.`,
+        )
+      }
+      if (!opts.routeDns) {
+        log.dim(`  Next: register DNS for ${hostname}, or re-run with --route-dns.`)
       }
 
       if (!opts.skipPreflight) {
         try {
-          await cloudflaredAdapter.dnsPreflight(hostname)
+          await adapter.dnsPreflight(hostname)
           log.success(`DNS preflight ok for ${hostname}`)
         } catch (e) {
           log.warn((e as Error).message)

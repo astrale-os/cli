@@ -2,7 +2,7 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
 
-import { cloudflaredAdapter } from '../../adapters/tunnel-cloudflared'
+import { resolveTunnelAdapter } from '../../adapters/tunnel'
 import { fatal, log } from '../../lib/log'
 import { RAW_OUTPUT_OPTIONS, isRawOutput, output, type RawOutputOpts } from '../../lib/output'
 import { readTunnels } from '../../lib/tunnels'
@@ -18,7 +18,9 @@ export default {
       const withStatus = await Promise.all(
         entries.map(async (e) => ({
           ...e,
-          status: await cloudflaredAdapter.status(e.id).catch(() => 'unknown' as const),
+          status: await resolveTunnelAdapter(e.adapter)
+            .status(e.id)
+            .catch(() => 'unknown' as const),
         })),
       )
 

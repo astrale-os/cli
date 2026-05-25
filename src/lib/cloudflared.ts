@@ -16,7 +16,7 @@ export function hasCloudflared(): boolean {
 /** Best-effort pgrep — matches the tunnel by its id in the command line. */
 export function isCloudflaredRunningFor(tunnelId: string): boolean {
   try {
-    const out = execSync(`pgrep -laf 'cloudflared tunnel run ${tunnelId}'`, {
+    const out = execSync(`pgrep -laf 'cloudflared tunnel.*run ${tunnelId}'`, {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
     })

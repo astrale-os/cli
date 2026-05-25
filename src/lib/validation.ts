@@ -29,6 +29,27 @@ export function validateSlug(slug: string): void {
   }
 }
 
+export function validateUrl(url: string): void {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('not http(s)')
+    }
+  } catch {
+    throw new Error(`Invalid URL "${url}" — expected a valid http:// or https:// URL`)
+  }
+}
+
+/** Non-throwing predicate form of `validateUrl`. */
+export function isHttpUrl(url: string): boolean {
+  try {
+    validateUrl(url)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** `local` = only this machine. `remote` = mirrored via astrale cloud (§2.7). */
 export const RegistryModeSchema = z.enum(['local', 'remote'])
 export type RegistryMode = z.infer<typeof RegistryModeSchema>
