@@ -69,6 +69,13 @@ export type DevUpOpts = {
    *   domain (vs the config-driven loud-fallback-to-built).
    */
   views?: 'built' | 'hmr'
+  /**
+   * Kill a FOREIGN process holding the worker port without prompting
+   * (`--force`/`--yes`). Our own stale worker is always reaped silently;
+   * this only governs a stranger on the port. Off without it: prompt on a
+   * TTY, abort otherwise (the fan-out children run with no TTY).
+   */
+  force?: boolean
 }
 
 export type DevDownOpts = {

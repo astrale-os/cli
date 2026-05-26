@@ -69,6 +69,7 @@ import {
   type DevVars,
   type DomainEnv,
 } from './cloudflare-helpers'
+import { reapWorkerWranglers } from './worker-reaper'
 
 // ── envs.ts loading ───────────────────────────────────────────────────
 
@@ -99,6 +100,15 @@ function readDomainPort(envs: EnvsModule): number {
     if (Number.isFinite(n) && n > 0) return n
   }
   return 8787
+}
+
+/** Best-effort worker port for `devDown` when no state file exists. */
+async function devDownPort(dir: string): Promise<number | null> {
+  try {
+    return readDomainPort(await loadDomainEnvs(dir))
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -294,8 +304,11 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
       // Restart-on-env-change (META_TRACE #92): silently skipping when env
       // diverges from the running wrangler is the worst-of-both — the new
       // KERNEL_URL/AGENT_IMAGE/etc. is invisible until the next manual kill.
-      const { killed } = killWranglerTree(port)
-      log.dim(`  env changed — killed ${killed} listener(s) on :${port}, restarting wrangler`)
+      log.dim(`  env changed — reaping + restarting wrangler on :${port}`)
+      await reapWorkerWranglers(workerDir, port, {
+        foreignPolicy: 'abort',
+        force: opts.force ?? false,
+      })
       await ensureWranglerWorker({
         domain,
         slug: resolved.slug,
@@ -322,16 +335,14 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
         state.started.wrangler = priorWrangler
       }
     } else {
-      if (assetsRebuilt && (await isHttpOk(localHealth))) {
-        // Assets just rebuilt, env unchanged, wrangler already up → it's
-        // serving the stale snapshot. writeDevVars sees no change so its
-        // own kill won't fire; kill here so ensureWranglerWorker
-        // respawns against the fresh dist-client/.
-        const { killed } = killWranglerTree(port)
-        log.dim(
-          `  assets rebuilt — killed ${killed} listener(s) on :${port}, restarting to pick up new dist-client/`,
-        )
-      }
+      // The RC2 path: a prior wrangler may be mid-reload (NOT listening, so
+      // a port-scoped kill can't see it) or serving a stale dist-client/.
+      // Reap OUR wrangler/workerd by identity before respawning, and abort
+      // if a foreign process holds the port.
+      await reapWorkerWranglers(workerDir, port, {
+        foreignPolicy: 'abort',
+        force: opts.force ?? false,
+      })
       await ensureWranglerWorker({
         domain,
         slug: resolved.slug,
@@ -364,8 +375,26 @@ export async function devDown(opts: DevDownOpts): Promise<DevDownResult> {
   const state = readDevState(statePath)
   const hooks = (resolved.lifecycle?.hooks ?? {}) as LifecycleHooks
 
+  // Reap OUR wrangler/workerd by identity FIRST — even when the state file
+  // is missing (CLI interrupted, process reparented to launchd). This is the
+  // RC1 fix: `devDown` no longer trusts the state file as the sole source of
+  // truth. foreignPolicy 'ignore' → `down` never kills a stranger's process.
+  const workerDir = join(resolved.dir, 'worker')
+  if (existsSync(workerDir)) {
+    const port = state?.started.wrangler?.port ?? (await devDownPort(resolved.dir))
+    if (port !== null) {
+      const { killedOurs } = await reapWorkerWranglers(workerDir, port, {
+        foreignPolicy: 'ignore',
+        force: true,
+      })
+      if (killedOurs > 0) log.dim(`  reaped ${killedOurs} ${resolved.slug} worker process(es)`)
+      const { killed: viteKilled } = killPort(vitePortFor(port))
+      if (viteKilled > 0) log.dim(`  stopped vite dev on :${vitePortFor(port)}`)
+    }
+  }
+
   if (!state) {
-    log.info(`No state file for ${resolved.slug} — nothing to stop.`)
+    log.info(`No state file for ${resolved.slug} — reaped any orphan worker by identity.`)
     return { stopped: { astrale: false, cloudflared: null, wrangler: null } }
   }
 
@@ -377,17 +406,8 @@ export async function devDown(opts: DevDownOpts): Promise<DevDownResult> {
   const stopped: DevState['started'] = { astrale: false, cloudflared: null, wrangler: null }
 
   if (state.started.wrangler) {
+    // Already reaped above by identity (incl. the Vite port) — just record it.
     const { port, pid } = state.started.wrangler
-    const { killed } = killWranglerTree(port)
-    log.dim(`  stopped wrangler on :${port} (pid=${pid}, killed ${killed} listener(s))`)
-    // Free the derived Vite dev port (HMR mode). Derived from the worker
-    // port — no DevState field needed. No-op if nothing's listening
-    // (built mode, or HMR never spawned).
-    const vitePort = vitePortFor(port)
-    const { killed: viteKilled } = killPort(vitePort)
-    if (viteKilled > 0) {
-      log.dim(`  stopped vite dev on :${vitePort} (killed ${viteKilled} listener(s))`)
-    }
     stopped.wrangler = { port, pid }
   }
 
