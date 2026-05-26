@@ -7,10 +7,8 @@ import { resolveCredential } from '../../kernel/auth'
 import { readConfig } from '../../lib/config'
 import { getDefault } from '../../lib/identity'
 import { addInstance, managerUrl } from '../../lib/instance'
-import { resolveAuth } from '../../lib/keys'
 import { fatal, fatalNotImplemented, log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
-import { KEYS_DIR } from '../../lib/paths'
 import { bindTunnel, findTunnel, readTunnels } from '../../lib/tunnels'
 import { validateSlug } from '../../lib/validation'
 import instanceInstall from './install'
@@ -131,42 +129,22 @@ export default {
       }
       const bakedIssuer = opts.issuer ?? autoBakedIssuer
 
-      // Pre-generate a per-instance keypair. The manager reads the public
-      // key off the register payload and persists it on the KernelInstance
-      // node; the spawn callback loads the matching private key from disk
-      // to build the child's AuthBinding. The CLI itself signs calls that
-      // target this instance with the same private key, so tokens present
-      // `{iss=bakedIssuer, sub=slug}` — which the child recognizes as its
-      // own identity (see authenticator.ts `resolveIdentity` shortcut).
-      const instanceAuth = await resolveAuth(KEYS_DIR, {
-        issuer: bakedIssuer,
-        subject: slug,
-      })
+      const defaultIdentity = opts.as ?? (await getDefault()).name
 
       let registered = false
       try {
-        log.info(`Registering instance "${slug}" on manager…`)
-        await client.call('/manager.astrale.ai/class.KernelInstance/register', {
+        log.info(`Creating instance "${slug}" through admin workflow…`)
+        const info = (await client.call('/admin.astrale.ai/class.AdminKernelInstance/create', {
           id: slug,
-          graphName: `${slug}-graph`,
-          host: 'localhost',
-          port: config.falkorPort,
           issuer: bakedIssuer,
           label: opts.name,
-          publicKey: instanceAuth.publicKey,
-        })
-        registered = true
-        log.info(`Booting "${slug}"…`)
-        await client.call('/manager.astrale.ai/class.KernelInstance/boot', {
-          id: slug,
+          owner: { id: defaultIdentity },
           installDistribution: !opts.distroless,
-        })
-
-        const info = (await client.call('/manager.astrale.ai/class.KernelInstance/info', {
-          id: slug,
-        })) as { issuer?: string; url?: string }
+          seedUser: !opts.distroless,
+        })) as { issuer?: string; status?: string }
+        registered = true
         const issuer = info.issuer ?? bakedIssuer
-        const url = info.url ?? issuer
+        const url = issuer
 
         // §4.6 invariant — failed JWKS check invalidates the baked issuer.
         if (!opts.skipJwksCheck) {
@@ -184,7 +162,6 @@ export default {
           }
         }
 
-        const defaultIdentity = opts.as ?? (await getDefault()).name
         log.dim(`  default identity: ${defaultIdentity}`)
 
         // `url`, `issuer`, `createdAt` live on the manager (`KernelInstance` node)

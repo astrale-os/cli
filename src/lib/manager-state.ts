@@ -8,7 +8,7 @@ import type { AstraleConfig } from './config'
 
 import { resolveBuiltinDomain } from './builtin-domains'
 import { isInContainer } from './env'
-import { resolveAuth } from './keys'
+import { keypairPaths, resolveAuth } from './keys'
 import { log } from './log'
 import { JOURNAL_PATH, KEYS_DIR, LOGS_DIR, MANAGER_PID_PATH } from './paths'
 
@@ -155,6 +155,38 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
       observability: ndjsonJournal({ path: JOURNAL_PATH, tags: { kernel: 'manager' } }),
       manager: inProcessManager({
         builtinDomains,
+        admin: {
+          defaultHost: {
+            id: 'local',
+            url: config.issuer,
+            kind: 'local',
+            label: 'Local manager',
+          },
+          childDefaults: {
+            host: 'localhost',
+            port: config.falkorPort,
+            issuerFor: (id) => `http://localhost:${config.managerPort}/${id}`,
+            graphNameFor: (id) => `${id}-graph`,
+          },
+          keyStore: {
+            async ensureKernelKey(input) {
+              const auth = await resolveAuth(KEYS_DIR, {
+                issuer: input.issuer,
+                subject: input.subject,
+                kid: input.kid,
+              })
+              const { privatePath } = keypairPaths(input.subject, KEYS_DIR)
+              const jwk = auth.publicKey.jwk as Record<string, unknown>
+              return {
+                auth,
+                kid: typeof jwk.kid === 'string' ? jwk.kid : (input.kid ?? `${input.subject}-key`),
+                alg: typeof jwk.alg === 'string' ? jwk.alg : 'ES256',
+                publicJwk: jwk,
+                secretRef: `file://${privatePath}`,
+              }
+            },
+          },
+        },
         async spawn(_parent, cfg) {
           const childUrl = cfg.issuer ?? `http://localhost:${config.managerPort}/${cfg.id}`
           // Load (or lazily generate) the per-instance keypair. The CLI

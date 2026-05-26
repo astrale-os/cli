@@ -63,6 +63,7 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, (await import('./commands/restart')).default)
   registerCommand(program, (await import('./commands/status')).default)
   registerCommand(program, (await import('./commands/reset')).default)
+  registerCommand(program, (await import('./commands/deploy')).default)
   // Manager-only, like `status` — deliberately NOT withKernelOptions: bootstrap
   // must hard-target the manager, so -i/--instance/--url are omitted (a foot-gun
   // here — they would let it silently mis-target a child).

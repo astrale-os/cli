@@ -2,4 +2,4 @@
 import { buildProgram } from '../src/program'
 
 const program = await buildProgram()
-program.parse()
+await program.parseAsync()
