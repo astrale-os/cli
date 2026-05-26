@@ -27,6 +27,8 @@ type Opts = {
   platform?: string
   views?: 'built' | 'hmr'
   follow?: boolean
+  force?: boolean
+  yes?: boolean
 }
 
 const FOLLOW_STOP_NOTE =
@@ -143,6 +145,9 @@ function runChild(dir: string, label: string, opts: Opts): Promise<DomainResult>
     // Note: `--follow` is intentionally NOT forwarded — only the top-level
     // invocation streams; children just start their worker and return.
     ...(opts.views ? ['--views', opts.views] : []),
+    // Forwarded so a foreign-port-holder is auto-killed in the fan-out
+    // children too — they have no TTY, so without this they'd abort.
+    ...(opts.force || opts.yes ? ['--yes'] : []),
   ]
   return new Promise<DomainResult>((resolve) => {
     // detached: true → the child gets its own session (setsid) with NO
@@ -210,6 +215,15 @@ export default {
       description:
         'After starting, stream the worker log(s) live until Ctrl-C (the worker keeps running).',
     },
+    {
+      flags: '-y, --yes',
+      description:
+        'Assume yes: kill a foreign process holding a worker port without prompting (our own stale worker is always reaped silently).',
+    },
+    {
+      flags: '--force',
+      description: 'Alias of --yes for the foreign-port-holder prompt.',
+    },
   ],
   action: async (opts: Opts) => {
     const platform = resolveDomainPlatform(opts.platform)
@@ -239,6 +253,7 @@ export default {
             kernel: opts.kernel,
             domain: opts.domain,
             views: opts.views,
+            force: opts.force || opts.yes,
           })
           const port = await resolveWorkerPort(dir, opts.domain).catch(() => null)
           results.push({ dir, label, ok: true, state, port: port ?? undefined })
