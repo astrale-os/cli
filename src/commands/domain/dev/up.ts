@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import * as os from 'node:os'
 import { join } from 'node:path'
 
@@ -69,12 +69,26 @@ function lastMeaningfulLine(s: string): string | undefined {
   return lines.at(-1)
 }
 
-/** Tail of the most relevant on-disk log for a failed domain. */
-function tailLog(slug: string, lines = 15): string | undefined {
-  const dir = paths.domainLogDir(slug)
+/**
+ * Tail of the most relevant on-disk log for a failed domain — but ONLY a
+ * log written during this run (mtime >= `sinceMs`). A pre-spawn failure
+ * (missing secret, PORT_HELD_BY_FOREIGN, DEV_LOCK_HELD, DNS) never touches
+ * `wrangler.log`, so a stale tail from a previous run would mislead (it
+ * once showed an old esbuild crash for a missing-secret failure). Build
+ * failures write `vite-build.log`, spawn failures write `wrangler.log` —
+ * the mtime gate surfaces exactly the log relevant to this run's failure.
+ */
+export function tailLog(logDir: string, sinceMs: number, lines = 15): string | undefined {
   for (const name of ['wrangler.log', 'vite-build.log']) {
-    const p = join(dir, name)
+    const p = join(logDir, name)
     if (!existsSync(p)) continue
+    let mtimeMs: number
+    try {
+      mtimeMs = statSync(p).mtimeMs
+    } catch {
+      continue
+    }
+    if (mtimeMs < sinceMs) continue // stale — not written this run
     const content = readFileSync(p, 'utf-8').trimEnd()
     if (!content) continue
     return `${name}:\n${content.split('\n').slice(-lines).join('\n')}`
@@ -82,13 +96,13 @@ function tailLog(slug: string, lines = 15): string | undefined {
   return undefined
 }
 
-/** Attach recap data: port + state on success, log tail on failure. */
-function enrich(r: DomainResult, port: number | null): DomainResult {
+/** Attach recap data: port + state on success, fresh log tail on failure. */
+function enrich(r: DomainResult, port: number | null, sinceMs: number): DomainResult {
   r.port = port ?? undefined
   if (r.ok) {
     r.state = readDevState(paths.domainState(r.label)) ?? undefined
   } else {
-    r.logTail = tailLog(r.label)
+    r.logTail = tailLog(paths.domainLogDir(r.label), sinceMs)
   }
   return r
 }
@@ -226,6 +240,9 @@ export default {
     },
   ],
   action: async (opts: Opts) => {
+    // Captured up front: the failure recap only shows a worker log written
+    // AFTER this (mtime gate in tailLog) — never a stale log from a prior run.
+    const runStartMs = Date.now()
     const platform = resolveDomainPlatform(opts.platform)
 
     if (opts.views !== undefined && opts.views !== 'built' && opts.views !== 'hmr') {
@@ -322,7 +339,7 @@ export default {
       const out: DomainResult[] = []
       for (const dir of group) {
         const label = labelByDir.get(dir) ?? labelFor(dir)
-        const r = enrich(await runChild(dir, label, opts), portByDir.get(dir) ?? null)
+        const r = enrich(await runChild(dir, label, opts), portByDir.get(dir) ?? null, runStartMs)
         ticker.tick(++done)
         out.push(r)
       }
