@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { isOurWorker, type ProcIdentity } from '../worker-reaper'
+import { isOurWorker, procIdentity, type ProcIdentity } from '../worker-reaper'
 
 // Fake (non-existent) paths: realpathSafe returns null for these, so
 // isOurWorker falls back to literal string comparison — exactly the seam
@@ -64,5 +64,19 @@ describe('isOurWorker', () => {
     expect(
       isOurWorker(id({ comm: 'node', cwd: WORKER, argv: ['node', 'wrangler', 'deploy'] }), WORKER),
     ).toBe(false)
+  })
+})
+
+describe('procIdentity (real process)', () => {
+  // Guards the macOS ps-parsing regression where `comm` came back as a
+  // truncated path fragment ("marcdavou" from `/Users/marcdavou…`) and
+  // misclassified our own workerd as foreign. `comm` must be the runtime
+  // basename (bun/node), never a path fragment, and cwd must resolve.
+  test('resolves comm to the runtime basename, not a truncated path', () => {
+    const id = procIdentity(process.pid)
+    expect(id).not.toBeNull()
+    expect(id!.comm).toMatch(/^(bun|node)/)
+    expect(id!.comm.startsWith('/')).toBe(false)
+    expect(id!.cwd.startsWith('/')).toBe(true)
   })
 })

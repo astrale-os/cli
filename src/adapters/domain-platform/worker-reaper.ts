@@ -71,20 +71,17 @@ export function procIdentity(pid: number): ProcIdentity | null {
       const argv = readFileSync(`/proc/${pid}/cmdline`, 'utf-8').split('\0').filter(Boolean)
       return { pid, comm, cwd, argv }
     }
-    const ps = spawnSync('ps', ['-o', 'comm=,command=', '-p', String(pid)], { encoding: 'utf-8' })
+    // `ps -ww -o command=` → the full argv. We derive `comm` from
+    // `basename(argv[0])` rather than asking for `comm=`: on macOS,
+    // requesting `comm=` ALONGSIDE `command=` truncates the comm column to
+    // ~16 chars (`/Users/marcdavou…` → bogus basename `marcdavou`), which
+    // would misclassify our own workerd as a foreign process.
+    const ps = spawnSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf-8' })
     if (ps.status !== 0 || !ps.stdout?.trim()) return null
-    const line = ps.stdout.trim()
-    const firstSpace = line.indexOf(' ')
-    const commPath = firstSpace === -1 ? line : line.slice(0, firstSpace)
-    const command = firstSpace === -1 ? '' : line.slice(firstSpace + 1)
+    const argv = ps.stdout.trim().split(/\s+/)
     const cwd = macCwd(pid)
     if (cwd === null) return null
-    return {
-      pid,
-      comm: basename(commPath),
-      cwd,
-      argv: command.length > 0 ? command.split(/\s+/) : [commPath],
-    }
+    return { pid, comm: basename(argv[0] ?? ''), cwd, argv }
   } catch {
     return null
   }
