@@ -140,11 +140,14 @@ function candidatePids(workerDirReal: string, managedPort: number): number[] {
   return [...pids]
 }
 
+/** True iff `pid` resolves to this worker's wrangler/workerd. */
+function isOurPid(pid: number, workerDirReal: string): boolean {
+  const id = procIdentity(pid)
+  return id !== null && isOurWorker(id, workerDirReal)
+}
+
 function ourHoldersOf(port: number, workerDirReal: string): number[] {
-  return listenersOnPort(port).filter((p) => {
-    const id = procIdentity(p)
-    return id !== null && isOurWorker(id, workerDirReal)
-  })
+  return listenersOnPort(port).filter((p) => isOurPid(p, workerDirReal))
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -171,8 +174,7 @@ export async function reapWorkerWranglers(
 
   let killedOurs = 0
   for (const pid of candidatePids(workerDirReal, managedPort)) {
-    const id = procIdentity(pid)
-    if (id !== null && isOurWorker(id, workerDirReal)) killedOurs += killPids([pid]).killed
+    if (isOurPid(pid, workerDirReal)) killedOurs += killPids([pid]).killed
   }
 
   // Drain: wait until the port is free or only non-ours remain.
@@ -192,10 +194,7 @@ export async function reapWorkerWranglers(
   const holders = listenersOnPort(managedPort)
   if (holders.length === 0) return { killedOurs, portFreed: true, foreign: 'none' }
 
-  const foreign = holders.filter((p) => {
-    const id = procIdentity(p)
-    return !(id !== null && isOurWorker(id, workerDirReal))
-  })
+  const foreign = holders.filter((p) => !isOurPid(p, workerDirReal))
   if (foreign.length === 0) {
     // Only ours still holding (a slow exit) — reap and report.
     killPids(holders)

@@ -307,11 +307,10 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
       const priorWrangler = priorState?.started.wrangler ?? null
       const envChanged = priorWrangler?.envHash !== undefined && priorWrangler.envHash !== envHash
 
-      if (envChanged) {
-        // Restart-on-env-change (META_TRACE #92): silently skipping when env
-        // diverges from the running wrangler is the worst-of-both — the new
-        // KERNEL_URL/AGENT_IMAGE/etc. is invisible until the next manual kill.
-        log.dim(`  env changed — reaping + restarting wrangler on :${port}`)
+      // Reap OUR wrangler/workerd by identity (catches a mid-reload one a
+      // port-scoped kill can't see), abort if a foreign process holds the
+      // port, then respawn against the fresh dist-client/ + env.
+      const reapAndRespawn = async (): Promise<void> => {
         await reapWorkerWranglers(workerDir, port, {
           foreignPolicy: 'abort',
           force: opts.force ?? false,
@@ -326,6 +325,14 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
           envHash,
           state,
         })
+      }
+
+      if (envChanged) {
+        // Restart-on-env-change (META_TRACE #92): silently skipping when env
+        // diverges from the running wrangler is the worst-of-both — the new
+        // KERNEL_URL/AGENT_IMAGE/etc. is invisible until the next manual kill.
+        log.dim(`  env changed — reaping + restarting wrangler on :${port}`)
+        await reapAndRespawn()
       } else if (!assetsRebuilt && (await isHttpOk(localHealth))) {
         // NOTE the `!assetsRebuilt` guard: a fresh `vite build` changes
         // `dist-client/` but NOT `envHash` (which hashes `.dev.vars`
@@ -342,24 +349,9 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
           state.started.wrangler = priorWrangler
         }
       } else {
-        // The RC2 path: a prior wrangler may be mid-reload (NOT listening, so
-        // a port-scoped kill can't see it) or serving a stale dist-client/.
-        // Reap OUR wrangler/workerd by identity before respawning, and abort
-        // if a foreign process holds the port.
-        await reapWorkerWranglers(workerDir, port, {
-          foreignPolicy: 'abort',
-          force: opts.force ?? false,
-        })
-        await ensureWranglerWorker({
-          domain,
-          slug: resolved.slug,
-          workerDir,
-          port,
-          localHealth,
-          baseVars,
-          envHash,
-          state,
-        })
+        // RC2: a prior wrangler may be mid-reload (NOT listening) or serving
+        // a stale dist-client/ — reapAndRespawn catches both.
+        await reapAndRespawn()
       }
 
       // If tunneled, wait for the tunnel to front the worker.
