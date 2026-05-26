@@ -102,22 +102,111 @@ export async function waitForUrl(url: string, timeoutMs: number, label: string):
 
 // ── Process lifecycle ─────────────────────────────────────────────────
 
-// Absolute paths for system utilities — `spawnSync` inherits the parent's
-// PATH, which is stripped to empty under macOS TCC on `~/Documents/`. Using
-// canonical BSD paths sidesteps PATH lookup entirely.
-const LSOF = '/usr/sbin/lsof'
-const KILL = '/bin/kill'
+// `process.kill(pid, 0)` liveness probe (hardened, single source).
+export { isPidAlive } from '../../lib/proc'
+
+// ── Port-holder discovery (feature-detected) ──────────────────────────
+//
+// `spawnSync` inherits the parent's PATH, which is stripped to empty under
+// macOS TCC on `~/Documents/` — so the canonical BSD `/usr/sbin/lsof` is
+// preferred (no PATH lookup). Linux/Alpine CI has no lsof there: fall back
+// to `ss`, then `fuser`. Detected once; a loud warning (never a silent
+// no-op) if none is available so `dev up`/`down` failures are legible.
+
+type PortTool = { kind: 'lsof' | 'ss' | 'fuser'; bin: string }
+let portToolCache: PortTool | null | undefined
+
+function commandExists(bin: string): boolean {
+  if (bin.startsWith('/')) return existsSync(bin)
+  const r = spawnSync(bin, ['--version'], { stdio: 'ignore' })
+  return (r.error as NodeJS.ErrnoException | undefined)?.code !== 'ENOENT'
+}
+
+function resolvePortTool(): PortTool | null {
+  if (portToolCache !== undefined) return portToolCache
+  if (existsSync('/usr/sbin/lsof')) portToolCache = { kind: 'lsof', bin: '/usr/sbin/lsof' }
+  else if (commandExists('lsof')) portToolCache = { kind: 'lsof', bin: 'lsof' }
+  else if (commandExists('ss')) portToolCache = { kind: 'ss', bin: 'ss' }
+  else if (commandExists('fuser')) portToolCache = { kind: 'fuser', bin: 'fuser' }
+  else {
+    portToolCache = null
+    log.warn(
+      'No port tool found (lsof/ss/fuser) — cannot detect or reap workers by port; dev up/down may leave orphan wranglers.',
+    )
+  }
+  return portToolCache
+}
+
+function uniquePositiveInts(values: Iterable<number>): number[] {
+  return [...new Set(values)].filter((n) => Number.isFinite(n) && n > 0)
+}
+
+function pidsFromSs(output: string, port: number): number[] {
+  const pids: number[] = []
+  for (const line of output.split('\n')) {
+    // Keep only rows whose local address ends with `:<port>` (ss prints the
+    // local addr in one of the first columns; the foreign addr never matches
+    // a *listening* sport, so an endsWith check is sufficient here).
+    if (!line.split(/\s+/).some((c) => c.endsWith(`:${port}`))) continue
+    for (const m of line.matchAll(/pid=(\d+)/g)) pids.push(Number.parseInt(m[1]!, 10))
+  }
+  return uniquePositiveInts(pids)
+}
+
+/**
+ * PIDs holding `port`. `listeningOnly` restricts to LISTEN sockets (used to
+ * record the worker PID); omit it to also catch a process bound-but-not-yet-
+ * listening. Returns `[]` when no port tool is available (already warned).
+ */
+export function listenersOnPort(port: number, opts: { listeningOnly?: boolean } = {}): number[] {
+  const tool = resolvePortTool()
+  if (!tool) return []
+  if (tool.kind === 'lsof') {
+    const args = ['-ti', `:${port}`]
+    if (opts.listeningOnly) args.push('-sTCP:LISTEN')
+    const r = spawnSync(tool.bin, args, { encoding: 'utf-8' })
+    return uniquePositiveInts((r.stdout ?? '').split('\n').map((s) => Number.parseInt(s, 10)))
+  }
+  if (tool.kind === 'ss') {
+    const args = opts.listeningOnly ? ['-tnlpH'] : ['-tnpH']
+    const r = spawnSync(tool.bin, args, { encoding: 'utf-8' })
+    return pidsFromSs(r.stdout ?? '', port)
+  }
+  // fuser <port>/tcp prints PIDs (to stdout on newer, stderr on older).
+  const r = spawnSync(tool.bin, [`${port}/tcp`], { encoding: 'utf-8' })
+  const out = `${r.stdout ?? ''} ${r.stderr ?? ''}`
+  return uniquePositiveInts(out.split(/\s+/).map((s) => Number.parseInt(s, 10)))
+}
+
+/** SIGKILL each PID individually (never a process-group fan-out — see worker-reaper). */
+export function killPids(pids: readonly number[]): { killed: number } {
+  let killed = 0
+  for (const pid of pids) {
+    if (pid <= 0) continue
+    try {
+      process.kill(pid, 'SIGKILL')
+      killed++
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (code === 'ESRCH') {
+        killed++ // already gone — counts as handled
+        continue
+      }
+      log.warn(`Could not kill pid ${pid} on cleanup: ${code ?? String(e)}`)
+    }
+  }
+  return { killed }
+}
 
 /**
  * Kill the wrangler/workerd process(es) listening on `port`. Port-scoped:
  * does NOT touch siblings on other ports — the previous global `pkill -f
  * workerd serve` fallback killed every other domain's worker on the host.
+ * Note: a wrangler stuck mid-reload is NOT listening, so this can't see it —
+ * `reapWorkerWranglers` (worker-reaper.ts) catches those by identity.
  */
 export function killWranglerTree(port: number): { killed: number } {
-  const lsof = spawnSync(LSOF, ['-ti', `:${port}`], { encoding: 'utf-8' })
-  const pids = (lsof.stdout ?? '').split('\n').filter(Boolean)
-  if (pids.length > 0) spawnSync(KILL, ['-KILL', ...pids])
-  return { killed: pids.length }
+  return killPids(listenersOnPort(port))
 }
 
 /**
@@ -125,27 +214,9 @@ export function killWranglerTree(port: number): { killed: number } {
  * Used to free a domain's derived Vite dev port on `devDown`, and to
  * clear a stale Vite before re-spawning on `devUp` (Vite's
  * `--strictPort` would otherwise fail against a leftover listener).
- * Functionally identical to `killWranglerTree` today; kept separate so
- * the wrangler-specific doc/semantics stay intact (future dedupe).
  */
 export function killPort(port: number): { killed: number } {
-  const lsof = spawnSync(LSOF, ['-ti', `:${port}`], { encoding: 'utf-8' })
-  const pids = (lsof.stdout ?? '').split('\n').filter(Boolean)
-  if (pids.length > 0) spawnSync(KILL, ['-KILL', ...pids])
-  return { killed: pids.length }
-}
-
-/**
- * Check whether a PID is alive without killing it (`kill 0`). Used by
- * `devStatus` to validate the persisted wrangler PID.
- */
-export function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
+  return killPids(listenersOnPort(port))
 }
 
 // ── Client views (dev `/ui/*` serving) ────────────────────────────────
@@ -163,12 +234,14 @@ export function vitePortFor(workerPort: number): number {
 }
 
 /**
- * Deterministic per-domain wrangler inspector (devtools) port. Wrangler
- * defaults it to 9229 — fine sequentially, but the parallel `dev up`
- * fan-out starts several `wrangler dev` at once and they'd all fight for
- * 9229 (`Address already in use 127.0.0.1:9230`). `+30000` keeps it
- * clear of the worker range and the `+40000` Vite range, and unique per
- * worker port (worker ports are centrally unique per domain).
+ * Deterministic per-domain wrangler inspector (devtools) port. `+30000`
+ * keeps it clear of the worker range and the `+40000` Vite range.
+ *
+ * NOTE: no longer passed to `wrangler dev` — the spawn uses
+ * `--inspector-port 0` (OS-assigned ephemeral) so two wranglers for the
+ * same worker can never collide on a *deterministic* inspector port (that
+ * collision was the second necessary condition of the reload loop). Kept
+ * exported for reference / potential reuse.
  */
 export function inspectorPortFor(workerPort: number): number {
   return workerPort + 30_000
