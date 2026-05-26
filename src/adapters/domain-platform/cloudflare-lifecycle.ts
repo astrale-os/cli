@@ -47,12 +47,12 @@ import {
   effectiveViewsMode,
   evalPreset,
   hashDevVars,
-  inspectorPortFor,
   isHttpOk,
   isPidAlive,
   killPort,
   killWranglerTree,
   lifecycleConfig,
+  listenersOnPort,
   loadDomainModule,
   preflightDns,
   readDevState,
@@ -739,16 +739,7 @@ export function resolveSdkFingerprint(domainDir: string): {
  * under macOS TCC on `~/Documents/`.
  */
 function findListenerPid(port: number): number | null {
-  const r = spawnSync('/usr/sbin/lsof', ['-ti', `:${port}`, '-sTCP:LISTEN'], { encoding: 'utf-8' })
-  if (r.status !== 0) return null
-  const pids = [
-    ...new Set(
-      (r.stdout ?? '')
-        .split('\n')
-        .map((s) => Number.parseInt(s, 10))
-        .filter((n) => Number.isFinite(n) && n > 0),
-    ),
-  ]
+  const pids = listenersOnPort(port, { listeningOnly: true })
   if (pids.length === 0) return null
   if (pids.length > 1) {
     log.warn(
@@ -830,7 +821,12 @@ async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
       // registers a job → no `[1] <pid>` monitor line and no
       // `zsh: jobs SIGHUPed` warning leaking to the terminal. The
       // process still detaches (nohup + subshell exits → reparented).
-      `( cd ${JSON.stringify(workerDir)} && nohup ${JSON.stringify(wranglerBin)} dev --port ${port} --inspector-port ${inspectorPortFor(port)} > ${JSON.stringify(logFile)} 2>&1 & )`,
+      // --inspector-port 0 → OS-assigned ephemeral devtools port. Two
+      // wranglers for the same worker must never share a deterministic
+      // inspector port (that collision was the 2nd necessary condition of
+      // the reload loop); the per-slug dev-lock prevents the duplicate in
+      // the first place, this is belt-and-suspenders.
+      `( cd ${JSON.stringify(workerDir)} && nohup ${JSON.stringify(wranglerBin)} dev --port ${port} --inspector-port 0 > ${JSON.stringify(logFile)} 2>&1 & )`,
     ],
     { stdio: 'inherit' },
   )
@@ -838,7 +834,17 @@ async function ensureWranglerWorker(args: WorkerSpawnArgs): Promise<void> {
     throw new AstraleError('WRANGLER_SPAWN_FAILED', `wrangler dev spawn failed`)
   }
   await waitForUrl(localHealth, 30_000, 'wrangler')
-  const pid = findListenerPid(port) ?? 0
+  // Health passed, but the port tool can momentarily miss the listener
+  // during a reload blip → never persist pid:0 silently. Short retry,
+  // then warn (dev down/status fall back to identity reaping anyway).
+  let pid = findListenerPid(port) ?? 0
+  for (let i = 0; pid <= 0 && i < 3; i++) {
+    await new Promise((r) => setTimeout(r, 200))
+    pid = findListenerPid(port) ?? 0
+  }
+  if (pid <= 0) {
+    log.warn(`  wrangler on :${port} answered health but no LISTEN pid resolved (recording pid:0).`)
+  }
   state.started.wrangler = { port, pid, envHash }
   log.dim(`  wrangler ready on :${port} (pid=${pid}); logs=${logFile}`)
 }

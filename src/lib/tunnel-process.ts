@@ -45,15 +45,8 @@ export async function removePidFile(id: string): Promise<void> {
   }
 }
 
-/** `process.kill(pid, 0)` liveness probe — true if the process still exists. */
-export function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
+/** `process.kill(pid, 0)` liveness probe (hardened, single source). */
+export { isPidAlive } from './proc'
 
 /**
  * Best-effort SIGTERM to every tunnel pid recorded under `TUNNELS_DIR`.
