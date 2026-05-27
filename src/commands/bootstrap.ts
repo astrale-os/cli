@@ -1,11 +1,12 @@
 /**
- * `astrale bootstrap` — install the builtin `distribution` then `manager-ui`
- * domains onto the manager kernel itself.
+ * `astrale bootstrap` — install the builtin `ai-gateway`, `distribution`,
+ * then `manager-ui` domains onto the manager kernel itself.
  *
  * This is intentionally schema-only: no grants, no Distribution.init. It
  * mirrors the standalone `instance install` contract. `manager-ui` has zero
- * methods (nothing to grant), and `distribution` on the manager exists only
- * so the `View` class is resolvable for manager-ui's `view_for`/`View` edges.
+ * methods (nothing to grant), `ai-gateway` provides distribution's cross-domain
+ * AIModel view target, and `distribution` on the manager exists so the `View`
+ * class is resolvable for manager-ui's `view_for`/`View` edges.
  *
  * Product workspace distribution installation is owned by the admin create
  * workflow, not by the manager `KernelInstance.boot` primitive.
@@ -32,8 +33,8 @@ import { probeHttp } from '../lib/manager-state'
 import { isRawOutput, output, RAW_OUTPUT_OPTIONS, type OutputOpts } from '../lib/output'
 import { extractDomainSlug, findFirstRemoteUrl } from '../lib/spec'
 
-/** Install order — distribution provides the `View` class manager-ui needs. */
-const ORDER: BuiltinDomainName[] = ['distribution', 'manager-ui']
+/** Install order — distribution references ai-gateway and manager-ui references distribution. */
+const ORDER: BuiltinDomainName[] = ['ai-gateway', 'distribution', 'manager-ui']
 const ORDER_SET: ReadonlySet<string> = new Set(ORDER)
 const isBootstrapDomain = (v: string): v is BuiltinDomainName => ORDER_SET.has(v)
 
@@ -112,8 +113,8 @@ async function installOne(
     // 'absent' → fall through and install.
   }
 
-  // ── Worker reachability (manager-ui only; distribution is schema-only
-  //    here and its binding is the prod URL — probing it is a false alarm) ──
+  // ── Worker reachability (manager-ui only; ai-gateway/distribution are
+  //    schema-only here and their bindings may be local/dev URLs) ──
   let workerProbed = false
   let workerUp = false
   let workerUrl: string | undefined
@@ -230,14 +231,16 @@ export async function bootstrapCommand(opts: BootstrapOpts): Promise<void> {
 
 export default {
   name: 'bootstrap',
-  description: 'Install the builtin distribution + manager-ui domains onto the manager',
+  description:
+    'Install the builtin ai-gateway + distribution + manager-ui domains onto the manager',
   afterHelpText: `
 Behavior:
   Installs onto the MANAGER kernel itself (not the active instance) — there
   is no -i/--instance flag. Idempotent: a domain whose Domain node already
   exists is skipped ("already installed"). Schema-only: no grants and no
   Distribution.init run on the manager (manager-ui has no methods;
-  distribution-on-manager only provides the View class). If the manager-ui
+  ai-gateway-on-manager only provides the AIModel class and distribution-on-manager
+  only provides the View class). If the manager-ui
   worker is down the spec still installs but the console will not load until
   the worker is up. To force a clean reinstall: astrale reset, then re-run.
 
@@ -249,7 +252,7 @@ Examples:
   options: [
     {
       flags: '--only <domain>',
-      description: 'Bootstrap only one builtin (distribution|manager-ui)',
+      description: 'Bootstrap only one builtin (ai-gateway|distribution|manager-ui)',
     },
     { flags: '--skip-worker-check', description: 'Skip the manager-ui worker reachability probe' },
     { flags: '--as <identity>', description: 'Call as a specific identity' },

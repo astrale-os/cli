@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 import { BuiltinDomainNotFoundError } from '../errors'
 
-export type BuiltinDomainName = 'distribution' | 'manager-ui'
+export type BuiltinDomainName = 'ai-gateway' | 'distribution' | 'manager-ui'
 
 export type BuiltinDomainPaths = {
   specPath: string
@@ -13,7 +13,7 @@ export type BuiltinDomainPaths = {
   source: 'env' | 'npm' | 'monorepo'
 }
 
-const BUILTIN_DOMAINS: BuiltinDomainName[] = ['distribution', 'manager-ui']
+const BUILTIN_DOMAINS: BuiltinDomainName[] = ['ai-gateway', 'distribution', 'manager-ui']
 
 export function isBuiltinDomainName(value: string): value is BuiltinDomainName {
   return (BUILTIN_DOMAINS as string[]).includes(value)

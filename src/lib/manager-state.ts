@@ -133,7 +133,7 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     await import('@astrale-os/kernel-host')
   const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
 
-  // Resolve the builtin distribution spec + worker key once at startup for
+  // Resolve builtin domain specs + worker keys once at startup for
   // the admin create workflow. If resolution fails, the manager still starts —
   // only admin requests that ask for distribution installation will surface a
   // clean error at call time.
@@ -155,6 +155,7 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
       manager: inProcessManager({
         admin: {
           builtinDomains: adminBuiltinDomains,
+          installDistributionOnManager: adminBuiltinDomains?.distribution !== undefined,
           workflow: {
             defaultHost: {
               id: 'local',
@@ -265,22 +266,35 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
  * create requests asking for distribution installation will reject clearly.
  */
 async function loadBuiltinDomainsCatalog(): Promise<
-  { distribution?: { spec: Record<string, unknown>; workerKey: JWK } } | undefined
+  | {
+      aiGateway?: { spec: Record<string, unknown>; workerKey: JWK }
+      distribution?: { spec: Record<string, unknown>; workerKey: JWK }
+    }
+  | undefined
 > {
   try {
-    const dist = await resolveBuiltinDomain('distribution')
-    const [specRaw, keyRaw] = await Promise.all([
+    const [aiGateway, dist] = await Promise.all([
+      resolveBuiltinDomain('ai-gateway'),
+      resolveBuiltinDomain('distribution'),
+    ])
+    const [aiGatewaySpecRaw, aiGatewayKeyRaw, distSpecRaw, distKeyRaw] = await Promise.all([
+      readFile(aiGateway.specPath, 'utf-8'),
+      readFile(aiGateway.keyPath, 'utf-8'),
       readFile(dist.specPath, 'utf-8'),
       readFile(dist.keyPath, 'utf-8'),
     ])
     return {
+      aiGateway: {
+        spec: JSON.parse(aiGatewaySpecRaw) as Record<string, unknown>,
+        workerKey: JSON.parse(aiGatewayKeyRaw) as JWK,
+      },
       distribution: {
-        spec: JSON.parse(specRaw) as Record<string, unknown>,
-        workerKey: JSON.parse(keyRaw) as JWK,
+        spec: JSON.parse(distSpecRaw) as Record<string, unknown>,
+        workerKey: JSON.parse(distKeyRaw) as JWK,
       },
     }
   } catch (err) {
-    log.dim(`  distribution builtin not loaded: ${(err as Error).message}`)
+    log.dim(`  builtin domain catalog not loaded: ${(err as Error).message}`)
     return undefined
   }
 }

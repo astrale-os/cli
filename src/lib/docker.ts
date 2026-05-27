@@ -200,6 +200,7 @@ function composeYaml(inputs: ComposeInputs): string {
       # Local domain specs use *.localhost identities and worker URLs.
       # Inside the manager container, those names must resolve to the host
       # where wrangler dev is listening, not to the container loopback.
+      - 'ai-gateway.localhost:host-gateway'
       - 'dist.localhost:host-gateway'
     environment:
       - ASTRALE_IN_CONTAINER=1
