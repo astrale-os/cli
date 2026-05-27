@@ -1,6 +1,11 @@
+// NOTE (temporary workaround): `@astrale-os/kernel-host/blaxel/deploy` is not
+// exported by the locally-linked kernel/host yet (v0.7.0 on `main`); the blaxel
+// deploy stack only lives on the `demo-sandbox` branch. program.ts eagerly
+// `await import`s every command module on each CLI run, so a top-level *value*
+// import of this missing subpath crashes the WHOLE CLI at load. It's deferred
+// into the action below so every other command keeps working; `astrale deploy`
+// only resolves it once kernel/host main ships the export.
 import type { BlaxelTargetSpec } from '@astrale-os/kernel-host/blaxel/deploy'
-
-import { BlaxelTargetStore, deployBlaxelTarget } from '@astrale-os/kernel-host/blaxel/deploy'
 
 import type { CommandDefinition } from '../command'
 
@@ -27,6 +32,8 @@ type DeployOptions = {
 }
 
 async function deployCommand(target: string, opts: DeployOptions): Promise<void> {
+  const { BlaxelTargetStore, deployBlaxelTarget } =
+    await import('@astrale-os/kernel-host/blaxel/deploy')
   const store = new BlaxelTargetStore(opts.store)
   const result = await deployBlaxelTarget({
     target,
