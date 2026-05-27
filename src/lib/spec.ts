@@ -34,7 +34,7 @@ export function rawStr(value: unknown): string | undefined {
 /**
  * Origin slug of the spec's Domain node: `props.origin`, else the node
  * path minus the leading `/`. `undefined` when the spec carries no Domain
- * node. Mirrors `kernel/host/.../install-builtin.ts:extractDomainOrigin`.
+ * node. Mirrors the host admin distribution installer.
  */
 export function extractDomainSlug(nodes: unknown[]): string | undefined {
   for (const node of nodes) {

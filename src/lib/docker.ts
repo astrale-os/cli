@@ -196,6 +196,11 @@ function composeYaml(inputs: ComposeInputs): string {
         condition: service_healthy
     ports:
       - '127.0.0.1:${managerPort}:${cPort}'
+    extra_hosts:
+      # Local domain specs use *.localhost identities and worker URLs.
+      # Inside the manager container, those names must resolve to the host
+      # where wrangler dev is listening, not to the container loopback.
+      - 'dist.localhost:host-gateway'
     environment:
       - ASTRALE_IN_CONTAINER=1
       - ASTRALE_HOME=/astrale

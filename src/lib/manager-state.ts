@@ -133,12 +133,11 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
     await import('@astrale-os/kernel-host')
   const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
 
-  // Resolve the builtin distribution spec + worker key once at startup so
-  // the manager can install it on demand (e.g., when a UI client calls
-  // `KernelInstance.boot({ installDistribution: true })`). If resolution
-  // fails, the manager still starts — only requests asking for an install
-  // will surface a clean error at call time.
-  const builtinDomains = await loadBuiltinDomainsCatalog()
+  // Resolve the builtin distribution spec + worker key once at startup for
+  // the admin create workflow. If resolution fails, the manager still starts —
+  // only admin requests that ask for distribution installation will surface a
+  // clean error at call time.
+  const adminBuiltinDomains = await loadBuiltinDomainsCatalog()
 
   const kernel = new Kernel({
     mode: 'manager',
@@ -154,36 +153,39 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
       transports: [node()],
       observability: ndjsonJournal({ path: JOURNAL_PATH, tags: { kernel: 'manager' } }),
       manager: inProcessManager({
-        builtinDomains,
         admin: {
-          defaultHost: {
-            id: 'local',
-            url: config.issuer,
-            kind: 'local',
-            label: 'Local manager',
-          },
-          childDefaults: {
-            host: 'localhost',
-            port: config.falkorPort,
-            issuerFor: (id) => `http://localhost:${config.managerPort}/${id}`,
-            graphNameFor: (id) => `${id}-graph`,
-          },
-          keyStore: {
-            async ensureKernelKey(input) {
-              const auth = await resolveAuth(KEYS_DIR, {
-                issuer: input.issuer,
-                subject: input.subject,
-                kid: input.kid,
-              })
-              const { privatePath } = keypairPaths(input.subject, KEYS_DIR)
-              const jwk = auth.publicKey.jwk as Record<string, unknown>
-              return {
-                auth,
-                kid: typeof jwk.kid === 'string' ? jwk.kid : (input.kid ?? `${input.subject}-key`),
-                alg: typeof jwk.alg === 'string' ? jwk.alg : 'ES256',
-                publicJwk: jwk,
-                secretRef: `file://${privatePath}`,
-              }
+          builtinDomains: adminBuiltinDomains,
+          workflow: {
+            defaultHost: {
+              id: 'local',
+              url: config.issuer,
+              kind: 'local',
+              label: 'Local manager',
+            },
+            childDefaults: {
+              host: 'localhost',
+              port: config.falkorPort,
+              issuerFor: (id) => `http://localhost:${config.managerPort}/${id}`,
+              graphNameFor: (id) => `${id}-graph`,
+            },
+            keyStore: {
+              async ensureKernelKey(input) {
+                const auth = await resolveAuth(KEYS_DIR, {
+                  issuer: input.issuer,
+                  subject: input.subject,
+                  kid: input.kid,
+                })
+                const { privatePath } = keypairPaths(input.subject, KEYS_DIR)
+                const jwk = auth.publicKey.jwk as Record<string, unknown>
+                return {
+                  auth,
+                  kid:
+                    typeof jwk.kid === 'string' ? jwk.kid : (input.kid ?? `${input.subject}-key`),
+                  alg: typeof jwk.alg === 'string' ? jwk.alg : 'ES256',
+                  publicJwk: jwk,
+                  secretRef: `file://${privatePath}`,
+                }
+              },
             },
           },
         },
@@ -258,9 +260,9 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
 
 /**
  * Resolve the distribution builtin (spec + worker key) and return it in
- * the shape `inProcessManager` expects. Silently returns `undefined` when
- * the builtin can't be resolved — the manager remains usable; only
- * `boot({ installDistribution: true })` will reject with a clear error.
+ * the shape the admin extension expects. Silently returns `undefined` when
+ * the builtin can't be resolved — the manager remains usable; only admin
+ * create requests asking for distribution installation will reject clearly.
  */
 async function loadBuiltinDomainsCatalog(): Promise<
   { distribution?: { spec: Record<string, unknown>; workerKey: JWK } } | undefined

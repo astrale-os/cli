@@ -2,14 +2,13 @@
  * `astrale bootstrap` — install the builtin `distribution` then `manager-ui`
  * domains onto the manager kernel itself.
  *
- * Deliberate divergence from the child `boot({ installDistribution })` path
- * (`kernel/host/src/drivers/manager/install-builtin.ts`): that path also runs
- * `issueBootstrapGrants` + `Distribution.init`. Here we install the spec
- * **only** — no grants, no init — on purpose, mirroring the standalone
- * `instance install` contract: `manager-ui` has zero methods (nothing to
- * grant) and `distribution` on the manager is schema-only (it exists so the
- * `View` class is resolvable for manager-ui's `view_for`/`View` edges).
- * Do not "fix" this by copying the child path.
+ * This is intentionally schema-only: no grants, no Distribution.init. It
+ * mirrors the standalone `instance install` contract. `manager-ui` has zero
+ * methods (nothing to grant), and `distribution` on the manager exists only
+ * so the `View` class is resolvable for manager-ui's `view_for`/`View` edges.
+ *
+ * Product workspace distribution installation is owned by the admin create
+ * workflow, not by the manager `KernelInstance.boot` primitive.
  */
 
 import { type FnMap, ConnectionError, NotFoundError } from '@astrale-os/kernel-client'

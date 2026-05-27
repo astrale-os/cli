@@ -18,7 +18,7 @@ import type {
 
 import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-host'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 import type {
@@ -274,6 +274,7 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
           const r = await tryViteHmr({ slug: resolved.slug, clientDir, vitePort })
           if (r.ok) {
             viewDevUrl = r.url
+            ensureAssetsDirectory(workerDir)
             log.dim(`  views=hmr — Vite dev on :${vitePort}, worker proxies /ui/*`)
           } else if (opts.views === 'hmr') {
             // Forced via --views hmr → hard error for THIS domain. The
@@ -769,6 +770,14 @@ function findListenerPid(port: number): number | null {
     )
   }
   return Math.max(...pids)
+}
+
+function ensureAssetsDirectory(workerDir: string): void {
+  const distDir = join(workerDir, 'dist-client')
+  const indexPath = join(distDir, 'index.html')
+  if (existsSync(indexPath)) return
+  mkdirSync(distDir, { recursive: true })
+  writeFileSync(indexPath, '<!doctype html><html><body></body></html>\n')
 }
 
 // ── Worker spawn helper ───────────────────────────────────────────────
