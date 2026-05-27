@@ -1,28 +1,37 @@
-import {
-  BlaxelTargetStore,
-  deployBlaxelTarget,
-  loadBlaxelDeployFile,
-} from '@astrale-os/kernel-host/blaxel/deploy'
+import type { BlaxelTargetSpec } from '@astrale-os/kernel-host/blaxel/deploy'
+
+import { BlaxelTargetStore, deployBlaxelTarget } from '@astrale-os/kernel-host/blaxel/deploy'
 
 import type { CommandDefinition } from '../command'
 
 import { log } from '../lib/log'
 
 type DeployOptions = {
-  config?: string
-  replaceBinding?: boolean
+  name?: string
+  region?: string
+  bookmark?: string
+  identity?: string
+  image?: string
+  template?: string
+  memory?: string
+  persist?: boolean
+  pin?: string
+  deploy?: boolean
+  skipBookmark?: boolean
+  bundle?: boolean
+  gui?: boolean
+  workers?: boolean
+  recreate?: boolean
   store?: string
   astraleHome?: string
 }
 
 async function deployCommand(target: string, opts: DeployOptions): Promise<void> {
-  const cwd = process.cwd()
-  const deployFile = await loadBlaxelDeployFile({ cwd, file: opts.config })
   const store = new BlaxelTargetStore(opts.store)
   const result = await deployBlaxelTarget({
     target,
-    deployFile,
-    replaceBinding: opts.replaceBinding,
+    targetSpec: targetSpecFromOptions(opts),
+    recreate: opts.recreate,
     store,
     astraleHome: opts.astraleHome,
   })
@@ -34,19 +43,53 @@ async function deployCommand(target: string, opts: DeployOptions): Promise<void>
   }
 }
 
+function targetSpecFromOptions(opts: DeployOptions): BlaxelTargetSpec {
+  const memory = opts.memory === undefined ? undefined : Number(opts.memory)
+  if (memory !== undefined && (!Number.isFinite(memory) || memory <= 0)) {
+    throw new Error(`--memory must be a positive number, got: ${opts.memory}`)
+  }
+
+  return {
+    name: opts.name,
+    region: opts.region,
+    bookmark: opts.bookmark,
+    identity: opts.identity,
+    image: opts.image,
+    template: opts.template,
+    memory,
+    persist: opts.persist,
+    pin: opts.pin,
+    noDeploy: opts.deploy === false,
+    noBookmark: opts.skipBookmark,
+    noBundle: opts.bundle === false,
+    noGui: opts.gui === false,
+    noWorkers: opts.workers === false,
+  }
+}
+
 const command: CommandDefinition = {
   name: 'deploy',
-  description: 'Build and deploy a target from astrale.deploy.ts',
-  arguments: [{ name: 'target', description: 'Target name from astrale.deploy.ts' }],
+  description: 'Build and deploy an Astrale kernel host on Blaxel',
+  arguments: [{ name: 'target', description: 'Target name / default sandbox name' }],
   options: [
+    { flags: '--name <name>', description: 'Concrete Blaxel sandbox name (default: target)' },
+    { flags: '--region <region>', description: 'Blaxel region (default: eu-fra-1)' },
+    { flags: '--bookmark <name>', description: 'CLI bookmark name (default: sandbox name)' },
+    { flags: '--identity <name>', description: 'CLI identity name (default: <sandbox>-system)' },
+    { flags: '--image <ref>', description: 'Use an existing sandbox image ref' },
+    { flags: '--template <name>', description: 'Sandbox template name (default: blaxel)' },
+    { flags: '--memory <mb>', description: 'Sandbox memory in MB (default: 4096)' },
+    { flags: '--persist', description: 'Mount a persistent Blaxel volume at /data' },
+    { flags: '--pin <pin>', description: 'Override the GUI PIN' },
     {
-      flags: '--config <path>',
-      description: 'Blaxel deploy file path (default: astrale.deploy.ts)',
+      flags: '--recreate',
+      description: 'Delete and recreate the concrete platform resource behind this target',
     },
-    {
-      flags: '--replace-binding',
-      description: 'Replace the concrete platform resource behind this target',
-    },
+    { flags: '--no-deploy', description: 'Skip bl deploy' },
+    { flags: '--skip-bookmark', description: 'Skip astrale instance bookmark' },
+    { flags: '--no-bundle', description: 'Skip kernel, gateway, GUI, and worker bundling' },
+    { flags: '--no-gui', description: 'Skip GUI build/bundling' },
+    { flags: '--no-workers', description: 'Skip service worker deploys and domain installs' },
     {
       flags: '--store <path>',
       description: 'Blaxel target store path (default: .astrale/blaxel-targets.json)',
@@ -59,8 +102,9 @@ const command: CommandDefinition = {
   afterHelpText: `
 Examples:
   astrale deploy demo
-  astrale deploy demo --replace-binding
-  astrale deploy demo --config ./astrale.deploy.ts
+  astrale deploy demo --recreate
+  astrale deploy demo --pin 482910
+  astrale deploy demo --no-gui --no-bundle --no-deploy
 `,
   action: deployCommand,
 }
