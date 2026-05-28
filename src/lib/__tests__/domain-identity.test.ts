@@ -12,9 +12,13 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { decodeJwt, exportJWK, generateKeyPair } from 'jose'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { AstraleError } from '../../errors'
-import { inferAlg } from '../domain-identity'
+import { buildIdentityBinding, inferAlg } from '../domain-identity'
 
 describe('inferAlg', () => {
   // Adversarial: `astrale init` historically generated ES256 keys without
@@ -56,5 +60,58 @@ describe('inferAlg', () => {
 
   test('treats empty-string alg as missing', () => {
     expect(inferAlg({ alg: '', kty: 'EC', crv: 'P-256' })).toBe('ES256')
+  })
+})
+
+describe('buildIdentityBinding (end-to-end against a committed spec)', () => {
+  // From `cli/src/lib/__tests__/` up to the workspace root, then `domains/`.
+  const SPEC_PATH = resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    '../../../..',
+    'domains/manager-ui/spec.json',
+  )
+
+  async function generateES256Jwk(kid: string): Promise<Record<string, unknown>> {
+    const { privateKey } = await generateKeyPair('ES256', { extractable: true })
+    const jwk = (await exportJWK(privateKey)) as Record<string, unknown>
+    jwk.alg = 'ES256'
+    jwk.kid = kid
+    return jwk
+  }
+
+  test('mints a credential whose subs match what the kernel will validate', async () => {
+    // The CLI's buildIdentityBinding runs the IDENTICAL `Graph.fromWire →
+    // deserializeDomainFromGraph → collectFunctionSubs` pipeline the kernel
+    // uses at install validation. This test pins the full mint path against
+    // a real committed spec — drift between the CLI and the kernel here
+    // would surface as a downstream `subs missing function path …` reject.
+    const raw = JSON.parse(readFileSync(SPEC_PATH, 'utf8')) as Record<string, unknown>
+    const { meta: _meta, ...spec } = raw
+    const privateJwk = await generateES256Jwk('cli-e2e')
+
+    const { credential, publicKey } = await buildIdentityBinding(
+      spec as Parameters<typeof buildIdentityBinding>[0],
+      privateJwk,
+    )
+
+    expect(typeof credential).toBe('string')
+    expect(publicKey.jwk.kid).toBe('cli-e2e')
+    // The public half MUST NOT carry the private scalar.
+    expect(publicKey.jwk.d).toBeUndefined()
+
+    const claims = decodeJwt(credential)
+    // iss/aud/sub all equal the domain origin (slug form).
+    expect(claims.iss).toBeTypeOf('string')
+    expect(claims.iss).toBe(claims.aud as string)
+    expect(claims.iss).toBe(claims.sub as string)
+
+    // subs must be a non-empty array of strings.
+    const subs = claims.subs as unknown
+    expect(Array.isArray(subs)).toBe(true)
+    expect((subs as string[]).length).toBeGreaterThan(0)
+    expect((subs as unknown[]).every((s) => typeof s === 'string')).toBe(true)
+    // Sanity: at least one sub must be scoped under the issuer (a method or
+    // core node path of the installed domain).
+    expect((subs as string[]).some((s) => s.includes(claims.iss as string))).toBe(true)
   })
 })

@@ -1,3 +1,5 @@
+import type { WireGraph } from '@astrale-os/kernel-core'
+
 import { Graph } from '@astrale-os/kernel-core'
 import { collectFunctionSubs, deserializeDomainFromGraph } from '@astrale-os/kernel-core/domain'
 import { exportJWK, importJWK, SignJWT } from 'jose'
@@ -7,13 +9,9 @@ import { resolve } from 'node:path'
 import { AstraleError } from '../errors'
 
 // Wire form of an install spec — the JSON shape produced by `buildSpec` and
-// consumed by `domains.install`. `Graph.fromWire` handles the validation +
-// parsing; we only annotate the field types loosely here for the public API.
-type Spec = {
-  nodes: unknown[]
-  edges: unknown[]
-  aliases?: ReadonlyArray<readonly [string, string]>
-}
+// consumed by `domains.install`. Aliased to the canonical kernel-core type
+// so callers don't re-derive via `Parameters<typeof Graph.fromWire>[0]`.
+type Spec = WireGraph
 
 type IdentityBinding = {
   credential: string
@@ -53,13 +51,7 @@ export async function buildIdentityBinding(
   // `registerFunctionIdentities` → `resolveCallables`). Going through the
   // identical pipeline guarantees the minted `subs` claim matches the set
   // the kernel validates against — drift = 0 by construction.
-  const compiled = deserializeDomainFromGraph(
-    Graph.fromWire({
-      nodes: spec.nodes,
-      edges: spec.edges,
-      ...(spec.aliases ? { aliases: spec.aliases } : {}),
-    } as Parameters<typeof Graph.fromWire>[0]),
-  )
+  const compiled = deserializeDomainFromGraph(Graph.fromWire(spec))
   const slug = compiled.$.origin
   const subs = collectFunctionSubs(compiled)
 
