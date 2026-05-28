@@ -40,10 +40,13 @@ const KERNEL_INTERFACES = new Set(['Node', 'Container', 'Identity', 'Function', 
 
 /** Kernel qualified-prop key for `Function.binding`. */
 export const BINDING_KEY = 'kernel.astrale.ai:interface.Function.property.binding'
+const OUTPUT_KEY = 'kernel.astrale.ai:interface.Function.property.output'
 
 export type RemoteBinding = {
   /** Worker URL where the envelope should be POSTed. */
   remoteUrl: string
+  /** Function output mode. Binary methods must use the binary transport. */
+  output?: string
   /** Audience the worker expects on inbound credentials (= domain slug). */
   audience: string
   /** The path to send to the worker — may differ from the input when rewriting `::method`. */
@@ -91,8 +94,11 @@ export async function lookupRemoteBinding(
       return null
     }
 
+    const output = node.props?.[OUTPUT_KEY]
+
     return {
       remoteUrl: binding.remoteUrl,
+      ...(typeof output === 'string' && { output }),
       audience,
       path: candidate,
       ...(resolved.selfRef !== undefined && { self: resolved.selfRef }),

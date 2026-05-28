@@ -6,6 +6,11 @@ import { log } from '../lib/log'
 import { output } from '../lib/output'
 
 type CallOpts = CallCommandOpts & { describe?: boolean; dryRun?: boolean }
+type BinaryResponseLike = {
+  status: number
+  contentType: string
+  body: Uint8Array | ReadableStream<Uint8Array>
+}
 
 export async function callCommand(
   path: string,
@@ -44,6 +49,14 @@ export async function callCommand(
       const binding = await lookupRemoteBinding(ctx.client, path, ctx.credential)
       if (binding) {
         const workerCreds = await mintRemoteCredential(ctx.client, binding.audience, ctx.credential)
+        if (binding.output === 'binary') {
+          const response = await ctx.client.binary(binding.path, params, {
+            url: binding.remoteUrl,
+            credential: workerCreds,
+            ...(binding.self !== undefined && { self: binding.self }),
+          })
+          return formatBinaryResponse(response)
+        }
         return ctx.client.call(binding.path, params, {
           url: binding.remoteUrl,
           credential: workerCreds,
@@ -53,6 +66,55 @@ export async function callCommand(
       return ctx.client.call(path, params)
     },
   })
+}
+
+async function formatBinaryResponse(
+  response: BinaryResponseLike,
+): Promise<Record<string, unknown>> {
+  const bytes = await readBinaryBody(response.body)
+  const contentType = response.contentType.toLowerCase()
+  const textLike =
+    contentType.startsWith('text/') ||
+    contentType.includes('json') ||
+    contentType.includes('xml') ||
+    contentType.includes('event-stream')
+
+  if (textLike) {
+    return {
+      status: response.status,
+      contentType: response.contentType,
+      body: new TextDecoder().decode(bytes),
+    }
+  }
+
+  return {
+    status: response.status,
+    contentType: response.contentType,
+    bodyBase64: Buffer.from(bytes).toString('base64'),
+  }
+}
+
+async function readBinaryBody(body: Uint8Array | ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  if (body instanceof Uint8Array) return body
+
+  const chunks: Uint8Array[] = []
+  const reader = body.getReader()
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (!value) continue
+    chunks.push(value)
+    total += value.byteLength
+  }
+
+  const out = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return out
 }
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {

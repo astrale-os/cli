@@ -3,7 +3,8 @@ import type { inProcessManager } from '@astrale-os/kernel-host/drivers'
 import type { JWK } from 'jose'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { inspect } from 'node:util'
 
 /**
@@ -37,6 +38,7 @@ type ManagerConfigWithAdmin = InProcessManagerConfigArg & {
           publicJwk: Record<string, unknown>
           secretRef: string
         }>
+        readPrivateJwk?(secretRef: string): Promise<Record<string, unknown>>
       }
     }
   }
@@ -113,6 +115,20 @@ async function readManagerPid(): Promise<number | undefined> {
   } catch {
     return undefined
   }
+}
+
+async function readPrivateJwkFromSecretRef(
+  secretRef: string,
+  allowedRoot: string,
+): Promise<Record<string, unknown>> {
+  const filePath = secretRef.startsWith('file://') ? fileURLToPath(secretRef) : secretRef
+  const root = resolve(allowedRoot)
+  const target = resolve(filePath)
+  const rel = relative(root, target)
+  if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error(`Private key secretRef is outside the configured key store: ${secretRef}`)
+  }
+  return JSON.parse(await readFile(target, 'utf-8')) as Record<string, unknown>
 }
 
 /**
@@ -236,6 +252,9 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
         admin: {
           builtinDomains: adminBuiltinDomains,
           installDistributionOnManager: adminBuiltinDomains?.distribution !== undefined,
+          views: {
+            workerUrl: process.env.ADMIN_WORKER_URL ?? 'http://localhost:8845',
+          },
           workflow: {
             defaultHost: {
               id: 'local',
@@ -266,6 +285,9 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
                   publicJwk: jwk,
                   secretRef: `file://${privatePath}`,
                 }
+              },
+              async readPrivateJwk(secretRef) {
+                return readPrivateJwkFromSecretRef(secretRef, KEYS_DIR)
               },
             },
           },
