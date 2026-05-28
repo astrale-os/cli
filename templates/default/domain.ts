@@ -33,7 +33,7 @@ import { z } from 'zod'
 import { AstraleDomainCore } from './core.ts'
 import { AstraleDomainSchema, Note } from './schema/schema.ts'
 
-const { View, view_for, RemoteFunction } = DistributionSchema.classes
+const { View, view_for } = DistributionSchema.classes
 
 // `astrale domain build` sets ASTRALE_DOMAIN_WORKER_URL from the active preset
 // before spawning the spec builder; fall back to prod so ad-hoc `buildSpec(...)`
@@ -78,7 +78,6 @@ export const astraleDomainDef = defineRemoteDomain<void>()({
     }),
   },
 
-  remoteFunctionClass: RemoteFunction,
   remoteFunctions: {
     count: defineRemoteFunction({
       inputSchema: z.object({}),

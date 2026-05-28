@@ -35,7 +35,7 @@ import { WorkerSchema } from './schema.ts'
 declare const SDK_COMMIT: string | undefined
 declare const SCHEMA_HASH: string | undefined
 
-const { View, view_for, RemoteFunction } = DistributionSchema.classes
+const { View, view_for } = DistributionSchema.classes
 
 function buildDomain(workerUrl: string) {
   return defineRemoteDomain<Env>()({
@@ -57,7 +57,6 @@ function buildDomain(workerUrl: string) {
       }),
     },
 
-    remoteFunctionClass: RemoteFunction,
     remoteFunctions: {
       count: defineRemoteFunction({
         inputSchema: z.object({}),

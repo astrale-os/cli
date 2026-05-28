@@ -66,8 +66,8 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
   }
   console.log('')
 
-  const operations = children.filter(isMethod)
-  const otherChildren = children.filter((c) => !isMethod(c))
+  const operations = children.filter(isFunction)
+  const otherChildren = children.filter((c) => !isFunction(c))
 
   if (operations.length > 0) {
     console.log(`  ${chalk.bold('Operations:')}`)
@@ -99,8 +99,8 @@ function classNameOf(item: NodeItem): string | undefined {
   return item.class ? (ClassPath.tryParse(item.class)?.className ?? undefined) : undefined
 }
 
-function isMethod(item: NodeItem): boolean {
-  return classNameOf(item) === 'Method'
+function isFunction(item: NodeItem): boolean {
+  return classNameOf(item) === 'Function'
 }
 
 function printProperties(node: NodeItem): void {

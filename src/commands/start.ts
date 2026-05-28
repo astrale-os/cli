@@ -20,7 +20,12 @@ import {
   writeComposeFile,
 } from '../lib/docker'
 import { fatal, log, spinner } from '../lib/log'
-import { startManager, detectManagerState, removeManagerPid } from '../lib/manager-state'
+import {
+  detectManagerState,
+  registerProcessGuards,
+  removeManagerPid,
+  startManager,
+} from '../lib/manager-state'
 import { COMPOSE_PATH, LOGS_DIR } from '../lib/paths'
 
 type StartOptions = {
@@ -152,6 +157,9 @@ async function startHostMode(
 
   if (opts.foreground) {
     const manager = await startManager(config)
+    // Install guards only AFTER the manager is up — boot failures must crash
+    // visibly so the parent daemon-spawner can report a clear error.
+    registerProcessGuards()
     log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
 
     let shuttingDown = false

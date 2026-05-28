@@ -19,7 +19,7 @@ import type { AstraleConfig } from './lib/config'
 
 import { readPositiveIntEnv } from './lib/env'
 import { log } from './lib/log'
-import { startManager } from './lib/manager-state'
+import { registerProcessGuards, startManager } from './lib/manager-state'
 
 process.env.ASTRALE_IN_CONTAINER = '1'
 
@@ -38,6 +38,9 @@ const config: AstraleConfig = {
 }
 
 const manager = await startManager(config)
+// Install guards only AFTER the manager is up — boot failures must crash
+// visibly so docker (and `astrale start`'s readiness probe) see the failure.
+registerProcessGuards()
 log.info(
   `[manager] listening on :${managerPort} (falkor=${falkorHost}:${falkorPort}, graph=${graphName})`,
 )

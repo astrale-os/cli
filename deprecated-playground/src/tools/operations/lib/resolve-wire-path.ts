@@ -2,7 +2,7 @@ import { K } from '@astrale-os/kernel-core'
 
 import type { BusinessGraph } from '@/tools/graph-state/lib/raw-to-business'
 
-const FUNCTION_REF_KEY = K.Function.ref.key
+const FUNCTION_REF_KEY = K.$.i('Function').ref.key
 
 /**
  * Result of resolving a Function's wire path from the graph.

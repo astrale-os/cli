@@ -55,7 +55,7 @@ export function graphStateToSchema(raw: GraphStateData): SchemaOutput | null {
       classNodes.set(n.id, { name, kind, id: n.id })
     } else if (labels.includes(DOMAIN_LABEL.Interface)) {
       interfaceNodes.set(n.id, { name, id: n.id })
-    } else if (labels.includes(DOMAIN_LABEL.Method)) {
+    } else if (labels.includes(DOMAIN_LABEL.Function)) {
       const props = n as Record<string, unknown>
       syscallNodes.set(n.id, {
         name,

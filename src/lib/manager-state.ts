@@ -3,6 +3,7 @@ import type { JWK } from 'jose'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { inspect } from 'node:util'
 
 import type { AstraleConfig } from './config'
 
@@ -124,6 +125,46 @@ export async function forceStopManager(timeoutMs = 2_000): Promise<boolean> {
  * graph on-demand (lazy; only when `/:id/*` is hit or an explicit
  * `KernelInstance/boot` call arrives).
  */
+/**
+ * Install process-level guards so a stray async rejection from any domain or
+ * child kernel cannot kill the manager process. Host-mode runs no supervisor,
+ * so we log and KEEP RUNNING rather than exit (a dead manager takes down every
+ * mounted instance — worse than the rejection itself).
+ *
+ * Idempotent (no-op on repeat). Call this from the LONG-LIVED entry points
+ * (`manager-entrypoint.ts`, `commands/start.ts` foreground branch) AFTER
+ * `startManager` resolves — boot-time failures must still propagate so the
+ * entry process exits visibly instead of zombieing. One-shot CLI flows
+ * (`commands/reset.ts`) must NOT install the guards — they need a clean
+ * non-zero exit on stray rejections, not a swallow.
+ */
+let processGuardsRegistered = false
+export function registerProcessGuards(): void {
+  if (processGuardsRegistered) return
+  processGuardsRegistered = true
+  process.on('unhandledRejection', (reason) => {
+    safeLog('unhandledRejection', formatReason(reason))
+  })
+  process.on('uncaughtException', (err) => {
+    safeLog('uncaughtException', err.stack ?? err.message)
+  })
+}
+
+function formatReason(reason: unknown): string {
+  if (reason instanceof Error) return reason.stack ?? reason.message
+  if (typeof reason === 'string') return reason
+  return inspect(reason, { depth: 3, breakLength: 200 })
+}
+
+function safeLog(event: string, detail: string): void {
+  try {
+    log.error(`[manager] ${event} (ignored, manager kept alive): ${detail}`)
+  } catch {
+    // stderr may be closed (detached child losing parent pipe); swallowing
+    // here keeps the guard from escalating to a hard abort.
+  }
+}
+
 export async function startManager(config: AstraleConfig): Promise<Kernel> {
   const auth = await resolveAuth(KEYS_DIR, {
     issuer: config.issuer,

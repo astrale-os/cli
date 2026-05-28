@@ -31,7 +31,7 @@ export const DOMAIN_TYPE = {
 
 export const DOMAIN_LABEL = {
   Interface: 'Interface',
-  Method: 'Method',
+  Function: 'Function',
   Domain: 'Domain',
   Root: 'Root',
 } as const
