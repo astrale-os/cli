@@ -1,21 +1,18 @@
+import { Graph } from '@astrale-os/kernel-core'
+import { collectFunctionSubs, deserializeDomainFromGraph } from '@astrale-os/kernel-core/domain'
 import { exportJWK, importJWK, SignJWT } from 'jose'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 import { AstraleError } from '../errors'
-import { BINDING_KEY } from '../kernel/remote-routing'
-import { KERNEL_DOMAIN_CLASS } from './spec'
 
-type Spec = { nodes: SpecNode[]; edges: SpecEdge[] }
-type SpecNode = {
-  path?: string
-  class?: string | { raw: string }
-  props: Record<string, unknown>
-}
-type SpecEdge = {
-  class?: string | { raw: string }
-  source: string | { raw: string }
-  target: string | { raw: string }
+// Wire form of an install spec — the JSON shape produced by `buildSpec` and
+// consumed by `domains.install`. `Graph.fromWire` handles the validation +
+// parsing; we only annotate the field types loosely here for the public API.
+type Spec = {
+  nodes: unknown[]
+  edges: unknown[]
+  aliases?: ReadonlyArray<readonly [string, string]>
 }
 
 type IdentityBinding = {
@@ -51,8 +48,20 @@ export async function buildIdentityBinding(
   privateJwk: Record<string, unknown>,
   keyPath?: string,
 ): Promise<IdentityBinding> {
-  const slug = extractDomainSlug(spec)
-  const subs = collectFunctionSubs(spec, slug)
+  // Deserialize the spec the SAME WAY the kernel will at install
+  // (`Graph.fromWire` → `deserializeDomainFromGraph` →
+  // `registerFunctionIdentities` → `resolveCallables`). Going through the
+  // identical pipeline guarantees the minted `subs` claim matches the set
+  // the kernel validates against — drift = 0 by construction.
+  const compiled = deserializeDomainFromGraph(
+    Graph.fromWire({
+      nodes: spec.nodes,
+      edges: spec.edges,
+      ...(spec.aliases ? { aliases: spec.aliases } : {}),
+    } as Parameters<typeof Graph.fromWire>[0]),
+  )
+  const slug = compiled.$.origin
+  const subs = collectFunctionSubs(compiled)
 
   const { d: _d, p: _p, q: _q, dp: _dp, dq: _dq, qi: _qi, ...publicJwk } = privateJwk
 
@@ -132,109 +141,4 @@ async function assertKeyPairConsistent(
       )
     }
   }
-}
-
-const METHOD_OF_CLASS = '/:kernel.astrale.ai:class.method_of'
-// Both buckets are valid `method_of` targets — Function methods can be hosted
-// on either a `class.X` or an `interface.X`. The kernel computes function
-// paths identically for both (`/:<origin>:<member>:<method>`), so the CLI
-// must emit subs for both kinds; emitting only `class.` silently drops
-// interface-hosted methods and the kernel rejects with
-// `subs missing function path "/:<origin>:interface.X:<method>"`.
-const MEMBER_NS_PREFIXES = ['class.', 'interface.'] as const
-const CORE_ANCHOR_SLUG = 'core'
-
-function rawStr(value: string | { raw: string } | undefined): string | undefined {
-  if (!value) return undefined
-  return typeof value === 'string' ? value : value.raw
-}
-
-function extractDomainSlug(spec: Spec): string {
-  const domainNode = spec.nodes.find((n) => {
-    const cls = rawStr(n.class)
-    return cls === KERNEL_DOMAIN_CLASS || cls === `${KERNEL_DOMAIN_CLASS}/self`
-  })
-  if (!domainNode) throw new Error('No Domain node found in spec')
-  const origin = domainNode.props?.origin
-  if (typeof origin === 'string' && origin.length > 0) return origin
-  const path = domainNode.path
-  if (typeof path === 'string' && path.startsWith('/')) return path.slice(1)
-  throw new Error('Domain node has no origin or path')
-}
-
-/**
- * Extract `(member, method)` from a `method_of` edge endpoint that points
- * at a Function. Accepts both wire forms emitted by the DSL builder over
- * its lifetime:
- *   - tree:  `/<origin>/<member>/<method>`  (segment separator `/`, legacy)
- *   - typed: `/:<origin>:<member>:<method>` (segment separator `:`, current)
- * Returns `undefined` when the prefix doesn't match this origin or when
- * either member or method is empty.
- */
-function parseFunctionEndpoint(
-  s: string,
-  treeOriginPrefix: string,
-  typedOriginPrefix: string,
-): { member: string; method: string } | undefined {
-  let tail: string
-  let sep: string
-  if (s.startsWith(treeOriginPrefix)) {
-    tail = s.slice(treeOriginPrefix.length)
-    sep = '/'
-  } else if (s.startsWith(typedOriginPrefix)) {
-    tail = s.slice(typedOriginPrefix.length)
-    sep = ':'
-  } else {
-    return undefined
-  }
-  const idx = tail.indexOf(sep)
-  if (idx <= 0 || idx === tail.length - 1) return undefined
-  return { member: tail.slice(0, idx), method: tail.slice(idx + 1) }
-}
-
-/**
- * Collect expected function subs. Must match what the kernel computes via
- * `resolveCallableNodes` over `compiled.$.paths.absolute`. Two flavors:
- *
- *   1. Method paths (`/:origin:Member:method`) — derived from `method_of`
- *      edges in the spec, filtered to this domain's own classes/interfaces
- *      (skipping inherited refs).
- *   2. Aux function paths (`/<origin>/core/<folder>/<slug>`) — derived
- *      from spec nodes that carry a `Function.binding` prop and live
- *      under the domain's core anchor. These are the auto-materialized
- *      RemoteFunction / View nodes that `extendCore` produces.
- *
- * Both wire forms (tree + typed) are accepted on the source side; the
- * source already encodes both member and method, so the target is
- * checked only for class membership filter via `MEMBER_NS_PREFIXES`.
- */
-export function collectFunctionSubs(spec: Spec, origin: string): string[] {
-  const treeOriginPrefix = `/${origin}/`
-  const typedOriginPrefix = `/:${origin}:`
-  const subs = new Set<string>()
-
-  for (const edge of spec.edges) {
-    const cls = rawStr(edge.class)
-    if (cls !== METHOD_OF_CLASS && cls !== `${METHOD_OF_CLASS}/self`) continue
-    const source = rawStr(edge.source)
-    if (!source) continue
-    const parsed = parseFunctionEndpoint(source, treeOriginPrefix, typedOriginPrefix)
-    if (!parsed) continue
-    if (!MEMBER_NS_PREFIXES.some((p) => parsed.member.startsWith(p))) continue
-    subs.add(`/:${origin}:${parsed.member}:${parsed.method}`)
-  }
-
-  // Mirror the kernel walker (`resolveCallableNodes`): a core node is a
-  // callable identity-bearing aux iff it has the `Function.binding` prop
-  // stamped by `extendCore.buildFunctionData`. Folders and other core
-  // nodes lack it and are skipped.
-  const coreAnchorPrefix = `/${origin}/${CORE_ANCHOR_SLUG}/`
-  for (const node of spec.nodes) {
-    const path = node.path
-    if (typeof path !== 'string' || !path.startsWith(coreAnchorPrefix)) continue
-    if (!node.props || !(BINDING_KEY in node.props)) continue
-    subs.add(path)
-  }
-
-  return [...subs]
 }
