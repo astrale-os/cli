@@ -1,9 +1,46 @@
 import type { Kernel } from '@astrale-os/kernel-host'
+import type { inProcessManager } from '@astrale-os/kernel-host/drivers'
 import type { JWK } from 'jose'
 
 import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { inspect } from 'node:util'
+
+/**
+ * Local extension of `InProcessManagerConfig` so the CLI can type-check the
+ * `admin: { ... }` field it passes to `inProcessManager`. The field is not yet
+ * declared in `kernel-host` v0.7.0 — it lives on a divergent upstream branch
+ * (commit 1cf9e915). When the upstream lands the type, drop this alias and the
+ * `as ManagerConfigWithAdmin` cast below; the call site keeps the same shape.
+ *
+ * Shape mirrors what is actually constructed at the call site — keep them in
+ * sync; the cast is the only thing protecting against silent drift.
+ */
+type InProcessManagerConfigArg = Parameters<typeof inProcessManager>[0]
+type ManagerConfigWithAdmin = InProcessManagerConfigArg & {
+  admin: {
+    builtinDomains?: { distribution?: { spec: Record<string, unknown>; workerKey: JWK } }
+    installDistributionOnManager?: boolean
+    workflow: {
+      defaultHost: { id: string; url: string; kind: 'local'; label: string }
+      childDefaults: {
+        host: string
+        port: number
+        issuerFor: (id: string) => string
+        graphNameFor: (id: string) => string
+      }
+      keyStore: {
+        ensureKernelKey(input: { issuer: string; subject: string; kid?: string }): Promise<{
+          auth: unknown
+          kid: string
+          alg: string
+          publicJwk: Record<string, unknown>
+          secretRef: string
+        }>
+      }
+    }
+  }
+}
 
 import type { AstraleConfig } from './config'
 
@@ -142,10 +179,12 @@ let processGuardsRegistered = false
 export function registerProcessGuards(): void {
   if (processGuardsRegistered) return
   processGuardsRegistered = true
-  process.on('unhandledRejection', (reason) => {
+  // Named function expressions so tests can structurally assert exactly one
+  // guard per event via `process.listeners(...).filter(h => h.name === ...)`.
+  process.on('unhandledRejection', function astraleManagerGuardRejection(reason) {
     safeLog('unhandledRejection', formatReason(reason))
   })
-  process.on('uncaughtException', (err) => {
+  process.on('uncaughtException', function astraleManagerGuardException(err) {
     safeLog('uncaughtException', err.stack ?? err.message)
   })
 }
@@ -279,7 +318,7 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
             },
           }
         },
-      }),
+      } as ManagerConfigWithAdmin),
     },
   })
   // In container mode, bind to 0.0.0.0 so the Docker port mapping

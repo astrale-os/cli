@@ -28,21 +28,24 @@ describe('registerProcessGuards', () => {
     while (cleanup.length) cleanup.pop()!()
   })
 
-  test('is idempotent — repeated calls register handlers exactly once per process', () => {
-    const beforeUnhandled = process.listenerCount('unhandledRejection')
-    const beforeUncaught = process.listenerCount('uncaughtException')
+  test('registers exactly one named guard per event, regardless of call count', () => {
+    // Structural assertion: filter listeners by their function name so the
+    // test distinguishes a real idempotent guard (exactly one named handler)
+    // from a buggy no-op (zero named handlers) and from a buggy stacking
+    // (more than one). Relies on Function.name preserved at runtime —
+    // source-mode only. The CLI runs from source via bun; if we ever bundle
+    // with a minifier we'd need to keep named function expressions.
     registerProcessGuards()
     registerProcessGuards()
     registerProcessGuards()
-    const afterUnhandled = process.listenerCount('unhandledRejection')
-    const afterUncaught = process.listenerCount('uncaughtException')
-    // First call in the process registers +1 each; subsequent calls are no-ops.
-    // Across multiple tests in the same process the flag stays set → delta is 0.
-    expect(afterUnhandled - beforeUnhandled).toBeLessThanOrEqual(1)
-    expect(afterUncaught - beforeUncaught).toBeLessThanOrEqual(1)
-    // After at least one call, at least one of each handler must exist.
-    expect(afterUnhandled).toBeGreaterThanOrEqual(1)
-    expect(afterUncaught).toBeGreaterThanOrEqual(1)
+    const rejGuards = process
+      .listeners('unhandledRejection')
+      .filter((h) => h.name === 'astraleManagerGuardRejection')
+    const excGuards = process
+      .listeners('uncaughtException')
+      .filter((h) => h.name === 'astraleManagerGuardException')
+    expect(rejGuards).toHaveLength(1)
+    expect(excGuards).toHaveLength(1)
   })
 
   test('the unhandledRejection handler does NOT call process.exit when invoked', () => {
