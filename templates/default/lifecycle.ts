@@ -20,7 +20,7 @@ import { loadEnv } from './load-env'
 
 export const config: LifecycleConfig = {
   // Static literal — `DISTRIBUTION_BASE_DOMAIN` points the imported
-  // `DistributionSchema` (`View` / `RemoteFunction`) at the local install.
+  // `DistributionSchema` (`View` / `view_for`) at the local install.
   extraDevVars: {
     DISTRIBUTION_BASE_DOMAIN: 'dist.localhost',
   },

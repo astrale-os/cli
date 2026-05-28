@@ -12,7 +12,7 @@
  *                                to count Notes under the domain origin.
  *
  * `/meta` is auto-mounted by `createRemoteServer` — never route it yourself.
- * Views are mounted at `/views/<slug>`, RemoteFunctions at
+ * Views are mounted at `/views/<slug>`, remote functions at
  * `/functions/<slug>`. `/ui/*` is the SPA served from the Workers Assets
  * binding (Vite build of `../client/`).
  *

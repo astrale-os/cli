@@ -19,10 +19,10 @@ common feature in one minimal, working domain:
 - One **`View`** (`ui-note`) — auto-materialized from the `views:` map in
   `domain.ts` via `defineView`. Uses `@astrale-os/distribution-domain`'s
   `View` / `view_for` classes.
-- One **`RemoteFunction`** (`count`) — auto-materialized from the
+- One **remote function** (`count`) — auto-materialized from the
   `remoteFunctions:` map via `defineRemoteFunction`. Stubbed (returns `0`);
-  swap in a real `kernel.call(...)` listing. Uses
-  `@astrale-os/distribution-domain`'s `RemoteFunction` class.
+  swap in a real `kernel.call(...)` listing. Materializes as a kernel
+  `Function` node (`binding.remoteUrl` set; no separate class needed).
 - A Cloudflare **Worker** wired through `createRemoteServer`, with a
   parallel `defineRemoteDomain<Env>()` for real impls.
 - A **React SPA** (`worker/client/`) served at `/ui/*`, shell-handshake
@@ -35,12 +35,14 @@ If you want fewer concepts and no cross-domain dependency, use
 
 ## Cross-domain dependency
 
-Importing `View` / `RemoteFunction` requires
+Importing `View` requires
 **`@astrale-os/distribution-domain` (semver `>=0.0.0 <1.0.0`)** as a
-dependency. The package is unpublished today; in practice this template
-**expects to be scaffolded inside the Astrale monorepo** so pnpm's
-workspace symlink resolves the dep. If you don't need View/RemoteFunction,
-use the `minimal` template instead — no cross-domain dep.
+dependency (remote functions materialize as kernel `Function` nodes — no
+cross-domain class needed for them). The package is unpublished today; in
+practice this template **expects to be scaffolded inside the Astrale
+monorepo** so pnpm's workspace symlink resolves the dep. If you don't need
+the cross-domain `View`, use the `minimal` template instead — no
+cross-domain dep.
 
 ## Shape
 

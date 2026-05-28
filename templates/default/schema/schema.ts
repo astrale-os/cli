@@ -1,7 +1,7 @@
 /**
  * Default remote-domain schema — demonstrates the full Astrale feature set:
  * Interface + Class with both static and instance methods + edge + View +
- * RemoteFunction + core genesis + lifecycle hooks.
+ * remote function + core genesis + lifecycle hooks.
  *
  *   - Interface `NoteOps` with one static op (`createNote`). Its impl lives
  *     under `interface:` in `defineMethods` — see astrale-domain-dev →
@@ -13,11 +13,11 @@
  *     `self.path` to create a real `references` edge to another Note).
  *   - Edge `references` linking Note → Note — created at runtime by `reference`.
  *
- * `View` (`ui-note`) and `RemoteFunction` (`count`) are NOT declared here —
+ * `View` (`ui-note`) and the `count` remote function are NOT declared here —
  * they are auto-materialized by the SDK from the `views` / `remoteFunctions`
- * maps passed to `defineRemoteDomain` in domain.ts. They reuse the `View`,
- * `view_for`, and `RemoteFunction` classes from the `distribution` domain
- * (imported below).
+ * maps passed to `defineRemoteDomain` in domain.ts. The view reuses the
+ * `View` and `view_for` classes from the `distribution` domain (imported
+ * below); the remote function materializes as a kernel `Function` node.
  */
 import { DistributionSchema } from '@astrale-os/distribution-domain/schema'
 import {

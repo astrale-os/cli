@@ -14,9 +14,9 @@
  * on every Function node in the compiled spec. Clients use that URL to bypass
  * kernel dispatch and POST the envelope straight to the worker.
  *
- * Views (`ui-note`) and RemoteFunctions (`count`) are auto-materialized by
+ * Views (`ui-note`) and remote functions (`count`) are auto-materialized by
  * the SDK from the maps below — `extendCore` adds the `/views/` and
- * `/functions/` Folders, View / RemoteFunction nodes (slug = map key), and
+ * `/functions/` Folders, `View` / `Function` nodes (slug = map key), and
  * `view_for` edges. No need to author them in `core.ts`.
  */
 
