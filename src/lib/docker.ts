@@ -228,7 +228,7 @@ function composeYaml(inputs: ComposeInputs): string {
         - CMD
         - bun
         - -e
-        - "fetch('http://localhost:${cPort}/mngt/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+        - "fetch('http://localhost:${cPort}/mngt/.well-known/openid-configuration').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
       interval: 5s
       timeout: 3s
       retries: 10

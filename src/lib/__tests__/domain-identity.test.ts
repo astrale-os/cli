@@ -90,7 +90,7 @@ describe('buildIdentityBinding (end-to-end against a committed spec)', () => {
     const privateJwk = await generateES256Jwk('cli-e2e')
 
     const { credential, publicKey } = await buildIdentityBinding(
-      spec as Parameters<typeof buildIdentityBinding>[0],
+      spec as unknown as Parameters<typeof buildIdentityBinding>[0],
       privateJwk,
     )
 

@@ -630,14 +630,16 @@ export async function buildSpec(opts: BuildSpecOpts): Promise<BuildSpecResult> {
   // (e.g. `NOTES_BASE_DOMAIN` for `notes`). The rename engine stamps the
   // prefix at scaffold time; derive it from the slug the same way here.
   const prefix = slugVariants(resolved.slug).upperSnake
+  const prefixedWorkerUrl = process.env[`${prefix}_WORKER_URL`] ?? domainUrl(domain)
+  const workerUrl = process.env.WORKER_URL ?? prefixedWorkerUrl
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     [`${prefix}_BASE_DOMAIN`]: domain.domain,
-    [`${prefix}_WORKER_URL`]: domainUrl(domain),
+    [`${prefix}_WORKER_URL`]: prefixedWorkerUrl,
     // Generic forms — convenient for domains whose domain.ts/schema.ts
     // read the unprefixed names (e.g. newer scaffolds).
     BASE_DOMAIN: domain.domain,
-    WORKER_URL: domainUrl(domain),
+    WORKER_URL: workerUrl,
   }
   const r = spawnSync('bun', ['run', buildCli, domainModule, outputPath], {
     cwd: resolved.dir,

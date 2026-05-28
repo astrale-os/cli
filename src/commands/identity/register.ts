@@ -110,7 +110,7 @@ export default {
           const node = (await ctx.client.call(KERNEL_NODE_CREATE, {
             class: classPath,
             path: nodePath,
-            properties: { 'Statused.status': 'creating' },
+            props: { 'Statused.status': 'creating' },
           })) as CreateNodeResult
 
           const bootstrap = await mintBootstrapJwt(privateJwk)
