@@ -168,8 +168,9 @@ export async function mintRemoteCredential(
   audience: string,
   callerCredential: string,
 ): Promise<string> {
+  const mintPath = mintDelegationPathFromCredential(callerCredential)
   const result = await client.call(
-    '@__system__::mintDelegationCredential',
+    mintPath,
     {
       audience,
       delegation: { kind: 'identity', self: true },
@@ -183,6 +184,27 @@ export async function mintRemoteCredential(
     )
   }
   return result
+}
+
+export function mintDelegationPathFromCredential(credential: string): string {
+  const sub = readJwtSub(credential)
+  if (sub === 'system') return '@__system__::mintDelegationCredential'
+  return sub ? `@${sub}::mintDelegationCredential` : '@__system__::mintDelegationCredential'
+}
+
+function readJwtSub(credential: string): string | null {
+  const [, payload] = credential.split('.')
+  if (!payload) return null
+  try {
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
+    const decoded = JSON.parse(Buffer.from(padded, 'base64').toString('utf8')) as {
+      sub?: unknown
+    }
+    return typeof decoded.sub === 'string' && decoded.sub.length > 0 ? decoded.sub : null
+  } catch {
+    return null
+  }
 }
 
 /**

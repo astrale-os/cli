@@ -2,6 +2,7 @@ import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 
 import { runKernelCommand } from '../kernel'
+import { mintDelegationPathFromCredential } from '../kernel/remote-routing'
 import { log } from '../lib/log'
 
 /**
@@ -25,7 +26,7 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
       const audience = opts.audience ?? ''
       const parsedTtl = Number(opts.ttl)
       const ttl = Number.isFinite(parsedTtl) && parsedTtl > 0 ? parsedTtl : 3600
-      const result = (await ctx.client.call('@__system__::mintDelegationCredential', {
+      const result = (await ctx.client.call(mintDelegationPathFromCredential(ctx.credential), {
         audience,
         delegation: { kind: 'identity', self: true },
         ttl,
