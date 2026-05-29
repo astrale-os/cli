@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { CompactEncrypt, compactDecrypt } from 'jose'
+import { CompactEncrypt, compactDecrypt, decodeProtectedHeader } from 'jose'
 import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { IdentityKeyMissingError } from '../../errors'
-import { keypairPaths, listIdentityKeys, persistKeypair, removeKeypair, signAs } from '../keys'
+import {
+  generateEd25519Jwk,
+  keypairPaths,
+  listIdentityKeys,
+  persistKeypair,
+  removeKeypair,
+  signAs,
+} from '../keys'
 
 describe('DESIGN — per-identity keys', () => {
   let tmp = ''
@@ -46,6 +53,17 @@ describe('DESIGN — per-identity keys', () => {
     await persistKeypair('alice', { keysDir: tmp })
     const jwt = await signAs('alice', tmp)
     expect(jwt.split('.').length).toBe(3)
+  })
+
+  test('signAs(alice) uses the key file algorithm for EdDSA identities', async () => {
+    const { privateJwk, publicJwk } = await generateEd25519Jwk('alice-ed25519')
+    const { privatePath, publicPath } = keypairPaths('alice', tmp)
+    await writeFile(privatePath, JSON.stringify(privateJwk, null, 2))
+    await writeFile(publicPath, JSON.stringify(publicJwk, null, 2))
+
+    const jwt = await signAs('alice', tmp)
+
+    expect(decodeProtectedHeader(jwt).alg).toBe('EdDSA')
   })
 
   test('signAs(alice) falls back to manager key with warning', async () => {

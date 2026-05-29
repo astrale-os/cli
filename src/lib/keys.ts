@@ -6,6 +6,7 @@ import { readFile, writeFile, mkdir, rename, access, unlink } from 'node:fs/prom
 import { join } from 'node:path'
 
 import { IdentityKeyMissingError } from '../errors'
+import { inferAlg } from './domain-identity'
 import { log } from './log'
 import { KEYS_DIR } from './paths'
 
@@ -191,12 +192,13 @@ export async function persistAuth(
   const kid = opts?.kid ?? `${subject}-key`
 
   const { privateJwk, publicJwk } = await persistKeypair(subject, { keysDir, kid })
-  const privateKey = await importJWK(privateJwk, 'ES256')
+  const alg = inferAlg(privateJwk as Record<string, unknown>)
+  const privateKey = await importJWK(privateJwk, alg)
 
   const credential = await new SignJWT({
     grant: { v: 1, expr: { kind: 'identity', self: true } },
   })
-    .setProtectedHeader({ alg: 'ES256', kid })
+    .setProtectedHeader({ alg, kid })
     .setIssuer(issuer)
     .setSubject(subject)
     .setAudience(issuer)
@@ -216,12 +218,13 @@ export async function loadAuth(
   const subject = opts?.subject ?? 'manager'
 
   const { privateJwk, publicJwk, kid } = await loadSigningMaterial(subject, keysDir)
-  const privateKey = await importJWK(privateJwk, 'ES256')
+  const alg = inferAlg(privateJwk as Record<string, unknown>)
+  const privateKey = await importJWK(privateJwk, alg)
 
   const credential = await new SignJWT({
     grant: { v: 1, expr: { kind: 'identity', self: true } },
   })
-    .setProtectedHeader({ alg: 'ES256', kid })
+    .setProtectedHeader({ alg, kid })
     .setIssuer(issuer)
     .setSubject(subject)
     .setAudience(issuer)
@@ -258,10 +261,11 @@ export async function signAs(
   const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const audience = opts?.audience ?? issuer
   const { privateJwk, kid } = await loadSigningMaterial(subject, keysDir)
-  const privateKey = await importJWK(privateJwk, 'ES256')
+  const alg = inferAlg(privateJwk as Record<string, unknown>)
+  const privateKey = await importJWK(privateJwk, alg)
 
   return new SignJWT({ grant: { v: 1, expr: { kind: 'identity', self: true } } })
-    .setProtectedHeader({ alg: 'ES256', kid })
+    .setProtectedHeader({ alg, kid })
     .setIssuer(issuer)
     .setSubject(opts?.subject ?? subject)
     .setAudience(audience)
