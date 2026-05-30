@@ -13,7 +13,7 @@ import { bindTunnel, findTunnel, readTunnels } from '../../lib/tunnels'
 import { validateSlug } from '../../lib/validation'
 import instanceInstall from './install'
 
-async function rollback(client: ClientSession<FnMap>, _credential: string, slug: string) {
+async function rollback(client: ClientSession<FnMap>, slug: string) {
   try {
     await client.call('/manager.astrale.ai/class.KernelInstance/delete', { id: slug })
     log.dim(`  rolled back — "${slug}" deleted on manager`)
@@ -156,8 +156,7 @@ export default {
           } catch (e) {
             log.error(`post-create JWKS check failed: ${(e as Error).message}`)
             log.dim('  rolling back — issuer has no rescue path.')
-            await rollback(client, credential, slug)
-            registered = false
+            await rollback(client, slug)
             process.exit(1)
           }
         }
@@ -200,7 +199,7 @@ export default {
           } as Parameters<typeof instanceInstall.action>[1])
         }
       } catch (err) {
-        if (registered) await rollback(client, credential, slug)
+        if (registered) await rollback(client, slug)
         throw err
       } finally {
         client.disconnect()

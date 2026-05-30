@@ -68,19 +68,11 @@ function richDetail(r: DomainResult): string | null {
 }
 
 /**
- * Render one `✔`/`✖` line per domain (no title/header). With per-domain
- * `state` it's the rich form (URL/pid/owned-vs-reused + dimmed log tail
- * on failure); without it (legacy `dev down`) the plain `dir` form.
- * The multi-domain `dev up` calls this directly under its own
- * consolidated header line.
- */
-/**
  * Render a single domain's `✔`/`✖` line (label padded to `width`),
- * plus a dimmed log tail on failure. Used both by `printResults` (batch)
- * and by the multi-domain `dev up` which streams each line the moment
- * its domain settles.
+ * plus a dimmed log tail on failure. Module-local helper for
+ * `printResults` (batch).
  */
-export function printResultLine(r: DomainResult, width: number): void {
+function printResultLine(r: DomainResult, width: number): void {
   const label = r.label.padEnd(width)
   const detail = richDetail(r)
   if (r.ok) {
@@ -99,17 +91,12 @@ export function printResults(results: DomainResult[]): void {
 }
 
 /**
- * `printResults` preceded by a `→ title (n domains)` step line and
- * optional dimmed header lines. Used by `dev down` and the single-domain
- * `dev up` path; the multi-domain fan-out builds its own header instead.
+ * `printResults` preceded by a `→ title (n domains)` step line. Used by
+ * `dev down` and the single-domain `dev up` path; the multi-domain
+ * fan-out builds its own header instead.
  */
-export function printSummary(
-  title: string,
-  results: DomainResult[],
-  headerLines: string[] = [],
-): void {
+export function printSummary(title: string, results: DomainResult[]): void {
   const n = results.length
   log.step(`${title} (${n} domain${n === 1 ? '' : 's'})`)
-  for (const line of headerLines) log.dim(`  ${line}`)
   printResults(results)
 }

@@ -11,7 +11,6 @@ import { getIdentity, setRegistration } from '../../lib/identity'
 import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
-import { KEYS_DIR } from '../../lib/paths'
 import { extractDomainSlug } from '../../lib/spec'
 
 const KERNEL_NODE_CREATE = '/kernel.astrale.ai/interface.Node/createNode'
@@ -76,7 +75,7 @@ export default {
   action: async (name: string, opts: RegisterOpts) => {
     try {
       const identity = await getIdentity(name)
-      const { privatePath, publicPath } = keypairPaths(identity.subject, KEYS_DIR)
+      const { privatePath, publicPath } = keypairPaths(identity.subject)
       if (!(await fileExists(privatePath)) || !(await fileExists(publicPath))) {
         fatal(
           new Error(

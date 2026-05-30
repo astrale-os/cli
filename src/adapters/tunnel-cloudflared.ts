@@ -232,9 +232,9 @@ export const cloudflaredAdapter: TunnelAdapter = {
         /* already dead */
       }
     }
-    // Fallback: pkill pattern matches anything launched outside the CLI.
-    const r = runCloudflared(['tunnel', '--help'])
-    if (r.status === 0) {
+    // Best-effort server-side cleanup of stale tunnel connections, but only
+    // when the cloudflared binary is present (skips silently otherwise).
+    if (hasCloudflared()) {
       runCloudflared(['tunnel', 'cleanup', id])
     }
     await removePidFile(id)

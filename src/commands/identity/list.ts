@@ -4,15 +4,12 @@ import type { CommandDefinition } from '../../command'
 
 import { readIdentities } from '../../lib/identity'
 import { log } from '../../lib/log'
-import { isRawOutput, output } from '../../lib/output'
+import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
 
 export default {
   name: 'list',
   description: 'List all identities',
-  options: [
-    { flags: '--raw', description: 'Output raw JSON' },
-    { flags: '--json', description: 'Alias for --raw' },
-  ],
+  options: [...RAW_OUTPUT_OPTIONS],
   action: async (opts: { raw?: boolean; json?: boolean }) => {
     const isRaw = isRawOutput(opts)
     const store = await readIdentities()

@@ -10,8 +10,8 @@ import { KERNEL_PASSTHROUGH_OPTIONS } from '../../kernel/options'
 import { readConfig } from '../../lib/config'
 import { getDefault } from '../../lib/identity'
 import { resolveInstanceId } from '../../lib/instance'
-import { log } from '../../lib/log'
-import { isRawOutput, output } from '../../lib/output'
+import { fatal } from '../../lib/log'
+import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
 import { JOURNAL_PATH, LOGS_DIR } from '../../lib/paths'
 
 type WhoamiOpts = KernelCommandOpts & {
@@ -49,11 +49,7 @@ export default {
   name: 'whoami',
   description:
     'Show the current default identity (with -i, also report the kernel-resolved principal)',
-  options: [
-    { flags: '--raw', description: 'Output raw JSON' },
-    { flags: '--json', description: 'Alias for --raw' },
-    ...KERNEL_PASSTHROUGH_OPTIONS,
-  ],
+  options: [...RAW_OUTPUT_OPTIONS, ...KERNEL_PASSTHROUGH_OPTIONS],
   action: async (opts: WhoamiOpts) => {
     try {
       const isRaw = isRawOutput(opts)
@@ -76,8 +72,7 @@ export default {
         console.log(`  ${chalk.dim('on kernel:')} principal=${chalk.cyan(result.principal)}`)
       }
     } catch (e) {
-      log.error(e instanceof Error ? e.message : String(e))
-      process.exit(1)
+      fatal(e)
     }
   },
 } satisfies CommandDefinition

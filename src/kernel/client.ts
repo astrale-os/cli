@@ -66,14 +66,13 @@ export async function withKernelClient<T>(
   await client.ready()
 
   try {
-    const result = await fn({ client, credential, url, config })
-    client.disconnect()
-    return result
+    return await fn({ client, credential, url, config })
   } catch (error) {
-    client.disconnect()
     // Attach url so formatKernelError can display it in connection errors
     if (error instanceof Error) (error as Error & { url?: string }).url = url
     throw error
+  } finally {
+    client.disconnect()
   }
 }
 

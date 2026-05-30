@@ -64,14 +64,9 @@ export async function stopAllTunnels(): Promise<number> {
   let signaled = 0
   for (const entry of entries) {
     if (!entry.endsWith('.pid')) continue
-    let raw: string
-    try {
-      raw = await readFile(join(TUNNELS_DIR, entry), 'utf-8')
-    } catch {
-      continue
-    }
-    const pid = Number.parseInt(raw.trim(), 10)
-    if (!Number.isFinite(pid) || pid <= 0) continue
+    const id = entry.slice(0, -'.pid'.length)
+    const pid = await readPidFile(id)
+    if (pid === null || pid <= 0) continue
     try {
       process.kill(pid, 'SIGTERM')
       signaled++

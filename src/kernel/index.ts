@@ -3,7 +3,6 @@ export { resolveCredential } from './auth'
 export { formatKernelError } from './errors'
 export {
   buildSelfContext,
-  expandOne,
   expandSelfInPath,
   withSelfHint,
   resolveOrThrow,

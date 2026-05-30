@@ -4,16 +4,13 @@ import type { CommandDefinition } from '../../command'
 
 import { getActive, resolveInstance } from '../../lib/instance'
 import { log } from '../../lib/log'
-import { isRawOutput, output } from '../../lib/output'
+import { RAW_OUTPUT_OPTIONS, isRawOutput, output, type RawOutputOpts } from '../../lib/output'
 
 export default {
   name: 'active',
   description: 'Show the currently active instance',
-  options: [
-    { flags: '--raw', description: 'Output raw JSON' },
-    { flags: '--json', description: 'Alias for --raw' },
-  ],
-  action: async (opts: { raw?: boolean; json?: boolean }) => {
+  options: [...RAW_OUTPUT_OPTIONS],
+  action: async (opts: RawOutputOpts) => {
     try {
       const isRaw = isRawOutput(opts)
       const { name } = await getActive()

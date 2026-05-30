@@ -114,7 +114,10 @@ async function resetManager(
       if (answer.toLowerCase() !== 'y') {
         log.info('Aborted')
         client.disconnect()
-        if (managerSession) await managerSession.close()
+        if (managerSession) {
+          await managerSession.close()
+          await removeManagerPid()
+        }
         process.exit(0)
       }
     }
@@ -163,19 +166,13 @@ async function resetManager(
     const elapsed = performance.now() - startTime
     log.success(`Manager reset ${chalk.dim(`in ${formatElapsed(elapsed)}`)}`)
 
-    const session = managerSession
-    log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-    log.info('Press Ctrl+C to stop')
-    const cleanup = async () => {
-      await session.close()
-      await removeManagerPid()
-      process.exit(0)
-    }
-    process.on('SIGINT', cleanup)
-    process.on('SIGTERM', cleanup)
+    keepManagerAlive(managerSession, config)
   } catch (error) {
     client.disconnect()
-    if (managerSession) await managerSession.close().catch(() => {})
+    if (managerSession) {
+      await managerSession.close().catch(() => {})
+      await removeManagerPid()
+    }
     log.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
   }
@@ -214,7 +211,10 @@ async function resetSubInstance(
       log.error('No sub-kernel instances registered with the manager')
       log.dim('  To reset the manager itself, run: astrale reset -i manager')
       client.disconnect()
-      if (managerSession) await managerSession.close()
+      if (managerSession) {
+        await managerSession.close()
+        await removeManagerPid()
+      }
       process.exit(1)
     }
 
@@ -225,7 +225,10 @@ async function resetSubInstance(
       log.error(`Instance "${targetId}" not found`)
       log.dim(`  Available: ${instances.map((i) => i.id).join(', ')}`)
       client.disconnect()
-      if (managerSession) await managerSession.close()
+      if (managerSession) {
+        await managerSession.close()
+        await removeManagerPid()
+      }
       process.exit(1)
     }
 
@@ -237,7 +240,10 @@ async function resetSubInstance(
       if (answer.toLowerCase() !== 'y') {
         log.info('Aborted')
         client.disconnect()
-        if (managerSession) await managerSession.close()
+        if (managerSession) {
+          await managerSession.close()
+          await removeManagerPid()
+        }
         process.exit(0)
       }
     }
@@ -261,23 +267,17 @@ async function resetSubInstance(
     client.disconnect()
 
     if (managerSession) {
-      const session = managerSession
-      log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
-      log.info('Press Ctrl+C to stop')
-      const cleanup = async () => {
-        await session.close()
-        await removeManagerPid()
-        process.exit(0)
-      }
-      process.on('SIGINT', cleanup)
-      process.on('SIGTERM', cleanup)
+      keepManagerAlive(managerSession, config)
     } else {
       process.exit(0)
     }
   } catch (error) {
     spin?.fail('Reset failed')
     client.disconnect()
-    if (managerSession) await managerSession.close().catch(() => {})
+    if (managerSession) {
+      await managerSession.close().catch(() => {})
+      await removeManagerPid()
+    }
     log.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
   }
@@ -445,6 +445,22 @@ async function resetHard(opts: ResetOptions): Promise<void> {
 }
 
 // ── Helpers ────────────────────────────────────────────────────
+
+/**
+ * Keep a manager that this command auto-started alive in the foreground:
+ * log its URL, then close the session + remove its PID file on Ctrl+C.
+ */
+function keepManagerAlive(session: Kernel, config: Awaited<ReturnType<typeof readConfig>>): void {
+  log.info(`Manager running on http://localhost:${config.managerPort}/mngt`)
+  log.info('Press Ctrl+C to stop')
+  const cleanup = async () => {
+    await session.close()
+    await removeManagerPid()
+    process.exit(0)
+  }
+  process.on('SIGINT', cleanup)
+  process.on('SIGTERM', cleanup)
+}
 
 function readLine(): Promise<string> {
   return new Promise((resolve) => {

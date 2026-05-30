@@ -179,8 +179,8 @@ function runChild(dir: string, label: string, opts: Opts): Promise<DomainResult>
     child.stderr?.on('data', (d: Buffer) => (buf += d))
     child.on('error', (e) => resolve({ dir, label, ok: false, error: e.message }))
     child.on('close', (code) => {
-      // Silent here: the group worker prints this domain's line (via
-      // printResultLine) the moment runChild resolves.
+      // Silent here: results are collected and printed together (via
+      // printResults) once the whole fan-out has settled.
       if (code === 0) {
         resolve({ dir, label, ok: true })
       } else {

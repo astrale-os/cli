@@ -5,17 +5,13 @@ import {
   buildSelfContext,
   lookupRemoteBinding,
   mintRemoteCredential,
+  resolveOrThrow,
   runKernelCommand,
   withSelfHint,
 } from '../kernel'
 import { log } from '../lib/log'
 import { output } from '../lib/output'
-import {
-  containsSelfRef,
-  expandSelfReferences,
-  resolveSelfNodeId,
-  selfRefusalError,
-} from '../lib/self'
+import { containsSelfRef, expandSelfReferences } from '../lib/self'
 
 type CallOpts = CallCommandOpts & { describe?: boolean; dryRun?: boolean }
 type BinaryResponseLike = {
@@ -41,10 +37,9 @@ export async function callCommand(
   if (inputsHaveSelf) {
     try {
       const selfCtx = await buildSelfContext(opts)
-      const resolution = resolveSelfNodeId(selfCtx)
-      if ('reason' in resolution) throw selfRefusalError(resolution)
-      expandedPath = expandSelfReferences(path, resolution.id)
-      expandedRaw = rawParams.map((p) => expandSelfReferences(p, resolution.id))
+      const selfId = resolveOrThrow(selfCtx)
+      expandedPath = expandSelfReferences(path, selfId)
+      expandedRaw = rawParams.map((p) => expandSelfReferences(p, selfId))
       // Stamp metadata whenever ANY input mutated — the stale-registration
       // hint in `formatKernelError` is just as useful when `@self` lived in
       // a param (`node=@self`) as when it was in the path head.
@@ -53,7 +48,7 @@ export async function callCommand(
         selfMeta = {
           original: path,
           expanded: expandedPath,
-          selfId: resolution.id,
+          selfId,
           identity: selfCtx.identity?.name,
           slug: selfCtx.instanceSlug,
         }

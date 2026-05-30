@@ -39,15 +39,22 @@ export type ResolvedDomain = {
 }
 
 /**
+ * Resolve an optional `cwdOverride` to an absolute starting directory.
+ * Falls back to `process.cwd()` when no override is given; a relative
+ * override is resolved against `process.cwd()`. An already-absolute path
+ * is returned unchanged.
+ */
+function resolveStart(cwdOverride?: string): string {
+  if (!cwdOverride) return process.cwd()
+  return isAbsolute(cwdOverride) ? cwdOverride : resolve(process.cwd(), cwdOverride)
+}
+
+/**
  * Walk up from `cwd` (or the optional override) until we find a dir
  * that looks like a domain. Maximum 6 levels up before giving up.
  */
 export async function resolveDomainDir(cwdOverride?: string): Promise<ResolvedDomain> {
-  const start = cwdOverride
-    ? isAbsolute(cwdOverride)
-      ? cwdOverride
-      : resolve(process.cwd(), cwdOverride)
-    : process.cwd()
+  const start = resolveStart(cwdOverride)
 
   const dir = findDomainDir(start)
   if (!dir) {
@@ -96,11 +103,7 @@ export async function resolveDomainDir(cwdOverride?: string): Promise<ResolvedDo
  * strategy finds anything.
  */
 export async function resolveDomainDirs(cwdOverride?: string): Promise<string[]> {
-  const start = cwdOverride
-    ? isAbsolute(cwdOverride)
-      ? cwdOverride
-      : resolve(process.cwd(), cwdOverride)
-    : process.cwd()
+  const start = resolveStart(cwdOverride)
 
   const found = await findDomainDirsUnder(start)
   if (found.length > 0) return found

@@ -73,7 +73,7 @@ function printGraphTable(graphs: GraphInfo[]): void {
   for (const g of graphs) {
     const { nodes, edges } = formatStats(g.stats)
     const name = g.name.padEnd(nameW)
-    const status = colorStatus(g.status).padEnd(18)
+    const status = colorStatus(g.status) + ' '.repeat(Math.max(0, 9 - g.status.length))
     const instance = chalk.dim(g.instance ?? '-')
     console.log(
       `  ${chalk.cyan(name)}  ${nodes.padStart(5)}  ${edges.padStart(5)}  ${status} ${instance}`,

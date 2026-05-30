@@ -36,10 +36,10 @@ Examples:
     try {
       if (!opts.hostname) fatal(new Error('--hostname is required'))
       if (!opts.service) fatal(new Error('--service is required'))
-      validateUrl(opts.service!)
+      validateUrl(opts.service)
       const { entry, duplicate } = await addIngressRule(tunnel, {
-        hostname: opts.hostname!,
-        service: opts.service!,
+        hostname: opts.hostname,
+        service: opts.service,
         ...(opts.path ? { path: opts.path } : {}),
       })
       if (duplicate) {

@@ -137,7 +137,7 @@ const warnedFallback = new Set<string>()
 async function loadSigningMaterial(
   subject: string,
   keysDir: string,
-): Promise<{ privateJwk: JWK; publicJwk: JWK; kid: string; fromFallback: boolean }> {
+): Promise<{ privateJwk: JWK; publicJwk: JWK; kid: string }> {
   const { privatePath, publicPath } = keypairPaths(subject, keysDir)
 
   if (await fileExists(privatePath)) {
@@ -147,7 +147,6 @@ async function loadSigningMaterial(
       privateJwk,
       publicJwk,
       kid: (privateJwk.kid as string | undefined) ?? `${subject}-key`,
-      fromFallback: false,
     }
   }
 
@@ -175,8 +174,31 @@ async function loadSigningMaterial(
     privateJwk,
     publicJwk,
     kid: (privateJwk.kid as string | undefined) ?? 'manager-key',
-    fromFallback: true,
   }
+}
+
+/**
+ * Sign a self-identity credential (`grant: identity/self`) from a private
+ * JWK. Shared by `persistAuth`, `loadAuth`, and `signAs` so the protected
+ * header and claim set stay identical across all three; the only thing that
+ * varies is how each caller obtains the key material and which
+ * subject/audience it stamps.
+ */
+async function signIdentityCredential(args: {
+  privateJwk: JWK
+  kid: string
+  issuer: string
+  subject: string
+  audience: string
+}): Promise<string> {
+  const alg = inferAlg(args.privateJwk as Record<string, unknown>)
+  const privateKey = await importJWK(args.privateJwk, alg)
+  return new SignJWT({ grant: { v: 1, expr: { kind: 'identity', self: true } } })
+    .setProtectedHeader({ alg, kid: args.kid })
+    .setIssuer(args.issuer)
+    .setSubject(args.subject)
+    .setAudience(args.audience)
+    .sign(privateKey)
 }
 
 /**
@@ -192,17 +214,13 @@ export async function persistAuth(
   const kid = opts?.kid ?? `${subject}-key`
 
   const { privateJwk, publicJwk } = await persistKeypair(subject, { keysDir, kid })
-  const alg = inferAlg(privateJwk as Record<string, unknown>)
-  const privateKey = await importJWK(privateJwk, alg)
-
-  const credential = await new SignJWT({
-    grant: { v: 1, expr: { kind: 'identity', self: true } },
+  const credential = await signIdentityCredential({
+    privateJwk,
+    kid,
+    issuer,
+    subject,
+    audience: issuer,
   })
-    .setProtectedHeader({ alg, kid })
-    .setIssuer(issuer)
-    .setSubject(subject)
-    .setAudience(issuer)
-    .sign(privateKey)
 
   return { credential, publicKey: { jwk: publicJwk } }
 }
@@ -218,17 +236,13 @@ export async function loadAuth(
   const subject = opts?.subject ?? 'manager'
 
   const { privateJwk, publicJwk, kid } = await loadSigningMaterial(subject, keysDir)
-  const alg = inferAlg(privateJwk as Record<string, unknown>)
-  const privateKey = await importJWK(privateJwk, alg)
-
-  const credential = await new SignJWT({
-    grant: { v: 1, expr: { kind: 'identity', self: true } },
+  const credential = await signIdentityCredential({
+    privateJwk,
+    kid,
+    issuer,
+    subject,
+    audience: issuer,
   })
-    .setProtectedHeader({ alg, kid })
-    .setIssuer(issuer)
-    .setSubject(subject)
-    .setAudience(issuer)
-    .sign(privateKey)
 
   return { credential, publicKey: { jwk: publicJwk } }
 }
@@ -261,15 +275,14 @@ export async function signAs(
   const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
   const audience = opts?.audience ?? issuer
   const { privateJwk, kid } = await loadSigningMaterial(subject, keysDir)
-  const alg = inferAlg(privateJwk as Record<string, unknown>)
-  const privateKey = await importJWK(privateJwk, alg)
 
-  return new SignJWT({ grant: { v: 1, expr: { kind: 'identity', self: true } } })
-    .setProtectedHeader({ alg, kid })
-    .setIssuer(issuer)
-    .setSubject(opts?.subject ?? subject)
-    .setAudience(audience)
-    .sign(privateKey)
+  return signIdentityCredential({
+    privateJwk,
+    kid,
+    issuer,
+    subject: opts?.subject ?? subject,
+    audience,
+  })
 }
 
 async function atomicWrite(path: string, data: string): Promise<void> {

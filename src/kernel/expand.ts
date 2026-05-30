@@ -2,10 +2,10 @@ import type { KernelCommandOpts } from './types'
 
 /**
  * Bridges `lib/self.ts` to CLI command sites: builds a `SelfResolverContext`
- * from CLI opts (local I/O only — no kernel round-trip), exposes a one-shot
- * `expandOne` that throws `SelfRefusalError` on refusal, and wraps async calls
- * with `withSelfHint` so `NotFoundError`s carry expansion metadata for the
- * stale-registration hint emitted by `formatKernelError`.
+ * from CLI opts (local I/O only — no kernel round-trip), resolves a nodeId via
+ * `resolveOrThrow` (throwing `SelfRefusalError` on refusal), and wraps async
+ * calls with `withSelfHint` so `NotFoundError`s carry expansion metadata for
+ * the stale-registration hint emitted by `formatKernelError`.
  */
 import { readConfig } from '../lib/config'
 import { getDefault, getIdentity } from '../lib/identity'
@@ -81,18 +81,6 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
   }
 
   return { identity, instanceSlug: slug, credsJwt: opts.creds, instanceSigned }
-}
-
-/**
- * Expand `@self` in a single string. Returns input unchanged when no `@self`
- * appears; throws `SelfRefusalError` (with typed `selfRefusal` metadata) when
- * `@self` is present but cannot be resolved.
- */
-export function expandOne(input: string, selfCtx: SelfResolverContext): string {
-  if (!containsSelfRef(input)) return input
-  const r = resolveSelfNodeId(selfCtx)
-  if ('reason' in r) throw selfRefusalError(r)
-  return expandSelfReferences(input, r.id)
 }
 
 /**
