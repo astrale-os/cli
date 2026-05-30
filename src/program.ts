@@ -201,6 +201,12 @@ export async function buildProgram(): Promise<Command> {
     ],
   })
 
+  registerGroup(program, {
+    name: 'env',
+    description: 'Domain env hygiene (.env.example, dev-vars, topology & secret leaks)',
+    commands: [(await import('./commands/env/check')).default],
+  })
+
   program.addHelpText(
     'after',
     `
@@ -212,6 +218,7 @@ Command groups:
   Server        server build, server logs
   Domains       domain init, domain build, domain deploy, domain check,
                 domain logs, domain instance-prepare, domain dev (up|down|status)
+  Env           env check
 
 Path syntax:
   /domain                        Domain node

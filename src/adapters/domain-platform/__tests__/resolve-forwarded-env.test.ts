@@ -27,10 +27,8 @@ describe('resolveForwardedEnv', () => {
     expect(resolveForwardedEnv({})).toEqual({})
   })
 
-  test('forwardEnv: unset name resolves to empty string', () => {
-    expect(resolveForwardedEnv({ forwardEnv: ['RFE_REQUIRED'] })).toEqual({
-      RFE_REQUIRED: '',
-    })
+  test('forwardEnv: unset name throws (fail loud, no silent empty write)', () => {
+    expect(() => resolveForwardedEnv({ forwardEnv: ['RFE_REQUIRED'] })).toThrow(/RFE_REQUIRED/)
   })
 
   test('forwardEnv: set name forwards its value', () => {
@@ -55,8 +53,9 @@ describe('resolveForwardedEnv', () => {
 
   test('resolves at call time, not import time (simulates preUp populating env)', () => {
     const config = { forwardEnv: ['RFE_LATE'] }
-    // First call mirrors "config read before preUp" — the var is unset.
-    expect(resolveForwardedEnv(config)).toEqual({ RFE_LATE: '' })
+    // First call mirrors "config read before preUp" — the var is unset, so a
+    // required forward now fails loud rather than freezing an empty value.
+    expect(() => resolveForwardedEnv(config)).toThrow(/RFE_LATE/)
     // preUp loads `.env` into process.env...
     process.env.RFE_LATE = 'loaded-by-preup'
     // ...and the post-preUp call sees it.

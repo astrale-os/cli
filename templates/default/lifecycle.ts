@@ -19,12 +19,12 @@ import { join } from 'node:path'
 import { loadEnv } from './load-env'
 
 export const config: LifecycleConfig = {
-  // Static literal — `DISTRIBUTION_BASE_DOMAIN` points the imported
-  // `DistributionSchema` (`View` / `view_for`) at the local install.
-  extraDevVars: {
-    DISTRIBUTION_BASE_DOMAIN: 'dist.localhost',
-  },
-
+  // Cross-domain base domains (e.g. `DISTRIBUTION_BASE_DOMAIN` for a dep on
+  // `@astrale-os/distribution-domain`) are resolved automatically from each
+  // dependency's own `envs.ts` — never hardcode them in `extraDevVars` (the
+  // `astrale env check` lint forbids a `*_BASE_DOMAIN` literal here). Put only
+  // NON-secret dev defaults in `extraDevVars`, e.g.:
+  //   extraDevVars: { MY_URL: process.env.MY_URL || 'http://localhost:1234' },
   // Runtime secrets: declare them here (resolved from `process.env` AFTER
   // the preUp hook loads `.env`). `dev up` fails fast if a `requiredSecrets`
   // entry is unset. Uncomment + rename for your domain:

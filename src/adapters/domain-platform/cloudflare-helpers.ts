@@ -418,7 +418,28 @@ export function assertNoDevVarsKeyOverlap(
  */
 export function resolveForwardedEnv(config: LifecycleConfig | undefined): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const k of config?.forwardEnv ?? []) out[k] = process.env[k] ?? ''
+  // `forwardEnv` is the REQUIRED forward: a missing/empty value must fail loud
+  // here (before wrangler spawns) rather than silently writing `KEY=` into
+  // `.dev.vars` — the latter surfaces only as an opaque upstream error at
+  // call-time (the `BL_WORKSPACE=` incident). Use `forwardEnvOptional` for
+  // keys that may legitimately be absent.
+  const missing: string[] = []
+  for (const k of config?.forwardEnv ?? []) {
+    const v = process.env[k]
+    if (!v) {
+      missing.push(k)
+      continue
+    }
+    out[k] = v
+  }
+  if (missing.length > 0) {
+    throw new AstraleError(
+      'MISSING_SECRETS',
+      `Required forwardEnv keys resolved empty:\n${missing.map((k) => `    - ${k}`).join('\n')}`,
+      'Set them in the domain `.env` (loaded by preUp) or the shell — or move ' +
+        'them to `forwardEnvOptional` if they are genuinely optional.',
+    )
+  }
   for (const k of config?.forwardEnvOptional ?? []) {
     const v = process.env[k]
     if (v) out[k] = v

@@ -17,7 +17,7 @@ import type {
 } from '@astrale-os/kernel-host'
 
 import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-host'
-import { resolveCrossDomainBaseDomains } from '@astrale-os/kernel-host/topology'
+import { resolveDomainEnv } from '@astrale-os/kernel-host/env'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -36,7 +36,6 @@ import type {
 import { AstraleError, IssuerUnreachableError } from '../../errors'
 import { acquireDevLock, releaseDevLock } from '../../lib/dev-lock'
 import { resolveDomainDir } from '../../lib/domain-discovery'
-import { slugVariants } from '../../lib/domain-scaffold'
 import { paths } from '../../lib/env'
 import { log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
@@ -308,8 +307,12 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
         }
       }
 
-      const crossDomain = await resolveCrossDomainBaseDomains(resolved.dir, opts.domain)
-      const baseVars = buildBaseVars(domain, resolved.slug, config, crossDomain, viewDevUrl)
+      const core = await resolveDomainEnv(resolved.dir, {
+        preset: opts.domain,
+        slug: resolved.slug,
+        domainEnv: domain,
+      })
+      const baseVars = buildBaseVars(core.vars, config, viewDevUrl)
       const envHash = hashDevVars(baseVars)
       const priorState = readDevState(paths.domainState(resolved.slug))
       const priorWrangler = priorState?.started.wrangler ?? null
@@ -636,23 +639,25 @@ export async function buildSpec(opts: BuildSpecOpts): Promise<BuildSpecResult> {
   // `domain.ts` expects `<UPPER_SNAKE>_BASE_DOMAIN` / `<UPPER_SNAKE>_WORKER_URL`
   // (e.g. `NOTES_BASE_DOMAIN` for `notes`). The rename engine stamps the
   // prefix at scaffold time; derive it from the slug the same way here.
-  const prefix = slugVariants(resolved.slug).upperSnake
-  const prefixedWorkerUrl = process.env[`${prefix}_WORKER_URL`] ?? domainUrl(domain)
+  // Own `<PREFIX>_*`/generic pair + cross-domain neighbours from the single
+  // shared resolver (passing the already-evaluated `domain` to avoid re-importing
+  // envs.ts). buildSpec additionally RESPECTS a shell-exported WORKER_URL /
+  // <PREFIX>_WORKER_URL (a dev override) — re-stamp those over the resolver's
+  // domainUrl-derived values; base domains come ONLY from the resolver so the
+  // spec never inherits stale topology from the shell.
+  const core = await resolveDomainEnv(resolved.dir, {
+    preset: presetName,
+    slug: resolved.slug,
+    domainEnv: domain,
+  })
+  const prefix = core.prefix
+  const prefixedWorkerUrl =
+    process.env[`${prefix}_WORKER_URL`] ?? core.vars[`${prefix}_WORKER_URL`]!
   const workerUrl = process.env.WORKER_URL ?? prefixedWorkerUrl
-  // Cross-domain neighbours' base domains, resolved from each dependency's own
-  // `envs.ts` for this preset — so the spec never inherits stale topology from
-  // the shell (e.g. a previous `astrale deploy` env). Spread AFTER `process.env`
-  // (it wins over the shell) but BEFORE the built domain's own prefix pair (the
-  // domain itself always wins).
-  const crossDomain = await resolveCrossDomainBaseDomains(resolved.dir, presetName)
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    ...crossDomain,
-    [`${prefix}_BASE_DOMAIN`]: domain.domain,
+    ...core.vars,
     [`${prefix}_WORKER_URL`]: prefixedWorkerUrl,
-    // Generic forms — convenient for domains whose domain.ts/schema.ts
-    // read the unprefixed names (e.g. newer scaffolds).
-    BASE_DOMAIN: domain.domain,
     WORKER_URL: workerUrl,
   }
   const r = spawnSync('bun', ['run', buildCli, domainModule, outputPath], {
@@ -809,29 +814,24 @@ type WorkerSpawnArgs = {
   state: DevState
 }
 
-// Merge order is significant: CLI-derived base vars first (incl. an
-// optional VIEW_DEV_URL for HMR-mode view serving), then
-// `forwardEnv`/`forwardEnvOptional` resolved from process.env (post
-// preUp), then `extraDevVars` literals, and finally the resolved
-// cross-domain base domains — authoritative, so a stale `extraDevVars`
-// literal (or shell value) can no longer pin a neighbour's base domain.
+// The topology core (own `<PREFIX>_*` + generic `WORKER_URL`/`BASE_DOMAIN` pair
+// + cross-domain neighbours) comes from the single shared resolver
+// (`@astrale-os/kernel-host/env` `resolveDomainEnv`). Dev layers on top: an
+// optional VIEW_DEV_URL (HMR view serving), then `forwardEnv`/`forwardEnvOptional`
+// (process.env, post preUp), then `extraDevVars` literals. Base domains live
+// ONLY in the topology core — `extraDevVars` must not carry a `*_BASE_DOMAIN`
+// (the `astrale env check` lint enforces this), so this layering can never let
+// a stale literal pin a neighbour's base domain.
 function buildBaseVars(
-  domain: DomainEnv,
-  slug: string,
+  coreVars: Record<string, string>,
   config: LifecycleConfig | undefined,
-  crossDomain: Record<string, string>,
   viewDevUrl?: string,
 ): DevVars {
-  const prefix = slugVariants(slug).upperSnake
   return {
-    WORKER_URL: domainUrl(domain),
-    BASE_DOMAIN: domain.domain,
-    [`${prefix}_WORKER_URL`]: domainUrl(domain),
-    [`${prefix}_BASE_DOMAIN`]: domain.domain,
+    ...coreVars,
     ...(viewDevUrl ? { VIEW_DEV_URL: viewDevUrl } : {}),
     ...resolveForwardedEnv(config),
     ...config?.extraDevVars,
-    ...crossDomain,
   }
 }
 
