@@ -63,6 +63,12 @@ export async function readIdentities(): Promise<IdentityStore> {
   } catch (e) {
     if (e instanceof z.ZodError) {
       log.warn(`Invalid identities at ${IDENTITIES_PATH} — using defaults`)
+    } else if ((e as { code?: string }).code !== 'ENOENT') {
+      // Present-but-unreadable file (malformed JSON → SyntaxError, or a
+      // non-missing-file read error). ENOENT is the legitimate first-run
+      // case and stays silent; anything else would otherwise be discarded
+      // and could be overwritten by a later writeIdentities.
+      log.warn(`Could not read identities at ${IDENTITIES_PATH} — using defaults`)
     }
     return seed()
   }

@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../command'
 
 import { deleteIdentity } from '../../lib/identity'
-import { log } from '../../lib/log'
+import { fatal, log } from '../../lib/log'
 
 export default {
   name: 'delete',
@@ -12,8 +12,7 @@ export default {
       await deleteIdentity(name)
       log.success(`Deleted identity "${name}"`)
     } catch (e) {
-      log.error(e instanceof Error ? e.message : String(e))
-      process.exit(1)
+      fatal(e)
     }
   },
 } satisfies CommandDefinition

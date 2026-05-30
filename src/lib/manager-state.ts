@@ -20,7 +20,10 @@ import { inspect } from 'node:util'
 type InProcessManagerConfigArg = Parameters<typeof inProcessManager>[0]
 type ManagerConfigWithAdmin = InProcessManagerConfigArg & {
   admin: {
-    builtinDomains?: { distribution?: { spec: Record<string, unknown>; workerKey: JWK } }
+    builtinDomains?: {
+      aiGateway?: { spec: Record<string, unknown>; workerKey: JWK }
+      distribution?: { spec: Record<string, unknown>; workerKey: JWK }
+    }
     installDistributionOnManager?: boolean
     workflow: {
       defaultHost: { id: string; url: string; kind: 'local'; label: string }
@@ -363,43 +366,55 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
   return kernel
 }
 
+type BuiltinDomainEntry = { spec: Record<string, unknown>; workerKey: JWK }
+
 /**
- * Resolve the distribution builtin (spec + worker key) and return it in
- * the shape the admin extension expects. Silently returns `undefined` when
- * the builtin can't be resolved — the manager remains usable; only admin
- * create requests asking for distribution installation will reject clearly.
+ * Resolve a single builtin domain (spec + worker key) into the shape the
+ * admin extension expects. Returns `undefined` (and logs) when the builtin
+ * can't be resolved/read, so one missing builtin never takes another down.
+ */
+async function loadBuiltinDomainEntry(
+  name: Parameters<typeof resolveBuiltinDomain>[0],
+): Promise<BuiltinDomainEntry | undefined> {
+  try {
+    const paths = await resolveBuiltinDomain(name)
+    const [specRaw, keyRaw] = await Promise.all([
+      readFile(paths.specPath, 'utf-8'),
+      readFile(paths.keyPath, 'utf-8'),
+    ])
+    return {
+      spec: JSON.parse(specRaw) as Record<string, unknown>,
+      workerKey: JSON.parse(keyRaw) as JWK,
+    }
+  } catch (err) {
+    log.dim(`  builtin domain "${name}" not loaded: ${(err as Error).message}`)
+    return undefined
+  }
+}
+
+/**
+ * Resolve the builtin domains (spec + worker key) and return them in the
+ * shape the admin extension expects. Each builtin is resolved independently,
+ * so a missing `ai-gateway` only drops `aiGateway` from the catalog while
+ * `distribution` still installs (and vice versa). Returns `undefined` only
+ * when no builtin could be resolved — the manager remains usable; admin
+ * create requests asking for an unavailable builtin reject clearly at call time.
  */
 async function loadBuiltinDomainsCatalog(): Promise<
   | {
-      aiGateway?: { spec: Record<string, unknown>; workerKey: JWK }
-      distribution?: { spec: Record<string, unknown>; workerKey: JWK }
+      aiGateway?: BuiltinDomainEntry
+      distribution?: BuiltinDomainEntry
     }
   | undefined
 > {
-  try {
-    const [aiGateway, dist] = await Promise.all([
-      resolveBuiltinDomain('ai-gateway'),
-      resolveBuiltinDomain('distribution'),
-    ])
-    const [aiGatewaySpecRaw, aiGatewayKeyRaw, distSpecRaw, distKeyRaw] = await Promise.all([
-      readFile(aiGateway.specPath, 'utf-8'),
-      readFile(aiGateway.keyPath, 'utf-8'),
-      readFile(dist.specPath, 'utf-8'),
-      readFile(dist.keyPath, 'utf-8'),
-    ])
-    return {
-      aiGateway: {
-        spec: JSON.parse(aiGatewaySpecRaw) as Record<string, unknown>,
-        workerKey: JSON.parse(aiGatewayKeyRaw) as JWK,
-      },
-      distribution: {
-        spec: JSON.parse(distSpecRaw) as Record<string, unknown>,
-        workerKey: JSON.parse(distKeyRaw) as JWK,
-      },
-    }
-  } catch (err) {
-    log.dim(`  builtin domain catalog not loaded: ${(err as Error).message}`)
-    return undefined
+  const [aiGateway, distribution] = await Promise.all([
+    loadBuiltinDomainEntry('ai-gateway'),
+    loadBuiltinDomainEntry('distribution'),
+  ])
+  if (!aiGateway && !distribution) return undefined
+  return {
+    ...(aiGateway ? { aiGateway } : {}),
+    ...(distribution ? { distribution } : {}),
   }
 }
 

@@ -32,7 +32,10 @@ export async function readConfig(): Promise<AstraleConfig> {
     const raw = await readFile(CONFIG_PATH, 'utf-8')
     return AstraleConfigSchema.parse(JSON.parse(raw))
   } catch (e) {
-    if (e instanceof z.ZodError) {
+    // A present-but-broken config (invalid JSON or failed validation) should
+    // surface; a missing file (readFile ENOENT) stays silent — that's the
+    // normal first-run case and defaults are expected.
+    if (e instanceof z.ZodError || e instanceof SyntaxError) {
       log.warn(`Invalid config at ${CONFIG_PATH} — using defaults`)
     }
     return DEFAULTS

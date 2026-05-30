@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../command'
 
 import { setDefault } from '../../lib/identity'
-import { log } from '../../lib/log'
+import { fatal, log } from '../../lib/log'
 
 export default {
   name: 'use',
@@ -12,8 +12,7 @@ export default {
       await setDefault(name)
       log.success(`Active identity set to "${name}"`)
     } catch (e) {
-      log.error(e instanceof Error ? e.message : String(e))
-      process.exit(1)
+      fatal(e)
     }
   },
 } satisfies CommandDefinition

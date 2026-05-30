@@ -41,10 +41,11 @@ function resolveHome(home?: string): string {
 export function createPaths(home?: string): Paths {
   const base = resolveHome(home)
   const domainsDir = join(base, 'domains')
+  const logsDir = process.env.ASTRALE_LOGS_DIR ?? join(base, 'logs')
   return {
     home: base,
     keys: process.env.ASTRALE_KEYS_DIR ?? join(base, 'keys'),
-    logs: process.env.ASTRALE_LOGS_DIR ?? join(base, 'logs'),
+    logs: logsDir,
     data: process.env.ASTRALE_DATA_DIR ?? join(base, 'data'),
     config: join(base, 'config.json'),
     compose: join(base, 'docker-compose.yml'),
@@ -54,7 +55,7 @@ export function createPaths(home?: string): Paths {
     managerCache: join(base, 'manager-cache.json'),
     tunnels: join(base, 'tunnels.json'),
     tunnelsDir: join(base, 'tunnels'),
-    journal: join(process.env.ASTRALE_LOGS_DIR ?? join(base, 'logs'), 'events.ndjson'),
+    journal: join(logsDir, 'events.ndjson'),
     domainsDir,
     domainStateDir: (slug: string) => join(domainsDir, slug),
     domainState: (slug: string) => join(domainsDir, slug, 'state.json'),

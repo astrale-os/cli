@@ -17,7 +17,7 @@ export default {
       const mode = opts.remote ? 'remote' : 'local'
       const identity = await createIdentity(name, { subject: opts.subject, mode })
       log.success(
-        `Created identity "${name}" (subject: ${identity.subject}, mode: ${identity.mode ?? mode})`,
+        `Created identity "${name}" (subject: ${identity.subject}, mode: ${identity.mode})`,
       )
     } catch (e) {
       fatal(e)

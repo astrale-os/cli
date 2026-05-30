@@ -54,7 +54,7 @@ export function validateGraphName(name: string): void {
 
 // ─── FalkorDB operations ───────────────────────────────────
 
-function falkorConfig(config: AstraleConfig, graphName = 'temp'): FalkorDBConfig {
+function falkorConfig(config: AstraleConfig, graphName: string): FalkorDBConfig {
   return { graphName, host: 'localhost', port: config.falkorPort }
 }
 

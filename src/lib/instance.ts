@@ -63,7 +63,7 @@ export type InstanceStore = z.infer<typeof InstanceStoreSchema>
 
 // ─── Seed ───────────────────────────────────────────────────
 
-function seed(_config?: AstraleConfig): InstanceStore {
+function seed(): InstanceStore {
   return {
     active: 'manager',
     instances: {
@@ -129,23 +129,22 @@ function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: b
 // (same process), which clears this cache.
 let instancesMemo: InstanceStore | null = null
 
-export async function readInstances(config?: AstraleConfig): Promise<InstanceStore> {
+export async function readInstances(_config?: AstraleConfig): Promise<InstanceStore> {
   if (instancesMemo) return instancesMemo
   let raw: string
   try {
     raw = await readFile(INSTANCES_PATH, 'utf-8')
   } catch {
-    instancesMemo = seed(config)
+    instancesMemo = seed()
     return instancesMemo
   }
   let parsed: InstanceStore
   try {
     parsed = InstanceStoreSchema.parse(JSON.parse(raw))
   } catch (e) {
-    if (e instanceof z.ZodError) {
-      log.warn(`Invalid instances at ${INSTANCES_PATH} — using defaults`)
-    }
-    instancesMemo = seed(config)
+    const reason = e instanceof z.ZodError ? 'invalid schema' : 'corrupt JSON'
+    log.warn(`Could not read instances at ${INSTANCES_PATH} (${reason}) — using defaults`)
+    instancesMemo = seed()
     return instancesMemo
   }
   const { store, changed } = sanitizeStore(parsed)
@@ -314,7 +313,7 @@ async function probeManagerInstance(name: string): Promise<boolean> {
   try {
     const config = await readConfig()
     const credential = await resolveCredential({}, config)
-    const url = `http://localhost:${config.managerPort}/mngt`
+    const url = managerUrl(config)
     const session = new ClientSession({
       default: url,
       identity: credential,
@@ -346,17 +345,6 @@ export async function getActive(config?: AstraleConfig): Promise<InstanceEntry &
     throw new Error(`Active instance "${store.active}" not found`)
   }
   return { ...entry, name: store.active }
-}
-
-export async function getInstance(name: string, config?: AstraleConfig): Promise<InstanceEntry> {
-  const store = await readInstances(config)
-  const key = resolveInstanceKey(store, name)
-  if (!key) {
-    throw new Error(
-      `Instance "${name}" not found. Run: astrale instance bookmark ${name} --url <url>`,
-    )
-  }
-  return store.instances[key]!
 }
 
 // ─── Manager-live snapshot + TTL cache ──────────────────────

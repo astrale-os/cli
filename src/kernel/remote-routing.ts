@@ -188,8 +188,8 @@ export async function mintRemoteCredential(
 
 export function mintDelegationPathFromCredential(credential: string): string {
   const sub = readJwtSub(credential)
-  if (sub === 'system') return '@__system__::mintDelegationCredential'
-  return sub ? `@${sub}::mintDelegationCredential` : '@__system__::mintDelegationCredential'
+  if (!sub || sub === 'system') return '@__system__::mintDelegationCredential'
+  return `@${sub}::mintDelegationCredential`
 }
 
 function readJwtSub(credential: string): string | null {

@@ -92,13 +92,6 @@ export async function addTunnel(entry: TunnelEntry): Promise<void> {
   await writeTunnels(store)
 }
 
-export async function removeTunnel(name: string): Promise<void> {
-  const store = await readTunnels()
-  if (!store.tunnels[name]) return
-  delete store.tunnels[name]
-  await writeTunnels(store)
-}
-
 /** Resolve a tunnel by name OR id. */
 export function findTunnel(store: TunnelStore, nameOrId: string): TunnelEntry | undefined {
   if (store.tunnels[nameOrId]) return store.tunnels[nameOrId]

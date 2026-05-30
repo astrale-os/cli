@@ -196,21 +196,14 @@ async function* scanFile(path: string, startByte?: number): AsyncIterable<Journa
   try {
     const stream = createReadStream(path, { encoding: 'utf-8', start: startByte })
     const rl = createInterface({ input: stream, crlfDelay: Infinity })
-    const mayBePartial = startByte !== undefined && startByte > 0
-    let isFirst = true
     for await (const line of rl) {
       if (!line.trim()) continue
       try {
         yield JSON.parse(line) as JournalEntry
       } catch {
-        // When resuming mid-file, the first chunk is likely a partial line — skip it.
-        // But if it's not the first line, this is a genuinely malformed entry.
-        if (isFirst && mayBePartial) {
-          // Expected: partial leftover from byte offset resume
-        }
-        // Either way, skip unparseable lines
+        // Skip unparseable lines — either a partial leftover from a byte-offset
+        // resume, or a genuinely malformed entry. Both are non-fatal.
       }
-      isFirst = false
     }
   } catch {
     /* file doesn't exist */

@@ -12,7 +12,7 @@ import { BINDING_KEY, parseBinding } from '../kernel/remote-routing'
 export { BINDING_KEY }
 
 /** Typed `/:kernel.astrale.ai:class.Domain` — the Domain node's class. */
-export const KERNEL_DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
+const KERNEL_DOMAIN_CLASS = '/:kernel.astrale.ai:class.Domain'
 
 /**
  * Spec `class`/`source`/`target` fields are emitted either as a plain

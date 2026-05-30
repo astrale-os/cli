@@ -149,12 +149,22 @@ async function resolveValue(
   defaultValue: number,
   noninteractive?: boolean,
 ): Promise<number> {
-  if (flag !== undefined) return parseInt(flag, 10)
+  if (flag !== undefined) return parsePort(label, flag)
   if (noninteractive) return defaultValue
   const rl = createInterface({ input: stdin, output: stdout })
   const answer = await rl.question(`${label} [${defaultValue}]: `)
   rl.close()
-  return parseInt(answer || String(defaultValue), 10)
+  return parsePort(label, answer || String(defaultValue))
+}
+
+/** Parse a port-like numeric value; fail loud rather than persist a broken (NaN) config. */
+function parsePort(label: string, raw: string): number {
+  const n = parseInt(raw, 10)
+  if (!Number.isInteger(n) || n <= 0) {
+    log.error(`Invalid ${label} "${raw}" — expected a positive integer.`)
+    process.exit(1)
+  }
+  return n
 }
 
 /** Resolve a string option: explicit flag wins; otherwise prompt unless --yes. */
