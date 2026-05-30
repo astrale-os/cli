@@ -17,6 +17,7 @@ import type {
 } from '@astrale-os/kernel-host'
 
 import { kernelEnvs, type KernelEnv } from '@astrale-os/kernel-host'
+import { resolveCrossDomainBaseDomains } from '@astrale-os/kernel-host/topology'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -40,6 +41,7 @@ import { paths } from '../../lib/env'
 import { log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
 import {
+  assertNoDevVarsKeyOverlap,
   assertRuntimeSecrets,
   astraleArgv,
   clearDevState,
@@ -180,6 +182,10 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
   const hooks = (resolved.lifecycle?.hooks ?? {}) as LifecycleHooks
   const tunnelName = tunnelNameOf(config)
 
+  // Reject misconfigured lifecycle.ts before any side effect (DNS probe, hooks,
+  // wrangler spawn). See `assertNoDevVarsKeyOverlap` for the rationale.
+  assertNoDevVarsKeyOverlap(config, resolved.slug, resolved.lifecyclePath)
+
   const needsAstrale = kernel.mode === 'manager' && !opts.kernel.startsWith('remote:')
   const needsCloudflared = opts.kernel.endsWith(':tunneled') || opts.domain === 'local:tunneled'
   const needsLocalWorker = opts.domain === 'local:inprocess' || opts.domain === 'local:tunneled'
@@ -302,7 +308,8 @@ export async function devUp(opts: DevUpOpts): Promise<DevState> {
         }
       }
 
-      const baseVars = buildBaseVars(domain, resolved.slug, config, viewDevUrl)
+      const crossDomain = await resolveCrossDomainBaseDomains(resolved.dir, opts.domain)
+      const baseVars = buildBaseVars(domain, resolved.slug, config, crossDomain, viewDevUrl)
       const envHash = hashDevVars(baseVars)
       const priorState = readDevState(paths.domainState(resolved.slug))
       const priorWrangler = priorState?.started.wrangler ?? null
@@ -632,8 +639,15 @@ export async function buildSpec(opts: BuildSpecOpts): Promise<BuildSpecResult> {
   const prefix = slugVariants(resolved.slug).upperSnake
   const prefixedWorkerUrl = process.env[`${prefix}_WORKER_URL`] ?? domainUrl(domain)
   const workerUrl = process.env.WORKER_URL ?? prefixedWorkerUrl
+  // Cross-domain neighbours' base domains, resolved from each dependency's own
+  // `envs.ts` for this preset — so the spec never inherits stale topology from
+  // the shell (e.g. a previous `astrale deploy` env). Spread AFTER `process.env`
+  // (it wins over the shell) but BEFORE the built domain's own prefix pair (the
+  // domain itself always wins).
+  const crossDomain = await resolveCrossDomainBaseDomains(resolved.dir, presetName)
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...crossDomain,
     [`${prefix}_BASE_DOMAIN`]: domain.domain,
     [`${prefix}_WORKER_URL`]: prefixedWorkerUrl,
     // Generic forms — convenient for domains whose domain.ts/schema.ts
@@ -798,12 +812,14 @@ type WorkerSpawnArgs = {
 // Merge order is significant: CLI-derived base vars first (incl. an
 // optional VIEW_DEV_URL for HMR-mode view serving), then
 // `forwardEnv`/`forwardEnvOptional` resolved from process.env (post
-// preUp), then `extraDevVars` literals last so an explicit literal
-// still wins (e.g. ai-gateway pins BASE_DOMAIN over the preset value).
+// preUp), then `extraDevVars` literals, and finally the resolved
+// cross-domain base domains — authoritative, so a stale `extraDevVars`
+// literal (or shell value) can no longer pin a neighbour's base domain.
 function buildBaseVars(
   domain: DomainEnv,
   slug: string,
   config: LifecycleConfig | undefined,
+  crossDomain: Record<string, string>,
   viewDevUrl?: string,
 ): DevVars {
   const prefix = slugVariants(slug).upperSnake
@@ -815,6 +831,7 @@ function buildBaseVars(
     ...(viewDevUrl ? { VIEW_DEV_URL: viewDevUrl } : {}),
     ...resolveForwardedEnv(config),
     ...config?.extraDevVars,
+    ...crossDomain,
   }
 }
 

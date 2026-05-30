@@ -227,7 +227,15 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
   })
   const { Kernel, falkordb, inProcessManager, node, ndjsonJournal } =
     await import('@astrale-os/kernel-host')
-  const { deleteGraph } = await import('@astrale-os/kernel-adapters/falkordb')
+  const { deleteGraphIfExists } = await import('@astrale-os/kernel-adapters/falkordb')
+
+  // Wipe a child's FalkorDB graph using the MANAGER's falkor config — never
+  // the child's persisted `host` (often `localhost`, which doesn't resolve to
+  // FalkorDB when the manager runs in a container; compose alias is
+  // `falkordb`). `deleteGraphIfExists` is idempotent on a missing graph, so
+  // delete and double-delete don't error.
+  const teardownGraph = (graphName: string): Promise<void> =>
+    deleteGraphIfExists({ graphName, host: config.falkorHost, port: config.falkorPort })
 
   // Resolve builtin domain specs + worker keys once at startup for
   // the admin create workflow. If resolution fails, the manager still starts —
@@ -327,19 +335,13 @@ export async function startManager(config: AstraleConfig): Promise<Kernel> {
           await child.boot()
           return {
             kernel: child,
-            disposer: async () => {
-              // Use the manager's own falkor config — the child's stored
-              // `host` may be the CLI's default `localhost`, which doesn't
-              // resolve to FalkorDB when the manager runs in a container
-              // (compose service name is `falkordb`).
-              await deleteGraph({
-                graphName: cfg.graphName,
-                host: config.falkorHost,
-                port: config.falkorPort,
-              })
-            },
+            disposer: () => teardownGraph(cfg.graphName),
           }
         },
+        // Durable storage teardown, reachable from `delete` without a live
+        // handle (the spawn disposer only exists for instances mounted this
+        // process). Same wipe as the disposer — one code path.
+        teardown: teardownGraph,
       } as ManagerConfigWithAdmin),
     },
   })

@@ -173,3 +173,15 @@ export class NotImplementedError extends AstraleError {
     )
   }
 }
+
+export class LifecycleConfigInvalidError extends AstraleError {
+  constructor(domain: string, overlap: readonly string[], lifecyclePath?: string) {
+    super(
+      'LIFECYCLE_CONFIG_INVALID',
+      `Domain "${domain}": key(s) listed in both extraDevVars and forwardEnv/forwardEnvOptional: ${overlap.join(', ')}`,
+      lifecyclePath
+        ? `In ${lifecyclePath}, remove the key(s) from extraDevVars — they're already forwarded from process.env. The two maps must be mutually exclusive.`
+        : `Remove the key(s) from extraDevVars — the two maps must be mutually exclusive.`,
+    )
+  }
+}

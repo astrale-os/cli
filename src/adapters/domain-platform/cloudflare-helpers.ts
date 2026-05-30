@@ -23,7 +23,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { AstraleError } from '../../errors'
+import { AstraleError, LifecycleConfigInvalidError } from '../../errors'
 import { log } from '../../lib/log'
 
 export const DEFAULT_TUNNEL_NAME = 'kernel-e2e'
@@ -398,6 +398,29 @@ export function assertRuntimeSecrets(
       ? `Set these in env / test/.env (declared in ${lifecyclePath}).`
       : 'Set these in env / test/.env.',
   )
+}
+
+/**
+ * Reject a `lifecycle.ts` whose `extraDevVars` (static literals) overlaps with
+ * `forwardEnv` / `forwardEnvOptional` (process.env forwarding). The dev-vars
+ * writer applies `extraDevVars` last, so the literal would silently shadow the
+ * forwarded value at write time — a misleading footgun the type system can't
+ * express. Pure config-shape check; safe to call before `preUp`.
+ */
+export function assertNoDevVarsKeyOverlap(
+  config: LifecycleConfig | undefined,
+  domainSlug: string,
+  lifecyclePath?: string,
+): void {
+  const literalKeys = Object.keys(config?.extraDevVars ?? {})
+  if (literalKeys.length === 0) return
+  const forwarded = new Set<string>([
+    ...(config?.forwardEnv ?? []),
+    ...(config?.forwardEnvOptional ?? []),
+  ])
+  const overlap = literalKeys.filter((k) => forwarded.has(k))
+  if (overlap.length === 0) return
+  throw new LifecycleConfigInvalidError(domainSlug, overlap, lifecyclePath)
 }
 
 /**
