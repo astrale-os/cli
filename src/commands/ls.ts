@@ -1,10 +1,17 @@
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../command'
-import type { KernelCommandOpts, ClientContext } from '../kernel'
+import type { KernelCommandOpts, ClientContext, SelfExpansionMeta } from '../kernel'
 
-import { runKernelCommand, extractItems, withKernelClient, formatKernelError } from '../kernel'
-import { spinner } from '../lib/log'
+import {
+  expandSelfInPath,
+  extractItems,
+  formatKernelError,
+  runKernelCommand,
+  withKernelClient,
+  withSelfHint,
+} from '../kernel'
+import { log, spinner } from '../lib/log'
 import { isRawOutput, output } from '../lib/output'
 
 type LsOpts = KernelCommandOpts & {
@@ -23,14 +30,23 @@ type Item = {
 }
 
 export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
+  let expandedPath: string
+  let meta
+  try {
+    ;({ path: expandedPath, meta } = await expandSelfInPath(path, opts))
+  } catch (e) {
+    log.error(e instanceof Error ? e.message : 'Invalid @self expansion')
+    process.exit(1)
+  }
+
   if (opts.recursive) {
-    return recursiveLs(path, opts)
+    return recursiveLs(expandedPath, opts, meta)
   }
 
   await runKernelCommand({
     opts,
-    label: `Children of ${path}`,
-    fn: (ctx) => ctx.client.call(`${path}::listChildren`, {}),
+    label: `Children of ${expandedPath}`,
+    fn: (ctx) => withSelfHint(() => ctx.client.call(`${expandedPath}::listChildren`, {}), meta),
     format: (result, fmtOpts, isRaw) => {
       let items = extractItems<Item>(result)
 
@@ -49,7 +65,7 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
         process.stdout.write(String(items.length) + '\n')
       } else if (opts.quiet) {
         for (const item of items) {
-          process.stdout.write(itemPath(path, item) + '\n')
+          process.stdout.write(itemPath(expandedPath, item) + '\n')
         }
       } else if (opts.long || fmtOpts.format) {
         output(result, fmtOpts)
@@ -67,14 +83,18 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
 const MAX_DEPTH = 5
 const MAX_NODES = 200
 
-async function recursiveLs(path: string, opts: LsOpts): Promise<void> {
+async function recursiveLs(
+  path: string,
+  opts: LsOpts,
+  meta: SelfExpansionMeta | undefined,
+): Promise<void> {
   const isRaw = isRawOutput(opts)
   const spin = !isRaw ? spinner(`Listing ${path} recursively...`) : null
 
   try {
     await withKernelClient(opts, async (ctx) => {
       const counter = { count: 0 }
-      const tree = await buildTree(ctx, path, 0, counter)
+      const tree = await withSelfHint(() => buildTree(ctx, path, 0, counter), meta)
       spin?.succeed(`Tree of ${path}`)
       if (!isRaw) console.log('')
 

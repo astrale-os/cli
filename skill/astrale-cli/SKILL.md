@@ -33,6 +33,7 @@ Clients address entities in the kernel graph via **Path**s.
 | Static method | `/domain/class.Name/method` or `/domain/interface.Name/method` | A class- or interface-level (static) operation |
 | Instance method | `<nodePath>::method` (incl. `@id::method`) | A method on a node instance |
 | Id reference | `@nodeId` | Reference a node by UID |
+| Self reference | `@self` | CLI-side shorthand — expands to your nodeId on the active instance (see below) |
 
 Load-bearing rules — true everywhere:
 
@@ -52,6 +53,48 @@ astrale call /blog.acme.com/class.Author/list                 # static on a Clas
 astrale call /blog.acme.com/interface.NoteOps/createNote …    # static on an Interface
 astrale call /blog.acme.com/alice::deactivate                 # instance method (or @id::deactivate)
 ```
+
+### `@self` — self-reference shorthand
+
+`@self` is a **CLI-side literal** (expanded before any envelope is signed or
+sent) that resolves to the calling identity's nodeId on the resolved active
+instance. The kernel and remote workers never see `@self` — they receive the
+concrete `@<nodeId>` form.
+
+The expansion is the JWT `sub` claim that the invocation would ship — which,
+by construction (`registerIdentity` writes `sub = String(self.id)`), is the
+caller's kernel nodeId on the target instance.
+
+```bash
+astrale call @self::deployFunction port=8080 kind=function name=test
+astrale describe @self
+astrale ls @self/functions
+astrale call /d/class.X/m _self=@self        # in a param value too
+```
+
+**Two positions only** are expanded: a path-head token (`@self::…`, `@self/…`,
+or `@self` alone) and the head of a `key=value` value (`key=@self::…`,
+`key=@self`). Substrings (`prefix@self`, `@selfsuffix`), comma-lists
+(`@self,@other`), and JSON payloads passed via `--data` / stdin are sent
+verbatim — pre-resolve there with `@$(astrale whoami --raw | jq -r .subject)`.
+
+**Refusal modes** — five fail-loud errors, each pointing at a fix:
+
+| Refusal | Trigger | Fix |
+|---|---|---|
+| `manager` | Default identity is the bootstrap `manager` (no graph node) | `astrale identity create <name>` then `astrale identity register <name>` |
+| `no-registration` | Identity has no registration on the resolved instance | `astrale identity register <name> -i <slug>` |
+| `instance-signed` | Signing as the instance itself (per-instance keypair) | Use `--as <name>` or a literal `@<nodeId>` |
+| `url-no-slug` | `--url` without `-i` — no slug to look up | Add `-i <slug>` or use a bookmark |
+| `creds-no-sub` | `--creds <jwt>` whose `sub` claim is missing | Pass a literal `@<nodeId>` |
+
+If `@self` expanded to a stale id (e.g. the underlying node was deleted and
+recreated), the resulting `NotFoundError` carries a hint pointing at
+`astrale identity register` to refresh the registration.
+
+`@self` is not available in `--url`, `--data`, or stdin (transport URL or
+verbatim JSON, respectively) and there is no `@@self` escape — if you own a
+node literally named `self`, reference it via its full id from `ls -q`.
 
 ## Instance resolution
 

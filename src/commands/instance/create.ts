@@ -175,6 +175,15 @@ export default {
           defaultIdentity,
         })
 
+        // Phase 2 (@self auto-register) is deferred — see TODO below. After
+        // `instance create --local`, calling `@self` against the new child
+        // refuses with `no-registration`. The seeded-user case can't be fixed
+        // by `astrale identity register` either (PATH_CONFLICT on the
+        // pre-seeded `/workspace/users/<name>` node) — proper resolution needs
+        // either (a) the admin workflow to return the seeded user's nodeId so
+        // the CLI writes the registration directly, or (b) the `@self`
+        // resolver to lazy-lookup the user node on first use.
+
         if (opts.tunnel) {
           await bindTunnel(opts.tunnel, slug)
           log.dim(`  tunnel bound: ${opts.tunnel} → ${slug}`)

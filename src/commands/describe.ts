@@ -4,7 +4,8 @@ import chalk from 'chalk'
 import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 
-import { runKernelCommand, extractItems } from '../kernel'
+import { expandSelfInPath, extractItems, runKernelCommand, withSelfHint } from '../kernel'
+import { log } from '../lib/log'
 import { output } from '../lib/output'
 
 type NodeItem = {
@@ -20,15 +21,29 @@ type DescribeResult = { node: NodeItem; children: NodeItem[] }
 type DescribeOpts = KernelCommandOpts & { schema?: boolean }
 
 export async function describeCommand(path: string, opts: DescribeOpts): Promise<void> {
+  let expandedPath: string
+  let meta
+  try {
+    ;({ path: expandedPath, meta } = await expandSelfInPath(path, opts))
+  } catch (e) {
+    log.error(e instanceof Error ? e.message : 'Invalid @self expansion')
+    process.exit(1)
+  }
   await runKernelCommand<DescribeResult>({
     opts,
-    label: path,
+    label: expandedPath,
     fn: async (ctx) => {
-      const node = (await ctx.client.call(`${path}::get`, {})) as NodeItem
+      const node = (await withSelfHint(
+        () => ctx.client.call(`${expandedPath}::get`, {}),
+        meta,
+      )) as NodeItem
 
       let children: NodeItem[] = []
       try {
-        const result = await ctx.client.call(`${path}::listChildren`, {})
+        const result = await withSelfHint(
+          () => ctx.client.call(`${expandedPath}::listChildren`, {}),
+          meta,
+        )
         children = extractItems<NodeItem>(result)
       } catch {
         // Node may have no children (leaf node)
@@ -42,7 +57,7 @@ export async function describeCommand(path: string, opts: DescribeOpts): Promise
         output(shown, fmtOpts)
         return
       }
-      printDescribe(shown, path)
+      printDescribe(shown, expandedPath)
     },
   })
 }

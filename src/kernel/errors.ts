@@ -1,5 +1,7 @@
 import chalk from 'chalk'
 
+import type { SelfExpansionMeta } from './expand'
+
 import { AstraleError } from '../errors'
 import { log } from '../lib/log'
 
@@ -96,10 +98,30 @@ export function formatKernelError(
 
     case 'NotFoundError': {
       const cleanMsg = stripMethodSuffix(error.message)
-      if (isRaw) writeRaw({ error: 'NOT_FOUND', message: cleanMsg })
-      else {
+      const selfMeta = (error as Error & { expandedFromSelf?: SelfExpansionMeta }).expandedFromSelf
+      // kernel-client maps both NOT_FOUND (the node doesn't exist) and
+      // METHOD_NOT_FOUND (the method doesn't exist on a real node) to
+      // `NotFoundError`. Firing the "refresh registration" hint for the
+      // method case is misleading. Gate on the message referencing the
+      // expanded id — node lookup errors mention `@<id>` whereas method
+      // errors mention the method path.
+      const selfHintApplies = selfMeta && error.message.includes(`@${selfMeta.selfId}`)
+      if (isRaw) {
+        const payload: Record<string, unknown> = { error: 'NOT_FOUND', message: cleanMsg }
+        if (selfHintApplies) payload.expandedFromSelf = selfMeta
+        writeRaw(payload)
+      } else {
         log.error(`Not found: ${cleanMsg}`)
         log.dim('  Check the path/ID and that the instance is booted')
+        if (selfHintApplies && selfMeta) {
+          const who = selfMeta.identity ?? 'your identity'
+          const where = selfMeta.slug ? ` on "${selfMeta.slug}"` : ''
+          log.dim(`  @self expanded to @${selfMeta.selfId} from ${who}'s registration${where}.`)
+          const fixCmd = `astrale identity register${
+            selfMeta.identity ? ` ${selfMeta.identity}` : ''
+          }${selfMeta.slug ? ` -i ${selfMeta.slug}` : ''}`
+          log.dim(`  If the node was deleted, refresh with: ${fixCmd}`)
+        }
       }
       break
     }

@@ -12,7 +12,7 @@ import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 import { KEYS_DIR } from '../../lib/paths'
-import { KERNEL_DOMAIN_CLASS } from '../../lib/spec'
+import { extractDomainSlug } from '../../lib/spec'
 
 const KERNEL_NODE_CREATE = '/kernel.astrale.ai/interface.Node/createNode'
 
@@ -37,16 +37,9 @@ async function defaultClassPath(): Promise<string> {
   // hard-coding either.
   const builtin = await resolveBuiltinDomain('distribution')
   const raw = await readFile(builtin.specPath, 'utf-8')
-  const spec = JSON.parse(raw) as {
-    nodes?: Array<{ class?: { raw?: string } | string; props?: { origin?: unknown } }>
-  }
-  for (const node of spec.nodes ?? []) {
-    const cls = typeof node.class === 'string' ? node.class : node.class?.raw
-    if (cls?.startsWith(KERNEL_DOMAIN_CLASS) && typeof node.props?.origin === 'string') {
-      return `/:${node.props.origin}:class.User`
-    }
-  }
-  return '/:dist.localhost:class.User'
+  const spec = JSON.parse(raw) as { nodes?: unknown[] }
+  const origin = extractDomainSlug(spec.nodes ?? [])
+  return origin ? `/:${origin}:class.User` : '/:dist.localhost:class.User'
 }
 
 async function mintBootstrapJwt(privateJwk: JWK): Promise<string> {

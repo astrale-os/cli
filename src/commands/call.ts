@@ -1,9 +1,21 @@
 import type { CommandDefinition } from '../command'
-import type { CallCommandOpts } from '../kernel'
+import type { CallCommandOpts, SelfExpansionMeta } from '../kernel'
 
-import { lookupRemoteBinding, mintRemoteCredential, runKernelCommand } from '../kernel'
+import {
+  buildSelfContext,
+  lookupRemoteBinding,
+  mintRemoteCredential,
+  runKernelCommand,
+  withSelfHint,
+} from '../kernel'
 import { log } from '../lib/log'
 import { output } from '../lib/output'
+import {
+  containsSelfRef,
+  expandSelfReferences,
+  resolveSelfNodeId,
+  selfRefusalError,
+} from '../lib/self'
 
 type CallOpts = CallCommandOpts & { describe?: boolean; dryRun?: boolean }
 type BinaryResponseLike = {
@@ -17,15 +29,51 @@ export async function callCommand(
   rawParams: string[],
   opts: CallOpts,
 ): Promise<void> {
+  // ── Expand `@self` in path + raw param strings ──────────
+  // Local resolution: no kernel round-trip. Throws a typed SelfRefusalError
+  // (e.g. bootstrap `manager`, no registration, instance-signed) which we
+  // surface as a fatal CLI error. Runs BEFORE `--describe` so users get the
+  // typed refusal instead of a generic NotFoundError from the kernel.
+  let expandedPath = path
+  let expandedRaw = rawParams
+  let selfMeta: SelfExpansionMeta | undefined
+  const inputsHaveSelf = containsSelfRef(path) || rawParams.some(containsSelfRef)
+  if (inputsHaveSelf) {
+    try {
+      const selfCtx = await buildSelfContext(opts)
+      const resolution = resolveSelfNodeId(selfCtx)
+      if ('reason' in resolution) throw selfRefusalError(resolution)
+      expandedPath = expandSelfReferences(path, resolution.id)
+      expandedRaw = rawParams.map((p) => expandSelfReferences(p, resolution.id))
+      // Stamp metadata whenever ANY input mutated — the stale-registration
+      // hint in `formatKernelError` is just as useful when `@self` lived in
+      // a param (`node=@self`) as when it was in the path head.
+      const rawMutated = expandedRaw.some((p, i) => p !== rawParams[i])
+      if (expandedPath !== path || rawMutated) {
+        selfMeta = {
+          original: path,
+          expanded: expandedPath,
+          selfId: resolution.id,
+          identity: selfCtx.identity?.name,
+          slug: selfCtx.instanceSlug,
+        }
+      }
+    } catch (e) {
+      log.error(e instanceof Error ? e.message : 'Invalid @self expansion')
+      process.exit(1)
+    }
+  }
+
   // ── Describe mode: show schema without executing ────────
+  // Runs AFTER expansion so `astrale call @self::m --describe` works.
   if (opts.describe) {
-    return describeOperation(path, opts)
+    return describeOperation(expandedPath, opts)
   }
 
   // ── Parse params ────────────────────────────────────────
   let params: Record<string, unknown>
   try {
-    params = await parseParams(rawParams, opts.data)
+    params = await parseParams(expandedRaw, opts.data)
   } catch (e) {
     log.error(e instanceof Error ? e.message : 'Invalid params')
     process.exit(1)
@@ -33,37 +81,45 @@ export async function callCommand(
 
   // ── Dry-run: show what would be sent ─────────────────────
   if (opts.dryRun) {
-    output({ method: path, params }, opts)
+    output({ method: expandedPath, params }, opts)
     return
   }
 
   // ── Execute ────────────────────────────────────────────
   await runKernelCommand({
     opts,
-    label: path,
+    label: expandedPath,
     fn: async (ctx) => {
       // Remote-bound functions live on an external worker; the kernel dispatch
       // path never reaches them. Before calling, check for `binding.remoteUrl`
       // and if present, mint a worker-scoped credential and override the URL
       // so the envelope POSTs straight to the worker.
-      const binding = await lookupRemoteBinding(ctx.client, path, ctx.credential)
+      const binding = await lookupRemoteBinding(ctx.client, expandedPath, ctx.credential)
       if (binding) {
         const workerCreds = await mintRemoteCredential(ctx.client, binding.audience, ctx.credential)
         if (binding.output === 'binary') {
-          const response = await ctx.client.binary(binding.path, params, {
-            url: binding.remoteUrl,
-            credential: workerCreds,
-            ...(binding.self !== undefined && { self: binding.self }),
-          })
+          const response = await withSelfHint(
+            () =>
+              ctx.client.binary(binding.path, params, {
+                url: binding.remoteUrl,
+                credential: workerCreds,
+                ...(binding.self !== undefined && { self: binding.self }),
+              }),
+            selfMeta,
+          )
           return formatBinaryResponse(response)
         }
-        return ctx.client.call(binding.path, params, {
-          url: binding.remoteUrl,
-          credential: workerCreds,
-          ...(binding.self !== undefined && { self: binding.self }),
-        })
+        return withSelfHint(
+          () =>
+            ctx.client.call(binding.path, params, {
+              url: binding.remoteUrl,
+              credential: workerCreds,
+              ...(binding.self !== undefined && { self: binding.self }),
+            }),
+          selfMeta,
+        )
       }
-      return ctx.client.call(path, params)
+      return withSelfHint(() => ctx.client.call(expandedPath, params), selfMeta)
     },
   })
 }
@@ -236,10 +292,17 @@ Behavior:
   --dry-run short-circuit (no execution). Remote-bound functions
   auto-mint a worker-scoped credential; --creds overrides it.
 
+Self-reference:
+  @self expands to your nodeId on the active instance (path head or
+  bare param value, e.g. node=@self). --data and stdin payloads are
+  sent verbatim — pre-resolve manually to a literal @<nodeId> there
+  (e.g. via 'astrale describe @self -q', or shell-substituted from the
+  registration record in ~/.astrale/identities.json).
+
 Examples:
   $ astrale call /manager.astrale.ai/class.KernelInstance/list
   $ astrale call /blog.acme.com/class.Author/list limit=10
-  $ astrale call '@abc123::deactivate'
+  $ astrale call '@self::deactivate'
   $ astrale call /dist.astrale.ai/class.Domain/install --creds "$TOKEN" \\
       -d "$(cat spec.json)"
 `,

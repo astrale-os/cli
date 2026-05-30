@@ -10,6 +10,14 @@ import { RegistryModeSchema, validateName, type RegistryMode } from './validatio
 export const RegistrationSchema = z.object({
   iss: z.string(),
   sub: z.string(),
+  // Kernel nodeId for `@self` expansion. Distinct from `sub` because
+  // identities seeded by `distribution.User.init` set `Identity.sub =
+  // 'user:<slug>'` (used for JWT auth) while the graph node id is a
+  // separate UUID (used for `@<id>::method` dispatch). Identities created
+  // via `registerIdentity` have `Identity.sub = String(node.id)`, so both
+  // values coincide — `nodeId` is optional and falls back to `sub` in
+  // resolvers for that case.
+  nodeId: z.string().optional(),
   registeredAt: z.string(),
 })
 

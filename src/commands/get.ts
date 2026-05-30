@@ -1,7 +1,8 @@
 import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 
-import { runKernelCommand } from '../kernel'
+import { expandSelfInPath, runKernelCommand, withSelfHint } from '../kernel'
+import { log } from '../lib/log'
 import { output } from '../lib/output'
 
 type GetOpts = KernelCommandOpts & { long?: boolean }
@@ -9,10 +10,18 @@ type GetOpts = KernelCommandOpts & { long?: boolean }
 const INTERNAL_KEYS = new Set(['__labels', 'classId'])
 
 export async function getCommand(path: string, opts: GetOpts): Promise<void> {
+  let expandedPath: string
+  let meta
+  try {
+    ;({ path: expandedPath, meta } = await expandSelfInPath(path, opts))
+  } catch (e) {
+    log.error(e instanceof Error ? e.message : 'Invalid @self expansion')
+    process.exit(1)
+  }
   await runKernelCommand({
     opts,
-    label: `Node ${path}`,
-    fn: (ctx) => ctx.client.call(`${path}::get`, {}),
+    label: `Node ${expandedPath}`,
+    fn: (ctx) => withSelfHint(() => ctx.client.call(`${expandedPath}::get`, {}), meta),
     format: (result, fmtOpts) => {
       output(opts.long ? result : cleanNode(result), fmtOpts)
     },
