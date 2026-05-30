@@ -203,27 +203,6 @@ describe('resolveSelfNodeId happy paths', () => {
     expect(r).toEqual({ id: 'creds-derived-id' })
   })
 
-  test('registration.nodeId wins over registration.sub when both are set', () => {
-    const ctx: SelfResolverContext = {
-      identity: {
-        name: 'alice',
-        subject: 'alice',
-        createdAt: 'x',
-        registrations: {
-          slug: {
-            iss: 'https://x/',
-            sub: 'user:alice',
-            nodeId: 'node-uuid-real',
-            registeredAt: 'x',
-          },
-        },
-      },
-      instanceSlug: 'slug',
-      instanceSigned: false,
-    }
-    expect(resolveSelfNodeId(ctx)).toEqual({ id: 'node-uuid-real' })
-  })
-
   test('manager identity WITH registrations → uses registration sub (not refused)', () => {
     const ctx: SelfResolverContext = {
       identity: {

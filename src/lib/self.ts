@@ -74,12 +74,9 @@ export function resolveSelfNodeId(ctx: SelfResolverContext): SelfResolution {
     return { reason: 'manager' }
   }
   // 5. Default path: read the registration entry for the resolved slug.
-  // Prefer `nodeId` (set by Phase 2 auto-register against User.init-seeded
-  // identities, where `Identity.sub = 'user:<slug>'` ≠ the graph node id),
-  // falling back to `sub` for entries written by `registerIdentity` where
-  // `sub` IS the node id by construction.
-  const reg = ctx.identity?.registrations?.[ctx.instanceSlug]
-  const id = reg?.nodeId ?? reg?.sub
+  // `sub` IS the node id by construction for entries written by
+  // `registerIdentity` (kernel/runtime/syscalls/identity/index.ts:207).
+  const id = ctx.identity?.registrations?.[ctx.instanceSlug]?.sub
   if (!id) {
     return {
       reason: 'no-registration',

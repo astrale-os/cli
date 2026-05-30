@@ -96,6 +96,12 @@ recreated), the resulting `NotFoundError` carries a hint pointing at
 verbatim JSON, respectively) and there is no `@@self` escape — if you own a
 node literally named `self`, reference it via its full id from `ls -q`.
 
+**Sandbox carve-out.** Inside a Blaxel agent sandbox the canonical form is
+`@"$ASTRALE_COMPUTER_NODE_ID"` instead — the sandbox prompt opts out of
+`@self` for predictability (the env var is always set at boot and avoids the
+registration-lookup path). The CLI shorthand remains valid host-side and in
+any context where a host identity is registered.
+
 ## Instance resolution
 
 Every kernel command picks its target in this order:
