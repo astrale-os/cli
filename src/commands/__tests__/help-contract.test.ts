@@ -47,6 +47,18 @@ describe('help contract — no internal SPEC anchors leak to users', () => {
   })
 })
 
+describe('help contract — IdP/auth surface is registered', () => {
+  test('idp group and auth commands are visible in --help tree', async () => {
+    const program = await buildProgram()
+    const names = allCommands(program).map((command) => command.name())
+
+    expect(names).toContain('idp')
+    expect(names).toContain('add')
+    expect(names).toContain('login')
+    expect(program.helpInformation()).toContain('idp')
+  })
+})
+
 describe('help contract — skill is single-source, not duplicated', () => {
   const canonical = join(cliRoot, 'skill/astrale-cli/SKILL.md')
   // Workspace mirror lives in the superrepo, outside this submodule. Absent

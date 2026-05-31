@@ -11,6 +11,8 @@ export type Paths = {
   managerPid: string
   identities: string
   instances: string
+  idps: string
+  idpSessionsDir: string
   managerCache: string
   tunnels: string
   tunnelsDir: string
@@ -18,6 +20,10 @@ export type Paths = {
   domainsDir: string
   /** Per-domain state dir: `~/.astrale/domains/<slug>/`. */
   domainStateDir: (slug: string) => string
+  /** Per-IdP config dir: `~/.astrale/idps/<name>/`. */
+  idpDir: (name: string) => string
+  /** Per-identity IdP session cache: `~/.astrale/idp-sessions/<name>.json`. */
+  idpSession: (identityName: string) => string
   /** Per-domain `devUp`/`devDown` state file. */
   domainState: (slug: string) => string
   /** Per-domain dev log dir (wrangler.log, tunnel logs…). */
@@ -41,6 +47,8 @@ function resolveHome(home?: string): string {
 export function createPaths(home?: string): Paths {
   const base = resolveHome(home)
   const domainsDir = join(base, 'domains')
+  const idpsDir = join(base, 'idps')
+  const idpSessionsDir = join(base, 'idp-sessions')
   const logsDir = process.env.ASTRALE_LOGS_DIR ?? join(base, 'logs')
   return {
     home: base,
@@ -52,12 +60,16 @@ export function createPaths(home?: string): Paths {
     managerPid: join(base, 'manager.pid'),
     identities: join(base, 'identities.json'),
     instances: join(base, 'instances.json'),
+    idps: join(idpsDir, 'index.json'),
+    idpSessionsDir,
     managerCache: join(base, 'manager-cache.json'),
     tunnels: join(base, 'tunnels.json'),
     tunnelsDir: join(base, 'tunnels'),
     journal: join(logsDir, 'events.ndjson'),
     domainsDir,
     domainStateDir: (slug: string) => join(domainsDir, slug),
+    idpDir: (name: string) => join(idpsDir, name),
+    idpSession: (identityName: string) => join(idpSessionsDir, `${identityName}.json`),
     domainState: (slug: string) => join(domainsDir, slug, 'state.json'),
     domainLogDir: (slug: string) => join(domainsDir, slug, 'logs'),
   }

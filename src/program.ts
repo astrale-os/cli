@@ -125,11 +125,23 @@ export async function buildProgram(): Promise<Command> {
 
   registerGroup(program, {
     name: 'auth',
-    description: 'Astrale cloud authentication (stubbed in v1)',
+    description: 'Authenticate with configured identity providers',
     commands: [
       (await import('./commands/auth/login')).default,
       (await import('./commands/auth/logout')).default,
       (await import('./commands/auth/status')).default,
+    ],
+  })
+
+  registerGroup(program, {
+    name: 'idp',
+    description: 'Manage OpenID Connect identity providers',
+    commands: [
+      (await import('./commands/idp/add')).default,
+      (await import('./commands/idp/list')).default,
+      (await import('./commands/idp/show')).default,
+      (await import('./commands/idp/refresh')).default,
+      (await import('./commands/idp/remove')).default,
     ],
   })
 
@@ -213,7 +225,7 @@ export async function buildProgram(): Promise<Command> {
 Command groups:
   Lifecycle     init, start, stop, restart, status, reset, bootstrap
   Graph         ls, get, call, query, describe, logs, token
-  Management    instance, identity, auth, tunnel
+  Management    instance, identity, auth, idp, tunnel
   Storage       graph list, graph prune, graph rm, graph df
   Server        server build, server logs
   Domains       domain init, domain build, domain deploy, domain check,

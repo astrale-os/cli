@@ -18,6 +18,8 @@ export default {
       const items = Object.entries(store.identities).map(([name, id]) => ({
         name,
         subject: id.subject,
+        source: id.source ?? 'key',
+        idp: id.idp,
         default: name === store.default,
         createdAt: id.createdAt,
       }))
@@ -36,7 +38,9 @@ export default {
       const isDefault = name === store.default
       const marker = isDefault ? chalk.green(' *') : ''
       const subject = identity.subject !== name ? chalk.dim(` (subject: ${identity.subject})`) : ''
-      console.log(`  ${chalk.bold(name)}${subject}${marker}`)
+      const source =
+        (identity.source ?? 'key') === 'idp' ? chalk.dim(` [idp:${identity.idp ?? '?'}]`) : ''
+      console.log(`  ${chalk.bold(name)}${subject}${source}${marker}`)
     }
   },
 } satisfies CommandDefinition

@@ -78,7 +78,7 @@ or `@self` alone) and the head of a `key=value` value (`key=@self::…`,
 (`@self,@other`), and JSON payloads passed via `--data` / stdin are sent
 verbatim — pre-resolve there with `@$(astrale whoami --raw | jq -r .subject)`.
 
-**Refusal modes** — five fail-loud errors, each pointing at a fix:
+**Refusal modes** — six fail-loud errors, each pointing at a fix:
 
 | Refusal | Trigger | Fix |
 |---|---|---|
@@ -87,6 +87,7 @@ verbatim — pre-resolve there with `@$(astrale whoami --raw | jq -r .subject)`.
 | `instance-signed` | Signing as the instance itself (per-instance keypair) | Use `--as <name>` or a literal `@<nodeId>` |
 | `url-no-slug` | `--url` without `-i` — no slug to look up | Add `-i <slug>` or use a bookmark |
 | `creds-no-sub` | `--creds <jwt>` whose `sub` claim is missing | Pass a literal `@<nodeId>` |
+| `idp-no-sub` | IdP-backed identity has no cached JWT with a usable `sub` | Re-run `astrale auth login --name <name>` or pass a literal `@<nodeId>` |
 
 If `@self` expanded to a stale id (e.g. the underlying node was deleted and
 recreated), the resulting `NotFoundError` carries a hint pointing at
@@ -145,17 +146,63 @@ stubbed in v1 (fatal with hint). See `astrale instance --help`.
 
 ## Auth model
 
-- Identity = `(issuer, subject)`. Each identity holds its own ES256 keypair
-  under `~/.astrale/keys/`.
+- Identity = `(issuer, subject)`. Key-backed identities hold ES256 keypairs
+  under `~/.astrale/keys/`; IdP-backed identities hold non-secret identity
+  metadata in `identities.json` and token cache entries under
+  `~/.astrale/idp-sessions/`.
 - The manager (and each child) publishes its JWKS at
   `<issuer>/.well-known/jwks.json`.
 - `--as <name>` signs a fresh JWT (`iss`, `sub`, `aud`) per call; `--creds <jwt>`
   passes a token you already minted (skips `--as` signing).
+- If `--as <name>` names an IdP-backed identity, or the default identity is
+  IdP-backed, kernel commands pass the cached OAuth/OIDC access token instead
+  of signing a local JWT. Expired sessions are refreshed when a refresh token
+  is cached.
 - Whether an unknown `(issuer, subject)` is auto-created depends on the target
   kernel's provisioning policy. The manager defaults to allow-all; a child may
   be stricter.
 
 See `astrale identity --help` for identity/keypair management.
+
+### OIDC / IdP workflow
+
+`astrale idp` manages OpenID Connect providers. The CLI stores discovery
+metadata in `~/.astrale/idps/<name>/metadata.json` and non-secret client
+metadata in `client.json`. Client secrets and WorkOS API keys are never stored;
+store only env var names with `--client-secret-env` / `--workos-api-key-env`.
+
+```bash
+# If WORKOS_CLIENT_ID or VITE_WORKOS_CLIENT_ID is set, this works immediately:
+astrale auth login --idp workos --device
+
+# Or persist the WorkOS profile explicitly:
+astrale idp add workos --workos-authkit --client-id client_...
+
+astrale idp add workos-connect --issuer https://example.authkit.app \
+  --client-id client_... --scope "openid profile email offline_access"
+astrale idp add workos-connect --issuer https://example.authkit.app \
+  --workos-app app_... --workos-api-key-env WORKOS_API_KEY
+astrale idp list
+astrale idp show workos
+astrale idp refresh workos
+```
+
+`astrale auth login` turns an IdP token into a local IdP-backed identity:
+
+```bash
+astrale auth login --idp workos --client-credentials \
+  --client-secret-env WORKOS_CLIENT_SECRET --audience https://api.example.com
+astrale auth status
+astrale call /some.domain/class.Thing/list --as <idp-identity>
+```
+
+WorkOS AuthKit CLI Auth uses `--workos-authkit` and needs only the public
+`client_id`. The `workos` IdP is built in when `WORKOS_CLIENT_ID` or
+`VITE_WORKOS_CLIENT_ID` is set; login or refresh persists it as a built-in IdP.
+The WorkOS API key is only needed for management API operations such as
+`--workos-app`. Authorization-code login is supported with `--code` +
+`--redirect-uri`; there is no automatic browser callback listener yet. `auth
+logout` clears local cached tokens only.
 
 ## Delegation tokens
 

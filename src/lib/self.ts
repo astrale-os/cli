@@ -25,6 +25,8 @@ export type SelfResolverContext = {
   credsJwt?: string
   /** True when `auth.ts` will sign as the instance itself (per-instance keypair, not user identity). */
   instanceSigned: boolean
+  /** `sub` decoded from a cached IdP token for source=idp identities, when available. */
+  idpSubject?: string
 }
 
 export type SelfRefusal =
@@ -33,6 +35,7 @@ export type SelfRefusal =
   | { reason: 'instance-signed'; instanceSlug: string }
   | { reason: 'url-no-slug' }
   | { reason: 'creds-no-sub' }
+  | { reason: 'idp-no-sub'; identityName: string }
 
 export type SelfResolution = { id: string } | SelfRefusal
 
@@ -64,16 +67,23 @@ export function resolveSelfNodeId(ctx: SelfResolverContext): SelfResolution {
   if (ctx.instanceSigned) {
     return { reason: 'instance-signed', instanceSlug: ctx.instanceSlug ?? 'unknown' }
   }
-  // 3. `--url` without `-i`: no slug to look up registration against.
+  // 3. IdP-backed identities ship the provider access token directly. There
+  // is no local registration cache to consult; when the token has a usable
+  // subject, expand `@self` to that subject.
+  if ((ctx.identity?.source ?? 'key') === 'idp') {
+    if (ctx.idpSubject) return { id: ctx.idpSubject }
+    return { reason: 'idp-no-sub', identityName: ctx.identity?.name ?? '(unknown)' }
+  }
+  // 4. `--url` without `-i`: no slug to look up registration against.
   if (!ctx.instanceSlug) return { reason: 'url-no-slug' }
-  // 4. Bootstrap `manager` identity has no graph node by construction.
+  // 5. Bootstrap `manager` identity has no graph node by construction.
   if (
     ctx.identity?.name === 'manager' &&
     (!ctx.identity.registrations || Object.keys(ctx.identity.registrations).length === 0)
   ) {
     return { reason: 'manager' }
   }
-  // 5. Default path: read the registration entry for the resolved slug.
+  // 6. Default path: read the registration entry for the resolved slug.
   // `sub` IS the node id by construction for entries written by
   // `registerIdentity` (kernel/runtime/syscalls/identity/index.ts:207).
   const id = ctx.identity?.registrations?.[ctx.instanceSlug]?.sub
@@ -140,6 +150,11 @@ function refusalMessage(r: SelfRefusal): string {
       return [
         '`@self` not available: the `--creds` JWT has no usable `sub` claim.',
         'Pass a literal `@<nodeId>` instead.',
+      ].join('\n  ')
+    case 'idp-no-sub':
+      return [
+        `\`@self\` not available: IdP identity "${r.identityName}" has no cached token with a usable \`sub\` claim.`,
+        `Run \`astrale auth login --name ${r.identityName}\` again, or pass a literal \`@<nodeId>\`.`,
       ].join('\n  ')
   }
 }

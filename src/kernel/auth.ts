@@ -1,7 +1,8 @@
 import type { AstraleConfig } from '../lib/config'
 
 import { AuthError } from '../errors'
-import { getDefault, getIdentity } from '../lib/identity'
+import { getDefault, getIdentity, type Identity } from '../lib/identity'
+import { isSessionExpired, readIdpSession, refreshSession } from '../lib/idp'
 import { fileExists, keypairPaths, signAs } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
 
@@ -37,12 +38,19 @@ export async function resolveCredential(
     // JWT matches what the kernel published under its issuer store.
     if (opts.as) {
       const identity = await getIdentity(opts.as)
+      if ((identity.source ?? 'key') === 'idp')
+        return await resolveIdpAccessToken(opts.as, identity)
       const registration = instanceSlug ? identity.registrations?.[instanceSlug] : undefined
       return await signAs(identity.subject, KEYS_DIR, {
         issuer: registration?.iss ?? config.issuer,
         subject: registration?.sub,
         audience,
       })
+    }
+
+    const identity = await getDefault()
+    if ((identity.source ?? 'key') === 'idp') {
+      return await resolveIdpAccessToken(identity.name, identity)
     }
 
     // Instance-scoped signing: when targeting a child for which the CLI
@@ -60,7 +68,6 @@ export async function resolveCredential(
 
     // Default: sign as the active local identity against the manager
     // issuer.
-    const identity = await getDefault()
     return await signAs(identity.subject, KEYS_DIR, {
       issuer: config.issuer,
       audience,
@@ -72,4 +79,18 @@ export async function resolveCredential(
       : 'Run `astrale identity create <name>` or `astrale init` to set up keys'
     throw new AuthError(message, hint)
   }
+}
+
+async function resolveIdpAccessToken(identityName: string, identity: Identity): Promise<string> {
+  const session = await readIdpSession(identityName)
+  if (!session) {
+    throw new Error(
+      `No cached IdP session for "${identityName}". Run: astrale auth login --idp ${identity.idp ?? '<idp>'}`,
+    )
+  }
+  if (isSessionExpired(session)) {
+    const refreshed = await refreshSession(identityName, session)
+    return refreshed.access_token
+  }
+  return session.access_token
 }

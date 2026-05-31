@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
+import { deleteIdpSession } from './idp'
 import { persistKeypair, removeKeypair } from './keys'
 import { log } from './log'
 import { IDENTITIES_PATH } from './paths'
@@ -16,10 +17,20 @@ export const RegistrationSchema = z.object({
 export const IdentitySchema = z.object({
   subject: z.string(),
   createdAt: z.string(),
+  /** `key` identities sign local JWTs; `idp` identities reuse OAuth/OIDC access tokens. */
+  source: z.enum(['key', 'idp']).optional(),
   // `local` = machine-only, `remote` = mirrored via astrale cloud (§2.7).
   mode: RegistryModeSchema.optional(),
   /** JWK thumbprint of the identity keypair. Optional for legacy entries. */
   kid: z.string().optional(),
+  /** IdP registry name for source=idp identities. */
+  idp: z.string().optional(),
+  /** OIDC issuer for source=idp identities. */
+  issuer: z.string().url().optional(),
+  /** Optional preferred audience used during IdP login/refresh flows. */
+  audience: z.string().optional(),
+  /** Non-secret claims snapshot from the last successful IdP login. */
+  claims: z.record(z.string(), z.unknown()).optional(),
   /**
    * Cache of `(iss, sub)` pairs returned by `Identity::registerIdentity`,
    * keyed by instance slug. Populated by `astrale identity register`; consulted
@@ -43,7 +54,12 @@ function seed(): IdentityStore {
   return {
     default: 'manager',
     identities: {
-      manager: { subject: 'manager', createdAt: new Date().toISOString(), mode: 'local' },
+      manager: {
+        subject: 'manager',
+        createdAt: new Date().toISOString(),
+        source: 'key',
+        mode: 'local',
+      },
     },
   }
 }
@@ -89,6 +105,7 @@ export async function createIdentity(
   const identity: Identity = {
     subject,
     createdAt: new Date().toISOString(),
+    source: 'key',
     mode: opts.mode ?? 'local',
     kid,
   }
@@ -108,7 +125,11 @@ export async function deleteIdentity(name: string): Promise<void> {
       `Cannot delete the default identity "${name}". Switch default first with: astrale identity use <other>`,
     )
   }
-  await removeKeypair(entry.subject)
+  if ((entry.source ?? 'key') === 'idp') {
+    await deleteIdpSession(name)
+  } else {
+    await removeKeypair(entry.subject)
+  }
   delete store.identities[name]
   await writeIdentities(store)
 }
@@ -139,6 +160,41 @@ export async function getIdentity(name: string): Promise<Identity> {
   if (!identity) {
     throw new Error(`Identity "${name}" not found. Run: astrale identity create ${name}`)
   }
+  return identity
+}
+
+export async function upsertIdpIdentity(
+  name: string,
+  opts: {
+    subject: string
+    idp: string
+    issuer: string
+    audience?: string
+    claims?: Record<string, unknown>
+    use?: boolean
+  },
+): Promise<Identity> {
+  validateName(name, 'Identity')
+  validateName(opts.idp, 'IdP')
+  const store = await readIdentities()
+  const existing = store.identities[name]
+  if (existing && (existing.source ?? 'key') !== 'idp') {
+    throw new Error(`Identity "${name}" already exists and is key-backed`)
+  }
+  const identity: Identity = {
+    subject: opts.subject,
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    source: 'idp',
+    mode: 'remote',
+    idp: opts.idp,
+    issuer: opts.issuer,
+    audience: opts.audience,
+    claims: opts.claims,
+    registrations: existing?.registrations,
+  }
+  store.identities[name] = identity
+  if (opts.use !== false) store.default = name
+  await writeIdentities(store)
   return identity
 }
 

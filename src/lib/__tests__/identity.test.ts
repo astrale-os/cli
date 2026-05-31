@@ -26,6 +26,27 @@ describe('IdentityStoreSchema', () => {
     expect(result.identities.user.subject).toBe('user-principal')
   })
 
+  test('parses IdP-backed identities without key metadata', () => {
+    const result = IdentityStoreSchema.parse({
+      default: 'alice',
+      identities: {
+        alice: {
+          source: 'idp',
+          subject: 'user_123',
+          idp: 'workos',
+          issuer: 'https://example.authkit.app',
+          audience: 'https://api.example.com',
+          createdAt: '2024-01-01T00:00:00Z',
+          claims: { email: 'alice@example.com' },
+        },
+      },
+    })
+
+    expect(result.identities.alice.source).toBe('idp')
+    expect(result.identities.alice.kid).toBeUndefined()
+    expect(result.identities.alice.idp).toBe('workos')
+  })
+
   test('rejects missing default field', () => {
     expect(() =>
       IdentityStoreSchema.parse({

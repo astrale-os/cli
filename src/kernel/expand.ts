@@ -9,6 +9,7 @@ import type { KernelCommandOpts } from './types'
  */
 import { readConfig } from '../lib/config'
 import { getDefault, getIdentity } from '../lib/identity'
+import { decodeTokenClaims, readIdpSession } from '../lib/idp'
 import { getActive, resolveInstance } from '../lib/instance'
 import { fileExists, keypairPaths } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
@@ -80,7 +81,17 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
     }
   }
 
-  return { identity, instanceSlug: slug, credsJwt: opts.creds, instanceSigned }
+  let idpSubject: string | undefined
+  if (identity && (identity.source ?? 'key') === 'idp') {
+    instanceSigned = false
+    const session = await readIdpSession(identity.name)
+    const claims = decodeTokenClaims(session?.id_token ?? session?.access_token)
+    if (typeof claims?.sub === 'string' && claims.sub.trim().length > 0) {
+      idpSubject = claims.sub
+    }
+  }
+
+  return { identity, instanceSlug: slug, credsJwt: opts.creds, instanceSigned, idpSubject }
 }
 
 /**
