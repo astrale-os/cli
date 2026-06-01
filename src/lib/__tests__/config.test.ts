@@ -5,38 +5,27 @@ import { AstraleConfigSchema } from '../config'
 describe('AstraleConfigSchema', () => {
   test('parses valid config', () => {
     const result = AstraleConfigSchema.parse({
-      managerPort: 5000,
-      falkorPort: 7000,
-      graphName: 'test-graph',
       issuer: 'https://test.astrale.ai',
     })
-    expect(result.managerPort).toBe(5000)
-    expect(result.graphName).toBe('test-graph')
+    expect(result.issuer).toBe('https://test.astrale.ai')
   })
 
   test('applies defaults for empty object', () => {
     const result = AstraleConfigSchema.parse({})
-    expect(result.managerPort).toBe(4400)
-    expect(result.falkorPort).toBe(6379)
-    expect(result.graphName).toBe('astrale-manager')
-    expect(result.issuer).toBe('http://localhost:4400/mngt')
-  })
-
-  test('rejects invalid port type', () => {
-    expect(() => AstraleConfigSchema.parse({ managerPort: 'not-a-number' })).toThrow()
-  })
-
-  test('rejects negative port', () => {
-    expect(() => AstraleConfigSchema.parse({ managerPort: -1 })).toThrow()
+    expect(result.issuer).toBe('https://identity.astrale.ai')
   })
 
   test('rejects non-url issuer', () => {
     expect(() => AstraleConfigSchema.parse({ issuer: 'not-a-url' })).toThrow()
   })
 
-  test('allows partial config with defaults filled in', () => {
-    const result = AstraleConfigSchema.parse({ managerPort: 9000 })
-    expect(result.managerPort).toBe(9000)
-    expect(result.falkorPort).toBe(6379)
+  test('strips removed local-runtime config keys', () => {
+    const result = AstraleConfigSchema.parse({
+      issuer: 'https://test.astrale.ai',
+      managerPort: 9000,
+      removedRuntimeKey: true,
+    })
+    expect('managerPort' in result).toBe(false)
+    expect('removedRuntimeKey' in result).toBe(false)
   })
 })

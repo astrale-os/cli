@@ -1,190 +1,91 @@
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
+import type { KernelCommandOpts } from '../../kernel'
 
-import { readConfig } from '../../lib/config'
-import {
-  getManagerInstances,
-  managerUrl,
-  readInstances,
-  type InstanceEntry,
-  type InstanceKind,
-  type ManagerInstance,
-} from '../../lib/instance'
-import { log } from '../../lib/log'
-import { RAW_OUTPUT_OPTIONS, isRawOutput, output, type RawOutputOpts } from '../../lib/output'
+import { withKernelClient } from '../../kernel/client'
+import { ADMIN_KERNEL_INSTANCE, type AdminKernelInstanceInfo } from '../../lib/admin-instance'
+import { readInstances } from '../../lib/instance'
+import { fatal, log } from '../../lib/log'
+import { isRawOutput, output, type RawOutputOpts } from '../../lib/output'
 
-type ListFilters = {
-  local?: boolean
-  managed?: boolean
-  bookmarked?: boolean
-  bookmarkedLocal?: boolean
-  bookmarkedCloud?: boolean
-}
-
-function hasAnyFilter(filters: ListFilters): boolean {
-  return !!(
-    filters.local ||
-    filters.managed ||
-    filters.bookmarked ||
-    filters.bookmarkedLocal ||
-    filters.bookmarkedCloud
-  )
-}
-
-function matchesFilter(
-  kind: InstanceKind,
-  mode: string | undefined,
-  filters: ListFilters,
-): boolean {
-  if (filters.local && (kind === 'manager' || kind === 'local-child')) return true
-  if (filters.managed && kind === 'managed-cloud') return true
-  if (filters.bookmarked && kind === 'bookmark') return true
-  if (filters.bookmarkedLocal && kind === 'bookmark' && mode === 'local') return true
-  if (filters.bookmarkedCloud && kind === 'bookmark' && mode === 'remote') return true
-  return false
-}
-
-function inferKind(entry: InstanceEntry, key: string): InstanceKind {
-  if (entry.kind) return entry.kind
-  if (key === 'manager') return 'manager'
-  return entry.url ? 'bookmark' : 'local-child'
-}
+type ListOpts = KernelCommandOpts &
+  RawOutputOpts & {
+    bookmarked?: boolean
+    adminOnly?: boolean
+  }
 
 export default {
   name: 'list',
-  description: 'List all registered instances',
+  description: 'List admin-managed instances and local bookmarks',
   options: [
-    { flags: '--local', description: 'Manager + local children only' },
-    { flags: '--managed', description: 'Astrale cloud managed instances only' },
-    { flags: '--bookmarked', description: 'All bookmarks (local + cloud)' },
-    { flags: '--bookmarked-local', description: 'Bookmarks stored on this machine only' },
-    { flags: '--bookmarked-cloud', description: 'Bookmarks synced via astrale cloud' },
-    ...RAW_OUTPUT_OPTIONS,
+    { flags: '--bookmarked', description: 'Only show locally bookmarked kernel connections' },
+    { flags: '--admin-only', description: 'Only show instances returned by the admin kernel' },
   ],
-  action: async (opts: RawOutputOpts & ListFilters) => {
-    const isRaw = isRawOutput(opts)
-    let discoveryError: Error | undefined
-    const [config, store, discovered] = await Promise.all([
-      readConfig(),
-      readInstances(),
-      getManagerInstances().catch((e) => {
-        discoveryError = e instanceof Error ? e : new Error(String(e))
-        return [] as ManagerInstance[]
-      }),
-    ])
+  action: async (opts: ListOpts) => {
+    try {
+      const store = await readInstances()
+      const bookmarks = Object.entries(store.instances).map(([name, entry]) => ({
+        name,
+        url: entry.url ?? null,
+        issuer: entry.issuer ?? null,
+        active: name === store.active,
+        defaultIdentity: entry.defaultIdentity ?? null,
+        createdAt: entry.createdAt ?? null,
+      }))
 
-    if (discoveryError && !isRaw) {
-      log.warn(`Could not discover instances from manager: ${discoveryError.message}`)
-    }
-
-    const filtering = hasAnyFilter(opts)
-    const matches = (kind: InstanceKind, mode: string | undefined) =>
-      !filtering || matchesFilter(kind, mode, opts)
-
-    type Row = {
-      key: string
-      label?: string
-      url?: string
-      issuer?: string
-      status?: string
-      kind: InstanceKind
-      mode?: string
-      source: 'store' | 'discovered'
-    }
-    const merged = new Map<string, Row>()
-
-    for (const [key, entry] of Object.entries(store.instances)) {
-      const kind = inferKind(entry, key)
-      if (!matches(kind, entry.mode)) continue
-      // Per-kind URL provenance:
-      //  - bookmark: entry.url (source of truth for remotes)
-      //  - manager: derived from config (the local manager is always us)
-      //  - local-child: merged from the discovered snapshot below
-      let url: string | undefined
-      let issuer: string | undefined
-      if (kind === 'bookmark') {
-        url = entry.url
-        issuer = entry.issuer
-      } else if (kind === 'manager') {
-        url = managerUrl(config)
-        issuer = config.issuer
+      let managed: AdminKernelInstanceInfo[] = []
+      if (!opts.bookmarked) {
+        managed = await withKernelClient(
+          opts,
+          async (ctx) =>
+            (await ctx.client.call(
+              `${ADMIN_KERNEL_INSTANCE}/list`,
+              {},
+            )) as AdminKernelInstanceInfo[],
+        )
       }
-      merged.set(key, {
-        key,
-        label: entry.name,
-        url,
-        issuer,
-        kind,
-        mode: entry.mode,
-        source: 'store',
-      })
-    }
 
-    for (const inst of discovered) {
-      const existing = merged.get(inst.id)
-      if (existing) {
-        existing.status = inst.status ?? existing.status
-        existing.label ??= inst.label
-        existing.url ??= inst.url
-        existing.issuer ??= inst.issuer
-      } else if (matches('local-child', undefined)) {
-        // Kernel-side instance not yet bookmarked locally (e.g., registered
-        // directly via syscall). Surface it so the user can
-        // `astrale instance use` it.
-        merged.set(inst.id, {
-          key: inst.id,
-          label: inst.label,
-          url: inst.url,
-          issuer: inst.issuer,
-          status: inst.status ?? 'unknown',
-          kind: 'local-child',
-          source: 'discovered',
-        })
+      if (isRawOutput(opts)) {
+        output(
+          {
+            active: store.active || null,
+            ...(opts.adminOnly ? {} : { bookmarks }),
+            ...(opts.bookmarked ? {} : { instances: managed }),
+          },
+          opts,
+        )
+        return
       }
-    }
 
-    // Orphan detection: local-child entries the manager no longer knows.
-    // The manager is source of truth — flag so the user can clean up.
-    if (!discoveryError) {
-      for (const row of merged.values()) {
-        if (row.kind === 'local-child' && row.source === 'store' && !row.url) {
-          row.status = 'orphan-local'
+      if (!opts.bookmarked) {
+        for (const item of managed) {
+          const status =
+            item.status === 'ready'
+              ? chalk.green(item.status)
+              : item.status === 'failed'
+                ? chalk.red(item.status)
+                : chalk.yellow(item.status)
+          console.log(`${chalk.bold(item.id)} ${chalk.dim(`<admin-managed>`)} [${status}]`)
+          log.dim(`  issuer: ${item.issuer}`)
+          if (item.error) log.dim(`  error: ${item.error}`)
         }
       }
-    }
 
-    if (isRaw) {
-      const items = Array.from(merged.values()).map((info) => ({
-        name: info.key,
-        label: info.label ?? null,
-        url: info.url ?? null,
-        issuer: info.issuer ?? null,
-        kind: info.kind,
-        mode: info.mode ?? null,
-        status: info.status ?? 'unknown',
-        active: info.key === store.active,
-      }))
-      output({ active: store.active, instances: items }, opts)
-      return
-    }
+      if (!opts.adminOnly) {
+        for (const item of bookmarks) {
+          const marker = item.active ? chalk.green(' *') : ''
+          console.log(
+            `${chalk.bold(item.name)} ${chalk.dim('<bookmark>')} ${chalk.dim(String(item.url))}${marker}`,
+          )
+        }
+      }
 
-    if (merged.size === 0) {
-      log.dim('  No instances matching filters. Run: astrale instance bookmark <name> --url <url>')
-      return
-    }
-
-    for (const info of merged.values()) {
-      const isActive = info.key === store.active
-      const marker = isActive ? chalk.green(' *') : ''
-      const status = info.status ? chalk.dim(` [${info.status}]`) : ''
-      const kindTag = chalk.dim(` <${info.kind}>`)
-      const detail = info.url ? chalk.dim(` (${info.url})`) : chalk.dim(' (local)')
-      // §4.7: display as "<label> (<slug>)" when both exist.
-      const header = info.label
-        ? `${chalk.bold(info.label)} ${chalk.dim(`(${info.key})`)}`
-        : chalk.bold(info.key)
-      console.log(`  ${header}${detail}${kindTag}${status}${marker}`)
+      if ((opts.bookmarked || managed.length === 0) && bookmarks.length === 0) {
+        log.dim('  No bookmarked instances. Run: astrale instance bookmark <name> --url <url>')
+      }
+    } catch (e) {
+      fatal(e)
     }
   },
 } satisfies CommandDefinition

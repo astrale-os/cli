@@ -1,42 +1,44 @@
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
+import type { KernelCommandOpts } from '../../kernel'
 
-import { readConfig } from '../../lib/config'
-import { readInstances, resolveInstance } from '../../lib/instance'
+import { withKernelClient } from '../../kernel/client'
+import { ADMIN_KERNEL_INSTANCE, type AdminKernelInstanceInfo } from '../../lib/admin-instance'
 import { fatal, log } from '../../lib/log'
-import { checkIssuerReachability } from '../../lib/meta'
-import { RAW_OUTPUT_OPTIONS, isRawOutput, output, type RawOutputOpts } from '../../lib/output'
+import { isRawOutput, output, type RawOutputOpts } from '../../lib/output'
+
+type StatusOpts = KernelCommandOpts & RawOutputOpts
 
 export default {
   name: 'status',
-  description: 'Check a single instance: OIDC discovery + JWKS reachable',
-  arguments: [{ name: 'name', description: 'Instance name (slug or name)', required: false }],
-  options: [...RAW_OUTPUT_OPTIONS],
-  action: async (name: string | undefined, opts: RawOutputOpts) => {
+  description: 'Show admin instance status',
+  arguments: [{ name: 'id', description: 'Instance id', required: true }],
+  action: async (id: string, opts: StatusOpts) => {
     try {
-      const config = await readConfig()
-      const target = name ?? (await readInstances(config)).active
-      if (!target) fatal(new Error('No active instance. Run: astrale instance use <name>'))
-
-      const resolved = await resolveInstance(target, config)
-      const { issuer, keys } = await checkIssuerReachability(resolved.url, resolved.issuer)
-
+      const result = await withKernelClient(
+        opts,
+        async (ctx) =>
+          (await ctx.client.call(`${ADMIN_KERNEL_INSTANCE}/info`, {
+            id,
+          })) as AdminKernelInstanceInfo,
+      )
       if (isRawOutput(opts)) {
-        output(
-          {
-            name: resolved.name,
-            url: resolved.url,
-            issuer,
-            keys: keys.map((k) => ({ kid: k.kid })),
-          },
-          opts,
-        )
+        output(result, opts)
         return
       }
-      console.log(`${chalk.bold(resolved.name)} (${resolved.url})`)
-      log.dim(`  iss=${issuer} keys=${keys.length}`)
-      log.success('OIDC discovery + JWKS reachable')
+      const status =
+        result.status === 'ready'
+          ? chalk.green(result.status)
+          : result.status === 'failed'
+            ? chalk.red(result.status)
+            : chalk.yellow(result.status)
+      console.log(`${chalk.bold(result.id)} [${status}]`)
+      log.dim(`  issuer: ${result.issuer}`)
+      log.dim(`  owner: ${result.ownerUserId}`)
+      log.dim(`  distribution: ${result.distributionInstalled ? 'installed' : 'missing'}`)
+      log.dim(`  user: ${result.userSeeded ? 'seeded' : 'not seeded'}`)
+      if (result.error) log.dim(`  error: ${result.error}`)
     } catch (e) {
       fatal(e)
     }

@@ -80,7 +80,8 @@ export function formatKernelError(
       if (isRaw) writeRaw({ error: 'AUTH_ERROR', reason, message: error.message })
       else {
         log.error(`Authentication failed: ${error.message}`)
-        if (reason === 'missing') log.dim('  No credential was sent. Run: astrale init')
+        if (reason === 'missing')
+          log.dim('  No credential was sent. Run: astrale identity create <name>')
         else if (reason === 'invalid')
           log.dim('  Credential is invalid — check issuer/keypair. Try: astrale identity whoami')
         else if (reason === 'expired') log.dim('  Credential expired — sign a fresh one')

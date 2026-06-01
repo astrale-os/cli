@@ -5,15 +5,8 @@ import { InstanceStoreSchema, assertNoCollision, resolveInstanceKey } from '../i
 import { validateSlug } from '../validation'
 
 const baseStore = InstanceStoreSchema.parse({
-  active: 'manager',
+  active: 'staging',
   instances: {
-    manager: {
-      url: 'http://localhost:4400/mngt',
-      createdAt: '2024-01-01T00:00:00Z',
-      slug: 'manager',
-      kind: 'manager',
-      mode: 'local',
-    },
     staging: {
       url: 'https://staging.example.com',
       createdAt: '2024-02-01T00:00:00Z',
@@ -23,10 +16,11 @@ const baseStore = InstanceStoreSchema.parse({
       mode: 'remote',
     },
     localdev: {
+      url: 'https://localdev.example.com',
       createdAt: '2024-02-02T00:00:00Z',
       slug: 'localdev',
-      kind: 'local-child',
-      mode: 'local',
+      kind: 'bookmark',
+      mode: 'remote',
     },
   },
 })

@@ -27,7 +27,7 @@ export async function callCommand(
 ): Promise<void> {
   // ── Expand `@self` in path + raw param strings ──────────
   // Local resolution: no kernel round-trip. Throws a typed SelfRefusalError
-  // (e.g. bootstrap `manager`, no registration, instance-signed) which we
+  // (e.g. no registration, instance-signed) which we
   // surface as a fatal CLI error. Runs BEFORE `--describe` so users get the
   // typed refusal instead of a generic NotFoundError from the kernel.
   let expandedPath = path

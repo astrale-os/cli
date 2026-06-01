@@ -1,4 +1,0 @@
-dist-client/
-node_modules/
-.wrangler/
-.dev.vars

@@ -5,16 +5,16 @@ import { InstanceStoreSchema } from '../instance'
 describe('InstanceStoreSchema', () => {
   test('parses valid store with url', () => {
     const result = InstanceStoreSchema.parse({
-      active: 'manager',
+      active: 'prod',
       instances: {
-        manager: { url: 'http://localhost:4400/mngt', createdAt: '2024-01-01T00:00:00Z' },
+        prod: { url: 'https://prod.example.com', createdAt: '2024-01-01T00:00:00Z' },
       },
     })
-    expect(result.active).toBe('manager')
-    expect(result.instances.manager.url).toBe('http://localhost:4400/mngt')
+    expect(result.active).toBe('prod')
+    expect(result.instances.prod.url).toBe('https://prod.example.com')
   })
 
-  test('parses local instance without url', () => {
+  test('parses legacy instance without url for migration compatibility', () => {
     const result = InstanceStoreSchema.parse({
       active: 'dev',
       instances: {
@@ -28,8 +28,8 @@ describe('InstanceStoreSchema', () => {
     const result = InstanceStoreSchema.parse({
       active: 'prod',
       instances: {
-        local: { createdAt: '2024-01-01T00:00:00Z' },
-        prod: { url: 'http://prod:4400/mngt', createdAt: '2024-06-01T00:00:00Z' },
+        local: { url: 'https://local.example.com', createdAt: '2024-01-01T00:00:00Z' },
+        prod: { url: 'https://prod.example.com', createdAt: '2024-06-01T00:00:00Z' },
       },
     })
     expect(Object.keys(result.instances)).toHaveLength(2)
@@ -45,8 +45,8 @@ describe('InstanceStoreSchema', () => {
 
   test('accepts instance without createdAt (optional at schema level)', () => {
     // `createdAt` is intentionally optional on InstanceEntrySchema: only
-    // `bookmark` entries persist it; `manager` / `local-child` derive it
-    // live and omit it from instances.json (see lib/instance.ts).
+    // `createdAt` is metadata; the connection URL is the only required
+    // field for a usable bookmark.
     const result = InstanceStoreSchema.parse({
       active: 'm',
       instances: { m: { url: 'http://test' } },

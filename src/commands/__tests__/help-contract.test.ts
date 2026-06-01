@@ -55,7 +55,32 @@ describe('help contract — IdP/auth surface is registered', () => {
     expect(names).toContain('idp')
     expect(names).toContain('add')
     expect(names).toContain('login')
+    expect(names).toContain('token')
     expect(program.helpInformation()).toContain('idp')
+  })
+})
+
+describe('help contract — connect-only command surface', () => {
+  test('runtime management commands are not registered', async () => {
+    const program = await buildProgram()
+    const names = allCommands(program).map((command) => command.name())
+
+    for (const removed of [
+      'init',
+      'start',
+      'stop',
+      'restart',
+      'reset',
+      'bootstrap',
+      'logs',
+      'tunnel',
+      'graph',
+      'server',
+      'domain',
+      'env',
+    ]) {
+      expect(names).not.toContain(removed)
+    }
   })
 })
 

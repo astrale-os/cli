@@ -19,7 +19,7 @@ export async function buildProgram(): Promise<Command> {
 
   program
     .name('astrale')
-    .description('Astrale system CLI — manage your local Astrale installation')
+    .description('Astrale CLI — connect to existing Astrale kernels')
     // Single source of truth = package.json (bumped by release-please together
     // with .release-please-manifest.json). Never hand-write a version literal.
     .version(pkg.version)
@@ -56,19 +56,6 @@ export async function buildProgram(): Promise<Command> {
     options: [...(def.options ?? []), ...kernelOptions],
   })
 
-  // ── Lifecycle ──────────────────────────────────────────────────
-  registerCommand(program, (await import('./commands/init')).default)
-  registerCommand(program, (await import('./commands/start')).default)
-  registerCommand(program, (await import('./commands/stop')).default)
-  registerCommand(program, (await import('./commands/restart')).default)
-  registerCommand(program, (await import('./commands/status')).default)
-  registerCommand(program, (await import('./commands/reset')).default)
-  registerCommand(program, (await import('./commands/deploy')).default)
-  // Manager-only, like `status` — deliberately NOT withKernelOptions: bootstrap
-  // must hard-target the manager, so -i/--instance/--url are omitted (a foot-gun
-  // here — they would let it silently mis-target a child).
-  registerCommand(program, (await import('./commands/bootstrap')).default)
-
   // Verbatim alias of `identity whoami` — defer to the command-definition
   // module so options stay in sync.
   const whoamiMod = await import('./commands/identity/whoami')
@@ -86,20 +73,17 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, withKernelOptions((await import('./commands/ls')).default))
   registerCommand(program, withKernelOptions((await import('./commands/describe')).default))
   registerCommand(program, withKernelOptions((await import('./commands/query')).default))
-  // `logs` reads ~/.astrale/logs/*.ndjson directly (not the kernel client) and
-  // carries its own --instance — deliberately NOT withKernelOptions.
-  registerCommand(program, (await import('./commands/logs')).default)
 
   registerGroup(program, {
     name: 'instance',
-    description: 'Manage kernel instances (local children + remote bookmarks)',
+    description: 'Manage admin-provisioned instances and local bookmarks',
     commands: [
-      (await import('./commands/instance/list')).default,
+      withKernelOptions((await import('./commands/instance/list')).default),
       (await import('./commands/instance/bookmark')).default,
       (await import('./commands/instance/forget')).default,
-      (await import('./commands/instance/create')).default,
-      (await import('./commands/instance/delete')).default,
-      (await import('./commands/instance/status')).default,
+      withKernelOptions((await import('./commands/instance/create')).default),
+      withKernelOptions((await import('./commands/instance/delete')).default),
+      withKernelOptions((await import('./commands/instance/status')).default),
       (await import('./commands/instance/active')).default,
       (await import('./commands/instance/use')).default,
       withKernelOptions((await import('./commands/instance/install')).default),
@@ -128,6 +112,7 @@ export async function buildProgram(): Promise<Command> {
     description: 'Authenticate with configured identity providers',
     commands: [
       (await import('./commands/auth/login')).default,
+      (await import('./commands/auth/token')).default,
       (await import('./commands/auth/logout')).default,
       (await import('./commands/auth/status')).default,
     ],
@@ -145,92 +130,12 @@ export async function buildProgram(): Promise<Command> {
     ],
   })
 
-  registerGroup(program, {
-    name: 'tunnel',
-    description: 'Machine-level tunnels (hostname → local service)',
-    commands: [
-      (await import('./commands/tunnel/setup')).default,
-      (await import('./commands/tunnel/adopt')).default,
-      (await import('./commands/tunnel/start')).default,
-      (await import('./commands/tunnel/status')).default,
-      (await import('./commands/tunnel/list')).default,
-      (await import('./commands/tunnel/stop')).default,
-    ],
-    subgroups: [
-      {
-        name: 'ingress',
-        description: 'Manage hostname → local service routing for a tunnel',
-        commands: [
-          (await import('./commands/tunnel/ingress/add')).default,
-          (await import('./commands/tunnel/ingress/list')).default,
-        ],
-      },
-    ],
-  })
-
-  registerGroup(program, {
-    name: 'graph',
-    description: 'Manage FalkorDB graphs',
-    commands: [
-      (await import('./commands/graph/list')).default,
-      (await import('./commands/graph/prune')).default,
-      (await import('./commands/graph/rm')).default,
-      (await import('./commands/graph/df')).default,
-    ],
-  })
-
-  registerGroup(program, {
-    name: 'server',
-    description: 'Manager server lifecycle (docker image + container logs)',
-    commands: [
-      (await import('./commands/server/build')).default,
-      (await import('./commands/server/logs')).default,
-    ],
-  })
-
-  registerGroup(program, {
-    name: 'domain',
-    description: 'Manage kernel domains (lifecycle: init/dev/build/deploy)',
-    commands: [
-      (await import('./commands/domain/init')).default,
-      (await import('./commands/domain/build')).default,
-      (await import('./commands/domain/deploy')).default,
-      (await import('./commands/domain/check')).default,
-      (await import('./commands/domain/logs')).default,
-      (await import('./commands/domain/instance-prepare')).default,
-    ],
-    subgroups: [
-      {
-        name: 'dev',
-        description:
-          'Local dev infrastructure lifecycle (replaces `pnpm infra:prepare`/`infra:down`)',
-        commands: [
-          (await import('./commands/domain/dev/up')).default,
-          (await import('./commands/domain/dev/down')).default,
-          (await import('./commands/domain/dev/status')).default,
-        ],
-      },
-    ],
-  })
-
-  registerGroup(program, {
-    name: 'env',
-    description: 'Domain env hygiene (.env.example, dev-vars, topology & secret leaks)',
-    commands: [(await import('./commands/env/check')).default],
-  })
-
   program.addHelpText(
     'after',
     `
 Command groups:
-  Lifecycle     init, start, stop, restart, status, reset, bootstrap
-  Graph         ls, get, call, query, describe, logs, token
-  Management    instance, identity, auth, idp, tunnel
-  Storage       graph list, graph prune, graph rm, graph df
-  Server        server build, server logs
-  Domains       domain init, domain build, domain deploy, domain check,
-                domain logs, domain instance-prepare, domain dev (up|down|status)
-  Env           env check
+  Kernel        ls, get, call, query, describe, token
+  Management    instance, identity, auth, idp
 
 Path syntax:
   /domain                        Domain node
@@ -243,13 +148,11 @@ Path syntax:
 
 Examples:
   $ astrale ls /
-  $ astrale start && astrale bootstrap
-  $ astrale call /manager.astrale.ai/class.KernelInstance/list
+  $ astrale call /admin.astrale.ai/class.AdminKernelInstance/list -i admin
   $ astrale instance bookmark staging --url https://kernel.example.com
-  $ astrale instance create my-app --local --install ./dist/spec.json
+  $ astrale instance create my-app -i admin --owner-id user_123
   $ astrale instance status staging
   $ astrale token --audience dist.astrale.ai --ttl 3600
-  $ astrale logs --topic 'op:*:failed' -n 10
   $ astrale query 'MATCH (n) RETURN n LIMIT 5'
 `,
   )

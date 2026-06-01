@@ -1,5 +1,3 @@
-import type { AuthBinding } from '@astrale-os/kernel-host/presets'
-
 import { generateKeyPair, exportJWK, importJWK, SignJWT, type JWK } from 'jose'
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile, mkdir, rename, access, unlink } from 'node:fs/promises'
@@ -17,6 +15,11 @@ type AuthOptions = {
   issuer?: string
   subject?: string
   kid?: string
+}
+
+export type AuthBinding = {
+  credential: string
+  publicKey: { jwk: JWK }
 }
 
 export type KeypairPaths = {

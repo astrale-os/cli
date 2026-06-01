@@ -254,11 +254,11 @@ astrale call @__system__::mintDelegationCredential \
 - **managed-cloud** create/auth is stubbed in v1.
 
 Prefer `astrale instance create --local <slug>` over hand-rolling
-`KernelInstance/{register,boot,info,stop,reboot,delete}` calls — it registers,
-boots, checks JWKS, stores the bookmark, and optionally installs a domain. By
-default `create --local` **installs the builtin distribution domain** (users,
-desktops, views, compute) on the new instance; pass `--no-install-builtins`
-for a bare instance (ref: `cli/src/commands/instance/create.ts`).
+`KernelInstance/{register,boot,info,stop,reboot,delete}` calls. The local CLI
+path is raw host lifecycle only: it registers and boots a child through the
+manager domain, records the local registry entry, and leaves admin,
+distribution, users, and product records to separate domain/admin workflows
+(ref: `cli/src/commands/instance/create.ts`).
 
 ## Manager lifecycle (docker-mode vs host-mode)
 

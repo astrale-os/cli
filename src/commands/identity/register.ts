@@ -6,12 +6,10 @@ import type { KernelCommandOpts } from '../../kernel'
 
 import { runKernelCommand } from '../../kernel'
 import { KERNEL_PASSTHROUGH_OPTIONS } from '../../kernel/options'
-import { resolveBuiltinDomain } from '../../lib/builtin-domains'
 import { getIdentity, setRegistration } from '../../lib/identity'
 import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
-import { extractDomainSlug } from '../../lib/spec'
 
 const KERNEL_NODE_CREATE = '/kernel.astrale.ai/interface.Node/createNode'
 
@@ -28,17 +26,8 @@ async function readJwk(path: string): Promise<JWK> {
   return JSON.parse(raw) as JWK
 }
 
-async function defaultClassPath(): Promise<string> {
-  // Default to the distribution domain's User class — distribution is
-  // installed by `astrale instance create` unless `--distroless`. Resolve
-  // the origin from the builtin spec so we follow the actual install
-  // (dist.localhost in dev, dist.astrale.ai canonically) rather than
-  // hard-coding either.
-  const builtin = await resolveBuiltinDomain('distribution')
-  const raw = await readFile(builtin.specPath, 'utf-8')
-  const spec = JSON.parse(raw) as { nodes?: unknown[] }
-  const origin = extractDomainSlug(spec.nodes ?? [])
-  return origin ? `/:${origin}:class.User` : '/:dist.localhost:class.User'
+function defaultClassPath(): string {
+  return '/:dist.astrale.ai:class.User'
 }
 
 async function mintBootstrapJwt(privateJwk: JWK): Promise<string> {
@@ -64,7 +53,7 @@ export default {
     {
       flags: '--class <classPath>',
       description:
-        'Class path of the identity node to create (default: /:dist.<origin>:class.User from the active distribution install)',
+        'Class path of the identity node to create (default: /:dist.<origin>:class.User when distribution is installed)',
     },
     {
       flags: '--path <nodePath>',
@@ -85,14 +74,14 @@ export default {
       }
       const privateJwk = await readJwk(privatePath)
       const publicJwk = await readJwk(publicPath)
-      const classPath = opts.class ?? (await defaultClassPath())
+      const classPath = opts.class ?? defaultClassPath()
       const nodePath = opts.path ?? `/workspace/users/${name}`
 
       await runKernelCommand({
         opts,
         label: `Register "${name}"`,
         fn: async (ctx) => {
-          const instanceSlug = opts.instance ?? 'manager'
+          const instanceSlug = opts.instance ?? opts.url ?? 'default'
           const existing = identity.registrations?.[instanceSlug]
           if (existing) {
             log.warn(`"${name}" already registered on "${instanceSlug}"`)

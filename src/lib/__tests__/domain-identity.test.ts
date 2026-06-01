@@ -21,7 +21,7 @@ import { AstraleError } from '../../errors'
 import { buildIdentityBinding, inferAlg } from '../domain-identity'
 
 describe('inferAlg', () => {
-  // Adversarial: `astrale init` historically generated ES256 keys without
+  // Adversarial: older CLI releases generated ES256 keys without
   // stamping `alg`. Every fresh-machine `astrale instance install` then
   // crashed with "alg is required when jwk.alg is not present" because the
   // CLI read `privateJwk.alg as string` directly and handed `undefined` to

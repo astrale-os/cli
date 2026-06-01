@@ -42,7 +42,7 @@ export async function withKernelClient<T>(
     const resolved = await resolveInstance(identifier, config)
     url = opts.url ?? resolved.url
     audience = resolved.issuer ?? resolved.url
-    slug = identifier
+    slug = resolved.name
   }
   const credential = await resolveCredential(opts, config, audience, slug)
 

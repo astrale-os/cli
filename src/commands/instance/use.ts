@@ -22,19 +22,14 @@ type UseOpts = {
 async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
   try {
     if (!name) {
-      const { name: activeName } = await getActive()
-      const { url } = await resolveInstance(activeName).catch(() => ({ url: undefined }))
-      console.log(`${activeName} (${url ?? 'local'})`)
+      const active = await getActive()
+      console.log(`${active.name} (${active.url})`)
       return
     }
 
-    // Resolve url/issuer via the live manager (or bookmark entry). If the
-    // target is unknown locally AND absent from the manager, resolveInstance
-    // throws — let `setActive` below handle the probe-and-persist path.
-    const resolved = await resolveInstance(name).catch(() => null)
+    const resolved = await resolveInstance(name)
 
-    // §7 JWKS reachability — fail loud; use --skip-jwks-check to bypass.
-    if (!opts.skipJwksCheck && resolved?.url && resolved.issuer) {
+    if (!opts.skipJwksCheck && resolved.issuer) {
       try {
         await checkIssuerReachability(resolved.url, resolved.issuer)
       } catch (e) {
@@ -43,14 +38,14 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
     }
 
     await setActive(name)
-    log.success(`Active instance: ${name} (${resolved?.url ?? 'local'})`)
+    log.success(`Active instance: ${name} (${resolved.url})`)
 
     // §7.1 identity-adoption prompt (DX). Orthogonality preserved — we
     // only switch on explicit user consent (or --adopt-default in CI).
     const store = await readInstances()
     const key = resolveInstanceKey(store, name)
     const identityCandidate =
-      resolved?.defaultIdentity ?? (key ? store.instances[key]?.defaultIdentity : undefined)
+      resolved.defaultIdentity ?? (key ? store.instances[key]?.defaultIdentity : undefined)
     if (!identityCandidate) return
     const active = await getDefault().catch(() => null)
     if (active?.name === identityCandidate) return

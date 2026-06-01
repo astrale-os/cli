@@ -6,8 +6,8 @@
  * `jwks_uri`) and JWKS at `/.well-known/jwks.json`. These helpers probe
  * both to verify the issuer is alive and publishes at least one key.
  *
- * Domain workers expose `/meta` for drift detection (schemaHash,
- * sdkCommit) — that's out of scope here; see `@astrale-os/sdk` `deployCheck`.
+ * Domain workers may expose `/meta` for deployment drift detection; that is
+ * outside this connect-only CLI surface.
  */
 
 import { IssuerUnreachableError } from '../errors'
@@ -49,8 +49,8 @@ export async function fetchJwks(
 
 /**
  * Verify the issuer at `url` publishes OIDC discovery and a non-empty JWKS.
- * `issuerOverride` forces a specific expected issuer (for tunneled instances
- * where the discovery URL differs from the declared issuer).
+ * `issuerOverride` forces a specific expected issuer when discovery URL and
+ * declared issuer differ.
  */
 export async function checkIssuerReachability(
   url: string,

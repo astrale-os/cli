@@ -1,109 +1,51 @@
-import { type FnMap } from '@astrale-os/kernel-client'
-import { ClientSession } from '@astrale-os/kernel-client/session'
-
 import type { CommandDefinition } from '../../command'
+import type { KernelCommandOpts } from '../../kernel'
 
-import { CannotDeleteManagerError } from '../../errors'
-import { resolveCredential } from '../../kernel/auth'
-import { readConfig } from '../../lib/config'
-import {
-  invalidateManagerCache,
-  managerUrl,
-  readInstances,
-  removeInstance,
-  resolveInstanceKey,
-} from '../../lib/instance'
-import { removeKeypair } from '../../lib/keys'
+import { withKernelClient } from '../../kernel/client'
+import { ADMIN_KERNEL_INSTANCE, type AdminKernelInstanceInfo } from '../../lib/admin-instance'
+import { readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
-import { detachInstanceTunnels } from '../../lib/tunnels'
+import { isRawOutput, output } from '../../lib/output'
+
+type DeleteOpts = KernelCommandOpts & {
+  keepBookmark?: boolean
+}
 
 export default {
   name: 'delete',
-  description: 'Destructively delete a local or managed instance',
+  description: 'Delete an admin-managed instance through the admin kernel',
   afterHelpText: `
 Behavior:
-  Destructive: removes the instance kernel-side and from the local
-  registry. Refused on the manager (use \`astrale stop\`) and on
-  remote bookmarks (use \`astrale instance forget\`). -f forces.
+  This is an admin operation. It calls AdminKernelInstance.delete on the admin
+  kernel and never talks directly to a local manager. If a local bookmark with
+  the same name exists, it is removed after the admin delete succeeds unless
+  --keep-bookmark is passed.
 `,
-  arguments: [{ name: 'name', description: 'Instance name (slug or name)', required: true }],
-  options: [{ flags: '-f, --force', description: 'Skip manager-side cleanup on failure' }],
-  action: async (name: string, cmdOpts: { force?: boolean }) => {
-    const store = await readInstances()
-    const key = resolveInstanceKey(store, name)
-    const entry = key ? store.instances[key] : undefined
-
-    // §5.1 refusals with actionable hints.
-    if (entry?.kind === 'manager' || key === 'manager') fatal(new CannotDeleteManagerError())
-    if (entry?.kind === 'bookmark') {
-      log.dim('  hint: use `astrale instance forget` to drop the reference')
-      fatal(new Error(`"${name}" is a bookmark — delete is destructive kernel-side.`))
-    }
-
-    const inLocal = key !== null
-    let deletedSomewhere = false
-
-    if (inLocal && key) {
-      try {
-        // §12 — orphan tunnels are never auto-stopped; detach + warn. Best-effort:
-        // a broken/unreadable tunnel registry must not block the deletion.
-        const { detached, error } = await detachInstanceTunnels(key)
-        for (const n of detached) {
-          log.warn(`  tunnel "${n}" detached — stop it with: astrale tunnel stop ${n}`)
-        }
-        if (error) {
-          log.warn(`  tunnel detach skipped (registry unreadable): ${error}`)
-        }
-        await removeInstance(key)
-        // Drop the per-instance keypair written at `instance create`. Left
-        // behind it would leak identity material for a slug the user could
-        // later reuse for a different instance.
-        if (entry?.kind === 'local-child') {
-          await removeKeypair(key)
-        }
-        log.success(`Deleted local instance "${key}"`)
-        deletedSomewhere = true
-      } catch (e) {
-        fatal(e)
-      }
-    }
-
-    const config = await readConfig()
-    const credential = await resolveCredential({}, config)
-    const client = new ClientSession<FnMap>({
-      default: managerUrl(config),
-      identity: credential,
-    })
+  arguments: [{ name: 'id', description: 'Instance id', required: true }],
+  options: [{ flags: '--keep-bookmark', description: 'Do not remove a same-name local bookmark' }],
+  action: async (id: string, opts: DeleteOpts) => {
     try {
-      await client.call(
-        '/manager.astrale.ai/class.KernelInstance/delete',
-        { id: key ?? name },
-        { timeout: 5_000 },
+      const result = await withKernelClient(
+        opts,
+        async (ctx) =>
+          (await ctx.client.call(`${ADMIN_KERNEL_INSTANCE}/delete`, {
+            id,
+          })) as AdminKernelInstanceInfo,
       )
-      log.success(`Unregistered "${key ?? name}" from manager`)
-      deletedSomewhere = true
+
+      if (!opts.keepBookmark) {
+        const store = await readInstances()
+        const key = resolveInstanceKey(store, id)
+        if (key) await removeInstance(key)
+      }
+
+      if (isRawOutput(opts)) {
+        output(result, opts)
+        return
+      }
+      log.success(`Deleted instance: ${result.id}`)
     } catch (e) {
-      if (!inLocal && !cmdOpts.force) {
-        fatal(
-          new Error(
-            `Instance "${name}" not found locally and manager unregister failed: ${e instanceof Error ? e.message : String(e)}`,
-          ),
-        )
-      }
-      if (cmdOpts.force) {
-        log.warn(
-          `Manager-side cleanup failed (--force): ${e instanceof Error ? e.message : String(e)}`,
-        )
-        deletedSomewhere = true
-      }
-    } finally {
-      client.disconnect()
+      fatal(e)
     }
-
-    // Bust the manager snapshot cache — any `astrale instance list` right
-    // after a delete must see the post-delete state, not a stale hit.
-    await invalidateManagerCache()
-
-    if (!deletedSomewhere) fatal(new Error(`Instance "${name}" not found`))
   },
 } satisfies CommandDefinition
