@@ -6,6 +6,12 @@ import { isSessionExpired, readIdpSession, refreshSession } from '../lib/idp'
 import { signAs } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
 
+export type KeyIdentityAuthOptions = {
+  issuer: string
+  subject?: string
+  audience: string
+}
+
 /**
  * Resolve a signed JWT credential from CLI options.
  *
@@ -34,12 +40,11 @@ export async function resolveCredential(
       const identity = await getIdentity(opts.as)
       if ((identity.source ?? 'key') === 'idp')
         return await resolveIdpAccessToken(opts.as, identity)
-      const registration = instanceSlug ? identity.registrations?.[instanceSlug] : undefined
-      return await signAs(identity.subject, KEYS_DIR, {
-        issuer: registration?.iss ?? config.issuer,
-        subject: registration?.sub,
-        audience,
-      })
+      return await signAs(
+        identity.subject,
+        KEYS_DIR,
+        resolveKeyIdentityAuthOptions(identity, config, audience, instanceSlug),
+      )
     }
 
     const identity = await getDefault()
@@ -47,12 +52,11 @@ export async function resolveCredential(
       return await resolveIdpAccessToken(identity.name, identity)
     }
 
-    const registration = instanceSlug ? identity.registrations?.[instanceSlug] : undefined
-    return await signAs(identity.subject, KEYS_DIR, {
-      issuer: registration?.iss ?? config.issuer,
-      subject: registration?.sub,
-      audience,
-    })
+    return await signAs(
+      identity.subject,
+      KEYS_DIR,
+      resolveKeyIdentityAuthOptions(identity, config, audience, instanceSlug),
+    )
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to resolve credentials'
     const hint = opts.as
@@ -60,6 +64,28 @@ export async function resolveCredential(
       : 'Run `astrale identity create <name>` to set up keys'
     throw new AuthError(message, hint)
   }
+}
+
+export function resolveKeyIdentityAuthOptions(
+  identity: Identity,
+  config: AstraleConfig,
+  audience: string = config.issuer,
+  instanceSlug?: string,
+): KeyIdentityAuthOptions {
+  const registration = instanceSlug ? identity.registrations?.[instanceSlug] : undefined
+  return {
+    issuer:
+      registration?.iss ?? identity.issuer ?? systemIdentityIssuer(identity, audience, config),
+    subject: registration?.sub,
+    audience,
+  }
+}
+
+function systemIdentityIssuer(identity: Identity, audience: string, config: AstraleConfig): string {
+  // Imported kernel bootstrap keys are subject=system and are published by the
+  // target kernel's JWKS. Without a stored issuer, signing them as the global
+  // CLI issuer makes the kernel try OIDC discovery for identity.astrale.ai.
+  return identity.subject === 'system' ? audience : config.issuer
 }
 
 async function resolveIdpAccessToken(identityName: string, identity: Identity): Promise<string> {

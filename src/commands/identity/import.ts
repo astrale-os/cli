@@ -15,6 +15,7 @@ type ExportEnvelope = {
   subject: string
   mode?: RegistryMode
   kid?: string
+  issuer?: string
   privateJwk: Record<string, unknown>
   publicJwk: Record<string, unknown>
 }
@@ -33,8 +34,12 @@ export default {
       flags: '--name <name>',
       description: 'Override identity name (defaults to envelope subject)',
     },
+    {
+      flags: '--issuer <url>',
+      description: 'Default issuer for credentials signed with this imported key',
+    },
   ],
-  action: async (path: string, opts: { name?: string }) => {
+  action: async (path: string, opts: { name?: string; issuer?: string }) => {
     try {
       const raw = await readFile(path, 'utf-8')
 
@@ -66,6 +71,8 @@ export default {
       await createIdentity(name, {
         subject: env.subject,
         mode: env.mode ?? 'local',
+        issuer: opts.issuer ?? env.issuer,
+        kid: env.kid,
         skipKeygen: true,
       })
       const { privatePath, publicPath } = keypairPaths(env.subject)

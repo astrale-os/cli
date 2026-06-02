@@ -89,7 +89,13 @@ export async function writeIdentities(store: IdentityStore): Promise<void> {
 
 export async function createIdentity(
   name: string,
-  opts: { subject?: string; mode?: RegistryMode; skipKeygen?: boolean } = {},
+  opts: {
+    subject?: string
+    mode?: RegistryMode
+    issuer?: string
+    kid?: string
+    skipKeygen?: boolean
+  } = {},
 ): Promise<Identity> {
   validateName(name, 'Identity')
   const store = await readIdentities()
@@ -107,7 +113,8 @@ export async function createIdentity(
     createdAt: new Date().toISOString(),
     source: 'key',
     mode: opts.mode ?? 'local',
-    kid,
+    kid: opts.kid ?? kid,
+    issuer: opts.issuer,
   }
   store.identities[name] = identity
   await writeIdentities(store)

@@ -18,11 +18,16 @@ describe('IdentityStoreSchema', () => {
     const result = IdentityStoreSchema.parse({
       default: 'admin',
       identities: {
-        admin: { subject: 'admin', createdAt: '2024-01-01T00:00:00Z' },
+        admin: {
+          subject: 'admin',
+          createdAt: '2024-01-01T00:00:00Z',
+          issuer: 'https://admin.example.com',
+        },
         user: { subject: 'user-principal', createdAt: '2024-06-15T12:00:00Z' },
       },
     })
     expect(Object.keys(result.identities)).toHaveLength(2)
+    expect(result.identities.admin.issuer).toBe('https://admin.example.com')
     expect(result.identities.user.subject).toBe('user-principal')
   })
 

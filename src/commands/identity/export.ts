@@ -36,6 +36,7 @@ export default {
         subject: identity.subject,
         mode: identity.mode ?? 'local',
         kid: identity.kid,
+        issuer: identity.issuer,
         privateJwk,
         publicJwk,
       }
