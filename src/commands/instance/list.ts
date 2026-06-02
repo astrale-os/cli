@@ -3,13 +3,15 @@ import chalk from 'chalk'
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
-import { withKernelClient } from '../../kernel/client'
+import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_KERNEL_INSTANCE, type AdminKernelInstanceInfo } from '../../lib/admin-instance'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readInstances } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { isRawOutput, output, type RawOutputOpts } from '../../lib/output'
 
 type ListOpts = KernelCommandOpts &
+  AdminTargetCommandOpts &
   RawOutputOpts & {
     bookmarked?: boolean
     adminOnly?: boolean
@@ -19,6 +21,7 @@ export default {
   name: 'list',
   description: 'List admin-managed instances and local bookmarks',
   options: [
+    ...ADMIN_TARGET_OPTIONS,
     { flags: '--bookmarked', description: 'Only show locally bookmarked kernel connections' },
     { flags: '--admin-only', description: 'Only show instances returned by the admin kernel' },
   ],
@@ -36,7 +39,7 @@ export default {
 
       let managed: AdminKernelInstanceInfo[] = []
       if (!opts.bookmarked) {
-        managed = await withKernelClient(
+        managed = await withAdminKernelClient(
           opts,
           async (ctx) =>
             (await ctx.client.call(

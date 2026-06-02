@@ -65,6 +65,7 @@ export async function buildProgram(): Promise<Command> {
     options: whoamiMod.default.options,
     action: whoamiMod.default.action,
   })
+  registerCommand(program, (await import('./commands/use')).default)
 
   // ── Graph / kernel ─────────────────────────────────────────────
   registerCommand(program, withKernelOptions((await import('./commands/call')).default))
@@ -73,6 +74,7 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, withKernelOptions((await import('./commands/ls')).default))
   registerCommand(program, withKernelOptions((await import('./commands/describe')).default))
   registerCommand(program, withKernelOptions((await import('./commands/query')).default))
+  registerCommand(program, (await import('./commands/status')).default)
 
   registerGroup(program, {
     name: 'instance',
@@ -87,6 +89,15 @@ export async function buildProgram(): Promise<Command> {
       (await import('./commands/instance/active')).default,
       (await import('./commands/instance/use')).default,
       withKernelOptions((await import('./commands/instance/install')).default),
+    ],
+  })
+
+  registerGroup(program, {
+    name: 'admin',
+    description: 'Configure the admin control-plane kernel',
+    commands: [
+      (await import('./commands/admin/status')).default,
+      (await import('./commands/admin/use')).default,
     ],
   })
 
@@ -135,7 +146,7 @@ export async function buildProgram(): Promise<Command> {
     `
 Command groups:
   Kernel        ls, get, call, query, describe, token
-  Management    instance, identity, auth, idp
+  Management    admin, instance, identity, auth, idp
 
 Path syntax:
   /domain                        Domain node
@@ -148,9 +159,9 @@ Path syntax:
 
 Examples:
   $ astrale ls /
-  $ astrale call /admin.astrale.ai/class.AdminKernelInstance/list -i admin
+  $ astrale admin status
   $ astrale instance bookmark staging --url https://kernel.example.com
-  $ astrale instance create my-app -i admin --owner-id user_123
+  $ astrale instance create my-app --owner-id user_123
   $ astrale instance status staging
   $ astrale token --audience dist.astrale.ai --ttl 3600
   $ astrale query 'MATCH (n) RETURN n LIMIT 5'

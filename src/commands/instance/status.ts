@@ -3,20 +3,22 @@ import chalk from 'chalk'
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
-import { withKernelClient } from '../../kernel/client'
+import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_KERNEL_INSTANCE, type AdminKernelInstanceInfo } from '../../lib/admin-instance'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, log } from '../../lib/log'
 import { isRawOutput, output, type RawOutputOpts } from '../../lib/output'
 
-type StatusOpts = KernelCommandOpts & RawOutputOpts
+type StatusOpts = KernelCommandOpts & AdminTargetCommandOpts & RawOutputOpts
 
 export default {
   name: 'status',
   description: 'Show admin instance status',
   arguments: [{ name: 'id', description: 'Instance id', required: true }],
+  options: [...ADMIN_TARGET_OPTIONS],
   action: async (id: string, opts: StatusOpts) => {
     try {
-      const result = await withKernelClient(
+      const result = await withAdminKernelClient(
         opts,
         async (ctx) =>
           (await ctx.client.call(`${ADMIN_KERNEL_INSTANCE}/info`, {

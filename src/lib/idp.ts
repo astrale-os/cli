@@ -79,11 +79,13 @@ export type TokenResponse = {
   access_token?: string
   accessToken?: string
   id_token?: string
+  idToken?: string
   refresh_token?: string
   refreshToken?: string
   token_type?: string
   scope?: string
   expires_in?: number
+  expiresIn?: number
   user?: { id?: string; [key: string]: unknown }
   organization_id?: string
   authentication_method?: string
@@ -269,7 +271,10 @@ export async function fetchOidcMetadata(issuer: string): Promise<OidcMetadata> {
   return metadata
 }
 
-export function workosAuthKitMetadata(apiHost = 'https://api.workos.com'): OidcMetadata {
+export function workosAuthKitMetadata(
+  apiHost = 'https://api.workos.com',
+  clientId?: string,
+): OidcMetadata {
   validateUrl(apiHost)
   const base = apiHost.replace(/\/+$/, '')
   return OidcMetadataSchema.parse({
@@ -277,7 +282,7 @@ export function workosAuthKitMetadata(apiHost = 'https://api.workos.com'): OidcM
     authorization_endpoint: `${base}/user_management/authorize`,
     token_endpoint: `${base}/user_management/authenticate`,
     device_authorization_endpoint: `${base}/user_management/authorize/device`,
-    jwks_uri: `${base}/user_management/jwks`,
+    jwks_uri: clientId ? `${base}/sso/jwks/${clientId}` : `${base}/sso/jwks`,
     grant_types_supported: ['urn:ietf:params:oauth:grant-type:device_code'],
     response_types_supported: ['code'],
   })
@@ -301,7 +306,7 @@ export function builtinIdpConfig(
       createdAt: now,
       updatedAt: now,
     },
-    metadata: workosAuthKitMetadata(apiHost),
+    metadata: workosAuthKitMetadata(apiHost, clientId),
     client: {
       client_id: clientId,
       public: true,
@@ -345,9 +350,33 @@ export async function postForm(url: string, params: URLSearchParams): Promise<To
   return body
 }
 
+export async function postJson(
+  url: string,
+  bodyInput: Record<string, string>,
+): Promise<TokenResponse> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bodyInput),
+  })
+  const text = await response.text()
+  const body = text ? (JSON.parse(text) as TokenResponse) : {}
+  if (!response.ok || body.error) {
+    const reason = body.error_description ?? body.error ?? `HTTP ${response.status}`
+    throw new Error(`OAuth token request failed: ${reason}`)
+  }
+  return body
+}
+
 export function tokenExpiresAt(token: TokenResponse): string | undefined {
-  if (typeof token.expires_in !== 'number') return undefined
-  return new Date(Date.now() + token.expires_in * 1000).toISOString()
+  const expiresIn =
+    typeof token.expires_in === 'number'
+      ? token.expires_in
+      : typeof token.expiresIn === 'number'
+        ? token.expiresIn
+        : undefined
+  if (typeof expiresIn === 'number') return new Date(Date.now() + expiresIn * 1000).toISOString()
+  return tokenExpiresAtFromJwt(token.access_token ?? token.accessToken ?? token.id_token)
 }
 
 export function decodeTokenClaims(token: string | undefined): JWTPayload | undefined {
@@ -357,6 +386,11 @@ export function decodeTokenClaims(token: string | undefined): JWTPayload | undef
   } catch {
     return undefined
   }
+}
+
+function tokenExpiresAtFromJwt(token: string | undefined): string | undefined {
+  const claims = decodeTokenClaims(token)
+  return typeof claims?.exp === 'number' ? new Date(claims.exp * 1000).toISOString() : undefined
 }
 
 export function subjectFromToken(token: TokenResponse, fallback: string): string {
@@ -375,6 +409,7 @@ export function normalizeTokenResponse(token: TokenResponse): TokenResponse {
   return {
     ...token,
     access_token: token.access_token ?? token.accessToken,
+    id_token: token.id_token ?? token.idToken,
     refresh_token: token.refresh_token ?? token.refreshToken,
   }
 }
@@ -427,11 +462,12 @@ export async function listIdpSessions(): Promise<IdpSession[]> {
 }
 
 export function isSessionExpired(
-  session: Pick<IdpSession, 'expires_at'>,
+  session: Pick<IdpSession, 'expires_at'> & { access_token?: string },
   skewMs = 60_000,
 ): boolean {
-  if (!session.expires_at) return false
-  return new Date(session.expires_at).getTime() <= Date.now() + skewMs
+  const expiresAt = session.expires_at ?? tokenExpiresAtFromJwt(session.access_token)
+  if (!expiresAt) return false
+  return new Date(expiresAt).getTime() <= Date.now() + skewMs
 }
 
 export function requireClientId(idp: IdpConfig, override?: string): string {
@@ -464,7 +500,11 @@ export async function refreshSession(
   })
   const secret = resolveClientSecret(idp)
   if (secret) params.set('client_secret', secret)
-  const token = await postForm(idp.metadata.token_endpoint, params)
+  const token = normalizeTokenResponse(
+    idp.client.token_request_format === 'json'
+      ? await postJson(idp.metadata.token_endpoint, Object.fromEntries(params))
+      : await postForm(idp.metadata.token_endpoint, params),
+  )
   if (!token.access_token) throw new Error('Refresh response did not include access_token')
   const claims = decodeTokenClaims(token.id_token ?? token.access_token)
   const next: IdpSession = {

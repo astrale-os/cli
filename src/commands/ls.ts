@@ -108,7 +108,7 @@ async function recursiveLs(
     })
   } catch (error) {
     if (!isRaw && spin) spin.fail('Failed')
-    formatKernelError(error, isRaw, undefined, opts.debug)
+    await formatKernelError(error, isRaw, undefined, opts.debug, { credential: opts.creds })
     process.exit(1)
   }
 }
@@ -234,7 +234,9 @@ Examples:
   $ astrale ls /kernel.astrale.ai --filter Folder
   $ astrale ls / -q | sed 's/^/@/' | xargs -I{} astrale describe {}
 `,
-  arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
+  arguments: [
+    { name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)', required: false },
+  ],
   options: [
     { flags: '-l, --long', description: 'Full node dump (default: compact)' },
     { flags: '-q, --quiet', description: 'One path per line (unix-pipeable)' },
@@ -246,6 +248,6 @@ Examples:
     },
   ],
   action: async (path, opts) => {
-    await lsCommand(path as string, opts as Parameters<typeof lsCommand>[1])
+    await lsCommand((path as string | undefined) ?? '/', opts as Parameters<typeof lsCommand>[1])
   },
 } satisfies CommandDefinition

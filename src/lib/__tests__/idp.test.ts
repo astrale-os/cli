@@ -35,13 +35,14 @@ describe('IdP schemas and token helpers', () => {
   })
 
   test('builds WorkOS AuthKit CLI Auth metadata for api-hosted device flow', () => {
-    const metadata = workosAuthKitMetadata('https://api.workos.com')
+    const metadata = workosAuthKitMetadata('https://api.workos.com', 'client_123')
 
     expect(metadata.issuer).toBe('https://api.workos.com')
     expect(metadata.device_authorization_endpoint).toBe(
       'https://api.workos.com/user_management/authorize/device',
     )
     expect(metadata.token_endpoint).toBe('https://api.workos.com/user_management/authenticate')
+    expect(metadata.jwks_uri).toBe('https://api.workos.com/sso/jwks/client_123')
   })
 
   test('builds built-in WorkOS IdP config from env client id', () => {
@@ -105,6 +106,17 @@ describe('IdP schemas and token helpers', () => {
     expect(new Date(expiresAt!).getTime()).toBeGreaterThan(Date.now())
   })
 
+  test('derives expiry timestamp from WorkOS camelCase and JWT claims', () => {
+    const camelCaseExpiresAt = tokenExpiresAt({ expiresIn: 60 })
+    expect(camelCaseExpiresAt).toBeString()
+    expect(new Date(camelCaseExpiresAt!).getTime()).toBeGreaterThan(Date.now())
+
+    const jwtExpiresAt = tokenExpiresAt({
+      access_token: unsignedJwt({ exp: 1893456000 }),
+    })
+    expect(jwtExpiresAt).toBe('2030-01-01T00:00:00.000Z')
+  })
+
   test('decodes JWT claims for identity naming, subject, and issuer', () => {
     const jwt = unsignedJwt({
       iss: 'https://example.authkit.app',
@@ -125,14 +137,21 @@ describe('IdP schemas and token helpers', () => {
     expect(isSessionExpired({})).toBe(false)
   })
 
+  test('detects expired sessions from cached JWT exp when expires_at is missing', () => {
+    expect(isSessionExpired({ access_token: unsignedJwt({ exp: 946684800 }) })).toBe(true)
+    expect(isSessionExpired({ access_token: unsignedJwt({ exp: 32503680000 }) })).toBe(false)
+  })
+
   test('normalizes WorkOS camelCase token response fields', () => {
     const token = normalizeTokenResponse({
       accessToken: 'access',
+      idToken: 'id',
       refreshToken: 'refresh',
       user: { id: 'user_123' },
     })
 
     expect(token.access_token).toBe('access')
+    expect(token.id_token).toBe('id')
     expect(token.refresh_token).toBe('refresh')
     expect(subjectFromToken(token, 'fallback')).toBe('user_123')
   })

@@ -1,15 +1,17 @@
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
-import { withKernelClient } from '../../kernel/client'
+import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_KERNEL_INSTANCE, type AdminKernelInstanceInfo } from '../../lib/admin-instance'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { isRawOutput, output } from '../../lib/output'
 
-type DeleteOpts = KernelCommandOpts & {
-  keepBookmark?: boolean
-}
+type DeleteOpts = KernelCommandOpts &
+  AdminTargetCommandOpts & {
+    keepBookmark?: boolean
+  }
 
 export default {
   name: 'delete',
@@ -22,10 +24,13 @@ Behavior:
   --keep-bookmark is passed.
 `,
   arguments: [{ name: 'id', description: 'Instance id', required: true }],
-  options: [{ flags: '--keep-bookmark', description: 'Do not remove a same-name local bookmark' }],
+  options: [
+    ...ADMIN_TARGET_OPTIONS,
+    { flags: '--keep-bookmark', description: 'Do not remove a same-name local bookmark' },
+  ],
   action: async (id: string, opts: DeleteOpts) => {
     try {
-      const result = await withKernelClient(
+      const result = await withAdminKernelClient(
         opts,
         async (ctx) =>
           (await ctx.client.call(`${ADMIN_KERNEL_INSTANCE}/delete`, {

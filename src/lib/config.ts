@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
+import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_CONFIG } from './admin-target'
 import { log } from './log'
 import { CONFIG_PATH } from './paths'
 
@@ -9,11 +10,12 @@ export const AstraleConfigSchema = z.object({
   // Local identity credentials still need an issuer for first-contact calls
   // before the target kernel records a registration-specific issuer.
   issuer: z.string().url().default('https://identity.astrale.ai'),
+  admin: AdminTargetConfigSchema.default(DEFAULT_ADMIN_TARGET_CONFIG),
 })
 
 export type AstraleConfig = z.infer<typeof AstraleConfigSchema>
 
-const DEFAULTS: AstraleConfig = AstraleConfigSchema.parse({})
+export const DEFAULT_CONFIG: AstraleConfig = AstraleConfigSchema.parse({})
 
 export async function readConfig(): Promise<AstraleConfig> {
   try {
@@ -26,7 +28,7 @@ export async function readConfig(): Promise<AstraleConfig> {
     if (e instanceof z.ZodError || e instanceof SyntaxError) {
       log.warn(`Invalid config at ${CONFIG_PATH} — using defaults`)
     }
-    return DEFAULTS
+    return DEFAULT_CONFIG
   }
 }
 

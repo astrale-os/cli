@@ -60,6 +60,21 @@ describe('help contract — IdP/auth surface is registered', () => {
   })
 })
 
+describe('help contract — admin target surface is registered', () => {
+  test('admin group and admin-target flags are visible', async () => {
+    const program = await buildProgram()
+    const names = allCommands(program).map((command) => command.name())
+    const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
+
+    expect(names).toContain('admin')
+    expect(names).toContain('status')
+    expect(names).toContain('use')
+    expect(program.helpInformation()).toContain('admin')
+    expect(instanceCreate?.helpInformation()).toContain('--admin <name>')
+    expect(instanceCreate?.helpInformation()).toContain('--admin-url <url>')
+  })
+})
+
 describe('help contract — connect-only command surface', () => {
   test('runtime management commands are not registered', async () => {
     const program = await buildProgram()

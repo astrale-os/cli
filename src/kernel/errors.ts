@@ -3,6 +3,7 @@ import chalk from 'chalk'
 import type { SelfExpansionMeta } from './expand'
 
 import { AstraleError } from '../errors'
+import { decodeJwtExpiration, readLocalStatus, type LocalStatus } from '../lib/local-status'
 import { log } from '../lib/log'
 
 type FieldError = { path: string[]; code: string; message: string }
@@ -19,14 +20,17 @@ type InvariantError = { code: string; message: string; context?: unknown }
  * When `debug` is true, additional diagnostic information (class name, full
  * error chain, attached url/details) is printed after the user-facing line.
  */
-export function formatKernelError(
+export async function formatKernelError(
   error: unknown,
   isRaw: boolean,
   urlArg = '',
   debug = false,
-): void {
+  opts: { credential?: string } = {},
+): Promise<void> {
   const url =
     urlArg || (error instanceof Error ? ((error as Error & { url?: string }).url ?? '') : '')
+  const localContext = await contextForError(error)
+  const credentialExpiration = opts.credential ? decodeJwtExpiration(opts.credential) : null
   // Handle AstraleError (AuthError, ConfigError, etc.) with structured hints
   if (error instanceof AstraleError) {
     if (isRaw) {
@@ -49,11 +53,13 @@ export function formatKernelError(
 
   switch (name) {
     case 'ConnectionError':
-      if (isRaw) writeRaw({ error: 'CONNECTION_ERROR', message: error.message, url })
+      if (isRaw)
+        writeRaw({ error: 'CONNECTION_ERROR', message: error.message, url, context: localContext })
       else {
         log.error(`Could not connect to ${chalk.bold(url || 'kernel')}`)
         log.dim(`  ${error.message}`)
         log.dim('  Is the kernel running? Try: astrale status')
+        printLocalContext(localContext)
       }
       break
 
@@ -77,7 +83,14 @@ export function formatKernelError(
 
     case 'AuthenticationError': {
       const reason = (error as { reason?: string }).reason ?? 'unknown'
-      if (isRaw) writeRaw({ error: 'AUTH_ERROR', reason, message: error.message })
+      if (isRaw)
+        writeRaw({
+          error: 'AUTH_ERROR',
+          reason,
+          message: error.message,
+          credential: credentialExpiration,
+          context: localContext,
+        })
       else {
         log.error(`Authentication failed: ${error.message}`)
         if (reason === 'missing')
@@ -85,6 +98,11 @@ export function formatKernelError(
         else if (reason === 'invalid')
           log.dim('  Credential is invalid — check issuer/keypair. Try: astrale identity whoami')
         else if (reason === 'expired') log.dim('  Credential expired — sign a fresh one')
+        if (credentialExpiration) {
+          const state = credentialExpiration.expired ? 'expired' : 'expires'
+          log.dim(`  Credential ${state} at ${credentialExpiration.expiresAt}`)
+        }
+        printLocalContext(localContext)
       }
       break
     }
@@ -182,6 +200,47 @@ function stripMethodSuffix(msg: string): string {
 
 function writeRaw(payload: Record<string, unknown>): void {
   process.stderr.write(JSON.stringify(payload) + '\n')
+}
+
+async function contextForError(error: unknown): Promise<LocalStatus | undefined> {
+  if (!(error instanceof Error)) return undefined
+  if (error.name !== 'AuthenticationError' && error.name !== 'ConnectionError') return undefined
+  return readLocalStatus().catch(() => undefined)
+}
+
+function printLocalContext(context: LocalStatus | undefined): void {
+  if (!context) return
+  process.stderr.write(chalk.dim('\nContext:\n'))
+  if ('error' in context.admin) {
+    process.stderr.write(chalk.dim(`  admin: invalid (${context.admin.error})\n`))
+  } else {
+    process.stderr.write(chalk.dim(`  admin: ${context.admin.name} -> ${context.admin.url}\n`))
+  }
+  if (context.instance) {
+    process.stderr.write(
+      chalk.dim(`  instance: ${context.instance.active} -> ${context.instance.url}\n`),
+    )
+  } else {
+    process.stderr.write(chalk.dim('  instance: none\n'))
+  }
+  if (context.identity) {
+    const source =
+      context.identity.source === 'idp'
+        ? `idp:${context.identity.idp ?? 'unknown'}`
+        : context.identity.source
+    process.stderr.write(chalk.dim(`  identity: ${context.identity.name} [${source}]\n`))
+    if (context.identity.session?.cached) {
+      const state = context.identity.session.expired ? 'expired' : 'active'
+      const expiry = context.identity.session.expiresAt
+        ? ` at ${context.identity.session.expiresAt}`
+        : ''
+      process.stderr.write(chalk.dim(`  session: ${state}${expiry}\n`))
+    } else if (context.identity.source === 'idp') {
+      process.stderr.write(chalk.dim('  session: not cached\n'))
+    }
+  } else {
+    process.stderr.write(chalk.dim('  identity: none\n'))
+  }
 }
 
 function printDebug(error: unknown, url: string): void {

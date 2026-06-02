@@ -1,19 +1,21 @@
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
-import { withKernelClient } from '../../kernel/client'
+import { withAdminKernelClient } from '../../kernel/client'
 import {
   ADMIN_KERNEL_INSTANCE,
   buildAdminCreateInstanceInput,
   type AdminCreateInstanceOpts,
   type AdminKernelInstanceInfo,
 } from '../../lib/admin-instance'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { addInstance, setActive } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { isRawOutput, output } from '../../lib/output'
 import { validateSlug } from '../../lib/validation'
 
 type CreateOpts = KernelCommandOpts &
+  AdminTargetCommandOpts &
   AdminCreateInstanceOpts & {
     bookmarkUrl?: string
     use?: boolean
@@ -26,14 +28,16 @@ export default {
 Behavior:
   This command never starts a local manager. It calls the configured admin
   kernel's AdminKernelInstance.create method. Target the admin kernel with
-  --url, -i/--instance, or the active bookmarked instance.
+  --admin, --admin-url, or \`astrale admin use\`. Legacy --url and -i/--instance
+  are still accepted as admin target aliases for this command.
 
 Examples:
-  $ astrale instance create demo --url https://admin.example.com --owner-id user_123
-  $ astrale instance create demo -i admin --bookmark-url https://demo.example.com --use
+  $ astrale instance create demo --owner-id user_123
+  $ astrale instance create demo --admin staging-admin --bookmark-url https://demo.example.com --use
 `,
   arguments: [{ name: 'id', description: 'Instance id', required: true }],
   options: [
+    ...ADMIN_TARGET_OPTIONS,
     { flags: '--label <label>', description: 'Human-readable label' },
     { flags: '--host-id <id>', description: 'Admin KernelHost id to provision on' },
     { flags: '--graph-name <name>', description: 'Graph name requested from admin' },
@@ -63,7 +67,7 @@ Examples:
     try {
       validateSlug(id)
       const input = await buildAdminCreateInstanceInput(id, opts)
-      const result = await withKernelClient(
+      const result = await withAdminKernelClient(
         opts,
         async (ctx) =>
           (await ctx.client.call(

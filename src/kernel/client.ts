@@ -4,6 +4,7 @@ import { ClientSession } from '@astrale-os/kernel-client/session'
 import type { KernelCommandOpts } from './types'
 
 import { AstraleError } from '../errors'
+import { resolveAdminTarget, type AdminTargetCommandOpts } from '../lib/admin-target'
 import { readConfig } from '../lib/config'
 import { getActive, resolveInstance } from '../lib/instance'
 import { resolveCredential } from './auth'
@@ -16,6 +17,12 @@ export type ClientContext = {
   credential: string
   url: string
   config: Awaited<ReturnType<typeof readConfig>>
+}
+
+type ResolvedKernelTarget = {
+  url: string
+  audience: string
+  slug?: string
 }
 
 /**
@@ -44,14 +51,41 @@ export async function withKernelClient<T>(
     audience = resolved.issuer ?? resolved.url
     slug = resolved.name
   }
-  const credential = await resolveCredential(opts, config, audience, slug)
+  return withResolvedKernelClient(opts, config, { url, audience, slug }, fn)
+}
+
+export async function withAdminKernelClient<T>(
+  opts: KernelCommandOpts & AdminTargetCommandOpts,
+  fn: (ctx: ClientContext) => Promise<T>,
+): Promise<T> {
+  const config = await readConfig()
+  const target = await resolveAdminTarget(opts, config)
+  return withResolvedKernelClient(
+    opts,
+    config,
+    {
+      url: target.url,
+      audience: target.issuer,
+      slug: target.registrationSlug,
+    },
+    fn,
+  )
+}
+
+async function withResolvedKernelClient<T>(
+  opts: KernelCommandOpts,
+  config: Awaited<ReturnType<typeof readConfig>>,
+  target: ResolvedKernelTarget,
+  fn: (ctx: ClientContext) => Promise<T>,
+): Promise<T> {
+  const credential = await resolveCredential(opts, config, target.audience, target.slug)
 
   // CLI is short-lived and one-shot per command. Skip the WS upgrade
   // (saves up to 5s on hangs) and disable HTTP retries (saves ~7s of
   // exponential backoff on ECONNREFUSED / 5xx). The user can re-run.
   const requestTimeout = resolveTimeoutMs(opts.timeout)
   const client = new ClientSession<FnMap>({
-    default: url,
+    default: target.url,
     identity: credential,
     pool: {
       clientFactory: (u) =>
@@ -66,10 +100,10 @@ export async function withKernelClient<T>(
   await client.ready()
 
   try {
-    return await fn({ client, credential, url, config })
+    return await fn({ client, credential, url: target.url, config })
   } catch (error) {
     // Attach url so formatKernelError can display it in connection errors
-    if (error instanceof Error) (error as Error & { url?: string }).url = url
+    if (error instanceof Error) (error as Error & { url?: string }).url = target.url
     throw error
   } finally {
     client.disconnect()

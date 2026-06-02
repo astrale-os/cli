@@ -44,7 +44,7 @@ export async function runKernelCommand<T>(run: RunOpts<T>): Promise<void> {
     }
   } catch (error) {
     if (!isRaw && spin) spin.fail(`${label} failed`)
-    formatKernelError(error, isRaw, undefined, opts.debug)
+    await formatKernelError(error, isRaw, undefined, opts.debug, { credential: opts.creds })
     process.exit(1)
   }
 }

@@ -77,8 +77,8 @@ Security:
       throw new Error('Either --issuer, --metadata, or --workos-authkit is required')
     }
 
-    const metadata = opts.workosAuthkit
-      ? workosAuthKitMetadata(opts.workosApiHostname)
+    let metadata = opts.workosAuthkit
+      ? workosAuthKitMetadata(opts.workosApiHostname, opts.clientId)
       : opts.metadata
         ? OidcMetadataSchema.parse(JSON.parse(await readFile(opts.metadata, 'utf-8')))
         : await fetchOidcMetadata(opts.issuer!)
@@ -117,6 +117,10 @@ Security:
         workos_application_id: app.id,
         workos_application_type: app.application_type,
       }
+    }
+
+    if (opts.workosAuthkit && client.client_id) {
+      metadata = workosAuthKitMetadata(opts.workosApiHostname, client.client_id)
     }
 
     const idp = await upsertIdpConfig({ name, metadata, client })

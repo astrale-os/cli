@@ -1,5 +1,19 @@
 #!/usr/bin/env bun
+import { CommanderError } from 'commander'
+
+import { renderCommanderError } from '../src/lib/command-dx'
 import { buildProgram } from '../src/program'
 
 const program = await buildProgram()
-await program.parseAsync()
+program.exitOverride()
+program.configureOutput({ writeErr: () => undefined })
+
+try {
+  await program.parseAsync()
+} catch (error) {
+  if (error instanceof CommanderError) {
+    process.stderr.write(renderCommanderError(program, error) + '\n')
+    process.exit(error.exitCode || 1)
+  }
+  throw error
+}
