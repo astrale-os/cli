@@ -51,7 +51,7 @@ astrale status
 # 4. Explore the graph
 astrale ls /
 astrale describe /kernel.astrale.ai
-astrale call /host.astrale.ai/class.KernelInstance/list
+astrale call /:host.astrale.ai:class.KernelInstance:list
 
 # 5. Boot a local child instance and target it
 astrale instance create my-app --local

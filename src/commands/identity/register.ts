@@ -1,3 +1,4 @@
+import { K } from '@astrale-os/kernel-core'
 import { importJWK, SignJWT, type JWK } from 'jose'
 import { readFile } from 'node:fs/promises'
 
@@ -10,8 +11,6 @@ import { getIdentity, setRegistration } from '../../lib/identity'
 import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
-
-const KERNEL_NODE_CREATE = '/kernel.astrale.ai/interface.Node/createNode'
 
 type CreateNodeResult = { id: string; path: string }
 type RegisterIdentityResult = { iss: string; sub: string }
@@ -88,7 +87,7 @@ export default {
             return existing
           }
 
-          const node = (await ctx.client.call(KERNEL_NODE_CREATE, {
+          const node = (await ctx.client.call(K.Node.createNode.path.method.raw, {
             class: classPath,
             path: nodePath,
             props: { 'Statused.status': 'creating' },

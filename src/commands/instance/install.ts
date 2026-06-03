@@ -1,3 +1,5 @@
+import { K } from '@astrale-os/kernel-core'
+
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
@@ -35,7 +37,7 @@ Examples:
       opts,
       label: `Installing domain from ${url}`,
       fn: async (ctx) =>
-        (await ctx.client.call('/kernel.astrale.ai/class.Root/installDomain', {
+        (await ctx.client.call(K.Root.installDomain.path.method.raw, {
           url,
           ...(opts.token ? { token: opts.token } : {}),
         })) as InstallResult,

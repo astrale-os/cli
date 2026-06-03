@@ -30,7 +30,7 @@ Clients address entities in the kernel graph via **Path**s.
 | Form | Grammar | Use when |
 |------|---------|---------|
 | Absolute path | `/domain` or `/domain/class.Name` or `/domain/interface.Name` | A Domain, a Class node, or an Interface node |
-| Static method | `/domain/class.Name/method` or `/domain/interface.Name/method` | A class- or interface-level (static) operation |
+| Static method | `/:domain:class.Name:method` *(preferred)* — or `/domain/class.Name/method` | A class- or interface-level (static) operation; the `/:` **domain path** is the more stable form (see note) |
 | Instance method | `<nodePath>::method` (incl. `@id::method`) | A method on a node instance |
 | Id reference | `@nodeId` | Reference a node by UID |
 | Self reference | `@self` | CLI-side shorthand — expands to your nodeId on the active instance (see below) |
@@ -38,19 +38,31 @@ Clients address entities in the kernel graph via **Path**s.
 Load-bearing rules — true everywhere:
 
 - The **`class.` / `interface.` prefix is required** on the namespace segment:
-  `/host.astrale.ai/class.KernelInstance/list`, never `.../KernelInstance/list`.
+  `/:host.astrale.ai:class.KernelInstance:list`, never `…:KernelInstance:list`.
 - A static method declared on an Interface is **not** reachable via
-  `class.<ConcreteClass>/<method>` — the kernel looks it up by the declaring
+  `class.<ConcreteClass>:<method>` — the kernel looks it up by the declaring
   namespace. Use `interface.<Name>` for interface-hosted statics.
 - Instance dispatch uses **double colon `::`**, never single `:`. `::get` and
   `::listChildren` are the universal node methods (`get`/`ls`/`describe`
   dispatch to them).
 
+**Prefer the domain path (`/:…:…:…`) for method calls when you can.** It is a
+*MethodPath* — it resolves the operation *semantically* (`installed_in →
+of_domain → method_of`), following what the member **is** in its Domain, so it
+stays valid even if the domain is re-mounted or its tree layout changes. The
+slash form (`/domain/class.Name/method`, an *AbsolutePath*) walks `has_parent`
+slugs by tree position and breaks when that layout moves. Both reach the same
+node, and both still carry the domain-origin token (which varies per env in
+either form) — the domain path is simply the more stable link. Instance methods
+already dispatch via `::` and have no slash-only variant. This holds for both
+kernel dispatch and remote domain workers reached via `--url` — both resolve the
+domain path semantically.
+
 Three concrete forms (origin `blog.acme.com`, installed at Root):
 
 ```bash
-astrale call /blog.acme.com/class.Author/list                 # static on a Class
-astrale call /blog.acme.com/interface.NoteOps/createNote …    # static on an Interface
+astrale call /:blog.acme.com:class.Author:list                # static on a Class (domain path, preferred)
+astrale call /:blog.acme.com:interface.NoteOps:createNote …   # static on an Interface (domain path)
 astrale call /blog.acme.com/alice::deactivate                 # instance method (or @id::deactivate)
 ```
 
@@ -69,7 +81,7 @@ caller's kernel nodeId on the target instance.
 astrale call @self::deployFunction port=8080 kind=function name=test
 astrale describe @self
 astrale ls @self/functions
-astrale call /d/class.X/m _self=@self        # in a param value too
+astrale call /:d:class.X:m _self=@self        # in a param value too
 ```
 
 **Two positions only** are expanded: a path-head token (`@self::…`, `@self/…`,
@@ -193,7 +205,7 @@ astrale idp refresh workos
 astrale auth login --idp workos --client-credentials \
   --client-secret-env WORKOS_CLIENT_SECRET --audience https://api.example.com
 astrale auth status
-astrale call /some.domain/class.Thing/list --as <idp-identity>
+astrale call /:some.domain:class.Thing:list --as <idp-identity>
 ```
 
 WorkOS AuthKit CLI Auth uses `--workos-authkit` and needs only the public
@@ -218,7 +230,7 @@ End-to-end — mint and call a remote worker:
 
 ```bash
 export TOKEN=$(astrale token --audience dist.astrale.ai --raw)
-astrale call /dist.astrale.ai/class.BlaxelComputer/init name=test … \
+astrale call /:dist.astrale.ai:class.BlaxelComputer:init name=test … \
   --url https://dist.astrale.ai --creds "$TOKEN"
 ```
 
@@ -232,7 +244,7 @@ astrale call @__system__::mintDelegationCredential \
 - `delegation={"kind":"identity","self":true}` = self-delegation (no subject
   expansion).
 - `_self=<ref>` on a static path is equivalent to instance dispatch:
-  `/<domain>/class.X/<method> _self=<ref>` ≡ `@<nodeId>::<method>`. Accepted
+  `/:<domain>:class.X:<method> _self=<ref>` ≡ `@<nodeId>::<method>`. Accepted
   `<ref>`: bare `<uuid>`, `@<uuid>`, or `/tree/path`. **Remote workers only
   accept the `class.X + _self=` form** — bare `@<uuid>::method` doesn't resolve
   the syscall on a worker.
