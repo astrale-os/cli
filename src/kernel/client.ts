@@ -23,6 +23,7 @@ type ResolvedKernelTarget = {
   url: string
   audience: string
   slug?: string
+  defaultIdentity?: string
 }
 
 /**
@@ -50,6 +51,12 @@ export async function withKernelClient<T>(
     url = opts.url ?? resolved.url
     audience = resolved.issuer ?? resolved.url
     slug = resolved.name
+    return withResolvedKernelClient(
+      opts,
+      config,
+      { url, audience, slug, defaultIdentity: resolved.defaultIdentity },
+      fn,
+    )
   }
   return withResolvedKernelClient(opts, config, { url, audience, slug }, fn)
 }
@@ -67,6 +74,7 @@ export async function withAdminKernelClient<T>(
       url: target.url,
       audience: target.issuer,
       slug: target.registrationSlug,
+      defaultIdentity: target.defaultIdentity,
     },
     fn,
   )
@@ -78,7 +86,12 @@ async function withResolvedKernelClient<T>(
   target: ResolvedKernelTarget,
   fn: (ctx: ClientContext) => Promise<T>,
 ): Promise<T> {
-  const credential = await resolveCredential(opts, config, target.audience, target.slug)
+  const credential = await resolveCredential(
+    { ...opts, defaultIdentity: target.defaultIdentity },
+    config,
+    target.audience,
+    target.slug,
+  )
 
   // CLI is short-lived and one-shot per command. Skip the WS upgrade
   // (saves up to 5s on hangs) and disable HTTP retries (saves ~7s of

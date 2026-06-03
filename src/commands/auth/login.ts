@@ -14,6 +14,7 @@ import {
   requestDeviceAuthorization,
   saveIdpSession,
   subjectFromToken,
+  tokenAudienceMatches,
   tokenExpiresAt,
   workosClientIdFromEnv,
   type IdpSession,
@@ -84,6 +85,11 @@ Notes:
 
     const token = normalizeTokenResponse(await obtainToken(idp, opts, scope))
     if (!token.access_token) throw new Error('IdP response did not include access_token')
+    if (opts.audience && !tokenAudienceMatches(token.access_token, opts.audience)) {
+      throw new Error(
+        `IdP response access_token was not minted for requested audience ${opts.audience}`,
+      )
+    }
 
     const claims = decodeTokenClaims(token.id_token ?? token.access_token)
     const subject = subjectFromToken(token, opts.clientId ?? idp.client.client_id ?? idpName)

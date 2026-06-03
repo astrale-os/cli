@@ -11,6 +11,7 @@ import {
   OidcMetadataSchema,
   subjectFromToken,
   tokenExpiresAt,
+  tokenAudienceMatches,
   workosClientIdFromEnv,
   workosAuthKitMetadata,
   builtinIdpConfig,
@@ -129,6 +130,24 @@ describe('IdP schemas and token helpers', () => {
     expect(identityNameFromClaims(claims, 'fallback')).toBe('Alice-Smith-example.com')
     expect(subjectFromToken({ access_token: jwt }, 'fallback')).toBe('user_123')
     expect(issuerFromToken({ access_token: jwt }, 'fallback')).toBe('https://example.authkit.app')
+  })
+
+  test('matches string and array JWT audiences', () => {
+    expect(
+      tokenAudienceMatches(
+        unsignedJwt({ aud: 'https://kernel.example.com' }),
+        'https://kernel.example.com',
+      ),
+    ).toBe(true)
+    expect(
+      tokenAudienceMatches(
+        unsignedJwt({ aud: ['api', 'https://kernel.example.com'] }),
+        'https://kernel.example.com',
+      ),
+    ).toBe(true)
+    expect(
+      tokenAudienceMatches(unsignedJwt({ aud: 'unknown/api' }), 'https://kernel.example.com'),
+    ).toBe(false)
   })
 
   test('detects expired sessions with skew', () => {

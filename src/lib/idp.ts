@@ -388,6 +388,12 @@ export function decodeTokenClaims(token: string | undefined): JWTPayload | undef
   }
 }
 
+export function tokenAudienceMatches(token: string | undefined, audience: string): boolean {
+  const actual = decodeTokenClaims(token)?.aud
+  if (Array.isArray(actual)) return actual.includes(audience)
+  return actual === audience
+}
+
 function tokenExpiresAtFromJwt(token: string | undefined): string | undefined {
   const claims = decodeTokenClaims(token)
   return typeof claims?.exp === 'number' ? new Date(claims.exp * 1000).toISOString() : undefined
@@ -489,6 +495,7 @@ export function resolveClientSecret(idp: IdpConfig, overrideEnv?: string): strin
 export async function refreshSession(
   identityName: string,
   session: IdpSession,
+  opts: { readonly audience?: string } = {},
 ): Promise<IdpSession> {
   if (!session.refresh_token)
     throw new Error(`IdP session for "${identityName}" has no refresh token`)
@@ -498,6 +505,8 @@ export async function refreshSession(
     refresh_token: session.refresh_token,
     client_id: requireClientId(idp),
   })
+  const audience = opts.audience ?? session.audience
+  if (audience) params.set('audience', audience)
   const secret = resolveClientSecret(idp)
   if (secret) params.set('client_secret', secret)
   const token = normalizeTokenResponse(
@@ -506,6 +515,11 @@ export async function refreshSession(
       : await postForm(idp.metadata.token_endpoint, params),
   )
   if (!token.access_token) throw new Error('Refresh response did not include access_token')
+  if (audience && !tokenAudienceMatches(token.access_token, audience)) {
+    throw new Error(
+      `Refresh response access_token was not minted for requested audience ${audience}`,
+    )
+  }
   const claims = decodeTokenClaims(token.id_token ?? token.access_token)
   const next: IdpSession = {
     ...session,
@@ -514,6 +528,7 @@ export async function refreshSession(
     refresh_token: token.refresh_token ?? session.refresh_token,
     token_type: token.token_type ?? session.token_type,
     scope: token.scope ?? session.scope,
+    audience,
     expires_at: tokenExpiresAt(token),
     claims: claims ? (claims as Record<string, unknown>) : session.claims,
     updatedAt: new Date().toISOString(),

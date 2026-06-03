@@ -76,6 +76,7 @@ export type ResolvedAdminTarget = {
   name: string
   url: string
   issuer: string
+  defaultIdentity?: string
   source: AdminTargetSource
   configured: boolean
   registrationSlug: string
@@ -197,6 +198,7 @@ function bookmarkTarget(
     registrationSlug: key,
     url: entry.url,
     issuer: entry.issuer ?? entry.url,
+    defaultIdentity: entry.defaultIdentity,
     source,
     configured,
   }

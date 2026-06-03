@@ -2,7 +2,7 @@ import type { AstraleConfig } from '../lib/config'
 
 import { AuthError } from '../errors'
 import { getDefault, getIdentity, type Identity } from '../lib/identity'
-import { isSessionExpired, readIdpSession, refreshSession } from '../lib/idp'
+import { isSessionExpired, readIdpSession, refreshSession, tokenAudienceMatches } from '../lib/idp'
 import { signAs } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
 
@@ -25,21 +25,22 @@ export type KeyIdentityAuthOptions = {
  *      registration for the target instance, use that target-issued `(iss, sub)`.
  */
 export async function resolveCredential(
-  opts: { as?: string; creds?: string },
+  opts: { as?: string; creds?: string; defaultIdentity?: string },
   config: AstraleConfig,
   audience: string = config.issuer,
   instanceSlug?: string,
 ): Promise<string> {
   if (opts.creds) return opts.creds
   try {
+    const identityName = opts.as ?? opts.defaultIdentity
     // Explicit `--as` wins: sign with that identity's key. When the identity
     // has a registration record for the targeted instance (populated by
     // `astrale identity register`), use the kernel-derived `(iss, sub)` so the
     // JWT matches what the kernel published under its issuer store.
-    if (opts.as) {
-      const identity = await getIdentity(opts.as)
+    if (identityName) {
+      const identity = await getIdentity(identityName)
       if ((identity.source ?? 'key') === 'idp')
-        return await resolveIdpAccessToken(opts.as, identity)
+        return await resolveIdpAccessToken(identityName, identity, audience)
       return await signAs(
         identity.subject,
         KEYS_DIR,
@@ -49,7 +50,7 @@ export async function resolveCredential(
 
     const identity = await getDefault()
     if ((identity.source ?? 'key') === 'idp') {
-      return await resolveIdpAccessToken(identity.name, identity)
+      return await resolveIdpAccessToken(identity.name, identity, audience)
     }
 
     return await signAs(
@@ -59,9 +60,12 @@ export async function resolveCredential(
     )
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to resolve credentials'
-    const hint = opts.as
-      ? `Check identity name. Available identities: astrale identity list`
-      : 'Run `astrale identity create <name>` to set up keys'
+    let hint = 'Run `astrale identity create <name>` to set up keys'
+    if (opts.as) {
+      hint = 'Check identity name. Available identities: astrale identity list'
+    } else if (opts.defaultIdentity) {
+      hint = `Check bookmark default identity "${opts.defaultIdentity}". Available identities: astrale identity list`
+    }
     throw new AuthError(message, hint)
   }
 }
@@ -88,16 +92,39 @@ function systemIdentityIssuer(identity: Identity, audience: string, config: Astr
   return identity.subject === 'system' ? audience : config.issuer
 }
 
-async function resolveIdpAccessToken(identityName: string, identity: Identity): Promise<string> {
+async function resolveIdpAccessToken(
+  identityName: string,
+  identity: Identity,
+  audience: string,
+): Promise<string> {
   const session = await readIdpSession(identityName)
   if (!session) {
     throw new Error(
       `No cached IdP session for "${identityName}". Run: astrale auth login --idp ${identity.idp ?? '<idp>'}`,
     )
   }
-  if (isSessionExpired(session)) {
-    const refreshed = await refreshSession(identityName, session)
-    return refreshed.access_token
+
+  let resolved = session
+  if (isSessionExpired(resolved) || !tokenAudienceMatches(resolved.access_token, audience)) {
+    if (!resolved.refresh_token)
+      throw new Error(wrongAudienceHint(identityName, identity, audience))
+    resolved = await refreshSession(identityName, resolved, { audience })
   }
-  return session.access_token
+
+  if (!tokenAudienceMatches(resolved.access_token, audience)) {
+    throw new Error(
+      `IdP token for "${identityName}" was not minted for target audience ${audience}. ` +
+        `Run: astrale auth login --name ${identityName} --idp ${identity.idp ?? '<idp>'} --audience ${audience}`,
+    )
+  }
+
+  return resolved.access_token
+}
+
+function wrongAudienceHint(identityName: string, identity: Identity, audience: string): string {
+  return (
+    `IdP token for "${identityName}" was not minted for target audience ${audience}, ` +
+    'and the cached session cannot be refreshed. ' +
+    `Run: astrale auth login --name ${identityName} --idp ${identity.idp ?? '<idp>'} --audience ${audience}`
+  )
 }

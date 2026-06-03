@@ -19,6 +19,7 @@ const instances: InstanceStore = {
     admin: {
       url: 'https://bookmarked-admin.example.com',
       issuer: 'https://bookmarked-issuer.example.com',
+      defaultIdentity: 'admin-workos',
     },
     alias: { url: 'https://alias-admin.example.com', name: 'named-admin' },
   },
@@ -47,6 +48,7 @@ describe('resolveAdminTargetFromStore', () => {
       registrationSlug: 'admin',
       url: 'https://bookmarked-admin.example.com',
       issuer: 'https://bookmarked-issuer.example.com',
+      defaultIdentity: 'admin-workos',
       source: 'config-instance',
       configured: true,
     })

@@ -43,6 +43,7 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
   const config = await readConfig()
   // Mirror withKernelClient's slug logic: --url without -i ⇒ no slug.
   let slug: string | undefined
+  let defaultIdentity: string | undefined
   if (opts.url && !opts.instance) {
     slug = undefined
   } else {
@@ -50,7 +51,8 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
     // resolveInstance throws if the bookmark doesn't exist; we just need the slug
     // for the registration lookup, so trust the user input on failure.
     try {
-      await resolveInstance(identifier, config)
+      const resolved = await resolveInstance(identifier, config)
+      defaultIdentity = resolved.defaultIdentity
     } catch {
       // Fall through — slug is still `identifier`.
     }
@@ -61,7 +63,7 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
   // child for which the CLI generated a dedicated keypair, the call signs
   // as the instance itself, not as a user identity.
   let instanceSigned = false
-  if (!opts.creds && !opts.as && slug && slug !== 'manager') {
+  if (!opts.creds && !opts.as && !defaultIdentity && slug && slug !== 'manager') {
     const { privatePath } = keypairPaths(slug, KEYS_DIR)
     instanceSigned = await fileExists(privatePath)
   }
@@ -73,9 +75,10 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
   // honest about the actual problem.
   let identity: SelfResolverContext['identity']
   if (!opts.creds) {
-    if (opts.as) {
-      const i = await getIdentity(opts.as)
-      identity = { ...i, name: opts.as }
+    const identityName = opts.as ?? defaultIdentity
+    if (identityName) {
+      const i = await getIdentity(identityName)
+      identity = { ...i, name: identityName }
     } else {
       identity = await getDefault()
     }
