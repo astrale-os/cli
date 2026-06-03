@@ -38,7 +38,7 @@ Clients address entities in the kernel graph via **Path**s.
 Load-bearing rules — true everywhere:
 
 - The **`class.` / `interface.` prefix is required** on the namespace segment:
-  `/manager.astrale.ai/class.KernelInstance/list`, never `.../KernelInstance/list`.
+  `/host.astrale.ai/class.KernelInstance/list`, never `.../KernelInstance/list`.
 - A static method declared on an Interface is **not** reachable via
   `class.<ConcreteClass>/<method>` — the kernel looks it up by the declaring
   namespace. Use `interface.<Name>` for interface-hosted statics.
@@ -110,7 +110,7 @@ Every kernel command picks its target in this order:
 **explicit `--url` > `-i/--instance <name>` > active instance
 (`~/.astrale/instances.json`) > local manager.**
 
-- Manager URL: `http://localhost:<managerPort>/mngt` (default port `4400`).
+- Manager URL: `http://localhost:<managerPort>/host` (default port `4400`).
 - Child instances are addressed by **direct path-prefix**:
   `http://localhost:<managerPort>/<slug>`. The child authenticates the caller
   itself, so the real principal is preserved in its audit log.
@@ -127,7 +127,7 @@ issuer, not the transport URL**:
 
 | Target | `aud` stamped |
 |---|---|
-| Manager (`/mngt`) | `config.issuer` (= `http://localhost:<port>/mngt`) |
+| Manager (`/host`) | `config.issuer` (= `http://localhost:<port>/host`) |
 | `-i <child>` with stored `issuer` | that issuer (often a tunneled URL) |
 | `-i <child>` not in registry | resolved via `KernelInstance/info`, cached back |
 | `--url <arbitrary>` | the URL itself (pass `--creds` to override) |
@@ -392,12 +392,12 @@ install, leave it unset.
 
 | Service | Default | URL form |
 |---------|---------|----------|
-| Manager | `4400` (`managerPort`) | `http://localhost:4400/mngt` |
+| Manager | `4400` (`managerPort`) | `http://localhost:4400/host` |
 | Child instances | same port | `http://localhost:4400/<slug>` |
 | FalkorDB | `6379` (`falkorPort`) | — |
 | GUI (run separately) | `3400` | `http://localhost:3400` |
 
-The local manager reserves the first path-segment `/mngt` for its management
+The local manager reserves the first path-segment `/host` for its management
 API; any other first path-segment is treated as a local-instance slug.
 
 ## Tunnel model

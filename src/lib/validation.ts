@@ -8,7 +8,8 @@ import { ReservedSlugError } from '../errors'
 const NAME_RE = /^[a-zA-Z0-9_.-]+$/
 // §4.7 — URL-safe slug.
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
-const RESERVED_SLUGS = new Set(['manager'])
+// `host` is the reserved slug of the host/manager kernel (SPEC §5.2); `manager` is the legacy name.
+const RESERVED_SLUGS = new Set(['manager', 'host'])
 
 export { RESERVED_SLUGS }
 

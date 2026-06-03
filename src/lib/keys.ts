@@ -11,6 +11,10 @@ import { KEYS_DIR } from './paths'
 const LEGACY_MANAGER_PRIVATE = 'manager.private.jwk'
 const LEGACY_MANAGER_PUBLIC = 'manager.public.jwk'
 
+// Default issuer/audience for the host-mode manager's own credential. The
+// manager kernel mounts at `/host` (the reserved host slug — SPEC §5.2).
+const DEFAULT_MANAGER_ISSUER = 'http://localhost:4400/host'
+
 type AuthOptions = {
   issuer?: string
   subject?: string
@@ -212,7 +216,7 @@ export async function persistAuth(
   keysDir: string = KEYS_DIR,
   opts?: AuthOptions,
 ): Promise<AuthBinding> {
-  const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
+  const issuer = opts?.issuer ?? DEFAULT_MANAGER_ISSUER
   const subject = opts?.subject ?? 'manager'
   const kid = opts?.kid ?? `${subject}-key`
 
@@ -235,7 +239,7 @@ export async function loadAuth(
   keysDir: string = KEYS_DIR,
   opts?: AuthOptions,
 ): Promise<AuthBinding> {
-  const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
+  const issuer = opts?.issuer ?? DEFAULT_MANAGER_ISSUER
   const subject = opts?.subject ?? 'manager'
 
   const { privateJwk, publicJwk, kid } = await loadSigningMaterial(subject, keysDir)
@@ -275,7 +279,7 @@ export async function signAs(
   keysDir: string = KEYS_DIR,
   opts?: { issuer?: string; audience?: string; subject?: string },
 ): Promise<string> {
-  const issuer = opts?.issuer ?? 'http://localhost:4400/mngt'
+  const issuer = opts?.issuer ?? DEFAULT_MANAGER_ISSUER
   const audience = opts?.audience ?? issuer
   const { privateJwk, kid } = await loadSigningMaterial(subject, keysDir)
 

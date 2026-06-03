@@ -59,7 +59,7 @@ export interface ConnectionContextValue {
   /**
    * Schema-bound typed view of the manager domain. `null` until connected;
    * use `manager.static('KernelInstance').register(...)` etc. for all
-   * `manager.astrale.ai` calls.
+   * `host.astrale.ai` calls.
    */
   manager: TypedManager | null
   setBindingMode: (mode: BindingMode) => void

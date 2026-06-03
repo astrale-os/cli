@@ -166,7 +166,7 @@ Behavior:
 
 Examples:
   $ astrale describe /kernel.astrale.ai
-  $ astrale describe /manager.astrale.ai --no-schema | jq .
+  $ astrale describe /host.astrale.ai --no-schema | jq .
 `,
   arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
   options: [

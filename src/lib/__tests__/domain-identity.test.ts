@@ -68,7 +68,7 @@ describe('buildIdentityBinding (end-to-end against a committed spec)', () => {
   const SPEC_PATH = resolve(
     dirname(fileURLToPath(import.meta.url)),
     '../../../..',
-    'domains/manager-ui/spec.json',
+    'domains/host-ui/spec.json',
   )
 
   async function generateES256Jwk(kid: string): Promise<Record<string, unknown>> {

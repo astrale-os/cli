@@ -295,7 +295,7 @@ Self-reference:
   registration record in ~/.astrale/identities.json).
 
 Examples:
-  $ astrale call /manager.astrale.ai/class.KernelInstance/list
+  $ astrale call /host.astrale.ai/class.KernelInstance/list
   $ astrale call /blog.acme.com/class.Author/list limit=10
   $ astrale call '@self::deactivate'
   $ astrale call /dist.astrale.ai/class.Domain/install --creds "$TOKEN" \\
@@ -305,7 +305,7 @@ Examples:
     {
       name: 'path',
       description:
-        'Operation path (e.g., /manager.astrale.ai/class.KernelInstance/list or /node::method)',
+        'Operation path (e.g., /host.astrale.ai/class.KernelInstance/list or /node::method)',
     },
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
