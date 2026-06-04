@@ -1,3 +1,4 @@
+import { isDnsLabel } from '@astrale-os/kernel-core'
 import { z } from 'zod'
 
 import { ReservedSlugError } from '../errors'
@@ -6,8 +7,6 @@ import { ReservedSlugError } from '../errors'
 // registries — kept in a leaf module to avoid circular imports.
 
 const NAME_RE = /^[a-zA-Z0-9_.-]+$/
-// §4.7 — URL-safe slug.
-const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/
 // `host` is the reserved slug of the host/manager kernel (SPEC §5.2); `manager` is the legacy name.
 const RESERVED_SLUGS = new Set(['manager', 'host'])
 
@@ -22,8 +21,12 @@ export function validateName(name: string, entity: string): void {
 }
 
 export function validateSlug(slug: string): void {
-  if (!slug || !SLUG_RE.test(slug)) {
-    throw new Error(`Invalid slug "${slug}" — must match [a-z0-9][a-z0-9-]* (§4.7)`)
+  // Canonical DNS-label rule (`@astrale-os/kernel-core`): a slug becomes a
+  // hostname label, so reject anything not DNS-safe (§4.7).
+  if (!slug || !isDnsLabel(slug)) {
+    throw new Error(
+      `Invalid slug "${slug}" — must be a lowercase DNS label [a-z0-9-], ≤63 chars, no leading/trailing hyphen (§4.7)`,
+    )
   }
   if (RESERVED_SLUGS.has(slug)) {
     throw new ReservedSlugError(slug)
