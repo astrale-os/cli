@@ -1,9 +1,11 @@
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
+import { AuthError } from '../../errors'
 import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import { readIdentities, type IdentityStore } from '../../lib/identity'
 import { addInstance, setActive } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { isRawOutput, output } from '../../lib/output'
@@ -42,6 +44,7 @@ Examples:
   action: async (id: string, opts: CreateOpts) => {
     try {
       validateSlug(id)
+      await assertAlphaCreateAuth(opts)
       const result = await withAdminKernelClient(
         opts,
         async (ctx) =>
@@ -76,3 +79,21 @@ Examples:
     }
   },
 } satisfies CommandDefinition
+
+async function assertAlphaCreateAuth(opts: Pick<CreateOpts, 'as' | 'creds'>): Promise<void> {
+  if (opts.creds) return
+  assertAlphaCreateIdentity(await readIdentities(), opts)
+}
+
+export function assertAlphaCreateIdentity(
+  store: IdentityStore,
+  opts: Pick<CreateOpts, 'as'> = {},
+): void {
+  const name = opts.as ?? store.default
+  const identity = store.identities[name]
+  if (identity && identity.source === 'idp') return
+  throw new AuthError(
+    'WorkOS login required for `astrale instance create`',
+    'Run: astrale auth login',
+  )
+}

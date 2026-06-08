@@ -9,7 +9,7 @@ set -eu
 #
 # Optional environment:
 #   ASTRALE_INSTALL_DIR  install directory (default: ~/.astrale/bin)
-#   ASTRALE_VERSION      exact release tag/version to install (for example 0.4.0-alpha.5)
+#   ASTRALE_VERSION      exact release tag/version to install (for example 0.4.0-alpha.6)
 #   ASTRALE_CHANNEL      release channel when ASTRALE_VERSION is unset (alpha|beta|rc|canary|stable)
 #   ASTRALE_REPO         GitHub repo override (default: astrale-os/cli)
 #   ASTRALE_DOWNLOAD_BASE  direct asset base URL override

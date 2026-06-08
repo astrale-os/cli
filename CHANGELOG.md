@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0-alpha.6 (2026-06-08)
+
+### Public Alpha
+
+* point fresh `instance create` users at `astrale auth login`
+
 ## 0.4.0-alpha.5 (2026-06-08)
 
 ### Public Alpha
