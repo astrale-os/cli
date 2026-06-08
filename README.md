@@ -5,13 +5,13 @@ managed alpha instances through the Astrale admin control plane, and calls
 domain functions on the selected instance.
 
 - Binary: `astrale`
-- Alpha installer: `curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh`
+- Alpha installer: `curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh`
 - Default admin kernel: `https://admin.eu.astrale.ai/api`
 
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
 The installer downloads the standalone binary from GitHub Releases, verifies
@@ -21,9 +21,9 @@ It does not install Bun, npm packages, Docker, or a local manager.
 Optional installer environment:
 
 ```bash
-ASTRALE_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh
-ASTRALE_VERSION=0.4.0-alpha.3 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh
-ASTRALE_CHANNEL=canary curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh
+ASTRALE_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
+ASTRALE_VERSION=0.4.0-alpha.3 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
+ASTRALE_CHANNEL=canary curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
 ## Alpha Quickstart

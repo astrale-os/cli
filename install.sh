@@ -4,7 +4,7 @@ set -eu
 # Install the public Astrale CLI binary.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 #
 # Optional environment:
 #   ASTRALE_INSTALL_DIR  install directory (default: ~/.astrale/bin)

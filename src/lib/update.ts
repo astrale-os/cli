@@ -100,7 +100,7 @@ export async function readInstallMetadata(path = INSTALL_PATH): Promise<InstallM
     throw new AstraleError(
       'UPDATE_NOT_SCRIPT_INSTALLED',
       'Astrale was not installed by the official install script.',
-      'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh',
+      'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
     )
   }
 
@@ -109,7 +109,7 @@ export async function readInstallMetadata(path = INSTALL_PATH): Promise<InstallM
     throw new AstraleError(
       'UPDATE_BAD_INSTALL_METADATA',
       `Invalid install metadata at ${path}.`,
-      'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh',
+      'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
     )
   }
   return parsed.data

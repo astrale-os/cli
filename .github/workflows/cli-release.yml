@@ -7,7 +7,7 @@ on:
     paths:
       - 'bin/**'
       - 'src/**'
-      - 'install/**'
+      - 'install.sh'
       - 'package.json'
       - 'tsconfig.json'
       - '.github/workflows/cli-release.yml'
@@ -207,5 +207,5 @@ jobs:
 
           - Version: \`${{ steps.meta.outputs.version }}\`
           - Channel: \`${{ steps.meta.outputs.channel }}\`
-          - Install: \`curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh\`
+          - Install: \`curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh\`
           EOF
