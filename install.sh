@@ -5,10 +5,11 @@ set -eu
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
+#   wget -qO- https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 #
 # Optional environment:
 #   ASTRALE_INSTALL_DIR  install directory (default: ~/.astrale/bin)
-#   ASTRALE_VERSION      exact release tag/version to install (for example 0.4.0-alpha.4)
+#   ASTRALE_VERSION      exact release tag/version to install (for example 0.4.0-alpha.5)
 #   ASTRALE_CHANNEL      release channel when ASTRALE_VERSION is unset (alpha|beta|rc|canary|stable)
 #   ASTRALE_REPO         GitHub repo override (default: astrale-os/cli)
 #   ASTRALE_DOWNLOAD_BASE  direct asset base URL override

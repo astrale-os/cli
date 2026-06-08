@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0-alpha.5 (2026-06-08)
+
+### Public Alpha
+
+* build Linux release assets with musl targets for Alpine-based sandboxes
+* document the `wget` installer path for minimal Linux images
+
 ## 0.4.0-alpha.4 (2026-06-08)
 
 ### Public Alpha

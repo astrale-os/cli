@@ -33,7 +33,7 @@ Examples:
   $ astrale update
   $ astrale update --check
   $ astrale update --channel canary
-  $ astrale update --version 0.4.0-alpha.4
+  $ astrale update --version 0.4.0-alpha.5
 `,
   action: async (opts: UpdateOpts) => {
     try {

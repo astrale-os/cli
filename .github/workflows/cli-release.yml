@@ -57,15 +57,19 @@ jobs:
           - os: ubuntu-latest
             target_os: linux
             target_arch: x64
+            bun_target: bun-linux-x64-musl
           - os: ubuntu-24.04-arm
             target_os: linux
             target_arch: arm64
+            bun_target: bun-linux-arm64-musl
           - os: macos-13
             target_os: darwin
             target_arch: x64
+            bun_target: bun-darwin-x64
           - os: macos-14
             target_os: darwin
             target_arch: arm64
+            bun_target: bun-darwin-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -89,7 +93,7 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
-          bun build --compile bin/astrale.ts --outfile dist/astrale
+          bun build --compile --target=${{ matrix.bun_target }} bin/astrale.ts --outfile dist/astrale
           ./dist/astrale --version
           ./dist/astrale --help >/dev/null
       - name: Package asset
