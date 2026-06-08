@@ -75,11 +75,6 @@ export async function lookupRemoteBinding(
   if (!resolved) return null
 
   for (const candidate of resolved.candidates) {
-    // Skip candidates that aren't domain-addressed (relative / id-anchored /
-    // malformed) before the round-trip; the slug itself is no longer the
-    // audience (that's the node's `iss`).
-    if (!extractDomainSlug(candidate)) continue
-
     let node: MethodNode | null = null
     try {
       node = (await client.call(`${candidate}::get`, {})) as MethodNode | null
@@ -241,20 +236,6 @@ function readJwtSub(credential: string): string | null {
   } catch {
     return null
   }
-}
-
-/**
- * Extract the domain slug from a kernel method path.
- *
- * `/dist.localhost/class.BlaxelComputer/init` -> `dist.localhost`
- * Returns `null` for relative paths, id-anchored paths, or malformed input.
- */
-export function extractDomainSlug(path: string): string | null {
-  if (!path.startsWith('/')) return null
-  const rest = path.slice(1)
-  const slash = rest.indexOf('/')
-  const slug = slash === -1 ? rest : rest.slice(0, slash)
-  return slug.length > 0 ? slug : null
 }
 
 /** Parse a `Function.binding` prop value (JSON string or object form). */
