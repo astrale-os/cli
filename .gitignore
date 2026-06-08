@@ -41,6 +41,3 @@ pnpm-debug.log*
 
 # Local files
 *.local
-
-# Lockfile (generated fresh in CI)
-pnpm-lock.yaml

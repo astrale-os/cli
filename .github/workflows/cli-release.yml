@@ -52,13 +52,12 @@ jobs:
             @astrale-os/kernel-api \
             @astrale-os/kernel-client \
             @astrale-os/kernel-core \
-            @astrale-os/kernel-dsl \
-            @astrale-os/ox
+            @astrale-os/kernel-dsl
           do
             npm view "$package" version --registry=https://npm.pkg.github.com
           done
       - name: Install production dependencies
-        run: STANDALONE=true pnpm install --prod --no-frozen-lockfile
+        run: STANDALONE=true pnpm install --prod --frozen-lockfile --ignore-scripts
       - name: Test
         run: pnpm test
 
@@ -104,7 +103,7 @@ jobs:
           printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
           printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install production dependencies
-        run: STANDALONE=true pnpm install --prod --no-frozen-lockfile
+        run: STANDALONE=true pnpm install --prod --frozen-lockfile --ignore-scripts
       - name: Build binary
         run: |
           set -eu
