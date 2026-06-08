@@ -52,7 +52,8 @@ jobs:
             @astrale-os/kernel-api \
             @astrale-os/kernel-client \
             @astrale-os/kernel-core \
-            @astrale-os/kernel-dsl
+            @astrale-os/kernel-dsl \
+            @astrale-os/ox
           do
             npm view "$package" version --registry=https://npm.pkg.github.com
           done
