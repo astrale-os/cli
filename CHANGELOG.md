@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0-alpha.8 (2026-06-08)
+
+### Public Alpha
+
+* publish deterministic standalone builds from CI
+* track channel release identity so `astrale update --check` is accurate
+* publish current kernel package contracts in the CLI lockfile
+
 ## 0.4.0-alpha.7 (2026-06-08)
 
 ### Public Alpha
