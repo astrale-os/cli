@@ -1,46 +1,56 @@
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
+import type { ListOpts, ListProjection } from '../../lib/output'
 
 import { readIdentities } from '../../lib/identity'
 import { log } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+
+type IdentityRow = {
+  name: string
+  subject: string
+  source: string
+  idp?: string
+  default: boolean
+  createdAt?: string
+}
+
+function projection(items: IdentityRow[]): ListProjection {
+  return {
+    columns: [
+      { key: 'name', header: 'NAME', color: chalk.bold },
+      { key: 'subject', header: 'SUBJECT', color: chalk.dim },
+      { key: 'source', header: 'SOURCE', color: chalk.dim },
+    ],
+    rows: items.map((i) => ({
+      name: i.default ? `${i.name} ${chalk.green('*')}` : i.name,
+      subject: i.subject !== i.name ? i.subject : '',
+      source: i.source === 'idp' ? `idp:${i.idp ?? '?'}` : 'key',
+    })),
+    paths: items.map((i) => i.name),
+  }
+}
 
 export default {
   name: 'list',
   description: 'List all identities',
   options: [...RAW_OUTPUT_OPTIONS],
-  action: async (opts: { raw?: boolean; json?: boolean }) => {
-    const isRaw = isRawOutput(opts)
+  action: async (opts: ListOpts) => {
     const store = await readIdentities()
+    const items: IdentityRow[] = Object.entries(store.identities).map(([name, id]) => ({
+      name,
+      subject: id.subject,
+      source: id.source ?? 'key',
+      idp: id.idp,
+      default: name === store.default,
+      createdAt: id.createdAt,
+    }))
 
-    if (isRaw) {
-      const items = Object.entries(store.identities).map(([name, id]) => ({
-        name,
-        subject: id.subject,
-        source: id.source ?? 'key',
-        idp: id.idp,
-        default: name === store.default,
-        createdAt: id.createdAt,
-      }))
-      output({ default: store.default, identities: items }, opts)
-      return
-    }
-
-    const names = Object.keys(store.identities)
-    if (names.length === 0) {
+    if (items.length === 0 && !isMachine(opts)) {
       log.dim('  No identities. Run: astrale identity create <name>')
       return
     }
-
-    for (const name of names) {
-      const identity = store.identities[name]
-      const isDefault = name === store.default
-      const marker = isDefault ? chalk.green(' *') : ''
-      const subject = identity.subject !== name ? chalk.dim(` (subject: ${identity.subject})`) : ''
-      const source =
-        (identity.source ?? 'key') === 'idp' ? chalk.dim(` [idp:${identity.idp ?? '?'}]`) : ''
-      console.log(`  ${chalk.bold(name)}${subject}${source}${marker}`)
-    }
+    presentList(items, opts, projection)
   },
 } satisfies CommandDefinition

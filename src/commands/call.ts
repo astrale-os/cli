@@ -9,16 +9,15 @@ import {
   runKernelCommand,
   withSelfHint,
 } from '../kernel'
+import { presentBinary, type BinaryLike } from '../lib/binary'
 import { log } from '../lib/log'
-import { output } from '../lib/output'
+import { output, present } from '../lib/output'
 import { containsSelfRef, expandSelfReferences } from '../lib/self'
 
-type CallOpts = CallCommandOpts & { describe?: boolean; dryRun?: boolean }
-type BinaryResponseLike = {
-  status: number
-  contentType: string
-  body: Uint8Array | ReadableStream<Uint8Array>
-}
+type CallOpts = CallCommandOpts & { describe?: boolean; dryRun?: boolean; output?: string }
+
+/** A call resolves to either a JSON value or a binary response. */
+type CallResult = { kind: 'binary'; response: BinaryLike } | { kind: 'value'; value: unknown }
 
 export async function callCommand(
   path: string,
@@ -81,10 +80,10 @@ export async function callCommand(
   }
 
   // ── Execute ────────────────────────────────────────────
-  await runKernelCommand({
+  await runKernelCommand<CallResult>({
     opts,
     label: expandedPath,
-    fn: async (ctx) => {
+    fn: async (ctx): Promise<CallResult> => {
       // Remote-bound functions live on an external worker; the kernel dispatch
       // path never reaches them. Before calling, check for `binding.remoteUrl`
       // and if present, mint a worker-scoped credential and override the URL
@@ -92,81 +91,40 @@ export async function callCommand(
       const binding = await lookupRemoteBinding(ctx.client, expandedPath, ctx.credential)
       if (binding) {
         const workerCreds = await mintRemoteCredential(ctx.client, binding.audience, ctx.credential)
+        const callOpts = {
+          url: binding.remoteUrl,
+          credential: workerCreds,
+          ...(binding.self !== undefined && { self: binding.self }),
+        }
         if (binding.output === 'binary') {
           const response = await withSelfHint(
-            () =>
-              ctx.client.binary(binding.path, params, {
-                url: binding.remoteUrl,
-                credential: workerCreds,
-                ...(binding.self !== undefined && { self: binding.self }),
-              }),
+            () => ctx.client.binary(binding.path, params, callOpts),
             selfMeta,
           )
-          return formatBinaryResponse(response)
+          return { kind: 'binary', response }
         }
-        return withSelfHint(
-          () =>
-            ctx.client.call(binding.path, params, {
-              url: binding.remoteUrl,
-              credential: workerCreds,
-              ...(binding.self !== undefined && { self: binding.self }),
-            }),
+        const value = await withSelfHint(
+          () => ctx.client.call(binding.path, params, callOpts),
           selfMeta,
         )
+        return { kind: 'value', value }
       }
-      return withSelfHint(() => ctx.client.call(expandedPath, params), selfMeta)
+      const value = await withSelfHint(() => ctx.client.call(expandedPath, params), selfMeta)
+      return { kind: 'value', value }
+    },
+    format: async (result, fmtOpts) => {
+      if (result.kind === 'binary') {
+        await presentBinary(result.response, fmtOpts, { outFile: opts.output })
+        return
+      }
+      present(result.value, fmtOpts)
     },
   })
 }
 
-async function formatBinaryResponse(
-  response: BinaryResponseLike,
-): Promise<Record<string, unknown>> {
-  const bytes = await readBinaryBody(response.body)
-  const contentType = response.contentType.toLowerCase()
-  const textLike =
-    contentType.startsWith('text/') ||
-    contentType.includes('json') ||
-    contentType.includes('xml') ||
-    contentType.includes('event-stream')
-
-  if (textLike) {
-    return {
-      status: response.status,
-      contentType: response.contentType,
-      body: new TextDecoder().decode(bytes),
-    }
-  }
-
-  return {
-    status: response.status,
-    contentType: response.contentType,
-    bodyBase64: Buffer.from(bytes).toString('base64'),
-  }
-}
-
-async function readBinaryBody(body: Uint8Array | ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  if (body instanceof Uint8Array) return body
-
-  const chunks: Uint8Array[] = []
-  const reader = body.getReader()
-  let total = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (!value) continue
-    chunks.push(value)
-    total += value.byteLength
-  }
-
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return out
-}
+// Kernel-dispatched binary (a binary method WITHOUT a `binding.remoteUrl`) is not
+// wired: only the remote path calls `ctx.client.binary`. To support it, read the
+// output mode from `::get` before dispatch and route to `ctx.client.binary`.
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {
   await runKernelCommand<Record<string, unknown>>({
@@ -311,6 +269,7 @@ Examples:
   ],
   options: [
     { flags: '-d, --data <json>', description: 'Params as JSON string' },
+    { flags: '-o, --output <file>', description: 'Write binary/raw output to a file' },
     { flags: '--describe', description: 'Show operation schema without executing' },
     { flags: '--dry-run', description: 'Show what would be sent without executing' },
   ],

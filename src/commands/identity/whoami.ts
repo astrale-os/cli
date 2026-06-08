@@ -4,7 +4,7 @@ import type { CommandDefinition } from '../../command'
 
 import { getDefault } from '../../lib/identity'
 import { fatal } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 
 type WhoamiResult = {
   name: string
@@ -22,7 +22,7 @@ export default {
         name: identity.name,
         subject: identity.subject,
       }
-      if (isRawOutput(opts)) {
+      if (isMachine(opts)) {
         output(result, opts)
         return
       }

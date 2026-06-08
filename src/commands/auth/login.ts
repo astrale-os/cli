@@ -21,7 +21,7 @@ import {
   type TokenResponse,
 } from '../../lib/idp'
 import { log } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
 
 type LoginOpts = {
   idp?: string
@@ -122,7 +122,7 @@ Notes:
     })
 
     const rendered = publicSession(session)
-    if (isRawOutput(opts)) {
+    if (isMachine(opts)) {
       output(rendered, opts)
       return
     }

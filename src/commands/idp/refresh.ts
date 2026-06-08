@@ -7,7 +7,7 @@ import {
   workosAuthKitMetadata,
 } from '../../lib/idp'
 import { log } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
 
 export default {
   name: 'refresh',
@@ -27,7 +27,7 @@ export default {
       builtIn: existing.entry.builtIn,
     })
 
-    if (isRawOutput(opts)) {
+    if (isMachine(opts)) {
       output(idp, opts)
       return
     }

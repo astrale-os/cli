@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../command'
 
 import pkg from '../../package.json' with { type: 'json' }
 import { fatal, log } from '../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
+import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 import { updateAstrale } from '../lib/update'
 
 type UpdateOpts = RawOutputOpts & {
@@ -44,7 +44,7 @@ Examples:
         currentVersion: pkg.version,
       })
 
-      if (isRawOutput(opts)) {
+      if (isMachine(opts)) {
         output(result, opts)
         if (opts.check && result.status === 'available') process.exitCode = 10
         return

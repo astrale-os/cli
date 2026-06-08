@@ -7,7 +7,7 @@ import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, log } from '../../lib/log'
-import { isRawOutput, output, type RawOutputOpts } from '../../lib/output'
+import { isMachine, output, type RawOutputOpts } from '../../lib/output'
 
 type StatusOpts = KernelCommandOpts & AdminTargetCommandOpts & RawOutputOpts
 
@@ -22,7 +22,7 @@ export default {
         opts,
         async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id })) as InstanceInfo,
       )
-      if (isRawOutput(opts)) {
+      if (isMachine(opts)) {
         output(result, opts)
         return
       }

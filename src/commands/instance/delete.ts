@@ -6,7 +6,7 @@ import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
-import { isRawOutput, output } from '../../lib/output'
+import { isMachine, output } from '../../lib/output'
 
 type DeleteOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -42,7 +42,7 @@ Behavior:
         if (key) await removeInstance(key)
       }
 
-      if (isRawOutput(opts)) {
+      if (isMachine(opts)) {
         output(result, opts)
         return
       }
