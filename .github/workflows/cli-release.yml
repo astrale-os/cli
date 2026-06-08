@@ -48,8 +48,14 @@ jobs:
       - name: Check package access
         run: |
           set -eu
-          npm view @astrale-os/kernel-core version --registry=https://npm.pkg.github.com
-          npm view @astrale-os/kernel-client version --registry=https://npm.pkg.github.com
+          for package in \
+            @astrale-os/kernel-api \
+            @astrale-os/kernel-client \
+            @astrale-os/kernel-core \
+            @astrale-os/kernel-dsl
+          do
+            npm view "$package" version --registry=https://npm.pkg.github.com
+          done
       - name: Install production dependencies
         run: STANDALONE=true pnpm install --prod --no-frozen-lockfile
       - name: Test
