@@ -1,6 +1,10 @@
 import chalk from 'chalk'
 import { stringify as yamlStringify } from 'yaml'
 
+import { renderTable, type Column } from './table'
+
+export type { Column } from './table'
+
 export type OutputOpts = {
   raw?: boolean
   json?: boolean
@@ -10,15 +14,25 @@ export type OutputOpts = {
 export type RawOutputOpts = Pick<OutputOpts, 'raw' | 'json'>
 
 export const RAW_OUTPUT_OPTIONS = [
-  { flags: '--raw', description: 'Output raw JSON (no colors)' },
-  { flags: '--json', description: 'Alias for --raw' },
+  { flags: '--json', description: 'Always-valid JSON (for jq)' },
+  { flags: '--raw', description: 'Unwrapped: bare scalar / raw bytes / JSON for objects' },
 ] as const
 
 /**
- * Determine if output should be raw (machine-readable).
+ * Is the consumer a machine (emit structured data, not a pretty view)?
+ * True for `--json`, `--raw`, or any non-TTY stdout (pipe, redirect, CI, agent).
  */
-export function isRawOutput(opts?: RawOutputOpts): boolean {
+export function isMachine(opts?: RawOutputOpts): boolean {
   return !!(opts?.raw || opts?.json) || !(process.stdout.isTTY ?? false)
+}
+
+/**
+ * `--raw` = the *unwrapped* value (bare scalar, raw bytes). The raw-vs-json
+ * distinction only manifests for scalars and binary; objects/arrays fall back
+ * to JSON under either flag.
+ */
+export function isUnwrapped(opts?: RawOutputOpts): boolean {
+  return !!opts?.raw
 }
 
 /**
@@ -97,4 +111,112 @@ function highlightJson(data: unknown): string {
     .replace(/: (-?\d+\.?\d*(?:e[+-]?\d+)?)\b/gi, (_, num: string) => `: ${chalk.yellow(num)}`)
     .replace(/: (true|false)\b/g, (_, bool: string) => `: ${chalk.magenta(bool)}`)
     .replace(/: (null)\b/g, () => `: ${chalk.dim('null')}`)
+}
+
+// ── present: shape-aware rendering ──────────────────────────
+
+export type PresentOpts = OutputOpts & { denoise?: boolean }
+
+/** One display row per item plus the columns and (optional) `-q` paths. */
+export type ListProjection = {
+  columns: Column[]
+  rows: Array<Record<string, string>>
+  paths?: string[]
+}
+
+export type ListOpts = OutputOpts & {
+  quiet?: boolean
+  count?: boolean
+  long?: boolean
+}
+
+const NOISE_KEYS = new Set(['schema', 'icon', 'code', 'inputSchema', 'outputSchema'])
+
+/**
+ * Strip heavy, low-signal keys (serialized schema blobs, SVG icons, code) at any
+ * depth — so machine output is the kernel's data minus the noise, never a wall.
+ */
+export function denoise(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(denoise)
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value)) {
+      if (NOISE_KEYS.has(k)) continue
+      out[k] = v && typeof v === 'object' ? denoise(v) : v
+    }
+    return out
+  }
+  return value
+}
+
+function isBareScalar(v: unknown): v is string | number | boolean {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+}
+
+/**
+ * Present a single kernel value, shape- and audience-aware.
+ *
+ * - scalar → `--raw` bare (no quotes, for `X=$(…)`) · `--json`/pipe JSON · TTY bare
+ * - object → YAML on a TTY, JSON for machines (delegates to {@link output})
+ * - array  → YAML/JSON fallback (use {@link presentList} for a table)
+ *
+ * `null`/`undefined` normalize to `null` (via `output`) so `JSON.parse(stdout)`
+ * never breaks.
+ */
+export function present(value: unknown, opts: PresentOpts = {}): void {
+  const data = opts.denoise ? denoise(value) : value
+
+  if (isBareScalar(data)) {
+    if (opts.raw) {
+      process.stdout.write(String(data) + '\n')
+      return
+    }
+    if (!opts.json && (process.stdout.isTTY ?? false)) {
+      process.stdout.write(String(data) + '\n')
+      return
+    }
+    // `--json` or non-TTY machine → JSON (quoted string / bare number).
+  }
+
+  output(data, opts)
+}
+
+/**
+ * Present an array of objects.
+ *
+ * - `--count`     → just the number
+ * - `-q/--quiet`  → one path per line (unix-pipeable)
+ * - machine       → denoised JSON of the raw items (`-l` keeps full items)
+ * - TTY           → an aligned table + a dim count footer
+ *
+ * Projection (columns/rows/paths) is for the human table and `-q` only; the
+ * machine surface stays the kernel's own item fields.
+ */
+export function presentList<T>(
+  items: T[],
+  opts: ListOpts,
+  project: (items: T[]) => ListProjection,
+): void {
+  if (opts.count) {
+    process.stdout.write(String(items.length) + '\n')
+    return
+  }
+
+  if (opts.quiet) {
+    const proj = project(items)
+    const paths = proj.paths ?? proj.rows.map((r) => r[proj.columns[0]?.key ?? ''] ?? '')
+    for (const p of paths) process.stdout.write(p + '\n')
+    return
+  }
+
+  if (isMachine(opts) || opts.format) {
+    output(opts.long ? items : denoise(items), opts)
+    return
+  }
+
+  const proj = project(items)
+  const table = renderTable(proj.rows, { columns: proj.columns })
+  const footer =
+    items.length > 0 ? chalk.dim(`\n  ${items.length} item${items.length === 1 ? '' : 's'}`) : ''
+  process.stdout.write(table + footer + '\n')
 }

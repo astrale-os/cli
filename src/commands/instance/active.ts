@@ -4,7 +4,7 @@ import type { CommandDefinition } from '../../command'
 
 import { getActive } from '../../lib/instance'
 import { log } from '../../lib/log'
-import { RAW_OUTPUT_OPTIONS, isRawOutput, output, type RawOutputOpts } from '../../lib/output'
+import { RAW_OUTPUT_OPTIONS, isMachine, output, type RawOutputOpts } from '../../lib/output'
 
 export default {
   name: 'active',
@@ -12,7 +12,7 @@ export default {
   options: [...RAW_OUTPUT_OPTIONS],
   action: async (opts: RawOutputOpts) => {
     try {
-      const isRaw = isRawOutput(opts)
+      const isRaw = isMachine(opts)
       const active = await getActive()
       const { name } = active
       const url = active.url ?? null

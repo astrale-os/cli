@@ -360,12 +360,17 @@ one segment, `**` matches the rest. Flags: `astrale logs --help`.
 
 ## Output / TTY behavior
 
-- TTY: spinner + syntax-highlighted YAML/JSON + timing info.
-- Non-TTY or `--raw`/`--json`: plain JSON to stdout, errors to stderr, no
-  colors. `--format <yaml|json>` defaults to yaml on TTY, json when piped.
-- `-R` (tree), `-q` (bare ids), `-c` (compact) are TTY-shaped: in `--raw`/
-  non-TTY mode `-R` emits a flat list of direct children — for scripted trees
-  use a Cypher `query` or recurse with `-q`.
+Output is shape-driven and audience-aware (auto-selected from TTY + flags):
+
+- **TTY** → pretty: lists render as an aligned **table**, objects as YAML, scalars bare.
+- **Piped / non-TTY / `--json`** → JSON (the kernel's value, denoised — heavy
+  `schema`/`icon` blobs stripped). `--format <yaml|json>` overrides.
+- **`--json` ≠ `--raw`**: `--json` = valid JSON (for `jq`); `--raw` = unwrapped —
+  bare scalar (e.g. `X=$(astrale token … --raw)`), raw bytes for binary.
+- `-q` = one path per line (pipeable); `--count` = the number; `-l` = full fields.
+- Binary: piped/`--raw` writes raw bytes; `call … -o <file>` saves to a file; a
+  TTY shows a `<binary · type · size>` summary instead of spewing bytes.
+
 
 The common kernel options (`--format`, `--raw`/`--json`, `--url`,
 `-i/--instance`, `--timeout`, `--as`, `--creds`, `--debug`) are shared by

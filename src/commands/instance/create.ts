@@ -8,7 +8,7 @@ import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/adm
 import { readIdentities, type IdentityStore } from '../../lib/identity'
 import { addInstance, setActive } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
-import { isRawOutput, output } from '../../lib/output'
+import { isMachine, output } from '../../lib/output'
 import { validateSlug } from '../../lib/validation'
 
 type CreateOpts = KernelCommandOpts &
@@ -67,7 +67,7 @@ Examples:
         await setActive(id)
       }
 
-      if (isRawOutput(opts)) {
+      if (isMachine(opts)) {
         output(result, opts)
         return
       }

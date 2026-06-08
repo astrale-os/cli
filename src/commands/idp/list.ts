@@ -1,17 +1,45 @@
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
+import type { ListOpts, ListProjection } from '../../lib/output'
 
 import { listIdpConfigs } from '../../lib/idp'
 import { log } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+
+type IdpRow = {
+  name: string
+  issuer: string
+  clientId?: string
+  scope?: string
+  builtIn: boolean
+  updatedAt?: string
+}
+
+function projection(items: IdpRow[]): ListProjection {
+  return {
+    columns: [
+      { key: 'name', header: 'NAME', color: chalk.bold },
+      { key: 'type', header: 'TYPE', color: chalk.dim },
+      { key: 'issuer', header: 'ISSUER', color: chalk.dim },
+      { key: 'clientId', header: 'CLIENT_ID', color: chalk.dim },
+    ],
+    rows: items.map((i) => ({
+      name: i.name,
+      type: i.builtIn ? 'built-in' : 'custom',
+      issuer: i.issuer ?? '',
+      clientId: i.clientId ?? '',
+    })),
+    paths: items.map((i) => i.name),
+  }
+}
 
 export default {
   name: 'list',
   description: 'List configured identity providers',
   options: [...RAW_OUTPUT_OPTIONS],
-  action: async (opts: { raw?: boolean; json?: boolean }) => {
-    const entries = (await listIdpConfigs()).map((config) => ({
+  action: async (opts: ListOpts) => {
+    const items: IdpRow[] = (await listIdpConfigs()).map((config) => ({
       name: config.name,
       issuer: config.entry.issuer,
       clientId: config.client.client_id,
@@ -20,20 +48,10 @@ export default {
       updatedAt: config.entry.updatedAt,
     }))
 
-    if (isRawOutput(opts)) {
-      output({ idps: entries }, opts)
-      return
-    }
-
-    if (entries.length === 0) {
+    if (items.length === 0 && !isMachine(opts)) {
       log.dim('  No IdPs. Run: astrale idp add <name> --issuer <url>')
       return
     }
-
-    for (const idp of entries) {
-      const builtIn = idp.builtIn ? chalk.dim(' (built-in)') : ''
-      const client = idp.clientId ? chalk.dim(` client_id=${idp.clientId}`) : ''
-      console.log(`  ${chalk.bold(idp.name)}${builtIn} ${chalk.dim(idp.issuer)}${client}`)
-    }
+    presentList(items, opts, projection)
   },
 } satisfies CommandDefinition

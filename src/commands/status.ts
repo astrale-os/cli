@@ -4,7 +4,7 @@ import type { CommandDefinition } from '../command'
 
 import { readLocalStatus } from '../lib/local-status'
 import { log } from '../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../lib/output'
+import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../lib/output'
 
 export default {
   name: 'status',
@@ -13,7 +13,7 @@ export default {
   action: async (opts: { raw?: boolean; json?: boolean }) => {
     const status = await readLocalStatus()
 
-    if (isRawOutput(opts)) {
+    if (isMachine(opts)) {
       output(status, opts)
       return
     }

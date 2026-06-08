@@ -5,7 +5,7 @@ import type { KernelCommandOpts } from './types'
 
 import { formatElapsed } from '../lib/format'
 import { spinner } from '../lib/log'
-import { isRawOutput, output } from '../lib/output'
+import { isMachine, present } from '../lib/output'
 import { withKernelClient } from './client'
 import { formatKernelError } from './errors'
 
@@ -13,7 +13,7 @@ type RunOpts<T> = {
   opts: KernelCommandOpts
   label: string
   fn: (ctx: ClientContext) => Promise<T>
-  format?: (result: T, opts: KernelCommandOpts, isRaw: boolean) => void
+  format?: (result: T, opts: KernelCommandOpts, isRaw: boolean) => void | Promise<void>
 }
 
 /**
@@ -26,7 +26,7 @@ type RunOpts<T> = {
  */
 export async function runKernelCommand<T>(run: RunOpts<T>): Promise<void> {
   const { opts, label, fn } = run
-  const isRaw = isRawOutput(opts)
+  const isRaw = isMachine(opts)
   const spin = !isRaw ? spinner(`${label}...`) : null
   const startTime = performance.now()
 
@@ -38,9 +38,9 @@ export async function runKernelCommand<T>(run: RunOpts<T>): Promise<void> {
     if (!isRaw) console.log('')
 
     if (run.format) {
-      run.format(result, opts, isRaw)
+      await run.format(result, opts, isRaw)
     } else {
-      output(result, opts)
+      present(result, opts)
     }
   } catch (error) {
     if (!isRaw && spin) spin.fail(`${label} failed`)

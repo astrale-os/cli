@@ -11,7 +11,7 @@ import {
   workosAuthKitMetadata,
 } from '../../lib/idp'
 import { log } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
 import { validateName, validateUrl } from '../../lib/validation'
 
 type AddOpts = {
@@ -124,7 +124,7 @@ Security:
     }
 
     const idp = await upsertIdpConfig({ name, metadata, client })
-    if (isRawOutput(opts)) {
+    if (isMachine(opts)) {
       output(redact(idp), opts)
       return
     }

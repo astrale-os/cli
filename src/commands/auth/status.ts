@@ -1,20 +1,61 @@
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
+import type { ListOpts, ListProjection } from '../../lib/output'
 
 import { readIdentities } from '../../lib/identity'
 import { isSessionExpired, listIdpSessions } from '../../lib/idp'
 import { log } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+
+type AuthRow = {
+  name: string
+  default: boolean
+  idp?: string
+  issuer?: string
+  subject: string
+  session:
+    | {
+        cached: true
+        expired: boolean
+        expires_at?: string
+        scope?: string
+        has_refresh_token: boolean
+      }
+    | { cached: false }
+}
+
+function sessionState(s: AuthRow['session']): string {
+  if (!s.cached) return chalk.dim('no session')
+  return s.expired ? chalk.yellow('expired') : chalk.green('active')
+}
+
+function projection(items: AuthRow[]): ListProjection {
+  return {
+    columns: [
+      { key: 'name', header: 'NAME', color: chalk.bold },
+      { key: 'session', header: 'SESSION' },
+      { key: 'idp', header: 'IDP', color: chalk.dim },
+      { key: 'subject', header: 'SUBJECT', color: chalk.dim },
+    ],
+    rows: items.map((i) => ({
+      name: i.default ? `${i.name} ${chalk.green('*')}` : i.name,
+      session: sessionState(i.session),
+      idp: i.idp ?? '',
+      subject: i.subject,
+    })),
+    paths: items.map((i) => i.name),
+  }
+}
 
 export default {
   name: 'status',
   description: 'Show cached IdP authentication status',
   options: [...RAW_OUTPUT_OPTIONS],
-  action: async (opts: { raw?: boolean; json?: boolean }) => {
+  action: async (opts: ListOpts) => {
     const [identityStore, sessions] = await Promise.all([readIdentities(), listIdpSessions()])
     const byIdentity = new Map(sessions.map((session) => [session.identity, session]))
-    const identities = Object.entries(identityStore.identities)
+    const items: AuthRow[] = Object.entries(identityStore.identities)
       .filter(([, identity]) => identity.source === 'idp')
       .map(([name, identity]) => {
         const session = byIdentity.get(name)
@@ -36,25 +77,10 @@ export default {
         }
       })
 
-    if (isRawOutput(opts)) {
-      output({ default: identityStore.default, identities }, opts)
-      return
-    }
-
-    if (identities.length === 0) {
+    if (items.length === 0 && !isMachine(opts)) {
       log.dim('  Not logged in to any IdP. Run: astrale auth login --idp <name>')
       return
     }
-
-    for (const identity of identities) {
-      const marker = identity.default ? chalk.green(' *') : ''
-      const session = identity.session.cached
-        ? identity.session.expired
-          ? chalk.yellow('expired')
-          : chalk.green('active')
-        : chalk.dim('no cached session')
-      console.log(`  ${chalk.bold(identity.name)}${marker} ${chalk.dim(identity.idp)} ${session}`)
-      console.log(`    ${chalk.dim(identity.subject)}`)
-    }
+    presentList(items, opts, projection)
   },
 } satisfies CommandDefinition

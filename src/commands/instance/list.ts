@@ -2,13 +2,15 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
+import type { Column } from '../../lib/output'
 
 import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readInstances } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
-import { isRawOutput, output, type RawOutputOpts } from '../../lib/output'
+import { isMachine, output, type RawOutputOpts } from '../../lib/output'
+import { renderTable } from '../../lib/table'
 
 type ListOpts = KernelCommandOpts &
   AdminTargetCommandOpts &
@@ -16,6 +18,22 @@ type ListOpts = KernelCommandOpts &
     bookmarked?: boolean
     adminOnly?: boolean
   }
+
+type Bookmark = {
+  name: string
+  url: string | null
+  issuer: string | null
+  active: boolean
+  defaultIdentity: string | null
+  createdAt: string | null
+}
+
+const COLUMNS: Column[] = [
+  { key: 'name', header: 'NAME', color: chalk.bold },
+  { key: 'kind', header: 'KIND', color: chalk.dim },
+  { key: 'url', header: 'URL', color: chalk.dim },
+  { key: 'extra', header: '', color: chalk.dim },
+]
 
 export default {
   name: 'list',
@@ -28,7 +46,7 @@ export default {
   action: async (opts: ListOpts) => {
     try {
       const store = await readInstances()
-      const bookmarks = Object.entries(store.instances).map(([name, entry]) => ({
+      const bookmarks: Bookmark[] = Object.entries(store.instances).map(([name, entry]) => ({
         name,
         url: entry.url ?? null,
         issuer: entry.issuer ?? null,
@@ -45,7 +63,7 @@ export default {
         )
       }
 
-      if (isRawOutput(opts)) {
+      if (isMachine(opts)) {
         output(
           {
             active: store.active || null,
@@ -57,28 +75,33 @@ export default {
         return
       }
 
+      const rows: Array<Record<string, string>> = []
       if (!opts.bookmarked) {
         for (const item of managed) {
-          console.log(
-            `${chalk.bold(item.slug)} ${chalk.dim('<admin-managed>')} ${chalk.dim(item.url)}`,
-          )
-          if (item.region) log.dim(`  region: ${item.region}`)
-          if (item.hostId) log.dim(`  host: ${item.hostId}`)
+          rows.push({
+            name: item.slug,
+            kind: 'managed',
+            url: item.url ?? '',
+            extra: [item.region, item.hostId].filter(Boolean).join(' · '),
+          })
         }
       }
-
       if (!opts.adminOnly) {
         for (const item of bookmarks) {
-          const marker = item.active ? chalk.green(' *') : ''
-          console.log(
-            `${chalk.bold(item.name)} ${chalk.dim('<bookmark>')} ${chalk.dim(String(item.url))}${marker}`,
-          )
+          rows.push({
+            name: item.active ? `${item.name} ${chalk.green('*')}` : item.name,
+            kind: 'bookmark',
+            url: String(item.url ?? ''),
+            extra: '',
+          })
         }
       }
 
-      if ((opts.bookmarked || managed.length === 0) && bookmarks.length === 0) {
-        log.dim('  No bookmarked instances. Run: astrale instance bookmark <name> --url <url>')
+      if (rows.length === 0) {
+        log.dim('  No instances. Run: astrale instance bookmark <name> --url <url>')
+        return
       }
+      process.stdout.write(renderTable(rows, { columns: COLUMNS }) + '\n')
     } catch (e) {
       fatal(e)
     }

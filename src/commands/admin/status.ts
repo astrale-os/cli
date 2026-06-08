@@ -7,7 +7,7 @@ import { readConfig } from '../../lib/config'
 import { getDefault } from '../../lib/identity'
 import { readInstances } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
-import { isRawOutput, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
+import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 
 type AdminStatus = {
   target: ReturnType<typeof resolveAdminTargetFromStore>
@@ -39,7 +39,7 @@ export default {
           : null,
       }
 
-      if (isRawOutput(opts)) {
+      if (isMachine(opts)) {
         output(status, opts)
         return
       }
