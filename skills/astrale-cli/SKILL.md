@@ -377,6 +377,34 @@ The common kernel options (`--format`, `--raw`/`--json`, `--url`,
 `call`, `get`, `ls`, `describe`, `query`, `token`, `instance install`. Full
 list and per-command specifics: `astrale <cmd> --help`.
 
+## Driving the GUI (`astrale browser` + agent-browser)
+
+Operate the live GUI through a real browser driven by
+[`agent-browser`](https://github.com/vercel-labs/agent-browser); `astrale
+browser` owns the authenticated **session** for it. The GUI login is an httpOnly
+cookie (no token injection), so you sign in once and the per-instance profile
+reuses it.
+
+```bash
+npm install -g agent-browser && agent-browser install   # once
+npx skills add vercel-labs/agent-browser                # the driving skill
+astrale browser                                         # sign in once → reusable session
+```
+
+Then drive it (compact `@eN` refs, not a raw a11y tree):
+
+```bash
+P=~/.astrale/browser/<host>                  # <host> = active instance origin
+agent-browser --profile "$P" open https://<host>/
+agent-browser --profile "$P" snapshot        # → @e1, @e2 …
+agent-browser --profile "$P" click @e3
+```
+
+`astrale browser --check` verifies the session; flags via `astrale browser
+--help`, driving commands via `agent-browser skills get core --full`.
+
+
+
 ## Configuration and storage
 
 Everything lives under `~/.astrale/` by default. `ASTRALE_HOME` is read as a
@@ -389,6 +417,8 @@ install, leave it unset.
   config.json        { managerPort, falkorPort, graphName (default astrale-manager), issuer }
   identities.json    { default, identities: { name: { subject, mode, kid, … } } }
   instances.json     { active, instances: { name: { url?, kind, mode, issuer?, … } } }
+  browser.json       Last-connected GUI browser session { url, host, profile, cdp, email }
+  browser/<host>/    Persistent agent-browser profile (holds the GUI login cookie)
   tunnels.json       Registry: tunnels[name] = { id, name, hostname,
                      ingress[], boundInstance? }. Source of truth for
                      astrale-managed tunnels — `tunnel start` renders

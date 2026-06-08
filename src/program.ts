@@ -76,6 +76,7 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, withKernelOptions((await import('./commands/describe')).default))
   registerCommand(program, withKernelOptions((await import('./commands/query')).default))
   registerCommand(program, (await import('./commands/status')).default)
+  registerCommand(program, (await import('./commands/browser')).default)
 
   registerGroup(program, {
     name: 'instance',
@@ -148,6 +149,7 @@ export async function buildProgram(): Promise<Command> {
 Command groups:
   Kernel        ls, get, call, query, describe, token
   Management    admin, instance, identity, auth, idp, update
+  Agent         browser   (drive the GUI via agent-browser)
 
 Path syntax:
   /domain                        Domain node
