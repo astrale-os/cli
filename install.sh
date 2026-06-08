@@ -34,6 +34,12 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+json_string_field() {
+  file="$1"
+  field="$2"
+  sed -n "s/^[[:space:]]*\"$field\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$file" | head -n 1
+}
+
 need() {
   command -v "$1" >/dev/null 2>&1 || error "Missing required command: $1"
 }
@@ -121,6 +127,7 @@ main() {
 
   download "$base/$asset" "$tmp/$asset"
   download "$base/sha256sums.txt" "$tmp/sha256sums.txt"
+  download "$base/manifest.json" "$tmp/manifest.json"
   verify_checksum "$tmp/$asset" "$tmp/sha256sums.txt"
 
   mkdir -p "$install_dir"
@@ -130,10 +137,14 @@ main() {
   installed_version="$("$install_dir/astrale" --version)"
   channel="${ASTRALE_CHANNEL:-alpha}"
   repo="${ASTRALE_REPO:-astrale-os/cli}"
+  release_version="$(json_string_field "$tmp/manifest.json" version)"
+  release_channel="$(json_string_field "$tmp/manifest.json" channel)"
+  [ -n "$release_version" ] || release_version="$installed_version"
+  [ -n "$release_channel" ] || release_channel="$channel"
   metadata_dir="${ASTRALE_HOME:-$HOME/.astrale}"
   mkdir -p "$metadata_dir"
-  escaped_channel="$(json_escape "$channel")"
-  escaped_version="$(json_escape "$installed_version")"
+  escaped_channel="$(json_escape "$release_channel")"
+  escaped_version="$(json_escape "$release_version")"
   escaped_repo="$(json_escape "$repo")"
   escaped_bin="$(json_escape "$install_dir/astrale")"
   cat > "$metadata_dir/install.json" <<EOF
@@ -147,7 +158,7 @@ main() {
 }
 EOF
 
-  success "installed $installed_version to $install_dir/astrale"
+  success "installed $release_version to $install_dir/astrale"
 
   case ":$PATH:" in
     *":$install_dir:"*) ;;

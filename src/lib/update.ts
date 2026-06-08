@@ -31,6 +31,7 @@ const ManifestAssetSchema = z.object({
 
 export const UpdateManifestSchema = z.object({
   version: z.string().min(1),
+  binaryVersion: z.string().min(1).optional(),
   channel: z.string().min(1),
   repo: z.string().min(1).optional(),
   assets: z.record(
@@ -159,6 +160,7 @@ export function shouldUpdate(currentVersion: string, manifestVersion: string): b
 
 export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
   const meta = await readInstallMetadata(req.installPath)
+  const currentVersion = meta.version ?? req.currentVersion
   const channel = req.channel ?? meta.channel ?? DEFAULT_CHANNEL
   const platform = req.platform ?? detectPlatform()
   const key = platformKey(platform)
@@ -173,10 +175,10 @@ export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
     )
   }
 
-  if (!shouldUpdate(req.currentVersion, manifest.version)) {
+  if (!shouldUpdate(currentVersion, manifest.version)) {
     return {
       status: 'up-to-date',
-      currentVersion: req.currentVersion,
+      currentVersion,
       latestVersion: manifest.version,
       channel: manifest.channel,
     }
@@ -185,7 +187,7 @@ export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
   if (req.check) {
     return {
       status: 'available',
-      currentVersion: req.currentVersion,
+      currentVersion,
       latestVersion: manifest.version,
       channel: manifest.channel,
     }
@@ -209,7 +211,7 @@ export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
     await extractTarGz(archive, tmp)
     const nextBin = join(tmp, 'astrale')
     await chmod(nextBin, 0o755)
-    await smokeVersion(nextBin, manifest.version)
+    await smokeVersion(nextBin, manifest.binaryVersion ?? manifest.version)
 
     const previous = `${meta.bin}.previous`
     const staged = `${meta.bin}.next`
@@ -230,7 +232,7 @@ export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
 
     return {
       status: 'updated',
-      previousVersion: req.currentVersion,
+      previousVersion: currentVersion,
       currentVersion: manifest.version,
       channel: manifest.channel,
       bin: meta.bin,

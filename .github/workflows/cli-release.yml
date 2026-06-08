@@ -137,6 +137,11 @@ jobs:
         run: |
           set -eu
           short_sha="$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          binary_version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -n 1)"
+          if [ -z "$binary_version" ]; then
+            echo "Could not resolve package version from package.json" >&2
+            exit 2
+          fi
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && printf '%s' "$GITHUB_REF_NAME" | grep -q '^cli/v'; then
             version="${GITHUB_REF_NAME#cli/v}"
             immutable_tag="$GITHUB_REF_NAME"
@@ -157,6 +162,7 @@ jobs:
             prerelease="true"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "binary_version=$binary_version" >> "$GITHUB_OUTPUT"
           echo "immutable_tag=$immutable_tag" >> "$GITHUB_OUTPUT"
           echo "channel=$channel" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
@@ -172,6 +178,7 @@ jobs:
           {
             printf '{\n'
             printf '  "version": "%s",\n' '${{ steps.meta.outputs.version }}'
+            printf '  "binaryVersion": "%s",\n' '${{ steps.meta.outputs.binary_version }}'
             printf '  "channel": "%s",\n' '${{ steps.meta.outputs.channel }}'
             printf '  "repo": "%s",\n' '${{ github.repository }}'
             printf '  "assets": {\n'
