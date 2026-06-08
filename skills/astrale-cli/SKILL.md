@@ -1,5 +1,5 @@
 ---
-name: Astrale CLI
+name: astrale-cli
 description: Reference for the Astrale CLI (binary `astrale`, package `@astrale-os/astrale`) — CLI setup, kernel lifecycle, graph exploration and querying, calling kernel operations, instance management (local children + remote bookmarks), identity management, delegation tokens, tunnels, and FalkorDB graph maintenance. Use when the user asks about running the CLI, composing `astrale` invocations, authoring/reading paths, debugging the graph, managing local or remote kernel instances, or setting up an Astrale installation.
 ---
 

@@ -1,0 +1,10 @@
+{
+  "name": "astrale",
+  "description": "Astrale CLI.",
+  "author": {
+    "name": "Astrale"
+  },
+  "homepage": "https://github.com/astrale-os/cli",
+  "repository": "https://github.com/astrale-os/cli",
+  "license": "MIT"
+}

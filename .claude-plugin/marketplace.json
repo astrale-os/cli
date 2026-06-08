@@ -1,0 +1,13 @@
+{
+  "name": "astrale-os",
+  "owner": {
+    "name": "Astrale"
+  },
+  "plugins": [
+    {
+      "name": "astrale",
+      "source": "./",
+      "description": "Astrale CLI."
+    }
+  ]
+}

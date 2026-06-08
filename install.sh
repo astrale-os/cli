@@ -161,6 +161,10 @@ EOF
   printf '\nNext:\n'
   printf '  astrale auth login\n'
   printf '  astrale instance create <slug>\n'
+
+  printf '\nWire your coding agent (recommended — installs the Astrale skill):\n'
+  printf '  npx skills add astrale-os/cli            # Claude Code, Cursor, Codex, Gemini, … (needs Node)\n'
+  printf '  gh  skill install astrale-os/cli astrale-cli\n'
 }
 
 main "$@"

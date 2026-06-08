@@ -112,7 +112,7 @@ describe('help contract — connect-only command surface', () => {
 })
 
 describe('help contract — skill is single-source, not duplicated', () => {
-  const canonical = join(cliRoot, 'skill/astrale-cli/SKILL.md')
+  const canonical = join(cliRoot, 'skills/astrale-cli/SKILL.md')
   // Workspace mirror lives in the superrepo, outside this submodule. Absent
   // when the CLI repo is tested standalone — only assert parity when present.
   const mirror = join(cliRoot, '../.agents/skills/astrale-cli/SKILL.md')
