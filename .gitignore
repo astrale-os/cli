@@ -1,0 +1,46 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+.*.bun-build
+*.tsbuildinfo
+.output
+.nitro
+.tanstack
+
+# Test coverage
+coverage
+
+# Environment files
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Cache
+.eslintcache
+.prettiercache
+*.cache
+.turbo
+
+# Local files
+*.local
+
+# Lockfile (generated fresh in CI)
+pnpm-lock.yaml

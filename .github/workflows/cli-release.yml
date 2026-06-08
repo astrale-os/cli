@@ -1,0 +1,211 @@
+name: CLI Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['cli/v*']
+    paths:
+      - 'bin/**'
+      - 'src/**'
+      - 'install/**'
+      - 'package.json'
+      - 'tsconfig.json'
+      - '.github/workflows/cli-release.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: read
+
+env:
+  BUN_VERSION: latest
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - name: Configure GitHub Packages
+        run: |
+          set -eu
+          printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
+          printf '%s\n' '//npm.pkg.github.com/:_authToken=${{ github.token }}' >> "$HOME/.npmrc"
+      - name: Install production dependencies
+        run: STANDALONE=true pnpm install --prod --no-frozen-lockfile
+      - name: Test
+        run: pnpm test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_os: linux
+            target_arch: x64
+          - os: ubuntu-24.04-arm
+            target_os: linux
+            target_arch: arm64
+          - os: macos-13
+            target_os: darwin
+            target_arch: x64
+          - os: macos-14
+            target_os: darwin
+            target_arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+      - name: Configure GitHub Packages
+        run: |
+          set -eu
+          printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
+          printf '%s\n' '//npm.pkg.github.com/:_authToken=${{ github.token }}' >> "$HOME/.npmrc"
+      - name: Install production dependencies
+        run: STANDALONE=true pnpm install --prod --no-frozen-lockfile
+      - name: Build binary
+        run: |
+          set -eu
+          mkdir -p dist
+          bun build --compile bin/astrale.ts --outfile dist/astrale
+          ./dist/astrale --version
+          ./dist/astrale --help >/dev/null
+      - name: Package asset
+        run: |
+          set -eu
+          asset="astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}"
+          tar -C dist -czf "$asset.tar.gz" astrale
+      - uses: actions/upload-artifact@v4
+        with:
+          name: astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}
+          path: astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - id: meta
+        name: Resolve release metadata
+        run: |
+          set -eu
+          short_sha="$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && printf '%s' "$GITHUB_REF_NAME" | grep -q '^cli/v'; then
+            version="${GITHUB_REF_NAME#cli/v}"
+            immutable_tag="$GITHUB_REF_NAME"
+            case "$version" in
+              *-alpha*) channel="alpha"; prerelease="true" ;;
+              *-beta*) channel="beta"; prerelease="true" ;;
+              *-rc*) channel="rc"; prerelease="true" ;;
+              *-*)
+                echo "Unsupported pre-release tag '$GITHUB_REF_NAME' (use -alpha.N, -beta.N, or -rc.N)" >&2
+                exit 2
+                ;;
+              *) channel="stable"; prerelease="false" ;;
+            esac
+          else
+            version="main-$short_sha"
+            immutable_tag=""
+            channel="canary"
+            prerelease="true"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "immutable_tag=$immutable_tag" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+      - name: Generate checksums
+        run: |
+          set -eu
+          cd release-assets
+          sha256sum astrale-*.tar.gz > sha256sums.txt
+      - name: Generate update manifest
+        run: |
+          set -eu
+          cd release-assets
+          {
+            printf '{\n'
+            printf '  "version": "%s",\n' '${{ steps.meta.outputs.version }}'
+            printf '  "channel": "%s",\n' '${{ steps.meta.outputs.channel }}'
+            printf '  "repo": "%s",\n' '${{ github.repository }}'
+            printf '  "assets": {\n'
+            first=1
+            for file in astrale-*.tar.gz; do
+              platform="${file#astrale-}"
+              platform="${platform%.tar.gz}"
+              sha="$(awk -v f="$file" '$2 == f { print $1 }' sha256sums.txt)"
+              if [ "$first" -eq 0 ]; then printf ',\n'; fi
+              first=0
+              printf '    "%s": { "name": "%s", "sha256": "%s" }' "$platform" "$file" "$sha"
+            done
+            printf '\n  }\n'
+            printf '}\n'
+          } > manifest.json
+      - name: Publish immutable version release
+        if: steps.meta.outputs.immutable_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.immutable_tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          set -eu
+          flags=""
+          if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "Astrale CLI $VERSION" --notes "Astrale CLI $VERSION" $flags
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+      - name: Publish channel release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          set -eu
+          git tag -f "$CHANNEL" "$GITHUB_SHA"
+          git push origin "refs/tags/$CHANNEL" --force
+          flags=""
+          if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
+          if ! gh release view "$CHANNEL" >/dev/null 2>&1; then
+            gh release create "$CHANNEL" --title "Astrale CLI $CHANNEL" --notes "Current $CHANNEL build: $VERSION" $flags
+          else
+            gh release edit "$CHANNEL" --title "Astrale CLI $CHANNEL" --notes "Current $CHANNEL build: $VERSION" $flags
+          fi
+          gh release upload "$CHANNEL" release-assets/* --clobber
+      - name: Release summary
+        run: |
+          cat <<EOF >> "$GITHUB_STEP_SUMMARY"
+          ## CLI release
+
+          - Version: \`${{ steps.meta.outputs.version }}\`
+          - Channel: \`${{ steps.meta.outputs.channel }}\`
+          - Install: \`curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install/install.sh | sh\`
+          EOF

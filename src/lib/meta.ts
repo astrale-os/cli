@@ -1,0 +1,86 @@
+/**
+ * Issuer reachability helpers — OIDC discovery + JWKS.
+ *
+ * Kernels don't expose `/meta`. They expose OIDC discovery at
+ * `/.well-known/openid-configuration` (standard, returns `issuer` and
+ * `jwks_uri`) and JWKS at `/.well-known/jwks.json`. These helpers probe
+ * both to verify the issuer is alive and publishes at least one key.
+ *
+ * Domain workers may expose `/meta` for deployment drift detection; that is
+ * outside this connect-only CLI surface.
+ */
+
+import { IssuerUnreachableError } from '../errors'
+
+export type DiscoveryDocument = {
+  /** OIDC issuer URL. */
+  issuer: string
+  /** JWKS URI (defaults to `<issuer>/.well-known/jwks.json`). */
+  jwksUri: string
+}
+
+export async function fetchDiscovery(
+  url: string,
+  timeoutMs = 5_000,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<DiscoveryDocument> {
+  const discoveryUrl = url.replace(/\/+$/, '') + '/.well-known/openid-configuration'
+  try {
+    const r = await fetchImpl(discoveryUrl, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    const body = (await r.json()) as { issuer?: string; jwks_uri?: string }
+    if (!body.issuer) throw new Error('discovery missing "issuer"')
+    const issuer = body.issuer
+    const jwksUri = body.jwks_uri ?? `${issuer.replace(/\/+$/, '')}/.well-known/jwks.json`
+    return { issuer, jwksUri }
+  } catch (e) {
+    throw new IssuerUnreachableError(discoveryUrl, (e as Error).message)
+  }
+}
+
+export async function fetchJwks(
+  jwksUri: string,
+  timeoutMs = 5_000,
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<{ keys: Array<{ kid?: string }> }> {
+  try {
+    const r = await fetchImpl(jwksUri, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    return (await r.json()) as { keys: Array<{ kid?: string }> }
+  } catch (e) {
+    throw new IssuerUnreachableError(jwksUri, (e as Error).message)
+  }
+}
+
+/**
+ * Discover the WorkOS organization an instance host pins
+ */
+export async function fetchOrgHint(url: string, timeoutMs = 5_000): Promise<string | undefined> {
+  try {
+    const origin = new URL(url).origin
+    const r = await fetch(`${origin}/auth/org`, { signal: AbortSignal.timeout(timeoutMs) })
+    if (!r.ok) return undefined
+    const body = (await r.json()) as { organizationId?: unknown }
+    return typeof body.organizationId === 'string' ? body.organizationId : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Verify the issuer at `url` publishes OIDC discovery and a non-empty JWKS.
+ * `issuerOverride` forces a specific expected issuer when discovery URL and
+ * declared issuer differ.
+ */
+export async function checkIssuerReachability(
+  url: string,
+  issuerOverride?: string,
+  fetchImpl?: typeof fetch,
+): Promise<{ issuer: string; keys: Array<{ kid?: string }> }> {
+  const discovery = await fetchDiscovery(url, 5_000, fetchImpl)
+  const issuer = issuerOverride ?? discovery.issuer
+  const jwks = await fetchJwks(discovery.jwksUri, 5_000, fetchImpl)
+  if (jwks.keys.length === 0)
+    throw new IssuerUnreachableError(discovery.jwksUri, 'no keys published')
+  return { issuer, keys: jwks.keys }
+}

@@ -1,0 +1,86 @@
+import chalk from 'chalk'
+
+import type { CommandDefinition } from '../../command'
+import type { KernelCommandOpts } from '../../kernel'
+
+import { withAdminKernelClient } from '../../kernel/client'
+import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import { readInstances } from '../../lib/instance'
+import { fatal, log } from '../../lib/log'
+import { isRawOutput, output, type RawOutputOpts } from '../../lib/output'
+
+type ListOpts = KernelCommandOpts &
+  AdminTargetCommandOpts &
+  RawOutputOpts & {
+    bookmarked?: boolean
+    adminOnly?: boolean
+  }
+
+export default {
+  name: 'list',
+  description: 'List admin-managed instances and local bookmarks',
+  options: [
+    ...ADMIN_TARGET_OPTIONS,
+    { flags: '--bookmarked', description: 'Only show locally bookmarked kernel connections' },
+    { flags: '--admin-only', description: 'Only show instances returned by the admin kernel' },
+  ],
+  action: async (opts: ListOpts) => {
+    try {
+      const store = await readInstances()
+      const bookmarks = Object.entries(store.instances).map(([name, entry]) => ({
+        name,
+        url: entry.url ?? null,
+        issuer: entry.issuer ?? null,
+        active: name === store.active,
+        defaultIdentity: entry.defaultIdentity ?? null,
+        createdAt: entry.createdAt ?? null,
+      }))
+
+      let managed: InstanceInfo[] = []
+      if (!opts.bookmarked) {
+        managed = await withAdminKernelClient(
+          opts,
+          async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/list`, {})) as InstanceInfo[],
+        )
+      }
+
+      if (isRawOutput(opts)) {
+        output(
+          {
+            active: store.active || null,
+            ...(opts.adminOnly ? {} : { bookmarks }),
+            ...(opts.bookmarked ? {} : { instances: managed }),
+          },
+          opts,
+        )
+        return
+      }
+
+      if (!opts.bookmarked) {
+        for (const item of managed) {
+          console.log(
+            `${chalk.bold(item.slug)} ${chalk.dim('<admin-managed>')} ${chalk.dim(item.url)}`,
+          )
+          if (item.region) log.dim(`  region: ${item.region}`)
+          if (item.hostId) log.dim(`  host: ${item.hostId}`)
+        }
+      }
+
+      if (!opts.adminOnly) {
+        for (const item of bookmarks) {
+          const marker = item.active ? chalk.green(' *') : ''
+          console.log(
+            `${chalk.bold(item.name)} ${chalk.dim('<bookmark>')} ${chalk.dim(String(item.url))}${marker}`,
+          )
+        }
+      }
+
+      if ((opts.bookmarked || managed.length === 0) && bookmarks.length === 0) {
+        log.dim('  No bookmarked instances. Run: astrale instance bookmark <name> --url <url>')
+      }
+    } catch (e) {
+      fatal(e)
+    }
+  },
+} satisfies CommandDefinition

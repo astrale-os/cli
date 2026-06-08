@@ -1,0 +1,74 @@
+{
+  "name": "@astrale-os/astrale",
+  "version": "0.4.0-alpha.3",
+  "description": "Astrale CLI — connect to existing Astrale kernels",
+  "keywords": [
+    "astrale",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "Astrale",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/astrale-os/cli.git"
+  },
+  "bin": {
+    "astrale": "./bin/astrale.ts"
+  },
+  "files": [
+    "bin",
+    "src",
+    "tsconfig.json"
+  ],
+  "type": "module",
+  "exports": {
+    "./keys": "./src/lib/keys.ts",
+    "./paths": "./src/lib/paths.ts",
+    "./kernel/remote-routing": "./src/kernel/remote-routing.ts"
+  },
+  "scripts": {
+    "preinstall": "node .check-workspace.cjs",
+    "prepare": "husky",
+    "typecheck": "tsgo --noEmit",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "pnpm exec oxfmt --write .",
+    "format:check": "pnpm exec oxfmt --check .",
+    "test": "bun test src",
+    "test:watch": "bun test --watch src"
+  },
+  "dependencies": {
+    "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
+    "chalk": "^5.6.2",
+    "commander": ">=13.0.0 <14.0.0",
+    "jose": "^6.1.3",
+    "ora": "^9.0.0",
+    "yaml": "^2.8.2",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@astrale-os/ox": ">=0.1.0 <1.0.0",
+    "@astrale/commitlint-config": "jsr:@astrale/commitlint-config@~2.0.0",
+    "@commitlint/cli": "~20.3.1",
+    "@commitlint/config-conventional": "~20.3.1",
+    "@types/bun": "^1.1.16",
+    "@types/node": "^22.0.0",
+    "@typescript/native-preview": "latest",
+    "husky": "~9.1.7",
+    "lint-staged": "~16.2.7",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "typescript": "~6.0.1-rc"
+  },
+  "lint-staged": {
+    "*.{js,cjs,mjs,ts,tsx}": [
+      "oxlint --fix",
+      "oxfmt --write"
+    ],
+    "*.{json,yml,yaml}": [
+      "oxfmt --write"
+    ]
+  },
+  "packageManager": "pnpm@10.28.0"
+}
