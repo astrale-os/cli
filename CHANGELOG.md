@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0-alpha.7 (2026-06-08)
+
+### Public Alpha
+
+* make WorkOS device login work on fresh script installs without env setup
+
 ## 0.4.0-alpha.6 (2026-06-08)
 
 ### Public Alpha
