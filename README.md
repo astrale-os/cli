@@ -22,7 +22,7 @@ Optional installer environment:
 
 ```bash
 ASTRALE_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
-ASTRALE_VERSION=0.4.0-alpha.3 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
+ASTRALE_VERSION=0.4.0-alpha.4 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ASTRALE_CHANNEL=canary curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
@@ -57,7 +57,7 @@ astrale update
 `astrale update` works for official script installs. It downloads the selected
 release channel, verifies the asset checksum, tests the new binary, and then
 replaces the current binary. Alpha installs default to the `alpha` channel.
-Use `--channel canary` to move channels or `--version 0.4.0-alpha.3` to install
+Use `--channel canary` to move channels or `--version 0.4.0-alpha.4` to install
 an exact release.
 
 ## Command Reference

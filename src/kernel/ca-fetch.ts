@@ -1,4 +1,4 @@
-import type { request as httpRequest } from 'node:http'
+import type { IncomingHttpHeaders, request as httpRequest } from 'node:http'
 
 import { Buffer } from 'node:buffer'
 import { readFileSync } from 'node:fs'
@@ -105,7 +105,7 @@ function headersInitToRecord(headers: HeadersInit | undefined): Record<string, s
   return Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, String(value)]))
 }
 
-function responseHeaders(headers: import('node:http').IncomingHttpHeaders): Headers {
+function responseHeaders(headers: IncomingHttpHeaders): Headers {
   const out = new Headers()
   for (const [key, value] of Object.entries(headers)) {
     if (value === undefined) continue
