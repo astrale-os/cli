@@ -9,6 +9,7 @@ on:
       - 'src/**'
       - 'install.sh'
       - 'package.json'
+      - 'pnpm-lock.yaml'
       - 'tsconfig.json'
       - '.github/workflows/cli-release.yml'
   workflow_dispatch:
