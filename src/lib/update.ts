@@ -23,14 +23,26 @@ export type InstallMetadata = z.infer<typeof InstallMetadataSchema>
 
 const ManifestAssetSchema = z.object({
   name: z.string().min(1),
-  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
+  sha256: z
+    .string()
+    .regex(/^[a-fA-F0-9]{64}$/)
+    .optional(),
 })
 
 export const UpdateManifestSchema = z.object({
   version: z.string().min(1),
   channel: z.string().min(1),
   repo: z.string().min(1).optional(),
-  assets: z.record(z.string(), ManifestAssetSchema),
+  assets: z.record(
+    z.string(),
+    z.union([
+      ManifestAssetSchema,
+      z
+        .string()
+        .min(1)
+        .transform((name) => ({ name })),
+    ]),
+  ),
 })
 
 export type UpdateManifest = z.infer<typeof UpdateManifestSchema>
@@ -183,12 +195,14 @@ export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
   try {
     const archive = join(tmp, asset.name)
     await downloadToFile(`${base}/${asset.name}`, archive)
+    const manifestChecksum = 'sha256' in asset ? asset.sha256 : undefined
+    const expected = manifestChecksum ?? (await fetchChecksum(base, asset.name))
     const actual = await sha256File(archive)
-    if (actual !== asset.sha256.toLowerCase()) {
+    if (actual !== expected.toLowerCase()) {
       throw new AstraleError(
         'UPDATE_CHECKSUM_MISMATCH',
         `Checksum mismatch for ${asset.name}.`,
-        `Expected ${asset.sha256}; got ${actual}.`,
+        `Expected ${expected}; got ${actual}.`,
       )
     }
 
@@ -244,6 +258,20 @@ async function downloadToFile(url: string, path: string): Promise<void> {
   if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status}`)
   const bytes = new Uint8Array(await res.arrayBuffer())
   await writeFile(path, bytes)
+}
+
+async function fetchChecksum(base: string, assetName: string): Promise<string> {
+  const raw = await readUrlText(`${base}/sha256sums.txt`)
+  for (const line of raw.split(/\r?\n/)) {
+    const [sha, file] = line.trim().split(/\s+/, 2)
+    if (!sha || !file) continue
+    if (file.replace(/^\*/, '') === assetName && /^[a-fA-F0-9]{64}$/.test(sha)) return sha
+  }
+  throw new AstraleError(
+    'UPDATE_CHECKSUM_NOT_FOUND',
+    `Checksum entry not found for ${assetName}.`,
+    `Release base: ${base}`,
+  )
 }
 
 async function sha256File(path: string): Promise<string> {

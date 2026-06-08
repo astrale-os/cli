@@ -11,7 +11,11 @@ import {
   type InstallMetadata,
 } from '../update'
 
-async function makeFakeRelease(root: string, version: string): Promise<string> {
+async function makeFakeRelease(
+  root: string,
+  version: string,
+  options: { legacyManifest?: boolean } = {},
+): Promise<string> {
   const release = join(root, 'release')
   const payload = join(root, 'payload')
   await mkdir(release, { recursive: true })
@@ -28,6 +32,7 @@ async function makeFakeRelease(root: string, version: string): Promise<string> {
   const shaProc = Bun.spawn(['shasum', '-a', '256', asset], { stdout: 'pipe' })
   const sha = (await new Response(shaProc.stdout).text()).trim().split(/\s+/)[0]
   expect(await shaProc.exited).toBe(0)
+  await writeFile(join(release, 'sha256sums.txt'), `${sha}  astrale-darwin-arm64.tar.gz\n`)
   await writeFile(
     join(release, 'manifest.json'),
     JSON.stringify(
@@ -35,12 +40,16 @@ async function makeFakeRelease(root: string, version: string): Promise<string> {
         version,
         channel: 'alpha',
         repo: 'astrale-os/cli',
-        assets: {
-          'darwin-arm64': {
-            name: 'astrale-darwin-arm64.tar.gz',
-            sha256: sha,
-          },
-        },
+        assets: options.legacyManifest
+          ? {
+              'darwin-arm64': 'astrale-darwin-arm64.tar.gz',
+            }
+          : {
+              'darwin-arm64': {
+                name: 'astrale-darwin-arm64.tar.gz',
+                sha256: sha,
+              },
+            },
       },
       null,
       2,
@@ -115,6 +124,42 @@ describe('updateAstrale', () => {
         latestVersion: '1.1.0',
       })
       expect(await readFile(meta.bin, 'utf8')).toContain('echo old')
+    } finally {
+      delete process.env.ASTRALE_UPDATE_BASE
+    }
+  })
+
+  test('supports legacy string asset manifests', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
+    const { path, meta } = await makeInstall(root, '1.0.0')
+    const release = await makeFakeRelease(root, '1.1.0', { legacyManifest: true })
+    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
+    try {
+      const check = await updateAstrale({
+        check: true,
+        currentVersion: '1.0.0',
+        platform: { os: 'darwin', arch: 'arm64' },
+        installPath: path,
+      })
+
+      expect(check).toMatchObject({
+        status: 'available',
+        latestVersion: '1.1.0',
+      })
+
+      const result = await updateAstrale({
+        currentVersion: '1.0.0',
+        platform: { os: 'darwin', arch: 'arm64' },
+        installPath: path,
+      })
+
+      expect(result).toMatchObject({
+        status: 'updated',
+        currentVersion: '1.1.0',
+      })
+      const versionProc = Bun.spawn([meta.bin, '--version'], { stdout: 'pipe' })
+      expect(await new Response(versionProc.stdout).text()).toBe('1.1.0\n')
+      expect(await versionProc.exited).toBe(0)
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE
     }

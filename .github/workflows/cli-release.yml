@@ -39,10 +39,17 @@ jobs:
         with:
           version: 10.28.0
       - name: Configure GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.ASTRALE_PACKAGES_TOKEN || github.token }}
         run: |
           set -eu
           printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
-          printf '%s\n' '//npm.pkg.github.com/:_authToken=${{ github.token }}' >> "$HOME/.npmrc"
+          printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+      - name: Check package access
+        run: |
+          set -eu
+          npm view @astrale-os/kernel-core version --registry=https://npm.pkg.github.com
+          npm view @astrale-os/kernel-client version --registry=https://npm.pkg.github.com
       - name: Install production dependencies
         run: STANDALONE=true pnpm install --prod --no-frozen-lockfile
       - name: Test
@@ -83,10 +90,12 @@ jobs:
         with:
           version: 10.28.0
       - name: Configure GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.ASTRALE_PACKAGES_TOKEN || github.token }}
         run: |
           set -eu
           printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
-          printf '%s\n' '//npm.pkg.github.com/:_authToken=${{ github.token }}' >> "$HOME/.npmrc"
+          printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install production dependencies
         run: STANDALONE=true pnpm install --prod --no-frozen-lockfile
       - name: Build binary
