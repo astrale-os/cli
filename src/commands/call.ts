@@ -1,14 +1,9 @@
-import type { CommandDefinition } from '../command'
-import type { CallCommandOpts, SelfExpansionMeta } from '../kernel'
+import { K } from '@astrale-os/kernel-core'
 
-import {
-  buildSelfContext,
-  lookupRemoteBinding,
-  mintRemoteCredential,
-  resolveOrThrow,
-  runKernelCommand,
-  withSelfHint,
-} from '../kernel'
+import type { CommandDefinition } from '../command'
+import type { CallCommandOpts, ClientContext, SelfExpansionMeta } from '../kernel'
+
+import { buildSelfContext, resolveOrThrow, runKernelCommand, withSelfHint } from '../kernel'
 import { presentBinary, type BinaryLike } from '../lib/binary'
 import { log } from '../lib/log'
 import { output, present } from '../lib/output'
@@ -84,30 +79,17 @@ export async function callCommand(
     opts,
     label: expandedPath,
     fn: async (ctx): Promise<CallResult> => {
-      // Remote-bound functions live on an external worker; the kernel dispatch
-      // path never reaches them. Before calling, check for `binding.remoteUrl`
-      // and if present, mint a worker-scoped credential and override the URL
-      // so the envelope POSTs straight to the worker.
-      const binding = await lookupRemoteBinding(ctx.client, expandedPath, ctx.credential)
-      if (binding) {
-        const workerCreds = await mintRemoteCredential(ctx.client, binding.audience, ctx.credential)
-        const callOpts = {
-          url: binding.remoteUrl,
-          credential: workerCreds,
-          ...(binding.self !== undefined && { self: binding.self }),
-        }
-        if (binding.output === 'binary') {
-          const response = await withSelfHint(
-            () => ctx.client.binary(binding.path, params, callOpts),
-            selfMeta,
-          )
-          return { kind: 'binary', response }
-        }
-        const value = await withSelfHint(
-          () => ctx.client.call(binding.path, params, callOpts),
-          selfMeta,
-        )
-        return { kind: 'value', value }
+      // Remote-bound functions live on an external worker. The kernel resolves
+      // the call to a redirect carrying the worker's URL + `iss`; the session
+      // follows it, minting a worker-scoped delegation for that `iss` (the
+      // delegation cache wired in `client.ts`). No client-side binding lookup.
+      //
+      // The one thing the reactive path can't discover after dispatch is a
+      // binary output mode (a JSON decode would corrupt the bytes), so detect
+      // it up front and route to the binary transport — which also auto-follows.
+      if (await isBinaryOutput(ctx, expandedPath)) {
+        const response = await withSelfHint(() => ctx.client.binary(expandedPath, params), selfMeta)
+        return { kind: 'binary', response }
       }
       const value = await withSelfHint(() => ctx.client.call(expandedPath, params), selfMeta)
       return { kind: 'value', value }
@@ -122,9 +104,26 @@ export async function callCommand(
   })
 }
 
-// Kernel-dispatched binary (a binary method WITHOUT a `binding.remoteUrl`) is not
-// wired: only the remote path calls `ctx.client.binary`. To support it, read the
-// output mode from `::get` before dispatch and route to `ctx.client.binary`.
+/**
+ * Best-effort pre-flight: does the target Function declare a binary output?
+ * A binary method must use the binary transport (the value path would JSON-
+ * decode and corrupt the bytes), and the client can't discover that after
+ * dispatch. Reads `output` off the node via `::get`. Any failure — including an
+ * instance-method path where `<path>::get` doesn't resolve a Function node —
+ * returns false and falls through to the value path, letting the kernel surface
+ * the real error. `::get` is a kernel syscall (same origin) so it neither
+ * redirects nor triggers delegation.
+ */
+async function isBinaryOutput(ctx: ClientContext, path: string): Promise<boolean> {
+  try {
+    const node = (await ctx.client.call(`${path}::get`, {})) as {
+      props?: Record<string, unknown>
+    } | null
+    return node?.props?.[K.$.i('Function').output.key] === 'binary'
+  } catch {
+    return false
+  }
+}
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {
   await runKernelCommand<Record<string, unknown>>({

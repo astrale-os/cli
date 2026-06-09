@@ -9,6 +9,7 @@ import { readConfig } from '../lib/config'
 import { getActive, resolveInstance } from '../lib/instance'
 import { resolveCredential } from './auth'
 import { fetchWithCaFile } from './ca-fetch'
+import { mintRemoteCredential } from './remote-routing'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 
@@ -100,9 +101,23 @@ async function withResolvedKernelClient<T>(
   // exponential backoff on ECONNREFUSED / 5xx). The user can re-run.
   const requestTimeout = resolveTimeoutMs(opts.timeout)
   const fetchImpl = target.caFile ? fetchWithCaFile(target.caFile) : undefined
-  const client = new ClientSession<FnMap>({
+  // The delegation mint references `client` lazily — it only fires on a cache
+  // miss during an actual remote call, long after this binding is initialised,
+  // so the self-reference inside the closure is safe.
+  const client: ClientSession<FnMap> = new ClientSession<FnMap>({
     default: target.url,
     identity: credential,
+    // Remote-bound functions redirect to a worker that verifies `aud` against
+    // its own identity. The session follows the redirect and mints a worker-
+    // scoped delegation here, for the audience the kernel carries on the
+    // redirect (`redirection.iss`, surfaced by the default iss-aware policy).
+    delegation: {
+      mint: async (audience) => ({
+        credential: await mintRemoteCredential(client, audience, credential),
+        ttl: 3600,
+      }),
+      ttl: 3600,
+    },
     pool: {
       clientFactory: (u) =>
         new KernelClient<FnMap>({

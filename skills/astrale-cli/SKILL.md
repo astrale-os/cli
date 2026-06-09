@@ -153,8 +153,12 @@ issuer, not the transport URL**:
 | `bookmark` | A reference to a remote kernel (no local process) |
 | `managed-cloud` | Astrale-cloud-managed (v1: not wired; stubbed) |
 
-`astrale instance create` without `--local` is the managed-cloud path and is
-stubbed in v1 (fatal with hint). See `astrale instance --help`.
+`astrale instance create` is the **managed-cloud** path — it calls
+`Instance.alphaCreate` on the configured admin kernel (requires WorkOS login
+via `astrale auth login`). There is no `--local` mode in this CLI; for a
+local-child kernel use the raw `KernelInstance/{register,boot}` calls against
+the manager domain (or the `demo-instance` skill for multi-domain setup).
+See `astrale instance --help`.
 
 ## Auth model
 
@@ -258,19 +262,21 @@ astrale call @__system__::mintDelegationCredential \
   `cli/src/commands/reset.ts:280`). When iterating on schema in dev,
   `astrale reset` between installs.
 - **`instances.json:active` is a process-global shared file.** Concurrent
-  `instance:prepare` or parallel test runs can rewrite it under you. In
+  commands or parallel test runs can rewrite it under you. In
   scripted/parallel flows pass `-i <instance>` on every command.
 - **`forget` vs `delete`**: `instance forget` drops a bookmark reference only
   (never destructive); `instance delete` is destructive (kernel-side + local
   registry). Each refuses the wrong target with an actionable hint.
 - **managed-cloud** create/auth is stubbed in v1.
 
-Prefer `astrale instance create --local <slug>` over hand-rolling
-`KernelInstance/{register,boot,info,stop,reboot,delete}` calls. The local CLI
-path is raw host lifecycle only: it registers and boots a child through the
-manager domain, records the local registry entry, and leaves admin,
-distribution, users, and product records to separate domain/admin workflows
-(ref: `cli/src/commands/instance/create.ts`).
+For a **local-child kernel** there is no convenience wrapper — the CLI is
+connect-only (`astrale instance create` is managed-cloud only since commit
+`043bb17 refactor: make cli connect-only`). Hand-roll the raw host
+lifecycle: `astrale call /manager.astrale.ai/class.KernelInstance/register`
++ `boot` + `astrale instance install <worker-url> -i <slug>` to install
+domains. For multi-domain demo setups, prefer the `demo-instance` skill
+which orchestrates the full flow. (ref:
+`cli/src/commands/instance/create.ts` — pure `Instance.alphaCreate` path.)
 
 ## Manager lifecycle (docker-mode vs host-mode)
 
@@ -288,45 +294,34 @@ the Docker healthcheck probe state) — ignore it unless calls actually hang.
 
 ## Domain dev workflow model
 
-> ⚠️ **Stale — pending rewrite.** The `astrale domain …` group (`init | dev | build | deploy |
-> instance-prepare | check | logs`) was **removed** (CLI is "connect-only"). Current flow: scaffold
-> with `create-astrale-domain`, run the worker locally (`cd worker && pnpm dev`), install by URL —
-> `astrale instance install <worker-url>`. File-based `astrale instance install <spec.json>` and
-> `pnpm build:spec`/committed `spec.json` are gone too.
+**The `astrale` CLI is connect-only — it does not build, run, or deploy
+domains.** The whole `astrale domain …` command group (`init | dev | build |
+deploy | instance-prepare | check | logs`) has been removed. Domain
+development now lives in a **separate devkit bin, `astrale-domain`** (from
+package `@astrale-os/devkit`), with subcommands `dev | build | deploy`. New
+domains are scaffolded by the **`create-astrale-domain`** scaffolder, which
+writes an `astrale.config.ts`.
 
-The canonical domain lifecycle is
-`astrale domain init → dev → build → deploy → instance-prepare` (flags:
-`astrale domain --help`, `astrale domain dev up --help`). `domain check`
-probes a domain/kernel (OIDC discovery + JWKS reachable); `domain logs`
-streams worker logs (**stub** — adapter-specific tooling).
+Domains are **installed by URL**, not from a file: run or deploy the domain
+service, then `astrale instance install <domain-url>` (the CLI asks the
+running service for a signed install bundle). File-based
+`astrale instance install <spec.json>`, committed `spec.json`, and
+`pnpm build:spec` are all gone.
 
-- `domain init <slug>` scaffolds from `cli/templates/<name>/`. Default is
-  `default` (full feature set: Interface + Class methods, View,
-  RemoteFunction, core, lifecycle; depends on `@astrale-os/distribution-
-  domain`). `--template minimal` is the bare alternative (no cross-domain
-  dep). Each template's `README.md` is canonical. Reserved slugs:
-  `astrale-domain` (the placeholder stem), `minimal`, `default`.
+- New domain: scaffold with `create-astrale-domain`, then build/run/deploy via
+  the `astrale-domain` devkit (`astrale-domain dev`, `astrale-domain build`,
+  `astrale-domain deploy`).
+- The live domains in `domains/*` have **not yet migrated** to the devkit:
+  their worker `package.json` still uses a plain `"dev": "wrangler dev"`, so
+  in dev you run the worker directly (`cd worker && pnpm dev`). Dev env vars /
+  secrets come from `worker/.dev.vars` (read natively by wrangler); in prod
+  from `wrangler secret put` / the deploy.
+- Install onto an instance: `astrale instance install <domain-url> -i <slug>`.
+  There is **no `astrale domain install`** — install lives under the
+  `instance` group because it operates on an instance graph.
 
-- `dev up` / `dev down` / `dev status` **recursively scan the cwd** for domain
-  dirs (each must have `package.json` + `envs.ts`) and act on **every** one;
-  they fall back to a walk-*up* single-domain resolver when run from inside a
-  domain or a subfolder.
-- `dev up` is **restart-by-default**: per domain it does `devDown` then `devUp`
-  every run (kill + respawn — not an idempotent skip), so env changes are
-  always picked up.
-- State is **per-slug** at `~/.astrale/domains/<slug>/state.json`; `dev up`
-  records exactly what it started and `dev down` stops only that — the global
-  manager is never killed if `dev up` didn't start it. `dev status --raw`
-  emits an array (one entry per domain).
-- `--kernel`/`--domain` are **preset selectors** applied uniformly to every
-  discovered domain (not a way to pick a domain). `instance-prepare` / `build`
-  / `deploy` stay single-domain.
-- Optional per-domain `lifecycle.ts` at the domain root exports `config`
-  (secrets, dev vars, tunnel name) and/or `hooks` (`preUp`, `postUp`,
-  `preDown`, `postDown`). Missing file → zero-config.
-
-`astrale instance install <spec.json>` lives under the `instance` group (it
-operates on an instance graph) — there is **no `astrale domain install`**.
+For domain design, schema, impl, env presets, and deploy details, see the
+`astrale-domain-dev` skill.
 
 ## Graph exploration gotchas
 
@@ -345,13 +340,12 @@ operates on an instance graph) — there is **no `astrale domain install`**.
 
 ## Logs semantics
 
-Three distinct `logs` surfaces:
+Two distinct `logs` surfaces:
 
 | Command | Source | Status |
 |---|---|---|
 | `astrale logs` | Event journal (`~/.astrale/logs/*.ndjson`, manager + child) | OK |
 | `astrale server logs` | Manager Docker container logs | OK |
-| `astrale domain logs` | Domain worker logs | **stub** — adapter-specific tooling |
 
 The detail below is for `astrale logs` (the on-disk event journal).
 
@@ -500,10 +494,10 @@ corrupt `tunnels.json` — no silent seed), `TunnelNotFoundError`,
 `originRequest` / `warp-routing`), `CannotDeleteManagerError`, `AuthError`,
 issuer/meta mismatches, slug
 validation, reserved-name collisions). Use `--debug` on any kernel command
-for full diagnostics, or `--log-level debug` globally. For JWKS/iss/aud issues, first reach for
-`astrale domain check --url <target>` — the dedicated OIDC discovery + JWKS
-reachability probe. `auth` is stubbed in v1 (NotImplemented, cloud adapter
-pending).
+for full diagnostics, or `--log-level debug` globally. JWKS/iss/aud probing of a
+domain is no longer an `astrale` command (the `astrale domain` group is gone);
+the OIDC discovery + JWKS reachability check now lives in the `astrale-domain`
+devkit. `auth` is stubbed in v1 (NotImplemented, cloud adapter pending).
 
 ## Source map
 
@@ -511,8 +505,9 @@ pending).
   `CommandDefinition`s; merges shared kernel options at the registration site).
 - Commands: `cli/src/commands/` — one `export default … satisfies
   CommandDefinition` per command (carrying `summary?` / `afterHelpText?`),
-  plus groups `instance/`, `identity/`, `auth/`, `tunnel/`, `graph/`,
-  `server/`, `domain/` (+ `domain/dev/`).
+  plus group subfolders (e.g. `instance/`, `identity/`, `idp/`, `auth/`,
+  `admin/`). The `domain/` group was removed (CLI is connect-only); domain
+  dev/build/deploy lives in the separate `astrale-domain` devkit bin.
 - Registry/help wiring: `cli/src/registry.ts`, types in `cli/src/command.ts`.
 - Libs: `cli/src/lib/`. Kernel client plumbing: `cli/src/kernel/`.
   Ports/adapters: `cli/src/ports/`, `cli/src/adapters/`.

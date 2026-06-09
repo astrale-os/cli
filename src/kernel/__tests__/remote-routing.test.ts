@@ -1,17 +1,9 @@
 import type { FnMap } from '@astrale-os/kernel-client'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
 
-import { K } from '@astrale-os/kernel-core'
 import { describe, expect, test } from 'bun:test'
 
-import { lookupRemoteBinding, mintDelegationPath } from '../remote-routing'
-
-/** A ClientSession stub whose `<path>::get` returns a node with the given props. */
-function nodeStubClient(props: Record<string, unknown>): ClientSession<FnMap> {
-  return {
-    call: async (path: string) => (path.endsWith('::get') ? { props } : null),
-  } as unknown as ClientSession<FnMap>
-}
+import { mintDelegationPath } from '../remote-routing'
 
 function unsignedJwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) =>
@@ -71,31 +63,8 @@ describe('mintDelegationPath — caller self-anchor resolution', () => {
   })
 })
 
-describe('lookupRemoteBinding — audience derivation', () => {
-  const PATH = '/crm.astrale.ai/class.NoteOps/createNote'
-
-  test('audience = the node iss (its identity), decoupled from the path slug', async () => {
-    // The node is addressed under `crm.astrale.ai` but its identity (iss) is a
-    // different serving URL — the audience must be the iss, not the slug.
-    // `Function` is a homonym (class + interface); its props are reached via `K.$.i('Function')`.
-    const client = nodeStubClient({
-      [K.$.i('Function').binding.key]: JSON.stringify({ remoteUrl: 'https://worker.example' }),
-      [K.Identity.iss.key]: 'https://crm.test.com',
-    })
-    const binding = await lookupRemoteBinding(client, PATH, 'cred')
-    expect(binding?.audience).toBe('https://crm.test.com')
-    expect(binding?.remoteUrl).toBe('https://worker.example')
-  })
-
-  test('throws when a remote-bound node carries no iss identity', async () => {
-    const client = nodeStubClient({
-      [K.$.i('Function').binding.key]: JSON.stringify({ remoteUrl: 'https://worker.example' }),
-    })
-    await expect(lookupRemoteBinding(client, PATH, 'cred')).rejects.toThrow(/no iss identity/i)
-  })
-
-  test('returns null when the node has no remote binding', async () => {
-    const client = nodeStubClient({ [K.Identity.iss.key]: 'https://crm.test.com' })
-    expect(await lookupRemoteBinding(client, PATH, 'cred')).toBeNull()
-  })
-})
+// `lookupRemoteBinding` (the proactive `<path>::get` resolver) was removed: the
+// kernel now carries the worker's `iss` on the redirect and the ClientSession
+// follows it reactively, minting via `mintRemoteCredential` (the cache mint
+// wired in `kernel/client.ts`). The slug→iss audience derivation it tested now
+// lives in the kernel resolver (`runtime/__tests__/resolver-remote.test.ts`).

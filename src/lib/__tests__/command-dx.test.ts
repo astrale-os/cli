@@ -4,6 +4,13 @@ import { CommanderError } from 'commander'
 import { buildProgram } from '../../program'
 import { collectCommandCatalog, renderCommanderError } from '../command-dx'
 
+// `renderCommanderError` styles commands with `chalk.bold`, which emits ANSI
+// codes only when chalk detects a color-capable stdout (TTY). Strip them so the
+// assertions are deterministic whether the suite runs under a TTY or in CI.
+// (Built from a char code so the regex source carries no literal control char.)
+const ANSI_RE = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g')
+const stripAnsi = (s: string): string => s.replace(ANSI_RE, '')
+
 describe('command DX suggestions', () => {
   test('collects command paths from the registered program tree', async () => {
     const program = await buildProgram()
@@ -26,7 +33,7 @@ describe('command DX suggestions', () => {
       'commander.excessArguments',
       'error: too many arguments. Expected 0 arguments but got 2.',
     )
-    const rendered = renderCommanderError(program, error, ['delete', 'demo-system'])
+    const rendered = stripAnsi(renderCommanderError(program, error, ['delete', 'demo-system']))
 
     expect(rendered).toContain('Unknown command: astrale delete demo-system')
     expect(rendered).toContain('"delete" is available under:')
@@ -42,7 +49,7 @@ describe('command DX suggestions', () => {
       'commander.excessArguments',
       'error: too many arguments. Expected 0 arguments but got 2.',
     )
-    const rendered = renderCommanderError(program, error, ['indetityl', 'ist'])
+    const rendered = stripAnsi(renderCommanderError(program, error, ['indetityl', 'ist']))
 
     expect(rendered).toContain('Unknown command: astrale indetityl ist')
     expect(rendered).toContain('Did you mean:')

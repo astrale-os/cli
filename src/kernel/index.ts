@@ -8,6 +8,6 @@ export {
   resolveOrThrow,
   type SelfExpansionMeta,
 } from './expand'
-export { lookupRemoteBinding, mintRemoteCredential, type RemoteBinding } from './remote-routing'
+export { mintRemoteCredential } from './remote-routing'
 export { runKernelCommand, extractItems } from './run'
 export type { KernelCommandOpts, CallCommandOpts } from './types'
