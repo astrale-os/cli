@@ -288,6 +288,12 @@ the Docker healthcheck probe state) — ignore it unless calls actually hang.
 
 ## Domain dev workflow model
 
+> ⚠️ **Stale — pending rewrite.** The `astrale domain …` group (`init | dev | build | deploy |
+> instance-prepare | check | logs`) was **removed** (CLI is "connect-only"). Current flow: scaffold
+> with `create-astrale-domain`, run the worker locally (`cd worker && pnpm dev`), install by URL —
+> `astrale instance install <worker-url>`. File-based `astrale instance install <spec.json>` and
+> `pnpm build:spec`/committed `spec.json` are gone too.
+
 The canonical domain lifecycle is
 `astrale domain init → dev → build → deploy → instance-prepare` (flags:
 `astrale domain --help`, `astrale domain dev up --help`). `domain check`
