@@ -10,12 +10,6 @@ export class AstraleError extends Error {
   }
 }
 
-export class ConfigError extends AstraleError {
-  constructor(message: string, hint?: string) {
-    super('CONFIG_ERROR', message, hint ?? 'Check ~/.astrale/config.json')
-  }
-}
-
 export class AuthError extends AstraleError {
   constructor(message: string, hint?: string) {
     super('AUTH_ERROR', message, hint ?? 'Run `astrale identity create <name>` to set up keys')
@@ -50,36 +44,6 @@ export class IdentifierCollisionError extends AstraleError {
   }
 }
 
-export class CapabilityMissingError extends AstraleError {
-  constructor(capability: string, adapter: string) {
-    super(
-      'CAPABILITY_MISSING',
-      `Adapter "${adapter}" does not support capability "${capability}"`,
-      'Choose a different adapter or avoid commands that require this capability',
-    )
-  }
-}
-
-export class LockTimeoutError extends AstraleError {
-  constructor(registry: string) {
-    super(
-      'LOCK_TIMEOUT',
-      `Timed out acquiring lock on registry "${registry}"`,
-      'Another CLI instance may be running — retry shortly',
-    )
-  }
-}
-
-export class CoupledMigrationRequiredError extends AstraleError {
-  constructor(entity: string, coupled: string) {
-    super(
-      'COUPLED_MIGRATION_REQUIRED',
-      `Cannot migrate "${entity}" alone — it is coupled to "${coupled}"`,
-      'Rerun with `--cascade` to migrate both, or `--force-decouple` to break the link',
-    )
-  }
-}
-
 export class IdentityKeyMissingError extends AstraleError {
   constructor(subject: string) {
     super(
@@ -96,18 +60,6 @@ export class NotImplementedError extends AstraleError {
       'NOT_IMPLEMENTED',
       `"${feature}" is not implemented in v1`,
       hint ?? 'Track the design implementation progress for updates',
-    )
-  }
-}
-
-export class LifecycleConfigInvalidError extends AstraleError {
-  constructor(domain: string, overlap: readonly string[], lifecyclePath?: string) {
-    super(
-      'LIFECYCLE_CONFIG_INVALID',
-      `Domain "${domain}": key(s) listed in both extraDevVars and forwardEnv/forwardEnvOptional: ${overlap.join(', ')}`,
-      lifecyclePath
-        ? `In ${lifecyclePath}, remove the key(s) from extraDevVars — they're already forwarded from process.env. The two maps must be mutually exclusive.`
-        : `Remove the key(s) from extraDevVars — the two maps must be mutually exclusive.`,
     )
   }
 }

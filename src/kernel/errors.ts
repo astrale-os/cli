@@ -31,7 +31,7 @@ export async function formatKernelError(
     urlArg || (error instanceof Error ? ((error as Error & { url?: string }).url ?? '') : '')
   const localContext = await contextForError(error)
   const credentialExpiration = opts.credential ? decodeJwtExpiration(opts.credential) : null
-  // Handle AstraleError (AuthError, ConfigError, etc.) with structured hints
+  // Handle AstraleError (AuthError, etc.) with structured hints
   if (error instanceof AstraleError) {
     if (isRaw) {
       writeRaw({ error: error.code, message: error.message, hint: error.hint })
