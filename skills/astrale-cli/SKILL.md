@@ -80,6 +80,10 @@ Load-bearing rules:
   static method syntax.
 - Prefer the domain-path form `/:domain:class.Name:method` for static calls
   when possible. It resolves by domain membership rather than tree layout.
+- `@<id>` takes a graph node UUID only — `@<slug>` is NOT_FOUND. And a
+  permission error naming a node that "should exist" often means the node
+  does NOT exist (missing targets surface as permission denied, not
+  NOT_FOUND) — verify with `astrale get <path>` before chasing grants.
 
 Examples:
 
@@ -162,6 +166,15 @@ worker, then `astrale instance install <url> -i <slug>` — the kernel fetches a
 signed install bundle from the running worker. There is no committed
 `spec.json` and no `astrale domain install`; install lives under the
 `instance` group because it operates on an instance graph.
+
+With the **managed (`astrale`) adapter**, `pnpm prod` publishes the bundle
+through the platform AND installs it on the configured instance in one step —
+no manual `instance install`. The service serves at
+`https://<name>-<hash>.svc.<region>.astrale.ai` (the CLI session is the auth).
+
+For authoring domains end-to-end (schema, handlers, external APIs, deploys),
+load the **astrale-domain** skill; for graph-level schema surgery on a live
+kernel, **astrale-live-domain-edit**.
 
 ## Auth And Credentials
 
@@ -257,6 +270,9 @@ Output is selected from stdout shape and flags:
 - `call --output <file>` writes binary/raw output to a file.
 - Piped stdin is read by `astrale call`; stdin on a TTY is ignored.
 - `--data` takes precedence over stdin and `key=value` params.
+- **Big payloads go through stdin** — argv caps around 128 KB, so multi-MB
+  JSON (e.g. a base64 bundle) must be piped:
+  `echo "$PAYLOAD_JSON" | astrale call <path> --json`.
 
 Examples:
 
@@ -315,7 +331,10 @@ astrale whoami
 
 Use diagnostics:
 
-- Add `--debug` to kernel commands for full error diagnostics.
+- Add `--debug` to kernel commands for full error diagnostics — including
+  the server-side cause chain (`data.cause`), which shows the ROOT failure
+  inside wrapped errors (e.g. what actually failed under a
+  `Delegation mint failed` or `KERNEL_ERROR`).
 - Use global `--log-level debug` for verbose CLI logging.
 - Use global `--log-format json` when an agent or script should parse logs.
 - Use `--json` or `--raw` for structured command output.
@@ -328,7 +347,7 @@ Common error classes and first checks:
 |---|---|
 | Connection error | `astrale status`; verify the instance URL and network path |
 | Authentication error | `astrale auth status`, `astrale whoami`, active identity |
-| Permission denied | Active identity and target operation permissions |
+| Permission denied | Does the named node actually exist (`astrale get`)? Then active identity and target operation permissions |
 | Not found | Path spelling, active instance, installed domain |
 | Validation error | `astrale call <path> --describe` |
 | Timeout | Target availability and `--timeout <ms>` |
