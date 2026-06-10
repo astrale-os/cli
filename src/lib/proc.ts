@@ -1,0 +1,35 @@
+import { spawn } from 'node:child_process'
+
+export type RunResult = {
+  /** Exit code, or -1 when the process was killed by a signal. */
+  code: number
+  stdout: string
+  stderr: string
+}
+
+/**
+ * Spawn a child process and capture stdout/stderr as UTF-8 text.
+ *
+ * Uses `node:child_process` rather than `Bun.spawn` so the exact same code runs
+ * under both the Bun-compiled standalone binary (Linux/macOS) and the Node/npm
+ * build (Windows and any Node user). The promise rejects only when the process
+ * fails to spawn (e.g. ENOENT); a non-zero exit resolves with that `code` so
+ * callers can branch on it.
+ */
+export function run(file: string, args: string[] = [], opts: { cwd?: string } = {}): Promise<RunResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    let stdout = ''
+    let stderr = ''
+    child.stdout?.setEncoding('utf8')
+    child.stderr?.setEncoding('utf8')
+    child.stdout?.on('data', (chunk: string) => {
+      stdout += chunk
+    })
+    child.stderr?.on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    child.on('error', reject)
+    child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }))
+  })
+}

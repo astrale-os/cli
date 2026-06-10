@@ -6,6 +6,7 @@ import { z } from 'zod'
 
 import { AstraleError } from '../errors'
 import { INSTALL_PATH } from './paths'
+import { run } from './proc'
 
 const DEFAULT_REPO = 'astrale-os/cli'
 const DEFAULT_CHANNEL = 'alpha'
@@ -105,16 +106,31 @@ export function platformKey(platform: Platform): string {
   return `${platform.os}-${platform.arch}`
 }
 
+/**
+ * True when running as the Bun-compiled standalone binary (Linux/macOS), which
+ * self-updates by swapping its own file. The Node/npm build does not expose
+ * `process.versions.bun`; it is managed by the user's package manager instead.
+ */
+function isStandaloneBinary(): boolean {
+  return Boolean((process.versions as { bun?: string }).bun)
+}
+
 export async function readInstallMetadata(path = INSTALL_PATH): Promise<InstallMetadata> {
   let raw: string
   try {
     raw = await readFile(path, 'utf8')
   } catch {
-    throw new AstraleError(
-      'UPDATE_NOT_SCRIPT_INSTALLED',
-      'Astrale was not installed by the official install script.',
-      'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
-    )
+    throw isStandaloneBinary()
+      ? new AstraleError(
+          'UPDATE_NOT_SCRIPT_INSTALLED',
+          'Astrale was not installed by the official install script.',
+          'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
+        )
+      : new AstraleError(
+          'UPDATE_PACKAGE_MANAGED',
+          'This Astrale build is managed by your package manager.',
+          'Update with: npm install -g @astrale-os/astrale@latest  (or pnpm/bun)',
+        )
   }
 
   const parsed = InstallMetadataSchema.safeParse(JSON.parse(raw))
@@ -283,25 +299,15 @@ async function sha256File(path: string): Promise<string> {
 }
 
 async function extractTarGz(archive: string, cwd: string): Promise<void> {
-  const proc = Bun.spawn(['tar', '-xzf', archive, '-C', cwd], {
-    stdout: 'ignore',
-    stderr: 'pipe',
-  })
-  const exit = await proc.exited
-  if (exit !== 0) {
-    const err = await new Response(proc.stderr).text()
-    throw new Error(`Could not extract update archive: ${err.trim()}`)
+  const { code, stderr } = await run('tar', ['-xzf', archive, '-C', cwd])
+  if (code !== 0) {
+    throw new Error(`Could not extract update archive: ${stderr.trim()}`)
   }
 }
 
 async function smokeVersion(bin: string, expectedVersion: string): Promise<void> {
-  const proc = Bun.spawn([bin, '--version'], { stdout: 'pipe', stderr: 'pipe' })
-  const [exit, stdout, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ])
-  if (exit !== 0) throw new Error(`Updated binary failed --version: ${stderr.trim()}`)
+  const { code, stdout, stderr } = await run(bin, ['--version'])
+  if (code !== 0) throw new Error(`Updated binary failed --version: ${stderr.trim()}`)
   const actual = stdout.trim()
   if (actual !== expectedVersion) {
     throw new Error(`Updated binary reported version ${actual}, expected ${expectedVersion}`)

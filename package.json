@@ -13,21 +13,31 @@
     "url": "git+https://github.com/astrale-os/cli.git"
   },
   "bin": {
-    "astrale": "./bin/astrale.ts"
+    "astrale": "./dist/astrale.js"
   },
   "files": [
-    "bin",
+    "dist",
     "src",
-    "tsconfig.json"
+    "tsconfig.json",
+    ".check-workspace.cjs"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "exports": {
     "./keys": "./src/lib/keys.ts",
     "./paths": "./src/lib/paths.ts"
   },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
   "scripts": {
     "preinstall": "node .check-workspace.cjs",
     "prepare": "husky",
+    "build": "bun scripts/build.ts",
+    "prepack": "bun scripts/build.ts",
     "typecheck": "tsgo --noEmit",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
@@ -37,8 +47,6 @@
     "test:watch": "bun test --watch src"
   },
   "dependencies": {
-    "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
-    "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
     "chalk": "^5.6.2",
     "commander": ">=13.0.0 <14.0.0",
     "jose": "^6.1.3",
@@ -47,6 +55,8 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
     "@astrale-os/ox": ">=0.1.0 <1.0.0",
     "@astrale/commitlint-config": "jsr:@astrale/commitlint-config@~2.0.0",
     "@commitlint/cli": "~20.3.1",

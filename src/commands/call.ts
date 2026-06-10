@@ -108,21 +108,42 @@ export async function callCommand(
  * Best-effort pre-flight: does the target Function declare a binary output?
  * A binary method must use the binary transport (the value path would JSON-
  * decode and corrupt the bytes), and the client can't discover that after
- * dispatch. Reads `output` off the node via `::get`. Any failure — including an
- * instance-method path where `<path>::get` doesn't resolve a Function node —
- * returns false and falls through to the value path, letting the kernel surface
- * the real error. `::get` is a kernel syscall (same origin) so it neither
+ * dispatch. For a static path the path IS the Function node — read `output`
+ * off it via `::get`. For an instance-method path (`<node>::method`) the
+ * Function node isn't addressable that way: resolve the instance's class
+ * first, then probe the class's method node (`<classPath>:method`). An
+ * interface-hosted instance method still escapes the probe (its Function node
+ * hangs off the interface, not the class) — that and any other failure returns
+ * false and falls through to the value path, letting the kernel surface the
+ * real error. `::get` is a kernel syscall (same origin) so it neither
  * redirects nor triggers delegation.
  */
 async function isBinaryOutput(ctx: ClientContext, path: string): Promise<boolean> {
   try {
-    const node = (await ctx.client.call(`${path}::get`, {})) as {
+    const target = path.includes('::') ? await instanceMethodNodePath(ctx, path) : path
+    if (!target) return false
+    const node = (await ctx.client.call(`${target}::get`, {})) as {
       props?: Record<string, unknown>
     } | null
     return node?.props?.[K.$.i('Function').output.key] === 'binary'
   } catch {
     return false
   }
+}
+
+/** `<node>::method` → the method's Function-node MethodPath, via the node's class. */
+async function instanceMethodNodePath(
+  ctx: ClientContext,
+  path: string,
+): Promise<string | undefined> {
+  const sep = path.lastIndexOf('::')
+  const source = path.slice(0, sep)
+  const method = path.slice(sep + 2)
+  if (!source || !method) return undefined
+  const node = (await ctx.client.call(`${source}::get`, {})) as { class?: string } | null
+  // node.class is a ClassPath (`/:domain:class.Name`); appending `:<method>`
+  // forms the MethodPath of the class-owned Function node.
+  return node?.class ? `${node.class}:${method}` : undefined
 }
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {

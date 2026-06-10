@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { paths } from './env'
+import { run } from './proc'
 
 /**
  * `astrale browser` is a thin orchestrator over `agent-browser`
@@ -54,13 +55,16 @@ export async function saveSession(session: BrowserSession): Promise<void> {
 
 /** Resolve `agent-browser` on PATH; null when not installed. */
 export async function findAgentBrowser(): Promise<string | null> {
-  const proc = Bun.spawn(['command', '-v', 'agent-browser'], {
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
-  const out = (await new Response(proc.stdout).text()).trim()
-  await proc.exited
-  return proc.exitCode === 0 && out ? out : null
+  // `command -v` is a POSIX shell builtin (no `command` executable exists on
+  // Windows), so resolve via `where` on Windows and a shell on Unix.
+  const lookup =
+    process.platform === 'win32'
+      ? run('where', ['agent-browser'])
+      : run('sh', ['-c', 'command -v agent-browser'])
+  const res = await lookup.catch(() => null)
+  if (!res || res.code !== 0) return null
+  const path = res.stdout.split(/\r?\n/)[0]?.trim()
+  return path || null
 }
 
 export type AbResult = {
@@ -90,12 +94,7 @@ export async function ab(
   if (opts.headed) argv.push('--headed')
   argv.push(...args, '--json')
 
-  const proc = Bun.spawn(argv, { stdout: 'pipe', stderr: 'pipe' })
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ])
-  await proc.exited
+  const { code, stdout, stderr } = await run(argv[0], argv.slice(1))
 
   try {
     const parsed = JSON.parse(stdout) as { success?: boolean; data?: unknown; error?: string }
@@ -105,7 +104,7 @@ export async function ab(
   } catch {
     // fall through to exit-code interpretation
   }
-  return { ok: proc.exitCode === 0, data: null, error: stderr.trim() || null }
+  return { ok: code === 0, data: null, error: stderr.trim() || null }
 }
 
 // Reads the GUI session from whatever origin the page currently sits on. During

@@ -18,6 +18,7 @@ type RegisterIdentityResult = { iss: string; sub: string }
 type RegisterOpts = KernelCommandOpts & {
   class?: string
   path?: string
+  props?: string
 }
 
 async function readJwk(path: string): Promise<JWK> {
@@ -25,8 +26,39 @@ async function readJwk(path: string): Promise<JWK> {
   return JSON.parse(raw) as JWK
 }
 
-function defaultClassPath(): string {
-  return '/:dist.astrale.ai:class.User'
+type ChildNode = { class?: string; path?: string }
+
+/**
+ * Discover the identity-bearer class on the target instance: find the
+ * installed distribution domain (whatever its origin — `dist.astrale.ai` in
+ * prod, `dist.localhost` locally) and address its `User` class semantically.
+ * The bearer class must exist before a non-root identity can be registered;
+ * failing here names the real problem instead of surfacing as a confusing
+ * permission error on a hardcoded prod origin.
+ */
+async function resolveUserClassPath(ctx: {
+  client: { call(path: string, params: unknown): Promise<unknown> }
+}): Promise<string> {
+  const children = (await ctx.client.call('/::listChildren', {})) as ChildNode[]
+  const domains = children
+    .filter((c) => typeof c.class === 'string' && c.class.endsWith(':class.Domain'))
+    .map((c) => (c.path ?? '').replace(/^\//, ''))
+    .filter(Boolean)
+  for (const origin of domains) {
+    try {
+      // The class materializes as a `class.User` Folder under the domain mount;
+      // a resolvable read means the domain declares it.
+      await ctx.client.call(`/${origin}/class.User::get`, {})
+      return `/:${origin}:class.User`
+    } catch {
+      // This domain has no User class — try the next one.
+    }
+  }
+  throw new Error(
+    'No installed domain declares a `User` class on this instance — registering a ' +
+      'non-root identity needs an identity-bearer class (install the distribution ' +
+      'domain, or pass --class <classPath> explicitly).',
+  )
 }
 
 async function mintBootstrapJwt(privateJwk: JWK): Promise<string> {
@@ -58,6 +90,12 @@ export default {
       flags: '--path <nodePath>',
       description: 'Path of the new identity node (default: /workspace/users/<name>)',
     },
+    {
+      flags: '--props <json>',
+      description:
+        'Extra props for the identity node (JSON). A User-class node defaults ' +
+        'firstName/lastName to the identity name when omitted.',
+    },
     ...KERNEL_PASSTHROUGH_OPTIONS,
   ],
   action: async (name: string, opts: RegisterOpts) => {
@@ -73,7 +111,6 @@ export default {
       }
       const privateJwk = await readJwk(privatePath)
       const publicJwk = await readJwk(publicPath)
-      const classPath = opts.class ?? defaultClassPath()
       const nodePath = opts.path ?? `/workspace/users/${name}`
 
       await runKernelCommand({
@@ -87,10 +124,21 @@ export default {
             return existing
           }
 
+          const classPath = opts.class ?? (await resolveUserClassPath(ctx))
+
+          // A bare `astrale identity create <name>` carries no profile, but the
+          // bearer class may require one (distribution's User wants
+          // firstName/lastName) — default both to the identity name so a dev
+          // registration works out of the box; `--props` overrides.
+          const extraProps = opts.props ? (JSON.parse(opts.props) as Record<string, unknown>) : {}
+          const userDefaults = classPath.endsWith(':class.User')
+            ? { firstName: name, lastName: name }
+            : {}
+
           const node = (await ctx.client.call(K.Node.createNode.path.method.raw, {
             class: classPath,
             path: nodePath,
-            props: { 'Statused.status': 'creating' },
+            props: { 'Statused.status': 'creating', ...userDefaults, ...extraProps },
           })) as CreateNodeResult
 
           const bootstrap = await mintBootstrapJwt(privateJwk)
