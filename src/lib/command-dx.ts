@@ -37,6 +37,19 @@ export function renderCommanderError(
     return renderUnknownCommand(tokens, catalog)
   }
 
+  if (error.code === 'commander.missingArgument') {
+    const usage = usageFor(matched.path, matched.command)
+    const argName = error.message.match(/'([^']+)'/)?.[1]
+    return [
+      `Missing required argument${argName ? ` ${chalk.bold(`<${argName}>`)}` : ''} for ${chalk.bold(
+        `astrale ${matched.path.join(' ')}`,
+      )}`,
+      '',
+      'Usage:',
+      `  astrale ${usage}`,
+    ].join('\n')
+  }
+
   if (error.code === 'commander.excessArguments') {
     const usage = usageFor(matched.path, matched.command)
     const extra = tokens.slice(matched.path.length).join(' ')

@@ -7,7 +7,7 @@ import { ADMIN_INSTANCE } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readIdentities, type IdentityStore } from '../../lib/identity'
 import { addInstance, setActive } from '../../lib/instance'
-import { fatal, log } from '../../lib/log'
+import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { validateSlug } from '../../lib/validation'
 
@@ -45,13 +45,15 @@ Examples:
     try {
       validateSlug(id)
       await assertAlphaCreateAuth(opts)
-      const result = await withAdminKernelClient(
-        opts,
-        async (ctx) =>
-          (await ctx.client.call(`${ADMIN_INSTANCE}/alphaCreate`, {
-            slug: id,
-            ...(opts.hostId ? { host_id: opts.hostId } : {}),
-          })) as { url: string },
+      const result = await withSpinner(`Provisioning instance ${id}`, !isMachine(opts), () =>
+        withAdminKernelClient(
+          opts,
+          async (ctx) =>
+            (await ctx.client.call(`${ADMIN_INSTANCE}/alphaCreate`, {
+              slug: id,
+              ...(opts.hostId ? { host_id: opts.hostId } : {}),
+            })) as { url: string },
+        ),
       )
 
       const use = opts.use !== false

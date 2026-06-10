@@ -6,7 +6,7 @@ import type { KernelCommandOpts } from '../../kernel'
 import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { fatal, log } from '../../lib/log'
+import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../../lib/output'
 
 type StatusOpts = KernelCommandOpts & AdminTargetCommandOpts & RawOutputOpts
@@ -18,9 +18,11 @@ export default {
   options: [...ADMIN_TARGET_OPTIONS],
   action: async (id: string, opts: StatusOpts) => {
     try {
-      const result = await withAdminKernelClient(
-        opts,
-        async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id })) as InstanceInfo,
+      const result = await withSpinner(`Fetching instance ${id}`, !isMachine(opts), () =>
+        withAdminKernelClient(
+          opts,
+          async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id })) as InstanceInfo,
+        ),
       )
       if (isMachine(opts)) {
         output(result, opts)

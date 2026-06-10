@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import ora, { type Ora } from 'ora'
 
 import { AstraleError, NotImplementedError } from '../errors'
+import { formatElapsed } from './format'
 
 export const log = {
   info: (msg: string) => console.log(chalk.blue('ℹ'), msg),
@@ -87,6 +88,30 @@ function cappedStream(target: NodeJS.WriteStream, maxBytes: number): NodeJS.Writ
 }
 
 const IS_CI = !!(process.env.CI || process.env.CONTINUOUS_INTEGRATION || process.env.NO_SPINNER)
+
+/**
+ * Run an async operation behind a spinner, mirroring the runKernelCommand
+ * presentation (label… → ✔ label <elapsed> / ✖ label failed). Pass
+ * `enabled: false` for machine-readable output modes. Errors are rethrown
+ * after the spinner is stopped.
+ */
+export async function withSpinner<T>(
+  label: string,
+  enabled: boolean,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!enabled) return await fn()
+  const spin = spinner(`${label}...`)
+  const start = performance.now()
+  try {
+    const result = await fn()
+    spin.succeed(`${label} ${chalk.dim(formatElapsed(performance.now() - start))}`)
+    return result
+  } catch (error) {
+    spin.fail(`${label} failed`)
+    throw error
+  }
+}
 
 export function spinner(text: string): Ora {
   const target = process.stderr
