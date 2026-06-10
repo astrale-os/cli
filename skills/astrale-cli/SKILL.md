@@ -270,6 +270,9 @@ Output is selected from stdout shape and flags:
 - `call --output <file>` writes binary/raw output to a file.
 - Piped stdin is read by `astrale call`; stdin on a TTY is ignored.
 - `--data` takes precedence over stdin and `key=value` params.
+- `key=value` values are auto-coerced: `true`/`false`/`null`, numeric strings
+  → numbers, `{…}`/`[…]` → parsed JSON; everything else stays a string. To
+  force a digits-only STRING (or pass nested values), use `--data`.
 - **Big payloads go through stdin** — argv caps around 128 KB, so multi-MB
   JSON (e.g. a base64 bundle) must be piped:
   `echo "$PAYLOAD_JSON" | astrale call <path> --json`.
