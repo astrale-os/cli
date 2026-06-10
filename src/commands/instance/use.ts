@@ -12,7 +12,7 @@ import {
   resolveInstance,
   resolveInstanceKey,
   setActive,
-  upsertInstance,
+  setActiveName,
   type ResolvedInstance,
 } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
@@ -42,7 +42,7 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
       return
     }
 
-    const { resolved, materialized } = await resolveUseTarget(name, opts)
+    const resolved = await resolveUseTarget(name, opts)
 
     if (!opts.skipJwksCheck && resolved.issuer) {
       try {
@@ -52,9 +52,12 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
       }
     }
 
-    await setActive(resolved.name)
+    if (resolved.kind === 'bookmark') {
+      await setActive(resolved.name)
+    } else {
+      await setActiveName(resolved.name)
+    }
     log.success(`Active instance: ${resolved.name} (${resolved.url})`)
-    if (materialized) log.dim('  managed instance bookmarked locally')
 
     // §7.1 identity-adoption prompt (DX). Orthogonality preserved — we
     // only switch on explicit user consent (or --adopt-default in CI).
@@ -91,13 +94,10 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
   }
 }
 
-async function resolveUseTarget(
-  name: string,
-  opts: UseOpts,
-): Promise<{ resolved: ResolvedInstance; materialized: boolean }> {
+async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedInstance> {
   let notFound: AstraleError
   try {
-    return { resolved: await resolveInstance(name), materialized: false }
+    return await resolveInstance(name)
   } catch (e) {
     if (!(e instanceof AstraleError) || e.code !== 'INSTANCE_NOT_FOUND') throw e
     notFound = e
@@ -116,32 +116,19 @@ async function resolveUseTarget(
       async (ctx) =>
         (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: name })) as InstanceInfo,
     )
-  } catch {
+  } catch (e) {
+    if (e instanceof Error && e.name !== 'NotFoundError') throw e
     throw notFound
   }
   const url = normalizeInstanceKernelUrl(managed.url)
-  const { entry } = await upsertInstance(managed.slug, {
-    url,
-    issuer: url,
-    slug: managed.slug,
-    name: managed.slug,
-    kind: 'bookmark',
-    mode: 'remote',
-  })
 
   return {
-    resolved: {
-      name: managed.slug,
-      kind: 'bookmark',
-      url: entry.url ?? url,
-      issuer: entry.issuer ?? url,
-      createdAt: entry.createdAt,
-      defaultIdentity: entry.defaultIdentity,
-      caFile: entry.caFile,
-      mode: entry.mode,
-      status: 'managed',
-    },
-    materialized: true,
+    name: managed.slug,
+    kind: 'managed',
+    url,
+    issuer: url,
+    createdAt: managed.createdAt,
+    status: 'managed',
   }
 }
 

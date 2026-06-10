@@ -71,12 +71,12 @@ export async function buildLocalStatus(
   config: AstraleConfig = DEFAULT_CONFIG,
 ): Promise<LocalStatus> {
   const activeEntry = instances.active ? instances.instances[instances.active] : undefined
-  const instance = activeEntry?.url
+  const instance = instances.active
     ? {
         active: instances.active,
-        url: activeEntry.url,
-        issuer: activeEntry.issuer ?? null,
-        defaultIdentity: activeEntry.defaultIdentity ?? null,
+        url: activeEntry?.url ?? '',
+        issuer: activeEntry?.issuer ?? null,
+        defaultIdentity: activeEntry?.defaultIdentity ?? null,
       }
     : null
 

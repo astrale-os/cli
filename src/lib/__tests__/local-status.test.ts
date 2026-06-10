@@ -92,6 +92,36 @@ describe('local status snapshot', () => {
     expect(status.identity?.session?.hasRefreshToken).toBe(true)
   })
 
+  test('summarizes active managed slug without requiring a local bookmark', async () => {
+    const instances: InstanceStore = {
+      active: 'testmarc',
+      instances: {},
+    }
+    const identities: IdentityStore = {
+      default: 'workos-user',
+      identities: {
+        'workos-user': {
+          subject: 'user_123',
+          source: 'idp',
+          mode: 'remote',
+          idp: 'workos',
+          issuer: 'https://idp.example.com',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    }
+
+    const status = await buildLocalStatus(instances, identities, async () => null)
+
+    expect(status.instance).toEqual({
+      active: 'testmarc',
+      url: '',
+      issuer: null,
+      defaultIdentity: null,
+    })
+    expect(status.identity?.registeredOnActiveInstance).toBe(false)
+  })
+
   test('falls back to identity exp claim when IdP session has no expires_at', async () => {
     const identities: IdentityStore = {
       default: 'workos-user',

@@ -51,7 +51,7 @@ export type AddInstanceOpts = {
 
 export type ResolvedInstance = {
   name: string
-  kind: InstanceKind
+  kind: InstanceKind | 'managed'
   url: string
   issuer?: string
   createdAt?: string
@@ -91,7 +91,7 @@ function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: b
     instances[key] = next
   }
 
-  const active = instances[store.active] ? store.active : (Object.keys(instances)[0] ?? '')
+  const active = store.active || Object.keys(instances)[0] || ''
   if (active !== store.active) changed = true
   return { store: { active, instances }, changed }
 }
@@ -245,13 +245,27 @@ export async function setActive(identifier: string): Promise<string> {
   return key
 }
 
+export async function setActiveName(identifier: string): Promise<string> {
+  validateName(identifier, 'Instance')
+  const store = await readInstances()
+  store.active = identifier
+  await writeInstances(store)
+  return identifier
+}
+
+export async function clearActive(identifier: string): Promise<void> {
+  const store = await readInstances()
+  if (store.active !== identifier) return
+  store.active = Object.keys(store.instances)[0] ?? ''
+  await writeInstances(store)
+}
+
 export async function getActive(config?: AstraleConfig): Promise<InstanceEntry & { name: string }> {
   const store = await readInstances(config)
   if (!store.active) {
     throw new Error('No active instance. Run: astrale instance bookmark <name> --url <url> --use')
   }
   const entry = store.instances[store.active]
-  if (!entry?.url) throw new Error(`Active instance "${store.active}" is not a valid bookmark`)
   return { ...entry, name: store.active }
 }
 

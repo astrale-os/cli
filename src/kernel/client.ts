@@ -4,9 +4,16 @@ import { ClientSession } from '@astrale-os/kernel-client/session'
 import type { KernelCommandOpts } from './types'
 
 import { AstraleError } from '../errors'
+import { ADMIN_INSTANCE, type InstanceInfo } from '../lib/admin-instance'
 import { resolveAdminTarget, type AdminTargetCommandOpts } from '../lib/admin-target'
 import { readConfig } from '../lib/config'
-import { getActive, resolveInstance } from '../lib/instance'
+import {
+  getActive,
+  normalizeInstanceKernelUrl,
+  resolveInstance,
+  type ResolvedInstance,
+} from '../lib/instance'
+import { validateSlug } from '../lib/validation'
 import { resolveCredential } from './auth'
 import { fetchWithCaFile } from './ca-fetch'
 import { mintRemoteCredential } from './remote-routing'
@@ -50,7 +57,7 @@ export async function withKernelClient<T>(
     slug = undefined
   } else {
     const identifier = opts.instance ?? (await getActive(config)).name
-    const resolved = await resolveInstance(identifier, config)
+    const resolved = await resolveKernelInstance(identifier, opts, config)
     url = opts.url ?? resolved.url
     audience = resolved.issuer ?? resolved.url
     slug = resolved.name
@@ -62,6 +69,57 @@ export async function withKernelClient<T>(
     )
   }
   return withResolvedKernelClient(opts, config, { url, audience, slug }, fn)
+}
+
+async function resolveKernelInstance(
+  identifier: string,
+  opts: KernelCommandOpts,
+  config: Awaited<ReturnType<typeof readConfig>>,
+): Promise<ResolvedInstance> {
+  let notFound: AstraleError
+  try {
+    return await resolveInstance(identifier, config)
+  } catch (e) {
+    if (!(e instanceof AstraleError) || e.code !== 'INSTANCE_NOT_FOUND') throw e
+    notFound = e
+  }
+
+  try {
+    validateSlug(identifier)
+  } catch {
+    throw notFound
+  }
+
+  let managed: InstanceInfo
+  try {
+    managed = await withAdminKernelClient(
+      adminLookupOpts(opts),
+      async (ctx) =>
+        (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: identifier })) as InstanceInfo,
+    )
+  } catch (e) {
+    if (e instanceof Error && e.name !== 'NotFoundError') throw e
+    throw notFound
+  }
+
+  const url = normalizeInstanceKernelUrl(managed.url)
+  return {
+    name: managed.slug,
+    kind: 'managed',
+    url,
+    issuer: url,
+    createdAt: managed.createdAt,
+    status: 'managed',
+  }
+}
+
+function adminLookupOpts(opts: KernelCommandOpts): KernelCommandOpts & AdminTargetCommandOpts {
+  return {
+    as: opts.as,
+    creds: opts.creds,
+    timeout: opts.timeout,
+    debug: opts.debug,
+  }
 }
 
 export async function withAdminKernelClient<T>(

@@ -4,7 +4,7 @@ import type { KernelCommandOpts } from '../../kernel'
 import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
+import { clearActive, readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 
@@ -44,6 +44,7 @@ Behavior:
         const key = resolveInstanceKey(store, id)
         if (key) await removeInstance(key)
       }
+      await clearActive(id)
 
       if (isMachine(opts)) {
         output(result, opts)

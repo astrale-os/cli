@@ -6,7 +6,7 @@ import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readIdentities, type IdentityStore } from '../../lib/identity'
-import { addInstance, setActive } from '../../lib/instance'
+import { setActiveName } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { validateSlug } from '../../lib/validation'
@@ -24,8 +24,8 @@ export default {
 Behavior:
   Calls Instance.alphaCreate on the configured admin kernel. The caller must be
   logged in with WorkOS. When --host-id is omitted, the admin kernel chooses the
-  caller's single eligible host. The new instance is bookmarked and selected by
-  default.
+  caller's single eligible host. The new managed instance is selected by
+  default without creating a local bookmark.
 
 Examples:
   $ astrale auth login
@@ -39,7 +39,7 @@ Examples:
       flags: '--host-id <id>',
       description: 'Advanced: host node id to provision on when multiple hosts are available',
     },
-    { flags: '--no-use', description: 'Do not bookmark and select the new instance' },
+    { flags: '--no-use', description: 'Do not select the new instance after provisioning' },
   ],
   action: async (id: string, opts: CreateOpts) => {
     try {
@@ -58,15 +58,7 @@ Examples:
 
       const use = opts.use !== false
       if (use) {
-        const kernelUrl = `${result.url.replace(/\/+$/, '')}/api`
-        await addInstance(id, {
-          url: kernelUrl,
-          name: id,
-          kind: 'bookmark',
-          mode: 'remote',
-          issuer: kernelUrl,
-        })
-        await setActive(id)
+        await setActiveName(id)
       }
 
       if (isMachine(opts)) {
@@ -75,7 +67,7 @@ Examples:
       }
       log.success(`Instance provisioned: ${id}`)
       log.dim(`  url: ${result.url}`)
-      if (use) log.dim(`  bookmarked + active: ${result.url}/api`)
+      if (use) log.dim(`  active managed instance: ${id}`)
     } catch (e) {
       fatal(e)
     }

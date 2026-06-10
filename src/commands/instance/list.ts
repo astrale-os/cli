@@ -64,12 +64,17 @@ export default {
           ),
         )
       }
+      const managedNames = new Set(managed.map((item) => item.slug))
+      const visibleBookmarks =
+        opts.bookmarked || opts.adminOnly
+          ? bookmarks
+          : bookmarks.filter((item) => !managedNames.has(item.name))
 
       if (isMachine(opts)) {
         output(
           {
             active: store.active || null,
-            ...(opts.adminOnly ? {} : { bookmarks }),
+            ...(opts.adminOnly ? {} : { bookmarks: visibleBookmarks }),
             ...(opts.bookmarked ? {} : { instances: managed }),
           },
           opts,
@@ -81,7 +86,7 @@ export default {
       if (!opts.bookmarked) {
         for (const item of managed) {
           rows.push({
-            name: item.slug,
+            name: item.slug === store.active ? `${item.slug} ${chalk.green('*')}` : item.slug,
             kind: 'managed',
             url: item.url ?? '',
             extra: [item.region, item.hostId].filter(Boolean).join(' · '),
@@ -89,7 +94,7 @@ export default {
         }
       }
       if (!opts.adminOnly) {
-        for (const item of bookmarks) {
+        for (const item of visibleBookmarks) {
           rows.push({
             name: item.active ? `${item.name} ${chalk.green('*')}` : item.name,
             kind: 'bookmark',
