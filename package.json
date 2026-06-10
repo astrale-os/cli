@@ -21,17 +21,14 @@
     "tsconfig.json",
     ".check-workspace.cjs"
   ],
-  "engines": {
-    "node": ">=20"
-  },
   "type": "module",
   "exports": {
     "./keys": "./src/lib/keys.ts",
     "./paths": "./src/lib/paths.ts"
   },
   "publishConfig": {
-    "registry": "https://registry.npmjs.org",
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "preinstall": "node .check-workspace.cjs",
@@ -55,8 +52,8 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@astrale-os/kernel-client": ">=0.1.0 <1.0.0",
-    "@astrale-os/kernel-core": ">=0.1.0 <1.0.0",
+    "@astrale-os/kernel-client": ">=0.2.0 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.4.1 <1.0.0",
     "@astrale-os/ox": ">=0.1.0 <1.0.0",
     "@astrale/commitlint-config": "jsr:@astrale/commitlint-config@~2.0.0",
     "@commitlint/cli": "~20.3.1",
@@ -78,6 +75,9 @@
     "*.{json,yml,yaml}": [
       "oxfmt --write"
     ]
+  },
+  "engines": {
+    "node": ">=20"
   },
   "packageManager": "pnpm@10.28.0"
 }

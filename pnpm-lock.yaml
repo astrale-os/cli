@@ -8,12 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@astrale-os/kernel-client':
-        specifier: '>=0.1.0 <1.0.0'
-        version: 0.1.1(msgpackr@1.11.14)(typescript@6.0.3)
-      '@astrale-os/kernel-core':
-        specifier: '>=0.1.0 <1.0.0'
-        version: 0.4.0(typescript@6.0.3)
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -33,6 +27,12 @@ importers:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
+      '@astrale-os/kernel-client':
+        specifier: '>=0.2.0 <1.0.0'
+        version: 0.2.0(msgpackr@1.11.14)(typescript@6.0.3)
+      '@astrale-os/kernel-core':
+        specifier: '>=0.4.1 <1.0.0'
+        version: 0.4.1(typescript@6.0.3)
       '@astrale-os/ox':
         specifier: '>=0.1.0 <1.0.0'
         version: 0.1.1(oxfmt@0.54.0)(oxlint@1.69.0)
@@ -72,16 +72,16 @@ importers:
 
 packages:
 
-  '@astrale-os/kernel-api@0.4.1':
-    resolution: {integrity: sha512-03a2k9/5rUWdohMS6xAxb70VK7D0Z+nnmKNONB7hJuwMPfiwB9FWhu76o+IyrEI0KGEYmvFAmnBau2fm81cAUQ==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-api/0.4.1/7ec501e946fcfb80df3d7937f5711b269b58aa7b}
+  '@astrale-os/kernel-api@0.4.2':
+    resolution: {integrity: sha512-CTbQKV4j6Xwzoy1YiYg/kCQ2PE2PGiBC8cuQgkl1NAxNuck3zvJpz23SjRkZoNubLEp7LuQ9vOCy8OndnyDkxg==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-api/0.4.2/9fed28cfa462c75248055f9a72a4fea8cb627f8c}
     peerDependencies:
       msgpackr: ^1.11.0
 
-  '@astrale-os/kernel-client@0.1.1':
-    resolution: {integrity: sha512-rT7oaIuySEquL3ezkioyURlgOG3fjbLReyQcO9ZJx3K1IN7uRHHZGyNal2N2MKoNpwvM+Ps+0pNzKbNbOY6fLA==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-client/0.1.1/09d51c629ced2606ef23e27c523ea8db7eef0ba0}
+  '@astrale-os/kernel-client@0.2.0':
+    resolution: {integrity: sha512-o7RDyPnd/0fOPL5AeMTe3Jm7hsIj0Tosbk0NAm7Fl+aVsS8t1Q83WSa36jYy4AjsA43omCBe32dPKWe3RNsDRQ==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-client/0.2.0/0ae9bb5a4636f2ac984fc521ce6bf7dfc52ec01b}
 
-  '@astrale-os/kernel-core@0.4.0':
-    resolution: {integrity: sha512-1rMeD6Wz7t8CUFwkRcg8la94c4l8Jb22sxRtas8YTG7sw8Zb5mD850R1SAAMVqi8mA88uTysAdPvaE9Lrqee8A==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-core/0.4.0/a4b5fb869319db3815eb8d4a874493732ffd9c4b}
+  '@astrale-os/kernel-core@0.4.1':
+    resolution: {integrity: sha512-oVJAP2nvFI9DSDsgx1lfHfXYahQ8vxsX9NGGGVcLf0/8mDb52XSVf5rmCl/zZ58J1JUK4tqo44asonud6P1OJw==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-core/0.4.1/062872895081ae03c13e35502c89e9365882ab51}
 
   '@astrale-os/kernel-dsl@0.1.0':
     resolution: {integrity: sha512-86icece8YEnSKCQ8OwvzB2R06P/Iks1EdBXxAsvA55MkyQhH+UvM7fvk3GG+TNrhmiaps/qtZexFBLOX0d3v6w==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-dsl/0.1.0/9662873904d4cf481de93ef535e6e18647ec072d}
@@ -993,19 +993,19 @@ packages:
 
 snapshots:
 
-  '@astrale-os/kernel-api@0.4.1(msgpackr@1.11.14)(typescript@6.0.3)':
+  '@astrale-os/kernel-api@0.4.2(msgpackr@1.11.14)(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-core': 0.4.0(typescript@6.0.3)
+      '@astrale-os/kernel-core': 0.4.1(typescript@6.0.3)
       jose: 6.2.3
       msgpackr: 1.11.14
       zod: 4.4.3
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-client@0.1.1(msgpackr@1.11.14)(typescript@6.0.3)':
+  '@astrale-os/kernel-client@0.2.0(msgpackr@1.11.14)(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-api': 0.4.1(msgpackr@1.11.14)(typescript@6.0.3)
-      '@astrale-os/kernel-core': 0.4.0(typescript@6.0.3)
+      '@astrale-os/kernel-api': 0.4.2(msgpackr@1.11.14)(typescript@6.0.3)
+      '@astrale-os/kernel-core': 0.4.1(typescript@6.0.3)
       '@astrale-os/kernel-dsl': 0.1.0(typescript@6.0.3)
       '@tanstack/pacer': 0.20.1
       dequal: 2.0.3
@@ -1013,7 +1013,7 @@ snapshots:
       - msgpackr
       - typescript
 
-  '@astrale-os/kernel-core@0.4.0(typescript@6.0.3)':
+  '@astrale-os/kernel-core@0.4.1(typescript@6.0.3)':
     dependencies:
       '@astrale-os/kernel-dsl': 0.1.0(typescript@6.0.3)
       '@types/json-schema': 7.0.15
