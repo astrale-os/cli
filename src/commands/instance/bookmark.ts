@@ -1,7 +1,7 @@
 import type { CommandDefinition } from '../../command'
 
 import { fetchWithCaFile } from '../../kernel/ca-fetch'
-import { addInstance, setActive } from '../../lib/instance'
+import { normalizeInstanceKernelUrl, setActive, upsertInstance } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
 
@@ -33,12 +33,14 @@ export default {
   ) => {
     try {
       if (!opts.url) fatal(new Error('Missing required flag: --url <url>'))
+      const url = normalizeInstanceKernelUrl(opts.url)
+      const expectedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
 
       if (!opts.skipProbe) {
         try {
           const { issuer, keys } = await checkIssuerReachability(
-            opts.url!,
-            opts.issuer,
+            url,
+            expectedIssuer,
             opts.ca ? fetchWithCaFile(opts.ca) : undefined,
           )
           log.dim(`  iss=${issuer} keys=${keys.length}`)
@@ -48,16 +50,16 @@ export default {
         }
       }
 
-      const entry = await addInstance(name, {
-        url: opts.url,
-        issuer: opts.issuer,
+      const { entry, created } = await upsertInstance(name, {
+        url,
+        issuer: expectedIssuer,
         caFile: opts.ca,
         name,
         kind: 'bookmark',
         mode: 'remote',
         defaultIdentity: opts.as,
       })
-      log.success(`Bookmarked "${name}" → ${entry.url}`)
+      log.success(`${created ? 'Bookmarked' : 'Updated bookmark'} "${name}" → ${entry.url}`)
       if (opts.as) log.dim(`  default identity: ${opts.as}`)
       if (opts.use) {
         await setActive(name)

@@ -78,8 +78,16 @@ function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: b
       changed = true
       continue
     }
-    const next: InstanceEntry = { ...entry, kind: 'bookmark' }
+    const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
+    const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
+    const next: InstanceEntry = {
+      ...entry,
+      url: normalizedUrl,
+      issuer: normalizedIssuer,
+      kind: 'bookmark',
+    }
     if (next !== entry || entry.kind !== 'bookmark') changed = true
+    if (normalizedUrl !== entry.url || normalizedIssuer !== entry.issuer) changed = true
     instances[key] = next
   }
 
@@ -163,7 +171,8 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
   validateName(key, 'Instance')
   if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
   if (!opts.url) throw new Error('Instance bookmarks require --url <url>')
-  validateUrl(opts.url)
+  const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
+  validateUrl(normalizedUrl)
 
   const store = await readInstances()
   if (store.instances[key]) {
@@ -175,6 +184,8 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
 
   const entry: InstanceEntry = {
     ...opts,
+    url: normalizedUrl,
+    issuer: opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : opts.issuer,
     kind: 'bookmark',
     createdAt: new Date().toISOString(),
   }
@@ -182,6 +193,35 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
   if (!store.active) store.active = key
   await writeInstances(store)
   return entry
+}
+
+export async function upsertInstance(
+  key: string,
+  opts: AddInstanceOpts = {},
+): Promise<{ entry: InstanceEntry; created: boolean }> {
+  validateName(key, 'Instance')
+  if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
+  if (!opts.url) throw new Error('Instance bookmarks require --url <url>')
+  const normalizedUrl = normalizeInstanceKernelUrl(opts.url)
+  validateUrl(normalizedUrl)
+
+  const store = await readInstances()
+  assertNoCollision(store, [key, opts.slug, opts.name].filter(Boolean) as string[], key)
+
+  const existing = store.instances[key]
+  const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
+  const entry: InstanceEntry = {
+    ...existing,
+    ...definedEntry(opts),
+    url: normalizedUrl,
+    ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
+    kind: 'bookmark',
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+  }
+  store.instances[key] = entry
+  if (!store.active) store.active = key
+  await writeInstances(store)
+  return { entry, created: !existing }
 }
 
 export async function removeInstance(key: string): Promise<void> {
@@ -233,8 +273,8 @@ export async function resolveInstance(
   return {
     name: key,
     kind: 'bookmark',
-    url: entry.url,
-    issuer: entry.issuer,
+    url: normalizeInstanceKernelUrl(entry.url),
+    issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer,
     createdAt: entry.createdAt,
     defaultIdentity: entry.defaultIdentity,
     caFile: entry.caFile,
@@ -249,4 +289,31 @@ export async function resolveKernelUrl(
   if (opts.url) return opts.url
   const identifier = opts.instance ?? (await getActive(config)).name
   return (await resolveInstance(identifier, config)).url
+}
+
+export function normalizeInstanceKernelUrl(url: string): string {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return url
+  }
+  if (!isRegionRoutedInstanceRoot(parsed)) return url.replace(/\/$/, '')
+
+  parsed.pathname = '/api'
+  return parsed.toString().replace(/\/$/, '')
+}
+
+function isRegionRoutedInstanceRoot(url: URL): boolean {
+  if (url.pathname !== '' && url.pathname !== '/') return false
+  if (url.search || url.hash) return false
+
+  const labels = url.hostname.toLowerCase().split('.')
+  return labels.length === 4 && labels[2] === 'astrale' && labels[3] === 'ai'
+}
+
+function definedEntry(entry: AddInstanceOpts): AddInstanceOpts {
+  return Object.fromEntries(
+    Object.entries(entry).filter(([, value]) => value !== undefined),
+  ) as AddInstanceOpts
 }

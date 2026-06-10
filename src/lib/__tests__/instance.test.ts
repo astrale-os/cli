@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { InstanceStoreSchema } from '../instance'
+import { InstanceStoreSchema, normalizeInstanceKernelUrl } from '../instance'
 
 describe('InstanceStoreSchema', () => {
   test('parses valid store with url', () => {
@@ -60,5 +60,32 @@ describe('InstanceStoreSchema', () => {
       instances: {},
     })
     expect(Object.keys(result.instances)).toHaveLength(0)
+  })
+
+  test('normalizes region-routed managed instance roots to the kernel api URL', () => {
+    expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai')).toBe(
+      'https://testmarc.eu.astrale.ai/api',
+    )
+    expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai/')).toBe(
+      'https://testmarc.eu.astrale.ai/api',
+    )
+  })
+
+  test('does not rewrite explicit kernel or non-managed URLs', () => {
+    expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai/api')).toBe(
+      'https://testmarc.eu.astrale.ai/api',
+    )
+    expect(normalizeInstanceKernelUrl('https://localhost:8443/kernel/host')).toBe(
+      'https://localhost:8443/kernel/host',
+    )
+    expect(normalizeInstanceKernelUrl('https://scw-admin.astrale.ai')).toBe(
+      'https://scw-admin.astrale.ai',
+    )
+    expect(normalizeInstanceKernelUrl('https://testmarc.svc.eu.astrale.ai')).toBe(
+      'https://testmarc.svc.eu.astrale.ai',
+    )
+    expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai?debug=1')).toBe(
+      'https://testmarc.eu.astrale.ai?debug=1',
+    )
   })
 })

@@ -1,18 +1,33 @@
 import type { CommandDefinition } from '../../command'
 
+import { AstraleError } from '../../errors'
+import { withAdminKernelClient } from '../../kernel/client'
+import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
+import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { getDefault, setDefault } from '../../lib/identity'
 import {
   getActive,
+  normalizeInstanceKernelUrl,
   readInstances,
   resolveInstance,
   resolveInstanceKey,
   setActive,
+  upsertInstance,
+  type ResolvedInstance,
 } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
 import { confirmDefaultYes } from '../../lib/prompt'
+import { validateSlug } from '../../lib/validation'
 
 type UseOpts = {
+  admin?: string
+  adminUrl?: string
+  url?: string
+  timeout?: string
+  as?: string
+  creds?: string
+  debug?: boolean
   ci?: boolean
   noPrompt?: boolean
   adoptDefault?: boolean
@@ -27,7 +42,7 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
       return
     }
 
-    const resolved = await resolveInstance(name)
+    const { resolved, materialized } = await resolveUseTarget(name, opts)
 
     if (!opts.skipJwksCheck && resolved.issuer) {
       try {
@@ -37,13 +52,14 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
       }
     }
 
-    await setActive(name)
-    log.success(`Active instance: ${name} (${resolved.url})`)
+    await setActive(resolved.name)
+    log.success(`Active instance: ${resolved.name} (${resolved.url})`)
+    if (materialized) log.dim('  managed instance bookmarked locally')
 
     // §7.1 identity-adoption prompt (DX). Orthogonality preserved — we
     // only switch on explicit user consent (or --adopt-default in CI).
     const store = await readInstances()
-    const key = resolveInstanceKey(store, name)
+    const key = resolveInstanceKey(store, resolved.name)
     const identityCandidate =
       resolved.defaultIdentity ?? (key ? store.instances[key]?.defaultIdentity : undefined)
     if (!identityCandidate) return
@@ -63,7 +79,7 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
       return
     }
 
-    const msg = `Instance "${name}" has default identity "${identityCandidate}". Active: "${active?.name ?? 'none'}". Switch identity too?`
+    const msg = `Instance "${resolved.name}" has default identity "${identityCandidate}". Active: "${active?.name ?? 'none'}". Switch identity too?`
     if (await confirmDefaultYes(msg)) {
       await setDefault(identityCandidate)
       log.success(`Identity switched to "${identityCandidate}"`)
@@ -72,6 +88,60 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
     }
   } catch (e) {
     fatal(e)
+  }
+}
+
+async function resolveUseTarget(
+  name: string,
+  opts: UseOpts,
+): Promise<{ resolved: ResolvedInstance; materialized: boolean }> {
+  let notFound: AstraleError
+  try {
+    return { resolved: await resolveInstance(name), materialized: false }
+  } catch (e) {
+    if (!(e instanceof AstraleError) || e.code !== 'INSTANCE_NOT_FOUND') throw e
+    notFound = e
+  }
+
+  try {
+    validateSlug(name)
+  } catch {
+    throw notFound
+  }
+
+  let managed: InstanceInfo
+  try {
+    managed = await withAdminKernelClient(
+      opts,
+      async (ctx) =>
+        (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: name })) as InstanceInfo,
+    )
+  } catch {
+    throw notFound
+  }
+  const url = normalizeInstanceKernelUrl(managed.url)
+  const { entry } = await upsertInstance(managed.slug, {
+    url,
+    issuer: url,
+    slug: managed.slug,
+    name: managed.slug,
+    kind: 'bookmark',
+    mode: 'remote',
+  })
+
+  return {
+    resolved: {
+      name: managed.slug,
+      kind: 'bookmark',
+      url: entry.url ?? url,
+      issuer: entry.issuer ?? url,
+      createdAt: entry.createdAt,
+      defaultIdentity: entry.defaultIdentity,
+      caFile: entry.caFile,
+      mode: entry.mode,
+      status: 'managed',
+    },
+    materialized: true,
   }
 }
 
@@ -91,6 +161,7 @@ Examples:
 `,
   arguments: [{ name: 'name', description: 'Registered instance name', required: false }],
   options: [
+    ...ADMIN_TARGET_OPTIONS,
     {
       flags: '--adopt-default',
       description: 'Adopt instance default identity without prompt',
