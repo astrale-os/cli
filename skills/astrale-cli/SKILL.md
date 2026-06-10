@@ -124,6 +124,15 @@ astrale call /:d:class.X:m owner=@self
 If `@self` expands to a deleted or stale id, refresh the registration with
 `astrale identity register <name> -i <instance>`.
 
+For IdP-backed identities (`astrale auth login`), `@self` is not available —
+the IdP subject is not a graph node id. Resolve your node id once and address
+it directly:
+
+```bash
+astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json  # → { id }
+astrale describe @<that-id>
+```
+
 ## Instances
 
 `astrale instance` manages admin-provisioned instances and local bookmarks.

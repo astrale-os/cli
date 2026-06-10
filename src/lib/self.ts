@@ -67,11 +67,15 @@ export function resolveSelfNodeId(ctx: SelfResolverContext): SelfResolution {
   if (ctx.instanceSigned) {
     return { reason: 'instance-signed', instanceSlug: ctx.instanceSlug ?? 'unknown' }
   }
-  // 3. IdP-backed identities ship the provider access token directly. There
-  // is no local registration cache to consult; when the token has a usable
-  // subject, expand `@self` to that subject.
+  // 3. IdP-backed identities: the provider token's `sub` is the IdP USER id
+  // (e.g. `user_01K…`), NEVER a graph node id — expanding to it always
+  // produced NOT_FOUND. Use a cached registration when one exists (a future
+  // `whoami`-backed cache can populate it); otherwise refuse with the recipe.
   if ((ctx.identity?.source ?? 'key') === 'idp') {
-    if (ctx.idpSubject) return { id: ctx.idpSubject }
+    const cached = ctx.instanceSlug
+      ? ctx.identity?.registrations?.[ctx.instanceSlug]?.sub
+      : undefined
+    if (cached) return { id: cached }
     return { reason: 'idp-no-sub', identityName: ctx.identity?.name ?? '(unknown)' }
   }
   // 4. `--url` without `-i`: no slug to look up registration against.
@@ -153,8 +157,10 @@ function refusalMessage(r: SelfRefusal): string {
       ].join('\n  ')
     case 'idp-no-sub':
       return [
-        `\`@self\` not available: IdP identity "${r.identityName}" has no cached token with a usable \`sub\` claim.`,
-        `Run \`astrale auth login --name ${r.identityName}\` again, or pass a literal \`@<nodeId>\`.`,
+        `\`@self\` not available for IdP identity "${r.identityName}": the IdP subject is not a graph node id.`,
+        'Get your node id once, then use it directly:',
+        '  astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json   # → { id: <nodeId> }',
+        'and address yourself as `@<nodeId>`.',
       ].join('\n  ')
   }
 }
