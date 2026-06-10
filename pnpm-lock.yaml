@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@astrale-os/kernel-client':
+        specifier: '>=0.2.0 <1.0.0'
+        version: 0.2.0(msgpackr@1.11.14)(typescript@6.0.3)
+      '@astrale-os/kernel-core':
+        specifier: '>=0.4.1 <1.0.0'
+        version: 0.4.1(typescript@6.0.3)
       chalk:
         specifier: ^5.6.2
         version: 5.6.2
@@ -27,12 +33,6 @@ importers:
         specifier: ^3.25.0
         version: 3.25.76
     devDependencies:
-      '@astrale-os/kernel-client':
-        specifier: '>=0.2.0 <1.0.0'
-        version: 0.2.0(msgpackr@1.11.14)(typescript@6.0.3)
-      '@astrale-os/kernel-core':
-        specifier: '>=0.4.1 <1.0.0'
-        version: 0.4.1(typescript@6.0.3)
       '@astrale-os/ox':
         specifier: '>=0.1.0 <1.0.0'
         version: 0.1.1(oxfmt@0.54.0)(oxlint@1.69.0)
@@ -76,6 +76,9 @@ packages:
     resolution: {integrity: sha512-CTbQKV4j6Xwzoy1YiYg/kCQ2PE2PGiBC8cuQgkl1NAxNuck3zvJpz23SjRkZoNubLEp7LuQ9vOCy8OndnyDkxg==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-api/0.4.2/9fed28cfa462c75248055f9a72a4fea8cb627f8c}
     peerDependencies:
       msgpackr: ^1.11.0
+    peerDependenciesMeta:
+      msgpackr:
+        optional: true
 
   '@astrale-os/kernel-client@0.2.0':
     resolution: {integrity: sha512-o7RDyPnd/0fOPL5AeMTe3Jm7hsIj0Tosbk0NAm7Fl+aVsS8t1Q83WSa36jYy4AjsA43omCBe32dPKWe3RNsDRQ==, tarball: https://npm.pkg.github.com/download/@astrale-os/kernel-client/0.2.0/0ae9bb5a4636f2ac984fc521ce6bf7dfc52ec01b}
@@ -997,8 +1000,9 @@ snapshots:
     dependencies:
       '@astrale-os/kernel-core': 0.4.1(typescript@6.0.3)
       jose: 6.2.3
-      msgpackr: 1.11.14
       zod: 4.4.3
+    optionalDependencies:
+      msgpackr: 1.11.14
     transitivePeerDependencies:
       - typescript
 
@@ -1603,6 +1607,7 @@ snapshots:
   msgpackr@1.11.14:
     optionalDependencies:
       msgpackr-extract: 3.0.4
+    optional: true
 
   nano-spawn@2.1.0: {}
 
