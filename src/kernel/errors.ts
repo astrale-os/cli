@@ -261,7 +261,16 @@ function printDebug(error: unknown, url: string): void {
     // Any attached fields (code, details, etc.)
     const extras: Record<string, unknown> = {}
     const bag = error as unknown as Record<string, unknown>
-    for (const key of ['code', 'type', 'reason', 'details', 'errors', 'timeoutMs', 'requestId']) {
+    for (const key of [
+      'code',
+      'type',
+      'reason',
+      'details',
+      'errors',
+      'data',
+      'timeoutMs',
+      'requestId',
+    ]) {
       const v = bag[key]
       if (v !== undefined) extras[key] = v
     }
