@@ -98,6 +98,15 @@ function resolveCredentialHint(
       ? `The IdP issues tokens for audience ${error.actual}, not the target's ${error.requested}. Target an instance whose URL/issuer is ${error.actual} (re-login won't change the audience).`
       : `The IdP did not mint a token for the target audience ${error.requested}, and re-login won't change it. Target an instance whose audience the IdP issues, or reconfigure the bookmark/IdP.`
   }
+  // Org-membership rejection: the session is healthy; the org we scoped the
+  // token to doesn't hold this user. Re-login can never fix it.
+  if (error instanceof IdpOrgMembershipError) {
+    return (
+      'The session is still valid — do NOT re-login. If this instance was just created, ' +
+      'the org mapping may still be propagating: retry in ~1 minute. Otherwise this ' +
+      'instance belongs to a different account.'
+    )
+  }
   // Transient IdP outage: the cached session is still valid — retrying is the
   // fix, not re-login.
   if (error instanceof IdpRefreshTransientError) {
@@ -184,6 +193,14 @@ export class IdpRefreshTransientError extends Error {
   }
 }
 
+/** The IdP refused to scope the session to the target's organization. */
+export class IdpOrgMembershipError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'IdpOrgMembershipError'
+  }
+}
+
 function refreshFailureError(identityName: string, identity: Identity, cause: unknown): Error {
   const reason = cause instanceof Error ? cause.message : String(cause)
   const idpFlag = identity.idp ? ` --idp ${identity.idp}` : ''
@@ -197,6 +214,14 @@ function refreshFailureError(identityName: string, identity: Identity, cause: un
       return new IdpRefreshTransientError(
         `Could not reach the IdP to refresh the session for "${identityName}" (${reason}). ` +
           'The cached session is likely still valid — retry the command.',
+      )
+    case 'org-rejected':
+      // The grant is alive; the ORG is wrong (stale `/auth/org` right after a
+      // create, or an instance owned by another account). Telling the user to
+      // re-login here is actively harmful — it burns a healthy session and
+      // can't ever succeed against the same org.
+      return new IdpOrgMembershipError(
+        `The IdP refused to scope "${identityName}" to this instance's organization (${reason}).`,
       )
     default:
       return new Error(

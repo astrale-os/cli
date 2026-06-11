@@ -28,6 +28,15 @@ export const InstanceEntrySchema = z.object({
   mode: RegistryModeSchema.optional(),
   defaultIdentity: z.string().optional(),
   caFile: z.string().optional(),
+  /**
+   * The WorkOS org this instance pins, captured from `instance create`. The
+   * AUTHORITATIVE org for token scoping: the router's `/auth/org` lookup is
+   * eventually consistent (KV propagation + colo cache), and a reused slug
+   * serves the PREVIOUS instance's org for up to ~90s after create — scoping
+   * to it gets "User is not a member of the organization" (observed live
+   * 2026-06-11, fresh-user flow).
+   */
+  organizationId: z.string().optional(),
 })
 
 export const InstanceStoreSchema = z.object({
@@ -47,6 +56,7 @@ export type AddInstanceOpts = {
   issuer?: string
   defaultIdentity?: string
   caFile?: string
+  organizationId?: string
 }
 
 export type ResolvedInstance = {
@@ -241,6 +251,7 @@ export async function upsertManagedBookmark(
   key: string,
   slug: string,
   rawUrl: string,
+  organizationId?: string,
 ): Promise<{ entry: InstanceEntry; repointedFrom?: string }> {
   const store = await readInstances()
   const previousUrl = store.instances[key]?.url
@@ -252,6 +263,7 @@ export async function upsertManagedBookmark(
     name: slug,
     kind: 'bookmark',
     mode: 'remote',
+    ...(organizationId ? { organizationId } : {}),
   })
   return {
     entry,
@@ -330,6 +342,33 @@ export async function resolveKernelUrl(
   if (opts.url) return opts.url
   const identifier = opts.instance ?? (await getActive(config)).name
   return (await resolveInstance(identifier, config)).url
+}
+
+/**
+ * The bookmarked WorkOS org id for the instance whose kernel URL shares
+ * `audience`'s origin, if any. Consulted BEFORE the router's `/auth/org`
+ * lookup: the bookmark value comes straight from `Instance.alphaCreate`, so
+ * it can never be stale, while the router read races KV propagation for
+ * ~90s after a create (fatal when the slug is reused — see the
+ * `organizationId` field doc).
+ */
+export async function orgIdForAudience(audience: string): Promise<string | undefined> {
+  let origin: string
+  try {
+    origin = new URL(audience).origin
+  } catch {
+    return undefined
+  }
+  const store = await readInstances()
+  for (const entry of Object.values(store.instances)) {
+    if (!entry.organizationId || !entry.url) continue
+    try {
+      if (new URL(entry.url).origin === origin) return entry.organizationId
+    } catch {
+      // unparsable bookmark URL — skip
+    }
+  }
+  return undefined
 }
 
 export function normalizeInstanceKernelUrl(url: string): string {

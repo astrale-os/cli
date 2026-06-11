@@ -7,6 +7,7 @@ import {
   refreshSession,
   type IdpSession,
 } from './idp'
+import { orgIdForAudience } from './instance'
 import { fetchOrgHint } from './meta'
 
 /** No cached session file exists for the identity — only a login creates one. */
@@ -73,10 +74,15 @@ export async function ensureFreshSession(
     if (!current) throw new IdpSessionMissingError(identityName)
     if (accessTokenForAudience(current, opts.audience)) return current
 
+    // Org resolution order: explicit > bookmarked-at-create > router lookup.
+    // The bookmark (written by `instance create` from alphaCreate's response)
+    // is authoritative; the router's `/auth/org` races KV propagation for
+    // ~90s after a create and can serve a reused slug's PREVIOUS org.
     const organizationId =
       opts.organizationId ??
       (opts.audience
-        ? await (opts.resolveOrganizationId ?? fetchOrgHint)(opts.audience)
+        ? ((await orgIdForAudience(opts.audience)) ??
+          (await (opts.resolveOrganizationId ?? fetchOrgHint)(opts.audience)))
         : undefined)
     try {
       return await refreshSession(identityName, current, {

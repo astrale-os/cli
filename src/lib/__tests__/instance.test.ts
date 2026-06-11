@@ -114,4 +114,23 @@ describe('sanitizeStore — read must not rewrite', () => {
     const { store: out } = sanitizeStore(store)
     expect(out.active).toBe('ghost')
   })
+
+  test('organizationId survives sanitize without flagging a rewrite', () => {
+    // The org id captured at `instance create` is what makes token scoping
+    // immune to the router's eventually-consistent /auth/org — losing it on
+    // a read (or rewriting the file for it) would re-open the stale-org race.
+    const store = {
+      active: 'a',
+      instances: {
+        a: {
+          url: 'https://a.example/api',
+          kind: 'bookmark' as const,
+          organizationId: 'org_123',
+        },
+      },
+    }
+    const { store: out, changed } = sanitizeStore(store)
+    expect(out.instances.a.organizationId).toBe('org_123')
+    expect(changed).toBe(false)
+  })
 })

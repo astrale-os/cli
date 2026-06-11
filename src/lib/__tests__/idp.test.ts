@@ -353,6 +353,27 @@ describe('OAuth token errors', () => {
     expect(classifyRefreshFailure(new OAuthTokenError({ code: 'invalid_client' }))).toBe('unknown')
     expect(classifyRefreshFailure(new Error('weird'))).toBe('unknown')
   })
+
+  test('org-membership rejection is org-rejected, never session-ended', () => {
+    // The live failure (fresh-user flow, 2026-06-11): the router served a
+    // stale org for a just-created instance; WorkOS refused the scope with
+    // "User is not a member of the organization." — and the CLI told the
+    // user to re-login, which can never fix it. Membership rejection must
+    // classify distinctly regardless of the OAuth error code it rides on.
+    expect(
+      classifyRefreshFailure(
+        new OAuthTokenError({
+          code: 'invalid_grant',
+          description: 'User is not a member of the organization.',
+        }),
+      ),
+    ).toBe('org-rejected')
+    expect(
+      classifyRefreshFailure(
+        new OAuthTokenError({ description: 'user is NOT a member of the organization' }),
+      ),
+    ).toBe('org-rejected')
+  })
 })
 
 function unsignedJwt(payload: Record<string, unknown>): string {

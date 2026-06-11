@@ -61,10 +61,19 @@ Examples:
               (await ctx.client.call(`${ADMIN_INSTANCE}/alphaCreate`, {
                 slug: id,
                 ...(opts.hostId ? { host_id: opts.hostId } : {}),
-              })) as { url: string },
+              })) as { url: string; organizationId?: string },
           )
           try {
-            const bookmarked = await upsertManagedBookmark(id, id, created.url)
+            // Persist the org id from the create response: it makes token
+            // scoping for this instance immune to the router's eventually-
+            // consistent `/auth/org` (stale for ~90s after create — fatal on
+            // a reused slug, where it serves the PREVIOUS instance's org).
+            const bookmarked = await upsertManagedBookmark(
+              id,
+              id,
+              created.url,
+              created.organizationId,
+            )
             repointedFrom = bookmarked.repointedFrom
             await setActive(id)
           } catch (e) {
