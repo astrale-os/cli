@@ -75,6 +75,7 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, withKernelOptions((await import('./commands/ls')).default))
   registerCommand(program, withKernelOptions((await import('./commands/describe')).default))
   registerCommand(program, withKernelOptions((await import('./commands/query')).default))
+  registerCommand(program, withKernelOptions((await import('./commands/logs')).default))
   registerCommand(program, (await import('./commands/status')).default)
   registerCommand(program, (await import('./commands/browser')).default)
 

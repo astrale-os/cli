@@ -92,6 +92,10 @@ describe('help contract — connect-only command surface', () => {
     const program = await buildProgram()
     const names = allCommands(program).map((command) => command.name())
 
+    // 'logs' is NOT in this list anymore: the historical `astrale logs` was
+    // LOCAL runtime management (removed with start/stop); today's `astrale
+    // logs <service>` is connect-side — it tails a MANAGED service's buffer
+    // through the admin control plane.
     for (const removed of [
       'init',
       'start',
@@ -99,7 +103,6 @@ describe('help contract — connect-only command surface', () => {
       'restart',
       'reset',
       'bootstrap',
-      'logs',
       'tunnel',
       'graph',
       'server',

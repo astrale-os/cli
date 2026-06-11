@@ -34,6 +34,7 @@ astrale get <path>
 astrale ls [path]
 astrale describe <path>
 astrale query <cypher>
+astrale logs <service>
 astrale status
 astrale browser
 astrale instance ...
@@ -47,7 +48,7 @@ Command groups:
 
 | Group | Commands |
 |---|---|
-| Kernel | `call`, `token`, `get`, `ls`, `describe`, `query` |
+| Kernel | `call`, `token`, `get`, `ls`, `describe`, `query`, `logs` |
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser` |
@@ -382,6 +383,12 @@ Use diagnostics:
 - Use `--json` or `--raw` for structured command output.
 - Use `--ci` and `--no-prompt` in non-interactive automation.
 - Use `--timeout <ms>` when a kernel call is valid but slow.
+- Use `astrale logs <service-slug> [--tail N]` to tail a MANAGED SERVICE's
+  runtime logs — console output, 5xx accesses, and uncaught exception stacks
+  (the readable side of `internal error; reference = …` responses). The slug
+  is the first label of the service's `…svc.<region>.astrale.ai` URL (also
+  accepts the full URL). In-memory, last ~500 lines, resets on runtime
+  restart; services deployed before log capture need one redeploy.
 
 Common error classes and first checks:
 
