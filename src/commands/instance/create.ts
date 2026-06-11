@@ -6,7 +6,7 @@ import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readIdentities, type IdentityStore } from '../../lib/identity'
-import { setActiveName } from '../../lib/instance'
+import { setActiveName, upsertInstance } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { validateSlug } from '../../lib/validation'
@@ -64,6 +64,10 @@ Examples:
 
       const use = opts.use !== false
       if (use) {
+        // Persist a real bookmark entry (url is known) BEFORE pointing the
+        // active selector at it — a name-only active pointer resolved through
+        // the admin on every call and broke silently when that lookup failed.
+        await upsertInstance(id, { url: result.url })
         await setActiveName(id)
       }
 

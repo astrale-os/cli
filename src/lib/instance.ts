@@ -65,7 +65,7 @@ function seed(): InstanceStore {
   return { active: '', instances: {} }
 }
 
-function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
+export function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: boolean } {
   let changed = false
   const instances: Record<string, InstanceEntry> = {}
 
@@ -86,8 +86,19 @@ function sanitizeStore(store: InstanceStore): { store: InstanceStore; changed: b
       issuer: normalizedIssuer,
       kind: 'bookmark',
     }
-    if (next !== entry || entry.kind !== 'bookmark') changed = true
-    if (normalizedUrl !== entry.url || normalizedIssuer !== entry.issuer) changed = true
+    // VALUE comparison only. The old `next !== entry` (object identity) was
+    // ALWAYS true, so every read rewrote instances.json fire-and-forget —
+    // concurrent astrale processes clobbered each other's `active` from
+    // stale snapshots (observed: `instance create` setting the active
+    // target, then a parallel command silently reverting it — every call
+    // after that wrote to the WRONG instance).
+    if (
+      entry.kind !== 'bookmark' ||
+      normalizedUrl !== entry.url ||
+      normalizedIssuer !== entry.issuer
+    ) {
+      changed = true
+    }
     instances[key] = next
   }
 

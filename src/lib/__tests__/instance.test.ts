@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { InstanceStoreSchema, normalizeInstanceKernelUrl } from '../instance'
+import { InstanceStoreSchema, normalizeInstanceKernelUrl, sanitizeStore } from '../instance'
 
 describe('InstanceStoreSchema', () => {
   test('parses valid store with url', () => {
@@ -87,5 +87,31 @@ describe('InstanceStoreSchema', () => {
     expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai?debug=1')).toBe(
       'https://testmarc.eu.astrale.ai?debug=1',
     )
+  })
+})
+
+describe('sanitizeStore — read must not rewrite', () => {
+  test('an already-normalized store reports changed=false', () => {
+    // `changed` was computed via OBJECT IDENTITY (always true), so every
+    // read rewrote instances.json fire-and-forget — concurrent astrale
+    // processes clobbered each other's `active` from stale snapshots and
+    // calls silently targeted the wrong instance.
+    const store = {
+      active: 'a',
+      instances: {
+        a: { url: 'https://a.example/api', kind: 'bookmark' as const },
+      },
+    }
+    const { changed } = sanitizeStore(store)
+    expect(changed).toBe(false)
+  })
+
+  test('a dangling active pointer is preserved (not silently re-aimed)', () => {
+    const store = {
+      active: 'ghost',
+      instances: { a: { url: 'https://a.example/api', kind: 'bookmark' as const } },
+    }
+    const { store: out } = sanitizeStore(store)
+    expect(out.active).toBe('ghost')
   })
 })
