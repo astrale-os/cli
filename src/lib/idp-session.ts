@@ -1,6 +1,7 @@
 import { withFileLock } from './fs-atomic'
 import {
   accessTokenForAudience,
+  classifyRefreshFailure,
   idpSessionPath,
   OAuthTokenError,
   readIdpSession,
@@ -75,14 +76,12 @@ export async function ensureFreshSession(
     if (accessTokenForAudience(current, opts.audience)) return current
 
     // Org resolution order: explicit > bookmarked-at-create > router lookup.
-    // The bookmark (written by `instance create` from alphaCreate's response)
-    // is authoritative; the router's `/auth/org` races KV propagation for
-    // ~90s after a create and can serve a reused slug's PREVIOUS org.
+    const bookmarkOrg =
+      opts.organizationId ?? (opts.audience ? await orgIdForAudience(opts.audience) : undefined)
     const organizationId =
-      opts.organizationId ??
+      bookmarkOrg ??
       (opts.audience
-        ? ((await orgIdForAudience(opts.audience)) ??
-          (await (opts.resolveOrganizationId ?? fetchOrgHint)(opts.audience)))
+        ? await (opts.resolveOrganizationId ?? fetchOrgHint)(opts.audience)
         : undefined)
     try {
       return await refreshSession(identityName, current, {
@@ -90,6 +89,23 @@ export async function ensureFreshSession(
         organizationId,
       })
     } catch (e) {
+      // A bookmarked org can go stale (instance deleted/recreated elsewhere).
+      // On an org rejection, retry once with the router's view and let the
+      // bookmark heal on the next `instance create`.
+      if (
+        bookmarkOrg &&
+        !opts.organizationId &&
+        opts.audience &&
+        classifyRefreshFailure(e) === 'org-rejected'
+      ) {
+        const routerOrg = await (opts.resolveOrganizationId ?? fetchOrgHint)(opts.audience)
+        if (routerOrg && routerOrg !== bookmarkOrg) {
+          return await refreshSession(identityName, current, {
+            audience: opts.audience,
+            organizationId: routerOrg,
+          })
+        }
+      }
       const rescued = await rescueAfterInvalidGrant(identityName, current, opts.audience, e)
       if (rescued) return rescued
       throw e

@@ -216,10 +216,7 @@ function refreshFailureError(identityName: string, identity: Identity, cause: un
           'The cached session is likely still valid — retry the command.',
       )
     case 'org-rejected':
-      // The grant is alive; the ORG is wrong (stale `/auth/org` right after a
-      // create, or an instance owned by another account). Telling the user to
-      // re-login here is actively harmful — it burns a healthy session and
-      // can't ever succeed against the same org.
+      // Healthy session, wrong org — re-login can never fix it.
       return new IdpOrgMembershipError(
         `The IdP refused to scope "${identityName}" to this instance's organization (${reason}).`,
       )

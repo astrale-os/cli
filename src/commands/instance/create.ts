@@ -8,7 +8,7 @@ import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { readIdentities, type IdentityStore } from '../../lib/identity'
-import { readInstances, setActive, upsertManagedBookmark } from '../../lib/instance'
+import { setActive, upsertManagedBookmark } from '../../lib/instance'
 import { fatal, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { validateSlug } from '../../lib/validation'
@@ -43,7 +43,10 @@ Examples:
     try {
       validateSlug(id)
       await assertAlphaCreateAuth(opts)
-      await warnOnPinnedAdminIdentity(opts)
+      // The created instance must belong to the LOGGED-IN identity — never to
+      // an identity pinned on the admin bookmark (that mismatch silently made
+      // a fresh user's instance unusable). `--as` still wins.
+      if (!opts.as) opts = { ...opts, as: (await readIdentities()).default }
       let repointedFrom: string | undefined
       let selectionError: unknown = null
       // Provisioning a child instance runs a multi-step saga (1-3 min). The
@@ -65,10 +68,8 @@ Examples:
               })) as { url: string; organizationId?: string },
           )
           try {
-            // Persist the org id from the create response: it makes token
-            // scoping for this instance immune to the router's eventually-
-            // consistent `/auth/org` (stale for ~90s after create — fatal on
-            // a reused slug, where it serves the PREVIOUS instance's org).
+            // Org id from the create response — authoritative for token
+            // scoping (the router's /auth/org is eventually consistent).
             const bookmarked = await upsertManagedBookmark(
               id,
               id,
@@ -111,30 +112,6 @@ Examples:
 async function assertAlphaCreateAuth(opts: Pick<CreateOpts, 'as' | 'creds'>): Promise<void> {
   if (opts.creds) return
   assertAlphaCreateIdentity(await readIdentities(), opts)
-}
-
-/**
- * The admin bookmark may pin its own `defaultIdentity`, which silently
- * overrides the logged-in identity for every admin-target call — the created
- * instance then BELONGS to the pinned identity, not the caller (observed live
- * 2026-06-11: a fresh user's instance was owned by the operator's pinned
- * identity; the user could never sign into it). Warn loudly; `--as` wins.
- */
-async function warnOnPinnedAdminIdentity(opts: Pick<CreateOpts, 'as'>): Promise<void> {
-  if (opts.as) return
-  try {
-    const [identities, instances] = await Promise.all([readIdentities(), readInstances()])
-    const pinned = instances.instances['admin']?.defaultIdentity
-    if (pinned && identities.default && pinned !== identities.default) {
-      console.error(
-        chalk.yellow('⚠'),
-        `The "admin" bookmark pins identity "${pinned}" — this instance will belong to it, ` +
-          `NOT to your active identity "${identities.default}". Pass --as ${identities.default} to own it.`,
-      )
-    }
-  } catch {
-    // best-effort advisory — never block create on it
-  }
 }
 
 export function assertAlphaCreateIdentity(

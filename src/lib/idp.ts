@@ -60,17 +60,15 @@ export type RefreshFailureKind = 'session-ended' | 'org-rejected' | 'transient' 
 
 /**
  * Classify a `refreshSession` failure so callers only demand a re-login when
- * the grant is actually dead. `invalid_grant` covers both WorkOS
- * "Refresh token already exchanged" and "Session has already ended"; an
- * org-membership rejection means the SESSION is healthy but the org we scoped
- * to doesn't hold the user (stale `/auth/org` after a create, or genuinely
- * someone else's instance) — re-login can never fix that; HTTP 5xx/429 and
- * fetch-layer failures (connection refused, abort, timeout) are transient —
- * the cached session is likely still valid.
+ * the grant is actually dead. `org-rejected` = healthy session, wrong/stale
+ * org scope (re-login can't fix it); 5xx/429 and fetch-layer failures are
+ * transient — the cached session is likely still valid.
  */
 export function classifyRefreshFailure(e: unknown): RefreshFailureKind {
   if (e instanceof OAuthTokenError) {
-    if (/not a member of the organization/i.test(e.description ?? e.message)) {
+    if (
+      /not a member of the organization|organization not found/i.test(e.description ?? e.message)
+    ) {
       return 'org-rejected'
     }
     if (e.code === 'invalid_grant') return 'session-ended'

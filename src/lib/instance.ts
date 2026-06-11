@@ -28,14 +28,8 @@ export const InstanceEntrySchema = z.object({
   mode: RegistryModeSchema.optional(),
   defaultIdentity: z.string().optional(),
   caFile: z.string().optional(),
-  /**
-   * The WorkOS org this instance pins, captured from `instance create`. The
-   * AUTHORITATIVE org for token scoping: the router's `/auth/org` lookup is
-   * eventually consistent (KV propagation + colo cache), and a reused slug
-   * serves the PREVIOUS instance's org for up to ~90s after create — scoping
-   * to it gets "User is not a member of the organization" (observed live
-   * 2026-06-11, fresh-user flow).
-   */
+  // WorkOS org captured from `instance create` — authoritative for token
+  // scoping (the router's /auth/org lookup is eventually consistent).
   organizationId: z.string().optional(),
 })
 
@@ -345,12 +339,8 @@ export async function resolveKernelUrl(
 }
 
 /**
- * The bookmarked WorkOS org id for the instance whose kernel URL shares
- * `audience`'s origin, if any. Consulted BEFORE the router's `/auth/org`
- * lookup: the bookmark value comes straight from `Instance.alphaCreate`, so
- * it can never be stale, while the router read races KV propagation for
- * ~90s after a create (fatal when the slug is reused — see the
- * `organizationId` field doc).
+ * The bookmarked org id for the instance matching `audience`'s origin —
+ * consulted before the router's eventually-consistent `/auth/org`.
  */
 export async function orgIdForAudience(audience: string): Promise<string | undefined> {
   let origin: string
