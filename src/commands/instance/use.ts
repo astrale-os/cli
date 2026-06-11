@@ -7,17 +7,21 @@ import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { getDefault, setDefault } from '../../lib/identity'
 import {
   getActive,
-  normalizeInstanceKernelUrl,
   readInstances,
   resolveInstance,
   resolveInstanceKey,
   setActive,
-  setActiveName,
+  upsertManagedBookmark,
   type ResolvedInstance,
 } from '../../lib/instance'
+import {
+  collectInstanceCandidates,
+  describeInstanceCandidate,
+  type InstanceCandidate,
+} from '../../lib/instance-candidates'
 import { fatal, log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
-import { confirmDefaultYes } from '../../lib/prompt'
+import { confirmDefaultYes, selectFrom } from '../../lib/prompt'
 import { validateSlug } from '../../lib/validation'
 
 type UseOpts = {
@@ -52,11 +56,7 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
       }
     }
 
-    if (resolved.kind === 'bookmark') {
-      await setActive(resolved.name)
-    } else {
-      await setActiveName(resolved.name)
-    }
+    await setActive(resolved.name)
     log.success(`Active instance: ${resolved.name} (${resolved.url})`)
 
     // §7.1 identity-adoption prompt (DX). Orthogonality preserved — we
@@ -95,41 +95,79 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
 }
 
 async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedInstance> {
-  let notFound: AstraleError
-  try {
-    return await resolveInstance(name)
-  } catch (e) {
-    if (!(e instanceof AstraleError) || e.code !== 'INSTANCE_NOT_FOUND') throw e
-    notFound = e
+  const [store, managed] = await Promise.all([readInstances(), fetchManagedInstances(name, opts)])
+  const candidates = collectInstanceCandidates(name, store, managed)
+
+  if (candidates.length === 0) {
+    throw new AstraleError(
+      'INSTANCE_NOT_FOUND',
+      `Instance "${name}" is not bookmarked and not admin-managed.\n` +
+        `  Bookmark: astrale instance bookmark ${name} --url <url>\n` +
+        `  Or check: astrale instance list`,
+    )
   }
 
+  const interactive = !(opts.ci || opts.noPrompt || process.env.CI)
+  const chosen =
+    candidates.length === 1
+      ? candidates[0]
+      : interactive
+        ? await pickCandidate(name, candidates)
+        : null
+  if (!chosen) throw ambiguousError(name, candidates)
+
+  if (chosen.source === 'bookmark') {
+    return await resolveInstance(chosen.key)
+  }
+
+  const { repointedFrom } = await upsertManagedBookmark(chosen.key, chosen.info.slug, chosen.url)
+  if (repointedFrom) {
+    log.warn(`Bookmark "${chosen.key}" repointed: ${repointedFrom} → ${chosen.url}`)
+  }
+  return await resolveInstance(chosen.key)
+}
+
+/**
+ * All admin-managed instances (collectInstanceCandidates filters by name).
+ * Best-effort: an unreachable or unauthenticated admin kernel degrades to
+ * bookmark-only resolution.
+ */
+async function fetchManagedInstances(name: string, opts: UseOpts): Promise<InstanceInfo[]> {
   try {
     validateSlug(name)
   } catch {
-    throw notFound
+    return []
   }
-
-  let managed: InstanceInfo
   try {
-    managed = await withAdminKernelClient(
+    return await withAdminKernelClient(
       opts,
-      async (ctx) =>
-        (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: name })) as InstanceInfo,
+      async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/list`, {})) as InstanceInfo[],
     )
-  } catch (e) {
-    if (e instanceof Error && e.name !== 'NotFoundError') throw e
-    throw notFound
+  } catch {
+    return []
   }
-  const url = normalizeInstanceKernelUrl(managed.url)
+}
 
-  return {
-    name: managed.slug,
-    kind: 'managed',
-    url,
-    issuer: url,
-    createdAt: managed.createdAt,
-    status: 'managed',
-  }
+async function pickCandidate(
+  name: string,
+  candidates: InstanceCandidate[],
+): Promise<InstanceCandidate | null> {
+  return selectFrom(
+    `Multiple instances match "${name}":`,
+    candidates.map((candidate) => ({
+      label: describeInstanceCandidate(candidate),
+      value: candidate,
+    })),
+  )
+}
+
+function ambiguousError(name: string, candidates: InstanceCandidate[]): AstraleError {
+  const lines = candidates.map((candidate) => `  - ${describeInstanceCandidate(candidate)}`)
+  return new AstraleError(
+    'INSTANCE_AMBIGUOUS',
+    `Multiple instances match "${name}":\n${lines.join('\n')}`,
+    'Run interactively to pick one, or `astrale instance forget <name>` to drop the stale bookmark.',
+  )
 }
 
 export default {

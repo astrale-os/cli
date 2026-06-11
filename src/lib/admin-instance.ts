@@ -14,3 +14,8 @@ export type InstanceInfo = {
   region?: string
   createdAt?: string
 }
+
+/** Human-readable location of a managed instance ("region · hostId"). */
+export function formatInstanceLocation(info: InstanceInfo): string {
+  return [info.region, info.hostId].filter(Boolean).join(' · ')
+}

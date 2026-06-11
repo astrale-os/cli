@@ -141,9 +141,10 @@ export async function writeInstances(store: InstanceStore): Promise<void> {
   instancesMemo = store
 }
 
-function collectIdentifiers(store: InstanceStore): Map<string, string> {
+function collectIdentifiers(store: InstanceStore, skipKey?: string): Map<string, string> {
   const out = new Map<string, string>()
   for (const [key, entry] of Object.entries(store.instances)) {
+    if (key === skipKey) continue
     out.set(key, `instance key "${key}"`)
     if (entry.slug && !out.has(entry.slug)) out.set(entry.slug, `slug of instance "${key}"`)
     if (entry.name && !out.has(entry.name)) out.set(entry.name, `name of instance "${key}"`)
@@ -156,13 +157,9 @@ export function assertNoCollision(
   identifiers: string[],
   ignoreKey?: string,
 ): void {
-  const existing = collectIdentifiers(store)
-  if (ignoreKey) {
-    const entry = store.instances[ignoreKey]
-    existing.delete(ignoreKey)
-    if (entry?.slug) existing.delete(entry.slug)
-    if (entry?.name) existing.delete(entry.name)
-  }
+  // Skip the ignored entry at collection time (never delete by identifier
+  // string: another entry may own the same slug/name alias).
+  const existing = collectIdentifiers(store, ignoreKey)
   for (const id of identifiers) {
     if (!id) continue
     const owner = existing.get(id)
@@ -235,6 +232,33 @@ export async function upsertInstance(
   return { entry, created: !existing }
 }
 
+/**
+ * Bookmark an admin-managed instance under `key` (url = issuer = the
+ * normalized kernel URL). Reports the previous URL when an existing
+ * bookmark was repointed to a different kernel so callers can warn.
+ */
+export async function upsertManagedBookmark(
+  key: string,
+  slug: string,
+  rawUrl: string,
+): Promise<{ entry: InstanceEntry; repointedFrom?: string }> {
+  const store = await readInstances()
+  const previousUrl = store.instances[key]?.url
+  const url = normalizeInstanceKernelUrl(rawUrl)
+  const { entry } = await upsertInstance(key, {
+    url,
+    issuer: url,
+    slug,
+    name: slug,
+    kind: 'bookmark',
+    mode: 'remote',
+  })
+  return {
+    entry,
+    ...(previousUrl && previousUrl !== entry.url ? { repointedFrom: previousUrl } : {}),
+  }
+}
+
 export async function removeInstance(key: string): Promise<void> {
   const store = await readInstances()
   if (!store.instances[key]) throw new Error(`Instance "${key}" not found`)
@@ -254,14 +278,6 @@ export async function setActive(identifier: string): Promise<string> {
   store.active = key
   await writeInstances(store)
   return key
-}
-
-export async function setActiveName(identifier: string): Promise<string> {
-  validateName(identifier, 'Instance')
-  const store = await readInstances()
-  store.active = identifier
-  await writeInstances(store)
-  return identifier
 }
 
 export async function clearActive(identifier: string): Promise<void> {

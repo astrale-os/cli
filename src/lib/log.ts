@@ -26,86 +26,37 @@ export function fatalNotImplemented(feature: string, hint?: string): never {
   fatal(new NotImplementedError(feature, hint))
 }
 
-/**
- * Maximum cumulative bytes the spinner may write before its output is
- * silently dropped. Prevents unbounded memory growth when the output
- * stream backs up.
- */
-const SPINNER_MAX_BYTES = 256 * 1024
-
 /** Maximum time a spinner may run before being forcefully stopped. */
 const SPINNER_SAFETY_MS = 60_000
-
-/**
- * Wrap a WriteStream so that `write()` calls are counted and silently
- * dropped once a byte cap is exceeded.
- */
-function cappedStream(target: NodeJS.WriteStream, maxBytes: number): NodeJS.WriteStream {
-  let totalBytes = 0
-  let killed = false
-
-  return new Proxy(target, {
-    get(obj, prop, receiver) {
-      if (prop === 'write') {
-        return function write(
-          chunk: string | Uint8Array,
-          encodingOrCb?: BufferEncoding | ((err?: Error) => void),
-          cb?: (err?: Error) => void,
-        ): boolean {
-          if (killed) {
-            // Invoke callback so callers waiting on drain don't hang.
-            const callback = typeof encodingOrCb === 'function' ? encodingOrCb : cb
-            if (callback) callback()
-            return true
-          }
-
-          const len =
-            typeof chunk === 'string'
-              ? Buffer.byteLength(chunk, typeof encodingOrCb === 'string' ? encodingOrCb : 'utf8')
-              : chunk.length
-          totalBytes += len
-
-          if (totalBytes > maxBytes) {
-            killed = true
-            const callback = typeof encodingOrCb === 'function' ? encodingOrCb : cb
-            if (callback) callback()
-            return true
-          }
-
-          return obj.write(
-            chunk,
-            encodingOrCb as BufferEncoding,
-            cb as ((err?: Error | null) => void) | undefined,
-          )
-        }
-      }
-
-      const value = Reflect.get(obj, prop, receiver)
-      if (typeof value === 'function') return value.bind(obj)
-      return value
-    },
-  })
-}
 
 const IS_CI = !!(process.env.CI || process.env.CONTINUOUS_INTEGRATION || process.env.NO_SPINNER)
 
 /**
- * Run an async operation behind a spinner, mirroring the runKernelCommand
- * presentation (label… → ✔ label <elapsed> / ✖ label failed). Pass
- * `enabled: false` for machine-readable output modes. Errors are rethrown
- * after the spinner is stopped.
+ * Run an async operation behind a spinner. Pass `enabled: false` for
+ * machine-readable output modes. Errors are rethrown after the spinner is
+ * stopped (✖ label failed).
+ *
+ * On success the spinner line is cleared — commands print their own result.
+ * Pass `opts.success` to instead persist a single final line
+ * (✔ <success text> <elapsed>) so a command ends on one line, not a
+ * spinner line + result line pair.
  */
 export async function withSpinner<T>(
   label: string,
   enabled: boolean,
   fn: () => Promise<T>,
+  opts: { success?: (result: T) => string } = {},
 ): Promise<T> {
   if (!enabled) return await fn()
   const spin = spinner(`${label}...`)
   const start = performance.now()
   try {
     const result = await fn()
-    spin.succeed(`${label} ${chalk.dim(formatElapsed(performance.now() - start))}`)
+    if (opts.success) {
+      spin.succeed(`${opts.success(result)} ${chalk.dim(formatElapsed(performance.now() - start))}`)
+    } else {
+      spin.stop()
+    }
     return result
   } catch (error) {
     spin.fail(`${label} failed`)
@@ -120,8 +71,11 @@ export function spinner(text: string): Ora {
     return ora({ text, isEnabled: false })
   }
 
-  const stream = cappedStream(target, SPINNER_MAX_BYTES)
-  const spin = ora({ text, color: 'cyan', stream }).start()
+  // Hand ora the bare stream: ora 9 hooks `stream.write` by assignment to
+  // interleave external writes, so any wrapper here must survive that
+  // mutation (a get-only Proxy recurses infinitely and kills the spinner).
+  // Backpressure is ora's job now — it pauses rendering until 'drain'.
+  const spin = ora({ text, color: 'cyan', stream: target }).start()
 
   const safety = setTimeout(() => {
     if (spin.isSpinning) spin.stop()

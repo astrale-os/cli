@@ -5,7 +5,7 @@ import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { clearActive, readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
-import { fatal, log, withSpinner } from '../../lib/log'
+import { fatal, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 
 type DeleteOpts = KernelCommandOpts &
@@ -33,12 +33,16 @@ Behavior:
     // Teardown walks services + deprovisions — same saga-sized budget as create.
     opts = { ...opts, timeout: opts.timeout ?? '240000' }
     try {
-      const result = await withSpinner(`Deleting instance ${id}`, !isMachine(opts), () =>
-        withAdminKernelClient(
-          opts,
-          async (ctx) =>
-            (await ctx.client.call(`${ADMIN_INSTANCE}/delete`, { id })) as InstanceInfo,
-        ),
+      const result = await withSpinner(
+        `Deleting instance ${id}`,
+        !isMachine(opts),
+        () =>
+          withAdminKernelClient(
+            opts,
+            async (ctx) =>
+              (await ctx.client.call(`${ADMIN_INSTANCE}/delete`, { id })) as InstanceInfo,
+          ),
+        { success: (deleted) => `Deleted instance: ${deleted.slug}` },
       )
 
       if (!opts.keepBookmark) {
@@ -52,7 +56,6 @@ Behavior:
         output(result, opts)
         return
       }
-      log.success(`Deleted instance: ${result.slug}`)
     } catch (e) {
       fatal(e)
     }

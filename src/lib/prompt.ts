@@ -37,6 +37,38 @@ export async function confirmWithInput(message: string, expected: string): Promi
   return answer === expected
 }
 
+/** Attempts allowed before a selector gives up on invalid input. */
+const SELECT_MAX_ATTEMPTS = 3
+
+/**
+ * Numbered single-choice selector. Prints the options and reads an index.
+ * Invalid input re-prompts; an empty answer cancels. Returns null in
+ * non-TTY environments, on cancel, or after repeated invalid input
+ * (caller decides how to fail).
+ */
+export async function selectFrom<T>(
+  message: string,
+  choices: Array<{ label: string; value: T }>,
+): Promise<T | null> {
+  if (!process.stdin.isTTY) return null
+
+  process.stdout.write(chalk.yellow(`${message}\n`))
+  choices.forEach((choice, index) => {
+    process.stdout.write(`  ${chalk.bold(String(index + 1))}. ${choice.label}\n`)
+  })
+  for (let attempt = 0; attempt < SELECT_MAX_ATTEMPTS; attempt++) {
+    process.stdout.write(chalk.yellow(`Select [1-${choices.length}] (empty to cancel): `))
+    const answer = await readLine()
+    if (answer === '') return null
+    // Whole-number input only: parseInt would accept "1.9" or "2x".
+    if (/^\d+$/.test(answer)) {
+      const choice = choices[Number.parseInt(answer, 10) - 1]
+      if (choice) return choice.value
+    }
+  }
+  return null
+}
+
 /** Prompt a passphrase without echoing. Fails in non-TTY unless env override. */
 export async function readPassphrase(
   message: string,

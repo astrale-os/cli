@@ -82,7 +82,7 @@ describe('help contract — admin target surface is registered', () => {
     const help = instanceCreate?.helpInformation() ?? ''
 
     expect(help).toContain('Instance.alphaCreate')
-    expect(help).toContain('--no-use')
+    expect(help).not.toContain('--no-use')
     expect(help).not.toContain('Instance.init requires --host-id')
   })
 })

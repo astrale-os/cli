@@ -5,9 +5,9 @@ import type { KernelCommandOpts } from '../../kernel'
 import type { Column } from '../../lib/output'
 
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
+import { ADMIN_INSTANCE, formatInstanceLocation, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { readInstances } from '../../lib/instance'
+import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../../lib/output'
 import { renderTable } from '../../lib/table'
@@ -19,7 +19,7 @@ type ListOpts = KernelCommandOpts &
     adminOnly?: boolean
   }
 
-type Bookmark = {
+export type Bookmark = {
   name: string
   url: string | null
   issuer: string | null
@@ -64,17 +64,11 @@ export default {
           ),
         )
       }
-      const managedNames = new Set(managed.map((item) => item.slug))
-      const visibleBookmarks =
-        opts.bookmarked || opts.adminOnly
-          ? bookmarks
-          : bookmarks.filter((item) => !managedNames.has(item.name))
-
       if (isMachine(opts)) {
         output(
           {
             active: store.active || null,
-            ...(opts.adminOnly ? {} : { bookmarks: visibleBookmarks }),
+            ...(opts.adminOnly ? {} : { bookmarks }),
             ...(opts.bookmarked ? {} : { instances: managed }),
           },
           opts,
@@ -82,27 +76,10 @@ export default {
         return
       }
 
-      const rows: Array<Record<string, string>> = []
-      if (!opts.bookmarked) {
-        for (const item of managed) {
-          rows.push({
-            name: item.slug === store.active ? `${item.slug} ${chalk.green('*')}` : item.slug,
-            kind: 'managed',
-            url: item.url ?? '',
-            extra: [item.region, item.hostId].filter(Boolean).join(' · '),
-          })
-        }
-      }
-      if (!opts.adminOnly) {
-        for (const item of visibleBookmarks) {
-          rows.push({
-            name: item.active ? `${item.name} ${chalk.green('*')}` : item.name,
-            kind: 'bookmark',
-            url: String(item.url ?? ''),
-            extra: '',
-          })
-        }
-      }
+      const rows = buildInstanceRows(managed, bookmarks, {
+        managed: !opts.bookmarked,
+        bookmarks: !opts.adminOnly,
+      })
 
       if (rows.length === 0) {
         log.dim('  No instances. Run: astrale instance bookmark <name> --url <url>')
@@ -114,3 +91,59 @@ export default {
     }
   },
 } satisfies CommandDefinition
+
+/**
+ * One row per instance. A bookmark that points at a managed instance (same
+ * name and same kernel URL) merges into the managed row — carrying the active
+ * marker — instead of listing the instance twice.
+ */
+export function buildInstanceRows(
+  managed: InstanceInfo[],
+  bookmarks: Bookmark[],
+  show: { managed: boolean; bookmarks: boolean },
+): Array<Record<string, string>> {
+  const rows: Array<Record<string, string>> = []
+  const merged = new Set<string>()
+
+  const bookmarkByName = new Map<string, { url: string; active: boolean }>()
+  if (show.managed && show.bookmarks) {
+    for (const bookmark of bookmarks) {
+      if (bookmark.url === null) continue
+      bookmarkByName.set(bookmark.name, {
+        url: normalizeInstanceKernelUrl(bookmark.url),
+        active: bookmark.active,
+      })
+    }
+  }
+
+  if (show.managed) {
+    for (const item of managed) {
+      const candidate = item.url ? bookmarkByName.get(item.slug) : undefined
+      const twin =
+        candidate && item.url && candidate.url === normalizeInstanceKernelUrl(item.url)
+          ? candidate
+          : undefined
+      if (twin) merged.add(item.slug)
+      rows.push({
+        name: twin?.active ? `${item.slug} ${chalk.green('*')}` : item.slug,
+        kind: 'managed',
+        url: item.url ?? '',
+        extra: formatInstanceLocation(item),
+      })
+    }
+  }
+
+  if (show.bookmarks) {
+    for (const item of bookmarks) {
+      if (merged.has(item.name)) continue
+      rows.push({
+        name: item.active ? `${item.name} ${chalk.green('*')}` : item.name,
+        kind: 'bookmark',
+        url: String(item.url ?? ''),
+        extra: '',
+      })
+    }
+  }
+
+  return rows
+}
