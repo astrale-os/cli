@@ -3,14 +3,16 @@ import type { AstraleConfig } from '../lib/config'
 import { AuthError } from '../errors'
 import { getDefault, getIdentity, type Identity } from '../lib/identity'
 import {
+  accessTokenForAudience,
+  classifyRefreshFailure,
   IdpAudienceMismatchError,
-  isSessionExpired,
-  readIdpSession,
-  refreshSession,
-  tokenAudienceMatches,
 } from '../lib/idp'
+import {
+  ensureFreshSession,
+  IdpSessionMissingError,
+  IdpSessionNoRefreshTokenError,
+} from '../lib/idp-session'
 import { signAs } from '../lib/keys'
-import { fetchOrgHint } from '../lib/meta'
 import { KEYS_DIR } from '../lib/paths'
 
 export type KeyIdentityAuthOptions = {
@@ -96,6 +98,11 @@ function resolveCredentialHint(
       ? `The IdP issues tokens for audience ${error.actual}, not the target's ${error.requested}. Target an instance whose URL/issuer is ${error.actual} (re-login won't change the audience).`
       : `The IdP did not mint a token for the target audience ${error.requested}, and re-login won't change it. Target an instance whose audience the IdP issues, or reconfigure the bookmark/IdP.`
   }
+  // Transient IdP outage: the cached session is still valid — retrying is the
+  // fix, not re-login.
+  if (error instanceof IdpRefreshTransientError) {
+    return 'The IdP could not be reached. Check the network and retry — the cached session is likely still valid.'
+  }
   // IdP-backed identities fail when the cached session expires or the upstream
   // session is terminated (e.g. WorkOS "Session has already ended"). Re-login,
   // don't recreate keys.
@@ -139,50 +146,64 @@ async function resolveIdpAccessToken(
   identity: Identity,
   audience: string,
 ): Promise<string> {
-  const session = await readIdpSession(identityName)
-  if (!session) {
-    throw new Error(
-      `No cached IdP session for "${identityName}". Run: astrale auth login --idp ${identity.idp ?? '<idp>'}`,
-    )
-  }
-
-  let resolved = session
-  if (isSessionExpired(resolved) || !tokenAudienceMatches(resolved.access_token, audience)) {
-    if (!resolved.refresh_token)
-      throw new Error(wrongAudienceHint(identityName, identity, audience))
-    const organizationId = await fetchOrgHint(audience)
-    try {
-      resolved = await refreshSession(identityName, resolved, { audience, organizationId })
-    } catch (e) {
-      // An audience mismatch means the session is healthy but the IdP won't
-      // mint this audience — re-login is futile, so propagate it verbatim for
-      // the hint logic to handle. Anything else is a dead/ended session.
-      if (e instanceof IdpAudienceMismatchError) throw e
-      throw new Error(refreshFailureMessage(identityName, identity, e))
+  let resolved
+  try {
+    resolved = await ensureFreshSession(identityName, { audience })
+  } catch (e) {
+    if (e instanceof IdpSessionMissingError) {
+      throw new Error(
+        `No cached IdP session for "${identityName}". Run: astrale auth login --idp ${identity.idp ?? '<idp>'}`,
+      )
     }
+    if (e instanceof IdpSessionNoRefreshTokenError) {
+      throw new Error(wrongAudienceHint(identityName, identity, audience))
+    }
+    // An audience mismatch means the session is healthy but the IdP won't
+    // mint this audience — re-login is futile, so propagate it verbatim for
+    // the hint logic to handle.
+    if (e instanceof IdpAudienceMismatchError) throw e
+    throw refreshFailureError(identityName, identity, e)
   }
 
-  if (!tokenAudienceMatches(resolved.access_token, audience)) {
+  const token = accessTokenForAudience(resolved, audience)
+  if (!token) {
     throw new Error(
       `IdP token for "${identityName}" was not minted for target audience ${audience}. ` +
         `Run: astrale auth login --name ${identityName} --idp ${identity.idp ?? '<idp>'} --audience ${audience}`,
     )
   }
 
-  return resolved.access_token
+  return token
 }
 
-function refreshFailureMessage(identityName: string, identity: Identity, cause: unknown): string {
+/** A refresh attempt failed for a reason that re-login will NOT fix. */
+export class IdpRefreshTransientError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'IdpRefreshTransientError'
+  }
+}
+
+function refreshFailureError(identityName: string, identity: Identity, cause: unknown): Error {
   const reason = cause instanceof Error ? cause.message : String(cause)
   const idpFlag = identity.idp ? ` --idp ${identity.idp}` : ''
-  // WorkOS terminates the upstream session (idle/absolute timeout, logout
-  // elsewhere) and then rejects the refresh token. Other IdPs surface the same
-  // class of failure as invalid_grant. Either way the cached session is dead —
-  // the only recovery is an interactive re-login.
-  return (
-    `IdP session for "${identityName}" could not be refreshed (${reason}). ` +
-    `The cached session has expired or ended — run: astrale auth login --name ${identityName}${idpFlag}`
-  )
+  // Only a definitively dead grant (invalid_grant: WorkOS idle/absolute
+  // timeout, logout elsewhere, reuse-detection revocation) warrants a
+  // re-login. Network failures and IdP 5xx leave the cached session valid —
+  // telling the user to re-login for those would burn a perfectly good
+  // session.
+  switch (classifyRefreshFailure(cause)) {
+    case 'transient':
+      return new IdpRefreshTransientError(
+        `Could not reach the IdP to refresh the session for "${identityName}" (${reason}). ` +
+          'The cached session is likely still valid — retry the command.',
+      )
+    default:
+      return new Error(
+        `IdP session for "${identityName}" could not be refreshed (${reason}). ` +
+          `The cached session has expired or ended — run: astrale auth login --name ${identityName}${idpFlag}`,
+      )
+  }
 }
 
 function wrongAudienceHint(identityName: string, identity: Identity, audience: string): string {

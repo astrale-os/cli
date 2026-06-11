@@ -16,7 +16,11 @@ export type RunResult = {
  * fails to spawn (e.g. ENOENT); a non-zero exit resolves with that `code` so
  * callers can branch on it.
  */
-export function run(file: string, args: string[] = [], opts: { cwd?: string } = {}): Promise<RunResult> {
+export function run(
+  file: string,
+  args: string[] = [],
+  opts: { cwd?: string } = {},
+): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(file, args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''

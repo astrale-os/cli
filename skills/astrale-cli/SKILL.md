@@ -214,6 +214,35 @@ astrale identity whoami
 That is different from `astrale token`, which mints a delegation token for
 kernel/worker calls.
 
+### Session lifetime and refresh
+
+IdP sessions refresh themselves: every kernel command silently exchanges the
+refresh token when the cached access token is stale, and concurrent `astrale`
+processes serialize that exchange on a per-identity file lock (refresh tokens
+are single-use — the lock is what makes parallel agent-driven commands safe).
+One `astrale auth login` should therefore last until the IdP itself ends the
+session. Access tokens are also cached **per audience**, so alternating
+commands between instances does not burn a refresh per flip.
+
+Refresh failures come in two distinct flavors — read the error before
+re-authenticating:
+
+- "could not be refreshed … run: astrale auth login" — the grant is dead
+  (IdP session ended, idle/absolute timeout, logout elsewhere). Re-login is
+  the only fix.
+- "Could not reach the IdP … retry the command" — transient network/IdP
+  outage. The cached session is still valid; do NOT re-login, just retry.
+
+### Agent auth
+
+An agent driving the CLI needs no special flow: it shares `~/.astrale`, so one
+human `astrale auth login` is enough and every subsequent command (including
+parallel ones) self-refreshes. For fully headless setups with no human login,
+use a key-backed identity — `astrale identity create <name>` then
+`astrale identity register <name> -i <instance>` — which signs locally and
+never expires; or hand the agent a TTL-bound delegation token minted with
+`astrale token` and passed via `--creds`.
+
 ## Delegation Tokens
 
 `astrale token` mints a delegation token for the active instance and identity.

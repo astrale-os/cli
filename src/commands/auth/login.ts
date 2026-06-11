@@ -16,6 +16,7 @@ import {
   subjectFromToken,
   tokenAudienceMatches,
   tokenExpiresAt,
+  withCachedToken,
   workosClientIdFromEnv,
   type IdpSession,
   type TokenResponse,
@@ -107,6 +108,7 @@ Notes:
       token_type: token.token_type,
       scope: token.scope ?? scope,
       expires_at: tokenExpiresAt(token),
+      tokens: withCachedToken(undefined, token.access_token, tokenExpiresAt(token)),
       claims: claims ? (claims as Record<string, unknown>) : undefined,
       updatedAt: new Date().toISOString(),
     }

@@ -1,10 +1,11 @@
 import { generateKeyPair, exportJWK, importJWK, SignJWT, type JWK } from 'jose'
 import { randomUUID } from 'node:crypto'
-import { readFile, writeFile, mkdir, rename, access, unlink } from 'node:fs/promises'
+import { readFile, mkdir, access, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { IdentityKeyMissingError } from '../errors'
 import { inferAlg } from './domain-identity'
+import { atomicWrite } from './fs-atomic'
 import { log } from './log'
 import { KEYS_DIR } from './paths'
 
@@ -290,10 +291,4 @@ export async function signAs(
     subject: opts?.subject ?? subject,
     audience,
   })
-}
-
-async function atomicWrite(path: string, data: string): Promise<void> {
-  const tmp = `${path}.${randomUUID()}.tmp`
-  await writeFile(tmp, data, { mode: 0o600 })
-  await rename(tmp, path)
 }

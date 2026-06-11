@@ -1,9 +1,10 @@
 import { decodeJwt, type JWTPayload } from 'jose'
-import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 
 import { paths } from './env'
+import { atomicWrite } from './fs-atomic'
 import { log } from './log'
 import { IDPS_PATH, IDP_SESSIONS_DIR } from './paths'
 import { validateName, validateUrl } from './validation'
@@ -28,6 +29,65 @@ export class IdpAudienceMismatchError extends Error {
     this.requested = requested
     this.actual = actual
   }
+}
+
+/**
+ * A token-endpoint request that the IdP answered with an OAuth error (or that
+ * failed at the HTTP layer). Carries the structured OAuth `error` code so
+ * callers can tell a definitively dead grant (`invalid_grant`) from a
+ * transient outage — the message string alone cannot.
+ */
+export class OAuthTokenError extends Error {
+  /** OAuth `error` code, e.g. `invalid_grant`. */
+  readonly code?: string
+  /** OAuth `error_description`. */
+  readonly description?: string
+  /** HTTP status of the token response. */
+  readonly status?: number
+
+  constructor(args: { code?: string; description?: string; status?: number }) {
+    super(
+      `OAuth token request failed: ${args.description ?? args.code ?? `HTTP ${args.status ?? '?'}`}`,
+    )
+    this.name = 'OAuthTokenError'
+    this.code = args.code
+    this.description = args.description
+    this.status = args.status
+  }
+}
+
+export type RefreshFailureKind = 'session-ended' | 'transient' | 'unknown'
+
+/**
+ * Classify a `refreshSession` failure so callers only demand a re-login when
+ * the grant is actually dead. `invalid_grant` covers both WorkOS
+ * "Refresh token already exchanged" and "Session has already ended"; HTTP
+ * 5xx/429 and fetch-layer failures (connection refused, abort, timeout) are
+ * transient — the cached session is likely still valid.
+ */
+export function classifyRefreshFailure(e: unknown): RefreshFailureKind {
+  if (e instanceof OAuthTokenError) {
+    if (e.code === 'invalid_grant') return 'session-ended'
+    if (e.status !== undefined && (e.status >= 500 || e.status === 429)) return 'transient'
+    return 'unknown'
+  }
+  if (e instanceof Error) {
+    if (e.name === 'AbortError' || e.name === 'TimeoutError') return 'transient'
+    // Node's fetch rejects network-layer failures as TypeError.
+    if (e instanceof TypeError) return 'transient'
+    // Bun stamps codes like ConnectionRefused/ConnectionClosed/FailedToOpenSocket;
+    // Node uses the classic ECONN*/ETIMEDOUT family.
+    const code = (e as { code?: string }).code
+    if (
+      typeof code === 'string' &&
+      /^(ECONN|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|ENETUNREACH|Connection|FailedToOpenSocket|Timeout)/.test(
+        code,
+      )
+    ) {
+      return 'transient'
+    }
+  }
+  return 'unknown'
 }
 
 export const OidcMetadataSchema = z
@@ -92,6 +152,19 @@ export const IdpSessionSchema = z
     scope: z.string().optional(),
     expires_at: z.string().optional(),
     claims: z.record(z.string(), z.unknown()).optional(),
+    /**
+     * Access tokens by audience. WorkOS mints one `aud` per token, so a
+     * session juggling several instances would otherwise burn a (single-use)
+     * refresh-token rotation on every instance flip. The top-level
+     * `access_token`/`expires_at` stay the most recently minted token for
+     * back-compat with older CLI builds.
+     */
+    tokens: z
+      .record(
+        z.string(),
+        z.object({ access_token: z.string(), expires_at: z.string().optional() }).passthrough(),
+      )
+      .optional(),
     updatedAt: z.string(),
   })
   .passthrough()
@@ -173,7 +246,7 @@ export async function readIdpStore(): Promise<IdpStore> {
 
 export async function writeIdpStore(store: IdpStore): Promise<void> {
   await mkdir(dirname(IDPS_PATH), { recursive: true })
-  await writeFile(IDPS_PATH, JSON.stringify(store, null, 2) + '\n', { mode: 0o600 })
+  await atomicWrite(IDPS_PATH, JSON.stringify(store, null, 2) + '\n')
 }
 
 export async function readIdpConfig(name: string): Promise<IdpConfig> {
@@ -251,12 +324,8 @@ export async function upsertIdpConfig(args: {
   }
   await mkdir(idpDir(args.name), { recursive: true })
   await Promise.all([
-    writeFile(idpMetadataPath(args.name), JSON.stringify(args.metadata, null, 2) + '\n', {
-      mode: 0o600,
-    }),
-    writeFile(idpClientPath(args.name), JSON.stringify(args.client ?? {}, null, 2) + '\n', {
-      mode: 0o600,
-    }),
+    atomicWrite(idpMetadataPath(args.name), JSON.stringify(args.metadata, null, 2) + '\n'),
+    atomicWrite(idpClientPath(args.name), JSON.stringify(args.client ?? {}, null, 2) + '\n'),
     writeIdpStore(store),
   ])
   return readIdpConfig(args.name)
@@ -367,13 +436,7 @@ export async function postForm(url: string, params: URLSearchParams): Promise<To
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params,
   })
-  const text = await response.text()
-  const body = text ? (JSON.parse(text) as TokenResponse) : {}
-  if (!response.ok || body.error) {
-    const reason = body.error_description ?? body.error ?? `HTTP ${response.status}`
-    throw new Error(`OAuth token request failed: ${reason}`)
-  }
-  return body
+  return tokenResponseFrom(response)
 }
 
 export async function postJson(
@@ -385,11 +448,28 @@ export async function postJson(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(bodyInput),
   })
+  return tokenResponseFrom(response)
+}
+
+async function tokenResponseFrom(response: Response): Promise<TokenResponse> {
   const text = await response.text()
-  const body = text ? (JSON.parse(text) as TokenResponse) : {}
+  let body: TokenResponse = {}
+  try {
+    body = text ? (JSON.parse(text) as TokenResponse) : {}
+  } catch {
+    // Non-JSON body (e.g. an HTML 502 from a proxy): surface the HTTP failure,
+    // keep a snippet for diagnostics.
+    throw new OAuthTokenError({
+      status: response.status,
+      description: `HTTP ${response.status} — non-JSON response: ${text.slice(0, 200)}`,
+    })
+  }
   if (!response.ok || body.error) {
-    const reason = body.error_description ?? body.error ?? `HTTP ${response.status}`
-    throw new Error(`OAuth token request failed: ${reason}`)
+    throw new OAuthTokenError({
+      code: body.error,
+      description: body.error_description,
+      status: response.status,
+    })
   }
   return body
 }
@@ -457,7 +537,7 @@ export function identityNameFromClaims(claims: JWTPayload | undefined, fallback:
 export async function saveIdpSession(session: IdpSession): Promise<void> {
   const path = idpSessionPath(session.identity)
   await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, JSON.stringify(session, null, 2) + '\n', { mode: 0o600 })
+  await atomicWrite(path, JSON.stringify(session, null, 2) + '\n')
 }
 
 export async function readIdpSession(identityName: string): Promise<IdpSession | null> {
@@ -502,6 +582,45 @@ export function isSessionExpired(
   return new Date(expiresAt).getTime() <= Date.now() + skewMs
 }
 
+/**
+ * A still-fresh access token usable for `audience`, or undefined when a
+ * refresh is needed. Checks the per-audience `tokens` map first, then the
+ * top-level token's own `aud` claim. Without an `audience`, freshness of the
+ * top-level token is the only requirement.
+ */
+export function accessTokenForAudience(session: IdpSession, audience?: string): string | undefined {
+  if (audience === undefined) {
+    return isSessionExpired(session) ? undefined : session.access_token
+  }
+  const entry = session.tokens?.[audience]
+  if (entry && !isSessionExpired(entry)) return entry.access_token
+  if (!isSessionExpired(session) && tokenAudienceMatches(session.access_token, audience)) {
+    return session.access_token
+  }
+  return undefined
+}
+
+/**
+ * Fold a freshly minted access token into the per-audience map under every
+ * `aud` it carries, dropping entries that have already expired.
+ */
+export function withCachedToken(
+  tokens: IdpSession['tokens'],
+  accessToken: string,
+  expiresAt: string | undefined,
+): IdpSession['tokens'] {
+  const next: NonNullable<IdpSession['tokens']> = {}
+  for (const [aud, entry] of Object.entries(tokens ?? {})) {
+    if (!isSessionExpired(entry)) next[aud] = entry
+  }
+  const aud = decodeTokenClaims(accessToken)?.aud
+  const audiences = Array.isArray(aud) ? aud : typeof aud === 'string' ? [aud] : []
+  for (const audience of audiences) {
+    next[audience] = { access_token: accessToken, expires_at: expiresAt }
+  }
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
 export function requireClientId(idp: IdpConfig, override?: string): string {
   const clientId = override ?? idp.client.client_id
   if (!clientId) {
@@ -544,6 +663,7 @@ export async function refreshSession(
   )
   if (!token.access_token) throw new Error('Refresh response did not include access_token')
   const claims = decodeTokenClaims(token.id_token ?? token.access_token)
+  const expiresAt = tokenExpiresAt(token)
   const next: IdpSession = {
     ...session,
     access_token: token.access_token,
@@ -553,7 +673,8 @@ export async function refreshSession(
     scope: token.scope ?? session.scope,
     audience,
     organizationId: organizationId ?? session.organizationId,
-    expires_at: tokenExpiresAt(token),
+    expires_at: expiresAt,
+    tokens: withCachedToken(session.tokens, token.access_token, expiresAt),
     claims: claims ? (claims as Record<string, unknown>) : session.claims,
     updatedAt: new Date().toISOString(),
   }

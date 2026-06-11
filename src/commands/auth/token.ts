@@ -1,7 +1,8 @@
 import type { CommandDefinition } from '../../command'
 
 import { getDefault, getIdentity, readIdentities } from '../../lib/identity'
-import { isSessionExpired, readIdpSession, refreshSession, type IdpSession } from '../../lib/idp'
+import { isSessionExpired, readIdpSession, type IdpSession } from '../../lib/idp'
+import { ensureFreshSession } from '../../lib/idp-session'
 import { log } from '../../lib/log'
 import { output } from '../../lib/output'
 
@@ -91,8 +92,9 @@ export async function resolveAuthToken(opts: AuthTokenOpts): Promise<AuthTokenRe
     )
   }
 
-  const shouldRefresh = opts.refresh !== false && isSessionExpired(session)
-  const resolved = shouldRefresh ? await refreshSession(identityName, session) : session
+  // ensureFreshSession serializes the (single-use) refresh-token exchange
+  // across concurrent CLI processes and is a no-op while the token is fresh.
+  const resolved = opts.refresh !== false ? await ensureFreshSession(identityName) : session
   const type = opts.type ?? 'access'
   const token = tokenFromSession(resolved, type)
 
@@ -107,7 +109,7 @@ export async function resolveAuthToken(opts: AuthTokenOpts): Promise<AuthTokenRe
     scope: resolved.scope,
     expires_at: resolved.expires_at,
     expired: isSessionExpired(resolved),
-    refreshed: shouldRefresh,
+    refreshed: resolved.updatedAt !== session.updatedAt,
     updatedAt: resolved.updatedAt,
   }
 }
