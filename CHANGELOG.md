@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0-alpha.9 (2026-06-11)
+
+### Public Alpha
+
+* durable IdP sessions: one login lasts until the IdP ends the session — refreshes serialize on a per-identity file lock, so parallel (agent-driven) commands no longer burn the single-use refresh token
+* cache access tokens per audience: alternating commands between instances no longer triggers a refresh per flip (~2x faster on mixed-instance workflows)
+* tell transient IdP/network failures apart from a dead grant — only the latter asks for `astrale auth login`
+* lazy whoami-backed `@self` for IdP identities
+* saga-sized default timeout on `instance create`/`instance delete`
+
 ## 0.4.0-alpha.8 (2026-06-08)
 
 ### Public Alpha
