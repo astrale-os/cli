@@ -3,7 +3,7 @@ import { K } from '@astrale-os/kernel-core'
 import type { CommandDefinition } from '../command'
 import type { CallCommandOpts, ClientContext, SelfExpansionMeta } from '../kernel'
 
-import { buildSelfContext, resolveOrThrow, runKernelCommand, withSelfHint } from '../kernel'
+import { buildSelfContext, resolveSelfIdLazy, runKernelCommand, withSelfHint } from '../kernel'
 import { presentBinary, type BinaryLike } from '../lib/binary'
 import { log } from '../lib/log'
 import { output, present } from '../lib/output'
@@ -20,8 +20,9 @@ export async function callCommand(
   opts: CallOpts,
 ): Promise<void> {
   // ── Expand `@self` in path + raw param strings ──────────
-  // Local resolution: no kernel round-trip. Throws a typed SelfRefusalError
-  // (e.g. no registration, instance-signed) which we
+  // Local resolution, with ONE lazy whoami round-trip for IdP identities
+  // missing a cached registration (persisted, so it's local afterwards).
+  // Throws a typed SelfRefusalError (manager, instance-signed, …) which we
   // surface as a fatal CLI error. Runs BEFORE `--describe` so users get the
   // typed refusal instead of a generic NotFoundError from the kernel.
   let expandedPath = path
@@ -31,7 +32,7 @@ export async function callCommand(
   if (inputsHaveSelf) {
     try {
       const selfCtx = await buildSelfContext(opts)
-      const selfId = resolveOrThrow(selfCtx)
+      const selfId = await resolveSelfIdLazy(selfCtx, opts)
       expandedPath = expandSelfReferences(path, selfId)
       expandedRaw = rawParams.map((p) => expandSelfReferences(p, selfId))
       // Stamp metadata whenever ANY input mutated — the stale-registration

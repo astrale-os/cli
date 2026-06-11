@@ -8,7 +8,7 @@ import type { KernelCommandOpts } from './types'
  * the stale-registration hint emitted by `formatKernelError`.
  */
 import { readConfig } from '../lib/config'
-import { getDefault, getIdentity } from '../lib/identity'
+import { getDefault, getIdentity, setRegistration } from '../lib/identity'
 import { decodeTokenClaims, readIdpSession } from '../lib/idp'
 import { getActive, resolveInstance } from '../lib/instance'
 import { fileExists, keypairPaths } from '../lib/keys'
@@ -21,6 +21,7 @@ import {
   type SelfResolverContext,
   type SelfResolution,
 } from '../lib/self'
+import { withKernelClient } from './client'
 
 /** Metadata attached to errors so the NotFoundError path can hint at stale `@self` expansions. */
 export type SelfExpansionMeta = {
@@ -124,6 +125,48 @@ export function resolveOrThrow(selfCtx: SelfResolverContext): string {
   return r.id
 }
 
+// The kernel's whoami — returns the AUTHENTICATED principal's graph node.
+// Static interface method, so the colon form (slash form is rejected).
+const WHOAMI_PATH = '/:kernel.astrale.ai:interface.Identity:whoami'
+
+/**
+ * Resolve `@self`, falling back to ONE kernel `whoami` round-trip when an
+ * IdP identity merely lacks a cached registration on this instance (the
+ * normal `astrale auth login` flow — the IdP subject is never a node id).
+ * The resolved id is persisted as a registration so subsequent expansions
+ * are local again. Every other refusal (manager, instance-signed, …) and a
+ * failed whoami throw the typed refusal unchanged.
+ */
+export async function resolveSelfIdLazy(
+  selfCtx: SelfResolverContext,
+  opts: KernelCommandOpts,
+): Promise<string> {
+  const r: SelfResolution = resolveSelfNodeId(selfCtx)
+  if (!('reason' in r)) return r.id
+  if (r.reason !== 'idp-no-sub' || !selfCtx.instanceSlug || !selfCtx.identity) {
+    throw selfRefusalError(r)
+  }
+  let me: { id?: unknown } | null
+  let kernelUrl = ''
+  try {
+    me = (await withKernelClient(opts, (ctx) => {
+      kernelUrl = ctx.url
+      return ctx.client.call(WHOAMI_PATH as never, {} as never)
+    })) as { id?: unknown } | null
+  } catch {
+    // Network/auth failure — surface the original recipe, not a stack.
+    throw selfRefusalError(r)
+  }
+  const id = typeof me?.id === 'string' && me.id.trim().length > 0 ? me.id : undefined
+  if (!id) throw selfRefusalError(r)
+  await setRegistration(selfCtx.identity.name, selfCtx.instanceSlug, {
+    iss: kernelUrl,
+    sub: id,
+    registeredAt: new Date().toISOString(),
+  })
+  return id
+}
+
 /**
  * Expand `@self` in a single path string for the common command shape
  * (`get`, `ls`, `describe`). Returns the expanded path AND the metadata
@@ -141,7 +184,7 @@ export async function expandSelfInPath(
 ): Promise<{ path: string; meta: SelfExpansionMeta | undefined }> {
   if (!containsSelfRef(path)) return { path, meta: undefined }
   const selfCtx = await buildSelfContext(opts)
-  const id = resolveOrThrow(selfCtx)
+  const id = await resolveSelfIdLazy(selfCtx, opts)
   const expanded = expandSelfReferences(path, id)
   if (expanded === path) return { path, meta: undefined }
   return {

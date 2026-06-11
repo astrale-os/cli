@@ -6,6 +6,7 @@ export {
   expandSelfInPath,
   withSelfHint,
   resolveOrThrow,
+  resolveSelfIdLazy,
   type SelfExpansionMeta,
 } from './expand'
 export { mintRemoteCredential } from './remote-routing'

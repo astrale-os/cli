@@ -157,8 +157,8 @@ function refusalMessage(r: SelfRefusal): string {
       ].join('\n  ')
     case 'idp-no-sub':
       return [
-        `\`@self\` not available for IdP identity "${r.identityName}": the IdP subject is not a graph node id.`,
-        'Get your node id once, then use it directly:',
+        `\`@self\` could not be resolved for IdP identity "${r.identityName}": no cached registration, and the automatic whoami lookup did not return a node id (offline, auth failure, or unprovisioned identity).`,
+        'Get your node id manually, then use it directly:',
         '  astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json   # → { id: <nodeId> }',
         'and address yourself as `@<nodeId>`.',
       ].join('\n  ')
