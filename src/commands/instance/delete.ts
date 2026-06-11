@@ -30,6 +30,8 @@ Behavior:
     { flags: '--keep-bookmark', description: 'Do not remove a same-name local bookmark' },
   ],
   action: async (id: string, opts: DeleteOpts) => {
+    // Teardown walks services + deprovisions — same saga-sized budget as create.
+    opts = { ...opts, timeout: opts.timeout ?? '240000' }
     try {
       const result = await withSpinner(`Deleting instance ${id}`, !isMachine(opts), () =>
         withAdminKernelClient(

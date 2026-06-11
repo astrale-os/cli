@@ -45,9 +45,15 @@ Examples:
     try {
       validateSlug(id)
       await assertAlphaCreateAuth(opts)
+      // Provisioning a child instance runs a multi-step saga (1-3 min). The
+      // global 30s default doesn't just fail the CLIENT: the disconnect kills
+      // the worker's request mid-saga and leaves TORN state (slug taken,
+      // routing live, no instance node — unrecoverable by retry). Default to
+      // a saga-sized timeout; an explicit --timeout still wins.
+      const createOpts = { ...opts, timeout: opts.timeout ?? '240000' }
       const result = await withSpinner(`Provisioning instance ${id}`, !isMachine(opts), () =>
         withAdminKernelClient(
-          opts,
+          createOpts,
           async (ctx) =>
             (await ctx.client.call(`${ADMIN_INSTANCE}/alphaCreate`, {
               slug: id,
