@@ -124,9 +124,10 @@ astrale call /:d:class.X:m owner=@self
 If `@self` expands to a deleted or stale id, refresh the registration with
 `astrale identity register <name> -i <instance>`.
 
-For IdP-backed identities (`astrale auth login`), `@self` is not available —
-the IdP subject is not a graph node id. Resolve your node id once and address
-it directly:
+For IdP-backed identities (`astrale auth login`), `@self` just works: on the
+first use against an instance the CLI does ONE kernel `whoami` round-trip,
+caches the node id as a registration, and expands locally afterwards. If that
+lookup fails (offline, expired session), the error carries the manual recipe:
 
 ```bash
 astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json  # → { id }
