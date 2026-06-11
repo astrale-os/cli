@@ -660,6 +660,15 @@ export async function refreshSession(
   if (audience) params.set('audience', audience)
   const organizationId = opts.organizationId ?? session.organizationId
   if (organizationId) params.set('organization_id', organizationId)
+  if (process.env.ASTRALE_DEBUG_ORG)
+    console.error(
+      '[debug-org] refresh',
+      JSON.stringify({
+        audience,
+        organizationId,
+        sub: (session.claims as { sub?: string } | undefined)?.sub,
+      }),
+    )
   const secret = resolveClientSecret(idp)
   if (secret) params.set('client_secret', secret)
   const token = normalizeTokenResponse(
