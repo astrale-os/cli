@@ -56,6 +56,12 @@ Behavior:
   the identity. The token aud must match the worker's expected
   audience or the worker rejects it. --for is an alias of --as.
 
+What this token is FOR — worker-direct HTTP calls:
+  Use it as a Bearer token against a domain worker's own URL
+  (curl/fetch to its remote functions). It carries NO .grant claim,
+  so it CANNOT drive a raw kernel ClientSession — for kernel calls
+  use 'astrale call' (which signs per-call) instead.
+
 Examples:
   $ export TOKEN=$(astrale token --audience dist.astrale.ai --raw)
   $ astrale token --audience worker.example.com --for alice -i staging
