@@ -14,7 +14,7 @@ describe('AstraleConfigSchema', () => {
 
   test('applies defaults for empty object', () => {
     const result = AstraleConfigSchema.parse({})
-    expect(result.issuer).toBe('https://identity.astrale.ai')
+    expect(result.issuer).toBe('https://unregistered.invalid')
     expect(result.admin).toEqual({
       name: 'admin',
       url: DEFAULT_ADMIN_TARGET_URL,

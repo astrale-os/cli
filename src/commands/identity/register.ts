@@ -8,6 +8,7 @@ import type { KernelCommandOpts } from '../../kernel'
 import { runKernelCommand } from '../../kernel'
 import { KERNEL_PASSTHROUGH_OPTIONS } from '../../kernel/options'
 import { getIdentity, setRegistration } from '../../lib/identity'
+import { getActive } from '../../lib/instance'
 import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
@@ -117,7 +118,7 @@ export default {
         opts,
         label: `Register "${name}"`,
         fn: async (ctx) => {
-          const instanceSlug = opts.instance ?? opts.url ?? 'default'
+          const instanceSlug = opts.instance ?? opts.url ?? (await getActive(ctx.config)).name
           const existing = identity.registrations?.[instanceSlug]
           if (existing) {
             log.warn(`"${name}" already registered on "${instanceSlug}"`)

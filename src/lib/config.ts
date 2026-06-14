@@ -7,9 +7,7 @@ import { log } from './log'
 import { CONFIG_PATH } from './paths'
 
 export const AstraleConfigSchema = z.object({
-  // Local identity credentials still need an issuer for first-contact calls
-  // before the target kernel records a registration-specific issuer.
-  issuer: z.string().url().default('https://identity.astrale.ai'),
+  issuer: z.string().url().default('https://unregistered.invalid'),
   admin: AdminTargetConfigSchema.default(DEFAULT_ADMIN_TARGET_CONFIG),
 })
 

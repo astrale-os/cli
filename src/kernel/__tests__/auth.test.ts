@@ -6,7 +6,7 @@ import type { Identity } from '../../lib/identity'
 import { resolveKeyIdentityAuthOptions } from '../auth'
 
 const config: AstraleConfig = {
-  issuer: 'https://identity.astrale.ai',
+  issuer: 'https://unregistered.invalid',
   admin: {
     name: 'admin',
     url: 'https://admin.eu.astrale.ai/api',

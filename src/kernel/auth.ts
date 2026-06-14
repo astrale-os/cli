@@ -141,8 +141,9 @@ export function resolveKeyIdentityAuthOptions(
 
 function systemIdentityIssuer(identity: Identity, audience: string, config: AstraleConfig): string {
   // Imported kernel bootstrap keys are subject=system and are published by the
-  // target kernel's JWKS. Without a stored issuer, signing them as the global
-  // CLI issuer makes the kernel try OIDC discovery for identity.astrale.ai.
+  // target kernel's JWKS. Without a stored issuer, signing them as the
+  // placeholder CLI issuer makes the kernel try OIDC discovery for a
+  // non-resolving host — use the audience (the target kernel) instead.
   return identity.subject === 'system' ? audience : config.issuer
 }
 
