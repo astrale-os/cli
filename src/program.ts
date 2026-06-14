@@ -38,7 +38,7 @@ export async function buildProgram(): Promise<Command> {
     })
 
   // Options shared by every kernel-touching command (call / token / get / ls /
-  // describe / query + `instance install`). Merged onto the command's own
+  // describe / query + `domain install`). Merged onto the command's own
   // options at the registration site so the list stays single-sourced — the
   // command-definition files only carry their command-specific options.
   const kernelOptions = [
@@ -91,7 +91,16 @@ export async function buildProgram(): Promise<Command> {
       withKernelOptions((await import('./commands/instance/status')).default),
       (await import('./commands/instance/active')).default,
       (await import('./commands/instance/use')).default,
-      withKernelOptions((await import('./commands/instance/install')).default),
+    ],
+  })
+
+  registerGroup(program, {
+    name: 'domain',
+    description: 'List, publish, and install domains (admin catalog + per-instance install)',
+    commands: [
+      withKernelOptions((await import('./commands/domain/list')).default),
+      withKernelOptions((await import('./commands/domain/publish')).default),
+      withKernelOptions((await import('./commands/domain/install')).default),
     ],
   })
 
@@ -149,7 +158,7 @@ export async function buildProgram(): Promise<Command> {
     `
 Command groups:
   Kernel        ls, get, call, query, describe, token
-  Management    admin, instance, identity, auth, idp, update
+  Management    admin, instance, domain, identity, auth, idp, update
   Agent         browser   (drive the GUI via agent-browser)
 
 Path syntax:

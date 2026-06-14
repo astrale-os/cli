@@ -101,11 +101,7 @@ function resolveCredentialHint(
   // Org-membership rejection: the session is healthy; the org we scoped the
   // token to doesn't hold this user. Re-login can never fix it.
   if (error instanceof IdpOrgMembershipError) {
-    return (
-      'The session is still valid — do NOT re-login. If this instance was just created, ' +
-      'the org mapping may still be propagating: retry in ~1 minute. Otherwise this ' +
-      'instance belongs to a different account.'
-    )
+    return 'This instance might belong to a different account.'
   }
   // Transient IdP outage: the cached session is still valid — retrying is the
   // fix, not re-login.

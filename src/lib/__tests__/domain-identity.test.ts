@@ -18,7 +18,7 @@ import { inferAlg } from '../domain-identity'
 
 describe('inferAlg', () => {
   // Adversarial: older CLI releases generated ES256 keys without
-  // stamping `alg`. Every fresh-machine `astrale instance install` then
+  // stamping `alg`. Every fresh-machine `astrale domain install` then
   // crashed with "alg is required when jwk.alg is not present" because the
   // CLI read `privateJwk.alg as string` directly and handed `undefined` to
   // jose's importJWK. The fix sets `alg` at keygen time AND falls back to

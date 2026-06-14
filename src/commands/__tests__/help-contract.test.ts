@@ -92,10 +92,13 @@ describe('help contract — connect-only command surface', () => {
     const program = await buildProgram()
     const names = allCommands(program).map((command) => command.name())
 
-    // 'logs' is NOT in this list anymore: the historical `astrale logs` was
-    // LOCAL runtime management (removed with start/stop); today's `astrale
-    // logs <service>` is connect-side — it tails a MANAGED service's buffer
-    // through the admin control plane.
+    // 'logs' and 'domain' are NOT in this list anymore: each was once LOCAL
+    // runtime management (the historical `astrale logs`, removed with
+    // start/stop; the historical `astrale domain`, local domain wiring) and each
+    // has since been RECLAIMED for a connect-side meaning through the admin
+    // control plane — `astrale logs <service>` tails a MANAGED service's buffer;
+    // `astrale domain publish` registers an installable domain in the admin's
+    // catalog and `astrale domain install <url>` mounts one on an instance.
     for (const removed of [
       'init',
       'start',
@@ -106,7 +109,6 @@ describe('help contract — connect-only command surface', () => {
       'tunnel',
       'graph',
       'server',
-      'domain',
       'env',
     ]) {
       expect(names).not.toContain(removed)

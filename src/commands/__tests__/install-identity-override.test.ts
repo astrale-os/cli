@@ -1,6 +1,19 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 
-import { isIdentityOverride, probeDeclaredOrigin } from '../instance/install'
+import { domainRefFromTarget, isIdentityOverride, probeDeclaredOrigin } from '../domain/install'
+
+describe('admin-path target classification', () => {
+  test('an http(s) url installs by url', () => {
+    expect(domainRefFromTarget('https://crm.acme.dev')).toEqual({ url: 'https://crm.acme.dev' })
+    expect(domainRefFromTarget('http://localhost:8787')).toEqual({ url: 'http://localhost:8787' })
+  })
+
+  test('a bare origin installs by catalog origin (the unique registry key)', () => {
+    expect(domainRefFromTarget('crm.acme.dev')).toEqual({ origin: 'crm.acme.dev' })
+    // A host:port that is not a url is still an origin, not a url.
+    expect(domainRefFromTarget('dist.astrale.ai')).toEqual({ origin: 'dist.astrale.ai' })
+  })
+})
 
 describe('identity-override detection', () => {
   test('origin matching the serving host is not an override', () => {

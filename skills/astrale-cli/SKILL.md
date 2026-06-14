@@ -38,6 +38,7 @@ astrale logs <service>
 astrale status
 astrale browser
 astrale instance ...
+astrale domain ...
 astrale admin ...
 astrale identity ...
 astrale auth ...
@@ -50,7 +51,7 @@ Command groups:
 |---|---|
 | Kernel | `call`, `token`, `get`, `ls`, `describe`, `query`, `logs` |
 | Context | `status`, `whoami`, `use` |
-| Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
+| Management | `admin`, `instance`, `domain`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser` |
 
 Shared kernel options are merged onto kernel-touching commands at registration
@@ -148,7 +149,6 @@ astrale instance use my-app
 astrale instance active
 astrale instance bookmark staging --url https://kernel.example.com
 astrale instance forget staging
-astrale instance install https://domain.example.com
 ```
 
 Important distinctions:
@@ -164,23 +164,37 @@ Important distinctions:
 ## Domain Dev Workflow
 
 **The `astrale` CLI is connect-only — it does not build, run, or deploy
-domains.** There is no `astrale domain …` command group. Domain development
-lives in two separate tools:
+domains.** The `astrale domain` group manages the admin catalog and installs a
+running domain onto an instance (`list`, `publish`, `install`); it does NOT
+build or run domains. `astrale domain list` shows the published catalog (add
+`--check` to probe each URL's reachability, `--default-only` for the
+install-on-every-instance set, `-q` to pipe install URLs). Building, running,
+and deploying live in two separate tools:
 
 - **`create-astrale-domain`** scaffolds a new standalone domain project
   (`pnpm create astrale-domain <slug>`), writing an `astrale.config.ts`.
-- **`astrale-domain`** (the `@astrale-os/devkit` bin, behind the project's
+- **`astrale-domain`** (the `@astrale-os/sdk` bin, behind the project's
   `pnpm dev` / `pnpm prod` scripts) runs `dev | prod | deploy <env> | build`.
 
-Domains are **installed by URL**, never from a file: run or deploy the domain
-worker, then `astrale instance install <url> -i <slug>` — the kernel fetches a
-signed install bundle from the running worker. There is no committed
-`spec.json` and no `astrale domain install`; install lives under the
-`instance` group because it operates on an instance graph.
+Domains are **installed by URL or catalog origin**, never from a file (there is
+no committed `spec.json`). `astrale domain install` has two modes:
+
+- **default (via admin)** — `astrale domain install <origin|url> -i <slug>`
+  installs a PUBLISHED domain through the admin control plane
+  (`DomainEntry.install`), addressed by its catalog `origin` (the unique
+  registry key) or `url`. Run it bare to pick from the catalog interactively.
+  The target instance is the active one or `-i <slug>` and **must be
+  admin-managed** (otherwise it fails loudly and points you at `--direct`).
+- **`--direct`** — `astrale domain install <url> --direct` installs a url
+  straight onto the instance kernel (`Root.installDomain`), bypassing the
+  catalog. Works on ANY instance you can authenticate to (managed, bookmarked,
+  or local), using your own authority, and is the only mode that runs the
+  identity-override consent gate. Use it for dev/local instances and
+  freshly-deployed, not-yet-published workers.
 
 With the **managed (`astrale`) adapter**, `pnpm prod` publishes the bundle
 through the platform AND installs it on the configured instance in one step —
-no manual `instance install`. The service serves at
+no manual `domain install`. The service serves at
 `https://<name>-<hash>.svc.<region>.astrale.ai` (the CLI session is the auth).
 
 For authoring domains end-to-end (schema, handlers, external APIs, deploys),

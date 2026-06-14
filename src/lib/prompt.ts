@@ -1,4 +1,6 @@
+import { input, select } from '@inquirer/prompts'
 import chalk from 'chalk'
+import { createInterface } from 'node:readline/promises'
 
 /**
  * Prompt the user for Y/N confirmation. Returns true if confirmed.
@@ -35,6 +37,43 @@ export async function confirmWithInput(message: string, expected: string): Promi
   process.stdout.write(chalk.yellow(`  Type "${expected}" to confirm: `))
   const answer = await readLine()
   return answer === expected
+}
+
+/**
+ * Free-text prompt (a styled `@inquirer/prompts` input — shows the default,
+ * supports inline `validate` with live re-ask). Returns the typed value, or the
+ * default on empty input.
+ *
+ * Gated on `process.stdin.isTTY` BEFORE touching inquirer (which requires a
+ * TTY): in a piped / CI / no-TTY (LLM) run it returns the default (`undefined`
+ * when none) immediately and renders nothing, so callers fall through to their
+ * required-flag error instead of hanging on a read.
+ */
+export async function promptText(
+  message: string,
+  opts: { default?: string; validate?: (value: string) => boolean | string } = {},
+): Promise<string | undefined> {
+  if (!process.stdin.isTTY) return opts.default
+  const answer = await input({
+    message,
+    ...(opts.default !== undefined ? { default: opts.default } : {}),
+    ...(opts.validate ? { validate: opts.validate } : {}),
+  })
+  return answer.trim() || opts.default
+}
+
+/**
+ * Single-choice selector (a styled `@inquirer/prompts` select with arrow-key
+ * navigation). Returns the chosen value, or `undefined` in a non-TTY
+ * environment — callers gate on a TTY before offering a choice, so this only
+ * ever renders interactively.
+ */
+export async function promptSelect<T>(
+  message: string,
+  choices: Array<{ name: string; value: T; description?: string }>,
+): Promise<T | undefined> {
+  if (!process.stdin.isTTY) return undefined
+  return select({ message, choices })
 }
 
 /** Attempts allowed before a selector gives up on invalid input. */
@@ -91,32 +130,19 @@ export async function readPassphrase(
   return answer
 }
 
-function readLine(): Promise<string> {
-  return new Promise((resolve) => {
-    let data = ''
-    process.stdin.setEncoding('utf-8')
-    process.stdin.resume()
-
-    const onData = (chunk: string) => {
-      data += chunk
-      if (data.includes('\n')) {
-        cleanup()
-        resolve(data.trim())
-      }
-    }
-
-    const onEnd = () => {
-      cleanup()
-      resolve(data.trim())
-    }
-
-    const cleanup = () => {
-      process.stdin.removeListener('data', onData)
-      process.stdin.removeListener('end', onEnd)
-      process.stdin.pause()
-    }
-
-    process.stdin.on('data', onData)
-    process.stdin.on('end', onEnd)
-  })
+/**
+ * Read one line from stdin via Node's own line reader (stdlib, zero-dep): it
+ * gives real line editing and clean EOF/^D handling, instead of hand-managing
+ * `stdin` 'data'/'end' listeners + pause/resume. Callers print their own
+ * (colored) prompt first, so the query is empty; closing the interface each
+ * call releases stdin so the next prompt starts clean. Only ever reached behind
+ * an `isTTY` gate, so it never blocks a piped / CI / no-TTY (LLM) run.
+ */
+async function readLine(): Promise<string> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    return (await rl.question('')).trim()
+  } finally {
+    rl.close()
+  }
 }
