@@ -57,7 +57,8 @@ export type JwtExpiration = {
 
 export async function readLocalStatus(): Promise<LocalStatus> {
   const [instances, identities, config] = await Promise.all([
-    readInstances(),
+    // Read-only: status / `setup --plan` must never trigger a sanitize-writeback.
+    readInstances(undefined, { persist: false }),
     readIdentities(),
     readConfig(),
   ])

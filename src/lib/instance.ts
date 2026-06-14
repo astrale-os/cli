@@ -113,7 +113,10 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
 
 let instancesMemo: InstanceStore | null = null
 
-export async function readInstances(_config?: AstraleConfig): Promise<InstanceStore> {
+export async function readInstances(
+  _config?: AstraleConfig,
+  opts: { persist?: boolean } = {},
+): Promise<InstanceStore> {
   if (instancesMemo) return instancesMemo
   let raw: string
   try {
@@ -135,7 +138,10 @@ export async function readInstances(_config?: AstraleConfig): Promise<InstanceSt
 
   const { store, changed } = sanitizeStore(parsed)
   instancesMemo = store
-  if (changed) writeInstances(store).catch(() => undefined)
+  // Self-heal a stale/unnormalized store on read — but never from a read-only
+  // caller (`opts.persist: false`, e.g. status / `setup --plan`). Any mutating
+  // path reads with the default and rewrites, so healing still happens there.
+  if (changed && opts.persist !== false) writeInstances(store).catch(() => undefined)
   return store
 }
 

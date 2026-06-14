@@ -1,53 +1,50 @@
-import { input, select } from '@inquirer/prompts'
+import { checkbox, confirm as confirmPrompt, input, select } from '@inquirer/prompts'
 import chalk from 'chalk'
 import { createInterface } from 'node:readline/promises'
 
+// All interactive prompts go through `@inquirer/prompts` so a single library
+// owns stdin (raw mode, keypress handling, cleanup). Hand-rolling some prompts
+// with `node:readline` alongside inquirer used to fight over the TTY — the
+// raw↔line-mode handoff swallowed the first keystroke, so a step right after an
+// inquirer prompt needed a double Enter. One owner, no handoff, no lost keys.
+//
+// Every helper guards on `process.stdin.isTTY` BEFORE touching inquirer (which
+// requires a TTY): a piped / CI / no-TTY (LLM) run returns the default
+// immediately and renders nothing, so callers never hang on a read.
+
 /**
- * Prompt the user for Y/N confirmation. Returns true if confirmed.
- * Returns false in non-TTY environments (use --yes to bypass).
+ * Prompt the user for Y/N confirmation (default No). Returns false in non-TTY
+ * environments (use --yes / a flag to bypass).
  */
 export async function confirm(message: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false
-
-  process.stdout.write(chalk.yellow(`${message} [y/N] `))
-  const answer = await readLine()
-  return answer.toLowerCase() === 'y'
+  return confirmPrompt({ message, default: false })
 }
 
 /**
- * Prompt with a Y default — design §7.1 "Y/n" semantics. Returns true
- * unless the user explicitly types `n`.
+ * Prompt with a Y default — "Y/n" semantics. Returns true unless the user
+ * explicitly declines; returns true in non-TTY.
  */
 export async function confirmDefaultYes(message: string): Promise<boolean> {
   if (!process.stdin.isTTY) return true
-
-  process.stdout.write(chalk.yellow(`${message} [Y/n] `))
-  const answer = await readLine()
-  return answer.toLowerCase() !== 'n'
+  return confirmPrompt({ message, default: true })
 }
 
 /**
  * Prompt the user to type a specific string to confirm a dangerous action.
- * Returns false in non-TTY environments (use --yes to bypass).
+ * Returns false in non-TTY environments (use a flag to bypass).
  */
 export async function confirmWithInput(message: string, expected: string): Promise<boolean> {
   if (!process.stdin.isTTY) return false
-
   process.stdout.write(chalk.yellow(`${message}\n`))
-  process.stdout.write(chalk.yellow(`  Type "${expected}" to confirm: `))
-  const answer = await readLine()
-  return answer === expected
+  const answer = await input({ message: `Type "${expected}" to confirm:` })
+  return answer.trim() === expected
 }
 
 /**
  * Free-text prompt (a styled `@inquirer/prompts` input — shows the default,
  * supports inline `validate` with live re-ask). Returns the typed value, or the
- * default on empty input.
- *
- * Gated on `process.stdin.isTTY` BEFORE touching inquirer (which requires a
- * TTY): in a piped / CI / no-TTY (LLM) run it returns the default (`undefined`
- * when none) immediately and renders nothing, so callers fall through to their
- * required-flag error instead of hanging on a read.
+ * default on empty input (`undefined` when none) in a non-TTY run.
  */
 export async function promptText(
   message: string,
@@ -63,10 +60,8 @@ export async function promptText(
 }
 
 /**
- * Single-choice selector (a styled `@inquirer/prompts` select with arrow-key
- * navigation). Returns the chosen value, or `undefined` in a non-TTY
- * environment — callers gate on a TTY before offering a choice, so this only
- * ever renders interactively.
+ * Single-choice selector (arrow-key `@inquirer/prompts` select). Returns the
+ * chosen value, or `undefined` in a non-TTY environment.
  */
 export async function promptSelect<T>(
   message: string,
@@ -76,36 +71,31 @@ export async function promptSelect<T>(
   return select({ message, choices })
 }
 
-/** Attempts allowed before a selector gives up on invalid input. */
-const SELECT_MAX_ATTEMPTS = 3
+/**
+ * Multi-choice selector (a styled `@inquirer/prompts` checkbox — space toggles,
+ * enter confirms). Pre-check options with `checked: true`. Returns the chosen
+ * values, or `undefined` in a non-TTY environment.
+ */
+export async function promptMultiSelect<T>(
+  message: string,
+  choices: Array<{ name: string; value: T; checked?: boolean; description?: string }>,
+): Promise<T[] | undefined> {
+  if (!process.stdin.isTTY) return undefined
+  return checkbox({ message, choices })
+}
 
 /**
- * Numbered single-choice selector. Prints the options and reads an index.
- * Invalid input re-prompts; an empty answer cancels. Returns null in
- * non-TTY environments, on cancel, or after repeated invalid input
- * (caller decides how to fail).
+ * Single-choice selector over labeled values. Returns the chosen value, or
+ * `null` in a non-TTY environment (callers decide how to fail). In a terminal
+ * the user always picks one (Enter selects the highlighted option; Ctrl-C
+ * aborts the command), so `null` only ever signals "no TTY".
  */
 export async function selectFrom<T>(
   message: string,
   choices: Array<{ label: string; value: T }>,
 ): Promise<T | null> {
   if (!process.stdin.isTTY) return null
-
-  process.stdout.write(chalk.yellow(`${message}\n`))
-  choices.forEach((choice, index) => {
-    process.stdout.write(`  ${chalk.bold(String(index + 1))}. ${choice.label}\n`)
-  })
-  for (let attempt = 0; attempt < SELECT_MAX_ATTEMPTS; attempt++) {
-    process.stdout.write(chalk.yellow(`Select [1-${choices.length}] (empty to cancel): `))
-    const answer = await readLine()
-    if (answer === '') return null
-    // Whole-number input only: parseInt would accept "1.9" or "2x".
-    if (/^\d+$/.test(answer)) {
-      const choice = choices[Number.parseInt(answer, 10) - 1]
-      if (choice) return choice.value
-    }
-  }
-  return null
+  return select({ message, choices: choices.map((c) => ({ name: c.label, value: c.value })) })
 }
 
 /** Prompt a passphrase without echoing. Fails in non-TTY unless env override. */
@@ -131,12 +121,10 @@ export async function readPassphrase(
 }
 
 /**
- * Read one line from stdin via Node's own line reader (stdlib, zero-dep): it
- * gives real line editing and clean EOF/^D handling, instead of hand-managing
- * `stdin` 'data'/'end' listeners + pause/resume. Callers print their own
- * (colored) prompt first, so the query is empty; closing the interface each
- * call releases stdin so the next prompt starts clean. Only ever reached behind
- * an `isTTY` gate, so it never blocks a piped / CI / no-TTY (LLM) run.
+ * Read one line from stdin via Node's own line reader (stdlib, zero-dep).
+ * Used only by `readPassphrase` (a single-shot prompt that intentionally echoes
+ * and honors ASTRALE_PASSPHRASE) — every navigational prompt uses inquirer.
+ * Only ever reached behind an `isTTY` gate, so it never blocks a piped run.
  */
 async function readLine(): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })

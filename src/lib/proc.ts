@@ -37,3 +37,21 @@ export function run(
     child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }))
   })
 }
+
+/**
+ * Spawn a child process with inherited stdio so its output streams live to the
+ * user's terminal. Used for hand-held installs (npm / npx) where progress
+ * matters and the output is for the human, not for parsing. Resolves with the
+ * exit code; rejects only when the process fails to spawn (e.g. ENOENT).
+ */
+export function runInherit(
+  file: string,
+  args: string[] = [],
+  opts: { cwd?: string } = {},
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { cwd: opts.cwd, stdio: 'inherit' })
+    child.on('error', reject)
+    child.on('close', (code) => resolve(code ?? -1))
+  })
+}

@@ -15,6 +15,9 @@ export const log = {
 
 /** Report an error with hint (when present) and exit. */
 export function fatal(e: unknown): never {
+  // Ctrl-C at an interactive (@inquirer/prompts) prompt — exit quietly with the
+  // SIGINT convention, not a red error line.
+  if (e instanceof Error && e.name === 'ExitPromptError') process.exit(130)
   const msg = e instanceof Error ? e.message : String(e)
   log.error(msg)
   if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)

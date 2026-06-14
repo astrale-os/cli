@@ -33,7 +33,16 @@ export async function buildProgram(): Promise<Command> {
       new Option('--log-level <level>', 'Log level').choices(['debug', 'info', 'warn', 'error']),
     )
     .addOption(new Option('--log-format <format>', 'Log output format').choices(['text', 'json']))
-    .action(() => {
+    .action(async () => {
+      // Bare `astrale` in an interactive terminal with nothing connected yet →
+      // launch the guided setup. Otherwise (configured, piped, or CI) show help.
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        const { shouldAutostartSetup } = await import('./setup/engine')
+        if (await shouldAutostartSetup()) {
+          await (await import('./commands/setup')).default.action(undefined, {})
+          return
+        }
+      }
       program.help()
     })
 
@@ -65,6 +74,7 @@ export async function buildProgram(): Promise<Command> {
     options: whoamiMod.default.options,
     action: whoamiMod.default.action,
   })
+  registerCommand(program, (await import('./commands/setup')).default)
   registerCommand(program, (await import('./commands/use')).default)
   registerCommand(program, (await import('./commands/update')).default)
 
@@ -157,6 +167,7 @@ export async function buildProgram(): Promise<Command> {
     'after',
     `
 Command groups:
+  Getting started  setup     (sign in, pick an instance, equip your workspace)
   Kernel        ls, get, call, query, describe, token
   Management    admin, instance, domain, identity, auth, idp, update
   Agent         browser   (drive the GUI via agent-browser)

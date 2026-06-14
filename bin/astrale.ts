@@ -26,5 +26,10 @@ try {
     process.stderr.write(renderCommanderError(program, error) + '\n')
     process.exit(error.exitCode ?? 1)
   }
+  // Ctrl-C at an interactive (@inquirer/prompts) prompt — exit quietly, the
+  // shell convention for SIGINT, instead of dumping an error stack.
+  if (error instanceof Error && error.name === 'ExitPromptError') {
+    process.exit(130)
+  }
   throw error
 }
