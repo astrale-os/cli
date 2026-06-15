@@ -44,12 +44,14 @@ Behavior:
   Upserts a catalog entry on the configured admin kernel: a domain's addressing
   \`origin\`, registry \`name\`, and published \`url\` (no bytes, no version — the
   author deploys the worker independently; publish just points the registry at
-  it). Idempotent: re-publishing the same name updates its url.
+  it). Idempotent: re-publishing the same name updates its url — and a publish
+  that would change nothing is reported as "already up to date" (no write).
 
   Publishing only makes the domain INSTALLABLE. Mount it on an instance with
   \`astrale domain install <url>\` (or rely on the admin's install-by-default
-  policy). This is usually invoked for you by \`astrale-domain publish\` right
-  after a deploy, so the freshly-deployed URL is what gets registered.
+  policy). This is usually invoked for you by \`astrale-domain publish\` (which
+  registers the already-deployed URL — it does NOT deploy) or by
+  \`astrale-domain deploy --publish\` (deploy AND register in one step).
 
   Run in a terminal with flags omitted and it PROMPTS for origin / name /
   public-url (origin defaults to the URL host, name to the origin's first
@@ -106,25 +108,44 @@ Examples:
         `Publishing ${name} → ${publicUrl}`,
         !isMachine(opts),
         () =>
-          withAdminKernelClient(
-            opts,
-            async (ctx) =>
-              (await ctx.client.call(`${ADMIN_DOMAIN}/publish`, {
-                origin,
-                name,
-                url: publicUrl,
-                ...(opts.description ? { description: opts.description } : {}),
-                ...(opts.installByDefault ? { installByDefault: true } : {}),
-              })) as DomainInfo,
-          ),
+          withAdminKernelClient(opts, async (ctx) => {
+            // Read the current catalog entry first: a re-publish that would write
+            // the same origin/name/url/description/install flag is a no-op we
+            // report as "already up to date" (and skip the write) rather than
+            // silently bumping `updatedAt`. `info` throws when absent → treat as
+            // a fresh publish.
+            const existing = (await ctx.client
+              .call(`${ADMIN_DOMAIN}/info`, { origin })
+              .catch(() => null)) as DomainInfo | null
+            if (
+              existing &&
+              existing.name === name &&
+              existing.url === publicUrl &&
+              (opts.description === undefined || existing.description === opts.description) &&
+              (opts.installByDefault === undefined ||
+                (existing.installByDefault ?? false) === opts.installByDefault)
+            ) {
+              return { entry: existing, changed: false as const, isNew: false }
+            }
+            const entry = (await ctx.client.call(`${ADMIN_DOMAIN}/publish`, {
+              origin,
+              name,
+              url: publicUrl,
+              ...(opts.description ? { description: opts.description } : {}),
+              ...(opts.installByDefault ? { installByDefault: true } : {}),
+            })) as DomainInfo
+            return { entry, changed: true as const, isNew: !existing }
+          }),
         {
-          success: (entry) =>
-            `Published: ${entry.name} ${chalk.dim(`(${entry.origin} → ${entry.url})`)}`,
+          success: ({ entry, changed, isNew }) =>
+            changed
+              ? `${isNew ? 'Published' : 'Updated'}: ${entry.name} ${chalk.dim(`(${entry.origin} → ${entry.url})`)}`
+              : `Already up to date: ${entry.name} ${chalk.dim(`(${entry.origin} → ${entry.url} — no change, already latest)`)}`,
         },
       )
 
       if (isMachine(opts)) {
-        output(result, opts)
+        output({ ...result.entry, changed: result.changed }, opts)
         return
       }
     } catch (e) {
