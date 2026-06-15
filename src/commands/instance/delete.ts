@@ -5,7 +5,7 @@ import { withAdminKernelClient } from '../../kernel/client'
 import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { clearActive, readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
-import { fatal, withSpinner } from '../../lib/log'
+import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 
 type DeleteOpts = KernelCommandOpts &
@@ -57,6 +57,15 @@ Behavior:
         return
       }
     } catch (e) {
+      // Bookmark-only id → no admin Instance → kernel NOT_FOUND. Point to
+      // `forget` (local drop) instead of surfacing the raw path error.
+      const notManaged =
+        e instanceof Error && (e.name === 'NotFoundError' || e.message.startsWith('Path not found'))
+      if (notManaged && resolveInstanceKey(await readInstances(), id)) {
+        log.error(`No admin-managed instance "${id}".`)
+        log.dim(`  hint: it's a local bookmark — drop it with: astrale instance forget ${id}`)
+        process.exit(1)
+      }
       fatal(e)
     }
   },
