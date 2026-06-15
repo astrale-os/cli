@@ -1,11 +1,11 @@
 /**
- * The admin control-plane `DomainEntry` surface used by `astrale domain
- * publish`. The merged admin domain models the installable-domain REGISTRY as
- * the `DomainEntry` class (named `DomainEntry`, not `Domain`, because `Domain`
- * is a reserved kernel node-kind); `publish` upserts a `name → url` catalog
- * entry the child kernel later installs from. Publishing only makes a domain
- * INSTALLABLE — mounting it on an instance is the separate `domain install`
- * step (or the admin's install-by-default policy).
+ * The admin `DomainEntry` surface used by `astrale domain publish`. The merged
+ * admin domain models the installable-domain REGISTRY as the `DomainEntry`
+ * class (named `DomainEntry`, not `Domain`, because `Domain` is a reserved
+ * kernel node-kind); `publish` upserts a `name → url` catalog entry the child
+ * kernel later installs from. Publishing only makes a domain INSTALLABLE —
+ * mounting it on an instance is the separate `domain install` step (or the
+ * admin's install-by-default policy).
  */
 export const ADMIN_DOMAIN = '/admin.astrale.ai/class.DomainEntry'
 

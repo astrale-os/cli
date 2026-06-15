@@ -1,5 +1,5 @@
 /**
- * The admin control-plane `Instance` surface used by `astrale instance
+ * The admin `Instance` surface used by `astrale instance
  * list/status/create/delete`. The merged admin domain models instances as the
  * `Instance` class (provisioned via `Instance.init`); these commands target it.
  */

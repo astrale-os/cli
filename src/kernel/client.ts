@@ -1,19 +1,13 @@
 import { KernelClient, type FnMap } from '@astrale-os/kernel-client'
 import { ClientSession } from '@astrale-os/kernel-client/session'
 
+import type { AdminTargetCommandOpts } from '../lib/admin-target'
 import type { KernelCommandOpts } from './types'
 
 import { AstraleError } from '../errors'
 import { ADMIN_INSTANCE, type InstanceInfo } from '../lib/admin-instance'
-import { resolveAdminTarget, type AdminTargetCommandOpts } from '../lib/admin-target'
 import { readConfig } from '../lib/config'
-import {
-  getActive,
-  normalizeInstanceKernelUrl,
-  resolveInstance,
-  type ResolvedInstance,
-} from '../lib/instance'
-import { validateSlug } from '../lib/validation'
+import { resolveInstanceTarget, type ResolvedInstanceTarget } from '../lib/instance-target'
 import { resolveCredential } from './auth'
 import { fetchWithCaFile } from './ca-fetch'
 import { mintRemoteCredential } from './remote-routing'
@@ -48,69 +42,33 @@ export async function withKernelClient<T>(
   const config = await readConfig()
   // Ad-hoc `--url` — unknown kernel. Stamp the URL itself as audience,
   // no slug for per-instance signing.
-  let url: string
-  let audience: string
-  let slug: string | undefined
+  let target: ResolvedKernelTarget
   if (opts.url && !opts.instance) {
-    url = opts.url
-    audience = opts.url
-    slug = undefined
-  } else {
-    const identifier = opts.instance ?? (await getActive(config)).name
-    const resolved = await resolveKernelInstance(identifier, opts, config)
-    url = opts.url ?? resolved.url
-    audience = resolved.issuer ?? resolved.url
-    slug = resolved.name
-    return withResolvedKernelClient(
-      opts,
-      config,
-      { url, audience, slug, defaultIdentity: resolved.defaultIdentity, caFile: resolved.caFile },
-      fn,
+    const resolved = await resolveInstanceTarget(
+      { source: 'url', url: opts.url },
+      { config, admin: adminLookupOpts(opts) },
     )
+    target = resolvedToKernelTarget(resolved)
+  } else {
+    const resolved = await resolveInstanceTarget(
+      opts.instance ? { source: 'name', name: opts.instance } : { source: 'active' },
+      {
+        config,
+        admin: adminLookupOpts(opts),
+        managed: (slug) => lookupManagedInstance(slug, opts),
+      },
+    )
+    target = resolvedToKernelTarget(resolved, opts.url)
   }
-  return withResolvedKernelClient(opts, config, { url, audience, slug }, fn)
+
+  return withResolvedKernelClient(opts, config, target, fn)
 }
 
-async function resolveKernelInstance(
-  identifier: string,
-  opts: KernelCommandOpts,
-  config: Awaited<ReturnType<typeof readConfig>>,
-): Promise<ResolvedInstance> {
-  let notFound: AstraleError
-  try {
-    return await resolveInstance(identifier, config)
-  } catch (e) {
-    if (!(e instanceof AstraleError) || e.code !== 'INSTANCE_NOT_FOUND') throw e
-    notFound = e
-  }
-
-  try {
-    validateSlug(identifier)
-  } catch {
-    throw notFound
-  }
-
-  let managed: InstanceInfo
-  try {
-    managed = await withAdminKernelClient(
-      adminLookupOpts(opts),
-      async (ctx) =>
-        (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: identifier })) as InstanceInfo,
-    )
-  } catch (e) {
-    if (e instanceof Error && e.name !== 'NotFoundError') throw e
-    throw notFound
-  }
-
-  const url = normalizeInstanceKernelUrl(managed.url)
-  return {
-    name: managed.slug,
-    kind: 'managed',
-    url,
-    issuer: url,
-    createdAt: managed.createdAt,
-    status: 'managed',
-  }
+async function lookupManagedInstance(slug: string, opts: KernelCommandOpts): Promise<InstanceInfo> {
+  return await withAdminKernelClient(
+    adminLookupOpts(opts),
+    async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: slug })) as InstanceInfo,
+  )
 }
 
 function adminLookupOpts(opts: KernelCommandOpts): KernelCommandOpts & AdminTargetCommandOpts {
@@ -122,20 +80,34 @@ function adminLookupOpts(opts: KernelCommandOpts): KernelCommandOpts & AdminTarg
   }
 }
 
+function resolvedToKernelTarget(
+  target: ResolvedInstanceTarget,
+  urlOverride?: string,
+): ResolvedKernelTarget {
+  return {
+    url: urlOverride ?? target.url,
+    audience: target.issuer,
+    slug: target.name,
+    defaultIdentity: target.defaultIdentity,
+    caFile: target.caFile,
+  }
+}
+
 export async function withAdminKernelClient<T>(
   opts: KernelCommandOpts & AdminTargetCommandOpts,
   fn: (ctx: ClientContext) => Promise<T>,
 ): Promise<T> {
   const config = await readConfig()
-  const target = await resolveAdminTarget(opts, config)
+  const target = await resolveInstanceTarget({ source: 'admin' }, { config, admin: opts })
   return withResolvedKernelClient(
     opts,
     config,
     {
       url: target.url,
       audience: target.issuer,
-      slug: target.registrationSlug,
+      slug: target.name,
       defaultIdentity: target.defaultIdentity,
+      caFile: target.caFile,
     },
     fn,
   )

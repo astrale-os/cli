@@ -1,8 +1,10 @@
+import type { InstanceInfo } from '../lib/admin-instance'
 import type { KernelCommandOpts } from './types'
 
+import { ADMIN_INSTANCE } from '../lib/admin-instance'
 /**
  * Bridges `lib/self.ts` to CLI command sites: builds a `SelfResolverContext`
- * from CLI opts (local I/O only — no kernel round-trip), resolves a nodeId via
+ * from CLI opts, resolves a nodeId via
  * `resolveOrThrow` (throwing `SelfRefusalError` on refusal), and wraps async
  * calls with `withSelfHint` so `NotFoundError`s carry expansion metadata for
  * the stale-registration hint emitted by `formatKernelError`.
@@ -10,7 +12,7 @@ import type { KernelCommandOpts } from './types'
 import { readConfig } from '../lib/config'
 import { getDefault, getIdentity, setRegistration } from '../lib/identity'
 import { decodeTokenClaims, readIdpSession } from '../lib/idp'
-import { getActive, resolveInstance } from '../lib/instance'
+import { resolveInstanceTarget } from '../lib/instance-target'
 import { fileExists, keypairPaths } from '../lib/keys'
 import { KEYS_DIR } from '../lib/paths'
 import {
@@ -21,7 +23,7 @@ import {
   type SelfResolverContext,
   type SelfResolution,
 } from '../lib/self'
-import { withKernelClient } from './client'
+import { withAdminKernelClient, withKernelClient } from './client'
 
 /** Metadata attached to errors so the NotFoundError path can hint at stale `@self` expansions. */
 export type SelfExpansionMeta = {
@@ -33,9 +35,8 @@ export type SelfExpansionMeta = {
 }
 
 /**
- * Build a `SelfResolverContext` from CLI opts. Mirrors the slug + signing-mode
- * logic in `withKernelClient` / `resolveCredential` — local I/O only:
- * reads config + identities + checks instance keypair file presence.
+ * Build a `SelfResolverContext` from CLI opts. Mirrors the target +
+ * signing-mode logic in `withKernelClient` / `resolveCredential`.
  *
  * Cheap enough to call eagerly; commands skip the call entirely when
  * `containsSelfRef` returns false on every input.
@@ -48,16 +49,16 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
   if (opts.url && !opts.instance) {
     slug = undefined
   } else {
-    const identifier = opts.instance ?? (await getActive(config)).name
-    // resolveInstance throws if the bookmark doesn't exist; we just need the slug
-    // for the registration lookup, so trust the user input on failure.
-    try {
-      const resolved = await resolveInstance(identifier, config)
-      defaultIdentity = resolved.defaultIdentity
-    } catch {
-      // Fall through — slug is still `identifier`.
-    }
-    slug = identifier
+    const resolved = await resolveInstanceTarget(
+      opts.instance ? { source: 'name', name: opts.instance } : { source: 'active' },
+      {
+        config,
+        admin: adminLookupOpts(opts),
+        managed: (instanceSlug) => lookupManagedInstance(instanceSlug, opts),
+      },
+    )
+    slug = resolved.name
+    defaultIdentity = resolved.defaultIdentity
   }
 
   // Mirror resolveCredential's instance-signed branch: when targeting a
@@ -96,6 +97,22 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
   }
 
   return { identity, instanceSlug: slug, credsJwt: opts.creds, instanceSigned, idpSubject }
+}
+
+function adminLookupOpts(opts: KernelCommandOpts): KernelCommandOpts {
+  return {
+    as: opts.as,
+    creds: opts.creds,
+    timeout: opts.timeout,
+    debug: opts.debug,
+  }
+}
+
+async function lookupManagedInstance(slug: string, opts: KernelCommandOpts): Promise<InstanceInfo> {
+  return await withAdminKernelClient(
+    adminLookupOpts(opts),
+    async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: slug })) as InstanceInfo,
+  )
 }
 
 /**

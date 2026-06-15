@@ -16,10 +16,10 @@ export default {
   description: 'Set the admin kernel target',
   afterHelpText: `
 Behavior:
-  The admin target is the control-plane kernel used by admin-backed commands
-  such as \`astrale instance create\`, \`astrale instance list\`, and
-  \`astrale instance delete\`. It is separate from the active workload
-  instance used by normal kernel calls.
+  The admin target is the admin kernel used by admin-backed commands such as
+  \`astrale instance create\`, \`astrale instance list\`, and
+  \`astrale instance delete\`. It is independent from the active instance used
+  by normal kernel calls.
 
 Examples:
   $ astrale admin use admin

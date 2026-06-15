@@ -64,10 +64,10 @@ export default {
   description: 'List domains published in the admin catalog (DomainEntry.list)',
   afterHelpText: `
 Behavior:
-  Reads the admin control-plane catalog — every domain that has been
-  \`publish\`ed (origin → published worker URL). Listing only shows what is
-  INSTALLABLE; what is actually mounted where lives on each instance's own
-  graph (\`astrale ls /\` against that instance).
+  Reads the admin catalog — every domain that has been \`publish\`ed
+  (origin → published worker URL). Listing only shows what is INSTALLABLE;
+  what is actually mounted where lives on each instance's own graph
+  (\`astrale ls /\` against that instance).
 
   Default output is a NAME/ORIGIN/URL/DEFAULT table on a TTY, JSON when piped
   or with --json/--raw (agent-friendly — full DomainInfo objects). -q prints

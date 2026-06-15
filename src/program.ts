@@ -116,7 +116,7 @@ export async function buildProgram(): Promise<Command> {
 
   registerGroup(program, {
     name: 'admin',
-    description: 'Configure the admin control-plane kernel',
+    description: 'Configure the admin kernel',
     commands: [
       (await import('./commands/admin/status')).default,
       (await import('./commands/admin/use')).default,

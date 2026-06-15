@@ -294,6 +294,14 @@ astrale query 'MATCH (n) RETURN n LIMIT 5'
 astrale call <path> --describe
 ```
 
+Admin host records are exposed by the concrete provider class, not by the
+provider-neutral `Host` interface:
+
+```bash
+astrale call /:admin.astrale.ai:class.ScalewayVPS:list -i admin --json
+astrale call /:admin.astrale.ai:class.ScalewayVPS:list --describe -i admin
+```
+
 Gotchas:
 
 - `query` is read-only; the kernel rejects write keywords such as `CREATE`,

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0-alpha.10 (2026-06-15)
+
+### Public Alpha
+
+* unify instance target resolution across active, named, admin, managed, and direct URL targets
+* fix `-i admin` so it selects the configured admin instance instead of probing `/admin/instances/admin`
+* document the concrete admin host list method as `ScalewayVPS.list`
+
 ## 0.4.0-alpha.9 (2026-06-11)
 
 ### Public Alpha

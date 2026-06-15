@@ -63,20 +63,14 @@ export type AdminTargetCommandOpts = {
   url?: string
 }
 
-export type AdminTargetSource =
-  | 'admin-url'
-  | 'admin'
-  | 'legacy-url'
-  | 'legacy-instance'
-  | 'config-instance'
-  | 'config-url'
-  | 'default'
+export type AdminTargetSource = 'admin-url' | 'admin' | 'config-instance' | 'config-url' | 'default'
 
 export type ResolvedAdminTarget = {
   name: string
   url: string
   issuer: string
   defaultIdentity?: string
+  caFile?: string
   source: AdminTargetSource
   configured: boolean
   registrationSlug: string
@@ -168,13 +162,13 @@ function readOverride(opts: AdminTargetCommandOpts):
     return {
       kind: 'url',
       url: first.value,
-      source: first.label === '--admin-url' ? 'admin-url' : 'legacy-url',
+      source: 'admin-url',
     }
   }
   return {
     kind: 'instance',
     instance: first.value,
-    source: first.label === '--admin' ? 'admin' : 'legacy-instance',
+    source: 'admin',
   }
 }
 
@@ -199,6 +193,7 @@ function bookmarkTarget(
     url: entry.url,
     issuer: entry.issuer ?? entry.url,
     defaultIdentity: entry.defaultIdentity,
+    ...(entry.caFile ? { caFile: entry.caFile } : {}),
     source,
     configured,
   }

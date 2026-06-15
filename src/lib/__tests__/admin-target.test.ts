@@ -10,11 +10,11 @@ import {
 import { DEFAULT_CONFIG, type AstraleConfig } from '../config'
 
 const instances: InstanceStore = {
-  active: 'workload',
+  active: 'primary',
   instances: {
-    workload: {
-      url: 'https://workload.example.com',
-      issuer: 'https://workload-issuer.example.com',
+    primary: {
+      url: 'https://primary.example.com',
+      issuer: 'https://primary-issuer.example.com',
     },
     admin: {
       url: 'https://bookmarked-admin.example.com',
@@ -78,21 +78,25 @@ describe('resolveAdminTargetFromStore', () => {
     })
   })
 
-  test('keeps legacy -i and --url as admin target aliases', () => {
+  test('accepts -i and --url as admin target overrides', () => {
     expect(
       resolveAdminTargetFromStore({ instance: 'admin' }, DEFAULT_CONFIG, instances),
     ).toMatchObject({
       name: 'admin',
       url: 'https://bookmarked-admin.example.com',
-      source: 'legacy-instance',
+      source: 'admin',
     })
 
     expect(
-      resolveAdminTargetFromStore({ url: 'https://legacy.example.com' }, DEFAULT_CONFIG, instances),
+      resolveAdminTargetFromStore(
+        { url: 'https://override.example.com' },
+        DEFAULT_CONFIG,
+        instances,
+      ),
     ).toMatchObject({
       name: 'admin',
-      url: 'https://legacy.example.com',
-      source: 'legacy-url',
+      url: 'https://override.example.com',
+      source: 'admin-url',
     })
   })
 
