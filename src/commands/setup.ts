@@ -25,8 +25,8 @@ What it does:
   Walks you from zero to a working instance, then offers to equip your agent:
     1. Connect    sign in (WorkOS), confirm the admin control plane, pick or
                   provision an instance — ending on your live instance URL.
-    2. Equip      the astrale-cli skill, agent-browser, and a first domain
-                  (a pre-checked multi-select — toggle off what you don't want).
+    2. Equip      the astrale agent skills (cli + domain), agent-browser, and a
+                  first domain (a pre-checked multi-select — toggle off any).
 
   Idempotent: re-run it anytime; satisfied steps are skipped. Bare \`astrale\`
   in a terminal launches this when you have no active instance yet.

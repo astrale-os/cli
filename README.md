@@ -59,9 +59,12 @@ Install the browser driver once:
 
 ```bash
 npm install -g agent-browser && agent-browser install
-npx skills add astrale-os/cli
+npx skills add astrale-os/cli            # installs both the astrale-cli (ops) and astrale-domain (authoring) skills
 npx skills add vercel-labs/agent-browser
 ```
+
+To install just one: `npx skills add astrale-os/cli@astrale-cli` or
+`npx skills add astrale-os/cli@astrale-domain`.
 
 ## Updating
 

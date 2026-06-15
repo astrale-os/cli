@@ -16,7 +16,12 @@ export const ASTRALE_CLI_SKILL = 'astrale-cli'
 export const ASTRALE_DOMAIN_SKILL = 'astrale-domain'
 export const AGENT_BROWSER_SKILL = 'agent-browser'
 
-/** Published skill source consumed by `npx skills add`. */
+/**
+ * Published skill source consumed by `npx skills add`. The public `astrale-os/cli`
+ * repo hosts BOTH the astrale-cli and astrale-domain skills (under `skills/`), so
+ * one `npx skills add astrale-os/cli` installs both; address one with
+ * `astrale-os/cli@astrale-cli` or `astrale-os/cli@astrale-domain`.
+ */
 export const ASTRALE_CLI_SKILL_SOURCE = 'astrale-os/cli'
 
 /**
