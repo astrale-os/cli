@@ -1,15 +1,15 @@
 import type { SetupStep } from '../types'
 
 import { log } from '../../lib/log'
-import { runInherit } from '../../lib/proc'
 import {
   ASTRALE_CLI_SKILL,
-  ASTRALE_CLI_SKILL_SOURCE,
   ASTRALE_DOMAIN_SKILL,
   detectSkill,
+  installSkills,
+  SKILL_INSTALL_HINT,
 } from '../../lib/skills'
 
-const FIX = `npx skills add ${ASTRALE_CLI_SKILL_SOURCE}`
+const FIX = SKILL_INSTALL_HINT
 
 /**
  * Equip — the astrale agent skills. Both the astrale-cli (ops) and astrale-domain
@@ -45,8 +45,7 @@ export const skillsStep: SetupStep = {
     }
 
     log.step(`Installing the astrale agent skills — ${FIX}`)
-    const code = await runInherit('npx', ['skills', 'add', ASTRALE_CLI_SKILL_SOURCE, '-y'])
-    if (code !== 0) {
+    if (!(await installSkills())) {
       log.warn(`Skill install did not complete — run it later: ${FIX}`)
       return 'failed'
     }

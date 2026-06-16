@@ -3,12 +3,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 import { findAgentBrowser } from './browser'
+import { runInherit } from './proc'
 
 /**
  * Agent skills and the agent-browser tool are owned by the coding-agent harness
- * (Claude Code et al.) and by npm — not by this CLI. `astrale setup` only
- * *detects* them and delegates installation to their real installers (`npx
- * skills add`, `npm i -g agent-browser`). This module is that detection layer.
+ * (Claude Code et al.) and by npm — not by this CLI. `astrale setup` and
+ * `astrale update` only *detect* them and delegate installation to their real
+ * installers (`npx skills add`, `npm i -g agent-browser`). This module is that
+ * detection + delegation layer.
  */
 
 /** The skill name the agent harness looks up under `<dir>/<name>/SKILL.md`. */
@@ -23,6 +25,21 @@ export const AGENT_BROWSER_SKILL = 'agent-browser'
  * `astrale-os/cli@astrale-cli` or `astrale-os/cli@astrale-domain`.
  */
 export const ASTRALE_CLI_SKILL_SOURCE = 'astrale-os/cli'
+
+/** Human-facing command that installs (or refreshes) both astrale skills. */
+export const SKILL_INSTALL_HINT = `npx skills add ${ASTRALE_CLI_SKILL_SOURCE}`
+
+/**
+ * Install or refresh the astrale agent skills by delegating to the skill package
+ * manager (`npx skills add`). We don't reimplement skill installation — re-running
+ * the real installer is also how an existing install updates to the latest
+ * published SKILL.md, so this doubles as the update path. Streams `npx` output
+ * live and resolves true on success. Requires Node/`npx` on PATH + network.
+ */
+export async function installSkills(): Promise<boolean> {
+  const code = await runInherit('npx', ['skills', 'add', ASTRALE_CLI_SKILL_SOURCE, '-y'])
+  return code === 0
+}
 
 /**
  * Where a skill may live, in priority order: this project's agent dirs, then the
