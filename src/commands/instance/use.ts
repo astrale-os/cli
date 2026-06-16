@@ -120,6 +120,7 @@ async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedIn
     return await resolveInstance(chosen.key)
   }
 
+  assertManagedReady(chosen.info)
   const { repointedFrom } = await upsertManagedBookmark(chosen.key, chosen.info.slug, chosen.url)
   if (repointedFrom) {
     log.warn(`Bookmark "${chosen.key}" repointed: ${repointedFrom} → ${chosen.url}`)
@@ -146,6 +147,16 @@ async function fetchManagedInstances(name: string, opts: UseOpts): Promise<Insta
   } catch {
     return []
   }
+}
+
+function assertManagedReady(info: InstanceInfo): void {
+  if (!info.state || info.state === 'ready') return
+  const detail = info.phase && info.phase !== info.state ? ` (${info.phase})` : ''
+  throw new AstraleError(
+    'INSTANCE_NOT_READY',
+    `Instance "${info.slug}" is ${info.state}${detail}; it cannot be selected yet.`,
+    info.error ?? undefined,
+  )
 }
 
 async function pickCandidate(

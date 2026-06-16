@@ -136,7 +136,8 @@ Everything is `kernel.call(path, params)`. Addressing forms:
 |---|---|---|
 | tree path + `::method` | `/projects/apollo::get` | instance dispatch on a node |
 | static slash form | `/origin/class.X/method` | static class/interface methods |
-| colon MethodPath | `/:origin:class.X:method` | canonical form; REQUIRED in postInstall |
+| colon MethodPath | `/:origin:class.X:method` | canonical method form |
+| colon FunctionPath | `/:origin:function.seed` | a standalone `functions/` callable (what `postInstall: functions.seed` resolves to) |
 | `@<uuid>::method` | `@4548…::get` | by graph id (NOT slugs/paths) |
 
 Core ops from handlers (all proven patterns):
@@ -232,7 +233,12 @@ Anti-patterns (all observed in production code — don't):
 - `functions/` declares standalone callables (`defineRemoteFunction`) not
   attached to a class — each serves at `POST <worker>/functions/<slug>` and
   materializes a Function node under `/<origin>/core/functions/`. This is the
-  INBOUND integration surface (webhooks).
+  INBOUND integration surface (webhooks). Each also gets an `of_domain` edge, so
+  it is addressable by the semantic path `/:<origin>:function.<slug>` (the map
+  key is `<slug>`) — which is why a standalone function is the cleanest
+  `postInstall` target: reference it directly (`postInstall: functions.seed`) and
+  the SDK derives the path, so a domain-bootstrap `seed` need not be bolted onto a
+  class and can't drift from a hand-written string.
 
 **The webhook-that-writes pattern** (validated): keep `auth: 'required'` and
 configure the external system's auth header with a minted delegation token —
@@ -317,9 +323,12 @@ that can reach you (local kernel, or a tunnel). Against a managed/remote
 instance, iterate with `pnpm prod` (the managed loop is ~25s and keeps the
 service URL stable).
 
-`postInstall` runs after every install — MUST be a colon MethodPath
-(`/:origin:class.X:seed`; tree paths are rejected) and MUST be idempotent
-(catch path-conflicts). Seed folders, defaults, and demo data here.
+`postInstall` runs after every install (as __SYSTEM__) and MUST be idempotent
+(catch path-conflicts). You never write the origin — it's always this domain.
+Prefer a standalone function and reference it directly: `postInstall: functions.seed`
+(the SDK derives the path; a rename is a compile error, never a stale string). A
+class/interface static method is a member string: `postInstall: 'class.X:seed'`.
+Seed folders, defaults, and demo data here.
 
 Manual install of any served domain: `astrale domain install <url> --direct`.
 
@@ -350,7 +359,7 @@ directly — useful for recovery and inspection:
 | `Permission denied: EDIT on /x (param-target)` | `/x` doesn't exist — seed the parent |
 | `method "x" not found … call it as "/:o:class.C/x"` | instance form used for a static method |
 | `Delegation mint failed for <url>` | check `--debug` cause chain; worker→worker call machinery |
-| postInstall `not within origin` | tree path used — switch to `/:origin:class.X:method` |
+| postInstall `not a function or method member` | wrote a full path/tree path — use `functions.seed` (a reference) or a member string `'class.X:seed'` |
 | install: `missing remote binding` | a callable lacks `binding.remoteUrl` — build via the adapter, not hand-rolled specs |
 | `ERR_PNPM_IGNORED_BUILDS` / approve-builds on `pnpm run` | template's pnpm-workspace.yaml needs `ignoredBuiltDependencies` + `verifyDepsBeforeRun: false` (recent scaffolds have it) |
 | stale/broken package versions on scaffold | clear pnpm metadata cache; check template floors are current |

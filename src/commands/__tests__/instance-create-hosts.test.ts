@@ -17,7 +17,7 @@ describe('parseEligibleHostIds', () => {
   test('returns null for the no-host error (nothing to pick — falls through to fatal)', () => {
     const e = new Error(
       'alphaCreate could not choose a host: no ready host is assigned to this user. ' +
-        'Ask an admin to grant USE on a host.',
+        'Ask an admin to assign (grant USE) a host.',
     )
     expect(parseEligibleHostIds(e)).toBeNull()
   })

@@ -12,10 +12,15 @@ export type InstanceInfo = {
   url: string
   hostId?: string
   region?: string
+  state?: 'provisioning' | 'ready' | 'failed'
+  phase?: string
+  error?: string | null
   createdAt?: string
 }
 
 /** Human-readable location of a managed instance ("region · hostId"). */
 export function formatInstanceLocation(info: InstanceInfo): string {
-  return [info.region, info.hostId].filter(Boolean).join(' · ')
+  return [info.state && info.state !== 'ready' ? info.state : undefined, info.region, info.hostId]
+    .filter(Boolean)
+    .join(' · ')
 }

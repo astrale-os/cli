@@ -29,6 +29,9 @@ export default {
         return
       }
       console.log(`${chalk.bold(result.slug)} ${chalk.dim(result.url)}`)
+      if (result.state)
+        log.dim(`  state: ${result.state}${result.phase ? ` (${result.phase})` : ''}`)
+      if (result.error) log.dim(`  error: ${result.error}`)
       if (result.region) log.dim(`  region: ${result.region}`)
       if (result.hostId) log.dim(`  host: ${result.hostId}`)
       if (result.createdAt) log.dim(`  created: ${result.createdAt}`)
