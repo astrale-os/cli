@@ -426,6 +426,69 @@ Common error classes and first checks:
 If a command fails only in a script, compare TTY vs non-TTY behavior and pass
 explicit `--json`, `--raw`, `-i <instance>`, and `--as <identity>` as needed.
 
+## Reporting DX Issues
+
+Astrale runs an in-graph issue tracker in the admin control plane (the `Issue`
+class on the admin domain). **You — the agent driving this CLI — file issues
+automatically** whenever working with Astrale costs you friction. This is the
+primary feedback channel; treat filing as part of the task, not an interruption.
+
+File an issue when you hit:
+
+- **friction** (`kind=friction`) — time lost to misdirection, an unclear or
+  surprising API, a missing/confusing error, or **stale docs or skills** (a
+  `SKILL.md` / doc that contradicted reality).
+- **bug** (`kind=bug`) — something broke, behaved unexpectedly, or forced a
+  workaround. Say so in the title when it was blocking.
+- **feature** (`kind=feature`) — a capability that should exist and would have
+  unblocked you.
+
+**Dedup first** — list open issues and comment instead of duplicating:
+
+```bash
+astrale call /:admin.astrale.ai:class.Issue:list status=open -i admin --json
+# if one matches, add to it instead of filing a new one:
+astrale call /:admin.astrale.ai:class.Issue:comment -i admin \
+  id=<issue-id> body="Hit this too during a domain deploy — same schemaHash mismatch."
+```
+
+**Otherwise file it** (one issue per distinct problem):
+
+```bash
+astrale call /:admin.astrale.ai:class.Issue:report -i admin \
+  kind=bug \
+  title="managed deploy stuck on old schemaHash after pnpm prod" \
+  tags='["deploy","cli"]' \
+  instance=<your-instance-slug> \
+  command="pnpm prod" \
+  body="pnpm prod builds and uploads, but the managed service never pivots to the
+new schemaHash — /meta keeps returning the old hash until the service is removed
+and recreated. Expected the redeploy to swap the version."
+```
+
+Attach context to make it actionable, but **strip secrets** from `trace` (no
+tokens, credentials, private keys, cookies):
+
+```bash
+... trace="$(astrale logs <service> --tail 40)"
+```
+
+Fields: `kind` ∈ {bug, friction, feature}; `tags` are area slugs — prefer the
+common set (`cli`, `sdk`, `kernel`, `adapter`, `deploy`, `install`,
+`permissions`, `views`, `domain-authoring`, `docs`, `skill`, `provisioning`) and
+add a new one only when none fit; `instance` is your instance slug (omit for
+docs/skill issues). `report` returns `{ id, status }`.
+
+Rules:
+
+- Best-effort and non-blocking: if `report` fails, note it and keep working —
+  never let filing an issue derail the user's task.
+- Be specific: exact command, exact error, what you expected. A vague issue is
+  noise; a reproducible one gets fixed.
+- Tell the user you filed it (mention the returned id) so they can follow up.
+- Triage and status changes are admin-only — you file and comment; admins
+  resolve.
+
 ## Storage
 
 CLI state lives under `ASTRALE_HOME` when set, otherwise `~/.astrale`.

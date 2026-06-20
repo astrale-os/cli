@@ -93,9 +93,20 @@ Conventions and rules:
   work on classes AND interfaces, wired through the same `method()` /
   `classMethods()` helpers (the scaffold's `seed` is a class-hosted static).
 - Model relations as **edges with props** (not foreign-key strings): create via
-  `::link {edgeClass, target, props}`, walk via `::getLinks`. Prefer FLAT nodes
-  + edges for peer resources; use Folders (Container) only for list-able
-  hierarchies (`::listChildren` works on Folders).
+  `::link {edgeClass, target, props}`, walk via `::getLinks`. Two shapes for a
+  child collection — pick by whether the child has independent existence:
+  **(a) containment** — give the parent class
+  `implements: [KernelSchema.interfaces.Container]` and store children as tree
+  nodes under it (`/parent/<childId>`); read them natively via
+  `<parent>::listChildren` and they belong to / delete with the parent. This
+  works on ANY Container-implementing class, not just `Folder` (the serializer
+  emits the `method_of` edge for the implemented interface, so `::listChildren`
+  dispatches on the instance) — a plain `nodeClass` instance has NO
+  `::listChildren`, so reach for it only on a Container. Use containment when the
+  child can't stand alone (a comment in a thread, a line in an order).
+  **(b) association** — FLAT nodes + an edge, read via `getLinks` — the
+  relation-first default for peer references. (Either way `deleteNode` is
+  leaf-only: drain children before deleting the parent.)
 - Props are zod; they land in the graph under QUALIFIED keys
   (`origin:class.X.property.y`). Never hand-write key strings — derive them
   from the compiled schema: `D.Contact.email.key`, `K.Named.name.key`.
