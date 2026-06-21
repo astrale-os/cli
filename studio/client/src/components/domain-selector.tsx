@@ -32,6 +32,7 @@ export function DomainSelector() {
   const { data: domains } = useWorkspace()
   const domainId = useUI((s) => s.domainId)
   const setDomain = useUI((s) => s.setDomain)
+  const setSection = useUI((s) => s.setSection)
   const [open, setOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const active = domains?.find((d) => d.id === domainId)
@@ -105,7 +106,14 @@ export function DomainSelector() {
         </PopoverContent>
       </Popover>
 
-      <CreateDomainDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={setDomain} />
+      <CreateDomainDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(id) => {
+          setDomain(id)
+          setSection('context')
+        }}
+      />
     </>
   )
 }
