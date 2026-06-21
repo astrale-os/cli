@@ -115,11 +115,27 @@ function parsePositiveInt(flag: string, raw: string): number {
 const TOPIC_COLOR = (s: string): string =>
   s.startsWith('op:') ? chalk.cyan(s) : s.startsWith('sys:') ? chalk.magenta(s) : chalk.dim(s)
 
+/** op:*:completed|failed carry `durationMs` in their payload; started does not. */
+const latencyOf = (e: JournalEntry): string => {
+  const d = (e.event.payload as { durationMs?: number } | undefined)?.durationMs
+  return typeof d === 'number' ? `${d}ms` : ''
+}
+
+/** Highlight slow ops: green < 100ms, yellow < 500ms, red beyond. */
+const LATENCY_COLOR = (s: string): string => {
+  if (!s) return s
+  const ms = Number.parseInt(s, 10)
+  if (ms >= 500) return chalk.red(s)
+  if (ms >= 100) return chalk.yellow(s)
+  return chalk.green(s)
+}
+
 function eventsProjection(entries: JournalEntry[]): ListProjection {
   const columns: Column[] = [
     { key: 'seq', header: 'SEQ', color: chalk.dim },
     { key: 'ts', header: 'TIME', color: chalk.dim },
     { key: 'topic', header: 'TOPIC', color: TOPIC_COLOR },
+    { key: 'latency', header: 'LATENCY', color: LATENCY_COLOR },
     { key: 'principal', header: 'PRINCIPAL', color: chalk.dim },
   ]
   return {
@@ -128,6 +144,7 @@ function eventsProjection(entries: JournalEntry[]): ListProjection {
       seq: String(e.seq),
       ts: new Date(e.event.metadata.timestamp).toISOString(),
       topic: e.event.topic,
+      latency: latencyOf(e),
       principal: String(e.event.metadata.principal),
     })),
     paths: entries.map((e) => String(e.seq)),
@@ -146,8 +163,9 @@ async function fetchEventsPage(ctx: ClientContext, opts: LogsOpts): Promise<Even
 
 function printEventLine(e: JournalEntry): void {
   const ts = new Date(e.event.metadata.timestamp).toISOString()
+  const lat = latencyOf(e)
   process.stdout.write(
-    `${chalk.dim(String(e.seq).padStart(6))} ${chalk.dim(ts)} ${TOPIC_COLOR(e.event.topic)} ${chalk.dim(String(e.event.metadata.principal))}\n`,
+    `${chalk.dim(String(e.seq).padStart(6))} ${chalk.dim(ts)} ${TOPIC_COLOR(e.event.topic)} ${chalk.dim(String(e.event.metadata.principal))}${lat ? ` ${LATENCY_COLOR(lat)}` : ''}\n`,
   )
 }
 
@@ -271,7 +289,8 @@ export default {
 Default: tails the kernel event journal via ${ROOT_JOURNAL_PATH} on the target
 instance (-i <instance>). Topics use ':'-segmented globs ('*' one segment,
 '**' zero-or-more). Machine output (--json / pipe) emits the JournalEntry[]
-array; a TTY shows a SEQ/TIME/TOPIC/PRINCIPAL table. --follow polls for new
+array; a TTY shows a SEQ/TIME/TOPIC/LATENCY/PRINCIPAL table (LATENCY is the
+op's durationMs, present on :completed/:failed). --follow polls for new
 entries (client-side, tailing by sequence number). The journal-read syscall's
 own ops are hidden unless --all.
 
