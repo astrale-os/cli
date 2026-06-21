@@ -5,7 +5,7 @@ import type { AstraleConfig } from './config'
 import { resolveAdminTargetFromStore } from './admin-target'
 import { DEFAULT_CONFIG, readConfig } from './config'
 import { readIdentities, type IdentityStore } from './identity'
-import { readIdpSession, type IdpSession } from './idp'
+import { isSessionExpired, readIdpSession, type IdpSession } from './idp'
 import { readInstances, type InstanceStore } from './instance'
 
 export type LocalInstanceStatus = {
@@ -22,8 +22,6 @@ export type LocalAdminStatus =
       issuer: string
       source: string
       configured: boolean
-      registrationSlug: string
-      identityRegistered: boolean
     }
   | {
       error: string
@@ -34,12 +32,9 @@ export type LocalIdentityStatus = {
   subject: string
   source: 'key' | 'idp'
   idp: string | null
-  registeredOnActiveInstance: boolean
-  registeredOnAdminTarget: boolean
   session: {
     cached: boolean
-    expired?: boolean
-    expiresAt?: string
+    requiresLogin?: boolean
     hasRefreshToken?: boolean
   } | null
 } | null
@@ -82,7 +77,7 @@ export async function buildLocalStatus(
     : null
 
   const identityEntry = identities.identities[identities.default]
-  const admin = buildAdminStatus(config, instances, identityEntry)
+  const admin = buildAdminStatus(config, instances)
   if (!identityEntry) {
     return { admin, instance, identity: null }
   }
@@ -97,11 +92,13 @@ export async function buildLocalStatus(
               value.expires_at ??
               expClaimToIso(value.claims?.exp) ??
               expClaimToIso(identityEntry.claims?.exp)
+            const hasRefreshToken = !!value.refresh_token
             return {
               cached: true,
-              expired: expiresAt ? Date.parse(expiresAt) <= Date.now() + 60_000 : false,
-              expiresAt,
-              hasRefreshToken: !!value.refresh_token,
+              requiresLogin:
+                !hasRefreshToken &&
+                isSessionExpired({ expires_at: expiresAt, access_token: value.access_token }),
+              hasRefreshToken,
             }
           })
           .catch(() => ({ cached: false }))
@@ -115,23 +112,12 @@ export async function buildLocalStatus(
       subject: identityEntry.subject,
       source,
       idp: identityEntry.idp ?? null,
-      registeredOnActiveInstance: !!(
-        instances.active && identityEntry.registrations?.[instances.active]
-      ),
-      registeredOnAdminTarget:
-        'registrationSlug' in admin
-          ? !!identityEntry.registrations?.[admin.registrationSlug]
-          : false,
       session,
     },
   }
 }
 
-function buildAdminStatus(
-  config: AstraleConfig,
-  instances: InstanceStore,
-  identityEntry: IdentityStore['identities'][string] | undefined,
-): LocalAdminStatus {
+function buildAdminStatus(config: AstraleConfig, instances: InstanceStore): LocalAdminStatus {
   try {
     const target = resolveAdminTargetFromStore({}, config, instances)
     return {
@@ -140,8 +126,6 @@ function buildAdminStatus(
       issuer: target.issuer,
       source: target.source,
       configured: target.configured,
-      registrationSlug: target.registrationSlug,
-      identityRegistered: !!identityEntry?.registrations?.[target.registrationSlug],
     }
   } catch (err) {
     return { error: err instanceof Error ? err.message : String(err) }

@@ -4,7 +4,7 @@ description: Create, develop, deploy, and iterate an Astrale domain end-to-end �
 when_to_use: when asked to create or edit a domain.
 ---
 
-# Astrale Domain — the authoring bible
+# Astrale Domain
 
 An Astrale **domain** is a typed contract installed into a kernel's graph plus a
 **worker you own** that executes it. The kernel stores the schema (classes,
@@ -63,13 +63,16 @@ skill for graph-level cleanup).
 
 ```ts
 import { KernelSchema, defineSchema, edgeClass, nodeClass, nodeInterface } from '@astrale-os/kernel-core'
+import { CONTACT_OPS_ICON, CONTACT_ICON } from '../icons'
 import { fn } from '@astrale-os/kernel-dsl'
 import { z } from 'zod'
 
 export const ContactOps = nodeInterface({           // interface = shared contract
+  icon: CONTACT_OPS_ICON,
   methods: { createContact: fn({ static: true, params: {...}, returns: ... }) },
 })
 export const Contact = nodeClass({
+  icon: CONTACT_ICON,
   implements: [ContactOps, KernelSchema.interfaces.Container],  // Container → can hold children
   props: { email: z.string(), company: z.string().optional() },
   methods: { assign: fn({ params: { project: z.string(), role: z.string() }, returns: ... }) },

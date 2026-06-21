@@ -23,10 +23,6 @@ export default {
       console.log(`  ${chalk.red('invalid')}: ${status.admin.error}`)
     } else {
       console.log(`  ${chalk.bold(status.admin.name)} ${chalk.dim(status.admin.url)}`)
-      console.log(`  issuer: ${chalk.dim(status.admin.issuer)}`)
-      console.log(`  source: ${status.admin.source}`)
-      const mark = status.admin.identityRegistered ? chalk.green('yes') : chalk.yellow('no')
-      console.log(`  active identity registered: ${mark}`)
     }
 
     console.log('')
@@ -50,31 +46,12 @@ export default {
           : status.identity.source
       console.log(`  ${chalk.bold(status.identity.name)} ${chalk.dim(`[${source}]`)}`)
       console.log(`  subject: ${chalk.dim(status.identity.subject)}`)
-      if (status.instance) {
-        const mark = status.identity.registeredOnActiveInstance
-          ? chalk.green('yes')
-          : chalk.yellow('no')
-        console.log(`  registered on active instance: ${mark}`)
-        const adminMark = status.identity.registeredOnAdminTarget
-          ? chalk.green('yes')
-          : chalk.yellow('no')
-        console.log(`  registered on admin target: ${adminMark}`)
-      }
       if (status.identity.session) {
-        if (!status.identity.session.cached) {
-          console.log(`  session: ${chalk.yellow('not cached')}`)
-        } else {
-          const state = status.identity.session.expired
-            ? chalk.yellow('expired')
-            : chalk.green('active')
-          console.log(`  session: ${state}`)
-          if (status.identity.session.expiresAt) {
-            console.log(`  expires: ${chalk.dim(status.identity.session.expiresAt)}`)
-          }
-          console.log(
-            `  refresh token: ${status.identity.session.hasRefreshToken ? chalk.green('yes') : chalk.yellow('no')}`,
-          )
-        }
+        const state =
+          !status.identity.session.cached || status.identity.session.requiresLogin
+            ? chalk.yellow('login required')
+            : chalk.green('ready')
+        console.log(`  session: ${state}`)
       }
     } else {
       log.dim('  No default identity. Run: astrale identity create <name>')

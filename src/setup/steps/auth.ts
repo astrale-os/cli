@@ -7,9 +7,9 @@ import { loginViaIdp } from '../../lib/login-flow'
 const FIX = 'astrale auth login'
 
 /**
- * Step 1 — a WorkOS-backed identity with a live token. Provisioning an instance
- * requires an `idp` identity (not the local seed key), so "satisfied" means
- * signed in AND the cached session is fresh.
+ * Step 1 — a WorkOS-backed identity with a cached session. Provisioning an
+ * instance requires an `idp` identity (not the local seed key), and stale
+ * access tokens refresh on the first command when a refresh token is cached.
  */
 export const authStep: SetupStep = {
   id: 'auth',
@@ -25,8 +25,12 @@ export const authStep: SetupStep = {
     if (!session || !session.cached) {
       return { state: 'gap', summary: `No cached token for "${identity.name}"`, fixHint: FIX }
     }
-    if (session.expired) {
-      return { state: 'gap', summary: `Session for "${identity.name}" expired`, fixHint: FIX }
+    if (session.requiresLogin) {
+      return {
+        state: 'gap',
+        summary: `Session for "${identity.name}" requires login`,
+        fixHint: FIX,
+      }
     }
     return {
       state: 'satisfied',

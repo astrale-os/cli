@@ -14,11 +14,11 @@ const FIX = SKILL_INSTALL_HINT
 /**
  * Equip — the astrale agent skills. Both the astrale-cli (ops) and astrale-domain
  * (authoring) skills publish from the one public `astrale-os/cli` repo, so a
- * single `npx skills add astrale-os/cli` installs both. We don't reimplement
- * skill installation; we detect presence and delegate to `npx skills add` (the
- * skill package manager). astrale-domain also rides along inside every
- * `create-astrale-domain` scaffold (the domain step), so a scaffolded project
- * already has it even without this step.
+ * single `npx skills add astrale-os/cli -g` installs both, globally. We don't
+ * reimplement skill installation; we detect presence and delegate to `npx skills
+ * add` (the skill package manager). A global (user-level) install equips every
+ * project on the machine, so a freshly scaffolded domain has the skills without
+ * shipping its own copy.
  */
 const bothInstalled = (): boolean =>
   detectSkill(ASTRALE_CLI_SKILL).installed && detectSkill(ASTRALE_DOMAIN_SKILL).installed
@@ -53,9 +53,6 @@ export const skillsStep: SetupStep = {
       log.success('astrale-cli + astrale-domain skills installed')
     } else {
       log.success('astrale-cli skill installed')
-      if (!detectSkill(ASTRALE_DOMAIN_SKILL).installed) {
-        log.dim('  astrale-domain also ships inside every `create-astrale-domain` scaffold.')
-      }
     }
     return 'fixed'
   },

@@ -1,0 +1,182 @@
+@import 'tailwindcss';
+@import '@xyflow/react/dist/style.css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Refined dark studio theme — soft, airy, Linear/Raycast-grade.
+   `html.dark` (0,1,1) outranks `:root` (0,1,0) so it wins when the class is set. */
+html.dark {
+  --radius: 0.75rem;
+  --background: oklch(0.205 0.006 285);
+  --foreground: oklch(0.96 0.003 285);
+  --canvas: oklch(0.182 0.006 285);
+  --card: oklch(0.238 0.006 285);
+  --card-foreground: oklch(0.96 0.003 285);
+  --popover: oklch(0.246 0.007 285);
+  --popover-foreground: oklch(0.97 0.003 285);
+  --primary: oklch(0.68 0.16 280);
+  --primary-foreground: oklch(0.16 0.02 280);
+  --secondary: oklch(0.285 0.007 285);
+  --secondary-foreground: oklch(0.96 0.003 285);
+  --muted: oklch(0.265 0.006 285);
+  --muted-foreground: oklch(0.665 0.013 285);
+  --accent: oklch(0.305 0.008 285);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.67 0.19 22);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 11%);
+  --ring: oklch(0.68 0.16 280);
+  --success: oklch(0.74 0.15 155);
+  --warning: oklch(0.82 0.14 80);
+}
+
+/* Light fallback (toggle) — kept simple. */
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.995 0 0);
+  --foreground: oklch(0.21 0.01 285);
+  --canvas: oklch(0.975 0.003 285);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.01 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.01 285);
+  --primary: oklch(0.55 0.17 280);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.97 0.004 285);
+  --secondary-foreground: oklch(0.25 0.01 285);
+  --muted: oklch(0.968 0.004 285);
+  --muted-foreground: oklch(0.52 0.012 285);
+  --accent: oklch(0.96 0.005 285);
+  --accent-foreground: oklch(0.25 0.01 285);
+  --destructive: oklch(0.58 0.21 25);
+  --border: oklch(0.92 0.004 285);
+  --input: oklch(0.9 0.004 285);
+  --ring: oklch(0.55 0.17 280);
+  --success: oklch(0.6 0.15 155);
+  --warning: oklch(0.7 0.15 70);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.006em;
+}
+
+::selection {
+  background: oklch(0.68 0.16 280 / 0.3);
+}
+
+/* subtle, refined scrollbars */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+  background-clip: content-box;
+}
+
+/* react-flow surface uses the dedicated canvas tone */
+.react-flow__attribution {
+  display: none;
+}
+.react-flow {
+  background: var(--color-canvas);
+}
+
+
+/* Domain Studio core-role shape grammar for schema cards. */
+.react-flow__node-classNode [data-core-role] {
+  transition:
+    border-radius 0.16s ease,
+    outline-color 0.16s ease;
+}
+
+.react-flow__node-classNode .schema-core-container {
+  border-radius: 6px;
+  background-image: none;
+}
+
+.react-flow__node-classNode .schema-core-identity,
+.react-flow__node-classNode .schema-core-function {
+  background-image: none;
+}
+
+.react-flow__node-classNode .schema-core-identity::after,
+.react-flow__node-classNode .schema-core-function::after {
+  content: none;
+}
+
+.react-flow__node-classNode .schema-core-identity-icon {
+  position: absolute;
+  right: 0.25rem;
+  top: 0.25rem;
+  z-index: 20;
+  display: inline-flex;
+  height: 18px;
+  width: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  border: 1px solid oklch(0.84 0.09 86 / 0.28);
+  background: oklch(0.84 0.08 86 / 0.11);
+  color: oklch(0.82 0.1 86 / 0.88);
+  pointer-events: none;
+}
+
+.react-flow__node-classNode .schema-core-function-icon {
+  color: oklch(0.72 0.13 292 / 0.9);
+  filter: none;
+  opacity: 0.92;
+}

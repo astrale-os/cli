@@ -45,16 +45,13 @@ describe('local status snapshot', () => {
     expect('error' in status.admin).toBe(false)
     if (!('error' in status.admin)) {
       expect(status.admin.url).toBe(DEFAULT_ADMIN_TARGET_URL)
-      expect(status.admin.identityRegistered).toBe(true)
     }
     expect(status.identity?.name).toBe('alice')
     expect(status.identity?.source).toBe('key')
-    expect(status.identity?.registeredOnActiveInstance).toBe(true)
-    expect(status.identity?.registeredOnAdminTarget).toBe(true)
     expect(status.identity?.session).toBeNull()
   })
 
-  test('summarizes expired cached IdP session', async () => {
+  test('keeps a refreshable cached IdP session ready when the access token is stale', async () => {
     const instances: InstanceStore = {
       active: '',
       instances: {},
@@ -88,8 +85,43 @@ describe('local status snapshot', () => {
     expect(status.instance).toBeNull()
     expect(status.identity?.source).toBe('idp')
     expect(status.identity?.session?.cached).toBe(true)
-    expect(status.identity?.session?.expired).toBe(true)
+    expect(status.identity?.session?.requiresLogin).toBe(false)
     expect(status.identity?.session?.hasRefreshToken).toBe(true)
+  })
+
+  test('requires login when the cached IdP access token is stale and cannot refresh', async () => {
+    const instances: InstanceStore = {
+      active: '',
+      instances: {},
+    }
+    const identities: IdentityStore = {
+      default: 'workos-user',
+      identities: {
+        'workos-user': {
+          subject: 'user_123',
+          source: 'idp',
+          mode: 'remote',
+          idp: 'workos',
+          issuer: 'https://idp.example.com',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    }
+    const session: IdpSession = {
+      identity: 'workos-user',
+      idp: 'workos',
+      issuer: 'https://idp.example.com',
+      subject: 'user_123',
+      access_token: 'redacted',
+      expires_at: '2000-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+
+    const status = await buildLocalStatus(instances, identities, async () => session)
+
+    expect(status.identity?.session?.cached).toBe(true)
+    expect(status.identity?.session?.requiresLogin).toBe(true)
+    expect(status.identity?.session?.hasRefreshToken).toBe(false)
   })
 
   test('summarizes active managed slug without requiring a local bookmark', async () => {
@@ -119,7 +151,6 @@ describe('local status snapshot', () => {
       issuer: null,
       defaultIdentity: null,
     })
-    expect(status.identity?.registeredOnActiveInstance).toBe(false)
   })
 
   test('falls back to identity exp claim when IdP session has no expires_at', async () => {
@@ -152,8 +183,7 @@ describe('local status snapshot', () => {
       async () => session,
     )
 
-    expect(status.identity?.session?.expiresAt).toBe('2000-01-01T00:00:00.000Z')
-    expect(status.identity?.session?.expired).toBe(true)
+    expect(status.identity?.session?.requiresLogin).toBe(true)
   })
 })
 

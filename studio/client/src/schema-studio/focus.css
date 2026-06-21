@@ -1,0 +1,32 @@
+/* Focus + context: dim non-neighbors on select/hover. Opacity is the single
+   dominant channel (desaturated context stays visible at ~0.2, never removed).
+   Group containers keep their chrome legible (only class nodes + edges dim) so
+   the user keeps their bearings. Numbers follow Cytoscape/GraphQL-Voyager. */
+
+.react-flow__node.classNode {
+  transition: opacity 180ms ease;
+}
+.react-flow__edge {
+  transition: opacity 180ms ease;
+}
+
+.react-flow__node.classNode.is-dimmed {
+  opacity: 0.2;
+}
+.react-flow__node.classNode.is-dimmed .rf-meta {
+  opacity: 0; /* hide dimmed detail/labels rather than render illegible gray */
+}
+
+.react-flow__edge.is-dimmed {
+  opacity: 0.08;
+}
+.react-flow__edge.is-on .react-flow__edge-path {
+  stroke-width: 2.4px;
+}
+/* selected edge: emphasize over focus/dim state so it always reads clearly */
+.react-flow__edge.is-selected {
+  opacity: 1;
+}
+.react-flow__edge.is-selected .react-flow__edge-path {
+  stroke-width: 3px;
+}

@@ -230,11 +230,8 @@ function printLocalContext(context: LocalStatus | undefined): void {
         : context.identity.source
     process.stderr.write(chalk.dim(`  identity: ${context.identity.name} [${source}]\n`))
     if (context.identity.session?.cached) {
-      const state = context.identity.session.expired ? 'expired' : 'active'
-      const expiry = context.identity.session.expiresAt
-        ? ` at ${context.identity.session.expiresAt}`
-        : ''
-      process.stderr.write(chalk.dim(`  session: ${state}${expiry}\n`))
+      const state = context.identity.session.requiresLogin ? 'login required' : 'ready'
+      process.stderr.write(chalk.dim(`  session: ${state}\n`))
     } else if (context.identity.source === 'idp') {
       process.stderr.write(chalk.dim('  session: not cached\n'))
     }

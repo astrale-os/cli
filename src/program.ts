@@ -88,6 +88,7 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, withKernelOptions((await import('./commands/logs')).default))
   registerCommand(program, (await import('./commands/status')).default)
   registerCommand(program, (await import('./commands/browser')).default)
+  registerCommand(program, (await import('./commands/studio')).default)
 
   registerGroup(program, {
     name: 'instance',
@@ -171,6 +172,7 @@ Command groups:
   Kernel        ls, get, call, query, describe, token
   Management    admin, instance, domain, identity, auth, idp, update
   Agent         browser   (drive the GUI via agent-browser)
+  Studio        studio    (launch the local Domain Studio GUI for a workspace)
 
 Path syntax:
   /domain                        Domain node
@@ -183,6 +185,7 @@ Path syntax:
 
 Examples:
   $ astrale ls /
+  $ astrale studio
   $ astrale admin status
   $ astrale update --check
   $ astrale instance bookmark staging --url https://kernel.example.com

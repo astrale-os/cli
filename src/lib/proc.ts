@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess, type StdioOptions } from 'node:child_process'
 
 export type RunResult = {
   /** Exit code, or -1 when the process was killed by a signal. */
@@ -53,5 +53,30 @@ export function runInherit(
     const child = spawn(file, args, { cwd: opts.cwd, stdio: 'inherit' })
     child.on('error', reject)
     child.on('close', (code) => resolve(code ?? -1))
+  })
+}
+
+/**
+ * Spawn a LONG-LIVED child and return the handle immediately so the caller can
+ * supervise it (wait for exit, forward signals, tear down siblings). Unlike
+ * run()/runInherit() — which resolve only once the child closes — this is for
+ * servers the command keeps attached to (e.g. `astrale studio`'s Bun server and
+ * Vite dev process). Same node:child_process basis (cross-runtime) and bare
+ * PATH-name lookup convention. Default stdio streams stdout/stderr live but
+ * ignores stdin, so two supervised children never contend for the TTY.
+ */
+export function spawnHandle(
+  file: string,
+  args: string[] = [],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv; stdio?: StdioOptions; detached?: boolean } = {},
+): ChildProcess {
+  return spawn(file, args, {
+    cwd: opts.cwd,
+    env: opts.env,
+    // `detached` makes the child its own process-group leader so the caller can
+    // tear down the whole tree (the child AND its grandchildren) with a single
+    // group signal — `process.kill(-child.pid, …)`.
+    detached: opts.detached,
+    stdio: opts.stdio ?? ['ignore', 'inherit', 'inherit'],
   })
 }
