@@ -366,7 +366,7 @@ directly — useful for recovery and inspection:
 
 | Symptom | Likely cause |
 |---|---|
-| any managed-service 500 — `{"error":{"code":5000,"message":"internal error; reference = …"}}` | `astrale logs <service-slug>` tails the service's runtime buffer (console output, 5xx accesses, uncaught exception stacks) — the slug is the first label of the `…svc.<region>.astrale.ai` URL `pnpm prod` printed. Services deployed before log capture need one redeploy first. |
+| any managed-service 500 — `{"error":{"code":5000,"message":"internal error; reference = …"}}` | `astrale logs --service <service-slug>` tails the service's runtime buffer (console output, 5xx accesses, uncaught exception stacks) — the slug is the first label of the `…svc.<region>.astrale.ai` URL `pnpm prod` printed. Services deployed before log capture need one redeploy first. |
 | `Permission denied: EDIT on /x (param-target)` | `/x` doesn't exist — seed the parent |
 | `method "x" not found … call it as "/:o:class.C/x"` | instance form used for a static method |
 | `Delegation mint failed for <url>` | check `--debug` cause chain; worker→worker call machinery |
@@ -382,7 +382,7 @@ directly — useful for recovery and inspection:
 
 Use `astrale call <path> --describe` for any callable's schema, `--debug` for
 the full error chain, `curl <worker>/meta` for what a worker serves
-(domainName, schemaHash), and `astrale logs <service-slug> [--tail N]` for a
+(domainName, schemaHash), and `astrale logs --service <slug> [--tail N]` for a
 managed service's runtime logs.
 
 ## Related skills

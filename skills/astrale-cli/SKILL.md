@@ -34,7 +34,7 @@ astrale get <path>
 astrale ls [path]
 astrale describe <path>
 astrale query <cypher>
-astrale logs <service>
+astrale logs [--service <name>]
 astrale status
 astrale browser
 astrale instance ...
@@ -405,10 +405,16 @@ Use diagnostics:
 - Use `--json` or `--raw` for structured command output.
 - Use `--ci` and `--no-prompt` in non-interactive automation.
 - Use `--timeout <ms>` when a kernel call is valid but slow.
-- Use `astrale logs <service-slug> [--tail N]` to tail a MANAGED SERVICE's
-  runtime logs — console output, 5xx accesses, and uncaught exception stacks
-  (the readable side of `internal error; reference = …` responses). The slug
-  is the first label of the service's `…svc.<region>.astrale.ai` URL (also
+- `astrale logs -i <instance>` defaults to tailing the kernel EVENT JOURNAL
+  (the `Root.journal` syscall): SEQ/TIME/TOPIC/PRINCIPAL on a TTY, the raw
+  `JournalEntry[]` under `--json`. Filter with `--topic <glob>` (':'-segmented,
+  `*` one segment / `**` zero-or-more, e.g. `op:*:failed`), `--principal <id>`,
+  `--since`/`--until` (epoch-ms or ISO-8601), `--limit <n>` (default 200), and
+  `--follow` (client-side poll, tailing by `--cursor`).
+- Use `astrale logs --service <slug> [--tail N]` to tail a MANAGED SERVICE's
+  runtime logs instead — console output, 5xx accesses, and uncaught exception
+  stacks (the readable side of `internal error; reference = …` responses). The
+  slug is the first label of the service's `…svc.<region>.astrale.ai` URL (also
   accepts the full URL). In-memory, last ~500 lines, resets on runtime
   restart; services deployed before log capture need one redeploy.
 
@@ -470,7 +476,7 @@ Attach context to make it actionable, but **strip secrets** from `trace` (no
 tokens, credentials, private keys, cookies):
 
 ```bash
-... trace="$(astrale logs <service> --tail 40)"
+... trace="$(astrale logs --service <slug> --tail 40)"
 ```
 
 Fields: `kind` ∈ {bug, friction, feature}; `tags` are area slugs — prefer the
