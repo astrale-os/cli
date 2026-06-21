@@ -40,6 +40,7 @@ type LogsOpts = KernelCommandOpts & {
   cursor?: string
   follow?: boolean
   all?: boolean
+  timing?: boolean
   // service mode
   service?: string
   tail?: string
@@ -130,12 +131,35 @@ const LATENCY_COLOR = (s: string): string => {
   return chalk.green(s)
 }
 
-function eventsProjection(entries: JournalEntry[]): ListProjection {
+/** Short labels for the per-step dispatch timing (payload.timing). */
+const STEP_LABEL: Record<string, string> = {
+  authenticate: 'auth',
+  validateInput: 'in',
+  authorize: 'authz',
+  resolve: 'resolve',
+  invariants: 'inv',
+  execute: 'exec',
+  validateOutput: 'out',
+  effects: 'fx',
+}
+
+/** Compact per-step breakdown, non-zero steps only: e.g. "auth:7 authz:13 exec:12". */
+const timingOf = (e: JournalEntry): string => {
+  const t = (e.event.payload as { timing?: Record<string, number> } | undefined)?.timing
+  if (!t || typeof t !== 'object') return ''
+  return Object.entries(t)
+    .filter(([, ms]) => typeof ms === 'number' && ms > 0)
+    .map(([k, ms]) => `${STEP_LABEL[k] ?? k}:${ms}`)
+    .join(' ')
+}
+
+function eventsProjection(entries: JournalEntry[], showTiming = false): ListProjection {
   const columns: Column[] = [
     { key: 'seq', header: 'SEQ', color: chalk.dim },
     { key: 'ts', header: 'TIME', color: chalk.dim },
     { key: 'topic', header: 'TOPIC', color: TOPIC_COLOR },
     { key: 'latency', header: 'LATENCY', color: LATENCY_COLOR },
+    ...(showTiming ? [{ key: 'steps', header: 'STEPS', color: chalk.dim } as Column] : []),
     { key: 'principal', header: 'PRINCIPAL', color: chalk.dim },
   ]
   return {
@@ -145,6 +169,7 @@ function eventsProjection(entries: JournalEntry[]): ListProjection {
       ts: new Date(e.event.metadata.timestamp).toISOString(),
       topic: e.event.topic,
       latency: latencyOf(e),
+      ...(showTiming ? { steps: timingOf(e) } : {}),
       principal: String(e.event.metadata.principal),
     })),
     paths: entries.map((e) => String(e.seq)),
@@ -161,11 +186,12 @@ async function fetchEventsPage(ctx: ClientContext, opts: LogsOpts): Promise<Even
   return { entries, nextCursor: page.nextCursor }
 }
 
-function printEventLine(e: JournalEntry): void {
+function printEventLine(e: JournalEntry, showTiming = false): void {
   const ts = new Date(e.event.metadata.timestamp).toISOString()
   const lat = latencyOf(e)
+  const steps = showTiming ? timingOf(e) : ''
   process.stdout.write(
-    `${chalk.dim(String(e.seq).padStart(6))} ${chalk.dim(ts)} ${TOPIC_COLOR(e.event.topic)} ${chalk.dim(String(e.event.metadata.principal))}${lat ? ` ${LATENCY_COLOR(lat)}` : ''}\n`,
+    `${chalk.dim(String(e.seq).padStart(6))} ${chalk.dim(ts)} ${TOPIC_COLOR(e.event.topic)} ${chalk.dim(String(e.event.metadata.principal))}${lat ? ` ${LATENCY_COLOR(lat)}` : ''}${steps ? ` ${chalk.dim(`[${steps}]`)}` : ''}\n`,
   )
 }
 
@@ -182,7 +208,7 @@ async function runEvents(opts: LogsOpts): Promise<void> {
         output(page.entries, fmtOpts)
         return
       }
-      presentList(page.entries, fmtOpts, eventsProjection)
+      presentList(page.entries, fmtOpts, (entries) => eventsProjection(entries, opts.timing))
       if (typeof page.nextCursor === 'number') {
         process.stdout.write(chalk.dim(`  tail: --follow  (or --cursor ${page.nextCursor})\n`))
       }
@@ -200,7 +226,7 @@ async function followEvents(opts: LogsOpts): Promise<void> {
     let cursor = opts.cursor !== undefined ? parsePositiveInt('--cursor', opts.cursor) : undefined
     for (;;) {
       const page = await fetchEventsPage(ctx, { ...opts, cursor: cursor?.toString() })
-      for (const e of page.entries) printEventLine(e)
+      for (const e of page.entries) printEventLine(e, opts.timing)
       if (typeof page.nextCursor === 'number') cursor = page.nextCursor
       await new Promise((resolve) => setTimeout(resolve, FOLLOW_INTERVAL_MS))
     }
@@ -278,6 +304,7 @@ export default {
     { flags: '--cursor <n>', description: 'Start after this journal sequence number' },
     { flags: '--follow', description: 'Poll for new events (Ctrl-C to stop)' },
     { flags: '--all', description: 'Include the journal-read syscall ops (hidden by default)' },
+    { flags: '--timing', description: 'Show the per-step dispatch breakdown (auth/authz/exec/…)' },
     { flags: '--service <name>', description: 'Tail a deployed service log buffer instead' },
     { flags: '--tail <n>', description: '[--service] lines to return (default 200, max 500)' },
     {
@@ -290,9 +317,10 @@ Default: tails the kernel event journal via ${ROOT_JOURNAL_PATH} on the target
 instance (-i <instance>). Topics use ':'-segmented globs ('*' one segment,
 '**' zero-or-more). Machine output (--json / pipe) emits the JournalEntry[]
 array; a TTY shows a SEQ/TIME/TOPIC/LATENCY/PRINCIPAL table (LATENCY is the
-op's durationMs, present on :completed/:failed). --follow polls for new
-entries (client-side, tailing by sequence number). The journal-read syscall's
-own ops are hidden unless --all.
+op's durationMs, present on :completed/:failed). --timing adds a STEPS column
+with the per-step dispatch breakdown (auth/in/authz/resolve/inv/exec/out/fx,
+non-zero only). --follow polls for new entries (client-side, tailing by
+sequence number). The journal-read syscall's own ops are hidden unless --all.
 
 --service <name> switches to the per-instance 'services' domain log buffer
 (console output, 5xx accesses, uncaught exceptions). Requires the services
@@ -301,6 +329,7 @@ domain installed on the target instance.
 Examples:
   astrale logs -i staging
   astrale logs -i staging --topic 'op:*:failed' --limit 50
+  astrale logs -i staging --topic 'op:*:completed' --timing
   astrale logs -i staging --since 2026-06-20T00:00:00Z --follow
   astrale logs --service my-notes -i staging --tail 50
 `,
