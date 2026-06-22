@@ -70,7 +70,7 @@
     "@typescript/native-preview": "latest",
     "husky": "~9.1.7",
     "lint-staged": "~16.2.7",
-    "oxfmt": "latest",
+    "oxfmt": "0.52.0",
     "oxlint": "latest",
     "typescript": "~6.0.1-rc"
   },
