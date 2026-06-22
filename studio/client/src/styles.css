@@ -83,7 +83,9 @@ html.dark {
   --color-success: var(--success);
   --color-warning: var(--warning);
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
-  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui,
+    sans-serif;
 }
 
 * {
@@ -134,7 +136,6 @@ body {
 .react-flow {
   background: var(--color-canvas);
 }
-
 
 /* Domain Studio core-role shape grammar for schema cards. */
 .react-flow__node-classNode [data-core-role] {

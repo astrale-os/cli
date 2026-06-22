@@ -483,7 +483,9 @@ Fields: `kind` ∈ {bug, friction, feature}; `tags` are area slugs — prefer th
 common set (`cli`, `sdk`, `kernel`, `adapter`, `deploy`, `install`,
 `permissions`, `views`, `domain-authoring`, `docs`, `skill`, `provisioning`) and
 add a new one only when none fit; `instance` is your instance slug (omit for
-docs/skill issues). `report` returns `{ id, status }`.
+docs/skill issues). The reporter's email is recorded automatically from the
+`email` claim on your credential — do NOT pass it yourself (there is no such
+param; it must not be guessed or falsified). `report` returns `{ id, status }`.
 
 Rules:
 

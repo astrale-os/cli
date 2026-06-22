@@ -15,14 +15,16 @@ Lives in the astrale CLI repo (`cli/studio`) and is launched by **`astrale studi
 ## Run
 
 ```bash
-astrale studio                 # open the studio for the current workspace
+astrale studio                 # start the studio + print its URL (no browser)
+astrale studio --open          # …and open it in a browser
 astrale studio ./my-domain     # …or a specific domain / workspace / astrale.config.ts path
 ```
 
 `astrale studio` resolves the studio shipped with the CLI, binds the first free
 loopback port in **4319–4338** (so a studio already running in another workspace
-just takes the next one), and opens your browser. Flags: `--port <n>` ·
-`--schema-dir <name>` (default `schema`) · `--no-open` · `--dev`.
+just takes the next one), and prints its URL — it does **not** pop a browser by
+default (pass `--open` for that). Flags: `--port <n>` ·
+`--schema-dir <name>` (default `schema`) · `--open` · `--dev`.
 
 By **default** it serves the **prebuilt client** (fast, always works — and what a
 published/global install runs). `ASTRALE_STUDIO_DIR` points the command at an

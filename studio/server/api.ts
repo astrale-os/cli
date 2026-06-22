@@ -16,6 +16,7 @@ import {
 } from './agent/runner'
 import { getBundle, getAnatomy, getCore, invalidate } from './cache'
 import { type DomainHandle, allDomains, depsInstalled, getDomain } from './domain'
+import { schemaRefs } from './introspect/schema-refs'
 import { buildCatalog } from './state/catalog'
 import {
   addThreadEntry,
@@ -244,7 +245,11 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
   if (rest === '/comments') {
     if (req.method === 'GET') {
       const bundle = await getBundle(id)
-      const valid = new Set(Object.keys(bundle?.overlay.sourceSpans ?? {}))
+      // Valid schema targets come from the IR (authoritative), not source spans —
+      // so inherited / span-less members are never falsely orphaned. Spans are
+      // unioned in only as a belt-and-suspenders for refs the IR walk might miss.
+      const valid = new Set<string>(bundle ? schemaRefs(bundle) : [])
+      for (const k of Object.keys(bundle?.overlay.sourceSpans ?? {})) valid.add(k)
       const store = readComments(root)
       for (const c of store.comments)
         for (const a of c.anchorRefs) if (a.kind !== 'schema') valid.add(a.ref)

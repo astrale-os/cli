@@ -12,7 +12,7 @@ import { run, spawnHandle } from '../lib/proc'
 
 type StudioOpts = RawOutputOpts & {
   port?: string
-  open?: boolean // `--no-open` → false (Commander defaults this to true)
+  open?: boolean // `--open` → true. Default (undefined) prints the URL without launching a browser.
   dev?: boolean
   prod?: boolean
   schemaDir?: string
@@ -151,7 +151,10 @@ export default {
   ],
   options: [
     { flags: '--port <n>', description: 'Studio HTTP port (default: first free in 4319-4338)' },
-    { flags: '--no-open', description: "Don't open the browser" },
+    {
+      flags: '--open',
+      description: 'Open the studio in your browser (default: just print the URL)',
+    },
     {
       flags: '--dev',
       description:
@@ -179,12 +182,16 @@ Behavior:
   studio changes reflect instantly; it requires the studio source checkout
   (cli/studio) with Vite installed.
 
+  By default the command just PRINTS the URL — it does not pop a browser (that's
+  invasive when you already have a tab open). Pass --open to launch one.
+
   The command stays attached and supervises its child processes; Ctrl-C tears
   them all down (a second Ctrl-C force-kills). With --json it prints a
   { url, port, mode, workspace } descriptor.
 
 Examples:
-  $ astrale studio                 # open the studio for the current workspace
+  $ astrale studio                 # start the studio + print its URL (no browser)
+  $ astrale studio --open          # …and open it in a browser
   $ astrale studio ./my-domain
   $ astrale studio --port 4400
   $ astrale studio --dev           # live-edit the studio itself (from source)
@@ -381,7 +388,7 @@ Examples:
         log.info(`  → ${displayUrl}`)
         if (!ready) log.warn('  still starting — open the URL above once it finishes indexing.')
       }
-      if (ready && opts.open !== false) openBrowser(displayUrl)
+      if (ready && opts.open === true) openBrowser(displayUrl)
 
       // Stay attached until the studio server ends; surface a non-zero code when a
       // child FAILURE (not a user Ctrl-C) drove the teardown.
