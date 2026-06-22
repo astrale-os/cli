@@ -43,6 +43,7 @@ import { friendlyType, methodGlyph } from '@/lib/friendly'
 import { useCatalog, useViewsModel } from '@/lib/hooks'
 import { unguardedCount } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
+import { anchorData, schemaMemberRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 import { viewsForClass } from '@/lib/views'
 
@@ -136,8 +137,7 @@ export function SchemaDetail({
 
   const isEdge = (member as IrClass).type === 'edge'
   const memberKind = kind === 'interface' ? 'interface' : isEdge ? 'edge' : 'class'
-  const refBase =
-    memberKind === 'interface' ? `interface.${name}` : isEdge ? `edge.${name}` : `class.${name}`
+  const refBase = schemaMemberRef(memberKind, name)
   const span = bundle.overlay.sourceSpans[refBase]
 
   const props = Object.entries(member.properties ?? {})
@@ -162,7 +162,11 @@ export function SchemaDetail({
   const classViews = viewsForClass(viewsModel, name)
 
   return (
-    <div className="h-full overflow-y-auto">
+    // The pane is a comment SCOPE: any click that doesn't land on a more specific
+    // marked element (a property/method row, an endpoint) resolves to this member
+    // rather than collapsing to the section. More-specific descendants still win
+    // because the resolver climbs to the NEAREST `data-anchor-ref` ancestor.
+    <div className="h-full overflow-y-auto" {...anchorData(refBase, name)}>
       <BackBar />
       <div className="px-5 py-6 space-y-7">
         {/* ── Header ── */}
@@ -346,9 +350,9 @@ function EdgeRelationship({
   return (
     <Surface className="px-3 py-5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-1">
-        <EndpointCard ir={ir} endpoint={from} />
+        <EndpointCard ir={ir} endpoint={from} edgeName={edgeName} />
         <RelConnector edgeName={edgeName} from={from} to={to} />
-        <EndpointCard ir={ir} endpoint={to} />
+        <EndpointCard ir={ir} endpoint={to} edgeName={edgeName} />
       </div>
     </Surface>
   )
@@ -368,11 +372,23 @@ const isOptional = (c?: Card) => !c || c.min <= 0
 
 // One endpoint: the connected class/interface as entity tile(s) with role + cardinality.
 // Single type → one prominent clickable tile; a union → an icon+name chip per type.
-function EndpointCard({ ir, endpoint }: { ir: SchemaIR; endpoint?: IrEndpoint }) {
+function EndpointCard({
+  ir,
+  endpoint,
+  edgeName,
+}: {
+  ir: SchemaIR
+  endpoint?: IrEndpoint
+  edgeName: string
+}) {
   const selectClass = useUI((s) => s.selectClass)
   if (!endpoint) return null
   const types = endpoint.types.length ? endpoint.types : ['—']
   const card = endpoint.cardinality
+  // each end is itself a comment target — `edge.<Name>.endpoint.<role>`
+  const epAnchor = endpoint.name
+    ? anchorData(`edge.${edgeName}.endpoint.${endpoint.name}`, endpoint.name)
+    : {}
   const meta = (t: string) => {
     const cls = ir.classes[t]
     const iface = ir.interfaces[t]
@@ -409,6 +425,7 @@ function EndpointCard({ ir, endpoint }: { ir: SchemaIR; endpoint?: IrEndpoint })
         onClick={m.resolvable ? go(m) : undefined}
         disabled={!m.resolvable}
         title={m.resolvable ? `Open ${m.t}` : m.t}
+        {...epAnchor}
         className={cn(
           'group/ep flex flex-col items-center gap-2.5 rounded-xl px-2 py-3 text-center min-w-0 transition-colors',
           m.resolvable ? 'hover:bg-accent/60 cursor-pointer' : 'cursor-default',
@@ -440,7 +457,10 @@ function EndpointCard({ ir, endpoint }: { ir: SchemaIR; endpoint?: IrEndpoint })
 
   // union — one clickable chip per allowed type
   return (
-    <div className="flex flex-col items-center gap-2.5 rounded-xl px-2 py-3 text-center min-w-0">
+    <div
+      {...epAnchor}
+      className="flex flex-col items-center gap-2.5 rounded-xl px-2 py-3 text-center min-w-0"
+    >
       <div className="flex flex-wrap items-center justify-center gap-1.5">
         {types.map((t) => {
           const m = meta(t)
@@ -906,6 +926,8 @@ function ModuleDetail({ bundle, path }: { bundle: StudioSchemaBundle; path: stri
     <Row
       key={m.selectId}
       onClick={() => selectClass(m.selectId)}
+      anchorRef={m.ref}
+      anchorExcerpt={m.name}
       leading={
         <IconTile
           tone={m.kind === 'interface' ? 'fuchsia' : m.kind === 'edge' ? 'amber' : 'sky'}
@@ -927,7 +949,8 @@ function ModuleDetail({ bundle, path }: { bundle: StudioSchemaBundle; path: stri
   )
 
   return (
-    <div className="h-full overflow-y-auto">
+    // scope: clicks in the module pane that miss a member row resolve to the module.
+    <div className="h-full overflow-y-auto" {...anchorData(`module.${path}`, info.label)}>
       <BackBar />
       <div className="px-5 py-6 space-y-7">
         <header className="flex items-start gap-3.5">

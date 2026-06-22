@@ -1,18 +1,10 @@
-import type { AnchorRef } from '@shared/types'
-
 import { MousePointerClick, Sparkles } from 'lucide-react'
 import { useEffect } from 'react'
 
 import { useAsks } from '@/lib/asks'
 import { type CommentDraft, useUI } from '@/lib/store'
+import { anchorKindForRef, flowEdgeAnchorRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
-
-function kindFor(ref: string): AnchorRef['kind'] {
-  if (/^(class|interface|edge)\./.test(ref)) return 'schema'
-  if (/^(module|section)\./.test(ref)) return 'section'
-  if (/^file\./.test(ref)) return 'file'
-  return 'free'
-}
 
 function flowPoint(target: HTMLElement, x: number, y: number): { x: number; y: number } | null {
   const flow = target.closest<HTMLElement>('.react-flow')
@@ -54,7 +46,7 @@ function resolveDraft(
   if (tagged?.dataset.anchorRef) {
     const ref = tagged.dataset.anchorRef
     const excerpt = (tagged.dataset.anchorExcerpt || tagged.textContent || ref).trim().slice(0, 80)
-    return { mode, anchor: { ref, kind: kindFor(ref) }, excerpt, x, y }
+    return { mode, anchor: { ref, kind: anchorKindForRef(ref) }, excerpt, x, y }
   }
 
   // 2) a graph node — a class box or a (collapsed/expanded) module box
@@ -72,8 +64,8 @@ function resolveDraft(
   // 3) a graph edge (relationship)
   const edge = target.closest<HTMLElement>('.react-flow__edge')
   if (edge) {
-    const name = (edge.getAttribute('data-id') ?? '').replace(/^edge-/, '')
-    if (name) return { mode, anchor: { ref: `edge.${name}`, kind: 'schema' }, excerpt: name, x, y }
+    const ref = flowEdgeAnchorRef(edge.getAttribute('data-id') ?? '')
+    if (ref) return { mode, anchor: { ref, kind: 'schema' }, excerpt: ref.slice(5), x, y }
   }
 
   // 4) anywhere else inside the main content (incl. empty canvas) → pinned to this section

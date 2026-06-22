@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 
 function anchorLabel(ref: string): string {
   if (ref === 'section.schema') return 'Schema canvas'
+  if (ref.startsWith('view.')) return `View · ${ref.slice('view.'.length)}`
   if (ref.startsWith('module.')) return `Module · ${ref.slice('module.'.length)}`
   if (ref.startsWith('class.')) return `Class · ${ref.slice('class.'.length)}`
   if (ref.startsWith('interface.')) return `Interface · ${ref.slice('interface.'.length)}`

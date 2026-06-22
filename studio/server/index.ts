@@ -2,7 +2,7 @@
 /**
  * index.ts — the Domain Studio server entrypoint.
  *
- *   bun server/index.ts [path | --workspace dir] [--port n] [--schema-dir schema] [--no-open]
+ *   bun server/index.ts [path | --workspace dir] [--port n] [--schema-dir schema] [--open]
  *
  * `path` may be an astrale.config.ts, a domain dir, or a workspace to scan.
  * Boots a Bun HTTP server: serves the built SPA, the JSON API, and the SSE
@@ -24,11 +24,14 @@ const argv = process.argv.slice(2)
 let target = ''
 let port = Number(process.env.PORT) || 4319
 let schemaDir = 'schema'
-let open = true
+// Default OFF — printing the URL is enough; popping a browser is invasive. The CLI
+// owns browser-opening (its own --open), and always passes --no-open here.
+let open = false
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
   if (a === '--port') port = Number(argv[++i])
   else if (a === '--schema-dir') schemaDir = argv[++i]
+  else if (a === '--open') open = true
   else if (a === '--no-open') open = false
   else if (a === '--workspace') target = argv[++i]
   else if (!a.startsWith('--')) target = a

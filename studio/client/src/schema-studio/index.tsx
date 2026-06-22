@@ -15,6 +15,11 @@ import { buildModuleTree } from './modules'
 import { ModuleTree } from './tree'
 import { ViewsPanel } from './views-panel'
 
+/** Modules sidebar width bounds (px). Default mirrors the old fixed `w-60` (15rem). */
+const MODULES_MIN = 180
+const MODULES_MAX = 560
+const MODULES_DEFAULT = 240
+
 export function SchemaSection({ domainId }: { domainId: string }) {
   const { data: bundle, isLoading } = useBundle(domainId)
   const { data: layout } = useLayout(domainId)
@@ -27,6 +32,39 @@ export function SchemaSection({ domainId }: { domainId: string }) {
   const panelOverlay = useUI((s) => s.panelOverlay)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
   const viewsModel = useViewsModel(domainId)
+
+  // Resizable modules sidebar — width persists across sessions (localStorage),
+  // clamped so it can't collapse the canvas or swallow the panel.
+  const [moduleWidth, setModuleWidth] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem('studio.modulesWidth'))
+      if (Number.isFinite(v) && v >= MODULES_MIN && v <= MODULES_MAX) return v
+    } catch {}
+    return MODULES_DEFAULT
+  })
+  const startModuleResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = moduleWidth
+    let latest = startW
+    const onMove = (ev: PointerEvent) => {
+      latest = Math.min(MODULES_MAX, Math.max(MODULES_MIN, startW + (ev.clientX - startX)))
+      setModuleWidth(latest)
+    }
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      try {
+        localStorage.setItem('studio.modulesWidth', String(latest))
+      } catch {}
+    }
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
 
   // core-view selection (a genesis node path) — local to this section, reset when
   // the domain or canvas mode changes so re-entering Core starts cleared.
@@ -76,7 +114,7 @@ export function SchemaSection({ domainId }: { domainId: string }) {
         </div>
       ) : (
         <div className="flex-1 flex min-h-0">
-          <div className="w-60 border-r shrink-0 min-h-0">
+          <div className="relative border-r shrink-0 min-h-0" style={{ width: moduleWidth }}>
             <ScrollArea className="h-full">
               {coreMode
                 ? core && (
@@ -89,6 +127,16 @@ export function SchemaSection({ domainId }: { domainId: string }) {
                   )
                 : tree && <ModuleTree root={tree} selected={selected} onSelect={select} />}
             </ScrollArea>
+            {/* drag handle straddling the right border — resize the modules sidebar */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              onPointerDown={startModuleResize}
+              title="Drag to resize"
+              className="group absolute right-0 top-0 z-20 h-full w-1.5 translate-x-1/2 cursor-col-resize"
+            >
+              <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-primary/50" />
+            </div>
           </div>
           <div className="flex-1 min-w-0 relative">
             <ReactFlowProvider>

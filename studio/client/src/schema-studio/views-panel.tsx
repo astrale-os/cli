@@ -1,6 +1,7 @@
 import { AppWindow, ArrowRight, Box, FileCode2, Globe, Play, TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 
+import { AnchorButton } from '@/components/anchor'
 import { EmptyState, Group, IconTile } from '@/components/studio-kit'
 import { ScrollArea } from '@/components/ui/misc'
 import { ViewModal } from '@/components/view-modal'
@@ -29,38 +30,54 @@ export function ViewRow({
   const [open, setOpen] = useState(false)
   const drift = driftLabel(view.drift)
   const meta = [view.kind, view.mount, view.auth].filter(Boolean).join(' · ')
+  // Make the row a comment/ask target (ref `view.<slug>`) so commenting on a view
+  // anchors to THAT view — not the enclosing `section.schema` it used to fall back to.
+  const anchorRef = `view.${view.slug}`
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Open live view"
-        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60"
+      <div
+        data-anchor-ref={anchorRef}
+        data-anchor-excerpt={view.slug}
+        className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/60"
       >
-        <IconTile tone="sky" size="sm">
-          {icon ? (
-            <SchemaIcon svg={icon} className="h-3.5 w-3.5" />
-          ) : (
-            <KindIcon kind={view.kind} className="h-3.5 w-3.5" />
-          )}
-        </IconTile>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium leading-tight">{view.slug}</div>
-          <div className="truncate text-[11px] leading-tight text-muted-foreground/70">{meta}</div>
-        </div>
-        {drift && (
-          <span
-            className={cn(
-              'inline-flex shrink-0 items-center gap-1 text-[10px] font-medium',
-              drift.tone === 'warn' ? 'text-warning' : 'text-muted-foreground/70',
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Open live view"
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
+          <IconTile tone="sky" size="sm">
+            {icon ? (
+              <SchemaIcon svg={icon} className="h-3.5 w-3.5" />
+            ) : (
+              <KindIcon kind={view.kind} className="h-3.5 w-3.5" />
             )}
-          >
-            {drift.tone === 'warn' && <TriangleAlert className="h-3 w-3" />}
-            {drift.text}
-          </span>
-        )}
-        <Play className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-primary" />
-      </button>
+          </IconTile>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px] font-medium leading-tight">{view.slug}</div>
+            <div className="truncate text-[11px] leading-tight text-muted-foreground/70">
+              {meta}
+            </div>
+          </div>
+          {drift && (
+            <span
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1 text-[10px] font-medium',
+                drift.tone === 'warn' ? 'text-warning' : 'text-muted-foreground/70',
+              )}
+            >
+              {drift.tone === 'warn' && <TriangleAlert className="h-3 w-3" />}
+              {drift.text}
+            </span>
+          )}
+          <Play className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-primary" />
+        </button>
+        <AnchorButton
+          anchorRef={{ ref: anchorRef, kind: 'section', file: view.file }}
+          excerpt={view.slug}
+          className="ml-1"
+        />
+      </div>
       {open && (
         <ViewModal
           domainId={domainId}

@@ -7,7 +7,7 @@ import {
   type StudioSettings,
 } from '@shared/types'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, HelpCircle, Lock, RefreshCw } from 'lucide-react'
+import { Check, ChevronRight, Copy, HelpCircle, Lock, RefreshCw } from 'lucide-react'
 import { type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -267,6 +267,94 @@ function SkillRow({
   )
 }
 
+/**
+ * How to install each featured skill when it is missing — so the "not installed"
+ * badge GUIDES instead of dead-ending. The two astrale skills ship together from
+ * the public cli repo; agent-browser is a third-party tool (the binary `astrale
+ * browser` drives) plus its skill. Mirrors the CLI's setup steps — keep in sync
+ * with cli/src/setup/steps/agent-browser.ts and cli/src/lib/skills.ts.
+ */
+const SKILL_INSTALL: Record<string, string[]> = {
+  'astrale-cli': ['npx skills add astrale-os/cli -g'],
+  'astrale-domain': ['npx skills add astrale-os/cli -g'],
+  'agent-browser': [
+    'npm install -g agent-browser && agent-browser install',
+    'npx skills add vercel-labs/agent-browser -g',
+  ],
+}
+
+/** A copyable command line — click to put it on the clipboard. */
+function CopyCommand({ cmd }: { cmd: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(cmd)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        } catch {
+          toast.error('Copy failed — select the command and copy it manually.')
+        }
+      }}
+      className="group flex w-full items-center gap-2 rounded bg-muted/40 px-2 py-1 text-left font-mono text-[11px] transition-colors hover:bg-muted"
+      title="Copy to clipboard"
+    >
+      <span className="truncate">{cmd}</span>
+      {copied ? (
+        <Check className="ml-auto h-3 w-3 shrink-0 text-emerald-500" />
+      ) : (
+        <Copy className="ml-auto h-3 w-3 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
+      )}
+    </button>
+  )
+}
+
+/** A featured skill that is absent on disk — click to reveal how to install it
+ *  (the gap Studio used to flag without telling you how to fix). */
+function MissingSkillRow({ command }: { command: string }) {
+  const [open, setOpen] = useState(false)
+  const cmds = SKILL_INSTALL[command]
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => cmds && setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/40"
+        title="not installed on disk in this workspace — click to see how"
+      >
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" title="not installed" />
+        <span className="truncate font-mono text-[12px] text-muted-foreground/60 line-through">
+          {command}
+        </span>
+        <span className="ml-auto shrink-0 rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+          not installed
+        </span>
+        {cmds && (
+          <ChevronRight
+            className={cn(
+              'h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform',
+              open && 'rotate-90',
+            )}
+          />
+        )}
+      </button>
+      {open && cmds && (
+        <div className="space-y-1.5 border-t bg-background/60 px-2.5 py-2">
+          <p className="text-[11px] text-muted-foreground/70">Run, then hit re-probe above:</p>
+          {cmds.map((cmd) => (
+            <CopyCommand key={cmd} cmd={cmd} />
+          ))}
+          <p className="text-[10px] text-muted-foreground/50">
+            Or run <span className="font-mono">astrale setup</span> to equip everything at once.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 const fmtTokens = (n: number) =>
   n >= 1_000_000
     ? `${(n / 1_000_000).toFixed(1)}M`
@@ -408,22 +496,7 @@ function AgentExtras({
                       onToggle={() => toggle(command)}
                     />
                   ) : (
-                    <div
-                      key={command}
-                      className="flex items-center gap-2 px-2.5 py-1.5"
-                      title="not installed on disk in this workspace"
-                    >
-                      <span
-                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive"
-                        title="not installed"
-                      />
-                      <span className="truncate font-mono text-[12px] text-muted-foreground/60 line-through">
-                        {command}
-                      </span>
-                      <span className="ml-auto shrink-0 rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                        not installed
-                      </span>
-                    </div>
+                    <MissingSkillRow key={command} command={command} />
                   )
                 })}
                 {showAll &&
