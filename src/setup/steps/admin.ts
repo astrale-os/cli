@@ -4,7 +4,7 @@ import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_NAME } from '../../lib/ad
 import { readConfig, writeConfig } from '../../lib/config'
 import { readLocalStatus } from '../../lib/local-status'
 import { log } from '../../lib/log'
-import { confirmDefaultYes, promptText } from '../../lib/prompt'
+import { promptText } from '../../lib/prompt'
 import { urlError } from '../util'
 
 const FIX = 'astrale admin use --url <admin-url>'
@@ -24,9 +24,11 @@ async function setAdminBookmark(bookmark: string): Promise<void> {
 
 /**
  * Step 2 — the admin control plane. There's always a default (admin.eu), so the
- * checklist shows it as satisfied; the hand-held path confirms the default on a
- * fresh setup and lets the user point elsewhere. Explicit --admin-url / --admin
- * flags persist immediately.
+ * checklist shows it as satisfied and setup just confirms it with a ✔ line — no
+ * prompt, since the default is right for nearly everyone and asking only confused
+ * first-run users. Explicit --admin-url / --admin flags still persist immediately,
+ * and power users repoint later with `astrale admin use <bookmark>|--url <url>`.
+ * The only prompt left is the recovery path when the configured target is broken.
  */
 export const adminStep: SetupStep = {
   id: 'admin',
@@ -68,22 +70,8 @@ export const adminStep: SetupStep = {
       return 'fixed'
     }
 
-    // Unconfigured (the baked default): confirm it, or let them change it.
-    if (admin.source === 'default') {
-      const keepDefault = await confirmDefaultYes(
-        `Use the default admin control plane (${admin.url})?`,
-      )
-      if (!keepDefault) {
-        const url = await promptText('Admin kernel URL', { validate: urlError })
-        if (url) {
-          await setAdminUrl(url)
-          log.success(`Admin control plane set: ${url}`)
-          return 'fixed'
-        }
-        log.dim('  No URL entered — keeping the default.')
-      }
-    }
-
+    // Configured or baked default: accept it silently — no prompt. Power users
+    // repoint with `astrale admin use` (or the --admin-url / --admin flags above).
     log.success(`Admin control plane: ${admin.name} (${admin.url})`)
     return 'unchanged'
   },
