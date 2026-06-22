@@ -1,5 +1,5 @@
 ---
-name: Astrale Domain
+name: astrale-domain
 description: Create, develop, deploy, and iterate an Astrale domain end-to-end — schema modeling (classes, interfaces, edges, methods), handler implementation, calling the kernel and other domains from handlers, integrating external APIs (the core use case — DI, secrets, idempotency, sagas), views, testing, and the deploy/install loop with the cloudflare or astrale adapter. Use whenever creating a domain, adding classes/methods/views, structuring external API calls, or debugging install/dispatch/permission errors. Pairs with the astrale-cli skill (CLI ops) — together they cover working an Astrale instance autonomously. `npx create-astrale-domain <name>` scaffolds a new domain project.
 when_to_use: when asked to create or edit a domain.
 ---
