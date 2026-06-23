@@ -34,6 +34,7 @@ type InstallOpts = KernelCommandOpts &
     direct?: boolean
     token?: string
     allowIdentityOverride?: boolean
+    expectedSchemaHash?: string
     // Global flags (program.ts) that force non-interactive.
     ci?: boolean
     noPrompt?: boolean
@@ -85,6 +86,13 @@ Examples:
     {
       flags: '--allow-identity-override',
       description: 'Consent to a domain whose origin differs from its serving host (--direct only)',
+    },
+    {
+      flags: '--expected-schema-hash <hash>',
+      description:
+        'Pin the install to a schema hash; the kernel fails (retryably, HTTP 409) ' +
+        'if the URL serves a different build. For deploy tooling racing edge ' +
+        'propagation (--direct only)',
     },
   ],
   action: async (target: string | undefined, opts: InstallOpts) => {
@@ -290,10 +298,15 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
     opts,
     label: `Installing domain from ${url}`,
     fn: async (ctx) =>
-      (await ctx.client.call(K.Root.installDomain.path.method.raw, {
-        url,
-        ...(opts.token ? { token: opts.token } : {}),
-      })) as DirectInstallResult,
+      (await retryOnSchemaHashMismatch(
+        () =>
+          ctx.client.call(K.Root.installDomain.path.method.raw, {
+            url,
+            ...(opts.token ? { token: opts.token } : {}),
+            ...(opts.expectedSchemaHash ? { expectedSchemaHash: opts.expectedSchemaHash } : {}),
+          }),
+        { enabled: Boolean(opts.expectedSchemaHash), log: (line) => log.dim(`  ${line}`) },
+      )) as DirectInstallResult,
     format: (result, fmtOpts, isRaw) => {
       if (isRaw) {
         output(result, fmtOpts)
@@ -313,6 +326,55 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
       }
     },
   })
+}
+
+const SCHEMA_HASH_MISMATCH_ATTEMPTS = 6
+const SCHEMA_HASH_MISMATCH_BACKOFF_MS = 2_000
+const SCHEMA_HASH_MISMATCH_BACKOFF_MAX_MS = 16_000
+
+/** A pinned install hit a not-yet-propagated build (kernel SCHEMA_HASH_MISMATCH / 409). */
+export function isSchemaHashMismatch(error: unknown): boolean {
+  return /SCHEMA_HASH_MISMATCH/.test(String((error as { message?: unknown })?.message ?? error))
+}
+
+type RetryOnMismatchOpts = {
+  enabled: boolean
+  attempts?: number
+  baseBackoffMs?: number
+  maxBackoffMs?: number
+  sleep?: (ms: number) => Promise<void>
+  log?: (line: string) => void
+}
+
+/**
+ * Retry a pinned install while the URL still serves a stale build. The kernel
+ * re-fetches the bundle each call, so backing off and retrying rides out edge
+ * propagation until it converges on the pinned build.
+ */
+export async function retryOnSchemaHashMismatch<T>(
+  call: () => Promise<T>,
+  opts: RetryOnMismatchOpts,
+): Promise<T> {
+  if (!opts.enabled) return call()
+  const attempts = opts.attempts ?? SCHEMA_HASH_MISMATCH_ATTEMPTS
+  const base = opts.baseBackoffMs ?? SCHEMA_HASH_MISMATCH_BACKOFF_MS
+  const max = opts.maxBackoffMs ?? SCHEMA_HASH_MISMATCH_BACKOFF_MAX_MS
+  const sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
+  let lastError: unknown
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await call()
+    } catch (error) {
+      lastError = error
+      if (attempt >= attempts || !isSchemaHashMismatch(error)) throw error
+      const delay = Math.min(max, base * 2 ** (attempt - 1))
+      opts.log?.(
+        `worker not propagated yet; retry ${attempt}/${attempts - 1} in ${Math.round(delay / 1000)}s…`,
+      )
+      await sleep(delay)
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
 }
 
 function validateInstallUrl(value: string): string {
