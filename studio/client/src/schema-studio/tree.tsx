@@ -2,6 +2,8 @@ import {
   Box,
   ChevronDown,
   ChevronRight,
+  Eye,
+  EyeOff,
   FileCode2,
   FolderClosed,
   FolderOpen,
@@ -16,6 +18,7 @@ import { cn } from '@/lib/utils'
 
 import { type MemberRef, type TreeNode } from './modules'
 import { SchemaIcon } from './schema-icon'
+import { isHidden } from './visibility'
 
 /** Does any member anywhere under `node` match the current selection? */
 function subtreeHasSelected(node: TreeNode, selected?: string): boolean {
@@ -160,6 +163,10 @@ function Member({
   onSelect: (id: string) => void
 }) {
   const active = selected === m.selectId
+  // `m.ref` (class.X / edge.X / interface.X) is the hide-set key — NOT `m.selectId`, whose
+  // edges share the class.X namespace and would collide with a same-named node class.
+  const hidden = useUI((s) => isHidden(m.ref, s.hidden))
+  const toggleHidden = useUI((s) => s.toggleHidden)
   const Icon = m.kind === 'interface' ? Shapes : m.kind === 'edge' ? Spline : Box
   const color =
     m.kind === 'interface'
@@ -179,8 +186,9 @@ function Member({
       data-anchor-ref={m.selectId}
       data-anchor-excerpt={`${m.kind} ${m.name}`}
       className={cn(
-        'w-full flex items-center pr-2 hover:bg-accent/50',
+        'group w-full flex items-center pr-2 hover:bg-accent/50',
         active && 'bg-accent text-accent-foreground font-black',
+        hidden && 'opacity-50',
       )}
       style={{ paddingLeft: 8 + (depth + 1) * 12 + 12 }}
       title={`${m.kind} ${m.name}`}
@@ -196,6 +204,20 @@ function Member({
           <Icon className={cn('h-3.5 w-3.5 shrink-0', color)} />
         )}
         <span className="truncate">{m.name}</span>
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          toggleHidden(m.ref)
+        }}
+        title={hidden ? 'Show in canvas' : 'Hide in canvas'}
+        className={cn(
+          'ml-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition hover:bg-white/5 hover:text-foreground',
+          hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100', // stays visible while hidden so you can un-hide
+        )}
+      >
+        {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </button>
       <AnchorButton
         anchorRef={{ ref: m.selectId, kind: 'schema' }}

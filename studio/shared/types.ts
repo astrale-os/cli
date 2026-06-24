@@ -761,6 +761,14 @@ export interface LayoutState {
   positions: Record<string, NodePosition>
 }
 
+/** Persisted per-domain canvas visibility — the manual hide-set + the inherited-edge
+ *  category toggle. Sibling of LayoutState: layout owns node POSITIONS, this owns what's SHOWN. */
+export interface VisibilityState {
+  /** refs hidden on the canvas: `class.X` | `edge.X` | `interface.X` | `domain.<origin>` */
+  hidden: Record<string, true>
+  showInheritedEdges: boolean
+}
+
 export type TypeDescriptor =
   | { kind: 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'unknown'; optional: boolean }
   | { kind: 'enum'; values: (string | number | boolean | null)[]; optional: boolean }

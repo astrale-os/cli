@@ -155,6 +155,16 @@ export function useLayout(id?: string) {
     staleTime: Number.POSITIVE_INFINITY,
   })
 }
+export function useVisibility(id?: string) {
+  // client-authoritative like layout: every toggle keeps this cache in sync (setQueryData)
+  // and flushes to disk debounced, so it must not be refetched out from under a live edit.
+  return useQuery({
+    queryKey: qk.visibility(id ?? ''),
+    queryFn: () => api.visibility(id!),
+    enabled: !!id,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
+}
 export function useDocuments(id?: string) {
   return useQuery({
     queryKey: qk.documents(id ?? ''),

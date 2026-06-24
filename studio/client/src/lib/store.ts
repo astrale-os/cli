@@ -40,8 +40,11 @@ interface UIState {
   collapsedModules: string[]
   /** comment-mode draft: the floating composer target + screen position */
   commentDraft: CommentDraft | null
-  /** external domain origins hidden in the canvas (kernel is hidden by default) */
-  hiddenDomains: string[]
+  /** Per-element canvas hide-set keyed by ref: `class.X` | `edge.X` | `interface.X` | `domain.<origin>`.
+   *  Everything is shown by default, so membership ⇒ hidden (no tri-state). Persisted per domain. */
+  hidden: Record<string, true>
+  /** Category control for the dashed interface-induced (poly) edge fan-out. Persisted per domain. */
+  showInheritedEdges: boolean
   /** which anchor's comment thread-popover is currently open (one at a time) */
   openAnchorRef: string | null
   /** which pin INSTANCE opened it (a `useId()`), so when the same ref is pinned in
@@ -70,7 +73,10 @@ interface UIState {
   focusClass: (id: string) => void
   setFocus: (id: string | null) => void
   toggleModule: (path: string) => void
-  toggleDomainVisibility: (origin: string) => void
+  toggleHidden: (ref: string) => void
+  /** Replace the whole visibility slice (used to hydrate from the persisted per-domain state). */
+  setVisibility: (v: { hidden: Record<string, true>; showInheritedEdges: boolean }) => void
+  toggleInheritedEdges: () => void
   setOpenAnchor: (ref: string | null, id?: string | null) => void
   toggleCommentMode: (on?: boolean) => void
   toggleAskMode: (on?: boolean) => void
@@ -89,7 +95,8 @@ export const useUI = create<UIState>((set) => ({
   selectionHistory: [],
   collapsedModules: [],
   commentDraft: null,
-  hiddenDomains: ['kernel.astrale.ai'],
+  hidden: {},
+  showInheritedEdges: true,
   openAnchorRef: null,
   openAnchorId: null,
   commentMode: false,
@@ -168,12 +175,15 @@ export const useUI = create<UIState>((set) => ({
         ? s.collapsedModules.filter((p) => p !== path)
         : [...s.collapsedModules, path],
     })),
-  toggleDomainVisibility: (origin) =>
-    set((s) => ({
-      hiddenDomains: s.hiddenDomains.includes(origin)
-        ? s.hiddenDomains.filter((o) => o !== origin)
-        : [...s.hiddenDomains, origin],
-    })),
+  toggleHidden: (ref) =>
+    set((s) => {
+      const next = { ...s.hidden }
+      if (next[ref]) delete next[ref]
+      else next[ref] = true
+      return { hidden: next }
+    }),
+  setVisibility: ({ hidden, showInheritedEdges }) => set({ hidden, showInheritedEdges }),
+  toggleInheritedEdges: () => set((s) => ({ showInheritedEdges: !s.showInheritedEdges })),
   setOpenAnchor: (openAnchorRef, openAnchorId = null) => set({ openAnchorRef, openAnchorId }),
   toggleCommentMode: (on) =>
     set((s) => ({ commentMode: on ?? !s.commentMode, askMode: false, openAnchorRef: null })),

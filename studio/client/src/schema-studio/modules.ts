@@ -57,7 +57,10 @@ function fileModulePath(file: string | undefined, schemaDir: string): string {
 function memberSelectId(kind: MemberKind, name: string): string {
   return kind === 'interface' ? `interface.${name}` : `class.${name}`
 }
-function memberRefKey(kind: MemberKind, name: string): string {
+/** The hide-set / anchor key for a member. Exported as the SOLE owner of the
+ *  `<kind>.<name>` scheme — visibility.ts's ref builders delegate here so the keys
+ *  the tree writes and the policy reads can never silently diverge. */
+export function memberRefKey(kind: MemberKind, name: string): string {
   return `${kind}.${name}`
 }
 

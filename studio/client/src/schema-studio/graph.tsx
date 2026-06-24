@@ -6,6 +6,7 @@ import type {
   LayoutState,
   NodePosition,
   StudioSchemaBundle,
+  VisibilityState,
 } from '@shared/types'
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -39,6 +40,7 @@ import {
   MessageSquare,
   Plug,
   Shapes,
+  Spline,
   UserRound,
   Zap,
 } from 'lucide-react'
@@ -48,7 +50,14 @@ import { ThreadPopover } from '@/components/thread-popover'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { api, qk } from '@/lib/api'
-import { useAnatomy, useCatalog, useComments, useCore, useViewsModel } from '@/lib/hooks'
+import {
+  useAnatomy,
+  useCatalog,
+  useComments,
+  useCore,
+  useViewsModel,
+  useVisibility,
+} from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -57,9 +66,22 @@ import { CoreModeToggle } from './core-view'
 import { elkLayout } from './elk-layout'
 import { type ExternalDomain, crossDomainEdges, externalDomains } from './external'
 import { edgeTypes } from './floating-edge'
-import { type FileModule, domainInterfacesOf, fileModules, moduleOfClass } from './modules'
+import { type FileModule, fileModules, moduleOfClass } from './modules'
 import { NodeCommentPin } from './node-comment-pin'
 import { SchemaIcon } from './schema-icon'
+import {
+  type Hidden,
+  VISIBILITY_DEFAULT,
+  classNodeVisible,
+  classRef,
+  domainVisible,
+  edgeRef,
+  edgeVisible,
+  filterHiddenInterfaces,
+  isHidden,
+  visibilityEqual,
+  visibleInterfaceBadges,
+} from './visibility'
 
 type SchemaCoreRole = 'container' | 'identity' | 'function'
 
@@ -562,10 +584,16 @@ function buildCrossEdges(
   visible: Set<string>,
   ids: Set<string>,
   bundle: StudioSchemaBundle,
+  hidden: Hidden,
 ): Edge[] {
   const out: Edge[] = []
   for (const e of cross) {
     if (!visible.has(e.origin)) continue
+    // honor the same hide-set the internal edge loop does: the edge class itself (its tree
+    // `edge` row has a hide eye) and the local source class. Cross edges are never
+    // interface-induced, so there's no inherited-edge / inducing-interface rule here.
+    if (isHidden(edgeRef(e.edge), hidden)) continue
+    if (isHidden(classRef(e.from), hidden)) continue // hidden source ⇒ no edge (don't reroute to the module box)
     const target = `extmember.${e.origin}.${e.to}`
     if (!ids.has(target)) continue
     const source = ids.has(`class.${e.from}`)
@@ -690,6 +718,8 @@ function schemaCoreRole(refs: unknown, bundle: StudioSchemaBundle): SchemaCoreRo
 function buildStructure(
   bundle: StudioSchemaBundle,
   collapsed: Set<string>,
+  hidden: Hidden,
+  showInheritedEdges: boolean,
 ): { nodes: Node[]; edges: Edge[] } {
   const ir = bundle.ir
   if (!ir) return { nodes: [], edges: [] }
@@ -711,7 +741,7 @@ function buildStructure(
         label: singleLabel(fm),
         path: fm.path,
         hue: fm.hue,
-        interfaces: fm.interfaces,
+        interfaces: filterHiddenInterfaces(fm.interfaces, hidden),
         collapsed: isCollapsed,
         classCount: fm.classes.length,
       } satisfies GroupNodeData,
@@ -719,6 +749,7 @@ function buildStructure(
     })
     if (isCollapsed) continue
     for (const cn of fm.classes) {
+      if (!classNodeVisible(cn, hidden)) continue
       nodes.push({
         id: `class.${cn}`,
         type: 'classNode',
@@ -733,7 +764,7 @@ function buildStructure(
           name: cn,
           props: Object.keys(ir.classes[cn]?.properties ?? {}).length,
           methods: Object.keys(ir.classes[cn]?.methods ?? {}).length,
-          interfaces: domainInterfacesOf(bundle, cn),
+          interfaces: visibleInterfaceBadges(bundle, cn, hidden),
           coreRole: schemaCoreRole(ir.classes[cn]?.implements ?? [], bundle),
           hue: fm.hue,
           icon: ir.classes[cn]?.icon,
@@ -751,19 +782,22 @@ function buildStructure(
   // resolve an endpoint's declared types into concrete node-class targets, expanding
   // unions (several listed types) and interfaces (→ every class that implements them)
   const targetsOf = (ep?: { types?: string[] }) => {
-    const out: { cls: string; viaInterface: boolean }[] = []
+    // viaInterface = the inducing interface name when an endpoint fans out through an
+    // interface to its implementers (null for a directly-named class). Carrying the NAME
+    // (not a boolean) is what lets the visibility policy mute one interface's induced edges.
+    const out: { cls: string; viaInterface: string | null }[] = []
     const seen = new Set<string>()
     for (const t of ep?.types ?? []) {
       if (ir.classes[t]?.type === 'node') {
         if (!seen.has(t)) {
           seen.add(t)
-          out.push({ cls: t, viaInterface: false })
+          out.push({ cls: t, viaInterface: null })
         }
       } else if (ir.interfaces[t]) {
         for (const [cn, c] of Object.entries(ir.classes)) {
           if (c.type === 'node' && (c.implements ?? []).includes(t) && !seen.has(cn)) {
             seen.add(cn)
-            out.push({ cls: cn, viaInterface: true })
+            out.push({ cls: cn, viaInterface: t })
           }
         }
       }
@@ -778,11 +812,21 @@ function buildStructure(
     const bTargets = targetsOf(e.endpoints?.[1])
     for (const a of aTargets) {
       for (const b of bTargets) {
+        // every interface an endpoint fanned out through — hiding any one mutes this edge
+        const viaInterfaces = [a.viaInterface, b.viaInterface].filter((i) => i !== null)
+        if (
+          !edgeVisible(
+            { edgeName: e.name, aClass: a.cls, bClass: b.cls, viaInterfaces },
+            hidden,
+            showInheritedEdges,
+          )
+        )
+          continue
         const sa = rep(a.cls)
         const sb = rep(b.cls)
         if (sa === sb) continue // self-link, or both ends collapsed into the same module box
         const cross = moduleOfClass(bundle, a.cls) !== moduleOfClass(bundle, b.cls)
-        const poly = a.viaInterface || b.viaInterface // resolved via interface ⇒ dashed
+        const poly = viaInterfaces.length > 0 // resolved via interface ⇒ dashed
         const color = cross ? 'oklch(0.72 0.16 35)' : 'oklch(0.62 0.07 264)'
         edges.push({
           id: `edge-${e.name}__${a.cls}__${b.cls}`,
@@ -842,21 +886,25 @@ export function SchemaGraph({
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
   const collapsedModules = useUI((s) => s.collapsedModules)
   const toggleModule = useUI((s) => s.toggleModule)
-  const hiddenDomains = useUI((s) => s.hiddenDomains)
+  const hidden = useUI((s) => s.hidden)
+  const showInheritedEdges = useUI((s) => s.showInheritedEdges)
+  const toggleInheritedEdges = useUI((s) => s.toggleInheritedEdges)
+  const setVisibility = useUI((s) => s.setVisibility)
   const { data: catalog } = useCatalog()
   const { data: commentStore } = useComments(domainId)
+  const { data: visibility } = useVisibility(domainId)
 
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [hoverId, setHoverId] = useState<string | null>(null)
 
   const structure = useMemo(
-    () => buildStructure(bundle, new Set(collapsedModules)),
-    [bundle.schemaHash, bundle, collapsedModules],
+    () => buildStructure(bundle, new Set(collapsedModules), hidden, showInheritedEdges),
+    [bundle.schemaHash, bundle, collapsedModules, hidden, showInheritedEdges],
   )
   const allExternal = useMemo(() => externalDomains(bundle), [bundle])
   const crossE = useMemo(() => crossDomainEdges(bundle), [bundle])
-  const hiddenKey = hiddenDomains.join(',')
+  const hiddenKey = Object.keys(hidden).sort().join(',') + `|${showInheritedEdges}`
 
   // auto-expand a collapsed module when one of its classes is selected (e.g. from ⌘K)
   useEffect(() => {
@@ -896,21 +944,52 @@ export function SchemaGraph({
   // don't lose a just-dragged position when the canvas unmounts (switching to core view)
   useEffect(() => () => flush(), [flush])
 
+  // ── visibility of record = the persisted per-domain visibility cache ──
+  // Same client-authoritative model as layout: the zustand store holds the LIVE slice,
+  // the query cache holds the PER-DOMAIN record. Hydrate the store on domain switch, and
+  // flush genuine user toggles back to the cache (immediately) + disk (debounced).
+  const visTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // hydrate the store from this domain's persisted slice (overwrites the live slice, since
+  // visibility is per-domain). Reset to defaults the instant the domain changes — BEFORE the
+  // GET resolves — so the canvas never renders the previous domain's hide-set while the new
+  // domain's slice is in flight; then paint the loaded slice once it lands.
+  useEffect(() => {
+    setVisibility(visibility ?? VISIBILITY_DEFAULT)
+  }, [domainId, visibility, setVisibility])
+  // persist user toggles. The query cache is the per-domain record; a hydrate (and the
+  // default-reset on switch) make the store match the cache, so a value-equal flush is a
+  // pure echo — skip it. That leaves only genuine user toggles (store ≠ cache) round-tripping
+  // to disk, with no hydratedFor bookkeeping to keep in lockstep with the async GET.
+  useEffect(() => {
+    const next: VisibilityState = { hidden, showInheritedEdges }
+    const cached = qc.getQueryData<VisibilityState>(qk.visibility(domainId)) ?? VISIBILITY_DEFAULT
+    if (visibilityEqual(next, cached)) return
+    qc.setQueryData<VisibilityState>(qk.visibility(domainId), next)
+    clearTimeout(visTimer.current)
+    visTimer.current = setTimeout(() => api.setVisibility(domainId, next).catch(() => {}), 500)
+  }, [hidden, showInheritedEdges, domainId, qc])
+
   // paint a set of positions onto the structure and append the external area.
   const compose = useCallback(
     (g: Geom) => {
       const internal = structure.nodes.map((n) => applyGeom(n, g))
-      const visibleDomains = allExternal.filter((d) => !hiddenDomains.includes(d.origin))
+      const visibleDomains = allExternal.filter((d) => domainVisible(d.origin, hidden))
       const { extNodes } = buildExternalLayout(internal, visibleDomains, catalog, g)
       const all = [...internal, ...extNodes]
       const ids = new Set(all.map((n) => n.id))
       setNodes(all)
       setEdges([
         ...structure.edges,
-        ...buildCrossEdges(crossE, new Set(visibleDomains.map((d) => d.origin)), ids, bundle),
+        ...buildCrossEdges(
+          crossE,
+          new Set(visibleDomains.map((d) => d.origin)),
+          ids,
+          bundle,
+          hidden,
+        ),
       ])
     },
-    [structure, allExternal, hiddenDomains, catalog, crossE, bundle],
+    [structure, allExternal, hidden, catalog, crossE, bundle],
   )
   const firstFit = useCallback(() => {
     if (fitted.current) return
@@ -1175,6 +1254,14 @@ export function SchemaGraph({
           <span className="rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
             {integrationsCount}
           </span>
+        </Button>
+        <Button
+          size="xs"
+          variant={showInheritedEdges ? 'default' : 'outline'}
+          onClick={toggleInheritedEdges}
+          title="Toggle inherited (interface-induced) edges"
+        >
+          <Spline className="h-3.5 w-3.5" /> Inherited
         </Button>
         <CoreModeToggle count={coreCount} />
       </Panel>

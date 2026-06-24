@@ -60,6 +60,7 @@ import { readSettings, updateSettings } from './state/settings'
 import { applyUpdates, getUpdates } from './state/updates'
 import { readUsage } from './state/usage'
 import { mintPreviewToken, resolveViewUrl } from './state/views'
+import { readVisibility, resetVisibility, saveVisibility } from './state/visibility'
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -494,6 +495,20 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
       return json({ ok: true })
     }
     return badReq('unknown layout action')
+  }
+
+  // ── canvas visibility (persisted hide-set + inherited-edge toggle) ──
+  if (rest === '/visibility') {
+    if (req.method === 'GET') return json(readVisibility(root))
+    if (body.action === 'set')
+      return json(
+        saveVisibility(root, {
+          hidden: body.hidden ?? {},
+          showInheritedEdges: body.showInheritedEdges ?? true,
+        }),
+      )
+    if (body.action === 'reset') return json(resetVisibility(root))
+    return badReq('unknown visibility action')
   }
 
   // ── copy payload ──

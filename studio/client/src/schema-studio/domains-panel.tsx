@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 
 import { type ExternalDomain, externalDomains } from './external'
 import { SchemaIcon } from './schema-icon'
+import { domainRef, isHidden } from './visibility'
 
 /**
  * DomainsPanel — the "Imported domains" overview in the RIGHT PANEL (opened from the
@@ -36,8 +37,8 @@ function useResolve() {
 
 function DomainRow({ domain }: { domain: ExternalDomain }) {
   const resolve = useResolve()
-  const hidden = useUI((s) => s.hiddenDomains.includes(domain.origin))
-  const toggle = useUI((s) => s.toggleDomainVisibility)
+  const hidden = useUI((s) => isHidden(domainRef(domain.origin), s.hidden))
+  const toggleHidden = useUI((s) => s.toggleHidden)
   const entry = resolve(domain.origin)
   const tone = domain.kind === 'kernel' ? 'violet' : 'emerald'
   const count = domain.members.length
@@ -60,7 +61,7 @@ function DomainRow({ domain }: { domain: ExternalDomain }) {
       </div>
       <button
         type="button"
-        onClick={() => toggle(domain.origin)}
+        onClick={() => toggleHidden(domainRef(domain.origin))}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent/60 hover:text-foreground"
       >

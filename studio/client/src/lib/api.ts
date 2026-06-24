@@ -33,6 +33,7 @@ import type {
   StudioSchemaBundle,
   ThreadEntry,
   ViewUrlResult,
+  VisibilityState,
 } from '@shared/types'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -174,6 +175,12 @@ export const api = {
   setLayout: (id: string, positions: Record<string, NodePosition>) =>
     post<LayoutState>(`${d(id)}/layout`, { action: 'set', positions }),
   resetLayout: (id: string) => post<{ ok: true }>(`${d(id)}/layout`, { action: 'reset' }),
+
+  visibility: (id: string) => get<VisibilityState>(`${d(id)}/visibility`),
+  setVisibility: (id: string, state: VisibilityState) =>
+    post<VisibilityState>(`${d(id)}/visibility`, { action: 'set', ...state }),
+  resetVisibility: (id: string) =>
+    post<VisibilityState>(`${d(id)}/visibility`, { action: 'reset' }),
 }
 
 export const qk = {
@@ -191,6 +198,7 @@ export const qk = {
   integrations: (id: string) => ['integrations', id] as const,
   settings: (id: string) => ['settings', id] as const,
   layout: (id: string) => ['layout', id] as const,
+  visibility: (id: string) => ['visibility', id] as const,
   documents: (id: string) => ['documents', id] as const,
   agent: (id: string) => ['agent', id] as const,
   agentSession: (id: string) => ['agent-session', id] as const,
