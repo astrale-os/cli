@@ -35,6 +35,15 @@ const RESUME_REJECTED =
 const PERMISSION_MODE = process.env.DOMAIN_STUDIO_AGENT_PERMISSION || 'bypassPermissions'
 const EXTRA_ARGS = (process.env.DOMAIN_STUDIO_CLAUDE_ARGS || '').split(' ').filter(Boolean)
 
+/** Build the child env: the studio's own env plus any per-domain overrides (a
+ *  custom model gateway's ANTHROPIC_*). Returns undefined when there are no
+ *  overrides so the child plainly inherits `process.env` (the prior behaviour) —
+ *  and crucially these vars live ONLY in the spawned child, never the studio
+ *  process or the user's shell. */
+function childEnv(extra?: Record<string, string>): NodeJS.ProcessEnv | undefined {
+  return extra && Object.keys(extra).length ? { ...process.env, ...extra } : undefined
+}
+
 /** Compact a tool_use block into a one-line target for the activity log. */
 function toolTarget(name: string, input: Record<string, unknown> | undefined): string {
   if (!input) return ''
@@ -192,8 +201,9 @@ export class ClaudeCodeHarness implements AgentHarness {
 
   // cache the version probe — getSnapshot is polled, no need to spawn each time
   private availCache?: { at: number; ok: boolean }
-  // cache the loadout probe per-root — the Settings dialog may re-open often
-  private loadoutCache?: { at: number; root: string; data: HarnessLoadout }
+  // cache the loadout probe per (root + env) — the Settings dialog may re-open
+  // often; the env is part of the key so switching gateway re-probes the model
+  private loadoutCache?: { at: number; key: string; data: HarnessLoadout }
 
   async isAvailable(): Promise<boolean> {
     const now = Date.now()
@@ -244,11 +254,12 @@ export class ClaudeCodeHarness implements AgentHarness {
   /** What did the harness ACTUALLY load for `root`? Reads the `system/init` event
    *  of a headless probe (authoritative — reflects enable/disable, cwd scope, MCP
    *  auth) and reconciles its slash-commands against on-disk skills. Cached ~60s. */
-  async loadout(root: string): Promise<HarnessLoadout> {
+  async loadout(root: string, env?: Record<string, string>): Promise<HarnessLoadout> {
     const now = Date.now()
-    if (this.loadoutCache && this.loadoutCache.root === root && now - this.loadoutCache.at < 60_000)
+    const key = `${root} ${JSON.stringify(env ?? {})}`
+    if (this.loadoutCache && this.loadoutCache.key === key && now - this.loadoutCache.at < 60_000)
       return this.loadoutCache.data
-    const probe = await this.probeInit(root)
+    const probe = await this.probeInit(root, env)
     let data: HarnessLoadout
     if (!probe.ok || !probe.init) {
       data = {
@@ -286,7 +297,7 @@ export class ClaudeCodeHarness implements AgentHarness {
         probedAt: now,
       }
     }
-    this.loadoutCache = { at: now, root, data }
+    this.loadoutCache = { at: now, key, data }
     return data
   }
 
@@ -301,12 +312,19 @@ export class ClaudeCodeHarness implements AgentHarness {
   /** Spawn the harness in headless stream-json mode and resolve on the first
    *  `system/init` event, then KILL it — init is emitted before the first model
    *  call, so this costs ~0 tokens. A 15s timeout / early close ⇒ a !ok result. */
-  private probeInit(root: string): Promise<{ ok: boolean; detail?: string; init?: any }> {
+  private probeInit(
+    root: string,
+    env?: Record<string, string>,
+  ): Promise<{ ok: boolean; detail?: string; init?: any }> {
     return new Promise((resolve) => {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', ...EXTRA_ARGS]
       let child: ReturnType<typeof spawn>
       try {
-        child = spawn(BIN, args, { cwd: root, stdio: ['pipe', 'pipe', 'ignore'] })
+        child = spawn(BIN, args, {
+          cwd: root,
+          stdio: ['pipe', 'pipe', 'ignore'],
+          env: childEnv(env),
+        })
       } catch (e) {
         resolve({
           ok: false,
@@ -366,8 +384,17 @@ export class ClaudeCodeHarness implements AgentHarness {
   }
 
   run(input: AgentTurnInput): Promise<AgentTurnResult> {
-    const { root, prompt, appendSystemPrompt, sessionId, effort, mcpConfigPath, signal, onEvent } =
-      input
+    const {
+      root,
+      prompt,
+      appendSystemPrompt,
+      sessionId,
+      effort,
+      mcpConfigPath,
+      env,
+      signal,
+      onEvent,
+    } = input
 
     const args = [
       '-p',
@@ -393,7 +420,11 @@ export class ClaudeCodeHarness implements AgentHarness {
       let errorMessage: string | undefined
       let stderr = ''
 
-      const child = spawn(BIN, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] })
+      const child = spawn(BIN, args, {
+        cwd: root,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: childEnv(env),
+      })
 
       const onAbort = () => {
         try {
@@ -548,7 +579,7 @@ export class ClaudeCodeHarness implements AgentHarness {
    * main agent, with the same configured effort.
    */
   ask(input: AskInput): Promise<AskResult> {
-    const { root, prompt, appendSystemPrompt, sessionId, effort, signal, onDelta } = input
+    const { root, prompt, appendSystemPrompt, sessionId, effort, env, signal, onDelta } = input
 
     const args = [
       '-p',
@@ -572,7 +603,11 @@ export class ClaudeCodeHarness implements AgentHarness {
       let isError = false
       let errorMessage: string | undefined
 
-      const child = spawn(BIN, args, { cwd: root, stdio: ['pipe', 'pipe', 'pipe'] })
+      const child = spawn(BIN, args, {
+        cwd: root,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: childEnv(env),
+      })
       const onAbort = () => {
         try {
           child.kill('SIGTERM')

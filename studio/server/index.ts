@@ -68,11 +68,21 @@ function serveStatic(pathname: string): Response {
   const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '')
   const file = join(DIST, rel)
   if (existsSync(file) && !file.endsWith('/') && rel !== 'index.html') {
-    return new Response(Bun.file(file))
+    // Vite emits content-hashed asset names (index-<hash>.js), so a given URL is
+    // immutable — cache it forever. A rebuild produces a NEW name, and the
+    // never-cached shell below points the browser at it.
+    return new Response(Bun.file(file), {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' },
+    })
   }
   const index = join(DIST, 'index.html')
   if (existsSync(index))
-    return new Response(Bun.file(index), { headers: { 'content-type': 'text/html' } })
+    // NEVER cache the HTML shell: it references the CURRENT hashed bundle. A stale
+    // shell would point at an asset a later build deleted → 404 → the app never
+    // boots and the page "loads forever". no-store guarantees every load is fresh.
+    return new Response(Bun.file(index), {
+      headers: { 'content-type': 'text/html', 'cache-control': 'no-store' },
+    })
   return new Response(
     'client not built — run `vite build` (or set DOMAIN_STUDIO_DEV=1 for the Vite dev server)',
     { status: 500 },

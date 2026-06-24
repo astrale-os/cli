@@ -335,8 +335,8 @@ export function SchemaDetail({
 // Endpoints carry a role (`as`), a set of allowed `types` (a union lists several;
 // an interface stands for any class that implements it), and an optional declared
 // `cardinality` ({min,max}; max:null = unbounded). We render each end as entity
-// tile(s) with a cardinality chip, and a connector whose ERD markers (crow's-foot
-// = many, bar = one, hollow ring = optional) reflect the real declared multiplicity.
+// tile(s) with a cardinality chip, and a connector whose markers (crow's-foot = many,
+// solid dot = one, hollow dot = optional) reflect the real declared multiplicity.
 function EdgeRelationship({
   ir,
   endpoints,
@@ -543,7 +543,9 @@ function RelConnector({
   )
 }
 
-// ── ERD end marker: crow's-foot (many) or bar (one); hollow ring when optional ──
+// ── End marker: crow's-foot (many) or a dot (one) — SOLID = a single, HOLLOW = optional ──
+// Mirrors the canvas markers (see cardinality-markers.tsx): a point reads as "one
+// thing", a fan as "many", and hollow vs. solid as "maybe" vs. "definitely".
 function EndMarker({
   many,
   optional,
@@ -564,8 +566,22 @@ function EndMarker({
       strokeLinejoin="round"
       aria-hidden
     >
-      {many ? <path d="M22 8 L9 2 M22 8 L9 8 M22 8 L9 14" /> : <path d="M22 8 L9 8 M9 3 L9 13" />}
-      {optional && <circle cx="5" cy="8" r="2.3" />}
+      {many ? (
+        <>
+          <path d="M22 8 L9 2 M22 8 L9 8 M22 8 L9 14" />
+          {/* solid dot ⇒ at least one (1..*); nothing for the optional/unbounded default */}
+          {!optional && <circle cx="16" cy="8" r="2.2" fill="currentColor" stroke="none" />}
+        </>
+      ) : (
+        // a single point at the entity — solid (exactly one) or hollow (zero-or-one)
+        <circle
+          cx="9"
+          cy="8"
+          r="3"
+          fill={optional ? 'none' : 'currentColor'}
+          stroke={optional ? 'currentColor' : 'none'}
+        />
+      )}
     </svg>
   )
 }

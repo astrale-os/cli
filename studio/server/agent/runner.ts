@@ -29,6 +29,7 @@ import { mergeReply, readComments } from '../state/comments'
 import { readContext } from '../state/context'
 import { listDocuments } from '../state/documents'
 import { refreshAuto } from '../state/handoff'
+import { resolveHarnessEnv } from '../state/harness-gateway'
 import { readSettings } from '../state/settings'
 import { readJson, removeState, writeJson } from '../state/store'
 import { recordRun } from '../state/usage'
@@ -260,6 +261,12 @@ async function startRun(
   const ctx = readContext(root)
   const documents = listDocuments(root)
   const settings = readSettings(root)
+  // custom model-gateway env (ANTHROPIC_*), injected into the harness child only.
+  // Resolved up-front so a token failure fails the submit cleanly (rather than
+  // silently spawning on the default Claude auth).
+  const envResult = await resolveHarnessEnv(root)
+  if (!envResult.ok) return { error: `model gateway auth failed — ${envResult.error}` }
+  const harnessEnv = envResult.env
 
   // per-run write-back bridge (token-scoped MCP tools); harmless if the harness ignores it
   const bridge = startBridge(handle, () => runs.get(domainId)?.id ?? '', notify)
@@ -361,6 +368,7 @@ async function startRun(
           sessionId,
           effort: settings.agentEffort,
           mcpConfigPath: bridge.mcpConfigPath,
+          env: harnessEnv,
           signal: controller.signal,
           onEvent: pushEvent,
         })

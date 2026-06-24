@@ -10,13 +10,20 @@ import { readJson, removeState, writeJson } from './store'
 export interface VisibilityState {
   hidden: Record<string, true>
   showInheritedEdges: boolean
+  materializedInterfaces: Record<string, true>
 }
 
 const FILE = 'visibility.json'
-const DEFAULT: VisibilityState = { hidden: {}, showInheritedEdges: true }
+const DEFAULT: VisibilityState = {
+  hidden: {},
+  showInheritedEdges: true,
+  materializedInterfaces: {},
+}
 
 export function readVisibility(root: string): VisibilityState {
-  return readJson<VisibilityState>(root, FILE, DEFAULT)
+  // merge over DEFAULT so a file written before a field existed (e.g. pre-materialize)
+  // still returns the complete shape — the client reads every field unconditionally.
+  return { ...DEFAULT, ...readJson<Partial<VisibilityState>>(root, FILE, DEFAULT) }
 }
 
 export function saveVisibility(root: string, state: VisibilityState): VisibilityState {

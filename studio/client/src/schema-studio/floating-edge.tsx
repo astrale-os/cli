@@ -56,7 +56,15 @@ function getEdgeParams(source: InternalNode<Node>, target: InternalNode<Node>) {
   }
 }
 
-export function FloatingEdge({ id, source, target, markerEnd, style, data }: EdgeProps) {
+export function FloatingEdge({
+  id,
+  source,
+  target,
+  markerStart,
+  markerEnd,
+  style,
+  data,
+}: EdgeProps) {
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
   if (!sourceNode || !targetNode) return null
@@ -81,7 +89,14 @@ export function FloatingEdge({ id, source, target, markerEnd, style, data }: Edg
   const edgeStyle = selected ? { ...style, stroke: strokeColor, strokeWidth: 3 } : style
   return (
     <>
-      <BaseEdge id={id} path={path} markerEnd={markerEnd} style={edgeStyle} interactionWidth={18} />
+      <BaseEdge
+        id={id}
+        path={path}
+        markerStart={markerStart}
+        markerEnd={markerEnd}
+        style={edgeStyle}
+        interactionWidth={18}
+      />
       {label && (
         <EdgeLabelRenderer>
           <div

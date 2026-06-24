@@ -139,7 +139,13 @@ export function SchemaSection({ domainId }: { domainId: string }) {
             </div>
           </div>
           <div className="flex-1 min-w-0 relative">
-            <ReactFlowProvider>
+            {/* Key the provider per domain+mode so ReactFlow's internal store is FRESH on every
+                switch. Without this the store persists across a domain switch (only the inner
+                canvas remounts), and feeding the new domain's nodes — notably a materialized
+                interface node — into a stale store (with a queued fitView) drives a setNodes-
+                during-commit loop → React #185 blank screen. A keyed provider makes a switch
+                behave exactly like a working fresh load. */}
+            <ReactFlowProvider key={`${domainId}:${canvasMode}`}>
               {coreMode ? (
                 core ? (
                   <CoreView

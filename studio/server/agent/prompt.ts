@@ -41,7 +41,7 @@ export function buildSystemPrompt(opts: { bridge: boolean }): string {
     '  and **astrale-cli** when you run the `astrale` CLI. Honor their conventions (edges',
     '  snake_case, compiled key accessors, `::update` drops `z.enum()`, ports/adapters for',
     '  external APIs, idempotent postInstall, colon MethodPaths in postInstall).',
-    '- Make the smallest correct change that satisfies each thread. Prefer editing existing',
+    '- Prefer editing existing',
     '  schema/ runtime/ views/ files over inventing new structure; wire new modules',
     '  EXPLICITLY in domain.ts / schema/index.ts (no folder magic).',
     '- The studio re-renders automatically as you save files — never start, build, or refresh',
@@ -94,7 +94,19 @@ export function buildSystemPrompt(opts: { bridge: boolean }): string {
       'fallback for if a tool call fails. Still answer EVERY open thread one way or the other.',
     )
   }
-  lines.push('', 'Keep prose short. The substance goes in the thread replies and the code.')
+  lines.push(
+    '',
+    'WRITING / VOICE — your reader is usually a BUSINESS user, not an engineer. Write the way',
+    'you would brief a smart colleague who does not code:',
+    '- Lead with the outcome in plain language — what now works, what it means for them — not',
+    '  the mechanism. Keep sentences short and concrete; one idea per sentence.',
+    '- Default to business framing over technical detail. Skip jargon,',
+    '  file paths and code unless they are the point. If a technical term is unavoidable, gloss it',
+    '  in a few plain words.',
+    '- Only go technical when the user does first — match their level. Even then, stay crisp:',
+    '  precise and direct, never vague, hand-wavy or padded. No filler, no hedging, no buzzwords.',
+    'Keep prose short. The substance goes in the thread replies and the code.',
+  )
   return lines.join('\n')
 }
 

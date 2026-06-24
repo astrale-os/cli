@@ -221,6 +221,14 @@ export function moduleOfClass(
   return fileModulePath(bundle.overlay.sourceSpans[`class.${className}`]?.file, schemaDir)
 }
 
+export function moduleOfInterface(
+  bundle: StudioSchemaBundle,
+  ifaceName: string,
+  schemaDir = 'schema',
+): string {
+  return fileModulePath(bundle.overlay.sourceSpans[`interface.${ifaceName}`]?.file, schemaDir)
+}
+
 export interface ModuleInfo {
   path: string
   label: string

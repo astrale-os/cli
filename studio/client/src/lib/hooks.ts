@@ -76,6 +76,13 @@ export function useHarness(id?: string) {
     staleTime: 15_000,
   })
 }
+export function useHarnessGateway(id?: string) {
+  return useQuery({
+    queryKey: qk.harnessGateway(id ?? ''),
+    queryFn: () => api.harnessGateway(id!),
+    enabled: !!id,
+  })
+}
 export function useLoadout(id?: string) {
   // the probe spawns `claude` — keep it lazy (enabled by the caller) and cached a while
   return useQuery({

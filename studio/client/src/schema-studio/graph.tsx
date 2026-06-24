@@ -62,23 +62,30 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import './focus.css'
+import { ErdMarkerDefs, cardinalityMarkers } from './cardinality-markers'
 import { CoreModeToggle } from './core-view'
 import { elkLayout } from './elk-layout'
-import { type ExternalDomain, crossDomainEdges, externalDomains } from './external'
+import {
+  type CrossDomainEdge,
+  type ExternalDomain,
+  crossDomainEdges,
+  externalDomains,
+} from './external'
 import { edgeTypes } from './floating-edge'
-import { type FileModule, fileModules, moduleOfClass } from './modules'
+import { type FileModule, fileModules, moduleOfClass, moduleOfInterface } from './modules'
 import { NodeCommentPin } from './node-comment-pin'
 import { SchemaIcon } from './schema-icon'
 import {
   type Hidden,
+  type Materialized,
   VISIBILITY_DEFAULT,
   classNodeVisible,
   classRef,
   domainVisible,
   edgeRef,
   edgeVisible,
-  filterHiddenInterfaces,
   isHidden,
+  isMaterialized,
   visibilityEqual,
   visibleInterfaceBadges,
 } from './visibility'
@@ -93,6 +100,11 @@ interface ClassNodeData extends Record<string, unknown> {
   coreRole?: SchemaCoreRole | null
   hue: number
   icon?: string
+}
+interface InterfaceNodeData extends Record<string, unknown> {
+  name: string
+  props: number
+  methods: number
 }
 interface GroupNodeData extends Record<string, unknown> {
   label: string
@@ -187,6 +199,48 @@ function ClassNode({ id, data }: NodeProps) {
                 ))}
               </div>
             )}
+          </div>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!opacity-0" />
+    </div>
+  )
+}
+
+/** A materialized interface — a real node box (fuchsia, Shapes icon), sibling of ClassNode.
+ *  Its relationships are drawn as edges (`implements` from each implementer, `extends` between
+ *  materialized interfaces) and its endpoint fan-out collapses to a single edge to this node. */
+function InterfaceNode({ data }: NodeProps) {
+  const d = data as InterfaceNodeData
+  const selected = useUI((s) => s.selectedClass === `interface.${d.name}`)
+  const zoom = useStore((s) => s.transform[2])
+  const compact = zoom < 0.5
+  return (
+    <div
+      className={cn(
+        // dashed border + fuchsia wash (a hue-independent cue) so the box reads as an INTERFACE,
+        // not a class, at a glance — a class from a hue-320 module would otherwise be near-identical.
+        'relative rounded-lg border border-dashed border-fuchsia-400/50 bg-fuchsia-500/[0.06] shadow-sm w-[160px] transition-shadow',
+        selected ? 'ring-2 ring-primary' : 'hover:shadow-md',
+      )}
+      style={{
+        borderLeftColor: 'oklch(0.72 0.18 330)',
+        borderLeftWidth: 3,
+        borderLeftStyle: 'solid',
+      }}
+    >
+      <NodeCommentPin anchorRef={`interface.${d.name}`} kind="schema" excerpt={d.name} />
+      <Handle type="target" position={Position.Top} className="!opacity-0" />
+      <div className="px-2.5 py-1.5">
+        <div className="flex items-center gap-2">
+          <span className="shrink-0 text-fuchsia-300">
+            <Shapes className="h-5 w-5" />
+          </span>
+          <span className="text-sm font-extrabold truncate">{d.name}</span>
+        </div>
+        {!compact && (d.props > 0 || d.methods > 0) && (
+          <div className="rf-meta mt-1.5 font-mono text-[9px] text-muted-foreground">
+            {d.props}p · {d.methods}m
           </div>
         )}
       </div>
@@ -339,6 +393,7 @@ function CanvasCommentNode({ data }: NodeProps) {
 
 const nodeTypes = {
   classNode: ClassNode,
+  interfaceNode: InterfaceNode,
   group: GroupNode,
   moduleNode: GroupNode,
   extDomain: ExtDomainNode,
@@ -516,6 +571,10 @@ type Geom = Record<string, NodePosition>
 const NEW_H = 88
 const NEW_GAP = 24
 
+// Stable empty materialize-set: used to render the canvas WITHOUT any interface nodes until the
+// first fit completes (see `materializeReady`), matching the timing of a fresh page load.
+const EMPTY_MATERIALIZED: Record<string, true> = {}
+
 // only expanded module containers persist a size. Prefer the LIVE measured size
 // (ReactFlow grows it via `expandParent` when a class is dragged to the edge) so we
 // capture the grown box; fall back to the structural style for not-yet-mounted nodes.
@@ -580,7 +639,7 @@ function packPending(placed: { n: Node; g: Geom[string] }[], pending: Node[]): G
 }
 
 function buildCrossEdges(
-  cross: { edge: string; from: string; origin: string; to: string }[],
+  cross: CrossDomainEdge[],
   visible: Set<string>,
   ids: Set<string>,
   bundle: StudioSchemaBundle,
@@ -601,6 +660,8 @@ function buildCrossEdges(
       : `grp-${moduleOfClass(bundle, e.from)}`
     if (!ids.has(source)) continue
     const color = 'oklch(0.72 0.16 35)' // cross-domain (same accent as cross-module edges)
+    // same dot/fork cardinality treatment as internal edges, at both ends
+    const card = cardinalityMarkers(e.fromCard, e.toCard)
     // id `edge-<name>` so it selects the real edge class in the detail pane, like any edge
     out.push({
       id: `edge-${e.edge}`,
@@ -608,7 +669,8 @@ function buildCrossEdges(
       target,
       type: 'floating',
       data: { label: e.edge },
-      markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
+      markerStart: card.markerStart,
+      markerEnd: card.markerEnd,
       style: { stroke: color, strokeWidth: 2 },
     })
   }
@@ -715,16 +777,36 @@ function schemaCoreRole(refs: unknown, bundle: StudioSchemaBundle): SchemaCoreRo
   return null
 }
 
+/** Fuchsia accent for materialized-interface nodes + their `implements`/`extends` edges. */
+const IFACE_COLOR = 'oklch(0.72 0.18 330)'
+
 function buildStructure(
   bundle: StudioSchemaBundle,
   collapsed: Set<string>,
   hidden: Hidden,
   showInheritedEdges: boolean,
+  materialized: Materialized,
 ): { nodes: Node[]; edges: Edge[] } {
   const ir = bundle.ir
   if (!ir) return { nodes: [], edges: [] }
 
-  const mods = fileModules(bundle).filter((m) => m.classes.length > 0)
+  // a LOCAL interface renders as a node only when it's materialized AND its module is EXPANDED — a
+  // collapsed module has no children, so a materialized interface there reverts to its fan-out
+  // (keeping materialize coherent with module-collapse, exactly like classes collapse to the box).
+  const ifaceRendered = (i: string): boolean =>
+    isMaterialized(i, materialized) &&
+    !!ir.interfaces[i] &&
+    !collapsed.has(moduleOfInterface(bundle, i))
+
+  // the authoritative set of interfaces actually drawn as nodes — computed up front (before any
+  // node/edge is built) so EVERY pass agrees on it: a class's badge suppression, the reroute, the
+  // implements/extends edges, and the module-box badges never reference an `iface.X` that wasn't
+  // emitted. Badge ⇄ node is thus mutually exclusive in every state.
+  const renderedIfaces = new Set(Object.keys(ir.interfaces).filter(ifaceRendered))
+
+  const mods = fileModules(bundle).filter(
+    (m) => m.classes.length > 0 || m.interfaces.some((i) => renderedIfaces.has(i)),
+  )
   const nodes: Node[] = []
 
   for (const fm of mods) {
@@ -741,7 +823,10 @@ function buildStructure(
         label: singleLabel(fm),
         path: fm.path,
         hue: fm.hue,
-        interfaces: filterHiddenInterfaces(fm.interfaces, hidden),
+        // badge the interfaces NOT rendered as nodes. A materialized interface only loses its
+        // badge once its node actually shows (module expanded); a collapsed module keeps the
+        // badge since the node isn't drawn — so the box never silently stops advertising it.
+        interfaces: fm.interfaces.filter((i) => !renderedIfaces.has(i)),
         collapsed: isCollapsed,
         classCount: fm.classes.length,
       } satisfies GroupNodeData,
@@ -764,11 +849,30 @@ function buildStructure(
           name: cn,
           props: Object.keys(ir.classes[cn]?.properties ?? {}).length,
           methods: Object.keys(ir.classes[cn]?.methods ?? {}).length,
-          interfaces: visibleInterfaceBadges(bundle, cn, hidden),
+          interfaces: visibleInterfaceBadges(bundle, cn, renderedIfaces),
           coreRole: schemaCoreRole(ir.classes[cn]?.implements ?? [], bundle),
           hue: fm.hue,
           icon: ir.classes[cn]?.icon,
         } satisfies ClassNodeData,
+      })
+    }
+    // materialized interfaces are children of their module box, treated identically to classes
+    // (extent:'parent' + expandParent) so ELK / drag / box-growth behave the same.
+    for (const ifn of fm.interfaces) {
+      if (!renderedIfaces.has(ifn)) continue
+      const def = ir.interfaces[ifn]! // LOCAL interfaces only (guaranteed by renderedIfaces)
+      nodes.push({
+        id: `iface.${ifn}`,
+        type: 'interfaceNode',
+        parentId: gid,
+        extent: 'parent',
+        expandParent: true,
+        position: { x: 0, y: 0 },
+        data: {
+          name: ifn,
+          props: Object.keys(def.properties ?? {}).length,
+          methods: Object.keys(def.methods ?? {}).length,
+        } satisfies InterfaceNodeData,
       })
     }
   }
@@ -779,25 +883,35 @@ function buildStructure(
     return collapsed.has(mp) ? `grp-${mp}` : `class.${cls}`
   }
 
-  // resolve an endpoint's declared types into concrete node-class targets, expanding
-  // unions (several listed types) and interfaces (→ every class that implements them)
+  // resolve an endpoint's declared types into concrete targets, expanding unions (several listed
+  // types) and interfaces. A MATERIALIZED+rendered interface collapses to ONE target — its node
+  // (`ifaceNode`); a non-materialized interface fans OUT to every implementing class (`cls`).
   const targetsOf = (ep?: { types?: string[] }) => {
-    // viaInterface = the inducing interface name when an endpoint fans out through an
-    // interface to its implementers (null for a directly-named class). Carrying the NAME
-    // (not a boolean) is what lets the visibility policy mute one interface's induced edges.
-    const out: { cls: string; viaInterface: string | null }[] = []
+    // viaInterface = the inducing interface name when an endpoint fans out through a (non-
+    // materialized) interface to its implementers; null for a directly-named class OR an
+    // interface node. Carrying the NAME is what gates the fan-out via showInheritedEdges.
+    const out: { cls: string | null; ifaceNode: string | null; viaInterface: string | null }[] = []
     const seen = new Set<string>()
     for (const t of ep?.types ?? []) {
       if (ir.classes[t]?.type === 'node') {
         if (!seen.has(t)) {
           seen.add(t)
-          out.push({ cls: t, viaInterface: null })
+          out.push({ cls: t, ifaceNode: null, viaInterface: null })
         }
       } else if (ir.interfaces[t]) {
-        for (const [cn, c] of Object.entries(ir.classes)) {
-          if (c.type === 'node' && (c.implements ?? []).includes(t) && !seen.has(cn)) {
-            seen.add(cn)
-            out.push({ cls: cn, viaInterface: t })
+        if (ifaceRendered(t)) {
+          // COLLAPSE: one edge to the interface node instead of a fan-out to implementers
+          const key = `iface.${t}`
+          if (!seen.has(key)) {
+            seen.add(key)
+            out.push({ cls: null, ifaceNode: key, viaInterface: null })
+          }
+        } else {
+          for (const [cn, c] of Object.entries(ir.classes)) {
+            if (c.type === 'node' && (c.implements ?? []).includes(t) && !seen.has(cn)) {
+              seen.add(cn)
+              out.push({ cls: cn, ifaceNode: null, viaInterface: t })
+            }
           }
         }
       }
@@ -805,36 +919,55 @@ function buildStructure(
     return out
   }
 
+  // the module a target lives in — a concrete class's module, or a materialized interface's own
+  // module (the iface node is its child) — used for the cross-module accent color.
+  const targetModule = (t: { cls: string | null; ifaceNode: string | null }): string =>
+    t.cls != null
+      ? moduleOfClass(bundle, t.cls)
+      : moduleOfInterface(bundle, t.ifaceNode!.slice('iface.'.length))
+
   const edges: Edge[] = []
   for (const e of Object.values(ir.classes)) {
     if (e.type !== 'edge') continue
     const aTargets = targetsOf(e.endpoints?.[0])
     const bTargets = targetsOf(e.endpoints?.[1])
+    // cardinality markers (dot = one, fork = many) at BOTH ends — every typed edge shows
+    // its multiplicity (undefined ⇒ many), so many-to-many reads as fork↔fork.
+    // Cardinality is a per-role property, so it's read once here, not per resolved pair.
+    const card = cardinalityMarkers(e.endpoints?.[0]?.cardinality, e.endpoints?.[1]?.cardinality)
     for (const a of aTargets) {
       for (const b of bTargets) {
-        // every interface an endpoint fanned out through — hiding any one mutes this edge
-        const viaInterfaces = [a.viaInterface, b.viaInterface].filter((i) => i !== null)
+        // every interface an endpoint fanned out through — gates the fan-out via showInheritedEdges
+        const viaInterfaces = [a.viaInterface, b.viaInterface].filter(
+          (i): i is string => i !== null,
+        )
+        // a class endpoint resolves through rep() (own node / collapsed box); an interface-node
+        // endpoint is its own id. Pass '' as the class to edgeVisible for an interface endpoint —
+        // never in the hide-set, so its class-hide checks are a no-op for it.
+        const sa = a.ifaceNode ?? rep(a.cls!)
+        const sb = b.ifaceNode ?? rep(b.cls!)
         if (
           !edgeVisible(
-            { edgeName: e.name, aClass: a.cls, bClass: b.cls, viaInterfaces },
+            { edgeName: e.name, aClass: a.cls ?? '', bClass: b.cls ?? '', viaInterfaces },
             hidden,
             showInheritedEdges,
           )
         )
           continue
-        const sa = rep(a.cls)
-        const sb = rep(b.cls)
         if (sa === sb) continue // self-link, or both ends collapsed into the same module box
-        const cross = moduleOfClass(bundle, a.cls) !== moduleOfClass(bundle, b.cls)
-        const poly = viaInterfaces.length > 0 // resolved via interface ⇒ dashed
+        const cross = targetModule(a) !== targetModule(b)
+        const poly = viaInterfaces.length > 0 // resolved via a non-materialized interface ⇒ dashed
         const color = cross ? 'oklch(0.72 0.16 35)' : 'oklch(0.62 0.07 264)'
         edges.push({
-          id: `edge-${e.name}__${a.cls}__${b.cls}`,
+          // id keyed by the resolved endpoint ids (already unique + stable) so a rerouted
+          // interface-node edge and a fan-out edge can never collide.
+          id: `edge-${e.name}__${sa}__${sb}`,
           source: sa,
           target: sb,
           type: 'floating',
           data: { label: e.name, edgeClass: e.name, polymorphic: poly },
-          markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
+          markerStart: card.markerStart,
+          markerEnd: card.markerEnd,
           style: {
             stroke: color,
             strokeWidth: cross ? 2.4 : 1.8,
@@ -842,6 +975,46 @@ function buildStructure(
           },
         })
       }
+    }
+  }
+
+  // implements: each implementer → its materialized interface node (a single fuchsia dashed edge,
+  // replacing the suppressed badge). Skipped when the implementer or the interface isn't rendered.
+  for (const [cn, c] of Object.entries(ir.classes)) {
+    if (c.type !== 'node' || isHidden(classRef(cn), hidden)) continue
+    for (const i of c.implements ?? []) {
+      if (!ifaceRendered(i)) continue
+      const src = rep(cn)
+      const tgt = `iface.${i}`
+      if (src === tgt) continue
+      edges.push({
+        id: `implements-${cn}__${i}`,
+        source: src,
+        target: tgt,
+        type: 'floating',
+        // no text label: N implementers converge on the hub, and N stamped "implements" labels
+        // would re-create the noise the collapse removes. The fuchsia dash + arrow into the
+        // Shapes-iconed interface node already read as "implements".
+        data: { kind: 'implements' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: IFACE_COLOR, width: 16, height: 16 },
+        style: { stroke: IFACE_COLOR, strokeWidth: 1.6, strokeDasharray: '7 4' },
+      })
+    }
+  }
+  // extends: materialized interface → materialized interface (both endpoints must be rendered).
+  for (const [iname, def] of Object.entries(ir.interfaces)) {
+    if (!ifaceRendered(iname)) continue
+    for (const parent of def.extends ?? []) {
+      if (!ifaceRendered(parent)) continue
+      edges.push({
+        id: `extends-${iname}__${parent}`,
+        source: `iface.${iname}`,
+        target: `iface.${parent}`,
+        type: 'floating',
+        data: { label: 'extends', kind: 'extends' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: IFACE_COLOR, width: 16, height: 16 },
+        style: { stroke: IFACE_COLOR, strokeWidth: 1.6, strokeDasharray: '2 4' },
+      })
     }
   }
   return { nodes, edges }
@@ -888,6 +1061,7 @@ export function SchemaGraph({
   const toggleModule = useUI((s) => s.toggleModule)
   const hidden = useUI((s) => s.hidden)
   const showInheritedEdges = useUI((s) => s.showInheritedEdges)
+  const materializedInterfaces = useUI((s) => s.materializedInterfaces)
   const toggleInheritedEdges = useUI((s) => s.toggleInheritedEdges)
   const setVisibility = useUI((s) => s.setVisibility)
   const { data: catalog } = useCatalog()
@@ -898,13 +1072,42 @@ export function SchemaGraph({
   const [edges, setEdges] = useState<Edge[]>([])
   const [hoverId, setHoverId] = useState<string | null>(null)
 
+  // Defer materialized-interface NODES until after the first fit (flipped in `firstFit`). Feeding
+  // an interface node into ReactFlow DURING the initial mount/fitView — which is what happens when
+  // you switch INTO a domain that already has one (its visibility slice hydrates synchronously
+  // from cache) — drives a ReactFlow controlled-nodes `setNodes`-during-commit loop (React #185 →
+  // blank canvas). Applying it one frame later, exactly as a fresh page load naturally does (its
+  // slice arrives async), sidesteps that. Live toggles run with `materializeReady` already true,
+  // so they apply immediately.
+  const [materializeReady, setMaterializeReady] = useState(false)
+  const effectiveMaterialized = materializeReady ? materializedInterfaces : EMPTY_MATERIALIZED
+
   const structure = useMemo(
-    () => buildStructure(bundle, new Set(collapsedModules), hidden, showInheritedEdges),
-    [bundle.schemaHash, bundle, collapsedModules, hidden, showInheritedEdges],
+    () =>
+      buildStructure(
+        bundle,
+        new Set(collapsedModules),
+        hidden,
+        showInheritedEdges,
+        effectiveMaterialized,
+      ),
+    [
+      bundle.schemaHash,
+      bundle,
+      collapsedModules,
+      hidden,
+      showInheritedEdges,
+      effectiveMaterialized,
+    ],
   )
   const allExternal = useMemo(() => externalDomains(bundle), [bundle])
   const crossE = useMemo(() => crossDomainEdges(bundle), [bundle])
-  const hiddenKey = Object.keys(hidden).sort().join(',') + `|${showInheritedEdges}`
+  // re-run the reconcile (pack/ELK) when the hide-set, inherited toggle, or materialize-set
+  // change — materializing an interface adds an `iface.X` node that must be packed.
+  const hiddenKey =
+    Object.keys(hidden).sort().join(',') +
+    `|${showInheritedEdges}|` +
+    Object.keys(effectiveMaterialized).sort().join(',')
 
   // auto-expand a collapsed module when one of its classes is selected (e.g. from ⌘K)
   useEffect(() => {
@@ -949,19 +1152,34 @@ export function SchemaGraph({
   // the query cache holds the PER-DOMAIN record. Hydrate the store on domain switch, and
   // flush genuine user toggles back to the cache (immediately) + disk (debounced).
   const visTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  // hydrate the store from this domain's persisted slice (overwrites the live slice, since
-  // visibility is per-domain). Reset to defaults the instant the domain changes — BEFORE the
-  // GET resolves — so the canvas never renders the previous domain's hide-set while the new
-  // domain's slice is in flight; then paint the loaded slice once it lands.
+  // hydrate the store from this domain's persisted slice (the live slice is per-domain, so
+  // loading a domain overwrites it). IDEMPOTENT: only setVisibility when the loaded slice
+  // actually differs from the live store. This is load-bearing — the persist effect below
+  // writes the store back into the query cache, which would otherwise bounce here as a fresh
+  // setVisibility and ping-pong the two effects into an infinite render loop (React #185 →
+  // blank canvas on domain switch). Skipping the equal echo breaks the loop (and, with it,
+  // the cross-domain write the loop caused). Defaults paint the instant the domain changes,
+  // before the GET resolves, so the canvas never shows the previous domain's slice.
   useEffect(() => {
-    setVisibility(visibility ?? VISIBILITY_DEFAULT)
+    const incoming = visibility ?? VISIBILITY_DEFAULT
+    const live = useUI.getState()
+    // Materialization is an EPHEMERAL, in-memory view toggle (reset on switch via setDomain) — it
+    // is NEVER hydrated from disk. Re-applying a persisted materialized interface while switching
+    // INTO its domain re-adds an interface node during the mount/fitView and crashes ReactFlow
+    // (controlled-nodes setNodes-during-commit → React #185 → blank). Only hidden +
+    // showInheritedEdges persist; the "show as node" toggle is a live exploration aid.
+    const next: VisibilityState = {
+      hidden: incoming.hidden,
+      showInheritedEdges: incoming.showInheritedEdges,
+      materializedInterfaces: live.materializedInterfaces,
+    }
+    if (!visibilityEqual(next, live)) setVisibility(next)
   }, [domainId, visibility, setVisibility])
-  // persist user toggles. The query cache is the per-domain record; a hydrate (and the
-  // default-reset on switch) make the store match the cache, so a value-equal flush is a
-  // pure echo — skip it. That leaves only genuine user toggles (store ≠ cache) round-tripping
-  // to disk, with no hydratedFor bookkeeping to keep in lockstep with the async GET.
+  // persist user toggles (hidden + showInheritedEdges only). materializedInterfaces is ephemeral
+  // (see hydrate) so it never round-trips to disk — written as {} here. A hydrate makes the store
+  // match the cache, so a value-equal flush is a pure echo — skip it.
   useEffect(() => {
-    const next: VisibilityState = { hidden, showInheritedEdges }
+    const next: VisibilityState = { hidden, showInheritedEdges, materializedInterfaces: {} }
     const cached = qc.getQueryData<VisibilityState>(qk.visibility(domainId)) ?? VISIBILITY_DEFAULT
     if (visibilityEqual(next, cached)) return
     qc.setQueryData<VisibilityState>(qk.visibility(domainId), next)
@@ -994,7 +1212,11 @@ export function SchemaGraph({
   const firstFit = useCallback(() => {
     if (fitted.current) return
     fitted.current = true
-    requestAnimationFrame(() => fitView({ padding: 0.18, duration: 400 }))
+    requestAnimationFrame(() => {
+      fitView({ padding: 0.18, duration: 400 })
+      // canvas has mounted + fit — now it's safe to add any materialized interface nodes
+      setMaterializeReady(true)
+    })
   }, [fitView])
 
   // Read the cache NON-reactively in the reconciler. A drag's own `commit` updates the
@@ -1132,7 +1354,10 @@ export function SchemaGraph({
 
   const displayNodes = useMemo(() => {
     const mapped = nodes.map((n) => {
-      if (n.type !== 'classNode') return n.className ? { ...n, className: undefined } : n
+      // class + materialized-interface boxes both participate in focus/hover dimming (the
+      // interface hub is the point of materializing — it must isolate like any class).
+      if (n.type !== 'classNode' && n.type !== 'interfaceNode')
+        return n.className ? { ...n, className: undefined } : n
       const cls = sets && !sets.nodeIds.has(n.id) ? 'is-dimmed' : undefined
       return n.className === cls ? n : { ...n, className: cls }
     })
@@ -1175,9 +1400,17 @@ export function SchemaGraph({
       onNodeDragStop={onNodeDragStop}
       onNodeClick={(_, n) => {
         if (n.id.startsWith('class.')) focusClass(n.id)
-        else if (n.id.startsWith('grp-')) selectClass(`module.${n.id.slice('grp-'.length)}`)
+        else if (n.id.startsWith('iface.')) {
+          // open the interface detail (keyed interface.X) AND pin focus to the hub (keyed by the
+          // node id iface.X) so clicking the materialized interface isolates its implements/extends
+          // edges, exactly like clicking a class — toggling focus off if it's already the active hub.
+          selectClass(`interface.${n.id.slice('iface.'.length)}`)
+          setFocus(focusId === n.id ? null : n.id)
+        } else if (n.id.startsWith('grp-')) selectClass(`module.${n.id.slice('grp-'.length)}`)
       }}
-      onNodeMouseEnter={(_, n) => n.id.startsWith('class.') && setHoverId(n.id)}
+      onNodeMouseEnter={(_, n) =>
+        (n.id.startsWith('class.') || n.id.startsWith('iface.')) && setHoverId(n.id)
+      }
       onNodeMouseLeave={() => setHoverId(null)}
       onEdgeClick={(_, edge) => {
         if (!edge.id.startsWith('edge-')) return // ignore cross-domain (implements) edges
@@ -1194,6 +1427,7 @@ export function SchemaGraph({
       proOptions={{ hideAttribution: true }}
     >
       <Background gap={18} size={1} color="oklch(0.3 0.01 270)" />
+      <ErdMarkerDefs />
       <Controls
         className="!bg-card !border !border-border [&_button]:!bg-card [&_button]:!border-border [&_button]:!fill-foreground"
         showInteractive={false}
@@ -1209,7 +1443,9 @@ export function SchemaGraph({
         nodeColor={(n) =>
           n.type === 'classNode'
             ? `oklch(0.6 0.13 ${(n.data as ClassNodeData).hue})`
-            : 'transparent'
+            : n.type === 'interfaceNode'
+              ? 'oklch(0.6 0.18 330)'
+              : 'transparent'
         }
         nodeStrokeWidth={0}
         maskColor="oklch(0.17 0.01 270 / 0.7)"

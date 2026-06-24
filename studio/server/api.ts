@@ -48,6 +48,14 @@ import { isEnvName, readEnvModel, writeEnvUpdates } from './state/env'
 import { detectGit } from './state/git'
 import { refreshAuto } from './state/handoff'
 import {
+  clearHarnessGateway,
+  gatewayAudience,
+  getHarnessGatewayState,
+  resolveHarnessEnv,
+  setHarnessGateway,
+} from './state/harness-gateway'
+import { setHostToken } from './state/harness-token'
+import {
   activeInstanceName,
   instanceStatus,
   listInstances,
@@ -372,7 +380,29 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
         builtinCommandCount: 0,
         probedAt: Date.now(),
       })
-    return json(await h.loadout(root))
+    const er = await resolveHarnessEnv(root)
+    return json(await h.loadout(root, er.ok ? er.env : undefined))
+  }
+  // Custom model-gateway config for the harness (per-domain + studio-global), e.g.
+  // routing Claude Code through an Astrale ai-gateway model node. The token/url are
+  // injected into the harness CHILD only — never the studio env or the user's shell.
+  if (rest === '/agent/harness-gateway') {
+    if (req.method === 'GET') return json(getHarnessGatewayState(root))
+    if (req.method === 'POST') {
+      const scope = body.scope === 'global' ? 'global' : 'domain'
+      if (body.action === 'set')
+        return json(setHarnessGateway(root, { scope, config: body.config ?? {} }))
+      if (body.action === 'clear') return json(clearHarnessGateway(root, scope))
+      return badReq('unknown harness-gateway action')
+    }
+  }
+  // EMBED seam: when the studio runs inside the Astrale GUI, the host (which holds
+  // the shell connection) relays a delegation token here for `host` auth mode. It
+  // is keyed by the configured gateway's audience and kept in memory only.
+  if (rest === '/agent/harness-gateway/host-token' && req.method === 'POST') {
+    const audience = gatewayAudience(root)
+    if (!audience) return badReq('no gateway base URL configured for this domain')
+    return json({ ok: setHostToken(audience, String(body.token ?? '')) })
   }
   // Domain-attributable agent spend (this studio's runs on this domain only).
   if (rest === '/agent/usage' && req.method === 'GET') return json(readUsage(root))
@@ -505,6 +535,7 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
         saveVisibility(root, {
           hidden: body.hidden ?? {},
           showInheritedEdges: body.showInheritedEdges ?? true,
+          materializedInterfaces: body.materializedInterfaces ?? {},
         }),
       )
     if (body.action === 'reset') return json(resetVisibility(root))

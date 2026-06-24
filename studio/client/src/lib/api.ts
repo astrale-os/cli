@@ -17,6 +17,8 @@ import type {
   DomainUsage,
   EnvFileModel,
   EnvName,
+  HarnessGatewayConfig,
+  HarnessGatewayState,
   HarnessLoadout,
   HarnessStatus,
   InstanceStatus,
@@ -143,6 +145,15 @@ export const api = {
     post<AgentSessionInfo>(`${d(id)}/agent/session`, { sessionId }),
   agentSystemPrompt: (id: string) => get<AgentSystemPromptInfo>(`${d(id)}/agent/prompt/system`),
   harness: (id: string) => get<HarnessStatus>(`${d(id)}/agent/harness`),
+  harnessGateway: (id: string) => get<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`),
+  setHarnessGateway: (id: string, scope: 'domain' | 'global', config: HarnessGatewayConfig) =>
+    post<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`, { action: 'set', scope, config }),
+  clearHarnessGateway: (id: string, scope: 'domain' | 'global') =>
+    post<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`, { action: 'clear', scope }),
+  // EMBED seam: relay a host-supplied delegation token to the server for `host`
+  // auth mode. Called by the Astrale GUI glue when the studio runs as an iframe.
+  pushHostToken: (id: string, token: string) =>
+    post<{ ok: boolean }>(`${d(id)}/agent/harness-gateway/host-token`, { token }),
   loadout: (id: string) => get<HarnessLoadout>(`${d(id)}/agent/loadout`),
   usage: (id: string) => get<DomainUsage>(`${d(id)}/agent/usage`),
   skillContent: (id: string, command: string) =>
@@ -204,6 +215,7 @@ export const qk = {
   agentSession: (id: string) => ['agent-session', id] as const,
   agentSystemPrompt: (id: string) => ['agent-system-prompt', id] as const,
   harness: (id: string) => ['harness', id] as const,
+  harnessGateway: (id: string) => ['harness-gateway', id] as const,
   loadout: (id: string) => ['loadout', id] as const,
   usage: (id: string) => ['usage', id] as const,
   skillContent: (id: string, command: string) => ['skill-content', id, command] as const,

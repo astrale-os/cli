@@ -1,4 +1,4 @@
-import type { StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, StudioSchemaBundle } from '@shared/types'
 
 /**
  * external.ts — the CROSS-DOMAIN data layer.
@@ -21,22 +21,35 @@ export interface ExternalDomain {
   members: ExternalMember[]
 }
 
+export interface CrossDomainEdge {
+  edge: string
+  from: string
+  origin: string
+  to: string
+  /** declared cardinality of the local (`from`) and external (`to`) endpoints — so the
+   *  canvas can draw the same ERD markers as internal edges (see cardinality-markers). */
+  fromCard?: IrEndpoint['cardinality']
+  toCard?: IrEndpoint['cardinality']
+}
+
 /** Each cross-domain edge: an edgeClass linking a local class to an external class. */
-export function crossDomainEdges(
-  bundle: StudioSchemaBundle,
-): { edge: string; from: string; origin: string; to: string }[] {
+export function crossDomainEdges(bundle: StudioSchemaBundle): CrossDomainEdge[] {
   const ir = bundle.ir
   if (!ir) return []
-  const out: { edge: string; from: string; origin: string; to: string }[] = []
+  const out: CrossDomainEdge[] = []
   for (const [name, c] of Object.entries(ir.classes)) {
     if (c.type !== 'edge' || !c.endpoints) continue
     const types = c.endpoints.flatMap((ep) => ep.types)
     const external = types.filter((t) => ir.imports[t]?.definition === 'class')
     if (!external.length) continue
     const internal = types.filter((t) => ir.classes[t] && !ir.imports[t])
+    // cardinality lives on the endpoint a type belongs to (role-level, not per-type)
+    const cardOf = (t: string) => c.endpoints?.find((ep) => ep.types.includes(t))?.cardinality
     for (const to of external) {
       const origin = ir.imports[to].origin
-      for (const from of internal) out.push({ edge: name, from, origin, to })
+      const toCard = cardOf(to)
+      for (const from of internal)
+        out.push({ edge: name, from, origin, to, fromCard: cardOf(from), toCard })
     }
   }
   return out

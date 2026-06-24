@@ -13,6 +13,7 @@ import type { DomainHandle } from '../domain'
 import type { AskResult } from './types'
 
 import { getBundle } from '../cache'
+import { resolveHarnessEnv } from '../state/harness-gateway'
 import { readSettings } from '../state/settings'
 import { buildAskPrompt, buildAskSystemPrompt } from './prompt'
 import { getHarness } from './registry'
@@ -50,6 +51,13 @@ export async function runAsk(
     overlay: bundle?.overlay,
   })
   const settings = readSettings(handle.root)
+  const envResult = await resolveHarnessEnv(handle.root)
+  if (!envResult.ok)
+    return {
+      text: '',
+      isError: true,
+      errorMessage: `model gateway auth failed — ${envResult.error}`,
+    }
 
   return harness.ask({
     root: handle.root,
@@ -57,6 +65,7 @@ export async function runAsk(
     appendSystemPrompt: buildAskSystemPrompt(),
     sessionId: forkableSession(handle.id), // fork the live conversation (undefined ⇒ fresh)
     effort: settings.agentEffort,
+    env: envResult.env,
     signal,
     onDelta,
   })

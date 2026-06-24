@@ -764,9 +764,13 @@ export interface LayoutState {
 /** Persisted per-domain canvas visibility — the manual hide-set + the inherited-edge
  *  category toggle. Sibling of LayoutState: layout owns node POSITIONS, this owns what's SHOWN. */
 export interface VisibilityState {
-  /** refs hidden on the canvas: `class.X` | `edge.X` | `interface.X` | `domain.<origin>` */
+  /** refs hidden on the canvas: `class.X` | `edge.X` | `domain.<origin>` (interfaces use
+   *  `materializedInterfaces`, not this set — see below) */
   hidden: Record<string, true>
   showInheritedEdges: boolean
+  /** Local interfaces MATERIALIZED as canvas NODES (default = badge). Keyed by BARE interface
+   *  name (e.g. `Fulfillable`) — a set distinct from `hidden`, so no ref namespace collision. */
+  materializedInterfaces: Record<string, true>
 }
 
 export type TypeDescriptor =
@@ -798,6 +802,58 @@ export interface StudioSettings {
   updatesPollMs: number
   /** timeout when probing a live view URL from the instance, ms (default 8000) */
   viewProbeTimeoutMs: number
+}
+
+// ─────────────────── Harness model gateway (custom LLM endpoint) ───────────────────
+
+/**
+ * Point the agent harness (Claude Code) at a custom Anthropic-compatible model
+ * gateway — e.g. an Astrale `ai-gateway` model node — instead of its built-in
+ * auth. The values become env on the SPAWNED harness child only
+ * (ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_MODEL): the studio
+ * never writes them to your shell, your `~/.claude`, or a `claude` you run
+ * yourself outside the studio.
+ */
+/**
+ * How the harness gets its bearer token for the gateway. Abstracted so the same
+ * gateway works whether the studio runs locally or embedded in the Astrale GUI:
+ *   - `mint`  — LOCAL: the studio mints a fresh, short-lived delegation token per
+ *               run via `astrale token` (audience derived from the gateway URL).
+ *               No secret is stored on disk; auth follows the active CLI identity.
+ *   - `token` — MANUAL: a static bearer the user pastes (non-Astrale gateways, or
+ *               an explicitly long-lived token).
+ *   - `host`  — EMBED: the embedding Astrale GUI supplies the token (via the shell)
+ *               and owns mint / refresh / scope; the studio just relays it to the
+ *               harness child. The forward-looking path for the iframe deployment.
+ */
+export type HarnessGatewayAuth =
+  | { mode: 'mint'; instance?: string } // instance to mint on; omitted ⇒ the active one
+  | { mode: 'token'; token: string }
+  | { mode: 'host' }
+
+export interface HarnessGatewayConfig {
+  /** master switch — off ⇒ the harness uses its own default auth */
+  enabled: boolean
+  /** ANTHROPIC_BASE_URL — Claude Code POSTs to `${baseUrl}/v1/messages`. For an
+   *  Astrale model node: `https://<gateway-host>/v1/models/<modelNodeId>`. */
+  baseUrl: string
+  /** ANTHROPIC_MODEL label (cosmetic — the gateway pins the real model by URL). */
+  model?: string
+  /** how the bearer token is obtained (see HarnessGatewayAuth) */
+  auth: HarnessGatewayAuth
+}
+
+/** The layered harness-gateway config for a domain: its own per-domain override,
+ *  the studio-wide global default, and which one actually takes effect. */
+export interface HarnessGatewayState {
+  /** per-domain override (`.domain-studio/harness-gateway.json`); null ⇒ inherits global */
+  local: HarnessGatewayConfig | null
+  /** studio-wide default — applies to every domain that has no local override */
+  global: HarnessGatewayConfig | null
+  /** the config that actually takes effect (an enabled local ∨ an enabled global), else null */
+  effective: HarnessGatewayConfig | null
+  /** which layer `effective` came from */
+  source: 'domain' | 'global' | 'none'
 }
 
 // ─────────────────────────── Update staleness (the header "Update" badge) ───────────────────────────

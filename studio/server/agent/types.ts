@@ -30,6 +30,10 @@ export interface AgentTurnInput {
   effort?: AgentEffort
   /** path to a generated MCP config exposing the studio write-back bridge */
   mcpConfigPath?: string
+  /** extra env merged into the harness CHILD process only (e.g. ANTHROPIC_BASE_URL
+   *  / ANTHROPIC_AUTH_TOKEN to route through a custom model gateway). Never touches
+   *  the studio's own env or the user's shell / global `claude`. */
+  env?: Record<string, string>
   /** abort the turn (user pressed Cancel) */
   signal: AbortSignal
   /** called for every normalized activity event */
@@ -66,6 +70,8 @@ export interface AskInput {
   sessionId?: string
   /** harness reasoning effort for this side question */
   effort?: AgentEffort
+  /** extra env merged into the harness child only (custom model gateway) — see AgentTurnInput.env */
+  env?: Record<string, string>
   signal: AbortSignal
   /** called with each chunk of the answer as it streams in */
   onDelta: (text: string) => void
@@ -103,8 +109,9 @@ export interface AgentHarness {
   ask?(input: AskInput): Promise<AskResult>
   /** optional: report what the harness ACTUALLY loaded for `root` (skills, MCP,
    *  tools, agents) — a read-only window into the agent for the Settings page.
-   *  Harnesses without an introspectable loadout omit it. */
-  loadout?(root: string): Promise<HarnessLoadout>
+   *  Harnesses without an introspectable loadout omit it. `env` (e.g. a custom
+   *  model gateway) is merged into the probe child so the reported model reflects it. */
+  loadout?(root: string, env?: Record<string, string>): Promise<HarnessLoadout>
   /** optional: the raw SKILL.md for a skill command, so the UI can show it. */
   skillContent?(
     root: string,

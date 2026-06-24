@@ -12,6 +12,7 @@ import { type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
 import { EnvEditor } from '@/components/env-editor'
+import { HarnessGatewayCard } from '@/components/harness-gateway-card'
 import {
   Dialog,
   DialogContent,
@@ -715,6 +716,8 @@ export function SettingsDialog() {
               />
             </div>
           </div>
+
+          <HarnessGatewayCard domainId={domainId} />
 
           <EnvEditor domainId={domainId} />
 
