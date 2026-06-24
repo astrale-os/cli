@@ -20,6 +20,25 @@ ASTRALE_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/
 ASTRALE_VERSION=<version> curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
+### npm (CLI + Domain Studio)
+
+Alternatively, install from npm — this runs the CLI under Node and additionally
+ships the [Domain Studio](studio/README.md) (`astrale studio`):
+
+```bash
+npm install -g @astrale-os/cli
+```
+
+The npm build bundles all dependencies, so no private-registry access is needed.
+`astrale studio` launches a local web GUI to author and inspect a domain; it runs
+on [Bun](https://bun.sh), so install Bun and keep it on `PATH` to use that command
+(the rest of the CLI needs only Node ≥ 20). The curl-installed standalone binary
+above does not include the studio — use the npm install for `astrale studio`.
+
+> Pre-1.0, `npm install -g @astrale-os/cli` installs the latest published
+> build (currently an alpha). The curl installer's channels (alpha/beta/rc) are
+> a binary-only concept.
+
 ## Quickstart
 
 ```bash

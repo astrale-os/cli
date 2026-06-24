@@ -129,7 +129,7 @@ export async function readInstallMetadata(path = INSTALL_PATH): Promise<InstallM
       : new AstraleError(
           'UPDATE_PACKAGE_MANAGED',
           'This Astrale build is managed by your package manager.',
-          'Update with: npm install -g @astrale-os/astrale@latest  (or pnpm/bun)',
+          'Update with: npm install -g @astrale-os/cli@latest  (or pnpm/bun)',
         )
   }
 

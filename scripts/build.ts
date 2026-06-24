@@ -7,7 +7,7 @@
  *
  * Why bundle: the runtime deps `@astrale-os/kernel-client` / `kernel-core` live
  * on a PRIVATE registry (GitHub Packages). Inlining them makes the published
- * package self-contained, so `npm i -g @astrale-os/astrale` needs no access to
+ * package self-contained, so `npm i -g @astrale-os/cli` needs no access to
  * any private registry.
  */
 import { existsSync } from 'node:fs'
@@ -62,10 +62,14 @@ if (existsSync(`${studioDir}/vite.config.ts`)) {
       stdout: 'inherit',
       stderr: 'inherit',
     })
-    console.log(
-      r.exitCode === 0
-        ? 'built studio/client/dist'
-        : 'studio client build FAILED — `astrale studio` will need a manual build',
-    )
+    if (r.exitCode === 0) {
+      console.log('built studio/client/dist')
+    } else {
+      // We HAD the toolchain and tried — a failure here would otherwise ship an
+      // empty/stale studio inside the package. Fail loudly (this also fails the
+      // prepack during `npm/pnpm pack`, so a broken studio never gets published).
+      console.error('studio client build FAILED')
+      process.exit(1)
+    }
   }
 }

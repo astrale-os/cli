@@ -1,6 +1,6 @@
 ---
 name: astrale-cli
-description: Reference for the Astrale CLI (binary `astrale`, package `@astrale-os/astrale`) - CLI setup, command composition, graph exploration and querying, kernel calls, instance bookmarks and admin-provisioned instances, identity management, delegation tokens, browser sessions, output behavior, debugging, and local storage.
+description: Reference for the Astrale CLI (binary `astrale`, package `@astrale-os/cli`) - CLI setup, command composition, graph exploration and querying, kernel calls, instance bookmarks and admin-provisioned instances, identity management, delegation tokens, browser sessions, output behavior, debugging, and local storage.
 ---
 
 # Astrale CLI
@@ -15,7 +15,7 @@ and examples. This skill should only hold cross-cutting model details and
 common recipes that help compose those commands correctly.
 
 - Binary: `astrale`
-- npm package: `@astrale-os/astrale`
+- npm package: `@astrale-os/cli`
 - Runtime: Bun
 - Framework: Commander.js
 - Dev entrypoint: `bun cli/bin/astrale.ts <command>`

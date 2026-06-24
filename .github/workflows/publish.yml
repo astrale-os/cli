@@ -1,0 +1,66 @@
+name: Publish
+
+# Publishes @astrale-os/cli to GitHub Packages + public npm after a version
+# lands on main, the SAME way the other Astrale repos do: the shared
+# astrale-os/config publish/packages action, npm via OIDC Trusted Publishing
+# (no NPM_TOKEN), GitHub Packages via the repo token. Idempotent — an
+# already-published version is skipped. See docs/release.md.
+#
+# The published package is the Node-runnable bundle (dist/astrale.js, all
+# @astrale-os deps inlined) PLUS the prebuilt Domain Studio (studio/server +
+# studio/client/dist), so `npm i -g @astrale-os/cli` gives the CLI under Node
+# and `astrale studio` (which additionally needs Bun on PATH).
+#
+# This is independent of the binary release (cli-release.yml, the curl installer).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bin/**'
+      - 'src/**'
+      - 'studio/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.release-please-manifest.json'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write # publish to GitHub Packages
+  id-token: write # OIDC for npm Trusted Publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The CLI builds with Bun (scripts/build.ts) and the studio client build
+      # shells out to Bun too — the shared action only sets up Node/pnpm.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: astrale-os/config/.github/actions/publish/packages@main
+        with:
+          dirs: '.'
+          # PAT (cross-repo GitHub Packages read) so the action's install can
+          # resolve @astrale-os/kernel-* for the bundle; falls back to the repo
+          # token. Same secret the binary build uses.
+          github-token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          # The CLI's `build` is its prepack (bun scripts/build.ts), which the
+          # action's `pnpm pack` runs during publish. That prepack also builds the
+          # studio client — but only if the studio toolchain is installed (the cli
+          # repo is single-package, so the action's root install doesn't pull it).
+          # So the build-command's job is just to install that toolchain (bun, not
+          # pnpm: pnpm v10 hard-fails on un-approved dep build scripts; studio/.npmrc
+          # resolves @astrale-os/shell from public npm).
+          build-command: 'cd studio && bun install'
+          # Pre-1.0: publish every alpha straight to `latest` so a bare
+          # `npm i -g @astrale-os/cli` always gets the newest build we push.
+          prerelease-tag: latest
