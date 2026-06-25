@@ -123,18 +123,19 @@ astrale call @self::deactivate
 astrale call /:d:class.X:m owner=@self
 ```
 
-If `@self` expands to a deleted or stale id, refresh the registration with
-`astrale identity register <name> -i <instance>`.
-
-For IdP-backed identities (`astrale auth login`), `@self` just works: on the
-first use against an instance the CLI does ONE kernel `whoami` round-trip,
-caches the node id as a registration, and expands locally afterwards. If that
-lookup fails (offline, expired session), the error carries the manual recipe:
+For IdP-backed identities (`astrale auth login`), `@self` just works: the CLI
+verifies the caller with kernel `whoami`, caches the node id as a
+registration, and refreshes that cache when it changes (for example after a
+managed instance is deleted and recreated under the same slug). If that lookup
+fails and no cached registration exists, the error carries the manual recipe:
 
 ```bash
 astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json  # → { id }
 astrale describe @<that-id>
 ```
+
+For key-backed identities, refresh a deleted or stale `@self` registration with
+`astrale identity register <name> -i <instance>`.
 
 ## Instances
 

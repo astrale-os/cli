@@ -20,8 +20,9 @@ export async function callCommand(
   opts: CallOpts,
 ): Promise<void> {
   // ── Expand `@self` in path + raw param strings ──────────
-  // Local resolution, with ONE lazy whoami round-trip for IdP identities
-  // missing a cached registration (persisted, so it's local afterwards).
+  // Local resolution, with a whoami refresh for IdP identities so a
+  // delete/recreate under the same managed-instance slug does not leave
+  // `@self` pinned to the old node id.
   // Throws a typed SelfRefusalError (manager, instance-signed, …) which we
   // surface as a fatal CLI error. Runs BEFORE `--describe` so users get the
   // typed refusal instead of a generic NotFoundError from the kernel.

@@ -146,42 +146,73 @@ export function resolveOrThrow(selfCtx: SelfResolverContext): string {
 // Static interface method, so the colon form (slash form is rejected).
 const WHOAMI_PATH = '/:kernel.astrale.ai:interface.Identity:whoami'
 
+export type ResolveSelfIdLazyDeps = {
+  whoami?: (opts: KernelCommandOpts) => Promise<{ id?: unknown; kernelUrl: string }>
+  setRegistration?: typeof setRegistration
+  now?: () => Date
+}
+
 /**
  * Resolve `@self`, falling back to ONE kernel `whoami` round-trip when an
  * IdP identity merely lacks a cached registration on this instance (the
- * normal `astrale auth login` flow — the IdP subject is never a node id).
- * The resolved id is persisted as a registration so subsequent expansions
- * are local again. Every other refusal (manager, instance-signed, …) and a
- * failed whoami throw the typed refusal unchanged.
+ * normal `astrale auth login` flow — the IdP subject is never a node id). IdP
+ * identities with a cached registration are refreshed too: managed instances
+ * can be deleted and recreated under the same slug, invalidating the cached
+ * node id while leaving the IdP session valid.
+ *
+ * The resolved id is persisted as a registration. Every other refusal
+ * (manager, instance-signed, …) and a failed whoami without a cached fallback
+ * throw the typed refusal unchanged.
  */
 export async function resolveSelfIdLazy(
   selfCtx: SelfResolverContext,
   opts: KernelCommandOpts,
+  deps: ResolveSelfIdLazyDeps = {},
 ): Promise<string> {
   const r: SelfResolution = resolveSelfNodeId(selfCtx)
+  const cachedId = 'reason' in r ? undefined : r.id
+  const isIdp = (selfCtx.identity?.source ?? 'key') === 'idp'
+
+  if (isIdp && selfCtx.instanceSlug && selfCtx.identity) {
+    let lookup: { id?: unknown; kernelUrl: string }
+    try {
+      lookup = await (deps.whoami ?? whoamiSelfId)(opts)
+    } catch {
+      if (cachedId) return cachedId
+      if ('reason' in r) throw selfRefusalError(r)
+      throw selfRefusalError({ reason: 'idp-no-sub', identityName: selfCtx.identity.name })
+    }
+
+    const resolvedId =
+      typeof lookup.id === 'string' && lookup.id.trim().length > 0 ? lookup.id : undefined
+    if (!resolvedId) {
+      if (cachedId) return cachedId
+      if ('reason' in r) throw selfRefusalError(r)
+      throw selfRefusalError({ reason: 'idp-no-sub', identityName: selfCtx.identity.name })
+    }
+
+    const cached = selfCtx.identity.registrations?.[selfCtx.instanceSlug]
+    if (cached?.sub !== resolvedId || cached?.iss !== lookup.kernelUrl) {
+      await (deps.setRegistration ?? setRegistration)(selfCtx.identity.name, selfCtx.instanceSlug, {
+        iss: lookup.kernelUrl,
+        sub: resolvedId,
+        registeredAt: (deps.now ?? (() => new Date()))().toISOString(),
+      })
+    }
+    return resolvedId
+  }
+
   if (!('reason' in r)) return r.id
-  if (r.reason !== 'idp-no-sub' || !selfCtx.instanceSlug || !selfCtx.identity) {
-    throw selfRefusalError(r)
-  }
-  let me: { id?: unknown } | null
+  throw selfRefusalError(r)
+}
+
+async function whoamiSelfId(opts: KernelCommandOpts): Promise<{ id?: unknown; kernelUrl: string }> {
   let kernelUrl = ''
-  try {
-    me = (await withKernelClient(opts, (ctx) => {
-      kernelUrl = ctx.url
-      return ctx.client.call(WHOAMI_PATH as never, {} as never)
-    })) as { id?: unknown } | null
-  } catch {
-    // Network/auth failure — surface the original recipe, not a stack.
-    throw selfRefusalError(r)
-  }
-  const id = typeof me?.id === 'string' && me.id.trim().length > 0 ? me.id : undefined
-  if (!id) throw selfRefusalError(r)
-  await setRegistration(selfCtx.identity.name, selfCtx.instanceSlug, {
-    iss: kernelUrl,
-    sub: id,
-    registeredAt: new Date().toISOString(),
-  })
-  return id
+  const me = (await withKernelClient(opts, (ctx) => {
+    kernelUrl = ctx.url
+    return ctx.client.call(WHOAMI_PATH as never, {} as never)
+  })) as { id?: unknown } | null
+  return { id: me?.id, kernelUrl }
 }
 
 /**
