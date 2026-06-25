@@ -191,12 +191,12 @@ no committed `spec.json`). `astrale domain install` has two modes:
   catalog. Works on ANY instance you can authenticate to (managed, bookmarked,
   or local), using your own authority, and is the only mode that runs the
   identity-override consent gate. Use it for dev/local instances and
-  freshly-deployed, not-yet-published workers.
+  freshly-deployed, not-yet-published domains.
 
 With the **managed (`astrale`) adapter**, `pnpm prod` publishes the bundle
-through the platform AND installs it on the configured instance in one step —
-no manual `domain install`. The service serves at
+through the platform on the configured instance in one step. The service serves at
 `https://<name>-<hash>.svc.<region>.astrale.ai` (the CLI session is the auth).
+Every time you re-deploy, you must then re-install the domain.
 
 For authoring domains end-to-end (schema, handlers, external APIs, deploys),
 load the **astrale-domain** skill; for graph-level schema surgery on a live
@@ -268,11 +268,10 @@ authority.
 Common flow:
 
 ```bash
-export TOKEN=$(astrale token --audience dist.astrale.ai --raw)
-astrale call /:dist.astrale.ai:class.Domain:install \
-  --url https://dist.astrale.ai \
+export TOKEN=$(astrale token --audience workspace.astrale.ai --raw)
+astrale call /:workspace.astrale.ai:class.App:available \
   --creds "$TOKEN" \
-  -d '{"name":"alice"}'
+  --json
 ```
 
 Notes:
@@ -344,7 +343,7 @@ Examples:
 
 ```bash
 astrale ls / --json | jq .
-TOKEN=$(astrale token --audience dist.astrale.ai --raw)
+TOKEN=$(astrale token --audience workspace.astrale.ai --raw)
 astrale call /:d:class.Asset:render id=123 --output asset.png
 astrale call /:d:class.X:m -d '{"name":"alice"}'
 ```

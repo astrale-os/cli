@@ -294,7 +294,7 @@ DETERMINISTIC node path from the sender's id (`/contacts/lead-<externalId>`),
 and make that key BOTH the existence check AND the write target. The classic
 bug is checking one key and writing another (random-suffixed) — the replay
 then duplicates. Custom `binding` supports REST-ish routes + header/body
-capture when the sender's shape is fixed (see distribution's proxy functions).
+capture when the sender's shape is fixed (see your domain's proxy functions).
 
 ## 6 · Identity, auth, permissions
 

@@ -7,7 +7,7 @@ import { basename, classNameOf } from '../ls'
 // `path` (absolute) and `class` (serialized ClassPath).
 describe('ls — display projection (slug-bug regression)', () => {
   test('basename derives the display name from the absolute path', () => {
-    expect(basename('/dist.astrale.ai')).toBe('dist.astrale.ai')
+    expect(basename('/example.astrale.ai')).toBe('example.astrale.ai')
     expect(basename('/kernel.astrale.ai')).toBe('kernel.astrale.ai')
     expect(basename('/')).toBe('/')
     expect(basename(undefined)).toBe('')

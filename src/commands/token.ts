@@ -63,7 +63,7 @@ What this token is FOR — worker-direct HTTP calls:
   use 'astrale call' (which signs per-call) instead.
 
 Examples:
-  $ export TOKEN=$(astrale token --audience dist.astrale.ai --raw)
+  $ export TOKEN=$(astrale token --audience workspace.astrale.ai --raw)
   $ astrale token --audience worker.example.com --for alice -i staging
 `,
   options: [

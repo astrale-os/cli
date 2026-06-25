@@ -31,11 +31,11 @@ type ChildNode = { class?: string; path?: string }
 
 /**
  * Discover the identity-bearer class on the target instance: find the
- * installed distribution domain (whatever its origin — `dist.astrale.ai` in
- * prod, `dist.localhost` locally) and address its `User` class semantically.
+ * installed domain that owns a `User` class (workspace on managed instances)
+ * and address it semantically.
  * The bearer class must exist before a non-root identity can be registered;
  * failing here names the real problem instead of surfacing as a confusing
- * permission error on a hardcoded prod origin.
+ * permission error on a hardcoded origin.
  */
 async function resolveUserClassPath(ctx: {
   client: { call(path: string, params: unknown): Promise<unknown> }
@@ -57,7 +57,7 @@ async function resolveUserClassPath(ctx: {
   }
   throw new Error(
     'No installed domain declares a `User` class on this instance — registering a ' +
-      'non-root identity needs an identity-bearer class (install the distribution ' +
+      'non-root identity needs an identity-bearer class (install workspace or another ' +
       'domain, or pass --class <classPath> explicitly).',
   )
 }
@@ -85,7 +85,7 @@ export default {
     {
       flags: '--class <classPath>',
       description:
-        'Class path of the identity node to create (default: /:dist.<origin>:class.User when distribution is installed)',
+        'Class path of the identity node to create (default: the installed domain that declares class.User)',
     },
     {
       flags: '--path <nodePath>',
@@ -127,9 +127,8 @@ export default {
 
           const classPath = opts.class ?? (await resolveUserClassPath(ctx))
 
-          // A bare `astrale identity create <name>` carries no profile, but the
-          // bearer class may require one (distribution's User wants
-          // firstName/lastName) — default both to the identity name so a dev
+          // A bare `astrale identity create <name>` carries no profile, but a
+          // User bearer class may require one. Default both names so a dev
           // registration works out of the box; `--props` overrides.
           const extraProps = opts.props ? (JSON.parse(opts.props) as Record<string, unknown>) : {}
           const userDefaults = classPath.endsWith(':class.User')

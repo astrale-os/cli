@@ -102,7 +102,7 @@ export async function renderFinale(): Promise<void> {
   console.log('')
   console.log(chalk.bold('Next'))
   console.log(
-    `  ${chalk.cyan('astrale call /:dist.astrale.ai:class.Echo:echo message=hello')}  ${chalk.dim('— smoke test')}`,
+    `  ${chalk.cyan('astrale call /:kernel.astrale.ai:interface.Identity:whoami')}  ${chalk.dim('— smoke test')}`,
   )
   console.log(`  ${chalk.cyan('astrale browser')}  ${chalk.dim('— drive the GUI as your agent')}`)
   console.log(`  ${chalk.cyan('astrale --help')}  ${chalk.dim('— everything else')}`)

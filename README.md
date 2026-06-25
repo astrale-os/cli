@@ -52,7 +52,7 @@ astrale instance create my-app
 astrale status
 
 # 4. Call a function on the active instance.
-astrale call /:dist.astrale.ai:class.Echo:echo message=hello
+astrale call /:kernel.astrale.ai:interface.Identity:whoami
 ```
 
 If you already have a kernel URL, create a local bookmark:

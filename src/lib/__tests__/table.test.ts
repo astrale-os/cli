@@ -15,7 +15,7 @@ describe('renderTable', () => {
     const out = strip(
       renderTable(
         [
-          { name: 'dist.astrale.ai', kind: 'Domain' },
+          { name: 'example.astrale.ai', kind: 'Domain' },
           { name: 'workspace', kind: 'Folder' },
         ],
         { columns: COLS },

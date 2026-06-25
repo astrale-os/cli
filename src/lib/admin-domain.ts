@@ -12,11 +12,11 @@ export const ADMIN_DOMAIN = '/admin.astrale.ai/class.DomainEntry'
 /** Read shape returned by `DomainEntry.publish` / `info` / `list` (domain `DomainInfoSchema`). */
 export type DomainInfo = {
   id: string
-  /** dist.astrale.ai — the authority origin (== JWT aud + kernel path prefix). */
+  /** workspace.astrale.ai — the authority origin (== JWT aud + kernel path prefix). */
   origin: string
-  /** 'distribution' — the node slug + the id used in install plans / the CLI. */
+  /** 'workspace' — the node slug + the id used in install plans / the CLI. */
   name: string
-  /** https://dist.astrale.ai — the published worker URL the kernel installs from. */
+  /** https://workspace.astrale.ai — the published worker URL the kernel installs from. */
   url?: string
   description?: string
   installByDefault?: boolean

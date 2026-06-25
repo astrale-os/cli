@@ -11,7 +11,7 @@ describe('admin-path target classification', () => {
   test('a bare origin installs by catalog origin (the unique registry key)', () => {
     expect(domainRefFromTarget('crm.acme.dev')).toEqual({ origin: 'crm.acme.dev' })
     // A host:port that is not a url is still an origin, not a url.
-    expect(domainRefFromTarget('dist.astrale.ai')).toEqual({ origin: 'dist.astrale.ai' })
+    expect(domainRefFromTarget('example.astrale.ai')).toEqual({ origin: 'example.astrale.ai' })
   })
 })
 
@@ -23,7 +23,7 @@ describe('identity-override detection', () => {
 
   test('origin differing from the serving host is an override', () => {
     // The spec §5 attack shape: a fork on workers.dev claiming a well-known origin.
-    expect(isIdentityOverride('distribution.astrale.ai', 'crm.workers.dev')).toBe(true)
+    expect(isIdentityOverride('workspace.astrale.ai', 'crm.workers.dev')).toBe(true)
     // The scaffold default also aliases until the placeholder origin is edited.
     expect(isIdentityOverride('hldom.example.dev', 'hldom-example-dev.acme.workers.dev')).toBe(true)
   })

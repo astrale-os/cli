@@ -278,8 +278,7 @@ Examples:
   $ astrale call /:host.astrale.ai:class.KernelInstance:list
   $ astrale call /:blog.acme.com:class.Author:list limit=10
   $ astrale call '@self::deactivate'
-  $ astrale call /:dist.astrale.ai:class.Domain:install --creds "$TOKEN" \\
-      -d "$(cat spec.json)"
+  $ astrale call /:workspace.astrale.ai:class.App:available --json
 `,
   arguments: [
     {

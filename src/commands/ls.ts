@@ -34,7 +34,7 @@ type Item = {
 
 // ── Display projection ──────────────────────────────────────
 
-/** `/dist.astrale.ai` → `dist.astrale.ai`; `/` stays `/`. */
+/** `/example.astrale.ai` → `example.astrale.ai`; `/` stays `/`. */
 export function basename(path?: string): string {
   if (!path || path === '/') return path ?? ''
   return path.slice(path.lastIndexOf('/') + 1)
