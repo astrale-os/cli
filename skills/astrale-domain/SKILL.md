@@ -1,395 +1,470 @@
 ---
 name: astrale-domain
-description: Create, develop, deploy, and iterate an Astrale domain end-to-end — schema modeling (classes, interfaces, edges, methods), handler implementation, calling the kernel and other domains from handlers, integrating external APIs (the core use case — DI, secrets, idempotency, sagas), views, testing, and the deploy/install loop with the cloudflare or astrale adapter. Use whenever creating a domain, adding classes/methods/views, structuring external API calls, or debugging install/dispatch/permission errors. Pairs with the astrale-cli skill (CLI ops) — together they cover working an Astrale instance autonomously. `npx create-astrale-domain <name>` scaffolds a new domain project.
-when_to_use: when asked to create or edit a domain.
+description: "Author Astrale domains end to end. Use when creating, editing, reviewing, productionizing, migrating, optimizing, securing, simulating, or debugging a domain; modeling schema; implementing handlers/functions; integrating external APIs; choosing native Astrale domains; designing views; or reasoning about permissions, delegation, kernel, seeds, core data, sample data, and live/runtime drift. Read the relevant reference for the current intent: development, modeling, implementing, integrations, domains, security, views, migration, performance, simulating, or debugging."
 ---
 
 # Astrale Domain
 
-An Astrale **domain** is a typed contract installed into a kernel's graph plus a
-**worker you own** that executes it. The kernel stores the schema (classes,
-edges, function contracts), enforces permissions, and routes calls; every
-method body runs on YOUR worker (Cloudflare worker or Astrale-managed service).
-The graph is the database AND the bus: domains read/write nodes+edges through
-the kernel and call each other's functions through it.
+## Operating Rules
 
-**Mental model:** schema = what exists and what's callable · graph = state ·
-worker = behavior · kernel = router + authorizer. You never run a database or
-an RPC layer; you declare a contract and implement handlers.
+- Treat the graph as the source of truth. A domain models meaning with schema, stores state as nodes and edges, and exposes behavior as typed functions.
+- Prefer workflow questions, guidelines, anti-patterns, and load-bearing advanced concepts over basic ontology. Basic concepts should be inferable from stronger authoring topics.
+- Do not trust installed/runtime state from source edits alone. For live bugs, prove what version is deployed and installed, which path is called, and which identity is acting.
+- Keep worker code import-side-effect-free. Build outside clients through deps, pass ports into logic, and write durable state to the graph.
+- When API behavior could have drifted, read the current repo or scaffold before copying syntax.
 
-## 0 · Start
+## Intent Router
 
-```bash
-npx -y create-astrale-domain@latest my-domain --yes --instance <slug>   # scaffold
-              # managed `astrale` adapter is the DEFAULT; `--instance` stamps the
-              # target instance into prod (`--adapter cloudflare` = your own CF account)
-cd my-domain && pnpm install
-pnpm dev      # local wrangler dev (prints a URL; install it on an instance to test)
-              # port 8787 taken? dev AUTO-PICKS a free one and prints it —
-              # always trust the printed URL, and `curl <url>/meta` must name
-              # YOUR domain (an orphan wrangler answers on stolen ports).
-pnpm dev --port 8899   # pin a port explicitly (disables auto-pick)
-pnpm dev --host https://my-box.preview.dev   # dev behind a tunnel/sandbox preview:
-                       # binds 0.0.0.0 + pins WORKER_URL so iss doesn't drift
-pnpm prod     # deploy + (astrale adapter) auto-install on your instance
-```
+Pick the reference by the user's intent. Do not load every file preemptively.
 
-Project anatomy (the scaffold is the reference — read its comments):
+- Draft, POC, create, deploy, install, or test a domain: read `references/development.md`.
+- Touch schema, vocabulary, properties, class/interface/edge choices, or review a schema: read `references/modeling.md` first. Always read it for schema work.
+- Implement handlers, remote functions, kernel calls, graph reads/writes, or cross-domain calls: read `references/implementing.md`.
+- Wrap an external API, build deps/ports, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
+- Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
+- Secure a domain, function, view, client call, public endpoint, grant, delegation, permission, authentication, or authorization hook: read `references/security.md`.
+- Build or review browser views, mounted UI, view auth, view resolution, or frontend design: read `references/views.md`.
+- Evolve an installed schema, write a migration, decide seed vs core, or handle reinstall/backfill behavior: read `references/migration.md`.
+- Optimize graph access, reduce round trips, choose indexes/queries, or review call patterns for latency: read `references/performance.md`.
+- Create fake/sample/demo data, testing, fixtures, demo flows, or smoke-test scenarios: read `references/simulating.md`.
+- Diagnose a failing live domain: read `references/debugging.md`; start symptom-first and verify installed/runtime state before source-level theory.
 
-```
-domain.ts           # THE manifest — wires it ALL: defineDomain({ schema, methods,
-                    #   deps, views, functions, client }) + origin/postInstall.
-                    #   Modules are imported & passed EXPLICITLY (no folder magic);
-                    #   a renamed module is a compile error here, not a missing route.
-astrale.config.ts   # binds the domain to its deploy adapter (deploy(domain, …)) — node-only
-schema/             # classes/interfaces/edges — the contract (zod props, fn signatures)
-                    #   + index.ts exports D = compileDomain(schema) (resolved paths/keys)
-core/<context>/     # pure, transport-agnostic logic per bounded context (e.g. core/monitor: keys/health/node)
-integrations/       # external-API ports + adapters + a lazy registry (see §4) — what deps is built from
-runtime/index.ts    # composition root: the methods map; each execute resolves deps → calls core logic
-functions/          # standalone remote functions (webhook-shaped endpoints)
-views/              # iframe-mountable UI declarations (defineView)
-client/             # the SPA served under /ui (vite)
-deps.ts             # env → typed Deps container (the seam defineDomain({ deps }) mounts)
-env.ts              # typed worker env — config + secrets arrive here, mapped by deps.ts → ctx.deps
-```
+## Default Stage Loop
 
-Iteration loop: edit → `pnpm prod` → call it. Managed redeploys keep the same
-service URL and reinstall the contract; schema changes are merge/reconcile
-(removed entries can leave old nodes behind — see the astrale-live-domain-edit
-skill for graph-level cleanup).
+Use this as the default execution shape when the user asks for end-to-end work.
 
-## 1 · Schema modeling
+1. Clarify the intent: draft/POC, create, edit, review, productionize, migrate, optimize, secure, view, integrate, choose native domains, simulate, or debug.
+2. Load exactly the matching reference above, plus `modeling.md` for any schema change.
+3. Inspect the current repo/scaffold before trusting command or API syntax.
+4. Make the smallest graph-native change that solves the intent.
+5. Verify locally with typecheck/tests when possible.
+6. For live behavior, prove deploy/install/runtime state with concrete calls, not source inspection alone.
 
-```ts
-import { KernelSchema, defineSchema, edgeClass, nodeClass, nodeInterface } from '@astrale-os/kernel-core'
-import { CONTACT_OPS_ICON, CONTACT_ICON } from '../icons'
-import { fn } from '@astrale-os/kernel-dsl'
-import { z } from 'zod'
+## High-Signal Workflow Questions
 
-export const ContactOps = nodeInterface({           // interface = shared contract
-  icon: CONTACT_OPS_ICON,
-  methods: { createContact: fn({ static: true, params: {...}, returns: ... }) },
-})
-export const Contact = nodeClass({
-  icon: CONTACT_ICON,
-  implements: [ContactOps, KernelSchema.interfaces.Container],  // Container → can hold children
-  props: { email: z.string(), company: z.string().optional() },
-  methods: { assign: fn({ params: { project: z.string(), role: z.string() }, returns: ... }) },
-})
-export const works_on = edgeClass(                  // edges are CLASSES with PROPS
-  { as: 'contact', types: [Contact] },
-  { as: 'project', types: [Project] },
-  { props: { role: z.string() } },
-)
-export const schema = defineSchema('my-domain.example.dev', {
-  interfaces: { ContactOps },
-  classes: { Contact, Project, works_on },  // EDGE classes register under `classes` too
-  imports: [KernelSchema],
-})
-```
+These are the questions most often needed without another reference loaded. They carry the basic model implicitly and point to the work that actually changes a domain.
 
-Conventions and rules:
-- Naming: classes/interfaces `PascalCase`, methods `camelCase`, **edges `snake_case`**.
-- `static: true` = called on the class (`/origin/class.X/method`); otherwise
-  instance-dispatched (`/path/to/node::method`, handler gets `self`). Statics
-  work on classes AND interfaces, wired through the same `method()` /
-  `classMethods()` helpers (the scaffold's `seed` is a class-hosted static).
-- Model relations as **edges with props** (not foreign-key strings): create via
-  `::link {edgeClass, target, props}`, walk via `::getLinks`. Two shapes for a
-  child collection — pick by whether the child has independent existence:
-  **(a) containment** — give the parent class
-  `implements: [KernelSchema.interfaces.Container]` and store children as tree
-  nodes under it (`/parent/<childId>`); read them natively via
-  `<parent>::listChildren` and they belong to / delete with the parent. This
-  works on ANY Container-implementing class, not just `Folder` (the serializer
-  emits the `method_of` edge for the implemented interface, so `::listChildren`
-  dispatches on the instance) — a plain `nodeClass` instance has NO
-  `::listChildren`, so reach for it only on a Container. Use containment when the
-  child can't stand alone (a comment in a thread, a line in an order).
-  **(b) association** — FLAT nodes + an edge, read via `getLinks` — the
-  relation-first default for peer references. (Either way `deleteNode` is
-  leaf-only: drain children before deleting the parent.)
-- Props are zod; they land in the graph under QUALIFIED keys
-  (`origin:class.X.property.y`). Never hand-write key strings — derive them
-  from the compiled schema: `D.Contact.email.key`, `K.Named.name.key`.
-- Known sharp edges: `::update` currently drops `z.enum()` props silently
-  (create is fine — track status as plain string if you must update it); edge
-  prop accessors exist at runtime but not in types yet (cast).
+### How to create a Domain?
 
-## 2 · Handlers
+You create a domain by scaffolding a project and growing it from a skeleton that already builds and runs. The generator
+lays down the folders, the wiring, and a deploy config, so you begin from a working domain rather than a blank file.
+From there the work is your own: declare the slice of the world you are modeling, and write the handlers that make it
+act.
 
-Separate LOGIC from WIRING. Logic = plain async functions in `core/` taking the
-kernel client + ports + params (testable with fakes). Wiring = `method()` /
-`classMethods()` / `interfaceMethods()` in `runtime/index.ts` (the composition
-root — the only place request context + `deps` meet the `core/` logic):
+### How to deploy a Domain?
 
-```ts
-const kickoff = method(schema, 'Project', 'kickoff', {
-  authorize: async () => undefined,   // see §6 for real authorization
-  execute: ({ kernel, self, params, deps }) => {
-    if (!kernel) throw new Error('kickoff requires a kernel credential')
-    return kickoffLogic(kernel, createWeatherClient(deps), self.path.raw, params)
-  },
-})
-```
+Deploying a domain ships its worker to a live URL, where it serves the domain's definition and handlers. Run
+`astrale-domain deploy <env>` (or `pnpm prod`); the deploy adapter builds the worker bundle, uploads it, and returns the
+address it now answers on. Deploying does not put the domain into any kernel instance; it only makes the code reachable,
+which installing then mounts.
 
-Handler context: `kernel` (callback client bound to the composed credential —
-caller's delegated authority ∪ this function's own), `self` (instance methods),
-`params` (zod-validated), `deps` (your typed `Deps` from `deps.ts`; raw `Env` if
-you omit the mapper), `auth` (principal, verified claims). Resolve ports from
-`deps` per request (`deps.prober()` — the registry builds + caches them per
-isolate) — NEVER construct external clients at module load (workers must be
-import-side-effect-free).
+### How to install a Domain?
 
-## 3 · Talking to the kernel (and other domains)
+Installing a domain mounts a deployed domain into one kernel instance, teaching it everything that domain can hold and
+do. Run `astrale domain install <origin-or-url> -i <instance>`; the kernel fetches the domain's signed bundle, verifies
+it, writes its schema and core data into the graph, then runs its seed once. After install, the domain's classes exist
+and its functions are callable on that instance.
 
-Everything is `kernel.call(path, params)`. Addressing forms:
+### What to do after modeling a Domain?
 
-| Form | Example | Use |
-|---|---|---|
-| tree path + `::method` | `/projects/apollo::get` | instance dispatch on a node |
-| static slash form | `/origin/class.X/method` | static class/interface methods |
-| colon MethodPath | `/:origin:class.X:method` | canonical method form |
-| colon FunctionPath | `/:origin:function.seed` | a standalone `functions/` callable (what `postInstall: functions.seed` resolves to) |
-| `@<uuid>::method` | `@4548…::get` | by graph id (NOT slugs/paths) |
+Once the schema is in place, you make it run. Write a handler for every function your classes declare, resolve any
+external clients through `deps`, then deploy the worker and install it onto an instance. Modeling says what can exist;
+these steps make it hold real data and answer calls.
 
-Core ops from handlers (all proven patterns):
+### How to evolve a domain's schema?
 
-```ts
-await kernel.call(K.Node.createNode.path.method.raw, { class: D.Contact.path.class.raw, path, props })
-await kernel.call(`${path}::update`, { props: { [D.Project.title.key]: 'New' } })
-// Edge props use QUALIFIED keys; the edge-prop TYPE accessor is missing today — use this cast:
-const ROLE_KEY = (D.works_on as unknown as { role: { key: string } }).role.key
-await kernel.call(`${path}::link`, { edgeClass: D.works_on.path.class.raw, target, props: { [ROLE_KEY]: role } })
-const links = await kernel.call(`${path}::getLinks`, {})       // filter by edge class
-await kernel.call('/other.domain/class.Echo/echo', { message }) // ANOTHER domain's function
-```
+You evolve a domain's schema by changing it and installing again: a re-install diffs the new schema against what the
+graph already holds and reconciles the difference. The kernel updates the shape, but it does not migrate your existing
+data, so a seed or a one-off migration is where you backfill new properties or move old ones. Add fields freely; rename
+or remove with care, because data shaped the old way is still there.
 
-- **Cross-function calls work** (same- or cross-domain): the kernel redirects
-  to the target worker and your worker mints a next-hop delegation as ITSELF —
-  the receiver sees your function as the caller, with the original caller's
-  authority threaded through the grant chain. Design service-to-service flows
-  on this; no direct HTTP between workers.
-- Upsert idiom: try `createNode`, on path-conflict fall back to `::update`.
-- A missing parent yields `Permission denied: EDIT on /<parent>` — read that
-  error as "does the parent exist?" first. Seed required folders in postInstall.
+### How to test a domain?
 
-## 4 · External APIs — the core pattern
+You test a domain by installing it into a throwaway in-process kernel and calling its functions as a real client would.
+The harness gives you a fresh graph with your schema and handlers loaded and a system identity for setup, so you
+exercise real dispatch end to end rather than mocked pieces. Act as a specific identity with chosen grants to confirm
+permissions behave as you intend.
 
-Almost every real domain wraps an external API (payment, calendar, LLM
-gateway, cloud provider). The shape (see admin/domain for the full-scale
-example — Scaleway/WorkOS/KV):
+### How to define a Function?
 
-1. **Port** — a narrow interface in `integrations/<feature>/port.ts` declaring
-   only what the logic needs (`WeatherClient { forecast(city) }`, the scaffold's
-   `Prober { probe(url) }`). `core/` logic depends on the port, never
-   on fetch/SDKs/env.
-2. **Adapter(s) + registry** — `createXClient(config)` in
-   `integrations/<feature>/` (one per backend), plus a `registry.ts` that reads
-   config + secrets from `env`, validates LOUDLY (`if (!env.X_API_KEY) throw`),
-   sets base URLs (overridable so tests point at a stub), timeouts
-   (`AbortSignal.timeout`), and maps upstream failures to errors with the
-   upstream detail in `cause`. The registry builds the chosen adapter LAZILY +
-   caches it per isolate (a worker never validates an unused backend's env).
-3. **Wiring** — `deps.ts` mounts the registry (`defineDomain({ deps })`); the
-   `execute` hook resolves the PORT from `deps` (`deps.prober()`) per
-   request and passes it to the `core/` logic.
+You define a function by declaring its typed shape, then writing its handler separately. For a method on a class,
+declare it with `fn` inside the class's `methods` (mark it `static` when it needs no node to act on); for a standalone
+domain-level callable, use `defineRemoteFunction`. The declaration fixes the params and return type; the handler
+supplies the behavior.
 
-Secrets & config:
-- Declare every var as a typed field on `Env` in `env.ts`. Secrets ship via
-  the adapter's `secrets: '.env.dev' / '.env.prod'` (cloudflare adapter) —
-  never committed, never defaulted. Fail fast for root-of-trust values; allow
-  multi-name fallbacks only for developer convenience, never silently in prod.
-- Both adapters ship secrets from `secrets: '.env.<env>'` — cloudflare via
-  wrangler secrets, astrale (managed) via the encrypted per-install store.
+### How to integrate an external API?
 
-Reliability rules (learned from the admin provisioning engine):
-- **Order effects**: external call FIRST, graph write AFTER when possible — a
-  failed upstream then leaves nothing to clean up. When you must write first
-  (reservations), write an INTENT record (state: 'provisioning'), make the
-  external call idempotent (tags/external ids so re-entry ADOPTS instead of
-  duplicating), and compensate on failure.
-- **Sagas for multi-step flows**: ordered phases; record state transitions on
-  nodes (`provisioning → ready | failed`); compensation runs best-effort in
-  reverse and NEVER throws (each step returns ok/skipped/error). Document
-  which phases are safe to re-enter.
-- **Idempotency before mutation**: check existing state before writing; design
-  re-runs of any handler to converge, not duplicate (postInstall seeds
-  especially — they re-run on every reinstall).
+You integrate an external API by wrapping it behind your own functions, so the outside service appears to the rest of
+Astrale as ordinary calls on your domain. Write to the graph first and treat it as the source of truth, then make the
+external call; keep each handler idempotent so a retry converges instead of duplicating (see the saga pattern for
+multi-step flows). The graph holds the state; the external API is a detail your functions hide.
 
-Anti-patterns (all observed in production code — don't):
-- constructing clients at module load, or monkey-patching `globalThis.fetch`;
-- scattering kernel-error message matching — the kernel exposes no stable
-  error codes to handlers yet, so when you must match (the PATH_CONFLICT
-  upsert), isolate it in ONE helper (the scaffold's `isPathConflict`) and
-  treat it as tech debt;
-- god persistence files — split graph CRUD by entity;
-- leaving state fields mid-transition with no failure path (`'installing'`
-  forever after a crash);
-- stringly-typed prop keys or class paths (always compiled accessors).
+## Modeling Questions And Guidelines
 
-## 5 · Views & standalone functions (webhooks)
+Use these to choose the graph shape. A strong relationship/property/boundary decision makes the basic node/class/edge model obvious without restating it.
 
-- `defineView({ auth, mount: '/ui/contact', viewFor: selfOf(Contact) })` in
-  `views/`, collected into the `views` map in `views/index.ts`, which
-  `astrale.config.ts` imports and passes to `defineDomain({ views })`. The MAP
-  KEY is the view's node slug (`'ui-contact'` → `/<origin>/core/views/ui-contact`).
-  Installs a View
-  node whose binding URL = `<serving url><mount>` (managed:
-  `https://<slug>.svc.<region>.astrale.ai/ui/contact`). The client/ SPA
-  serves `/ui/*` — BOTH adapters ship it (cloudflare via Workers Assets;
-  managed via the platform's per-version asset archive); the SPA must handle
-  any `/ui/<route>` via its fallback (the scaffold's vite config does).
-- Discovery: clients/GUIs find a node's views via
-  `kernel.call('/kernel.astrale.ai/class.View/resolve', { node: <path> })` →
-  `[{ path, url, name, origin }]` — `url` is the mounted iframe target.
-- `functions/` declares standalone callables (`defineRemoteFunction`) not
-  attached to a class — each serves at `POST <worker>/functions/<slug>` and
-  materializes a Function node under `/<origin>/core/functions/`. This is the
-  INBOUND integration surface (webhooks). Each also gets an `of_domain` edge, so
-  it is addressable by the semantic path `/:<origin>:function.<slug>` (the map
-  key is `<slug>`) — which is why a standalone function is the cleanest
-  `postInstall` target: reference it directly (`postInstall: functions.seed`) and
-  the SDK derives the path, so a domain-bootstrap `seed` need not be bolted onto a
-  class and can't drift from a hand-written string.
+### How to decide a domain's boundaries?
 
-**The webhook-that-writes pattern** (validated): keep `auth: 'required'` and
-configure the external system's auth header with a minted delegation token —
-`astrale token --audience <service url> --ttl <seconds> --raw` (use a
-dedicated, attenuated identity: grant it only what the webhook needs).
-For `auth: 'public'` upstreams that can't carry a header (HMAC-signature
-webhooks, Stripe-style): `kernel` is null, but `ctx.selfKernel()` gives a
-session authenticated as THE FUNCTION'S OWN identity (its grants only) —
-VERIFY THE UPSTREAM SIGNATURE FIRST, then act as yourself. Needs
-`deps.INSTANCE_KERNEL_URL` (managed deploys set it) and the function identity
-granted exactly what it writes (e.g. EDIT on the target folder + USE on
-createNode + USE on the class — narrow, never root).
+Draw a domain's boundary around one coherent vocabulary: the classes and actions that belong to a single area of the
+world and are owned by a single purpose or team. Split into two domains when the language diverges (the same word means
+different things) or when ownership does. Keep together what changes together, and let separate domains call each other
+rather than merging.
 
-**A PUBLIC view that reads the graph** (e.g. a server-rendered list page):
-the render ctx exposes `ctx.selfKernel()` (sdk ≥0.1.5) — a session as THE
-VIEW'S OWN identity. Read with it directly in `render`, template to HTML:
-`const k = await ctx.selfKernel(); const rows = await k.call('/messages::listChildren', {})`.
-Grant the view's function identity the READ-side minimum in your seed —
-the grant call is dispatched ON the identity node, with a bitmask:
-```ts
-import { READ, USE, toMask } from '@astrale-os/kernel-core'
-await kernel.call('/<origin>/core/views/<view-slug>::grantPerm', { node: '/messages', perms: toMask(READ) })
-await kernel.call('/<origin>/core/views/<view-slug>::grantPerm', { node: '/:kernel.astrale.ai:interface.Container:listChildren', perms: toMask(USE) })
-```
-Needs `deps.INSTANCE_KERNEL_URL` — managed deploys set it automatically; on
-the cloudflare adapter set it yourself: the instance's kernel API base is
-`https://<instance-slug>.eu.astrale.ai/api` (a vars entry or secret).
-Public-input
-hygiene: HTML-escape every stored string at render. (Prefer `selfKernel`
-over the `SELF` service binding for graph reads — `SELF` exists on both
-cloudflare and current managed runtimes, but it costs an extra HTTP hop and
-older hosts omit it.)
+### Model the world, not the storage
 
-**Calling a remote function over raw HTTP**: the response wraps your return
-value in an envelope — `{ result: <your value> }` (errors: `{ error }`).
+Name your classes after the real things your domain is about, like `Contact`, `Invoice`, or `Shipment`, not after
+database tables, DTOs, or technical roles. A schema that reads like the business is one anyone can navigate and an agent
+can reason over; one that reads like a storage layer (see technical names) hides what it means. The graph is your model
+of the world, so let it look like the world.
 
-**Webhook idempotency** (senders retry — design for replays): derive a
-DETERMINISTIC node path from the sender's id (`/contacts/lead-<externalId>`),
-and make that key BOTH the existence check AND the write target. The classic
-bug is checking one key and writing another (random-suffixed) — the replay
-then duplicates. Custom `binding` supports REST-ish routes + header/body
-capture when the sender's shape is fixed (see distribution's proxy functions).
+### How to model a relationship?
 
-## 6 · Identity, auth, permissions
+Model a relationship as a typed edge between two nodes, giving the edge any properties the relationship itself carries
+(such as a `role`). When the related thing cannot exist on its own, make it a child node under a Core folder instead, so
+it lives and dies with its parent. Never model a relationship as a foreign-key string buried in a node; an edge keeps it
+visible and walkable both ways.
 
-- Your worker IS an identity: at install, every callable gets `(iss = serving
-  URL, sub = function path)` stamped in the graph; the kernel verifies your
-  worker's signatures against your live JWKS. `astrale.config.ts` origin =
-  `schema.domain` (aliasing another origin triggers a DANGER prompt).
-- Inbound calls carry a delegation of the caller; your handler's `kernel` acts
-  with `union(caller's delegated authority, your function's own grants)` —
-  attenuation is automatic (you can't exceed what the caller + you hold).
-- `authorize` hook: return `undefined` to allow (relying on kernel-level
-  checks downstream), or assert claims/perms before `execute` runs.
-- Permissions are bitmasks (READ/EDIT/USE/SHARE) on `has_perm` edges; grants
-  on a node cascade down the tree. Function identities get USE on
-  `mintDelegationCredential` at install (enables cross-function calls).
+### Edge or child node?
 
-## 7 · Deploy & install
+Use a typed edge when two things exist on their own and you are relating them: a contact `works_on` a project. Use a
+child node when one thing exists only as part of another and should die with it: a comment under a post, a line item
+under an invoice. Ask whether the thing has a life of its own; if yes, link to it, and if no, nest it inside (see
+modeling a relationship).
 
-Adapter choice in `astrale.config.ts` (each adapter is its OWN package — swap
-BOTH the import and the call):
-- `cloudflare({...})` from `@astrale-os/adapter-cloudflare` — your CF account;
-  `dev` (wrangler dev), `prod` (route or workers.dev); ships secrets + SPA
-  assets; extra bindings via a deep-merged `wrangler` block.
-- `astrale({ dev: {...}, prod: { instance: '<slug>' } })` from
-  `@astrale-os/adapter-astrale` — managed (the scaffold's DEFAULT): publishes
-  the bundle THROUGH the platform and installs it as a host-local service next
-  to your instance (`https://<name>-<hash>.svc.<region>.astrale.ai`). No CF
-  account; auth = your `astrale auth login` session. Ships the client SPA
-  (`/ui` serves managed) and author secrets (`prod.secrets: '.env.prod'` —
-  encrypted at rest platform-side, re-applied on redeploys; omit = keep,
-  `{}` = clear; platform keys always win).
+### Should a fact live on an edge?
 
-The first deploy generates `.astrale/identity.ts` — the domain's SIGNING
-IDENTITY (its private key). Losing or regenerating it breaks reinstalls under
-the same origin; back it up (or commit it knowingly for throwaway domains).
+Put a property on an edge when the fact is about the relationship itself, not about either node it joins: the `role`
+someone holds on a project, the date a membership began, the weight of a link. If the fact would be the same no matter
+what the node connects to, it belongs on the node instead. Ask what the fact describes; if it describes the connection,
+it lives on the edge.
 
-Dev-loop reality: `pnpm dev` serves on localhost — a REMOTE instance's kernel
-cannot fetch its install bundle. Local URL installs only work against a kernel
-that can reach you (local kernel, or a tunnel). Against a managed/remote
-instance, iterate with `pnpm prod` (the managed loop is ~25s and keeps the
-service URL stable).
+### Its own node, or just a property?
 
-`postInstall` runs after every install (as __SYSTEM__) and MUST be idempotent
-(catch path-conflicts). You never write the origin — it's always this domain.
-Prefer a standalone function and reference it directly: `postInstall: functions.seed`
-(the SDK derives the path; a rename is a compile error, never a stale string). A
-class/interface static method is a member string: `postInstall: 'class.X:seed'`.
-Seed folders, defaults, and demo data here.
+Make something its own node when it has identity and a life of its own, something you want to find, link to, permission,
+or hang data on: a `Company`, a `Tag` others reuse. Keep it a property when it is just a value describing one node and
+means nothing apart from it: an email, a status. If two nodes could ever point at the same one, it is a node; if it only
+ever belongs to one, it is a property.
 
-Manual install of any served domain: `astrale domain install <url> --direct`.
+### When to use a Class vs an Interface?
 
-The managed catalog surface (what `pnpm prod` shells into) is callable
-directly — useful for recovery and inspection:
-`/admin/domains/<name>::install {instanceId, source:{kind:'package'}}` ·
-`::uninstall {instanceId}` (the un-wedge recipe before a retry) ·
-`::installations` · `::versions` — all on the admin instance (`-i admin`).
+Use a class when real instances of the thing exist and need to be created, named, and stored. Use an interface when a
+contract (some properties or methods) is shared across several kinds but is never a thing on its own. If you are about
+to copy the same fields onto two classes, reach for an interface; if you need to point at one concrete record, reach for
+a class.
 
-## 8 · Testing
+### Depend on a domain, don't copy it
 
-- **Logic**: unit-test with fake ports (the DI in §4 exists for this) and a
-  fake kernel — an in-memory `{ call(path, params) }` that records calls /
-  returns canned nodes. Assert call ORDER and failure paths (best-effort
-  flows: one failing step must not block the rest).
-- **Wiring/contract**: typecheck is the contract test (`pnpm typecheck` /
-  `tsgo --noEmit`); the schema drives param validation at runtime.
-- **Live smoke** (always finish with this): deploy, then drive the REAL surface
-  with the CLI — create a node, call an instance method, walk an edge, call a
-  cross-domain function. Fixture-green alone proves nothing about dispatch,
-  identity, or bindings.
+When your domain needs what another already models, depend on it: declare it in requires and call its functions or read
+its nodes from the shared graph. Do not re-declare its classes or duplicate its data into your own schema, which forks
+the truth and lets the two drift apart. One domain owns each slice of the world; everyone else builds on it by
+reference.
 
-## 9 · Debugging quick table
+### Ship fixed reference data as core
 
-| Symptom | Likely cause |
-|---|---|
-| any managed-service 500 — `{"error":{"code":5000,"message":"internal error; reference = …"}}` | `astrale logs --service <service-slug>` tails the service's runtime buffer (console output, 5xx accesses, uncaught exception stacks) — the slug is the first label of the `…svc.<region>.astrale.ai` URL `pnpm prod` printed. Services deployed before log capture need one redeploy first. |
-| `Permission denied: EDIT on /x (param-target)` | `/x` doesn't exist — seed the parent |
-| `method "x" not found … call it as "/:o:class.C/x"` | instance form used for a static method |
-| `Delegation mint failed for <url>` | check `--debug` cause chain; worker→worker call machinery |
-| postInstall `not a function or method member` | wrote a full path/tree path — use `functions.seed` (a reference) or a member string `'class.X:seed'` |
-| install: `missing remote binding` | a callable lacks `binding.remoteUrl` — build via the adapter, not hand-rolled specs |
-| `ERR_PNPM_IGNORED_BUILDS` / approve-builds on `pnpm run` | template's pnpm-workspace.yaml needs `ignoredBuiltDependencies` + `verifyDepsBeforeRun: false` (recent scaffolds have it) |
-| stale/broken package versions on scaffold | clear pnpm metadata cache; check template floors are current |
-| TS: "Types of property '__brand' are incompatible" in untouched files | TWO copies of kernel-core/dsl in the tree (mixed link:/registry/override resolution) — unify versions, then `pnpm dedupe` |
-| runtime 500: `MISSING_DEF: Def at path "…" is not registered` | SAME dual-copy disease at runtime (defineSchema wrote copy A, compile read copy B) — and on managed installs it presents as the service never turning ready / install stuck `installing`. Unify + dedupe. |
-| managed install stuck at `installing` | check the SERVICE first: `curl <svc>/meta` (500 = the bundle itself is broken — run it locally with wrangler to see the real error); then `…::uninstall {instanceId}` and re-run the install |
-| `Path not found: /admin/instances/<uuid>` on install | `instanceId` takes the instance SLUG, not the node UUID (`astrale instance status <slug>` shows both) |
-| deploy: `Export named 'X' not found` from an @astrale-os module | a transitive dep resolved below its REAL floor — `pnpm add @astrale-os/<pkg>@<needed>` then `pnpm dedupe` |
+When a domain always needs the same fixed data present (a list of supported currencies, a default catalog), declare it
+as core rather than creating it in a seed. Core is materialized at every install with no code to run, sits at stable
+known paths your handlers can depend on, and cannot drift between installs. Reserve a seed for setup that needs real
+logic.
 
-Use `astrale call <path> --describe` for any callable's schema, `--debug` for
-the full error chain, `curl <worker>/meta` for what a worker serves
-(domainName, schemaHash), and `astrale logs --service <slug> [--tail N]` for a
-managed service's runtime logs.
+### Core vs Seed
 
-## Related skills
-- **astrale-cli** — every CLI command (auth, instances, calls, install).
-- **astrale-live-domain-edit** — graph-level schema surgery on a live kernel
-  (no worker changes): temp specs, reinstall semantics, minimum class/method
-  graph material.
+Core and Seed both put data in place at install, but in opposite ways. Core is declarative: genesis nodes baked into the
+install bundle and materialized by the kernel with no callback to your worker, the fixed data a domain always has. Seed
+is imperative: a function that runs once after install and builds things step by step (folders, demo data, grants).
+Reach for Core for stable reference data with known paths, and Seed when setup needs real logic.
+
+### Static method vs Instance method
+
+An **instance** method runs on one particular node, the `self` it acts on, like assigning a role to a specific contact.
+A **static** method belongs to the class itself and runs without any node, like creating a brand-new contact. You
+address an instance method with `::` on a node, and a static through its class.
+
+## Load-Bearing Concepts
+
+Keep only concepts that unlock several other ideas. These are worth loading because an agent can infer many lower-level facts from them.
+
+### Domain Definition
+
+A **Domain Definition** is the single object that wires a domain together: its schema, the handlers that implement its
+methods, its `deps`, its views, and its standalone functions. You build it with `defineDomain`, and the deployed worker
+sees only this one wired object, so your folder layout stays invisible to it. It is the place every part of a domain
+meets, declared once and explicitly.
+
+### Requires
+
+**requires** is how a domain declares the other domains it cannot work without. Listing another domain's origin tells
+the kernel to refuse installation until that dependency is already present, so your handlers can safely call across to
+it and build on its classes. It turns an implicit assumption into a checked guarantee: what you depend on is there
+before you run.
+
+### Publish vs Deploy vs Install
+
+**Deploying** ships a domain's worker to a live URL; **publishing** registers that URL in a catalog so instances can
+find it; **installing** mounts it onto one kernel instance. Three separate steps: deploy makes the code reachable,
+publish makes it discoverable, install makes it part of an instance's graph. You can install straight from a URL and
+skip publishing; you cannot install what was never deployed.
+
+### Origin vs Serving URL
+
+A domain's **origin** is its name in the graph, the slug its paths are addressed under, like `crm.acme.dev`. Its
+**serving URL** is where the worker actually lives and signs from, the issuer the kernel verifies against. The two are
+deliberately separate: you can move a domain to a new URL without renaming everything that addresses it, because
+identity is pinned to where it is served, not to what it is called.
+
+### Qualified Properties
+
+A **Qualified Property** key is the fully-spelled name of a property, carrying the domain origin, the owning class, and
+the field, like `crm.acme.dev:class.Contact.property.email`. The graph stores properties under these keys, so two
+domains can each have an `email` field without colliding. You almost never type them by hand: a typed accessor like
+`D.Contact.email.key` compiles to the qualified string for you.
+
+### Reference
+
+A **Reference** is a property or return value that points at another node by its identity, rather than copying its data.
+You declare one with `ref(SomeClass)`, or `ref(SELF)` to point at another node of the same class, and the value travels
+as a stable handle the caller can resolve. Use a reference when a function should hand back which node it means, not a
+snapshot that goes stale.
+
+### Function Handler
+
+A **Handler** is the code that runs when a function is called: the implementation behind a declared method. It receives
+a typed context holding the call's `params`, the acting identity as `auth`, the resolved deps, a bound `kernel` for
+calling back, and, for an instance method, the `self` node it acts on. Handlers live in `runtime/`, apart from the
+schema that declares the method, so the declaration fixes the shape and the handler supplies the behavior.
+
+### Deps
+
+**Deps** is a domain's dependency container: a typed object of the external clients and ports its handlers need, such as
+an HTTP client or a payment SDK. You build it with a `deps(env)` function that runs once when the worker starts, and
+every handler then reads what it needs from it. Building clients here rather than at module load keeps the worker
+side-effect-free and each service swappable behind a port (see integrating an external API).
+
+### selfKernel
+
+**selfKernel** lets a handler act as its own identity rather than the caller's. A function reaches for it when there is
+no caller to borrow authority from, like a webhook arriving from the outside world, or when it deliberately needs to do
+something the caller could not. Where the ordinary session carries who called, this one carries the function itself.
+
+### Function Identity
+
+A **Function Identity** is the fact that a function is itself an identity: it can be the principal of a call and can
+hold its own grants. At install, every callable is stamped with an identity (`iss` is its serving URL, `sub` is its
+path) and the kernel verifies its signatures against that issuer's keys. This lets a function act on its own behalf,
+with authority that never exceeds both the caller's and its own.
+
+### Grants combine by intersection, not union
+
+When a function acts for a caller, the authority of the call is the **intersection** of the caller's grants and the
+function's own, not the union. Routing through something more privileged cannot lift you above your own rights, and
+calling a function cannot exceed what that function holds either. This least-privilege rule (see identity composition)
+is why crossing into a function is always safe: authority only ever narrows.
+
+### Syscall
+
+A **Syscall** is a built-in function the kernel itself exposes: a primitive operation on the graph such as creating a
+node, linking two nodes, or granting a permission. Domains build on these; a domain function usually does its work by
+making syscalls. They are declared on the kernel's own classes (`Node`, `Container`, `Identity`) and addressed like any
+other call.
+
+### kernel.call vs callRemote
+
+Use `kernel.call` for anything on the same kernel: syscalls and other methods of domains installed alongside yours. Use
+callRemote when the target lives on a different worker, because that hop needs a credential minted for the other
+worker's audience. Same kernel, plain call; another worker, callRemote.
+
+## Implementation Guidelines And Patterns
+
+Keep implementation boundaries boring: schema declares meaning, the domain definition wires parts explicitly, deps owns external clients, handlers mutate the graph through typed calls.
+
+### Use typed keys and paths
+
+Always derive property keys and class paths from the compiled schema, never hand-write the qualified strings. A typed
+accessor like `D.Contact.email.key` stays correct when you rename a field, because a wrong name becomes a compile error
+instead of a silent miss at runtime. Treat a raw key string as a smell.
+
+### Build clients in deps, not at import
+
+Construct every external client (an HTTP SDK, a database driver, a payment library) inside your deps function, and read
+it from the context in each handler. Building at module load or reaching for a global breaks the worker model: setup
+must be side-effect-free, and a client made once at import outlives the request it was meant for (see why not at load).
+Deps is the one seam where the outside world is wired in.
+
+### Write the graph first, then call out
+
+When a handler touches an external service, record your intent in the graph before or around the outside call, and treat
+the graph as the source of truth. If the external call fails or the worker crashes, the graph still shows what was meant
+to happen, so retrying the call later can converge on the finished job instead of losing the work. The outside world is
+a detail your handler reconciles toward, not where your state lives.
+
+### Idempotency before mutation
+
+Check existing state before writing; design every handler (especially postInstall seeds) to converge on re-run, not
+duplicate.
+
+### A status field for in-flight work
+
+For any operation that is not instant, give the node a status property and move it through explicit states: `pending`
+when work starts, `ready` on success, `error` on failure. The state lives in the graph, so a crash leaves a node you can
+find and finish rather than work lost in the air. Pair it with an idempotent handler so re-running a stuck operation
+converges.
+
+### Saga for multi-step flows
+
+The Graph is the source of truth. Prefer to write first in the Graph, then make external calls. if it takes some time;
+then you can set a status: "creating/provisioning" and then update the status to "ready" when the external call is done
+or rollback on failure. make your function idempotent.
+
+### Let typed params validate the input
+
+Declare a function's inputs as a typed schema and trust them inside the handler: the kernel validates every call against
+that schema before your code runs, so a bad payload is turned away at the door. Re-checking the same things by hand
+duplicates what the contract already guarantees. Put the real constraints in the params (a positive number, a valid
+email), the same discipline as requiring what is required, and let the handler assume they hold.
+
+### Create with a static method
+
+Make the method that creates a new node a static one, declared on the class rather than on an instance. There is no node
+to act on yet when you are making one, so an instance method would have no `self` to receive; a static `create` on the
+`Contact` class is the natural home. Use instance methods to act on a node that already exists, and statics to bring one
+into being.
+
+### Return a reference, not a snapshot
+
+When a function returns which node it created or found, return a typed reference rather than copying that node's
+properties into a bespoke object. A ref is a node identity the caller can resolve with a later graph read when it needs
+current state, not an automatically hydrated object. Return plain data when the function means a snapshot, projection,
+or computed result.
+
+## Red Flags
+
+Treat these as design smells during review. Most downstream bugs come from one of these shortcuts.
+
+### Do NOT use technical semantics for Modules
+
+Naming your modules after technical layers, like `models`, `controllers`, or `utils`, hides what the domain is actually
+about. Group classes by the part of the real world they describe instead, such as `Billing` or `Scheduling`. A good
+schema reads like the business it models, not like the folders of a codebase.
+
+### Misplaced properties
+
+A property should live on the thing it actually describes. A fact about how two nodes relate belongs on the edge, not on
+one of the nodes; a fact shared by many kinds belongs on the interface they share, not copied onto each class. Misplaced
+properties duplicate data and blur what each thing really is.
+
+### A reference buried as a string
+
+Storing another node's id or path as a plain string property hides a real relationship inside an opaque field. The
+kernel cannot follow it, the graph UI cannot draw it, and nothing stops it from pointing at something deleted. Model the
+connection as a typed edge (see modeling a relationship), so it is walkable from both ends and the schema knows it
+exists.
+
+### The god class
+
+Piling every field onto one giant class, a `Thing` with thirty optional props, throws away the very structure the schema
+exists to capture. Different kinds of thing deserve different classes with the shape each actually has; what they share
+belongs on an interface, not on a catch-all. If half a class's properties are empty on any given node, you have two
+kinds wearing one name.
+
+### Making everything optional
+
+Marking every property optional throws away the schema's main job: turning bad data away at the door. If `email` is
+optional on a `Contact` that cannot exist without one, the graph will hold a contact with no email, and every handler
+then has to re-check what the schema should have guaranteed. Require what is truly required, so a node that exists is a
+node you can trust.
+
+### One domain that models everything
+
+Cramming unrelated areas of the world into a single domain, billing and scheduling and chat all under one origin, makes
+a blob no one owns and nothing can reuse. A domain should cover one coherent slice with one vocabulary (see drawing
+boundaries); when its classes stop sharing a subject, it wants splitting. Smaller domains that depend on each other beat
+one that tries to be all of them.
+
+### Keeping state in the handler
+
+A handler keeps no state of its own between calls: the worker may run on a fresh instance each time, so anything stashed
+in a module variable or in memory is gone by the next request. Treat the graph as the only place state lives, and read
+and write it through the kernel. A counter held in a local variable is a bug; the same counter on a node is the truth.
+
+### Secrets in the graph
+
+Never store an API key, password, or token as a node property. The graph is shared by every domain on the instance and
+readable by anyone you grant access, so a secret written there is a secret leaked. Keep secrets in the worker's
+environment and reach them through deps; the graph holds your model, never your credentials.
+
+### Trusting a webhook you didn't verify
+
+A public function has no Astrale credential to vouch for its caller, so anyone on the internet can hit it. Acting on its
+input without first verifying the sender's own signature lets a stranger forge events into your graph. Verify the
+upstream signature before doing anything (see the webhook pattern); a public endpoint that trusts its body is an open
+door.
+
+### Handing out SHARE freely
+
+Granting `SHARE` is granting the power to grant: whoever holds it can pass rights to others, who may in turn hold SHARE
+and pass them further, so access spreads down a chain you stop seeing (see sharing access). Give SHARE only to those you
+trust to manage access themselves. When a recipient just needs to use a thing, grant plain READ or USE, not the right to
+re-share it.
+
+### Walking children one by one
+
+Fetching a folder's children and then making a separate call per child to read each one turns a single logical read into
+dozens of round trips. `listChildren` already returns the child nodes with their data, so use what it gives you instead
+of re-fetching each by path. When you find yourself calling `get` inside a loop over children, you have an N-plus-one.
+
+### Nesting too deep
+
+Burying nodes many levels deep (`/org/regions/emea/teams/sales/members/ada`) makes paths long and brittle, and
+permission coarse: a grant high up sweeps in everything below, one low down reaches almost nothing. Depth should reflect
+real containment, not stand in for a filing system. When the tree gets deep just to organize, prefer a flatter structure
+linked by edges.
+
+### A mutable value as the key
+
+Using a value that can change, like an email or a name, as a node's slug or the key others address it by ties every
+reference to a fact that may not hold tomorrow. Rename the contact and `/contacts/ada@old.com` breaks, along with every
+grant and edge that named it. Address by a stable id or a slug that encodes nothing mutable, and keep the changeable
+value as an ordinary property.
+
+## Common Pitfalls
+
+When behavior looks wrong, check installed/runtime state before assuming the source tree is what the instance runs.
+
+### Defined but not wired in
+
+A standalone function or a view exists for the domain only if it is listed in the domain's `functions` or `views` map.
+Writing the file is not enough: an unlisted function is invisible at runtime, callable by no one, with no error to
+explain why. When a new function or view cannot be reached, first check that it is wired into the domain definition.
+
+### Changed the schema but didn't reinstall
+
+Editing your schema or handlers changes nothing on a running instance until you deploy and install again. The instance
+keeps running the version it last installed, so a class you just added is not there yet and a handler you just fixed is
+still broken. If a change does not seem to take, confirm you re-deployed and re-installed, not just saved the file.
+
+### A public function has no kernel
+
+In a public function or view there is no caller, so the context's `kernel` is null; reaching for it to touch the graph
+throws. Use selfKernel instead, which acts as the function's own identity, whenever the entry point is public.
+
+### Calling an instance form for a static
+
+'method x not found... call it as /:o:class.C/x' means you used::method on a static; switch to the static slash form.
+
+### Renaming a property orphans its data
+
+A node's properties are stored under their fully qualified keys, so renaming a property in the schema does not rename
+the data already written: the old values sit under the old key, invisible to the new name. A re-install changes the
+shape, not the stored facts. When you rename or move a property, migrate the existing data in a seed or a one-off step,
+or accept that old nodes will look empty.
+
+### Renaming the origin breaks everything
+
+A domain's origin is woven into every path its members are addressed by and into the identity its functions sign with.
+Change it and every existing address, grant, and cross-domain dependency that named the old origin stops resolving. Pick
+an origin you can live with up front; renaming one already in use is not an edit but a migration.
+
+### Granting needs more than SHARE
+
+Holding `SHARE` on a node lets you grant access, but only to rights you yourself hold: you cannot hand out EDIT if you
+only have READ and SHARE. A grant that is refused, or quietly grants less than you asked, is often this: the granter is
+missing the very verb they are trying to pass on. To delegate a right, make sure you hold both SHARE and that right.
