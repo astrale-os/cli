@@ -3,7 +3,14 @@ import { K } from '@astrale-os/kernel-core'
 import type { CommandDefinition } from '../command'
 import type { CallCommandOpts, ClientContext, SelfExpansionMeta } from '../kernel'
 
-import { buildSelfContext, resolveSelfIdLazy, runKernelCommand, withSelfHint } from '../kernel'
+import {
+  bindGraph,
+  buildSelfContext,
+  nodeProp,
+  resolveSelfIdLazy,
+  runKernelCommand,
+  withSelfHint,
+} from '../kernel'
 import { presentBinary, type BinaryLike } from '../lib/binary'
 import { log } from '../lib/log'
 import { output, present } from '../lib/output'
@@ -111,22 +118,22 @@ export async function callCommand(
  * A binary method must use the binary transport (the value path would JSON-
  * decode and corrupt the bytes), and the client can't discover that after
  * dispatch. For a static path the path IS the Function node — read `output`
- * off it via `::get`. For an instance-method path (`<node>::method`) the
- * Function node isn't addressable that way: resolve the instance's class
+ * off it via `function.get`. For an instance-method path (`<node>::method`)
+ * the Function node isn't addressable that way: resolve the instance's class
  * first, then probe the class's method node (`<classPath>:method`). An
  * interface-hosted instance method still escapes the probe (its Function node
  * hangs off the interface, not the class) — that and any other failure returns
  * false and falls through to the value path, letting the kernel surface the
- * real error. `::get` is a kernel syscall (same origin) so it neither
- * redirects nor triggers delegation.
+ * real error. `function.get` is a same-origin kernel door so it neither
+ * redirects nor triggers delegation; an unreadable/missing target soft-masks
+ * to `null`, which folds to `false` here.
  */
 async function isBinaryOutput(ctx: ClientContext, path: string): Promise<boolean> {
   try {
     const target = path.includes('::') ? await instanceMethodNodePath(ctx, path) : path
     if (!target) return false
-    const node = (await ctx.client.call(`${target}::get`, {})) as {
-      props?: Record<string, unknown>
-    } | null
+    const node = await bindGraph(ctx).node(target)
+    // Props travel under fully-qualified keys; `output.key` IS that key.
     return node?.props?.[K.$.i('Function').output.key] === 'binary'
   } catch {
     return false
@@ -142,22 +149,24 @@ async function instanceMethodNodePath(
   const source = path.slice(0, sep)
   const method = path.slice(sep + 2)
   if (!source || !method) return undefined
-  const node = (await ctx.client.call(`${source}::get`, {})) as { class?: string } | null
+  const node = await bindGraph(ctx).node(source)
   // node.class is a ClassPath (`/:domain:class.Name`); appending `:<method>`
   // forms the MethodPath of the class-owned Function node.
   return node?.class ? `${node.class}:${method}` : undefined
 }
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {
-  await runKernelCommand<Record<string, unknown>>({
+  await runKernelCommand({
     opts,
     label: `Schema for ${path}`,
-    fn: (ctx) => ctx.client.call(`${path}::get`, {}) as Promise<Record<string, unknown>>,
+    // The Function node carries the schemas as props (function.get depth:0).
+    fn: (ctx) => bindGraph(ctx).node(path),
     format: (node, fmtOpts) => {
-      const props = (node.properties ?? node) as Record<string, unknown>
+      const input = nodeProp(node, 'inputSchema')
+      const outputSchema = nodeProp(node, 'outputSchema')
       const schema: Record<string, unknown> = {}
-      if (props.inputSchema) schema.input = tryParseJson(props.inputSchema)
-      if (props.outputSchema) schema.output = tryParseJson(props.outputSchema)
+      if (input) schema.input = tryParseJson(input)
+      if (outputSchema) schema.output = tryParseJson(outputSchema)
       output(Object.keys(schema).length > 0 ? schema : node, fmtOpts)
     },
   })

@@ -1,11 +1,10 @@
-import { K } from '@astrale-os/kernel-core'
 import { importJWK, SignJWT, type JWK } from 'jose'
 import { readFile } from 'node:fs/promises'
 
 import type { CommandDefinition } from '../../command'
-import type { KernelCommandOpts } from '../../kernel'
+import type { ClientContext, KernelCommandOpts } from '../../kernel'
 
-import { runKernelCommand } from '../../kernel'
+import { bindGraph, runKernelCommand } from '../../kernel'
 import { KERNEL_PASSTHROUGH_OPTIONS } from '../../kernel/options'
 import { getIdentity, setRegistration } from '../../lib/identity'
 import { getActive } from '../../lib/instance'
@@ -13,7 +12,6 @@ import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 
-type CreateNodeResult = { id: string; path: string }
 type RegisterIdentityResult = { iss: string; sub: string }
 
 type RegisterOpts = KernelCommandOpts & {
@@ -27,8 +25,6 @@ async function readJwk(path: string): Promise<JWK> {
   return JSON.parse(raw) as JWK
 }
 
-type ChildNode = { class?: string; path?: string }
-
 /**
  * Discover the identity-bearer class on the target instance: find the
  * installed domain that owns a `User` class (workspace on managed instances)
@@ -37,22 +33,19 @@ type ChildNode = { class?: string; path?: string }
  * failing here names the real problem instead of surfacing as a confusing
  * permission error on a hardcoded origin.
  */
-async function resolveUserClassPath(ctx: {
-  client: { call(path: string, params: unknown): Promise<unknown> }
-}): Promise<string> {
-  const children = (await ctx.client.call('/::listChildren', {})) as ChildNode[]
-  const domains = children
-    .filter((c) => typeof c.class === 'string' && c.class.endsWith(':class.Domain'))
-    .map((c) => (c.path ?? '').replace(/^\//, ''))
+async function resolveUserClassPath(ctx: ClientContext): Promise<string> {
+  const graph = bindGraph(ctx)
+  // Root's direct children are the installed Domain nodes (function.get depth:1).
+  const { nodes } = await graph.children('/')
+  const domains = nodes
+    .filter((n) => typeof n.class === 'string' && n.class.endsWith(':class.Domain'))
+    .map((n) => (n.path ?? '').replace(/^\//, ''))
     .filter(Boolean)
   for (const origin of domains) {
-    try {
-      // The class materializes as a `class.User` Folder under the domain mount;
-      // a resolvable read means the domain declares it.
-      await ctx.client.call(`/${origin}/class.User::get`, {})
+    // The class materializes as a `class.User` Folder under the domain mount;
+    // a visible node means the domain declares it (soft-root: null when absent).
+    if (await graph.node(`/${origin}/class.User`)) {
       return `/:${origin}:class.User`
-    } catch {
-      // This domain has no User class — try the next one.
     }
   }
   throw new Error(
@@ -135,14 +128,16 @@ export default {
             ? { firstName: name, lastName: name }
             : {}
 
-          const node = (await ctx.client.call(K.Node.createNode.path.method.raw, {
-            class: classPath,
-            path: nodePath,
-            props: { 'Statused.status': 'creating', ...userDefaults, ...extraProps },
-          })) as CreateNodeResult
+          // One-arm create through function.mutate; the minted node id comes
+          // back in createdNodes (keyed by the `at` path).
+          const nodeId = await bindGraph(ctx).create(classPath, nodePath, {
+            'Statused.status': 'creating',
+            ...userDefaults,
+            ...extraProps,
+          })
 
           const bootstrap = await mintBootstrapJwt(privateJwk)
-          const result = (await ctx.client.call(`@${node.id}::registerIdentity`, {
+          const result = (await ctx.client.call(`@${nodeId}::registerIdentity`, {
             signingKey: {
               publicKey: { jwk: publicJwk },
               credential: bootstrap,

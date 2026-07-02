@@ -87,16 +87,17 @@ const reports_to = edgeClass(
 ## Walking children one by one
 
 Fetching a folder's children and then making a separate call per child to read each one turns a single
-logical read into dozens of round trips. `listChildren` already returns the child nodes with their data,
-so use what it gives you instead of re-fetching each by path. When you find yourself calling `get`
-inside a loop over children, you have an N-plus-one.
+logical read into dozens of round trips. `graph.children` already returns the child nodes with their
+data, so use what it gives you instead of re-fetching each by path. When you find yourself calling
+`graph.node` inside a loop over children, you have an N-plus-one; `graph.tree` reads a whole subtree in
+ONE `function.get`.
 
 ```ts
-// NO N+1: one listChildren, then a get per child
-const kids = await kernel.call('/contacts::listChildren', {})
-for (const k of kids) await kernel.call(`${k.path}::get`, {})
-// OK listChildren already returned each child's props; just read them
-const loaded = await kernel.call('/contacts::listChildren', {})
+// NO N+1: children, then a node() read per child
+const { nodes } = await ctx.graph.children('/contacts')
+for (const k of nodes) await ctx.graph.node(k.path)
+// OK graph.children already returned each child's props; just read them
+const { nodes: loaded } = await ctx.graph.children('/contacts')
 ```
 
 ## How does a handler report an error?

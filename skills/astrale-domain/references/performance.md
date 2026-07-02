@@ -7,16 +7,19 @@ Read when optimizing graph access, reducing kernel round trips, choosing indexes
 ## Walking children one by one
 
 Fetching a folder's children and then making a separate call per child to read each one turns a single
-logical read into dozens of round trips. `listChildren` already returns the child nodes with their data,
-so use what it gives you instead of re-fetching each by path. When you find yourself calling `get`
-inside a loop over children, you have an N-plus-one.
+logical read into dozens of round trips. `graph.children` already returns the child nodes with their
+data, so use what it gives you instead of re-fetching each by path. When you find yourself calling
+`graph.node` inside a loop over children, you have an N-plus-one — and `graph.tree` collapses a whole
+subtree into ONE `function.get`.
 
 ```ts
-// NO N+1: one listChildren, then a get per child
-const kids = await kernel.call('/contacts::listChildren', {})
-for (const k of kids) await kernel.call(`${k.path}::get`, {})
-// OK listChildren already returned each child's props; just read them
-const loaded = await kernel.call('/contacts::listChildren', {})
+// NO N+1: children, then a node() read per child
+const { nodes } = await ctx.graph.children('/contacts')
+for (const k of nodes) await ctx.graph.node(k.path)
+// OK graph.children already returned each child's props; just read them
+const { nodes: loaded } = await ctx.graph.children('/contacts')
+// deeper: one function.get for the subtree instead of a level-by-level walk
+const subtree = await ctx.graph.tree('/contacts', { depth: 3 })
 ```
 
 ## Index
@@ -38,26 +41,28 @@ const Contact = nodeClass({
 
 ## How to read and find nodes?
 
-You read one node by calling `get` on its path, and the contents of a folder by calling `listChildren`
-on it, both syscalls the kernel checks READ on. To find nodes by a relationship, follow edges from a
-node you already hold; to find them by arbitrary criteria, run a query. Reach for the simplest read that
-answers the question before reaching for a full graph query.
+You read one node by calling `graph.node` on its path, and the contents of a folder by calling
+`graph.children` on it — both go through `function.get`, which the kernel gates by per-node READ
+visibility. To find nodes by a relationship, follow edges with `graph.links`; to find them by arbitrary
+criteria, run a query. Reach for the simplest read that answers the question before reaching for a full
+graph query.
 
 ```ts
-await kernel.call('/contacts/ada::get', {})
-await kernel.call('/contacts::listChildren', {})
+await ctx.graph.node('/contacts/ada')
+await ctx.graph.children('/contacts')
 ```
 
 ## How to list a node's children?
 
-You list what sits directly beneath a node by calling `listChildren` on it, the way you would read a
+You list what sits directly beneath a node by calling `graph.children` on it, the way you would read a
 folder's contents. It returns the nodes one level down, including their data, so narrow them to the
-class you care about on the result instead of fetching each child again. Walk deeper by listing a child
-in turn; the tree is traversed one level at a time.
+class you care about on the result instead of fetching each child again — or push the filter server-side
+with `graph.children(path, { classes: [...] })`. Walk deeper with `graph.tree(path, { depth })` in one
+call rather than one level at a time.
 
 ```ts
-const kids = await kernel.call('/contacts::listChildren', {})
-const contacts = kids.filter((n) => n.class === D.Contact.path.class.raw)
+const { nodes } = await ctx.graph.children('/contacts')
+const contacts = nodes.filter((n) => n.class === D.Contact.path.class.raw)
 ```
 
 ## How to run a complex graph query?
@@ -81,8 +86,8 @@ id never does. Address by id when you mean *this exact node forever*, and by pat
 *whatever lives here now*.
 
 ```ts
-await kernel.call('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20::get', {}) // by id  -  this exact node, forever
-await kernel.call('/contacts/ada::get', {})                          // by path  -  whatever lives here now
+await ctx.graph.node('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20') // by id  -  this exact node, forever
+await ctx.graph.node('/contacts/ada')                          // by path  -  whatever lives here now
 ```
 
 ## A mutable value as the key

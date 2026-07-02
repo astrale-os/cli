@@ -136,14 +136,28 @@ const GROUP_HELPERS = new Set([
   'remoteInterfaceMethods',
 ])
 
-/** Kernel-op tokens we surface as `kernelCalls`, longest-first to avoid overlap. */
+/**
+ * Kernel-op idioms we surface as `kernelCalls`, longest-first so a longer token
+ * (`graph.createEdge`) is blanked before its prefix (`graph.create`) can match.
+ * Post-cutover the graph surface is `ctx.graph.*` (the two doors + read/write
+ * sugar) plus the raw `function.get` / `function.mutate` paths; grant/revokePerm
+ * stay Identity ops.
+ */
 const KERNEL_TOKENS = [
-  '::getLinks',
-  '::getLink',
-  '::update',
-  '::link',
-  '::create',
-  'createNode',
+  'graph.createEdge',
+  'graph.removeEdge',
+  'function.mutate',
+  'graph.children',
+  'function.get',
+  'graph.create',
+  'graph.update',
+  'graph.remove',
+  'graph.mutate',
+  'graph.links',
+  'graph.tree',
+  'graph.node',
+  'revokePerm',
+  'graph.get',
   'grantPerm',
 ]
 

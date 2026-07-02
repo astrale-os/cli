@@ -152,11 +152,12 @@ called, this one carries the function itself.
 ```ts
 // a public webhook has no caller, so it acts as the function's own identity
 execute: async ({ params, selfKernel }) => {
-  const kernel = await selfKernel()                      // the function's own session
-  await kernel.call(K.Node.createNode.path.method.raw, {
-    class: D.Event.path.class.raw,
-    path: `/events/${params.id}`,
-    props: params.body,
+  const own = await selfKernel()                         // the function's own session
+  // write through the function.mutate door, under the function's own authority
+  await own.call('/:kernel.astrale.ai:function.mutate', {
+    nodes: {
+      create: [{ class: D.Event.path.class.raw, at: `/events/${params.id}`, props: params.body }],
+    },
   })
 }
 ```
@@ -169,8 +170,8 @@ with only the grants the function itself holds. Reach for `kernel` to honor who 
 when there is no caller or the function must act in its own right.
 
 ```ts
-execute: async ({ kernel, selfKernel }) => {
-  await kernel.call('/contacts/ada::get', {})         // as the caller
+execute: async ({ graph, selfKernel }) => {
+  await graph.node('/contacts/ada')                   // read as the caller (function.get)
   const own = await selfKernel()
   await own.call('/audit::append', { event: 'read' }) // as the function itself
 }
