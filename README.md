@@ -149,3 +149,18 @@ bun cli/bin/astrale.ts <command>
 # Build the CLI
 pnpm -C cli build
 ```
+
+### Testing local changes live: `astrale-dev`
+
+When developing inside the [workspace](https://github.com/astrale-os/workspace),
+`astrale` stays the official released CLI. To run your local CLI source live
+(no build, no global link), use `astrale-dev`:
+
+```bash
+astrale-dev <command>   # execs `bun <workspace>/cli/bin/astrale.ts` of the
+                        # workspace/worktree you are currently in
+```
+
+It resolves the workspace from your current directory, so each worktree runs its
+own source, and outside a workspace it refuses (use `astrale`). It is installed
+by the workspace's `./scripts/init-machine.sh`.
