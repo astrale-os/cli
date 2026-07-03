@@ -133,7 +133,7 @@ export default {
 
           // One-arm create through function.mutate; the minted node id comes
           // back in createdNodes (keyed by the `at` path).
-          const nodeId = await bindGraph(ctx).create(classPath, nodePath, {
+          const nodeId = await bindGraph(ctx).createNode(classPath, nodePath, {
             'Statused.status': 'creating',
             ...userDefaults,
             ...extraProps,

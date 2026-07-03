@@ -97,8 +97,8 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
         meta,
       )
       return {
-        children: splitRoot(result.nodes, expandedPath).children,
-        next: childrenCursor(result),
+        children: splitRoot(result.wire.nodes, expandedPath).children,
+        next: childrenCursor(result.wire),
       }
     },
     format: ({ children, next }, fmtOpts) => {
@@ -139,7 +139,7 @@ async function recursiveLs(
         () => bindGraph(ctx).get({ roots: [path], depth: MAX_DEPTH }),
         meta,
       )
-      const tree = buildTree(result.nodes, path)
+      const tree = buildTree(result.wire.nodes, path)
       spin?.succeed(`Tree of ${path}`)
       if (!machine) console.log('')
 

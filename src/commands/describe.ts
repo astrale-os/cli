@@ -40,7 +40,7 @@ export async function describeCommand(path: string, opts: DescribeOpts): Promise
         () => bindGraph(ctx).get({ roots: [expandedPath], depth: 1 }),
         meta,
       )
-      const { root, children } = splitRoot(result.nodes, expandedPath)
+      const { root, children } = splitRoot(result.wire.nodes, expandedPath)
       return { node: root, children }
     },
     format: (result, fmtOpts, isRaw) => {

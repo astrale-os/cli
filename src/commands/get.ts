@@ -43,7 +43,7 @@ export async function getCommand(paths: string[], opts: GetOpts): Promise<void> 
   await runKernelCommand<GetResultWire>({
     opts,
     label: `Node ${roots.join(' ')}`,
-    fn: (ctx) => withSelfHint(() => bindGraph(ctx).get(input), meta),
+    fn: async (ctx) => (await withSelfHint(() => bindGraph(ctx).get(input), meta)).wire,
     format: (result, fmtOpts) => {
       if (graphShape) {
         output(result, fmtOpts)
