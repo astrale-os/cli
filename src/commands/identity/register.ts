@@ -35,16 +35,19 @@ async function readJwk(path: string): Promise<JWK> {
  */
 async function resolveUserClassPath(ctx: ClientContext): Promise<string> {
   const graph = bindGraph(ctx)
-  // Root's direct children are the installed Domain nodes (function.get depth:1).
-  const { nodes } = await graph.children('/')
-  const domains = nodes
-    .filter((n) => typeof n.class === 'string' && n.class.endsWith(':class.Domain'))
-    .map((n) => (n.path ?? '').replace(/^\//, ''))
+  // Root's direct children are the installed Domain nodes (the `query` door lowers
+  // this one-level walk to `function.get` depth:1). The seed root rides the same
+  // hydrated graph, so exclude it by identity to keep only the children.
+  const result = await graph.query((q) => q.from('/').children())
+  const domains = result.graph.nodes
+    .filter((n) => !result.roots.includes(n))
+    .filter((n) => n.class.className === 'Domain')
+    .map((n) => n.path.raw.replace(/^\//, ''))
     .filter(Boolean)
   for (const origin of domains) {
     // The class materializes as a `class.User` Folder under the domain mount;
-    // a visible node means the domain declares it (soft-root: null when absent).
-    if (await graph.node(`/${origin}/class.User`)) {
+    // a resolving node means the domain declares it (empty result when absent).
+    if ((await graph.query((q) => q.from(`/${origin}/class.User`))).roots[0]) {
       return `/:${origin}:class.User`
     }
   }

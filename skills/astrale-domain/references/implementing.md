@@ -52,8 +52,8 @@ id never does. Address by id when you mean *this exact node forever*, and by pat
 *whatever lives here now*.
 
 ```ts
-await ctx.graph.node('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20') // by id  -  this exact node, forever
-await ctx.graph.node('/contacts/ada')                          // by path  -  whatever lives here now
+await ctx.graph.query((q) => q.from('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20')) // by id  -  this exact node, forever
+await ctx.graph.query((q) => q.from('/contacts/ada'))                          // by path  -  whatever lives here now
 ```
 
 ## IdPath
@@ -157,8 +157,12 @@ per-node graph syscall anymore: `createNode`, `get`, `update`, `deleteNode`,
 `link`, `unlink`, `getLinks`, `getTree`, `listChildren`, `push` are all gone.
 Reach for the sugar, not raw `kernel.call`, for graph work:
 
-- reads: `graph.node(path)`, `graph.children(path, opts?)`, `graph.tree(path, opts?)`,
-  `graph.links(path, opts?)`
+- reads: `graph.query((q) => q.from(path)…)` → a `QueryResult`. The read presets
+  (`node`/`children`/`tree`/`links`) are GONE; every read is a query plus a
+  `result` accessor: the seed node is `result.roots[0] ?? null`; its children are
+  `result.graph.nodes.filter((n) => !result.roots.includes(n))` after a
+  `.children()`; a subtree is `.descend(depth)`; incident edges are
+  `result.graph.edges.all` after a `.links(edge?)`
 - writes: `graph.create(cls, at, props?)` → new id, `graph.update(cls, path, props)`,
   `graph.remove(cls, path)`, `graph.createEdge(e)` → new id, `graph.removeEdge(e)`
 - raw doors: `graph.get(input)`, `graph.mutate(patch)` (accepts a `Patch` builder);
@@ -191,14 +195,16 @@ await ctx.graph.mutate({
 
 ## How to read and update a node?
 
-You read a node with `graph.node` and change it with `graph.update`. `graph.node`
-returns the node (its class, path, and current properties) or `null` when it is
-missing or not visible to you; `graph.update` writes new values, checked against
-the node's class just as at creation. Each is authorized before it touches the
-graph — an update needs `EDIT` on the target.
+You read a node by querying its path and taking the seed, and change it with
+`graph.update`. A single-node read is `graph.query((q) => q.from(path))`; the
+result's `roots[0] ?? null` is the node (its class, path, and current properties)
+or `null` when it is missing or not visible to you. `graph.update` writes new
+values, checked against the node's class just as at creation. Each is authorized
+before it touches the graph — a read needs `READ`, an update needs `EDIT` on the
+target.
 
 ```ts
-const ada = await ctx.graph.node('/contacts/ada')                                    // read props
+const ada = (await ctx.graph.query((q) => q.from('/contacts/ada'))).roots[0] ?? null // read props
 await ctx.graph.update(D.Contact.path.class.raw, '/contacts/ada', { [D.Contact.title.key]: 'Lead' }) // write props
 ```
 
@@ -273,18 +279,20 @@ static slash form.
 
 ## Walking children one by one
 
-Fetching a folder's children and then making a separate call per child to read each one turns a single
-logical read into dozens of round trips. `graph.children` already returns the child nodes with their
-data, so use what it gives you instead of re-fetching each by path. When you find yourself calling
-`graph.node` inside a loop over children, you have an N-plus-one. For a whole subtree, `graph.tree`
-fetches many levels in ONE `function.get`.
+Fetching a folder's children and then querying each child again to read it turns a single logical read
+into dozens of round trips. One `graph.query(...).children()` already returns the child nodes with their
+data in ONE `function.get`, so read them off `result.graph` instead of re-querying each by path. When you
+find yourself issuing a `graph.query((q) => q.from(child.path))` inside a loop over children, you have an
+N-plus-one. For a whole subtree, `.descend(depth)` fetches many levels in one `function.get`.
 
 ```ts
-// NO N+1: children, then a node() read per child
-const { nodes } = await ctx.graph.children('/contacts')
-for (const k of nodes) await ctx.graph.node(k.path)
-// OK graph.children already returned each child's props; just read them
-const { nodes: loaded } = await ctx.graph.children('/contacts')
-// deeper: one call for the subtree instead of a walk
-const subtree = await ctx.graph.tree('/contacts', { depth: 3 })
+// NO N+1: a children query, then a per-child query re-read
+const listed = await ctx.graph.query((q) => q.from('/contacts').children())
+const kids = listed.graph.nodes.filter((n) => !listed.roots.includes(n))
+for (const k of kids) await ctx.graph.query((q) => q.from(k.path))
+// OK the children query already returned each child's props; just read them
+const r = await ctx.graph.query((q) => q.from('/contacts').children())
+const loaded = r.graph.nodes.filter((n) => !r.roots.includes(n))
+// deeper: one function.get for the subtree instead of a level-by-level walk
+const subtree = await ctx.graph.query((q) => q.from('/contacts').descend(3))
 ```

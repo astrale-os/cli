@@ -171,7 +171,7 @@ when there is no caller or the function must act in its own right.
 
 ```ts
 execute: async ({ graph, selfKernel }) => {
-  await graph.node('/contacts/ada')                   // read as the caller (function.get)
+  await graph.query((q) => q.from('/contacts/ada'))   // read as the caller (function.get)
   const own = await selfKernel()
   await own.call('/audit::append', { event: 'read' }) // as the function itself
 }

@@ -86,18 +86,20 @@ const reports_to = edgeClass(
 
 ## Walking children one by one
 
-Fetching a folder's children and then making a separate call per child to read each one turns a single
-logical read into dozens of round trips. `graph.children` already returns the child nodes with their
-data, so use what it gives you instead of re-fetching each by path. When you find yourself calling
-`graph.node` inside a loop over children, you have an N-plus-one; `graph.tree` reads a whole subtree in
-ONE `function.get`.
+Fetching a folder's children and then querying each child again to read it turns a single logical read
+into dozens of round trips. One `graph.query(...).children()` already returns the child nodes with their
+data, so read them off `result.graph` instead of re-querying each by path. When you find yourself issuing
+a `graph.query((q) => q.from(child.path))` inside a loop over children, you have an N-plus-one;
+`.descend(depth)` reads a whole subtree in ONE `function.get`.
 
 ```ts
-// NO N+1: children, then a node() read per child
-const { nodes } = await ctx.graph.children('/contacts')
-for (const k of nodes) await ctx.graph.node(k.path)
-// OK graph.children already returned each child's props; just read them
-const { nodes: loaded } = await ctx.graph.children('/contacts')
+// NO N+1: a children query, then a per-child query re-read
+const listed = await ctx.graph.query((q) => q.from('/contacts').children())
+const kids = listed.graph.nodes.filter((n) => !listed.roots.includes(n))
+for (const k of kids) await ctx.graph.query((q) => q.from(k.path))
+// OK the children query already returned each child's props; just read them
+const r = await ctx.graph.query((q) => q.from('/contacts').children())
+const loaded = r.graph.nodes.filter((n) => !r.roots.includes(n))
 ```
 
 ## How does a handler report an error?
