@@ -78,7 +78,7 @@ patterns across nodes and edges in one call. Use it sparingly: it steps outside 
 simple reads where they suffice.
 
 ```ts
-await kernel.call(K.Root.query.path.method.raw, {
+await kernel.call(K.$.f('query').path.domain.raw, {
   cypher: 'MATCH (c)-[:works_on]->(p) WHERE p.name = $name RETURN c',
 })
 ```

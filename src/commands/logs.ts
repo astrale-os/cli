@@ -1,9 +1,9 @@
 import type { JournalEntry, JournalFilter } from '@astrale-os/kernel-core'
 
 /**
- * `astrale logs` — tail the kernel event journal (Root.journal) for the target
+ * `astrale logs` — tail the kernel event journal (function.journal) for the target
  * instance. Defaults to the kernel journal syscall
- * `/kernel.astrale.ai/class.Root/journal`; `--service <name>` switches to the
+ * `/kernel.astrale.ai/functions/journal`; `--service <name>` switches to the
  * per-instance `services` domain log buffer (the historical behavior).
  *
  * Target the instance with `-i <instance>` (inherited from withKernelOptions).
@@ -18,13 +18,13 @@ import { runKernelCommand, withKernelClient } from '../kernel'
 import { fatal, withSpinner } from '../lib/log'
 import { isMachine, output, presentList } from '../lib/output'
 
-const ROOT_JOURNAL_PATH = '/kernel.astrale.ai/class.Root/journal'
+const JOURNAL_FN_PATH = '/kernel.astrale.ai/functions/journal'
 const DEFAULT_SERVICES_ORIGIN = 'services.astrale.ai'
 const DEFAULT_LIMIT = 200
 const FOLLOW_INTERVAL_MS = 2000
 // The journal-read syscall journals its own ops; hide them by default so polling
 // doesn't self-pollute the view. `--all` shows them.
-const SELF_READ_PREFIX = 'op:class.Root.method.journal:'
+const SELF_READ_PREFIX = 'op:function.journal:'
 
 // The published @astrale-os/kernel-core@0.5.0 JournalFilter has no `cursor` yet
 // (added on the kernel branch). Type against the augmented shape so the
@@ -48,7 +48,7 @@ type LogsOpts = KernelCommandOpts & {
 }
 
 /**
- * Kernel journal page. The Root.journal syscall returns a BARE `JournalEntry[]`;
+ * Kernel journal page. The function.journal syscall returns a BARE `JournalEntry[]`;
  * the client derives the next cursor from the max `seq`. We still model a
  * `nextCursor` field so the TTY footer / incremental tail share one shape, and
  * so a future paged kernel response degrades gracefully.
@@ -58,7 +58,7 @@ type EventsPage = {
   nextCursor?: number | null
 }
 
-// ── Root.journal (default) ───────────────────────────────────
+// ── function.journal (default) ───────────────────────────────────
 
 /** The highest `seq` across entries, or null when empty. */
 function maxSeq(entries: JournalEntry[]): number | null {
@@ -177,7 +177,7 @@ function eventsProjection(entries: JournalEntry[], showTiming = false): ListProj
 }
 
 async function fetchEventsPage(ctx: ClientContext, opts: LogsOpts): Promise<EventsPage> {
-  const raw = await ctx.client.call(ROOT_JOURNAL_PATH, buildEventsParams(opts))
+  const raw = await ctx.client.call(JOURNAL_FN_PATH, buildEventsParams(opts))
   const page = normalizePage(raw)
   // Strip the journal's own read ops by default (but keep nextCursor past them).
   const entries = opts.all
@@ -313,7 +313,7 @@ export default {
     },
   ],
   afterHelpText: `
-Default: tails the kernel event journal via ${ROOT_JOURNAL_PATH} on the target
+Default: tails the kernel event journal via ${JOURNAL_FN_PATH} on the target
 instance (-i <instance>). Topics use ':'-segmented globs ('*' one segment,
 '**' zero-or-more). Machine output (--json / pipe) emits the JournalEntry[]
 array; a TTY shows a SEQ/TIME/TOPIC/LATENCY/PRINCIPAL table (LATENCY is the

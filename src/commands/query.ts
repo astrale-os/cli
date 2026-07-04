@@ -9,7 +9,7 @@ export async function queryCommand(cypher: string, opts: KernelCommandOpts): Pro
   await runKernelCommand({
     opts,
     label: 'Query',
-    fn: (ctx) => ctx.client.call(K.Root.query.path.method.raw, { cypher }),
+    fn: (ctx) => ctx.client.call(K.$.f('query').path.domain.raw, { cypher }),
   })
 }
 

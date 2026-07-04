@@ -195,7 +195,7 @@ no committed `spec.json`). `astrale domain install` has two modes:
   The target instance is the active one or `-i <slug>` and **must be
   admin-managed** (otherwise it fails loudly and points you at `--direct`).
 - **`--direct`** — `astrale domain install <url> --direct` installs a url
-  straight onto the instance kernel (`Root.installDomain`), bypassing the
+  straight onto the instance kernel (`function.installDomain`), bypassing the
   catalog. Works on ANY instance you can authenticate to (managed, bookmarked,
   or local), using your own authority, and is the only mode that runs the
   identity-override consent gate. Use it for dev/local instances and
@@ -507,7 +507,7 @@ Use diagnostics:
 - Use `--ci` and `--no-prompt` in non-interactive automation.
 - Use `--timeout <ms>` when a kernel call is valid but slow.
 - `astrale logs -i <instance>` defaults to tailing the kernel EVENT JOURNAL
-  (the `Root.journal` syscall): SEQ/TIME/TOPIC/PRINCIPAL on a TTY, the raw
+  (the `function.journal` syscall): SEQ/TIME/TOPIC/PRINCIPAL on a TTY, the raw
   `JournalEntry[]` under `--json`. Filter with `--topic <glob>` (':'-segmented,
   `*` one segment / `**` zero-or-more, e.g. `op:*:failed`), `--principal <id>`,
   `--since`/`--until` (epoch-ms or ISO-8601), `--limit <n>` (default 200), and
