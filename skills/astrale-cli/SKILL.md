@@ -195,7 +195,7 @@ no committed `spec.json`). `astrale domain install` has two modes:
   The target instance is the active one or `-i <slug>` and **must be
   admin-managed** (otherwise it fails loudly and points you at `--direct`).
 - **`--direct`** — `astrale domain install <url> --direct` installs a url
-  straight onto the instance kernel (`function.installDomain`), bypassing the
+  straight onto the instance kernel (`Domain.install`), bypassing the
   catalog. Works on ANY instance you can authenticate to (managed, bookmarked,
   or local), using your own authority, and is the only mode that runs the
   identity-override consent gate. Use it for dev/local instances and
