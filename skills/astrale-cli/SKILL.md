@@ -55,12 +55,9 @@ Command groups:
 | Management | `admin`, `instance`, `domain`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser` |
 
-`get` and `mutate` are the two graph doors. `get` reads (`function.get` — one or
-more roots, optional subtree depth + children/edge selectors); `mutate` writes a
-batch patch (`function.mutate` — create/update/delete nodes & edges, all-or-nothing).
-The per-node graph syscalls (`::get`, `::listChildren`, `::createNode`, `::update`,
-`::deleteNode`, `::link`, `::getLinks`, `::getTree`, `::push`) are GONE — `get`/`ls`/
-`describe` all go through `function.get`, and there is no per-node write syscall.
+`get` and `mutate` are the two graph doors: `get` reads (`function.get`), `mutate`
+writes a batch patch (`function.mutate`). `ls` and `describe` are `get` presets.
+The old per-node syscalls (`::get`, `::createNode`, `::link`, …) are gone.
 
 Shared kernel options are merged onto kernel-touching commands at registration
 time: `--format`, `--json`, `--raw`, `--url`, `-i/--instance`, `--timeout`,
@@ -308,31 +305,24 @@ single multi-root graph read. Its semantics shape all three:
 - **Subtree depth** — `--depth 0..5` fetches descendants (0 = just the roots).
   `ls` is `--depth 1` under the hood; `ls -R` is `--depth 5` reassembled into a
   tree client-side (one call, not the old N+1 walk); `describe` is `--depth 1`.
-- **Children selector** — shape the depth-1 children page:
-  `--children-class <classPath...>` (server-side class filter), `--limit <n>`
-  (≤500), `--order <by[:dir]>` (`by` = `id` or a fully-qualified prop key),
-  `--cursor <s>` (resume a page). These need `--depth ≥ 1` to bite.
-- **Edge selector** — `--edges <json>` includes incident edges. A selector is
-  `{ as?, classes?, direction?: in|out|both, limit?, cursor?, order? }`, or a
-  JSON array of selectors (each aliased by `as`), e.g.
-  `--edges '{"direction":"out","classes":["/:kernel.astrale.ai:class.has_perm"]}'`.
-- **Soft-root visibility** — a read NEVER 403s. Unreadable or missing roots (and
-  descendants) are silently OMITTED from the result; only when NO root resolves
-  does `get` error `NOT_FOUND`. "I got fewer nodes than expected" = a visibility
-  or existence gap, not a permission error to chase.
-- **Cursors** — when a children/edge page overflows, the result carries per-root
-  cursors in `.next`; on a TTY `get` prints a dim `more: --cursor …` footer.
+- **Children / edge selectors** — `--children <json>` and `--edges <json>` are
+  symmetric. `--children` is `{ classes?, limit?, cursor?, order? }` (shapes the
+  depth-1 children page; needs `--depth ≥ 1`). `--edges` is
+  `{ as?, classes?, direction?: in|out|both, limit?, cursor?, order? }` or a JSON
+  array of such selectors (each aliased by `as`) to include incident edges.
+- **Soft-root visibility** — a read NEVER 403s: unreadable or missing roots (and
+  descendants) are silently omitted; only when NO root resolves does `get` error
+  `NOT_FOUND`. Fewer nodes than expected = a visibility/existence gap, not a perm.
+- **Cursors** — when a children/edge page overflows, per-root cursors land in
+  `.next`; on a TTY `get` prints a dim `more: …` footer with the flag to page on.
 
 ```bash
 astrale get /a /b --graph                       # full GraphData for many roots
 astrale get / --depth 1                          # root + its domains
 astrale get /kernel.astrale.ai --depth 2 \
-  --children-class /:kernel.astrale.ai:class.Folder
+  --children '{"classes":["/:kernel.astrale.ai:class.Folder"]}'
 astrale get @abc123 --edges '{"direction":"both"}'   # node + incident edges
 ```
-
-Writes go through the other door, **`function.mutate`** (`astrale mutate`) — a
-batch PatchData applied all-or-nothing. See "Batch Writes" below.
 
 Admin host records are exposed by the concrete provider class, not by the
 provider-neutral `Host` interface:
@@ -350,7 +340,7 @@ Gotchas:
   `jq` or use command-specific flags when available.
 - `ls` has list-specific output controls such as `-q/--quiet`, `--count`, and
   `-l/--long`; `--filter <kind>` is a client-side post-filter on child KIND or
-  label. For a server-side class filter use `get --depth 1 --children-class`.
+  label. For a server-side class filter use `get --depth 1 --children`.
 - For operation schemas, prefer `astrale call <path> --describe` before
   executing a call you are unsure about.
 - **`class.<Name>` materializes as a `Folder` node** (kind `Folder`, name
@@ -362,8 +352,8 @@ Gotchas:
 ## Batch Writes
 
 `astrale mutate` applies a **PatchData** patch through `function.mutate` — one
-atomic, all-or-nothing write over the graph. The patch source ladder (highest
-wins) mirrors `call`: `--data <json>` > `--file <path>` > piped stdin.
+atomic, all-or-nothing write. Patch source ladder (highest wins), mirroring
+`call`: `--data <json>` > `--file <path>` > piped stdin.
 
 ```json
 {
@@ -383,14 +373,13 @@ Every arm is optional (defaults to `[]`). The result is the minted id maps:
 `createdNodes` (`at` path → node id) and `createdEdges`
 (`class|source|slug|target` tuple → edge id); `--json` emits it raw.
 
-- **`--dry`** validates the patch locally against the kernel's `patchDataSchema`
-  and prints the normalized form — no kernel round-trip. Use it to catch a
-  malformed class path or shape before sending.
+- **`--dry`** validates locally against the kernel's `patchDataSchema` and prints
+  the normalized form — no round-trip. Catches a malformed patch before sending.
 - **Per-arm authorization** — a `create` needs `USE` on the class and `EDIT` on
   the parent; an `update`/`delete` needs `EDIT` on the target. Any denied arm
-  fails the WHOLE patch (there is no partial apply).
+  fails the WHOLE patch (no partial apply).
 - **`delete`** is leaf-only per arm — to remove a subtree, include every
-  descendant in the `delete` arm (the kernel enforces the invariant in-statement).
+  descendant in the `delete` arm.
 
 ```bash
 astrale mutate --data '{"nodes":{"create":[{"class":"/:blog.acme.com:class.Author","at":"/blog.acme.com/authors/ada","props":{}}]}}'
@@ -423,21 +412,13 @@ Output is selected from stdout shape and flags:
 
 ### `get` output shapes
 
-`get` has two output shapes, chosen by the request:
-
-- **Flat node** (default) — a single root, `--depth 0`, no `--edges`. Emits the
-  bare node projection `{ id, class, path, props }` (add `-l` to keep the
-  internal `__labels`/`classId`). This is the stable shape scripts and Studio
-  parse — `props` are keyed by fully-qualified prop keys
-  (`<domain>:class.X.property.name`).
-- **GraphData** — any richer request (multiple roots, `--depth > 0`, `--edges`,
-  or an explicit `--graph`). Emits `{ nodes, edges, aliases? }` plus per-root
-  pagination cursors under `.next`. On a TTY, a dim cursor footer prints when
-  more pages exist; page with `--cursor` (children) or an `--edges` selector
-  carrying the alias's `cursor`.
-
-`mutate` prints the minted id maps (aligned tables on a TTY, raw
-`{ createdNodes, createdEdges }` under `--json`).
+`get` returns the **flat node** projection `{ id, class, path, props }` for the
+simple case (single root, `--depth 0`, no `--edges`) — the stable shape scripts
+and Studio parse, `props` keyed by fully-qualified keys
+(`<domain>:class.X.property.name`); `-l` keeps `__labels`/`classId`. Any richer
+request (multiple roots, `--depth > 0`, `--edges`, `--graph`) returns full
+`GraphData { nodes, edges, aliases? }` plus `.next` cursors. `mutate` prints the
+minted id maps (tables on a TTY, raw `{ createdNodes, createdEdges }` under `--json`).
 
 Examples:
 
@@ -530,11 +511,6 @@ Common error classes and first checks:
 | Not found | `get` errors NOT_FOUND only when NO root resolves; else path spelling, active instance, installed domain |
 | Validation error | `astrale call <path> --describe`; for a patch, `astrale mutate --dry` |
 | Timeout | Target availability and `--timeout <ms>` |
-
-Note the asymmetry the two graph doors introduce: **reads cannot 403** (they
-silently return fewer nodes), while **writes fail loudly and per-arm** on the
-class-`USE` / parent-or-target-`EDIT` checks. `function.get`/`function.mutate`
-themselves are ungated — no operation-`USE` grant is needed to reach either door.
 
 If a command fails only in a script, compare TTY vs non-TTY behavior and pass
 explicit `--json`, `--raw`, `-i <instance>`, and `--as <identity>` as needed.

@@ -1,17 +1,24 @@
 import type {
-  GetInput,
   GetResultWire,
   GraphApi,
   GraphNodeWire,
   MutationResultWire,
   PatchInput,
+  QueryASTInput,
 } from '@astrale-os/kernel-client/graph'
 
 import { createGraph, rawOf } from '@astrale-os/kernel-client/graph'
 
 import type { ClientContext } from './client'
 
-export type { GetInput, GetResultWire, GraphApi, GraphNodeWire, MutationResultWire, PatchInput }
+export type {
+  GetResultWire,
+  GraphApi,
+  GraphNodeWire,
+  MutationResultWire,
+  PatchInput,
+  QueryASTInput,
+}
 
 /** A node row as it crosses the graph doors — the shared item shape for `get`/`ls`/`describe`. */
 export type GraphNode = GraphNodeWire

@@ -1,7 +1,8 @@
+import { getInputSchema } from '@astrale-os/kernel-core'
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../command'
-import type { GetInput, GetResultWire, KernelCommandOpts, SelfExpansionMeta } from '../kernel'
+import type { GetResultWire, KernelCommandOpts, QueryASTInput, SelfExpansionMeta } from '../kernel'
 
 import { bindGraph, expandSelfInPath, runKernelCommand, withSelfHint } from '../kernel'
 import { log } from '../lib/log'
@@ -10,10 +11,7 @@ import { isMachine, output } from '../lib/output'
 type GetOpts = KernelCommandOpts & {
   long?: boolean
   depth?: string
-  childrenClass?: string[]
-  limit?: string
-  cursor?: string
-  order?: string
+  children?: string
   edges?: string
   graph?: boolean
 }
@@ -23,10 +21,10 @@ const INTERNAL_KEYS = new Set(['__labels', 'classId'])
 export async function getCommand(paths: string[], opts: GetOpts): Promise<void> {
   let roots: string[]
   let meta: SelfExpansionMeta | undefined
-  let input: GetInput
+  let query: BuiltQuery
   try {
     ;({ roots, meta } = await expandRoots(paths, opts))
-    input = buildGetInput(roots, opts)
+    query = buildQuery(roots, opts)
   } catch (e) {
     log.error(e instanceof Error ? e.message : 'Invalid arguments')
     process.exit(1)
@@ -37,13 +35,12 @@ export async function getCommand(paths: string[], opts: GetOpts): Promise<void> 
   // node projection (`{ id, class, path, props }`) that Studio + user scripts
   // parse. Anything richer — multiple roots, a subtree, edge selectors, or an
   // explicit --graph — emits the full GraphData + cursors.
-  const graphShape =
-    opts.graph || roots.length > 1 || (input.depth ?? 0) > 0 || input.edges !== undefined
+  const graphShape = opts.graph || roots.length > 1 || query.depth > 0 || query.hasEdges
 
   await runKernelCommand<GetResultWire>({
     opts,
     label: `Node ${roots.join(' ')}`,
-    fn: async (ctx) => (await withSelfHint(() => bindGraph(ctx).get(input), meta)).wire,
+    fn: async (ctx) => (await withSelfHint(() => bindGraph(ctx).query(query.ast), meta)).wire,
     format: (result, fmtOpts) => {
       if (graphShape) {
         output(result, fmtOpts)
@@ -70,19 +67,81 @@ async function expandRoots(
   return { roots, meta }
 }
 
-function buildGetInput(roots: string[], opts: GetOpts): GetInput {
-  const input: GetInput = { roots }
-  if (opts.depth !== undefined) input.depth = parseRange('--depth', opts.depth, 0, 5)
+type QueryDir = 'in' | 'out' | 'both'
+type QueryOrder = { by: string; dir: 'asc' | 'desc' }
+type ChildrenSelector = { classes?: string[]; limit?: number; cursor?: string; order?: QueryOrder }
+type EdgeSelector = {
+  as?: string
+  classes?: string[]
+  direction?: QueryDir
+  limit?: number
+  cursor?: string
+  order?: QueryOrder
+}
+type BuiltQuery = { ast: QueryASTInput; depth: number; hasEdges: boolean }
 
-  const children: NonNullable<GetInput['children']> = {}
-  if (opts.childrenClass && opts.childrenClass.length > 0) children.classes = opts.childrenClass
-  if (opts.limit !== undefined) children.limit = parseRange('--limit', opts.limit, 1, 500)
-  if (opts.cursor !== undefined) children.cursor = opts.cursor
-  if (opts.order !== undefined) children.order = parseOrder(opts.order)
-  if (Object.keys(children).length > 0) input.children = children
+function buildQuery(roots: string[], opts: GetOpts): BuiltQuery {
+  const depth = opts.depth !== undefined ? parseRange('--depth', opts.depth, 0, 5) : 0
+  const children =
+    opts.children !== undefined
+      ? parseSelector<ChildrenSelector>('--children', opts.children, getInputSchema.shape.children)
+      : undefined
+  const edges =
+    opts.edges !== undefined
+      ? parseSelector<EdgeSelector | EdgeSelector[]>(
+          '--edges',
+          opts.edges,
+          getInputSchema.shape.edges,
+        )
+      : undefined
 
-  if (opts.edges !== undefined) input.edges = parseEdges(opts.edges)
-  return input
+  const steps: NonNullable<QueryASTInput['steps']> = []
+  if (depth > 0) steps.push({ expand: childExpand(depth, children) })
+  edgeSelectors(edges).forEach((selector, index) => {
+    steps.push({ expand: edgeExpand(selector, index) })
+  })
+
+  return {
+    ast: { version: 1, from: roots, ...(steps.length > 0 ? { steps } : {}) },
+    depth,
+    hasEdges: edges !== undefined,
+  }
+}
+
+function childExpand(depth: number, children: ChildrenSelector | undefined) {
+  return {
+    edge: 'has_parent',
+    dir: 'in' as const,
+    depth,
+    ...(children?.classes !== undefined ? { filter: { class: children.classes } } : {}),
+    ...pageFields(children),
+    ...(children?.order !== undefined ? { order: children.order } : {}),
+  }
+}
+
+function edgeExpand(selector: EdgeSelector, index: number) {
+  return {
+    ...(selector.classes !== undefined ? { edge: selector.classes } : {}),
+    dir: selector.direction ?? 'both',
+    as: selector.as ?? 'e' + index,
+    ...pageFields(selector),
+    ...(selector.order !== undefined ? { order: selector.order } : {}),
+  }
+}
+
+function pageFields(selector: { limit?: number; cursor?: string } | undefined) {
+  if (selector?.limit === undefined && selector?.cursor === undefined) return {}
+  return {
+    page: {
+      ...(selector.limit !== undefined ? { limit: selector.limit } : {}),
+      ...(selector.cursor !== undefined ? { cursor: selector.cursor } : {}),
+    },
+  }
+}
+
+function edgeSelectors(edges: EdgeSelector | EdgeSelector[] | undefined): EdgeSelector[] {
+  if (edges === undefined) return []
+  return Array.isArray(edges) ? edges : [edges]
 }
 
 function parseRange(flag: string, raw: string, min: number, max: number): number {
@@ -93,29 +152,40 @@ function parseRange(flag: string, raw: string, min: number, max: number): number
   return n
 }
 
-/** `<by>` or `<by>:<dir>` → `{ by, dir }`; dir defaults to 'asc'. */
-function parseOrder(raw: string): NonNullable<NonNullable<GetInput['children']>['order']> {
-  const sep = raw.lastIndexOf(':')
-  const by = sep === -1 ? raw : raw.slice(0, sep)
-  const dir = sep === -1 ? 'asc' : raw.slice(sep + 1)
-  if (dir !== 'asc' && dir !== 'desc') {
-    throw new Error(`--order direction must be 'asc' or 'desc', got "${dir}"`)
-  }
-  if (!by) throw new Error('--order needs a property key (e.g. id or <domain>:class.X.property.y)')
-  return { by, dir }
+type SelectorIssue = { readonly path: readonly PropertyKey[]; readonly message: string }
+/** Minimal `safeParse` view of a `getInputSchema` field — avoids unifying kernel-core's zod (v4) with the CLI's (v3). */
+type SelectorSchema = {
+  safeParse(
+    value: unknown,
+  ): { success: true } | { success: false; error: { issues: readonly SelectorIssue[] } }
 }
 
-function parseEdges(raw: string): GetInput['edges'] {
+/**
+ * Parse then strict-validate a `--children`/`--edges` JSON flag against
+ * function.get's own selector schema — the query lowering would otherwise
+ * silently normalize scalars/bare-refs and drop the unknown keys the old wire
+ * rejected. Returns the raw parsed value (strings preserved) for the lowering.
+ */
+function parseSelector<T>(flag: string, raw: string, schema: SelectorSchema): T {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error(`--edges must be JSON (a selector object or an array of selectors): ${raw}`)
+    throw new Error(`${flag} must be JSON: ${raw}`)
   }
   if (parsed === null || typeof parsed !== 'object') {
-    throw new Error('--edges must be a selector object or an array of selectors')
+    throw new Error(
+      `${flag} must be a JSON selector object${flag === '--edges' ? ' or array' : ''}`,
+    )
   }
-  return parsed as GetInput['edges']
+  const check = schema.safeParse(parsed)
+  if (!check.success) {
+    const detail = check.error.issues
+      .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('; ')
+    throw new Error(`${flag} invalid selector: ${detail}`)
+  }
+  return parsed as T
 }
 
 /** Mirror `logs`' cursor UX: a dim, pipeable hint of the next page's cursors. */
@@ -124,7 +194,7 @@ function printCursorFooter(next: NonNullable<GetResultWire['next']>): void {
   if (entries.length === 1) {
     const cursors = entries[0]?.[1]
     if (cursors?.children) {
-      process.stdout.write(chalk.dim(`  more: --cursor ${cursors.children}\n`))
+      process.stdout.write(chalk.dim(`  more: --children '{"cursor":"${cursors.children}"}'\n`))
     }
     for (const [alias, cursor] of Object.entries(cursors?.edges ?? {})) {
       process.stdout.write(
@@ -165,9 +235,11 @@ Behavior:
   GraphData { nodes, edges, aliases } plus per-root pagination cursors in
   .next; on a TTY a dim cursor footer is printed when more pages exist.
 
-  --children-class / --limit / --cursor / --order shape the depth-1 children
-  page (they need --depth ≥ 1 to have an effect). --edges takes a JSON edge
-  selector, or a JSON array of selectors, e.g.
+  --children and --edges are symmetric JSON selectors. --children takes
+  { classes?, limit?, cursor?, order? } and shapes the depth-1 children page
+  (needs --depth ≥ 1 to bite); --edges takes an edge selector, or a JSON array
+  of them, e.g.
+  --children '{"classes":["/:kernel.astrale.ai:class.Folder"],"limit":50}'
   --edges '{"direction":"out","classes":["/:kernel.astrale.ai:class.has_perm"]}'.
 
 Examples:
@@ -175,7 +247,7 @@ Examples:
   $ astrale get @abc123 -l
   $ astrale get / --depth 1
   $ astrale get /a /b --graph
-  $ astrale get /kernel.astrale.ai --depth 2 --children-class /:kernel.astrale.ai:class.Folder
+  $ astrale get /kernel.astrale.ai --depth 2 --children '{"classes":["/:kernel.astrale.ai:class.Folder"]}'
   $ astrale get @abc123 --edges '{"direction":"both"}'
 `,
   arguments: [
@@ -185,14 +257,8 @@ Examples:
     { flags: '-l, --long', description: 'Include internal fields (__labels, classId)' },
     { flags: '--depth <n>', description: 'Subtree depth to fetch (0-5, default 0)' },
     {
-      flags: '--children-class <cls...>',
-      description: 'Restrict fetched children to these class paths (server-side)',
-    },
-    { flags: '--limit <n>', description: 'Max children per node (1-500)' },
-    { flags: '--cursor <s>', description: 'Resume a children page from this cursor' },
-    {
-      flags: '--order <by[:dir]>',
-      description: "Order children by 'id' or a prop key (dir asc|desc)",
+      flags: '--children <json>',
+      description: 'Children selector { classes?, limit?, cursor?, order? } (needs --depth ≥ 1)',
     },
     {
       flags: '--edges <json>',
