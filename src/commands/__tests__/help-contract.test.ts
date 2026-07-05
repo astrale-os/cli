@@ -116,6 +116,30 @@ describe('help contract — connect-only command surface', () => {
   })
 })
 
+describe('help contract — read command split', () => {
+  test('get is point-read only and query owns structured read flags', async () => {
+    const program = await buildProgram()
+    const get = allCommands(program).find((command) => command.name() === 'get')
+    const query = allCommands(program).find((command) => command.name() === 'query')
+    const getHelp = get?.helpInformation() ?? ''
+    const queryHelp = query?.helpInformation() ?? ''
+
+    expect(getHelp).toContain('Usage: astrale get [options] <path>')
+    expect(getHelp).toContain('-l, --long')
+    expect(getHelp).not.toContain('--depth')
+    expect(getHelp).not.toContain('--children')
+    expect(getHelp).not.toContain('--edges')
+    expect(getHelp).not.toContain('--graph')
+
+    expect(queryHelp).toContain('Usage: astrale query [options] [paths...]')
+    expect(queryHelp).toContain('--depth <n>')
+    expect(queryHelp).toContain('--children <json>')
+    expect(queryHelp).toContain('--edges <json>')
+    expect(queryHelp).toContain('--ast <json>')
+    expect(queryHelp).toContain('--cypher <query>')
+  })
+})
+
 describe('help contract — skill is single-source, not duplicated', () => {
   const canonical = join(cliRoot, 'skills/astrale-cli/SKILL.md')
   // Workspace mirror lives in the superrepo, outside this submodule. Absent

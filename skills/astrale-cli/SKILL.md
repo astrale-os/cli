@@ -30,11 +30,11 @@ astrale use <name>
 astrale update
 astrale call <path> [params...]
 astrale token
-astrale get <paths...>
+astrale get <path>
 astrale mutate
 astrale ls [path]
 astrale describe <path>
-astrale query <cypher>
+astrale query [paths...]
 astrale logs [--service <name>]
 astrale status
 astrale browser
@@ -55,9 +55,12 @@ Command groups:
 | Management | `admin`, `instance`, `domain`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser` |
 
-`get` and `mutate` are the two graph doors: `get` reads (`function.get`), `mutate`
-writes a batch patch (`function.mutate`). `ls` and `describe` are `get` presets.
-The old per-node syscalls (`::get`, `::createNode`, `::link`, …) are gone.
+`get`, `query`, and `mutate` are the graph door commands: `get` is a
+single-node point read, `query` is a structured multi-root read, and both lower
+to `function.get` today. `query` is the door a future true query syscall will
+back. `mutate` writes a batch patch (`function.mutate`). `ls` and `describe`
+remain `function.get` presets. The old per-node syscalls (`::get`,
+`::createNode`, `::link`, …) are gone.
 
 Shared kernel options are merged onto kernel-touching commands at registration
 time: `--format`, `--json`, `--raw`, `--url`, `-i/--instance`, `--timeout`,
@@ -293,35 +296,47 @@ Use these commands for graph inspection:
 ```bash
 astrale ls /
 astrale get /some/path
+astrale query / --depth 1
+astrale query --cypher 'MATCH (n) RETURN n LIMIT 5'
 astrale describe /some/path
-astrale query 'MATCH (n) RETURN n LIMIT 5'
 astrale call <path> --describe
 ```
 
-`get`, `ls`, and `describe` all read through the **`function.get`** door — a
-single multi-root graph read. Its semantics shape all three:
+`get` is a point read: exactly one path or `@id`, flat node output, and an
+opaque missing-or-masked error. Richer reads live on `query`. Positional
+`query` roots build the CLI's structured QueryASTInput and lower through
+`function.get` today; a future true query syscall can back the same door.
 
-- **Multi-root** — `get` takes one OR more root paths: `astrale get /a /b @c`.
-- **Subtree depth** — `--depth 0..5` fetches descendants (0 = just the roots).
-  `ls` is `--depth 1` under the hood; `ls -R` is `--depth 5` reassembled into a
-  tree client-side (one call, not the old N+1 walk); `describe` is `--depth 1`.
-- **Children / edge selectors** — `--children <json>` and `--edges <json>` are
-  symmetric. `--children` is `{ classes?, limit?, cursor?, order? }` (shapes the
-  depth-1 children page; needs `--depth ≥ 1`). `--edges` is
-  `{ as?, classes?, direction?: in|out|both, limit?, cursor?, order? }` or a JSON
-  array of such selectors (each aliased by `as`) to include incident edges.
-- **Soft-root visibility** — a read NEVER 403s: unreadable or missing roots (and
-  descendants) are silently omitted; only when NO root resolves does `get` error
-  `NOT_FOUND`. Fewer nodes than expected = a visibility/existence gap, not a perm.
+- **Multi-root / subtree** — `query` takes one or more roots:
+  `astrale query /a /b @c`. `--depth 0..5` fetches descendants
+  (0 = just the roots). `ls` is a depth-1 preset; `ls -R` is depth 5
+  reassembled into a tree client-side; `describe` is depth 1.
+- **Children / edge selectors** — `--children <json>` and `--edges <json>`
+  are symmetric. `--children` is `{ classes?, limit?, cursor?, order? }`
+  (shapes the depth-1 children page; needs `--depth ≥ 1`). `--edges` is
+  `{ as?, classes?, direction?: in|out|both, limit?, cursor?, order? }` or a
+  JSON array of such selectors (each aliased by `as`) to include incident edges.
+- **AST input** — `query --ast '<json>'` accepts the raw QueryASTInput
+  value-form for the full v1 AST language. The CLI only checks that it is a JSON
+  object; kernel-client owns schema validation. `@self` is not expanded inside
+  `--ast` JSON.
+- **Cypher escape hatch** — `query --cypher '<query>'` calls the kernel's
+  read-only Cypher endpoint.
+- **Soft-root visibility** — a structured read NEVER 403s: unreadable or
+  missing roots (and descendants) are omitted. Fewer nodes than expected = a
+  visibility/existence gap, not an operation permission error.
 - **Cursors** — when a children/edge page overflows, per-root cursors land in
-  `.next`; on a TTY `get` prints a dim `more: …` footer with the flag to page on.
+  `.next`; on a TTY `query` prints a dim `more: …` footer with the flag to
+  page on.
 
 ```bash
-astrale get /a /b --graph                       # full GraphData for many roots
-astrale get / --depth 1                          # root + its domains
-astrale get /kernel.astrale.ai --depth 2 \
+astrale get /kernel.astrale.ai/class.Root
+astrale query /a /b --edges '{"direction":"both"}'
+astrale query / --depth 1
+astrale query /kernel.astrale.ai --depth 2 \
   --children '{"classes":["/:kernel.astrale.ai:class.Folder"]}'
-astrale get @abc123 --edges '{"direction":"both"}'   # node + incident edges
+astrale query --ast '{"version":1,"from":["/"],"steps":[{"expand":{"edge":"has_parent","dir":"in","depth":1}}]}'
+astrale query --cypher 'MATCH (n) RETURN count(n) AS total'
 ```
 
 Admin host records are exposed by the concrete provider class, not by the
@@ -334,13 +349,13 @@ astrale call /:admin.astrale.ai:class.ScalewayVPS:list --describe -i admin
 
 Gotchas:
 
-- `query` is read-only; the kernel rejects write keywords such as `CREATE`,
-  `DELETE`, `SET`, `MERGE`, `REMOVE`, and `DETACH`.
+- `query --cypher` is read-only; the kernel rejects write keywords such as
+  `CREATE`, `DELETE`, `SET`, `MERGE`, `REMOVE`, and `DETACH`.
 - `describe` can return large properties such as serialized schemas. Pipe to
   `jq` or use command-specific flags when available.
 - `ls` has list-specific output controls such as `-q/--quiet`, `--count`, and
   `-l/--long`; `--filter <kind>` is a client-side post-filter on child KIND or
-  label. For a server-side class filter use `get --depth 1 --children`.
+  label. For a server-side class filter use `query --depth 1 --children`.
 - For operation schemas, prefer `astrale call <path> --describe` before
   executing a call you are unsure about.
 - **`class.<Name>` materializes as a `Folder` node** (kind `Folder`, name
@@ -412,13 +427,16 @@ Output is selected from stdout shape and flags:
 
 ### `get` output shapes
 
-`get` returns the **flat node** projection `{ id, class, path, props }` for the
-simple case (single root, `--depth 0`, no `--edges`) — the stable shape scripts
-and Studio parse, `props` keyed by fully-qualified keys
-(`<domain>:class.X.property.name`); `-l` keeps `__labels`/`classId`. Any richer
-request (multiple roots, `--depth > 0`, `--edges`, `--graph`) returns full
-`GraphData { nodes, edges, aliases? }` plus `.next` cursors. `mutate` prints the
-minted id maps (tables on a TTY, raw `{ createdNodes, createdEdges }` under `--json`).
+`get` always returns the **flat node** projection `{ id, class, path, props }`
+for exactly one root — the stable shape scripts and Studio parse, with `props`
+keyed by fully-qualified keys (`<domain>:class.X.property.name`). `-l` keeps
+`__labels`/`classId`.
+
+`query` always returns the full `GraphData { nodes, edges, aliases }` envelope
+plus `.roots` and any `.next` cursors. Use it for multi-root reads, subtree
+expansion, edge expansion, cursor paging, raw `--ast`, and `--cypher`.
+`mutate` prints the minted id maps (tables on a TTY, raw
+`{ createdNodes, createdEdges }` under `--json`).
 
 Examples:
 

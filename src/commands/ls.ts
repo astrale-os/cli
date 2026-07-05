@@ -107,7 +107,13 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
       )
       if (next && !isMachine(fmtOpts) && !opts.quiet && !opts.count) {
         process.stdout.write(
-          chalk.dim('  more children truncated — page with `get --depth 1 --cursor`\n'),
+          chalk.dim(
+            '  more children truncated - page with `query ' +
+              expandedPath +
+              ' --depth 1 --children \'{"cursor":"' +
+              next +
+              '"}\'`\n',
+          ),
         )
       }
     },
