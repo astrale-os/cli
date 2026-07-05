@@ -316,10 +316,6 @@ opaque missing-or-masked error. Richer reads live on `query`. Positional
   (shapes the depth-1 children page; needs `--depth ≥ 1`). `--edges` is
   `{ as?, classes?, direction?: in|out|both, limit?, cursor?, order? }` or a
   JSON array of such selectors (each aliased by `as`) to include incident edges.
-- **AST input** — `query --ast '<json>'` accepts the raw QueryASTInput
-  value-form for the full v1 AST language. The CLI only checks that it is a JSON
-  object; kernel-client owns schema validation. `@self` is not expanded inside
-  `--ast` JSON.
 - **Cypher escape hatch** — `query --cypher '<query>'` calls the kernel's
   read-only Cypher endpoint.
 - **Soft-root visibility** — a structured read NEVER 403s: unreadable or
@@ -335,7 +331,6 @@ astrale query /a /b --edges '{"direction":"both"}'
 astrale query / --depth 1
 astrale query /kernel.astrale.ai --depth 2 \
   --children '{"classes":["/:kernel.astrale.ai:class.Folder"]}'
-astrale query --ast '{"version":1,"from":["/"],"steps":[{"expand":{"edge":"has_parent","dir":"in","depth":1}}]}'
 astrale query --cypher 'MATCH (n) RETURN count(n) AS total'
 ```
 
@@ -434,7 +429,7 @@ keyed by fully-qualified keys (`<domain>:class.X.property.name`). `-l` keeps
 
 `query` always returns the full `GraphData { nodes, edges, aliases }` envelope
 plus `.roots` and any `.next` cursors. Use it for multi-root reads, subtree
-expansion, edge expansion, cursor paging, raw `--ast`, and `--cypher`.
+expansion, edge expansion, cursor paging, and `--cypher`.
 `mutate` prints the minted id maps (tables on a TTY, raw
 `{ createdNodes, createdEdges }` under `--json`).
 
