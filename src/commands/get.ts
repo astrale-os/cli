@@ -10,10 +10,7 @@ import { isMachine, output } from '../lib/output'
 type GetOpts = KernelCommandOpts & {
   long?: boolean
   depth?: string
-  childrenClass?: string[]
-  limit?: string
-  cursor?: string
-  order?: string
+  children?: string
   edges?: string
   graph?: boolean
 }
@@ -73,15 +70,12 @@ async function expandRoots(
 function buildGetInput(roots: string[], opts: GetOpts): GetInput {
   const input: GetInput = { roots }
   if (opts.depth !== undefined) input.depth = parseRange('--depth', opts.depth, 0, 5)
-
-  const children: NonNullable<GetInput['children']> = {}
-  if (opts.childrenClass && opts.childrenClass.length > 0) children.classes = opts.childrenClass
-  if (opts.limit !== undefined) children.limit = parseRange('--limit', opts.limit, 1, 500)
-  if (opts.cursor !== undefined) children.cursor = opts.cursor
-  if (opts.order !== undefined) children.order = parseOrder(opts.order)
-  if (Object.keys(children).length > 0) input.children = children
-
-  if (opts.edges !== undefined) input.edges = parseEdges(opts.edges)
+  if (opts.children !== undefined) {
+    input.children = parseSelector('--children', opts.children) as GetInput['children']
+  }
+  if (opts.edges !== undefined) {
+    input.edges = parseSelector('--edges', opts.edges) as GetInput['edges']
+  }
   return input
 }
 
@@ -93,29 +87,24 @@ function parseRange(flag: string, raw: string, min: number, max: number): number
   return n
 }
 
-/** `<by>` or `<by>:<dir>` → `{ by, dir }`; dir defaults to 'asc'. */
-function parseOrder(raw: string): NonNullable<NonNullable<GetInput['children']>['order']> {
-  const sep = raw.lastIndexOf(':')
-  const by = sep === -1 ? raw : raw.slice(0, sep)
-  const dir = sep === -1 ? 'asc' : raw.slice(sep + 1)
-  if (dir !== 'asc' && dir !== 'desc') {
-    throw new Error(`--order direction must be 'asc' or 'desc', got "${dir}"`)
-  }
-  if (!by) throw new Error('--order needs a property key (e.g. id or <domain>:class.X.property.y)')
-  return { by, dir }
-}
-
-function parseEdges(raw: string): GetInput['edges'] {
+/**
+ * Parse a JSON selector flag (`--children`, `--edges`) to an object. Both are
+ * passed as raw JSON and validated server-side by the kernel's getInputSchema;
+ * here we only guard that it parses to an object (`--edges` also allows an array).
+ */
+function parseSelector(flag: string, raw: string): object {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    throw new Error(`--edges must be JSON (a selector object or an array of selectors): ${raw}`)
+    throw new Error(`${flag} must be JSON: ${raw}`)
   }
   if (parsed === null || typeof parsed !== 'object') {
-    throw new Error('--edges must be a selector object or an array of selectors')
+    throw new Error(
+      `${flag} must be a JSON selector object${flag === '--edges' ? ' or array' : ''}`,
+    )
   }
-  return parsed as GetInput['edges']
+  return parsed
 }
 
 /** Mirror `logs`' cursor UX: a dim, pipeable hint of the next page's cursors. */
@@ -124,7 +113,7 @@ function printCursorFooter(next: NonNullable<GetResultWire['next']>): void {
   if (entries.length === 1) {
     const cursors = entries[0]?.[1]
     if (cursors?.children) {
-      process.stdout.write(chalk.dim(`  more: --cursor ${cursors.children}\n`))
+      process.stdout.write(chalk.dim(`  more: --children '{"cursor":"${cursors.children}"}'\n`))
     }
     for (const [alias, cursor] of Object.entries(cursors?.edges ?? {})) {
       process.stdout.write(
@@ -165,9 +154,11 @@ Behavior:
   GraphData { nodes, edges, aliases } plus per-root pagination cursors in
   .next; on a TTY a dim cursor footer is printed when more pages exist.
 
-  --children-class / --limit / --cursor / --order shape the depth-1 children
-  page (they need --depth ≥ 1 to have an effect). --edges takes a JSON edge
-  selector, or a JSON array of selectors, e.g.
+  --children and --edges are symmetric JSON selectors. --children takes
+  { classes?, limit?, cursor?, order? } and shapes the depth-1 children page
+  (needs --depth ≥ 1 to bite); --edges takes an edge selector, or a JSON array
+  of them, e.g.
+  --children '{"classes":["/:kernel.astrale.ai:class.Folder"],"limit":50}'
   --edges '{"direction":"out","classes":["/:kernel.astrale.ai:class.has_perm"]}'.
 
 Examples:
@@ -175,7 +166,7 @@ Examples:
   $ astrale get @abc123 -l
   $ astrale get / --depth 1
   $ astrale get /a /b --graph
-  $ astrale get /kernel.astrale.ai --depth 2 --children-class /:kernel.astrale.ai:class.Folder
+  $ astrale get /kernel.astrale.ai --depth 2 --children '{"classes":["/:kernel.astrale.ai:class.Folder"]}'
   $ astrale get @abc123 --edges '{"direction":"both"}'
 `,
   arguments: [
@@ -185,14 +176,8 @@ Examples:
     { flags: '-l, --long', description: 'Include internal fields (__labels, classId)' },
     { flags: '--depth <n>', description: 'Subtree depth to fetch (0-5, default 0)' },
     {
-      flags: '--children-class <cls...>',
-      description: 'Restrict fetched children to these class paths (server-side)',
-    },
-    { flags: '--limit <n>', description: 'Max children per node (1-500)' },
-    { flags: '--cursor <s>', description: 'Resume a children page from this cursor' },
-    {
-      flags: '--order <by[:dir]>',
-      description: "Order children by 'id' or a prop key (dir asc|desc)",
+      flags: '--children <json>',
+      description: 'Children selector { classes?, limit?, cursor?, order? } (needs --depth ≥ 1)',
     },
     {
       flags: '--edges <json>',
