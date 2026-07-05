@@ -226,5 +226,5 @@ same as any principal.
 ```ts
 import { EDIT, toMask } from '@astrale-os/kernel-core'
 // the function is an identity; grant it EDIT on the folder it writes to
-await kernel.call(`${functionIdentity}::grantPerm`, { node: '/events', perms: toMask(EDIT) })
+await kernel.auth.grant({ to: functionIdentity, on: '/events', perms: toMask(EDIT) })
 ```

@@ -142,10 +142,6 @@ export function resolveOrThrow(selfCtx: SelfResolverContext): string {
   return r.id
 }
 
-// The kernel's whoami — returns the AUTHENTICATED principal's graph node.
-// Static interface method, so the colon form (slash form is rejected).
-const WHOAMI_PATH = '/:kernel.astrale.ai:interface.Identity:whoami'
-
 export type ResolveSelfIdLazyDeps = {
   whoami?: (opts: KernelCommandOpts) => Promise<{ id?: unknown; kernelUrl: string }>
   setRegistration?: typeof setRegistration
@@ -208,11 +204,11 @@ export async function resolveSelfIdLazy(
 
 async function whoamiSelfId(opts: KernelCommandOpts): Promise<{ id?: unknown; kernelUrl: string }> {
   let kernelUrl = ''
-  const me = (await withKernelClient(opts, (ctx) => {
+  const me = await withKernelClient(opts, (ctx) => {
     kernelUrl = ctx.url
-    return ctx.client.call(WHOAMI_PATH as never, {} as never)
-  })) as { id?: unknown } | null
-  return { id: me?.id, kernelUrl }
+    return ctx.client.as(ctx.credential).auth.whoami()
+  })
+  return { id: me.node?.id, kernelUrl }
 }
 
 /**

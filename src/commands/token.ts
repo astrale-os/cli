@@ -2,12 +2,11 @@ import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 
 import { runKernelCommand } from '../kernel'
-import { mintDelegationPath } from '../kernel/remote-routing'
 import { log } from '../lib/log'
 
 /**
  * `astrale token` — mint a fresh delegation token for the active instance
- * + active identity (§2.5). Shortcut over the mintDelegationCredential call.
+ * + active identity through the bound AuthApi.
  */
 export type TokenOpts = KernelCommandOpts & {
   audience?: string
@@ -26,12 +25,10 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
       const audience = opts.audience ?? ''
       const parsedTtl = Number(opts.ttl)
       const ttl = Number.isFinite(parsedTtl) && parsedTtl > 0 ? parsedTtl : 3600
-      const mintPath = await mintDelegationPath(ctx.client, ctx.credential)
-      const result = (await ctx.client.call(mintPath, {
+      const result = await ctx.client.as(ctx.credential).auth.delegate({
         audience,
-        delegation: { kind: 'identity', self: true },
         ttl,
-      })) as string
+      })
       return result
     },
     format: (token, fmtOpts, isRaw) => {
