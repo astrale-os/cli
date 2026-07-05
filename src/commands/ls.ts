@@ -92,10 +92,7 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
     // Flat listing = ONE function.get depth:1; the root is dropped, the rest are
     // the direct children (replaces the removed `::listChildren` syscall).
     fn: async (ctx) => {
-      const result = await withSelfHint(
-        () => bindGraph(ctx).get({ roots: [expandedPath], depth: 1 }),
-        meta,
-      )
+      const result = await withSelfHint(() => bindGraph(ctx).children(expandedPath), meta)
       return {
         children: splitRoot(result.wire.nodes, expandedPath).children,
         next: childrenCursor(result.wire),
@@ -136,7 +133,7 @@ async function recursiveLs(
       // The recursive walk is now ONE function.get to the depth cap; the tree is
       // reassembled client-side from the flat node page (was an N+1 buildTree).
       const result = await withSelfHint(
-        () => bindGraph(ctx).get({ roots: [path], depth: MAX_DEPTH }),
+        () => bindGraph(ctx).query((q) => q.from(path).descend(MAX_DEPTH)),
         meta,
       )
       const tree = buildTree(result.wire.nodes, path)

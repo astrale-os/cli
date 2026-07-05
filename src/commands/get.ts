@@ -1,7 +1,8 @@
+import { getInputSchema } from '@astrale-os/kernel-core'
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../command'
-import type { GetInput, GetResultWire, KernelCommandOpts, SelfExpansionMeta } from '../kernel'
+import type { GetResultWire, KernelCommandOpts, QueryASTInput, SelfExpansionMeta } from '../kernel'
 
 import { bindGraph, expandSelfInPath, runKernelCommand, withSelfHint } from '../kernel'
 import { log } from '../lib/log'
@@ -20,10 +21,10 @@ const INTERNAL_KEYS = new Set(['__labels', 'classId'])
 export async function getCommand(paths: string[], opts: GetOpts): Promise<void> {
   let roots: string[]
   let meta: SelfExpansionMeta | undefined
-  let input: GetInput
+  let query: BuiltQuery
   try {
     ;({ roots, meta } = await expandRoots(paths, opts))
-    input = buildGetInput(roots, opts)
+    query = buildQuery(roots, opts)
   } catch (e) {
     log.error(e instanceof Error ? e.message : 'Invalid arguments')
     process.exit(1)
@@ -34,13 +35,12 @@ export async function getCommand(paths: string[], opts: GetOpts): Promise<void> 
   // node projection (`{ id, class, path, props }`) that Studio + user scripts
   // parse. Anything richer — multiple roots, a subtree, edge selectors, or an
   // explicit --graph — emits the full GraphData + cursors.
-  const graphShape =
-    opts.graph || roots.length > 1 || (input.depth ?? 0) > 0 || input.edges !== undefined
+  const graphShape = opts.graph || roots.length > 1 || query.depth > 0 || query.hasEdges
 
   await runKernelCommand<GetResultWire>({
     opts,
     label: `Node ${roots.join(' ')}`,
-    fn: async (ctx) => (await withSelfHint(() => bindGraph(ctx).get(input), meta)).wire,
+    fn: async (ctx) => (await withSelfHint(() => bindGraph(ctx).query(query.ast), meta)).wire,
     format: (result, fmtOpts) => {
       if (graphShape) {
         output(result, fmtOpts)
@@ -67,16 +67,81 @@ async function expandRoots(
   return { roots, meta }
 }
 
-function buildGetInput(roots: string[], opts: GetOpts): GetInput {
-  const input: GetInput = { roots }
-  if (opts.depth !== undefined) input.depth = parseRange('--depth', opts.depth, 0, 5)
-  if (opts.children !== undefined) {
-    input.children = parseSelector('--children', opts.children) as GetInput['children']
+type QueryDir = 'in' | 'out' | 'both'
+type QueryOrder = { by: string; dir: 'asc' | 'desc' }
+type ChildrenSelector = { classes?: string[]; limit?: number; cursor?: string; order?: QueryOrder }
+type EdgeSelector = {
+  as?: string
+  classes?: string[]
+  direction?: QueryDir
+  limit?: number
+  cursor?: string
+  order?: QueryOrder
+}
+type BuiltQuery = { ast: QueryASTInput; depth: number; hasEdges: boolean }
+
+function buildQuery(roots: string[], opts: GetOpts): BuiltQuery {
+  const depth = opts.depth !== undefined ? parseRange('--depth', opts.depth, 0, 5) : 0
+  const children =
+    opts.children !== undefined
+      ? parseSelector<ChildrenSelector>('--children', opts.children, getInputSchema.shape.children)
+      : undefined
+  const edges =
+    opts.edges !== undefined
+      ? parseSelector<EdgeSelector | EdgeSelector[]>(
+          '--edges',
+          opts.edges,
+          getInputSchema.shape.edges,
+        )
+      : undefined
+
+  const steps: NonNullable<QueryASTInput['steps']> = []
+  if (depth > 0) steps.push({ expand: childExpand(depth, children) })
+  edgeSelectors(edges).forEach((selector, index) => {
+    steps.push({ expand: edgeExpand(selector, index) })
+  })
+
+  return {
+    ast: { version: 1, from: roots, ...(steps.length > 0 ? { steps } : {}) },
+    depth,
+    hasEdges: edges !== undefined,
   }
-  if (opts.edges !== undefined) {
-    input.edges = parseSelector('--edges', opts.edges) as GetInput['edges']
+}
+
+function childExpand(depth: number, children: ChildrenSelector | undefined) {
+  return {
+    edge: 'has_parent',
+    dir: 'in' as const,
+    depth,
+    ...(children?.classes !== undefined ? { filter: { class: children.classes } } : {}),
+    ...pageFields(children),
+    ...(children?.order !== undefined ? { order: children.order } : {}),
   }
-  return input
+}
+
+function edgeExpand(selector: EdgeSelector, index: number) {
+  return {
+    ...(selector.classes !== undefined ? { edge: selector.classes } : {}),
+    dir: selector.direction ?? 'both',
+    as: selector.as ?? 'e' + index,
+    ...pageFields(selector),
+    ...(selector.order !== undefined ? { order: selector.order } : {}),
+  }
+}
+
+function pageFields(selector: { limit?: number; cursor?: string } | undefined) {
+  if (selector?.limit === undefined && selector?.cursor === undefined) return {}
+  return {
+    page: {
+      ...(selector.limit !== undefined ? { limit: selector.limit } : {}),
+      ...(selector.cursor !== undefined ? { cursor: selector.cursor } : {}),
+    },
+  }
+}
+
+function edgeSelectors(edges: EdgeSelector | EdgeSelector[] | undefined): EdgeSelector[] {
+  if (edges === undefined) return []
+  return Array.isArray(edges) ? edges : [edges]
 }
 
 function parseRange(flag: string, raw: string, min: number, max: number): number {
@@ -87,12 +152,21 @@ function parseRange(flag: string, raw: string, min: number, max: number): number
   return n
 }
 
+type SelectorIssue = { readonly path: readonly PropertyKey[]; readonly message: string }
+/** Minimal `safeParse` view of a `getInputSchema` field — avoids unifying kernel-core's zod (v4) with the CLI's (v3). */
+type SelectorSchema = {
+  safeParse(
+    value: unknown,
+  ): { success: true } | { success: false; error: { issues: readonly SelectorIssue[] } }
+}
+
 /**
- * Parse a JSON selector flag (`--children`, `--edges`) to an object. Both are
- * passed as raw JSON and validated server-side by the kernel's getInputSchema;
- * here we only guard that it parses to an object (`--edges` also allows an array).
+ * Parse then strict-validate a `--children`/`--edges` JSON flag against
+ * function.get's own selector schema — the query lowering would otherwise
+ * silently normalize scalars/bare-refs and drop the unknown keys the old wire
+ * rejected. Returns the raw parsed value (strings preserved) for the lowering.
  */
-function parseSelector(flag: string, raw: string): object {
+function parseSelector<T>(flag: string, raw: string, schema: SelectorSchema): T {
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
@@ -104,7 +178,14 @@ function parseSelector(flag: string, raw: string): object {
       `${flag} must be a JSON selector object${flag === '--edges' ? ' or array' : ''}`,
     )
   }
-  return parsed
+  const check = schema.safeParse(parsed)
+  if (!check.success) {
+    const detail = check.error.issues
+      .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('; ')
+    throw new Error(`${flag} invalid selector: ${detail}`)
+  }
+  return parsed as T
 }
 
 /** Mirror `logs`' cursor UX: a dim, pipeable hint of the next page's cursors. */
