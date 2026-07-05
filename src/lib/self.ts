@@ -158,9 +158,7 @@ function refusalMessage(r: SelfRefusal): string {
     case 'idp-no-sub':
       return [
         `\`@self\` could not be resolved for IdP identity "${r.identityName}": no cached registration, and the automatic whoami lookup did not return a node id (offline, auth failure, or unprovisioned identity).`,
-        'Get your node id manually, then use it directly:',
-        '  astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json   # → { id: <nodeId> }',
-        'and address yourself as `@<nodeId>`.',
+        'The CLI resolves `@self` through the bound auth.whoami() flow; fix auth/registration and rerun, or pass a literal `@<nodeId>`.',
       ].join('\n  ')
   }
 }

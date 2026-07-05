@@ -132,14 +132,13 @@ astrale call /:d:class.X:m owner=@self
 ```
 
 For IdP-backed identities (`astrale auth login`), `@self` just works: the CLI
-verifies the caller with kernel `whoami`, caches the node id as a
-registration, and refreshes that cache when it changes (for example after a
-managed instance is deleted and recreated under the same slug). If that lookup
-fails and no cached registration exists, the error carries the manual recipe:
+verifies the caller through the bound auth surface (`auth.whoami()`), caches
+the node id as a registration, and refreshes that cache when it changes (for
+example after a managed instance is deleted and recreated under the same slug).
+Smoke the active identity with the same public flow:
 
 ```bash
-astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json  # → { id }
-astrale describe @<that-id>
+astrale get @self --json
 ```
 
 For key-backed identities, refresh a deleted or stale `@self` registration with

@@ -136,29 +136,29 @@ const GROUP_HELPERS = new Set([
   'remoteInterfaceMethods',
 ])
 
-/**
- * Kernel-op idioms we surface as `kernelCalls`, longest-first so a longer token
- * (`graph.createEdge`) is blanked before its prefix (`graph.create`) can match.
- * Post-cutover the graph surface is `ctx.graph.*` (the two doors + read/write
- * sugar) plus the raw `function.get` / `function.mutate` paths; grant/revokePerm
- * stay Identity ops.
- */
-const KERNEL_TOKENS = [
-  'graph.createEdge',
-  'graph.removeEdge',
-  'function.mutate',
-  'graph.children',
-  'function.get',
-  'graph.create',
-  'graph.update',
-  'graph.remove',
-  'graph.mutate',
-  'graph.links',
-  'graph.tree',
-  'graph.node',
-  'revokePerm',
-  'graph.get',
-  'grantPerm',
+type KernelToken = { token: string; label?: string }
+
+/** Kernel-op idioms surfaced as `kernelCalls`; entries are longest-first. */
+const KERNEL_TOKENS: KernelToken[] = [
+  { token: 'graph.createEdge' },
+  { token: 'graph.removeEdge' },
+  { token: 'function.mutate' },
+  { token: 'graph.children' },
+  { token: 'function.get' },
+  { token: 'graph.create' },
+  { token: 'graph.update' },
+  { token: 'graph.remove' },
+  { token: 'graph.mutate' },
+  { token: 'auth.revoke' },
+  { token: 'graph.links' },
+  { token: 'auth.grant' },
+  { token: 'auth.check' },
+  { token: 'graph.tree' },
+  { token: 'graph.node' },
+  { token: 'revokePerm', label: 'revokePerm (legacy)' },
+  { token: 'checkPerm', label: 'checkPerm (legacy)' },
+  { token: 'graph.get' },
+  { token: 'grantPerm', label: 'grantPerm (legacy)' },
 ]
 
 /**
@@ -520,11 +520,11 @@ function scanKernelCalls(file: string): string[] {
   }
   const found: string[] = []
   let work = text
-  for (const token of KERNEL_TOKENS) {
-    if (work.includes(token)) {
-      found.push(token)
+  for (const entry of KERNEL_TOKENS) {
+    if (work.includes(entry.token)) {
+      found.push(entry.label ?? entry.token)
       // Blank out matches so `::getLinks` doesn't also count as `::getLink`.
-      work = work.split(token).join(' '.repeat(token.length))
+      work = work.split(entry.token).join(' '.repeat(entry.token.length))
     }
   }
   return found

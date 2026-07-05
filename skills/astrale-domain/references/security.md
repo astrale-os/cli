@@ -139,7 +139,7 @@ same as any principal.
 ```ts
 import { EDIT, toMask } from '@astrale-os/kernel-core'
 // the function is an identity; grant it EDIT on the folder it writes to
-await kernel.call(`${functionIdentity}::grantPerm`, { node: '/events', perms: toMask(EDIT) })
+await kernel.auth.grant({ to: functionIdentity, on: '/events', perms: toMask(EDIT) })
 ```
 
 ## selfKernel
@@ -188,7 +188,7 @@ actually allowed to do it.
 ```ts
 import { READ, toMask } from '@astrale-os/kernel-core'
 // grant Ada the right to read a node
-await kernel.call('/people/ada::grantPerm', { node: '/contacts/bob', perms: toMask(READ) })
+await kernel.auth.grant({ to: '/people/ada', on: '/contacts/bob', perms: toMask(READ) })
 ```
 
 ## Deny by Default
@@ -208,7 +208,7 @@ and the rights flow down to where they are needed.
 ```ts
 import { READ, toMask } from '@astrale-os/kernel-core'
 // one grant on the parent folder covers every node beneath it
-await kernel.call('/people/ada::grantPerm', { node: '/contacts', perms: toMask(READ) })
+await kernel.auth.grant({ to: '/people/ada', on: '/contacts', perms: toMask(READ) })
 // Ada can now read /contacts/ada, /contacts/bob, ... with no separate grants
 ```
 
@@ -221,7 +221,7 @@ beneath it.
 
 ```ts
 import { READ, USE, toMask } from '@astrale-os/kernel-core'
-await kernel.call('/people/ada::grantPerm', { node: '/contacts', perms: toMask(READ, USE) })
+await kernel.auth.grant({ to: '/people/ada', on: '/contacts', perms: toMask(READ, USE) })
 ```
 
 ## Permission verbs (READ, EDIT, USE, SHARE)
@@ -233,7 +233,7 @@ bit, and a grant is the combined mask, so one grant can carry several verbs at o
 ```ts
 import { READ, USE, toMask } from '@astrale-os/kernel-core'
 // allow reading the node and calling its functions
-await kernel.call('/people/ada::grantPerm', { node: '/contacts', perms: toMask(READ, USE) })
+await kernel.auth.grant({ to: '/people/ada', on: '/contacts', perms: toMask(READ, USE) })
 ```
 
 ## PermissionMask
@@ -271,26 +271,24 @@ are handed out; scopes are how a delegation hands out less than all of them.
 
 ## How to grant a permission?
 
-You grant a permission by calling `grantPerm` on the identity, naming the target node and a mask of
-verbs to allow. The grant takes effect at once and propagates to everything under that node, so grant at
-the shallowest node that covers what you mean. Granting is always deliberate: nothing is shared until
-you do.
+You grant a permission with `kernel.auth.grant({ to, on, perms })`, naming the identity, the target
+node, and a mask of verbs to allow. The grant takes effect at once and propagates to everything under
+that node, so grant at the shallowest node that covers what you mean.
 
 ```ts
 import { READ, toMask } from '@astrale-os/kernel-core'
-await kernel.call('/people/ada::grantPerm', { node: '/projects/apollo', perms: toMask(READ) })
+await kernel.auth.grant({ to: '/people/ada', on: '/projects/apollo', perms: toMask(READ) })
 ```
 
 ## How to check a permission?
 
-You check a permission with `checkPerm`, asking whether an identity holds given verbs on a node before
-you act on its behalf. The kernel already enforces permissions on every call, so you reach for an
-explicit check only to branch your own logic, like hiding an action a caller could not use. It reports
-whether the access would be allowed, without performing anything.
+You check a permission with `kernel.auth.check({ who, on, perms })`, asking whether an identity holds
+given verbs on a node before you act on its behalf. The kernel already enforces permissions on every
+call, so you reach for an explicit check only to branch your own logic.
 
 ```ts
 import { READ, toMask } from '@astrale-os/kernel-core'
-const allowed = await kernel.call('/people/ada::checkPerm', { node: '/contacts/bob', perms: toMask(READ) })
+const allowed = await kernel.auth.check({ who: '/people/ada', on: '/contacts/bob', perms: toMask(READ) })
 ```
 
 ## How to let a user share access?
@@ -303,20 +301,19 @@ deliberately, because it lets access spread on its own.
 ```ts
 import { SHARE, toMask } from '@astrale-os/kernel-core'
 // give Ada the right to share this project; she can then grant Bob READ herself
-await kernel.call('/people/ada::grantPerm', { node: '/projects/apollo', perms: toMask(SHARE) })
+await kernel.auth.grant({ to: '/people/ada', on: '/projects/apollo', perms: toMask(SHARE) })
 ```
 
 ## How to take access away?
 
-You revoke a grant by calling `revokePerm` on the identity, naming the node and the verbs to remove, the
-mirror of granting. Removing a grant on a node also withdraws the access that grant propagated to
-everything beneath it; nodes lower down keep only the grants made to them directly. Like granting,
-revoking is a permissioned act, so you can only take back access on nodes you control.
+You revoke a grant with `kernel.auth.revoke({ from, on, perms })`, naming the identity, the node, and
+the verbs to remove. Removing a grant on a node also withdraws the access that grant propagated to
+everything beneath it; nodes lower down keep only the grants made to them directly.
 
 ```ts
 import { EDIT, toMask } from '@astrale-os/kernel-core'
 // take back EDIT on a node (and everything under it)
-await kernel.call('/people/ada::revokePerm', { node: '/projects/apollo', perms: toMask(EDIT) })
+await kernel.auth.revoke({ from: '/people/ada', on: '/projects/apollo', perms: toMask(EDIT) })
 ```
 
 ## How to debug a permission denied?
@@ -352,8 +349,9 @@ business decision, not a default.
 ```ts
 import { USE, toMask } from '@astrale-os/kernel-core'
 // allow Ada to call this function at all (USE on the function node)
-await kernel.call('/people/ada::grantPerm', {
-  node: D.Project.kickoff.path.method.raw,   // the function being secured
+await kernel.auth.grant({
+  to: '/people/ada',
+  on: D.Project.kickoff.path.method.raw,   // the function being secured
   perms: toMask(USE),
 })
 // then ensure she can reach what it touches; finer business rules go in the authorize hook

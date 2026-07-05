@@ -9,7 +9,6 @@ export {
   resolveSelfIdLazy,
   type SelfExpansionMeta,
 } from './expand'
-export { mintRemoteCredential } from './remote-routing'
 export { runKernelCommand } from './run'
 export { bindGraph, splitRoot, childrenCursor, nodeProp, unqualifyKey } from './graph'
 export type {
