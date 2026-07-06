@@ -37,14 +37,14 @@ async function resolveUserClassPath(ctx: ClientContext): Promise<string> {
   const graph = bindGraph(ctx)
   // Root's direct children are the installed Domain nodes.
   const result = await graph.children('/')
-  const domains = result.children
+  const domains = result.nodes
     .filter((n) => n.class.className === 'Domain')
     .map((n) => n.path.raw.replace(/^\//, ''))
     .filter(Boolean)
   for (const origin of domains) {
     // The class materializes as a `class.User` Folder under the domain mount;
     // a resolving node means the domain declares it (null when absent).
-    if ((await graph.get(`/${origin}/class.User`)).node) {
+    if (await graph.get(`/${origin}/class.User`)) {
       return `/:${origin}:class.User`
     }
   }

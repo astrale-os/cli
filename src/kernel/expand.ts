@@ -208,7 +208,7 @@ async function whoamiSelfId(opts: KernelCommandOpts): Promise<{ id?: unknown; ke
     kernelUrl = ctx.url
     return ctx.client.as(ctx.credential).auth.whoami()
   })
-  return { id: me.node?.id, kernelUrl }
+  return { id: me.id, kernelUrl }
 }
 
 /**

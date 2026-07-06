@@ -1,5 +1,3 @@
-import type { NodeResult } from '@astrale-os/kernel-client/graph'
-
 import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 
@@ -30,12 +28,12 @@ export async function getCommand(pathArg: string, opts: GetOpts): Promise<void> 
     return
   }
 
-  await runKernelCommand<NodeResult>({
+  await runKernelCommand({
     opts,
     label: 'Node ' + path,
     fn: async (ctx) => {
-      const result = await withSelfHint(() => bindGraph(ctx).get(path), meta)
-      if (result.node === null) {
+      const result = await withSelfHint(() => bindGraph(ctx).query((q) => q.from(path)), meta)
+      if (result.wire.nodes.length === 0) {
         log.error('node "' + path + '" not found or not visible')
         process.exit(1)
       }

@@ -92,7 +92,10 @@ export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
     // Flat listing = ONE function.get depth:1; the root is dropped, the rest are
     // the direct children (replaces the removed `::listChildren` syscall).
     fn: async (ctx) => {
-      const result = await withSelfHint(() => bindGraph(ctx).children(expandedPath), meta)
+      const result = await withSelfHint(
+        () => bindGraph(ctx).query((q) => q.from(expandedPath).children()),
+        meta,
+      )
       return {
         children: splitRoot(result.wire.nodes, expandedPath).children,
         next: childrenCursor(result.wire),

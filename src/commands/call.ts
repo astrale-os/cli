@@ -132,7 +132,7 @@ async function isBinaryOutput(ctx: ClientContext, path: string): Promise<boolean
   try {
     const target = path.includes('::') ? await instanceMethodNodePath(ctx, path) : path
     if (!target) return false
-    const node = (await bindGraph(ctx).get(target)).node
+    const node = await bindGraph(ctx).get(target)
     // Props travel under fully-qualified keys; `output.key` IS that key.
     return node?.props?.[K.$.i('Function').output.key] === 'binary'
   } catch {
@@ -149,7 +149,7 @@ async function instanceMethodNodePath(
   const source = path.slice(0, sep)
   const method = path.slice(sep + 2)
   if (!source || !method) return undefined
-  const node = (await bindGraph(ctx).get(source)).node
+  const node = await bindGraph(ctx).get(source)
   // node.class is a ClassPath (`/:domain:class.Name`); appending `:<method>`
   // forms the MethodPath of the class-owned Function node.
   return node?.class ? `${node.class.raw}:${method}` : undefined
@@ -160,7 +160,7 @@ async function describeOperation(path: string, opts: CallOpts): Promise<void> {
     opts,
     label: `Schema for ${path}`,
     // The Function node carries the schemas as props (function.get depth:0).
-    fn: async (ctx) => (await bindGraph(ctx).get(path)).node,
+    fn: async (ctx) => await bindGraph(ctx).get(path),
     format: (node, fmtOpts) => {
       const input = nodeProp(node, 'inputSchema')
       const outputSchema = nodeProp(node, 'outputSchema')

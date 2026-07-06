@@ -36,7 +36,10 @@ export async function describeCommand(path: string, opts: DescribeOpts): Promise
     // One function.get depth:1 = the node AND its children (was ::get +
     // ::listChildren). Function-class children are the node's operations.
     fn: async (ctx) => {
-      const result = await withSelfHint(() => bindGraph(ctx).children(expandedPath), meta)
+      const result = await withSelfHint(
+        () => bindGraph(ctx).query((q) => q.from(expandedPath).children()),
+        meta,
+      )
       const { root, children } = splitRoot(result.wire.nodes, expandedPath)
       return { node: root, children }
     },
