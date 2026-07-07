@@ -677,23 +677,78 @@ const DECL_HELPERS: Record<string, 'node' | 'interface' | 'edge'> = {
 }
 
 /**
- * Decide the anchor namespace ('class' | 'interface' | 'edge') for a declared
- * name, preferring the IR's authority (an edgeClass is a class whose IR type is
- * 'edge'); fall back to the declaration helper used.
+ * A schema member's true NAME + section, resolved from the `defineSchema` map.
+ * The declaration helpers (nodeClass/nodeInterface/edgeClass) carry no name — a
+ * member is named by the KEY it is registered under, not by its variable — and a
+ * domain may register a class and an interface under the SAME name (the
+ * intentional same-name pattern: the `iUser` interface alongside the `User`
+ * class). So the map is the sole authority for both the anchor name and the
+ * interface-vs-class distinction; the variable identifier alone tells us neither.
  */
-function anchorKindFor(
+interface MemberName {
+  schemaName: string
+  section: 'interface' | 'class' // the `classes` map also holds edge classes
+}
+
+/** Map each registered member VARIABLE (as referenced in `defineSchema`) to its
+ *  schema name + section, from the domain's own schema files — never node_modules
+ *  (a dependency's `defineSchema` is not this domain's). */
+function buildMemberNameMap(files: SourceFile[]): Map<string, MemberName> {
+  const map = new Map<string, MemberName>()
+  for (const sf of files) {
+    if (sf.getFilePath().includes('/node_modules/')) continue
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      if (calleeName(call) !== 'defineSchema') continue
+      const cfg = call.getArguments()[1]
+      if (!cfg || !Node.isObjectLiteralExpression(cfg)) continue
+      collectSchemaSection(map, cfg, 'interfaces', 'interface')
+      collectSchemaSection(map, cfg, 'classes', 'class')
+    }
+  }
+  return map
+}
+
+/** Record `variable → { schemaName, section }` for one `defineSchema` section
+ *  (`interfaces` / `classes`), handling both `Key: alias` and shorthand `Key`. */
+function collectSchemaSection(
+  map: Map<string, MemberName>,
+  cfg: Node,
+  prop: 'interfaces' | 'classes',
+  section: 'interface' | 'class',
+): void {
+  const obj = getObjectProp(cfg, prop)
+  if (!obj) return
+  for (const p of obj.getProperties()) {
+    if (Node.isShorthandPropertyAssignment(p)) {
+      map.set(p.getName(), { schemaName: p.getName(), section })
+    } else if (Node.isPropertyAssignment(p)) {
+      const init = p.getInitializer()
+      if (init && Node.isIdentifier(init)) {
+        map.set(init.getText(), { schemaName: p.getName(), section })
+      }
+    }
+  }
+}
+
+/**
+ * The anchor namespace ('class' | 'interface' | 'edge') for a declared member.
+ * The `defineSchema` SECTION is authoritative for interface-vs-class — a
+ * `nodeClass` whose name collides with a same-named interface must still anchor
+ * as a class. Within the class section, an `edgeClass` (or an IR edge type)
+ * anchors as 'edge'. Falls back to the declaration helper when the member isn't
+ * in a parseable `defineSchema` map (e.g. an imported kernel member).
+ */
+function resolveMemberKind(
   ir: SchemaIR | null,
   name: string,
+  section: 'interface' | 'class' | undefined,
   helperKind: 'node' | 'interface' | 'edge',
 ): 'class' | 'interface' | 'edge' {
-  if (ir) {
-    if (ir.interfaces?.[name]) return 'interface'
-    const cls = ir.classes?.[name]
-    if (cls) return cls.type === 'edge' ? 'edge' : 'class'
-  }
+  if (section === 'interface') return 'interface'
+  const isEdge = helperKind === 'edge' || ir?.classes?.[name]?.type === 'edge'
+  if (section === 'class') return isEdge ? 'edge' : 'class'
   if (helperKind === 'interface') return 'interface'
-  if (helperKind === 'edge') return 'edge'
-  return 'class'
+  return isEdge ? 'edge' : 'class'
 }
 
 export function buildSourceSpans(args: {
@@ -717,10 +772,14 @@ export function buildSourceSpans(args: {
 
   const spans: Record<string, SourceSpan> = {}
 
-  for (const filePath of files) {
-    const sf = project.getSourceFile(filePath)
-    if (!sf) continue
-    const fileRel = relToRoot(domainRoot, filePath)
+  const sourceFiles = files.map((f) => project.getSourceFile(f)).filter((f): f is SourceFile => !!f)
+  // The domain's `defineSchema` map is authoritative for each member's name +
+  // interface-vs-class kind, so an aliased interface (`iUser`→`User`) and a class
+  // sharing its name (`User`) each anchor correctly instead of colliding.
+  const memberNames = buildMemberNameMap(sourceFiles)
+
+  for (const sf of sourceFiles) {
+    const fileRel = relToRoot(domainRoot, sf.getFilePath())
 
     for (const v of sf.getVariableDeclarations()) {
       if (!v.isExported()) continue
@@ -729,9 +788,9 @@ export function buildSourceSpans(args: {
       const helper = calleeName(init)
       if (!helper || !(helper in DECL_HELPERS)) continue
       const helperKind = DECL_HELPERS[helper]
-      const name = v.getName()
-      const kind = anchorKindFor(ir, name, helperKind)
-      const ns = kind // 'class' | 'interface' | 'edge'
+      const member = memberNames.get(v.getName())
+      const name = member?.schemaName ?? v.getName()
+      const ns = resolveMemberKind(ir, name, member?.section, helperKind)
 
       const stmt = v.getVariableStatement() ?? v
       spans[`${ns}.${name}`] = makeSpan(domainRoot, fileRel, stmt, v)
@@ -743,7 +802,7 @@ export function buildSourceSpans(args: {
       }
 
       // Edges: endpoints are the first two args; props live in the third.
-      if (kind === 'edge') {
+      if (ns === 'edge') {
         collectEdge(spans, name, init, domainRoot, fileRel)
       }
     }
