@@ -26,13 +26,8 @@ export async function callCommand(
   rawParams: string[],
   opts: CallOpts,
 ): Promise<void> {
-  // ── Expand `@self` in path + raw param strings ──────────
-  // Local resolution, with a whoami refresh for IdP identities so a
-  // delete/recreate under the same managed-instance slug does not leave
-  // `@self` pinned to the old node id.
-  // Throws a typed SelfRefusalError (manager, instance-signed, …) which we
-  // surface as a fatal CLI error. Runs BEFORE `--describe` so users get the
-  // typed refusal instead of a generic NotFoundError from the kernel.
+  // Expand @self before describe/execute so refusals are typed and stale IdP
+  // registrations can refresh through whoami.
   let expandedPath = path
   let expandedRaw = rawParams
   let selfMeta: SelfExpansionMeta | undefined
@@ -43,9 +38,7 @@ export async function callCommand(
       const selfId = await resolveSelfIdLazy(selfCtx, opts)
       expandedPath = expandSelfReferences(path, selfId)
       expandedRaw = rawParams.map((p) => expandSelfReferences(p, selfId))
-      // Stamp metadata whenever ANY input mutated — the stale-registration
-      // hint in `formatKernelError` is just as useful when `@self` lived in
-      // a param (`node=@self`) as when it was in the path head.
+      // Stale-registration hints apply when @self appears in either path or params.
       const rawMutated = expandedRaw.some((p, i) => p !== rawParams[i])
       if (expandedPath !== path || rawMutated) {
         selfMeta = {
@@ -88,14 +81,7 @@ export async function callCommand(
     opts,
     label: expandedPath,
     fn: async (ctx): Promise<CallResult> => {
-      // Remote-bound functions live on an external worker. The kernel resolves
-      // the call to a redirect carrying the worker's URL + `iss`; the session
-      // follows it, minting a worker-scoped delegation for that `iss` (the
-      // delegation cache wired in `client.ts`). No client-side binding lookup.
-      //
-      // The one thing the reactive path can't discover after dispatch is a
-      // binary output mode (a JSON decode would corrupt the bytes), so detect
-      // it up front and route to the binary transport — which also auto-follows.
+      // Binary outputs must be routed before dispatch; JSON decoding would corrupt bytes.
       if (await isBinaryOutput(ctx, expandedPath)) {
         const response = await withSelfHint(() => ctx.client.binary(expandedPath, params), selfMeta)
         return { kind: 'binary', response }
@@ -114,19 +100,8 @@ export async function callCommand(
 }
 
 /**
- * Best-effort pre-flight: does the target Function declare a binary output?
- * A binary method must use the binary transport (the value path would JSON-
- * decode and corrupt the bytes), and the client can't discover that after
- * dispatch. For a static path the path IS the Function node — read `output`
- * off it via `function.get`. For an instance-method path (`<node>::method`)
- * the Function node isn't addressable that way: resolve the instance's class
- * first, then probe the class's method node (`<classPath>:method`). An
- * interface-hosted instance method still escapes the probe (its Function node
- * hangs off the interface, not the class) — that and any other failure returns
- * false and falls through to the value path, letting the kernel surface the
- * real error. `function.get` is a same-origin kernel door so it neither
- * redirects nor triggers delegation; an unreadable/missing target soft-masks
- * to `null`, which folds to `false` here.
+ * Best-effort binary preflight. Static paths read the Function node directly;
+ * instance paths probe the class method node and fall back to value transport on miss.
  */
 async function isBinaryOutput(ctx: ClientContext, path: string): Promise<boolean> {
   try {
@@ -150,8 +125,7 @@ async function instanceMethodNodePath(
   const method = path.slice(sep + 2)
   if (!source || !method) return undefined
   const node = await bindGraph(ctx).get(source)
-  // node.class is a ClassPath (`/:domain:class.Name`); appending `:<method>`
-  // forms the MethodPath of the class-owned Function node.
+  // ClassPath + method name forms the class-owned Function MethodPath.
   return node?.class ? `${node.class.raw}:${method}` : undefined
 }
 

@@ -6,10 +6,7 @@ import { join } from 'node:path'
 
 import { buildProgram } from '../../program'
 
-// The `astrale-cli` skill claims `astrale --help` is the source of truth and
-// "never drifts". These tests hold that claim to account: the version is
-// single-sourced from package.json, no internal `§` spec anchors leak into
-// rendered help, and the workspace skill mirror stays byte-identical.
+// Help output is the public CLI contract: version, spec anchors, and skill mirror stay in sync.
 
 const cliRoot = join(import.meta.dir, '../../..')
 
@@ -28,9 +25,7 @@ describe('help contract — version is single-sourced', () => {
       readFileSync(join(cliRoot, '.release-please-manifest.json'), 'utf8'),
     ) as Record<string, string>
 
-    // `bin/astrale.ts` -> buildProgram -> .version(pkg.version): asserting the
-    // rendered version equals BOTH JSON sources catches a re-hardcoded literal
-    // and a manifest/package.json divergence (release-please bumps both).
+    // Program version must follow both package.json and release-please metadata.
     expect(program.version()).toBe(pkg.version)
     expect(manifest['.']).toBe(pkg.version)
   })
@@ -92,13 +87,7 @@ describe('help contract — connect-only command surface', () => {
     const program = await buildProgram()
     const names = allCommands(program).map((command) => command.name())
 
-    // 'logs' and 'domain' are NOT in this list anymore: each was once LOCAL
-    // runtime management (the historical `astrale logs`, removed with
-    // start/stop; the historical `astrale domain`, local domain wiring) and each
-    // has since been RECLAIMED for a connect-side meaning through the admin
-    // control plane — `astrale logs <service>` tails a MANAGED service's buffer;
-    // `astrale domain publish` registers an installable domain in the admin's
-    // catalog and `astrale domain install <url>` mounts one on an instance.
+    // `logs` and `domain` have managed/admin meanings, so only retired local-runtime verbs are absent.
     for (const removed of [
       'init',
       'start',

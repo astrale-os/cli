@@ -33,13 +33,8 @@ export function bindGraph(ctx: ClientContext): GraphApi {
 }
 
 /**
- * Split a depth≥1 `function.get` node page into the addressed root node and the
- * remaining descendants — the ONE place a `GraphData` page becomes rows for the
- * `ls` / `describe` projections (replaces the old `extractItems`).
- *
- * The root matches by absolute path (`rawOf`) or, when addressed by `@id`, by
- * node id; failing both it falls back to the shallowest node (a root is strictly
- * shallower than its own descendants within one page).
+ * Split a `function.get` page into addressed root and descendants. Root matches
+ * path/id first, then falls back to the shallowest node in the page.
  */
 export function splitRoot(
   nodes: readonly GraphNode[],

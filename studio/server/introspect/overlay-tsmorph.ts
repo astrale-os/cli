@@ -1,18 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
 /**
- * overlay-tsmorph.ts — ts-morph extraction of the things the IR cannot carry:
- *   - handlerLinks: schema method → runtime handler file (follow the `execute`
- *     import in runtime/index.ts; do NOT assume a folder/name convention).
- *   - sourceSpans: file:line + JSDoc for each class/interface/edge/prop/method,
- *     keyed by anchor ref (class.X / class.X.property.y / class.X.method.m / …).
- *   - annotations: sharp-edge hints (ENUM_DROPPED_BY_UPDATE).
- *
- * Implementation notes:
- *   - We open files with a throwaway ts-morph Project (no tsconfig, no type
- *     checker required) so this stays cheap and tolerant of broken trees.
- *   - Everything degrades gracefully: a missing file/dir yields [] / {}, an
- *     unresolvable handler yields `{ unlinked: true }` rather than a wrong guess.
+ * ts-morph overlay for IR gaps: handler links, source spans, and annotations.
+ * It is tolerant by contract; unresolved files or handlers produce empty/unlinked output.
  */
 import { Node, Project, SyntaxKind, type CallExpression, type SourceFile } from 'ts-morph'
 
@@ -114,12 +104,7 @@ function stringArg(call: CallExpression, index: number): string | undefined {
 
 // ───────────────────────────── handler links ─────────────────────────────
 
-/**
- * The shape of a "wire one method" call we recognise, after normalising the two
- * fixture styles:
- *   my-domain:   method(schema, 'Owner', 'name', { authorize, execute })
- *   evaluation:  classMethods(schema, 'Owner', { name: todo('Owner.name'), … })
- */
+/** Recognized method-wiring calls after normalizing single-method and grouped helpers. */
 interface WiredMethod {
   owner: string
   method: string
