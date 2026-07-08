@@ -2,13 +2,7 @@ import type { InstanceInfo } from '../lib/admin-instance'
 import type { KernelCommandOpts } from './types'
 
 import { ADMIN_INSTANCE } from '../lib/admin-instance'
-/**
- * Bridges `lib/self.ts` to CLI command sites: builds a `SelfResolverContext`
- * from CLI opts, resolves a nodeId via
- * `resolveOrThrow` (throwing `SelfRefusalError` on refusal), and wraps async
- * calls with `withSelfHint` so `NotFoundError`s carry expansion metadata for
- * the stale-registration hint emitted by `formatKernelError`.
- */
+/** CLI bridge for @self resolution and stale-registration error hints. */
 import { readConfig } from '../lib/config'
 import { getDefault, getIdentity, setRegistration } from '../lib/identity'
 import { decodeTokenClaims, readIdpSession } from '../lib/idp'
@@ -34,13 +28,7 @@ export type SelfExpansionMeta = {
   slug?: string
 }
 
-/**
- * Build a `SelfResolverContext` from CLI opts. Mirrors the target +
- * signing-mode logic in `withKernelClient` / `resolveCredential`.
- *
- * Cheap enough to call eagerly; commands skip the call entirely when
- * `containsSelfRef` returns false on every input.
- */
+/** Build the same target/signing context `withKernelClient` will use. */
 export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfResolverContext> {
   const config = await readConfig()
   // Mirror withKernelClient's slug logic: --url without -i ⇒ no slug.
@@ -70,11 +58,7 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
     instanceSigned = await fileExists(privatePath)
   }
 
-  // Identity that will sign (only relevant when not instance-signed and not --creds).
-  // Failures here (corrupt identities.json, missing --as identity) are
-  // re-thrown rather than swallowed — swallowing produces a useless
-  // refusal naming `identityName: '(unknown)'`. The fatal-error UX is
-  // honest about the actual problem.
+  // Identity lookup failures should surface as real CLI errors, not @self refusals.
   let identity: SelfResolverContext['identity']
   if (!opts.creds) {
     const identityName = opts.as ?? defaultIdentity
@@ -142,10 +126,6 @@ export function resolveOrThrow(selfCtx: SelfResolverContext): string {
   return r.id
 }
 
-// The kernel's whoami — returns the AUTHENTICATED principal's graph node.
-// Static interface method, so the colon form (slash form is rejected).
-const WHOAMI_PATH = '/:kernel.astrale.ai:interface.Identity:whoami'
-
 export type ResolveSelfIdLazyDeps = {
   whoami?: (opts: KernelCommandOpts) => Promise<{ id?: unknown; kernelUrl: string }>
   setRegistration?: typeof setRegistration
@@ -153,16 +133,8 @@ export type ResolveSelfIdLazyDeps = {
 }
 
 /**
- * Resolve `@self`, falling back to ONE kernel `whoami` round-trip when an
- * IdP identity merely lacks a cached registration on this instance (the
- * normal `astrale auth login` flow — the IdP subject is never a node id). IdP
- * identities with a cached registration are refreshed too: managed instances
- * can be deleted and recreated under the same slug, invalidating the cached
- * node id while leaving the IdP session valid.
- *
- * The resolved id is persisted as a registration. Every other refusal
- * (manager, instance-signed, …) and a failed whoami without a cached fallback
- * throw the typed refusal unchanged.
+ * Resolve @self for IdP identities through one whoami refresh, then cache the
+ * current node id. Non-IdP refusals stay typed and local.
  */
 export async function resolveSelfIdLazy(
   selfCtx: SelfResolverContext,
@@ -208,24 +180,14 @@ export async function resolveSelfIdLazy(
 
 async function whoamiSelfId(opts: KernelCommandOpts): Promise<{ id?: unknown; kernelUrl: string }> {
   let kernelUrl = ''
-  const me = (await withKernelClient(opts, (ctx) => {
+  const me = await withKernelClient(opts, (ctx) => {
     kernelUrl = ctx.url
-    return ctx.client.call(WHOAMI_PATH as never, {} as never)
-  })) as { id?: unknown } | null
-  return { id: me?.id, kernelUrl }
+    return ctx.client.as(ctx.credential).auth.whoami()
+  })
+  return { id: me.id, kernelUrl }
 }
 
-/**
- * Expand `@self` in a single path string for the common command shape
- * (`get`, `ls`, `describe`). Returns the expanded path AND the metadata
- * needed by `withSelfHint` to attach the stale-registration hint to a
- * downstream `NotFoundError`.
- *
- * No-op (returns the input unchanged with `meta: undefined`) when the path
- * contains no `@self` — avoids the I/O of `buildSelfContext`.
- *
- * Throws `SelfRefusalError` when `@self` is present but unresolvable.
- */
+/** Expand @self in path-like commands and return metadata for NotFound hints. */
 export async function expandSelfInPath(
   path: string,
   opts: KernelCommandOpts,

@@ -9,6 +9,15 @@ export {
   resolveSelfIdLazy,
   type SelfExpansionMeta,
 } from './expand'
-export { mintRemoteCredential } from './remote-routing'
-export { runKernelCommand, extractItems } from './run'
+export { runKernelCommand } from './run'
+export { bindGraph, splitRoot, childrenCursor, nodeProp, unqualifyKey } from './graph'
+export type {
+  GetResultWire,
+  GraphApi,
+  GraphNode,
+  GraphNodeWire,
+  MutationResultWire,
+  PatchInput,
+  QueryASTInput,
+} from './graph'
 export type { KernelCommandOpts, CallCommandOpts } from './types'

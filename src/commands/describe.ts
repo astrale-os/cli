@@ -2,20 +2,21 @@ import { ClassPath } from '@astrale-os/kernel-core/domain'
 import chalk from 'chalk'
 
 import type { CommandDefinition } from '../command'
-import type { KernelCommandOpts } from '../kernel'
+import type { GraphNode, KernelCommandOpts } from '../kernel'
 
-import { expandSelfInPath, extractItems, runKernelCommand, withSelfHint } from '../kernel'
+import {
+  bindGraph,
+  expandSelfInPath,
+  nodeProp,
+  runKernelCommand,
+  splitRoot,
+  unqualifyKey,
+  withSelfHint,
+} from '../kernel'
 import { log } from '../lib/log'
 import { output } from '../lib/output'
 
-type NodeItem = {
-  id?: string
-  slug?: string
-  class?: string
-  properties?: Record<string, unknown>
-}
-
-type DescribeResult = { node: NodeItem; children: NodeItem[] }
+type DescribeResult = { node: GraphNode | undefined; children: GraphNode[] }
 
 // Commander turns `--no-schema` into `schema: false`.
 type DescribeOpts = KernelCommandOpts & { schema?: boolean }
@@ -32,27 +33,18 @@ export async function describeCommand(path: string, opts: DescribeOpts): Promise
   await runKernelCommand<DescribeResult>({
     opts,
     label: expandedPath,
+    // One function.get depth:1 = the node AND its children (was ::get +
+    // ::listChildren). Function-class children are the node's operations.
     fn: async (ctx) => {
-      const node = (await withSelfHint(
-        () => ctx.client.call(`${expandedPath}::get`, {}),
+      const result = await withSelfHint(
+        () => bindGraph(ctx).query((q) => q.from(expandedPath).children()),
         meta,
-      )) as NodeItem
-
-      let children: NodeItem[] = []
-      try {
-        const result = await withSelfHint(
-          () => ctx.client.call(`${expandedPath}::listChildren`, {}),
-          meta,
-        )
-        children = extractItems<NodeItem>(result)
-      } catch {
-        // Node may have no children (leaf node)
-      }
-
-      return { node, children }
+      )
+      const { root, children } = splitRoot(result.wire.nodes, expandedPath)
+      return { node: root, children }
     },
     format: (result, fmtOpts, isRaw) => {
-      const shown = opts.schema === false ? stripSchemaProp(result) : result
+      const shown = opts.schema === false ? stripSchema(result) : result
       if (isRaw) {
         output(shown, fmtOpts)
         return
@@ -62,23 +54,21 @@ export async function describeCommand(path: string, opts: DescribeOpts): Promise
   })
 }
 
-function stripSchemaProp(result: DescribeResult): DescribeResult {
-  const props = result.node.properties
-  if (!props || !('schema' in props)) return result
-  const { schema: _omitted, ...rest } = props
-  return { ...result, node: { ...result.node, properties: rest } }
+function stripSchema(result: DescribeResult): DescribeResult {
+  if (!result.node) return result
+  const entries = Object.entries(result.node.props).filter(([k]) => unqualifyKey(k) !== 'schema')
+  return { ...result, node: { ...result.node, props: Object.fromEntries(entries) } }
 }
 
 // ── Pretty-print ────────────────────────────────────────────
 
 function printDescribe({ node, children }: DescribeResult, path: string): void {
   const kind = classNameOf(node) ?? 'Node'
-  const slug = node.properties?.slug ?? node.slug ?? path.split('/').pop()
-  console.log(`  ${chalk.bold.cyan(String(slug))} ${chalk.dim(`(${kind})`)}`)
+  const name = basename(path) || path
+  console.log(`  ${chalk.bold.cyan(name)} ${chalk.dim(`(${kind})`)}`)
 
-  if (node.properties?.description) {
-    console.log(`  ${chalk.dim(String(node.properties.description))}`)
-  }
+  const description = nodeProp(node, 'description')
+  if (description) console.log(`  ${chalk.dim(String(description))}`)
   console.log('')
 
   const operations = children.filter(isFunction)
@@ -86,12 +76,13 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
 
   if (operations.length > 0) {
     console.log(`  ${chalk.bold('Operations:')}`)
-    const slugW = Math.max(4, ...operations.map((o) => (o.slug ?? '').length))
-    for (const op of operations) {
-      const opSlug = (op.slug ?? '?').padEnd(slugW)
-      const schema = formatInputSchema(op.properties)
-      console.log(`    ${chalk.green(opSlug)}  ${chalk.dim(schema)}`)
-    }
+    const names = operations.map((o) => basename(o.path))
+    const slugW = Math.max(4, ...names.map((n) => n.length))
+    operations.forEach((op, i) => {
+      const opName = names[i].padEnd(slugW)
+      const schema = formatInputSchema(op)
+      console.log(`    ${chalk.green(opName)}  ${chalk.dim(schema)}`)
+    })
     console.log('')
   }
 
@@ -99,7 +90,7 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
     console.log(`  ${chalk.bold('Children:')}`)
     for (const child of otherChildren) {
       const childKind = classNameOf(child) ?? '?'
-      console.log(`    ${chalk.cyan(child.slug ?? '?')}  ${chalk.dim(childKind)}`)
+      console.log(`    ${chalk.cyan(basename(child.path) || '?')}  ${chalk.dim(childKind)}`)
     }
     console.log('')
   }
@@ -109,18 +100,26 @@ function printDescribe({ node, children }: DescribeResult, path: string): void {
   }
 }
 
-/** Short class name from the contract field `class` (a serialized ClassPath). */
-function classNameOf(item: NodeItem): string | undefined {
-  return item.class ? (ClassPath.tryParse(item.class)?.className ?? undefined) : undefined
+/** `/a/b/c` → `c`; `/` → `/`. */
+function basename(path?: string): string {
+  if (!path || path === '/') return path ?? ''
+  return path.slice(path.lastIndexOf('/') + 1)
 }
 
-function isFunction(item: NodeItem): boolean {
+/** Short class name from the contract field `class` (a serialized ClassPath). */
+function classNameOf(item: GraphNode | undefined): string | undefined {
+  return item?.class ? (ClassPath.tryParse(item.class)?.className ?? undefined) : undefined
+}
+
+function isFunction(item: GraphNode): boolean {
   return classNameOf(item) === 'Function'
 }
 
-function printProperties(node: NodeItem): void {
-  const props = node.properties ?? (node as Record<string, unknown>)
-  const entries = Object.entries(props).filter(([k]) => k !== '__labels' && k !== 'id')
+function printProperties(node: GraphNode | undefined): void {
+  if (!node) return
+  const entries = Object.entries(node.props)
+    .map(([k, v]) => [unqualifyKey(k), v] as const)
+    .filter(([k]) => k !== '__labels' && k !== 'id')
   if (entries.length === 0) return
 
   console.log(`  ${chalk.bold('Properties:')}`)
@@ -130,9 +129,8 @@ function printProperties(node: NodeItem): void {
   }
 }
 
-function formatInputSchema(properties?: Record<string, unknown>): string {
-  if (!properties) return '{}'
-  const raw = properties.inputSchema
+function formatInputSchema(node: GraphNode): string {
+  const raw = nodeProp(node, 'inputSchema')
   if (!raw) return '{}'
 
   try {
@@ -160,9 +158,10 @@ export default {
   description: 'Describe a node: its kind, operations, children, and schemas',
   afterHelpText: `
 Behavior:
-  Raw node dump: full properties + children. For Domain nodes this
-  includes a multi-kB serialized 'schema' — use --no-schema, and pipe
-  to jq rather than reading by eye (it is not a curated summary).
+  One function.get depth:1 — the node plus its children (Function-class
+  children are shown as Operations). Raw dump: full properties + children.
+  For Domain nodes the properties include a multi-kB serialized 'schema' —
+  use --no-schema, and pipe to jq rather than reading by eye.
 
 Examples:
   $ astrale describe /kernel.astrale.ai
@@ -177,6 +176,6 @@ Examples:
     },
   ],
   action: async (path, opts) => {
-    await describeCommand(path as string, opts as Parameters<typeof describeCommand>[1])
+    await describeCommand(path as string, opts as DescribeOpts)
   },
 } satisfies CommandDefinition

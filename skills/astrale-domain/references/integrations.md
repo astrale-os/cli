@@ -120,10 +120,10 @@ state lives.
 
 ```ts
 // OK graph first, then the side effect, so a retry can converge
-execute: async ({ self, kernel, deps }) => {
-  await kernel.call(`${self}::update`, { props: { status: 'sending' } })
+execute: async ({ self, graph, deps }) => {
+  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'sending' })
   await deps.email.send(/* ... */)        // the external effect
-  await kernel.call(`${self}::update`, { props: { status: 'sent' } })
+  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'sent' })
 }
 ```
 
@@ -141,12 +141,12 @@ an idempotent handler so re-running a stuck operation converges.
 
 ```ts
 // every long operation flips an explicit status the graph remembers
-await kernel.call(`${self}::update`, { props: { status: 'pending' } })
+await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'pending' })
 try {
   await doWork()
-  await kernel.call(`${self}::update`, { props: { status: 'ready' } })
+  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'ready' })
 } catch {
-  await kernel.call(`${self}::update`, { props: { status: 'error' } })
+  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'error' })
 }
 ```
 
@@ -226,5 +226,5 @@ same as any principal.
 ```ts
 import { EDIT, toMask } from '@astrale-os/kernel-core'
 // the function is an identity; grant it EDIT on the folder it writes to
-await kernel.call(`${functionIdentity}::grantPerm`, { node: '/events', perms: toMask(EDIT) })
+await kernel.auth.grant({ to: functionIdentity, on: '/events', perms: toMask(EDIT) })
 ```

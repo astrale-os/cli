@@ -31,9 +31,10 @@ astrale update
 astrale call <path> [params...]
 astrale token
 astrale get <path>
+astrale mutate
 astrale ls [path]
 astrale describe <path>
-astrale query <cypher>
+astrale query [paths...]
 astrale logs [--service <name>]
 astrale status
 astrale browser
@@ -49,10 +50,17 @@ Command groups:
 
 | Group | Commands |
 |---|---|
-| Kernel | `call`, `token`, `get`, `ls`, `describe`, `query`, `logs` |
+| Kernel | `call`, `token`, `get`, `mutate`, `ls`, `describe`, `query`, `logs` |
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `domain`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser` |
+
+`get`, `query`, and `mutate` are the graph door commands: `get` is a
+single-node point read, `query` is a structured multi-root read, and both lower
+to `function.get` today. `query` is the door a future true query syscall will
+back. `mutate` writes a batch patch (`function.mutate`). `ls` and `describe`
+remain `function.get` presets. The old per-node syscalls (`::get`,
+`::createNode`, `::link`, …) are gone.
 
 Shared kernel options are merged onto kernel-touching commands at registration
 time: `--format`, `--json`, `--raw`, `--url`, `-i/--instance`, `--timeout`,
@@ -124,14 +132,13 @@ astrale call /:d:class.X:m owner=@self
 ```
 
 For IdP-backed identities (`astrale auth login`), `@self` just works: the CLI
-verifies the caller with kernel `whoami`, caches the node id as a
-registration, and refreshes that cache when it changes (for example after a
-managed instance is deleted and recreated under the same slug). If that lookup
-fails and no cached registration exists, the error carries the manual recipe:
+verifies the caller through the bound auth surface (`auth.whoami()`), caches
+the node id as a registration, and refreshes that cache when it changes (for
+example after a managed instance is deleted and recreated under the same slug).
+Smoke the active identity with the same public flow:
 
 ```bash
-astrale call "/:kernel.astrale.ai:interface.Identity:whoami" --json  # → { id }
-astrale describe @<that-id>
+astrale get @self --json
 ```
 
 For key-backed identities, refresh a deleted or stale `@self` registration with
@@ -187,7 +194,7 @@ no committed `spec.json`). `astrale domain install` has two modes:
   The target instance is the active one or `-i <slug>` and **must be
   admin-managed** (otherwise it fails loudly and points you at `--direct`).
 - **`--direct`** — `astrale domain install <url> --direct` installs a url
-  straight onto the instance kernel (`Root.installDomain`), bypassing the
+  straight onto the instance kernel (`Domain.install`), bypassing the
   catalog. Works on ANY instance you can authenticate to (managed, bookmarked,
   or local), using your own authority, and is the only mode that runs the
   identity-override consent gate. Use it for dev/local instances and
@@ -289,9 +296,42 @@ Use these commands for graph inspection:
 ```bash
 astrale ls /
 astrale get /some/path
+astrale query / --depth 1
+astrale query --cypher 'MATCH (n) RETURN n LIMIT 5'
 astrale describe /some/path
-astrale query 'MATCH (n) RETURN n LIMIT 5'
 astrale call <path> --describe
+```
+
+`get` is a point read: exactly one path or `@id`, flat node output, and an
+opaque missing-or-masked error. Richer reads live on `query`. Positional
+`query` roots build the CLI's structured QueryASTInput and lower through
+`function.get` today; a future true query syscall can back the same door.
+
+- **Multi-root / subtree** — `query` takes one or more roots:
+  `astrale query /a /b @c`. `--depth 0..5` fetches descendants
+  (0 = just the roots). `ls` is a depth-1 preset; `ls -R` is depth 5
+  reassembled into a tree client-side; `describe` is depth 1.
+- **Children / edge selectors** — `--children <json>` and `--edges <json>`
+  are symmetric. `--children` is `{ classes?, limit?, cursor?, order? }`
+  (shapes the depth-1 children page; needs `--depth ≥ 1`). `--edges` is
+  `{ as?, classes?, direction?: in|out|both, limit?, cursor?, order? }` or a
+  JSON array of such selectors (each aliased by `as`) to include incident edges.
+- **Cypher escape hatch** — `query --cypher '<query>'` calls the kernel's
+  read-only Cypher endpoint.
+- **Soft-root visibility** — a structured read NEVER 403s: unreadable or
+  missing roots (and descendants) are omitted. Fewer nodes than expected = a
+  visibility/existence gap, not an operation permission error.
+- **Cursors** — when a children/edge page overflows, per-root cursors land in
+  `.next`; on a TTY `query` prints a dim `more: …` footer with the flag to
+  page on.
+
+```bash
+astrale get /kernel.astrale.ai/class.Root
+astrale query /a /b --edges '{"direction":"both"}'
+astrale query / --depth 1
+astrale query /kernel.astrale.ai --depth 2 \
+  --children '{"classes":["/:kernel.astrale.ai:class.Folder"]}'
+astrale query --cypher 'MATCH (n) RETURN count(n) AS total'
 ```
 
 Admin host records are exposed by the concrete provider class, not by the
@@ -304,12 +344,13 @@ astrale call /:admin.astrale.ai:class.ScalewayVPS:list --describe -i admin
 
 Gotchas:
 
-- `query` is read-only; the kernel rejects write keywords such as `CREATE`,
-  `DELETE`, `SET`, `MERGE`, `REMOVE`, and `DETACH`.
+- `query --cypher` is read-only; the kernel rejects write keywords such as
+  `CREATE`, `DELETE`, `SET`, `MERGE`, `REMOVE`, and `DETACH`.
 - `describe` can return large properties such as serialized schemas. Pipe to
   `jq` or use command-specific flags when available.
 - `ls` has list-specific output controls such as `-q/--quiet`, `--count`, and
-  `-l/--long`; check `astrale ls --help`.
+  `-l/--long`; `--filter <kind>` is a client-side post-filter on child KIND or
+  label. For a server-side class filter use `query --depth 1 --children`.
 - For operation schemas, prefer `astrale call <path> --describe` before
   executing a call you are unsure about.
 - **`class.<Name>` materializes as a `Folder` node** (kind `Folder`, name
@@ -317,6 +358,45 @@ Gotchas:
   is no `Class` node at that tree position — the Class definition lives inside
   the Domain's serialized `schema` prop. So `--filter Class` returns zero; use
   `--filter Folder`, or descend into `class.<X>` and filter on `Function`.
+
+## Batch Writes
+
+`astrale mutate` applies a **PatchData** patch through `function.mutate` — one
+atomic, all-or-nothing write. Patch source ladder (highest wins), mirroring
+`call`: `--data <json>` > `--file <path>` > piped stdin.
+
+```json
+{
+  "nodes": {
+    "create": [{ "class": "/:d:class.X", "at": "/d/x", "props": {} }],
+    "update": [{ "class": "/:d:class.X", "path": "/d/x", "props": {} }],
+    "delete": [{ "class": "/:d:class.X", "path": "/d/x" }]
+  },
+  "edges": {
+    "create": [{ "class": "/:d:class.e", "source": "/a", "target": "/b", "props": {} }],
+    "delete": [{ "class": "/:d:class.e", "source": "/a", "target": "/b" }]
+  }
+}
+```
+
+Every arm is optional (defaults to `[]`). The result is the minted id maps:
+`createdNodes` (`at` path → node id) and `createdEdges`
+(`class|source|slug|target` tuple → edge id); `--json` emits it raw.
+
+- **`--dry`** validates locally against the kernel's `patchDataSchema` and prints
+  the normalized form — no round-trip. Catches a malformed patch before sending.
+- **Per-arm authorization** — a `create` needs `USE` on the class and `EDIT` on
+  the parent; an `update`/`delete` needs `EDIT` on the target. Any denied arm
+  fails the WHOLE patch (no partial apply).
+- **`delete`** is leaf-only per arm — to remove a subtree, include every
+  descendant in the `delete` arm.
+
+```bash
+astrale mutate --data '{"nodes":{"create":[{"class":"/:blog.acme.com:class.Author","at":"/blog.acme.com/authors/ada","props":{}}]}}'
+astrale mutate --file patch.json
+astrale mutate --file patch.json --dry
+echo '{"nodes":{"delete":[{"class":"/:d:class.X","path":"/d/x"}]}}' | astrale mutate
+```
 
 ## Output / TTY Behavior
 
@@ -330,7 +410,8 @@ Output is selected from stdout shape and flags:
   responses.
 - `--format yaml|json`: explicit structured output where supported.
 - `call --output <file>` writes binary/raw output to a file.
-- Piped stdin is read by `astrale call`; stdin on a TTY is ignored.
+- Piped stdin is read by `astrale call` and `astrale mutate`; stdin on a TTY is
+  ignored.
 - `--data` takes precedence over stdin and `key=value` params.
 - `key=value` values are auto-coerced: `true`/`false`/`null`, numeric strings
   → numbers, `{…}`/`[…]` → parsed JSON; everything else stays a string. To
@@ -338,6 +419,19 @@ Output is selected from stdout shape and flags:
 - **Big payloads go through stdin** — argv caps around 128 KB, so multi-MB
   JSON (e.g. a base64 bundle) must be piped:
   `echo "$PAYLOAD_JSON" | astrale call <path> --json`.
+
+### `get` output shapes
+
+`get` always returns the **flat node** projection `{ id, class, path, props }`
+for exactly one root — the stable shape scripts and Studio parse, with `props`
+keyed by fully-qualified keys (`<domain>:class.X.property.name`). `-l` keeps
+`__labels`/`classId`.
+
+`query` always returns the full `GraphData { nodes, edges, aliases }` envelope
+plus `.roots` and any `.next` cursors. Use it for multi-root reads, subtree
+expansion, edge expansion, cursor paging, and `--cypher`.
+`mutate` prints the minted id maps (tables on a TTY, raw
+`{ createdNodes, createdEdges }` under `--json`).
 
 Examples:
 
@@ -406,7 +500,7 @@ Use diagnostics:
 - Use `--ci` and `--no-prompt` in non-interactive automation.
 - Use `--timeout <ms>` when a kernel call is valid but slow.
 - `astrale logs -i <instance>` defaults to tailing the kernel EVENT JOURNAL
-  (the `Root.journal` syscall): SEQ/TIME/TOPIC/PRINCIPAL on a TTY, the raw
+  (the `function.journal` syscall): SEQ/TIME/TOPIC/PRINCIPAL on a TTY, the raw
   `JournalEntry[]` under `--json`. Filter with `--topic <glob>` (':'-segmented,
   `*` one segment / `**` zero-or-more, e.g. `op:*:failed`), `--principal <id>`,
   `--since`/`--until` (epoch-ms or ISO-8601), `--limit <n>` (default 200), and
@@ -424,9 +518,11 @@ Common error classes and first checks:
 |---|---|
 | Connection error | `astrale status`; verify the instance URL and network path |
 | Authentication error | `astrale auth status`, `astrale whoami`, active identity |
-| Permission denied | Does the named node actually exist (`astrale get`)? Then active identity and target operation permissions |
-| Not found | Path spelling, active instance, installed domain |
-| Validation error | `astrale call <path> --describe` |
+| Permission denied (call) | Does the named node actually exist (`astrale get`)? Then active identity and target operation permissions |
+| `get`/`ls` returns fewer nodes than expected | NOT a 403 — a graph read never denies; unreadable/missing roots+descendants are omitted by soft-root visibility. Check the node exists and you hold `READ`, not the operation grant |
+| `mutate` fails whole patch | Per-arm authz: a `create` needs `USE` on the class + `EDIT` on the parent; `update`/`delete` needs `EDIT` on the target. `--dry` first to rule out a malformed patch |
+| Not found | `get` errors NOT_FOUND only when NO root resolves; else path spelling, active instance, installed domain |
+| Validation error | `astrale call <path> --describe`; for a patch, `astrale mutate --dry` |
 | Timeout | Target availability and `--timeout <ms>` |
 
 If a command fails only in a script, compare TTY vs non-TTY behavior and pass

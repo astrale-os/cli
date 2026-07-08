@@ -6,17 +6,22 @@ Read when optimizing graph access, reducing kernel round trips, choosing indexes
 
 ## Walking children one by one
 
-Fetching a folder's children and then making a separate call per child to read each one turns a single
-logical read into dozens of round trips. `listChildren` already returns the child nodes with their data,
-so use what it gives you instead of re-fetching each by path. When you find yourself calling `get`
-inside a loop over children, you have an N-plus-one.
+Fetching a folder's children and then querying each child again to read it turns a single logical read
+into dozens of round trips. One `graph.query(...).children()` already returns the child nodes with their
+data, so read them off `result.graph` instead of re-querying each by path. When you find yourself issuing
+a `graph.query((q) => q.from(child.path))` inside a loop over children, you have an N-plus-one — and
+`.descend(depth)` collapses a whole subtree into ONE `function.get`.
 
 ```ts
-// NO N+1: one listChildren, then a get per child
-const kids = await kernel.call('/contacts::listChildren', {})
-for (const k of kids) await kernel.call(`${k.path}::get`, {})
-// OK listChildren already returned each child's props; just read them
-const loaded = await kernel.call('/contacts::listChildren', {})
+// NO N+1: a children query, then a per-child query re-read
+const listed = await ctx.graph.query((q) => q.from('/contacts').children())
+const kids = listed.graph.nodes.filter((n) => !listed.roots.includes(n))
+for (const k of kids) await ctx.graph.query((q) => q.from(k.path))
+// OK the children query already returned each child's props; just read them
+const r = await ctx.graph.query((q) => q.from('/contacts').children())
+const loaded = r.graph.nodes.filter((n) => !r.roots.includes(n))
+// deeper: one function.get for the subtree instead of a level-by-level walk
+const subtree = await ctx.graph.query((q) => q.from('/contacts').descend(3))
 ```
 
 ## Index
@@ -38,26 +43,31 @@ const Contact = nodeClass({
 
 ## How to read and find nodes?
 
-You read one node by calling `get` on its path, and the contents of a folder by calling `listChildren`
-on it, both syscalls the kernel checks READ on. To find nodes by a relationship, follow edges from a
-node you already hold; to find them by arbitrary criteria, run a query. Reach for the simplest read that
-answers the question before reaching for a full graph query.
+You read one node by querying its path and taking `roots[0] ?? null`, and the contents of a folder by
+adding `.children()` and excluding the seed — both go through `function.get`, which the kernel gates by
+per-node READ visibility. To find nodes by a relationship, gather edges with `.links(edge?)`; to find
+them by arbitrary criteria, add filter steps. Reach for the simplest query that answers the question.
 
 ```ts
-await kernel.call('/contacts/ada::get', {})
-await kernel.call('/contacts::listChildren', {})
+const ada = (await ctx.graph.query((q) => q.from('/contacts/ada'))).roots[0] ?? null
+const r = await ctx.graph.query((q) => q.from('/contacts').children())
+const children = r.graph.nodes.filter((n) => !r.roots.includes(n))
 ```
 
 ## How to list a node's children?
 
-You list what sits directly beneath a node by calling `listChildren` on it, the way you would read a
-folder's contents. It returns the nodes one level down, including their data, so narrow them to the
-class you care about on the result instead of fetching each child again. Walk deeper by listing a child
-in turn; the tree is traversed one level at a time.
+You list what sits directly beneath a node with `graph.query((q) => q.from(path).children())`, the way
+you would read a folder's contents. The result holds the nodes one level down WITH their data (exclude
+the seed via `!result.roots.includes(n)`), so narrow them to the class you care about on the result
+instead of fetching each child again — or push the filter server-side with
+`.children({ classes: [...] })`. Walk deeper with `.descend(depth)` in one call rather than one level at
+a time.
 
 ```ts
-const kids = await kernel.call('/contacts::listChildren', {})
-const contacts = kids.filter((n) => n.class === D.Contact.path.class.raw)
+const r = await ctx.graph.query((q) => q.from('/contacts').children())
+const contacts = r.graph.nodes.filter(
+  (n) => !r.roots.includes(n) && n.class.raw === D.Contact.path.class.raw,
+)
 ```
 
 ## How to run a complex graph query?
@@ -68,7 +78,7 @@ patterns across nodes and edges in one call. Use it sparingly: it steps outside 
 simple reads where they suffice.
 
 ```ts
-await kernel.call(K.Root.query.path.method.raw, {
+await kernel.call(K.$.f('query').path.domain.raw, {
   cypher: 'MATCH (c)-[:works_on]->(p) WHERE p.name = $name RETURN c',
 })
 ```
@@ -81,8 +91,8 @@ id never does. Address by id when you mean *this exact node forever*, and by pat
 *whatever lives here now*.
 
 ```ts
-await kernel.call('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20::get', {}) // by id  -  this exact node, forever
-await kernel.call('/contacts/ada::get', {})                          // by path  -  whatever lives here now
+await ctx.graph.query((q) => q.from('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20')) // by id  -  this exact node, forever
+await ctx.graph.query((q) => q.from('/contacts/ada'))                          // by path  -  whatever lives here now
 ```
 
 ## A mutable value as the key

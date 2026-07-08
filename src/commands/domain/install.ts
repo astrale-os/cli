@@ -26,7 +26,7 @@ type DomainInstallResult = {
   error?: string | null
 }
 
-/** Mirrors the kernel's `Root.installDomain` return. */
+/** Mirrors the kernel's `Domain.install` return. */
 type DirectInstallResult = { domainId: string; origin: string }
 
 type InstallOpts = KernelCommandOpts &
@@ -50,7 +50,7 @@ Behavior:
   interactively. The target instance is the active one, or -i <slug>; it must be
   admin-managed (otherwise the command fails loudly and points you at --direct).
 
-  --direct: installs a url STRAIGHT onto the instance kernel (Root.installDomain),
+  --direct: installs a url STRAIGHT onto the instance kernel (Domain.install),
   bypassing the admin/catalog. Works on any instance you can authenticate to
   (managed, bookmarked, or local), using your own authority. This is the only
   mode that runs the identity-override consent gate: when the domain's declared
@@ -260,7 +260,7 @@ async function activeSlug(): Promise<string | undefined> {
 // ── Direct path (--direct) ────────────────────────────────────────────────────
 
 /**
- * Install a url straight onto the instance kernel (`Root.installDomain`),
+ * Install a url straight onto the instance kernel (`Domain.install`),
  * bypassing the admin/catalog — the classic path, with the §5 identity-override
  * consent gate. Works on any instance the caller can authenticate to.
  */
@@ -290,7 +290,7 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
     opts,
     label: `Installing domain from ${url}`,
     fn: async (ctx) =>
-      (await ctx.client.call(K.Root.installDomain.path.method.raw, {
+      (await ctx.client.call(K.Domain.install.path.method.raw, {
         url,
         ...(opts.token ? { token: opts.token } : {}),
       })) as DirectInstallResult,

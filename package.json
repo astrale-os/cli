@@ -1,6 +1,6 @@
 {
   "name": "@astrale-os/cli",
-  "version": "0.4.0-alpha.13",
+  "version": "0.5.0-alpha.0",
   "description": "Astrale CLI — connect to existing Astrale kernels",
   "keywords": [
     "astrale",
@@ -49,8 +49,8 @@
     "test:watch": "bun test --watch src"
   },
   "dependencies": {
-    "@astrale-os/kernel-client": ">=0.2.0 <1.0.0",
-    "@astrale-os/kernel-core": ">=0.4.1 <1.0.0",
+    "@astrale-os/kernel-client": ">=0.3.0 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.6.2 <1.0.0",
     "@inquirer/prompts": "^8.5.2",
     "chalk": "^5.6.2",
     "chokidar": "^4.0.3",

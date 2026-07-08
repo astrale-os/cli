@@ -10,7 +10,7 @@ export async function loadPrivateJwk(keyPath: string): Promise<Record<string, un
 }
 
 /**
- * True when the kernel rejected an `installDomain` call because the
+ * True when the kernel rejected a `Domain.install` call because the
  * identity binding's signature failed to verify — i.e. the private/public
  * JWK halves don't match. Callers re-throw with a regenerate-the-keypair
  * hint instead of leaking the raw `AuthenticationError`.

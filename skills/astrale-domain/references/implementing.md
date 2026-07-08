@@ -52,8 +52,8 @@ id never does. Address by id when you mean *this exact node forever*, and by pat
 *whatever lives here now*.
 
 ```ts
-await kernel.call('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20::get', {}) // by id  -  this exact node, forever
-await kernel.call('/contacts/ada::get', {})                          // by path  -  whatever lives here now
+await ctx.graph.query((q) => q.from('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20')) // by id  -  this exact node, forever
+await ctx.graph.query((q) => q.from('/contacts/ada'))                          // by path  -  whatever lives here now
 ```
 
 ## IdPath
@@ -149,30 +149,63 @@ interfaces auto-inherit `Edge`, which inherits `Sluggable`, `Timestamped`, and `
 is used where schema meta-nodes carry an SVG icon. Use these inherited fields instead of local
 duplicates.
 
+## The handler graph surface (ctx.graph)
+
+Every handler gets `ctx.graph`, a small typed API over the kernel's two graph
+doors — `function.get` (reads) and `function.mutate` (writes). There is no
+per-node graph syscall anymore: `createNode`, `get`, `update`, `deleteNode`,
+`link`, `unlink`, `getLinks`, `getTree`, `listChildren`, `push` are all gone.
+Reach for the sugar, not raw `kernel.call`, for graph work:
+
+- reads: `graph.query((q) => q.from(path)…)` → a `QueryResult`. The read presets
+  (`node`/`children`/`tree`/`links`) are GONE; every read is a query plus a
+  `result` accessor: the seed node is `result.roots[0] ?? null`; its children are
+  `result.graph.nodes.filter((n) => !result.roots.includes(n))` after a
+  `.children()`; a subtree is `.descend(depth)`; incident edges are
+  `result.graph.edges.all` after a `.links(edge?)`
+- writes: `graph.create(cls, at, props?)` → new id, `graph.update(cls, path, props)`,
+  `graph.remove(cls, path)`, `graph.createEdge(e)` → new id, `graph.removeEdge(e)`
+- raw doors: `graph.get(input)`, `graph.mutate(patch)` (accepts a `Patch` builder);
+  `graph.nextInput(input, result)` folds a page's cursors for the next call.
+
+`self.node()` still works — it now reads through `function.get` under the hood
+(same memoization/reload). `pushPatch` is REMOVED; build a `Patch` and hand it to
+`graph.mutate` when you need a multi-write batch. On the frontend the identical
+API is `shell.kernel.graph`.
+
 ## How to create a node?
 
-You create a node with the `createNode` syscall, giving it a class, a path to place it at, and its
-initial property values. The kernel checks the props against the class and places the node in the tree
-under the path's parent, and the node exists from then on. Creating a node is how something new comes to
-exist.
+You create a node with `ctx.graph.create`, giving it a class, a path to place it
+at, and its initial property values. The kernel checks the props against the
+class and places the node in the tree under the path's parent, and the node
+exists from then on; the call returns the minted node id. Creating a node is how
+something new comes to exist.
 
 ```ts
-await kernel.call(K.Node.createNode.path.method.raw, {
-  class: D.Contact.path.class.raw,
-  path: '/contacts/ada',
-  props: { [D.Contact.email.key]: 'ada@example.dev' },
+const id = await ctx.graph.create(
+  D.Contact.path.class.raw,
+  '/contacts/ada',
+  { [D.Contact.email.key]: 'ada@example.dev' },
+)
+// batch form — many writes, one atomic function.mutate:
+await ctx.graph.mutate({
+  nodes: { create: [{ class: D.Contact.path.class.raw, at: '/contacts/ada', props: {} }] },
 })
 ```
 
 ## How to read and update a node?
 
-You read a node with `get` and change it with `update`, both syscalls addressed on the node itself.
-`get` returns its current properties; `update` writes new values, checked against the node's class just
-as at creation. Each is an invocation the kernel authorizes before it touches the graph.
+You read a node by querying its path and taking the seed, and change it with
+`graph.update`. A single-node read is `graph.query((q) => q.from(path))`; the
+result's `roots[0] ?? null` is the node (its class, path, and current properties)
+or `null` when it is missing or not visible to you. `graph.update` writes new
+values, checked against the node's class just as at creation. Each is authorized
+before it touches the graph — a read needs `READ`, an update needs `EDIT` on the
+target.
 
 ```ts
-await kernel.call('/contacts/ada::get', {})                                    // read props
-await kernel.call('/contacts/ada::update', { props: { [D.Contact.title.key]: 'Lead' } }) // write props
+const ada = (await ctx.graph.query((q) => q.from('/contacts/ada'))).roots[0] ?? null // read props
+await ctx.graph.update(D.Contact.path.class.raw, '/contacts/ada', { [D.Contact.title.key]: 'Lead' }) // write props
 ```
 
 ## How to use another Domain?
@@ -246,15 +279,20 @@ static slash form.
 
 ## Walking children one by one
 
-Fetching a folder's children and then making a separate call per child to read each one turns a single
-logical read into dozens of round trips. `listChildren` already returns the child nodes with their data,
-so use what it gives you instead of re-fetching each by path. When you find yourself calling `get`
-inside a loop over children, you have an N-plus-one.
+Fetching a folder's children and then querying each child again to read it turns a single logical read
+into dozens of round trips. One `graph.query(...).children()` already returns the child nodes with their
+data in ONE `function.get`, so read them off `result.graph` instead of re-querying each by path. When you
+find yourself issuing a `graph.query((q) => q.from(child.path))` inside a loop over children, you have an
+N-plus-one. For a whole subtree, `.descend(depth)` fetches many levels in one `function.get`.
 
 ```ts
-// NO N+1: one listChildren, then a get per child
-const kids = await kernel.call('/contacts::listChildren', {})
-for (const k of kids) await kernel.call(`${k.path}::get`, {})
-// OK listChildren already returned each child's props; just read them
-const loaded = await kernel.call('/contacts::listChildren', {})
+// NO N+1: a children query, then a per-child query re-read
+const listed = await ctx.graph.query((q) => q.from('/contacts').children())
+const kids = listed.graph.nodes.filter((n) => !listed.roots.includes(n))
+for (const k of kids) await ctx.graph.query((q) => q.from(k.path))
+// OK the children query already returned each child's props; just read them
+const r = await ctx.graph.query((q) => q.from('/contacts').children())
+const loaded = r.graph.nodes.filter((n) => !r.roots.includes(n))
+// deeper: one function.get for the subtree instead of a level-by-level walk
+const subtree = await ctx.graph.query((q) => q.from('/contacts').descend(3))
 ```

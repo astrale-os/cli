@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@astrale-os/kernel-client':
-        specifier: '>=0.2.0 <1.0.0'
-        version: 0.2.3(typescript@6.0.3)
+        specifier: '>=0.3.0 <1.0.0'
+        version: 0.3.0(typescript@6.0.3)
       '@astrale-os/kernel-core':
-        specifier: '>=0.4.1 <1.0.0'
-        version: 0.6.1(typescript@6.0.3)
+        specifier: '>=0.6.2 <1.0.0'
+        version: 0.7.0(typescript@6.0.3)
       '@inquirer/prompts':
         specifier: ^8.5.2
         version: 8.5.2(@types/node@22.20.0)
@@ -81,22 +81,30 @@ importers:
 
 packages:
 
-  '@astrale-os/kernel-api@0.4.6':
-    resolution: {integrity: sha512-6OAiJbEPZRJM0QbjrVAaPWgllO5pj0FjlzTfTeS0zDhenUgJUtsSa9qygRv762A+uAh7ILJLttFV5tQjAQ16cQ==}
+  '@astrale-os/kernel-api@0.4.8':
+    resolution: {integrity: sha512-VeKnovOiKiCf7qSoXgSJJEzpAGnWo1ZlfYDwQmfkrnFTe3+u/1Y4bat3nznsLjKe2A2wUKEe98cFRKwxTV3f/w==}
     peerDependencies:
       msgpackr: ^1.11.0
     peerDependenciesMeta:
       msgpackr:
         optional: true
 
-  '@astrale-os/kernel-client@0.2.3':
-    resolution: {integrity: sha512-M5nJU/4P5R7mN1/vYSQVtIZlYxwSnW63St5umHbRDMRKoxmE40NbERgy/3b9utoLLpWUc1bxdSntIZBQgoya4A==}
+  '@astrale-os/kernel-client@0.3.0':
+    resolution: {integrity: sha512-GAKMmDCwZH6oEfl6+eKfW68WLES69TfUq22J/84kCCq16+A8WSk9obPwPFKny+Et+mW0OfClIxx7ajMmhIKueQ==}
 
-  '@astrale-os/kernel-core@0.6.1':
-    resolution: {integrity: sha512-wqLbP1U7vqkOvlxxbZmeSCt8qbluqmrKtAiOEuC8JUq2Dpcu4/5Tsvh3djCHRgbkSmMbjSfQbrayfa07P8dh7A==}
+  '@astrale-os/kernel-core@0.6.2':
+    resolution: {integrity: sha512-pkR5yRfccFWyBoxj12s1dExRBGkBh0UGN10XYK7XQi/3XzBuFmyxSMRwfOA/QPGvHOSoNhdS2kVfWO1owBT2sA==}
+
+  '@astrale-os/kernel-core@0.7.0':
+    resolution: {integrity: sha512-unRjG/ZyG+yIfhdOAdK/YrKxlxPBzo2JkI/Qe3FaO2REEAsldUmbHRsI+UKOl6VKlzxhNzf5n6tmJslHlfGsqA==}
 
   '@astrale-os/kernel-dsl@0.1.2':
     resolution: {integrity: sha512-WIWZlvrlI/xYZctCoM7CeB0QeUgxd9eTT5N7WPMi0pINuNmG861tCFmb/aP2fQP2y5180wTDESD7Xm432bhHHQ==}
+    peerDependencies:
+      typescript: ~6.0.1-rc
+
+  '@astrale-os/kernel-dsl@0.1.3':
+    resolution: {integrity: sha512-3O2/hUjwUDwqRIKZNUuE5GgdVFuEdYbgruHcItkIf/OW/5uhTLWugXHKgZ5kxxQZz0x97IE31MXiUEofVuJ6Fg==}
     peerDependencies:
       typescript: ~6.0.1-rc
 
@@ -1196,18 +1204,18 @@ packages:
 
 snapshots:
 
-  '@astrale-os/kernel-api@0.4.6(typescript@6.0.3)':
+  '@astrale-os/kernel-api@0.4.8(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-core': 0.6.1(typescript@6.0.3)
+      '@astrale-os/kernel-core': 0.7.0(typescript@6.0.3)
       jose: 6.2.3
       zod: 4.4.3
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-client@0.2.3(typescript@6.0.3)':
+  '@astrale-os/kernel-client@0.3.0(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-api': 0.4.6(typescript@6.0.3)
-      '@astrale-os/kernel-core': 0.6.1(typescript@6.0.3)
+      '@astrale-os/kernel-api': 0.4.8(typescript@6.0.3)
+      '@astrale-os/kernel-core': 0.6.2(typescript@6.0.3)
       '@astrale-os/kernel-dsl': 0.1.2(typescript@6.0.3)
       '@tanstack/pacer': 0.20.1
       dequal: 2.0.3
@@ -1215,7 +1223,7 @@ snapshots:
       - msgpackr
       - typescript
 
-  '@astrale-os/kernel-core@0.6.1(typescript@6.0.3)':
+  '@astrale-os/kernel-core@0.6.2(typescript@6.0.3)':
     dependencies:
       '@astrale-os/kernel-dsl': 0.1.2(typescript@6.0.3)
       '@types/json-schema': 7.0.15
@@ -1225,7 +1233,22 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
+  '@astrale-os/kernel-core@0.7.0(typescript@6.0.3)':
+    dependencies:
+      '@astrale-os/kernel-dsl': 0.1.3(typescript@6.0.3)
+      '@types/json-schema': 7.0.15
+      dequal: 2.0.3
+      jose: 6.2.3
+      zod: 4.4.3
+    transitivePeerDependencies:
+      - typescript
+
   '@astrale-os/kernel-dsl@0.1.2(typescript@6.0.3)':
+    dependencies:
+      typescript: 6.0.3
+      zod: 4.4.3
+
+  '@astrale-os/kernel-dsl@0.1.3(typescript@6.0.3)':
     dependencies:
       typescript: 6.0.3
       zod: 4.4.3

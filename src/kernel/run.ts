@@ -48,16 +48,3 @@ export async function runKernelCommand<T>(run: RunOpts<T>): Promise<void> {
     process.exit(1)
   }
 }
-
-/**
- * Normalize a `listChildren` response into an array of items.
- * The kernel may return a bare array or `{ items: [...] }`.
- */
-export function extractItems<T = Record<string, unknown>>(result: unknown): T[] {
-  if (Array.isArray(result)) return result as T[]
-  if (result && typeof result === 'object') {
-    const items = (result as { items?: unknown }).items
-    if (Array.isArray(items)) return items as T[]
-  }
-  return []
-}

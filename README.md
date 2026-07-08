@@ -51,8 +51,8 @@ astrale instance create my-app
 # 3. Check local CLI context.
 astrale status
 
-# 4. Call a function on the active instance.
-astrale call /:kernel.astrale.ai:interface.Identity:whoami
+# 4. Read your identity node on the active instance.
+astrale get @self --json
 ```
 
 If you already have a kernel URL, create a local bookmark:

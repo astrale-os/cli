@@ -26,9 +26,9 @@ export const Catalog = defineCore(schema, {
   nodes: { 'gpt-5': node(AIModel, { modelId: 'gpt-5' }) },
 })
 
-// Seed  -  imperative, runs once after install (as the system identity)
-export async function seed(kernel) {
-  await kernel.call(K.Node.createNode.path.method.raw, { class: FOLDER_CLASS, path: '/inbox', props: {} })
+// Seed  -  imperative postInstall function, runs once after install (as the system identity)
+export async function seed({ graph }) {
+  await graph.create(FOLDER_CLASS, '/inbox', {})
 }
 ```
 
