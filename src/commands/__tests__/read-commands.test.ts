@@ -23,7 +23,7 @@ let originalExit: typeof process.exit
 let queryAsts: unknown[] = []
 let getPaths: string[] = []
 let queryResult: { wire: Wire } = { wire: emptyWire() }
-let getResult: { node: unknown; wire: Wire } = { node: null, wire: emptyWire() }
+let getResult: unknown = null
 let clientCallResult: unknown = { rows: [] }
 
 const clientCallMock = mock(async () => clientCallResult)
@@ -64,7 +64,7 @@ beforeEach(() => {
   queryAsts = []
   getPaths = []
   queryResult = { wire: emptyWire() }
-  getResult = { node: null, wire: emptyWire() }
+  getResult = null
   clientCallResult = { rows: [] }
   clientCallMock.mockClear()
   queryMock.mockClear()
@@ -176,7 +176,7 @@ describe('get command', () => {
       __labels: ['Node', 'Widget'],
       classId: 'class-1',
     }
-    getResult = { node: { id: 'n1' }, wire: { nodes: [row], edges: [], roots: ['n1'] } }
+    getResult = row
 
     await getCommand('/demo/widget', { json: true })
 
@@ -191,7 +191,7 @@ describe('get command', () => {
 
   test('errors with exit 1 when no node resolves', async () => {
     const { getCommand } = await import('../get')
-    getResult = { node: null, wire: emptyWire() }
+    getResult = null
 
     await expect(getCommand('/missing', { json: true })).rejects.toEqual(new ExitError(1))
 

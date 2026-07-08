@@ -32,15 +32,14 @@ export async function getCommand(pathArg: string, opts: GetOpts): Promise<void> 
     opts,
     label: 'Node ' + path,
     fn: async (ctx) => {
-      const result = await withSelfHint(() => bindGraph(ctx).query((q) => q.from(path)), meta)
-      if (result.wire.nodes.length === 0) {
+      const node = await withSelfHint(() => bindGraph(ctx).get(path), meta)
+      if (node === null) {
         log.error('node "' + path + '" not found or not visible')
         process.exit(1)
       }
-      return result
+      return node
     },
-    format: (result, fmtOpts) => {
-      const node = result.wire.nodes[0]
+    format: (node, fmtOpts) => {
       output(opts.long ? node : cleanNode(node), fmtOpts)
     },
   })
