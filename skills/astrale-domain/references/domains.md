@@ -18,11 +18,11 @@ Prefer reuse when an existing domain already owns the concept, lifecycle, or aut
 
 Use for the built-in graph model, base interfaces, permissions, identities, views, syscalls, and common classes such as containers and nodes. Import `KernelSchema` or compiled kernel accessors instead of redeclaring generic graph vocabulary. Do not add it as a normal app dependency; it is the substrate every instance already runs.
 
-### `workspace.astrale.ai`
+### `shell.astrale.ai`
 
 Use for user workspaces, homes, groups, app installation surfaces, ownership, and user-facing organization of installed domains. Reach for it when your objects should be owned by users/groups or appear in a workspace shell.
 
-package: `@astrale-domains/workspace-schema`
+package: `@astrale-domains/shell-schema`
 
 ### `ai-gateway.astrale.ai`
 

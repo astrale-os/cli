@@ -192,7 +192,7 @@ Examples:
   $ astrale instance bookmark staging --url https://kernel.example.com
   $ astrale instance create my-app
   $ astrale instance status staging
-  $ astrale token --audience workspace.astrale.ai --ttl 3600
+  $ astrale token --audience shell.astrale.ai --ttl 3600
   $ astrale query / --depth 1
   $ astrale query --cypher 'MATCH (n) RETURN n LIMIT 5'
 `,
