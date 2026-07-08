@@ -6,7 +6,7 @@
     "astrale",
     "cli"
   ],
-  "license": "MIT",
+  "license": "Apache-2.0",
   "author": "Astrale",
   "repository": {
     "type": "git",
@@ -23,7 +23,8 @@
     "studio/server",
     "studio/shared",
     "studio/client/dist",
-    "studio/package.json"
+    "studio/package.json",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "type": "module",
   "exports": {
