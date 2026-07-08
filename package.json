@@ -29,7 +29,8 @@
   "type": "module",
   "exports": {
     "./keys": "./src/lib/keys.ts",
-    "./paths": "./src/lib/paths.ts"
+    "./paths": "./src/lib/paths.ts",
+    "./connect-core": "./src/connect-core.ts"
   },
   "publishConfig": {
     "access": "public",
