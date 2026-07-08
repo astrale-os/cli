@@ -23,7 +23,8 @@
     "studio/server",
     "studio/shared",
     "studio/client/dist",
-    "studio/package.json"
+    "studio/package.json",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "type": "module",
   "exports": {
