@@ -23,7 +23,7 @@ describe('identity-override detection', () => {
 
   test('origin differing from the serving host is an override', () => {
     // The spec §5 attack shape: a fork on workers.dev claiming a well-known origin.
-    expect(isIdentityOverride('workspace.astrale.ai', 'crm.workers.dev')).toBe(true)
+    expect(isIdentityOverride('shell.astrale.ai', 'crm.workers.dev')).toBe(true)
     // The scaffold default also aliases until the placeholder origin is edited.
     expect(isIdentityOverride('hldom.example.dev', 'hldom-example-dev.acme.workers.dev')).toBe(true)
   })

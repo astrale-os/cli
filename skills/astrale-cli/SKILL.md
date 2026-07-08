@@ -275,8 +275,8 @@ authority.
 Common flow:
 
 ```bash
-export TOKEN=$(astrale token --audience workspace.astrale.ai --raw)
-astrale call /:workspace.astrale.ai:class.App:available \
+export TOKEN=$(astrale token --audience shell.astrale.ai --raw)
+astrale call /:shell.astrale.ai:class.Application:available \
   --creds "$TOKEN" \
   --json
 ```
@@ -437,7 +437,7 @@ Examples:
 
 ```bash
 astrale ls / --json | jq .
-TOKEN=$(astrale token --audience workspace.astrale.ai --raw)
+TOKEN=$(astrale token --audience shell.astrale.ai --raw)
 astrale call /:d:class.Asset:render id=123 --output asset.png
 astrale call /:d:class.X:m -d '{"name":"alice"}'
 ```
