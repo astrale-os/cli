@@ -29,6 +29,27 @@ import { log } from './log'
  * behavior; presentation (the device URL is logged here; success lines are the
  * caller's) does not.
  */
+/**
+ * Interactive device-flow progress. Emitted once, when the device authorization
+ * has been requested and the user must approve it in a browser. The caller
+ * decides how to present it (the CLI logs it; the desktop opens the URL and
+ * pushes it to the renderer). Structurally identical to connect-host's wire
+ * `AuthVerificationEvent`, but declared here so the CLI carries no dependency on
+ * connect-host (which depends on the CLI, not the reverse).
+ */
+export type DeviceVerification = {
+  /** The base verification URL (fallback to the complete one when absent). */
+  verificationUri: string
+  /** Pre-filled verification URL (opens straight to the approval page). */
+  verificationUriComplete?: string
+  /** The short user code to confirm — a reassurance fallback when the URL is pre-filled. */
+  userCode?: string
+  /** Seconds until the device code expires. */
+  expiresIn?: number
+  /** Human-readable instruction from the IdP. */
+  message?: string
+}
+
 export type LoginFlowOpts = {
   idp?: string
   name?: string
@@ -42,6 +63,12 @@ export type LoginFlowOpts = {
   codeVerifier?: string
   /** Switch the default identity to the one we just logged in (default true). */
   use?: boolean
+  /**
+   * When set, receives the device-flow verification details and REPLACES the
+   * default `log.info` presentation (a headless/GUI caller drives the UI). The
+   * `auth login` command passes nothing, so its terminal output is unchanged.
+   */
+  onVerification?: (e: DeviceVerification) => void
 }
 
 export type LoginResult = {
@@ -148,10 +175,20 @@ async function obtainToken(
     scope,
     audience: opts.audience,
   })
-  if (device.verification_uri_complete) log.info(`Open: ${device.verification_uri_complete}`)
-  else if (device.verification_uri) log.info(`Open: ${device.verification_uri}`)
-  if (device.user_code) log.info(`Code: ${device.user_code}`)
-  if (device.message) log.dim(`  ${device.message}`)
+  if (opts.onVerification) {
+    opts.onVerification({
+      verificationUri: device.verification_uri ?? device.verification_uri_complete ?? '',
+      verificationUriComplete: device.verification_uri_complete,
+      userCode: device.user_code,
+      expiresIn: device.expires_in,
+      message: device.message,
+    })
+  } else {
+    if (device.verification_uri_complete) log.info(`Open: ${device.verification_uri_complete}`)
+    else if (device.verification_uri) log.info(`Open: ${device.verification_uri}`)
+    if (device.user_code) log.info(`Code: ${device.user_code}`)
+    if (device.message) log.dim(`  ${device.message}`)
+  }
 
   return pollDeviceToken({
     idp,
