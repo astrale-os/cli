@@ -12,6 +12,7 @@ const config: AstraleConfig = {
     url: 'https://admin.eu.astrale.ai/api',
     issuer: 'https://admin.eu.astrale.ai/api',
   },
+  telemetry: { enabled: true },
 }
 
 describe('resolveKeyIdentityAuthOptions', () => {
