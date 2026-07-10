@@ -476,6 +476,47 @@ agent-browser --profile <dir> eval '<js>'
 The GUI session uses an httpOnly cookie. There is no token-injection shortcut;
 the persistent browser profile is the session boundary.
 
+## Opening A Single View
+
+`astrale view` renders ONE view in an emulated host shell — no GUI, no
+cookies, no sign-in. It resolves the view on the kernel, hands it a token
+minted from the CLI identity (`--as`/`--creds`/`-i` work as on any kernel
+command), and opens the page headless in agent-browser; driving stays
+agent-browser's job. Prefer it over `astrale browser` whenever the goal is
+one view, not the whole OS surface.
+
+```bash
+astrale view /crm/customers/ada --list         # what views does this node offer?
+astrale view /crm/customers/ada --snapshot     # open + print what it shows
+astrale view /:crm.acme.dev:view.dashboard --target /crm/customers/ada
+astrale view --view-url http://localhost:8787 --handshake shell --target /a/b
+astrale view --sessions ; astrale view --close v-3e350d
+```
+
+- The positional is a ViewPath (`/:origin:view.slug`) or a target node path;
+  when a target resolves several views, pick with `--view <slug>` (`--list`'s
+  `origin` field says whether a view is the node's own (`self`) or offered by
+  its class (`class`)).
+- `--snapshot` waits for the mount and prints the page content in one go.
+  Only when snapshotting BY HAND
+  (`agent-browser --profile ~/.astrale/browser/_view snapshot`) snapshot
+  TWICE — the first request only builds the iframe's accessibility tree.
+- `--browser` opens the system browser (authenticated, human-viewable);
+  `--no-open` starts the session and prints the URL only.
+- Sessions self-expire after ~30 min idle. Close YOUR session by id
+  (`--close <id>` — the id is in the open output); `--close --all` also kills
+  sessions other agents may have open.
+- A kernel is always required (any instance, or the local docker kernel).
+- Frontend iteration against live data: start the vite HMR dev server in the
+  domain's `client/` (check `client/package.json` for the script — often
+  `dev:hmr`, NOT `dev`, and note the port vite prints) and open
+  `astrale view <target> --view-url http://127.0.0.1:<port>` — source edits
+  then HMR straight into the open session, no rebuild. The `astrale-domain
+  dev` worker (:8787) also serves views but builds the client ONCE: after an
+  edit, run `vite build` in `client/`, then re-open the page.
+- Refresh a session page with `agent-browser open <pageUrl>` — an eval'd
+  `location.reload()` loses the page.
+
 ## Debugging And Common Errors
 
 Start with local context:

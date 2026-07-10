@@ -41,6 +41,27 @@ await chmod(OUT, 0o755)
 
 console.log(`built ${OUT}`)
 
+// Build the `astrale view` viewer page (package.json `files`: viewer/dist) —
+// the static page the view-session server serves. It bundles @astrale-os/shell
+// (dev dependency), so the published CLI needs no registry access at runtime.
+{
+  const viewerDir = new URL('../viewer', import.meta.url).pathname
+  const r = await Bun.build({
+    entrypoints: [`${viewerDir}/main.ts`],
+    outdir: `${viewerDir}/dist`,
+    target: 'browser',
+    format: 'esm',
+    minify: true,
+  })
+  if (!r.success) {
+    for (const message of r.logs) console.error(message)
+    console.error('viewer build FAILED')
+    process.exit(1)
+  }
+  await Bun.write(`${viewerDir}/dist/index.html`, Bun.file(`${viewerDir}/index.html`))
+  console.log('built viewer/dist')
+}
+
 // Also build the Domain Studio client so the prebuilt SPA ships in the package
 // (package.json `files`: studio/client/dist) — that's what `astrale studio` serves
 // on a published/global install (prod-static). Best-effort: NEVER fail the CLI

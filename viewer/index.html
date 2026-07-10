@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>astrale view</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        font:
+          12px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        background: #101014;
+        color: #c8c8d0;
+      }
+      header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 6px 10px;
+        border-bottom: 1px solid #26262e;
+        flex: none;
+      }
+      #status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #8a8a94;
+        flex: none;
+      }
+      #status-dot[data-state='connected'] {
+        background: #3fb950;
+      }
+      #status-dot[data-state='plain'] {
+        background: #d29922;
+      }
+      #status-dot[data-state='failed'] {
+        background: #f85149;
+      }
+      #view-label {
+        font-weight: 600;
+        color: #e8e8f0;
+      }
+      .dim {
+        color: #7a7a86;
+      }
+      #error {
+        display: none;
+        padding: 10px;
+        color: #f85149;
+        white-space: pre-wrap;
+        flex: none;
+      }
+      #frame {
+        flex: 1;
+        position: relative;
+      }
+      #frame iframe {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span id="status-dot" data-state="waiting"></span>
+      <span id="view-label"></span>
+      <span id="target-label" class="dim"></span>
+      <span id="identity-label" class="dim" style="margin-left: auto"></span>
+    </header>
+    <div id="error"></div>
+    <div id="frame"></div>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

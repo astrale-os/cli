@@ -46,8 +46,7 @@ export async function queryCommand(paths: string[], opts: QueryOpts): Promise<vo
     label: mode.kind === 'roots' ? 'Query ' + mode.roots.join(' ') : 'Query',
     fn: async (ctx) => {
       const read = () => bindGraph(ctx).query(mode.kind === 'roots' ? mode.query.ast : mode.ast)
-      const result =
-        mode.kind === 'roots' ? await withSelfHint(read, mode.meta) : await read()
+      const result = mode.kind === 'roots' ? await withSelfHint(read, mode.meta) : await read()
       return result.wire
     },
     format: (result, fmtOpts) => {
@@ -62,7 +61,8 @@ async function parseMode(paths: string[], opts: QueryOpts): Promise<QueryMode> {
   const hasRoots = rootsInput.length > 0
   const hasAst = opts.ast !== undefined
   const hasCypher = opts.cypher !== undefined
-  const hasSelectors = opts.depth !== undefined || opts.children !== undefined || opts.edges !== undefined
+  const hasSelectors =
+    opts.depth !== undefined || opts.children !== undefined || opts.edges !== undefined
 
   if (hasCypher) {
     if (hasAst || hasRoots || hasSelectors) {
@@ -215,7 +215,9 @@ function parseSelector<T>(flag: string, raw: string, schema: SelectorSchema): T 
     throw new Error(flag + ' must be JSON: ' + raw)
   }
   if (parsed === null || typeof parsed !== 'object') {
-    throw new Error(flag + ' must be a JSON selector object' + (flag === '--edges' ? ' or array' : ''))
+    throw new Error(
+      flag + ' must be a JSON selector object' + (flag === '--edges' ? ' or array' : ''),
+    )
   }
   const check = schema.safeParse(parsed)
   if (!check.success) {
@@ -232,11 +234,21 @@ function printCursorFooter(next: NonNullable<GetResultWire['next']>): void {
   if (entries.length === 1) {
     const cursors = entries[0]?.[1]
     if (cursors?.children) {
-      process.stdout.write(chalk.dim('  more: --children \'{"cursor":"' + cursors.children + '"}\'\n'))
+      process.stdout.write(
+        chalk.dim('  more: --children \'{"cursor":"' + cursors.children + '"}\'\n'),
+      )
     }
     for (const [alias, cursor] of Object.entries(cursors?.edges ?? {})) {
       process.stdout.write(
-        chalk.dim('  more edges[' + alias + ']: --edges \'{"as":"' + alias + '","cursor":"' + cursor + '"}\'\n'),
+        chalk.dim(
+          '  more edges[' +
+            alias +
+            ']: --edges \'{"as":"' +
+            alias +
+            '","cursor":"' +
+            cursor +
+            '"}\'\n',
+        ),
       )
     }
     return
@@ -279,7 +291,11 @@ export default {
     '',
   ].join('\n'),
   arguments: [
-    { name: 'paths...', description: 'One or more root paths (/domain/Class) or IDs (@nodeId)', required: false },
+    {
+      name: 'paths...',
+      description: 'One or more root paths (/domain/Class) or IDs (@nodeId)',
+      required: false,
+    },
   ],
   options: [
     { flags: '--depth <n>', description: 'Subtree depth to fetch (0-5, default 0)' },
@@ -291,7 +307,10 @@ export default {
       flags: '--edges <json>',
       description: 'Edge selector (or JSON array of selectors) to include',
     },
-    { flags: '--ast <json>', description: 'Raw QueryASTInput JSON object (experimental, unstable shape)' },
+    {
+      flags: '--ast <json>',
+      description: 'Raw QueryASTInput JSON object (experimental, unstable shape)',
+    },
     { flags: '--cypher <query>', description: 'Read-only Cypher escape hatch' },
   ],
   action: async (paths, opts) => {

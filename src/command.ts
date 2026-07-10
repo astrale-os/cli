@@ -16,6 +16,8 @@ export type CommandDefinition = {
   description: string
   /** One-line summary shown in the parent's command list (Commander `.summary()`). */
   summary?: string
+  /** Hide from help listings (internal entries, e.g. `__view-serve`). */
+  hidden?: boolean
   aliases?: string[]
   arguments?: CommandArgument[]
   options?: CommandOption[]

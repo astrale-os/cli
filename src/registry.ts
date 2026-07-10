@@ -6,7 +6,7 @@ import type { CommandDefinition, CommandGroup } from './command'
  * Register a single command on a Commander program or subcommand.
  */
 export function registerCommand(parent: Command, def: CommandDefinition): void {
-  const cmd = parent.command(def.name).description(def.description)
+  const cmd = parent.command(def.name, { hidden: def.hidden ?? false }).description(def.description)
 
   if (def.summary) cmd.summary(def.summary)
 
