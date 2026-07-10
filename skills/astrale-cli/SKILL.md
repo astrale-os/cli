@@ -628,6 +628,10 @@ Rules:
 
 - Best-effort and non-blocking: if `report` fails, note it and keep working —
   never let filing an issue derail the user's task.
+- END-OF-TASK CHECKLIST: before delivering your final summary, sweep the
+  session for filable frictions you deferred mid-task — file or comment each
+  one now. If there were genuinely none, say so in one line ("no DX frictions
+  this session"). Mid-task you defer; end-of-task you settle.
 - Be specific: exact command, exact error, what you expected. A vague issue is
   noise; a reproducible one gets fixed.
 - Tell the user you filed it (mention the returned id) so they can follow up.

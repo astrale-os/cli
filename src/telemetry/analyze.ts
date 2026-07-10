@@ -75,7 +75,8 @@ function buildPrompt(opts: {
   const filing = opts.file
     ? `
 FILE the issues that clear the quality bar (after writing report.md). Use the normal door, one call per issue:
-  astrale call /:admin.astrale.ai:class.Issue:report -i admin kind=<bug|friction|feature> title="<one line>" body="<evidence: exact command, exact error, expected vs actual, session ${id}>"
+  astrale call /:admin.astrale.ai:class.Issue:report -i admin --ci kind=<bug|friction|feature> title="<one line>" body="<evidence: exact command, exact error, expected vs actual, session ${id}>"
+Always pass --ci and keep title/body plain ASCII (no smart quotes/arrows) — long special-character bodies can hang the call.
 Duplicates of existing issues are acceptable — recurrence is signal, triage groups them later. Do NOT dedup-check first. Record each returned issue id in report.md under "## Filed". If filing fails (auth/offline), record the failure in report.md — do not retry more than once.`
     : `
 Do NOT file any issues in this run (dry-run). report.md is the only output.`

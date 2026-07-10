@@ -36,6 +36,7 @@ import { recordRun } from '../state/usage'
 import { startBridge } from './bridge'
 import { buildResumePrompt, buildSystemPrompt, buildTurnPrompt } from './prompt'
 import { getHarness } from './registry'
+import { studioSessionId } from './session-id'
 
 type Notify = (e: StudioEvent) => void
 
@@ -266,7 +267,9 @@ async function startRun(
   // silently spawning on the default Claude auth).
   const envResult = await resolveHarnessEnv(root)
   if (!envResult.ok) return { error: `model gateway auth failed — ${envResult.error}` }
-  const harnessEnv = envResult.env
+  // Surface-owned telemetry session: the harness's astrale calls bucket per
+  // domain per hour instead of falling back to ambient cwd inference.
+  const harnessEnv = { ...envResult.env, ASTRALE_SESSION: studioSessionId(domainId) }
 
   // per-run write-back bridge (token-scoped MCP tools); harmless if the harness ignores it
   const bridge = startBridge(handle, () => runs.get(domainId)?.id ?? '', notify)
