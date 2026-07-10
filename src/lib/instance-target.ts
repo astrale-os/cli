@@ -172,6 +172,11 @@ export function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInst
 export function isManagedInstanceNotFound(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   if (error.name === 'NotFoundError') return true
+  // The admin kernel reports a missing instance node as InternalKernelError
+  // with a NOT_FOUND-prefixed message. In this lookup that's an instance
+  // miss (config problem), not a kernel fault — map it so callers get the
+  // typed INSTANCE_NOT_FOUND with remediation instead of a raw kernel error.
+  if (error.name === 'InternalKernelError' && /^NOT_FOUND\b/.test(error.message)) return true
   const data = (error as Error & { data?: unknown }).data
   return (
     error.name === 'KernelError' &&

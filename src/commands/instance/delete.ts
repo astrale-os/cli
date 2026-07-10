@@ -66,7 +66,7 @@ Behavior:
         log.dim(`  hint: it's a local bookmark — drop it with: astrale instance forget ${id}`)
         process.exit(1)
       }
-      fatal(e)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition

@@ -36,7 +36,7 @@ export default {
       if (result.hostId) log.dim(`  host: ${result.hostId}`)
       if (result.createdAt) log.dim(`  created: ${result.createdAt}`)
     } catch (e) {
-      fatal(e)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition

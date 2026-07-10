@@ -3,6 +3,7 @@ import ora, { type Ora } from 'ora'
 
 import { AstraleError, NotImplementedError } from '../errors'
 import { formatElapsed } from './format'
+import { isMachine, type RawOutputOpts } from './output'
 
 export const log = {
   info: (msg: string) => console.log(chalk.blue('ℹ'), msg),
@@ -13,12 +14,21 @@ export const log = {
   dim: (msg: string) => console.log(chalk.dim(msg)),
 }
 
-/** Report an error with hint (when present) and exit. */
-export function fatal(e: unknown): never {
+/** Report an error with hint (when present) and exit. Commands that carry
+ *  RawOutputOpts should pass them so machine consumers (--json/--raw/piped)
+ *  get one structured JSON line on stderr instead of the pretty ✖ view. */
+export function fatal(e: unknown, opts?: RawOutputOpts): never {
   // Ctrl-C at an interactive (@inquirer/prompts) prompt — exit quietly with the
   // SIGINT convention, not a red error line.
   if (e instanceof Error && e.name === 'ExitPromptError') process.exit(130)
   const msg = e instanceof Error ? e.message : String(e)
+  if (opts && isMachine(opts)) {
+    const error = e instanceof AstraleError ? e.code : e instanceof Error ? e.name : 'Error'
+    const payload: Record<string, unknown> = { error, message: msg }
+    if (e instanceof AstraleError && e.hint) payload.hint = e.hint
+    process.stderr.write(JSON.stringify(payload) + '\n')
+    process.exit(1)
+  }
   log.error(msg)
   if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
   process.exit(1)
