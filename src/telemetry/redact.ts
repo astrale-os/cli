@@ -5,9 +5,23 @@
  */
 
 const SECRET_KEY = /(token|secret|key|password|auth|bearer|jwk|credential)/i
+// Secret-shaped VALUES regardless of the key they travel under: JWTs (the
+// `eyJ` base64 of `{"`) and provider API keys. Deliberately no generic
+// long-base64 rule — absolute paths share that alphabet and would false-hit.
+const SECRET_VALUE_SHAPES = [
+  /eyJ[A-Za-z0-9_-]{14,}(?:\.[A-Za-z0-9_-]{8,}){0,2}/g,
+  /\bsk-[A-Za-z0-9_-]{16,}\b/g,
+]
 const REDACTED = '<redacted>'
 const MAX_ARG_LEN = 200
 const MAX_ITEMS = 40
+
+/** Replace secret-shaped substrings anywhere in an arg (positional JWTs etc.). */
+function redactValueShapes(arg: string): string {
+  let out = arg
+  for (const shape of SECRET_VALUE_SHAPES) out = out.replace(shape, REDACTED)
+  return out
+}
 
 /** Redact secret values in argv, truncate long args, cap the array length. */
 export function redactArgv(argv: string[]): string[] {
@@ -29,7 +43,7 @@ export function redactArgv(argv: string[]): string[] {
       redactNext = true
       continue
     }
-    out.push(arg)
+    out.push(redactValueShapes(arg))
   }
   const bounded = out.map((a) => (a.length > MAX_ARG_LEN ? a.slice(0, MAX_ARG_LEN) + '…' : a))
   if (bounded.length > MAX_ITEMS) {

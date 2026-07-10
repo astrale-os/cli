@@ -147,3 +147,19 @@ describe('ensureSession', () => {
     expect(typeof meta.createdAt).toBe('string')
   })
 })
+
+describe('analyzed sessions are never reused', () => {
+  test('an open ambient session with an .analyzed marker gets a fresh mint', async () => {
+    const { markerPath } = await import('../store')
+    const root = join(work, 'analyzed-root')
+    mkdirSync(root, { recursive: true })
+    seedAmbient('amb-analyzed-open', root, 0) // fresh mtime → open
+    writeFileSync(
+      markerPath('amb-analyzed-open'),
+      JSON.stringify({ analyzedAt: new Date().toISOString(), outcome: 'reported' }),
+    )
+    const resolved = resolveSession(root)
+    expect(resolved.id).not.toBe('amb-analyzed-open')
+    expect(resolved.id.startsWith('amb-')).toBe(true)
+  })
+})

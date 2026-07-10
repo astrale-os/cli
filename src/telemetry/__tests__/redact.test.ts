@@ -63,3 +63,17 @@ describe('redactArgv', () => {
     expect(redactArgv(['call', '--token'])).toEqual(['call', '--token'])
   })
 })
+
+describe('secret-shaped values', () => {
+  test('positional JWT is redacted wherever it appears', () => {
+    const jwt =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U'
+    expect(redactArgv(['call', '/x::y', jwt])).toEqual(['call', '/x::y', '<redacted>'])
+    expect(redactArgv(['call', `body=Bearer ${jwt}`])[1]).toBe('body=Bearer <redacted>')
+  })
+  test('sk- style api key is redacted, plain paths are not', () => {
+    expect(redactArgv(['x', 'sk-abcdefghijklmnop1234'])).toEqual(['x', '<redacted>'])
+    const p = '/Users/someone/Documents/astrale/workspace/cli/src/telemetry/adapters/index.ts'
+    expect(redactArgv([p])).toEqual([p])
+  })
+})

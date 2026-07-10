@@ -119,3 +119,20 @@ describe('codexAdapter large session_meta', () => {
     expect(sessions.map((s) => s.sessionId)).toEqual(['sid-huge'])
   })
 })
+
+describe('codexAdapter timezone shard boundary', () => {
+  test('rollout in the next local-date shard still matches a window ending today (UTC+ offsets)', async () => {
+    const w = {
+      start: new Date('2026-07-10T20:00:00.000Z'),
+      end: new Date('2026-07-10T23:00:00.000Z'),
+    }
+    rollout(
+      ['2026', '07', '11'],
+      'tzedge',
+      meta(ROOT, '2026-07-10T22:25:00.000Z'),
+      new Date('2026-07-10T22:30:00.000Z'),
+    )
+    const sessions = await codexAdapter(base).discover(ROOT, w)
+    expect(sessions.map((s) => s.transcriptPath.includes('tzedge'))).toEqual([true])
+  })
+})

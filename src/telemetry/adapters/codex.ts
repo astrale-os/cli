@@ -91,8 +91,10 @@ export function codexAdapter(base: string = join(homedir(), '.codex')): HarnessA
       for (const yyyy of numericDirs(sessionsDir)) {
         for (const mm of numericDirs(join(sessionsDir, yyyy))) {
           for (const dd of numericDirs(join(sessionsDir, yyyy, mm))) {
+            // Shard names are LOCAL dates but dayStart is computed as UTC —
+            // pad both bounds a day so no timezone offset can skip a shard.
             const dayStart = Date.UTC(Number(yyyy), Number(mm) - 1, Number(dd))
-            if (dayStart > endMs || dayStart + DAY_MS <= lowerMs) continue
+            if (dayStart > endMs + DAY_MS || dayStart + DAY_MS <= lowerMs) continue
             scanDay(join(sessionsDir, yyyy, mm, dd), root, startMs, endMs, sessions)
           }
         }

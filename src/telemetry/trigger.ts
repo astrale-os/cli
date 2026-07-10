@@ -4,13 +4,34 @@
  * analyzer for it. No daemon, no cron; a lockfile keeps it single-flight.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { telemetryEnabled } from './settings'
-import { listSessions, sessionsRoot } from './store'
+import { listSessions, sessionDir, sessionsRoot, type SessionInfo } from './store'
 
 const LOCK_STALE_MS = 30 * 60 * 1000
+const GC_AGE_MS = 30 * 24 * 60 * 60 * 1000
+const GC_MAX_PER_RUN = 20
+
+/** Opportunistic GC: analyzed sessions idle past the retention age are removed
+ *  (capped per invocation) so the store — and the per-invocation scan — stays
+ *  bounded. Evidence worth keeping has left via reports or filed issues. */
+function gcOldSessions(sessions: SessionInfo[]): void {
+  try {
+    const cutoff = Date.now() - GC_AGE_MS
+    let removed = 0
+    for (const s of sessions) {
+      if (removed >= GC_MAX_PER_RUN) break
+      if (s.analyzed !== null && s.lastEventAt !== null && s.lastEventAt.getTime() < cutoff) {
+        rmSync(sessionDir(s.id), { recursive: true, force: true })
+        removed++
+      }
+    }
+  } catch {
+    /* best effort */
+  }
+}
 
 function lockPath(): string {
   return join(sessionsRoot(), '.analyzer.lock')
@@ -62,16 +83,19 @@ export function maybeTriggerAnalysis(argv: string[]): void {
     // Never cascade off the session commands themselves.
     if (argv[2] === 'session') return
 
-    const target = listSessions().find(
-      (s) => s.closed && s.analyzed === null && s.lastEventAt !== null,
-    )
+    const sessions = listSessions()
+    gcOldSessions(sessions)
+    const target = sessions.find((s) => s.closed && s.analyzed === null && s.lastEventAt !== null)
     if (!target) return
     if (!claimLock()) return
 
     // Re-invoke self: execPath is bun/node (dev) or the compiled binary; when
-    // argv[1] is a script path, keep it as the first argument.
+    // argv[1] is a real script path, keep it as the first argument. In a
+    // bun-compiled binary argv[1] is a virtual /$bunfs/ path that must NOT be
+    // passed — the binary re-runs itself from execPath alone.
     const script = process.argv[1]
-    const args = script && script !== process.execPath ? [script] : []
+    const args =
+      script && script !== process.execPath && !script.startsWith('/$bunfs') ? [script] : []
     args.push('session', 'analyze', target.id, '--auto')
     const child = spawn(process.execPath, args, {
       detached: true,

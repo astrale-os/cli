@@ -38,10 +38,14 @@ function stamp(d = new Date()): string {
   return `${p(d.getFullYear(), 4)}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}`
 }
 
-/** id of an open, ambient session already bucketed to `root`, else null. */
+/** id of an open, ambient session already bucketed to `root`, else null.
+ *  Analyzed sessions are never reused — a straggler event may "reopen" one
+ *  after its report, and new work funneled there would never be analyzed. */
 function findOpenAmbient(root: string): string | null {
   for (const s of listSessions()) {
-    if (s.meta?.root === root && s.meta.explicit === false && !s.closed) return s.id
+    if (s.meta?.root === root && s.meta.explicit === false && !s.closed && s.analyzed === null) {
+      return s.id
+    }
   }
   return null
 }

@@ -22,7 +22,9 @@ export default {
     }
     for (const s of sessions) {
       const state = s.analyzed
-        ? chalk.green(s.analyzed.outcome)
+        ? s.analyzed.outcome === 'error'
+          ? chalk.red(s.analyzed.outcome)
+          : chalk.green(s.analyzed.outcome)
         : s.closed
           ? chalk.yellow('closed, unanalyzed')
           : chalk.cyan('open')
