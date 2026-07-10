@@ -207,7 +207,9 @@ Every time you re-deploy, you must then re-install the domain.
 
 For authoring domains end-to-end (schema, handlers, external APIs, deploys),
 load the **astrale-domain** skill; for graph-level schema surgery on a live
-kernel, **astrale-live-domain-edit**.
+kernel, **astrale-live-domain-edit**. To validate a freshly built domain
+BEFORE any instance exists (spec build + dev-worker `/meta` / install-bundle
+probes), see the astrale-domain skill's development reference.
 
 ## Auth And Credentials
 

@@ -63,6 +63,60 @@ again. The instance keeps running the version it last installed, so a class you 
 yet and a handler you just fixed is still broken. If a change does not seem to take, confirm you
 re-deployed and re-installed, not just saved the file.
 
+## Validate locally without an instance
+
+You can prove a freshly built domain is sound before any kernel exists to install it. Three layers,
+cheapest first: the spec build (schema + graph, no server), the dev worker's probe endpoints (a real
+signed bundle, no kernel), and handler unit tests (logic, no worker). None of them touch an instance.
+
+Build the diagnostic spec offline - no env, no secrets, no deploy:
+
+```bash
+pnpm build   # astrale-domain build -> .astrale/spec.json  (needs Bun)
+```
+
+`.astrale/spec.json` is the install graph (`wire`) plus its `schemaHash`. A clean write proves the schema
+compiles and the install graph assembles and hashes. CAVEAT: `build` has no URL, so it hashes at the
+placeholder `https://<origin>`; the install graph embeds URL-derived `binding.remoteUrl`s, so this
+`schemaHash` will NOT match a deployed worker's `/meta`. Read the build hash as "does it assemble", never
+as the deploy identity.
+
+Boot the worker locally and probe it - still no kernel, no install:
+
+```bash
+pnpm dev     # prints http://localhost:8787 (or the next free port)
+
+# worker booted + install graph builds + manifest well-formed; schemaHash is REAL for this URL
+curl -s localhost:8787/meta | jq
+
+# the signing identity loaded and its public key publishes (what a kernel needs to verify an install)
+curl -s localhost:8787/.well-known/jwks.json | jq '.keys | length'
+
+# the FULL signed install bundle assembles - the deepest no-instance check
+curl -sX POST localhost:8787/_astrale/install-domain \
+  -H 'content-type: application/json' \
+  -d '{"kernelIssuer":"https://probe.local","nonce":"probe-1"}' \
+  | jq '{origin, nodes: (.graph.nodes|length), edges: (.graph.edges|length), credential: (.identity.credential|type)}'
+```
+
+`/meta` returns `{ iss, domainName, schemaHash, manifest? }` and proves the worker runs and the manifest
+(logo, entrypoint, roles) is valid; its `schemaHash` IS the live hash for the dev URL, unlike the build
+placeholder. `/_astrale/install-domain` runs exactly what a kernel fetches at install -
+`buildInstallGraph` + `hashInstallGraph` + a signed install credential - and returns
+`{ origin, graph, identity.credential, postInstall?, requires? }`; a 200 means the whole bundle builds and
+signs. If the domain sets `install.authorize`, the probe needs a valid `Authorization: Bearer` token or
+returns 403; the blank template sets none.
+
+Unit-test the logic with no worker at all:
+
+```bash
+bun test     # exercise core/ logic and execute() handlers directly, off the graph
+```
+
+What none of this proves: that a kernel accepts the bundle, writes the graph, runs `postInstall`, and
+grants what the domain needs. Only a real install closes that gap - `astrale domain install <dev-url>
+--direct` onto any instance you can authenticate to (see the astrale-cli skill).
+
 ## Schema Hash
 
 A **Schema Hash** is a fingerprint of a domain's schema, computed from its shape with node ids stripped
