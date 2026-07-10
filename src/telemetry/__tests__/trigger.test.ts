@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -12,9 +12,12 @@ let sessionDir: (id: string) => string
 beforeAll(async () => {
   ;({ maybeTriggerAnalysis } = await import('../trigger'))
   ;({ sessionDir } = await import('../store'))
-  // Sibling test files mutate these in the shared bun process — own them here.
+  // Sibling test files mutate shared state (env vars, and recorder.test.ts
+  // leaves a telemetry-disabled config.json in the shared home) — own it here.
   delete process.env.ASTRALE_TELEMETRY
   delete process.env.ASTRALE_TELEMETRY_NO_TRIGGER
+  const { CONFIG_PATH } = await import('../../lib/paths')
+  rmSync(CONFIG_PATH, { force: true })
 })
 
 function seed(id: string, ageMs: number, analyzed: boolean): void {
