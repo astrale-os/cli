@@ -156,6 +156,15 @@ export async function buildProgram(): Promise<Command> {
   })
 
   registerGroup(program, {
+    name: 'session',
+    description: 'Locally recorded work sessions: list and DX-analyze them',
+    commands: [
+      (await import('./commands/session/list')).default,
+      (await import('./commands/session/analyze')).default,
+    ],
+  })
+
+  registerGroup(program, {
     name: 'idp',
     description: 'Manage OpenID Connect identity providers',
     commands: [

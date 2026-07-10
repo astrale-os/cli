@@ -9,6 +9,7 @@ import { CONFIG_PATH } from './paths'
 export const AstraleConfigSchema = z.object({
   issuer: z.string().url().default('https://unregistered.invalid'),
   admin: AdminTargetConfigSchema.default(DEFAULT_ADMIN_TARGET_CONFIG),
+  telemetry: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
 })
 
 export type AstraleConfig = z.infer<typeof AstraleConfigSchema>
