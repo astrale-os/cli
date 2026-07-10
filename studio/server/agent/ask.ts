@@ -18,6 +18,7 @@ import { readSettings } from '../state/settings'
 import { buildAskPrompt, buildAskSystemPrompt } from './prompt'
 import { getHarness } from './registry'
 import { forkableSession } from './runner'
+import { studioSessionId } from './session-id'
 
 export interface AskRequest {
   anchor?: AnchorRef
@@ -65,7 +66,7 @@ export async function runAsk(
     appendSystemPrompt: buildAskSystemPrompt(),
     sessionId: forkableSession(handle.id), // fork the live conversation (undefined ⇒ fresh)
     effort: settings.agentEffort,
-    env: envResult.env,
+    env: { ...envResult.env, ASTRALE_SESSION: studioSessionId(handle.id) },
     signal,
     onDelta,
   })
