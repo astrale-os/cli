@@ -52,6 +52,7 @@ beforeAll(async () => {
 })
 
 beforeEach(() => {
+  if (!sessionsRoot().startsWith(tmpdir())) throw new Error('refusing to clean a non-tmp home')
   rmSync(sessionsRoot(), { recursive: true, force: true })
   delete process.env.ASTRALE_SESSION
   work = mkdtempSync(join(tmpdir(), 'astrale-tele-work-'))

@@ -11,12 +11,15 @@ import { join } from 'node:path'
 
 import type { AnalyzedMarker, SessionMeta } from './types'
 
-import { ASTRALE_HOME } from '../lib/paths'
+import { createPaths } from '../lib/env'
 
 export const IDLE_WINDOW_MS = 30 * 60 * 1000
 
+// Resolved at CALL time (not import time) so ASTRALE_HOME set late — notably
+// by tests whose module-load order is out of their control — always applies.
+// The env can't change mid-process in real CLI runs, so behavior is identical.
 export function sessionsRoot(): string {
-  return join(ASTRALE_HOME, 'sessions')
+  return join(createPaths().home, 'sessions')
 }
 
 export function sessionDir(id: string): string {

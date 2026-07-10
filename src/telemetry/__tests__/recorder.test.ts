@@ -24,15 +24,16 @@ let cwd0: string
 beforeAll(async () => {
   const recorder = await import('../recorder')
   const store = await import('../store')
-  const paths = await import('../../lib/paths')
   beginInvocation = recorder.beginInvocation
   eventsPath = store.eventsPath
   listSessions = store.listSessions
   sessionsRoot = store.sessionsRoot
-  configPath = paths.CONFIG_PATH
+  configPath = join(process.env.ASTRALE_HOME!, 'config.json')
 })
 
 beforeEach(() => {
+  // Destructive cleanup must be provably confined to this file's mkdtemp home.
+  if (!sessionsRoot().startsWith(tmpdir())) throw new Error('refusing to clean a non-tmp home')
   rmSync(sessionsRoot(), { recursive: true, force: true })
   rmSync(configPath, { force: true })
   delete process.env.ASTRALE_TELEMETRY

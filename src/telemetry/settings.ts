@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 
-import { CONFIG_PATH } from '../lib/paths'
+import { createPaths } from '../lib/env'
 
 const OFF_VALUES = new Set(['0', 'false', 'off'])
 
@@ -14,7 +14,8 @@ export function telemetryEnabled(): boolean {
   const env = process.env.ASTRALE_TELEMETRY
   if (env !== undefined && OFF_VALUES.has(env.trim().toLowerCase())) return false
   try {
-    const parsed = JSON.parse(readFileSync(CONFIG_PATH, 'utf-8')) as {
+    // Call-time path resolution — see sessionsRoot() in store.ts for why.
+    const parsed = JSON.parse(readFileSync(createPaths().config, 'utf-8')) as {
       telemetry?: { enabled?: boolean }
     }
     if (parsed.telemetry?.enabled === false) return false
