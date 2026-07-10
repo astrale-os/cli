@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AstraleConfig } from '../config'
 import type { InstanceStore } from '../instance'
 
+import { AstraleError } from '../../errors'
 import { DEFAULT_CONFIG } from '../config'
 import {
   couldBeConfiguredAdminInstance,
@@ -179,5 +180,38 @@ describe('instance target helpers', () => {
     auth.name = 'PermissionDeniedError'
 
     expect(isManagedInstanceNotFound(auth)).toBe(false)
+  })
+})
+
+describe('isManagedInstanceNotFound: kernel InternalKernelError wrap', () => {
+  test('NOT_FOUND-prefixed InternalKernelError is an instance miss', () => {
+    const e = new Error('NOT_FOUND: no instance node for "knowledge"')
+    e.name = 'InternalKernelError'
+    expect(isManagedInstanceNotFound(e)).toBe(true)
+  })
+  test('other InternalKernelError messages are not swallowed', () => {
+    const e = new Error('DISPATCH_FAILED: handler crashed')
+    e.name = 'InternalKernelError'
+    expect(isManagedInstanceNotFound(e)).toBe(false)
+  })
+  test('resolveNamedInstanceTarget maps the wrap to typed INSTANCE_NOT_FOUND', async () => {
+    const managed = async () => {
+      const e = new Error('NOT_FOUND: no instance node for "ghost"')
+      e.name = 'InternalKernelError'
+      throw e
+    }
+    const opts = {
+      config: DEFAULT_CONFIG,
+      instances: { instances: {} },
+      managed,
+    } as unknown as Parameters<typeof resolveInstanceTarget>[1]
+    let caught: unknown
+    try {
+      await resolveInstanceTarget({ source: 'name', name: 'ghost' }, opts)
+    } catch (e) {
+      caught = e
+    }
+    expect(caught).toBeInstanceOf(AstraleError)
+    expect((caught as AstraleError).code).toBe('INSTANCE_NOT_FOUND')
   })
 })

@@ -63,7 +63,7 @@ Examples:
         return
       }
     } catch (e) {
-      fatal(e)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition

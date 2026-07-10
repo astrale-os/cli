@@ -87,7 +87,7 @@ export default {
       }
       process.stdout.write(renderTable(rows, { columns: COLUMNS }) + '\n')
     } catch (e) {
-      fatal(e)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition
