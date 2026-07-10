@@ -1,4 +1,10 @@
-export { withKernelClient, withAdminKernelClient, type ClientContext } from './client'
+export {
+  withKernelClient,
+  withAdminKernelClient,
+  resolveKernelTarget,
+  type ClientContext,
+  type ResolvedKernelTarget,
+} from './client'
 export { resolveCredential } from './auth'
 export { formatKernelError } from './errors'
 export {

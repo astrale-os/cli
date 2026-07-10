@@ -24,6 +24,7 @@
     "studio/shared",
     "studio/client/dist",
     "studio/package.json",
+    "viewer/dist",
     "THIRD-PARTY-NOTICES.md"
   ],
   "type": "module",
@@ -41,7 +42,7 @@
     "prepare": "husky",
     "build": "bun scripts/build.ts",
     "prepack": "bun scripts/build.ts",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsgo --noEmit && tsgo --noEmit -p viewer",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
@@ -64,6 +65,7 @@
   },
   "devDependencies": {
     "@astrale-os/ox": ">=0.1.0 <1.0.0",
+    "@astrale-os/shell": ">=0.2.0 <1.0.0",
     "@astrale/commitlint-config": "jsr:~2.0.1",
     "@commitlint/cli": "~20.3.1",
     "@commitlint/config-conventional": "~20.3.1",

@@ -21,12 +21,37 @@ export type ClientContext = {
   config: Awaited<ReturnType<typeof readConfig>>
 }
 
-type ResolvedKernelTarget = {
+export type ResolvedKernelTarget = {
   url: string
   audience: string
   slug?: string
   defaultIdentity?: string
   caFile?: string
+}
+
+/** Resolve the kernel a command targets (`--url` / `-i` / active instance). */
+export async function resolveKernelTarget(
+  opts: KernelCommandOpts,
+  config: Awaited<ReturnType<typeof readConfig>>,
+): Promise<ResolvedKernelTarget> {
+  // Ad-hoc `--url` — unknown kernel. Stamp the URL itself as audience,
+  // no slug for per-instance signing.
+  if (opts.url && !opts.instance) {
+    const resolved = await resolveInstanceTarget(
+      { source: 'url', url: opts.url },
+      { config, admin: adminLookupOpts(opts) },
+    )
+    return resolvedToKernelTarget(resolved)
+  }
+  const resolved = await resolveInstanceTarget(
+    opts.instance ? { source: 'name', name: opts.instance } : { source: 'active' },
+    {
+      config,
+      admin: adminLookupOpts(opts),
+      managed: (slug) => lookupManagedInstance(slug, opts),
+    },
+  )
+  return resolvedToKernelTarget(resolved, opts.url)
 }
 
 /**
@@ -39,27 +64,7 @@ export async function withKernelClient<T>(
   fn: (ctx: ClientContext) => Promise<T>,
 ): Promise<T> {
   const config = await readConfig()
-  // Ad-hoc `--url` — unknown kernel. Stamp the URL itself as audience,
-  // no slug for per-instance signing.
-  let target: ResolvedKernelTarget
-  if (opts.url && !opts.instance) {
-    const resolved = await resolveInstanceTarget(
-      { source: 'url', url: opts.url },
-      { config, admin: adminLookupOpts(opts) },
-    )
-    target = resolvedToKernelTarget(resolved)
-  } else {
-    const resolved = await resolveInstanceTarget(
-      opts.instance ? { source: 'name', name: opts.instance } : { source: 'active' },
-      {
-        config,
-        admin: adminLookupOpts(opts),
-        managed: (slug) => lookupManagedInstance(slug, opts),
-      },
-    )
-    target = resolvedToKernelTarget(resolved, opts.url)
-  }
-
+  const target = await resolveKernelTarget(opts, config)
   return withResolvedKernelClient(opts, config, target, fn)
 }
 
