@@ -461,6 +461,11 @@ view when the schema should drive the shape of the code.
 Inside a handler the `kernel` you receive supports `withSchema`. (Future SDK versions may pre-bind the
 handler `kernel` to the domain's own schema for even less boilerplate.)
 
+All the classic graph methods (`getOrThrow`, `updateNode`, `createNode`, `mutate`, `query`, `children`,
+`neighbors` etc.) are directly on the typed view with exactly the same semantics as before. The typed
+features are isolated under `.classes` (and on BoundNodes) so there is no possibility of collision with
+the core client surface.
+
 ```ts
 const t = kernel.withSchema(schema)
 
