@@ -60,8 +60,7 @@ export const domain = defineDomain({
 For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
 caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
 policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
-reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
-providers also require the SDK fix described by the auxiliary-route limitation.
+reaching for an ordinary kernel in a public handler is an authority-model mistake.
 
 ```ts
 export const webhook = defineRemoteFunction({
@@ -81,14 +80,6 @@ export const webhook = defineRemoteFunction({
   },
 })
 ```
-
-## Exact raw webhook bodies are consumed before handlers
-
-The current standalone-function auxiliary route parses JSON before `authorize` and `execute`, so
-`c.req.raw` no longer provides untouched bytes to the handler. A provider that signs exact request bytes
-cannot be verified safely through this route until the SDK preserves a clone; never reconstruct the
-signed body from parsed JSON. Providers that sign explicit headers or canonical parsed fields can still
-use the public webhook pattern.
 
 ## Do NOT call a static method as an instance method
 

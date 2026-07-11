@@ -234,8 +234,7 @@ export const domain = defineDomain({
 For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
 caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
 policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
-reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
-providers also require the SDK fix described by the auxiliary-route limitation.
+reaching for an ordinary kernel in a public handler is an authority-model mistake.
 
 ```ts
 export const webhook = defineRemoteFunction({
