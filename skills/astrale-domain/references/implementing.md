@@ -450,16 +450,25 @@ for (const edge of result.graph.edges.all) {
 
 When you have a schema (your own or an imported one), call `kernel.withSchema(schema)` to obtain a
 schema-bound view. The primary surface lives under `.classes` for safe namespacing. You get typed
-`BoundNode` instances (with methods callable directly on the node), schema-aware traversals
-(`.out(edge)`, `.in(edge)`, and `.links(edge)` / `.links.out(edge)` / `.links.in(edge)` for unified
-in/out), and typed dispatch.
+`BoundNode` instances (with methods callable directly on the node), schema-aware traversals via the
+`.links` namespace (`.links(edge)`, `.links.out(edge)`, `.links.in(edge)`) for unified in/out support,
+and typed dispatch.
 
 The bound view complements the flat graph surface. Use `getOrThrow`, the `mutate` builder, `children`,
 etc. when you want the most explicit graph syscall shape and compiled D accessors. Reach for the typed
 view when the schema should drive the shape of the code.
 
-Inside a handler the `kernel` you receive supports `withSchema`. (Future SDK versions may pre-bind the
-handler `kernel` to the domain's own schema for even less boilerplate.)
+Inside a handler the `kernel` you receive supports `withSchema`. SDK dispatch now pre-binds the provided
+`kernel` to the domain schema when known, so own-domain code can use `kernel.classes.XXX(...)` with zero
+boilerplate. Use `kernel.withSchema(otherSchema)` to switch for cross-domain or KernelSchema.
+
+The legacy direct callable view or explicit `.static`/`.node(class, id)` (old SchemaTypedClient) is
+deprecated; the documented surface is `.classes` + direct methods on BoundNodes + `.withSchema`.
+
+All the classic graph methods (`getOrThrow`, `updateNode`, `createNode`, `mutate`, `query`, `children`,
+`neighbors` etc.) are directly on the typed view with exactly the same semantics as before. The typed
+features are isolated under `.classes` (and on BoundNodes) so there is no possibility of collision with
+the core client surface.
 
 ```ts
 const t = kernel.withSchema(schema)
@@ -470,7 +479,7 @@ console.log(contact.props.email)
 await contact.rename({ name: 'Ada' })
 
 // Typed edge traversal (and unified links)
-const projects = await contact.out('works_on')
+const projects = await contact.links.out('works_on')
 const allLinks = await contact.links('works_on')  // or .links.out / .links.in
 
 // Static (class) dispatch
