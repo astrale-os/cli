@@ -1,6 +1,11 @@
 import type { MountedWindow } from '@astrale-os/shell'
 
-import { createIframeShellAdapter, createShell } from '@astrale-os/shell'
+import {
+  createIframeShellAdapter,
+  createShell,
+  rejectIntent,
+  replyToIntent,
+} from '@astrale-os/shell'
 
 import { installOpenIntentHandler, mountWithHandshakeFallback } from '../src/lib/view/open-intent'
 
@@ -154,6 +159,12 @@ async function main(): Promise<void> {
       el('error').style.display = 'none'
     },
     failed: showIntentError,
+    reply: (message, windowId) => {
+      replyToIntent(shell.children, message.envelope.sender.windowId, message, { windowId })
+    },
+    reject: (message, error) => {
+      rejectIntent(shell.children, message.envelope.sender.windowId, message, error)
+    },
   })
 
   if (cfg.handshake !== 'shell') {

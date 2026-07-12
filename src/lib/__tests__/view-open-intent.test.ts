@@ -67,13 +67,7 @@ function harness(views: readonly ResolvedView[] = [profile, card]) {
         return views
       },
     },
-    children: {
-      send: (windowId: string, message: IntentMessage) => {
-        events.push(`reply:${windowId}`)
-        sent.push({ windowId, message })
-      },
-    },
-  } as unknown as Pick<Shell, 'children' | 'views'>
+  } as unknown as Pick<Shell, 'views'>
   const host: OpenIntentHost = {
     current: () => current,
     setCurrent: (next) => {
@@ -86,6 +80,44 @@ function harness(views: readonly ResolvedView[] = [profile, card]) {
     },
     opened: (view, nodeId) => events.push(`opened:${view.path}:${nodeId}`),
     failed: (error) => events.push(`failed:${error instanceof Error ? error.message : error}`),
+    reply: (message, windowId) => {
+      if (!message.envelope.correlationId) return
+      events.push(`reply:${message.envelope.sender.windowId}`)
+      sent.push({
+        windowId: message.envelope.sender.windowId,
+        message: {
+          type: 'intent',
+          version: 1,
+          envelope: {
+            name: 'intentReply',
+            payload: {
+              correlationId: message.envelope.correlationId,
+              result: { windowId },
+            },
+            sender: { windowId: 'root' },
+          },
+        },
+      })
+    },
+    reject: (message, error) => {
+      if (!message.envelope.correlationId) return
+      events.push(`reply:${message.envelope.sender.windowId}`)
+      sent.push({
+        windowId: message.envelope.sender.windowId,
+        message: {
+          type: 'intent',
+          version: 1,
+          envelope: {
+            name: 'intentReply',
+            payload: {
+              correlationId: message.envelope.correlationId,
+              error: { message: error instanceof Error ? error.message : String(error) },
+            },
+            sender: { windowId: 'root' },
+          },
+        },
+      })
+    },
   }
   return { events, sent, shell, host, current: () => current }
 }

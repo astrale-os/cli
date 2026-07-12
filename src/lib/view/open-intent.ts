@@ -1,13 +1,13 @@
 import type { IntentMessage, MountedWindow, ResolvedView, Shell } from '@astrale-os/shell'
 
-import { rejectIntent, replyToIntent } from '@astrale-os/shell'
-
 export interface OpenIntentHost {
   current(): MountedWindow | null
   setCurrent(window: MountedWindow): void
   mount(view: ResolvedView, nodeId: string): Promise<MountedWindow>
   opened(view: ResolvedView, nodeId: string): void
   failed(error: unknown): void
+  reply(message: IntentMessage<'open'>, windowId: string): void
+  reject(message: IntentMessage<'open'>, error: unknown): void
 }
 
 /** Register the root host's serialized node-to-View navigation handler. */
@@ -21,7 +21,7 @@ export function installOpenIntentHandler(shell: Shell, host: OpenIntentHost): ()
 }
 
 export async function handleOpenIntent(
-  shell: Pick<Shell, 'children' | 'views'>,
+  shell: Pick<Shell, 'views'>,
   host: OpenIntentHost,
   message: IntentMessage<'open'>,
 ): Promise<void> {
@@ -35,9 +35,7 @@ export async function handleOpenIntent(
     host.opened(selected, nodeId)
     // A correlated requester is normally `previous`; answer while its channel
     // still exists, then retire the old mount.
-    replyToIntent(shell.children, message.envelope.sender.windowId, message, {
-      windowId: next.windowId,
-    })
+    host.reply(message, next.windowId)
 
     if (previous && previous.windowId !== next.windowId) {
       try {
@@ -50,7 +48,7 @@ export async function handleOpenIntent(
       }
     }
   } catch (error) {
-    rejectIntent(shell.children, message.envelope.sender.windowId, message, error)
+    host.reject(message, error)
     host.failed(error)
   }
 }
