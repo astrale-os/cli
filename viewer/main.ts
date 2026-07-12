@@ -1,4 +1,8 @@
+import type { MountedWindow } from '@astrale-os/shell'
+
 import { createIframeShellAdapter, createShell } from '@astrale-os/shell'
+
+import { installOpenIntentHandler, mountWithHandshakeFallback } from '../src/lib/view/open-intent'
 
 /**
  * The `astrale view` host page: a thin consumer of the real shell mount
@@ -62,6 +66,12 @@ function fail(error: unknown): void {
   report('failed', message)
 }
 
+function showIntentError(error: unknown): void {
+  const box = el('error')
+  box.style.display = 'block'
+  box.textContent = error instanceof Error ? error.message : String(error)
+}
+
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
   el('view-label').textContent = cfg.viewPath ?? cfg.viewUrl
@@ -79,13 +89,19 @@ async function main(): Promise<void> {
   })
 
   const container = el('frame')
-  const mountWith = (handshake: 'shell' | 'none') =>
+  let mounted: MountedWindow | null = null
+
+  const mountWith = (
+    view: { url: string; functionId: string },
+    targetNodeId: string | undefined,
+    handshake: 'shell' | 'none',
+  ) =>
     shell.mount({
       host: container,
-      url: cfg.viewUrl,
-      functionId: cfg.functionId,
-      targetNodeId: cfg.targetNodeId ?? undefined,
-      capabilities: { intents: ['receive', 'closeAck', 'closeRefuse'] },
+      url: view.url,
+      functionId: view.functionId,
+      targetNodeId,
+      capabilities: { intents: ['open', 'receive', 'closeAck', 'closeRefuse'] },
       sandbox: null,
       handshake,
       handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
@@ -99,31 +115,69 @@ async function main(): Promise<void> {
       },
     })
 
+  const mountResolved = async (
+    view: { url: string; functionId: string; handshake: 'shell' | 'none' },
+    targetNodeId: string | undefined,
+  ): Promise<{ mounted: MountedWindow; handshake: 'shell' | 'none' }> => {
+    const existing = new Set(container.children)
+    return mountWithHandshakeFallback({
+      handshake: view.handshake,
+      attempts: SHELL_ATTEMPTS,
+      mount: (handshake) => mountWith(view, targetNodeId, handshake),
+      cleanupFailedAttempt: () => {
+        for (const child of Array.from(container.children)) {
+          if (!existing.has(child)) child.remove()
+        }
+      },
+    })
+  }
+
+  installOpenIntentHandler(shell, {
+    current: () => mounted,
+    setCurrent: (next) => {
+      mounted = next
+    },
+    mount: async (selected, nodeId) => {
+      const next = await mountResolved(
+        {
+          url: selected.url,
+          functionId: selected.id,
+          handshake: selected.handshake ?? 'shell',
+        },
+        nodeId,
+      )
+      return next.mounted
+    },
+    opened: (selected, nodeId) => {
+      el('view-label').textContent = selected.path
+      el('target-label').textContent = `@${nodeId}`
+      el('error').style.display = 'none'
+    },
+    failed: showIntentError,
+  })
+
   if (cfg.handshake !== 'shell') {
-    await mountWith('none')
+    mounted = await mountWith(
+      { url: cfg.viewUrl, functionId: cfg.functionId },
+      cfg.targetNodeId ?? undefined,
+      'none',
+    )
     setStatus('plain')
     report('plain')
   } else {
     // Cold SPA boots can miss the first handshake window — retry before
     // downgrading to a plain iframe (the GUI host's fallback of last resort).
-    let lastError: unknown
-    let mounted = false
-    for (let attempt = 0; attempt < SHELL_ATTEMPTS && !mounted; attempt++) {
-      try {
-        await mountWith('shell')
-        mounted = true
-      } catch (error) {
-        lastError = error
-        container.replaceChildren()
-      }
-    }
-    if (mounted) {
+    const initial = await mountResolved(
+      { url: cfg.viewUrl, functionId: cfg.functionId, handshake: 'shell' },
+      cfg.targetNodeId ?? undefined,
+    )
+    mounted = initial.mounted
+    if (initial.handshake === 'shell') {
       setStatus('connected')
       report('connected')
     } else {
-      await mountWith('none')
       setStatus('plain')
-      report('plain', lastError instanceof Error ? lastError.message : undefined)
+      report('plain')
     }
   }
   setInterval(() => report('alive'), HEARTBEAT_MS)
