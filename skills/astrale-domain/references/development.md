@@ -2,77 +2,373 @@
 
 # Development
 
-Read when creating, scaffolding, deploying, installing, testing, smoke-checking, or iterating on a domain. This is the development loop reference, not the schema-migration reference.
+Read when creating, scaffolding, deploying, installing, testing, smoke-checking, or iterating on a domain.
+This is an operational reference, not the modeling core. Verify commands against the current scaffold and
+CLI before running them; managed and self-hosted adapters do not have identical install behavior.
 
 ## How to create a Domain?
 
-You create a domain by scaffolding a project and growing it from a skeleton that already builds and
-runs. The generator lays down the folders, the wiring, and a deploy config, so you begin from a working
-domain rather than a blank file. From there the work is your own: declare the slice of the world you are
-modeling, and write the handlers that make it act.
+Start from the official scaffold, then replace its example vocabulary with the smallest real schema for
+the problem. Keep schema, runtime methods, dependencies, views, and deployment configuration separated.
+Make the first vertical slice compile and run before expanding the domain boundary.
 
 ```bash
-# scaffold a new domain, install, run it locally, then ship it
-npx -y create-astrale-domain@latest my-domain --yes --instance acme
-cd my-domain && pnpm install
-pnpm dev      # run the worker locally, in watch mode
-pnpm prod     # build and deploy to your adapter
+npx -y create-astrale-domain@latest contacts --yes --instance dev
+cd contacts
+pnpm install
+pnpm prod
+```
+
+## Lay out every layer by bounded context
+
+Subdivide `schema/`, `core/`, and `runtime/` by bounded context, not by technical kind. A context owns
+its classes, edge classes, pure logic, handlers, errors, constants, and path helpers, so `issue`,
+`comments`, and `tags` each appear in all three layers. Cross-cutting behavior is itself a context:
+export lives in `sync/`, never in a technical folder such as `schema/functions/`.
+
+```ts
+// OK the same contexts across every layer
+// schema/issue/issue.ts  -  core/issue/paths.ts  -  runtime/issue/assign-issue.ts
+// schema/tags/tag.ts     -  core/tags/colors.ts  -  runtime/tags/create-tag.ts
+// schema/sync/export-issues.ts                 -  functions/sync/export-issues.ts
+
+// NO technical buckets that own no vocabulary
+// schema/functions/  -  schema/edges.ts  -  core/utils.ts  -  runtime/handlers.ts
+```
+
+## Keep core pure
+
+`core/` holds ONLY deterministic logic: projections, validation, defaults, path construction, utils and
+domain errors. It performs no I/O, holds no kernel session, and reads no clock or randomness. Effects
+belong to runtime handlers; external clients belong in `integrations/` and reach handlers through deps.
+This folder is unrelated to Core install data, which shares only the word.
+
+```ts
+// core/issue/paths.ts  -  pure.
+export function childPath(parent: AbsolutePath, slug: string): AbsolutePath {
+  const raw = parent.raw === '/' ? '' : parent.raw
+  return AbsolutePath.parse(`${raw}/${slug}`)
+}
+```
+
+## One file per callable, named verb-object
+
+Give each method and standalone function its own file inside its context, named after the business
+action it performs: `assign-issue.ts`, `add-comment-to-issue.ts`, `export-issues.ts`. The file holds the
+pure operation and its typed registration. A bare `assign.ts` drops the object; a shared `handlers.ts`
+drops the boundary.
+
+```ts
+// OK runtime/issue/assign-issue.ts    -  one callable, verb-object
+// OK functions/sync/export-issues.ts
+
+// NO runtime/issue/assign.ts          -  object lost
+// NO runtime/issue/handlers.ts        -  several callables in one file
 ```
 
 ## How to deploy a Domain?
 
-Deploying a domain ships its worker to a live URL, where it serves the domain's definition and handlers.
-Run `astrale-domain deploy <env>` (or `pnpm prod`); the deploy adapter builds the worker bundle, uploads
-it, and returns the address it now answers on. Deploying does not put the domain into any kernel
-instance; it only makes the code reachable, which installing then mounts.
+Deploy with `astrale-domain deploy <env>` or the scaffold's `pnpm prod`. Deployment ships the worker and
+produces a serving URL; it does not, by itself, prove that every target instance has the new schema.
+Some managed adapters can also install and return their own next steps, so use the deploy result rather
+than assuming installation is always manual. See publish, deploy, and install.
 
 ```ts
-// astrale.config.ts binds the deploy target; kept out of the worker bundle
-export default deploy(domain, cloudflare({ prod: { route: 'crm.acme.dev' } }))
+// astrale.config.ts
+export default deploy(domain, cloudflare({
+  prod: { route: 'contacts.example.dev' },
+}))
 ```
 
 ## How to install a Domain?
 
-Installing a domain mounts a deployed domain into one kernel instance, teaching it everything that
-domain can hold and do. Run `astrale domain install <origin-or-url> -i <instance>`; the kernel fetches
-the domain's signed bundle, verifies it, writes its schema and core data into the graph, then runs its
-seed once. After install, the domain's classes exist and its functions are callable on that instance.
+Install mounts a deployed domain onto one kernel instance. The kernel verifies and materializes the
+install graph, then invokes `postInstall` if one is configured. Install by catalog name for a published
+release, or directly from a URL while developing.
 
 ```bash
-astrale domain install crm.acme.dev -i staging              # via the admin catalog
-astrale domain install https://crm.acme.dev --direct -i dev # bypass the catalog
+astrale domain install contacts.example.dev -i staging
+astrale domain install https://contacts-dev.example.workers.dev --direct -i dev
 ```
 
 ## Publish vs Deploy vs Install
 
-**Deploying** ships a domain's worker to a live URL; **publishing** registers that URL in a catalog so
-instances can find it; **installing** mounts it onto one kernel instance. Three separate steps: deploy
-makes the code reachable, publish makes it discoverable, install makes it part of an instance's graph.
-You can install straight from a URL and skip publishing; you cannot install what was never deployed.
+**Deploy** ships the worker. **Install** materializes a deployed domain on one instance. The SDK command
+`astrale-domain publish [env]` is a release operation: it publishes the `./schema` package to npm when
+present, then registers the already-deployed URL in the catalog. The operator command `astrale domain
+publish` performs only that catalog registration. `astrale-domain deploy <env> --publish` combines
+deployment with the SDK release tail; managed deploy adapters may additionally install. See deployment
+and installation.
 
 ```bash
-astrale-domain deploy prod                                           # ship the worker
-astrale domain publish --origin crm.acme.dev --public-url https://crm.acme.dev  # register
-astrale domain install crm.acme.dev -i acme                          # mount on an instance
+astrale-domain deploy prod --publish  # deploy + schema release + catalog
+astrale-domain publish prod           # schema release + catalog for existing deploy
+astrale-domain publish --schema       # schema package only
+astrale-domain publish prod --skip-schema # catalog only
+astrale domain install contacts.example.dev -i staging
 ```
 
-## Changed the schema but didn't reinstall
+## Handler Code vs Installed Schema
 
-Editing your schema or handlers changes nothing on a running instance until you deploy and install
-again. The instance keeps running the version it last installed, so a class you just added is not there
-yet and a handler you just fixed is still broken. If a change does not seem to take, confirm you
-re-deployed and re-installed, not just saved the file.
+Handler code is served by the deployed worker and can hot-reload at the same URL during development
+without reinstalling the domain. The installed schema graph is a snapshot identified by its schema hash;
+changing classes, method contracts, views, core data, or bindings requires the deploy/install path that
+updates that snapshot. The presentation manifest is worker `/meta` data, so changing it affects future
+metadata reads after deployment rather than the installed schema graph.
+
+## Domain Definition
+
+A **domain definition** is the deployable composition of a domain's schema, complete method map,
+dependency mapper, views, standalone functions, presentation manifest, installation dependencies,
+physical path, and optional post-install function. It packages what the domain is; deployment adapters
+remain outside this worker-safe object.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  deps,
+  views,
+  functions,
+  manifest: {
+    logo: DOMAIN_LOGO,
+    entrypoint: views.home,
+    roles: [{ slug: 'editor', name: 'Editor', default: true }],
+  },
+  postInstall: functions.seed,
+  requires: ['identity.example.dev'],
+  path: '/domains/tasks.example.dev',
+})
+```
+
+## Domain Manifest
+
+A **domain manifest** is optional presentation and role metadata served from the deployed domain. `logo`
+is inline SVG or a data URL, `entrypoint` names the registered main view, and `roles` declares named
+capability identities. A role declaration does not grant permissions by itself; the domain provisions
+its grants, usually in post-install.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  views,
+  manifest: {
+    logo: DOMAIN_LOGO,
+    entrypoint: views.home,
+    roles: [
+      {
+        slug: 'editor',
+        name: 'Editor',
+        description: 'Can create and edit tasks',
+        default: true,
+      },
+    ],
+  },
+})
+```
+
+## How to develop a View locally?
+
+Use `astrale view` as the local Shell host for an installed View. It can resolve a semantic ViewPath
+directly or find the views attached to a target node; use `--list` before choosing when several views
+match, and `--snapshot` for an accessibility snapshot. The command uses the selected CLI identity, live
+kernel data, and the Shell handshake.
+
+For Vite HMR, keep the installed view identity and target but replace its frontend origin with
+`--view-url`. This keeps the graph binding and live session real while the frontend reloads locally,
+including for the application entrypoint. See view definition. Start the view client's current `dev:hmr`
+script first; run `astrale view` from a second terminal using the origin Vite prints. React clients
+should follow the shell-react hook pattern, while handshake mode determines whether that Shell bridge
+exists.
+
+```bash
+astrale view /projects/apollo --list -i dev
+astrale view /:tasks.example.dev:view.home --snapshot -i dev
+
+# Terminal 1, from the domain root
+pnpm --dir client dev:hmr
+
+# Terminal 2
+astrale view /:tasks.example.dev:view.home --view-url http://127.0.0.1:5173 -i dev
+```
+
+## Domain Placement
+
+**Domain placement** is the physical tree path of the Domain node. It defaults to `/domains/<origin>`,
+and its final segment must equal the origin. Placement does not move semantic addresses:
+`/:tasks.example.dev:class.Task` remains root-anchored, so a physical placement change does not rename
+domain members or their call addresses.
+
+```ts
+defineDomain({
+  schema,
+  methods,
+  path: '/domains/tasks.example.dev',
+})
+
+D.Task.path.class.raw
+// '/:tasks.example.dev:class.Task'
+```
+
+## Physical Domain Path vs Semantic Origin
+
+`defineDomain({ path })` controls where the Domain node sits in the physical tree and defaults to
+`/domains/<origin>`. It does not move the semantic namespace: compiled addresses remain rooted at
+`/:<origin>`. Use the physical path for containment and the origin for types, functions, and views. This
+is a domain-level application of spatial versus semantic paths and is independent of the serving URL.
+
+```ts
+defineDomain({
+  schema,
+  methods,
+  path: '/domains/contacts.example.dev',
+})
+
+D.Contact.path.class.raw // still /:contacts.example.dev:class.Contact
+```
+
+## Same Domain on Two Instances
+
+A domain is a reusable definition; installation and data are per kernel instance. Two instances can
+install the same origin and still share no graph data or grants. They may call the same worker
+deployment, whose cold-isolate dependencies are not per-instance state; keep durable and
+instance-specific state in each instance's graph. Each instance owns its installed version even when the
+serving URL is shared.
+
+## What to do after modeling a Domain?
+
+Implement every declared method with schema-derived types, register those handlers in a complete method
+map, wire external clients through `deps`, and add narrow tests around authorization and graph effects.
+Then run the domain locally and exercise one real call before deployment. A model is not complete until
+its runtime contract and security boundary are executable.
+
+## How to implement a method?
+
+Use `remoteMethod<Deps>()(schema, owner, method, impl)` so parameters, result, `self`, auth nullability,
+and dependencies all come from the declared contract. Put caller-sensitive checks in `authorize`, keep
+the execution body focused on state changes, and register every implementation through
+`remoteClassMethods` or `remoteInterfaceMethods`. This prevents a handler from silently drifting from
+its function.
+
+```ts
+import { EDIT } from '@astrale-os/kernel-core'
+import {
+  remoteClassMethods,
+  remoteMethod,
+  type SchemaMethodsImpl,
+} from '@astrale-os/sdk'
+
+export const renameContact = remoteMethod<Deps>()(schema, 'Contact', 'rename', {
+  authorize: ({ auth, kernel, self }) =>
+    kernel.auth.require({
+      who: auth.principal,
+      on: self.path,
+      perms: EDIT,
+      context: 'Contact.rename',
+    }),
+  execute: async ({ kernel, self, params, step }) => {
+    await step.run('update-contact-name', async () => {
+      await kernel.updateNode(D.Contact.path.class, self.path, {
+        [D.Contact.name.key]: params.name,
+      })
+    })
+  },
+})
+
+const classMethods = remoteClassMethods<Deps>()
+export const methods: SchemaMethodsImpl<typeof schema, Deps> = {
+  class: { Contact: classMethods(schema, 'Contact', { rename: renameContact }) },
+  interface: {},
+}
+```
+
+## How to implement a standalone function?
+
+Declare the contract with `func` in the schema, implement the same map key with `defineRemoteFunction`,
+then pass that map to `defineDomain`. The SDK rejects a missing or extra handler. A public webhook has
+`auth: null` and `kernel: null`; verify its upstream request first, then acquire a self-only session
+through `fn.kernel()`. Providers that sign exact raw bytes currently hit the raw-body route limitation;
+never reconstruct signed bytes from parsed JSON. This follows public-entry discipline.
+
+```ts
+export const functions = {
+  ingest: defineRemoteFunction({
+    inputSchema: z.object({ eventId: z.string(), payload: z.unknown() }),
+    outputSchema: z.object({ accepted: z.boolean() }),
+    auth: 'public',
+    authorize: ({ c, deps, params }) => deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+    execute: async ({ params, fn, step }) => {
+      const kernel = await fn.kernel()
+      await step.run('store-webhook-event', async () => {
+        const id = await kernel.createNode(D.Event.path.class, `/events/${params.eventId}`, {
+          [D.Event.payload.key]: params.payload,
+        })
+        return { id }
+      })
+      return { accepted: true }
+    },
+  }),
+}
+
+export const domain = defineDomain({ schema, methods, functions })
+```
+
+## How to test a domain's handlers?
+
+The SDK ships no test kernel. Export each handler body as a plain function over `{ kernel, step }`, then
+drive it with a domain-owned kernel double and `createInlineStep()`, the inline step executor from
+`@astrale-os/sdk/step`. Assert the patch it built and the pages it drained, not only its return value.
+Invoke the exported handler's `authorize` hook against a denied caller too, and keep a real kernel for
+one end-to-end install.
+
+```ts
+import { createInlineStep } from '@astrale-os/sdk/step'
+
+const capture = new CaptureKernel(issueGraph({ path: '/issues/one', comments: 2 }))
+
+await deleteIssue(AbsolutePath.parse('/issues/one'), {
+  kernel: capture.kernel,
+  step: createInlineStep(),
+})
+
+// One atomic drain, not one delete per comment.
+expect(capture.patches).toHaveLength(1)
+expect(capture.patches[0].nodes.delete).toHaveLength(3)
+```
+
+## Wire every function, method, and view into the domain
+
+A standalone function or view exists only when it is present in the `functions` or `views` map passed to
+the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
+map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
+before debugging dispatch.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  functions: { search },
+  views: { dashboard },
+  deps,
+})
+```
 
 ## Schema Hash
 
-A **Schema Hash** is a fingerprint of a domain's schema, computed from its shape with node ids stripped
-out, so the same model always hashes the same way. An install can demand an expected hash and refuse if
-the deployed schema does not match, which is how a release pipeline pins exactly the version it tested.
-It turns what would otherwise just install into a checked, reproducible artifact.
+The **schema hash** identifies the complete id-independent install graph, not only the user-authored
+class definitions. It lets the kernel detect whether an installed bundle matches the deployed domain
+definition. Treat a hash change as evidence that the installable graph contract changed; inspect the
+actual diff before deciding whether reinstall or migration is safe.
 
 ## Install Bundle
 
-An **Install Bundle** is the signed package a kernel fetches to install a domain: its origin, the graph
-of its schema and core nodes, a credential proving who built it, and any seed and dependencies. The
-worker serves it on demand, and the kernel verifies the signature before writing anything. Everything an
-install needs travels in this one verifiable payload.
+An **install bundle** is the serialized, id-independent graph and metadata the kernel consumes to
+install a domain. It includes schema members, bindings, views, core data, and physical placement. The
+install response also carries signed `requires` and `postInstall` fields. Presentation manifest data is
+served separately from `/meta` and is not part of this bundle. Runtime ids are minted during
+installation, which is why bundles can be published and installed on more than one instance.

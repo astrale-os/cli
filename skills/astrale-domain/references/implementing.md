@@ -2,297 +2,888 @@
 
 # Implementing
 
-Read when implementing handlers, remote functions, kernel calls, cross-domain calls, path addressing, node CRUD, list/find/query logic, or static-vs-instance dispatch.
+Read when implementing schema-bound methods, standalone functions, durable-shaped steps, graph reads and
+writes, cross-domain calls, or semantic dispatch. Prefer schema-derived types and the handler's
+schema-bound client (`kernel.classes`) for typed `BoundNode`s and traversals; use `withSchema` at
+cross-domain boundaries. Keep compiled accessors for low-level graph work, use explicit caller gates,
+and choose the narrowest operation that preserves the invariant.
 
-## Path
+## Function Handler
 
-A **Path** is an address that names or locates something in the graph: a node by where it sits in the
-tree, a node by its id, or a member of a domain by meaning. Every call and every grant targets a path,
-so addressing is how you point at anything in Astrale. The kernel parses a path into a walk it follows
-to reach exactly one target.
+A **handler** is the executable implementation of a declared function. The schema says what a call
+means; the handler supplies behavior. Authorization, orchestration, and effects are separate concerns
+inside that behavior, while kernel permissions remain the resource boundary. Their implementation
+belongs in method handlers or standalone handlers.
 
-```ts
-'/contacts/ada'                 // by tree location
-'@4f0a...'                        // by node id
-'/:crm.acme.dev:class.Contact'  // by meaning (a class)
-'/contacts/ada::assign'         // a method on a node
-```
+## How to implement a method?
 
-## Addressing Language
-
-The **Addressing Language** is the small grammar an Astrale path is written in, where a few tokens say
-how to reach a target. A leading `/` walks the tree by location; `@` followed by an id points straight
-at a node; `:` names a member of a domain by meaning; and `::` calls a method on whatever the path
-before it resolves to. Member prefixes (`class.`, `interface.`, `function.`, `view.`) say which kind of
-member a semantic path names.
+Use `remoteMethod<Deps>()(schema, owner, method, impl)` so parameters, result, `self`, auth nullability,
+and dependencies all come from the declared contract. Put caller-sensitive checks in `authorize`, keep
+the execution body focused on state changes, and register every implementation through
+`remoteClassMethods` or `remoteInterfaceMethods`. This prevents a handler from silently drifting from
+its function.
 
 ```ts
-'/contacts/ada'                    // '/'  walk the tree
-'@4f0a-...'                          // '@'  a node id
-'/:crm.acme.dev:function.search'   // ':'  a domain member
-'/contacts/ada::assign'            // '::' a method on a node
+import { EDIT } from '@astrale-os/kernel-core'
+import {
+  remoteClassMethods,
+  remoteMethod,
+  type SchemaMethodsImpl,
+} from '@astrale-os/sdk'
+
+export const renameContact = remoteMethod<Deps>()(schema, 'Contact', 'rename', {
+  authorize: ({ auth, kernel, self }) =>
+    kernel.auth.require({
+      who: auth.principal,
+      on: self.path,
+      perms: EDIT,
+      context: 'Contact.rename',
+    }),
+  execute: async ({ kernel, self, params, step }) => {
+    await step.run('update-contact-name', async () => {
+      await kernel.updateNode(D.Contact.path.class, self.path, {
+        [D.Contact.name.key]: params.name,
+      })
+    })
+  },
+})
+
+const classMethods = remoteClassMethods<Deps>()
+export const methods: SchemaMethodsImpl<typeof schema, Deps> = {
+  class: { Contact: classMethods(schema, 'Contact', { rename: renameContact }) },
+  interface: {},
+}
 ```
 
-## Path: Spatial vs Semantic
+## Implement methods from the schema contract
 
-A **spatial** path says *where* a node sits in the tree, like `/contacts/ada`. A **semantic** path says
-*what* something is, naming a kind from a domain's vocabulary, like
-`/:contacts.example.dev:class.Contact`. One points to a place; the other points to a meaning.
+Implement a schema method with `remoteMethod`, and aggregate implementations with `remoteClassMethods`
+or `remoteInterfaceMethods`. These helpers derive params, result, static-versus-instance self, and auth
+policy from the schema, so the handler cannot silently drift from the declared function.
 
 ```ts
-'/contacts/ada'                         // spatial  -  WHERE this node lives
-'/:contacts.example.dev:class.Contact'  // semantic  -  WHAT kind of thing it is
+export const renameContact = remoteMethod<Deps>()(
+  schema,
+  'Contact',
+  'rename',
+  {
+    authorize: ({ kernel, auth, self }) =>
+      kernel.auth.require({
+        who: auth.principal,
+        on: self.path,
+        perms: EDIT,
+        context: 'Contact.rename',
+      }),
+    execute: async ({ self, params }) => {
+      const contact = await self.node()
+      await contact.update({ name: params.name })
+    },
+  },
+)
 ```
 
-## Identity vs Location (id vs path)
+## One file per callable, named verb-object
 
-Every node has two ways to be named: its **identity**, a stable id it keeps for life, and its
-**location**, the path where it currently sits. The path can change when a node is renamed or moved; the
-id never does. Address by id when you mean *this exact node forever*, and by path when you mean
-*whatever lives here now*.
+Give each method and standalone function its own file inside its context, named after the business
+action it performs: `assign-issue.ts`, `add-comment-to-issue.ts`, `export-issues.ts`. The file holds the
+pure operation and its typed registration. A bare `assign.ts` drops the object; a shared `handlers.ts`
+drops the boundary.
 
 ```ts
-await ctx.graph.query((q) => q.from('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20')) // by id  -  this exact node, forever
-await ctx.graph.query((q) => q.from('/contacts/ada'))                          // by path  -  whatever lives here now
+// OK runtime/issue/assign-issue.ts    -  one callable, verb-object
+// OK functions/sync/export-issues.ts
+
+// NO runtime/issue/assign.ts          -  object lost
+// NO runtime/issue/handlers.ts        -  several callables in one file
 ```
 
-## IdPath
+## What does ctx.self represent?
 
-An **IdPath** addresses a node directly by its immutable id, written `@` followed by the id, like
-`@4f0a-...`. It needs no tree walk and never changes when the node is moved or renamed, which makes it
-the way to mean this exact node forever. It is the addressing form behind id versus location.
+For an instance method, `ctx.self` is the typed receiver named by the call. Its path and call proxy are
+address-first; `self.node()` performs the point-in-time graph read when data is needed. It is absent for
+a static method. Use this SDK convenience through the canonical method implementation pattern, while
+keeping the conceptual distinction in static versus instance methods and the read semantics in get
+versus getOrThrow.
 
-## AbsolutePath
+## What are ctx.fn identity tools for?
 
-An **AbsolutePath** is a node's full location from the root: every slug from `/` down to it, like
-`/contacts/ada`. It is the canonical spatial address, anchored at the root and walked through parent
-links in the tree. Every node except the root has exactly one absolute path at any moment.
+`ctx.fn` exposes the currently executing callable's identity tools. `fn.ref` is a schema ref used for
+naming, not an addressable graph path; `fn.credential()` signs as the function, and `fn.kernel()`
+creates a self-only session. Use that session only when the function identity should act, most notably
+after a public endpoint verifies its upstream. See public entry points, handler versus self-only
+authority, and the raw-body limitation.
 
-## DomainPath
+## Composed Handler Kernel vs fn.kernel()
 
-A **DomainPath** is the semantic root for a domain's vocabulary, written `/:origin`, like
-`/:crm.acme.dev`. Its continuations name members in the domain's namespaces: `:class.Contact`,
-`:interface.ContactOps`, `:class.Contact:create`, `:function.search`, `:view.dashboard`, or
-`:core.defaults`. Use it when a path means "this domain's Contact or search" rather than "the node at
-this tree location."
-
-## ClassPath
-
-A **ClassPath** addresses a class itself by meaning, written `/:origin:class.Name`, like
-`/:crm.acme.dev:class.Contact`. It resolves to the class's meta-node (the class is itself a node), which
-is how you call a static method or point at a type. The `class.` prefix is what marks the member as a
-class rather than an interface or function.
+For required authentication, `ctx.kernel` is a bound session using `union(caller delegation, function
+identity)`. For optional authentication it may be null; for public handlers it is always null. `await
+ctx.fn.kernel()` creates a **self-only** session for the current function identity. Use it after
+authenticating an external webhook, not to pretend an anonymous caller was authorized. See composed
+authority and public entry points.
 
 ```ts
-'/:crm.acme.dev:class.Contact'          // the Contact class node
-'/:crm.acme.dev:class.Contact:create'   // a static method on it (a MethodPath)
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: webhookInput,
+  outputSchema: webhookOutput,
+  authorize: ({ c }) =>
+    verifySignedEvent({
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+  }),
+  execute: async ({ fn, step }) => {
+    const kernel = await fn.kernel()
+    await step.run('store-event', () => storeEvent(kernel))
+    return { accepted: true }
+  },
+})
 ```
 
-## InterfacePath
+## Composed Handler Authority
 
-An **InterfacePath** addresses an interface by meaning, written `/:origin:interface.Name`, like
-`/:crm.acme.dev:interface.Contactable`. Like a class path it resolves to the member's meta-node; the
-difference is the `interface.` prefix, which says this member is an abstract contract rather than a
-concrete class. You reach it to address a shared method declared on the interface.
+An authenticated handler's kernel is bound to the **union** of the delegated caller authority and the
+current function identity. That lets a function use its own operational grants, but it means a
+successful graph write does not prove the caller could perform it personally. Put caller-sensitive
+checks in an explicit authorization gate before the first effect, naming the principal whose standing
+authority is required.
 
-## MethodPath
+## Declare authorize on every callable
 
-A **MethodPath** addresses a method owned by a class or interface, written `/:origin:class.Name:method`,
-like `/:crm.acme.dev:class.Contact:create`. It extends a class path with a final `:method`, resolving to
-the function node the class declares.
-
-Use a MethodPath directly for a static method, where no node is the receiver. An instance method still
-has a MethodPath as its semantic identity, but calling it needs a receiver: use an InstanceMethodPath
-such as `/contacts/ada::assign`. In that form, the node before `::` becomes the handler's `self`; it is
-not a normal parameter you pass in the method body.
-
-## InstanceMethodPath
-
-An **InstanceMethodPath** calls a method on a node by its type, written as any node address followed by
-`::method`, like `@4f0a-...::send` or `/contacts/ada::assign`. The kernel dispatches it by walking from
-the node to its class, then to the method, so the same `::send` works on any node of a type that
-declares it. This form lives only in the path: the graph cannot reproduce which instance was the source,
-so it is parsed, never recovered.
-
-## FunctionPath
-
-A **FunctionPath** addresses a standalone remote function declared at the domain level, written
-`/:origin:function.name`, like `/:crm.acme.dev:function.search`. It is not the path for every function:
-a method owned by a class or interface uses a MethodPath. Use FunctionPath only for a top-level callable
-not bound to a type, such as search or a webhook entry point.
-
-## ViewPath
-
-A **ViewPath** addresses a view a domain offers, written `/:origin:view.name`, like
-`/:crm.acme.dev:view.dashboard`. The `view.` prefix marks the member as an iframe-mountable UI named by
-meaning, and the path resolves to the view node carrying its URL. It is how the shell finds a domain's
-view to open it in a browser.
-
-## Static method vs Instance method
-
-An **instance** method runs on one particular node, the `self` it acts on, like assigning a role to a
-specific contact. A **static** method belongs to the class itself and runs without any node, like
-creating a brand-new contact. You address an instance method with `::` on a node, and a static through
-its class.
+Give every `remoteMethod` and `defineRemoteFunction` an `authorize` hook. Gate the principal with
+`kernel.auth.require`; when a callable is genuinely open, write an empty hook rather than none.
 
 ```ts
-await kernel.call('/contacts/ada::assign', { role: 'lead' })                    // instance  -  acts on Ada
-await kernel.call('/contacts.example.dev/class.Contact/createContact', { email }) // static  -  on the class
+// Gated: the caller must personally hold EDIT on the receiver.
+export const deleteIssueMethod = remoteMethod<Deps>()(schema, 'Issue', 'delete', {
+  authorize: ({ kernel, auth, self }) =>
+    kernel.auth.require({
+      who: auth.principal,
+      on: self.path,
+      perms: EDIT,
+      context: 'Issue.delete',
+    }),
+  execute: ({ self, kernel, step }) => deleteIssue(self.path, { kernel, step }),
+})
+
+// Open to any authenticated caller: declare it, do not omit it.
+export const listTagsMethod = remoteMethod<Deps>()(schema, 'Tag', 'list', {
+  authorize: () => {},
+  execute: ({ kernel }) => listTags(kernel),
+})
 ```
 
-## Kernel generic interfaces
+## Gate the caller explicitly when the rule is about the caller
 
-A **Kernel generic interface** is a small metadata contract in KernelSchema for common properties. You
-normally do not implement them by hand: `nodeClass` and `nodeInterface` auto-inherit `Node`, which
-inherits `Named`, `Descriptable`, `Remotable`, `Timestamped`, and `Statused`; edge classes and
-interfaces auto-inherit `Edge`, which inherits `Sluggable`, `Timestamped`, and `Remotable`. `Iconable`
-is used where schema meta-nodes carry an SVG icon. Use these inherited fields instead of local
-duplicates.
+A remote handler's kernel session carries the union of the caller delegation and the function identity.
+Therefore, a successful graph operation does not prove that the caller personally held the right. Put
+caller-specific business gates in the authorize hook and check the caller with `kernel.auth.require`
+before execution.
 
-## The handler graph surface (ctx.graph)
+```ts
+export const installApplication = remoteMethod<Deps>()(
+  schema,
+  'Application',
+  'install',
+  {
+    authorize: ({ kernel, auth, params }) =>
+      kernel.auth.require({
+        who: auth.principal,
+        on: params.space,
+        perms: EDIT,
+        context: 'Application.install',
+      }),
+    execute: ({ params, kernel }) => install(params, { kernel }),
+  },
+)
+```
 
-Every handler gets `ctx.graph`, a small typed API over the kernel's two graph
-doors — `function.get` (reads) and `function.mutate` (writes). There is no
-per-node graph syscall anymore: `createNode`, `get`, `update`, `deleteNode`,
-`link`, `unlink`, `getLinks`, `getTree`, `listChildren`, `push` are all gone.
-Reach for the sugar, not raw `kernel.call`, for graph work:
+## Run every effect inside a step
 
-- reads: `graph.query((q) => q.from(path)…)` → a `QueryResult`. The read presets
-  (`node`/`children`/`tree`/`links`) are GONE; every read is a query plus a
-  `result` accessor: the seed node is `result.roots[0] ?? null`; its children are
-  `result.graph.nodes.filter((n) => !result.roots.includes(n))` after a
-  `.children()`; a subtree is `.descend(depth)`; incident edges are
-  `result.graph.edges.all` after a `.links(edge?)`
-- writes: `graph.create(cls, at, props?)` → new id, `graph.update(cls, path, props)`,
-  `graph.remove(cls, path)`, `graph.createEdge(e)` → new id, `graph.removeEdge(e)`
-- raw doors: `graph.get(input)`, `graph.mutate(patch)` (accepts a `Patch` builder);
-  `graph.nextInput(input, result)` folds a page's cursors for the next call.
+Wrap every kernel call, external request, clock read, and random value in `step.run` under a stable id.
+Keep pure projection, validation, and defaults outside.
 
-`self.node()` still works — it now reads through `function.get` under the hood
-(same memoization/reload). `pushPatch` is REMOVED; build a `Patch` and hand it to
-`graph.mutate` when you need a multi-write batch. On the frontend the identical
-API is `shell.kernel.graph`.
+```ts
+const parent = await step.run('resolve-issue-parent', async () => {
+  const node = await kernel.getOrThrow(params.parent)
+  return node.path.raw // JSON-serializable, never a Path or BoundNode
+})
+
+// Pure: no step.
+const props = defaultIssueProps(params, AbsolutePath.parse(parent))
+
+await step.run('create-issue', () =>
+  kernel.mutate((m) => {
+    const issue = m.createNode(D.Issue.path.class, AbsolutePath.parse(parent), props)
+    m.link(issue, D.reported_by.path.class, auth.principal)
+  }),
+)
+```
+
+## Give step stages stable identifiers and serializable results
+
+Give each externally meaningful stage of a handler its own stable `step.run` identifier; do not hide the
+whole handler behind one opaque step. Do not nest one `step.run` inside another: the inner step composes
+no child key and its result is serialized twice, so the stage boundary is lost. Return only values that
+survive a JSON round trip, not clients, functions, or cyclic objects; return nothing when no later stage
+needs a result. This stage boundary is ready for a future durable backend, while today's inline executor
+still requires provider idempotency and graph-backed convergence.
+
+```ts
+const contact = await step.run('resolve-contact', async () => {
+  const node = await kernel.getOrThrow(params.contact)
+  return { id: node.id, path: node.path.raw }
+})
+
+const sent = await step.run('send-welcome-email', async () => {
+  const result = await deps.email.send({
+    contactId: contact.id,
+    idempotencyKey: contact.id,
+  })
+  return { messageId: result.id }
+})
+```
+
+## Make external effects converge through steps and graph state
+
+For an external effect, persist intent in the graph, give each meaningful stage a stable step, and
+record the provider's result on the modeled node. Reuse a provider idempotency key derived from stable
+graph identity so a retry converges after any interruption. The graph stores durable progress; the
+provider key prevents duplicate effects; the steps expose replayable stage boundaries.
+
+```ts
+execute: async ({ self, kernel, deps, step }) => {
+  const message = await self.node()
+
+  await step.run('mark-sending', async () => {
+    await message.update({ status: 'sending' })
+    return { status: 'sending' }
+  })
+
+  try {
+    const sent = await step.run('send-provider-message', async () => {
+      const result = await deps.email.send({ idempotencyKey: message.id })
+      return { providerMessageId: result.id }
+    })
+    await step.run('mark-sent', async () => {
+      await message.update({ status: 'sent', providerMessageId: sent.providerMessageId })
+      return { status: 'sent' }
+    })
+  } catch (error) {
+    try {
+      await step.run('mark-error', async () => {
+        await message.update({ status: 'error' })
+        return { status: 'error' }
+      })
+    } catch (recordError) {
+      throw new AggregateError([error, recordError], 'send failed and error state was not recorded')
+    }
+    throw error
+  }
+}
+```
+
+## Return only JSON-serializable step results
+
+`step.run` round-trips a completed value through JSON. A function, `BigInt`, or cyclic object fails
+after the step body has run, while a class instance may silently lose its prototype or fields. Either
+outcome can leave an external effect completed without a trustworthy recorded result. Return plain data
+and reconstruct runtime capabilities from the handler's dependency container in the next stage; see
+dependency construction.
+
+```ts
+// Wrong: a client is not a durable plain value; serialization may fail or erase it.
+await step.run('connect-provider', () => deps.provider)
+
+// Right: return the durable fact the next step needs.
+await step.run('connect-provider', async () => {
+  const connection = await deps.provider.connect(params)
+  return { connectionId: connection.id }
+})
+```
+
+## Durable step execution and compensation are not implemented yet
+
+The current SDK implements `step.run` with an inline executor: it builds a stable scoped key, runs the
+callback on every invocation, then JSON-round-trips the result. Durable execution is planned for a
+future backend but is not implemented yet: there is no persisted completion, replay deduplication, or
+exactly-once effect. First-class rollback or compensation is also planned for the future but absent
+today, so handlers must record failure, compensate explicitly, and use provider idempotency plus graph
+convergence.
+
+## Build external clients in deps
+
+Construct external clients in the domain's `deps` function and read them from each handler. Dependencies
+are resolved once for the worker lifecycle, so construction should be deterministic and free of network
+work; perform request-specific I/O inside the handler. Keep module imports declarative and side-effect
+free; see the module-load antipattern.
+
+```ts
+export function deps(env: Env): Deps {
+  return { email: createEmailClient({ token: env.EMAIL_TOKEN }) }
+}
+```
+
+## How to implement a standalone function?
+
+Declare the contract with `func` in the schema, implement the same map key with `defineRemoteFunction`,
+then pass that map to `defineDomain`. The SDK rejects a missing or extra handler. A public webhook has
+`auth: null` and `kernel: null`; verify its upstream request first, then acquire a self-only session
+through `fn.kernel()`. Providers that sign exact raw bytes currently hit the raw-body route limitation;
+never reconstruct signed bytes from parsed JSON. This follows public-entry discipline.
+
+```ts
+export const functions = {
+  ingest: defineRemoteFunction({
+    inputSchema: z.object({ eventId: z.string(), payload: z.unknown() }),
+    outputSchema: z.object({ accepted: z.boolean() }),
+    auth: 'public',
+    authorize: ({ c, deps, params }) => deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+    execute: async ({ params, fn, step }) => {
+      const kernel = await fn.kernel()
+      await step.run('store-webhook-event', async () => {
+        const id = await kernel.createNode(D.Event.path.class, `/events/${params.eventId}`, {
+          [D.Event.payload.key]: params.payload,
+        })
+        return { id }
+      })
+      return { accepted: true }
+    },
+  }),
+}
+
+export const domain = defineDomain({ schema, methods, functions })
+```
+
+## When to use a standalone function vs a static method?
+
+Authority does not decide: both are schema-declared callables, and both carry their own function
+identity, `deps`, `step`, `authorize`, and auth policy. Use a standalone function for domain-level
+behavior, for the postInstall target, or for a webhook that must read the raw request (`ctx.c`). Use a
+static method for schema-derived params, a schema-bound `ctx.kernel`, and stream or binary output.
+
+## Wire every function, method, and view into the domain
+
+A standalone function or view exists only when it is present in the `functions` or `views` map passed to
+the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
+map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
+before debugging dispatch.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  functions: { search },
+  views: { dashboard },
+  deps,
+})
+```
+
+## Use the graph API before raw calls
+
+Use the kernel client's graph surface for ordinary graph work: `get`, `getOrThrow`, `children`,
+`neighbors`, `query`, `mutate`, and `reconcile`. These operations preserve typed paths, paging, error
+mapping, and atomic write semantics. Reserve raw calls for domain methods or kernel functions without a
+graph helper.
+
+```ts
+const contact = await kernel.getOrThrow('/contacts/ada')
+const projects = await kernel.neighbors(
+  contact.path,
+  D.works_on.path.class,
+  'out',
+)
+await projects.all()
+```
 
 ## How to create a node?
 
-You create a node with `ctx.graph.create`, giving it a class, a path to place it
-at, and its initial property values. The kernel checks the props against the
-class and places the node in the tree under the path's parent, and the node
-exists from then on; the call returns the minted node id. Creating a node is how
-something new comes to exist.
+Use `kernel.createNode(class, path, props)` for one independent write. Use mutate when the new node and
+its relationships must commit together, or reconcile when declaring desired state. The kernel validates
+the class and structural qualified properties; do not assume every Zod value refinement runs on a graph
+write.
 
 ```ts
-const id = await ctx.graph.create(
-  D.Contact.path.class.raw,
-  '/contacts/ada',
-  { [D.Contact.email.key]: 'ada@example.dev' },
-)
-// batch form — many writes, one atomic function.mutate:
-await ctx.graph.mutate({
-  nodes: { create: [{ class: D.Contact.path.class.raw, at: '/contacts/ada', props: {} }] },
+const id = await kernel.createNode(D.Contact.path.class, '/contacts/ada', {
+  [D.Contact.email.key]: 'ada@example.dev',
 })
 ```
 
 ## How to read and update a node?
 
-You read a node by querying its path and taking the seed, and change it with
-`graph.update`. A single-node read is `graph.query((q) => q.from(path))`; the
-result's `roots[0] ?? null` is the node (its class, path, and current properties)
-or `null` when it is missing or not visible to you. `graph.update` writes new
-values, checked against the node's class just as at creation. Each is authorized
-before it touches the graph — a read needs `READ`, an update needs `EDIT` on the
-target.
+Use `get` for optional presence and `getOrThrow` when absence is an error. Update with the class, node
+path, and changed qualified properties. Reads deliberately fold missing and visibility-masked nodes
+together; see missing versus masked reads. For multi-write invariants, use one mutation.
 
 ```ts
-const ada = (await ctx.graph.query((q) => q.from('/contacts/ada'))).roots[0] ?? null // read props
-await ctx.graph.update(D.Contact.path.class.raw, '/contacts/ada', { [D.Contact.title.key]: 'Lead' }) // write props
+const contact = await kernel.getOrThrow('/contacts/ada', 'rename contact')
+await kernel.updateNode(D.Contact.path.class, contact.path, {
+  [D.Contact.name.key]: 'Ada Lovelace',
+})
 ```
 
-## How to use another Domain?
+## How to delete a node with children?
 
-You use another domain by declaring it as a dependency and calling its functions like any other. List
-its origin in your `requires` so the kernel verifies it is already installed, import its schema if you
-need its classes in your own types, then call across to its paths. The graph is shared, so another
-domain's nodes are directly readable once you hold permission.
+`deleteNode` is leaf-guarded and Astrale has no cascade or `onDelete` rule. To remove a subtree, read
+every descendant, then put a delete arm for each descendant and for the parent into one mutation. A
+single surviving descendant rejects the whole patch, so drain every page before writing. Edges need no
+arm: see children block, edges vanish.
 
 ```ts
-// declare the dependency so the kernel installs it first
-defineDomain({ schema, methods, requires: ['ai-gateway.astrale.ai'] })
-// then call its functions like any path you have permission on
-await kernel.call('/ai-gateway.astrale.ai/class.Model/list', {})
+const comments = await step.run('read-issue-comments', () =>
+  kernel
+    .children(issue, { classes: [D.Comment.path.class], limit: 100 })
+    .then((page) => page.all())
+    .then((nodes) => nodes.map((node) => node.path.raw)),
+)
+
+await step.run('delete-issue-and-comments', () =>
+  kernel.mutate((m) => {
+    for (const comment of comments) m.deleteNode(D.Comment.path.class, comment)
+    m.deleteNode(D.Issue.path.class, issue)
+  }),
+)
 ```
 
-## Cross-Domain calls
+## Delete: children block, edges vanish
 
-A **Cross-Domain call** is one domain invoking another domain's function. Because every domain installed
-in a kernel instance shares the one graph, the call just names a path the other domain owns and the
-kernel routes it. The caller still needs permission on the target and the call carries the caller's
-identity, so crossing a domain boundary changes nothing about how authority is checked.
+Delete treats the two relationships oppositely. A node that still has children cannot be deleted at all:
+the kernel throws `NodeNotEmptyError` and the whole patch writes nothing. A node's edges never block it:
+every incident edge, inbound and outbound, is removed with the node, along with the grants held on it,
+while the node at the far end survives and silently loses the relationship. See how to drain a subtree.
 
-```ts
-// call another domain's function by naming its path; the kernel routes it
-await kernel.call('/ai-gateway.astrale.ai/class.Model/list', {})
-```
+## How to read and find nodes?
 
-## Local Execution vs Remote Execution
-
-A call runs **locally** when its function lives on the same worker that received it: the handler
-executes in place. It runs **remotely** when the function lives on another worker; the kernel does not
-run it but issues a redirect to the worker that owns it. What decides which is simply where the function
-is bound, not how you wrote the call, so local and remote calls look identical.
+Use the narrowest graph operation that answers the question: `get` or `getOrThrow` for one path,
+`children` for containment, `neighbors` for one relationship, and `query` for a multi-root or multi-hop
+subgraph. These methods are flattened directly onto the bound kernel session. Avoid re-reading nodes
+already returned by a paged collection, and use structured queries instead of raw database syntax.
 
 ```ts
-// identical call shape; only the function's binding decides where it runs
-await kernel.call('/contacts/ada::assign', { role: 'lead' })     // local: same worker
-await kernel.call('/ai-gateway.astrale.ai/class.Model/list', {}) // remote: redirected
-```
-
-## kernel.call vs callRemote
-
-Use `kernel.call` for anything on the same kernel: syscalls and other methods of domains installed
-alongside yours. Use callRemote when the target lives on a different worker, because that hop needs a
-credential minted for the other worker's audience. Same kernel, plain call; another worker, callRemote.
-
-```ts
-await kernel.call('/contacts/ada::assign', { role: 'lead' })           // same kernel
-await callRemote('/billing.acme.dev/class.Invoice/issue', { amount })  // another worker
-```
-
-## callRemote
-
-**callRemote** is how a handler calls a function on another worker, as opposed to another domain sharing
-the same kernel (a plain cross-domain call). A call that leaves your worker must carry a credential
-addressed to the worker it is bound for, its audience; callRemote is the call that arranges this. It
-settles who the credential is for, never what it may do.
-
-```ts
-execute: async ({ params, callRemote }) => {
-  // call another worker's method; the credential is re-minted for its audience
-  return callRemote('/ai-gateway.astrale.ai:class.Model:complete', { prompt: params.q })
+const contact = await kernel.getOrThrow('/contacts/ada')
+const projects = await kernel.neighbors(contact.path, D.works_on.path.class, 'out')
+for await (const project of projects) {
+  await indexProject(project)
 }
 ```
 
-## Calling an instance form for a static
+## Pagination
 
-'method x not found... call it as /:o:class.C/x' means you used::method on a static; switch to the
-static slash form.
+**Pagination** delivers a large read as a sequence of bounded pages. The current `Paged` result exposes
+`nodes` and `first` for the current page, `next()` for a live next page, `all()` and async iteration for
+draining, and `cursor()` for an opaque resumable position. See paged graph reads, the first-page
+pitfall, and structured-query continuation.
 
-## Walking children one by one
+## How to list a node's children?
 
-Fetching a folder's children and then querying each child again to read it turns a single logical read
-into dozens of round trips. One `graph.query(...).children()` already returns the child nodes with their
-data in ONE `function.get`, so read them off `result.graph` instead of re-querying each by path. When you
-find yourself issuing a `graph.query((q) => q.from(child.path))` inside a loop over children, you have an
-N-plus-one. For a whole subtree, `.descend(depth)` fetches many levels in one `function.get`.
+Call `kernel.children(path, options)`. It returns a `Paged` collection: `nodes` is the current page,
+`first` is its first node or null, `next()` advances, `all()` drains, `cursor()` gives an opaque resume
+token, and async iteration streams all pages. Filter by class and order in the request rather than
+issuing an N-plus-one loop. See pagination, tree containment, and the read selection ladder.
 
 ```ts
-// NO N+1: a children query, then a per-child query re-read
-const listed = await ctx.graph.query((q) => q.from('/contacts').children())
-const kids = listed.graph.nodes.filter((n) => !listed.roots.includes(n))
-for (const k of kids) await ctx.graph.query((q) => q.from(k.path))
-// OK the children query already returned each child's props; just read them
-const r = await ctx.graph.query((q) => q.from('/contacts').children())
-const loaded = r.graph.nodes.filter((n) => !r.roots.includes(n))
-// deeper: one function.get for the subtree instead of a level-by-level walk
-const subtree = await ctx.graph.query((q) => q.from('/contacts').descend(3))
+const page = await kernel.children('/contacts', {
+  classes: [D.Contact.path.class],
+  limit: 100,
+  order: { by: D.Contact.name.key, dir: 'asc' },
+})
+
+for await (const contact of page) {
+  await indexContact(contact)
+}
+```
+
+## Consume paged results deliberately
+
+`children` and `neighbors` return a paged collection, not a complete array. Read `nodes` when one page
+is the intended boundary; call `all()`, follow `next()`, or use async iteration when the operation needs
+every matching node. Preserve `cursor()` when work must resume without restarting the read.
+
+```ts
+const contacts = await kernel.children('/contacts', {
+  classes: [D.Contact.path.class],
+  limit: 100,
+})
+
+for await (const contact of contacts) {
+  await indexContact(contact)
+}
+```
+
+## Do NOT read only the first page
+
+`children` and `neighbors` return an `Paged` collection whose first page is `result.nodes`, not the
+complete collection. Code that treats that array as exhaustive works in small fixtures and silently
+truncates in production. Drain with `all()`, follow `next()`, iterate asynchronously, or persist
+`cursor()` according to the operation's paging contract.
+
+```ts
+const apps = await kernel.children('/apps', { limit: 100 })
+
+const firstPage = apps.nodes
+const resumeFrom = apps.cursor()
+const everyApp = await apps.all()
+```
+
+## How to run a structured graph query?
+
+Use `kernel.query` with the typed builder for supported reads or pass a portable v1 AST. The result is a
+`GraphResult` containing the hydrated subgraph, visible roots, paging, and a replayable cursor AST.
+Builder `from`, `children`, `descend`, `out`, `in`, and `links` are current; callback-form `filter`,
+`with`, and raw `expand` remain gated until the structured query syscall lands. Do not use raw Cypher.
+Start with simpler reads and combine related writes through mutate. Continuation is subject to the
+single-root limit, and content data is not wired yet.
+
+```ts
+const result = await kernel.query((q) =>
+  q.from('/contacts/ada').out(D.works_on.path.class, { as: 'projects', limit: 100 }),
+)
+
+for (const edge of result.graph.edges.all) {
+  consume(edge)
+}
+```
+
+## Project a query result through its graph accessors
+
+Read a query result through its indexed accessors: `nodes.byId`, `nodes.byClass`, `nodes.get`,
+`edges.byClass`, and `graph.endpoints(edge)`. Do not scan or stringify `nodes.all`. An edge carries
+`source` and `target` as paths, not ids, and an endpoint gathered from outside the read's subtree is not
+materialized: `nodes.get` returns null for it. Build the read model from the returned graph, never by
+reading each node again.
+
+```ts
+const result = await kernel.query((q) =>
+  q
+    .from(issue)
+    .children({ classes: [D.Comment.path.class] })
+    .out(D.tagged_with.path.class, { as: 'tags' }),
+)
+
+const comments = result.graph.nodes.byClass(D.Comment.path.class)
+
+for (const edge of result.graph.edges.byClass(D.tagged_with.path.class)) {
+  const { target } = result.graph.endpoints(edge)
+  if (target) render(target) // null when the endpoint lies outside the read
+}
+```
+
+## Prefer schema-bound clients for typed domain work
+
+Prefer a schema-bound client when the schema is known. In an SDK class or interface method handler,
+`kernel` is already bound to the domain schema; use `kernel.classes` directly. Outside that handler
+context, or when switching to an imported domain, call `kernel.withSchema(schema)` once at the boundary.
+
+Each class handle supports typed static dispatch, address-only instance dispatch, and `.get()` for
+hydrated `BoundNode` snapshots. A bound node exposes short-keyed `props`, domain methods directly,
+cardinality-aware traversal under `.links`, and typed paged children. Kernel node operations remain
+available under `node.$`; non-colliding ones are also available directly. Therefore a domain method
+named `update` or `refresh` stays direct while the kernel operation remains unambiguous as
+`node.$.update()` or `node.$.refresh()`.
+
+Generic typed node creation is the root operation `kernel.create(type, at, props)`. The client does not
+synthesize `classes.Contact.create`; that member exists only when the schema actually declares a static
+method named `create`.
+
+The schema-bound client retains the complete graph surface. Use `query`, `mutate`, `reconcile`, or
+compiled `D` accessors for dynamic, cross-schema, administrative, or batch graph work. Use the typed
+surface by default when the schema already expresses the class, properties, methods, edges, and
+cardinality you need. Standalone functions are not owned by a class schema, so their handler kernel
+remains the generic session; bind the relevant schema explicitly there.
+
+```ts
+// In a schema method handler, kernel is already bound to this domain.
+const Contact = kernel.classes.Contact
+
+const contact = await Contact.get('/contacts/ada')
+if (!contact) return { found: false }
+
+console.log(contact.props.email)
+await contact.rename({ name: 'Ada' })
+
+// Edge endpoint types and single-vs-many cardinality come from the schema.
+const projects = await contact.links.out('works_on')
+const bothDirections = await contact.links('works_on', 'both')
+
+// Static schema method; parameters and result are inferred.
+const created = await Contact.createContact({ email: 'grace@example.dev' })
+
+// Address-only instance dispatch performs no preliminary read.
+await Contact(created.id).rename({ name: 'Grace Hopper' })
+
+// Typed pagination is preserved instead of collapsing to the first page.
+const firstPage = await contact.children('Message', { limit: 50 })
+for (const message of firstPage.nodes) console.log(message.props.subject)
+const everyMessage = await firstPage.all()
+```
+
+## Graph Mutation
+
+A **graph mutation** is one atomic change set applied to the graph. It may create, update, or delete
+nodes and edges, but either the complete change set commits or none of it does. A mutation expresses a
+known delta; reconciliation instead starts from desired state.
+
+## How to commit related graph writes atomically?
+
+Use `kernel.mutate` for one graph mutation when several known writes form one invariant. The builder
+accumulates node and edge operations and sends one all-or-nothing patch after the callback returns. No
+read inside the builder becomes part of that atomic commit. Use returned `NodeRef` values to connect
+nodes created in the same patch. This is the write-side counterpart to structured reads and differs from
+reconciliation.
+
+```ts
+await kernel.mutate((m) => {
+  const contact = m.createNode(D.Contact.path.class, '/contacts/ada', {
+    [D.Contact.email.key]: 'ada@example.dev',
+  })
+  m.link(contact, D.works_on.path.class, '/projects/apollo', {
+    props: { [D.works_on.role.key]: 'lead' },
+  })
+})
+```
+
+## Do NOT assume a read inside mutate is atomic
+
+The `kernel.mutate` callback only builds a patch; its accumulated writes become atomic when the callback
+returns. A graph read awaited inside that callback happens before the commit and is not part of the
+transaction, so concurrent state may change between the read and the write. Use a scoped reconcile for
+convergence or a server-side invariant when the decision depends on current state; see mutate versus
+reconcile.
+
+```ts
+// Misleading: the read and update are not one transaction.
+await kernel.mutate(async (m) => {
+  const current = await kernel.getOrThrow(params.counter)
+  m.updateNode(current.class, current.path, {
+    [D.Counter.value.key]: Number(current.props[D.Counter.value.key]) + 1,
+  })
+})
+```
+
+## How to converge graph state idempotently?
+
+Use `kernel.reconcile` when you know the desired nodes and edges inside a bounded scope but not the
+minimal patch. State the scope and removal policy explicitly; the safe default preserves untracked
+state. `dryRun` exposes the patch without applying it. This is ideal for seeds and integration
+convergence, following the scoped reconcile pattern, but not a substitute for a known atomic patch.
+
+```ts
+const result = await kernel.reconcile({
+  spec: {
+    nodes: [{
+      class: D.Contact.path.class,
+      path: '/contacts/ada',
+      props: { [D.Contact.email.key]: 'ada@example.dev' },
+      onConflict: 'merge',
+    }],
+  },
+  scope: {
+    roots: ['/contacts/ada'],
+    depth: 0,
+    classes: [D.Contact.path.class],
+  },
+  policy: {
+    onConflict: 'merge',
+    onRemoved: { nodes: 'preserve', edges: 'preserve' },
+  },
+})
+```
+
+## mutate vs reconcile
+
+`mutate` commits a known patch as one atomic graph write; use it when the caller already knows the exact
+creates, updates, and deletes. `reconcile` reads a declared scope, diffs current graph state against a
+desired spec, then applies the resulting patch; use it for repeatable convergence. The final
+reconciliation write is atomic, but the read-diff-write workflow is not one isolated transaction, so
+choose conflict and untracked-state policies deliberately. See atomic mutation and reconciliation.
+
+## Function Calling (Invocation)
+
+A **function call** sends validated params to a method or standalone function path through a
+credential-bound session. Local and remote targets share the same call semantics; a remote binding may
+produce a transparent redirect.
+
+## How to use another Domain?
+
+Declare the other domain's origin in `requires`, import its schema package when you need typed members,
+and call through the schema-bound view (or its compiled semantic accessor). `requires` enforces a
+presence precondition: the required domain must already be installed; it neither installs the dependency
+nor grants permission. Calls use the same local-or-remote surface, while graph access still depends on
+authority.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  requires: ['billing.example.dev'],
+})
+
+// Raw semantic path
+await kernel.call(Billing.Invoice.issue.path.method.raw, { amount: 2500 })
+
+// With imported schema (recommended for typed work)
+import { schema as billing } from '@acme/billing-schema'
+const billingClient = kernel.withSchema(billing)
+await billingClient.classes.Invoice.issue({ amount: 2500 })
+```
+
+## Cross-Domain Calls
+
+A **cross-domain call** invokes a callable owned by another installed domain. It has the same call
+semantics as a local call. The session follows any remote redirect and remints the next-hop delegation
+under the current bound authority.
+
+## Local Execution vs Remote Execution
+
+Local and remote describe where a callable is bound, not two author-facing call APIs. A bound session
+runs a local function in place and transparently follows an allowed redirect for a remote one, including
+next-hop delegation reminting. Call both through `kernel.call`; configure redirect and delegation policy
+at the ClientSession boundary.
+
+```ts
+await kernel.call('/contacts/ada::rename', params)
+await kernel.call(Billing.Invoice.issue.path.method.raw, params)
+```
+
+## Kernel Redirect
+
+A **kernel redirect** tells the client where a remote-bound function is served. The session follows it,
+remembers the route, and creates a credential for the next audience using the session's delegation
+expression. Redirect handling is a session responsibility rather than a different kind of domain
+function.
+
+## KernelClient vs ClientSession vs Bound Session View
+
+`KernelClient` is the one-URL, one-kernel transport client: its `send` primitives expose discriminated
+outcomes and do not auto-follow redirects. `ClientSession` is the orchestration layer: it owns a client
+pool, policies, schema registry, route learning, redirect following, and next-hop delegation.
+`BoundClientSessionView` is the credential-bound value returned by `session.as(...)`; it exposes
+unwrapped calls, flattened GraphApi operations, and namespaced `auth`. Handler `ctx.kernel` is this
+bound view. See local versus remote dispatch.
+
+```ts
+const client = new KernelClient({ url })
+const session = new ClientSession({ default: url })
+const kernel = session.as(credential)
+
+await kernel.getOrThrow('/contacts/ada')
+await kernel.call(D.Contact.list.path.method.raw, {})
+```
+
+## Path
+
+A **Path** is an Astrale address. Absolute paths locate nodes in the tree, `@id` paths anchor a stable
+node id, semantic paths name domain members, and `::method` invokes an instance method on a receiver.
+
+```ts
+'/tasks/launch'
+'@4f0a0000-0000-0000-0000-000000000000'
+D.Task.path.class
+D.Task.complete.path.method
+'/tasks/launch::complete'
+```
+
+## Type graph addresses as paths, not strings
+
+Declare a param that names a graph location with `pathSchema()` or `absolutePathSchema()`, never
+`z.string()`. Import them from `@astrale-os/kernel-core`; the SDK barrel does not re-export them. The
+handler then receives a parsed `Path`; keep it typed throughout and call `.raw` only at a wire boundary.
+
+```ts
+import { pathSchema } from '@astrale-os/kernel-core'
+
+assign: fn({
+  params: { identity: pathSchema() },
+  returns: IssueInfoSchema,
+})
+```
+
+## Path vs PathLike vs raw string
+
+A `Path` is a parsed address with `.raw`, `.equals()`, and subclasses such as `AbsolutePath`. `PathLike`
+is exactly `string | Path`: the input type an API accepts at a boundary. `rawOf(value)` normalizes a
+`PathLike` to its string; `.raw` reads the string off a value already known to be a `Path`. Call `rawOf`
+only where both forms genuinely arrive, never on an already-typed value such as a compiled accessor, and
+compare addresses with `equals`, not `===`.
+
+```ts
+import { rawOf, type PathLike } from '@astrale-os/kernel-core'
+
+if (issue.path.equals(other.path)) return // structural, not `===`
+const key = issue.path.raw // serialize at the wire boundary
+
+// A helper that genuinely admits both forms normalizes once.
+const leaf = (ref: PathLike) => rawOf(ref).split('/').at(-1)
+```
+
+## Path: Spatial vs Semantic
+
+A **spatial** path says where a node currently sits in the tree, such as `/contacts/ada`. A **semantic**
+path addresses a domain member by meaning, such as `/:contacts.example.dev:class.Contact:rename`.
+Spatial paths can change when nodes move; semantic member addresses remain rooted in the domain's origin
+regardless of physical domain placement. Prefer compiled accessors for semantic paths.
+
+```ts
+'/contacts/ada'                                  // spatial node location
+D.Contact.rename.path.method.raw                 // compiled semantic method path
+```
+
+## Identity vs Location (id vs path)
+
+A node id identifies the same node for its lifetime; a spatial path identifies whatever visible node
+currently occupies that tree location. Use `@id` for a durable reference to one object and an absolute
+path for a stable place in the tree. Both are accepted by current graph reads, while semantic paths
+address domain members rather than data instances.
+
+```ts
+await kernel.getOrThrow(`@${contactId}`)
+await kernel.getOrThrow('/contacts/ada')
+```
+
+## Static Method vs Instance Method
+
+A static method belongs to a class and runs with `self: undefined`. An instance method runs against one
+concrete node and receives a typed `ctx.self`. Call the static method through its compiled semantic
+accessor; call the instance method by appending `::method` to a node reference. Both are declared with
+`fn`, with `static: true` selecting the first form.
+
+```ts
+await kernel.call(D.Contact.create.path.method.raw, { email })
+await kernel.call(`${contact.path.raw}::rename`, { name: 'Ada Lovelace' })
+```
+
+## Value vs Stream vs Binary Output
+
+A function with `value` output completes with one validated result. `stream` emits a validated sequence
+over time, while `binary` returns byte-oriented content rather than a JSON value. The output mode is
+part of the call contract, so its handler and caller must agree on the transport shape.
+
+```ts
+fn({ returns: z.object({ id: z.string() }) })
+fn({ output: 'stream', returns: z.object({ event: z.string() }) })
+fn({ output: 'binary', returns: z.any() })
+```
+
+## How to address a method to call it?
+
+Prefer compiled accessors. A static method has a semantic method path; an instance method combines a
+node reference with `::method`. Typed accessors survive physical domain placement under
+`/domains/<origin>`, while hand-written physical paths do not. See static versus instance and spatial
+versus semantic paths.
+
+## Do NOT call a static method as an instance method
+
+If a method exists in the schema but instance dispatch cannot resolve it, check whether it was declared
+static. A static method is addressed by its compiled method path; `node::method` is only for a method
+whose handler receives that node as `self`. Do not repair the mismatch by guessing another raw path.
+
+```ts
+// Static: call the compiled method path.
+await kernel.call(D.Contact.create.path.method.raw, { at, email })
+
+// Instance: call on an existing node.
+await kernel.call(`${contact.path.raw}::rename`, { name: 'Ada' })
 ```

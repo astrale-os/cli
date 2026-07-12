@@ -2,168 +2,232 @@
 
 # Modeling
 
-Read whenever touching the schema. Use this for domain boundaries, class/interface/edge/property choices, modules, cardinality, indexes, constraints, core data, and schema review.
+Read whenever touching the schema. Use this for domain boundaries, class/interface/edge/property choices,
+cardinality, constraints, imports, typed accessors, and schema review. Model the vocabulary first; runtime
+handler and graph patterns belong in the implementing reference.
 
 ## How to decide a domain's boundaries?
 
-Draw a domain's boundary around one coherent vocabulary: the classes and actions that belong to a single
-area of the world and are owned by a single purpose or team. Split into two domains when the language
-diverges (the same word means different things) or when ownership does. Keep together what changes
-together, and let separate domains call each other rather than merging.
+Draw the boundary around one coherent vocabulary and ownership model. Keep classes and actions together
+when they share invariants and release cadence; split when the same word has different meaning,
+authority, or owners. Prefer explicit cross-domain calls over importing another domain's runtime
+internals. A good domain can explain its purpose in one sentence without saying "utilities" or "shared."
+
+## Schema
+
+A **Schema** is the complete, installable vocabulary of a domain: interfaces, classes, standalone
+function contracts, and imported schemas. It binds that vocabulary to one origin. A schema describes the
+graph contract; executable behavior is wired separately by the domain definition.
+
+```ts
+export const schema = defineSchema('tasks.example.dev', {
+  interfaces: { User: iUser },
+  classes: { Task, assigned_to },
+  functions: {
+    seed: func({ input: z.object({}), output: z.object({ seeded: z.boolean() }) }),
+  },
+  imports: [KernelSchema],
+})
+```
 
 ## Interface
 
-An **Interface** is a shared contract that many classes can promise to fulfil, without ever being a
-thing on its own. It groups properties and methods that belong together, so a behavior is defined once
-and reused everywhere it applies. When a class implements an interface, it takes on everything that
-interface promises. For example, anything that implements `Container` is allowed to hold other nodes as
-children within the tree.
+An **Interface** is an abstract contract shared by several classes. A node interface can contribute
+properties and methods but cannot have instances of its own. Model a capability as an interface when
+callers should work against the capability rather than enumerate every concrete class that provides it;
+use inheritance to compose smaller contracts.
 
 ```ts
-const ContactOps = nodeInterface({
-  methods: { createContact: fn({ static: true, params: { email: z.string() }, returns: z.string() }) },
+const Contactable = nodeInterface({
+  props: { email: z.string().email() },
+  methods: {
+    notify: fn({ params: { message: z.string() }, returns: z.void() }),
+  },
 })
-const Contact = nodeClass({ implements: [ContactOps], props: { email: z.string() } })
+
+const Person = nodeClass({ implements: [Contactable] })
 ```
 
 ## NodeClass
 
-A **NodeClass** is the definition of a kind of node: a concrete type whose instances are real things you
-create and store. You declare it with `nodeClass`, listing its properties, the interfaces it implements,
-and the methods callers can invoke on it. It is the node counterpart to EdgeClass: one defines things,
-the other defines how they connect.
+A **NodeClass** is the concrete schema definition created by `nodeClass`. Its instances become nodes, it
+automatically inherits the kernel's generic node interfaces, and its `props` and `methods` are preserved
+in the compiled schema. Use an interface for an abstract capability and a NodeClass for something the
+graph can instantiate.
 
 ```ts
-const Contact = nodeClass({
-  implements: [Named],
-  props: { email: z.string(), title: z.string().optional() },
-  methods: { assign: fn({ params: { role: z.string() }, returns: z.void() }) },
+export const Task = nodeClass({
+  implements: [KernelSchema.interfaces.Named],
+  props: { done: z.boolean() },
 })
 ```
 
 ## EdgeClass
 
-An **EdgeClass** is the definition of a kind of edge: a typed relationship with two named ends, each
-fixing which classes it may join and with what cardinality. You declare it with `edgeClass`, and like a
-node class it can carry its own properties, such as a `role` on a `works_on` edge. Defining the
-relationship as a class keeps it typed and walkable from either node, instead of a loose pointer.
+An **EdgeClass** is a concrete relationship type created by `edgeClass`. Its two endpoint declarations
+name each side and declare intended node types and cardinality. Its options may add properties and
+structural constraints. Its instances are relationships, not foreign-id properties on nodes.
+
+```ts
+export const owned_by = edgeClass(
+  { as: 'resource', types: [Resource], cardinality: '0..1' as const },
+  { as: 'owner', types: [iUser] },
+  { noSelf: true },
+)
+```
+
+## Edge Endpoint
+
+An **edge endpoint** is one named side of an edge class. Its role name states how that side is
+understood, its types constrain which nodes may participate there, and its optional cardinality states
+how many relationships may meet that side.
 
 ```ts
 const works_on = edgeClass(
   { as: 'contact', types: [Contact] },
-  { as: 'project', types: [Project], cardinality: '0..1' },
-  { props: { role: z.string() } },
+  { as: 'project', types: [Project], cardinality: '1' },
+)
+```
+
+## EdgeInterface
+
+An **EdgeInterface** is an abstract relationship definition with endpoints and optional shared
+properties. It is not instantiated directly; it names a relationship capability that concrete edge
+classes may share across stored relationships.
+
+```ts
+const Assignable = edgeInterface(
+  { as: 'assignee', types: [iUser] },
+  { as: 'work', types: [iWork] },
+  { props: { assignedAt: z.string() } },
 )
 ```
 
 ## NodeInterface
 
-A **NodeInterface** is a contract that node classes share: a named set of properties and methods that
-has no instances of its own. You declare it with `nodeInterface` and pull it into a class with
-`implements`, so many classes gain the same shape without copying it. It is the interface form for
-nodes, where common facts like `name` or `createdAt` live in one place.
+A **NodeInterface** is the node-shaped form of interface, created with `nodeInterface`. It groups
+properties and methods that multiple node classes share. Endpoint declarations may target a
+NodeInterface, declaring that an edge class expects an implementing node type.
 
 ```ts
-const Named = nodeInterface({ props: { name: z.string() } })
-const Contact = nodeClass({ implements: [Named], props: { email: z.string() } })
+const iUser = nodeInterface({
+  extends: [KernelSchema.interfaces.Identity],
+  methods: {
+    activate: fn({ params: {}, returns: z.void() }),
+  },
+})
 ```
 
-## Edge Endpoint
+## Inheritance
 
-An **Endpoint** is one end of an edge definition: a role `as` name, the classes allowed at that end
-(`types`), and an optional cardinality. Every edge class has two endpoints, and naming each end
-(`contact`, `project`) is what lets you read a relationship from either side. The `as` name is how the
-end is addressed when you walk the edge.
+**Inheritance** composes schema contracts. Node classes use `implements` to adopt node interfaces, node
+interfaces use `extends` to adopt other interfaces, and inherited properties and methods become part of
+the implementing type's compiled contract. An inherited method may be `default` (overridable),
+`abstract` (requiring an implementation), or `sealed` (not overridable).
 
 ```ts
-const works_on = edgeClass(
-  { as: 'contact', types: [Contact] },                   // one endpoint
-  { as: 'project', types: [Project], cardinality: '1' }, // the other
-)
+const Reviewable = nodeInterface({
+  extends: [KernelSchema.interfaces.Named],
+  methods: {
+    review: fn({ params: {}, returns: z.void(), inheritance: 'abstract' }),
+  },
+})
+
+const Proposal = nodeClass({ implements: [Reviewable] })
+```
+
+## Properties
+
+**Properties** are typed facts stored on nodes and edges. Each has a short schema name and a
+collision-safe qualified key in the graph. Function input and output are a separate call contract.
+
+```ts
+const Project = nodeClass({
+  props: {
+    title: z.string().min(1),
+    archived: z.boolean().optional(),
+  },
+})
 ```
 
 ## Cardinality
 
-**Cardinality** says how many nodes are allowed at each end of a relationship: at most one, or many;
-required, or optional. You set it on each end of an edge on its own, so a relationship can be many on
-one side and exactly one on the other (a company has many contacts, but a contact works at just one
-company). Stating it turns a loose link into a rule the schema can enforce; leaving an end unset keeps
-it open to any number.
+**Cardinality** declares how many edges of one class may meet an endpoint: exactly one, optional one, or
+many. It belongs to the edge endpoint because it describes that side's participation in the
+relationship.
 
 ```ts
-// cardinality is declared per endpoint, next to its role and types
-const works_at = edgeClass(
-  { as: 'contact', types: [Contact], cardinality: '0..*' },                       // a company has 0 or many contacts
-  { as: 'company', types: [Company], cardinality: '0..1' },  // a contact works at one company, or none
-  { props: {} },
+const selected_space = edgeClass(
+  { as: 'user', types: [iUser], cardinality: '0..1' as const },
+  { as: 'space', types: [iSpace] },
 )
-```
-
-## Index
-
-An **Index** makes a property fast to look up or unique, declared on a class beside its props. You
-choose the kind: a plain index for quick lookups, `unique` to forbid duplicates (one contact per email),
-or `fulltext` for text search. Without an index, finding nodes by a property means scanning; with one,
-the graph jumps straight to them.
-
-```ts
-const Contact = nodeClass({
-  props: { email: z.string(), bio: z.string() },
-  indexes: [
-    { property: 'email', type: 'unique' }, // no two contacts share an email
-    { property: 'bio', type: 'fulltext' }, // searchable text
-  ],
-})
 ```
 
 ## Constraints
 
-**Constraints** are rules an edge class declares for the relationships it creates, beyond cardinality.
-You can forbid an edge from a node to itself (`noSelf`), keep a relationship `acyclic` so it cannot form
-loops (useful for a `reports_to` chain), require at most one such edge (`unique`), or make it
-`symmetric` so linking A to B also links B to A. They make the rules a relationship is meant to obey
-explicit in the schema, rather than leaving them for every caller of the graph to remember.
+**Constraints** declare intended invariants for an edge class, including self-link, cycle, uniqueness,
+and symmetry rules. They refine the set of valid relationships independently of endpoint types and
+cardinality.
 
 ```ts
-const reports_to = edgeClass(
-  { as: 'report', types: [Employee] },
-  { as: 'manager', types: [Employee] },
-  { constraints: { noSelf: true, acyclic: true } }, // no self-manage, no cycles
+const contains = edgeClass(
+  { as: 'parent', types: [Folder] },
+  { as: 'child', types: [Folder] },
+  { noSelf: true, acyclic: true, unique: true },
 )
 ```
 
-## Kernel generic interfaces
+## Kernel Generic Interfaces
 
-A **Kernel generic interface** is a small metadata contract in KernelSchema for common properties. You
-normally do not implement them by hand: `nodeClass` and `nodeInterface` auto-inherit `Node`, which
-inherits `Named`, `Descriptable`, `Remotable`, `Timestamped`, and `Statused`; edge classes and
-interfaces auto-inherit `Edge`, which inherits `Sluggable`, `Timestamped`, and `Remotable`. `Iconable`
-is used where schema meta-nodes carry an SVG icon. Use these inherited fields instead of local
-duplicates.
+**Kernel generic interfaces** are shared metadata contracts supplied by `KernelSchema`. Node classes
+automatically inherit the generic Node chain, and edge types inherit the Edge chain; domain types
+explicitly implement additional capabilities such as `Identity` or `Container`. Reuse these contracts
+instead of copying native property shapes into local interfaces.
+
+## Kernel Native Interfaces
+
+**Kernel native interfaces** carry behavior the kernel itself understands, such as `Identity` and
+`Container`. Implementing one is not mere documentation: it adds the kernel contract and its inherited
+methods to the class, and kernel schema members may target that interface. Keep domain-specific
+capabilities in the domain's own interfaces.
+
+## Domain Imports
+
+**Schema imports** let definitions refer to types owned by another schema. Import the kernel schema to
+implement native interfaces such as `Identity` or `Container`, or import another domain's schema when
+your endpoint types truly cross that vocabulary. Imports describe type relationships; runtime
+installation ordering is declared separately with requires.
+
+```ts
+export const schema = defineSchema('tasks.example.dev', {
+  interfaces,
+  classes,
+  imports: [KernelSchema],
+})
+```
 
 ## Module (bounded context)
 
-A **Module** is a named group of classes that share one bounded context: a single area of the world your
-domain models, such as `Billing` or `Scheduling`. It is how you carve a domain into focused vocabularies
-(see organizing by modules), each coherent on its own. Prefer many small modules named for the business,
-never for technical layers.
+A **Module** is a named group of classes that share one bounded context: one area of the world a domain
+models, such as `Billing` or `Scheduling`. Modules carve a domain into focused vocabularies; their names
+come from the modeled world rather than technical layers. See the naming antipattern and domain
+boundaries.
 
 ## When to use a Class vs an Interface?
 
-Use a class when real instances of the thing exist and need to be created, named, and stored. Use an
-interface when a contract (some properties or methods) is shared across several kinds but is never a
-thing on its own. If you are about to copy the same fields onto two classes, reach for an interface; if
-you need to point at one concrete record, reach for a class.
+Use a class for concrete instances. Use a node interface for a shared node contract and an edge
+interface for a shared relationship contract. An interface is not instantiated; classes implement it.
+Reach for an interface when multiple real types need the same typed properties or methods, not merely to
+group similarly named concepts.
 
 ## Should a fact live on an edge?
 
-Put a property on an edge when the fact is about the relationship itself, not about either node it
-joins: the `role` someone holds on a project, the date a membership began, the weight of a link. If the
-fact would be the same no matter what the node connects to, it belongs on the node instead. Ask what the
-fact describes; if it describes the connection, it lives on the edge.
+Put a property on an edge when it describes this particular relationship: membership role, start date,
+ordering, or weight. Put it on a node when it remains true independently of a connection. If the
+relationship needs its own lifecycle, permissions, or many relationships, model an explicit node instead
+of overloading the edge.
 
 ```ts
-// `role` and `since` are facts about the relationship, so they live on the edge
 const works_on = edgeClass(
   { as: 'contact', types: [Contact] },
   { as: 'project', types: [Project] },
@@ -173,123 +237,54 @@ const works_on = edgeClass(
 
 ## Its own node, or just a property?
 
-Make something its own node when it has identity and a life of its own, something you want to find, link
-to, permission, or hang data on: a `Company`, a `Tag` others reuse. Keep it a property when it is just a
-value describing one node and means nothing apart from it: an email, a status. If two nodes could ever
-point at the same one, it is a node; if it only ever belongs to one, it is a property.
+Use a node when the concept has identity, lifecycle, relationships, independent permissions, or shared
+references. Use a property for a value that only describes its owning node. If several records can point
+at the same value-as-thing, it is probably a node; if it is replaced as part of updating one record, it
+is probably a property.
 
 ## How to model a many-to-many relationship?
 
-Model a many-to-many with a single typed edge whose ends both allow many: a `Student` enrolled in many
-`Course`s, each `Course` holding many students. Leave the cardinality open (the default) on both ends,
-and create one edge per pairing. If the link carries data of its own, put it on the edge; if the pairing
-is itself a thing with its own life, make it a node between them instead.
+Use one typed edge class with many-valued endpoints. Each pairing is one edge, and relationship-specific
+data belongs on that edge. If the pairing needs an independent lifecycle, turn it into a node connected
+to both sides. Declare one-to-one or one-to-many intent with endpoint cardinality, but do not treat it
+as an enforced write invariant: the current mutation path does not uniformly reject excess
+relationships, so critical limits still need an explicit gate.
 
 ```ts
-// both ends allow many -> a many-to-many
 const enrolled_in = edgeClass(
-  { as: 'student', types: [Student] },   // a course has many students
-  { as: 'course', types: [Course] },     // a student takes many courses
+  { as: 'student', types: [Student] },
+  { as: 'course', types: [Course] },
   { props: { since: z.string() } },
 )
 ```
 
-## Edge interfaces are not supported yet
+## How to model a fixed set of values?
 
-Edge interfaces are not supported yet in Astrale's schema contract. Although node interfaces let several
-node classes share a contract, the current edge API supports concrete edge classes only, so a
-relationship shape like `linked_to` cannot be declared once and implemented by `references` and
-`mentions`. Model each relationship as its own edge class for now, and duplicate the shared endpoint and
-property shape until edge interfaces exist.
-
-## Model the world, not the storage
-
-Name your classes after the real things your domain is about, like `Contact`, `Invoice`, or `Shipment`,
-not after database tables, DTOs, or technical roles. A schema that reads like the business is one anyone
-can navigate and an agent can reason over; one that reads like a storage layer (see technical names)
-hides what it means. The graph is your model of the world, so let it look like the world.
+Use `z.enum` for a closed set of value labels. Use nodes when the options have their own data,
+relationships, permissions, or runtime extensibility. The distinction is the same as node versus
+property: a status is usually a value; a reusable category is often an entity.
 
 ```ts
-// OK names from the business           NO names from the storage layer
-Contact  -  Invoice  -  Shipment           ContactRecord  -  InvoiceDTO  -  DataRow
-```
-
-## Naming Conventions
-
-classes/interfaces `PascalCase`, methods `camelCase`, **edges `snake_case`**.
-
-## Organize the schema by modules
-
-A module (folder/file) is a bounded-context vocabulary rendered as a colored region in the UI. Prefer
-many small focused modules. Every class/interface/edge/zod-object in a module shares its context.
-
-## Add comments when relevant
-
-Comment a class, edge, or method when its name does not fully say what it is for or how to use it. A
-comment rides along with the schema and surfaces in the graph UI, so it teaches the next reader (often
-an agent) the intent a name alone cannot carry. Do not comment the obvious; comment the surprising, the
-constraint, and the why.
-
-## Give every class/interface an icon
-
-Fill the icon property with an SVG; it is shown in the graph UI.
-
-## Annotate cardinality on relations
-
-Put cardinalities on edges when easy to determine; leave 0..* (optional many) when unsure.
-
-## Use typed keys and paths
-
-Always derive property keys and class paths from the compiled schema, never hand-write the qualified
-strings. A typed accessor like `D.Contact.email.key` stays correct when you rename a field, because a
-wrong name becomes a compile error instead of a silent miss at runtime. Treat a raw key string as a
-smell.
-
-```ts
-// OK derive from the compiled schema  -  a rename is a compile error
-props: { [D.Contact.email.key]: 'ada@example.dev' }
-// NO hand-written qualified key  -  drifts silently when the field is renamed
-props: { 'contacts.example.dev:class.Contact.property.email': 'ada@example.dev' }
-```
-
-## Use an abstract method to require behavior
-
-When every class that implements an interface must provide its own version of a method, declare that
-method abstract. An abstract method has no body on the interface, so the kernel will not let a concrete
-class skip it: a `Payable` that forgets `charge` makes the whole schema fail to load. It turns "must
-implement this" from a comment into a guarantee the kernel enforces.
-
-```ts
-const Payable = nodeInterface({
-  methods: { charge: fn({ inheritance: 'abstract', params: { amount: z.number() }, returns: z.void() }) },
+const Invoice = nodeClass({
+  props: { status: z.enum(['draft', 'sent', 'paid']) },
 })
-// every class that implements Payable must now declare its own `charge`
 ```
 
-## Do NOT use technical semantics for Modules
+## Node Class vs Edge Class
 
-Naming your modules after technical layers, like `models`, `controllers`, or `utils`, hides what the
-domain is actually about. Group classes by the part of the real world they describe instead, such as
-`Billing` or `Scheduling`. A good schema reads like the business it models, not like the folders of a
-codebase.
+A node class defines independent things. An edge class defines typed relationships and constrains their
+source and target endpoint contract. Both can declare properties. Choose a node class when an instance
+can exist independently and an edge class when it exists only as a connection.
 
-```ts
-// NO technical layers say nothing about the domain
-//    models/  -  controllers/  -  utils/
-// OK modules named for the business read like a map of it
-//    billing/  -  scheduling/  -  contacts/
-```
+## Node (Object) vs Edge (Relation)
 
-## Misplaced properties
-
-A property should live on the thing it actually describes. A fact about how two nodes relate belongs on
-the edge, not on one of the nodes; a fact shared by many kinds belongs on the interface they share, not
-copied onto each class. Misplaced properties duplicate data and blur what each thing really is.
+A node represents a thing with independent identity and lifecycle. An edge represents one typed
+relationship between two endpoints. Both may have properties, but an edge's identity includes its class,
+source, optional slug, and target. Model a thing as a node and a fact about how things relate as an
+edge.
 
 ```ts
-// NO role describes the relationship, not the person
-const Contact = nodeClass({ props: { email: z.string(), role: z.string() } })
-// OK put it on the edge that connects them
+const Contact = nodeClass({ props: { email: z.string() } })
 const works_on = edgeClass(
   { as: 'contact', types: [Contact] },
   { as: 'project', types: [Project] },
@@ -297,61 +292,366 @@ const works_on = edgeClass(
 )
 ```
 
-## A reference buried as a string
+## Direct Edge vs Reified Edge
 
-Storing another node's id or path as a plain string property hides a real relationship inside an opaque
-field. The kernel cannot follow it, the graph UI cannot draw it, and nothing stops it from pointing at
-something deleted. Model the connection as a typed edge (see modeling a relationship), so it is walkable
-from both ends and the schema knows it exists.
+A **direct edge** is stored as the database relationship itself. A **reified edge** is stored as an edge
+node joined to its source and target through `from` and `to`. Both materialize as the same semantic edge
+to callers. Direct is the compact shape used by selected kernel structural relations; normal
+domain-authored edge classes are reified so their identity and properties do not depend on a database
+relationship type. Storage never changes the edge contract; see Edge Identity vs Storage Shape. In
+storage notation, direct is `(source)-[edge]->(target)`, while reified is
+`(source)-[:from]->(edge)-[:to]->(target)`.
+
+## Reified-default vs Reified-indexed Edge
+
+Both are reified storage. **Reified-default** resolves the edge's class through its `instance_of`
+relationship because its labels are not unique to one class. **Reified-indexed** can identify the class
+from a unique label chain. The latter is an adapter optimization, not a new graph meaning. The standard
+manifest pipeline currently makes domain edge classes reified-default; indexed reification remains
+unreachable there. Compare Direct Edge vs Reified Edge and Edge Identity vs Storage Shape.
+
+## Edge Identity vs Storage Shape
+
+An edge has semantic identity `(class, source, slug?, target)`. Its physical storage may be a direct
+relationship, a reified node with `instance_of`, or an indexed reified node. Changing that plan must not
+change which edge exists or how the Graph API addresses it. Indexed reification is a reversible storage
+optimization, never a separate domain concept.
+
+## Model the world, not a storage layout
+
+Name classes after the real things the domain owns, such as `Contact`, `Invoice`, or `Shipment`, rather
+than tables, DTOs, or transport records. Put relationships in typed edges and let the graph express the
+model. A schema should read like the world it describes.
 
 ```ts
-// NO a relationship hidden as a string id
+// Good: domain vocabulary.
+Contact
+Invoice
+Shipment
+
+// Avoid: storage and transport vocabulary.
+ContactRow
+InvoiceDTO
+ShipmentRecord
+```
+
+## Follow the schema naming conventions
+
+Use `PascalCase` for classes and interfaces, `camelCase` for methods, and `snake_case` for edge classes.
+These forms make a name's role visible before a reader opens its definition and keep compiled schema
+accessors predictable across domains.
+
+```ts
+const Contact = nodeClass({ props: { email: z.string() } })
+const ContactOps = nodeInterface({
+  methods: {
+    createContact: fn({
+      static: true,
+      params: { email: z.string().email() },
+      returns: z.string(),
+    }),
+  },
+})
+const works_on = edgeClass({ as: 'contact', types: [Contact] }, { as: 'project', types: [Project] })
+```
+
+## Give visible node classes an icon
+
+Give a user-facing node class an SVG icon when people will encounter its instances in graph tools or
+views. The icon is class metadata, not an interface contract; keep it stable and recognizable, and omit
+it for internal classes that never need a visual identity.
+
+```ts
+const Contact = nodeClass({
+  icon: CONTACT_ICON,
+  props: { email: z.string().email() },
+})
+```
+
+## State cardinality when the relationship requires it
+
+Declare cardinality when the model requires one or at most one node at an edge endpoint. Leave the
+default many-valued shape only when many is genuinely valid, not because the decision was deferred.
+Cardinality is part of the relationship contract and drives typed traversal result shapes, but the
+current mutation path does not enforce those bounds as a database invariant; account for the
+constraint-layer limitation.
+
+```ts
+const owned_by = edgeClass(
+  { as: 'resource', types: [Resource], cardinality: '0..1' },
+  { as: 'owner', types: [User] },
+)
+```
+
+## Derive keys and paths from compiled accessors
+
+Derive property keys and semantic paths from the compiled schema instead of assembling strings. Compiled
+accessors keep graph operations aligned with renames and distinguish a class path from a method or
+property key. Flat members are convenience accessors; use `D.$.c(...)`, `D.$.i(...)`, and `D.$.f(...)`
+when class, interface, or function names can collide. Hand-write only spatial paths chosen by users or
+runtime data.
+
+```ts
+const Contact = D.$.c('Contact')
+
+await kernel.createNode(Contact.path.class, '/contacts/ada', {
+  [Contact.email.key]: 'ada@example.dev',
+})
+
+await kernel.call(Contact.create.path.method.raw, { email: 'grace@example.dev' })
+```
+
+## Use an abstract method to require behavior
+
+Declare an abstract method through schema inheritance on an interface when every implementing class must
+provide its own behavior. The schema then refuses a concrete class that omits the method, turning an
+authoring convention into a checked contract.
+
+```ts
+const Payable = nodeInterface({
+  methods: {
+    charge: fn({
+      inheritance: 'abstract',
+      params: { amount: z.number().positive() },
+      returns: z.void(),
+    }),
+  },
+})
+```
+
+## Implement native interfaces only for native capabilities
+
+Implement a kernel native interface only when a class should gain that kernel capability. `Container`
+makes a node participate in containment, while `Identity` lets it hold grants and act. Business actions
+remain declared methods; implementing the kernel's `Function` interface is not a substitute for
+authoring one.
+
+## Do NOT put relationship facts on nodes
+
+A property belongs on the thing it describes. A fact about how two nodes relate belongs on their edge,
+while a fact shared by several kinds belongs on a interface. Copying the fact onto each class duplicates
+state and makes the graph ambiguous.
+
+```ts
+// Wrong: role describes Contact independently of any project.
+const Contact = nodeClass({ props: { email: z.string(), role: z.string() } })
+
+// Right: role describes one Contact-to-Project relationship.
+const works_on = edgeClass(
+  { as: 'contact', types: [Contact] },
+  { as: 'project', types: [Project] },
+  { props: { role: z.string() } },
+)
+```
+
+## Do NOT hide relationships in strings
+
+Storing another node's id or path as a string property hides a relationship from traversal, schema
+checks, and graph tooling. Model the connection as a typed edge, and put relationship data on that edge
+when appropriate (see where an edge fact belongs). Keep a string only when it is truly opaque external
+data, not an Astrale node reference.
+
+```ts
+// Wrong: an Astrale relationship hidden as text.
 const Task = nodeClass({ props: { title: z.string(), assigneeId: z.string() } })
-// OK a typed edge the kernel can walk from either side
-const assigned_to = edgeClass({ as: 'task', types: [Task] }, { as: 'user', types: [User] })
+
+// Right: a typed relationship the graph can traverse.
+const assigned_to = edgeClass(
+  { as: 'task', types: [Task] },
+  { as: 'assignee', types: [User] },
+)
 ```
 
-## The god class
+## Do NOT model every kind as one god class
 
-Piling every field onto one giant class, a `Thing` with thirty optional props, throws away the very
-structure the schema exists to capture. Different kinds of thing deserve different classes with the
-shape each actually has; what they share belongs on an interface, not on a catch-all. If half a class's
-properties are empty on any given node, you have two kinds wearing one name.
+A giant class with a discriminator and many unrelated optional properties erases the model the schema
+should enforce. Give each real kind its own class and put genuinely shared behavior on a interface. If
+most properties are meaningless for most nodes, the class combines several concepts.
 
 ```ts
-// NO one class for everything; most props empty on any node
-const Thing = nodeClass({ props: { kind: z.string(), email: z.string().optional(), sku: z.string().optional() } })
-// OK distinct kinds; shared shape on an interface
-const Contact = nodeClass({ implements: [Named], props: { email: z.string() } })
-const Product = nodeClass({ implements: [Named], props: { sku: z.string() } })
+// Wrong: most fields are absent for every node.
+const Thing = nodeClass({
+  props: {
+    kind: z.string(),
+    email: z.string().optional(),
+    sku: z.string().optional(),
+  },
+})
+
+// Right: distinct kinds with their own required shape.
+const Contact = nodeClass({ props: { email: z.string().email() } })
+const Product = nodeClass({ props: { sku: z.string() } })
 ```
 
-## Making everything optional
+## Do NOT make every property optional
 
-Marking every property optional throws away the schema's main job: turning bad data away at the door. If
-`email` is optional on a `Contact` that cannot exist without one, the graph will hold a contact with no
-email, and every handler then has to re-check what the schema should have guaranteed. Require what is
-truly required, so a node that exists is a node you can trust.
+Marking every property optional discards the structural guarantees a schema can enforce. Require the
+fields without which the node has no valid meaning, and reserve optionality for facts that may truly be
+absent. Required class-owned fields are checked on create, but value refinements such as email format
+still belong at the validated function boundary.
 
 ```ts
-// NO nothing is guaranteed; every handler must re-check
+// Wrong: a Contact can exist without the fact that defines it.
 nodeClass({ props: { email: z.string().optional(), name: z.string().optional() } })
-// OK require what a Contact cannot exist without
-nodeClass({ props: { email: z.string(), name: z.string().optional() } })
+
+// Right: email is structurally required; name may be absent.
+nodeClass({ props: { email: z.string().email(), name: z.string().optional() } })
 ```
 
-## A self-referential edge without guards
+## Nesting too deep
 
-An edge whose two ends are the same class, like `reports_to` between two `Employee`s, can point a node
-at itself or form a cycle (A reports to B reports to A). Declare the constraints the relationship is
-meant to obey, `noSelf` and `acyclic`, so the rule lives in the schema, and guard for these shapes in
-your own logic where they would break it. An edge over one class that assumes a clean hierarchy without
-checking is asking for the loop that breaks it.
+Burying nodes under many organizational folders makes paths brittle and permission propagation difficult
+to reason about. Use containment for real ownership or lifecycle nesting, not every classification
+dimension. Model other relationships with typed edges.
+
+## Do NOT use mutable data as a path key
+
+Using an email, display name, or other mutable value as a node's path segment ties grants and callers to
+a fact that may change. Keep mutable values as properties, use a stable opaque slug for location, and
+use id addressing when the reference must survive a move or rename.
+
+## Do NOT use technical semantics for Modules
+
+Keep the scaffold's top-level composition layers, but do not name the bounded-context modules inside
+them `models`, `controllers`, or `utils`. Group classes and their handlers by coherent world vocabulary
+such as `billing`, `scheduling`, or `contacts`, so source boundaries reinforce the domain's boundaries
+and world-first schema.
+
+```ts
+// Keep: schema/  -  runtime/  -  views/
+// Wrong within a layer: runtime/controllers/  -  core/utils/
+// Right bounded contexts: runtime/billing/  -  core/scheduling/
+```
+
+## Lay out every layer by bounded context
+
+Subdivide `schema/`, `core/`, and `runtime/` by bounded context, not by technical kind. A context owns
+its classes, edge classes, pure logic, handlers, errors, constants, and path helpers, so `issue`,
+`comments`, and `tags` each appear in all three layers. Cross-cutting behavior is itself a context:
+export lives in `sync/`, never in a technical folder such as `schema/functions/`.
+
+```ts
+// OK the same contexts across every layer
+// schema/issue/issue.ts  -  core/issue/paths.ts  -  runtime/issue/assign-issue.ts
+// schema/tags/tag.ts     -  core/tags/colors.ts  -  runtime/tags/create-tag.ts
+// schema/sync/export-issues.ts                 -  functions/sync/export-issues.ts
+
+// NO technical buckets that own no vocabulary
+// schema/functions/  -  schema/edges.ts  -  core/utils.ts  -  runtime/handlers.ts
+```
+
+## Keep core pure
+
+`core/` holds ONLY deterministic logic: projections, validation, defaults, path construction, utils and
+domain errors. It performs no I/O, holds no kernel session, and reads no clock or randomness. Effects
+belong to runtime handlers; external clients belong in `integrations/` and reach handlers through deps.
+This folder is unrelated to Core install data, which shares only the word.
+
+```ts
+// core/issue/paths.ts  -  pure.
+export function childPath(parent: AbsolutePath, slug: string): AbsolutePath {
+  const raw = parent.raw === '/' ? '' : parent.raw
+  return AbsolutePath.parse(`${raw}/${slug}`)
+}
+```
+
+## Do NOT rely on self-referential edge constraints as write guards
+
+An edge whose endpoints accept the same class can point a node to itself or close a cycle. Declare the
+available constraints directly on the edge class to preserve the model, but do not rely on them as write
+guards: the current mutation path does not enforce `noSelf`, `acyclic`, or endpoint cardinality. Until
+the constraint layer lands, a handler precheck improves errors but cannot provide a concurrency-safe
+hierarchy invariant.
 
 ```ts
 const reports_to = edgeClass(
   { as: 'report', types: [Employee] },
   { as: 'manager', types: [Employee] },
-  { constraints: { noSelf: true, acyclic: true } }, // no self-manage, no cycles
+  {
+    noSelf: true,
+    acyclic: true,
+  },
 )
+```
+
+## When to use a standalone function vs a static method?
+
+Authority does not decide: both are schema-declared callables, and both carry their own function
+identity, `deps`, `step`, `authorize`, and auth policy. Use a standalone function for domain-level
+behavior, for the postInstall target, or for a webhook that must read the raw request (`ctx.c`). Use a
+static method for schema-derived params, a schema-bound `ctx.kernel`, and stream or binary output.
+
+## How to delete a node with children?
+
+`deleteNode` is leaf-guarded and Astrale has no cascade or `onDelete` rule. To remove a subtree, read
+every descendant, then put a delete arm for each descendant and for the parent into one mutation. A
+single surviving descendant rejects the whole patch, so drain every page before writing. Edges need no
+arm: see children block, edges vanish.
+
+```ts
+const comments = await step.run('read-issue-comments', () =>
+  kernel
+    .children(issue, { classes: [D.Comment.path.class], limit: 100 })
+    .then((page) => page.all())
+    .then((nodes) => nodes.map((node) => node.path.raw)),
+)
+
+await step.run('delete-issue-and-comments', () =>
+  kernel.mutate((m) => {
+    for (const comment of comments) m.deleteNode(D.Comment.path.class, comment)
+    m.deleteNode(D.Issue.path.class, issue)
+  }),
+)
+```
+
+## Delete: children block, edges vanish
+
+Delete treats the two relationships oppositely. A node that still has children cannot be deleted at all:
+the kernel throws `NodeNotEmptyError` and the whole patch writes nothing. A node's edges never block it:
+every incident edge, inbound and outbound, is removed with the node, along with the grants held on it,
+while the node at the far end survives and silently loses the relationship. See how to drain a subtree.
+
+## Relative vs Absolute Path (./x vs /x)
+
+An absolute path starts at the graph root and names one full tree location, independent of context. A
+relative path starts with `.` and names a location inside a tree fragment or relative to a known base;
+it becomes absolute only when mounted or resolved against that base. Do not pass a relative path to an
+operation whose contract requires an absolute location.
+
+```ts
+const fixed = AbsolutePath.parse('/contacts/ada')
+const withinTree = RelativePath.parse('./contacts/ada')
+```
+
+## Path vs PathLike vs raw string
+
+A `Path` is a parsed address with `.raw`, `.equals()`, and subclasses such as `AbsolutePath`. `PathLike`
+is exactly `string | Path`: the input type an API accepts at a boundary. `rawOf(value)` normalizes a
+`PathLike` to its string; `.raw` reads the string off a value already known to be a `Path`. Call `rawOf`
+only where both forms genuinely arrive, never on an already-typed value such as a compiled accessor, and
+compare addresses with `equals`, not `===`.
+
+```ts
+import { rawOf, type PathLike } from '@astrale-os/kernel-core'
+
+if (issue.path.equals(other.path)) return // structural, not `===`
+const key = issue.path.raw // serialize at the wire boundary
+
+// A helper that genuinely admits both forms normalizes once.
+const leaf = (ref: PathLike) => rawOf(ref).split('/').at(-1)
+```
+
+## Type graph addresses as paths, not strings
+
+Declare a param that names a graph location with `pathSchema()` or `absolutePathSchema()`, never
+`z.string()`. Import them from `@astrale-os/kernel-core`; the SDK barrel does not re-export them. The
+handler then receives a parsed `Path`; keep it typed throughout and call `.raw` only at a wire boundary.
+
+```ts
+import { pathSchema } from '@astrale-os/kernel-core'
+
+assign: fn({
+  params: { identity: pathSchema() },
+  returns: IssueInfoSchema,
+})
 ```

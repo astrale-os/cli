@@ -2,7 +2,9 @@
 
 # Domains
 
-Read when deciding whether a domain should depend on an existing Astrale domain instead of modeling the capability itself. This reference is intentionally sparse until the corpus has first-class topics for each native domain.
+Read when deciding whether a domain should depend on an existing Astrale domain instead of modeling the
+capability itself. Domain origins and package names change: discover them from the current workspace or
+catalog rather than copying a static list.
 
 ## How To Use This Reference
 
@@ -12,44 +14,121 @@ Prefer reuse when an existing domain already owns the concept, lifecycle, or aut
 - If your schema implements or points at another domain's classes/interfaces, import its schema package and include it in `defineSchema(..., { imports: [...] })`; also declare `requires` so install fails clearly when the dependency is missing.
 - Always verify the current package name and origin in the local workspace before adding an import; native domains are moving faster than the corpus.
 
-## Native Domain Catalog
+## Discovery
 
-### `kernel.astrale.ai`
-
-Use for the built-in graph model, base interfaces, permissions, identities, views, syscalls, and common classes such as containers and nodes. Import `KernelSchema` or compiled kernel accessors instead of redeclaring generic graph vocabulary. Do not add it as a normal app dependency; it is the substrate every instance already runs.
-
-### `shell.astrale.ai`
-
-Use for user workspaces, homes, groups, app installation surfaces, ownership, and user-facing organization of installed domains. Reach for it when your objects should be owned by users/groups or appear in a workspace shell.
-
-package: `@astrale-domains/shell-schema`
-
-### `ai-gateway.astrale.ai`
-
-Use for AI model catalog, model nodes, token usage, budgeted model access, and chat/model protocol front doors. Do not build direct OpenAI/Anthropic/Workers AI plumbing in a domain if the domain only needs model inference as a graph capability. Declare a runtime dependency and call model methods on `AIModel` nodes.
-
-package: `@astrale-domains/ai-gateway-schema`
-
-### `agents.astrale.ai`
-
-Use for autonomous agent or sandbox-backed agent nodes. It depends on AI Gateway at runtime, so prefer it when the concept is an agent as an Astrale actor/resource, not merely a handler that calls an LLM once.
-
-package: `@astrale-domains/agents-schema`
-
-### `integration.astrale.ai`
-
-Use for provider catalogs, integrations, OAuth/API-key connection flows, and graph-modeled external account connections. Prefer it over ad hoc credential or connection nodes when your domain needs users to connect SaaS providers.
-
-package: `@astrale-domains/integration-schema`
-
-### `services.astrale.ai`
-
-Use for deploying and managing tenant services, currently with Cloudflare Workers for Platforms as the concrete backend. Reach for it when the domain needs a service-control-plane capability: deploy code, set secrets, inspect logs, schedule work, or remove a tenant service. Do not use it for ordinary outbound API clients inside a handler; those still belong in `deps`/ports.
-
-package: `@astrale-domains/services-schema`
+1. Inspect `workspace/domains/*/schema/package.json` and each schema's `defineSchema` origin.
+2. Use the CLI catalog for domains that are actually published to the target environment.
+3. Verify the exported compiled accessors before importing a schema package.
+4. Treat `kernel.astrale.ai` as the built-in substrate, not a normal application dependency.
 
 ## Review Questions
 
 - Is the concept already owned by a native domain? If yes, depend on that domain instead of copying its vocabulary.
 - Is the dependency schema-level or only runtime-level? Schema-level needs an import and `requires`; runtime-only may only need `requires` plus kernel calls.
 - Is the dependency stable enough for production, or is it a platform/internal surface that should remain a script/operator concern?
+
+## Reuse an existing domain before integrating
+
+Before wrapping an external service, check whether an installed or native domain already owns the
+capability and its lifecycle. Reusing that domain preserves one vocabulary and authority boundary; a new
+integration creates a second owner. If the capability exists, declare requires and import its schema
+only when your model references its types.
+
+## Depend on a domain instead of copying it
+
+When another domain already owns a concept, declare it in requires and call or link to its vocabulary.
+Import its schema only when your own schema implements or references its types. Copying its classes
+creates a second source of truth that will drift.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  requires: ['billing.acme.dev'],
+})
+```
+
+## Requires
+
+**`requires`** declares other domain origins that must already be installed on the target kernel
+instance. Installation verifies that the dependency is present. It expresses a runtime dependency; use
+schema imports for cross-schema type references. Neither mechanism grants permission to the dependent
+domain.
+
+```ts
+defineDomain({
+  schema,
+  methods,
+  requires: ['identity.example.dev'],
+})
+```
+
+## Domain Imports
+
+**Schema imports** let definitions refer to types owned by another schema. Import the kernel schema to
+implement native interfaces such as `Identity` or `Container`, or import another domain's schema when
+your endpoint types truly cross that vocabulary. Imports describe type relationships; runtime
+installation ordering is declared separately with requires.
+
+```ts
+export const schema = defineSchema('tasks.example.dev', {
+  interfaces,
+  classes,
+  imports: [KernelSchema],
+})
+```
+
+## How to use another Domain?
+
+Declare the other domain's origin in `requires`, import its schema package when you need typed members,
+and call through the schema-bound view (or its compiled semantic accessor). `requires` enforces a
+presence precondition: the required domain must already be installed; it neither installs the dependency
+nor grants permission. Calls use the same local-or-remote surface, while graph access still depends on
+authority.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  requires: ['billing.example.dev'],
+})
+
+// Raw semantic path
+await kernel.call(Billing.Invoice.issue.path.method.raw, { amount: 2500 })
+
+// With imported schema (recommended for typed work)
+import { schema as billing } from '@acme/billing-schema'
+const billingClient = kernel.withSchema(billing)
+await billingClient.classes.Invoice.issue({ amount: 2500 })
+```
+
+## Cross-Domain Calls
+
+A **cross-domain call** invokes a callable owned by another installed domain. It has the same call
+semantics as a local call. The session follows any remote redirect and remints the next-hop delegation
+under the current bound authority.
+
+## Origin vs Serving URL
+
+A domain's **origin** is its stable addressing name, such as `contacts.example.dev`. Its **serving URL**
+is the deployed worker address used as the cryptographic issuer and routing destination. A worker can
+move without renaming every semantic path, while changing the serving URL changes the issuer that signs
+and verifies credentials. Do not put a URL in `defineDomain({ origin })`; see physical placement and
+issuer identity.
+
+## Physical Domain Path vs Semantic Origin
+
+`defineDomain({ path })` controls where the Domain node sits in the physical tree and defaults to
+`/domains/<origin>`. It does not move the semantic namespace: compiled addresses remain rooted at
+`/:<origin>`. Use the physical path for containment and the origin for types, functions, and views. This
+is a domain-level application of spatial versus semantic paths and is independent of the serving URL.
+
+```ts
+defineDomain({
+  schema,
+  methods,
+  path: '/domains/contacts.example.dev',
+})
+
+D.Contact.path.class.raw // still /:contacts.example.dev:class.Contact
+```

@@ -11,42 +11,109 @@ Simulation should prove the domain's real world behavior as closely as possible.
 - Put throwaway demo data behind an explicit demo function, script, or test helper, not hidden in normal `postInstall`.
 - Prefer when possible to truly integrate with the integrations domain rather than mocking it.
 
-## What to put in a seed?
+## How to test a domain's handlers?
 
-Put in a seed only the setup that needs real logic at install: granting the initial permissions a fresh
-domain needs (which core cannot express), or building data that depends on runtime state. Fixed
-structure that never varies, even folders, nodes, and the edges between them, belongs in core, declared
-rather than built. Keep the seed idempotent, because a re-install runs it again.
-
-## Core vs Seed
-
-Core and Seed both put data in place at install, but in opposite ways. Core is declarative: genesis
-nodes baked into the install bundle and materialized by the kernel with no callback to your worker, the
-fixed data a domain always has. Seed is imperative: a function that runs once after install and builds
-things step by step (folders, demo data, grants). Reach for Core for stable reference data with known
-paths, and Seed when setup needs real logic.
+The SDK ships no test kernel. Export each handler body as a plain function over `{ kernel, step }`, then
+drive it with a domain-owned kernel double and `createInlineStep()`, the inline step executor from
+`@astrale-os/sdk/step`. Assert the patch it built and the pages it drained, not only its return value.
+Invoke the exported handler's `authorize` hook against a denied caller too, and keep a real kernel for
+one end-to-end install.
 
 ```ts
-// Core  -  declarative genesis, materialized with no worker callback
-export const Catalog = defineCore(schema, {
-  nodes: { 'gpt-5': node(AIModel, { modelId: 'gpt-5' }) },
+import { createInlineStep } from '@astrale-os/sdk/step'
+
+const capture = new CaptureKernel(issueGraph({ path: '/issues/one', comments: 2 }))
+
+await deleteIssue(AbsolutePath.parse('/issues/one'), {
+  kernel: capture.kernel,
+  step: createInlineStep(),
 })
 
-// Seed  -  imperative postInstall function, runs once after install (as the system identity)
-export async function seed({ graph }) {
-  await graph.create(FOLDER_CLASS, '/inbox', {})
-}
+// One atomic drain, not one delete per comment.
+expect(capture.patches).toHaveLength(1)
+expect(capture.patches[0].nodes.delete).toHaveLength(3)
 ```
 
-## Ship fixed reference data as core
+## Declare authorize on every callable
 
-When a domain always needs the same fixed data present (a list of supported currencies, a default
-catalog), declare it as core rather than creating it in a seed. Core is materialized at every install
-with no code to run, sits at stable known paths your handlers can depend on, and cannot drift between
-installs. Reserve a seed for setup that needs real logic.
+Give every `remoteMethod` and `defineRemoteFunction` an `authorize` hook. Gate the principal with
+`kernel.auth.require`; when a callable is genuinely open, write an empty hook rather than none.
 
 ```ts
-// stable reference data, present at every install, at known paths
+// Gated: the caller must personally hold EDIT on the receiver.
+export const deleteIssueMethod = remoteMethod<Deps>()(schema, 'Issue', 'delete', {
+  authorize: ({ kernel, auth, self }) =>
+    kernel.auth.require({
+      who: auth.principal,
+      on: self.path,
+      perms: EDIT,
+      context: 'Issue.delete',
+    }),
+  execute: ({ self, kernel, step }) => deleteIssue(self.path, { kernel, step }),
+})
+
+// Open to any authenticated caller: declare it, do not omit it.
+export const listTagsMethod = remoteMethod<Deps>()(schema, 'Tag', 'list', {
+  authorize: () => {},
+  execute: ({ kernel }) => listTags(kernel),
+})
+```
+
+## Core vs Post-install Function (seed)
+
+Core is declarative install-graph data: fixed nodes and edges shipped in the signed bundle and
+materialized by the kernel. A post-install function is executable setup run after installation for
+grants, environment-aware work, or idempotent convergence. Use core when the data is part of the
+definition; use `postInstall` when setup needs runtime logic.
+
+## What to put in a seed?
+
+Put fixed install-graph data in core. Use the standalone `postInstall` function for logic, grants,
+environment-dependent setup, and idempotent convergence that cannot be represented declaratively.
+Register the function in both the schema `functions` group and `defineDomain({ functions })`, then
+reference the same object as `postInstall`. Use step.run and reconcile for repeatable work.
+
+```ts
+export const functions = {
+  seed: defineRemoteFunction({
+    inputSchema: z.object({}),
+    outputSchema: z.object({ seeded: z.boolean() }),
+    execute: ({ kernel, step }) =>
+      step.run('ensure-domain-roots', async () => {
+        await ensureDomainRoots(kernel)
+        return { seeded: true }
+      }),
+  }),
+}
+
+export const domain = defineDomain({
+  schema,
+  methods,
+  functions,
+  postInstall: functions.seed,
+})
+```
+
+## Core
+
+**Core** is declarative genesis data serialized into the install bundle. Use it for invariant nodes and
+edges known entirely from the schema package. Core data lives under the installed domain's core member,
+not a global `/core` folder. Use post-install when creation needs runtime logic, permissions, external
+information, or convergence against existing state.
+
+## Seed
+
+A domain **seed** is conventionally a standalone function registered as `postInstall`. It runs as the
+system identity after installation and should converge safely when repeated. It complements declarative
+core with runtime setup such as grants. Its procedural contract belongs in what to put in a seed.
+
+## Ship fixed reference data as Core
+
+Declare fixed, domain-owned reference data as Core so every installation receives the same nodes at
+stable paths. Use a seed only when setup requires execution, such as grants or runtime-dependent data.
+User-owned resources do not belong in Core.
+
+```ts
 export const Catalog = defineCore(schema, {
   nodes: {
     usd: node(Currency, { code: 'USD', symbol: '$' }),
@@ -55,55 +122,72 @@ export const Catalog = defineCore(schema, {
 })
 ```
 
-## Core folders as reference homes
+## Commit related graph writes in one mutation
 
-Use core folders as stable homes for domain-owned reference collections, such as built-in templates or
-catalogs that ship with the domain. A core folder gives fixed paths your handlers can depend on, but it
-should not become the default place for user-created nodes. For user resources, prefer asking where to
-create the node.
-
-### Instantiate a class of another domain
-- you must have "USE" on the class you want to instantiate
-
-### Creating a node as a Domain
-- you might want to ask for both the "path" and a semantic "anchor" on which you bind a semantic edge so it's easily queryable
-
-## Idempotency before mutation
-
-Check existing state before writing; design every handler (especially postInstall seeds) to converge on
-re-run, not duplicate.
-
-## Write the graph first, then call out
-
-When a handler touches an external service, record your intent in the graph before or around the outside
-call, and treat the graph as the source of truth. If the external call fails or the worker crashes, the
-graph still shows what was meant to happen, so retrying the call later can converge on the finished job
-instead of losing the work. The outside world is a detail your handler reconciles toward, not where your
-state lives.
+When several graph writes form one invariant, accumulate them in one `kernel.mutate` builder. The
+builder commits one atomic mutation to the graph after its callback returns; if the callback throws, it
+writes nothing. A node reference returned by `createNode` can be used by later operations in the same
+patch.
 
 ```ts
-// OK graph first, then the side effect, so a retry can converge
-execute: async ({ self, graph, deps }) => {
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'sending' })
-  await deps.email.send(/* ... */)        // the external effect
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'sent' })
-}
+import type { NodeRef } from '@astrale-os/kernel-client/graph'
+
+let taskRef: NodeRef | undefined
+
+await kernel.mutate((m) => {
+  taskRef = m.createNode(D.Task.path.class, params.at, {
+    [D.Task.title.key]: params.title,
+  })
+  m.link(taskRef, D.owned_by.path.class, params.owner)
+})
+
+return taskRef!.id // available only after mutate resolves; reading it inside the builder throws
 ```
 
-## A status field for in-flight work
+## Reconcile a domain-owned scope
 
-For any operation that is not instant, give the node a status property and move it through explicit
-states: `pending` when work starts, `ready` on success, `error` on failure. The state lives in the
-graph, so a crash leaves a node you can find and finish rather than work lost in the air. Pair it with
-an idempotent handler so re-running a stuck operation converges.
+Use `kernel.reconcile` when a handler owns a bounded graph scope and should make it match a desired
+specification across retries. State the roots, depth, and classes that define that ownership boundary,
+then choose explicit conflict and removal policies. Reconciliation is for convergence over a scope; its
+final patch is atomic, but its read-diff-write workflow is not one isolated transaction. Use mutate for
+a known one-shot patch, and reserve destructive removal policies for a scope the domain owns
+exclusively.
 
 ```ts
-// every long operation flips an explicit status the graph remembers
-await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'pending' })
-try {
-  await doWork()
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'ready' })
-} catch {
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'error' })
-}
+await kernel.reconcile({
+  spec: {
+    nodes: [
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps',
+        props: { [D.Folder.name.key]: 'Apps' },
+        onConflict: 'merge',
+      },
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps/inbox',
+        props: { [D.Folder.name.key]: 'Inbox' },
+        onConflict: 'merge',
+      },
+    ],
+  },
+  scope: {
+    roots: ['/reference/apps'],
+    depth: 1,
+    classes: [D.Folder.path.class],
+  },
+  policy: {
+    onConflict: 'merge',
+    onRemoved: { nodes: 'remove', edges: 'preserve' },
+    onUntracked: { nodes: 'remove', edges: 'preserve' },
+  },
+})
 ```
+
+## mutate vs reconcile
+
+`mutate` commits a known patch as one atomic graph write; use it when the caller already knows the exact
+creates, updates, and deletes. `reconcile` reads a declared scope, diffs current graph state against a
+desired spec, then applies the resulting patch; use it for repeatable convergence. The final
+reconciliation write is atomic, but the read-diff-write workflow is not one isolated transaction, so
+choose conflict and untracked-state policies deliberately. See atomic mutation and reconciliation.

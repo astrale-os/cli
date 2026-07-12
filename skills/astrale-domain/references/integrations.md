@@ -6,225 +6,413 @@ Read when wrapping an outside API, building deps/ports, receiving webhooks, usin
 
 ## How to integrate an external API?
 
-You integrate an external API by wrapping it behind your own functions, so the outside service appears
-to the rest of Astrale as ordinary calls on your domain. Write to the graph first and treat it as the
-source of truth, then make the external call; keep each handler idempotent so a retry converges instead
-of duplicating (see the saga pattern for multi-step flows). The graph holds the state; the external API
-is a detail your functions hide.
+Expose the capability as your own typed function and hide the vendor client behind `deps`. Derive a
+stable idempotency key from the domain operation, pass it to the provider, and record the provider
+result in graph state so a retry can converge instead of duplicating the remote effect. Keep caller
+authorization outside the effect. Use the canonical step pattern for the read/effect/write sequence and
+step-and-graph convergence when the remote system cannot participate in an atomic write.
 
 ## Reuse an existing domain before integrating
 
-When asked for an integration, first run `astrale domain list` and check whether a domain already
-fulfills the need (LLM calls, agents, the integrations connector domain) before wrapping a new API.
+Before wrapping an external service, check whether an installed or native domain already owns the
+capability and its lifecycle. Reusing that domain preserves one vocabulary and authority boundary; a new
+integration creates a second owner. If the capability exists, declare requires and import its schema
+only when your model references its types.
 
-## Depend on a domain, don't copy it
+## Depend on a domain instead of copying it
 
-When your domain needs what another already models, depend on it: declare it in requires and call its
-functions or read its nodes from the shared graph. Do not re-declare its classes or duplicate its data
-into your own schema, which forks the truth and lets the two drift apart. One domain owns each slice of
-the world; everyone else builds on it by reference.
+When another domain already owns a concept, declare it in requires and call or link to its vocabulary.
+Import its schema only when your own schema implements or references its types. Copying its classes
+creates a second source of truth that will drift.
 
 ```ts
-// OK depend and call across; the other domain stays the owner of its model
-defineDomain({ schema, methods, requires: ['billing.acme.dev'] })
-await kernel.call('/billing.acme.dev/class.Invoice/issue', { amount })
-// NO re-declaring Invoice in your own schema forks the truth
+export const domain = defineDomain({
+  schema,
+  methods,
+  requires: ['billing.acme.dev'],
+})
 ```
 
 ## Requires
 
-**requires** is how a domain declares the other domains it cannot work without. Listing another domain's
-origin tells the kernel to refuse installation until that dependency is already present, so your
-handlers can safely call across to it and build on its classes. It turns an implicit assumption into a
-checked guarantee: what you depend on is there before you run.
+**`requires`** declares other domain origins that must already be installed on the target kernel
+instance. Installation verifies that the dependency is present. It expresses a runtime dependency; use
+schema imports for cross-schema type references. Neither mechanism grants permission to the dependent
+domain.
 
 ```ts
-export const domain = defineDomain({
-  schema, methods,
-  requires: ['ai-gateway.astrale.ai', 'billing.acme.dev'], // installed before this one
+defineDomain({
+  schema,
+  methods,
+  requires: ['identity.example.dev'],
 })
 ```
 
 ## Domain Imports
 
-**Imports** let one domain's schema reference classes and interfaces defined by another. You list the
-other schema under `imports`, then use its definitions directly: implement its interfaces, point an edge
-at its classes, or extend its types. This is how a domain builds on shared vocabulary, such as the
-kernel's own base classes, instead of redefining it.
+**Schema imports** let definitions refer to types owned by another schema. Import the kernel schema to
+implement native interfaces such as `Identity` or `Container`, or import another domain's schema when
+your endpoint types truly cross that vocabulary. Imports describe type relationships; runtime
+installation ordering is declared separately with requires.
 
 ```ts
-import { KernelSchema } from '@astrale-os/kernel-core'
-export const schema = defineSchema('crm.acme.dev', {
-  interfaces: {}, classes: { Contact },
-  imports: [KernelSchema],   // reuse the kernel's Named, Timestamped, ...
+export const schema = defineSchema('tasks.example.dev', {
+  interfaces,
+  classes,
+  imports: [KernelSchema],
 })
 ```
 
-## Deps
+## Build external clients in deps
 
-**Deps** is a domain's dependency container: a typed object of the external clients and ports its
-handlers need, such as an HTTP client or a payment SDK. You build it with a `deps(env)` function that
-runs once when the worker starts, and every handler then reads what it needs from it. Building clients
-here rather than at module load keeps the worker side-effect-free and each service swappable behind a
-port (see integrating an external API).
-
-```ts
-// deps(env) runs once at worker startup; handlers read ctx.deps
-export function deps(env: Env): Deps {
-  return { egress: createEgress(env.API_KEY) }
-}
-```
-
-## Build clients in deps, not at import
-
-Construct every external client (an HTTP SDK, a database driver, a payment library) inside your deps
-function, and read it from the context in each handler. Building at module load or reaching for a global
-breaks the worker model: setup must be side-effect-free, and a client made once at import outlives the
-request it was meant for (see why not at load). Deps is the one seam where the outside world is wired
-in.
+Construct external clients in the domain's `deps` function and read them from each handler. Dependencies
+are resolved once for the worker lifecycle, so construction should be deterministic and free of network
+work; perform request-specific I/O inside the handler. Keep module imports declarative and side-effect
+free; see the module-load antipattern.
 
 ```ts
-// deps(env) is the single place clients are built, once per worker
 export function deps(env: Env): Deps {
-  return { stripe: new Stripe(env.STRIPE_KEY), http: makeHttp(env.BASE_URL) }
+  return { email: createEmailClient({ token: env.EMAIL_TOKEN }) }
 }
-// a handler reads what it needs: execute: ({ deps }) => deps.stripe.charge(/* ... */)
 ```
 
 ## Do NOT import clients at module load
 
-Never construct external clients at import time or monkey-patch globalThis.fetch; workers must be
-import-side-effect-free, so resolve ports from deps per request.
+Importing an external client at module load bypasses the domain's dependency lifecycle and can make
+imports perform work before the worker is configured. Define clients in `deps`, following the dependency
+construction seam, then perform request-specific I/O inside the handler. Do not patch global `fetch` or
+hide a second client singleton elsewhere.
 
-## Secrets in the graph
+## Do NOT store secrets in the graph
 
-Never store an API key, password, or token as a node property. The graph is shared by every domain on
-the instance and readable by anyone you grant access, so a secret written there is a secret leaked. Keep
-secrets in the worker's environment and reach them through deps; the graph holds your model, never your
-credentials.
+An API key, password, or bearer token is not a normal property. The graph is shared by installed domains
+and exposed through grants, so a readable secret node expands the blast radius of ordinary graph access.
+Keep service credentials in the worker environment and expose only a purpose-built client through
+`deps`.
 
 ```ts
-// NO a secret as graph data  -  readable by anyone with access
-props: { stripeKey: z.string() }
-// OK secrets live in env, reached through deps; the graph stays model-only
-export function deps(env: Env) { return { stripe: new Stripe(env.STRIPE_KEY) } }
+// Wrong: any reader of this node receives the key.
+props: { providerToken: z.string() }
+
+// Right: the graph stores provider identity; deps holds the credentialed client.
+export const deps = (env: Env) => ({
+  provider: createProviderClient(env.PROVIDER_TOKEN),
+})
 ```
 
-## Write the graph first, then call out
+## How to use step.run well?
 
-When a handler touches an external service, record your intent in the graph before or around the outside
-call, and treat the graph as the source of truth. If the external call fails or the worker crashes, the
-graph still shows what was meant to happen, so retrying the call later can converge on the finished job
-instead of losing the work. The outside world is a detail your handler reconciles toward, not where your
-state lives.
+Wrap every kernel call, external request, clock read, and random value in `step.run(stableId, effect)`;
+keep only pure projection and validation outside. Use semantic IDs that survive refactors, return
+JSON-serializable values, and keep the effect inside the callback. Because every result is
+JSON-round-tripped, return a plain DTO rather than a `Path`, `Node`, `BoundNode`, `Paged`,
+`GraphResult`, client, or another live capability, or return nothing when the result is unused. The
+current backend executes steps inline; the shape is intentionally replayable by future backends, so do
+not rely on closure-local mutation between steps. Pair this with stable step ids, the serialization
+pitfall, the external integration pattern, and the current durability limitation.
 
 ```ts
-// OK graph first, then the side effect, so a retry can converge
-execute: async ({ self, graph, deps }) => {
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'sending' })
-  await deps.email.send(/* ... */)        // the external effect
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'sent' })
+execute: async ({ params, kernel, deps, step }) => {
+  const job = await step.run('read-job', async () => {
+    const node = await kernel.getOrThrow(params.job)
+    return {
+      id: node.id,
+      path: node.path.raw,
+      input: z.string().parse(node.props[D.Job.input.key]),
+    }
+  })
+  const result = await step.run('submit-provider-job', async () => {
+    const submitted = await deps.provider.submit({ jobId: job.id, input: job.input })
+    return { id: submitted.id }
+  })
+  await step.run('record-provider-job', async () => {
+    await kernel.updateNode(D.Job.path.class, job.path, {
+      [D.Job.providerId.key]: result.id,
+    })
+    return { recorded: true }
+  })
+  return { id: result.id }
 }
 ```
 
-## Idempotency before mutation
+## Run every effect inside a step
 
-Check existing state before writing; design every handler (especially postInstall seeds) to converge on
-re-run, not duplicate.
-
-## A status field for in-flight work
-
-For any operation that is not instant, give the node a status property and move it through explicit
-states: `pending` when work starts, `ready` on success, `error` on failure. The state lives in the
-graph, so a crash leaves a node you can find and finish rather than work lost in the air. Pair it with
-an idempotent handler so re-running a stuck operation converges.
+Wrap every kernel call, external request, clock read, and random value in `step.run` under a stable id.
+Keep pure projection, validation, and defaults outside.
 
 ```ts
-// every long operation flips an explicit status the graph remembers
-await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'pending' })
-try {
-  await doWork()
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'ready' })
-} catch {
-  await graph.update(D.Message.path.class.raw, self.path.raw, { status: 'error' })
+const parent = await step.run('resolve-issue-parent', async () => {
+  const node = await kernel.getOrThrow(params.parent)
+  return node.path.raw // JSON-serializable, never a Path or BoundNode
+})
+
+// Pure: no step.
+const props = defaultIssueProps(params, AbsolutePath.parse(parent))
+
+await step.run('create-issue', () =>
+  kernel.mutate((m) => {
+    const issue = m.createNode(D.Issue.path.class, AbsolutePath.parse(parent), props)
+    m.link(issue, D.reported_by.path.class, auth.principal)
+  }),
+)
+```
+
+## Make external effects converge through steps and graph state
+
+For an external effect, persist intent in the graph, give each meaningful stage a stable step, and
+record the provider's result on the modeled node. Reuse a provider idempotency key derived from stable
+graph identity so a retry converges after any interruption. The graph stores durable progress; the
+provider key prevents duplicate effects; the steps expose replayable stage boundaries.
+
+```ts
+execute: async ({ self, kernel, deps, step }) => {
+  const message = await self.node()
+
+  await step.run('mark-sending', async () => {
+    await message.update({ status: 'sending' })
+    return { status: 'sending' }
+  })
+
+  try {
+    const sent = await step.run('send-provider-message', async () => {
+      const result = await deps.email.send({ idempotencyKey: message.id })
+      return { providerMessageId: result.id }
+    })
+    await step.run('mark-sent', async () => {
+      await message.update({ status: 'sent', providerMessageId: sent.providerMessageId })
+      return { status: 'sent' }
+    })
+  } catch (error) {
+    try {
+      await step.run('mark-error', async () => {
+        await message.update({ status: 'error' })
+        return { status: 'error' }
+      })
+    } catch (recordError) {
+      throw new AggregateError([error, recordError], 'send failed and error state was not recorded')
+    }
+    throw error
+  }
 }
 ```
 
-## Saga for multi-step flows
+## Durable step execution and compensation are not implemented yet
 
-The Graph is the source of truth. Prefer to write first in the Graph, then make external calls. if it
-takes some time; then you can set a status: "creating/provisioning" and then update the status to
-"ready" when the external call is done or rollback on failure. make your function idempotent.
+The current SDK implements `step.run` with an inline executor: it builds a stable scoped key, runs the
+callback on every invocation, then JSON-round-trips the result. Durable execution is planned for a
+future backend but is not implemented yet: there is no persisted completion, replay deduplication, or
+exactly-once effect. First-class rollback or compensation is also planned for the future but absent
+today, so handlers must record failure, compensate explicitly, and use provider idempotency plus graph
+convergence.
 
-## Webhook: verify, then act as self
+## Commit related graph writes in one mutation
 
-To receive a webhook from an outside service, expose a public function (one with no caller to
-authenticate), verify the request's own signature yourself, then act on the graph through selfKernel.
-The function trusts the sender's signature, not an Astrale credential, because the sender has none;
-selfKernel gives it just enough authority to record what arrived. This is the standard shape for any
-unauthenticated entry point.
+When several graph writes form one invariant, accumulate them in one `kernel.mutate` builder. The
+builder commits one atomic mutation to the graph after its callback returns; if the callback throws, it
+writes nothing. A node reference returned by `createNode` can be used by later operations in the same
+patch.
 
 ```ts
-// a public webhook: verify the sender's own signature, then act as the function itself
-export const onStripeEvent = defineRemoteFunction({
-  auth: 'public',
-  inputSchema: StripeEvent, outputSchema: z.void(),
-  execute: async ({ params, selfKernel, deps }) => {
-    deps.stripe.verifySignature(params)            // trust the upstream, not a credential
-    const kernel = await selfKernel()
-    await kernel.call('/payments::recordEvent', { event: params })
+import type { NodeRef } from '@astrale-os/kernel-client/graph'
+
+let taskRef: NodeRef | undefined
+
+await kernel.mutate((m) => {
+  taskRef = m.createNode(D.Task.path.class, params.at, {
+    [D.Task.title.key]: params.title,
+  })
+  m.link(taskRef, D.owned_by.path.class, params.owner)
+})
+
+return taskRef!.id // available only after mutate resolves; reading it inside the builder throws
+```
+
+## Reconcile a domain-owned scope
+
+Use `kernel.reconcile` when a handler owns a bounded graph scope and should make it match a desired
+specification across retries. State the roots, depth, and classes that define that ownership boundary,
+then choose explicit conflict and removal policies. Reconciliation is for convergence over a scope; its
+final patch is atomic, but its read-diff-write workflow is not one isolated transaction. Use mutate for
+a known one-shot patch, and reserve destructive removal policies for a scope the domain owns
+exclusively.
+
+```ts
+await kernel.reconcile({
+  spec: {
+    nodes: [
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps',
+        props: { [D.Folder.name.key]: 'Apps' },
+        onConflict: 'merge',
+      },
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps/inbox',
+        props: { [D.Folder.name.key]: 'Inbox' },
+        onConflict: 'merge',
+      },
+    ],
+  },
+  scope: {
+    roots: ['/reference/apps'],
+    depth: 1,
+    classes: [D.Folder.path.class],
+  },
+  policy: {
+    onConflict: 'merge',
+    onRemoved: { nodes: 'remove', edges: 'preserve' },
+    onUntracked: { nodes: 'remove', edges: 'preserve' },
   },
 })
 ```
 
-## Trusting a webhook you didn't verify
+## Return only JSON-serializable step results
 
-A public function has no Astrale credential to vouch for its caller, so anyone on the internet can hit
-it. Acting on its input without first verifying the sender's own signature lets a stranger forge events
-into your graph. Verify the upstream signature before doing anything (see the webhook pattern); a public
-endpoint that trusts its body is an open door.
+`step.run` round-trips a completed value through JSON. A function, `BigInt`, or cyclic object fails
+after the step body has run, while a class instance may silently lose its prototype or fields. Either
+outcome can leave an external effect completed without a trustworthy recorded result. Return plain data
+and reconstruct runtime capabilities from the handler's dependency container in the next stage; see
+dependency construction.
 
 ```ts
-// NO acts on unverified input; anyone can forge this
-execute: async ({ params, selfKernel }) => record(params)
-// OK verify the sender's signature first
-execute: async ({ params, selfKernel, deps }) => {
-  if (!deps.stripe.verify(params)) throw new Error('bad signature')
-  record(params)
-}
+// Wrong: a client is not a durable plain value; serialization may fail or erase it.
+await step.run('connect-provider', () => deps.provider)
+
+// Right: return the durable fact the next step needs.
+await step.run('connect-provider', async () => {
+  const connection = await deps.provider.connect(params)
+  return { connectionId: connection.id }
+})
+```
+
+## Verify a public webhook, then act as the function
+
+A public webhook has no Astrale caller, so its handler first verifies the provider's supported signed
+fields in `authorize`, then asks `ctx.fn.kernel()` for a session owned by the function identity. Grant
+that identity only the permission its webhook needs. This keeps upstream authentication separate from
+Astrale authority, while a stable event path plus reconcile makes provider redelivery converge.
+Providers that sign exact raw bytes are blocked by the current auxiliary route; never rebuild signed
+bytes from parsed JSON.
+
+```ts
+export const onStripeEvent = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: StripeEvent,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ params, fn }) => {
+    const eventPath = AbsolutePath.from('events', params.id)
+
+    const kernel = await fn.kernel()
+    await kernel.reconcile({
+      spec: {
+        nodes: [{
+          class: D.Event.path.class,
+          path: eventPath,
+          props: { [D.Event.payload.key]: params.payload },
+          onConflict: 'skip',
+        }],
+      },
+      scope: { roots: [eventPath], depth: 0, classes: [D.Event.path.class] },
+      policy: {
+        onConflict: 'skip',
+        onRemoved: { nodes: 'preserve', edges: 'preserve' },
+      },
+    })
+    return { accepted: true }
+  },
+})
+```
+
+## Exact raw webhook bodies are consumed before handlers
+
+The current standalone-function auxiliary route parses JSON before `authorize` and `execute`, so
+`c.req.raw` no longer provides untouched bytes to the handler. A provider that signs exact request bytes
+cannot be verified safely through this route until the SDK preserves a clone; never reconstruct the
+signed body from parsed JSON. Providers that sign explicit headers or canonical parsed fields can still
+use the public webhook pattern.
+
+## Do NOT act on an unverified webhook
+
+A public standalone function has no Astrale caller credential. Minting the function's own kernel session
+before authenticating the upstream request lets any sender trigger privileged graph work. Verify the
+provider's supported signed fields in `authorize`, then use the function identity only for the narrow
+operation the webhook owns. If the provider requires exact raw bytes, the current route boundary must be
+fixed first; the complete replay-safe shape is the public webhook pattern.
+
+```ts
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: ProviderEvent,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ params, fn }) => {
+    const kernel = await fn.kernel()
+    await recordProviderEvent(kernel, params)
+    return { accepted: true }
+  },
+})
 ```
 
 ## When should an entry point be public?
 
-Make a view or function public only when it must serve callers who have no Astrale credential: a
-marketing page, a sign-in screen, a webhook from an outside service. Everything reached by your own
-users should stay `required`, so the kernel checks who they are. A public endpoint trades the kernel's
-identity check for one you must do yourself, so reach for it sparingly and verify what you can.
+Use `public` only when a caller cannot present an Astrale credential: for example a sign-in page or a
+third-party webhook. Public function and method contexts have `auth: null` and `kernel: null`; a view
+context has `auth: null` and never exposes a `kernel` property. Validate the upstream request before
+acquiring `ctx.fn.kernel()`. Use `optional` only when both authenticated and anonymous behavior are
+genuinely needed. Everything else should keep the default required policy and follow the public webhook
+pattern and function security.
 
-## A public function has no kernel
+## Do NOT expect a caller kernel in a public handler
 
-In a public function or view there is no caller, so the context's `kernel` is null; reaching for it to
-touch the graph throws. Use selfKernel instead, which acts as the function's own identity, whenever the
-entry point is public.
+For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
+caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
+policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
+reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
+providers also require the SDK fix described by the auxiliary-route limitation.
 
 ```ts
-// auth: 'public' -> ctx.kernel is null
-execute: async ({ kernel, selfKernel }) => {
-  // await kernel.call(/* ... */)   // NO throws: no caller to act as
-  const own = await selfKernel()  // OK act as the function itself
-  await own.call('/log::append', { event: 'hit' })
-}
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: EventSchema,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ fn, params }) => {
+    const own = await fn.kernel()
+    await recordProviderEvent(own, params)
+    return { accepted: true }
+  },
+})
 ```
 
 ## How to give a function its own permissions?
 
-A function is an identity, so you grant it permissions exactly as you would a user: a grant of the verbs
-it needs on the nodes it touches. This is what lets a function act on its own through selfKernel, like a
-webhook that records events into a folder it has been granted EDIT on. Give it the least it needs, the
-same as any principal.
+Grant the callable's function identity exactly the resources its implementation needs. `ctx.fn.ref` is a
+schema ref used for naming, not an addressable path. In a post-install function, target the callable
+through its compiled FunctionPath or MethodPath and call `kernel.auth.grant`. A required handler's
+normal kernel uses the union of caller and function authority, while `ctx.fn.kernel()` is self-only. See
+function identity and the two handler sessions.
 
 ```ts
-import { EDIT, toMask } from '@astrale-os/kernel-core'
-// the function is an identity; grant it EDIT on the folder it writes to
-await kernel.auth.grant({ to: functionIdentity, on: '/events', perms: toMask(EDIT) })
+await kernel.auth.grant({
+  to: D.$.f('ingest').path.domain,
+  on: '/events',
+  perms: toMask(READ, EDIT),
+})
 ```
