@@ -2,116 +2,326 @@
 
 # Debugging
 
-Read when encountering any unexpected behavior. Start by proving which domain version is installed and which identity/path/form the failing call is using.
+Read when encountering unexpected domain behavior. Prove the serving URL, installed schema hash, physical
+placement, caller identity, authority gate, path form, and page/cursor state before changing code. Reproduce
+through the same bound session and adapter used by the failing path.
 
-## Changed the schema but didn't reinstall
+## Physical Domain Path vs Semantic Origin
 
-Editing your schema or handlers changes nothing on a running instance until you deploy and install
-again. The instance keeps running the version it last installed, so a class you just added is not there
-yet and a handler you just fixed is still broken. If a change does not seem to take, confirm you
-re-deployed and re-installed, not just saved the file.
-
-## Defined but not wired in
-
-A standalone function or a view exists for the domain only if it is listed in the domain's `functions`
-or `views` map. Writing the file is not enough: an unlisted function is invisible at runtime, callable
-by no one, with no error to explain why. When a new function or view cannot be reached, first check that
-it is wired into the domain definition.
-
-## A public function has no kernel
-
-In a public function or view there is no caller, so the context's `kernel` is null; reaching for it to
-touch the graph throws. Use selfKernel instead, which acts as the function's own identity, whenever the
-entry point is public.
+`defineDomain({ path })` controls where the Domain node sits in the physical tree and defaults to
+`/domains/<origin>`. It does not move the semantic namespace: compiled addresses remain rooted at
+`/:<origin>`. Use the physical path for containment and the origin for types, functions, and views. This
+is a domain-level application of spatial versus semantic paths and is independent of the serving URL.
 
 ```ts
-// auth: 'public' -> ctx.kernel is null
-execute: async ({ kernel, selfKernel }) => {
-  // await kernel.call(/* ... */)   // NO throws: no caller to act as
-  const own = await selfKernel()  // OK act as the function itself
-  await own.call('/log::append', { event: 'hit' })
-}
+defineDomain({
+  schema,
+  methods,
+  path: '/domains/contacts.example.dev',
+})
+
+D.Contact.path.class.raw // still /:contacts.example.dev:class.Contact
 ```
 
-## Calling an instance form for a static
+## Schema Hash
 
-'method x not found... call it as /:o:class.C/x' means you used::method on a static; switch to the
-static slash form.
+The **schema hash** identifies the complete id-independent install graph, not only the user-authored
+class definitions. It lets the kernel detect whether an installed bundle matches the deployed domain
+definition. Treat a hash change as evidence that the installable graph contract changed; inspect the
+actual diff before deciding whether reinstall or migration is safe.
+
+## Handler Code vs Installed Schema
+
+Handler code is served by the deployed worker and can hot-reload at the same URL during development
+without reinstalling the domain. The installed schema graph is a snapshot identified by its schema hash;
+changing classes, method contracts, views, core data, or bindings requires the deploy/install path that
+updates that snapshot. The presentation manifest is worker `/meta` data, so changing it affects future
+metadata reads after deployment rather than the installed schema graph.
+
+## Wire every function, method, and view into the domain
+
+A standalone function or view exists only when it is present in the `functions` or `views` map passed to
+the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
+map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
+before debugging dispatch.
+
+```ts
+export const domain = defineDomain({
+  schema,
+  methods,
+  functions: { search },
+  views: { dashboard },
+  deps,
+})
+```
+
+## Do NOT expect a caller kernel in a public handler
+
+For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
+caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
+policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
+reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
+providers also require the SDK fix described by the auxiliary-route limitation.
+
+```ts
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: EventSchema,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ fn, params }) => {
+    const own = await fn.kernel()
+    await recordProviderEvent(own, params)
+    return { accepted: true }
+  },
+})
+```
+
+## Exact raw webhook bodies are consumed before handlers
+
+The current standalone-function auxiliary route parses JSON before `authorize` and `execute`, so
+`c.req.raw` no longer provides untouched bytes to the handler. A provider that signs exact request bytes
+cannot be verified safely through this route until the SDK preserves a clone; never reconstruct the
+signed body from parsed JSON. Providers that sign explicit headers or canonical parsed fields can still
+use the public webhook pattern.
+
+## Do NOT call a static method as an instance method
+
+If a method exists in the schema but instance dispatch cannot resolve it, check whether it was declared
+static. A static method is addressed by its compiled method path; `node::method` is only for a method
+whose handler receives that node as `self`. Do not repair the mismatch by guessing another raw path.
+
+```ts
+// Static: call the compiled method path.
+await kernel.call(D.Contact.create.path.method.raw, { at, email })
+
+// Instance: call on an existing node.
+await kernel.call(`${contact.path.raw}::rename`, { name: 'Ada' })
+```
 
 ## How to debug a permission denied?
 
-When a call is refused, check the chain that grants access: does the caller hold a grant with the right
-verb (USE to call, READ to see, EDIT to change) on the target node, or on an ancestor it propagates
-from? Access is denied by default, so the absence of a grant, not a wrong one, is the usual cause.
-Confirm the caller is who you expect, then trace from the node up its parents for the grant that should
-cover it.
+First confirm the actual principal with `kernel.auth.whoami()`. Then check the exact node and verb
+through `kernel.auth.check`, inspect the relevant ancestor grant, and distinguish standing grants from a
+narrowed credential. In a handler, separately ask whether the caller or the function identity was
+expected to supply the permission. This follows composed authority and AuthApi checks.
 
-## Granting needs more than SHARE
+```ts
+const principal = await kernel.auth.whoami()
+const allowed = await kernel.auth.check({
+  who: principal.id,
+  on: '/projects/apollo',
+  perms: EDIT,
+})
+```
 
-Holding `SHARE` on a node lets you grant access, but only to rights you yourself hold: you cannot hand
-out EDIT if you only have READ and SHARE. A grant that is refused, or quietly grants less than you
-asked, is often this: the granter is missing the very verb they are trying to pass on. To delegate a
-right, make sure you hold both SHARE and that right.
+## Composed Handler Authority vs Caller Authority
 
-## Renaming a property orphans its data
+An authenticated handler's `ctx.kernel` is bound to the **union** of the caller's delegated authority
+and the function identity's own grants. Either side can make a graph operation succeed. That makes
+function-owned capabilities usable, but it also means success does not prove the caller personally held
+the permission. For caller-sensitive operations, gate `ctx.auth.principal` explicitly with
+`kernel.auth.require` in `authorize`. This is the operational consequence of identity composition and
+business authorization.
 
-A node's properties are stored under their fully qualified keys, so renaming a property in the schema
-does not rename the data already written: the old values sit under the old key, invisible to the new
-name. A re-install changes the shape, not the stored facts. This is a current kernel limitation: until
-migrations handle schema-level renames, preserve the old property name or write an explicit migration
-that copies the old qualified key into the new one.
+```ts
+authorize: ({ auth, kernel, self }) =>
+  kernel.auth.require({
+    who: auth.principal,
+    on: self.path,
+    perms: EDIT,
+    context: 'Contact.rename',
+  })
+```
 
-## Renaming the origin breaks everything
+## Missing Read vs Masked Read
 
-A domain's origin is woven into every path its members are addressed by and into the identity its
-functions sign with. Change it and every existing address, grant, and cross-domain dependency that named
-the old origin stops resolving. Pick an origin you can live with up front; renaming one already in use
-is not an edit but a migration.
+At the GraphApi read surface, a node that does not exist and a node hidden by the visibility mask
+intentionally have the same result. `get` returns null, `getOrThrow` throws `NodeUnavailableError`, and
+an unresolved query root contributes no visible result. This prevents existence leaks. Do not infer
+nonexistence from a null; separately use AuthApi checks when policy allows and select optional versus
+required reads as described by get versus getOrThrow.
 
-## A self-referential edge without guards
+```ts
+const optional = await kernel.get('/contacts/ada')
+const required = await kernel.getOrThrow('/contacts/ada', 'load contact')
+```
 
-An edge whose two ends are the same class, like `reports_to` between two `Employee`s, can point a node
-at itself or form a cycle (A reports to B reports to A). Declare the constraints the relationship is
-meant to obey, `noSelf` and `acyclic`, so the rule lives in the schema, and guard for these shapes in
-your own logic where they would break it. An edge over one class that assumes a clean hierarchy without
-checking is asking for the loop that breaks it.
+## Do NOT read only the first page
+
+`children` and `neighbors` return an `Paged` collection whose first page is `result.nodes`, not the
+complete collection. Code that treats that array as exhaustive works in small fixtures and silently
+truncates in production. Drain with `all()`, follow `next()`, iterate asynchronously, or persist
+`cursor()` according to the operation's paging contract.
+
+```ts
+const apps = await kernel.children('/apps', { limit: 100 })
+
+const firstPage = apps.nodes
+const resumeFrom = apps.cursor()
+const everyApp = await apps.all()
+```
+
+## Return only JSON-serializable step results
+
+`step.run` round-trips a completed value through JSON. A function, `BigInt`, or cyclic object fails
+after the step body has run, while a class instance may silently lose its prototype or fields. Either
+outcome can leave an external effect completed without a trustworthy recorded result. Return plain data
+and reconstruct runtime capabilities from the handler's dependency container in the next stage; see
+dependency construction.
+
+```ts
+// Wrong: a client is not a durable plain value; serialization may fail or erase it.
+await step.run('connect-provider', () => deps.provider)
+
+// Right: return the durable fact the next step needs.
+await step.run('connect-provider', async () => {
+  const connection = await deps.provider.connect(params)
+  return { connectionId: connection.id }
+})
+```
+
+## Do NOT assume a read inside mutate is atomic
+
+The `kernel.mutate` callback only builds a patch; its accumulated writes become atomic when the callback
+returns. A graph read awaited inside that callback happens before the commit and is not part of the
+transaction, so concurrent state may change between the read and the write. Use a scoped reconcile for
+convergence or a server-side invariant when the decision depends on current state; see mutate versus
+reconcile.
+
+```ts
+// Misleading: the read and update are not one transaction.
+await kernel.mutate(async (m) => {
+  const current = await kernel.getOrThrow(params.counter)
+  m.updateNode(current.class, current.path, {
+    [D.Counter.value.key]: Number(current.props[D.Counter.value.key]) + 1,
+  })
+})
+```
+
+## Refresh the graph after a domain method call
+
+shell-react's graph memory invalidates only the writes made through it (`useGraph().create`, `.update`,
+`.mutate`). A domain method dispatched through `useMethod` or a schema-bound class call reaches the
+kernel directly, so no shape is marked stale and the view keeps rendering pre-mutation state. Await the
+call, then `refetch()` each read the mutation touched. There is no `invalidate()`.
+
+```tsx
+const comments = useChildren(issue, { type: 'Comment' })
+const list = useChildren(space, { type: 'Issue' })
+const addComment = useMethod(schema, 'Issue', 'addComment')
+
+async function submit(body: string) {
+  await addComment(issue.id, { body })
+  // Written through the kernel, not the memory: refresh what it touched.
+  await Promise.all([comments.refetch(), list.refetch()])
+}
+```
+
+## Fluent expand, filter, and with operations are not implemented yet
+
+The current structured query surface can express seeded children and edge gathers that lower to the
+kernel `get` function. Raw `expand`, `filter`, and `with` builder methods remain visible but throw until
+the structured query syscall is available. Build only supported reads, or pass a supported query AST
+when its extra shape is required. The AST form still runs through `lowerToGet`; it does not unlock
+filters, chained moves, visibility permissions, or other capabilities that `function.get` cannot
+express.
+
+## Multi-root query continuation is single-root only
+
+A `GraphResult` can begin from several roots, but continuation through `next()` or `cursor()` currently
+supports only a single root. If every root may paginate, run a separate query per root or design an
+explicit resume plan rather than assuming one cursor covers the whole graph result.
+
+## Hold SHARE and every right you grant
+
+Holding `SHARE` lets an identity create a grant, but it cannot grant a verb it does not hold. A caller
+with READ and SHARE can pass READ, not EDIT. When a grant is denied or narrower than intended, inspect
+both SHARE and the rights being delegated on the target.
+
+## Renaming a property does not migrate stored data
+
+A node stores properties under fully qualified keys. Renaming a schema property creates a new key but
+does not copy values written under the old one, so existing nodes appear to lose that field. Preserve
+the name or run an explicit data migration from the old qualified key to the new one.
+
+## Treat an origin rename as a semantic-address migration
+
+The origin qualifies schema keys, semantic paths, dependencies, and callable identities. Changing it
+creates a new semantic namespace rather than editing a display name. Treat an origin change as an
+explicit migration of stored properties, grants, cross-domain requirements, and external callers.
+
+## Do NOT rely on self-referential edge constraints as write guards
+
+An edge whose endpoints accept the same class can point a node to itself or close a cycle. Declare the
+available constraints directly on the edge class to preserve the model, but do not rely on them as write
+guards: the current mutation path does not enforce `noSelf`, `acyclic`, or endpoint cardinality. Until
+the constraint layer lands, a handler precheck improves errors but cannot provide a concurrency-safe
+hierarchy invariant.
 
 ```ts
 const reports_to = edgeClass(
   { as: 'report', types: [Employee] },
   { as: 'manager', types: [Employee] },
-  { constraints: { noSelf: true, acyclic: true } }, // no self-manage, no cycles
+  {
+    noSelf: true,
+    acyclic: true,
+  },
 )
 ```
 
-## Walking children one by one
+## Do NOT read each child again
 
-Fetching a folder's children and then querying each child again to read it turns a single logical read
-into dozens of round trips. One `graph.query(...).children()` already returns the child nodes with their
-data, so read them off `result.graph` instead of re-querying each by path. When you find yourself issuing
-a `graph.query((q) => q.from(child.path))` inside a loop over children, you have an N-plus-one;
-`.descend(depth)` reads a whole subtree in ONE `function.get`.
+Calling `get` for every node returned by `children` or `neighbors` turns one paged read into many round
+trips. A paged result already contains hydrated nodes for that page and can drain later pages itself.
+Consume those nodes directly unless a later operation explicitly needs a fresh snapshot.
 
 ```ts
-// NO N+1: a children query, then a per-child query re-read
-const listed = await ctx.graph.query((q) => q.from('/contacts').children())
-const kids = listed.graph.nodes.filter((n) => !listed.roots.includes(n))
-for (const k of kids) await ctx.graph.query((q) => q.from(k.path))
-// OK the children query already returned each child's props; just read them
-const r = await ctx.graph.query((q) => q.from('/contacts').children())
-const loaded = r.graph.nodes.filter((n) => !r.roots.includes(n))
+const contacts = await kernel.children('/contacts', { limit: 100 })
+
+// Wrong: every item causes another graph call.
+for await (const contact of contacts) await kernel.get(contact.path)
+
+// Right: the iterator yields hydrated nodes across all pages.
+for await (const contact of contacts) await indexContact(contact)
 ```
 
-## How does a handler report an error?
+## Do NOT scatter error-message matching through handlers
 
-A handler reports failure by throwing; the kernel catches it and turns it into a structured error result
-delivered to the caller instead of a value. Throw a plain `Error` for an ordinary failure, or a typed
-error carrying a code when the caller must tell failures apart and react. Never swallow an error into a
-fake success: a thrown error is how the call truthfully says it did not work.
+Repeated `error.message.includes(...)` branches couple every handler to transport wording. Prefer
+exported error guards or `classifyKernelError` when the typed error survives the call boundary. If an
+RPC path preserves only a message, isolate the compatibility match in one tested boundary helper and let
+all unrecognized failures propagate from the handler.
 
 ```ts
-execute: async ({ self, params }) => {
-  if (params.amount <= 0) throw new Error('amount must be positive') // -> structured error to caller
-  return charge(self, params.amount)
+try {
+  return await kernel.getOrThrow(params.node)
+} catch (error) {
+  if (isNodeUnavailableError(error)) return null
+  throw error
 }
+
+// One tested compatibility boundary for an RPC that currently loses error classes.
+const isCreateConflict = (error: unknown) =>
+  error instanceof Error && /PATH_CONFLICT|CONFLICT|already exist/i.test(error.message)
+```
+
+## Do NOT reimplement graph syscalls with raw calls
+
+Calling raw kernel functions for ordinary graph CRUD bypasses the client surface that normalizes paths,
+maps errors, pages results, and batches writes. Use the graph API for graph work and reserve raw
+dispatch for domain methods or genuinely unwrapped kernel functions. A raw call should be an explicit
+escape hatch, not the default style.
+
+```ts
+// Avoid rebuilding function.get and function.mutate payloads by hand.
+const contact = await kernel.getOrThrow('/contacts/ada')
+await kernel.updateNode(contact.class, contact.path, {
+  [D.Contact.name.key]: 'Ada Lovelace',
+})
 ```

@@ -2,147 +2,332 @@
 
 # Performance
 
-Read when optimizing graph access, reducing kernel round trips, choosing indexes or queries, designing lookup paths, or reviewing handler call patterns for avoidable latency.
+Read when reducing graph round trips or choosing between direct reads, paging, structured queries, atomic
+mutations, and reconciliation. Preserve visibility, pagination, and write invariants first; optimize from
+measured call patterns rather than database-specific shortcuts.
 
-## Walking children one by one
+## Use the graph API before raw calls
 
-Fetching a folder's children and then querying each child again to read it turns a single logical read
-into dozens of round trips. One `graph.query(...).children()` already returns the child nodes with their
-data, so read them off `result.graph` instead of re-querying each by path. When you find yourself issuing
-a `graph.query((q) => q.from(child.path))` inside a loop over children, you have an N-plus-one — and
-`.descend(depth)` collapses a whole subtree into ONE `function.get`.
-
-```ts
-// NO N+1: a children query, then a per-child query re-read
-const listed = await ctx.graph.query((q) => q.from('/contacts').children())
-const kids = listed.graph.nodes.filter((n) => !listed.roots.includes(n))
-for (const k of kids) await ctx.graph.query((q) => q.from(k.path))
-// OK the children query already returned each child's props; just read them
-const r = await ctx.graph.query((q) => q.from('/contacts').children())
-const loaded = r.graph.nodes.filter((n) => !r.roots.includes(n))
-// deeper: one function.get for the subtree instead of a level-by-level walk
-const subtree = await ctx.graph.query((q) => q.from('/contacts').descend(3))
-```
-
-## Index
-
-An **Index** makes a property fast to look up or unique, declared on a class beside its props. You
-choose the kind: a plain index for quick lookups, `unique` to forbid duplicates (one contact per email),
-or `fulltext` for text search. Without an index, finding nodes by a property means scanning; with one,
-the graph jumps straight to them.
+Use the kernel client's graph surface for ordinary graph work: `get`, `getOrThrow`, `children`,
+`neighbors`, `query`, `mutate`, and `reconcile`. These operations preserve typed paths, paging, error
+mapping, and atomic write semantics. Reserve raw calls for domain methods or kernel functions without a
+graph helper.
 
 ```ts
-const Contact = nodeClass({
-  props: { email: z.string(), bio: z.string() },
-  indexes: [
-    { property: 'email', type: 'unique' }, // no two contacts share an email
-    { property: 'bio', type: 'fulltext' }, // searchable text
-  ],
-})
+const contact = await kernel.getOrThrow('/contacts/ada')
+const projects = await kernel.neighbors(
+  contact.path,
+  D.works_on.path.class,
+  'out',
+)
+await projects.all()
 ```
 
 ## How to read and find nodes?
 
-You read one node by querying its path and taking `roots[0] ?? null`, and the contents of a folder by
-adding `.children()` and excluding the seed — both go through `function.get`, which the kernel gates by
-per-node READ visibility. To find nodes by a relationship, gather edges with `.links(edge?)`; to find
-them by arbitrary criteria, add filter steps. Reach for the simplest query that answers the question.
+Use the narrowest graph operation that answers the question: `get` or `getOrThrow` for one path,
+`children` for containment, `neighbors` for one relationship, and `query` for a multi-root or multi-hop
+subgraph. These methods are flattened directly onto the bound kernel session. Avoid re-reading nodes
+already returned by a paged collection, and use structured queries instead of raw database syntax.
 
 ```ts
-const ada = (await ctx.graph.query((q) => q.from('/contacts/ada'))).roots[0] ?? null
-const r = await ctx.graph.query((q) => q.from('/contacts').children())
-const children = r.graph.nodes.filter((n) => !r.roots.includes(n))
+const contact = await kernel.getOrThrow('/contacts/ada')
+const projects = await kernel.neighbors(contact.path, D.works_on.path.class, 'out')
+for await (const project of projects) {
+  await indexProject(project)
+}
 ```
+
+## Missing Read vs Masked Read
+
+At the GraphApi read surface, a node that does not exist and a node hidden by the visibility mask
+intentionally have the same result. `get` returns null, `getOrThrow` throws `NodeUnavailableError`, and
+an unresolved query root contributes no visible result. This prevents existence leaks. Do not infer
+nonexistence from a null; separately use AuthApi checks when policy allows and select optional versus
+required reads as described by get versus getOrThrow.
+
+```ts
+const optional = await kernel.get('/contacts/ada')
+const required = await kernel.getOrThrow('/contacts/ada', 'load contact')
+```
+
+## Pagination
+
+**Pagination** delivers a large read as a sequence of bounded pages. The current `Paged` result exposes
+`nodes` and `first` for the current page, `next()` for a live next page, `all()` and async iteration for
+draining, and `cursor()` for an opaque resumable position. See paged graph reads, the first-page
+pitfall, and structured-query continuation.
 
 ## How to list a node's children?
 
-You list what sits directly beneath a node with `graph.query((q) => q.from(path).children())`, the way
-you would read a folder's contents. The result holds the nodes one level down WITH their data (exclude
-the seed via `!result.roots.includes(n)`), so narrow them to the class you care about on the result
-instead of fetching each child again — or push the filter server-side with
-`.children({ classes: [...] })`. Walk deeper with `.descend(depth)` in one call rather than one level at
-a time.
+Call `kernel.children(path, options)`. It returns a `Paged` collection: `nodes` is the current page,
+`first` is its first node or null, `next()` advances, `all()` drains, `cursor()` gives an opaque resume
+token, and async iteration streams all pages. Filter by class and order in the request rather than
+issuing an N-plus-one loop. See pagination, tree containment, and the read selection ladder.
 
 ```ts
-const r = await ctx.graph.query((q) => q.from('/contacts').children())
-const contacts = r.graph.nodes.filter(
-  (n) => !r.roots.includes(n) && n.class.raw === D.Contact.path.class.raw,
-)
+const page = await kernel.children('/contacts', {
+  classes: [D.Contact.path.class],
+  limit: 100,
+  order: { by: D.Contact.name.key, dir: 'asc' },
+})
+
+for await (const contact of page) {
+  await indexContact(contact)
+}
 ```
 
-## How to run a complex graph query?
+## Consume paged results deliberately
 
-For reads that a direct lookup or child listing cannot express, query the graph with the kernel's
-`query` syscall and a Cypher string. The graph is a real graph database underneath, so a query can match
-patterns across nodes and edges in one call. Use it sparingly: it steps outside typed paths, so prefer
-simple reads where they suffice.
+`children` and `neighbors` return a paged collection, not a complete array. Read `nodes` when one page
+is the intended boundary; call `all()`, follow `next()`, or use async iteration when the operation needs
+every matching node. Preserve `cursor()` when work must resume without restarting the read.
 
 ```ts
-await kernel.call(K.$.f('query').path.domain.raw, {
-  cypher: 'MATCH (c)-[:works_on]->(p) WHERE p.name = $name RETURN c',
+const contacts = await kernel.children('/contacts', {
+  classes: [D.Contact.path.class],
+  limit: 100,
+})
+
+for await (const contact of contacts) {
+  await indexContact(contact)
+}
+```
+
+## Do NOT read only the first page
+
+`children` and `neighbors` return an `Paged` collection whose first page is `result.nodes`, not the
+complete collection. Code that treats that array as exhaustive works in small fixtures and silently
+truncates in production. Drain with `all()`, follow `next()`, iterate asynchronously, or persist
+`cursor()` according to the operation's paging contract.
+
+```ts
+const apps = await kernel.children('/apps', { limit: 100 })
+
+const firstPage = apps.nodes
+const resumeFrom = apps.cursor()
+const everyApp = await apps.all()
+```
+
+## Do NOT read each child again
+
+Calling `get` for every node returned by `children` or `neighbors` turns one paged read into many round
+trips. A paged result already contains hydrated nodes for that page and can drain later pages itself.
+Consume those nodes directly unless a later operation explicitly needs a fresh snapshot.
+
+```ts
+const contacts = await kernel.children('/contacts', { limit: 100 })
+
+// Wrong: every item causes another graph call.
+for await (const contact of contacts) await kernel.get(contact.path)
+
+// Right: the iterator yields hydrated nodes across all pages.
+for await (const contact of contacts) await indexContact(contact)
+```
+
+## How to run a structured graph query?
+
+Use `kernel.query` with the typed builder for supported reads or pass a portable v1 AST. The result is a
+`GraphResult` containing the hydrated subgraph, visible roots, paging, and a replayable cursor AST.
+Builder `from`, `children`, `descend`, `out`, `in`, and `links` are current; callback-form `filter`,
+`with`, and raw `expand` remain gated until the structured query syscall lands. Do not use raw Cypher.
+Start with simpler reads and combine related writes through mutate. Continuation is subject to the
+single-root limit, and content data is not wired yet.
+
+```ts
+const result = await kernel.query((q) =>
+  q.from('/contacts/ada').out(D.works_on.path.class, { as: 'projects', limit: 100 }),
+)
+
+for (const edge of result.graph.edges.all) {
+  consume(edge)
+}
+```
+
+## Project a query result through its graph accessors
+
+Read a query result through its indexed accessors: `nodes.byId`, `nodes.byClass`, `nodes.get`,
+`edges.byClass`, and `graph.endpoints(edge)`. Do not scan or stringify `nodes.all`. An edge carries
+`source` and `target` as paths, not ids, and an endpoint gathered from outside the read's subtree is not
+materialized: `nodes.get` returns null for it. Build the read model from the returned graph, never by
+reading each node again.
+
+```ts
+const result = await kernel.query((q) =>
+  q
+    .from(issue)
+    .children({ classes: [D.Comment.path.class] })
+    .out(D.tagged_with.path.class, { as: 'tags' }),
+)
+
+const comments = result.graph.nodes.byClass(D.Comment.path.class)
+
+for (const edge of result.graph.edges.byClass(D.tagged_with.path.class)) {
+  const { target } = result.graph.endpoints(edge)
+  if (target) render(target) // null when the endpoint lies outside the read
+}
+```
+
+## Fluent expand, filter, and with operations are not implemented yet
+
+The current structured query surface can express seeded children and edge gathers that lower to the
+kernel `get` function. Raw `expand`, `filter`, and `with` builder methods remain visible but throw until
+the structured query syscall is available. Build only supported reads, or pass a supported query AST
+when its extra shape is required. The AST form still runs through `lowerToGet`; it does not unlock
+filters, chained moves, visibility permissions, or other capabilities that `function.get` cannot
+express.
+
+## Multi-root query continuation is single-root only
+
+A `GraphResult` can begin from several roots, but continuation through `next()` or `cursor()` currently
+supports only a single root. If every root may paginate, run a separate query per root or design an
+explicit resume plan rather than assuming one cursor covers the whole graph result.
+
+## GraphResult data is not wired yet
+
+`GraphResult.data(node)` is a visible placeholder for lazily fetching a node's heavy content, but the
+content plane is not wired and the method throws `NotImplementedError`. Read ordinary properties from
+the hydrated node and keep datastore-backed content out of a production flow until this contract is
+implemented.
+
+## Graph Mutation
+
+A **graph mutation** is one atomic change set applied to the graph. It may create, update, or delete
+nodes and edges, but either the complete change set commits or none of it does. A mutation expresses a
+known delta; reconciliation instead starts from desired state.
+
+## How to commit related graph writes atomically?
+
+Use `kernel.mutate` for one graph mutation when several known writes form one invariant. The builder
+accumulates node and edge operations and sends one all-or-nothing patch after the callback returns. No
+read inside the builder becomes part of that atomic commit. Use returned `NodeRef` values to connect
+nodes created in the same patch. This is the write-side counterpart to structured reads and differs from
+reconciliation.
+
+```ts
+await kernel.mutate((m) => {
+  const contact = m.createNode(D.Contact.path.class, '/contacts/ada', {
+    [D.Contact.email.key]: 'ada@example.dev',
+  })
+  m.link(contact, D.works_on.path.class, '/projects/apollo', {
+    props: { [D.works_on.role.key]: 'lead' },
+  })
 })
 ```
 
-## Identity vs Location (id vs path)
+## Commit related graph writes in one mutation
 
-Every node has two ways to be named: its **identity**, a stable id it keeps for life, and its
-**location**, the path where it currently sits. The path can change when a node is renamed or moved; the
-id never does. Address by id when you mean *this exact node forever*, and by path when you mean
-*whatever lives here now*.
+When several graph writes form one invariant, accumulate them in one `kernel.mutate` builder. The
+builder commits one atomic mutation to the graph after its callback returns; if the callback throws, it
+writes nothing. A node reference returned by `createNode` can be used by later operations in the same
+patch.
 
 ```ts
-await ctx.graph.query((q) => q.from('@4548f0a2-9c1e-4f0a-b2d1-7e3c9a5b1f20')) // by id  -  this exact node, forever
-await ctx.graph.query((q) => q.from('/contacts/ada'))                          // by path  -  whatever lives here now
+import type { NodeRef } from '@astrale-os/kernel-client/graph'
+
+let taskRef: NodeRef | undefined
+
+await kernel.mutate((m) => {
+  taskRef = m.createNode(D.Task.path.class, params.at, {
+    [D.Task.title.key]: params.title,
+  })
+  m.link(taskRef, D.owned_by.path.class, params.owner)
+})
+
+return taskRef!.id // available only after mutate resolves; reading it inside the builder throws
 ```
 
-## A mutable value as the key
+## Do NOT assume a read inside mutate is atomic
 
-Using a value that can change, like an email or a name, as a node's slug or the key others address it by
-ties every reference to a fact that may not hold tomorrow. Rename the contact and
-`/contacts/ada@old.com` breaks, along with every grant and edge that named it. Address by a stable id or
-a slug that encodes nothing mutable, and keep the changeable value as an ordinary property.
-
-### Avoid listing based on the "absolute path"
-- assume nodes can be moved by the user
-- do not base your query on location; but prefer to always fetch through semantic path
-
-## Core folders as reference homes
-
-Use core folders as stable homes for domain-owned reference collections, such as built-in templates or
-catalogs that ship with the domain. A core folder gives fixed paths your handlers can depend on, but it
-should not become the default place for user-created nodes. For user resources, prefer asking where to
-create the node.
-
-### Instantiate a class of another domain
-- you must have "USE" on the class you want to instantiate
-
-### Creating a node as a Domain
-- you might want to ask for both the "path" and a semantic "anchor" on which you bind a semantic edge so it's easily queryable
-
-## Addressing Language
-
-The **Addressing Language** is the small grammar an Astrale path is written in, where a few tokens say
-how to reach a target. A leading `/` walks the tree by location; `@` followed by an id points straight
-at a node; `:` names a member of a domain by meaning; and `::` calls a method on whatever the path
-before it resolves to. Member prefixes (`class.`, `interface.`, `function.`, `view.`) say which kind of
-member a semantic path names.
+The `kernel.mutate` callback only builds a patch; its accumulated writes become atomic when the callback
+returns. A graph read awaited inside that callback happens before the commit and is not part of the
+transaction, so concurrent state may change between the read and the write. Use a scoped reconcile for
+convergence or a server-side invariant when the decision depends on current state; see mutate versus
+reconcile.
 
 ```ts
-'/contacts/ada'                    // '/'  walk the tree
-'@4f0a-...'                          // '@'  a node id
-'/:crm.acme.dev:function.search'   // ':'  a domain member
-'/contacts/ada::assign'            // '::' a method on a node
+// Misleading: the read and update are not one transaction.
+await kernel.mutate(async (m) => {
+  const current = await kernel.getOrThrow(params.counter)
+  m.updateNode(current.class, current.path, {
+    [D.Counter.value.key]: Number(current.props[D.Counter.value.key]) + 1,
+  })
+})
 ```
 
-## Local Execution vs Remote Execution
+## How to converge graph state idempotently?
 
-A call runs **locally** when its function lives on the same worker that received it: the handler
-executes in place. It runs **remotely** when the function lives on another worker; the kernel does not
-run it but issues a redirect to the worker that owns it. What decides which is simply where the function
-is bound, not how you wrote the call, so local and remote calls look identical.
+Use `kernel.reconcile` when you know the desired nodes and edges inside a bounded scope but not the
+minimal patch. State the scope and removal policy explicitly; the safe default preserves untracked
+state. `dryRun` exposes the patch without applying it. This is ideal for seeds and integration
+convergence, following the scoped reconcile pattern, but not a substitute for a known atomic patch.
 
 ```ts
-// identical call shape; only the function's binding decides where it runs
-await kernel.call('/contacts/ada::assign', { role: 'lead' })     // local: same worker
-await kernel.call('/ai-gateway.astrale.ai/class.Model/list', {}) // remote: redirected
+const result = await kernel.reconcile({
+  spec: {
+    nodes: [{
+      class: D.Contact.path.class,
+      path: '/contacts/ada',
+      props: { [D.Contact.email.key]: 'ada@example.dev' },
+      onConflict: 'merge',
+    }],
+  },
+  scope: {
+    roots: ['/contacts/ada'],
+    depth: 0,
+    classes: [D.Contact.path.class],
+  },
+  policy: {
+    onConflict: 'merge',
+    onRemoved: { nodes: 'preserve', edges: 'preserve' },
+  },
+})
+```
+
+## mutate vs reconcile
+
+`mutate` commits a known patch as one atomic graph write; use it when the caller already knows the exact
+creates, updates, and deletes. `reconcile` reads a declared scope, diffs current graph state against a
+desired spec, then applies the resulting patch; use it for repeatable convergence. The final
+reconciliation write is atomic, but the read-diff-write workflow is not one isolated transaction, so
+choose conflict and untracked-state policies deliberately. See atomic mutation and reconciliation.
+
+## Reconcile a domain-owned scope
+
+Use `kernel.reconcile` when a handler owns a bounded graph scope and should make it match a desired
+specification across retries. State the roots, depth, and classes that define that ownership boundary,
+then choose explicit conflict and removal policies. Reconciliation is for convergence over a scope; its
+final patch is atomic, but its read-diff-write workflow is not one isolated transaction. Use mutate for
+a known one-shot patch, and reserve destructive removal policies for a scope the domain owns
+exclusively.
+
+```ts
+await kernel.reconcile({
+  spec: {
+    nodes: [
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps',
+        props: { [D.Folder.name.key]: 'Apps' },
+        onConflict: 'merge',
+      },
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps/inbox',
+        props: { [D.Folder.name.key]: 'Inbox' },
+        onConflict: 'merge',
+      },
+    ],
+  },
+  scope: {
+    roots: ['/reference/apps'],
+    depth: 1,
+    classes: [D.Folder.path.class],
+  },
+  policy: {
+    onConflict: 'merge',
+    onRemoved: { nodes: 'remove', edges: 'preserve' },
+    onUntracked: { nodes: 'remove', edges: 'preserve' },
+  },
+})
 ```

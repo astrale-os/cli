@@ -4,163 +4,289 @@
 
 Read when adding browser surfaces, attaching views to classes or core nodes, deciding public auth, render-vs-mount, shell handshake, view resolution, or UI-as-node patterns.
 
-# Frontend Design
-Highly recommended to always use and load ONE of those skills, by order of preference (depending on availability):
-1. 180vrislife-.claude-frontend-design
-2. claude-frontend-design
-
-You MUST follow design guidelines of the selected skill.
+Keep view guidance tied to the current Astrale view contract: auth policy, `viewFor`, render context,
+manifest entrypoint, and Shell mounting. Use a frontend-design workflow only when one is actually
+available in the environment; this reference does not depend on third-party skill names.
 
 ## View
 
-A **View** is a window onto your domain that opens in a browser, instead of working with raw data. A
-view is attached to part of the graph, so opening a node can show a page built just for it. Views are
-how a domain presents itself to anyone who can reach it through a browser, whether a person or an AI
-agent, turning the graph into something you can look at and use.
+A **View** is an iframe-mountable UI supplied by a domain. It binds served content, target semantics,
+and an authentication policy into one installed graph member with a semantic view path. The manifest may
+select one registered view as the domain's entrypoint.
+
+## View Entrypoint
+
+A **view entrypoint** is the registered View selected by the domain manifest as an application's main
+surface. When Shell opens an installed application, it follows the semantic entrypoint edge from the
+application to this view. The entrypoint owns the application's top-level navigation and may navigate to
+or open other views; it is the starting surface, not the only UI the domain may expose.
+
+## View Auth Policy (required, optional, public)
+
+A view's **auth policy** decides whether opening it requires an Astrale credential. `required` admits an
+authenticated caller, `optional` supports either authenticated or anonymous use, and `public` has no
+caller identity. The choice is part of the view's security contract; see when public access is justified
+and resource permissions.
+
+## Domain Manifest
+
+A **domain manifest** is optional presentation and role metadata served from the deployed domain. `logo`
+is inline SVG or a data URL, `entrypoint` names the registered main view, and `roles` declares named
+capability identities. A role declaration does not grant permissions by itself; the domain provisions
+its grants, usually in post-install.
 
 ```ts
-// a view is a UI mounted onto part of the graph
-defineView({ mount: '/ui/contact', viewFor: selfOf(Contact) })
+export const domain = defineDomain({
+  schema,
+  methods,
+  views,
+  manifest: {
+    logo: DOMAIN_LOGO,
+    entrypoint: views.home,
+    roles: [
+      {
+        slug: 'editor',
+        name: 'Editor',
+        description: 'Can create and edit tasks',
+        default: true,
+      },
+    ],
+  },
+})
 ```
 
-## viewFor
+## Rendered View vs Mounted View
 
-**`viewFor`** attaches a view to the class or node it belongs to, creating a `view_for` edge from the
-view to its target. You give it `selfOf(SomeClass)` to attach the view to every instance of a class, or
-a core path to attach it to a fixed core node, so opening that node in a browser surfaces the view. It
-is how a view finds its place in the graph instead of floating loose.
+A rendered view returns a `Response` directly from its worker. A mounted view points to a client
+application path served as the browser surface. Choose one delivery form per view, then apply
+authentication deliberately as described by public-entry policy. `render` suits small server responses;
+`mount` suits a bundled interactive application.
 
-```ts
-defineView({ mount: '/ui/contact', viewFor: selfOf(Contact) }) // shows on every Contact
+## Shell Handshake vs Standalone View (shell vs none)
+
+A mounted view with the `shell` handshake joins its host's session, target, navigation, and window
+protocol. A view with `none` is a standalone browser surface and receives no Shell bridge. Mounted
+applications normally use `shell`; direct rendered responses normally use `none`. React views consume
+the bridge through shell-react.
+
+## How to develop a View locally?
+
+Use `astrale view` as the local Shell host for an installed View. It can resolve a semantic ViewPath
+directly or find the views attached to a target node; use `--list` before choosing when several views
+match, and `--snapshot` for an accessibility snapshot. The command uses the selected CLI identity, live
+kernel data, and the Shell handshake.
+
+For Vite HMR, keep the installed view identity and target but replace its frontend origin with
+`--view-url`. This keeps the graph binding and live session real while the frontend reloads locally,
+including for the application entrypoint. See view definition. Start the view client's current `dev:hmr`
+script first; run `astrale view` from a second terminal using the origin Vite prints. React clients
+should follow the shell-react hook pattern, while handshake mode determines whether that Shell bridge
+exists.
+
+```bash
+astrale view /projects/apollo --list -i dev
+astrale view /:tasks.example.dev:view.home --snapshot -i dev
+
+# Terminal 1, from the domain root
+pnpm --dir client dev:hmr
+
+# Terminal 2
+astrale view /:tasks.example.dev:view.home --view-url http://127.0.0.1:5173 -i dev
 ```
 
-## selfOf
+## Use shell-react in domain React views
 
-**`selfOf(Class)`** is a marker that points at a class's own meta-node, the node that represents the
-class itself. You pass it to `viewFor` to attach a view to a whole class rather than one instance, and
-it resolves at build time to that class's self path. It is how a definition refers to its own class node
-without writing the path by hand.
+Build a domain React view on the public `@astrale-os/shell-react` provider and hooks. `ShellProvider`
+owns the sandbox handshake, session, and graph memory; `NavScope` plus the target, graph, and navigation
+hooks keep the view aligned with the host instead of duplicating that state locally. Keep the worker
+view entrypoint declarative and consume the shared graph read surface from React. When the domain schema
+is available, prefer the schema hooks: `useNode(schema, type, ref)`, typed `useChildren(parent, { type
+})`, `useOut` / `useIn`, `useMethod`, and `useDomain`. They preserve the same `BoundNode`,
+edge-cardinality, method-parameter, and result types as the imperative client. Use `useQuery`,
+`useMutate`, `useMove`, and `useCall` for dynamic graph shapes; use window/application hooks only when
+the view participates in those Shell planes.
 
-## View Auth Policy
+```tsx
+import {
+  NavScope,
+  ShellProvider,
+  useChildren,
+  useMethod,
+  useNavigate,
+  useNode,
+  useTargetNode,
+  type ShellConfig,
+} from '@astrale-os/shell-react'
+import { schema } from '../schema.js'
 
-A view's **Auth Policy** decides who may open it: `required` admits only a signed-in caller, `optional`
-works with or without a credential, and `public` lets anyone in with no identity at all. The policy also
-shapes what a handler sees: under `public` there is no caller, so the view reaches the graph as its own
-identity instead. Set it with `auth` when you define the view.
+const shellConfig: ShellConfig = { mode: 'sandboxed' }
 
-```ts
-defineView({ auth: 'public', render: ({ c }) => c.html('<h1>Welcome</h1>') })
+export function App() {
+  return (
+    <ShellProvider config={shellConfig} fallback={<p>Connecting...</p>}>
+      <NavScope>
+        <FolderView />
+      </NavScope>
+    </ShellProvider>
+  )
+}
+
+function FolderView() {
+  const target = useTargetNode()
+  const project = useNode(schema, 'Project', target.node?.id ?? null)
+  const tasks = useChildren(project.node, { type: 'Task', limit: 50 })
+  const addTask = useMethod(schema, 'Project', 'addTask')
+  const navigate = useNavigate()
+
+  if (target.error) throw target.error
+  if (project.error) throw project.error
+  if (tasks.error) throw tasks.error
+  if (addTask.error) throw addTask.error
+  if (target.pending || project.pending) return <p>Loading...</p>
+  if (project.node === null) return <p>No project.</p>
+  const currentProject = project.node
+
+  return (
+    <>
+      {tasks.children.map((task) => (
+        <button key={task.id} onClick={() => navigate(task)}>{task.props.title}</button>
+      ))}
+      <button
+        disabled={addTask.pending}
+        onClick={() => void addTask(currentProject.id, { title: 'Follow up' })}
+      >
+        Add task
+      </button>
+      {tasks.more.has && <button onClick={() => tasks.more.load()}>More</button>}
+    </>
+  )
+}
 ```
 
-## View Handshake
+## Refresh the graph after a domain method call
 
-A view's **Handshake** says whether it loads inside the Astrale shell or stands alone: `shell` mounts it
-with the shell client, giving it navigation and an authenticated session to call the kernel, while
-`none` serves it as a bare page. A view that mounts a single-page app defaults to `shell`; one that just
-renders a response defaults to `none`.
+shell-react's graph memory invalidates only the writes made through it (`useGraph().create`, `.update`,
+`.mutate`). A domain method dispatched through `useMethod` or a schema-bound class call reaches the
+kernel directly, so no shape is marked stale and the view keeps rendering pre-mutation state. Await the
+call, then `refetch()` each read the mutation touched. There is no `invalidate()`.
 
-## View Resolution
+```tsx
+const comments = useChildren(issue, { type: 'Comment' })
+const list = useChildren(space, { type: 'Issue' })
+const addComment = useMethod(schema, 'Issue', 'addComment')
 
-**View Resolution** is the kernel listing the views available on a node: the node itself when its class
-is a view, or else the views attached to its class through `view_for`. The `resolve` call returns each
-one's URL and how it should mount, which is how a shell knows what it can open for a given node. It
-answers the question of what can be shown for this node.
-
-```ts
-// list the views available on a node (its own + its class's)
-await kernel.call('/kernel.astrale.ai:class.View:resolve', { node: '/contacts/ada' })
+async function submit(body: string) {
+  await addComment(issue.id, { body })
+  // Written through the kernel, not the memory: refresh what it touched.
+  await Promise.all([comments.refetch(), list.refetch()])
+}
 ```
-
-## View render vs mount
-
-A view with **`render`** returns a `Response` straight from the worker, like a handler producing HTML,
-good for a light server-rendered page. A view with **`mount`** points at a client single-page app served
-at that path, good for a rich interactive UI. They are mutually exclusive: `render` answers inline,
-`mount` hands off to a bundled app; pick by how much the view does.
 
 ## View vs Function
 
-A view and a function are the two ways a domain faces outward, for different callers. A function returns
-typed data to a program, an agent, or another domain; a view returns a page a browser renders for a
-person, often a public one. Reach for a function when something needs the answer as data to act on, and
-a view when a human needs to see and interact. The same underlying work is usually a function, with a
-view that calls it to display the result.
+A view is a browser-facing resource that returns or mounts a UI. A function is a typed programmatic
+contract. Put business behavior in functions and let views call them; do not duplicate invariants in
+browser code. Views still have an auth policy, but their transport-oriented result is different from a
+function's typed output.
 
 ## How to create a View?
 
-You create a view with `defineView`, which mounts a UI the kernel serves in a browser. Give it a
-`render` that returns a `Response` (or a client `mount` path for a single-page app), set `auth` to say
-whether a caller must be signed in, and attach it to a class or node with `viewFor` so it appears where
-it belongs. Register it in the domain's `views` map so it deploys with the worker.
+Define a view with `defineView`, choose either a client `mount` or a worker `render`, set its
+authentication policy deliberately, and register the same value in `defineDomain({ views })`. If it is
+the application entry surface, pass the view object, not a duplicate slug, to `manifest.entrypoint` so
+renames cannot drift. See render versus mount and the domain manifest.
 
 ```ts
-export const noteView = defineView({
-  mount: '/ui/note',                       // serves the client SPA
-  auth: 'required',            // caller must be signed in
-  viewFor: selfOf(Note),       // attach it to the Note class
+export const views = {
+  contacts: defineView({ mount: '/ui/contacts', auth: 'required' }),
+}
+
+export const domain = defineDomain({
+  schema,
+  methods,
+  views,
+  manifest: { entrypoint: views.contacts },
 })
 ```
 
 ## How to attach a View to a class?
 
-You attach a view to a class by passing `selfOf(TheClass)` to `viewFor`, which links the view to the
-class's meta-node. Every instance of that class then offers the view, so opening any node of the type
-shows it. Register the view in the domain's `views` map so it deploys with the worker.
+Set `viewFor: selfOf(Class)` on the view and register it in the domain's `views` map. The association is
+semantic: the view belongs to the class, while an application entrypoint is separately declared through
+`manifest.entrypoint`. Use the self-view pattern instead of duplicating a class path string.
 
 ```ts
 export const contactCard = defineView({
   mount: '/ui/contact',
-  viewFor: selfOf(Contact),   // every Contact node offers this view
+  auth: 'required',
+  viewFor: selfOf(Contact),
 })
 ```
 
 ## When should an entry point be public?
 
-Make a view or function public only when it must serve callers who have no Astrale credential: a
-marketing page, a sign-in screen, a webhook from an outside service. Everything reached by your own
-users should stay `required`, so the kernel checks who they are. A public endpoint trades the kernel's
-identity check for one you must do yourself, so reach for it sparingly and verify what you can.
+Use `public` only when a caller cannot present an Astrale credential: for example a sign-in page or a
+third-party webhook. Public function and method contexts have `auth: null` and `kernel: null`; a view
+context has `auth: null` and never exposes a `kernel` property. Validate the upstream request before
+acquiring `ctx.fn.kernel()`. Use `optional` only when both authenticated and anonymous behavior are
+genuinely needed. Everything else should keep the default required policy and follow the public webhook
+pattern and function security.
 
-## A node that is its own view
+## Let a node serve as its own view
 
-A node can be its own **view**: when its class implements the kernel's `UI` interface, the node carries
-the view's URL directly and needs no separate `view_for` edge. Resolving the views on such a node
-returns the node itself. Reach for this when a thing and its UI are one and the same, like a document
-that is always opened as its own editor.
+A node can serve as its own view when its class implements the kernel's UI capability and carries the
+view binding itself. In that shape, view resolution returns the node instead of following a separately
+attached view. Use it when the modeled resource and its browser surface have the same identity and
+lifecycle.
 
-## View navigation
+## What are ctx.fn identity tools for?
 
-Clicking an instance opens that instance's view (smooth redirect navigation);
+`ctx.fn` exposes the currently executing callable's identity tools. `fn.ref` is a schema ref used for
+naming, not an addressable graph path; `fn.credential()` signs as the function, and `fn.kernel()`
+creates a self-only session. Use that session only when the function identity should act, most notably
+after a public endpoint verifies its upstream. See public entry points, handler versus self-only
+authority, and the raw-body limitation.
 
-## Branding and design identity
+## Wire every function, method, and view into the domain
 
-a domain can ship a custom theme + UI components (brand).
-
-## ViewPath
-
-A **ViewPath** addresses a view a domain offers, written `/:origin:view.name`, like
-`/:crm.acme.dev:view.dashboard`. The `view.` prefix marks the member as an iframe-mountable UI named by
-meaning, and the path resolves to the view node carrying its URL. It is how the shell finds a domain's
-view to open it in a browser.
-
-## Defined but not wired in
-
-A standalone function or a view exists for the domain only if it is listed in the domain's `functions`
-or `views` map. Writing the file is not enough: an unlisted function is invisible at runtime, callable
-by no one, with no error to explain why. When a new function or view cannot be reached, first check that
-it is wired into the domain definition.
-
-## A public function has no kernel
-
-In a public function or view there is no caller, so the context's `kernel` is null; reaching for it to
-touch the graph throws. Use selfKernel instead, which acts as the function's own identity, whenever the
-entry point is public.
+A standalone function or view exists only when it is present in the `functions` or `views` map passed to
+the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
+map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
+before debugging dispatch.
 
 ```ts
-// auth: 'public' -> ctx.kernel is null
-execute: async ({ kernel, selfKernel }) => {
-  // await kernel.call(/* ... */)   // NO throws: no caller to act as
-  const own = await selfKernel()  // OK act as the function itself
-  await own.call('/log::append', { event: 'hit' })
-}
+export const domain = defineDomain({
+  schema,
+  methods,
+  functions: { search },
+  views: { dashboard },
+  deps,
+})
+```
+
+## Do NOT expect a caller kernel in a public handler
+
+For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
+caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
+policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
+reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
+providers also require the SDK fix described by the auxiliary-route limitation.
+
+```ts
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: EventSchema,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ fn, params }) => {
+    const own = await fn.kernel()
+    await recordProviderEvent(own, params)
+    return { accepted: true }
+  },
+})
 ```

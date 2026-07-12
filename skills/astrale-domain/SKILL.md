@@ -5,11 +5,11 @@ description: "Author Astrale domains end to end. Use when creating, editing, rev
 
 # Astrale Domain
 
-Keep this file lean. Load detailed domain knowledge from exactly the reference that matches the user's intent.
+Load detailed domain knowledge from the references that matches the goal.
 
 ## Intent Router
 
-Pick the reference by the user's intent. Do not load every file preemptively.
+Pick and read the reference(s) aligned with the task.
 
 - Draft, POC, create, deploy, install, or test a domain: read `references/development.md`.
 - Author schema, vocabulary, properties, class/interface/edge choices, or review a schema: read `references/modeling.md` first. Always read it for schema work.

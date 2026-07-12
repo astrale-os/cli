@@ -6,72 +6,39 @@ Read when changing an installed domain's schema, moving data, renaming propertie
 
 ## How to evolve a domain's schema?
 
-You evolve a domain's schema by changing it and installing again: a re-install diffs the new shape
-against what the graph already holds and reconciles the schema nodes. The kernel updates the shape, but
-it does not migrate existing data, so a seed or one-off migration is where you backfill new properties
-or move old ones. Add fields freely; rename or remove with care, because data shaped the old way is
-still there.
+Treat a schema change and a data migration as separate operations. Reinstall reconciles the installed
+schema graph; it does not automatically transform existing domain data. Use an idempotent post-install
+function or an explicit migration to backfill data, and keep old readers/writers compatible until the
+migration is proven. Additive changes are usually safest; renames and removals need a deliberate
+core-versus-runtime plan.
 
-## Core vs Seed
+## Core vs Post-install Function (seed)
 
-Core and Seed both put data in place at install, but in opposite ways. Core is declarative: genesis
-nodes baked into the install bundle and materialized by the kernel with no callback to your worker, the
-fixed data a domain always has. Seed is imperative: a function that runs once after install and builds
-things step by step (folders, demo data, grants). Reach for Core for stable reference data with known
-paths, and Seed when setup needs real logic.
-
-```ts
-// Core  -  declarative genesis, materialized with no worker callback
-export const Catalog = defineCore(schema, {
-  nodes: { 'gpt-5': node(AIModel, { modelId: 'gpt-5' }) },
-})
-
-// Seed  -  imperative postInstall function, runs once after install (as the system identity)
-export async function seed({ graph }) {
-  await graph.create(FOLDER_CLASS, '/inbox', {})
-}
-```
+Core is declarative install-graph data: fixed nodes and edges shipped in the signed bundle and
+materialized by the kernel. A post-install function is executable setup run after installation for
+grants, environment-aware work, or idempotent convergence. Use core when the data is part of the
+definition; use `postInstall` when setup needs runtime logic.
 
 ## Core
 
-A domain's **Core** is the stable data it ships with: a set of genesis nodes declared up front and baked
-into the install bundle, which the kernel materializes at install with no callback to your worker. Each
-core node sits at a fixed, known path (its `CorePath`) that the domain's functions can depend on, which
-makes Core the right home for built-in reference data such as a default catalog. You declare it with
-`defineCore`, listing the nodes the domain always has.
-
-```ts
-import { defineCore, node } from '@astrale-os/kernel-dsl'
-
-// genesis nodes baked into the bundle, materialized under /core/ at install
-export const GatewayCore = defineCore(GatewaySchema, {
-  nodes: {
-    'claude-sonnet': node(AIModel, { modelId: 'claude-sonnet-4-6', provider: 'anthropic' }),
-  },
-})
-```
+**Core** is declarative genesis data serialized into the install bundle. Use it for invariant nodes and
+edges known entirely from the schema package. Core data lives under the installed domain's core member,
+not a global `/core` folder. Use post-install when creation needs runtime logic, permissions, external
+information, or convergence against existing state.
 
 ## Seed
 
-A **Seed** is a function a domain runs once, right after it is installed, to set up state that needs
-real logic: creating starter folders, granting initial permissions, or building linked nodes. The kernel
-runs it as the system identity, so it can write freely across the new domain. You declare it as the
-domain's `postInstall` and keep it idempotent, so re-installing converges instead of duplicating.
+A domain **seed** is conventionally a standalone function registered as `postInstall`. It runs as the
+system identity after installation and should converge safely when repeated. It complements declarative
+core with runtime setup such as grants. Its procedural contract belongs in what to put in a seed.
+
+## Ship fixed reference data as Core
+
+Declare fixed, domain-owned reference data as Core so every installation receives the same nodes at
+stable paths. Use a seed only when setup requires execution, such as grants or runtime-dependent data.
+User-owned resources do not belong in Core.
 
 ```ts
-// declared on the domain; the kernel calls it once after install, as __SYSTEM__
-defineDomain({ schema, methods, postInstall: functions.seed })
-```
-
-## Ship fixed reference data as core
-
-When a domain always needs the same fixed data present (a list of supported currencies, a default
-catalog), declare it as core rather than creating it in a seed. Core is materialized at every install
-with no code to run, sits at stable known paths your handlers can depend on, and cannot drift between
-installs. Reserve a seed for setup that needs real logic.
-
-```ts
-// stable reference data, present at every install, at known paths
 export const Catalog = defineCore(schema, {
   nodes: {
     usd: node(Currency, { code: 'USD', symbol: '$' }),
@@ -80,44 +47,159 @@ export const Catalog = defineCore(schema, {
 })
 ```
 
-## Core folders as reference homes
+## Use Core folders as stable reference homes
 
-Use core folders as stable homes for domain-owned reference collections, such as built-in templates or
-catalogs that ship with the domain. A core folder gives fixed paths your handlers can depend on, but it
-should not become the default place for user-created nodes. For user resources, prefer asking where to
-create the node.
+Use a Core folder as the stable parent of domain-owned reference collections such as built-in templates
+or provider catalogs. Its known path lets handlers address the collection without searching, while
+user-owned resources stay in caller-selected containers. The folder is a reference home, not a universal
+data directory.
 
-### Instantiate a class of another domain
-- you must have "USE" on the class you want to instantiate
+## mutate vs reconcile
 
-### Creating a node as a Domain
-- you might want to ask for both the "path" and a semantic "anchor" on which you bind a semantic edge so it's easily queryable
+`mutate` commits a known patch as one atomic graph write; use it when the caller already knows the exact
+creates, updates, and deletes. `reconcile` reads a declared scope, diffs current graph state against a
+desired spec, then applies the resulting patch; use it for repeatable convergence. The final
+reconciliation write is atomic, but the read-diff-write workflow is not one isolated transaction, so
+choose conflict and untracked-state policies deliberately. See atomic mutation and reconciliation.
 
-## Renaming a property orphans its data
+## How to converge graph state idempotently?
 
-A node's properties are stored under their fully qualified keys, so renaming a property in the schema
-does not rename the data already written: the old values sit under the old key, invisible to the new
-name. A re-install changes the shape, not the stored facts. This is a current kernel limitation: until
-migrations handle schema-level renames, preserve the old property name or write an explicit migration
-that copies the old qualified key into the new one.
+Use `kernel.reconcile` when you know the desired nodes and edges inside a bounded scope but not the
+minimal patch. State the scope and removal policy explicitly; the safe default preserves untracked
+state. `dryRun` exposes the patch without applying it. This is ideal for seeds and integration
+convergence, following the scoped reconcile pattern, but not a substitute for a known atomic patch.
 
-## Renaming the origin breaks everything
+```ts
+const result = await kernel.reconcile({
+  spec: {
+    nodes: [{
+      class: D.Contact.path.class,
+      path: '/contacts/ada',
+      props: { [D.Contact.email.key]: 'ada@example.dev' },
+      onConflict: 'merge',
+    }],
+  },
+  scope: {
+    roots: ['/contacts/ada'],
+    depth: 0,
+    classes: [D.Contact.path.class],
+  },
+  policy: {
+    onConflict: 'merge',
+    onRemoved: { nodes: 'preserve', edges: 'preserve' },
+  },
+})
+```
 
-A domain's origin is woven into every path its members are addressed by and into the identity its
-functions sign with. Change it and every existing address, grant, and cross-domain dependency that named
-the old origin stops resolving. Pick an origin you can live with up front; renaming one already in use
-is not an edit but a migration.
+## Reconcile a domain-owned scope
 
-## Changed the schema but didn't reinstall
+Use `kernel.reconcile` when a handler owns a bounded graph scope and should make it match a desired
+specification across retries. State the roots, depth, and classes that define that ownership boundary,
+then choose explicit conflict and removal policies. Reconciliation is for convergence over a scope; its
+final patch is atomic, but its read-diff-write workflow is not one isolated transaction. Use mutate for
+a known one-shot patch, and reserve destructive removal policies for a scope the domain owns
+exclusively.
 
-Editing your schema or handlers changes nothing on a running instance until you deploy and install
-again. The instance keeps running the version it last installed, so a class you just added is not there
-yet and a handler you just fixed is still broken. If a change does not seem to take, confirm you
-re-deployed and re-installed, not just saved the file.
+```ts
+await kernel.reconcile({
+  spec: {
+    nodes: [
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps',
+        props: { [D.Folder.name.key]: 'Apps' },
+        onConflict: 'merge',
+      },
+      {
+        class: D.Folder.path.class,
+        path: '/reference/apps/inbox',
+        props: { [D.Folder.name.key]: 'Inbox' },
+        onConflict: 'merge',
+      },
+    ],
+  },
+  scope: {
+    roots: ['/reference/apps'],
+    depth: 1,
+    classes: [D.Folder.path.class],
+  },
+  policy: {
+    onConflict: 'merge',
+    onRemoved: { nodes: 'remove', edges: 'preserve' },
+    onUntracked: { nodes: 'remove', edges: 'preserve' },
+  },
+})
+```
+
+## Make external effects converge through steps and graph state
+
+For an external effect, persist intent in the graph, give each meaningful stage a stable step, and
+record the provider's result on the modeled node. Reuse a provider idempotency key derived from stable
+graph identity so a retry converges after any interruption. The graph stores durable progress; the
+provider key prevents duplicate effects; the steps expose replayable stage boundaries.
+
+```ts
+execute: async ({ self, kernel, deps, step }) => {
+  const message = await self.node()
+
+  await step.run('mark-sending', async () => {
+    await message.update({ status: 'sending' })
+    return { status: 'sending' }
+  })
+
+  try {
+    const sent = await step.run('send-provider-message', async () => {
+      const result = await deps.email.send({ idempotencyKey: message.id })
+      return { providerMessageId: result.id }
+    })
+    await step.run('mark-sent', async () => {
+      await message.update({ status: 'sent', providerMessageId: sent.providerMessageId })
+      return { status: 'sent' }
+    })
+  } catch (error) {
+    try {
+      await step.run('mark-error', async () => {
+        await message.update({ status: 'error' })
+        return { status: 'error' }
+      })
+    } catch (recordError) {
+      throw new AggregateError([error, recordError], 'send failed and error state was not recorded')
+    }
+    throw error
+  }
+}
+```
+
+## Renaming a property does not migrate stored data
+
+A node stores properties under fully qualified keys. Renaming a schema property creates a new key but
+does not copy values written under the old one, so existing nodes appear to lose that field. Preserve
+the name or run an explicit data migration from the old qualified key to the new one.
+
+## Treat an origin rename as a semantic-address migration
+
+The origin qualifies schema keys, semantic paths, dependencies, and callable identities. Changing it
+creates a new semantic namespace rather than editing a display name. Treat an origin change as an
+explicit migration of stored properties, grants, cross-domain requirements, and external callers.
+
+## GraphResult data is not wired yet
+
+`GraphResult.data(node)` is a visible placeholder for lazily fetching a node's heavy content, but the
+content plane is not wired and the method throws `NotImplementedError`. Read ordinary properties from
+the hydrated node and keep datastore-backed content out of a production flow until this contract is
+implemented.
 
 ## Schema Hash
 
-A **Schema Hash** is a fingerprint of a domain's schema, computed from its shape with node ids stripped
-out, so the same model always hashes the same way. An install can demand an expected hash and refuse if
-the deployed schema does not match, which is how a release pipeline pins exactly the version it tested.
-It turns what would otherwise just install into a checked, reproducible artifact.
+The **schema hash** identifies the complete id-independent install graph, not only the user-authored
+class definitions. It lets the kernel detect whether an installed bundle matches the deployed domain
+definition. Treat a hash change as evidence that the installable graph contract changed; inspect the
+actual diff before deciding whether reinstall or migration is safe.
+
+## Install Bundle
+
+An **install bundle** is the serialized, id-independent graph and metadata the kernel consumes to
+install a domain. It includes schema members, bindings, views, core data, and physical placement. The
+install response also carries signed `requires` and `postInstall` fields. Presentation manifest data is
+served separately from `/meta` and is not part of this bundle. Runtime ids are minted during
+installation, which is why bundles can be published and installed on more than one instance.

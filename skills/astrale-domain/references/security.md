@@ -2,372 +2,458 @@
 
 # Security
 
-Read when securing a domain: permissions, authentication, authorization hooks, grants, scopes, credentials, public entry points, selfKernel, delegation, function-owned authority, SHARE, client-side delegated calls, or permission-denied debugging.
+Read when securing a handler, public endpoint, grant, delegation, or client call. Start from the handler's
+composed authority and gate the caller explicitly; treat credentials and JWT fields as supporting mechanics,
+not as substitutes for resource authorization.
 
-## Identity
+## Declare authorize on every callable
 
-An **Identity** is anyone or anything that can act in Astrale. A person, an AI agent, a domain, even a
-single function is an identity. Every action is performed by some identity, and the system always knows
-who is acting, which is what lets it decide what that identity is allowed to do.
+Give every `remoteMethod` and `defineRemoteFunction` an `authorize` hook. Gate the principal with
+`kernel.auth.require`; when a callable is genuinely open, write an empty hook rather than none.
 
 ```ts
-// inside any handler, `auth` tells you which identity is calling
-execute: ({ auth }) => {
-  // auth carries the verified caller: who they are and what they may do
-}
+// Gated: the caller must personally hold EDIT on the receiver.
+export const deleteIssueMethod = remoteMethod<Deps>()(schema, 'Issue', 'delete', {
+  authorize: ({ kernel, auth, self }) =>
+    kernel.auth.require({
+      who: auth.principal,
+      on: self.path,
+      perms: EDIT,
+      context: 'Issue.delete',
+    }),
+  execute: ({ self, kernel, step }) => deleteIssue(self.path, { kernel, step }),
+})
+
+// Open to any authenticated caller: declare it, do not omit it.
+export const listTagsMethod = remoteMethod<Deps>()(schema, 'Tag', 'list', {
+  authorize: () => {},
+  execute: ({ kernel }) => listTags(kernel),
+})
 ```
 
-## Identity Provider (IdP)
+## Composed Handler Authority
 
-An **Identity Provider** is an outside authority that vouches for a human or other external identity,
-such as an OAuth or OIDC login. Astrale is provider-agnostic: when someone presents a credential from a
-provider that a trust policy admits, the kernel verifies it, then, if a provisioning policy allows,
-provisions an identity node keyed by issuer and subject. This is how people from the outside become
-principals inside the graph.
+An authenticated handler's kernel is bound to the **union** of the delegated caller authority and the
+current function identity. That lets a function use its own operational grants, but it means a
+successful graph write does not prove the caller could perform it personally. Put caller-sensitive
+checks in an explicit authorization gate before the first effect, naming the principal whose standing
+authority is required.
 
-## Credential
+## Gate the caller explicitly when the rule is about the caller
 
-A **Credential** is the signed token a call carries to prove who is acting: a JWT stating an issuer, a
-subject, an intended audience, and a set of claims. The kernel verifies its signature before trusting
-it, so an identity is only ever as good as the credential proving it. Every authenticated call resolves
-its principal from a verified credential.
+A remote handler's kernel session carries the union of the caller delegation and the function identity.
+Therefore, a successful graph operation does not prove that the caller personally held the right. Put
+caller-specific business gates in the authorize hook and check the caller with `kernel.auth.require`
+before execution.
 
 ```ts
-// inside a handler, the verified credential is read off `auth`
-auth.credential.verified   // { iss, sub, aud?, claims }
+export const installApplication = remoteMethod<Deps>()(
+  schema,
+  'Application',
+  'install',
+  {
+    authorize: ({ kernel, auth, params }) =>
+      kernel.auth.require({
+        who: auth.principal,
+        on: params.space,
+        perms: EDIT,
+        context: 'Application.install',
+      }),
+    execute: ({ params, kernel }) => install(params, { kernel }),
+  },
+)
 ```
 
-## Issuer
+## When to use an authorize hook vs a permission?
 
-The **Issuer** (`iss`) of a credential is the URL of the web service or kernel that signed it: the
-authority a verifier checks the signature against. Astrale pins identity to where a domain is actually
-served, so a credential's issuer is the serving URL whose public keys sign it, not a free-floating name.
-To trust a credential is to fetch the issuer's keys and confirm it signed this token.
+Kernel permissions are authoritative for graph reads and writes, not for reaching a callable: the kernel
+authenticates a remote-bound method and redirects without checking a permission, and the SDK dispatcher
+runs `authorize` only when the handler defines one. A method with no hook is open to any authenticated
+caller. `authorize` is the invocation gate; check the caller there with `kernel.auth.require`. See
+composed versus caller authority.
 
-## Subject
+## How to secure a function?
 
-The **Subject** (`sub`) of a credential names whose identity it carries: the node id of an identity for
-kernel-issued credentials, or an external id such as a user from an outside provider. Together with the
-issuer, the subject uniquely identifies a principal. It answers who, where the issuer answers
-vouched-for-by-whom.
+Choose `required`, `optional`, or `public`; grant only the resources the function identity needs; and
+gate caller-sensitive effects against `ctx.auth.principal`. Do not treat successful access through
+`ctx.kernel` as proof that the caller personally held the permission, because that kernel uses composed
+authority. Public handlers must verify their upstream before using a self-only session. Combine the
+typed handler pattern with authorization.
 
-## Audience
+## Composed Handler Kernel vs fn.kernel()
 
-The **Audience** (`aud`) of a credential is the target it was minted for: the kernel or web service
-meant to consume it. A verifier rejects a credential presented to the wrong audience, which stops a
-token meant for one worker from being replayed against another. When a call crosses to another worker,
-the kernel mints a fresh delegation credential whose audience is that worker.
-
-## Claims
-
-The **Claims** of a credential are the statements its issuer signs into it: the standard fields (iss,
-sub, aud) plus Astrale-specific ones such as a grant or a delegation. Because they are signed, a
-verifier trusts them without asking the issuer again. A handler reads the verified claims to learn
-exactly what the issuer vouched for about the caller.
-
-## Principal
-
-The **Principal** of a call is the identity it is attributed to right now: the actor the kernel checks
-permissions for. It is resolved from the verified credential, whose issuer and subject the kernel maps
-to one identity node. An identity is a standing capacity; a principal is that identity in the act of
-doing something.
-
-## Identity vs Principal
-
-An **identity** is anything that *can* act: a person, a domain, even a function. A principal is the
-identity a given call is attributed to right now. The difference is standing capacity versus the actor
-of this moment: an identity is a principal only while it is the one acting.
-
-## Domain Identity
-
-A **Domain Identity** is the single root of trust every one of a domain's callables signs under: one
-signing key, one issuer (its serving URL), and one published key set. Every function a domain installs
-shares that issuer and key but carries its own subject path, so the domain speaks with one voice
-cryptographically while each callable stays a distinct principal for authorization. There is no single
-domain-level principal that acts for all its functions - grants attach per callable - but the domain is
-very much one identity at the layer where credentials are signed and verified.
-
-## Function Identity
-
-A **Function Identity** is the fact that a function is itself an identity: it can be the principal of a
-call and can hold its own grants. At install, every callable is stamped with an identity (`iss` is its
-serving URL, `sub` is its path) and the kernel verifies its signatures against that issuer's keys. This
-lets a function act on its own behalf, with authority that never exceeds both the caller's and its own.
-
-## JWKS
-
-**JWKS** (JSON Web Key Set) is the set of public keys a domain publishes so others can verify the
-credentials it signs. The kernel discovers them from the issuer URL and checks each token's signature
-against the matching key, accepting only asymmetric signatures. The private half, the signing key, never
-leaves the worker; sharing only the public keys is what lets anyone verify without being able to forge.
-
-## Signing Key
-
-A **Signing Key** is the private key a worker uses to mint credentials, proving that calls and installs
-really come from it. Its public half is published as the worker's JWKS, so anyone can verify a signature
-while only the worker can produce one. Keep it secret: whoever holds the signing key can speak as that
-worker's identity.
-
-## Delegation
-
-**Delegation** is one identity acting on behalf of another, carried in a credential that chains them.
-When a call crosses to another worker, the kernel mints a delegation credential for that worker's
-audience, so the target sees both who originally acted and that the kernel vouches for the hop. The
-resulting authority is bounded by every link in the chain, never widened by it.
-
-## Identity Composition
-
-**Identity Composition** is how grants combine into the authority a call actually has. A grant is an
-expression over identities that can union several, intersect them, exclude some, or scope them to
-certain nodes or verbs. Calling through a more privileged function intersects authority rather than
-adding it, so an actor never gains rights by routing a call through something else.
-
-## When does the system identity act?
-
-The system identity acts only when the kernel itself does work with no user behind it, most visibly
-while running a domain's seed just after install, before any grants exist. You do not invoke it and
-should not reach for it from a handler: your code acts as the caller, or for a self-driven function as
-itself. Treat the system identity as the kernel's own, not a backdoor for skipping permission checks.
-
-## How to give a function its own permissions?
-
-A function is an identity, so you grant it permissions exactly as you would a user: a grant of the verbs
-it needs on the nodes it touches. This is what lets a function act on its own through selfKernel, like a
-webhook that records events into a folder it has been granted EDIT on. Give it the least it needs, the
-same as any principal.
+For required authentication, `ctx.kernel` is a bound session using `union(caller delegation, function
+identity)`. For optional authentication it may be null; for public handlers it is always null. `await
+ctx.fn.kernel()` creates a **self-only** session for the current function identity. Use it after
+authenticating an external webhook, not to pretend an anonymous caller was authorized. See composed
+authority and public entry points.
 
 ```ts
-import { EDIT, toMask } from '@astrale-os/kernel-core'
-// the function is an identity; grant it EDIT on the folder it writes to
-await kernel.auth.grant({ to: functionIdentity, on: '/events', perms: toMask(EDIT) })
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: webhookInput,
+  outputSchema: webhookOutput,
+  authorize: ({ c }) =>
+    verifySignedEvent({
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+  }),
+  execute: async ({ fn, step }) => {
+    const kernel = await fn.kernel()
+    await step.run('store-event', () => storeEvent(kernel))
+    return { accepted: true }
+  },
+})
 ```
 
-## selfKernel
+## Do NOT expect a caller kernel in a public handler
 
-**selfKernel** lets a handler act as its own identity rather than the caller's. A function reaches for
-it when there is no caller to borrow authority from, like a webhook arriving from the outside world, or
-when it deliberately needs to do something the caller could not. Where the ordinary session carries who
-called, this one carries the function itself.
+For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
+caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
+policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
+reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
+providers also require the SDK fix described by the auxiliary-route limitation.
 
 ```ts
-// a public webhook has no caller, so it acts as the function's own identity
-execute: async ({ params, selfKernel }) => {
-  const own = await selfKernel()                         // the function's own session
-  // write through the function.mutate door, under the function's own authority
-  await own.call('/:kernel.astrale.ai:function.mutate', {
-    nodes: {
-      create: [{ class: D.Event.path.class.raw, at: `/events/${params.id}`, props: params.body }],
-    },
-  })
-}
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: EventSchema,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ fn, params }) => {
+    const own = await fn.kernel()
+    await recordProviderEvent(own, params)
+    return { accepted: true }
+  },
+})
 ```
 
-## kernel vs selfKernel
+## Verify a public webhook, then act as the function
 
-Inside a handler, `kernel` acts with the caller's authority, the credential the call arrived with, and
-is what you use to do work on their behalf. `selfKernel` instead acts as the function's own identity,
-with only the grants the function itself holds. Reach for `kernel` to honor who asked, and `selfKernel`
-when there is no caller or the function must act in its own right.
+A public webhook has no Astrale caller, so its handler first verifies the provider's supported signed
+fields in `authorize`, then asks `ctx.fn.kernel()` for a session owned by the function identity. Grant
+that identity only the permission its webhook needs. This keeps upstream authentication separate from
+Astrale authority, while a stable event path plus reconcile makes provider redelivery converge.
+Providers that sign exact raw bytes are blocked by the current auxiliary route; never rebuild signed
+bytes from parsed JSON.
 
 ```ts
-execute: async ({ graph, selfKernel }) => {
-  await graph.query((q) => q.from('/contacts/ada'))   // read as the caller (function.get)
-  const own = await selfKernel()
-  await own.call('/audit::append', { event: 'read' }) // as the function itself
-}
+export const onStripeEvent = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: StripeEvent,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ params, fn }) => {
+    const eventPath = AbsolutePath.from('events', params.id)
+
+    const kernel = await fn.kernel()
+    await kernel.reconcile({
+      spec: {
+        nodes: [{
+          class: D.Event.path.class,
+          path: eventPath,
+          props: { [D.Event.payload.key]: params.payload },
+          onConflict: 'skip',
+        }],
+      },
+      scope: { roots: [eventPath], depth: 0, classes: [D.Event.path.class] },
+      policy: {
+        onConflict: 'skip',
+        onRemoved: { nodes: 'preserve', edges: 'preserve' },
+      },
+    })
+    return { accepted: true }
+  },
+})
 ```
 
-## Permission
+## Exact raw webhook bodies are consumed before handlers
 
-A **Permission** is the right for an identity to do a particular thing to a particular node, such as
-reading it, changing it, or calling its methods. Before any action runs, Astrale checks that the acting
-identity holds the matching permission, and refuses the action if it does not. A permission can also
-propagate down the tree. Permissions are how a domain stays safe: nothing happens unless someone was
-actually allowed to do it.
+The current standalone-function auxiliary route parses JSON before `authorize` and `execute`, so
+`c.req.raw` no longer provides untouched bytes to the handler. A provider that signs exact request bytes
+cannot be verified safely through this route until the SDK preserves a clone; never reconstruct the
+signed body from parsed JSON. Providers that sign explicit headers or canonical parsed fields can still
+use the public webhook pattern.
 
-```ts
-import { READ, toMask } from '@astrale-os/kernel-core'
-// grant Ada the right to read a node
-await kernel.auth.grant({ to: '/people/ada', on: '/contacts/bob', perms: toMask(READ) })
-```
+## Do NOT act on an unverified webhook
 
-## Deny by Default
-
-**Deny by default** means nothing is allowed unless something explicitly grants it: with no grant, an
-identity can do nothing to a node. Astrale never assumes access from absence; an action runs only when a
-matching permission is found. This is why a new domain is safe from the start, and why sharing is always
-a deliberate act of granting.
-
-## Permission Propagation
-
-**Permission Propagation** means that a permission given on a node also reaches everything beneath it in
-the tree. Granting access to a folder therefore grants access to everything inside it, without setting
-each child one by one. This is why the shape of the tree matters so much: you grant broadly at the top,
-and the rights flow down to where they are needed.
+A public standalone function has no Astrale caller credential. Minting the function's own kernel session
+before authenticating the upstream request lets any sender trigger privileged graph work. Verify the
+provider's supported signed fields in `authorize`, then use the function identity only for the narrow
+operation the webhook owns. If the provider requires exact raw bytes, the current route boundary must be
+fixed first; the complete replay-safe shape is the public webhook pattern.
 
 ```ts
-import { READ, toMask } from '@astrale-os/kernel-core'
-// one grant on the parent folder covers every node beneath it
-await kernel.auth.grant({ to: '/people/ada', on: '/contacts', perms: toMask(READ) })
-// Ada can now read /contacts/ada, /contacts/bob, ... with no separate grants
-```
-
-## Grant
-
-A **Grant** is a record that gives an identity specific permission verbs on a node: the thing that turns
-no access into allowed. In the graph it is an edge from the identity to the node, carrying a mask of the
-verbs it allows. Because permissions propagate down the tree, a grant on a folder reaches everything
-beneath it.
-
-```ts
-import { READ, USE, toMask } from '@astrale-os/kernel-core'
-await kernel.auth.grant({ to: '/people/ada', on: '/contacts', perms: toMask(READ, USE) })
-```
-
-## Permission verbs (READ, EDIT, USE, SHARE)
-
-A grant carries one or more **permission verbs**, the capabilities it allows on a node: `READ` to see
-it, `EDIT` to change it, `USE` to call its functions, and `SHARE` to grant others. Each verb is a single
-bit, and a grant is the combined mask, so one grant can carry several verbs at once.
-
-```ts
-import { READ, USE, toMask } from '@astrale-os/kernel-core'
-// allow reading the node and calling its functions
-await kernel.auth.grant({ to: '/people/ada', on: '/contacts', perms: toMask(READ, USE) })
-```
-
-## PermissionMask
-
-A **PermissionMask** is the set of permission verbs a grant allows, packed into a single number where
-each verb is one bit. You build one with `toMask(READ, USE,...)` rather than writing the number by hand,
-and the kernel combines masks with bitwise operations. Storing permissions as bits is what makes a check
-a fast intersection of two numbers.
-
-```ts
-import { READ, EDIT, USE, toMask } from '@astrale-os/kernel-core'
-const mask = toMask(READ, EDIT, USE)  // one number, three verbs
-```
-
-## Scopes
-
-A **Scope** narrows what a grant allows, restricting it to certain nodes, certain verbs, or certain
-principals, and never widening it. It is how a delegation hands over only part of an identity's
-authority: act as me, but only here and only to read. Scopes intersect as they stack, so each one added
-can only tighten.
-
-## Grants combine by intersection, not union
-
-When a function acts for a caller, the authority of the call is the **intersection** of the caller's
-grants and the function's own, not the union. Routing through something more privileged cannot lift you
-above your own rights, and calling a function cannot exceed what that function holds either. This
-least-privilege rule (see identity composition) is why crossing into a function is always safe:
-authority only ever narrows.
-
-## Grant vs Scope
-
-A grant adds authority: it gives an identity verbs on a node it did not have. A scope only subtracts: it
-takes an existing authority and confines it to fewer nodes, verbs, or principals. Grants are how rights
-are handed out; scopes are how a delegation hands out less than all of them.
-
-## How to grant a permission?
-
-You grant a permission with `kernel.auth.grant({ to, on, perms })`, naming the identity, the target
-node, and a mask of verbs to allow. The grant takes effect at once and propagates to everything under
-that node, so grant at the shallowest node that covers what you mean.
-
-```ts
-import { READ, toMask } from '@astrale-os/kernel-core'
-await kernel.auth.grant({ to: '/people/ada', on: '/projects/apollo', perms: toMask(READ) })
+export const webhook = defineRemoteFunction({
+  auth: 'public',
+  inputSchema: ProviderEvent,
+  outputSchema: z.object({ accepted: z.boolean() }),
+  authorize: ({ c, params, deps }) =>
+    deps.provider.verifySignedEvent({
+      event: params,
+      signature: c.req.header('x-provider-signature'),
+      timestamp: c.req.header('x-provider-timestamp'),
+    }),
+  execute: async ({ params, fn }) => {
+    const kernel = await fn.kernel()
+    await recordProviderEvent(kernel, params)
+    return { accepted: true }
+  },
+})
 ```
 
 ## How to check a permission?
 
-You check a permission with `kernel.auth.check({ who, on, perms })`, asking whether an identity holds
-given verbs on a node before you act on its behalf. The kernel already enforces permissions on every
-call, so you reach for an explicit check only to branch your own logic.
+Use `kernel.auth.check` to inspect an identity's **standing grant edges** and `kernel.auth.require` when
+false should become a typed denial. Supply `who` explicitly for caller-sensitive code. This does not
+answer whether a currently narrowed credential would pass; it asks what that identity holds. See
+permission and business authorization.
 
 ```ts
-import { READ, toMask } from '@astrale-os/kernel-core'
-const allowed = await kernel.auth.check({ who: '/people/ada', on: '/contacts/bob', perms: toMask(READ) })
+await kernel.auth.require({
+  who: auth.principal,
+  on: project.path,
+  perms: EDIT,
+  context: 'Project.rename',
+})
 ```
 
-## How to let a user share access?
+## How to grant a permission?
 
-You let one identity share access with another by granting it the `SHARE` verb on a node: SHARE is the
-right to pass rights on. A holder of SHARE can then grant others any verbs it already holds on that
-node, with no admin in the loop, but it cannot pass on a right it does not have itself. Give SHARE
-deliberately, because it lets access spread on its own.
+Use `kernel.auth.grant({ to, on, perms })`. Grant at the shallowest node whose subtree matches the
+intended access. Crucially, `grant` **sets the complete permission mask** on that grant edge; it does
+not OR new bits into the old mask. Batch input is convenient but not transactional, so failures report
+per-entry outcomes. See grants and propagation.
 
 ```ts
-import { SHARE, toMask } from '@astrale-os/kernel-core'
-// give Ada the right to share this project; she can then grant Bob READ herself
-await kernel.auth.grant({ to: '/people/ada', on: '/projects/apollo', perms: toMask(SHARE) })
+import { READ, USE, toMask } from '@astrale-os/kernel-core'
+
+await kernel.auth.grant({
+  to: 'user-id',
+  on: '/projects/apollo',
+  perms: toMask(READ, USE),
+})
 ```
 
 ## How to take access away?
 
-You revoke a grant with `kernel.auth.revoke({ from, on, perms })`, naming the identity, the node, and
-the verbs to remove. Removing a grant on a node also withdraws the access that grant propagated to
-everything beneath it; nodes lower down keep only the grants made to them directly.
+Use `kernel.auth.revoke({ from, on, perms })`. Revocation removes the requested bits from that grant;
+other direct or inherited grants may still authorize the identity, so verify the effective result
+instead of assuming one edge was the only source. Batch revocation mirrors batch grant semantics and is
+not a transaction. See grants and propagation.
 
 ```ts
-import { EDIT, toMask } from '@astrale-os/kernel-core'
-// take back EDIT on a node (and everything under it)
-await kernel.auth.revoke({ from: '/people/ada', on: '/projects/apollo', perms: toMask(EDIT) })
+await kernel.auth.revoke({
+  from: '@ada-id',
+  on: '/projects/apollo',
+  perms: EDIT,
+})
 ```
 
 ## How to debug a permission denied?
 
-When a call is refused, check the chain that grants access: does the caller hold a grant with the right
-verb (USE to call, READ to see, EDIT to change) on the target node, or on an ancestor it propagates
-from? Access is denied by default, so the absence of a grant, not a wrong one, is the usual cause.
-Confirm the caller is who you expect, then trace from the node up its parents for the grant that should
-cover it.
-
-## Granting needs more than SHARE
-
-Holding `SHARE` on a node lets you grant access, but only to rights you yourself hold: you cannot hand
-out EDIT if you only have READ and SHARE. A grant that is refused, or quietly grants less than you
-asked, is often this: the granter is missing the very verb they are trying to pass on. To delegate a
-right, make sure you hold both SHARE and that right.
-
-## Handing out SHARE freely
-
-Granting `SHARE` is granting the power to grant: whoever holds it can pass rights to others, who may in
-turn hold SHARE and pass them further, so access spreads down a chain you stop seeing (see sharing
-access). Give SHARE only to those you trust to manage access themselves. When a recipient just needs to
-use a thing, grant plain READ or USE, not the right to re-share it.
-
-## How to secure a function?
-
-You secure a function by deciding two things: who may call it, and what it may touch. Grant USE on the
-function to whoever is allowed to invoke it, and make sure the resources it reads or writes are
-reachable with the right verbs; without a grant the call is denied. For rules a permission bit cannot
-express, add an authorize hook that checks the request against the data. What the right grants are is a
-business decision, not a default.
+First confirm the actual principal with `kernel.auth.whoami()`. Then check the exact node and verb
+through `kernel.auth.check`, inspect the relevant ancestor grant, and distinguish standing grants from a
+narrowed credential. In a handler, separately ask whether the caller or the function identity was
+expected to supply the permission. This follows composed authority and AuthApi checks.
 
 ```ts
-import { USE, toMask } from '@astrale-os/kernel-core'
-// allow Ada to call this function at all (USE on the function node)
-await kernel.auth.grant({
-  to: '/people/ada',
-  on: D.Project.kickoff.path.method.raw,   // the function being secured
-  perms: toMask(USE),
+const principal = await kernel.auth.whoami()
+const allowed = await kernel.auth.check({
+  who: principal.id,
+  on: '/projects/apollo',
+  perms: EDIT,
 })
-// then ensure she can reach what it touches; finer business rules go in the authorize hook
 ```
 
-## A public function has no kernel
+## Permission
 
-In a public function or view there is no caller, so the context's `kernel` is null; reaching for it to
-touch the graph throws. Use selfKernel instead, which acts as the function's own identity, whenever the
-entry point is public.
+A **permission** is a bitmask of verbs an identity holds on a graph node. The kernel checks permissions
+at every graph or function door. Standing grants propagate through containment, while credentials may
+carry scoped delegated authority. Handler business rules add explicit checks without replacing kernel
+enforcement.
+
+## Permission Verbs
+
+The kernel's main **permission verbs** are `READ` (inspect), `EDIT` (change), `USE` (invoke), and
+`SHARE` (delegate access). A permission mask combines one or more verbs for checks and grants, but is
+not an authorization policy by itself: the target node and identity complete the rule.
+
+## Grant
+
+A **grant** is the standing graph relationship that assigns a permission mask to an identity on a node
+and its subtree. The mask is the complete current set of verbs for that relationship, not an incremental
+list of bits to add. See the grant operation.
+
+## Permission Propagation
+
+**Permission propagation** makes a standing grant on a node apply through its containment subtree. This
+is why tree design is also security design: a grant on `/projects` can cover every project beneath it.
+Use the narrowest stable ancestor that matches the intended permission boundary.
+
+## Scopes
+
+A **scope** narrows authority carried by a credential to selected nodes, verbs, or principals. Scopes
+compose restrictively inside the delegated credential branch and never create a standing grant. They do
+not change handler composition: the scoped caller branch is still unioned with the current function
+identity.
+
+## Grant vs Scope
+
+A grant is standing authority stored for an identity on a node and its subtree. A scope narrows
+authority carried by a credential or delegation; it cannot create a standing permission the identity
+lacks. Use grants to assign capabilities and scopes to constrain what one delegated call can exercise.
+
+## How to let a user share access?
+
+Grant the user `SHARE` on the narrowest subtree they may delegate. SHARE authorizes grant management; it
+does not implicitly add READ, EDIT, or USE. The sharer still cannot grant authority they do not hold.
+Model the operation through grants and audit it as deliberately as any other permission verb. Because
+`grant` sets the complete mask, include every permission the user should retain.
 
 ```ts
-// auth: 'public' -> ctx.kernel is null
-execute: async ({ kernel, selfKernel }) => {
-  // await kernel.call(/* ... */)   // NO throws: no caller to act as
-  const own = await selfKernel()  // OK act as the function itself
-  await own.call('/log::append', { event: 'hit' })
-}
+import { READ, SHARE, toMask } from '@astrale-os/kernel-core'
+
+await kernel.auth.grant({
+  to: 'ada-id',
+  on: '/projects/apollo',
+  perms: toMask(READ, SHARE),
+})
 ```
+
+## Hold SHARE and every right you grant
+
+Holding `SHARE` lets an identity create a grant, but it cannot grant a verb it does not hold. A caller
+with READ and SHARE can pass READ, not EDIT. When a grant is denied or narrower than intended, inspect
+both SHARE and the rights being delegated on the target.
+
+## Do NOT hand out SHARE as ordinary access
+
+`SHARE` is not a convenience form of READ or USE. It lets an identity create a new grant from rights it
+already holds, allowing access to spread through additional principals. Give SHARE only to identities
+that should administer access; ordinary consumers need the verbs for their own work.
+
+## Function Identity
+
+Every installed function is an **identity** with its own subject path and standing grants. Those grants
+let trusted domain code perform work without granting the same low-level capabilities directly to every
+caller. They also create a confused-deputy risk, which is why caller-sensitive operations need an
+explicit caller gate.
+
+## How to give a function its own permissions?
+
+Grant the callable's function identity exactly the resources its implementation needs. `ctx.fn.ref` is a
+schema ref used for naming, not an addressable path. In a post-install function, target the callable
+through its compiled FunctionPath or MethodPath and call `kernel.auth.grant`. A required handler's
+normal kernel uses the union of caller and function authority, while `ctx.fn.kernel()` is self-only. See
+function identity and the two handler sessions.
+
+```ts
+await kernel.auth.grant({
+  to: D.$.f('ingest').path.domain,
+  on: '/events',
+  perms: toMask(READ, EDIT),
+})
+```
+
+## Identity Composition
+
+**Identity composition** expresses authority from several identities. In a normal authenticated handler,
+outbound kernel authority is `union(credential(caller delegation), self function identity)`: either
+side's permission may satisfy a kernel operation. Scopes within an delegated credential can still narrow
+that credential branch, but handler composition is not an intersection. Durable `bind`/`unbind`
+relationships form a separate graph-level composition mechanism.
+
+## Identity
+
+An **identity** is a graph principal that can hold standing grants and participate in durable
+composition. Humans, groups, roles, applications, and installed functions may all be identities. A
+verified credential resolves to a principal for one call; it does not replace the identity node or its
+standing graph relationships.
+
+## System Identity
+
+The **system identity** is the kernel's built-in identity, reserved for lifecycle work that has no user
+behind it. It acts most visibly when the kernel invokes a domain's post-install function. Ordinary
+handlers act as their caller and function identity, never as a shortcut to system authority.
+
+## Principal
+
+The **principal** is the identity attributed to the current authenticated call. It answers who initiated
+that call, not the full set of authority available to its handler, which may also include the function
+identity.
+
+## Identity vs Principal
+
+An identity is an entity capable of acting and holding standing grants. A principal is the identity to
+which one authenticated call is attributed. A function, user, group, or role may exist as an identity
+without being the principal of the current request.
+
+## Credential
+
+A **credential** is signed evidence used to authenticate and authorize a call. Its issuer, subject,
+audience, and grant expression are verified before a handler receives an auth context. A bound session
+resolves it for each call.
+
+## Delegation
+
+A **delegation credential** carries authority across a call hop. A session remints it for a remote
+target's audience while preserving the bound delegation expression. Delegation scopes can narrow
+authority; they do not change the handler rule that composed caller and function branches form a union.
+
+## Audience
+
+The **audience** (`aud`) is the service URL a credential is intended for. A credential presented to
+another audience is rejected. Redirect-following sessions therefore mint a next-hop delegation for the
+redirected worker rather than forwarding a bearer intended for the previous kernel instance.
+
+## Issuer and Subject
+
+The credential **issuer** (`iss`) identifies the service that signed it, while the **subject** (`sub`)
+identifies the principal asserted by that issuer. Together they form the external identity binding used
+during authentication. Do not confuse a serving URL issuer with a domain's stable origin.
+
+## Origin vs Serving URL
+
+A domain's **origin** is its stable addressing name, such as `contacts.example.dev`. Its **serving URL**
+is the deployed worker address used as the cryptographic issuer and routing destination. A worker can
+move without renaming every semantic path, while changing the serving URL changes the issuer that signs
+and verifies credentials. Do not put a URL in `defineDomain({ origin })`; see physical placement and
+issuer identity.
+
+## Trust Policy
+
+A **trust policy** controls which external credential issuers and authentication methods an instance
+admits before verification and provisioning. It defines the boundary at which outside evidence may
+become an Astrale credential; effective defaults are adapter-specific rather than a universal platform
+rule.
+
+## Provisioning Policy
+
+A **provisioning policy** decides whether and how a newly authenticated external subject becomes a graph
+identity. It is separate from the trust policy that admits the credential, and maps the same
+issuer/subject pair to a stable identity when it appears again.
+
+## When does the system identity act?
+
+The system identity is reserved for kernel-owned lifecycle work, most visibly a domain's post-install
+function. Normal handlers act through their composed or self-only function sessions; they cannot select
+the system identity as an escape hatch. Design ordinary authorization around function identities and
+explicit callers.
+
+## View Auth Policy (required, optional, public)
+
+A view's **auth policy** decides whether opening it requires an Astrale credential. `required` admits an
+authenticated caller, `optional` supports either authenticated or anonymous use, and `public` has no
+caller identity. The choice is part of the view's security contract; see when public access is justified
+and resource permissions.
