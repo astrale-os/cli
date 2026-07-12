@@ -243,6 +243,32 @@ map, wire external clients through `deps`, and add narrow tests around authoriza
 Then run the domain locally and exercise one real call before deployment. A model is not complete until
 its runtime contract and security boundary are executable.
 
+## How to validate a domain without an instance?
+
+Prove a freshly built domain is sound before any kernel instance exists to install it, in three offline
+layers, cheapest first. The spec build shows the schema compiles and the install graph assembles and
+hashes, but at a placeholder origin, so its schema hash will not match a deployed worker. The dev worker
+goes deeper with no kernel attached: its probes return the real hash and manifest, publish the signing
+key a kernel verifies the install against, and assemble the full signed bundle on demand, while handler
+tests cover logic off the graph. None of this proves a kernel accepts the bundle, writes the graph, and
+runs `postInstall`; only a real install closes that gap.
+
+```bash
+# 1. Spec build: schema + install graph assemble and hash, at a placeholder origin
+pnpm build                                      # writes .astrale/spec.json
+
+# 2. Dev worker probes: a real signed bundle, still no kernel
+pnpm dev                                        # boots http://localhost:8787
+curl -s localhost:8787/meta                     # real schemaHash + manifest for this URL
+curl -s localhost:8787/.well-known/jwks.json    # public key a kernel verifies the install against
+curl -sX POST localhost:8787/_astrale/install-domain \
+  -H 'content-type: application/json' \
+  -d '{"kernelIssuer":"https://probe.local","nonce":"probe-1"}'   # full signed bundle
+
+# 3. Handler logic: no worker at all
+pnpm test
+```
+
 ## How to implement a method?
 
 Use `remoteMethod<Deps>()(schema, owner, method, impl)` so parameters, result, `self`, auth nullability,
