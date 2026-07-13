@@ -23,7 +23,7 @@ export type SchemaMemberKind = 'class' | 'interface' | 'edge'
 export function anchorKindForRef(ref: string): AnchorKind {
   if (/^(class|interface|edge)\./.test(ref)) return 'schema'
   if (/^(module|section|view)\./.test(ref)) return 'section'
-  if (/^file\./.test(ref)) return 'file'
+  if (ref.startsWith('file.')) return 'file'
   return 'free'
 }
 
@@ -40,7 +40,12 @@ export function schemaMemberRef(kind: SchemaMemberKind, name: string): string {
  * class segment so both forms resolve to `edge.<Class>`.
  */
 export function flowEdgeAnchorRef(edgeId: string): string | null {
-  const name = edgeId
+  const localId = edgeId.startsWith('workspace-edge:')
+    ? `edge-${edgeId.split(':')[2] ?? ''}`
+    : edgeId.startsWith('workspace:')
+      ? edgeId.split(':').slice(2).join(':')
+      : edgeId
+  const name = localId
     .replace(/^edge-/, '')
     .split('__')[0]
     ?.trim()

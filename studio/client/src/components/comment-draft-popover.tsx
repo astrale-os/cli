@@ -13,7 +13,7 @@ import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 export function CommentDraftPopover() {
   const draft = useUI((s) => s.commentDraft)
   const setCommentDraft = useUI((s) => s.setCommentDraft)
-  const { threads } = useAnchorThreads(draft?.anchor.ref ?? '__none__')
+  const { threads } = useAnchorThreads(draft?.anchor.ref ?? '__none__', draft?.domainId)
 
   if (!draft) return null
 
@@ -42,6 +42,7 @@ export function CommentDraftPopover() {
         onInteractOutside={(e) => e.preventDefault()}
       >
         <ThreadPopover
+          domainId={draft.domainId}
           anchor={draft.anchor}
           excerpt={draft.excerpt}
           threads={threads}

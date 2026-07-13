@@ -20,6 +20,16 @@ import { type MemberRef, type TreeNode } from './modules'
 import { SchemaIcon } from './schema-icon'
 import { isHidden, isMaterialized } from './visibility'
 
+export interface ModuleTreeControls {
+  domainId: string
+  collapsedModules: string[]
+  hidden: Record<string, true>
+  materializedInterfaces: Record<string, true>
+  toggleModule: (path: string) => void
+  toggleHidden: (ref: string) => void
+  toggleInterfaceMaterialized: (name: string) => void
+}
+
 /** Does any member anywhere under `node` match the current selection? */
 function subtreeHasSelected(node: TreeNode, selected?: string): boolean {
   if (!selected) return false
@@ -31,21 +41,37 @@ export function ModuleTree({
   root,
   selected,
   onSelect,
+  controls,
 }: {
   root: TreeNode
   selected?: string
   onSelect: (id: string) => void
+  controls?: ModuleTreeControls
 }) {
   return (
-    <div className="text-sm py-2">
+    <div className="text-sm py-2" data-domain-id={controls?.domainId}>
       <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         Modules
       </div>
       {root.children.map((c) => (
-        <Branch key={c.path} node={c} depth={0} selected={selected} onSelect={onSelect} />
+        <Branch
+          key={c.path}
+          node={c}
+          depth={0}
+          selected={selected}
+          onSelect={onSelect}
+          controls={controls}
+        />
       ))}
       {root.members.map((m) => (
-        <Member key={m.selectId} m={m} depth={1} selected={selected} onSelect={onSelect} />
+        <Member
+          key={m.selectId}
+          m={m}
+          depth={1}
+          selected={selected}
+          onSelect={onSelect}
+          controls={controls}
+        />
       ))}
     </div>
   )
@@ -56,14 +82,18 @@ function Branch({
   depth,
   selected,
   onSelect,
+  controls,
 }: {
   node: TreeNode
   depth: number
   selected?: string
   onSelect: (id: string) => void
+  controls?: ModuleTreeControls
 }) {
-  const collapsedModules = useUI((s) => s.collapsedModules)
-  const toggleModule = useUI((s) => s.toggleModule)
+  const storeCollapsedModules = useUI((s) => s.collapsedModules)
+  const storeToggleModule = useUI((s) => s.toggleModule)
+  const collapsedModules = controls?.collapsedModules ?? storeCollapsedModules
+  const toggleModule = controls?.toggleModule ?? storeToggleModule
   const [localOpen, setLocalOpen] = useState(true)
   const moduleId = `module.${node.path}`
   const active = selected === moduleId
@@ -113,6 +143,7 @@ function Branch({
           <span className="truncate">{node.name}</span>
         </button>
         <AnchorButton
+          domainId={controls?.domainId}
           anchorRef={{ ref: moduleId, kind: 'section' }}
           excerpt={node.path}
           className="ml-1"
@@ -127,6 +158,7 @@ function Branch({
               depth={depth + 1}
               selected={selected}
               onSelect={onSelect}
+              controls={controls}
             />
           ))}
           {node.members.map((m) => (
@@ -136,6 +168,7 @@ function Branch({
               depth={depth + 1}
               selected={selected}
               onSelect={onSelect}
+              controls={controls}
             />
           ))}
         </div>
@@ -149,21 +182,29 @@ function Member({
   depth,
   selected,
   onSelect,
+  controls,
 }: {
   m: MemberRef
   depth: number
   selected?: string
   onSelect: (id: string) => void
+  controls?: ModuleTreeControls
 }) {
   const active = selected === m.selectId
   const isInterface = m.kind === 'interface'
   // `m.ref` (class.X / edge.X) is the hide-set key — NOT `m.selectId`, whose edges share the
   // class.X namespace and would collide with a same-named node class. Interfaces don't hide;
   // their per-element control is materialize (badge ⇄ canvas node), keyed by bare name.
-  const hidden = useUI((s) => isHidden(m.ref, s.hidden))
-  const toggleHidden = useUI((s) => s.toggleHidden)
-  const materialized = useUI((s) => isMaterialized(m.name, s.materializedInterfaces))
-  const toggleInterfaceMaterialized = useUI((s) => s.toggleInterfaceMaterialized)
+  const storeHidden = useUI((s) => isHidden(m.ref, s.hidden))
+  const storeToggleHidden = useUI((s) => s.toggleHidden)
+  const storeMaterialized = useUI((s) => isMaterialized(m.name, s.materializedInterfaces))
+  const storeToggleInterface = useUI((s) => s.toggleInterfaceMaterialized)
+  const hidden = controls ? isHidden(m.ref, controls.hidden) : storeHidden
+  const toggleHidden = controls?.toggleHidden ?? storeToggleHidden
+  const materialized = controls
+    ? isMaterialized(m.name, controls.materializedInterfaces)
+    : storeMaterialized
+  const toggleInterfaceMaterialized = controls?.toggleInterfaceMaterialized ?? storeToggleInterface
   const dimmed = !isInterface && hidden // materialized = MORE visible, never dims the row
   const Icon = m.kind === 'interface' ? Shapes : m.kind === 'edge' ? Spline : Box
   const color =
@@ -246,6 +287,7 @@ function Member({
         </button>
       )}
       <AnchorButton
+        domainId={controls?.domainId}
         anchorRef={{ ref: m.selectId, kind: 'schema' }}
         excerpt={`${m.kind} ${m.name}`}
         className="ml-1"

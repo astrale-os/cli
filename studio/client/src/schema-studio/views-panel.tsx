@@ -38,6 +38,7 @@ export function ViewRow({
   return (
     <>
       <div
+        data-domain-id={domainId}
         data-anchor-ref={anchorRef}
         data-anchor-excerpt={view.slug}
         className="group flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/60"
@@ -75,6 +76,7 @@ export function ViewRow({
           <Play className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-primary" />
         </button>
         <AnchorButton
+          domainId={domainId}
           anchorRef={{ ref: anchorRef, kind: 'section', file: view.file }}
           excerpt={view.slug}
           className="ml-1"
