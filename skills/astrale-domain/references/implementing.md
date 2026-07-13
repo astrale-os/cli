@@ -301,6 +301,17 @@ await step.run('connect-provider', async () => {
 })
 ```
 
+## Do NOT put a constant slug on an n->m edge
+
+A slugged edge is unique by `(class, target, slug)`, stricter than its identity: a constant slug lets
+only the first source reach a target, every later link an `EDGE_CONFLICT`. Leave n->m relations
+unslugged.
+
+## Standalone domain functions can receive empty params
+
+Observed: a standalone function saw empty params where a class method saw its own. Its worker route
+reads params by content-type, so an unrecognised envelope validates down to `{}`.
+
 ## Durable step execution and compensation are not implemented yet
 
 The current SDK implements `step.run` with an inline executor: it builds a stable scoped key, runs the
@@ -476,6 +487,11 @@ for await (const project of projects) {
 `nodes` and `first` for the current page, `next()` for a live next page, `all()` and async iteration for
 draining, and `cursor()` for an opaque resumable position. See paged graph reads, the first-page
 pitfall, and structured-query continuation.
+
+## Do NOT read a page cursor by root path
+
+`function.get` keys its page cursors by the root's node id, not its path, so `next[root.raw]` is always
+`undefined`: the drain stops after page one and a partial read looks complete.
 
 ## How to list a node's children?
 

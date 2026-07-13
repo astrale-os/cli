@@ -34,6 +34,11 @@ expect(capture.patches).toHaveLength(1)
 expect(capture.patches[0].nodes.delete).toHaveLength(3)
 ```
 
+## Make a fake kernel enforce the kernel's invariants
+
+A fake that accepts what the kernel rejects (a duplicate edge, a path-keyed cursor) turns a live failure
+into a green suite: encode the invariant in the fake, not the assertion.
+
 ## Declare authorize on every callable
 
 Give every `remoteMethod` and `defineRemoteFunction` an `authorize` hook. Gate the principal with

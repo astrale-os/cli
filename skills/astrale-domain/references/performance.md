@@ -177,6 +177,11 @@ when its extra shape is required. The AST form still runs through `lowerToGet`; 
 filters, chained moves, visibility permissions, or other capabilities that `function.get` cannot
 express.
 
+## Query gathers are depth-1 and cannot chain
+
+Gathers are depth-1 and anchor on the query roots, so `.out(A).out(B)` is two parallel hops, not a
+two-step walk. Read the enclosing graph scope once and walk it in memory, never an N+1.
+
 ## Multi-root query continuation is single-root only
 
 A `GraphResult` can begin from several roots, but continuation through `next()` or `cursor()` currently
