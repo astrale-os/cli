@@ -9,6 +9,7 @@ import { join, relative } from 'node:path'
 
 import type { DomainAnatomy, StudioCore, StudioSchemaBundle } from '../shared/types'
 
+import { invalidateClientPackage, resolveClientPackage } from './client-package'
 import { getDomain } from './domain'
 import { buildAnatomy } from './introspect/anatomy'
 import { buildBundle } from './introspect/bundle'
@@ -17,7 +18,7 @@ import { hashAnatomyFiles } from './state/baseline'
 import { readJson, writeJson } from './state/store'
 
 const bundles = new Map<string, StudioSchemaBundle>()
-const anatomies = new Map<string, DomainAnatomy>()
+const anatomies = new Map<string, Promise<DomainAnatomy>>()
 const cores = new Map<string, StudioCore>()
 
 const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
@@ -112,13 +113,19 @@ export async function getBundle(id: string, rebuild = false): Promise<StudioSche
   return b
 }
 
-export function getAnatomy(id: string, rebuild = false): DomainAnatomy | null {
+export async function getAnatomy(id: string, rebuild = false): Promise<DomainAnatomy | null> {
   const h = getDomain(id)
   if (!h) return null
   if (!rebuild && anatomies.has(id)) return anatomies.get(id)!
-  const a = buildAnatomy({ root: h.root, schemaDirName: h.schemaDirName })
-  anatomies.set(id, a)
-  return a
+  const anatomy = resolveClientPackage(h.root, rebuild).then((client) =>
+    buildAnatomy({
+      root: h.root,
+      schemaDirName: h.schemaDirName,
+      clientDir: client.status === 'available' ? client.dir : undefined,
+    }),
+  )
+  anatomies.set(id, anatomy)
+  return anatomy
 }
 
 export async function getCore(id: string, rebuild = false): Promise<StudioCore | null> {
@@ -132,7 +139,11 @@ export async function getCore(id: string, rebuild = false): Promise<StudioCore |
 
 export function invalidate(id: string, what: 'schema' | 'anatomy' | 'all'): void {
   if (what !== 'anatomy') bundles.delete(id)
-  if (what !== 'schema') anatomies.delete(id)
+  if (what !== 'schema') {
+    anatomies.delete(id)
+    const domain = getDomain(id)
+    if (domain) invalidateClientPackage(domain.root)
+  }
   // Core is derived from domain.ts (in the anatomy fileset), so it tracks anatomy.
   if (what !== 'schema') cores.delete(id)
 }

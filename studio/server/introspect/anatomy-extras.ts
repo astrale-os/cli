@@ -125,7 +125,7 @@ export function buildViews(root: string): ViewInfo[] {
   for (const imp of index.getImportDeclarations()) {
     const spec = imp.getModuleSpecifierValue()
     for (const named of imp.getNamedImports()) {
-      importSpecByName.set(named.getName(), spec)
+      importSpecByName.set(named.getAliasNode()?.getText() ?? named.getName(), spec)
     }
     const def = imp.getDefaultImport()
     if (def) importSpecByName.set(def.getText(), spec)
@@ -174,15 +174,31 @@ export function buildViews(root: string): ViewInfo[] {
       info.file = relative(root, indexFile)
       applyParsed(info, parseViewObject(inlineArg))
     } else {
-      // referenced view file (e.g. my-domain) — resolve the import + parse the file
-      const spec = refName ? importSpecByName.get(refName) : undefined
-      const viewFile = spec ? resolveLocalModule(indexFile, spec) : null
-      if (viewFile) {
-        info.file = relative(root, viewFile)
-        try {
-          applyParsed(info, parseViewFile(project, viewFile))
-        } catch {
-          /* keep the unknown-kind stub */
+      // A shorthand may reference a defineView declared earlier in this same
+      // registry file (services), or one imported from another module (ai-gateway).
+      const localInit = refName
+        ? index.getVariableDeclaration(refName)?.getInitializer()
+        : undefined
+      if (
+        localInit &&
+        Node.isCallExpression(localInit) &&
+        localInit.getExpression().getText() === 'defineView'
+      ) {
+        const arg = localInit.getArguments()[0]
+        if (arg) {
+          info.file = relative(root, indexFile)
+          applyParsed(info, parseViewObject(arg))
+        }
+      } else {
+        const spec = refName ? importSpecByName.get(refName) : undefined
+        const viewFile = spec ? resolveLocalModule(indexFile, spec) : null
+        if (viewFile) {
+          info.file = relative(root, viewFile)
+          try {
+            applyParsed(info, parseViewFile(project, viewFile))
+          } catch {
+            /* keep the unknown-kind stub */
+          }
         }
       }
     }
@@ -294,8 +310,11 @@ function parseViewObject(arg: Node): ParsedView {
 
 const RESERVED_CLIENT_DIRS = new Set(['shell', 'ui', 'views'])
 
-export function buildClientTree(root: string): ClientTree {
-  const srcDir = join(root, 'client', 'src')
+export function buildClientTree(
+  root: string,
+  clientDir: string | null = join(root, 'client'),
+): ClientTree {
+  const srcDir = clientDir ? join(clientDir, 'src') : ''
   if (!existsSync(srcDir)) {
     return { shell: [], features: [], routes: {}, present: false }
   }
@@ -306,49 +325,29 @@ export function buildClientTree(root: string): ClientTree {
     .filter((d) => !RESERVED_CLIENT_DIRS.has(d))
     .map((name) => ({ name, files: listFiles(join(srcDir, name)) }))
 
-  const routes = parseRoutes(join(srcDir, 'app.tsx'))
+  const routes = parseRoutes(
+    listFiles(srcDir)
+      .filter((file) => /\.[cm]?[jt]sx?$/.test(file))
+      .map((file) => join(srcDir, file)),
+  )
 
   return { shell, features, routes, present: true }
 }
 
-/** Best-effort parse of the `ROUTES` map (mountPath → ComponentName) in app.tsx. */
-function parseRoutes(appFile: string): Record<string, string> {
+/**
+ * Best-effort parse of top-level client route registries. Domains call these
+ * maps ROUTES, VIEW_REGISTRY, or another local name; the stable contract is a
+ * quoted `/ui/…` key pointing at a component identifier.
+ */
+function parseRoutes(files: string[]): Record<string, string> {
   const routes: Record<string, string> = {}
-  const src = readTextSafe(appFile)
-  if (!src) return routes
-
-  // Isolate the ROUTES object literal body: `const ROUTES[: Type] = { ... }`.
-  // The identifier may carry a type annotation but never a newline/backtick — that
-  // keeps us from latching onto a `ROUTES` mention inside a JSDoc comment.
-  const startMatch = src.match(/\bROUTES\b\s*(?::\s*[\w<>.\[\], ]+)?\s*=\s*\{/)
-  if (!startMatch || startMatch.index === undefined) {
-    return routes
-  }
-  const openIdx = src.indexOf('{', startMatch.index + startMatch[0].length - 1)
-  if (openIdx === -1) return routes
-
-  // Balance braces to find the matching close.
-  let depth = 0
-  let endIdx = -1
-  for (let i = openIdx; i < src.length; i++) {
-    const ch = src[i]
-    if (ch === '{') depth++
-    else if (ch === '}') {
-      depth--
-      if (depth === 0) {
-        endIdx = i
-        break
-      }
+  for (const file of files) {
+    const src = readTextSafe(file)
+    const entryRe = /['"`](\/ui\/[^'"`]+)['"`]\s*:\s*([A-Za-z_$][\w$.]*)/g
+    let match: RegExpExecArray | null
+    while ((match = entryRe.exec(src)) !== null) {
+      routes[match[1]] = match[2]
     }
-  }
-  if (endIdx === -1) return routes
-
-  const body = src.slice(openIdx + 1, endIdx)
-  // Each entry:  '/ui/status-page': StatusView   (quoted key → identifier/expr).
-  const entryRe = /['"`]([^'"`]+)['"`]\s*:\s*([A-Za-z_$][\w$.]*)/g
-  let m: RegExpExecArray | null
-  while ((m = entryRe.exec(body)) !== null) {
-    routes[m[1]] = m[2]
   }
   return routes
 }

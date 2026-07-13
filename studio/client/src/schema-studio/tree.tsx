@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
-  FileCode2,
   FolderClosed,
   FolderOpen,
   Shapes,
@@ -66,17 +65,17 @@ function Branch({
   const collapsedModules = useUI((s) => s.collapsedModules)
   const toggleModule = useUI((s) => s.toggleModule)
   const [localOpen, setLocalOpen] = useState(true)
-  const isFolder = node.type === 'folder'
-  const isFile = node.type === 'file'
   const moduleId = `module.${node.path}`
   const active = selected === moduleId
+  const hasCanvasModule = node.members.length > 0
 
-  // A FILE's collapse is shared with the canvas (collapsedModules); a FOLDER's is
-  // tree-local. Either auto-reveals when the selection lives beneath it.
-  const open = isFile
+  // A folder with direct schema members owns a canvas module, so its collapse is
+  // shared with the canvas. Pure parent folders only control the tree locally.
+  // Either auto-reveals when the current selection lives beneath it.
+  const open = hasCanvasModule
     ? !collapsedModules.includes(node.path) || subtreeHasSelected(node, selected)
     : localOpen || subtreeHasSelected(node, selected)
-  const toggle = () => (isFile ? toggleModule(node.path) : setLocalOpen((o) => !o))
+  const toggle = () => (hasCanvasModule ? toggleModule(node.path) : setLocalOpen((value) => !value))
 
   const pad = { paddingLeft: 8 + depth * 12 }
   const FolderIcon = open ? FolderOpen : FolderClosed
@@ -107,17 +106,10 @@ function Branch({
             active && 'font-extrabold',
           )}
         >
-          {isFolder ? (
-            <FolderIcon
-              className="h-3.5 w-3.5 shrink-0"
-              style={{ color: `oklch(0.78 0.12 ${node.hue})` }}
-            />
-          ) : (
-            <FileCode2
-              className="h-3.5 w-3.5 shrink-0"
-              style={{ color: `oklch(0.78 0.1 ${node.hue})` }}
-            />
-          )}
+          <FolderIcon
+            className="h-3.5 w-3.5 shrink-0"
+            style={{ color: `oklch(0.78 0.12 ${node.hue})` }}
+          />
           <span className="truncate">{node.name}</span>
         </button>
         <AnchorButton

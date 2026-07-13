@@ -8,7 +8,7 @@
  * never executed (its deps→integrations chain has import side effects).
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 
 import type { DomainAnatomy, DomainOverview } from '../../shared/types'
 
@@ -18,19 +18,20 @@ import { buildClientTree, buildEnvFields, buildViews } from './anatomy-extras'
 export interface AnatomyArgs {
   root: string
   schemaDirName: string
+  clientDir?: string
 }
 
-export function buildAnatomy({ root, schemaDirName }: AnatomyArgs): DomainAnatomy {
+export function buildAnatomy({ root, schemaDirName, clientDir }: AnatomyArgs): DomainAnatomy {
   return {
-    overview: buildOverview(root, schemaDirName),
+    overview: buildOverview(root, schemaDirName, clientDir),
     views: buildViews(root),
-    client: buildClientTree(root),
+    client: buildClientTree(root, clientDir ?? null),
     env: buildEnvFields(root),
     detectedIntegrations: detectIntegrations(root),
   }
 }
 
-function buildOverview(root: string, schemaDirName: string): DomainOverview {
+function buildOverview(root: string, schemaDirName: string, clientDir?: string): DomainOverview {
   const pkg = readJsonSafe(join(root, 'package.json'))
   const astraleDeps: Record<string, string> = {}
   for (const [k, v] of Object.entries({
@@ -52,7 +53,6 @@ function buildOverview(root: string, schemaDirName: string): DomainOverview {
     config.match(/secrets\s*:\s*['"]([^'"]+)['"]/)?.[1]
 
   const domainSrc = readTextSafe(join(root, 'domain.ts'))
-  const clientDir = domainSrc.match(/client\s*:\s*\{\s*dir\s*:\s*['"]([^'"]+)['"]/)?.[1]
   const origin =
     domainSrc.match(/defineSchema\(\s*['"]([^'"]+)['"]/)?.[1] ??
     readTextSafe(join(root, schemaDirName, 'index.ts')).match(
@@ -71,7 +71,7 @@ function buildOverview(root: string, schemaDirName: string): DomainOverview {
     packageVersion: pkg?.version,
     astraleDeps,
     schemaDir: schemaDirName,
-    client: clientDir,
+    client: clientDir ? relative(root, clientDir).replaceAll('\\', '/') || '.' : undefined,
   }
 }
 

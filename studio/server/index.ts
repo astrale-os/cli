@@ -17,6 +17,7 @@ import { resolveTarget } from './detect'
 import { allDomains } from './domain'
 import { bootDomain } from './lifecycle'
 import { broadcast, sseResponse } from './sse'
+import { shutdownViewDevServers } from './view-dev-server'
 import { initWorkspaceState, stoppers } from './workspace-state'
 import { watchWorkspace } from './workspace-watch'
 
@@ -115,6 +116,18 @@ const server = Bun.serve({
     return serveStatic(url.pathname)
   },
 })
+
+let shuttingDown = false
+async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  await shutdownViewDevServers()
+  for (const stop of stoppers.values()) stop()
+  server.stop(true)
+  process.exit(signal === 'SIGINT' ? 130 : 143)
+}
+process.once('SIGINT', () => void shutdown('SIGINT'))
+process.once('SIGTERM', () => void shutdown('SIGTERM'))
 
 setBridgePort(server.port ?? port)
 const urlStr = `http://localhost:${server.port}`

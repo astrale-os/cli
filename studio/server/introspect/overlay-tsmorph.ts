@@ -28,7 +28,7 @@ function newProject(): Project {
 function tryAddFile(project: Project, file: string): SourceFile | undefined {
   try {
     if (!existsSync(file)) return undefined
-    return project.addSourceFileAtPath(file)
+    return project.getSourceFile(file) ?? project.addSourceFileAtPath(file)
   } catch {
     return undefined
   }
@@ -163,26 +163,127 @@ interface ConfigResolution {
   unlinkedReason?: 'no-config'
 }
 
-function resolveConfigObject(configNode: Node): ConfigResolution {
-  // Case A: a call expression, e.g. `todo('Owner.name')`. Follow the helper to
-  // its returned object literal (the local `todo` factory in evaluation).
-  if (Node.isCallExpression(configNode)) {
-    const obj = followFactoryToObject(configNode)
+function resolveConfigObject(configNode: Node, seen = new Set<string>()): ConfigResolution {
+  const node = unwrapExpression(configNode)
+  const key = `${node.getSourceFile().getFilePath()}:${node.getStart()}`
+  if (seen.has(key)) return { implemented: false, unlinkedReason: 'no-config' }
+  seen.add(key)
+
+  if (Node.isCallExpression(node)) {
+    // Curried SDK helpers carry the handler config in their final argument:
+    // `remoteMethod()(schema, 'Issue', 'delete', { authorize, execute })`.
+    const lastArg = node.getArguments().at(-1)
+    if (lastArg) {
+      const candidate = unwrapExpression(lastArg)
+      if (Node.isObjectLiteralExpression(candidate) || Node.isIdentifier(candidate)) {
+        return resolveConfigObject(candidate, seen)
+      }
+    }
+
+    // Local factories such as `todo('Owner.name')` return the config object themselves.
+    const obj = followFactoryToObject(node)
     if (obj) return classifyObjectLiteral(obj)
     return { implemented: false, unlinkedReason: 'no-config' }
   }
-  if (Node.isObjectLiteralExpression(configNode)) {
-    return classifyObjectLiteral(configNode)
+  if (Node.isObjectLiteralExpression(node)) {
+    return classifyObjectLiteral(node)
   }
-  // An identifier referencing a config defined elsewhere — try to resolve it.
-  if (Node.isIdentifier(configNode)) {
-    const decl = firstValueDeclaration(configNode)
-    if (decl && Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer()
-      if (init) return resolveConfigObject(init)
-    }
+  // Handler maps normally reference a local or imported `remoteMethod` value.
+  if (Node.isIdentifier(node)) {
+    const value = valueOfIdentifier(node)
+    if (value) return resolveConfigObject(value, seen)
   }
   return { implemented: false, unlinkedReason: 'no-config' }
+}
+
+/** Remove syntax-only wrappers around a runtime value. */
+function unwrapExpression(node: Node): Node {
+  let current = node
+  while (
+    Node.isParenthesizedExpression(current) ||
+    Node.isAsExpression(current) ||
+    Node.isSatisfiesExpression(current) ||
+    Node.isTypeAssertion(current)
+  ) {
+    current = current.getExpression()
+  }
+  return current
+}
+
+/** Resolve a local or relatively imported identifier to its runtime value. */
+function valueOfIdentifier(id: Node): Node | undefined {
+  if (!Node.isIdentifier(id)) return undefined
+  const decl = firstValueDeclaration(id)
+  if (decl && Node.isVariableDeclaration(decl)) return decl.getInitializer()
+  return resolveImportedValue(id)
+}
+
+/** Follow a named relative import to the exported value that defines it. */
+function resolveImportedValue(id: Node): Node | undefined {
+  if (!Node.isIdentifier(id)) return undefined
+  const localName = id.getText()
+  const sourceFile = id.getSourceFile()
+
+  for (const imp of sourceFile.getImportDeclarations()) {
+    for (const named of imp.getNamedImports()) {
+      const local = named.getAliasNode()?.getText() ?? named.getName()
+      if (local !== localName) continue
+      const target = resolveModuleFile(sourceFile, imp.getModuleSpecifierValue())
+      if (!target) return undefined
+      return findExportedValue(id.getProject(), target, named.getName(), new Set<string>())
+    }
+  }
+  return undefined
+}
+
+/** Find an exported variable/function value, following local and barrel exports. */
+function findExportedValue(
+  project: Project,
+  file: string,
+  exportName: string,
+  seen: Set<string>,
+): Node | undefined {
+  const key = `${file}:${exportName}`
+  if (seen.has(key)) return undefined
+  seen.add(key)
+  const sf = tryAddFile(project, file)
+  if (!sf) return undefined
+
+  const localValue = (name: string, exportedOnly: boolean): Node | undefined => {
+    const variable = sf
+      .getVariableDeclarations()
+      .find(
+        (candidate) => candidate.getName() === name && (!exportedOnly || candidate.isExported()),
+      )
+    if (variable) return variable.getInitializer()
+    return sf
+      .getFunctions()
+      .find(
+        (candidate) => candidate.getName() === name && (!exportedOnly || candidate.isExported()),
+      )
+  }
+
+  const direct = localValue(exportName, true)
+  if (direct) return direct
+
+  for (const ex of sf.getExportDeclarations()) {
+    const modSpec = ex.getModuleSpecifierValue()
+    const target = modSpec ? resolveModuleFile(sf, modSpec) : undefined
+    const named = ex.getNamedExports()
+    if (named.length > 0) {
+      for (const specifier of named) {
+        const exposed = specifier.getAliasNode()?.getText() ?? specifier.getName()
+        if (exposed !== exportName) continue
+        const original = specifier.getName()
+        if (target) return findExportedValue(project, target, original, seen)
+        return localValue(original, false)
+      }
+    } else if (target) {
+      const found = findExportedValue(project, target, exportName, seen)
+      if (found) return found
+    }
+  }
+  return undefined
 }
 
 /** Given `todo('x')`, find the factory's `return { … }` object literal. */
@@ -287,11 +388,8 @@ function functionBodyOf(node: Node): Node | null | undefined {
   if (Node.isArrowFunction(node) || Node.isFunctionExpression(node)) fn = node
   else if (Node.isMethodDeclaration(node)) fn = node
   else if (Node.isIdentifier(node)) {
-    const decl = firstValueDeclaration(node)
-    if (decl && Node.isVariableDeclaration(decl)) {
-      const init = decl.getInitializer()
-      if (init) return functionBodyOf(init)
-    }
+    const value = valueOfIdentifier(node)
+    if (value) return functionBodyOf(value)
     return undefined
   }
   if (!fn) return undefined
@@ -434,9 +532,11 @@ function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
   if (!spec.startsWith('.')) return undefined
   const baseDir = dirname(from.getFilePath())
   const base = resolvePath(baseDir, spec)
+  const sourceBase = base.replace(/\.(?:[cm]?js|jsx)$/, '')
   const candidates = [
-    base.endsWith('.ts') ? base : `${base}.ts`,
-    base.endsWith('.tsx') ? base : `${base}.tsx`,
+    base,
+    sourceBase.endsWith('.ts') ? sourceBase : `${sourceBase}.ts`,
+    sourceBase.endsWith('.tsx') ? sourceBase : `${sourceBase}.tsx`,
     `${base}/index.ts`,
     `${base}/index.tsx`,
   ]

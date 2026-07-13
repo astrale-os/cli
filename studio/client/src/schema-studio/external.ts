@@ -1,13 +1,13 @@
-import type { IrEndpoint, StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/types'
 
 /**
  * external.ts — the CROSS-DOMAIN data layer.
  *
  * We ONLY treat a true cross-domain EDGE CLASS as a cross-domain relationship:
- * an `edgeClass` whose endpoint references a class living in another domain
- * (it appears in `ir.imports` with `definition: 'class'`). Interface
- * implementations (`implements: [SomeExternalInterface]`) are NOT edges — those
- * are shown as little badges on the class, not links.
+ * an `edgeClass` whose endpoint references a class or interface living in another
+ * domain (it appears in `ir.imports`). Interface implementations
+ * (`implements: [SomeExternalInterface]`) are NOT edges — those remain metadata
+ * on the implementing class.
  */
 
 export interface ExternalMember {
@@ -17,12 +17,13 @@ export interface ExternalMember {
 export interface ExternalDomain {
   origin: string
   kind: 'kernel' | 'external'
-  /** the external classes this domain's edges connect to */
+  /** the external classes/interfaces this domain's edges connect to */
   members: ExternalMember[]
 }
 
 export interface CrossDomainEdge {
   edge: string
+  /** locally declared endpoint type; may be a concrete class or an interface */
   from: string
   origin: string
   to: string
@@ -32,30 +33,88 @@ export interface CrossDomainEdge {
   toCard?: IrEndpoint['cardinality']
 }
 
-/** Each cross-domain edge: an edgeClass linking a local class to an external class. */
+export interface LocalEndpointTarget {
+  cls: string | null
+  ifaceNode: string | null
+  /** inducing interface when a non-materialized endpoint fans out to an implementing class */
+  viaInterface: string | null
+}
+
+/**
+ * Resolve locally-owned endpoint types into canvas targets. A rendered interface is one target;
+ * otherwise it fans out to its concrete implementers. Imported types are deliberately ignored.
+ */
+export function localEndpointTargets(
+  ir: SchemaIR,
+  endpoint: { types?: string[] } | undefined,
+  interfaceRendered: (name: string) => boolean,
+): LocalEndpointTarget[] {
+  const out: LocalEndpointTarget[] = []
+  const seen = new Set<string>()
+  for (const type of endpoint?.types ?? []) {
+    if (ir.classes[type]?.type === 'node') {
+      if (!seen.has(type)) {
+        seen.add(type)
+        out.push({ cls: type, ifaceNode: null, viaInterface: null })
+      }
+      continue
+    }
+    if (!ir.interfaces[type]) continue
+    if (interfaceRendered(type)) {
+      const ifaceNode = `iface.${type}`
+      if (!seen.has(ifaceNode)) {
+        seen.add(ifaceNode)
+        out.push({ cls: null, ifaceNode, viaInterface: null })
+      }
+      continue
+    }
+    for (const [className, cls] of Object.entries(ir.classes)) {
+      if (cls.type === 'node' && (cls.implements ?? []).includes(type) && !seen.has(className)) {
+        seen.add(className)
+        out.push({ cls: className, ifaceNode: null, viaInterface: type })
+      }
+    }
+  }
+  return out
+}
+
+/** Each cross-domain edge: an edgeClass linking a local endpoint type to an imported one. */
 export function crossDomainEdges(bundle: StudioSchemaBundle): CrossDomainEdge[] {
   const ir = bundle.ir
   if (!ir) return []
   const out: CrossDomainEdge[] = []
   for (const [name, c] of Object.entries(ir.classes)) {
     if (c.type !== 'edge' || !c.endpoints) continue
-    const types = c.endpoints.flatMap((ep) => ep.types)
-    const external = types.filter((t) => ir.imports[t]?.definition === 'class')
-    if (!external.length) continue
-    const internal = types.filter((t) => ir.classes[t] && !ir.imports[t])
-    // cardinality lives on the endpoint a type belongs to (role-level, not per-type)
-    const cardOf = (t: string) => c.endpoints?.find((ep) => ep.types.includes(t))?.cardinality
-    for (const to of external) {
-      const origin = ir.imports[to].origin
-      const toCard = cardOf(to)
-      for (const from of internal)
-        out.push({ edge: name, from, origin, to, fromCard: cardOf(from), toCard })
+    const a = c.endpoints[0]
+    const b = c.endpoints[1]
+    if (!a || !b) continue
+    for (const [localEndpoint, externalEndpoint] of [
+      [a, b],
+      [b, a],
+    ] as const) {
+      const local = localEndpoint.types.filter(
+        (type) => ir.classes[type]?.type === 'node' || ir.interfaces[type] !== undefined,
+      )
+      const external = externalEndpoint.types.filter((type) => ir.imports[type] !== undefined)
+      for (const to of external) {
+        const origin = ir.imports[to].origin
+        for (const from of local) {
+          out.push({
+            edge: name,
+            from,
+            origin,
+            to,
+            fromCard: localEndpoint.cardinality,
+            toCard: externalEndpoint.cardinality,
+          })
+        }
+      }
     }
   }
   return out
 }
 
-/** External domains connected via cross-domain edges, each with the external classes referenced. */
+/** External domains connected via cross-domain edges, with each referenced endpoint type. */
 export function externalDomains(bundle: StudioSchemaBundle): ExternalDomain[] {
   const ir = bundle.ir
   if (!ir) return []

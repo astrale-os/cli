@@ -5,7 +5,7 @@ import { useEffect, useMemo } from 'react'
 import { useBundle } from '@/lib/hooks'
 import { type SectionKey, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { fileModules, moduleOfClass } from '@/schema-studio/modules'
+import { folderModules, moduleOfClass } from '@/schema-studio/modules'
 
 /** The nav sections, mirroring app.tsx's NAV order/labels. */
 const SECTIONS: { key: SectionKey; label: string }[] = [
@@ -168,7 +168,7 @@ export function CommandPalette() {
     }
     properties.sort((a, b) => a.value.localeCompare(b.value))
 
-    const modules = fileModules(bundle).map((m) => {
+    const modules = folderModules(bundle).map((m) => {
       const n = m.classes.length + m.interfaces.length + m.edges.length
       return {
         path: m.path,

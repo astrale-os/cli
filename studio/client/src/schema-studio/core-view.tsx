@@ -43,7 +43,7 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { elkLayout } from './elk-layout'
-import { edgeTypes } from './floating-edge'
+import { edgeTypes, separateParallelEdges } from './floating-edge'
 import { moduleHue } from './modules'
 import { NodeCommentPin } from './node-comment-pin'
 import { SchemaIcon } from './schema-icon'
@@ -269,7 +269,7 @@ export function CoreView({
     elkLayout(structure.nodes, structure.edges).then((laid) => {
       if (cancelled) return
       setNodes(laid)
-      setEdges(structure.edges)
+      setEdges(separateParallelEdges(structure.edges))
       requestAnimationFrame(() => fitView({ padding: 0.2, duration: 400 }))
     })
     return () => {

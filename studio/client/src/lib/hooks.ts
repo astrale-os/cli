@@ -25,12 +25,14 @@ export function useAnatomy(id?: string) {
     enabled: !!id,
   })
 }
-/** Lazily resolve a view's live URL (only when `enabled`, e.g. its modal is open). */
-export function useViewUrl(id?: string, slug?: string, enabled = true) {
+/** Lazily start the domain frontend and resolve target candidates for one view. */
+export function useViewRuntime(id?: string, slug?: string, enabled = true) {
   return useQuery({
-    queryKey: qk.viewUrl(id ?? '', slug ?? ''),
-    queryFn: () => api.viewUrl(id!, slug!),
+    queryKey: qk.viewRuntime(id ?? '', slug ?? ''),
+    queryFn: () => api.viewRuntime(id!, slug!),
     enabled: enabled && !!id && !!slug,
+    staleTime: 2000,
+    refetchInterval: enabled ? 10_000 : false,
   })
 }
 /** Declared views cross-referenced with the schema + client routes (binding + drift). */

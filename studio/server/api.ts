@@ -67,8 +67,9 @@ import { readLayout, resetLayout, saveLayout, setNodePositions } from './state/l
 import { readSettings, updateSettings } from './state/settings'
 import { applyUpdates, getUpdates } from './state/updates'
 import { readUsage } from './state/usage'
-import { mintPreviewToken, resolveViewUrl } from './state/views'
+import { closeViewSession, getViewRuntime, launchViewSession } from './state/views'
 import { readVisibility, resetVisibility, saveVisibility } from './state/visibility'
+import { restartViewDevServer } from './view-dev-server'
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -193,7 +194,7 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
 
   // ── schema bundle ──
   if (rest === '/bundle') return json(await getBundle(id, url.searchParams.has('fresh')))
-  if (rest === '/anatomy') return json(getAnatomy(id, url.searchParams.has('fresh')))
+  if (rest === '/anatomy') return json(await getAnatomy(id, url.searchParams.has('fresh')))
 
   // ── update staleness (CLI + SDK deps, via `astrale update --check --json`) ──
   if (rest === '/updates' && req.method === 'GET') return json(await getUpdates(root))
@@ -203,37 +204,54 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
   // ── core (genesis) data ──
   if (rest === '/core') return json(await getCore(id, url.searchParams.has('fresh')))
 
-  // ── views: resolve a view's LIVE serving URL on its target instance (for the in-studio modal) ──
-  const viewUrlM = rest.match(/^\/views\/([^/]+)\/url$/)
-  if (viewUrlM && req.method === 'GET') {
-    const slug = decodeURIComponent(viewUrlM[1])
-    // slug goes into a kernel path arg — reject anything but a plain view slug (no `..`, no `/` via %2F)
-    if (!/^[a-zA-Z0-9_-]+$/.test(slug)) return badReq('invalid view slug')
-    const target = instanceTarget(getAnatomy(id)?.overview.prodTarget)
+  // ── views: Studio-owned local Vite lifecycle + `astrale view` auth/session ──
+  if (rest === '/views/dev-server/restart' && req.method === 'POST') {
+    return json(await restartViewDevServer(root))
+  }
+  if (rest === '/views/sessions/close' && req.method === 'POST') {
+    return json(await closeViewSession(String(body.sessionId ?? '')))
+  }
+
+  const viewRuntimeM = rest.match(/^\/views\/([^/]+)\/runtime$/)
+  if (viewRuntimeM && req.method === 'GET') {
+    const slug = decodeURIComponent(viewRuntimeM[1])
+    if (!/^[a-z][a-z0-9-]*$/.test(slug)) return badReq('invalid view slug')
+    const anatomy = await getAnatomy(id)
+    const view = anatomy?.views.find((candidate) => candidate.slug === slug)
+    if (!view) return notFound()
     const bundle = await getBundle(id)
+    const origin = bundle?.overlay.origin || anatomy?.overview.origin
+    if (!origin) return badReq('domain origin is unavailable')
     return json(
-      await resolveViewUrl(
-        bundle?.overlay.origin ?? null,
-        target,
-        slug,
+      await getViewRuntime(root, origin, view, bundle, readSettings(root).viewProbeTimeoutMs),
+    )
+  }
+
+  const viewSessionM = rest.match(/^\/views\/([^/]+)\/session$/)
+  if (viewSessionM && req.method === 'POST') {
+    const slug = decodeURIComponent(viewSessionM[1])
+    if (!/^[a-z][a-z0-9-]*$/.test(slug)) return badReq('invalid view slug')
+    const anatomy = await getAnatomy(id)
+    const view = anatomy?.views.find((candidate) => candidate.slug === slug)
+    if (!view) return notFound()
+    const bundle = await getBundle(id)
+    const origin = bundle?.overlay.origin || anatomy?.overview.origin
+    if (!origin) return badReq('domain origin is unavailable')
+    return json(
+      await launchViewSession(
+        root,
+        origin,
+        view,
+        bundle,
+        body,
         readSettings(root).viewProbeTimeoutMs,
       ),
     )
   }
 
-  // ── views: mint a delegation token so the studio can HOST a live (authenticated) preview ──
-  const viewTokenM = rest.match(/^\/views\/([^/]+)\/preview-token$/)
-  if (viewTokenM && req.method === 'GET') {
-    const slug = decodeURIComponent(viewTokenM[1])
-    if (!/^[a-zA-Z0-9_-]+$/.test(slug)) return badReq('invalid view slug')
-    const target = instanceTarget(getAnatomy(id)?.overview.prodTarget)
-    const bundle = await getBundle(id)
-    return json(await mintPreviewToken(bundle?.overlay.origin ?? null, target, slug))
-  }
-
   // ── instance / deploy ──
   if (rest === '/instance') {
-    const target = instanceTarget(getAnatomy(id)?.overview.prodTarget)
+    const target = instanceTarget((await getAnatomy(id))?.overview.prodTarget)
     const bundle = await getBundle(id)
     return json(
       await instanceStatus(
@@ -468,7 +486,7 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
 
   // ── integrations ──
   if (rest === '/integrations') {
-    const detected = getAnatomy(id)?.detectedIntegrations ?? []
+    const detected = (await getAnatomy(id))?.detectedIntegrations ?? []
     if (req.method === 'GET') return json(readIntegrations(root, detected))
     if (body.action === 'upsert') return json(upsertIntegration(root, body))
     if (body.action === 'delete') return json({ ok: deleteIntegration(root, body.id) })
@@ -527,7 +545,7 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
     return badReq('unknown layout action')
   }
 
-  // ── canvas visibility (persisted hide-set + inherited-edge toggle) ──
+  // ── canvas visibility (persisted hide-set, inherited-edge toggle, interface nodes) ──
   if (rest === '/visibility') {
     if (req.method === 'GET') return json(readVisibility(root))
     if (body.action === 'set')

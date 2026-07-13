@@ -29,7 +29,9 @@ export function ViewRow({
 }) {
   const [open, setOpen] = useState(false)
   const drift = driftLabel(view.drift)
-  const meta = [view.kind, view.mount, view.auth].filter(Boolean).join(' · ')
+  const meta = [view.kind, view.mount, view.auth, view.unbound ? 'standalone' : 'targeted']
+    .filter(Boolean)
+    .join(' · ')
   // Make the row a comment/ask target (ref `view.<slug>`) so commenting on a view
   // anchors to THAT view — not the enclosing `section.schema` it used to fall back to.
   const anchorRef = `view.${view.slug}`
@@ -78,15 +80,7 @@ export function ViewRow({
           className="ml-1"
         />
       </div>
-      {open && (
-        <ViewModal
-          domainId={domainId}
-          slug={view.slug}
-          label={view.slug}
-          open={open}
-          onOpenChange={setOpen}
-        />
-      )}
+      {open && <ViewModal domainId={domainId} view={view} open={open} onOpenChange={setOpen} />}
     </>
   )
 }
@@ -154,7 +148,7 @@ export function ViewsPanel({ domainId, model }: { domainId: string; model: Views
         })}
 
         {model.unbound.length > 0 && (
-          <Group label="Unbound" hint="not tied to a class">
+          <Group label="Standalone" hint="opens without a target">
             <div className="flex flex-col gap-0.5">
               {model.unbound.map((v) => (
                 <ViewRow key={v.slug} domainId={domainId} view={v} />

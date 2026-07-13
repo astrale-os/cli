@@ -80,7 +80,7 @@ type ResolvedView = {
   name?: string
 }
 
-async function resolveSession(
+export async function resolveSession(
   spec: string | undefined,
   opts: ViewOpts,
 ): Promise<{ view: ResolvedView; target?: ResolvedTarget; candidates: ViewCandidate[] }> {
@@ -100,7 +100,10 @@ async function resolveSession(
       }
       target = { id: node.id, path }
     }
-    const anchor = parsed?.kind === 'view' ? parsed.path : target?.path
+    // A bare --view-url already identifies the frontend. Its target is only
+    // shell context, so asking View:resolve for installed candidates is both
+    // unnecessary and incorrect for classes without a class-owned self view.
+    const anchor = parsed ? (parsed.kind === 'view' ? parsed.path : target?.path) : undefined
     const candidates = anchor ? await resolveViewCandidates(ctx, anchor) : []
     return { target, candidates }
   })

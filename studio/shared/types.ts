@@ -198,16 +198,62 @@ export interface ViewInfo {
   description?: string
 }
 
-/** Resolved LIVE serving URL of a view on its target instance (ground truth via `astrale get`). */
-export interface ViewUrlResult {
-  status: 'installed' | 'not-installed' | 'unknown'
-  url?: string | null
+/** One node that can be supplied as a targeted view's `targetNodeId`. */
+export interface ViewTargetCandidate {
+  id: string
+  ref: string
+  className: string
+  classOrigin: string
+  label: string
+  description?: string
+  status?: string
 }
 
-/** A short-lived delegation token + context so the studio can act as the authenticated
- *  SHELL HOST for a live view preview (the parent hands this to the view iframe). */
-export type PreviewToken =
-  | { status: 'ok'; token: string; expiresAt: number; kernelUrl: string; functionId: string }
+/** Small durable snapshot retained when a previously selected node disappears. */
+export interface RememberedViewTarget {
+  id: string
+  className: string
+  classOrigin: string
+  label: string
+}
+
+export type ViewDevServerStatus =
+  | {
+      status: 'running'
+      url: string
+      port: number
+      startedAt: string
+      idleTimeoutMs: number
+    }
+  | { status: 'failed'; reason: string }
+  | { status: 'unavailable'; reason: string }
+
+export interface ViewTargetResult {
+  status: 'available' | 'unavailable'
+  items: ViewTargetCandidate[]
+  selected: ViewTargetCandidate | null
+  stale: RememberedViewTarget | null
+  truncated: boolean
+  reason?: string
+}
+
+/** Full launch context shown before Studio asks `astrale view` to open locally. */
+export interface ViewRuntime {
+  slug: string
+  instance: string | null
+  targetRequired: boolean
+  server: ViewDevServerStatus
+  targets: ViewTargetResult
+}
+
+export type ViewSessionResult =
+  | {
+      status: 'ready'
+      sessionId: string
+      pageUrl: string
+      viewUrl: string
+      target: ViewTargetCandidate | null
+    }
   | { status: 'unavailable'; reason: string }
 
 export interface ClientFeature {
@@ -761,8 +807,9 @@ export interface LayoutState {
   positions: Record<string, NodePosition>
 }
 
-/** Persisted per-domain canvas visibility — the manual hide-set + the inherited-edge
- *  category toggle. Sibling of LayoutState: layout owns node POSITIONS, this owns what's SHOWN. */
+/** Persisted per-domain canvas visibility — the manual hide-set, inherited-edge category toggle,
+ *  and materialized interfaces. Sibling of LayoutState: layout owns node POSITIONS, this owns
+ *  what's SHOWN. */
 export interface VisibilityState {
   /** refs hidden on the canvas: `class.X` | `edge.X` | `domain.<origin>` (interfaces use
    *  `materializedInterfaces`, not this set — see below) */

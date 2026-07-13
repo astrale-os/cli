@@ -43,6 +43,16 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > (`pnpm install` at the workspace root) for full-fidelity schema rendering;
 > otherwise the studio falls back to a static parse.
 
+### View previews
+
+Opening a SPA view lazily starts that domain's `client` `dev:hmr` script. Studio
+asks the OS for a free loopback port, so several domain frontends can run at once
+without inheriting or competing for their Vite config ports. The process is reused
+while a view stays open, stops after 10 minutes without a view heartbeat, and is
+always terminated with Studio. Set `DOMAIN_STUDIO_VIEW_IDLE_MS` to override the
+idle window (minimum 30 seconds). The frontend is local, but its `astrale view` shell session is minted
+for the active Studio instance, so graph data and permissions remain instance-real.
+
 ## What it does
 
 | Section | What it shows |
@@ -63,6 +73,7 @@ Vite directly via `STUDIO_VITE_PORT`.)
 ```
 shared/types.ts          the one contract (DSL IR mirror + studio overlay/state)
 server/
+  view-dev-server.ts     lazy per-domain Vite supervisor (ports · reuse · teardown)
   introspect/            extractor (Bun import → D.$.ir) · runtime driver · ts-morph
                          overlay (handler links, source spans, JSDoc) · anatomy · hash · diff · bundle
   state/                 store (write-allowlist) · comments · copy · baseline · git

@@ -70,9 +70,10 @@ import {
   type ExternalDomain,
   crossDomainEdges,
   externalDomains,
+  localEndpointTargets,
 } from './external'
-import { edgeTypes } from './floating-edge'
-import { type FileModule, fileModules, moduleOfClass, moduleOfInterface } from './modules'
+import { edgeTypes, separateParallelEdges } from './floating-edge'
+import { folderModules, moduleOfClass, moduleOfInterface } from './modules'
 import { NodeCommentPin } from './node-comment-pin'
 import { SchemaIcon } from './schema-icon'
 import {
@@ -82,7 +83,6 @@ import {
   classNodeVisible,
   classRef,
   domainVisible,
-  edgeRef,
   edgeVisible,
   isHidden,
   isMaterialized,
@@ -643,36 +643,59 @@ function buildCrossEdges(
   visible: Set<string>,
   ids: Set<string>,
   bundle: StudioSchemaBundle,
+  collapsed: Set<string>,
   hidden: Hidden,
+  showInheritedEdges: boolean,
+  materialized: Materialized,
 ): Edge[] {
+  const ir = bundle.ir
+  if (!ir) return []
   const out: Edge[] = []
+  const ifaceRendered = (name: string) =>
+    localInterfaceRendered(bundle, collapsed, materialized, name)
   for (const e of cross) {
     if (!visible.has(e.origin)) continue
-    // honor the same hide-set the internal edge loop does: the edge class itself (its tree
-    // `edge` row has a hide eye) and the local source class. Cross edges are never
-    // interface-induced, so there's no inherited-edge / inducing-interface rule here.
-    if (isHidden(edgeRef(e.edge), hidden)) continue
-    if (isHidden(classRef(e.from), hidden)) continue // hidden source ⇒ no edge (don't reroute to the module box)
     const target = `extmember.${e.origin}.${e.to}`
     if (!ids.has(target)) continue
-    const source = ids.has(`class.${e.from}`)
-      ? `class.${e.from}`
-      : `grp-${moduleOfClass(bundle, e.from)}`
-    if (!ids.has(source)) continue
-    const color = 'oklch(0.72 0.16 35)' // cross-domain (same accent as cross-module edges)
-    // same dot/fork cardinality treatment as internal edges, at both ends
-    const card = cardinalityMarkers(e.fromCard, e.toCard)
-    // id `edge-<name>` so it selects the real edge class in the detail pane, like any edge
-    out.push({
-      id: `edge-${e.edge}`,
-      source,
-      target,
-      type: 'floating',
-      data: { label: e.edge },
-      markerStart: card.markerStart,
-      markerEnd: card.markerEnd,
-      style: { stroke: color, strokeWidth: 2 },
-    })
+    for (const local of localEndpointTargets(ir, { types: [e.from] }, ifaceRendered)) {
+      const viaInterfaces = local.viaInterface ? [local.viaInterface] : []
+      if (
+        !edgeVisible(
+          {
+            edgeName: e.edge,
+            aClass: local.cls ?? '',
+            bClass: '',
+            viaInterfaces,
+          },
+          hidden,
+          showInheritedEdges,
+        )
+      )
+        continue
+      const source =
+        local.ifaceNode ??
+        (collapsed.has(moduleOfClass(bundle, local.cls!))
+          ? `grp-${moduleOfClass(bundle, local.cls!)}`
+          : `class.${local.cls}`)
+      if (!ids.has(source)) continue
+      const color = 'oklch(0.72 0.16 35)'
+      const card = cardinalityMarkers(e.fromCard, e.toCard)
+      const polymorphic = viaInterfaces.length > 0
+      out.push({
+        id: `edge-${e.edge}__${source}__${target}`,
+        source,
+        target,
+        type: 'floating',
+        data: { label: e.edge, edgeClass: e.edge, polymorphic },
+        markerStart: card.markerStart,
+        markerEnd: card.markerEnd,
+        style: {
+          stroke: color,
+          strokeWidth: 2,
+          ...(polymorphic ? { strokeDasharray: '7 4' } : {}),
+        },
+      })
+    }
   }
   return out
 }
@@ -728,16 +751,24 @@ function commentNodes(groups: { key: string; anchor: AnchorRef; comments: Commen
 
 // ── structure (nodes + edges, no positions — ELK assigns them) ──
 
-function singleLabel(fm: FileModule): string {
-  const segs = fm.path.split('/')
-  return segs.length === 2 && segs[0] === segs[1] ? segs[0] : fm.path
-}
-
 function schemaRefName(ref: unknown): string {
   return (
     String(ref ?? '')
       .split(/[.:/]/)
       .pop() ?? ''
+  )
+}
+
+function localInterfaceRendered(
+  bundle: StudioSchemaBundle,
+  collapsed: Set<string>,
+  materialized: Materialized,
+  name: string,
+): boolean {
+  return (
+    isMaterialized(name, materialized) &&
+    !!bundle.ir?.interfaces[name] &&
+    !collapsed.has(moduleOfInterface(bundle, name))
   )
 }
 
@@ -794,9 +825,7 @@ function buildStructure(
   // collapsed module has no children, so a materialized interface there reverts to its fan-out
   // (keeping materialize coherent with module-collapse, exactly like classes collapse to the box).
   const ifaceRendered = (i: string): boolean =>
-    isMaterialized(i, materialized) &&
-    !!ir.interfaces[i] &&
-    !collapsed.has(moduleOfInterface(bundle, i))
+    localInterfaceRendered(bundle, collapsed, materialized, i)
 
   // the authoritative set of interfaces actually drawn as nodes — computed up front (before any
   // node/edge is built) so EVERY pass agrees on it: a class's badge suppression, the reroute, the
@@ -804,7 +833,7 @@ function buildStructure(
   // emitted. Badge ⇄ node is thus mutually exclusive in every state.
   const renderedIfaces = new Set(Object.keys(ir.interfaces).filter(ifaceRendered))
 
-  const mods = fileModules(bundle).filter(
+  const mods = folderModules(bundle).filter(
     (m) => m.classes.length > 0 || m.interfaces.some((i) => renderedIfaces.has(i)),
   )
   const nodes: Node[] = []
@@ -820,7 +849,7 @@ function buildStructure(
       position: { x: 0, y: 0 },
       selectable: true,
       data: {
-        label: singleLabel(fm),
+        label: fm.label,
         path: fm.path,
         hue: fm.hue,
         // badge the interfaces NOT rendered as nodes. A materialized interface only loses its
@@ -883,41 +912,8 @@ function buildStructure(
     return collapsed.has(mp) ? `grp-${mp}` : `class.${cls}`
   }
 
-  // resolve an endpoint's declared types into concrete targets, expanding unions (several listed
-  // types) and interfaces. A MATERIALIZED+rendered interface collapses to ONE target — its node
-  // (`ifaceNode`); a non-materialized interface fans OUT to every implementing class (`cls`).
-  const targetsOf = (ep?: { types?: string[] }) => {
-    // viaInterface = the inducing interface name when an endpoint fans out through a (non-
-    // materialized) interface to its implementers; null for a directly-named class OR an
-    // interface node. Carrying the NAME is what gates the fan-out via showInheritedEdges.
-    const out: { cls: string | null; ifaceNode: string | null; viaInterface: string | null }[] = []
-    const seen = new Set<string>()
-    for (const t of ep?.types ?? []) {
-      if (ir.classes[t]?.type === 'node') {
-        if (!seen.has(t)) {
-          seen.add(t)
-          out.push({ cls: t, ifaceNode: null, viaInterface: null })
-        }
-      } else if (ir.interfaces[t]) {
-        if (ifaceRendered(t)) {
-          // COLLAPSE: one edge to the interface node instead of a fan-out to implementers
-          const key = `iface.${t}`
-          if (!seen.has(key)) {
-            seen.add(key)
-            out.push({ cls: null, ifaceNode: key, viaInterface: null })
-          }
-        } else {
-          for (const [cn, c] of Object.entries(ir.classes)) {
-            if (c.type === 'node' && (c.implements ?? []).includes(t) && !seen.has(cn)) {
-              seen.add(cn)
-              out.push({ cls: cn, ifaceNode: null, viaInterface: t })
-            }
-          }
-        }
-      }
-    }
-    return out
-  }
+  const targetsOf = (endpoint?: { types?: string[] }) =>
+    localEndpointTargets(ir, endpoint, ifaceRendered)
 
   // the module a target lives in — a concrete class's module, or a materialized interface's own
   // module (the iface node is its child) — used for the cross-module accent color.
@@ -1067,6 +1063,7 @@ export function SchemaGraph({
   const { data: catalog } = useCatalog()
   const { data: commentStore } = useComments(domainId)
   const { data: visibility } = useVisibility(domainId)
+  const visibilityHydrated = useRef(false)
 
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
@@ -1149,9 +1146,8 @@ export function SchemaGraph({
 
   // ── visibility of record = the persisted per-domain visibility cache ──
   // Same client-authoritative model as layout: the zustand store holds the LIVE slice,
-  // the query cache holds the PER-DOMAIN record. Hydrate the store on domain switch, and
-  // flush genuine user toggles back to the cache (immediately) + disk (debounced).
-  const visTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // the query cache holds the PER-DOMAIN record. Hydrate the store on domain switch, then
+  // write genuine user toggles to both the cache and disk.
   // hydrate the store from this domain's persisted slice (the live slice is per-domain, so
   // loading a domain overwrites it). IDEMPOTENT: only setVisibility when the loaded slice
   // actually differs from the live store. This is load-bearing — the persist effect below
@@ -1161,31 +1157,33 @@ export function SchemaGraph({
   // the cross-domain write the loop caused). Defaults paint the instant the domain changes,
   // before the GET resolves, so the canvas never shows the previous domain's slice.
   useEffect(() => {
-    const incoming = visibility ?? VISIBILITY_DEFAULT
+    if (!visibility) return
+    const incoming = visibility
     const live = useUI.getState()
-    // Materialization is an EPHEMERAL, in-memory view toggle (reset on switch via setDomain) — it
-    // is NEVER hydrated from disk. Re-applying a persisted materialized interface while switching
-    // INTO its domain re-adds an interface node during the mount/fitView and crashes ReactFlow
-    // (controlled-nodes setNodes-during-commit → React #185 → blank). Only hidden +
-    // showInheritedEdges persist; the "show as node" toggle is a live exploration aid.
     const next: VisibilityState = {
       hidden: incoming.hidden,
       showInheritedEdges: incoming.showInheritedEdges,
-      materializedInterfaces: live.materializedInterfaces,
+      materializedInterfaces: incoming.materializedInterfaces,
     }
     if (!visibilityEqual(next, live)) setVisibility(next)
+    visibilityHydrated.current = true
   }, [domainId, visibility, setVisibility])
-  // persist user toggles (hidden + showInheritedEdges only). materializedInterfaces is ephemeral
-  // (see hydrate) so it never round-trips to disk — written as {} here. A hydrate makes the store
-  // match the cache, so a value-equal flush is a pure echo — skip it.
+  // Persist only after this domain's saved slice has hydrated. Reading the live store here is
+  // intentional: hydration updates Zustand synchronously, so the immediately-following persist
+  // effect sees the restored value instead of overwriting it with its pre-hydration render.
   useEffect(() => {
-    const next: VisibilityState = { hidden, showInheritedEdges, materializedInterfaces: {} }
+    if (!visibilityHydrated.current) return
+    const live = useUI.getState()
+    const next: VisibilityState = {
+      hidden: live.hidden,
+      showInheritedEdges: live.showInheritedEdges,
+      materializedInterfaces: live.materializedInterfaces,
+    }
     const cached = qc.getQueryData<VisibilityState>(qk.visibility(domainId)) ?? VISIBILITY_DEFAULT
     if (visibilityEqual(next, cached)) return
     qc.setQueryData<VisibilityState>(qk.visibility(domainId), next)
-    clearTimeout(visTimer.current)
-    visTimer.current = setTimeout(() => api.setVisibility(domainId, next).catch(() => {}), 500)
-  }, [hidden, showInheritedEdges, domainId, qc])
+    api.setVisibility(domainId, next).catch(() => {})
+  }, [hidden, showInheritedEdges, materializedInterfaces, domainId, qc])
 
   // paint a set of positions onto the structure and append the external area.
   const compose = useCallback(
@@ -1196,18 +1194,33 @@ export function SchemaGraph({
       const all = [...internal, ...extNodes]
       const ids = new Set(all.map((n) => n.id))
       setNodes(all)
-      setEdges([
-        ...structure.edges,
-        ...buildCrossEdges(
-          crossE,
-          new Set(visibleDomains.map((d) => d.origin)),
-          ids,
-          bundle,
-          hidden,
-        ),
-      ])
+      setEdges(
+        separateParallelEdges([
+          ...structure.edges,
+          ...buildCrossEdges(
+            crossE,
+            new Set(visibleDomains.map((d) => d.origin)),
+            ids,
+            bundle,
+            new Set(collapsedModules),
+            hidden,
+            showInheritedEdges,
+            effectiveMaterialized,
+          ),
+        ]),
+      )
     },
-    [structure, allExternal, hidden, catalog, crossE, bundle],
+    [
+      structure,
+      allExternal,
+      hidden,
+      catalog,
+      crossE,
+      bundle,
+      collapsedModules,
+      showInheritedEdges,
+      effectiveMaterialized,
+    ],
   )
   const firstFit = useCallback(() => {
     if (fitted.current) return

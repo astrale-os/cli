@@ -29,12 +29,13 @@ import type {
   LayoutState,
   MergeResult,
   NodePosition,
-  PreviewToken,
   StaleReport,
   StudioCore,
   StudioSchemaBundle,
   ThreadEntry,
-  ViewUrlResult,
+  ViewDevServerStatus,
+  ViewRuntime,
+  ViewSessionResult,
   VisibilityState,
 } from '@shared/types'
 
@@ -72,10 +73,14 @@ export const api = {
   bundle: (id: string) => get<StudioSchemaBundle>(`${d(id)}/bundle`),
   core: (id: string) => get<StudioCore>(`${d(id)}/core`),
   anatomy: (id: string) => get<DomainAnatomy>(`${d(id)}/anatomy`),
-  viewUrl: (id: string, slug: string) =>
-    get<ViewUrlResult>(`${d(id)}/views/${encodeURIComponent(slug)}/url`),
-  previewToken: (id: string, slug: string) =>
-    get<PreviewToken>(`${d(id)}/views/${encodeURIComponent(slug)}/preview-token`),
+  viewRuntime: (id: string, slug: string) =>
+    get<ViewRuntime>(`${d(id)}/views/${encodeURIComponent(slug)}/runtime`),
+  restartViewServer: (id: string) =>
+    post<ViewDevServerStatus>(`${d(id)}/views/dev-server/restart`, {}),
+  launchView: (id: string, slug: string, request: { targetId?: string }) =>
+    post<ViewSessionResult>(`${d(id)}/views/${encodeURIComponent(slug)}/session`, request),
+  closeViewSession: (id: string, sessionId: string) =>
+    post<{ ok: true }>(`${d(id)}/views/sessions/close`, { sessionId }),
   updates: (id: string) => get<StaleReport>(`${d(id)}/updates`),
   applyUpdate: (id: string) => post<{ ok: boolean; output: string }>(`${d(id)}/updates/apply`, {}),
   instance: (id: string) => get<InstanceStatus>(`${d(id)}/instance`),
@@ -201,7 +206,7 @@ export const qk = {
   bundle: (id: string) => ['bundle', id] as const,
   core: (id: string) => ['core', id] as const,
   anatomy: (id: string) => ['anatomy', id] as const,
-  viewUrl: (id: string, slug: string) => ['view-url', id, slug] as const,
+  viewRuntime: (id: string, slug: string) => ['view-runtime', id, slug] as const,
   updates: (id: string) => ['updates', id] as const,
   instance: (id: string) => ['instance', id] as const,
   comments: (id: string) => ['comments', id] as const,
