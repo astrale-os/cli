@@ -186,6 +186,17 @@ await step.run('connect-provider', async () => {
 })
 ```
 
+## Do NOT put a constant slug on an n->m edge
+
+A slugged edge is unique by `(class, target, slug)`, stricter than its identity: a constant slug lets
+only the first source reach a target, every later link an `EDGE_CONFLICT`. Leave n->m relations
+unslugged.
+
+## Standalone domain functions can receive empty params
+
+Observed: a standalone function saw empty params where a class method saw its own. Its worker route
+reads params by content-type, so an unrecognised envelope validates down to `{}`.
+
 ## Do NOT assume a read inside mutate is atomic
 
 The `kernel.mutate` callback only builds a patch; its accumulated writes become atomic when the callback
@@ -231,6 +242,11 @@ the structured query syscall is available. Build only supported reads, or pass a
 when its extra shape is required. The AST form still runs through `lowerToGet`; it does not unlock
 filters, chained moves, visibility permissions, or other capabilities that `function.get` cannot
 express.
+
+## Query gathers are depth-1 and cannot chain
+
+Gathers are depth-1 and anchor on the query roots, so `.out(A).out(B)` is two parallel hops, not a
+two-step walk. Read the enclosing graph scope once and walk it in memory, never an N+1.
 
 ## Multi-root query continuation is single-root only
 
@@ -290,6 +306,11 @@ for await (const contact of contacts) await kernel.get(contact.path)
 // Right: the iterator yields hydrated nodes across all pages.
 for await (const contact of contacts) await indexContact(contact)
 ```
+
+## Do NOT read a page cursor by root path
+
+`function.get` keys its page cursors by the root's node id, not its path, so `next[root.raw]` is always
+`undefined`: the drain stops after page one and a partial read looks complete.
 
 ## Do NOT scatter error-message matching through handlers
 
