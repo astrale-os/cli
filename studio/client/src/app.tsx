@@ -14,7 +14,6 @@ import {
 import { useCallback, useEffect } from 'react'
 
 import { AgentActivityDrawer, AgentSubmitButton } from '@/components/agent-activity'
-import { AnchorButton } from '@/components/anchor'
 import { AskLayer } from '@/components/ask-popover'
 import { CommandPalette } from '@/components/command-palette'
 import { CommentDraftPopover } from '@/components/comment-draft-popover'

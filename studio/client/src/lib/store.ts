@@ -6,6 +6,8 @@ import { create } from 'zustand'
  *  `mode` decides which composer opens — a persistent comment or an ephemeral ask. */
 export interface CommentDraft {
   mode: 'comment' | 'ask'
+  /** Owning domain of the target. Falls back to the active domain for legacy surfaces. */
+  domainId?: string
   anchor: AnchorRef
   excerpt: string
   x: number

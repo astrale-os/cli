@@ -8,7 +8,14 @@ import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
 // returns child x/y RELATIVE to the parent — exactly what React Flow expects, so
 // the flat-parentId ⇄ nested-children transform round-trips cleanly.
 
-const elk = new ELK()
+type ElkLayoutEngine = InstanceType<typeof ELK>
+
+let elk: ElkLayoutEngine | undefined
+
+function layoutEngine(): ElkLayoutEngine {
+  elk ??= new ELK()
+  return elk
+}
 
 const OPTS: Record<string, string> = {
   'elk.algorithm': 'layered',
@@ -69,7 +76,7 @@ export async function elkLayout(nodes: Node[], edges: Edge[]): Promise<Node[]> {
 
   let res: ElkNode
   try {
-    res = await elk.layout(graph)
+    res = await layoutEngine().layout(graph)
   } catch {
     return nodes // fall back to whatever positions we had
   }

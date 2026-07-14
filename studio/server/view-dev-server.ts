@@ -83,14 +83,8 @@ export class ViewDevServerManager {
 
     const client = await resolveClientPackage(key, force)
     if (client.status === 'unavailable') return client
-    if (!client.devScript) {
-      return {
-        status: 'unavailable',
-        reason: 'The domain client does not define a dev:hmr script.',
-      }
-    }
 
-    // Concurrent cold requests share adapter discovery. Re-check after that
+    // Concurrent cold requests share package discovery. Re-check after that
     // await so only one of them gets to spawn the Vite process.
     const pendingAfterProbe = this.starts.get(key)
     if (pendingAfterProbe) return pendingAfterProbe
@@ -104,7 +98,7 @@ export class ViewDevServerManager {
     if (!force && failed && Date.now() < failed.retryAt) return failed.status
     this.failures.delete(key)
 
-    const started = this.start(key, client.dir).catch((error: unknown) => {
+    const started = this.start(key, client.packageDir).catch((error: unknown) => {
       const status: Extract<ViewDevServerStatus, { status: 'failed' }> = {
         status: 'failed',
         reason: error instanceof Error ? error.message : String(error),

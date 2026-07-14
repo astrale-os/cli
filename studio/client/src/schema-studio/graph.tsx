@@ -2,7 +2,6 @@ import type {
   AnchorRef,
   Comment,
   DomainCatalogEntry,
-  IrInterface,
   LayoutState,
   NodePosition,
   StudioSchemaBundle,
@@ -17,7 +16,6 @@ import {
   type Edge,
   type EdgeChange,
   Handle,
-  MarkerType,
   MiniMap,
   type Node,
   type NodeChange,
@@ -73,47 +71,27 @@ import {
   localEndpointTargets,
 } from './external'
 import { edgeTypes, separateParallelEdges } from './floating-edge'
-import { folderModules, moduleOfClass, moduleOfInterface } from './modules'
+import { type Geometry, applyGeometry, geometryOf, packPendingNodes, sizeOfNode } from './geometry'
+import { useLayoutCommitter } from './layout-commit'
+import { moduleOfClass } from './modules'
 import { NodeCommentPin } from './node-comment-pin'
+import {
+  type ClassNodeData,
+  type GroupNodeData,
+  type InterfaceNodeData,
+  type SchemaCoreRole,
+  localInterfaceRendered,
+  projectDomainCanvas,
+} from './projection'
 import { SchemaIcon } from './schema-icon'
 import {
   type Hidden,
   type Materialized,
   VISIBILITY_DEFAULT,
-  classNodeVisible,
-  classRef,
   domainVisible,
   edgeVisible,
-  isHidden,
-  isMaterialized,
   visibilityEqual,
-  visibleInterfaceBadges,
 } from './visibility'
-
-type SchemaCoreRole = 'container' | 'identity' | 'function'
-
-interface ClassNodeData extends Record<string, unknown> {
-  name: string
-  props: number
-  methods: number
-  interfaces: string[]
-  coreRole?: SchemaCoreRole | null
-  hue: number
-  icon?: string
-}
-interface InterfaceNodeData extends Record<string, unknown> {
-  name: string
-  props: number
-  methods: number
-}
-interface GroupNodeData extends Record<string, unknown> {
-  label: string
-  path: string
-  hue: number
-  interfaces: string[]
-  collapsed: boolean
-  classCount: number
-}
 interface CanvasCommentNodeData extends Record<string, unknown> {
   comments: Comment[]
   anchor: AnchorRef
@@ -122,10 +100,11 @@ interface CanvasCommentNodeData extends Record<string, unknown> {
 
 // ── custom nodes ──
 
-function ClassNode({ id, data }: NodeProps) {
+function ClassNode({ data }: NodeProps) {
   const d = data as ClassNodeData
   const selectClass = useUI((s) => s.selectClass)
-  const selected = useUI((s) => s.selectedClass === `class.${d.name}`)
+  const setDomain = useUI((s) => s.setDomain)
+  const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `class.${d.name}`)
   // semantic zoom (level-of-detail): collapse to a title chip when zoomed out
   const zoom = useStore((s) => s.transform[2])
   const compact = zoom < 0.5
@@ -140,6 +119,7 @@ function ClassNode({ id, data }: NodeProps) {
     : undefined
   return (
     <div
+      data-domain-id={d.domainId}
       data-core-role={d.coreRole ?? undefined}
       className={cn(
         'relative rounded-lg border bg-card shadow-sm w-[160px] transition-shadow',
@@ -154,6 +134,7 @@ function ClassNode({ id, data }: NodeProps) {
         </span>
       )}
       <NodeCommentPin
+        domainId={d.domainId}
         anchorRef={`class.${d.name}`}
         kind="schema"
         excerpt={d.name}
@@ -189,6 +170,7 @@ function ClassNode({ id, data }: NodeProps) {
                     title={`interface ${i}`}
                     onClick={(e) => {
                       e.stopPropagation()
+                      if (useUI.getState().domainId !== d.domainId) setDomain(d.domainId)
                       selectClass(`interface.${i}`)
                     }}
                     className="inline-flex items-center gap-0.5 rounded bg-fuchsia-500/15 text-fuchsia-300 px-1 py-0.5 text-[9px] font-mono hover:bg-fuchsia-500/25"
@@ -212,11 +194,14 @@ function ClassNode({ id, data }: NodeProps) {
  *  materialized interfaces) and its endpoint fan-out collapses to a single edge to this node. */
 function InterfaceNode({ data }: NodeProps) {
   const d = data as InterfaceNodeData
-  const selected = useUI((s) => s.selectedClass === `interface.${d.name}`)
+  const selected = useUI(
+    (s) => s.domainId === d.domainId && s.selectedClass === `interface.${d.name}`,
+  )
   const zoom = useStore((s) => s.transform[2])
   const compact = zoom < 0.5
   return (
     <div
+      data-domain-id={d.domainId}
       className={cn(
         // dashed border + fuchsia wash (a hue-independent cue) so the box reads as an INTERFACE,
         // not a class, at a glance — a class from a hue-320 module would otherwise be near-identical.
@@ -229,7 +214,12 @@ function InterfaceNode({ data }: NodeProps) {
         borderLeftStyle: 'solid',
       }}
     >
-      <NodeCommentPin anchorRef={`interface.${d.name}`} kind="schema" excerpt={d.name} />
+      <NodeCommentPin
+        domainId={d.domainId}
+        anchorRef={`interface.${d.name}`}
+        kind="schema"
+        excerpt={d.name}
+      />
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div className="px-2.5 py-1.5">
         <div className="flex items-center gap-2">
@@ -249,13 +239,15 @@ function InterfaceNode({ data }: NodeProps) {
   )
 }
 
-function GroupNode({ data }: NodeProps) {
+export function GroupNode({ data }: NodeProps) {
   const d = data as GroupNodeData
   const selectClass = useUI((s) => s.selectClass)
+  const setDomain = useUI((s) => s.setDomain)
   const toggleModule = useUI((s) => s.toggleModule)
-  const selected = useUI((s) => s.selectedClass === `module.${d.path}`)
+  const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `module.${d.path}`)
   return (
     <div
+      data-domain-id={d.domainId}
       className={cn(
         'relative w-full h-full rounded-xl border transition-shadow',
         selected ? 'ring-2 ring-primary' : d.collapsed && 'hover:shadow-md cursor-pointer',
@@ -265,7 +257,12 @@ function GroupNode({ data }: NodeProps) {
         background: `oklch(0.5 0.12 ${d.hue} / ${d.collapsed ? 0.12 : 0.07})`,
       }}
     >
-      <NodeCommentPin anchorRef={`module.${d.path}`} kind="section" excerpt={d.label} />
+      <NodeCommentPin
+        domainId={d.domainId}
+        anchorRef={`module.${d.path}`}
+        kind="section"
+        excerpt={d.label}
+      />
       {/* hidden handles so React Flow can anchor (rerouted) edges to a collapsed module box */}
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
@@ -278,7 +275,11 @@ function GroupNode({ data }: NodeProps) {
           title={d.collapsed ? 'Show classes' : 'Hide classes'}
           onClick={(e) => {
             e.stopPropagation()
-            toggleModule(d.path)
+            if (d.onToggleModule) d.onToggleModule(d.domainId, d.path)
+            else {
+              if (useUI.getState().domainId !== d.domainId) setDomain(d.domainId)
+              toggleModule(d.path)
+            }
           }}
           className="rounded p-0.5 hover:bg-white/10 shrink-0"
         >
@@ -298,6 +299,7 @@ function GroupNode({ data }: NodeProps) {
               type="button"
               onClick={(e) => {
                 e.stopPropagation()
+                if (useUI.getState().domainId !== d.domainId) setDomain(d.domainId)
                 selectClass(`interface.${i}`)
               }}
               className="inline-flex items-center gap-0.5 rounded bg-fuchsia-500/15 text-fuchsia-300 px-1 py-0.5 text-[9px] hover:bg-fuchsia-500/25 shrink-0"
@@ -391,7 +393,7 @@ function CanvasCommentNode({ data }: NodeProps) {
   )
 }
 
-const nodeTypes = {
+export const schemaNodeTypes = {
   classNode: ClassNode,
   interfaceNode: InterfaceNode,
   group: GroupNode,
@@ -563,80 +565,7 @@ function deriveRegion(nodes: Node[], label: string): Node | null {
   }
 }
 
-// ── geometry: positions/sizes keyed by node id, owned by the user (persisted) ──
-// `applyGeom` paints a stored position onto a structural node; `toGeom` snapshots
-// laid-out nodes; `packPending` places ONLY new nodes without moving the rest.
-type Geom = Record<string, NodePosition>
-
-const NEW_H = 88
-const NEW_GAP = 24
-
-// Stable empty materialize-set: used to render the canvas WITHOUT any interface nodes until the
-// first fit completes (see `materializeReady`), matching the timing of a fresh page load.
 const EMPTY_MATERIALIZED: Record<string, true> = {}
-
-// only expanded module containers persist a size. Prefer the LIVE measured size
-// (ReactFlow grows it via `expandParent` when a class is dragged to the edge) so we
-// capture the grown box; fall back to the structural style for not-yet-mounted nodes.
-function sizeOf(n: Node): { w?: number; h?: number } {
-  if (n.type !== 'group') return {}
-  const w =
-    (typeof n.measured?.width === 'number' ? n.measured.width : undefined) ??
-    (typeof n.style?.width === 'number' ? n.style.width : undefined)
-  const h =
-    (typeof n.measured?.height === 'number' ? n.measured.height : undefined) ??
-    (typeof n.style?.height === 'number' ? n.style.height : undefined)
-  return w != null && h != null ? { w: Math.round(w), h: Math.round(h) } : {}
-}
-
-function applyGeom(n: Node, g: Geom): Node {
-  const p = g[n.id]
-  if (!p) return n
-  const next: Node = { ...n, position: { x: p.x, y: p.y } }
-  if (n.type === 'group' && p.w != null && p.h != null)
-    next.style = { ...n.style, width: p.w, height: p.h }
-  return next
-}
-
-function toGeom(nodes: Node[]): Geom {
-  const g: Geom = {}
-  for (const n of nodes)
-    g[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y), ...sizeOf(n) }
-  return g
-}
-
-// place the newly-appeared nodes (agent added a class / module) without touching
-// anything already placed: new roots go in a column to the right of the bounding
-// box; new children stack inside their module box. Returns geometry for new ids only.
-function packPending(placed: { n: Node; g: Geom[string] }[], pending: Node[]): Geom {
-  let maxX = 0
-  let minY = Number.POSITIVE_INFINITY
-  const childY = new Map<string, number>() // parentId → next relative y for a new child
-  for (const { n, g } of placed) {
-    if (n.parentId) {
-      const below = g.y + ((n.style?.height as number) ?? NEW_H) + NEW_GAP
-      childY.set(n.parentId, Math.max(childY.get(n.parentId) ?? 34, below))
-    } else {
-      maxX = Math.max(maxX, g.x + ((n.style?.width as number) ?? 200))
-      minY = Math.min(minY, g.y)
-    }
-  }
-  if (!Number.isFinite(minY)) minY = 0
-  const trayX = maxX + 96
-  let trayY = minY
-  const out: Geom = {}
-  for (const n of pending) {
-    if (n.parentId) {
-      const y = childY.get(n.parentId) ?? 34
-      out[n.id] = { x: 14, y }
-      childY.set(n.parentId, y + NEW_H + NEW_GAP)
-    } else {
-      out[n.id] = { x: trayX, y: trayY, ...sizeOf(n) }
-      trayY += ((n.style?.height as number) ?? 120) + NEW_GAP
-    }
-  }
-  return out
-}
 
 function buildCrossEdges(
   cross: CrossDomainEdge[],
@@ -749,273 +678,6 @@ function commentNodes(groups: { key: string; anchor: AnchorRef; comments: Commen
   })
 }
 
-// ── structure (nodes + edges, no positions — ELK assigns them) ──
-
-function schemaRefName(ref: unknown): string {
-  return (
-    String(ref ?? '')
-      .split(/[.:/]/)
-      .pop() ?? ''
-  )
-}
-
-function localInterfaceRendered(
-  bundle: StudioSchemaBundle,
-  collapsed: Set<string>,
-  materialized: Materialized,
-  name: string,
-): boolean {
-  return (
-    isMaterialized(name, materialized) &&
-    !!bundle.ir?.interfaces[name] &&
-    !collapsed.has(moduleOfInterface(bundle, name))
-  )
-}
-
-function schemaRefList(refs: unknown): string[] {
-  return Array.isArray(refs) ? refs.map(String) : refs ? [String(refs)] : []
-}
-
-function schemaInterfaceMap(bundle: StudioSchemaBundle): Record<string, IrInterface> {
-  const out: Record<string, IrInterface> = {}
-  for (const source of [bundle.importedInterfaces, bundle.ir?.interfaces]) {
-    for (const [name, def] of Object.entries(source ?? {})) out[schemaRefName(name)] = def
-  }
-  return out
-}
-
-function schemaCoreRole(refs: unknown, bundle: StudioSchemaBundle): SchemaCoreRole | null {
-  const interfaces = schemaInterfaceMap(bundle)
-  const seen = new Set<string>()
-  const stack = schemaRefList(refs).map(schemaRefName)
-  while (stack.length) {
-    const name = stack.pop()
-    if (!name || seen.has(name)) continue
-    seen.add(name)
-    const def = interfaces[name] as
-      | (IrInterface & { implements?: string[]; interfaces?: string[] })
-      | undefined
-    for (const parent of [
-      ...schemaRefList(def?.extends),
-      ...schemaRefList(def?.implements),
-      ...schemaRefList(def?.interfaces),
-    ])
-      stack.push(schemaRefName(parent))
-  }
-  if (seen.has('Function')) return 'function'
-  if (seen.has('Identity')) return 'identity'
-  if (seen.has('Container')) return 'container'
-  return null
-}
-
-/** Fuchsia accent for materialized-interface nodes + their `implements`/`extends` edges. */
-const IFACE_COLOR = 'oklch(0.72 0.18 330)'
-
-function buildStructure(
-  bundle: StudioSchemaBundle,
-  collapsed: Set<string>,
-  hidden: Hidden,
-  showInheritedEdges: boolean,
-  materialized: Materialized,
-): { nodes: Node[]; edges: Edge[] } {
-  const ir = bundle.ir
-  if (!ir) return { nodes: [], edges: [] }
-
-  // a LOCAL interface renders as a node only when it's materialized AND its module is EXPANDED — a
-  // collapsed module has no children, so a materialized interface there reverts to its fan-out
-  // (keeping materialize coherent with module-collapse, exactly like classes collapse to the box).
-  const ifaceRendered = (i: string): boolean =>
-    localInterfaceRendered(bundle, collapsed, materialized, i)
-
-  // the authoritative set of interfaces actually drawn as nodes — computed up front (before any
-  // node/edge is built) so EVERY pass agrees on it: a class's badge suppression, the reroute, the
-  // implements/extends edges, and the module-box badges never reference an `iface.X` that wasn't
-  // emitted. Badge ⇄ node is thus mutually exclusive in every state.
-  const renderedIfaces = new Set(Object.keys(ir.interfaces).filter(ifaceRendered))
-
-  const mods = folderModules(bundle).filter(
-    (m) => m.classes.length > 0 || m.interfaces.some((i) => renderedIfaces.has(i)),
-  )
-  const nodes: Node[] = []
-
-  for (const fm of mods) {
-    const gid = `grp-${fm.path}`
-    const isCollapsed = collapsed.has(fm.path)
-    nodes.push({
-      // a collapsed module is a LEAF node ('moduleNode') so edges attach to it like a
-      // class; an expanded module is a 'group' container holding its class children.
-      id: gid,
-      type: isCollapsed ? 'moduleNode' : 'group',
-      position: { x: 0, y: 0 },
-      selectable: true,
-      data: {
-        label: fm.label,
-        path: fm.path,
-        hue: fm.hue,
-        // badge the interfaces NOT rendered as nodes. A materialized interface only loses its
-        // badge once its node actually shows (module expanded); a collapsed module keeps the
-        // badge since the node isn't drawn — so the box never silently stops advertising it.
-        interfaces: fm.interfaces.filter((i) => !renderedIfaces.has(i)),
-        collapsed: isCollapsed,
-        classCount: fm.classes.length,
-      } satisfies GroupNodeData,
-      style: isCollapsed ? { width: 200, height: 44 } : { width: 200, height: 120 },
-    })
-    if (isCollapsed) continue
-    for (const cn of fm.classes) {
-      if (!classNodeVisible(cn, hidden)) continue
-      nodes.push({
-        id: `class.${cn}`,
-        type: 'classNode',
-        parentId: gid,
-        // a class stays inside its module box; dragging it to the edge GROWS the box
-        // (expandParent) rather than letting it escape. The grown size is snapshotted on
-        // drag stop (onNodeDragStop) so it survives recompose/remount — no rollback.
-        extent: 'parent',
-        expandParent: true,
-        position: { x: 0, y: 0 },
-        data: {
-          name: cn,
-          props: Object.keys(ir.classes[cn]?.properties ?? {}).length,
-          methods: Object.keys(ir.classes[cn]?.methods ?? {}).length,
-          interfaces: visibleInterfaceBadges(bundle, cn, renderedIfaces),
-          coreRole: schemaCoreRole(ir.classes[cn]?.implements ?? [], bundle),
-          hue: fm.hue,
-          icon: ir.classes[cn]?.icon,
-        } satisfies ClassNodeData,
-      })
-    }
-    // materialized interfaces are children of their module box, treated identically to classes
-    // (extent:'parent' + expandParent) so ELK / drag / box-growth behave the same.
-    for (const ifn of fm.interfaces) {
-      if (!renderedIfaces.has(ifn)) continue
-      const def = ir.interfaces[ifn]! // LOCAL interfaces only (guaranteed by renderedIfaces)
-      nodes.push({
-        id: `iface.${ifn}`,
-        type: 'interfaceNode',
-        parentId: gid,
-        extent: 'parent',
-        expandParent: true,
-        position: { x: 0, y: 0 },
-        data: {
-          name: ifn,
-          props: Object.keys(def.properties ?? {}).length,
-          methods: Object.keys(def.methods ?? {}).length,
-        } satisfies InterfaceNodeData,
-      })
-    }
-  }
-
-  // a class is represented by its own node, or — when its module is collapsed — by the module box
-  const rep = (cls: string) => {
-    const mp = moduleOfClass(bundle, cls)
-    return collapsed.has(mp) ? `grp-${mp}` : `class.${cls}`
-  }
-
-  const targetsOf = (endpoint?: { types?: string[] }) =>
-    localEndpointTargets(ir, endpoint, ifaceRendered)
-
-  // the module a target lives in — a concrete class's module, or a materialized interface's own
-  // module (the iface node is its child) — used for the cross-module accent color.
-  const targetModule = (t: { cls: string | null; ifaceNode: string | null }): string =>
-    t.cls != null
-      ? moduleOfClass(bundle, t.cls)
-      : moduleOfInterface(bundle, t.ifaceNode!.slice('iface.'.length))
-
-  const edges: Edge[] = []
-  for (const e of Object.values(ir.classes)) {
-    if (e.type !== 'edge') continue
-    const aTargets = targetsOf(e.endpoints?.[0])
-    const bTargets = targetsOf(e.endpoints?.[1])
-    // cardinality markers (dot = one, fork = many) at BOTH ends — every typed edge shows
-    // its multiplicity (undefined ⇒ many), so many-to-many reads as fork↔fork.
-    // Cardinality is a per-role property, so it's read once here, not per resolved pair.
-    const card = cardinalityMarkers(e.endpoints?.[0]?.cardinality, e.endpoints?.[1]?.cardinality)
-    for (const a of aTargets) {
-      for (const b of bTargets) {
-        // every interface an endpoint fanned out through — gates the fan-out via showInheritedEdges
-        const viaInterfaces = [a.viaInterface, b.viaInterface].filter(
-          (i): i is string => i !== null,
-        )
-        // a class endpoint resolves through rep() (own node / collapsed box); an interface-node
-        // endpoint is its own id. Pass '' as the class to edgeVisible for an interface endpoint —
-        // never in the hide-set, so its class-hide checks are a no-op for it.
-        const sa = a.ifaceNode ?? rep(a.cls!)
-        const sb = b.ifaceNode ?? rep(b.cls!)
-        if (
-          !edgeVisible(
-            { edgeName: e.name, aClass: a.cls ?? '', bClass: b.cls ?? '', viaInterfaces },
-            hidden,
-            showInheritedEdges,
-          )
-        )
-          continue
-        if (sa === sb) continue // self-link, or both ends collapsed into the same module box
-        const cross = targetModule(a) !== targetModule(b)
-        const poly = viaInterfaces.length > 0 // resolved via a non-materialized interface ⇒ dashed
-        const color = cross ? 'oklch(0.72 0.16 35)' : 'oklch(0.62 0.07 264)'
-        edges.push({
-          // id keyed by the resolved endpoint ids (already unique + stable) so a rerouted
-          // interface-node edge and a fan-out edge can never collide.
-          id: `edge-${e.name}__${sa}__${sb}`,
-          source: sa,
-          target: sb,
-          type: 'floating',
-          data: { label: e.name, edgeClass: e.name, polymorphic: poly },
-          markerStart: card.markerStart,
-          markerEnd: card.markerEnd,
-          style: {
-            stroke: color,
-            strokeWidth: cross ? 2.4 : 1.8,
-            ...(poly ? { strokeDasharray: '7 4' } : {}),
-          },
-        })
-      }
-    }
-  }
-
-  // implements: each implementer → its materialized interface node (a single fuchsia dashed edge,
-  // replacing the suppressed badge). Skipped when the implementer or the interface isn't rendered.
-  for (const [cn, c] of Object.entries(ir.classes)) {
-    if (c.type !== 'node' || isHidden(classRef(cn), hidden)) continue
-    for (const i of c.implements ?? []) {
-      if (!ifaceRendered(i)) continue
-      const src = rep(cn)
-      const tgt = `iface.${i}`
-      if (src === tgt) continue
-      edges.push({
-        id: `implements-${cn}__${i}`,
-        source: src,
-        target: tgt,
-        type: 'floating',
-        // no text label: N implementers converge on the hub, and N stamped "implements" labels
-        // would re-create the noise the collapse removes. The fuchsia dash + arrow into the
-        // Shapes-iconed interface node already read as "implements".
-        data: { kind: 'implements' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: IFACE_COLOR, width: 16, height: 16 },
-        style: { stroke: IFACE_COLOR, strokeWidth: 1.6, strokeDasharray: '7 4' },
-      })
-    }
-  }
-  // extends: materialized interface → materialized interface (both endpoints must be rendered).
-  for (const [iname, def] of Object.entries(ir.interfaces)) {
-    if (!ifaceRendered(iname)) continue
-    for (const parent of def.extends ?? []) {
-      if (!ifaceRendered(parent)) continue
-      edges.push({
-        id: `extends-${iname}__${parent}`,
-        source: `iface.${iname}`,
-        target: `iface.${parent}`,
-        type: 'floating',
-        data: { label: 'extends', kind: 'extends' },
-        markerEnd: { type: MarkerType.ArrowClosed, color: IFACE_COLOR, width: 16, height: 16 },
-        style: { stroke: IFACE_COLOR, strokeWidth: 1.6, strokeDasharray: '2 4' },
-      })
-    }
-  }
-  return { nodes, edges }
-}
-
 function neighborSet(activeId: string, edges: Edge[]) {
   const nodeIds = new Set<string>([activeId])
   const edgeIds = new Set<string>()
@@ -1081,7 +743,7 @@ export function SchemaGraph({
 
   const structure = useMemo(
     () =>
-      buildStructure(
+      projectDomainCanvas(
         bundle,
         new Set(collapsedModules),
         hidden,
@@ -1119,30 +781,13 @@ export function SchemaGraph({
   // never lost across remounts, and data refetches (file edits) never relayout.
   const qc = useQueryClient()
   const fitted = useRef(false)
-
-  // commit positions: update the cache immediately, flush to disk debounced.
-  const dirty = useRef<Geom>({})
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const flush = useCallback(() => {
-    clearTimeout(timer.current)
-    const upd = dirty.current
-    dirty.current = {}
-    if (Object.keys(upd).length) api.setLayout(domainId, upd).catch(() => {})
-  }, [domainId])
+  const { commitLayout } = useLayoutCommitter()
   const commit = useCallback(
-    (updates: Geom) => {
-      qc.setQueryData<LayoutState>(qk.layout(domainId), (prev) => ({
-        schemaHash: prev?.schemaHash,
-        positions: { ...(prev?.positions ?? {}), ...updates },
-      }))
-      Object.assign(dirty.current, updates)
-      clearTimeout(timer.current)
-      timer.current = setTimeout(flush, 500)
+    (updates: Geometry) => {
+      commitLayout(domainId, updates)
     },
-    [qc, domainId, flush],
+    [commitLayout, domainId],
   )
-  // don't lose a just-dragged position when the canvas unmounts (switching to core view)
-  useEffect(() => () => flush(), [flush])
 
   // ── visibility of record = the persisted per-domain visibility cache ──
   // Same client-authoritative model as layout: the zustand store holds the LIVE slice,
@@ -1187,8 +832,8 @@ export function SchemaGraph({
 
   // paint a set of positions onto the structure and append the external area.
   const compose = useCallback(
-    (g: Geom) => {
-      const internal = structure.nodes.map((n) => applyGeom(n, g))
+    (g: Geometry) => {
+      const internal = structure.nodes.map((n) => applyGeometry(n, g))
       const visibleDomains = allExternal.filter((d) => domainVisible(d.origin, hidden))
       const { extNodes } = buildExternalLayout(internal, visibleDomains, catalog, g)
       const all = [...internal, ...extNodes]
@@ -1238,7 +883,7 @@ export function SchemaGraph({
   // collapse, new domains) + a one-shot "layout loaded" flag — never off a position change.
   const savedRef = useRef(saved)
   savedRef.current = saved
-  const layoutReady = saved != null
+  const layoutReady = saved !== undefined
 
   // reconcile structure → layout: pure repaint when every node is known; ELK only when the
   // canvas is cold; cheap packing for nodes the agent newly added. NEVER runs on a drag.
@@ -1257,7 +902,7 @@ export function SchemaGraph({
       let cancelled = false
       elkLayout(structure.nodes, structure.edges).then((laid) => {
         if (cancelled) return
-        const g = toGeom(laid)
+        const g = geometryOf(laid)
         compose(g)
         commit(g)
         firstFit()
@@ -1267,8 +912,8 @@ export function SchemaGraph({
       }
     }
     // incremental: place only the new nodes, leave everything else exactly put
-    const added = packPending(
-      placed.map((n) => ({ n, g: cur[n.id] })),
+    const added = packPendingNodes(
+      placed.map((node) => ({ node, position: cur[node.id] })),
       pending,
     )
     compose({ ...cur, ...added })
@@ -1300,11 +945,11 @@ export function SchemaGraph({
   // moves and siblings never shift — only the box SIZE needs capturing.
   const onNodeDragStop = useCallback(
     (_: unknown, node: Node) => {
-      const updates: Geom = {
+      const updates: Geometry = {
         [node.id]: {
           x: Math.round(node.position.x),
           y: Math.round(node.position.y),
-          ...sizeOf(node),
+          ...sizeOfNode(node),
         },
       }
       if (node.parentId) {
@@ -1339,7 +984,7 @@ export function SchemaGraph({
   const autoArrange = useCallback(async () => {
     await api.resetLayout(domainId).catch(() => {})
     const laid = await elkLayout(structure.nodes, structure.edges)
-    const g = toGeom(laid)
+    const g = geometryOf(laid)
     compose(g)
     qc.setQueryData<LayoutState>(qk.layout(domainId), { positions: g })
     api.setLayout(domainId, g).catch(() => {})
@@ -1406,7 +1051,7 @@ export function SchemaGraph({
     <ReactFlow
       nodes={displayNodes}
       edges={displayEdges}
-      nodeTypes={nodeTypes}
+      nodeTypes={schemaNodeTypes}
       edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}

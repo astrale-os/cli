@@ -15,28 +15,31 @@ import { cn } from '@/lib/utils'
  * comments through the same global `openAnchorRef` single-open machinery.
  */
 export function NodeCommentPin({
+  domainId,
   anchorRef,
   kind,
   excerpt,
   className,
 }: {
+  domainId?: string
   anchorRef: string
   kind: AnchorKind
   excerpt: string
   className?: string
 }) {
-  const { threads, status, orphaned } = useAnchorThreads(anchorRef)
+  const { threads, status, orphaned } = useAnchorThreads(anchorRef, domainId)
   const myId = useId()
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
-  const open = openRef === anchorRef && (openId === null || openId === myId)
+  const openKey = domainId ? `${domainId}::${anchorRef}` : anchorRef
+  const open = openRef === openKey && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
   if (threads.length === 0) return null
   return (
     <Popover
       modal={false}
       open={open}
-      onOpenChange={(o) => setOpenAnchor(o ? anchorRef : null, o ? myId : null)}
+      onOpenChange={(o) => setOpenAnchor(o ? openKey : null, o ? myId : null)}
     >
       <PopoverAnchor asChild>
         <button
@@ -44,7 +47,7 @@ export function NodeCommentPin({
           title="View comments"
           onClick={(e) => {
             e.stopPropagation()
-            setOpenAnchor(open ? null : anchorRef, myId)
+            setOpenAnchor(open ? null : openKey, myId)
           }}
           className={cn(
             'nodrag nopan absolute right-1 top-1 z-30 flex h-[18px] min-w-[18px] items-center justify-center gap-0.5 rounded-full px-1 text-[10px] font-bold shadow-md ring-2 ring-card hover:brightness-110',
@@ -62,6 +65,7 @@ export function NodeCommentPin({
       </PopoverAnchor>
       <PopoverContent side="top" align="end" className="w-80">
         <ThreadPopover
+          domainId={domainId}
           anchor={{ ref: anchorRef, kind }}
           excerpt={excerpt}
           threads={threads}

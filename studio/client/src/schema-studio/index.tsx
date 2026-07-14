@@ -1,5 +1,5 @@
 import { ReactFlowProvider } from '@xyflow/react'
-import { AlertTriangle, X } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ScrollArea } from '@/components/ui/misc'
@@ -12,8 +12,11 @@ import { DomainsPanel } from './domains-panel'
 import { SchemaGraph } from './graph'
 import { IntegrationsPanel } from './integrations-panel'
 import { buildModuleTree } from './modules'
+import { PanelShell } from './panel-shell'
 import { ModuleTree } from './tree'
 import { ViewsPanel } from './views-panel'
+import { WorkspaceSchemaSection } from './workspace/section'
+import { useSchemaWorkspace } from './workspace/store'
 
 /** Modules sidebar width bounds (px). Default mirrors the old fixed `w-60` (15rem). */
 const MODULES_MIN = 180
@@ -21,6 +24,15 @@ const MODULES_MAX = 560
 const MODULES_DEFAULT = 240
 
 export function SchemaSection({ domainId }: { domainId: string }) {
+  const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
+  const workspaceIds = selectedDomainIds.includes(domainId)
+    ? selectedDomainIds
+    : [domainId, ...selectedDomainIds]
+  if (workspaceIds.length > 1) return <WorkspaceSchemaSection domainIds={workspaceIds} />
+  return <SingleDomainSchemaSection domainId={domainId} />
+}
+
+function SingleDomainSchemaSection({ domainId }: { domainId: string }) {
   const { data: bundle, isLoading } = useBundle(domainId)
   const { data: layout } = useLayout(domainId)
   const { data: core } = useCore(domainId)
@@ -195,24 +207,6 @@ export function SchemaSection({ domainId }: { domainId: string }) {
           ) : null}
         </div>
       )}
-    </div>
-  )
-}
-
-/** The right-side panel chrome: fixed width, left border, a top-right close button. */
-function PanelShell({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="w-[420px] border-l bg-card/30 shrink-0 min-h-0 relative">
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close panel"
-        title="Close (Esc)"
-        className="absolute right-3.5 top-3.5 z-20 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <X className="h-4 w-4" />
-      </button>
-      {children}
     </div>
   )
 }

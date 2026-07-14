@@ -40,32 +40,65 @@ function resolveDraft(
   y: number,
 ): CommentDraft | null {
   if (!target) return null
+  const scopedDomainId = target.closest<HTMLElement>('[data-domain-id]')?.dataset.domainId
 
   // 1) an element explicitly marked commentable (detail props/methods, section items…)
   const tagged = target.closest<HTMLElement>('[data-anchor-ref]')
   if (tagged?.dataset.anchorRef) {
     const ref = tagged.dataset.anchorRef
     const excerpt = (tagged.dataset.anchorExcerpt || tagged.textContent || ref).trim().slice(0, 80)
-    return { mode, anchor: { ref, kind: anchorKindForRef(ref) }, excerpt, x, y }
+    return {
+      mode,
+      domainId: tagged.dataset.domainId ?? scopedDomainId,
+      anchor: { ref, kind: anchorKindForRef(ref) },
+      excerpt,
+      x,
+      y,
+    }
   }
 
   // 2) a graph node — a class box or a (collapsed/expanded) module box
   const node = target.closest<HTMLElement>('.react-flow__node')
   if (node) {
-    const id = node.getAttribute('data-id') ?? ''
+    const rawId = node.getAttribute('data-id') ?? ''
+    const id = rawId.startsWith('workspace:') ? rawId.split(':').slice(2).join(':') : rawId
     if (id.startsWith('class.'))
-      return { mode, anchor: { ref: id, kind: 'schema' }, excerpt: id.slice(6), x, y }
+      return {
+        mode,
+        domainId: scopedDomainId,
+        anchor: { ref: id, kind: 'schema' },
+        excerpt: id.slice(6),
+        x,
+        y,
+      }
     if (id.startsWith('grp-')) {
       const p = id.slice(4)
-      return { mode, anchor: { ref: `module.${p}`, kind: 'section' }, excerpt: p, x, y }
+      return {
+        mode,
+        domainId: scopedDomainId,
+        anchor: { ref: `module.${p}`, kind: 'section' },
+        excerpt: p,
+        x,
+        y,
+      }
     }
   }
 
   // 3) a graph edge (relationship)
   const edge = target.closest<HTMLElement>('.react-flow__edge')
   if (edge) {
-    const ref = flowEdgeAnchorRef(edge.getAttribute('data-id') ?? '')
-    if (ref) return { mode, anchor: { ref, kind: 'schema' }, excerpt: ref.slice(5), x, y }
+    const edgeId = edge.getAttribute('data-id') ?? ''
+    const ref = flowEdgeAnchorRef(edgeId)
+    const encodedOwner = edgeId.startsWith('workspace-edge:') ? edgeId.split(':')[1] : undefined
+    if (ref)
+      return {
+        mode,
+        domainId: encodedOwner ? decodeURIComponent(encodedOwner) : scopedDomainId,
+        anchor: { ref, kind: 'schema' },
+        excerpt: ref.slice(5),
+        x,
+        y,
+      }
   }
 
   // 4) anywhere else inside the main content (incl. empty canvas) → pinned to this section
@@ -73,7 +106,8 @@ function resolveDraft(
     const pt = flowPoint(target, x, y)
     return {
       mode,
-      anchor: { ref: `section.${section}`, kind: 'section', ...(pt ?? {}) },
+      domainId: scopedDomainId,
+      anchor: { ref: `section.${section}`, kind: 'section', ...pt },
       excerpt: section,
       x,
       y,
@@ -121,9 +155,10 @@ export function CommentModeOverlay() {
       // otherwise Radix treats the opening click as an outside-dismiss and closes it.
       if (draft.mode === 'ask') {
         // ask → an ephemeral, element-anchored side-question (client-only, not a comment)
-        if (st.domainId)
+        const ownerDomainId = draft.domainId ?? st.domainId
+        if (ownerDomainId)
           requestAnimationFrame(() =>
-            useAsks.getState().start(st.domainId!, draft.anchor, draft.excerpt, draft.x, draft.y),
+            useAsks.getState().start(ownerDomainId, draft.anchor, draft.excerpt, draft.x, draft.y),
           )
       } else {
         requestAnimationFrame(() => setCommentDraft(draft))

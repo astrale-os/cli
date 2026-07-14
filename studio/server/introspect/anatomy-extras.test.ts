@@ -32,7 +32,7 @@ test('discovers view mounts from any top-level client route registry', () => {
   })
 })
 
-test('reads the adapter-selected client directory', () => {
+test('reads the discovered client directory', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-client-tree-configured-'))
   roots.push(root)
   const clientDir = join(root, 'frontend')

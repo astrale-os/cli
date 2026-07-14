@@ -21,16 +21,20 @@ import { Textarea } from './ui/textarea'
  * composer for starting a new comment.
  */
 export function ThreadPopover({
+  domainId,
   anchor,
   excerpt,
   threads,
   onClose,
 }: {
+  domainId?: string
   anchor: AnchorRef
   excerpt: string
   threads: Comment[]
   onClose: () => void
 }) {
+  const activeDomainId = useUI((s) => s.domainId)
+  const ownerDomainId = domainId ?? activeDomainId ?? ''
   return (
     <div className="flex max-h-[calc(var(--radix-popover-content-available-height)-1.5rem)] min-h-0 flex-col gap-2 text-sm">
       {/* lean header: a small label + a subtle target affordance (hover to see the ref) */}
@@ -65,12 +69,13 @@ export function ThreadPopover({
       {threads.length > 0 && (
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
           {threads.map((c) => (
-            <ThreadCard key={c.id} comment={c} />
+            <ThreadCard key={c.id} domainId={ownerDomainId} comment={c} />
           ))}
         </div>
       )}
 
       <Composer
+        domainId={ownerDomainId}
         anchor={anchor}
         excerpt={excerpt}
         hasThreads={threads.length > 0}
@@ -86,16 +91,18 @@ export function ThreadPopover({
  * tool, so any text entry is editable; the edit rewrites that entry in place.
  */
 export function EntryText({
+  domainId,
   commentId,
   entryId,
   text,
 }: {
+  domainId?: string
   commentId: string
   entryId: string
   text: string
 }) {
-  const domainId = useUI((s) => s.domainId)
-  const { edit } = useCommentMutations(domainId ?? '')
+  const activeDomainId = useUI((s) => s.domainId)
+  const { edit } = useCommentMutations(domainId ?? activeDomainId ?? '')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(text)
 
@@ -163,9 +170,8 @@ export function EntryText({
 }
 
 /** One existing comment thread rendered compactly (mirrors sections/comments.tsx). */
-function ThreadCard({ comment }: { comment: Comment }) {
-  const domainId = useUI((s) => s.domainId)
-  const { reply, setStatus, remove } = useCommentMutations(domainId ?? '')
+function ThreadCard({ domainId, comment }: { domainId: string; comment: Comment }) {
+  const { reply, setStatus, remove } = useCommentMutations(domainId)
   const [text, setText] = useState('')
   const closed = comment.status === 'closed'
   const [expanded, setExpanded] = useState(!closed)
@@ -241,15 +247,16 @@ function ThreadCard({ comment }: { comment: Comment }) {
                 >
                   {t.role === 'author' ? 'agent' : 'you'}
                 </span>
-                <EntryText commentId={comment.id} entryId={t.id} text={t.text} />
+                <EntryText
+                  domainId={domainId}
+                  commentId={comment.id}
+                  entryId={t.id}
+                  text={t.text}
+                />
                 {t.type === 'choice' &&
                   t.options &&
                   (answerable ? (
-                    <ChoiceOptions
-                      commentId={comment.id}
-                      options={t.options}
-                      domainId={domainId ?? ''}
-                    />
+                    <ChoiceOptions commentId={comment.id} options={t.options} domainId={domainId} />
                   ) : (
                     <div className="mt-1 flex flex-wrap gap-1">
                       {t.options.map((o) => (
@@ -404,18 +411,19 @@ export function ChoiceOptions({
 
 /** Compact composer for a new comment on this anchor. */
 function Composer({
+  domainId,
   anchor,
   excerpt,
   hasThreads,
   onClose,
 }: {
+  domainId: string
   anchor: AnchorRef
   excerpt: string
   hasThreads: boolean
   onClose: () => void
 }) {
-  const domainId = useUI((s) => s.domainId)
-  const { create } = useCommentMutations(domainId ?? '')
+  const { create } = useCommentMutations(domainId)
   const [text, setText] = useState('')
 
   const submit = () => {
