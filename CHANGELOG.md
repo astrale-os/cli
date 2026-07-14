@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.0-alpha.0...cli-v0.6.1-alpha.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* **deps:** declare msgpackr for package builds ([034ca16](https://github.com/astrale-os/cli/commit/034ca1694faf6ef01af7c9d1f03aaea094a68fd9))
+* **deps:** declare package build dependencies ([de35cb5](https://github.com/astrale-os/cli/commit/de35cb53403ba1cfef724a62d2671278e837e77b))
+
 ## [0.6.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.5.0-alpha.0...cli-v0.6.0-alpha.0) (2026-07-14)
 
 

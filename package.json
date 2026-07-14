@@ -1,6 +1,6 @@
 {
   "name": "@astrale-os/cli",
-  "version": "0.6.0-alpha.0",
+  "version": "0.6.1-alpha.0",
   "description": "Astrale CLI — connect to existing Astrale kernels",
   "keywords": [
     "astrale",
