@@ -121,7 +121,7 @@ export async function getAnatomy(id: string, rebuild = false): Promise<DomainAna
     buildAnatomy({
       root: h.root,
       schemaDirName: h.schemaDirName,
-      clientDir: client.status === 'available' ? client.dir : undefined,
+      clientDir: client.status === 'available' ? client.sourceDir : undefined,
     }),
   )
   anatomies.set(id, anatomy)

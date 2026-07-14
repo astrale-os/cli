@@ -28,18 +28,6 @@ process.on('SIGTERM', stop)
 process.on('SIGINT', stop)
 `,
   )
-  if (packageDir !== 'client') {
-    writeFileSync(
-      join(root, 'astrale.config.ts'),
-      `const adapter = {
-  name: 'fixture',
-  params: () => ({ dir: ${JSON.stringify(packageDir)} }),
-  clientPackage: (params: { dir: string }, ctx: { projectDir: string }) => ({ dir: ctx.projectDir + '/' + params.dir }),
-}
-export default { adapter }
-`,
-    )
-  }
   return root
 }
 
@@ -68,8 +56,8 @@ describe('view dev server lifecycle', () => {
       manager.ensure(alpha),
       manager.ensure(beta),
     ])
-    expect(alphaServer.status).toBe('running')
-    expect(betaServer.status).toBe('running')
+    expect(alphaServer).toMatchObject({ status: 'running' })
+    expect(betaServer).toMatchObject({ status: 'running' })
     if (alphaServer.status !== 'running' || betaServer.status !== 'running') return
     expect(sameAlphaServer.status === 'running' ? sameAlphaServer.port : null).toBe(
       alphaServer.port,
@@ -102,18 +90,18 @@ describe('view dev server lifecycle', () => {
 
     expect(await manager.ensure(root)).toEqual({
       status: 'unavailable',
-      reason: 'The domain client does not define a dev:hmr script.',
+      reason: 'This domain has no package that defines a dev:hmr script.',
     })
   })
 
-  test('starts the client package selected by the adapter', async () => {
+  test('starts the sole frontend preview package without adapter metadata', async () => {
     const manager = new ViewDevServerManager({ idleTimeoutMs: 250, startTimeoutMs: 5_000 })
     managers.push(manager)
     const root = domainFixture('configured-frontend', 'frontend')
 
     const server = await manager.ensure(root)
 
-    expect(server.status).toBe('running')
+    expect(server).toMatchObject({ status: 'running' })
     if (server.status === 'running') {
       expect(await fetch(server.url).then((response) => response.text())).toBe(
         'configured-frontend',
