@@ -59,6 +59,9 @@ jobs:
           done
       - name: Install production dependencies
         run: STANDALONE=true pnpm install --prod --frozen-lockfile --ignore-scripts
+      - name: Install Studio test dependencies
+        working-directory: studio
+        run: bun install --no-save
       - name: Test
         run: pnpm test
 
