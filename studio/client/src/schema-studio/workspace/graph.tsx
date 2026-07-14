@@ -15,7 +15,7 @@ import {
   useReactFlow,
 } from '@xyflow/react'
 import { AppWindow, Layers3, LayoutGrid, Spline, TriangleAlert } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useCatalog } from '@/lib/hooks'
@@ -26,11 +26,14 @@ import type { ClassNodeData } from '../projection'
 
 import { ErdMarkerDefs } from '../cardinality-markers'
 import { edgeTypes, separateParallelEdges } from '../floating-edge'
+import { type Geometry, sizeOfNode } from '../geometry'
 import { schemaNodeTypes } from '../graph'
+import { useLayoutCommitter } from '../layout-commit'
 import {
   composeWorkspaceCanvas,
   type WorkspaceDomainNodeData,
   type WorkspaceDomainProjection,
+  type WorkspaceNodeGeometryData,
 } from './projection'
 import { useSchemaWorkspace } from './store'
 
@@ -73,6 +76,17 @@ function localNodeRef(id: string): { domainId: string; localId: string } | null 
   return { domainId: decodeURIComponent(encodedDomainId), localId: rest.join(':') }
 }
 
+function workspaceGeometry(node: Node): WorkspaceNodeGeometryData | null {
+  return (node.data?.workspaceGeometry as WorkspaceNodeGeometryData | undefined) ?? null
+}
+
+function localPosition(node: Node, geometry: WorkspaceNodeGeometryData) {
+  return {
+    x: Math.round(node.position.x - geometry.offset.x),
+    y: Math.round(node.position.y - geometry.offset.y),
+  }
+}
+
 export function WorkspaceSchemaGraph({
   domains,
   viewsCount,
@@ -82,7 +96,7 @@ export function WorkspaceSchemaGraph({
   viewsCount: number
   onToggleInherited: () => void
 }) {
-  const { fitView } = useReactFlow()
+  const { fitView, getNodes } = useReactFlow()
   const { data: catalog } = useCatalog()
   const activeDomainId = useUI((state) => state.domainId) ?? domains[0]?.input.summary.id ?? ''
   const selected = useUI((state) => state.selectedClass)
@@ -90,12 +104,22 @@ export function WorkspaceSchemaGraph({
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const panelOverlay = useUI((state) => state.panelOverlay)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
+  const domainContentOffsets = useSchemaWorkspace((state) => state.domainContentOffsets)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
+  const ensureDomainContentOffsets = useSchemaWorkspace((state) => state.ensureDomainContentOffsets)
   const resetDomainPositions = useSchemaWorkspace((state) => state.resetDomainPositions)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
+  const { commitLayout } = useLayoutCommitter()
+  const fittedDomains = useRef('')
 
   const projection = useMemo(() => {
-    const composed = composeWorkspaceCanvas(domains, activeDomainId, domainPositions, catalog)
+    const composed = composeWorkspaceCanvas(
+      domains,
+      activeDomainId,
+      domainPositions,
+      catalog,
+      domainContentOffsets,
+    )
     return {
       ...composed,
       nodes: composed.nodes.map((node) =>
@@ -110,16 +134,20 @@ export function WorkspaceSchemaGraph({
           : node,
       ),
     }
-  }, [activeDomainId, catalog, domainPositions, domains, toggleModule])
+  }, [activeDomainId, catalog, domainContentOffsets, domainPositions, domains, toggleModule])
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(() => separateParallelEdges(projection.edges))
 
   useEffect(() => {
+    ensureDomainContentOffsets(projection.contentOffsets)
     setNodes(projection.nodes)
     setEdges(separateParallelEdges(projection.edges))
+    const domainKey = domains.map((domain) => domain.input.summary.id).join('|')
+    if (fittedDomains.current === domainKey) return
+    fittedDomains.current = domainKey
     const frame = requestAnimationFrame(() => fitView({ padding: 0.12, duration: 420 }))
     return () => cancelAnimationFrame(frame)
-  }, [fitView, projection])
+  }, [domains, ensureDomainContentOffsets, fitView, projection])
 
   const activate = useCallback(
     (domainId: string, ref?: string) => {
@@ -150,6 +178,54 @@ export function WorkspaceSchemaGraph({
     [],
   )
   const inheritedOn = domains.every((domain) => domain.input.visibility.showInheritedEdges)
+
+  const onNodeDragStop = useCallback(
+    (_event: unknown, node: Node) => {
+      if (node.id.startsWith('workspace-domain:')) {
+        setDomainPosition(node.id.slice('workspace-domain:'.length), {
+          x: Math.round(node.position.x),
+          y: Math.round(node.position.y),
+        })
+        return
+      }
+
+      const geometry = workspaceGeometry(node)
+      if (!geometry) return
+      const updates: Geometry = {
+        [geometry.localId]: {
+          ...localPosition(node, geometry),
+          ...sizeOfNode(node),
+        },
+      }
+
+      if (node.parentId) {
+        const all = getNodes()
+        const parent = all.find((candidate) => candidate.id === node.parentId)
+        const parentGeometry = parent ? workspaceGeometry(parent) : null
+        if (parent && parentGeometry) {
+          let width =
+            parent.measured?.width ??
+            (typeof parent.style?.width === 'number' ? parent.style.width : 200)
+          let height =
+            parent.measured?.height ??
+            (typeof parent.style?.height === 'number' ? parent.style.height : 120)
+          for (const sibling of all) {
+            if (sibling.parentId !== node.parentId) continue
+            width = Math.max(width, sibling.position.x + (sibling.measured?.width ?? 160))
+            height = Math.max(height, sibling.position.y + (sibling.measured?.height ?? 88))
+          }
+          updates[parentGeometry.localId] = {
+            ...localPosition(parent, parentGeometry),
+            w: Math.round(width),
+            h: Math.round(height),
+          }
+        }
+      }
+
+      commitLayout(geometry.domainId, updates)
+    },
+    [commitLayout, getNodes, setDomainPosition],
+  )
 
   const displayEdges = useMemo(
     () =>
@@ -183,13 +259,7 @@ export function WorkspaceSchemaGraph({
       edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
-      onNodeDragStop={(_, node) => {
-        if (!node.id.startsWith('workspace-domain:')) return
-        setDomainPosition(node.id.slice('workspace-domain:'.length), {
-          x: Math.round(node.position.x),
-          y: Math.round(node.position.y),
-        })
-      }}
+      onNodeDragStop={onNodeDragStop}
       onNodeClick={(_, node) => {
         if (node.id.startsWith('workspace-domain:')) {
           activate(node.id.slice('workspace-domain:'.length))

@@ -72,6 +72,7 @@ import {
 } from './external'
 import { edgeTypes, separateParallelEdges } from './floating-edge'
 import { type Geometry, applyGeometry, geometryOf, packPendingNodes, sizeOfNode } from './geometry'
+import { useLayoutCommitter } from './layout-commit'
 import { moduleOfClass } from './modules'
 import { NodeCommentPin } from './node-comment-pin'
 import {
@@ -780,30 +781,13 @@ export function SchemaGraph({
   // never lost across remounts, and data refetches (file edits) never relayout.
   const qc = useQueryClient()
   const fitted = useRef(false)
-
-  // commit positions: update the cache immediately, flush to disk debounced.
-  const dirty = useRef<Geometry>({})
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const flush = useCallback(() => {
-    clearTimeout(timer.current)
-    const upd = dirty.current
-    dirty.current = {}
-    if (Object.keys(upd).length) api.setLayout(domainId, upd).catch(() => {})
-  }, [domainId])
+  const { commitLayout } = useLayoutCommitter()
   const commit = useCallback(
     (updates: Geometry) => {
-      qc.setQueryData<LayoutState>(qk.layout(domainId), (prev) => ({
-        schemaHash: prev?.schemaHash,
-        positions: { ...prev?.positions, ...updates },
-      }))
-      Object.assign(dirty.current, updates)
-      clearTimeout(timer.current)
-      timer.current = setTimeout(flush, 500)
+      commitLayout(domainId, updates)
     },
-    [qc, domainId, flush],
+    [commitLayout, domainId],
   )
-  // don't lose a just-dragged position when the canvas unmounts (switching to core view)
-  useEffect(() => () => flush(), [flush])
 
   // ── visibility of record = the persisted per-domain visibility cache ──
   // Same client-authoritative model as layout: the zustand store holds the LIVE slice,

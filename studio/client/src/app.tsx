@@ -33,7 +33,6 @@ import { useEventStream } from '@/lib/sse'
 import { type SectionKey, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { SchemaSection } from '@/schema-studio'
-import { WorkspaceDomainPicker } from '@/schema-studio/workspace/picker'
 import { CommentsSection } from '@/sections/comments'
 import { ContextSection } from '@/sections/context'
 import { ProcessSection } from '@/sections/process'
@@ -175,7 +174,6 @@ export function App() {
           <div className="flex items-center gap-1.5">
             <InstanceSwitcher />
             <DomainSelector />
-            <WorkspaceDomainPicker />
             {domainId && <InstanceBadge domainId={domainId} />}
             {domainId && (
               <button

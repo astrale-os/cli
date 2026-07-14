@@ -31,6 +31,13 @@ export interface WorkspaceProjection {
   nodes: Node[]
   edges: Edge[]
   diagnostics: string[]
+  contentOffsets: Record<string, NodePosition>
+}
+
+export interface WorkspaceNodeGeometryData {
+  domainId: string
+  localId: string
+  offset: NodePosition
 }
 
 interface ResolvedTarget {
@@ -47,6 +54,9 @@ interface DomainBox {
   height: number
   minX: number
   minY: number
+  maxX: number
+  maxY: number
+  contentOffset: NodePosition
   position: NodePosition
 }
 
@@ -69,10 +79,10 @@ function nodeSize(node: Node): { width: number; height: number } {
   }
 }
 
-function domainBounds(nodes: Node[]): Omit<DomainBox, 'domain' | 'position'> {
+function domainBounds(nodes: Node[]): Omit<DomainBox, 'domain' | 'position' | 'contentOffset'> {
   const roots = nodes.filter((node) => !node.parentId)
   if (roots.length === 0) {
-    return { width: 360, height: 220, minX: 0, minY: 0 }
+    return { width: 360, height: 220, minX: 0, minY: 0, maxX: 0, maxY: 0 }
   }
   let minX = Number.POSITIVE_INFINITY
   let minY = Number.POSITIVE_INFINITY
@@ -90,6 +100,8 @@ function domainBounds(nodes: Node[]): Omit<DomainBox, 'domain' | 'position'> {
     height: Math.max(220, maxY - minY + DOMAIN_PADDING * 2 + DOMAIN_HEADER),
     minX,
     minY,
+    maxX,
+    maxY,
   }
 }
 
@@ -450,6 +462,7 @@ export function composeWorkspaceCanvas(
   activeDomainId: string,
   savedDomainPositions: Record<string, NodePosition>,
   catalog?: DomainCatalogEntry[],
+  savedContentOffsets: Record<string, NodePosition> = {},
 ): WorkspaceProjection {
   const diagnostics = new Set<string>()
   const origins = new Map<string, WorkspaceDomainProjection[]>()
@@ -460,7 +473,20 @@ export function composeWorkspaceCanvas(
     origins.set(origin, list)
   }
 
-  const rawBoxes = domains.map((domain) => ({ domain, ...domainBounds(domain.nodes) }))
+  const rawBoxes = domains.map((domain) => {
+    const bounds = domainBounds(domain.nodes)
+    const contentOffset = savedContentOffsets[domain.input.summary.id] ?? {
+      x: DOMAIN_PADDING - bounds.minX,
+      y: DOMAIN_PADDING + DOMAIN_HEADER - bounds.minY,
+    }
+    return {
+      domain,
+      ...bounds,
+      contentOffset,
+      width: Math.max(360, bounds.maxX + contentOffset.x + DOMAIN_PADDING),
+      height: Math.max(220, bounds.maxY + contentOffset.y + DOMAIN_PADDING),
+    }
+  })
   const defaults = defaultDomainPositions(rawBoxes)
   const boxes: DomainBox[] = rawBoxes.map((box, index) => ({
     ...box,
@@ -491,19 +517,23 @@ export function composeWorkspaceCanvas(
 
     for (const node of box.domain.nodes) {
       const root = !node.parentId
+      const offset = root ? box.contentOffset : { x: 0, y: 0 }
       nodes.push({
         ...node,
         id: qualifiedNodeId(domainId, node.id),
         parentId: root ? rootId : qualifiedNodeId(domainId, node.parentId!),
-        position: root
-          ? {
-              x: node.position.x - box.minX + DOMAIN_PADDING,
-              y: node.position.y - box.minY + DOMAIN_PADDING + DOMAIN_HEADER,
-            }
-          : node.position,
+        position: { x: node.position.x + offset.x, y: node.position.y + offset.y },
+        data: {
+          ...node.data,
+          workspaceGeometry: {
+            domainId,
+            localId: node.id,
+            offset,
+          } satisfies WorkspaceNodeGeometryData,
+        },
         extent: 'parent',
-        expandParent: false,
-        draggable: false,
+        expandParent: true,
+        draggable: true,
       })
     }
     for (const edge of box.domain.edges) {
@@ -522,5 +552,12 @@ export function composeWorkspaceCanvas(
   nodes.push(...externalNodes(cross.unresolved, catalog, rightEdge + DOMAIN_GAP))
   edges.push(...cross.edges, ...contracts)
 
-  return { nodes, edges, diagnostics: [...diagnostics].sort() }
+  return {
+    nodes,
+    edges,
+    diagnostics: [...diagnostics].sort(),
+    contentOffsets: Object.fromEntries(
+      boxes.map((box) => [box.domain.input.summary.id, box.contentOffset]),
+    ),
+  }
 }

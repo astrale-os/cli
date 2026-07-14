@@ -1,12 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Boxes, Check, ChevronsUpDown, FolderPlus, Loader2 } from 'lucide-react'
-import { useState } from 'react'
+import { Boxes, Check, ChevronsUpDown, FolderPlus, Layers3, Loader2 } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { api, qk } from '@/lib/api'
 import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { selectionForActiveDomain, useSchemaWorkspace } from '@/schema-studio/workspace/store'
 
 import { Button } from './ui/button'
 import {
@@ -23,19 +24,43 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 /** create-astrale-domain's slug shape (kept in sync with the server guard). */
 const SLUG = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
-/**
- * The domain switcher (top-left, after the instance). A custom Popover list of
- * the workspace's domains + a "Create new" action that scaffolds a fresh domain
- * via `create-astrale-domain` (server-side) and selects it when ready.
- */
+/** The unified active-domain and schema-composition selector. */
 export function DomainSelector() {
   const { data: domains } = useWorkspace()
   const domainId = useUI((s) => s.domainId)
   const setDomain = useUI((s) => s.setDomain)
   const setSection = useUI((s) => s.setSection)
+  const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
+  const replaceDomains = useSchemaWorkspace((state) => state.replaceDomains)
+  const toggleDomain = useSchemaWorkspace((state) => state.toggleDomain)
   const [open, setOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const active = domains?.find((d) => d.id === domainId)
+  const validIds = useMemo(() => new Set((domains ?? []).map((domain) => domain.id)), [domains])
+
+  useEffect(() => {
+    if (!domainId || !domains) return
+    const next = selectedDomainIds.filter((id) => validIds.has(id))
+    if (!next.includes(domainId)) next.unshift(domainId)
+    if (
+      next.length !== selectedDomainIds.length ||
+      next.some((id, index) => id !== selectedDomainIds[index])
+    ) {
+      replaceDomains(next)
+    }
+  }, [domainId, domains, replaceDomains, selectedDomainIds, validIds])
+
+  const selected = new Set(selectedDomainIds)
+  if (domainId) selected.add(domainId)
+  const canvasCount = selected.size
+
+  const activateDomain = (nextDomainId: string) => {
+    replaceDomains(
+      domainId ? selectionForActiveDomain([...selected], domainId, nextDomainId) : [nextDomainId],
+    )
+    setDomain(nextDomainId)
+    setOpen(false)
+  }
 
   return (
     <>
@@ -43,46 +68,104 @@ export function DomainSelector() {
         <PopoverTrigger asChild>
           <button
             type="button"
-            title="Domain — switch or create"
-            className="inline-flex h-8 items-center gap-2 rounded-lg border bg-card pl-1.5 pr-2.5 text-sm font-medium outline-none transition-colors hover:bg-accent/50"
+            data-testid="domain-selector"
+            title="Domain canvas — choose the active domain and optional companions"
+            className={cn(
+              'inline-flex h-8 items-center gap-2 rounded-lg border pl-1.5 pr-2 text-sm font-medium outline-none transition-colors',
+              canvasCount > 1
+                ? 'border-sky-400/35 bg-sky-400/10 text-sky-100 hover:bg-sky-400/15'
+                : 'bg-card hover:bg-accent/50',
+            )}
           >
             <span className="grid h-5 w-5 place-items-center rounded-md bg-primary/10 text-primary">
               <Boxes className="h-3.5 w-3.5" />
             </span>
             <span className="max-w-[15rem] truncate">{active?.origin ?? 'select domain'}</span>
+            <span
+              className={cn(
+                'inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-[10px] tabular-nums',
+                canvasCount > 1 ? 'bg-sky-300/15 text-sky-100' : 'bg-muted text-muted-foreground',
+              )}
+            >
+              <Layers3 className="h-3 w-3" /> {canvasCount}
+            </span>
             <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-1.5">
-          <div className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Domains
+        <PopoverContent align="start" className="w-80 p-1.5">
+          <div className="flex items-start justify-between gap-3 px-2 pb-2 pt-1">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Domain canvas
+              </div>
+              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground/70">
+                Open one domain, then check companions to compose their schemas.
+              </p>
+            </div>
+            {!!domains?.length && (
+              <button
+                type="button"
+                onClick={() => replaceDomains(domains.map((domain) => domain.id))}
+                className="shrink-0 rounded-md px-1.5 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-400/10"
+              >
+                Select all
+              </button>
+            )}
           </div>
           <div className="max-h-[50vh] space-y-0.5 overflow-y-auto">
-            {(domains ?? []).map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => {
-                  setDomain(d.id)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent',
-                  d.id === domainId && 'bg-accent/40',
-                )}
-              >
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                  {d.id === domainId && <Check className="h-3.5 w-3.5 text-primary" />}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{d.origin}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">
-                    {d.path.split('/').pop()}
-                    {!d.depsInstalled && ' · deps not installed'}
-                  </span>
-                </span>
-              </button>
-            ))}
+            {(domains ?? []).map((d) => {
+              const checked = selected.has(d.id)
+              const isActive = d.id === domainId
+              return (
+                <div
+                  key={d.id}
+                  className={cn(
+                    'flex items-center gap-1 rounded-md transition-colors',
+                    checked ? 'bg-accent/55' : 'hover:bg-accent/35',
+                  )}
+                >
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-label={
+                      isActive
+                        ? `${d.origin} is the active domain on canvas`
+                        : `${checked ? 'Remove' : 'Add'} ${d.origin} ${checked ? 'from' : 'to'} canvas`
+                    }
+                    aria-checked={checked}
+                    disabled={isActive}
+                    title={isActive ? 'The active domain is always on the canvas' : undefined}
+                    onClick={() => domainId && toggleDomain(d.id, domainId)}
+                    className="group ml-2 grid h-5 w-5 shrink-0 place-items-center rounded border border-border text-transparent transition-colors enabled:hover:border-sky-400/60 disabled:cursor-default"
+                  >
+                    {checked && (
+                      <span className="grid h-full w-full place-items-center rounded bg-sky-400/15 text-sky-200">
+                        <Check className="h-3 w-3" />
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-current={isActive ? 'true' : undefined}
+                    onClick={() => activateDomain(d.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-2 text-left"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-semibold">{d.origin}</span>
+                      <span className="block truncate text-[10px] text-muted-foreground/65">
+                        {d.path.split('/').pop()}
+                        {!d.depsInstalled && ' · deps missing'}
+                      </span>
+                    </span>
+                    {isActive && (
+                      <span className="rounded-full border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                        active
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )
+            })}
             {!domains?.length && (
               <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
                 No domains found
@@ -90,6 +173,15 @@ export function DomainSelector() {
             )}
           </div>
           <div className="my-1 h-px bg-border/60" />
+          {domainId && canvasCount > 1 && (
+            <button
+              type="button"
+              onClick={() => replaceDomains([domainId])}
+              className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+            >
+              Show only {active?.origin ?? 'active domain'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -110,6 +202,7 @@ export function DomainSelector() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(id) => {
+          replaceDomains([id])
           setDomain(id)
           setSection('context')
         }}

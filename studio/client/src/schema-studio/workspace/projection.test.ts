@@ -185,6 +185,33 @@ test('qualifies identical class names and edge identities by owning domain', () 
   expect(ids.size).toBe(result.nodes.length)
 })
 
+test('keeps owner-local geometry on draggable workspace nodes', () => {
+  const services = prepared(bundle('services', 'services.dev', { Service: nodeClass('Service') }), [
+    'Service',
+  ])
+  const result = composeWorkspaceCanvas([services], 'services', {}, undefined, {
+    services: { x: 80, y: 96 },
+  })
+  const node = result.nodes.find(
+    (candidate) => candidate.id === qualifiedNodeId('services', 'class.Service'),
+  )
+
+  expect(node).toEqual(
+    expect.objectContaining({
+      draggable: true,
+      parentId: 'workspace-domain:services',
+      position: { x: 80, y: 96 },
+      data: expect.objectContaining({
+        workspaceGeometry: {
+          domainId: 'services',
+          localId: 'class.Service',
+          offset: { x: 80, y: 96 },
+        },
+      }),
+    }),
+  )
+})
+
 test('does not guess when two selected folders declare the same semantic origin', () => {
   const source = prepared(
     bundle(
