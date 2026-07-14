@@ -17,12 +17,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'bin/**'
-      - 'src/**'
-      - 'studio/**'
-      - 'scripts/**'
       - 'package.json'
-      - 'pnpm-lock.yaml'
       - '.release-please-manifest.json'
       - '.github/workflows/publish.yml'
   workflow_dispatch:
