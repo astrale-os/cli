@@ -4,6 +4,11 @@ const getMock = mock(async (_path: string) => ({ id: 'issue-id' }))
 const clientCallMock = mock(async (): Promise<unknown> => {
   throw new Error('View:resolve must not run for a bare --view-url')
 })
+const abMock = mock(async (_args: string[]) => ({
+  ok: true,
+  data: { snapshot: '- button "Ready" [ref=e1]' },
+  error: null,
+}))
 
 mock.module('../../kernel', () => ({
   bindGraph: () => ({ get: getMock }),
@@ -15,9 +20,17 @@ mock.module('../../kernel', () => ({
   ) => run({ client: { call: clientCallMock } }),
 }))
 
+mock.module('../../lib/browser', () => ({
+  ab: abMock,
+  AGENT_BROWSER_REPO: 'vercel-labs/agent-browser',
+  BROWSER_DIR: '/tmp/astrale-browser',
+  findAgentBrowser: mock(async () => '/usr/bin/agent-browser'),
+}))
+
 beforeEach(() => {
   getMock.mockClear()
   clientCallMock.mockClear()
+  abMock.mockClear()
 })
 
 describe('view session resolution', () => {
@@ -70,5 +83,18 @@ describe('view session resolution', () => {
       target: { id: 'issue-id', path: targetPath },
       candidates,
     })
+  })
+})
+
+describe('view capture timing', () => {
+  test('settles the view before taking a screenshot', async () => {
+    const { runSnapshotExtras } = await import('../view')
+
+    await runSnapshotExtras({ screenshot: '/tmp/view.png' })
+
+    const commands = abMock.mock.calls.map(([args]) => args[0])
+    expect(commands.at(-1)).toBe('screenshot')
+    expect(commands.slice(0, -1).every((command) => command === 'snapshot')).toBe(true)
+    expect(commands.length).toBeGreaterThan(2)
   })
 })
