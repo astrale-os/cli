@@ -7,6 +7,7 @@ export type { WorkspacePoint, WorkspaceSize } from './geometry'
 interface PersistedWorkspaceState {
   selectedDomainIds: string[]
   domainPositions: Record<string, WorkspacePoint>
+  externalPositions: Record<string, WorkspacePoint>
   domainSizes: Record<string, WorkspaceSize>
   domainContentOffsets: Record<string, WorkspacePoint>
   collapsedModules: Record<string, string[]>
@@ -19,8 +20,9 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   setDomainPosition: (id: string, position: WorkspacePoint) => void
   setDomainSize: (id: string, size: WorkspaceSize) => void
   ensureDomainPositions: (positions: Record<string, WorkspacePoint>) => void
+  ensureExternalPositions: (positions: Record<string, WorkspacePoint>) => void
   ensureDomainContentOffsets: (offsets: Record<string, WorkspacePoint>) => void
-  resetDomainFrames: () => void
+  resetWorkspaceFrames: () => void
   toggleModule: (domainId: string, path: string) => void
   toggleInterface: (domainId: string, name: string) => void
 }
@@ -30,6 +32,7 @@ const STORAGE_KEY = 'studio.schemaWorkspace.v1'
 const EMPTY: PersistedWorkspaceState = {
   selectedDomainIds: [],
   domainPositions: {},
+  externalPositions: {},
   domainSizes: {},
   domainContentOffsets: {},
   collapsedModules: {},
@@ -63,6 +66,7 @@ function load(): PersistedWorkspaceState {
     return {
       selectedDomainIds: uniqueDomainIds(value.selectedDomainIds ?? []),
       domainPositions: value.domainPositions ?? {},
+      externalPositions: value.externalPositions ?? {},
       domainSizes: value.domainSizes ?? {},
       domainContentOffsets: value.domainContentOffsets ?? {},
       collapsedModules: value.collapsedModules ?? {},
@@ -83,6 +87,7 @@ function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
   return {
     selectedDomainIds: state.selectedDomainIds,
     domainPositions: state.domainPositions,
+    externalPositions: state.externalPositions,
     domainSizes: state.domainSizes,
     domainContentOffsets: state.domainContentOffsets,
     collapsedModules: state.collapsedModules,
@@ -136,6 +141,19 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       persist({ ...persisted(state), domainPositions })
       return { domainPositions }
     }),
+  ensureExternalPositions: (positions) =>
+    set((state) => {
+      const externalPositions = { ...state.externalPositions }
+      let changed = false
+      for (const [origin, position] of Object.entries(positions)) {
+        if (externalPositions[origin]) continue
+        externalPositions[origin] = position
+        changed = true
+      }
+      if (!changed) return state
+      persist({ ...persisted(state), externalPositions })
+      return { externalPositions }
+    }),
   ensureDomainContentOffsets: (offsets) =>
     set((state) => {
       const domainContentOffsets = { ...state.domainContentOffsets }
@@ -149,10 +167,15 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       persist({ ...persisted(state), domainContentOffsets })
       return { domainContentOffsets }
     }),
-  resetDomainFrames: () =>
+  resetWorkspaceFrames: () =>
     set((state) => {
-      persist({ ...persisted(state), domainPositions: {}, domainSizes: {} })
-      return { domainPositions: {}, domainSizes: {} }
+      persist({
+        ...persisted(state),
+        domainPositions: {},
+        externalPositions: {},
+        domainSizes: {},
+      })
+      return { domainPositions: {}, externalPositions: {}, domainSizes: {} }
     }),
   toggleModule: (domainId, path) =>
     set((state) => {

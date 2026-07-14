@@ -59,13 +59,15 @@ export function WorkspaceSchemaGraph({
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const panelOverlay = useUI((state) => state.panelOverlay)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
+  const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
   const domainSizes = useSchemaWorkspace((state) => state.domainSizes)
   const domainContentOffsets = useSchemaWorkspace((state) => state.domainContentOffsets)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
   const setDomainSize = useSchemaWorkspace((state) => state.setDomainSize)
   const ensureDomainPositions = useSchemaWorkspace((state) => state.ensureDomainPositions)
+  const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
   const ensureDomainContentOffsets = useSchemaWorkspace((state) => state.ensureDomainContentOffsets)
-  const resetDomainFrames = useSchemaWorkspace((state) => state.resetDomainFrames)
+  const resetWorkspaceFrames = useSchemaWorkspace((state) => state.resetWorkspaceFrames)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
   const { commitLayout } = useLayoutCommitter()
   const fittedDomains = useRef('')
@@ -114,21 +116,30 @@ export function WorkspaceSchemaGraph({
 
   const projection = useMemo(
     () =>
-      composeWorkspaceCanvas(
-        domains,
+      composeWorkspaceCanvas(domains, {
         activeDomainId,
-        domainPositions,
         catalog,
-        domainContentOffsets,
+        contentOffsets: domainContentOffsets,
+        domainPositions,
         domainSizes,
-      ),
-    [activeDomainId, catalog, domainContentOffsets, domainPositions, domainSizes, domains],
+        externalPositions,
+      }),
+    [
+      activeDomainId,
+      catalog,
+      domainContentOffsets,
+      domainPositions,
+      domainSizes,
+      domains,
+      externalPositions,
+    ],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(() => separateParallelEdges(projection.edges))
 
   useEffect(() => {
     ensureDomainPositions(projection.domainPositions)
+    ensureExternalPositions(projection.externalPositions)
     ensureDomainContentOffsets(projection.contentOffsets)
     setNodes(projection.nodes)
     setEdges(separateParallelEdges(projection.edges))
@@ -142,7 +153,14 @@ export function WorkspaceSchemaGraph({
     fittedDomains.current = domainKey
     const frame = requestAnimationFrame(() => fitView({ padding: 0.12, duration: 420 }))
     return () => cancelAnimationFrame(frame)
-  }, [domains, ensureDomainContentOffsets, ensureDomainPositions, fitView, projection])
+  }, [
+    domains,
+    ensureDomainContentOffsets,
+    ensureDomainPositions,
+    ensureExternalPositions,
+    fitView,
+    projection,
+  ])
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) =>
@@ -250,9 +268,9 @@ export function WorkspaceSchemaGraph({
           <ControlButton
             onClick={() => {
               fitAfterReset.current = true
-              resetDomainFrames()
+              resetWorkspaceFrames()
             }}
-            title="Reset and auto-pack domain regions"
+            title="Reset and auto-pack workspace regions"
           >
             <LayoutGrid className="h-4 w-4 text-foreground" />
           </ControlButton>

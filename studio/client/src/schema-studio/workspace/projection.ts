@@ -12,8 +12,13 @@ import { moduleOfClass } from '../modules'
 import { localInterfaceRendered, projectDomainCanvas } from '../projection'
 import { classRef, edgeRef, isHidden, type Materialized } from '../visibility'
 import {
+  projectExternalFrames,
+  workspaceExternalMemberNodeId,
+  type WorkspaceExternalCluster,
+  type WorkspaceExternalReference,
+} from './external-frames'
+import {
   layoutWorkspaceFrames,
-  WORKSPACE_DOMAIN_GAP,
   type WorkspaceNodeGeometryData,
   type WorkspacePoint,
   type WorkspaceSize,
@@ -39,7 +44,17 @@ export interface WorkspaceProjection {
   edges: Edge[]
   diagnostics: string[]
   domainPositions: Record<string, WorkspacePoint>
+  externalPositions: Record<string, WorkspacePoint>
   contentOffsets: Record<string, WorkspacePoint>
+}
+
+export interface ComposeWorkspaceCanvasOptions {
+  activeDomainId: string
+  domainPositions?: Record<string, WorkspacePoint>
+  externalPositions?: Record<string, WorkspacePoint>
+  contentOffsets?: Record<string, WorkspacePoint>
+  domainSizes?: Record<string, WorkspaceSize>
+  catalog?: DomainCatalogEntry[]
 }
 
 interface ResolvedTarget {
@@ -47,7 +62,7 @@ interface ResolvedTarget {
   domainId: string | null
   className: string | null
   viaInterface: string | null
-  unresolved?: { origin: string; name: string; definition: 'class' | 'interface' }
+  unresolved?: WorkspaceExternalReference
 }
 
 const CROSS_COLOR = 'oklch(0.76 0.16 35)'
@@ -136,10 +151,6 @@ function localTargets(domain: WorkspaceDomainProjection, type: string): Resolved
     })
 }
 
-function externalMemberNodeId(origin: string, name: string): string {
-  return `workspace-external-member:${encodeURIComponent(origin)}:${encodeURIComponent(name)}`
-}
-
 function resolveType(
   owner: WorkspaceDomainProjection,
   type: string,
@@ -171,7 +182,7 @@ function resolveType(
 
   return [
     {
-      nodeId: externalMemberNodeId(imported.origin, type),
+      nodeId: workspaceExternalMemberNodeId(imported.origin, type),
       domainId: null,
       className: null,
       viaInterface: null,
@@ -188,16 +199,23 @@ function crossDomainEdges(
   domains: WorkspaceDomainProjection[],
   origins: Map<string, WorkspaceDomainProjection[]>,
   diagnostics: Set<string>,
-): { edges: Edge[]; unresolved: Map<string, Map<string, ResolvedTarget['unresolved']>> } {
+): { edges: Edge[]; unresolved: WorkspaceExternalCluster[] } {
   const edges: Edge[] = []
-  const unresolved = new Map<string, Map<string, ResolvedTarget['unresolved']>>()
+  const unresolved = new Map<
+    string,
+    { members: Map<string, WorkspaceExternalReference>; ownerDomainIds: Set<string> }
+  >()
   const seen = new Set<string>()
 
-  const remember = (target: ResolvedTarget) => {
+  const remember = (target: ResolvedTarget, ownerDomainId: string) => {
     if (!target.unresolved) return
-    const byName = unresolved.get(target.unresolved.origin) ?? new Map()
-    byName.set(target.unresolved.name, target.unresolved)
-    unresolved.set(target.unresolved.origin, byName)
+    const cluster = unresolved.get(target.unresolved.origin) ?? {
+      members: new Map(),
+      ownerDomainIds: new Set(),
+    }
+    cluster.members.set(target.unresolved.name, target.unresolved)
+    cluster.ownerDomainIds.add(ownerDomainId)
+    unresolved.set(target.unresolved.origin, cluster)
   }
 
   for (const owner of domains) {
@@ -232,8 +250,8 @@ function crossDomainEdges(
           ) {
             continue
           }
-          remember(source)
-          remember(target)
+          remember(source, owner.input.summary.id)
+          remember(target, owner.input.summary.id)
           const id = edgeId(owner.input.summary.id, edgeClass.name, source.nodeId, target.nodeId)
           if (seen.has(id)) continue
           seen.add(id)
@@ -262,7 +280,14 @@ function crossDomainEdges(
     }
   }
 
-  return { edges, unresolved }
+  return {
+    edges,
+    unresolved: [...unresolved.entries()].map(([origin, cluster]) => ({
+      origin,
+      members: [...cluster.members.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      ownerDomainIds: [...cluster.ownerDomainIds],
+    })),
+  }
 }
 
 function contractEdges(
@@ -340,64 +365,16 @@ function contractEdges(
   return edges
 }
 
-function externalNodes(
-  unresolved: Map<string, Map<string, ResolvedTarget['unresolved']>>,
-  catalog: DomainCatalogEntry[] | undefined,
-  x: number,
-): Node[] {
-  const nodes: Node[] = []
-  const byOrigin = new Map((catalog ?? []).map((entry) => [entry.origin, entry]))
-  let y = 0
-  for (const [origin, members] of [...unresolved.entries()].sort(([a], [b]) =>
-    a.localeCompare(b),
-  )) {
-    const entry = byOrigin.get(origin)
-    const domainId = `workspace-external:${encodeURIComponent(origin)}`
-    const rows = [...members.values()].filter(Boolean)
-    const height = 48 + rows.length * 52 + 12
-    nodes.push({
-      id: domainId,
-      type: 'extDomain',
-      position: { x, y },
-      draggable: false,
-      selectable: false,
-      data: {
-        name: entry?.name ?? origin.split('.')[0],
-        origin,
-        kind: origin === 'kernel.astrale.ai' ? 'kernel' : 'external',
-        icon: entry?.icon,
-      },
-      style: { width: 216, height },
-    })
-    rows.forEach((member, index) => {
-      if (!member) return
-      nodes.push({
-        id: externalMemberNodeId(origin, member.name),
-        type: 'extMember',
-        parentId: domainId,
-        extent: 'parent',
-        draggable: false,
-        position: { x: 12, y: 42 + index * 52 },
-        data: {
-          name: member.name,
-          kind: origin === 'kernel.astrale.ai' ? 'kernel' : 'external',
-          definition: member.definition,
-        },
-        style: { width: 192, height: 44 },
-      })
-    })
-    y += height + 40
-  }
-  return nodes
-}
-
 export function composeWorkspaceCanvas(
   domains: WorkspaceDomainProjection[],
-  activeDomainId: string,
-  savedDomainPositions: Record<string, WorkspacePoint>,
-  catalog?: DomainCatalogEntry[],
-  savedContentOffsets: Record<string, WorkspacePoint> = {},
-  savedDomainSizes: Record<string, WorkspaceSize> = {},
+  {
+    activeDomainId,
+    domainPositions = {},
+    externalPositions = {},
+    contentOffsets = {},
+    domainSizes = {},
+    catalog,
+  }: ComposeWorkspaceCanvasOptions,
 ): WorkspaceProjection {
   const diagnostics = new Set<string>()
   const origins = new Map<string, WorkspaceDomainProjection[]>()
@@ -410,9 +387,9 @@ export function composeWorkspaceCanvas(
 
   const frames = layoutWorkspaceFrames(
     domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
-    savedDomainPositions,
-    savedDomainSizes,
-    savedContentOffsets,
+    domainPositions,
+    domainSizes,
+    contentOffsets,
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
   const nodes: Node[] = []
@@ -481,11 +458,8 @@ export function composeWorkspaceCanvas(
 
   const cross = crossDomainEdges(domains, origins, diagnostics)
   const contracts = contractEdges(domains, origins, diagnostics)
-  const rightEdge = frames.reduce(
-    (max, frame) => Math.max(max, frame.position.x + frame.size.width),
-    0,
-  )
-  nodes.push(...externalNodes(cross.unresolved, catalog, rightEdge + WORKSPACE_DOMAIN_GAP))
+  const externals = projectExternalFrames(cross.unresolved, frames, externalPositions, catalog)
+  nodes.push(...externals.nodes)
   edges.push(...cross.edges, ...contracts)
 
   return {
@@ -493,6 +467,7 @@ export function composeWorkspaceCanvas(
     edges,
     diagnostics: [...diagnostics].sort(),
     domainPositions: Object.fromEntries(frames.map((frame) => [frame.domainId, frame.position])),
+    externalPositions: externals.positions,
     contentOffsets: Object.fromEntries(
       frames.map((frame) => [frame.domainId, frame.contentOffset]),
     ),

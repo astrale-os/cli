@@ -11,7 +11,8 @@ import { expect, test } from 'bun:test'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
-import { DOMAIN_MIN_SIZE } from './geometry'
+import { workspaceExternalNodeId } from './external-frames'
+import { DOMAIN_MIN_SIZE, WORKSPACE_DOMAIN_GAP } from './geometry'
 import {
   composeWorkspaceCanvas,
   qualifiedNodeId,
@@ -128,7 +129,7 @@ test('resolves a selected imported endpoint to the real qualified class node', (
     ['Function'],
   )
 
-  const result = composeWorkspaceCanvas([services, kernel], 'services', {})
+  const result = composeWorkspaceCanvas([services, kernel], { activeDomainId: 'services' })
   expect(result.edges).toContainEqual(
     expect.objectContaining({
       source: qualifiedNodeId('services', 'class.Service'),
@@ -165,12 +166,71 @@ test('keeps an unresolved target as one external stub when its domain is not sel
     ['Service'],
   )
 
-  const result = composeWorkspaceCanvas([services], 'services', {})
+  const result = composeWorkspaceCanvas([services], { activeDomainId: 'services' })
   expect(result.nodes.filter((node) => node.id.includes('workspace-external-member'))).toHaveLength(
     1,
   )
   expect(result.edges).toHaveLength(1)
   expect(result.edges[0].target).toContain('workspace-external-member')
+})
+
+test('keeps an external frame anchored to its relationship owner when an unrelated domain moves', () => {
+  const issues = prepared(
+    bundle(
+      'issues',
+      'issues.astrale.ai',
+      {
+        Issue: nodeClass('Issue'),
+        issue_reported_by: {
+          type: 'edge',
+          name: 'issue_reported_by',
+          properties: {},
+          methods: {},
+          endpoints: [
+            { name: 'issue', types: ['Issue'] },
+            { name: 'identity', types: ['Identity'] },
+          ],
+        },
+      },
+      { Identity: { origin: 'kernel.astrale.ai', definition: 'class' } },
+    ),
+    ['Issue'],
+  )
+  const integration = prepared(
+    bundle('integration', 'integration.astrale.ai', { Integration: nodeClass('Integration') }),
+    ['Integration'],
+  )
+  const initial = composeWorkspaceCanvas([issues, integration], {
+    activeDomainId: 'issues',
+    domainPositions: {
+      issues: { x: 0, y: 0 },
+      integration: { x: 0, y: 600 },
+    },
+  })
+  const issueFrame = initial.nodes.find((node) => node.id === 'workspace-domain:issues')!
+  const kernelId = workspaceExternalNodeId('kernel.astrale.ai')
+  const initialKernel = initial.nodes.find((node) => node.id === kernelId)!
+
+  expect(initialKernel.position).toEqual({
+    x: issueFrame.position.x + Number(issueFrame.style?.width) + WORKSPACE_DOMAIN_GAP,
+    y: issueFrame.position.y,
+  })
+
+  const moved = composeWorkspaceCanvas([issues, integration], {
+    activeDomainId: 'issues',
+    contentOffsets: initial.contentOffsets,
+    domainPositions: {
+      ...initial.domainPositions,
+      integration: { x: 1600, y: 600 },
+    },
+    externalPositions: initial.externalPositions,
+  })
+  const movedKernel = moved.nodes.find((node) => node.id === kernelId)!
+
+  expect(movedKernel.position).toEqual(initialKernel.position)
+  expect(moved.externalPositions['kernel.astrale.ai']).toEqual(
+    initial.externalPositions['kernel.astrale.ai'],
+  )
 })
 
 test('qualifies identical class names and edge identities by owning domain', () => {
@@ -179,7 +239,7 @@ test('qualifies identical class names and edge identities by owning domain', () 
   ])
   const beta = prepared(bundle('beta', 'beta.dev', { Service: nodeClass('Service') }), ['Service'])
 
-  const result = composeWorkspaceCanvas([alpha, beta], 'alpha', {})
+  const result = composeWorkspaceCanvas([alpha, beta], { activeDomainId: 'alpha' })
   const ids = new Set(result.nodes.map((node) => node.id))
   expect(ids.has(qualifiedNodeId('alpha', 'class.Service'))).toBe(true)
   expect(ids.has(qualifiedNodeId('beta', 'class.Service'))).toBe(true)
@@ -190,8 +250,9 @@ test('keeps owner-local geometry on draggable workspace nodes', () => {
   const services = prepared(bundle('services', 'services.dev', { Service: nodeClass('Service') }), [
     'Service',
   ])
-  const result = composeWorkspaceCanvas([services], 'services', {}, undefined, {
-    services: { x: 80, y: 96 },
+  const result = composeWorkspaceCanvas([services], {
+    activeDomainId: 'services',
+    contentOffsets: { services: { x: 80, y: 96 } },
   })
   const node = result.nodes.find(
     (candidate) => candidate.id === qualifiedNodeId('services', 'class.Service'),
@@ -221,7 +282,7 @@ test('only makes nodes inside the active domain interactive', () => {
   ])
   const beta = prepared(bundle('beta', 'beta.dev', { Worker: nodeClass('Worker') }), ['Worker'])
 
-  const result = composeWorkspaceCanvas([alpha, beta], 'alpha', {})
+  const result = composeWorkspaceCanvas([alpha, beta], { activeDomainId: 'alpha' })
   const alphaClass = result.nodes.find(
     (node) => node.id === qualifiedNodeId('alpha', 'class.Service'),
   )
@@ -252,25 +313,19 @@ test('applies persisted domain sizes without allowing content to be covered', ()
   const services = prepared(bundle('services', 'services.dev', { Service: nodeClass('Service') }), [
     'Service',
   ])
-  const expanded = composeWorkspaceCanvas(
-    [services],
-    'services',
-    {},
-    undefined,
-    { services: { x: 80, y: 96 } },
-    { services: { width: 720, height: 540 } },
-  )
+  const expanded = composeWorkspaceCanvas([services], {
+    activeDomainId: 'services',
+    contentOffsets: { services: { x: 80, y: 96 } },
+    domainSizes: { services: { width: 720, height: 540 } },
+  })
   const expandedDomain = expanded.nodes.find((node) => node.id === 'workspace-domain:services')!
   expect(expandedDomain.style).toEqual(expect.objectContaining({ width: 720, height: 540 }))
 
-  const clamped = composeWorkspaceCanvas(
-    [services],
-    'services',
-    {},
-    undefined,
-    { services: { x: 80, y: 96 } },
-    { services: { width: 10, height: 10 } },
-  )
+  const clamped = composeWorkspaceCanvas([services], {
+    activeDomainId: 'services',
+    contentOffsets: { services: { x: 80, y: 96 } },
+    domainSizes: { services: { width: 10, height: 10 } },
+  })
   const clampedDomain = clamped.nodes.find((node) => node.id === 'workspace-domain:services')!
   expect(clampedDomain.style).toEqual(
     expect.objectContaining({ width: DOMAIN_MIN_SIZE.width, height: DOMAIN_MIN_SIZE.height }),
@@ -282,16 +337,14 @@ test('does not repack sibling domains after one domain is resized', () => {
     'Service',
   ])
   const beta = prepared(bundle('beta', 'beta.dev', { Worker: nodeClass('Worker') }), ['Worker'])
-  const initial = composeWorkspaceCanvas([alpha, beta], 'alpha', {})
+  const initial = composeWorkspaceCanvas([alpha, beta], { activeDomainId: 'alpha' })
   const initialBeta = initial.nodes.find((node) => node.id === 'workspace-domain:beta')!
-  const resized = composeWorkspaceCanvas(
-    [alpha, beta],
-    'alpha',
-    initial.domainPositions,
-    undefined,
-    initial.contentOffsets,
-    { alpha: { width: 800, height: 500 } },
-  )
+  const resized = composeWorkspaceCanvas([alpha, beta], {
+    activeDomainId: 'alpha',
+    contentOffsets: initial.contentOffsets,
+    domainPositions: initial.domainPositions,
+    domainSizes: { alpha: { width: 800, height: 500 } },
+  })
   const resizedBeta = resized.nodes.find((node) => node.id === 'workspace-domain:beta')!
 
   expect(resizedBeta.position).toEqual(initialBeta.position)
@@ -324,7 +377,7 @@ test('does not guess when two selected folders declare the same semantic origin'
     'Target',
   ])
 
-  const result = composeWorkspaceCanvas([source, first, second], 'source', {})
+  const result = composeWorkspaceCanvas([source, first, second], { activeDomainId: 'source' })
   expect(result.diagnostics.join(' ')).toContain('Multiple selected folders declare shared.dev')
   expect(result.edges[0].target).toContain('workspace-external-member')
 })
