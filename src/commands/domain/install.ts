@@ -7,8 +7,8 @@ import type { KernelCommandOpts } from '../../kernel'
 import { AstraleError } from '../../errors'
 import { runKernelCommand } from '../../kernel'
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_DOMAIN, type DomainInfo } from '../../lib/admin-domain'
-import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
+import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
+import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { getActive } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
@@ -125,7 +125,7 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
 
   try {
     await withAdminKernelClient(adminOpts, async (ctx) => {
-      const instances = (await ctx.client.call(`${ADMIN_INSTANCE}/list`, {})) as InstanceInfo[]
+      const instances = (await ctx.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[]
 
       const ref = await resolveDomainRef(ctx, target, interactive)
       const slug = await resolveTargetSlug(opts, target, interactive, instances)
@@ -145,7 +145,7 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
         `Installing ${label} on ${match.slug}`,
         !isMachine(opts),
         () =>
-          ctx.client.call(`${ADMIN_DOMAIN}/install`, {
+          ctx.client.call(adminDomainMethod('install'), {
             instanceId: match.slug,
             ...ref,
           }) as Promise<DomainInstallResult>,
@@ -190,7 +190,7 @@ async function resolveDomainRef(
   if (target) return domainRefFromTarget(target)
   if (!interactive) throw new AstraleError('MISSING_ARG', 'No domain given.')
 
-  const catalog = (await ctx.client.call(`${ADMIN_DOMAIN}/list`, {})) as DomainInfo[]
+  const catalog = (await ctx.client.call(adminDomainMethod('list'), {})) as DomainInfo[]
   const installable = catalog.filter((d) => d.url)
   if (installable.length === 0) {
     throw new AstraleError(

@@ -3,12 +3,13 @@ import { describe, expect, test } from 'bun:test'
 import type { IdentityStore } from '../../lib/identity'
 
 import { AuthError } from '../../errors'
-import { ADMIN_INSTANCE } from '../../lib/admin-instance'
+import { ADMIN_INSTANCE, adminInstanceMethod } from '../../lib/admin-instance'
 import { assertAlphaCreateIdentity } from '../instance/create'
 
 describe('admin-backed instance commands', () => {
   test('target the merged Instance class', () => {
-    expect(ADMIN_INSTANCE).toBe('/admin.astrale.ai/class.Instance')
+    expect(ADMIN_INSTANCE).toBe('/:admin.astrale.ai:class.Instance')
+    expect(adminInstanceMethod('list')).toBe('/:admin.astrale.ai:class.Instance:list')
   })
 
   test('instance create preflight points fresh installs at WorkOS login', () => {

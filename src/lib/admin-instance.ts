@@ -3,7 +3,11 @@
  * list/status/create/delete`. The merged admin domain models instances as the
  * `Instance` class (provisioned via `Instance.init`); these commands target it.
  */
-export const ADMIN_INSTANCE = '/admin.astrale.ai/class.Instance'
+export const ADMIN_INSTANCE = '/:admin.astrale.ai:class.Instance'
+
+export function adminInstanceMethod(method: 'alphaCreate' | 'delete' | 'info' | 'list'): string {
+  return `${ADMIN_INSTANCE}:${method}`
+}
 
 /** Read shape returned by `Instance.list` / `info` / `delete` (domain `InstanceInfoSchema`). */
 export type InstanceInfo = {

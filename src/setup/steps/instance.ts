@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import type { SetupContext, SetupStep } from '../types'
 
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
+import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
 import { normalizeInstanceKernelUrl, setActive, upsertManagedBookmark } from '../../lib/instance'
 import { readLocalStatus } from '../../lib/local-status'
 import { log, withSpinner } from '../../lib/log'
@@ -19,7 +19,7 @@ async function fetchManaged(ctx: SetupContext): Promise<InstanceInfo[]> {
       withAdminKernelClient(
         ctx.opts,
         async (client) =>
-          (await client.client.call(`${ADMIN_INSTANCE}/list`, {})) as InstanceInfo[],
+          (await client.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[],
       ),
     )
   } catch {

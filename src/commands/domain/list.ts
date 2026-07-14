@@ -5,7 +5,7 @@ import type { KernelCommandOpts } from '../../kernel'
 import type { ListProjection, RawOutputOpts } from '../../lib/output'
 
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_DOMAIN, type DomainInfo } from '../../lib/admin-domain'
+import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, withSpinner } from '../../lib/log'
 import { isMachine, presentList } from '../../lib/output'
@@ -102,7 +102,7 @@ Examples:
         async (): Promise<DomainRow[]> => {
           const list = await withAdminKernelClient(
             opts,
-            async (ctx) => (await ctx.client.call(`${ADMIN_DOMAIN}/list`, {})) as DomainInfo[],
+            async (ctx) => (await ctx.client.call(adminDomainMethod('list'), {})) as DomainInfo[],
           )
           const filtered = opts.defaultOnly ? list.filter((d) => d.installByDefault) : list
           filtered.sort(byDefaultThenName)

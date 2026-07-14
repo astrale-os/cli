@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import type { DomainInfo } from '../../lib/admin-domain'
-
+import { ADMIN_DOMAIN, adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
 import { byDefaultThenName, domainProjection, type DomainRow } from '../domain/list'
 
 const strip = (s: string): string => s.replace(/\[[0-9;]*m/g, '')
@@ -18,6 +17,11 @@ function entry(over: Partial<DomainInfo>): DomainInfo {
 }
 
 describe('domain list — ordering', () => {
+  test('uses the semantic static method path', () => {
+    expect(ADMIN_DOMAIN).toBe('/:admin.astrale.ai:class.DomainEntry')
+    expect(adminDomainMethod('list')).toBe('/:admin.astrale.ai:class.DomainEntry:list')
+  })
+
   test('install-by-default sorts first, then alphabetical by origin', () => {
     const rows = [
       entry({ origin: 'zeta.astrale.ai' }),

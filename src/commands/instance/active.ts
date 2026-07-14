@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import type { CommandDefinition } from '../../command'
 
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
+import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
 import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance'
 import { log } from '../../lib/log'
 import { RAW_OUTPUT_OPTIONS, isMachine, output, type RawOutputOpts } from '../../lib/output'
@@ -51,7 +51,7 @@ async function resolveActiveForDisplay(): Promise<{
     const managed = await withAdminKernelClient(
       {},
       async (ctx) =>
-        (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: active.name })) as InstanceInfo,
+        (await ctx.client.call(adminInstanceMethod('info'), { id: active.name })) as InstanceInfo,
     )
     return {
       name: managed.slug,

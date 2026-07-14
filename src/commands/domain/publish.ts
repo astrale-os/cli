@@ -4,7 +4,7 @@ import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_DOMAIN, type DomainInfo } from '../../lib/admin-domain'
+import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
@@ -115,7 +115,7 @@ Examples:
             // silently bumping `updatedAt`. `info` throws when absent → treat as
             // a fresh publish.
             const existing = (await ctx.client
-              .call(`${ADMIN_DOMAIN}/info`, { origin })
+              .call(adminDomainMethod('info'), { origin })
               .catch(() => null)) as DomainInfo | null
             if (
               existing &&
@@ -127,7 +127,7 @@ Examples:
             ) {
               return { entry: existing, changed: false as const, isNew: false }
             }
-            const entry = (await ctx.client.call(`${ADMIN_DOMAIN}/publish`, {
+            const entry = (await ctx.client.call(adminDomainMethod('publish'), {
               origin,
               name,
               url: publicUrl,

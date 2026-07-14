@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../../command'
 
 import { AstraleError } from '../../errors'
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_INSTANCE, type InstanceInfo } from '../../lib/admin-instance'
+import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { getDefault, setDefault } from '../../lib/identity'
 import {
@@ -142,7 +142,7 @@ async function fetchManagedInstances(name: string, opts: UseOpts): Promise<Insta
   try {
     return await withAdminKernelClient(
       opts,
-      async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/list`, {})) as InstanceInfo[],
+      async (ctx) => (await ctx.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[],
     )
   } catch {
     return []
