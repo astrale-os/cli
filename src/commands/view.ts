@@ -83,7 +83,7 @@ type ResolvedView = {
 export async function resolveSession(
   spec: string | undefined,
   opts: ViewOpts,
-): Promise<{ view: ResolvedView; target?: ResolvedTarget; candidates: ViewCandidate[] }> {
+): Promise<{ view?: ResolvedView; target?: ResolvedTarget; candidates: ViewCandidate[] }> {
   const parsed = spec ? parseViewSpec(spec) : undefined
   if (parsed?.kind === 'target' && opts.target) {
     fatal(new Error('Pass the target either as the positional or as --target, not both'))
@@ -123,6 +123,9 @@ export async function resolveSession(
   }
 
   const anchor = parsed.kind === 'view' ? parsed.path : resolved.target!.path
+  if (opts.list) {
+    return { target: resolved.target, candidates: resolved.candidates }
+  }
   const picked = await chooseCandidate(resolved.candidates, anchor, opts)
   let url = picked.url
   if (opts.viewUrl) url = applyViewUrlOverride(url, opts.viewUrl)
@@ -577,6 +580,7 @@ Examples:
       }
       return
     }
+    if (!view) throw new Error('View resolution completed without a selected view')
 
     const record = await startSession(view, target, opts)
 

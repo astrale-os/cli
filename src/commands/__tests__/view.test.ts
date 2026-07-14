@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 const getMock = mock(async (_path: string) => ({ id: 'issue-id' }))
-const clientCallMock = mock(async () => {
+const clientCallMock = mock(async (): Promise<unknown> => {
   throw new Error('View:resolve must not run for a bare --view-url')
 })
 
@@ -42,6 +42,33 @@ describe('view session resolution', () => {
       },
       target: { id: 'issue-id', path: targetPath },
       candidates: [],
+    })
+  })
+
+  test('lists every candidate without requiring a view selection', async () => {
+    const { resolveSession } = await import('../view')
+    const targetPath = '/domains/ai-gateway.astrale.ai/core/gemini-3-5-flash'
+    const candidates = [
+      {
+        id: 'chat-id',
+        path: '/domains/ai-gateway.astrale.ai/views/chat',
+        url: 'https://ai-gateway.astrale.ai/ui/chat',
+        origin: 'class' as const,
+      },
+      {
+        id: 'model-id',
+        path: '/domains/ai-gateway.astrale.ai/views/model',
+        url: 'https://ai-gateway.astrale.ai/ui/model',
+        origin: 'class' as const,
+      },
+    ]
+    clientCallMock.mockImplementationOnce(async () => candidates)
+
+    const result = await resolveSession(targetPath, { list: true })
+
+    expect(result).toEqual({
+      target: { id: 'issue-id', path: targetPath },
+      candidates,
     })
   })
 })
