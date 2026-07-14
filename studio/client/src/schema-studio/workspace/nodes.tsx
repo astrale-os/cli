@@ -10,6 +10,7 @@ import { GroupNode, schemaNodeTypes } from '../graph'
 import { DOMAIN_MIN_SIZE, MODULE_MIN_SIZE, type WorkspaceSize, workspaceGeometry } from './geometry'
 
 export interface WorkspaceNodeActions {
+  activateDomain: (domainId: string) => void
   resizeNode: (nodeId: string, size: WorkspaceSize) => void
   toggleModule: (domainId: string, path: string) => void
 }
@@ -76,6 +77,7 @@ function ResizeCorner({
 }
 
 function WorkspaceDomainNode({ id, data }: NodeProps) {
+  const actions = useWorkspaceNodeActions()
   const domain = data as WorkspaceDomainNodeData
   return (
     <div
@@ -88,7 +90,12 @@ function WorkspaceDomainNode({ id, data }: NodeProps) {
           : 'cursor-pointer border-border/55 hover:border-border',
       )}
     >
-      <div className="absolute inset-x-0 top-0 flex h-12 items-center gap-2 border-b border-border/35 px-4">
+      <div
+        data-testid={`workspace-domain-header-${domain.domainId}`}
+        title={`Drag ${domain.origin}`}
+        onPointerDownCapture={() => actions.activateDomain(domain.domainId)}
+        className="workspace-domain-drag-handle absolute inset-x-0 top-0 flex h-12 cursor-grab select-none items-center gap-2 border-b border-border/35 px-4 active:cursor-grabbing"
+      >
         <span
           className={cn(
             'h-2 w-2 rounded-full',

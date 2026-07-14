@@ -239,7 +239,13 @@ test('only makes nodes inside the active domain interactive', () => {
       style: expect.objectContaining({ pointerEvents: 'none' }),
     }),
   )
-  expect(betaDomain).toEqual(expect.objectContaining({ draggable: false, selectable: true }))
+  expect(betaDomain).toEqual(
+    expect.objectContaining({
+      draggable: true,
+      dragHandle: '.workspace-domain-drag-handle',
+      selectable: true,
+    }),
+  )
 })
 
 test('applies persisted domain sizes without allowing content to be covered', () => {

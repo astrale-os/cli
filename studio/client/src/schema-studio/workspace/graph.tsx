@@ -85,6 +85,17 @@ export function WorkspaceSchemaGraph({
     [commitLayout, getNode, setDomainSize],
   )
 
+  const activate = useCallback(
+    (domainId: string, ref?: string) => {
+      if (useUI.getState().domainId !== domainId) {
+        setDomain(domainId)
+        return
+      }
+      if (ref) useUI.getState().selectClass(ref)
+    },
+    [setDomain],
+  )
+
   const toggleWorkspaceModule = useCallback(
     (domainId: string, path: string) => {
       if (useUI.getState().domainId !== domainId) {
@@ -97,8 +108,8 @@ export function WorkspaceSchemaGraph({
   )
 
   const nodeActions = useMemo<WorkspaceNodeActions>(
-    () => ({ resizeNode, toggleModule: toggleWorkspaceModule }),
-    [resizeNode, toggleWorkspaceModule],
+    () => ({ activateDomain: activate, resizeNode, toggleModule: toggleWorkspaceModule }),
+    [activate, resizeNode, toggleWorkspaceModule],
   )
 
   const projection = useMemo(
@@ -132,17 +143,6 @@ export function WorkspaceSchemaGraph({
     const frame = requestAnimationFrame(() => fitView({ padding: 0.12, duration: 420 }))
     return () => cancelAnimationFrame(frame)
   }, [domains, ensureDomainContentOffsets, ensureDomainPositions, fitView, projection])
-
-  const activate = useCallback(
-    (domainId: string, ref?: string) => {
-      if (useUI.getState().domainId !== domainId) {
-        setDomain(domainId)
-        return
-      }
-      if (ref) useUI.getState().selectClass(ref)
-    },
-    [setDomain],
-  )
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) =>

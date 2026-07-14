@@ -427,7 +427,8 @@ export function composeWorkspaceCanvas(
       id: rootId,
       type: 'workspaceDomain',
       position: frame.position,
-      draggable: active,
+      draggable: true,
+      dragHandle: '.workspace-domain-drag-handle',
       selectable: true,
       data: {
         domainId,
