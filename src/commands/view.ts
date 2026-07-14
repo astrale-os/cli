@@ -36,6 +36,7 @@ import {
   saveRecord,
   VIEW_DIR,
 } from '../lib/view/session'
+import { snapshotText, waitForSettledSnapshot } from '../lib/view/snapshot'
 
 /**
  * `astrale view` — open ONE view in an emulated host shell, authenticated as
@@ -414,31 +415,26 @@ async function reportOpened(
   console.log(`${chalk.bold('Close:')}   astrale view --close ${record.id}`)
 }
 
-async function runSnapshotExtras(record: ViewSessionRecord, opts: ViewOpts): Promise<void> {
+export async function runSnapshotExtras(
+  opts: Pick<ViewOpts, 'headed' | 'screenshot' | 'snapshot'>,
+): Promise<void> {
   const target = { profile: VIEW_PROFILE, headed: !!opts.headed }
+  const settled =
+    opts.screenshot || opts.snapshot
+      ? await waitForSettledSnapshot(() => ab(['snapshot'], target))
+      : null
+
   if (opts.screenshot) {
     const shot = await ab(['screenshot', opts.screenshot], target)
     if (!shot.ok) log.warn(`screenshot failed: ${shot.error ?? 'unknown error'}`)
     else log.dim(`  screenshot → ${opts.screenshot}`)
   }
-  if (opts.snapshot) {
-    // Snapshot twice: the first triggers a11y-tree construction for the
-    // cross-origin view iframe (OOPIF), the second reads its actual content.
-    await ab(['snapshot'], target)
-    await sleep(800)
-    const snap = await ab(['snapshot'], target)
-    if (!snap.ok) {
-      log.warn(`snapshot failed: ${snap.error ?? 'unknown error'}`)
+  if (opts.snapshot && settled) {
+    if (!settled.ok) {
+      log.warn(`snapshot failed: ${settled.error ?? 'unknown error'}`)
       return
     }
-    const data = snap.data as { snapshot?: unknown } | string | null
-    const text =
-      typeof data === 'string'
-        ? data
-        : typeof (data as { snapshot?: unknown })?.snapshot === 'string'
-          ? (data as { snapshot: string }).snapshot
-          : JSON.stringify(data, null, 2)
-    console.log(text)
+    console.log(snapshotText(settled) ?? JSON.stringify(settled.data, null, 2))
   }
 }
 
@@ -613,6 +609,6 @@ Examples:
       process.exit(1)
     }
     await reportOpened(record, state, mode, opts)
-    if (mode === 'agent') await runSnapshotExtras(record, opts)
+    if (mode === 'agent') await runSnapshotExtras(opts)
   },
 } satisfies CommandDefinition
