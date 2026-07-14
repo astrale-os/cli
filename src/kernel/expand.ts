@@ -1,7 +1,7 @@
 import type { InstanceInfo } from '../lib/admin-instance'
 import type { KernelCommandOpts } from './types'
 
-import { ADMIN_INSTANCE } from '../lib/admin-instance'
+import { adminInstanceMethod } from '../lib/admin-instance'
 /** CLI bridge for @self resolution and stale-registration error hints. */
 import { readConfig } from '../lib/config'
 import { getDefault, getIdentity, setRegistration } from '../lib/identity'
@@ -95,7 +95,8 @@ function adminLookupOpts(opts: KernelCommandOpts): KernelCommandOpts {
 async function lookupManagedInstance(slug: string, opts: KernelCommandOpts): Promise<InstanceInfo> {
   return await withAdminKernelClient(
     adminLookupOpts(opts),
-    async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: slug })) as InstanceInfo,
+    async (ctx) =>
+      (await ctx.client.call(adminInstanceMethod('info'), { id: slug })) as InstanceInfo,
   )
 }
 

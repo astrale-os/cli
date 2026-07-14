@@ -5,7 +5,7 @@ import type { AdminTargetCommandOpts } from '../lib/admin-target'
 import type { KernelCommandOpts } from './types'
 
 import { AstraleError } from '../errors'
-import { ADMIN_INSTANCE, type InstanceInfo } from '../lib/admin-instance'
+import { adminInstanceMethod, type InstanceInfo } from '../lib/admin-instance'
 import { readConfig } from '../lib/config'
 import { resolveInstanceTarget, type ResolvedInstanceTarget } from '../lib/instance-target'
 import { resolveCredential } from './auth'
@@ -71,7 +71,8 @@ export async function withKernelClient<T>(
 async function lookupManagedInstance(slug: string, opts: KernelCommandOpts): Promise<InstanceInfo> {
   return await withAdminKernelClient(
     adminLookupOpts(opts),
-    async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/info`, { id: slug })) as InstanceInfo,
+    async (ctx) =>
+      (await ctx.client.call(adminInstanceMethod('info'), { id: slug })) as InstanceInfo,
   )
 }
 

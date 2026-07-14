@@ -7,7 +7,11 @@
  * mounting it on an instance is the separate `domain install` step (or the
  * admin's install-by-default policy).
  */
-export const ADMIN_DOMAIN = '/admin.astrale.ai/class.DomainEntry'
+export const ADMIN_DOMAIN = '/:admin.astrale.ai:class.DomainEntry'
+
+export function adminDomainMethod(method: 'info' | 'install' | 'list' | 'publish'): string {
+  return `${ADMIN_DOMAIN}:${method}`
+}
 
 /** Read shape returned by `DomainEntry.publish` / `info` / `list` (domain `DomainInfoSchema`). */
 export type DomainInfo = {

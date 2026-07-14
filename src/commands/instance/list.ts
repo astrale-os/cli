@@ -5,7 +5,11 @@ import type { KernelCommandOpts } from '../../kernel'
 import type { Column } from '../../lib/output'
 
 import { withAdminKernelClient } from '../../kernel/client'
-import { ADMIN_INSTANCE, formatInstanceLocation, type InstanceInfo } from '../../lib/admin-instance'
+import {
+  adminInstanceMethod,
+  formatInstanceLocation,
+  type InstanceInfo,
+} from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
@@ -60,7 +64,8 @@ export default {
         managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
           withAdminKernelClient(
             opts,
-            async (ctx) => (await ctx.client.call(`${ADMIN_INSTANCE}/list`, {})) as InstanceInfo[],
+            async (ctx) =>
+              (await ctx.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[],
           ),
         )
       }

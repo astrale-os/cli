@@ -5,7 +5,7 @@ import type { AdminTargetCommandOpts } from './admin-target'
 
 import { AuthError } from '../errors'
 import { withAdminKernelClient } from '../kernel/client'
-import { ADMIN_INSTANCE } from './admin-instance'
+import { adminInstanceMethod } from './admin-instance'
 import { readIdentities, type IdentityStore } from './identity'
 import { setActive, upsertManagedBookmark } from './instance'
 import { withSpinner } from './log'
@@ -74,7 +74,7 @@ export async function provisionInstance(
         const created = await withAdminKernelClient(
           createOpts,
           async (ctx) =>
-            (await ctx.client.call(`${ADMIN_INSTANCE}/alphaCreate`, {
+            (await ctx.client.call(adminInstanceMethod('alphaCreate'), {
               slug,
               ...(hostId ? { host_id: hostId } : {}),
             })) as { url: string; organizationId?: string },
