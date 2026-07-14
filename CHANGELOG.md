@@ -1,5 +1,57 @@
 # Changelog
 
+## [0.6.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.5.0-alpha.0...cli-v0.6.0-alpha.0) (2026-07-14)
+
+
+### Features
+
+* add schema module tests and client package extraction ([5a9831f](https://github.com/astrale-os/cli/commit/5a9831f02e121a57b9bdd076a7657e47eaf8d07b))
+* astrale view — single-view sessions in an emulated shell host ([4df3125](https://github.com/astrale-os/cli/commit/4df3125de3e3d8a2a75d28510b197428ff8406cc))
+* astrale view — single-view sessions in an emulated shell host ([9f2d855](https://github.com/astrale-os/cli/commit/9f2d8554004254d21c0ab6756a8057a7817e85c3))
+* **cli:** connect-core seam + IdP device-flow onVerification ([#34](https://github.com/astrale-os/cli/issues/34)) ([1e495e4](https://github.com/astrale-os/cli/commit/1e495e40b1034c614f230fd624496abc91bfdba0))
+* local telemetry — session recorder, harness adapters, opportunistic DX analyzer ([46dbe55](https://github.com/astrale-os/cli/commit/46dbe55f391187792c71c3eb3871cd1fbd3895c0))
+* local telemetry — session recorder, harness adapters, opportunistic DX analyzer ([34fe32c](https://github.com/astrale-os/cli/commit/34fe32c35caf2586e00b42c37a287400e709cae5))
+* make Studio domain headers draggable ([0a6f502](https://github.com/astrale-os/cli/commit/0a6f502006b2774ededa4f6704f4452d66b2f131))
+* studio exports ASTRALE_SESSION; skill end-of-task DX-issue checklist ([8f94fb1](https://github.com/astrale-os/cli/commit/8f94fb1132d9af45446284a1af2433f4d33c0ef9))
+* studio exports ASTRALE_SESSION; skill end-of-task DX-issue checklist ([717a612](https://github.com/astrale-os/cli/commit/717a61297d6481e6131aecca71ea4f32c05a853e))
+* **studio:** add multi-domain workspaces ([170f0d7](https://github.com/astrale-os/cli/commit/170f0d744bb7454c9d3521f6f833c381640c76e1))
+* **studio:** compose multiple domains on canvas ([5bcfb14](https://github.com/astrale-os/cli/commit/5bcfb1407402722e790c8bbaa9fbde3aec9b317f))
+* **studio:** guard and resize workspace domains ([84d5801](https://github.com/astrale-os/cli/commit/84d580161b089d090f349abc0bd0bf4f27ca980f))
+* unify Studio domain canvas controls ([6144626](https://github.com/astrale-os/cli/commit/6144626cc95efa4f2a1def4ae8ff012607a6ab29))
+* **view:** route open intents to associated views ([9f8c2b1](https://github.com/astrale-os/cli/commit/9f8c2b156097eb805a31c15ff2143bfdd5096902))
+
+
+### Bug Fixes
+
+* analyzer files issues with --ci and plain-ASCII bodies (non-ci hang) ([9534203](https://github.com/astrale-os/cli/commit/9534203e14e936304dadbaed46cd8251fa564972))
+* **ci:** restore automated CLI publishing ([ab5d246](https://github.com/astrale-os/cli/commit/ab5d2469bd08bc242335db0caf703f46d04b3381))
+* **cli:** keep command timeout defaults ([6554e95](https://github.com/astrale-os/cli/commit/6554e9509e74a6a3ecbf13901f94dd81caed4b8f))
+* **commands:** list view candidates before selection ([11be6ba](https://github.com/astrale-os/cli/commit/11be6ba6b0c4d0b0d393b170791a19bd28f9b222))
+* **commands:** use semantic admin method paths ([9b5d1b2](https://github.com/astrale-os/cli/commit/9b5d1b2e4e2ab592ee7c046ed9f3293c5b2ec031))
+* **commands:** use semantic admin method paths ([a271fbf](https://github.com/astrale-os/cli/commit/a271fbf42e4882fef198fd32fd6bbc6eb63e3484))
+* **lib:** keep open-intent tests runtime-independent ([1396af4](https://github.com/astrale-os/cli/commit/1396af44a6982d71e68395c3962d18b9c7734b21))
+* **release:** restore automated CLI publishing ([91d0c3e](https://github.com/astrale-os/cli/commit/91d0c3e7b1f658bb5c8f5039d574e589df10723c))
+* **studio:** discover local preview packages ([7805fa3](https://github.com/astrale-os/cli/commit/7805fa373f1a296d3a036671579a66cdb02b23aa))
+* **studio:** stabilize external workspace frames ([f3e23a0](https://github.com/astrale-os/cli/commit/f3e23a049984ae9ea1645c5878fa0f8f3bfb292c))
+* sync standalone lockfile with @astrale-os/shell devDependency ([7b1b3c9](https://github.com/astrale-os/cli/commit/7b1b3c940c34dbcc82f54f806f7a0596fcad36e0))
+* sync standalone lockfile with @astrale-os/shell devDependency ([e74f933](https://github.com/astrale-os/cli/commit/e74f9339839d27f3b97679b02a4ca8b3c0dc94a1))
+* telemetry paths resolve at call time; test cleanups confined to tmpdir ([d38aecf](https://github.com/astrale-os/cli/commit/d38aecf59707abe88ddc9c87836706b8485d5c92))
+* telemetry review pass — bunfs self-spawn, analyzer sandbox, GC, redaction shapes ([5ec0785](https://github.com/astrale-os/cli/commit/5ec07859f99cce9b97fb9d27093647df97b092c0))
+* typed fail-fast for unknown -i instances; machine-readable errors in machine mode ([c262b99](https://github.com/astrale-os/cli/commit/c262b99a6acde0f4f9a403734b484ef09f8d475c))
+* typed fail-fast for unknown -i instances; machine-readable errors in machine mode ([49f2476](https://github.com/astrale-os/cli/commit/49f2476679b100e16d039717d50aeeb43af23efc))
+* **view:** list candidates before selection ([9141b18](https://github.com/astrale-os/cli/commit/9141b1809478ed5111dc70d0ee5f9c313f5f0136))
+* **view:** wait for settled captures ([845881d](https://github.com/astrale-os/cli/commit/845881d3afd3be635f4fdb16bdbd29296af4a379))
+* **view:** wait for settled one-shot captures ([4677b62](https://github.com/astrale-os/cli/commit/4677b62c72465e7824361b3804967383009e620f))
+
+
+### Documentation
+
+* add Issues-retrospective topics to astrale-domain skill ([#42](https://github.com/astrale-os/cli/issues/42)) ([f3570ef](https://github.com/astrale-os/cli/commit/f3570ef920cada5910d696b747ea14d4449f21b3))
+* add no-instance domain validation topic to astrale-domain skill ([#43](https://github.com/astrale-os/cli/issues/43)) ([605ad5c](https://github.com/astrale-os/cli/commit/605ad5c7c28dffcf9879b7ec88b3d92e2f779c6b))
+* update astrale-domain skill ([#44](https://github.com/astrale-os/cli/issues/44)) ([143ddb3](https://github.com/astrale-os/cli/commit/143ddb36a0d49d9a7892da943d34e2e29fdc1de8))
+* update shell domain examples ([aea8f23](https://github.com/astrale-os/cli/commit/aea8f23f85183dff74883ef1b7a35b6fdd77dd6b))
+* update shell domain examples ([9092315](https://github.com/astrale-os/cli/commit/90923151de49b5ac42f621bfb5a276617c4cab0e))
+
 ## 0.4.0-alpha.10 (2026-06-15)
 
 ### Public Alpha
