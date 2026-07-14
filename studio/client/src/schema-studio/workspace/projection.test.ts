@@ -11,6 +11,7 @@ import { expect, test } from 'bun:test'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
+import { DOMAIN_MIN_SIZE } from './geometry'
 import {
   composeWorkspaceCanvas,
   qualifiedNodeId,
@@ -199,6 +200,7 @@ test('keeps owner-local geometry on draggable workspace nodes', () => {
   expect(node).toEqual(
     expect.objectContaining({
       draggable: true,
+      expandParent: false,
       parentId: 'workspace-domain:services',
       position: { x: 80, y: 96 },
       data: expect.objectContaining({
@@ -264,10 +266,29 @@ test('applies persisted domain sizes without allowing content to be covered', ()
     { services: { width: 10, height: 10 } },
   )
   const clampedDomain = clamped.nodes.find((node) => node.id === 'workspace-domain:services')!
-  const limits = clampedDomain.data as { minWidth: number; minHeight: number }
   expect(clampedDomain.style).toEqual(
-    expect.objectContaining({ width: limits.minWidth, height: limits.minHeight }),
+    expect.objectContaining({ width: DOMAIN_MIN_SIZE.width, height: DOMAIN_MIN_SIZE.height }),
   )
+})
+
+test('does not repack sibling domains after one domain is resized', () => {
+  const alpha = prepared(bundle('alpha', 'alpha.dev', { Service: nodeClass('Service') }), [
+    'Service',
+  ])
+  const beta = prepared(bundle('beta', 'beta.dev', { Worker: nodeClass('Worker') }), ['Worker'])
+  const initial = composeWorkspaceCanvas([alpha, beta], 'alpha', {})
+  const initialBeta = initial.nodes.find((node) => node.id === 'workspace-domain:beta')!
+  const resized = composeWorkspaceCanvas(
+    [alpha, beta],
+    'alpha',
+    initial.domainPositions,
+    undefined,
+    initial.contentOffsets,
+    { alpha: { width: 800, height: 500 } },
+  )
+  const resizedBeta = resized.nodes.find((node) => node.id === 'workspace-domain:beta')!
+
+  expect(resizedBeta.position).toEqual(initialBeta.position)
 })
 
 test('does not guess when two selected folders declare the same semantic origin', () => {

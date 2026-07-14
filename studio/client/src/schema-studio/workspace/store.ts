@@ -1,14 +1,8 @@
 import { create } from 'zustand'
 
-export interface WorkspacePoint {
-  x: number
-  y: number
-}
+import type { WorkspacePoint, WorkspaceSize } from './geometry'
 
-export interface WorkspaceSize {
-  width: number
-  height: number
-}
+export type { WorkspacePoint, WorkspaceSize } from './geometry'
 
 interface PersistedWorkspaceState {
   selectedDomainIds: string[]
@@ -24,8 +18,9 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   toggleDomain: (id: string, primaryDomainId: string) => void
   setDomainPosition: (id: string, position: WorkspacePoint) => void
   setDomainSize: (id: string, size: WorkspaceSize) => void
+  ensureDomainPositions: (positions: Record<string, WorkspacePoint>) => void
   ensureDomainContentOffsets: (offsets: Record<string, WorkspacePoint>) => void
-  resetDomainPositions: () => void
+  resetDomainFrames: () => void
   toggleModule: (domainId: string, path: string) => void
   toggleInterface: (domainId: string, name: string) => void
 }
@@ -128,6 +123,19 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       persist({ ...persisted(state), domainSizes })
       return { domainSizes }
     }),
+  ensureDomainPositions: (positions) =>
+    set((state) => {
+      const domainPositions = { ...state.domainPositions }
+      let changed = false
+      for (const [domainId, position] of Object.entries(positions)) {
+        if (domainPositions[domainId]) continue
+        domainPositions[domainId] = position
+        changed = true
+      }
+      if (!changed) return state
+      persist({ ...persisted(state), domainPositions })
+      return { domainPositions }
+    }),
   ensureDomainContentOffsets: (offsets) =>
     set((state) => {
       const domainContentOffsets = { ...state.domainContentOffsets }
@@ -141,10 +149,10 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       persist({ ...persisted(state), domainContentOffsets })
       return { domainContentOffsets }
     }),
-  resetDomainPositions: () =>
+  resetDomainFrames: () =>
     set((state) => {
-      persist({ ...persisted(state), domainPositions: {} })
-      return { domainPositions: {} }
+      persist({ ...persisted(state), domainPositions: {}, domainSizes: {} })
+      return { domainPositions: {}, domainSizes: {} }
     }),
   toggleModule: (domainId, path) =>
     set((state) => {

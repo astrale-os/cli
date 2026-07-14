@@ -1,8 +1,7 @@
-import type { DomainCatalogEntry, NodePosition } from '@shared/types'
+import type { DomainCatalogEntry } from '@shared/types'
 
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
-import type { WorkspaceSize } from './store'
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
 import { cardinalityMarkers } from '../cardinality-markers'
@@ -12,6 +11,13 @@ import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../g
 import { moduleOfClass } from '../modules'
 import { localInterfaceRendered, projectDomainCanvas } from '../projection'
 import { classRef, edgeRef, isHidden, type Materialized } from '../visibility'
+import {
+  layoutWorkspaceFrames,
+  WORKSPACE_DOMAIN_GAP,
+  type WorkspaceNodeGeometryData,
+  type WorkspacePoint,
+  type WorkspaceSize,
+} from './geometry'
 
 export interface WorkspaceDomainProjection {
   input: WorkspaceDomainInput
@@ -26,24 +32,14 @@ export interface WorkspaceDomainNodeData extends Record<string, unknown> {
   origin: string
   memberCount: number
   active: boolean
-  minWidth: number
-  minHeight: number
 }
 
 export interface WorkspaceProjection {
   nodes: Node[]
   edges: Edge[]
   diagnostics: string[]
-  contentOffsets: Record<string, NodePosition>
-}
-
-export interface WorkspaceNodeGeometryData {
-  domainId: string
-  localId: string
-  offset: NodePosition
-  active: boolean
-  minWidth?: number
-  minHeight?: number
+  domainPositions: Record<string, WorkspacePoint>
+  contentOffsets: Record<string, WorkspacePoint>
 }
 
 interface ResolvedTarget {
@@ -54,113 +50,12 @@ interface ResolvedTarget {
   unresolved?: { origin: string; name: string; definition: 'class' | 'interface' }
 }
 
-interface DomainBox {
-  domain: WorkspaceDomainProjection
-  width: number
-  height: number
-  minWidth: number
-  minHeight: number
-  minX: number
-  minY: number
-  maxX: number
-  maxY: number
-  contentOffset: NodePosition
-  position: NodePosition
-}
-
-const DOMAIN_PADDING = 52
-const DOMAIN_HEADER = 48
-const DOMAIN_GAP = 112
-const SHELF_WIDTH = 1900
 const CROSS_COLOR = 'oklch(0.76 0.16 35)'
 const CONTRACT_COLOR = 'oklch(0.72 0.18 330)'
 
 export const workspaceDomainNodeId = (domainId: string) => `workspace-domain:${domainId}`
 export const qualifiedNodeId = (domainId: string, localId: string) =>
   `workspace:${encodeURIComponent(domainId)}:${localId}`
-
-function nodeSize(node: Node): { width: number; height: number } {
-  const fallback =
-    node.type === 'classNode' || node.type === 'interfaceNode'
-      ? { width: 160, height: 88 }
-      : node.type === 'moduleNode'
-        ? { width: 200, height: 44 }
-        : { width: 200, height: 120 }
-  return {
-    width:
-      node.measured?.width ??
-      (typeof node.style?.width === 'number' ? node.style.width : fallback.width),
-    height:
-      node.measured?.height ??
-      (typeof node.style?.height === 'number' ? node.style.height : fallback.height),
-  }
-}
-
-function moduleMinimumSizes(nodes: Node[]): Map<string, WorkspaceSize> {
-  const minimums = new Map<string, WorkspaceSize>()
-  for (const node of nodes) {
-    if (node.type === 'group') minimums.set(node.id, { width: 200, height: 120 })
-  }
-  for (const child of nodes) {
-    if (!child.parentId) continue
-    const minimum = minimums.get(child.parentId)
-    if (!minimum) continue
-    const size = nodeSize(child)
-    minimum.width = Math.max(minimum.width, child.position.x + size.width + 14)
-    minimum.height = Math.max(minimum.height, child.position.y + size.height + 14)
-  }
-  for (const minimum of minimums.values()) {
-    minimum.width = Math.round(minimum.width)
-    minimum.height = Math.round(minimum.height)
-  }
-  return minimums
-}
-
-function domainBounds(
-  nodes: Node[],
-): Omit<DomainBox, 'domain' | 'position' | 'contentOffset' | 'minWidth' | 'minHeight'> {
-  const roots = nodes.filter((node) => !node.parentId)
-  if (roots.length === 0) {
-    return { width: 360, height: 220, minX: 0, minY: 0, maxX: 0, maxY: 0 }
-  }
-  let minX = Number.POSITIVE_INFINITY
-  let minY = Number.POSITIVE_INFINITY
-  let maxX = Number.NEGATIVE_INFINITY
-  let maxY = Number.NEGATIVE_INFINITY
-  for (const node of roots) {
-    const size = nodeSize(node)
-    minX = Math.min(minX, node.position.x)
-    minY = Math.min(minY, node.position.y)
-    maxX = Math.max(maxX, node.position.x + size.width)
-    maxY = Math.max(maxY, node.position.y + size.height)
-  }
-  return {
-    width: Math.max(360, maxX - minX + DOMAIN_PADDING * 2),
-    height: Math.max(220, maxY - minY + DOMAIN_PADDING * 2 + DOMAIN_HEADER),
-    minX,
-    minY,
-    maxX,
-    maxY,
-  }
-}
-
-function defaultDomainPositions(boxes: Omit<DomainBox, 'position'>[]): NodePosition[] {
-  const positions: NodePosition[] = []
-  let x = 0
-  let y = 0
-  let rowHeight = 0
-  for (const box of boxes) {
-    if (x > 0 && x + box.width > SHELF_WIDTH) {
-      x = 0
-      y += rowHeight + DOMAIN_GAP
-      rowHeight = 0
-    }
-    positions.push({ x, y })
-    x += box.width + DOMAIN_GAP
-    rowHeight = Math.max(rowHeight, box.height)
-  }
-  return positions
-}
 
 function materializedInterfaces(
   input: WorkspaceDomainInput,
@@ -499,9 +394,9 @@ function externalNodes(
 export function composeWorkspaceCanvas(
   domains: WorkspaceDomainProjection[],
   activeDomainId: string,
-  savedDomainPositions: Record<string, NodePosition>,
+  savedDomainPositions: Record<string, WorkspacePoint>,
   catalog?: DomainCatalogEntry[],
-  savedContentOffsets: Record<string, NodePosition> = {},
+  savedContentOffsets: Record<string, WorkspacePoint> = {},
   savedDomainSizes: Record<string, WorkspaceSize> = {},
 ): WorkspaceProjection {
   const diagnostics = new Set<string>()
@@ -513,61 +408,41 @@ export function composeWorkspaceCanvas(
     origins.set(origin, list)
   }
 
-  const rawBoxes = domains.map((domain) => {
-    const bounds = domainBounds(domain.nodes)
-    const contentOffset = savedContentOffsets[domain.input.summary.id] ?? {
-      x: DOMAIN_PADDING - bounds.minX,
-      y: DOMAIN_PADDING + DOMAIN_HEADER - bounds.minY,
-    }
-    const minWidth = Math.max(360, bounds.maxX + contentOffset.x + DOMAIN_PADDING)
-    const minHeight = Math.max(220, bounds.maxY + contentOffset.y + DOMAIN_PADDING)
-    const savedSize = savedDomainSizes[domain.input.summary.id]
-    return {
-      domain,
-      ...bounds,
-      contentOffset,
-      width: Math.max(minWidth, savedSize?.width ?? 0),
-      height: Math.max(minHeight, savedSize?.height ?? 0),
-      minWidth,
-      minHeight,
-    }
-  })
-  const defaults = defaultDomainPositions(rawBoxes)
-  const boxes: DomainBox[] = rawBoxes.map((box, index) => ({
-    ...box,
-    position: savedDomainPositions[box.domain.input.summary.id] ?? defaults[index],
-  }))
+  const frames = layoutWorkspaceFrames(
+    domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
+    savedDomainPositions,
+    savedDomainSizes,
+    savedContentOffsets,
+  )
+  const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
   const nodes: Node[] = []
   const edges: Edge[] = []
 
-  for (const box of boxes) {
-    const domainId = box.domain.input.summary.id
+  for (const domain of domains) {
+    const domainId = domain.input.summary.id
+    const frame = framesByDomain.get(domainId)!
     const rootId = workspaceDomainNodeId(domainId)
     const active = domainId === activeDomainId
     nodes.push({
       id: rootId,
       type: 'workspaceDomain',
-      position: { x: box.position.x, y: box.position.y },
+      position: frame.position,
       draggable: active,
       selectable: true,
       data: {
         domainId,
-        origin: box.domain.input.summary.origin,
+        origin: domain.input.summary.origin,
         memberCount:
-          Object.keys(box.domain.input.bundle.ir?.classes ?? {}).length +
-          Object.keys(box.domain.input.bundle.ir?.interfaces ?? {}).length,
+          Object.keys(domain.input.bundle.ir?.classes ?? {}).length +
+          Object.keys(domain.input.bundle.ir?.interfaces ?? {}).length,
         active,
-        minWidth: box.minWidth,
-        minHeight: box.minHeight,
       } satisfies WorkspaceDomainNodeData,
-      style: { width: box.width, height: box.height },
+      style: { width: frame.size.width, height: frame.size.height },
     })
 
-    const moduleMinimums = moduleMinimumSizes(box.domain.nodes)
-    for (const node of box.domain.nodes) {
+    for (const node of domain.nodes) {
       const root = !node.parentId
-      const offset = root ? box.contentOffset : { x: 0, y: 0 }
-      const minimum = moduleMinimums.get(node.id)
+      const offset = root ? frame.contentOffset : { x: 0, y: 0 }
       nodes.push({
         ...node,
         id: qualifiedNodeId(domainId, node.id),
@@ -580,11 +455,10 @@ export function composeWorkspaceCanvas(
             localId: node.id,
             offset,
             active,
-            ...(minimum ? { minWidth: minimum.width, minHeight: minimum.height } : {}),
           } satisfies WorkspaceNodeGeometryData,
         },
         extent: 'parent',
-        expandParent: true,
+        expandParent: false,
         draggable: active,
         selectable: active,
         focusable: active,
@@ -594,7 +468,7 @@ export function composeWorkspaceCanvas(
         },
       })
     }
-    for (const edge of box.domain.edges) {
+    for (const edge of domain.edges) {
       edges.push({
         ...edge,
         id: qualifiedNodeId(domainId, edge.id),
@@ -606,16 +480,20 @@ export function composeWorkspaceCanvas(
 
   const cross = crossDomainEdges(domains, origins, diagnostics)
   const contracts = contractEdges(domains, origins, diagnostics)
-  const rightEdge = boxes.reduce((max, box) => Math.max(max, box.position.x + box.width), 0)
-  nodes.push(...externalNodes(cross.unresolved, catalog, rightEdge + DOMAIN_GAP))
+  const rightEdge = frames.reduce(
+    (max, frame) => Math.max(max, frame.position.x + frame.size.width),
+    0,
+  )
+  nodes.push(...externalNodes(cross.unresolved, catalog, rightEdge + WORKSPACE_DOMAIN_GAP))
   edges.push(...cross.edges, ...contracts)
 
   return {
     nodes,
     edges,
     diagnostics: [...diagnostics].sort(),
+    domainPositions: Object.fromEntries(frames.map((frame) => [frame.domainId, frame.position])),
     contentOffsets: Object.fromEntries(
-      boxes.map((box) => [box.domain.input.summary.id, box.contentOffset]),
+      frames.map((frame) => [frame.domainId, frame.contentOffset]),
     ),
   }
 }
