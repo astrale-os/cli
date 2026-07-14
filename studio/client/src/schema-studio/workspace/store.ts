@@ -5,9 +5,15 @@ export interface WorkspacePoint {
   y: number
 }
 
+export interface WorkspaceSize {
+  width: number
+  height: number
+}
+
 interface PersistedWorkspaceState {
   selectedDomainIds: string[]
   domainPositions: Record<string, WorkspacePoint>
+  domainSizes: Record<string, WorkspaceSize>
   domainContentOffsets: Record<string, WorkspacePoint>
   collapsedModules: Record<string, string[]>
   badgeInterfaces: Record<string, string[]>
@@ -17,6 +23,7 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   replaceDomains: (ids: string[]) => void
   toggleDomain: (id: string, primaryDomainId: string) => void
   setDomainPosition: (id: string, position: WorkspacePoint) => void
+  setDomainSize: (id: string, size: WorkspaceSize) => void
   ensureDomainContentOffsets: (offsets: Record<string, WorkspacePoint>) => void
   resetDomainPositions: () => void
   toggleModule: (domainId: string, path: string) => void
@@ -28,6 +35,7 @@ const STORAGE_KEY = 'studio.schemaWorkspace.v1'
 const EMPTY: PersistedWorkspaceState = {
   selectedDomainIds: [],
   domainPositions: {},
+  domainSizes: {},
   domainContentOffsets: {},
   collapsedModules: {},
   badgeInterfaces: {},
@@ -60,6 +68,7 @@ function load(): PersistedWorkspaceState {
     return {
       selectedDomainIds: uniqueDomainIds(value.selectedDomainIds ?? []),
       domainPositions: value.domainPositions ?? {},
+      domainSizes: value.domainSizes ?? {},
       domainContentOffsets: value.domainContentOffsets ?? {},
       collapsedModules: value.collapsedModules ?? {},
       badgeInterfaces: value.badgeInterfaces ?? {},
@@ -79,6 +88,7 @@ function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
   return {
     selectedDomainIds: state.selectedDomainIds,
     domainPositions: state.domainPositions,
+    domainSizes: state.domainSizes,
     domainContentOffsets: state.domainContentOffsets,
     collapsedModules: state.collapsedModules,
     badgeInterfaces: state.badgeInterfaces,
@@ -111,6 +121,12 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       const domainPositions = { ...state.domainPositions, [id]: position }
       persist({ ...persisted(state), domainPositions })
       return { domainPositions }
+    }),
+  setDomainSize: (id, size) =>
+    set((state) => {
+      const domainSizes = { ...state.domainSizes, [id]: size }
+      persist({ ...persisted(state), domainSizes })
+      return { domainSizes }
     }),
   ensureDomainContentOffsets: (offsets) =>
     set((state) => {

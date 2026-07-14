@@ -206,9 +206,67 @@ test('keeps owner-local geometry on draggable workspace nodes', () => {
           domainId: 'services',
           localId: 'class.Service',
           offset: { x: 80, y: 96 },
+          active: true,
         },
       }),
     }),
+  )
+})
+
+test('only makes nodes inside the active domain interactive', () => {
+  const alpha = prepared(bundle('alpha', 'alpha.dev', { Service: nodeClass('Service') }), [
+    'Service',
+  ])
+  const beta = prepared(bundle('beta', 'beta.dev', { Worker: nodeClass('Worker') }), ['Worker'])
+
+  const result = composeWorkspaceCanvas([alpha, beta], 'alpha', {})
+  const alphaClass = result.nodes.find(
+    (node) => node.id === qualifiedNodeId('alpha', 'class.Service'),
+  )
+  const betaClass = result.nodes.find((node) => node.id === qualifiedNodeId('beta', 'class.Worker'))
+  const betaDomain = result.nodes.find((node) => node.id === 'workspace-domain:beta')
+
+  expect(alphaClass).toEqual(
+    expect.objectContaining({ draggable: true, selectable: true, focusable: true }),
+  )
+  expect(betaClass).toEqual(
+    expect.objectContaining({
+      draggable: false,
+      selectable: false,
+      focusable: false,
+      style: expect.objectContaining({ pointerEvents: 'none' }),
+    }),
+  )
+  expect(betaDomain).toEqual(expect.objectContaining({ draggable: false, selectable: true }))
+})
+
+test('applies persisted domain sizes without allowing content to be covered', () => {
+  const services = prepared(bundle('services', 'services.dev', { Service: nodeClass('Service') }), [
+    'Service',
+  ])
+  const expanded = composeWorkspaceCanvas(
+    [services],
+    'services',
+    {},
+    undefined,
+    { services: { x: 80, y: 96 } },
+    { services: { width: 720, height: 540 } },
+  )
+  const expandedDomain = expanded.nodes.find((node) => node.id === 'workspace-domain:services')!
+  expect(expandedDomain.style).toEqual(expect.objectContaining({ width: 720, height: 540 }))
+
+  const clamped = composeWorkspaceCanvas(
+    [services],
+    'services',
+    {},
+    undefined,
+    { services: { x: 80, y: 96 } },
+    { services: { width: 10, height: 10 } },
+  )
+  const clampedDomain = clamped.nodes.find((node) => node.id === 'workspace-domain:services')!
+  const limits = clampedDomain.data as { minWidth: number; minHeight: number }
+  expect(clampedDomain.style).toEqual(
+    expect.objectContaining({ width: limits.minWidth, height: limits.minHeight }),
   )
 })
 

@@ -8,13 +8,14 @@ import {
   type Node,
   type NodeChange,
   type NodeProps,
+  NodeResizeControl,
   Panel,
   ReactFlow,
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
 } from '@xyflow/react'
-import { AppWindow, Layers3, LayoutGrid, Spline, TriangleAlert } from 'lucide-react'
+import { AppWindow, Layers3, LayoutGrid, MoveDiagonal2, Spline, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -27,7 +28,7 @@ import type { ClassNodeData } from '../projection'
 import { ErdMarkerDefs } from '../cardinality-markers'
 import { edgeTypes, separateParallelEdges } from '../floating-edge'
 import { type Geometry, sizeOfNode } from '../geometry'
-import { schemaNodeTypes } from '../graph'
+import { GroupNode, schemaNodeTypes } from '../graph'
 import { useLayoutCommitter } from '../layout-commit'
 import {
   composeWorkspaceCanvas,
@@ -35,18 +36,61 @@ import {
   type WorkspaceDomainProjection,
   type WorkspaceNodeGeometryData,
 } from './projection'
-import { useSchemaWorkspace } from './store'
+import { useSchemaWorkspace, type WorkspaceSize } from './store'
 
-function WorkspaceDomainNode({ data }: NodeProps) {
+interface WorkspaceResizableData extends Record<string, unknown> {
+  onWorkspaceResizeEnd?: (nodeId: string, size: WorkspaceSize) => void
+}
+
+function WorkspaceResizeHandle({
+  nodeId,
+  minWidth,
+  minHeight,
+  onResizeEnd,
+  label,
+}: {
+  nodeId: string
+  minWidth: number
+  minHeight: number
+  onResizeEnd?: (nodeId: string, size: WorkspaceSize) => void
+  label: string
+}) {
+  return (
+    <NodeResizeControl
+      position="bottom-right"
+      minWidth={minWidth}
+      minHeight={minHeight}
+      onResizeEnd={(_, size) =>
+        onResizeEnd?.(nodeId, {
+          width: Math.round(size.width),
+          height: Math.round(size.height),
+        })
+      }
+      className="nodrag nopan !-bottom-1 !-right-1 !h-5 !w-5 !border-0 !bg-transparent"
+    >
+      <span
+        data-testid={`workspace-resize-${nodeId}`}
+        title={label}
+        className="flex h-4 w-4 items-center justify-center rounded-sm border border-sky-300/40 bg-card/90 text-sky-200 opacity-0 shadow-sm transition-opacity hover:opacity-100"
+      >
+        <MoveDiagonal2 className="h-2.5 w-2.5" />
+      </span>
+    </NodeResizeControl>
+  )
+}
+
+function WorkspaceDomainNode({ id, data }: NodeProps) {
   const domain = data as WorkspaceDomainNodeData
+  const resizable = data as WorkspaceDomainNodeData & WorkspaceResizableData
   return (
     <div
       data-domain-id={domain.domainId}
+      title={domain.active ? undefined : `Click to activate ${domain.origin}`}
       className={cn(
         'relative h-full w-full rounded-[22px] border-2 bg-card/[0.035] shadow-[0_24px_80px_-48px_rgba(0,0,0,0.9)] transition-colors',
         domain.active
           ? 'border-sky-400/55 bg-sky-400/[0.045]'
-          : 'border-border/55 hover:border-border',
+          : 'cursor-pointer border-border/55 hover:border-border',
       )}
     >
       <div className="absolute inset-x-0 top-0 flex h-12 items-center gap-2 border-b border-border/35 px-4">
@@ -63,11 +107,44 @@ function WorkspaceDomainNode({ data }: NodeProps) {
           {domain.memberCount}
         </span>
       </div>
+      {domain.active && (
+        <WorkspaceResizeHandle
+          nodeId={id}
+          minWidth={domain.minWidth}
+          minHeight={domain.minHeight}
+          onResizeEnd={resizable.onWorkspaceResizeEnd}
+          label={`Resize ${domain.origin} domain`}
+        />
+      )}
     </div>
   )
 }
 
-const workspaceNodeTypes = { ...schemaNodeTypes, workspaceDomain: WorkspaceDomainNode }
+function WorkspaceGroupNode(props: NodeProps) {
+  const geometry = workspaceGeometry(props)
+  const data = props.data as WorkspaceResizableData
+  return (
+    <div className="relative h-full w-full">
+      <GroupNode {...props} />
+      {props.type === 'group' && geometry?.active && geometry.minWidth && geometry.minHeight && (
+        <WorkspaceResizeHandle
+          nodeId={props.id}
+          minWidth={geometry.minWidth}
+          minHeight={geometry.minHeight}
+          onResizeEnd={data.onWorkspaceResizeEnd}
+          label="Resize module"
+        />
+      )}
+    </div>
+  )
+}
+
+const workspaceNodeTypes = {
+  ...schemaNodeTypes,
+  group: WorkspaceGroupNode,
+  moduleNode: WorkspaceGroupNode,
+  workspaceDomain: WorkspaceDomainNode,
+}
 
 function localNodeRef(id: string): { domainId: string; localId: string } | null {
   if (!id.startsWith('workspace:')) return null
@@ -76,7 +153,9 @@ function localNodeRef(id: string): { domainId: string; localId: string } | null 
   return { domainId: decodeURIComponent(encodedDomainId), localId: rest.join(':') }
 }
 
-function workspaceGeometry(node: Node): WorkspaceNodeGeometryData | null {
+function workspaceGeometry(node: {
+  data?: Record<string, unknown>
+}): WorkspaceNodeGeometryData | null {
   return (node.data?.workspaceGeometry as WorkspaceNodeGeometryData | undefined) ?? null
 }
 
@@ -104,13 +183,35 @@ export function WorkspaceSchemaGraph({
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const panelOverlay = useUI((state) => state.panelOverlay)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
+  const domainSizes = useSchemaWorkspace((state) => state.domainSizes)
   const domainContentOffsets = useSchemaWorkspace((state) => state.domainContentOffsets)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
+  const setDomainSize = useSchemaWorkspace((state) => state.setDomainSize)
   const ensureDomainContentOffsets = useSchemaWorkspace((state) => state.ensureDomainContentOffsets)
   const resetDomainPositions = useSchemaWorkspace((state) => state.resetDomainPositions)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
   const { commitLayout } = useLayoutCommitter()
   const fittedDomains = useRef('')
+
+  const onWorkspaceResizeEnd = useCallback(
+    (nodeId: string, size: WorkspaceSize) => {
+      if (nodeId.startsWith('workspace-domain:')) {
+        setDomainSize(nodeId.slice('workspace-domain:'.length), size)
+        return
+      }
+      const node = getNodes().find((candidate) => candidate.id === nodeId)
+      const geometry = node ? workspaceGeometry(node) : null
+      if (!node || !geometry || node.type !== 'group') return
+      commitLayout(geometry.domainId, {
+        [geometry.localId]: {
+          ...localPosition(node, geometry),
+          w: size.width,
+          h: size.height,
+        },
+      })
+    },
+    [commitLayout, getNodes, setDomainSize],
+  )
 
   const projection = useMemo(() => {
     const composed = composeWorkspaceCanvas(
@@ -119,22 +220,45 @@ export function WorkspaceSchemaGraph({
       domainPositions,
       catalog,
       domainContentOffsets,
+      domainSizes,
     )
     return {
       ...composed,
-      nodes: composed.nodes.map((node) =>
-        node.type === 'group' || node.type === 'moduleNode'
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                onToggleModule: (domainId: string, path: string) => toggleModule(domainId, path),
-              },
-            }
-          : node,
-      ),
+      nodes: composed.nodes.map((node) => {
+        if (node.type === 'workspaceDomain') {
+          return {
+            ...node,
+            data: { ...node.data, onWorkspaceResizeEnd },
+          }
+        }
+        if (node.type !== 'group' && node.type !== 'moduleNode') return node
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            onToggleModule: (domainId: string, path: string) => {
+              if (useUI.getState().domainId !== domainId) {
+                setDomain(domainId)
+                return
+              }
+              toggleModule(domainId, path)
+            },
+            onWorkspaceResizeEnd,
+          },
+        }
+      }),
     }
-  }, [activeDomainId, catalog, domainContentOffsets, domainPositions, domains, toggleModule])
+  }, [
+    activeDomainId,
+    catalog,
+    domainContentOffsets,
+    domainPositions,
+    domainSizes,
+    domains,
+    onWorkspaceResizeEnd,
+    setDomain,
+    toggleModule,
+  ])
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(() => separateParallelEdges(projection.edges))
 
@@ -151,7 +275,10 @@ export function WorkspaceSchemaGraph({
 
   const activate = useCallback(
     (domainId: string, ref?: string) => {
-      if (useUI.getState().domainId !== domainId) setDomain(domainId)
+      if (useUI.getState().domainId !== domainId) {
+        setDomain(domainId)
+        return
+      }
       if (ref) useUI.getState().selectClass(ref)
     },
     [setDomain],

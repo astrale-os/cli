@@ -2,6 +2,7 @@ import type { DomainCatalogEntry, NodePosition } from '@shared/types'
 
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
+import type { WorkspaceSize } from './store'
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
 import { cardinalityMarkers } from '../cardinality-markers'
@@ -25,6 +26,8 @@ export interface WorkspaceDomainNodeData extends Record<string, unknown> {
   origin: string
   memberCount: number
   active: boolean
+  minWidth: number
+  minHeight: number
 }
 
 export interface WorkspaceProjection {
@@ -38,6 +41,9 @@ export interface WorkspaceNodeGeometryData {
   domainId: string
   localId: string
   offset: NodePosition
+  active: boolean
+  minWidth?: number
+  minHeight?: number
 }
 
 interface ResolvedTarget {
@@ -52,6 +58,8 @@ interface DomainBox {
   domain: WorkspaceDomainProjection
   width: number
   height: number
+  minWidth: number
+  minHeight: number
   minX: number
   minY: number
   maxX: number
@@ -72,14 +80,45 @@ export const qualifiedNodeId = (domainId: string, localId: string) =>
   `workspace:${encodeURIComponent(domainId)}:${localId}`
 
 function nodeSize(node: Node): { width: number; height: number } {
+  const fallback =
+    node.type === 'classNode' || node.type === 'interfaceNode'
+      ? { width: 160, height: 88 }
+      : node.type === 'moduleNode'
+        ? { width: 200, height: 44 }
+        : { width: 200, height: 120 }
   return {
-    width: node.measured?.width ?? (typeof node.style?.width === 'number' ? node.style.width : 200),
+    width:
+      node.measured?.width ??
+      (typeof node.style?.width === 'number' ? node.style.width : fallback.width),
     height:
-      node.measured?.height ?? (typeof node.style?.height === 'number' ? node.style.height : 120),
+      node.measured?.height ??
+      (typeof node.style?.height === 'number' ? node.style.height : fallback.height),
   }
 }
 
-function domainBounds(nodes: Node[]): Omit<DomainBox, 'domain' | 'position' | 'contentOffset'> {
+function moduleMinimumSizes(nodes: Node[]): Map<string, WorkspaceSize> {
+  const minimums = new Map<string, WorkspaceSize>()
+  for (const node of nodes) {
+    if (node.type === 'group') minimums.set(node.id, { width: 200, height: 120 })
+  }
+  for (const child of nodes) {
+    if (!child.parentId) continue
+    const minimum = minimums.get(child.parentId)
+    if (!minimum) continue
+    const size = nodeSize(child)
+    minimum.width = Math.max(minimum.width, child.position.x + size.width + 14)
+    minimum.height = Math.max(minimum.height, child.position.y + size.height + 14)
+  }
+  for (const minimum of minimums.values()) {
+    minimum.width = Math.round(minimum.width)
+    minimum.height = Math.round(minimum.height)
+  }
+  return minimums
+}
+
+function domainBounds(
+  nodes: Node[],
+): Omit<DomainBox, 'domain' | 'position' | 'contentOffset' | 'minWidth' | 'minHeight'> {
   const roots = nodes.filter((node) => !node.parentId)
   if (roots.length === 0) {
     return { width: 360, height: 220, minX: 0, minY: 0, maxX: 0, maxY: 0 }
@@ -463,6 +502,7 @@ export function composeWorkspaceCanvas(
   savedDomainPositions: Record<string, NodePosition>,
   catalog?: DomainCatalogEntry[],
   savedContentOffsets: Record<string, NodePosition> = {},
+  savedDomainSizes: Record<string, WorkspaceSize> = {},
 ): WorkspaceProjection {
   const diagnostics = new Set<string>()
   const origins = new Map<string, WorkspaceDomainProjection[]>()
@@ -479,12 +519,17 @@ export function composeWorkspaceCanvas(
       x: DOMAIN_PADDING - bounds.minX,
       y: DOMAIN_PADDING + DOMAIN_HEADER - bounds.minY,
     }
+    const minWidth = Math.max(360, bounds.maxX + contentOffset.x + DOMAIN_PADDING)
+    const minHeight = Math.max(220, bounds.maxY + contentOffset.y + DOMAIN_PADDING)
+    const savedSize = savedDomainSizes[domain.input.summary.id]
     return {
       domain,
       ...bounds,
       contentOffset,
-      width: Math.max(360, bounds.maxX + contentOffset.x + DOMAIN_PADDING),
-      height: Math.max(220, bounds.maxY + contentOffset.y + DOMAIN_PADDING),
+      width: Math.max(minWidth, savedSize?.width ?? 0),
+      height: Math.max(minHeight, savedSize?.height ?? 0),
+      minWidth,
+      minHeight,
     }
   })
   const defaults = defaultDomainPositions(rawBoxes)
@@ -498,11 +543,12 @@ export function composeWorkspaceCanvas(
   for (const box of boxes) {
     const domainId = box.domain.input.summary.id
     const rootId = workspaceDomainNodeId(domainId)
+    const active = domainId === activeDomainId
     nodes.push({
       id: rootId,
       type: 'workspaceDomain',
       position: { x: box.position.x, y: box.position.y },
-      draggable: true,
+      draggable: active,
       selectable: true,
       data: {
         domainId,
@@ -510,14 +556,18 @@ export function composeWorkspaceCanvas(
         memberCount:
           Object.keys(box.domain.input.bundle.ir?.classes ?? {}).length +
           Object.keys(box.domain.input.bundle.ir?.interfaces ?? {}).length,
-        active: domainId === activeDomainId,
+        active,
+        minWidth: box.minWidth,
+        minHeight: box.minHeight,
       } satisfies WorkspaceDomainNodeData,
       style: { width: box.width, height: box.height },
     })
 
+    const moduleMinimums = moduleMinimumSizes(box.domain.nodes)
     for (const node of box.domain.nodes) {
       const root = !node.parentId
       const offset = root ? box.contentOffset : { x: 0, y: 0 }
+      const minimum = moduleMinimums.get(node.id)
       nodes.push({
         ...node,
         id: qualifiedNodeId(domainId, node.id),
@@ -529,11 +579,19 @@ export function composeWorkspaceCanvas(
             domainId,
             localId: node.id,
             offset,
+            active,
+            ...(minimum ? { minWidth: minimum.width, minHeight: minimum.height } : {}),
           } satisfies WorkspaceNodeGeometryData,
         },
         extent: 'parent',
         expandParent: true,
-        draggable: true,
+        draggable: active,
+        selectable: active,
+        focusable: active,
+        style: {
+          ...node.style,
+          ...(active ? {} : { pointerEvents: 'none' }),
+        },
       })
     }
     for (const edge of box.domain.edges) {

@@ -239,7 +239,7 @@ function InterfaceNode({ data }: NodeProps) {
   )
 }
 
-function GroupNode({ data }: NodeProps) {
+export function GroupNode({ data }: NodeProps) {
   const d = data as GroupNodeData
   const selectClass = useUI((s) => s.selectClass)
   const setDomain = useUI((s) => s.setDomain)
