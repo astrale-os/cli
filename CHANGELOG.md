@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.2-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.1-alpha.0...cli-v0.6.2-alpha.0) (2026-07-15)
+
+
+### Bug Fixes
+
+* target native issues domain ([09b5e98](https://github.com/astrale-os/cli/commit/09b5e983fe828380c4c8396434ce44b7c1bfdacc))
+* target native issues domain ([cd24aaa](https://github.com/astrale-os/cli/commit/cd24aaa7a0846a80934700b94c6d900d50279fcc))
+
+
+### Documentation
+
+* teach issue listing through graph queries ([961de08](https://github.com/astrale-os/cli/commit/961de08576b90526308aeb14f404f42d8a1eb0c3))
+* teach issue listing through graph queries ([505f9f1](https://github.com/astrale-os/cli/commit/505f9f119623ef34ceb1ec42d42dc17b33be4001))
+
 ## [0.6.1-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.0-alpha.0...cli-v0.6.1-alpha.0) (2026-07-14)
 
 
