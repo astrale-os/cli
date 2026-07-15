@@ -276,7 +276,7 @@ Common flow:
 
 ```bash
 export TOKEN=$(astrale token --audience shell.astrale.ai --raw)
-astrale call /:shell.astrale.ai:class.Application:available \
+astrale call /:shell.astrale.ai:function.search-domains \
   --creds "$TOKEN" \
   --json
 ```

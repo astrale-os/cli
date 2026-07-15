@@ -261,7 +261,7 @@ Examples:
   $ astrale call /:host.astrale.ai:class.KernelInstance:list
   $ astrale call /:blog.acme.com:class.Author:list limit=10
   $ astrale call '@self::deactivate'
-  $ astrale call /:shell.astrale.ai:class.Application:available --json
+  $ astrale call /:shell.astrale.ai:function.search-domains --json
 `,
   arguments: [
     {
