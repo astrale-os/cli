@@ -589,15 +589,18 @@ File an issue when you hit:
 **Dedup first** — list open issues and comment instead of duplicating:
 
 ```bash
-astrale call /:issues.astrale.ai:class.Issue:list -i admin \
-  --data '{"root":"/issues","limit":100}' --json
+astrale query /issues --depth 1 -i admin \
+  --children '{"classes":["/:issues.astrale.ai:class.Issue"],"limit":100,"order":{"by":"kernel.astrale.ai:interface.Timestamped.property.updatedAt","dir":"desc"}}' \
+  --json
 # if one matches, add to it instead of filing a new one:
 astrale call /issues/<issue-path-segment>::addComment -i admin \
   body="Hit this too during a domain deploy — same schemaHash mismatch."
 ```
 
-Filter the returned `.issues[]` by `status == "open"`. If `nextCursor` is
-present, fetch the next page with the same root and limit plus that cursor.
+Filter the returned Issue nodes by the qualified Statused `status` property.
+If `.next` contains a children cursor, fetch the next page by passing that
+opaque cursor in the same `--children` selector. Listing is a graph read; do
+not call or recreate an `Issue.list` domain method.
 
 **Otherwise file it** (one issue per distinct problem):
 
