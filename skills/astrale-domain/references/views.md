@@ -163,6 +163,111 @@ function FolderView() {
 }
 ```
 
+## Resolve target context through typed graph relationships
+
+A **target view** receives the resource selected by Shell, not every surrounding node needed by the
+screen. Validate `target.node.class` against the compiled class path, bind the node through the schema,
+then recover owners or related context with typed `useIn` or `useOut` edges. Do not infer context from
+URL or spatial path segments: graph ownership and containment may differ, and nodes can move. Render
+pending, unreadable, wrong-class, and missing-relation states explicitly.
+
+```tsx
+import { useNode, useOut, useTargetNode } from '@astrale-os/shell-react'
+
+function TargetTaskView() {
+  const target = useTargetNode()
+  const taskId =
+    target.node?.class.raw === D.Task.path.class.raw ? target.node.id : null
+  const task = useNode(schema, 'Task', taskId)
+  const assignee = useOut(task.node, 'assigned_to')
+
+  if (target.pending || task.pending || assignee.pending) return <Loading />
+  if (!task.node) return <WrongTarget />
+  if (!assignee.node) return <Unassigned task={task.node} />
+  return <TaskScreen task={task.node} assignee={assignee.node} />
+}
+```
+
+## Project graph nodes before rendering UI
+
+A **view projection** converts kernel `Node` values and qualified schema properties into a feature read
+model before render-only components see them. Keep this boundary beside view query logic, because it
+depends on the graph and compiled schema; keep the projected model free of `Node`, `Path`, and qualified
+keys. This localizes schema changes and lets live and standalone views share the same UI contract after
+an efficient graph read.
+
+```tsx
+import type { Node } from '@astrale-os/kernel-core'
+import { K } from '@astrale-os/kernel-core'
+
+interface AgentItem {
+  path: string
+  name: string
+}
+
+export function projectAgent(node: Node): AgentItem {
+  const name = node.props[K.Named.name.key]
+  return {
+    path: node.path.raw,
+    name: typeof name === 'string' ? name : 'Unnamed agent',
+  }
+}
+
+export function AgentRow({ agent }: { agent: AgentItem }) {
+  return <span>{agent.name}</span>
+}
+```
+
+## Lay out an Astrale client as a feature dependency DAG
+
+An **Astrale client feature DAG** organizes browser code first by bounded context, then by the smallest
+useful set of `model/`, `logic/`, `ui/`, and `view/` layers. Role suffixes make graph projection and
+Shell boundaries searchable: `.model`, `.projection`, `.query`, `.mutation`, `.hook`, and `.view`.
+Cross-feature imports use public feature exports and must stay acyclic, including type-only imports;
+composition features may depend on leaf features, never the reverse. Do not create empty layers or new
+suffixes for symmetry.
+
+```bash
+# src/
+# |-- task/                              leaf feature
+# |   |-- model/
+# |   |   |-- task.model.ts              TaskItem + pure status rules
+# |   |   `-- task-filter.model.ts       filter state + pure matching
+# |   |-- logic/
+# |   |   |-- task.projection.ts         Node + compiled keys -> TaskItem
+# |   |   |-- tasks-by-project.query.ts  non-React graph read
+# |   |   |-- create-task.mutation.ts    non-React method call
+# |   |   `-- use-task-board.hook.ts     React lifecycle and orchestration
+# |   |-- ui/
+# |   |   |-- task-card.tsx              props and callbacks only
+# |   |   |-- status-column.tsx          props and callbacks only
+# |   |   `-- task.css
+# |   |-- view/
+# |   |   `-- task-board.view.tsx        hooks + UI composition
+# |   `-- index.ts                       cross-feature exports only
+# |-- project/                           imports task through task/index.ts
+# |   |-- model/project.model.ts
+# |   |-- logic/project.projection.ts
+# |   |-- logic/use-project.hook.ts
+# |   |-- ui/project-header.tsx
+# |   |-- ui/project.css
+# |   |-- view/project.view.tsx
+# |   `-- index.ts
+# |-- views.tsx                          route registry -> feature views
+# |-- app.tsx                            ShellProvider + app composition
+# `-- main.tsx                           browser mount
+
+# Import direction:
+# logic -> model
+# ui -> model
+# view -> logic + ui + model
+# project -> task
+# task -/-> project
+# views/app -> project/view + task/view
+
+# Representative full feature. Omit roles the feature does not own.
+```
+
 ## Refresh the graph after a domain method call
 
 shell-react's graph memory invalidates only the writes made through it (`useGraph().create`, `.update`,
@@ -179,6 +284,50 @@ async function submit(body: string) {
   await addComment(issue.id, { body })
   // Written through the kernel, not the memory: refresh what it touched.
   await Promise.all([comments.refetch(), list.refetch()])
+}
+```
+
+## Keep optimistic graph items until reads converge
+
+An **optimistic graph overlay** is temporary client state merged with the latest Shell read. Keep it
+after a method returns and remove it only when that read contains the durable node, or when the
+operation fails and the user dismisses it. Method completion confirms the mutation, not that a separate
+Shell read observed it; dropping the item immediately creates a visible gap. When creation accepts one,
+send a stable client-generated id, then reconcile by the returned durable path.
+
+```tsx
+const [overlay, setOverlay] = useState<Item[]>([])
+
+const items = useMemo(() => {
+  const realPaths = new Set(realItems.map((item) => item.path))
+  return [...realItems, ...overlay.filter((item) => !realPaths.has(item.path))]
+}, [realItems, overlay])
+
+useEffect(() => {
+  const realPaths = new Set(realItems.map((item) => item.path))
+  setOverlay((current) => current.filter((item) => !realPaths.has(item.path)))
+}, [realItems])
+
+async function create(input: CreateInput) {
+  const id = crypto.randomUUID()
+  const temporaryPath = `optimistic:${id}`
+  setOverlay((current) => [...current, optimisticItem(id, temporaryPath, input)])
+
+  try {
+    const result = await createItem({ ...input, id })
+    setOverlay((current) =>
+      current.map((item) =>
+        item.path === temporaryPath ? { ...item, path: result.path } : item,
+      ),
+    )
+    await list.refetch()
+  } catch (error) {
+    setOverlay((current) =>
+      current.map((item) =>
+        item.path === temporaryPath ? { ...item, status: 'failed', error } : item,
+      ),
+    )
+  }
 }
 ```
 
