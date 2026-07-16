@@ -14,11 +14,14 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { Comment } from '../../shared/types'
+import type { DomainHandle } from '../domain'
 import type { AgentHarness, AgentTurnInput, AgentTurnResult, AskInput, AskResult } from './types'
 
 import { readComments } from '../state/comments'
+import { handleBridge } from './bridge'
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
   return new Promise((resolve) => {
     const t = setTimeout(resolve, ms)
     signal.addEventListener(
@@ -71,6 +74,13 @@ function applyMockEdit(root: string, propName: string): { file: string; prop: st
 export class MockHarness implements AgentHarness {
   id = 'mock'
   label = 'Mock agent (free)'
+  capabilities = {
+    effortLevels: ['low', 'medium', 'high'],
+    accessLevels: ['workspace', 'full'],
+    ask: true,
+    loadout: false,
+    gateway: 'none',
+  } as const
 
   async isAvailable(): Promise<boolean> {
     return true
@@ -78,6 +88,11 @@ export class MockHarness implements AgentHarness {
 
   async run(input: AgentTurnInput): Promise<AgentTurnResult> {
     const { root, signal, onEvent } = input
+    const expectedModel = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
+    if (expectedModel && input.model !== expectedModel)
+      throw new Error(
+        `mock expected model ${expectedModel}, received ${input.model ?? '(default)'}`,
+      )
     // test knobs (env): MODE=error|noblock|openreply|badblock|resumefail, DELAY_MS=extra latency for cancel/concurrency tests
     const mode = process.env.DOMAIN_STUDIO_MOCK_MODE || 'normal'
     const extraDelay = Number(process.env.DOMAIN_STUDIO_MOCK_DELAY_MS || 0)
@@ -124,6 +139,43 @@ export class MockHarness implements AgentHarness {
         : 'Answered the open threads.',
     })
 
+    const replyText = editRes
+      ? `Done — implemented this by adding \`${editRes.prop}\` to \`${editRes.file}\`. (mock agent)`
+      : 'Acknowledged. (mock agent)'
+
+    // Test-only live-bridge modes exercise the same MCP HTTP boundary a real
+    // harness uses, then echo that reply in the final block to validate dedupe.
+    if ((mode === 'liveandblock' || mode === 'liveandblockdifferent') && open[0]) {
+      const server = input.mcpServers?.find((candidate) => candidate.name === 'domain-studio')
+      const configPath = server?.args?.at(-1)
+      if (configPath) {
+        const { base, token } = JSON.parse(readFileSync(configPath, 'utf8')) as {
+          base: string
+          token: string
+        }
+        const url = new URL(`${base}/reply`)
+        const match = url.pathname.match(/^\/api\/domain\/([^/]+)\/agent\/bridge\/reply$/)
+        const domainId = match ? decodeURIComponent(match[1]) : ''
+        const response = await handleBridge(
+          {
+            id: domainId,
+            root,
+          } as DomainHandle,
+          'reply',
+          new Request(url),
+          {
+            token,
+            commentId: open[0].id,
+            text: replyText,
+            resolve: true,
+            closeNote: 'mock live reply',
+          },
+          () => {},
+        )
+        if (!response.ok) throw new Error(`mock bridge reply failed: ${response.status}`)
+      }
+    }
+
     // final machine-state block (identical shape to a real agent reply)
     const replied: Comment[] = open.map((c) => ({
       ...c,
@@ -134,10 +186,18 @@ export class MockHarness implements AgentHarness {
           id: crypto.randomUUID(),
           role: 'author' as const,
           type: 'text' as const,
-          text: editRes
-            ? `Done — implemented this by adding \`${editRes.prop}\` to \`${editRes.file}\`. (mock agent)`
-            : 'Acknowledged. (mock agent)',
+          text: replyText,
         },
+        ...(mode === 'liveandblockdifferent'
+          ? [
+              {
+                id: crypto.randomUUID(),
+                role: 'author' as const,
+                type: 'text' as const,
+                text: 'Additional final detail. (mock agent)',
+              },
+            ]
+          : []),
       ],
     }))
     const machine = {
@@ -168,6 +228,20 @@ export class MockHarness implements AgentHarness {
 
   /** Fake streamed answer for a side-question (free plumbing test of the Ask loop). */
   async ask(input: AskInput): Promise<AskResult> {
+    const expectedModel = process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL
+    if (expectedModel && input.model !== expectedModel)
+      return {
+        text: '',
+        isError: true,
+        errorMessage: `mock expected model ${expectedModel}, received ${input.model ?? '(default)'}`,
+      }
+    const expectedSession = process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION
+    if (expectedSession && input.sessionId !== expectedSession)
+      return {
+        text: '',
+        isError: true,
+        errorMessage: `mock expected session ${expectedSession}, received ${input.sessionId ?? '(fresh)'}`,
+      }
     const forked = input.sessionId ? `(forked from ${input.sessionId.slice(0, 8)}…) ` : '(fresh) '
     const parts = [
       forked,

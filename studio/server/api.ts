@@ -5,11 +5,17 @@
 import type { StudioEvent } from '../shared/types'
 
 import { buildSystemPrompt } from './agent/prompt'
-import { getHarness, listHarnesses } from './agent/registry'
+import {
+  getHarness,
+  getHarnessSelection,
+  listHarnesses,
+  setHarnessSelection,
+} from './agent/registry'
 import {
   cancelRun,
   getSessionId,
   getSnapshot,
+  isRunning,
   resetConversation,
   setSessionId,
   submitRun,
@@ -365,11 +371,12 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
     return json({ bridge: true, systemPrompt: buildSystemPrompt({ bridge: true }) })
   }
   if (rest === '/agent/harness' && req.method === 'GET') {
-    const h = getHarness()
+    const selection = getHarnessSelection(root)
+    const h = getHarness(root)
     const health = h.health
       ? await h.health()
       : { ok: await h.isAvailable(), bin: h.id, version: undefined, detail: undefined }
-    const options = listHarnesses().filter((o) => o.id !== 'mock' || o.id === h.id)
+    const options = listHarnesses(h.id)
     const message = health.ok
       ? `Detected${health.version ? ` — ${health.version}` : ''}`
       : (health.detail ?? `${h.label} is not detected. Is it installed and on your PATH?`)
@@ -381,12 +388,41 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
       version: health.version,
       message,
       options,
+      locked: selection.locked,
+      source: selection.source,
+      capabilities: h.capabilities,
     })
+  }
+  if (rest === '/agent/harness' && req.method === 'POST') {
+    if (isRunning(id)) return badReq('the harness cannot be changed while a turn is running')
+    try {
+      const selection = setHarnessSelection(root, String(body.id ?? ''))
+      const h = getHarness(root)
+      const health = h.health
+        ? await h.health()
+        : { ok: await h.isAvailable(), bin: h.id, version: undefined, detail: undefined }
+      return json({
+        id: h.id,
+        label: h.label,
+        bin: health.bin ?? h.id,
+        ok: health.ok,
+        version: health.version,
+        message: health.ok
+          ? `Selected ${h.label}${health.version ? ` — ${health.version}` : ''}`
+          : (health.detail ?? `${h.label} is not detected. Is it installed and on your PATH?`),
+        options: listHarnesses(h.id),
+        locked: selection.locked,
+        source: selection.source,
+        capabilities: h.capabilities,
+      })
+    } catch (e) {
+      return badReq(String((e as Error)?.message ?? e))
+    }
   }
   // What the harness ACTUALLY loaded for this domain's cwd — skills (reconciled against
   // on-disk installs), MCP servers + status, tools, agents. Read-only window into the agent.
   if (rest === '/agent/loadout' && req.method === 'GET') {
-    const h = getHarness()
+    const h = getHarness(root)
     if (!h.loadout)
       return json({
         ok: false,
@@ -398,8 +434,23 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
         builtinCommandCount: 0,
         probedAt: Date.now(),
       })
-    const er = await resolveHarnessEnv(root)
-    return json(await h.loadout(root, er.ok ? er.env : undefined))
+    const er =
+      h.capabilities.gateway === 'anthropic'
+        ? await resolveHarnessEnv(root)
+        : { ok: true as const, env: {} }
+    if (!er.ok)
+      return json({
+        ok: false,
+        detail: `model gateway auth failed — ${er.error}`,
+        tools: [],
+        mcpServers: [],
+        skills: [],
+        agents: [],
+        builtinCommandCount: 0,
+        probedAt: Date.now(),
+      })
+    const model = readSettings(root).agentModels[h.id]?.trim() || undefined
+    return json(await h.loadout(root, { env: er.env, model }))
   }
   // Custom model-gateway config for the harness (per-domain + studio-global), e.g.
   // routing Claude Code through an Astrale ai-gateway model node. The token/url are
@@ -427,7 +478,7 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
   // Raw SKILL.md for a skill command (the "view skill" action).
   if (rest === '/agent/skill' && req.method === 'GET') {
     const command = url.searchParams.get('command')
-    const h = getHarness()
+    const h = getHarness(root)
     if (!command || !h.skillContent) return notFound()
     const c = await h.skillContent(root, command)
     return c ? json(c) : notFound()

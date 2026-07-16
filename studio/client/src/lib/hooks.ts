@@ -86,7 +86,7 @@ export function useHarnessGateway(id?: string) {
   })
 }
 export function useLoadout(id?: string) {
-  // the probe spawns `claude` — keep it lazy (enabled by the caller) and cached a while
+  // Probes the selected local harness — keep it lazy and cached for a while.
   return useQuery({
     queryKey: qk.loadout(id ?? ''),
     queryFn: () => api.loadout(id!),

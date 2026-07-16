@@ -7,7 +7,13 @@
  * harness maps its native streaming output onto `AgentStreamEvent`s and returns
  * a final text blob (which carries the machine-state reply block).
  */
-import type { AgentEffort, AgentEventKind, HarnessLoadout } from '../../shared/types'
+import type {
+  AgentAccess,
+  AgentEffort,
+  AgentEventKind,
+  HarnessCapabilities,
+  HarnessLoadout,
+} from '../../shared/types'
 
 /** A single normalized activity event emitted while the harness runs. */
 export interface AgentStreamEvent {
@@ -15,6 +21,19 @@ export interface AgentStreamEvent {
   text: string
   tool?: string
   target?: string
+}
+
+/** Harness-neutral description of one stdio MCP server. Each harness is
+ * responsible for expressing this in its native CLI/config shape. */
+export interface HarnessMcpServer {
+  name: string
+  command: string
+  args?: string[]
+  env?: Record<string, string>
+  required?: boolean
+  /** Studio's run-scoped write-back tools are user-authorized by the submit. */
+  approvalMode?: 'auto' | 'prompt' | 'writes' | 'approve'
+  enabledTools?: string[]
 }
 
 export interface AgentTurnInput {
@@ -26,13 +45,16 @@ export interface AgentTurnInput {
   appendSystemPrompt?: string
   /** prior harness session id → resume the same conversation */
   sessionId?: string
+  /** explicit model override; absent preserves the harness's native config/default */
+  model?: string
   /** harness reasoning effort for this turn */
   effort?: AgentEffort
-  /** path to a generated MCP config exposing the studio write-back bridge */
-  mcpConfigPath?: string
-  /** extra env merged into the harness CHILD process only (e.g. ANTHROPIC_BASE_URL
-   *  / ANTHROPIC_AUTH_TOKEN to route through a custom model gateway). Never touches
-   *  the studio's own env or the user's shell / global `claude`. */
+  /** authority granted to the local harness */
+  access?: AgentAccess
+  /** generated MCP servers exposing Studio write-back */
+  mcpServers?: HarnessMcpServer[]
+  /** extra env merged into the harness CHILD process only. Never touches the
+   *  studio's own env or the user's shell/global harness process. */
   env?: Record<string, string>
   /** abort the turn (user pressed Cancel) */
   signal: AbortSignal
@@ -47,7 +69,7 @@ export interface AgentTurnResult {
   finalText: string
   costUsd?: number
   numTurns?: number
-  /** total tokens processed (input + output + cache) */
+  /** total token usage reported by the harness */
   tokens?: number
   isError: boolean
   errorMessage?: string
@@ -68,9 +90,13 @@ export interface AskInput {
   appendSystemPrompt?: string
   /** the domain's live conversation session id to FORK from (undefined ⇒ fresh, no fork) */
   sessionId?: string
+  /** explicit model override; absent preserves the harness's native config/default */
+  model?: string
   /** harness reasoning effort for this side question */
   effort?: AgentEffort
-  /** extra env merged into the harness child only (custom model gateway) — see AgentTurnInput.env */
+  /** authority granted to the local harness */
+  access?: AgentAccess
+  /** extra env merged into the harness child only — see AgentTurnInput.env */
   env?: Record<string, string>
   signal: AbortSignal
   /** called with each chunk of the answer as it streams in */
@@ -93,11 +119,19 @@ export interface HarnessHealth {
   detail?: string
 }
 
+export interface HarnessLoadoutOptions {
+  /** Child-only environment overrides used while probing the harness. */
+  env?: Record<string, string>
+  /** Studio's per-domain override for the selected harness. */
+  model?: string
+}
+
 export interface AgentHarness {
   /** stable id, e.g. 'claude' | 'mock' | 'codex' */
   id: string
   /** human label for the UI */
   label: string
+  capabilities: HarnessCapabilities
   /** is the underlying CLI/binary actually invokable here? */
   isAvailable(): Promise<boolean>
   /** optional: a richer install probe for the UI (version + reason). Harnesses that
@@ -111,7 +145,7 @@ export interface AgentHarness {
    *  tools, agents) — a read-only window into the agent for the Settings page.
    *  Harnesses without an introspectable loadout omit it. `env` (e.g. a custom
    *  model gateway) is merged into the probe child so the reported model reflects it. */
-  loadout?(root: string, env?: Record<string, string>): Promise<HarnessLoadout>
+  loadout?(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout>
   /** optional: the raw SKILL.md for a skill command, so the UI can show it. */
   skillContent?(
     root: string,

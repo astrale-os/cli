@@ -4,13 +4,15 @@
  * `.domain-studio/settings.json`; missing keys fall back to DEFAULT_SETTINGS.
  * Surfaced subtly in the UI (command palette + a faint gear) for power users.
  */
-import { AGENT_EFFORT_LEVELS, type StudioSettings } from '../../shared/types'
+import { AGENT_ACCESS_LEVELS, AGENT_EFFORT_LEVELS, type StudioSettings } from '../../shared/types'
 import { readJson, writeJson } from './store'
 
 const PATH = 'settings.json'
 
 export const DEFAULT_SETTINGS: StudioSettings = {
   agentEffort: 'high',
+  agentAccess: 'full',
+  agentModels: {},
   integrationsDir: 'integrations',
   introspectTimeoutMs: 20000,
   instancePollMs: 30000,
@@ -22,6 +24,20 @@ function normalizeSettings(input: Partial<StudioSettings>): Partial<StudioSettin
   const out = { ...input }
   if (out.agentEffort !== undefined && !AGENT_EFFORT_LEVELS.includes(out.agentEffort as any))
     delete out.agentEffort
+  if (out.agentAccess !== undefined && !AGENT_ACCESS_LEVELS.includes(out.agentAccess as any))
+    delete out.agentAccess
+  if (out.agentModels !== undefined) {
+    if (!out.agentModels || typeof out.agentModels !== 'object' || Array.isArray(out.agentModels)) {
+      delete out.agentModels
+    } else {
+      out.agentModels = Object.fromEntries(
+        Object.entries(out.agentModels)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+          .map(([harness, model]) => [harness.trim().toLowerCase(), model.trim()])
+          .filter(([harness, model]) => !!harness && !!model),
+      )
+    }
+  }
   return out
 }
 

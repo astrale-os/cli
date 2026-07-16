@@ -31,9 +31,18 @@ import { listDocuments } from '../state/documents'
 import { refreshAuto } from '../state/handoff'
 import { resolveHarnessEnv } from '../state/harness-gateway'
 import { readSettings } from '../state/settings'
-import { readJson, removeState, writeJson } from '../state/store'
+import { readJson, writeJson } from '../state/store'
 import { recordRun } from '../state/usage'
 import { startBridge } from './bridge'
+import { effectiveHarnessEffort } from './capabilities'
+import {
+  clearConversation,
+  conversationInfo,
+  readConversation,
+  saveConversation,
+  sessionInfo,
+  setConversationSession,
+} from './conversation'
 import { buildResumePrompt, buildSystemPrompt, buildTurnPrompt } from './prompt'
 import { getHarness } from './registry'
 import { studioSessionId } from './session-id'
@@ -48,7 +57,6 @@ const starting = new Set<string>()
 /** domains whose last-run has been rehydrated from disk this process (once). */
 const hydrated = new Set<string>()
 
-const SESSION_FILE = '.cache/agent/session.json'
 /** A stable pointer to the latest run, written on START and at terminal, so a fresh
  *  process can show the last run (and reconcile one orphaned by a crash). */
 const LAST_RUN_FILE = '.cache/agent/last-run.json'
@@ -60,16 +68,6 @@ const MCP_TOOLS = [
   'post_progress',
   'raise_question',
 ]
-
-/** The persisted conversation handle: one resumable harness session per domain,
- *  with a turn counter so the UI can show "N turns" and resume continuity. */
-interface SessionState {
-  harness?: string
-  sessionId?: string
-  turns?: number
-  updatedAt?: string
-}
-const readSession = (root: string): SessionState => readJson<SessionState>(root, SESSION_FILE, {})
 
 /** Persist the run to disk (best-effort). `transcript` also writes the per-id record. */
 function persistRun(root: string, run: AgentRun, transcript = false): void {
@@ -102,13 +100,8 @@ function hydrate(domainId: string, root: string): void {
 
 /** The resumable-conversation summary for the snapshot. */
 function conversationOf(root: string): ConversationInfo {
-  const s = readSession(root)
-  const harness = getHarness()
-  return {
-    active: s.harness === harness.id && !!s.sessionId,
-    turns: s.turns ?? 0,
-    harness: s.harness,
-  }
+  const harness = getHarness(root)
+  return conversationInfo(root, harness.id)
 }
 
 /** Open threads whose last entry is NOT the agent — the ones it owes a reply. */
@@ -128,12 +121,12 @@ function stripMachineState(text: string): string {
 
 export function isRunning(domainId: string): boolean {
   const s = runs.get(domainId)?.status
-  return s === 'running' || s === 'queued'
+  return starting.has(domainId) || s === 'running' || s === 'queued'
 }
 
 export async function getSnapshot(domainId: string): Promise<AgentRunSnapshot> {
-  const harness = getHarness()
   const handle = getDomain(domainId)
+  const harness = getHarness(handle?.root ?? process.cwd())
   if (handle) hydrate(domainId, handle.root)
   const conversation = handle ? conversationOf(handle.root) : { active: false, turns: 0 }
   return {
@@ -157,8 +150,8 @@ export function cancelRun(domainId: string): boolean {
 export function forkableSession(domainId: string): string | undefined {
   const handle = getDomain(domainId)
   if (!handle) return undefined
-  const s = readSession(handle.root)
-  return s.harness === getHarness().id ? s.sessionId : undefined
+  const harness = getHarness(handle.root)
+  return readConversation(handle.root, harness.id).sessionId
 }
 
 /** Forget the resumable conversation so the NEXT submit starts a brand-new session.
@@ -167,7 +160,7 @@ export function resetConversation(domainId: string): boolean {
   const handle = getDomain(domainId)
   if (!handle) return false
   if (isRunning(domainId)) return false
-  removeState(handle.root, SESSION_FILE)
+  clearConversation(handle.root, getHarness(handle.root).id)
   return true
 }
 
@@ -180,8 +173,7 @@ export function getSessionId(domainId: string): {
 } {
   const handle = getDomain(domainId)
   if (!handle) return { sessionId: null, turns: 0 }
-  const s = readSession(handle.root)
-  return { sessionId: s.sessionId ?? null, turns: s.turns ?? 0, harness: s.harness }
+  return sessionInfo(handle.root, getHarness(handle.root).id)
 }
 
 /** Overwrite (or clear) the resumable session id by hand. Empty ⇒ forget the
@@ -192,16 +184,10 @@ export function setSessionId(domainId: string, sessionId: string): boolean {
   if (isRunning(domainId)) return false
   const trimmed = sessionId.trim()
   if (!trimmed) {
-    removeState(handle.root, SESSION_FILE)
+    clearConversation(handle.root, getHarness(handle.root).id)
     return true
   }
-  const prev = readSession(handle.root)
-  writeJson(handle.root, SESSION_FILE, {
-    harness: prev.harness ?? getHarness().id,
-    sessionId: trimmed,
-    turns: prev.turns ?? 0,
-    updatedAt: new Date().toISOString(),
-  })
+  setConversationSession(handle.root, getHarness(handle.root).id, trimmed)
   return true
 }
 
@@ -222,28 +208,35 @@ export async function submitRun(
   // — a double-click / retry — can't both pass the gate and start two runs.
   if (isRunning(domainId) || starting.has(domainId))
     return { error: 'an agent run is already in progress for this domain' }
+  const controller = new AbortController()
   starting.add(domainId)
+  controllers.set(domainId, controller)
   try {
-    return await startRun(handle, notify, opts)
+    return await startRun(handle, notify, controller, opts)
   } finally {
     starting.delete(domainId)
+    const status = runs.get(domainId)?.status
+    if (controllers.get(domainId) === controller && status !== 'running' && status !== 'queued')
+      controllers.delete(domainId)
   }
 }
 
 async function startRun(
   handle: DomainHandle,
   notify: Notify,
+  controller: AbortController,
   opts?: SubmitOpts,
 ): Promise<{ run?: AgentRun; error?: string }> {
   const domainId = handle.id
   const root = handle.root
 
-  const harness = getHarness()
+  const harness = getHarness(root)
   if (!(await harness.isAvailable()))
     return { error: `${harness.label} is not available on this machine` }
+  if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
 
-  const session = readSession(root)
-  const resume = session.harness === harness.id ? session.sessionId : undefined
+  const session = readConversation(root, harness.id)
+  const resume = session.sessionId
   // A bare resume only continues an EXISTING session — without one there's nothing
   // in the agent's memory to pick up, so a nudge alone would be useless. When the
   // caller asks to resume but no session survives, fall through to a normal full turn.
@@ -256,16 +249,23 @@ async function startRun(
 
   // refresh the auto-context digests on disk first, so "read these files" holds
   await refreshAuto(handle).catch(() => {})
+  if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
 
   const bundle = await getBundle(domainId)
+  if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
   const schemaHash = bundle?.schemaHash ?? ''
   const ctx = readContext(root)
   const documents = listDocuments(root)
   const settings = readSettings(root)
+  const model = settings.agentModels[harness.id]?.trim() || undefined
+  const effort = effectiveHarnessEffort(harness.capabilities, settings.agentEffort)
   // custom model-gateway env (ANTHROPIC_*), injected into the harness child only.
   // Resolved up-front so a token failure fails the submit cleanly (rather than
   // silently spawning on the default Claude auth).
-  const envResult = await resolveHarnessEnv(root)
+  const envResult =
+    harness.capabilities.gateway === 'anthropic'
+      ? await resolveHarnessEnv(root)
+      : { ok: true as const, env: {} }
   if (!envResult.ok) return { error: `model gateway auth failed — ${envResult.error}` }
   // Surface-owned telemetry session: the harness's astrale calls bucket per
   // domain per hour instead of falling back to ambient cwd inference.
@@ -305,7 +305,9 @@ async function startRun(
     firstTurn,
     resumed: !!sessionId,
     sessionId,
-    effort: settings.agentEffort,
+    model,
+    effort,
+    access: settings.agentAccess,
     mcpTools: bridge.enabled ? MCP_TOOLS : [],
   })
 
@@ -330,8 +332,6 @@ async function startRun(
   }
   runs.set(domainId, run)
   persistRun(root, run) // record on START so a crash mid-turn leaves a reconcilable trace
-  const controller = new AbortController()
-  controllers.set(domainId, controller)
   notify({ type: 'agent-run', domainId, run })
 
   const pushEvent = (e: Omit<AgentEvent, 'id' | 'ts'>) => {
@@ -369,8 +369,10 @@ async function startRun(
           prompt: prompt.turnPrompt,
           appendSystemPrompt: prompt.systemPrompt,
           sessionId,
-          effort: settings.agentEffort,
-          mcpConfigPath: bridge.mcpConfigPath,
+          model,
+          effort,
+          access: settings.agentAccess,
+          mcpServers: bridge.mcpServers,
           env: harnessEnv,
           signal: controller.signal,
           onEvent: pushEvent,
@@ -384,7 +386,7 @@ async function startRun(
       // (pruned/expired). Drop it and transparently re-run the SAME work as a NEW
       // conversation so the user's turn still lands instead of dead-ending on a stale id.
       if (resume && result.resumeRejected && !controller.signal.aborted) {
-        removeState(root, SESSION_FILE)
+        clearConversation(root, harness.id)
         convoTurns = 0
         run.sessionId = undefined
         run.resumed = false
@@ -458,8 +460,7 @@ async function startRun(
       // above (with a fresh restart). On success, persist the id and bump the turn
       // count; otherwise leave the stored session exactly as it was.
       if (run.status === 'succeeded' && result.sessionId)
-        writeJson(root, SESSION_FILE, {
-          harness: harness.id,
+        saveConversation(root, harness.id, {
           sessionId: result.sessionId,
           turns: convoTurns + 1,
           updatedAt: new Date().toISOString(),

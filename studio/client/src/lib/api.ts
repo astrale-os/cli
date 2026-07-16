@@ -150,6 +150,8 @@ export const api = {
     post<AgentSessionInfo>(`${d(id)}/agent/session`, { sessionId }),
   agentSystemPrompt: (id: string) => get<AgentSystemPromptInfo>(`${d(id)}/agent/prompt/system`),
   harness: (id: string) => get<HarnessStatus>(`${d(id)}/agent/harness`),
+  selectHarness: (id: string, harness: string) =>
+    post<HarnessStatus>(`${d(id)}/agent/harness`, { id: harness }),
   harnessGateway: (id: string) => get<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`),
   setHarnessGateway: (id: string, scope: 'domain' | 'global', config: HarnessGatewayConfig) =>
     post<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`, { action: 'set', scope, config }),

@@ -1,7 +1,7 @@
 /**
  * usage.ts — domain-attributable agent spend. Accumulates tokens + USD from THIS
- * studio's own agent runs on THIS domain (not machine-wide — that lives in
- * ~/.claude/stats-cache.json and is out of scope here). Stored at
+ * studio's own agent runs on THIS domain (not the selected harness's machine-wide
+ * usage, which is out of scope here). Stored at
  * `.domain-studio/usage.json`; surfaced read-only in the Settings dialog.
  */
 import type { AgentRun, DomainUsage } from '../../shared/types'

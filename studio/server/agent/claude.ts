@@ -10,11 +10,8 @@
  *   (the turn prompt is piped on stdin so it is never argv-length-bounded)
  */
 import { spawn } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
 
-import type { HarnessLoadout, LoadoutSkill } from '../../shared/types'
+import type { HarnessLoadout } from '../../shared/types'
 import type {
   AgentHarness,
   AgentTurnInput,
@@ -22,9 +19,13 @@ import type {
   AskInput,
   AskResult,
   HarnessHealth,
+  HarnessLoadoutOptions,
 } from './types'
 
-const BIN = process.env.DOMAIN_STUDIO_CLAUDE_BIN || 'claude'
+import { writeClaudeMcpConfig } from './mcp-config'
+import { readSkillContent, reconcileLoadedSkills, scanClaudeSkills } from './skills'
+
+const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CLAUDE_BIN || 'claude'
 /** Phrases Claude Code emits when `--resume <id>` names a session it can no longer
  *  find (pruned/expired/foreign cwd). Kept strict so an unrelated failure is never
  *  mistaken for a dead session (which would needlessly drop a valid conversation). */
@@ -72,132 +73,16 @@ function toolTarget(name: string, input: Record<string, unknown> | undefined): s
   }
 }
 
-/** Pull `name` + `description` out of a SKILL.md YAML frontmatter block. Line-based
- *  (these fields are single-line in practice) — good enough to label a skill. */
-function readSkillMeta(skillMd: string): { name?: string; description?: string } {
-  let text: string
-  try {
-    text = readFileSync(skillMd, 'utf8')
-  } catch {
-    return {}
-  }
-  if (!text.startsWith('---')) return {}
-  const end = text.indexOf('\n---', 3)
-  const fm = end >= 0 ? text.slice(3, end) : text.slice(3)
-  const out: { name?: string; description?: string } = {}
-  for (const line of fm.split('\n')) {
-    const m = /^(name|description)\s*:\s*(.*)$/.exec(line)
-    if (m && out[m[1] as 'name' | 'description'] === undefined) {
-      out[m[1] as 'name' | 'description'] = m[2].trim().replace(/^["']|["']$/g, '')
-    }
-  }
-  return out
-}
-
-/** Scan one skills/ directory: each immediate subdir holding a SKILL.md is a skill.
- *  `commandPrefix` namespaces plugin skills (`vercel:`). First-seen command wins so
- *  a project skill shadows a same-named user/plugin one. */
-function scanSkillDir(
-  dir: string,
-  source: LoadoutSkill['source'],
-  plugin: string | undefined,
-  commandPrefix: string,
-  out: Omit<LoadoutSkill, 'loaded'>[],
-  seen: Set<string>,
-): void {
-  if (!existsSync(dir)) return
-  let entries: string[]
-  try {
-    entries = readdirSync(dir)
-  } catch {
-    return
-  }
-  for (const entry of entries) {
-    const skillMd = join(dir, entry, 'SKILL.md')
-    if (!existsSync(skillMd)) continue // readFileSync follows symlinks (e.g. ~/.claude/skills/*)
-    const command = commandPrefix + entry
-    if (seen.has(command)) continue
-    seen.add(command)
-    const meta = readSkillMeta(skillMd)
-    out.push({
-      command,
-      name: meta.name || entry,
-      description: meta.description,
-      source,
-      plugin,
-      path: skillMd,
-    })
-  }
-}
-
-/** The active plugins from installed_plugins.json → their on-disk skills root. */
-function installedPluginDirs(): { plugin: string; installPath: string }[] {
-  const f = join(homedir(), '.claude', 'plugins', 'installed_plugins.json')
-  let parsed: any
-  try {
-    parsed = JSON.parse(readFileSync(f, 'utf8'))
-  } catch {
-    return []
-  }
-  const out: { plugin: string; installPath: string }[] = []
-  const seenPath = new Set<string>()
-  for (const [key, entries] of Object.entries(parsed?.plugins ?? {})) {
-    const plugin = String(key).split('@')[0]
-    for (const e of Array.isArray(entries) ? entries : []) {
-      const installPath = (e as any)?.installPath
-      if (typeof installPath === 'string' && !seenPath.has(installPath)) {
-        seenPath.add(installPath)
-        out.push({ plugin, installPath })
-      }
-    }
-  }
-  return out
-}
-
-/** All skills installed on disk, pre-reconcile. Scans, in precedence order (first-seen
- *  command wins): `.claude/skills` + `.agents/skills` from `root` up to (not incl.) the
- *  home dir — so a domain nested in a workspace also picks up the workspace's
- *  `.agents/skills` (where Astrale keeps astrale-cli / astrale-domain / agent-browser) —
- *  then the user-level dirs, then enabled plugins. A skill found here but absent from the
- *  harness's slash-commands reconciles to `loaded:false` (installed but not wired in). */
-function scanInstalledSkills(root: string): Omit<LoadoutSkill, 'loaded'>[] {
-  const out: Omit<LoadoutSkill, 'loaded'>[] = []
-  const seen = new Set<string>()
-  const home = homedir()
-  let cur = root
-  for (let i = 0; i < 12 && cur !== home; i++) {
-    scanSkillDir(join(cur, '.claude', 'skills'), 'project', undefined, '', out, seen)
-    scanSkillDir(join(cur, '.agents', 'skills'), 'project', undefined, '', out, seen)
-    const parent = dirname(cur)
-    if (parent === cur) break
-    cur = parent
-  }
-  scanSkillDir(join(home, '.claude', 'skills'), 'user', undefined, '', out, seen)
-  scanSkillDir(join(home, '.agents', 'skills'), 'user', undefined, '', out, seen)
-  for (const { plugin, installPath } of installedPluginDirs()) {
-    scanSkillDir(join(installPath, 'skills'), 'plugin', plugin, `${plugin}:`, out, seen)
-  }
-  return out
-}
-
-/** Resolve a skill command to its SKILL.md content — for the "view skill" action.
- *  Only reads files inside a scanned skill dir (no arbitrary path access). */
-function readSkillContent(
-  root: string,
-  command: string,
-): { command: string; content: string; path: string } | null {
-  const skill = scanInstalledSkills(root).find((s) => s.command === command)
-  if (!skill?.path) return null
-  try {
-    return { command, content: readFileSync(skill.path, 'utf8'), path: skill.path }
-  } catch {
-    return null
-  }
-}
-
 export class ClaudeCodeHarness implements AgentHarness {
   id = 'claude'
   label = 'Claude Code (local)'
+  capabilities = {
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+    accessLevels: ['workspace', 'full'],
+    ask: true,
+    loadout: true,
+    gateway: 'anthropic',
+  } as const
 
   // cache the version probe — getSnapshot is polled, no need to spawn each time
   private availCache?: { at: number; ok: boolean }
@@ -205,12 +90,14 @@ export class ClaudeCodeHarness implements AgentHarness {
   // often; the env is part of the key so switching gateway re-probes the model
   private loadoutCache?: { at: number; key: string; data: HarnessLoadout }
 
+  constructor(private readonly bin = DEFAULT_BIN) {}
+
   async isAvailable(): Promise<boolean> {
     const now = Date.now()
     if (this.availCache && now - this.availCache.at < 30_000) return this.availCache.ok
     const ok = await new Promise<boolean>((resolve) => {
       try {
-        const p = spawn(BIN, ['--version'], { stdio: ['ignore', 'ignore', 'ignore'] })
+        const p = spawn(this.bin, ['--version'], { stdio: ['ignore', 'ignore', 'ignore'] })
         p.on('error', () => resolve(false))
         p.on('close', (code) => resolve(code === 0))
       } catch {
@@ -225,7 +112,7 @@ export class ClaudeCodeHarness implements AgentHarness {
   async health(): Promise<HarnessHealth> {
     const probe = await new Promise<{ ok: boolean; out: string; err: string }>((resolve) => {
       try {
-        const p = spawn(BIN, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
+        const p = spawn(this.bin, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] })
         let out = ''
         let err = ''
         p.stdout?.on('data', (d) => {
@@ -246,20 +133,20 @@ export class ClaudeCodeHarness implements AgentHarness {
     return {
       ok: probe.ok,
       version: probe.ok ? probe.out || undefined : undefined,
-      bin: BIN,
-      detail: probe.ok ? undefined : probe.err || `\`${BIN}\` was not found on PATH`,
+      bin: this.bin,
+      detail: probe.ok ? undefined : probe.err || `\`${this.bin}\` was not found on PATH`,
     }
   }
 
   /** What did the harness ACTUALLY load for `root`? Reads the `system/init` event
    *  of a headless probe (authoritative — reflects enable/disable, cwd scope, MCP
    *  auth) and reconciles its slash-commands against on-disk skills. Cached ~60s. */
-  async loadout(root: string, env?: Record<string, string>): Promise<HarnessLoadout> {
+  async loadout(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout> {
     const now = Date.now()
-    const key = `${root} ${JSON.stringify(env ?? {})}`
+    const key = `${root}\u0000${options?.model ?? ''}\u0000${JSON.stringify(options?.env ?? {})}`
     if (this.loadoutCache && this.loadoutCache.key === key && now - this.loadoutCache.at < 60_000)
       return this.loadoutCache.data
-    const probe = await this.probeInit(root, env)
+    const probe = await this.probeInit(root, options)
     let data: HarnessLoadout
     if (!probe.ok || !probe.init) {
       data = {
@@ -276,11 +163,13 @@ export class ClaudeCodeHarness implements AgentHarness {
       const init = probe.init
       const slash: string[] = Array.isArray(init.slash_commands) ? init.slash_commands : []
       const slashSet = new Set(slash)
-      const installed = scanInstalledSkills(root)
+      const installed = scanClaudeSkills(root)
       const skillCommands = new Set(installed.map((s) => s.command))
       data = {
         ok: true,
         model: init.model,
+        nativeModel: options?.model ? undefined : init.model,
+        modelSource: options?.model ? 'studio' : 'runtime',
         permissionMode: init.permissionMode,
         apiKeySource: init.apiKeySource,
         cwd: init.cwd,
@@ -291,10 +180,11 @@ export class ClaudeCodeHarness implements AgentHarness {
               status: String(m?.status ?? 'unknown'),
             }))
           : [],
-        skills: installed.map((s) => ({ ...s, loaded: slashSet.has(s.command) })),
+        skills: reconcileLoadedSkills(installed, [...slashSet]),
         agents: Array.isArray(init.agents) ? init.agents : [],
         builtinCommandCount: slash.filter((c) => !skillCommands.has(c)).length,
         probedAt: now,
+        source: 'runtime',
       }
     }
     this.loadoutCache = { at: now, key, data }
@@ -306,7 +196,7 @@ export class ClaudeCodeHarness implements AgentHarness {
     root: string,
     command: string,
   ): Promise<{ command: string; content: string; path: string } | null> {
-    return readSkillContent(root, command)
+    return readSkillContent(scanClaudeSkills(root), command)
   }
 
   /** Spawn the harness in headless stream-json mode and resolve on the first
@@ -314,21 +204,22 @@ export class ClaudeCodeHarness implements AgentHarness {
    *  call, so this costs ~0 tokens. A 15s timeout / early close ⇒ a !ok result. */
   private probeInit(
     root: string,
-    env?: Record<string, string>,
+    options?: HarnessLoadoutOptions,
   ): Promise<{ ok: boolean; detail?: string; init?: any }> {
     return new Promise((resolve) => {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', ...EXTRA_ARGS]
+      if (options?.model) args.push('--model', options.model)
       let child: ReturnType<typeof spawn>
       try {
-        child = spawn(BIN, args, {
+        child = spawn(this.bin, args, {
           cwd: root,
           stdio: ['pipe', 'pipe', 'ignore'],
-          env: childEnv(env),
+          env: childEnv(options?.env),
         })
       } catch (e) {
         resolve({
           ok: false,
-          detail: `failed to spawn ${BIN}: ${String((e as Error)?.message ?? e)}`,
+          detail: `failed to spawn ${this.bin}: ${String((e as Error)?.message ?? e)}`,
         })
         return
       }
@@ -349,7 +240,7 @@ export class ClaudeCodeHarness implements AgentHarness {
         15_000,
       )
       child.on('error', (e) =>
-        finish({ ok: false, detail: `failed to spawn ${BIN}: ${e.message}` }),
+        finish({ ok: false, detail: `failed to spawn ${this.bin}: ${e.message}` }),
       )
       child.on('close', () => finish({ ok: false, detail: 'probe ended before an init event' }))
       // -p needs an input; a single char is enough — we kill on init, before any model call
@@ -389,24 +280,31 @@ export class ClaudeCodeHarness implements AgentHarness {
       prompt,
       appendSystemPrompt,
       sessionId,
+      model,
       effort,
-      mcpConfigPath,
+      access,
+      mcpServers,
       env,
       signal,
       onEvent,
     } = input
 
+    const permissionMode =
+      process.env.DOMAIN_STUDIO_AGENT_PERMISSION ||
+      (access === 'workspace' ? 'acceptEdits' : PERMISSION_MODE)
+    const mcp = writeClaudeMcpConfig(root, mcpServers)
     const args = [
       '-p',
       '--output-format',
       'stream-json',
       '--verbose',
       '--permission-mode',
-      PERMISSION_MODE,
+      permissionMode,
     ]
     if (sessionId) args.push('--resume', sessionId)
+    if (model) args.push('--model', model)
     if (effort) args.push('--effort', effort)
-    if (mcpConfigPath) args.push('--mcp-config', mcpConfigPath)
+    if (mcp.path) args.push('--mcp-config', mcp.path)
     if (appendSystemPrompt) args.push('--append-system-prompt', appendSystemPrompt)
     args.push(...EXTRA_ARGS)
 
@@ -420,7 +318,7 @@ export class ClaudeCodeHarness implements AgentHarness {
       let errorMessage: string | undefined
       let stderr = ''
 
-      const child = spawn(BIN, args, {
+      const child = spawn(this.bin, args, {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: childEnv(env),
@@ -524,6 +422,7 @@ export class ClaudeCodeHarness implements AgentHarness {
       }
 
       child.on('error', (err) => {
+        mcp.dispose()
         resolve({
           sessionId: resolvedSession,
           finalText,
@@ -531,11 +430,12 @@ export class ClaudeCodeHarness implements AgentHarness {
           numTurns,
           tokens,
           isError: true,
-          errorMessage: `failed to spawn ${BIN}: ${err.message}`,
+          errorMessage: `failed to spawn ${this.bin}: ${err.message}`,
         })
       })
 
       child.on('close', (code) => {
+        mcp.dispose()
         if (signal.aborted) {
           resolve({
             sessionId: resolvedSession,
@@ -579,7 +479,21 @@ export class ClaudeCodeHarness implements AgentHarness {
    * main agent, with the same configured effort.
    */
   ask(input: AskInput): Promise<AskResult> {
-    const { root, prompt, appendSystemPrompt, sessionId, effort, env, signal, onDelta } = input
+    const {
+      root,
+      prompt,
+      appendSystemPrompt,
+      sessionId,
+      model,
+      effort,
+      access,
+      env,
+      signal,
+      onDelta,
+    } = input
+    const permissionMode =
+      process.env.DOMAIN_STUDIO_AGENT_PERMISSION ||
+      (access === 'workspace' ? 'acceptEdits' : PERMISSION_MODE)
 
     const args = [
       '-p',
@@ -587,8 +501,9 @@ export class ClaudeCodeHarness implements AgentHarness {
       'stream-json',
       '--verbose',
       '--permission-mode',
-      PERMISSION_MODE,
+      permissionMode,
     ]
+    if (model) args.push('--model', model)
     if (effort) args.push('--effort', effort)
     // forking inherits context but leaves the parent untouched; --no-session-persistence
     // means the fork itself isn't saved either (truly ephemeral). No fork ⇒ a fresh ask.
@@ -603,7 +518,7 @@ export class ClaudeCodeHarness implements AgentHarness {
       let isError = false
       let errorMessage: string | undefined
 
-      const child = spawn(BIN, args, {
+      const child = spawn(this.bin, args, {
         cwd: root,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: childEnv(env),
@@ -660,7 +575,7 @@ export class ClaudeCodeHarness implements AgentHarness {
         resolve({
           text: finalText,
           isError: true,
-          errorMessage: `failed to spawn ${BIN}: ${err.message}`,
+          errorMessage: `failed to spawn ${this.bin}: ${err.message}`,
         }),
       )
       child.on('close', (code) => {

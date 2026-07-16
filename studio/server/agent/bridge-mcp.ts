@@ -8,8 +8,22 @@
  * Transport: newline-delimited JSON-RPC 2.0 on stdin/stdout. Nothing but
  * protocol messages may touch stdout; diagnostics go to stderr.
  */
-const BASE = process.env.DOMAIN_STUDIO_BRIDGE_URL || ''
-const TOKEN = process.env.DOMAIN_STUDIO_BRIDGE_TOKEN || ''
+import { readFileSync } from 'node:fs'
+
+function configFromArgv(): { base?: string; token?: string } {
+  const i = process.argv.indexOf('--config')
+  const path = i >= 0 ? process.argv[i + 1] : undefined
+  if (!path) return {}
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as { base?: string; token?: string }
+  } catch {
+    return {}
+  }
+}
+
+const config = configFromArgv()
+const BASE = config.base || process.env.DOMAIN_STUDIO_BRIDGE_URL || ''
+const TOKEN = config.token || process.env.DOMAIN_STUDIO_BRIDGE_TOKEN || ''
 
 const TOOLS = [
   {

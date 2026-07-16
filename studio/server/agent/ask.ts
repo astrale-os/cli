@@ -15,6 +15,7 @@ import type { AskResult } from './types'
 import { getBundle } from '../cache'
 import { resolveHarnessEnv } from '../state/harness-gateway'
 import { readSettings } from '../state/settings'
+import { effectiveHarnessEffort } from './capabilities'
 import { buildAskPrompt, buildAskSystemPrompt } from './prompt'
 import { getHarness } from './registry'
 import { forkableSession } from './runner'
@@ -32,7 +33,7 @@ export async function runAsk(
   signal: AbortSignal,
   onDelta: (text: string) => void,
 ): Promise<AskResult> {
-  const harness = getHarness()
+  const harness = getHarness(handle.root)
   if (!harness.ask)
     return {
       text: '',
@@ -52,7 +53,12 @@ export async function runAsk(
     overlay: bundle?.overlay,
   })
   const settings = readSettings(handle.root)
-  const envResult = await resolveHarnessEnv(handle.root)
+  const model = settings.agentModels[harness.id]?.trim() || undefined
+  const effort = effectiveHarnessEffort(harness.capabilities, settings.agentEffort)
+  const envResult =
+    harness.capabilities.gateway === 'anthropic'
+      ? await resolveHarnessEnv(handle.root)
+      : { ok: true as const, env: {} }
   if (!envResult.ok)
     return {
       text: '',
@@ -65,7 +71,9 @@ export async function runAsk(
     prompt,
     appendSystemPrompt: buildAskSystemPrompt(),
     sessionId: forkableSession(handle.id), // fork the live conversation (undefined ⇒ fresh)
-    effort: settings.agentEffort,
+    model,
+    effort,
+    access: settings.agentAccess,
     env: { ...envResult.env, ASTRALE_SESSION: studioSessionId(handle.id) },
     signal,
     onDelta,

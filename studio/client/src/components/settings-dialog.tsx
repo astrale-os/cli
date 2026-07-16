@@ -1,5 +1,7 @@
 import {
+  AGENT_ACCESS_LEVELS,
   AGENT_EFFORT_LEVELS,
+  type AgentAccess,
   type AgentEffort,
   type DomainUsage,
   type HarnessLoadout,
@@ -43,9 +45,8 @@ import { cn } from '@/lib/utils'
  * compact `label [?] … input` rows (description tucked behind the ?) so the
  * dialog stays dense and scannable as more knobs are lifted out of the code —
  * adding one is a single line in SECTIONS. The "Agent" section is special: the
- * harness (locked to Claude Code for now, with a live install probe) and the
- * session id live in agent state, not settings.json, so they round-trip through
- * their own endpoints but save with the same button.
+ * harness selection and session id live in agent state, not settings.json, while
+ * model/effort/access are ordinary settings.
  */
 type FieldDef = {
   key: keyof StudioSettings
@@ -56,15 +57,26 @@ type FieldDef = {
 }
 
 const EFFORT_LABELS: Record<AgentEffort, string> = {
+  minimal: 'Minimal',
   low: 'Low',
   medium: 'Medium',
   high: 'High',
   xhigh: 'X-high',
   max: 'Max',
-  ultracode: 'Ultracode',
 }
 const isAgentEffort = (value: string | undefined): value is AgentEffort =>
   !!value && (AGENT_EFFORT_LEVELS as readonly string[]).includes(value)
+
+function effectiveEffort(
+  value: string | undefined,
+  levels: readonly AgentEffort[],
+): AgentEffort | undefined {
+  if (isAgentEffort(value) && levels.includes(value)) return value
+  if (value === 'max' && levels.includes('xhigh')) return 'xhigh'
+  if (value === 'minimal' && levels.includes('low')) return 'low'
+  if (levels.includes('high')) return 'high'
+  return levels[0]
+}
 
 const SECTIONS: { title: string; fields: FieldDef[] }[] = [
   {
@@ -158,19 +170,21 @@ function MetaRow({
 
 function AgentEffortPicker({
   value,
+  levels,
   onChange,
 }: {
   value?: string
+  levels: readonly AgentEffort[]
   onChange: (value: AgentEffort) => void
 }) {
-  const current = isAgentEffort(value) ? value : 'high'
+  const current = effectiveEffort(value, levels)
   return (
     <div
       className="grid grid-cols-3 gap-1 rounded-md bg-muted/45 p-1 sm:grid-cols-6"
       role="radiogroup"
       aria-label="Agent effort"
     >
-      {AGENT_EFFORT_LEVELS.map((effort) => (
+      {levels.map((effort) => (
         <button
           key={effort}
           type="button"
@@ -185,6 +199,49 @@ function AgentEffortPicker({
           )}
         >
           {EFFORT_LABELS[effort]}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const ACCESS_LABELS: Record<AgentAccess, string> = {
+  workspace: 'Workspace',
+  full: 'Full automation',
+}
+
+function AgentAccessPicker({
+  value,
+  levels,
+  onChange,
+}: {
+  value?: string
+  levels: readonly AgentAccess[]
+  onChange: (value: AgentAccess) => void
+}) {
+  const current =
+    AGENT_ACCESS_LEVELS.includes(value as AgentAccess) && levels.includes(value as AgentAccess)
+      ? (value as AgentAccess)
+      : levels.includes('full')
+        ? 'full'
+        : levels[0]
+  return (
+    <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/45 p-1" role="radiogroup">
+      {levels.map((access) => (
+        <button
+          key={access}
+          type="button"
+          role="radio"
+          aria-checked={current === access}
+          onClick={() => onChange(access)}
+          className={cn(
+            'rounded px-2 py-1 text-center text-[11px] font-medium transition-colors',
+            current === access
+              ? 'bg-background text-foreground shadow-sm'
+              : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
+          )}
+        >
+          {ACCESS_LABELS[access]}
         </button>
       ))}
     </div>
@@ -225,9 +282,7 @@ function SkillRow({
             s.loaded ? 'bg-emerald-500' : 'bg-amber-500',
           )}
           title={
-            s.loaded
-              ? 'loaded by Claude Code here'
-              : 'on disk but NOT loaded by Claude Code in this folder'
+            s.loaded ? 'available to the selected harness here' : 'installed but disabled here'
           }
         />
         <span className="truncate font-mono text-[12px]">{s.command}</span>
@@ -371,7 +426,7 @@ function SystemPromptReveal({ domainId }: { domainId?: string }) {
       <div className="flex items-center gap-2">
         <span className="flex items-center gap-1.5 text-[13px]">
           <span>Injected system prompt</span>
-          <Hint text="The exact appendix passed to the local harness with --append-system-prompt. It is hidden by default because it is long and mostly protocol." />
+          <Hint text="The exact developer/system appendix passed to the selected local harness. It is hidden by default because it is long and mostly protocol." />
         </span>
         <button
           type="button"
@@ -440,7 +495,13 @@ function AgentExtras({
       <div className="space-y-2 px-3 py-2.5 text-[12px]">
         <div className="flex items-center gap-1.5 text-[13px]">
           <span>Loaded by the harness</span>
-          <Hint text="What the local Claude Code actually loaded for THIS domain's folder — probed live from its session-init event (the reliable signal). A skill on disk but not active here shows amber." />
+          <Hint
+            text={
+              loadout?.source === 'configured'
+                ? 'What the selected harness has configured or installed for this folder. Codex discovers runtime tools when a turn starts.'
+                : 'What the selected harness actually loaded for this folder, probed from its runtime initialization event.'
+            }
+          />
           <button
             type="button"
             onClick={onRefresh}
@@ -465,6 +526,11 @@ function AgentExtras({
         ) : (
           <div className="space-y-2">
             <MetaRow label="Model" value={loadout.model ?? '—'} />
+            <MetaRow
+              label="Source"
+              value={loadout.source === 'configured' ? 'configured' : 'runtime'}
+              title={loadout.detail}
+            />
             <MetaRow label="Tools" value={loadout.tools.length} title={loadout.tools.join(', ')} />
             <MetaRow
               label="Subagents"
@@ -529,7 +595,7 @@ function AgentExtras({
       <div className="space-y-1.5 px-3 py-2.5 text-[12px]">
         <span className="flex items-center gap-1.5 text-[13px]">
           <span>Usage</span>
-          <Hint text="This studio's agent turns on THIS domain (succeeded or not). Machine-wide totals live in ~/.claude and are out of scope here." />
+          <Hint text="This Studio's agent turns on this domain (succeeded or not). Machine-wide harness totals are out of scope." />
           <span className="ml-auto text-[11px] text-muted-foreground/60">this domain</span>
         </span>
         <MetaRow label="Turns" value={usage?.runs ?? 0} />
@@ -561,10 +627,23 @@ export function SettingsDialog() {
   const { data: usage } = useUsage(open ? domainId : undefined)
   const qc = useQueryClient()
   const [values, setValues] = useState<Record<string, string>>({})
+  const [agentModels, setAgentModels] = useState<Record<string, string>>({})
   const [sessionId, setSessionId] = useState('')
+  const effortLevels = harness?.capabilities.effortLevels ?? [...AGENT_EFFORT_LEVELS]
+  const accessLevels = harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
+  const shownEffort = effectiveEffort(values.agentEffort ?? data?.agentEffort, effortLevels)
 
   useEffect(() => {
-    if (data) setValues(Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])))
+    if (data) {
+      setValues(
+        Object.fromEntries(
+          Object.entries(data)
+            .filter(([, value]) => typeof value !== 'object')
+            .map(([key, value]) => [key, String(value)]),
+        ),
+      )
+      setAgentModels({ ...data.agentModels })
+    }
   }, [data])
   useEffect(() => {
     if (session) setSessionId(session.sessionId ?? '')
@@ -581,8 +660,15 @@ export function SettingsDialog() {
               ? Number(raw) || (data?.[f.key] as number)
               : raw.trim() || (data?.[f.key] as string)
         }
-      const effort = isAgentEffort(values.agentEffort) ? values.agentEffort : data?.agentEffort
+      const effort = effectiveEffort(values.agentEffort, effortLevels)
       if (effort) patch.agentEffort = effort
+      const access = accessLevels.includes(values.agentAccess as AgentAccess)
+        ? (values.agentAccess as AgentAccess)
+        : accessLevels.includes('full')
+          ? 'full'
+          : accessLevels[0]
+      if (access) patch.agentAccess = access
+      patch.agentModels = agentModels
       await api.updateSettings(domainId!, patch as Partial<StudioSettings>)
       // The session id is agent state, not settings — only touch it if it changed.
       if (sessionId.trim() !== (session?.sessionId ?? ''))
@@ -593,13 +679,41 @@ export function SettingsDialog() {
       qc.invalidateQueries({ queryKey: qk.anatomy(domainId!) }) // integrations folder drives detection
       qc.invalidateQueries({ queryKey: qk.agentSession(domainId!) })
       qc.invalidateQueries({ queryKey: qk.agent(domainId!) }) // conversation summary in the agent drawer
+      qc.invalidateQueries({ queryKey: qk.loadout(domainId!) })
       toast.success('Settings saved')
       setOpen(false)
     },
     onError: (e) => toast.error(String(e)),
   })
 
+  const selectHarness = useMutation({
+    mutationFn: (id: string) => api.selectHarness(domainId!, id),
+    onSuccess: (selected) => {
+      // Never render the previous harness's model catalog while the new probe is
+      // loading (e.g. Codex models momentarily appearing under Claude).
+      qc.setQueryData(qk.loadout(domainId!), undefined)
+      qc.invalidateQueries({ queryKey: qk.harness(domainId!) })
+      qc.invalidateQueries({ queryKey: qk.agentSession(domainId!) })
+      qc.invalidateQueries({ queryKey: qk.agent(domainId!) })
+      qc.invalidateQueries({ queryKey: qk.loadout(domainId!) })
+      toast.success(`Using ${selected.label}`)
+    },
+    onError: (e) => toast.error(String(e)),
+  })
+
   const harnessOptions = harness?.options ?? [{ id: 'claude', label: 'Claude Code (local)' }]
+  const harnessId = harness?.id ?? 'claude'
+  const selectedModel = agentModels[harnessId] ?? ''
+  const modelOptions = loadout?.models ?? []
+  const effectiveModel = selectedModel || loadout?.model || 'harness default'
+  const setSelectedModel = (model: string) =>
+    setAgentModels((current) => {
+      const next = { ...current }
+      const normalized = model.trim()
+      if (normalized) next[harnessId] = normalized
+      else delete next[harnessId]
+      return next
+    })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -611,25 +725,28 @@ export function SettingsDialog() {
           </DialogDescription>
         </DialogHeader>
         <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
-          {/* Agent — first: harness (locked) + session id (live agent state) + the loadout/usage readout */}
+          {/* Agent — harness + session id live in agent state; settings own model/effort/access. */}
           <div>
             <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
               Agent
             </div>
             <div className="divide-y divide-border/50 rounded-lg border bg-card/40">
-              {/* Harness — locked to Claude Code for now, with a live install probe */}
+              {/* Harness selection + live install probe */}
               <div className="space-y-2 px-3 py-2.5">
                 <div className="flex items-center gap-3">
                   <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]">
                     <span className="truncate">Harness</span>
-                    <Hint text="Which local AI agent does the edits. Only Claude Code is supported for now; more harnesses (Codex, …) later." />
+                    <Hint text="Which installed local coding agent handles Studio turns. Conversations are preserved independently per harness." />
                   </span>
                   <div className="flex items-center gap-1.5">
-                    <Lock className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+                    {harness?.locked && (
+                      <Lock className="h-3 w-3 shrink-0 text-muted-foreground/40" />
+                    )}
                     <select
-                      disabled
+                      disabled={!harness || harness.locked || selectHarness.isPending}
                       value={harness?.id ?? 'claude'}
-                      className="w-40 shrink-0 cursor-not-allowed rounded-md border bg-background px-2 py-1 text-[13px] text-muted-foreground outline-none"
+                      onChange={(event) => selectHarness.mutate(event.target.value)}
+                      className="w-40 shrink-0 rounded-md border bg-background px-2 py-1 text-[13px] outline-none disabled:cursor-not-allowed disabled:text-muted-foreground"
                     >
                       {harnessOptions.map((o) => (
                         <option key={o.id} value={o.id}>
@@ -660,21 +777,98 @@ export function SettingsDialog() {
                   >
                     {harness ? harness.message : 'Checking…'}
                   </span>
+                  {harness?.locked && (
+                    <span className="ml-auto shrink-0 text-muted-foreground/50">
+                      locked by --harness
+                    </span>
+                  )}
                 </div>
+              </div>
+
+              {/* Per-domain, per-harness model override */}
+              <div className="space-y-1.5 px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[13px]">
+                  <span>Model</span>
+                  <Hint text="Leave this on Default to preserve the selected harness's own config and account default. An explicit choice is remembered independently for this domain and harness, then passed as --model to normal turns, resumed turns, and Ask forks." />
+                  <span className="ml-auto max-w-[55%] truncate font-mono text-[11px] text-muted-foreground/70">
+                    {effectiveModel}
+                  </span>
+                </div>
+                {modelOptions.length > 0 ? (
+                  <select
+                    value={selectedModel}
+                    onChange={(event) => setSelectedModel(event.target.value)}
+                    className="w-full rounded-md border bg-background px-2 py-1 text-[12px] outline-none focus:border-primary"
+                  >
+                    <option value="">
+                      Default
+                      {loadout?.nativeModel ? ` — ${loadout.nativeModel}` : ''}
+                    </option>
+                    {selectedModel && !modelOptions.some((model) => model.id === selectedModel) && (
+                      <option value={selectedModel}>{selectedModel} — custom</option>
+                    )}
+                    {modelOptions.map((model) => (
+                      <option key={model.id} value={model.id} title={model.description}>
+                        {model.label}
+                        {model.isDefault ? ' — catalog default' : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={selectedModel}
+                    onChange={(event) => setSelectedModel(event.target.value)}
+                    placeholder={
+                      loadout?.nativeModel
+                        ? `Default — ${loadout.nativeModel}`
+                        : 'Default — type an alias or full model id to override'
+                    }
+                    spellCheck={false}
+                    className="w-full rounded-md border bg-background px-2 py-1 font-mono text-[12px] outline-none focus:border-primary"
+                  />
+                )}
+                <p className="text-[10px] text-muted-foreground/50">
+                  {selectedModel
+                    ? 'Studio override · saved when you press Save'
+                    : loadout?.modelSource === 'config'
+                      ? 'Codex effective config'
+                      : loadout?.modelSource === 'default'
+                        ? 'Harness catalog default'
+                        : loadout?.modelSource === 'runtime'
+                          ? 'Harness runtime default'
+                          : 'Harness-native selection'}
+                </p>
               </div>
 
               {/* Effort */}
               <div className="space-y-1.5 px-3 py-2.5">
                 <div className="flex items-center gap-1.5 text-[13px]">
                   <span>Effort</span>
-                  <Hint text="Passed to Claude Code as --effort. Values come from the local claude --help output." />
+                  <Hint text="Passed using the selected harness's native reasoning-effort setting. Only values supported by that harness are shown." />
                   <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
-                    {values.agentEffort ?? data?.agentEffort ?? 'high'}
+                    {shownEffort ?? 'high'}
                   </span>
                 </div>
                 <AgentEffortPicker
                   value={values.agentEffort ?? data?.agentEffort}
+                  levels={effortLevels}
                   onChange={(effort) => setValues((v) => ({ ...v, agentEffort: effort }))}
+                />
+              </div>
+
+              {/* Access */}
+              <div className="space-y-1.5 px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-[13px]">
+                  <span>Access</span>
+                  <Hint text="Workspace keeps the agent sandboxed to local edits. Full automation preserves Studio's deploy/install capability and grants unrestricted local command access." />
+                  <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
+                    {values.agentAccess ?? data?.agentAccess ?? 'full'}
+                  </span>
+                </div>
+                <AgentAccessPicker
+                  value={values.agentAccess ?? data?.agentAccess}
+                  levels={accessLevels}
+                  onChange={(access) => setValues((v) => ({ ...v, agentAccess: access }))}
                 />
               </div>
 
@@ -717,7 +911,7 @@ export function SettingsDialog() {
             </div>
           </div>
 
-          <HarnessGatewayCard domainId={domainId} />
+          <HarnessGatewayCard domainId={domainId} harness={harness} />
 
           <EnvEditor domainId={domainId} />
 

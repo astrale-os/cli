@@ -1,4 +1,4 @@
-import type { HarnessGatewayAuth } from '@shared/types'
+import type { HarnessGatewayAuth, HarnessStatus } from '@shared/types'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Eye, EyeOff, HelpCircle } from 'lucide-react'
@@ -56,8 +56,15 @@ const MODE_LABEL: Record<AuthMode, string> = {
 }
 const MODES: AuthMode[] = ['mint', 'token', 'host']
 
-export function HarnessGatewayCard({ domainId }: { domainId?: string }) {
-  const { data: gw } = useHarnessGateway(domainId)
+export function HarnessGatewayCard({
+  domainId,
+  harness,
+}: {
+  domainId?: string
+  harness?: HarnessStatus
+}) {
+  const anthropic = harness?.capabilities.gateway === 'anthropic'
+  const { data: gw } = useHarnessGateway(anthropic ? domainId : undefined)
   const qc = useQueryClient()
 
   const [enabled, setEnabled] = useState(false)
@@ -121,6 +128,24 @@ export function HarnessGatewayCard({ domainId }: { domainId?: string }) {
       : source === 'global'
         ? 'inherited from the studio-wide default'
         : 'off — the harness uses its own Claude Code auth'
+
+  if (harness && !anthropic) {
+    return (
+      <div>
+        <div className="mb-1.5 flex items-center gap-1.5 px-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Model gateway
+          </span>
+          <span className="ml-auto text-[10px] text-muted-foreground/60">not applicable</span>
+        </div>
+        <div className="rounded-lg border bg-card/40 px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+          {harness.id === 'codex'
+            ? 'Codex uses its own local login. The Astrale gateway currently exposes Chat Completions and Anthropic Messages, while Codex custom providers require the Responses API.'
+            : `${harness.label} does not expose a Studio model-gateway adapter.`}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div>

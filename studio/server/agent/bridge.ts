@@ -12,17 +12,19 @@
  * block, and mergeReply dedupes by text so a live reply is never duplicated.
  */
 import { randomUUID } from 'node:crypto'
+import { chmodSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { StudioEvent } from '../../shared/types'
 import type { DomainHandle } from '../domain'
+import type { HarnessMcpServer } from './types'
 
 import { addThreadEntry, readComments, setStatus, upsertComment } from '../state/comments'
 import { removeState, statePath, writeJson } from '../state/store'
 
 export interface Bridge {
   enabled: boolean
-  mcpConfigPath?: string
+  mcpServers: HarnessMcpServer[]
   onReply(cb: (commentId: string, text: string) => void): void
   onProgress(cb: (text: string) => void): void
   dispose(): void
@@ -54,6 +56,7 @@ export function startBridge(
   _notify: (e: StudioEvent) => void,
 ): Bridge {
   const token = randomUUID()
+  const fileId = randomUUID()
   const holder: RunBridge = {
     domainId: handle.id,
     root: handle.root,
@@ -63,21 +66,32 @@ export function startBridge(
   bridges.set(token, holder)
 
   const base = `http://127.0.0.1:${studioPort}/api/domain/${encodeURIComponent(handle.id)}/agent/bridge`
-  const mcpRel = `.cache/agent/mcp-${token}.json`
-  writeJson(handle.root, mcpRel, {
-    mcpServers: {
-      'domain-studio': {
-        command: BIN,
-        args: [MCP_SERVER],
-        env: { DOMAIN_STUDIO_BRIDGE_URL: base, DOMAIN_STUDIO_BRIDGE_TOKEN: token },
-      },
+  // Keep the bearer inside a state file. The path is safe to place in harness
+  // argv/config, unlike the token itself (which would be visible through `ps`).
+  const bridgeRel = `.cache/agent/bridge-${fileId}.json`
+  writeJson(handle.root, bridgeRel, { base, token })
+  const bridgeConfigPath = statePath(handle.root, bridgeRel)
+  chmodSync(bridgeConfigPath, 0o600)
+  const mcpServers: HarnessMcpServer[] = [
+    {
+      name: 'domain-studio',
+      command: BIN,
+      args: [MCP_SERVER, '--config', bridgeConfigPath],
+      required: true,
+      approvalMode: 'approve',
+      enabledTools: [
+        'list_open_threads',
+        'reply_to_thread',
+        'resolve_thread',
+        'post_progress',
+        'raise_question',
+      ],
     },
-  })
-  const mcpConfigPath = statePath(handle.root, mcpRel)
+  ]
 
   return {
     enabled: true,
-    mcpConfigPath,
+    mcpServers,
     onReply: (cb) => {
       holder.onReply = cb
     },
@@ -87,7 +101,7 @@ export function startBridge(
     dispose: () => {
       bridges.delete(token)
       try {
-        removeState(handle.root, mcpRel)
+        removeState(handle.root, bridgeRel)
       } catch {
         /* best-effort */
       }
