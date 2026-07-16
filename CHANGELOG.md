@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.3-alpha.0...cli-v0.7.0-alpha.0) (2026-07-16)
+
+
+### Features
+
+* **commands:** adopt owned managed instances ([8fbbfd8](https://github.com/astrale-os/cli/commit/8fbbfd8d9beb5af82b915a88d4aa53be9c4bf4a7))
+* **commands:** adopt owned managed instances ([a674fbf](https://github.com/astrale-os/cli/commit/a674fbf40fb06a6fba55e5e3a83aabe9395e0261))
+
+
+### Bug Fixes
+
+* **commands:** clarify installed CLI runtimes ([d0b1f70](https://github.com/astrale-os/cli/commit/d0b1f70cf353300f0a6469888de1cd3bd6bf3128))
+* **commands:** clarify published cli runtime (issue iss_90fd577f) ([ae1ea16](https://github.com/astrale-os/cli/commit/ae1ea16553da99b1a881db5ffc3e96fef0642b15))
+* **commands:** correct call payload guidance ([1fc9e73](https://github.com/astrale-os/cli/commit/1fc9e738b9089265e463d6ee855b7ee2d309e333))
+* **commands:** document call payload inputs (issue iss_60382d35) ([2614053](https://github.com/astrale-os/cli/commit/26140535bebb8f4cafc126a890c1740f720cdff4))
+* **commands:** narrow view port lock boundary ([4414821](https://github.com/astrale-os/cli/commit/441482167697b535029be4a8ae25810ae2c21c51))
+* **commands:** serialize view port allocation (issue iss_414b7690) ([aa794c0](https://github.com/astrale-os/cli/commit/aa794c0b034512f9a6a08042b6ced70e80776052))
+* **commands:** serialize view session port allocation ([90538fb](https://github.com/astrale-os/cli/commit/90538fbcebcad6e81eed8f8771970f72a249d1f8))
+
 ## [0.6.3-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.2-alpha.0...cli-v0.6.3-alpha.0) (2026-07-15)
 
 
