@@ -18,6 +18,7 @@ import { fatal, log } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
+import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
   applyViewUrlOverride,
   candidateSlug,
@@ -232,16 +233,45 @@ async function startSession(
   await ensureViewerAssets()
   const config = await readConfig()
   const kernelTarget = await resolveKernelTarget(opts, config)
+  const [instances, identities, runtime] = await Promise.all([
+    readInstances(),
+    readIdentities(),
+    resolveServeRuntime(),
+  ])
+  return withViewPortAllocationLock(() =>
+    startSessionLocked(
+      view,
+      target,
+      opts,
+      kernelTarget,
+      instances.active,
+      identities.default,
+      runtime,
+    ),
+  )
+}
+
+/**
+ * Called under the cross-process port-allocation lock. Keep the lock until the
+ * detached child answers its readiness probe: only then is the selected port
+ * durably owned and safe for the next CLI process to scan.
+ */
+async function startSessionLocked(
+  view: ResolvedView,
+  target: ResolvedTarget | undefined,
+  opts: ViewOpts,
+  kernelTarget: { url: string; caFile?: string },
+  activeInstance: string | undefined,
+  defaultIdentity: string | undefined,
+  runtime: { file: string; args: string[] },
+): Promise<ViewSessionRecord> {
   const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
   if (port === null) {
-    fatal(
-      new Error(
-        `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1} — close sessions with \`astrale view --close --all\``,
-      ),
+    throw new Error(
+      `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1} — close sessions with \`astrale view --close --all\``,
     )
   }
 
-  const [instances, identities] = await Promise.all([readInstances(), readIdentities()])
   const id = `v-${randomBytes(3).toString('hex')}`
   const nonce = randomBytes(12).toString('hex')
   const record: ViewSessionRecord = {
@@ -252,8 +282,8 @@ async function startSession(
     pageUrl: `http://127.0.0.1:${port}/s/${nonce}/`,
     view,
     target,
-    instance: opts.instance ?? (opts.url ? opts.url : instances.active),
-    identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? identities.default),
+    instance: opts.instance ?? (opts.url ? opts.url : activeInstance),
+    identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? defaultIdentity),
     createdAt: new Date().toISOString(),
   }
   const serveConfig: ViewServeConfig = {
@@ -276,7 +306,6 @@ async function startSession(
   await mkdir(VIEW_DIR, { recursive: true })
   await writeFile(configPath(id), JSON.stringify(serveConfig, null, 2))
   const logFd = openSync(logPath(id), 'a')
-  const runtime = await resolveServeRuntime()
   const child = spawnHandle(
     runtime.file,
     [...runtime.args, '__view-serve', '--config', configPath(id)],
@@ -287,7 +316,7 @@ async function startSession(
   )
   child.unref()
   closeSync(logFd)
-  if (!child.pid) fatal(new Error('Failed to spawn the view session server'))
+  if (!child.pid) throw new Error('Failed to spawn the view session server')
   const live = { ...record, pid: child.pid }
   await saveRecord(live)
 
@@ -304,10 +333,8 @@ async function startSession(
   }
   const tail = await readFile(logPath(id), 'utf8').catch(() => '')
   await closeSession(live)
-  return fatal(
-    new Error(
-      `View session server did not come up.${tail ? `\n--- server log ---\n${tail.slice(-2000)}` : ''}`,
-    ),
+  throw new Error(
+    `View session server did not come up.${tail ? `\n--- server log ---\n${tail.slice(-2000)}` : ''}`,
   )
 }
 
