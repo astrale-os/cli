@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.7.0-alpha.0...cli-v0.8.0-alpha.0) (2026-07-16)
+
+
+### Features
+
+* **studio:** add Codex harness and model selection ([027701c](https://github.com/astrale-os/cli/commit/027701c0e274ce503805bc27f8799330fc3f0bfa))
+
+
+### Bug Fixes
+
+* **view:** resolve packaged viewer from module ([bbf647b](https://github.com/astrale-os/cli/commit/bbf647b34223970e11d5855ec7a9031444b2c160))
+* **view:** resolve packaged viewer from module ([d4264f7](https://github.com/astrale-os/cli/commit/d4264f7dd61190d031d8f174952c1334ba32bf1b))
+
 ## [0.7.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.3-alpha.0...cli-v0.7.0-alpha.0) (2026-07-16)
 
 
