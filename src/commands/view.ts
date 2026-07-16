@@ -231,7 +231,24 @@ async function startSession(
   opts: ViewOpts,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
-  return withViewPortAllocationLock(() => startSessionLocked(view, target, opts))
+  const config = await readConfig()
+  const kernelTarget = await resolveKernelTarget(opts, config)
+  const [instances, identities, runtime] = await Promise.all([
+    readInstances(),
+    readIdentities(),
+    resolveServeRuntime(),
+  ])
+  return withViewPortAllocationLock(() =>
+    startSessionLocked(
+      view,
+      target,
+      opts,
+      kernelTarget,
+      instances.active,
+      identities.default,
+      runtime,
+    ),
+  )
 }
 
 /**
@@ -243,9 +260,11 @@ async function startSessionLocked(
   view: ResolvedView,
   target: ResolvedTarget | undefined,
   opts: ViewOpts,
+  kernelTarget: { url: string; caFile?: string },
+  activeInstance: string | undefined,
+  defaultIdentity: string | undefined,
+  runtime: { file: string; args: string[] },
 ): Promise<ViewSessionRecord> {
-  const config = await readConfig()
-  const kernelTarget = await resolveKernelTarget(opts, config)
   const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
   if (port === null) {
     throw new Error(
@@ -253,7 +272,6 @@ async function startSessionLocked(
     )
   }
 
-  const [instances, identities] = await Promise.all([readInstances(), readIdentities()])
   const id = `v-${randomBytes(3).toString('hex')}`
   const nonce = randomBytes(12).toString('hex')
   const record: ViewSessionRecord = {
@@ -264,8 +282,8 @@ async function startSessionLocked(
     pageUrl: `http://127.0.0.1:${port}/s/${nonce}/`,
     view,
     target,
-    instance: opts.instance ?? (opts.url ? opts.url : instances.active),
-    identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? identities.default),
+    instance: opts.instance ?? (opts.url ? opts.url : activeInstance),
+    identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? defaultIdentity),
     createdAt: new Date().toISOString(),
   }
   const serveConfig: ViewServeConfig = {
@@ -288,7 +306,6 @@ async function startSessionLocked(
   await mkdir(VIEW_DIR, { recursive: true })
   await writeFile(configPath(id), JSON.stringify(serveConfig, null, 2))
   const logFd = openSync(logPath(id), 'a')
-  const runtime = await resolveServeRuntime()
   const child = spawnHandle(
     runtime.file,
     [...runtime.args, '__view-serve', '--config', configPath(id)],
