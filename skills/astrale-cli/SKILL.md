@@ -364,8 +364,9 @@ Gotchas:
 ## Batch Writes
 
 `astrale mutate` applies a **PatchData** patch through `function.mutate` — one
-atomic, all-or-nothing write. Patch source ladder (highest wins), mirroring
-`call`: `--data <json>` > `--file <path>` > piped stdin.
+atomic, all-or-nothing write. Its patch source ladder (highest wins) is
+`--data <json>` > `--file <path>` > piped stdin. `astrale call` does not accept
+`--file`; use `--data` or piped stdin for call payloads.
 
 ```json
 {
