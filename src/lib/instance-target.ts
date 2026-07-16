@@ -170,6 +170,7 @@ export function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInst
 }
 
 export function isManagedInstanceNotFound(error: unknown): boolean {
+  if (error instanceof AstraleError && error.code === 'INSTANCE_NOT_FOUND') return true
   if (!(error instanceof Error)) return false
   if (error.name === 'NotFoundError') return true
   // The admin kernel reports a missing instance node as InternalKernelError

@@ -1,8 +1,8 @@
 import type { CommandDefinition } from '../../command'
+import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 
 import { AstraleError } from '../../errors'
-import { withAdminKernelClient } from '../../kernel/client'
-import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
+import { listOwnedInstances } from '../../kernel/client'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { getDefault, setDefault } from '../../lib/identity'
 import {
@@ -121,7 +121,12 @@ async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedIn
   }
 
   assertManagedReady(chosen.info)
-  const { repointedFrom } = await upsertManagedBookmark(chosen.key, chosen.info.slug, chosen.url)
+  const { repointedFrom } = await upsertManagedBookmark(
+    chosen.key,
+    chosen.info.slug,
+    chosen.url,
+    chosen.info.organizationId,
+  )
   if (repointedFrom) {
     log.warn(`Bookmark "${chosen.key}" repointed: ${repointedFrom} → ${chosen.url}`)
   }
@@ -133,29 +138,26 @@ async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedIn
  * Best-effort: an unreachable or unauthenticated admin kernel degrades to
  * bookmark-only resolution.
  */
-async function fetchManagedInstances(name: string, opts: UseOpts): Promise<InstanceInfo[]> {
+async function fetchManagedInstances(name: string, opts: UseOpts): Promise<OwnedInstanceInfo[]> {
   try {
     validateSlug(name)
   } catch {
     return []
   }
   try {
-    return await withAdminKernelClient(
-      opts,
-      async (ctx) => (await ctx.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[],
-    )
+    return await listOwnedInstances(opts)
   } catch {
     return []
   }
 }
 
-function assertManagedReady(info: InstanceInfo): void {
-  if (!info.state || info.state === 'ready') return
+function assertManagedReady(info: OwnedInstanceInfo): void {
+  if (info.state === 'ready') return
   const detail = info.phase && info.phase !== info.state ? ` (${info.phase})` : ''
   throw new AstraleError(
     'INSTANCE_NOT_READY',
     `Instance "${info.slug}" is ${info.state}${detail}; it cannot be selected yet.`,
-    info.error ?? undefined,
+    info.error ?? `Run: astrale instance status ${info.slug}`,
   )
 }
 
