@@ -93,6 +93,11 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
   if (rest === '/agent/session') {
     if (req.method === 'GET') return json(getSessionId(id))
     if (req.method === 'POST') {
+      const harness = getHarness(root)
+      if (body.harness !== harness.id)
+        return badRequest(
+          `selected harness changed from ${String(body.harness ?? '(unknown)')} to ${harness.id}`,
+        )
       const ok = setSessionId(id, typeof body.sessionId === 'string' ? body.sessionId : '')
       if (!ok) return badRequest('the session id cannot be changed while a turn is running')
       return json(getSessionId(id))
@@ -137,14 +142,25 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
         probedAt: Date.now(),
       })
     const { env, model } = configuration.configuration
-    return json(await harness.loadout(root, { env, model }))
+    return json(
+      await harness.loadout(root, {
+        env,
+        model,
+        refresh: url.searchParams.get('refresh') === '1',
+      }),
+    )
   }
   if (rest === '/agent/harness-gateway') {
     if (req.method === 'GET') return json(getHarnessGatewayState(root))
     if (req.method === 'POST') {
       const scope = body.scope === 'global' ? 'global' : 'domain'
-      if (body.action === 'set')
-        return json(setHarnessGateway(root, { scope, config: body.config ?? {} }))
+      if (body.action === 'set') {
+        try {
+          return json(setHarnessGateway(root, { scope, config: body.config ?? {} }))
+        } catch (error) {
+          return badRequest(String((error as Error)?.message ?? error))
+        }
+      }
       if (body.action === 'clear') return json(clearHarnessGateway(root, scope))
       return badRequest('unknown harness-gateway action')
     }

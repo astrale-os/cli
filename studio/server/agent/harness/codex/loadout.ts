@@ -2,8 +2,8 @@ import type { HarnessLoadout } from '../../../../shared/types'
 import type { HarnessLoadoutOptions } from '../adapter'
 
 import { captureCommand } from '../process'
-import { scanCodexSkills, type CodexPlugin } from '../skills'
 import { probeCodexModels } from './models'
+import { scanCodexSkills, type CodexPlugin } from './skills'
 
 function parseJson<T>(text: string, fallback: T): T {
   try {

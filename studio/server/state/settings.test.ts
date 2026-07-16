@@ -45,3 +45,34 @@ test('rejects malformed model maps and entries without discarding unrelated sett
   })
   expect(readSettings(root).agentModels).toEqual({ valid: 'model-ok' })
 })
+
+test('drops destructive timing values from disk and API patches', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-settings-timings-'))
+  roots.push(root)
+  writeJson(root, 'settings.json', {
+    introspectTimeoutMs: -1,
+    instancePollMs: 1_000.5,
+    updatesPollMs: 9_999,
+    viewProbeTimeoutMs: 120_001,
+  })
+
+  expect(readSettings(root)).toMatchObject({
+    introspectTimeoutMs: 20_000,
+    instancePollMs: 30_000,
+    updatesPollMs: 600_000,
+    viewProbeTimeoutMs: 8_000,
+  })
+
+  const saved = updateSettings(root, {
+    introspectTimeoutMs: Number.POSITIVE_INFINITY,
+    instancePollMs: 1_000,
+    updatesPollMs: 86_400_000,
+    viewProbeTimeoutMs: 250,
+  })
+  expect(saved).toMatchObject({
+    introspectTimeoutMs: 20_000,
+    instancePollMs: 1_000,
+    updatesPollMs: 86_400_000,
+    viewProbeTimeoutMs: 250,
+  })
+})

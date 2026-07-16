@@ -146,8 +146,8 @@ export const api = {
   agentCancel: (id: string) => post<{ ok: boolean }>(`${d(id)}/agent/cancel`, {}),
   agentReset: (id: string) => post<{ ok: boolean }>(`${d(id)}/agent/reset`, {}),
   agentSession: (id: string) => get<AgentSessionInfo>(`${d(id)}/agent/session`),
-  setAgentSession: (id: string, sessionId: string) =>
-    post<AgentSessionInfo>(`${d(id)}/agent/session`, { sessionId }),
+  setAgentSession: (id: string, harness: string, sessionId: string) =>
+    post<AgentSessionInfo>(`${d(id)}/agent/session`, { harness, sessionId }),
   agentSystemPrompt: (id: string) => get<AgentSystemPromptInfo>(`${d(id)}/agent/prompt/system`),
   harness: (id: string) => get<HarnessStatus>(`${d(id)}/agent/harness`),
   selectHarness: (id: string, harness: string) =>
@@ -161,7 +161,8 @@ export const api = {
   // auth mode. Called by the Astrale GUI glue when the studio runs as an iframe.
   pushHostToken: (id: string, token: string) =>
     post<{ ok: boolean }>(`${d(id)}/agent/harness-gateway/host-token`, { token }),
-  loadout: (id: string) => get<HarnessLoadout>(`${d(id)}/agent/loadout`),
+  loadout: (id: string, refresh = false) =>
+    get<HarnessLoadout>(`${d(id)}/agent/loadout${refresh ? '?refresh=1' : ''}`),
   usage: (id: string) => get<DomainUsage>(`${d(id)}/agent/usage`),
   skillContent: (id: string, command: string) =>
     get<{ command: string; content: string; path: string }>(

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -17,6 +17,7 @@ function fakeClaude(root: string): string {
     file,
     `#!/usr/bin/env bun
 const fs = require('node:fs')
+const { spawn } = require('node:child_process')
 const args = process.argv.slice(2)
 if (args[0] === '--version') {
   console.log('2.1.test')
@@ -54,6 +55,21 @@ process.stdin.on('end', () => {
     console.error('crashed after text')
     process.exit(7)
   }
+  if (process.env.FAKE_CLAUDE_MODE === 'result-error') {
+    send({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'failed' })
+    return
+  }
+  if (process.env.FAKE_CLAUDE_MODE === 'hang-ignore-term') {
+    process.on('SIGTERM', () => {})
+    const child = spawn(process.execPath, ['-e', "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+      stdio: 'ignore',
+    })
+    fs.writeFileSync(
+      process.env.FAKE_CLAUDE_PID_LOG,
+      JSON.stringify({ parent: process.pid, child: child.pid }),
+    )
+    return setInterval(() => {}, 1000)
+  }
   send({
     type: 'result',
     subtype: 'success',
@@ -76,12 +92,30 @@ function invocations(log: string): { args: string[] }[] {
     .map((line) => JSON.parse(line))
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('condition did not become true before timeout')
+    await Bun.sleep(20)
+  }
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
 test('Claude loadout probing reports and passes the Studio model override', async () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-claude-model-probe-'))
   roots.push(root)
   const log = join(root, 'claude.jsonl')
+  const harness = new ClaudeCodeHarness(fakeClaude(root))
 
-  const loadout = await new ClaudeCodeHarness(fakeClaude(root)).loadout(root, {
+  const loadout = await harness.loadout(root, {
     model: 'sonnet',
     env: { FAKE_CLAUDE_LOG: log },
   })
@@ -94,6 +128,18 @@ test('Claude loadout probing reports and passes the Studio model override', asyn
   const args = invocations(log)[0].args
   const modelAt = args.indexOf('--model')
   expect(args.slice(modelAt, modelAt + 2)).toEqual(['--model', 'sonnet'])
+
+  await harness.loadout(root, {
+    model: 'sonnet',
+    env: { FAKE_CLAUDE_LOG: log },
+  })
+  expect(invocations(log)).toHaveLength(1)
+  await harness.loadout(root, {
+    model: 'sonnet',
+    env: { FAKE_CLAUDE_LOG: log },
+    refresh: true,
+  })
+  expect(invocations(log)).toHaveLength(2)
 })
 
 test('Claude resumed turns and fresh or forked Ask calls carry their selected model', async () => {
@@ -167,7 +213,7 @@ test('Claude resumed turns and fresh or forked Ask calls carry their selected mo
   ])
 })
 
-test('Claude rejects zero-exit and text-before-crash streams without a terminal result', async () => {
+test('Claude turns and Ask reject incomplete terminal protocols', async () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-claude-terminal-'))
   roots.push(root)
   const harness = new ClaudeCodeHarness(fakeClaude(root))
@@ -195,4 +241,68 @@ test('Claude rejects zero-exit and text-before-crash streams without a terminal 
     isError: true,
     errorMessage: expect.stringContaining('claude exited 7'),
   })
+
+  const askInput = {
+    root,
+    prompt: 'question',
+    signal: new AbortController().signal,
+    onDelta: () => {},
+  }
+  const askNoResult = await harness.ask({
+    ...askInput,
+    env: { FAKE_CLAUDE_MODE: 'no-result' },
+  })
+  expect(askNoResult).toMatchObject({
+    isError: true,
+    errorMessage: 'claude exited without a result event',
+  })
+
+  const askCrashed = await harness.ask({
+    ...askInput,
+    env: { FAKE_CLAUDE_MODE: 'text-then-crash' },
+  })
+  expect(askCrashed).toMatchObject({
+    isError: true,
+    errorMessage: expect.stringContaining('claude exited 7'),
+  })
+
+  const askTerminalError = await harness.ask({
+    ...askInput,
+    env: { FAKE_CLAUDE_MODE: 'result-error' },
+  })
+  expect(askTerminalError).toEqual({
+    text: 'failed',
+    isError: true,
+    errorMessage: 'error_during_execution',
+  })
+})
+
+test('Claude Ask cancellation kills the entire stubborn subprocess group', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-claude-ask-cancel-'))
+  roots.push(root)
+  const pidLog = join(root, 'pids.json')
+  const controller = new AbortController()
+  const resultPromise = new ClaudeCodeHarness(fakeClaude(root)).ask({
+    root,
+    prompt: 'question',
+    env: {
+      FAKE_CLAUDE_MODE: 'hang-ignore-term',
+      FAKE_CLAUDE_PID_LOG: pidLog,
+    },
+    signal: controller.signal,
+    onDelta: () => {},
+  })
+
+  await waitFor(() => existsSync(pidLog))
+  const pids = JSON.parse(readFileSync(pidLog, 'utf8')) as { parent: number; child: number }
+  expect(processExists(pids.parent)).toBe(true)
+  expect(processExists(pids.child)).toBe(true)
+  controller.abort()
+
+  expect(await resultPromise).toEqual({
+    text: '',
+    isError: true,
+    errorMessage: 'canceled',
+  })
+  await waitFor(() => !processExists(pids.parent) && !processExists(pids.child))
 })

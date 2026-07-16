@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { statePath } from '../../../state/store'
+import { statePath, writeJson } from '../../../state/store'
 import {
   clearHarnessGateway,
   getHarnessGatewayState,
@@ -52,4 +52,47 @@ test('owns normalized per-domain gateway configuration and child environment', a
 
   clearHarnessGateway(root, 'domain')
   expect(getHarnessGatewayState(root).local).toBeNull()
+})
+
+test('rejects enabled gateway configurations that cannot authenticate safely', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-gateway-invalid-'))
+  roots.push(root)
+
+  expect(() =>
+    setHarnessGateway(root, {
+      scope: 'domain',
+      config: { enabled: true, baseUrl: '', auth: { mode: 'mint' } },
+    }),
+  ).toThrow('gateway base URL is required')
+  expect(() =>
+    setHarnessGateway(root, {
+      scope: 'domain',
+      config: { enabled: true, baseUrl: 'file:///tmp/gateway', auth: { mode: 'mint' } },
+    }),
+  ).toThrow('must use http:// or https://')
+  expect(() =>
+    setHarnessGateway(root, {
+      scope: 'domain',
+      config: {
+        enabled: true,
+        baseUrl: 'https://gateway.example',
+        auth: { mode: 'token', token: ' ' },
+      },
+    }),
+  ).toThrow('static token is required')
+})
+
+test('fails closed for invalid enabled configuration already present on disk', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-gateway-legacy-invalid-'))
+  roots.push(root)
+  writeJson(root, 'harness-gateway.json', {
+    enabled: true,
+    baseUrl: '',
+    auth: { mode: 'mint' },
+  })
+
+  expect(await resolveHarnessEnv(root)).toEqual({
+    ok: false,
+    error: 'gateway base URL is required while enabled',
+  })
 })

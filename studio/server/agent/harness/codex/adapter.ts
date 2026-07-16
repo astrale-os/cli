@@ -14,6 +14,7 @@ import { readSkillContent } from '../skills'
 import { runCodexForkAsk } from './ask'
 import { runCodexExec } from './exec'
 import { loadCodexConfiguration } from './loadout'
+import { scanCodexSkills } from './skills'
 
 const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CODEX_BIN || 'codex'
 
@@ -93,7 +94,12 @@ export class CodexHarness implements AgentHarness {
   async loadout(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout> {
     const now = Date.now()
     const key = `${root}\u0000${options?.model ?? ''}\u0000${JSON.stringify(options?.env ?? {})}`
-    if (this.loadoutCache && this.loadoutCache.key === key && now - this.loadoutCache.at < 60_000)
+    if (
+      !options?.refresh &&
+      this.loadoutCache &&
+      this.loadoutCache.key === key &&
+      now - this.loadoutCache.at < 60_000
+    )
       return this.loadoutCache.data
     const data = await loadCodexConfiguration(this.bin, root, options)
     this.loadoutCache = { at: now, key, data }

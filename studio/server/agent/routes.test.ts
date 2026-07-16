@@ -33,9 +33,9 @@ function fixture() {
   return handle
 }
 
-async function route(rest: string, method = 'GET', body: any = {}) {
+async function route(rest: string, method = 'GET', body: any = {}, search = '') {
   const handle = fixture()
-  const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+  const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}${search}`)
   const req = new Request(url, {
     method,
     ...(method === 'POST'
@@ -71,6 +71,56 @@ test('ignores non-agent routes and rejects unknown agent routes', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   expect(await route('/context')).toBeNull()
   expect((await route('/agent/unknown'))?.status).toBe(404)
+})
+
+test('rejects stale session ownership and invalid gateway writes at the route boundary', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+
+  const staleSession = await route('/agent/session', 'POST', {
+    harness: 'codex',
+    sessionId: 'wrong-owner',
+  })
+  expect(staleSession?.status).toBe(400)
+  expect(await staleSession?.json()).toEqual({
+    error: 'selected harness changed from codex to mock',
+  })
+
+  const invalidGateway = await route('/agent/harness-gateway', 'POST', {
+    action: 'set',
+    scope: 'domain',
+    config: { enabled: true, baseUrl: '', auth: { mode: 'mint' } },
+  })
+  expect(invalidGateway?.status).toBe(400)
+  expect(await invalidGateway?.json()).toEqual({
+    error: 'gateway base URL is required while enabled',
+  })
+})
+
+test('threads an explicit loadout refresh through to the selected harness', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'claude'
+  const harness = getHarnessById('claude')
+  const originalLoadout = harness.loadout
+  let refresh: boolean | undefined
+  harness.loadout = async (_root, options) => {
+    refresh = options?.refresh
+    return {
+      ok: true,
+      tools: [],
+      mcpServers: [],
+      skills: [],
+      agents: [],
+      builtinCommandCount: 0,
+      probedAt: Date.now(),
+    }
+  }
+
+  try {
+    const response = await route('/agent/loadout', 'GET', {}, '?refresh=1')
+    expect(response?.status).toBe(200)
+    expect(refresh).toBe(true)
+  } finally {
+    harness.loadout = originalLoadout
+  }
 })
 
 test('cancels an Ask stream without enqueueing after the client closes it', async () => {

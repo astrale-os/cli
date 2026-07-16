@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { readSkillContent, scanCodexSkills } from './skills'
+import { scanClaudeSkills } from './claude/skills'
+import { scanCodexSkills } from './codex/skills'
+import { readSkillContent } from './skills'
 
 const roots: string[] = []
 
@@ -55,7 +57,6 @@ description: >
     loaded: true,
     path: nearestSkill,
   })
-  expect(project.path).not.toBe(parentSkill)
   expect(plugin).toMatchObject({
     name: 'Review',
     source: 'plugin',
@@ -68,4 +69,27 @@ description: >
     content: `---\nname: Review\ndescription: Disabled review tool\n---\n\nInstructions for review.\n`,
     path: pluginSkill,
   })
+})
+
+test('Claude skill discovery owns Claude project precedence without leaking Codex policy', () => {
+  const parent = mkdtempSync(join(tmpdir(), 'studio-claude-skills-'))
+  roots.push(parent)
+  const root = join(parent, 'domain')
+  mkdirSync(root)
+  skill(join(root, '.agents', 'skills'), 'review', 'name: Shared\ndescription: shared fallback')
+  const claudeSkill = skill(
+    join(root, '.claude', 'skills'),
+    'review',
+    'name: Claude Review\ndescription: Claude-native project skill',
+  )
+
+  const reviews = scanClaudeSkills(root).filter((item) => item.command === 'review')
+  expect(reviews).toEqual([
+    expect.objectContaining({
+      name: 'Claude Review',
+      source: 'project',
+      loaded: true,
+      path: claudeSkill,
+    }),
+  ])
 })

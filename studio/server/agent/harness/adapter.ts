@@ -127,6 +127,8 @@ export interface HarnessLoadoutOptions {
   env?: Record<string, string>
   /** Studio's per-domain override for the selected harness. */
   model?: string
+  /** Bypass the adapter's short-lived probe cache for an explicit user re-probe. */
+  refresh?: boolean
 }
 
 export interface AgentHarness {

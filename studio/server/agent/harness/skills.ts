@@ -5,12 +5,6 @@ import { parse as parseYaml } from 'yaml'
 
 import type { LoadoutSkill } from '../../../shared/types'
 
-export interface CodexPlugin {
-  name: string
-  path: string
-  enabled: boolean
-}
-
 function readSkillMeta(skillMd: string): { name?: string; description?: string } {
   let text: string
   try {
@@ -32,7 +26,7 @@ function readSkillMeta(skillMd: string): { name?: string; description?: string }
   }
 }
 
-function scanSkillDir(
+export function scanSkillDir(
   dir: string,
   source: LoadoutSkill['source'],
   plugin: string | undefined,
@@ -67,7 +61,12 @@ function scanSkillDir(
   }
 }
 
-function scanAncestors(root: string, dirs: string[], out: LoadoutSkill[], seen: Set<string>): void {
+export function scanAncestors(
+  root: string,
+  dirs: string[],
+  out: LoadoutSkill[],
+  seen: Set<string>,
+): void {
   const home = homedir()
   let current = root
   for (let i = 0; i < 12 && current !== home; i++) {
@@ -77,61 +76,6 @@ function scanAncestors(root: string, dirs: string[], out: LoadoutSkill[], seen: 
     if (parent === current) break
     current = parent
   }
-}
-
-function installedClaudePluginDirs(): { plugin: string; installPath: string }[] {
-  const file = join(homedir(), '.claude', 'plugins', 'installed_plugins.json')
-  let parsed: any
-  try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'))
-  } catch {
-    return []
-  }
-  const out: { plugin: string; installPath: string }[] = []
-  const seen = new Set<string>()
-  for (const [key, entries] of Object.entries(parsed?.plugins ?? {})) {
-    const plugin = String(key).split('@')[0]
-    for (const entry of Array.isArray(entries) ? entries : []) {
-      const installPath = (entry as any)?.installPath
-      if (typeof installPath === 'string' && !seen.has(installPath)) {
-        seen.add(installPath)
-        out.push({ plugin, installPath })
-      }
-    }
-  }
-  return out
-}
-
-export function scanClaudeSkills(root: string): LoadoutSkill[] {
-  const out: LoadoutSkill[] = []
-  const seen = new Set<string>()
-  const home = homedir()
-  scanAncestors(root, ['.claude/skills', '.agents/skills'], out, seen)
-  scanSkillDir(join(home, '.claude', 'skills'), 'user', undefined, '', true, out, seen)
-  scanSkillDir(join(home, '.agents', 'skills'), 'user', undefined, '', true, out, seen)
-  for (const { plugin, installPath } of installedClaudePluginDirs())
-    scanSkillDir(join(installPath, 'skills'), 'plugin', plugin, `${plugin}:`, true, out, seen)
-  return out
-}
-
-export function scanCodexSkills(root: string, plugins: CodexPlugin[]): LoadoutSkill[] {
-  const out: LoadoutSkill[] = []
-  const seen = new Set<string>()
-  const home = homedir()
-  scanAncestors(root, ['.agents/skills', '.codex/skills'], out, seen)
-  scanSkillDir(join(home, '.agents', 'skills'), 'user', undefined, '', true, out, seen)
-  scanSkillDir(join(home, '.codex', 'skills'), 'user', undefined, '', true, out, seen)
-  for (const plugin of plugins)
-    scanSkillDir(
-      join(plugin.path, 'skills'),
-      'plugin',
-      plugin.name,
-      `${plugin.name}:`,
-      plugin.enabled,
-      out,
-      seen,
-    )
-  return out
 }
 
 export function readSkillContent(

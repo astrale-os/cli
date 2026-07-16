@@ -55,6 +55,21 @@ function normalize(input: any): HarnessGatewayConfig {
   }
 }
 
+function validateEnabledConfig(config: HarnessGatewayConfig): void {
+  if (!config.enabled) return
+  if (!config.baseUrl) throw new Error('gateway base URL is required while enabled')
+  let url: URL
+  try {
+    url = new URL(config.baseUrl)
+  } catch {
+    throw new Error(`invalid gateway base URL: ${config.baseUrl}`)
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    throw new Error('gateway base URL must use http:// or https://')
+  if (config.auth.mode === 'token' && !config.auth.token)
+    throw new Error('gateway static token is required in token mode')
+}
+
 function readLocal(root: string): HarnessGatewayConfig | null {
   const raw = readJson<HarnessGatewayConfig | null>(root, LOCAL_FILE, null)
   return raw ? normalize(raw) : null
@@ -116,6 +131,7 @@ export function setHarnessGateway(
   input: SetHarnessGatewayInput,
 ): HarnessGatewayState {
   const cfg = normalize(input.config)
+  validateEnabledConfig(cfg)
   if (input.scope === 'global') {
     writeGlobal(cfg)
     removeState(root, LOCAL_FILE)
@@ -167,10 +183,14 @@ export type HarnessEnvResult =
  */
 export async function resolveHarnessEnv(root: string): Promise<HarnessEnvResult> {
   const cfg = resolveHarnessGateway(root)
-  if (!cfg || !cfg.enabled || !cfg.baseUrl) return { ok: true, env: {} }
+  if (!cfg || !cfg.enabled) return { ok: true, env: {} }
+  if (!cfg.baseUrl) return { ok: false, error: 'gateway base URL is required while enabled' }
   let audience: string
   try {
-    audience = new URL(cfg.baseUrl).origin
+    const url = new URL(cfg.baseUrl)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:')
+      return { ok: false, error: 'gateway base URL must use http:// or https://' }
+    audience = url.origin
   } catch {
     return { ok: false, error: `invalid gateway base URL: ${cfg.baseUrl}` }
   }

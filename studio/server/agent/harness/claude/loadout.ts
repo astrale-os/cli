@@ -4,8 +4,9 @@ import type { HarnessLoadout } from '../../../../shared/types'
 import type { HarnessHealth, HarnessLoadoutOptions } from '../adapter'
 
 import { captureCommand, childEnvironment, terminateProcessTree } from '../process'
-import { reconcileLoadedSkills, scanClaudeSkills } from '../skills'
+import { reconcileLoadedSkills } from '../skills'
 import { buildClaudeProbeArgs } from './command'
+import { scanClaudeSkills } from './skills'
 
 interface InitProbe {
   ok: boolean

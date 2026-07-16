@@ -1,9 +1,9 @@
 import type { AgentEffort, StudioSettings } from '../../../shared/types'
 import type { AgentHarness } from './adapter'
 
+import { effectiveAgentEffort } from '../../../shared/agent-effort'
 import { readSettings } from '../../state/settings'
 import { readJson, writeJson } from '../../state/store'
-import { effectiveHarnessEffort } from './effort'
 import { resolveHarnessEnv } from './gateway/config'
 import { getHarnessById, hasHarness } from './registry'
 
@@ -58,7 +58,7 @@ export async function resolveHarnessConfiguration(
 ): Promise<HarnessConfigurationResult> {
   const settings = readSettings(root)
   const model = settings.agentModels[harness.id]?.trim() || undefined
-  const effort = effectiveHarnessEffort(harness.capabilities, settings.agentEffort)
+  const effort = effectiveAgentEffort(harness.capabilities.effortLevels, settings.agentEffort)
   const environment =
     harness.capabilities.gateway === 'anthropic'
       ? await resolveHarnessEnv(root)
