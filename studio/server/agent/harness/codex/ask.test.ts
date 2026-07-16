@@ -117,7 +117,7 @@ test('forks the parent thread and streams the side answer without mutating it', 
   })
 })
 
-test('starts a fresh Ask thread with the selected model when no parent session exists', async () => {
+test('starts a fresh Ask thread and normalizes Claude-only effort modes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-codex-app-server-fresh-'))
   roots.push(root)
   const log = join(root, 'app-server-fresh.jsonl')
@@ -125,7 +125,7 @@ test('starts a fresh Ask thread with the selected model when no parent session e
     root,
     prompt: 'first question',
     model: 'gpt-fresh',
-    effort: 'medium',
+    effort: 'ultracode',
     access: 'full',
     env: { FAKE_APP_LOG: log, FAKE_APP_EXPECT_FRESH: '1' },
     signal: new AbortController().signal,
@@ -152,7 +152,7 @@ test('starts a fresh Ask thread with the selected model when no parent session e
   expect(requests[3].params).toMatchObject({
     threadId: 'fresh-thread',
     model: 'gpt-fresh',
-    effort: 'medium',
+    effort: 'xhigh',
   })
 })
 

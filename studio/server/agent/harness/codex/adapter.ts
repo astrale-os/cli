@@ -12,7 +12,6 @@ import type {
 import { captureCommand } from '../process'
 import { readSkillContent } from '../skills'
 import { runCodexForkAsk } from './ask'
-import { CODEX_CAPABILITIES } from './capabilities'
 import { runCodexExec } from './exec'
 import { loadCodexConfiguration } from './loadout'
 import { scanCodexSkills } from './skills'
@@ -22,7 +21,13 @@ const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CODEX_BIN || 'codex'
 export class CodexHarness implements AgentHarness {
   id = 'codex'
   label = 'Codex (local)'
-  capabilities = CODEX_CAPABILITIES
+  capabilities = {
+    effortLevels: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+    accessLevels: ['workspace', 'full'],
+    ask: true,
+    loadout: true,
+    gateway: 'none',
+  } as const
 
   private availCache?: { at: number; health: HarnessHealth }
   private loadoutCache?: { at: number; key: string; data: HarnessLoadout }

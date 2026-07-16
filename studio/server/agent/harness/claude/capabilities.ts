@@ -1,9 +1,8 @@
 import type { HarnessCapabilities } from '../../../../shared/types'
 
-/** Stable CLI aliases; account-specific availability is resolved by Claude Code itself. */
+/** Stable model aliases plus the effort modes supported by current Claude Code. */
 export const CLAUDE_CAPABILITIES = {
-  effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
-  effortLabels: { max: 'Ultra' },
+  effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'],
   accessLevels: ['workspace', 'full'],
   modelOptions: [
     {
@@ -22,7 +21,6 @@ export const CLAUDE_CAPABILITIES = {
       description: 'Claude Code alias for the latest available Opus model.',
     },
   ],
-  allowCustomModel: true,
   ask: true,
   loadout: true,
   gateway: 'anthropic',

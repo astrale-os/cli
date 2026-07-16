@@ -10,7 +10,7 @@ function sandbox(access?: AgentAccess): 'workspace-write' | 'danger-full-access'
 }
 
 function normalizeEffort(effort?: AgentEffort): AgentEffort | undefined {
-  return effort === 'max' ? 'xhigh' : effort
+  return effort === 'max' || effort === 'ultracode' ? 'xhigh' : effort
 }
 
 /** Build one `codex exec` invocation from the harness-neutral turn. */

@@ -101,7 +101,10 @@ export function runCodexForkAsk(bin: string, input: AskInput): Promise<AskResult
               threadId,
               input: [{ type: 'text', text: input.prompt, text_elements: [] }],
               model: input.model ?? null,
-              effort: input.effort === 'max' ? 'xhigh' : (input.effort ?? null),
+              effort:
+                input.effort === 'max' || input.effort === 'ultracode'
+                  ? 'xhigh'
+                  : (input.effort ?? null),
             },
             3,
           )

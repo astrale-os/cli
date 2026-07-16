@@ -55,7 +55,7 @@ test('environment selection locks the GUI override', () => {
   expect(() => setHarnessSelection(root, 'claude')).toThrow('locked to codex')
 })
 
-test('resolves persisted Claude Ultra as the native max effort value', async () => {
+test('resolves persisted Claude max and Ultracode effort modes', async () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
   const root = mkdtempSync(join(tmpdir(), 'studio-harness-effort-'))
   roots.push(root)
@@ -66,4 +66,10 @@ test('resolves persisted Claude Ultra as the native max effort value', async () 
   if (!resolved.ok) return
   expect(resolved.configuration.harness.id).toBe('claude')
   expect(resolved.configuration.effort).toBe('max')
+
+  updateSettings(root, { agentEffort: 'ultracode' })
+  const ultracode = await resolveHarnessConfiguration(root)
+  expect(ultracode.ok).toBe(true)
+  if (!ultracode.ok) return
+  expect(ultracode.configuration.effort).toBe('ultracode')
 })

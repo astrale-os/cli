@@ -142,7 +142,7 @@ test('Claude loadout probing reports and passes the Studio model override', asyn
   expect(invocations(log)).toHaveLength(2)
 })
 
-test('Claude turns and Ask calls carry selected models and native max effort', async () => {
+test('Claude turns and Ask calls carry selected models and native effort modes', async () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-claude-model-turns-'))
   roots.push(root)
   const log = join(root, 'claude.jsonl')
@@ -153,7 +153,7 @@ test('Claude turns and Ask calls carry selected models and native max effort', a
     root,
     prompt: 'normal turn',
     model: 'sonnet',
-    effort: 'max',
+    effort: 'ultracode',
     access: 'full',
     env: { FAKE_CLAUDE_LOG: log },
     signal,
@@ -231,10 +231,15 @@ test('Claude turns and Ask calls carry selected models and native max effort', a
     'parent-session',
     '--fork-session',
   ])
-  for (const args of [normalArgs, resumedArgs, freshArgs, forkArgs]) {
+  const normalEffortAt = normalArgs.indexOf('--effort')
+  expect(normalArgs.slice(normalEffortAt, normalEffortAt + 2)).toEqual(['--effort', 'xhigh'])
+  const settingsAt = normalArgs.indexOf('--settings')
+  expect(normalArgs.slice(settingsAt, settingsAt + 2)).toEqual(['--settings', '{"ultracode":true}'])
+  expect(normalArgs).not.toContain('ultracode')
+
+  for (const args of [resumedArgs, freshArgs, forkArgs]) {
     const effortAt = args.indexOf('--effort')
     expect(args.slice(effortAt, effortAt + 2)).toEqual(['--effort', 'max'])
-    expect(args).not.toContain('Ultra')
   }
 })
 

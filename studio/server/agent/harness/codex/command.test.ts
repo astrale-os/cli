@@ -48,7 +48,7 @@ describe('Codex command construction', () => {
     ])
   })
 
-  test('resumes by thread id, maps Claude-only max effort, and can be ephemeral', () => {
+  test('resumes by thread id, maps Claude-only effort modes, and can be ephemeral', () => {
     const args = buildCodexArgs(
       {
         sessionId: '019f-thread',
@@ -61,5 +61,9 @@ describe('Codex command construction', () => {
     expect(args.join(' ')).toContain('model_reasoning_effort="xhigh"')
     expect(args.join(' ')).toContain('sandbox_mode="danger-full-access"')
     expect(args).toContain('--ephemeral')
+
+    expect(buildCodexArgs({ effort: 'ultracode' }).join(' ')).toContain(
+      'model_reasoning_effort="xhigh"',
+    )
   })
 })
