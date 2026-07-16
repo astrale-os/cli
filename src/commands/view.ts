@@ -18,6 +18,7 @@ import { fatal, log } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
+import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
   applyViewUrlOverride,
   candidateSlug,
@@ -230,14 +231,25 @@ async function startSession(
   opts: ViewOpts,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
+  return withViewPortAllocationLock(() => startSessionLocked(view, target, opts))
+}
+
+/**
+ * Called under the cross-process port-allocation lock. Keep the lock until the
+ * detached child answers its readiness probe: only then is the selected port
+ * durably owned and safe for the next CLI process to scan.
+ */
+async function startSessionLocked(
+  view: ResolvedView,
+  target: ResolvedTarget | undefined,
+  opts: ViewOpts,
+): Promise<ViewSessionRecord> {
   const config = await readConfig()
   const kernelTarget = await resolveKernelTarget(opts, config)
   const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
   if (port === null) {
-    fatal(
-      new Error(
-        `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1} — close sessions with \`astrale view --close --all\``,
-      ),
+    throw new Error(
+      `No free port in ${VIEW_PORT_BASE}-${VIEW_PORT_BASE + VIEW_PORT_SPAN - 1} — close sessions with \`astrale view --close --all\``,
     )
   }
 
@@ -287,7 +299,7 @@ async function startSession(
   )
   child.unref()
   closeSync(logFd)
-  if (!child.pid) fatal(new Error('Failed to spawn the view session server'))
+  if (!child.pid) throw new Error('Failed to spawn the view session server')
   const live = { ...record, pid: child.pid }
   await saveRecord(live)
 
@@ -304,10 +316,8 @@ async function startSession(
   }
   const tail = await readFile(logPath(id), 'utf8').catch(() => '')
   await closeSession(live)
-  return fatal(
-    new Error(
-      `View session server did not come up.${tail ? `\n--- server log ---\n${tail.slice(-2000)}` : ''}`,
-    ),
+  throw new Error(
+    `View session server did not come up.${tail ? `\n--- server log ---\n${tail.slice(-2000)}` : ''}`,
   )
 }
 
