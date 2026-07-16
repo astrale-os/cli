@@ -10,6 +10,7 @@ import type {
 
 import { readSkillContent } from '../skills'
 import { runClaudeAsk } from './ask'
+import { CLAUDE_CAPABILITIES } from './capabilities'
 import { runClaudeTurn } from './events'
 import { loadClaudeConfiguration, probeClaudeHealth } from './loadout'
 import { scanClaudeSkills } from './skills'
@@ -19,13 +20,7 @@ const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CLAUDE_BIN || 'claude'
 export class ClaudeCodeHarness implements AgentHarness {
   id = 'claude'
   label = 'Claude Code (local)'
-  capabilities = {
-    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
-    accessLevels: ['workspace', 'full'],
-    ask: true,
-    loadout: true,
-    gateway: 'anthropic',
-  } as const
+  capabilities = CLAUDE_CAPABILITIES
 
   private availCache?: { at: number; health: HarnessHealth }
   private loadoutCache?: { at: number; key: string; data: HarnessLoadout }

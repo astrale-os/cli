@@ -72,6 +72,7 @@
     "@types/bun": "^1.1.16",
     "@types/node": "^22.0.0",
     "@typescript/native-preview": "latest",
+    "happy-dom": "^20.10.6",
     "husky": "~9.1.7",
     "lint-staged": "~16.2.7",
     "msgpackr": "^1.12.1",

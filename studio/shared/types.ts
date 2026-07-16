@@ -696,7 +696,13 @@ export interface AgentSessionInfo {
 
 export interface HarnessCapabilities {
   effortLevels: readonly AgentEffort[]
+  /** Harness-specific presentation without changing the native wire value. */
+  effortLabels?: Partial<Record<AgentEffort, string>>
   accessLevels: readonly AgentAccess[]
+  /** Stable aliases advertised even when the harness has no catalog API. */
+  modelOptions?: readonly HarnessModelOption[]
+  /** The harness accepts an alias or full model id outside its advertised options. */
+  allowCustomModel?: boolean
   ask: boolean
   loadout: boolean
   /** Custom model-gateway wire contract this harness can consume in Studio. */

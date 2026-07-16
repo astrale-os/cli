@@ -1,18 +1,30 @@
-import type { HarnessLoadout } from '@shared/types'
+import type { HarnessLoadout, HarnessModelOption } from '@shared/types'
+
+import { useState } from 'react'
 
 import { SettingsHint } from './hint'
+
+export const CUSTOM_MODEL_OPTION = '__custom_model__'
 
 /** Per-domain model override for the currently selected harness. */
 export function AgentModel({
   selected,
   loadout,
+  modelOptions,
+  allowCustomModel,
   onChange,
 }: {
   selected: string
   loadout?: HarnessLoadout
+  modelOptions?: readonly HarnessModelOption[]
+  allowCustomModel?: boolean
   onChange: (model: string) => void
 }) {
-  const options = loadout?.models ?? []
+  const options = loadout?.models ?? modelOptions ?? []
+  const [customMode, setCustomMode] = useState(false)
+  const knownSelection = options.some((model) => model.id === selected)
+  const customSelection = !!selected && !knownSelection
+  const showingCustom = allowCustomModel && (customMode || customSelection)
   const effective = selected || loadout?.model || 'harness default'
   return (
     <div className="space-y-1.5 px-3 py-2.5">
@@ -24,27 +36,49 @@ export function AgentModel({
         </span>
       </div>
       {options.length > 0 ? (
-        <select
-          value={selected}
-          onChange={(event) => onChange(event.target.value)}
-          className="w-full rounded-md border bg-background px-2 py-1 text-[12px] outline-none focus:border-primary"
-        >
-          <option value="">
-            Default
-            {loadout?.nativeModel ? ` — ${loadout.nativeModel}` : ''}
-          </option>
-          {selected && !options.some((model) => model.id === selected) && (
-            <option value={selected}>{selected} — custom</option>
-          )}
-          {options.map((model) => (
-            <option key={model.id} value={model.id} title={model.description}>
-              {model.label}
-              {model.isDefault ? ' — catalog default' : ''}
+        <div className="space-y-1.5">
+          <select
+            aria-label="Agent model"
+            value={showingCustom ? CUSTOM_MODEL_OPTION : selected}
+            onChange={(event) => {
+              const value = event.target.value
+              if (value === CUSTOM_MODEL_OPTION) {
+                setCustomMode(true)
+                if (!customSelection) onChange('')
+              } else {
+                setCustomMode(false)
+                onChange(value)
+              }
+            }}
+            className="w-full rounded-md border bg-background px-2 py-1 text-[12px] outline-none focus:border-primary"
+          >
+            <option value="">
+              Default
+              {loadout?.nativeModel ? ` — ${loadout.nativeModel}` : ''}
             </option>
-          ))}
-        </select>
+            {options.map((model) => (
+              <option key={model.id} value={model.id} title={model.description}>
+                {model.label}
+                {model.isDefault ? ' — catalog default' : ''}
+              </option>
+            ))}
+            {allowCustomModel && <option value={CUSTOM_MODEL_OPTION}>Custom model ID…</option>}
+          </select>
+          {showingCustom && (
+            <input
+              value={customSelection ? selected : ''}
+              onChange={(event) => onChange(event.target.value)}
+              placeholder="Alias or full model ID"
+              aria-label="Custom model ID"
+              spellCheck={false}
+              autoFocus
+              className="w-full rounded-md border bg-background px-2 py-1 font-mono text-[12px] outline-none placeholder:text-muted-foreground/40 focus:border-primary"
+            />
+          )}
+        </div>
       ) : (
         <input
+          aria-label="Agent model"
           value={selected}
           onChange={(event) => onChange(event.target.value)}
           placeholder={

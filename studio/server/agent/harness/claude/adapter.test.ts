@@ -142,25 +142,41 @@ test('Claude loadout probing reports and passes the Studio model override', asyn
   expect(invocations(log)).toHaveLength(2)
 })
 
-test('Claude resumed turns and fresh or forked Ask calls carry their selected model', async () => {
+test('Claude turns and Ask calls carry selected models and native max effort', async () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-claude-model-turns-'))
   roots.push(root)
   const log = join(root, 'claude.jsonl')
   const harness = new ClaudeCodeHarness(fakeClaude(root))
   const signal = new AbortController().signal
 
-  const run = await harness.run({
+  const normal = await harness.run({
     root,
-    prompt: 'main turn',
-    sessionId: 'parent-session',
-    model: 'opus',
-    effort: 'high',
+    prompt: 'normal turn',
+    model: 'sonnet',
+    effort: 'max',
     access: 'full',
     env: { FAKE_CLAUDE_LOG: log },
     signal,
     onEvent: () => {},
   })
-  expect(run).toMatchObject({
+  expect(normal).toMatchObject({
+    sessionId: 'fresh-session',
+    finalText: 'done',
+    isError: false,
+  })
+
+  const resumed = await harness.run({
+    root,
+    prompt: 'resumed turn',
+    sessionId: 'parent-session',
+    model: 'opus',
+    effort: 'max',
+    access: 'full',
+    env: { FAKE_CLAUDE_LOG: log },
+    signal,
+    onEvent: () => {},
+  })
+  expect(resumed).toMatchObject({
     sessionId: 'parent-session',
     finalText: 'done',
     isError: false,
@@ -170,6 +186,7 @@ test('Claude resumed turns and fresh or forked Ask calls carry their selected mo
     root,
     prompt: 'fresh ask',
     model: 'fable',
+    effort: 'max',
     access: 'workspace',
     env: { FAKE_CLAUDE_LOG: log },
     signal,
@@ -180,6 +197,7 @@ test('Claude resumed turns and fresh or forked Ask calls carry their selected mo
     prompt: 'forked ask',
     sessionId: 'parent-session',
     model: 'sonnet',
+    effort: 'max',
     access: 'workspace',
     env: { FAKE_CLAUDE_LOG: log },
     signal,
@@ -188,15 +206,17 @@ test('Claude resumed turns and fresh or forked Ask calls carry their selected mo
   expect(fresh).toEqual({ text: 'done', isError: false })
   expect(forked).toEqual({ text: 'done', isError: false })
 
-  const [runArgs, freshArgs, forkArgs] = invocations(log).map((entry) => entry.args)
-  expect(runArgs.slice(runArgs.indexOf('--resume'), runArgs.indexOf('--resume') + 2)).toEqual([
-    '--resume',
-    'parent-session',
-  ])
-  expect(runArgs.slice(runArgs.indexOf('--model'), runArgs.indexOf('--model') + 2)).toEqual([
-    '--model',
-    'opus',
-  ])
+  const [normalArgs, resumedArgs, freshArgs, forkArgs] = invocations(log).map((entry) => entry.args)
+  expect(normalArgs).not.toContain('--resume')
+  expect(
+    normalArgs.slice(normalArgs.indexOf('--model'), normalArgs.indexOf('--model') + 2),
+  ).toEqual(['--model', 'sonnet'])
+  expect(
+    resumedArgs.slice(resumedArgs.indexOf('--resume'), resumedArgs.indexOf('--resume') + 2),
+  ).toEqual(['--resume', 'parent-session'])
+  expect(
+    resumedArgs.slice(resumedArgs.indexOf('--model'), resumedArgs.indexOf('--model') + 2),
+  ).toEqual(['--model', 'opus'])
   expect(freshArgs.slice(freshArgs.indexOf('--model'), freshArgs.indexOf('--model') + 2)).toEqual([
     '--model',
     'fable',
@@ -211,6 +231,11 @@ test('Claude resumed turns and fresh or forked Ask calls carry their selected mo
     'parent-session',
     '--fork-session',
   ])
+  for (const args of [normalArgs, resumedArgs, freshArgs, forkArgs]) {
+    const effortAt = args.indexOf('--effort')
+    expect(args.slice(effortAt, effortAt + 2)).toEqual(['--effort', 'max'])
+    expect(args).not.toContain('Ultra')
+  }
 })
 
 test('Claude turns and Ask reject incomplete terminal protocols', async () => {

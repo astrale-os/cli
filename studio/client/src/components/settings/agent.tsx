@@ -18,7 +18,7 @@ import { useLoadout, useUsage } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 import { AgentModel } from './agent-model'
-import { AgentAccessPicker, AgentEffortPicker } from './agent-pickers'
+import { agentEffortLabel, AgentAccessPicker, AgentEffortPicker } from './agent-pickers'
 import { AgentSession } from './agent-session'
 import { SettingsHint } from './hint'
 import { AgentLoadout } from './loadout'
@@ -48,6 +48,7 @@ export function AgentSettings({
   const queryClient = useQueryClient()
   const effortLevels = harness?.capabilities.effortLevels ?? [...AGENT_EFFORT_LEVELS]
   const accessLevels = harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
+  const effortLabels = harness?.capabilities.effortLabels
   const shownEffort = effectiveAgentEffort(
     effortLevels,
     values.agentEffort ?? settings?.agentEffort,
@@ -138,19 +139,27 @@ export function AgentSettings({
           </div>
         </div>
 
-        <AgentModel selected={selectedModel} loadout={loadout} onChange={setSelectedModel} />
+        <AgentModel
+          key={harnessId}
+          selected={selectedModel}
+          loadout={loadout}
+          modelOptions={harness?.capabilities.modelOptions}
+          allowCustomModel={harness?.capabilities.allowCustomModel}
+          onChange={setSelectedModel}
+        />
 
         <div className="space-y-1.5 px-3 py-2.5">
           <div className="flex items-center gap-1.5 text-[13px]">
             <span>Effort</span>
             <SettingsHint text="Passed using the selected harness's native reasoning-effort setting. Only values supported by that harness are shown." />
             <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
-              {shownEffort ?? 'high'}
+              {agentEffortLabel(shownEffort, effortLabels)}
             </span>
           </div>
           <AgentEffortPicker
             value={values.agentEffort ?? settings?.agentEffort}
             levels={effortLevels}
+            labels={effortLabels}
             onChange={(effort) => setValues((current) => ({ ...current, agentEffort: effort }))}
           />
         </div>
