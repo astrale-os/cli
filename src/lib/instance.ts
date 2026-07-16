@@ -113,17 +113,6 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
 
 let instancesMemo: InstanceStore | null = null
 
-/**
- * Drop the in-process bookmark cache so the next `readInstances` re-reads disk.
- *
- * A long-lived host (e.g. `@astrale-os/connect-host`) would otherwise serve a
- * stale bookmark list after the user runs `astrale instance bookmark`. The CLI
- * itself is one-shot, so this is a no-op for command usage.
- */
-export function resetInstancesMemo(): void {
-  instancesMemo = null
-}
-
 export async function readInstances(
   _config?: AstraleConfig,
   opts: { persist?: boolean } = {},
