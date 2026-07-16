@@ -4,22 +4,7 @@
  */
 import type { StudioEvent } from '../shared/types'
 
-import { buildSystemPrompt } from './agent/prompt'
-import {
-  getHarness,
-  getHarnessSelection,
-  listHarnesses,
-  setHarnessSelection,
-} from './agent/registry'
-import {
-  cancelRun,
-  getSessionId,
-  getSnapshot,
-  isRunning,
-  resetConversation,
-  setSessionId,
-  submitRun,
-} from './agent/runner'
+import { handleAgentRoute } from './agent/routes'
 import { getBundle, getAnatomy, getCore, invalidate } from './cache'
 import { type DomainHandle, allDomains, depsInstalled, getDomain } from './domain'
 import { schemaRefs } from './introspect/schema-refs'
@@ -54,14 +39,6 @@ import { isEnvName, readEnvModel, writeEnvUpdates } from './state/env'
 import { detectGit } from './state/git'
 import { refreshAuto } from './state/handoff'
 import {
-  clearHarnessGateway,
-  gatewayAudience,
-  getHarnessGatewayState,
-  resolveHarnessEnv,
-  setHarnessGateway,
-} from './state/harness-gateway'
-import { setHostToken } from './state/harness-token'
-import {
   activeInstanceName,
   instanceStatus,
   listInstances,
@@ -72,7 +49,6 @@ import { deleteIntegration, readIntegrations, upsertIntegration } from './state/
 import { readLayout, resetLayout, saveLayout, setNodePositions } from './state/layout'
 import { readSettings, updateSettings } from './state/settings'
 import { applyUpdates, getUpdates } from './state/updates'
-import { readUsage } from './state/usage'
 import { closeViewSession, getViewRuntime, launchViewSession } from './state/views'
 import { readVisibility, resetVisibility, saveVisibility } from './state/visibility'
 import { restartViewDevServer } from './view-dev-server'
@@ -337,187 +313,8 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
     }
   }
 
-  // ── agent loop (live, harness-agnostic) ──
-  if (rest === '/agent') {
-    if (req.method === 'GET') return json(await getSnapshot(id))
-    return badReq('use /agent/submit or /agent/cancel')
-  }
-  if (rest === '/agent/submit' && req.method === 'POST') {
-    const r = await submitRun(handle, notify, {
-      message: typeof body.message === 'string' ? body.message : undefined,
-      resume: body.resume === true,
-    })
-    // 200 + {error} (not 409) — the rejections ("already running" / "no open threads")
-    // are expected states, surfaced as a friendly client toast rather than a thrown error.
-    return r.error ? json({ error: r.error }) : json(r.run)
-  }
-  if (rest === '/agent/cancel' && req.method === 'POST') {
-    return json({ ok: cancelRun(id) })
-  }
-  if (rest === '/agent/reset' && req.method === 'POST') {
-    // forget the resumable conversation — the next submit starts a fresh session
-    return json({ ok: resetConversation(id) })
-  }
-  if (rest === '/agent/session') {
-    if (req.method === 'GET') return json(getSessionId(id))
-    if (req.method === 'POST') {
-      const ok = setSessionId(id, typeof body.sessionId === 'string' ? body.sessionId : '')
-      if (!ok) return badReq('the session id cannot be changed while a turn is running')
-      return json(getSessionId(id))
-    }
-    return badReq('GET or POST')
-  }
-  if (rest === '/agent/prompt/system' && req.method === 'GET') {
-    return json({ bridge: true, systemPrompt: buildSystemPrompt({ bridge: true }) })
-  }
-  if (rest === '/agent/harness' && req.method === 'GET') {
-    const selection = getHarnessSelection(root)
-    const h = getHarness(root)
-    const health = h.health
-      ? await h.health()
-      : { ok: await h.isAvailable(), bin: h.id, version: undefined, detail: undefined }
-    const options = listHarnesses(h.id)
-    const message = health.ok
-      ? `Detected${health.version ? ` — ${health.version}` : ''}`
-      : (health.detail ?? `${h.label} is not detected. Is it installed and on your PATH?`)
-    return json({
-      id: h.id,
-      label: h.label,
-      bin: health.bin ?? h.id,
-      ok: health.ok,
-      version: health.version,
-      message,
-      options,
-      locked: selection.locked,
-      source: selection.source,
-      capabilities: h.capabilities,
-    })
-  }
-  if (rest === '/agent/harness' && req.method === 'POST') {
-    if (isRunning(id)) return badReq('the harness cannot be changed while a turn is running')
-    try {
-      const selection = setHarnessSelection(root, String(body.id ?? ''))
-      const h = getHarness(root)
-      const health = h.health
-        ? await h.health()
-        : { ok: await h.isAvailable(), bin: h.id, version: undefined, detail: undefined }
-      return json({
-        id: h.id,
-        label: h.label,
-        bin: health.bin ?? h.id,
-        ok: health.ok,
-        version: health.version,
-        message: health.ok
-          ? `Selected ${h.label}${health.version ? ` — ${health.version}` : ''}`
-          : (health.detail ?? `${h.label} is not detected. Is it installed and on your PATH?`),
-        options: listHarnesses(h.id),
-        locked: selection.locked,
-        source: selection.source,
-        capabilities: h.capabilities,
-      })
-    } catch (e) {
-      return badReq(String((e as Error)?.message ?? e))
-    }
-  }
-  // What the harness ACTUALLY loaded for this domain's cwd — skills (reconciled against
-  // on-disk installs), MCP servers + status, tools, agents. Read-only window into the agent.
-  if (rest === '/agent/loadout' && req.method === 'GET') {
-    const h = getHarness(root)
-    if (!h.loadout)
-      return json({
-        ok: false,
-        detail: `${h.label} does not expose a loadout`,
-        tools: [],
-        mcpServers: [],
-        skills: [],
-        agents: [],
-        builtinCommandCount: 0,
-        probedAt: Date.now(),
-      })
-    const er =
-      h.capabilities.gateway === 'anthropic'
-        ? await resolveHarnessEnv(root)
-        : { ok: true as const, env: {} }
-    if (!er.ok)
-      return json({
-        ok: false,
-        detail: `model gateway auth failed — ${er.error}`,
-        tools: [],
-        mcpServers: [],
-        skills: [],
-        agents: [],
-        builtinCommandCount: 0,
-        probedAt: Date.now(),
-      })
-    const model = readSettings(root).agentModels[h.id]?.trim() || undefined
-    return json(await h.loadout(root, { env: er.env, model }))
-  }
-  // Custom model-gateway config for the harness (per-domain + studio-global), e.g.
-  // routing Claude Code through an Astrale ai-gateway model node. The token/url are
-  // injected into the harness CHILD only — never the studio env or the user's shell.
-  if (rest === '/agent/harness-gateway') {
-    if (req.method === 'GET') return json(getHarnessGatewayState(root))
-    if (req.method === 'POST') {
-      const scope = body.scope === 'global' ? 'global' : 'domain'
-      if (body.action === 'set')
-        return json(setHarnessGateway(root, { scope, config: body.config ?? {} }))
-      if (body.action === 'clear') return json(clearHarnessGateway(root, scope))
-      return badReq('unknown harness-gateway action')
-    }
-  }
-  // EMBED seam: when the studio runs inside the Astrale GUI, the host (which holds
-  // the shell connection) relays a delegation token here for `host` auth mode. It
-  // is keyed by the configured gateway's audience and kept in memory only.
-  if (rest === '/agent/harness-gateway/host-token' && req.method === 'POST') {
-    const audience = gatewayAudience(root)
-    if (!audience) return badReq('no gateway base URL configured for this domain')
-    return json({ ok: setHostToken(audience, String(body.token ?? '')) })
-  }
-  // Domain-attributable agent spend (this studio's runs on this domain only).
-  if (rest === '/agent/usage' && req.method === 'GET') return json(readUsage(root))
-  // Raw SKILL.md for a skill command (the "view skill" action).
-  if (rest === '/agent/skill' && req.method === 'GET') {
-    const command = url.searchParams.get('command')
-    const h = getHarness(root)
-    if (!command || !h.skillContent) return notFound()
-    const c = await h.skillContent(root, command)
-    return c ? json(c) : notFound()
-  }
-  // Ask: a quick, ephemeral, FORKED side-question — streamed as newline-delimited
-  // JSON ({delta} chunks then a final {done}|{error}). Bypasses the run lock and
-  // never touches comments.json or the parent session.
-  if (rest === '/agent/ask' && req.method === 'POST') {
-    const { runAsk } = await import('./agent/ask')
-    const ctrl = new AbortController()
-    req.signal?.addEventListener('abort', () => ctrl.abort(), { once: true }) // client disconnect → kill the fork
-    const enc = new TextEncoder()
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const send = (o: unknown) => controller.enqueue(enc.encode(`${JSON.stringify(o)}\n`))
-        try {
-          const result = await runAsk(handle, body, ctrl.signal, (delta) => send({ delta }))
-          send(
-            result.isError ? { error: result.errorMessage || 'ask failed' } : { done: result.text },
-          )
-        } catch (e: any) {
-          send({ error: String(e?.message ?? e) })
-        } finally {
-          controller.close()
-        }
-      },
-      cancel() {
-        ctrl.abort()
-      },
-    })
-    return new Response(stream, {
-      headers: { 'content-type': 'application/x-ndjson', 'cache-control': 'no-cache' },
-    })
-  }
-  // bridge write-back routes (token-guarded) handled by the agent bridge module
-  if (rest.startsWith('/agent/bridge/')) {
-    const { handleBridge } = await import('./agent/bridge')
-    return handleBridge(handle, rest.slice('/agent/bridge/'.length), req, body, notify)
-  }
+  const agentResponse = await handleAgentRoute({ req, url, rest, body, handle, notify })
+  if (agentResponse) return agentResponse
 
   // ── context ──
   if (rest === '/context') {

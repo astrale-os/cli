@@ -3,10 +3,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { getHarness } from './agent/registry'
+import { setHarnessGateway } from './agent/harness/gateway/config'
+import { getHarness } from './agent/harness/selection'
 import { handleApi } from './api'
 import { registerDomain, unregisterDomain } from './domain'
-import { setHarnessGateway } from './state/harness-gateway'
 
 const roots: string[] = []
 const domainIds: string[] = []

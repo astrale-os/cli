@@ -65,4 +65,20 @@ describe('per-harness conversations', () => {
     expect(stored.conversations.claude.sessionId).toBe('legacy-session')
     expect(stored.conversations.codex.sessionId).toBe('codex-thread')
   })
+
+  test('fails closed without rewriting a future conversation-store version', () => {
+    const dir = root()
+    const future = {
+      version: 2,
+      conversations: {
+        codex: { sessionId: 'future-thread', turns: 9 },
+      },
+    }
+    writeJson(dir, '.cache/agent/session.json', future)
+
+    expect(() => setConversationSession(dir, 'claude', 'new-session')).toThrow(
+      'unsupported agent conversation store version: 2',
+    )
+    expect(readJson<any>(dir, '.cache/agent/session.json', {})).toEqual(future)
+  })
 })

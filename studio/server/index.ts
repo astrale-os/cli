@@ -11,7 +11,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { setBridgePort } from './agent/bridge'
+import { setBridgePort } from './agent/bridge/grant'
 import { handleApi } from './api'
 import { resolveTarget } from './detect'
 import { allDomains } from './domain'

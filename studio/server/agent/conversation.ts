@@ -22,8 +22,11 @@ interface LegacySessionState extends HarnessConversation {
 function readStore(root: string): ConversationStore {
   const raw = readJson<ConversationStore | LegacySessionState | null>(root, SESSION_FILE, null)
   if (!raw) return { version: 1, conversations: {} }
-  if ('conversations' in raw && raw.version === 1 && raw.conversations)
-    return { version: 1, conversations: { ...raw.conversations } }
+  if ('conversations' in raw) {
+    if (raw.version !== 1)
+      throw new Error(`unsupported agent conversation store version: ${String(raw.version)}`)
+    if (raw.conversations) return { version: 1, conversations: { ...raw.conversations } }
+  }
   if ('harness' in raw && raw.harness && raw.sessionId) {
     return {
       version: 1,
