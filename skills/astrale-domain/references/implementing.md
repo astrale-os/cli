@@ -369,12 +369,13 @@ export const functions = {
 export const domain = defineDomain({ schema, methods, functions })
 ```
 
-## When to use a standalone function vs a static method?
+## When to use an instance method, static method, or standalone function?
 
-Authority does not decide: both are schema-declared callables, and both carry their own function
-identity, `deps`, `step`, `authorize`, and auth policy. Use a standalone function for domain-level
-behavior, for the postInstall target, or for a webhook that must read the raw request (`ctx.c`). Use a
-static method for schema-derived params, a schema-bound `ctx.kernel`, and stream or binary output.
+Choose by semantic ownership, not transport convenience. Use an instance method when an existing node is
+the natural receiver, its lifecycle or invariant changes, or authorization should follow it; use a
+static method for class-level construction or queries with no receiver; use a standalone function for
+domain-wide orchestration, postInstall, or raw-request webhooks. A static method that accepts the node
+it acts on is a receiver smell unless a cross-aggregate invariant justifies it.
 
 ## Wire every function, method, and view into the domain
 
