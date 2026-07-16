@@ -16,7 +16,9 @@ common recipes that help compose those commands correctly.
 
 - Binary: `astrale`
 - npm package: `@astrale-os/cli`
-- Runtime: Bun
+- Installed runtime: the standalone binary is self-contained; the npm package
+  requires Node ≥20 (`astrale studio` additionally requires Bun)
+- Source development/build tooling: Bun
 - Framework: Commander.js
 - Dev entrypoint: `bun cli/bin/astrale.ts <command>`
 
@@ -276,7 +278,7 @@ Common flow:
 
 ```bash
 export TOKEN=$(astrale token --audience shell.astrale.ai --raw)
-astrale call /:shell.astrale.ai:class.Application:available \
+astrale call /:shell.astrale.ai:function.search-domains \
   --creds "$TOKEN" \
   --json
 ```
@@ -362,8 +364,9 @@ Gotchas:
 ## Batch Writes
 
 `astrale mutate` applies a **PatchData** patch through `function.mutate` — one
-atomic, all-or-nothing write. Patch source ladder (highest wins), mirroring
-`call`: `--data <json>` > `--file <path>` > piped stdin.
+atomic, all-or-nothing write. Its patch source ladder (highest wins) is
+`--data <json>` > `--file <path>` > piped stdin. `astrale call` does not accept
+`--file`; use `--data` or piped stdin for call payloads.
 
 ```json
 {
@@ -571,62 +574,72 @@ explicit `--json`, `--raw`, `-i <instance>`, and `--as <identity>` as needed.
 
 ## Reporting DX Issues
 
-Astrale runs an in-graph issue tracker in the admin control plane (the `Issue`
-class on the admin domain). **You — the agent driving this CLI — file issues
+Astrale runs an in-graph issue tracker on the admin instance through the native
+`issues.astrale.ai` domain. **You — the agent driving this CLI — file issues
 automatically** whenever working with Astrale costs you friction. This is the
 primary feedback channel; treat filing as part of the task, not an interruption.
 
 File an issue when you hit:
 
-- **friction** (`kind=friction`) — time lost to misdirection, an unclear or
+- **friction** (tag `friction`) — time lost to misdirection, an unclear or
   surprising API, a missing/confusing error, or **stale docs or skills** (a
   `SKILL.md` / doc that contradicted reality).
-- **bug** (`kind=bug`) — something broke, behaved unexpectedly, or forced a
+- **bug** (tag `bug`) — something broke, behaved unexpectedly, or forced a
   workaround. Say so in the title when it was blocking.
-- **feature** (`kind=feature`) — a capability that should exist and would have
+- **feature** (tag `feature`) — a capability that should exist and would have
   unblocked you.
 
 **Dedup first** — list open issues and comment instead of duplicating:
 
 ```bash
-astrale call /:admin.astrale.ai:class.Issue:list status=open -i admin --json
+astrale query /issues --depth 1 -i admin \
+  --children '{"classes":["/:issues.astrale.ai:class.Issue"],"limit":100,"order":{"by":"kernel.astrale.ai:interface.Timestamped.property.updatedAt","dir":"desc"}}' \
+  --json
 # if one matches, add to it instead of filing a new one:
-astrale call /:admin.astrale.ai:class.Issue:comment -i admin \
-  id=<issue-id> body="Hit this too during a domain deploy — same schemaHash mismatch."
+astrale call /issues/<issue-path-segment>::addComment -i admin \
+  body="Hit this too during a domain deploy — same schemaHash mismatch."
 ```
+
+Filter the returned Issue nodes by the qualified Statused `status` property.
+If `.next` contains a children cursor, fetch the next page by passing that
+opaque cursor in the same `--children` selector. Listing is a graph read; do
+not call or recreate an `Issue.list` domain method.
 
 **Otherwise file it** (one issue per distinct problem):
 
 ```bash
-astrale call /:admin.astrale.ai:class.Issue:report -i admin \
-  kind=bug \
+astrale call /:issues.astrale.ai:class.Issue:create -i admin \
+  parent=/issues \
+  status=open \
   title="managed deploy stuck on old schemaHash after pnpm prod" \
-  tags='["deploy","cli"]' \
-  instance=<your-instance-slug> \
-  command="pnpm prod" \
+  initialTags='["bug","deploy","cli"]' \
+  concerns='["/admin/instances/<your-instance-slug>"]' \
   body="pnpm prod builds and uploads, but the managed service never pivots to the
 new schemaHash — /meta keeps returning the old hash until the service is removed
 and recreated. Expected the redeploy to swap the version."
 ```
 
-Attach context to make it actionable, but **strip secrets** from `trace` (no
-tokens, credentials, private keys, cookies):
+Put the exact command and a short trace in the body to make it actionable, but
+**strip secrets** (no tokens, credentials, private keys, cookies):
 
 ```bash
-... trace="$(astrale logs --service <slug> --tail 40)"
+... body="Command: pnpm prod
+
+Trace:
+$(astrale logs --service <slug> --tail 40)"
 ```
 
-Fields: `kind` ∈ {bug, friction, feature}; `tags` are area slugs — prefer the
-common set (`cli`, `sdk`, `kernel`, `adapter`, `deploy`, `install`,
+Use one of `bug`, `friction`, or `feature` as the first tag. Add area tags from
+the common set (`cli`, `sdk`, `kernel`, `adapter`, `deploy`, `install`,
 `permissions`, `views`, `domain-authoring`, `docs`, `skill`, `provisioning`) and
-add a new one only when none fit; `instance` is your instance slug (omit for
-docs/skill issues). The reporter's email is recorded automatically from the
-`email` claim on your credential — do NOT pass it yourself (there is no such
-param; it must not be guessed or falsified). `report` returns `{ id, status }`.
+add a new one only when none fit. `concerns` accepts graph node paths, so link
+`/admin/instances/<slug>` only when the issue is actually instance-scoped.
+The reporter is the authenticated principal; do not invent reporter fields.
+`create` returns the issue read model, including its canonical `.path`.
 
 Rules:
 
-- Best-effort and non-blocking: if `report` fails, note it and keep working —
+- Best-effort and non-blocking: if `create` fails, note it and keep working —
   never let filing an issue derail the user's task.
 - END-OF-TASK CHECKLIST: before delivering your final summary, sweep the
   session for filable frictions you deferred mid-task — file or comment each
@@ -634,9 +647,9 @@ Rules:
   this session"). Mid-task you defer; end-of-task you settle.
 - Be specific: exact command, exact error, what you expected. A vague issue is
   noise; a reproducible one gets fixed.
-- Tell the user you filed it (mention the returned id) so they can follow up.
-- Triage and status changes are admin-only — you file and comment; admins
-  resolve.
+- Tell the user you filed it (mention the returned `.path`) so they can follow up.
+- Triage and status changes are permission-controlled — if a mutation is
+  denied, leave the evidence you can and tell the user which action remains.
 
 ## Storage
 
