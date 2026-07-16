@@ -16,7 +16,9 @@ common recipes that help compose those commands correctly.
 
 - Binary: `astrale`
 - npm package: `@astrale-os/cli`
-- Runtime: Bun
+- Installed runtime: the standalone binary is self-contained; the npm package
+  requires Node ≥20 (`astrale studio` additionally requires Bun)
+- Source development/build tooling: Bun
 - Framework: Commander.js
 - Dev entrypoint: `bun cli/bin/astrale.ts <command>`
 
