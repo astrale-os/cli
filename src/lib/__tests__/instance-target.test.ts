@@ -98,7 +98,7 @@ describe('resolveInstanceTarget', () => {
     })
   })
 
-  test('managed slug resolves through injected Instance.info lookup', async () => {
+  test('managed slug resolves through the injected managed lookup', async () => {
     await expect(
       resolveInstanceTarget(
         { source: 'name', name: 'bryan' },
@@ -180,6 +180,14 @@ describe('instance target helpers', () => {
     auth.name = 'PermissionDeniedError'
 
     expect(isManagedInstanceNotFound(auth)).toBe(false)
+  })
+
+  test('recognizes an owner-scoped lookup miss', () => {
+    expect(
+      isManagedInstanceNotFound(
+        new AstraleError('INSTANCE_NOT_FOUND', 'No owned instance matches "missing".'),
+      ),
+    ).toBe(true)
   })
 })
 

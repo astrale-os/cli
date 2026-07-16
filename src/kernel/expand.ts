@@ -1,7 +1,5 @@
-import type { InstanceInfo } from '../lib/admin-instance'
 import type { KernelCommandOpts } from './types'
 
-import { adminInstanceMethod } from '../lib/admin-instance'
 /** CLI bridge for @self resolution and stale-registration error hints. */
 import { readConfig } from '../lib/config'
 import { getDefault, getIdentity, setRegistration } from '../lib/identity'
@@ -17,7 +15,7 @@ import {
   type SelfResolverContext,
   type SelfResolution,
 } from '../lib/self'
-import { withAdminKernelClient, withKernelClient } from './client'
+import { lookupImplicitOwnedInstance, withKernelClient } from './client'
 
 /** Metadata attached to errors so the NotFoundError path can hint at stale `@self` expansions. */
 export type SelfExpansionMeta = {
@@ -41,8 +39,8 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
       opts.instance ? { source: 'name', name: opts.instance } : { source: 'active' },
       {
         config,
-        admin: adminLookupOpts(opts),
-        managed: (instanceSlug) => lookupManagedInstance(instanceSlug, opts),
+        admin: {},
+        managed: (instanceSlug) => lookupImplicitOwnedInstance(instanceSlug, opts),
       },
     )
     slug = resolved.name
@@ -81,23 +79,6 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
   }
 
   return { identity, instanceSlug: slug, credsJwt: opts.creds, instanceSigned, idpSubject }
-}
-
-function adminLookupOpts(opts: KernelCommandOpts): KernelCommandOpts {
-  return {
-    as: opts.as,
-    creds: opts.creds,
-    timeout: opts.timeout,
-    debug: opts.debug,
-  }
-}
-
-async function lookupManagedInstance(slug: string, opts: KernelCommandOpts): Promise<InstanceInfo> {
-  return await withAdminKernelClient(
-    adminLookupOpts(opts),
-    async (ctx) =>
-      (await ctx.client.call(adminInstanceMethod('info'), { id: slug })) as InstanceInfo,
-  )
 }
 
 /**
