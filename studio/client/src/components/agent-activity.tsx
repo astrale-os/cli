@@ -275,6 +275,7 @@ function SentPromptDialog({
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
           <span>{prompt.firstTurn ? 'new session' : 'follow-up turn'}</span>
           <span>{prompt.resumed ? 'resumed' : 'fresh'}</span>
+          {prompt.model && <span className="font-mono">model {prompt.model}</span>}
           {prompt.effort && <span>effort {prompt.effort}</span>}
           <span>{new Date(prompt.createdAt).toLocaleString()}</span>
           {prompt.sessionId && <span className="font-mono">session {prompt.sessionId}</span>}

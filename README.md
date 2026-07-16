@@ -30,8 +30,9 @@ npm install -g @astrale-os/cli
 ```
 
 The npm build bundles all dependencies, so no private-registry access is needed.
-`astrale studio` launches a local web GUI to author and inspect a domain; it runs
-on [Bun](https://bun.sh), so install Bun and keep it on `PATH` to use that command
+`astrale studio` launches a local web GUI to author and inspect a domain, with
+local Claude Code and Codex agent harnesses (`--harness claude|codex`); it runs on
+[Bun](https://bun.sh), so install Bun and keep it on `PATH` to use that command
 (the rest of the CLI needs only Node ≥ 20). The curl-installed standalone binary
 above does not include the studio — use the npm install for `astrale studio`.
 

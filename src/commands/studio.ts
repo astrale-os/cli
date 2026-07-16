@@ -16,6 +16,7 @@ type StudioOpts = RawOutputOpts & {
   dev?: boolean
   prod?: boolean
   schemaDir?: string
+  harness?: string
 }
 
 // Uncommon, safe bands in the IANA Registered range (well below the OS
@@ -162,6 +163,11 @@ export default {
     },
     { flags: '--prod', description: 'Serve the prebuilt client (the default)' },
     { flags: '--schema-dir <dir>', description: 'Schema entry dir to scan for (default: schema)' },
+    {
+      flags: '--harness <name>',
+      description: 'Lock the agent harness for this Studio process',
+      choices: ['claude', 'codex'],
+    },
     ...RAW_OUTPUT_OPTIONS,
   ],
   afterHelpText: `
@@ -185,6 +191,10 @@ Behavior:
   By default the command just PRINTS the URL — it does not pop a browser (that's
   invasive when you already have a tab open). Pass --open to launch one.
 
+  Agent harness: choose Claude Code or Codex per domain in Studio Settings. Pass
+  --harness claude|codex to lock this process to one harness. Each harness uses
+  its existing local authentication and keeps an independent resumable session.
+
   The command stays attached and supervises its child processes; Ctrl-C tears
   them all down (a second Ctrl-C force-kills). With --json it prints a
   { url, port, mode, workspace } descriptor.
@@ -193,6 +203,7 @@ Examples:
   $ astrale studio                 # start the studio + print its URL (no browser)
   $ astrale studio --open          # …and open it in a browser
   $ astrale studio ./my-domain
+  $ astrale studio --harness codex
   $ astrale studio --port 4400
   $ astrale studio --dev           # live-edit the studio itself (from source)
 `,
@@ -331,6 +342,7 @@ Examples:
                 VITE_URL: `http://127.0.0.1:${vitePort}`,
                 PORT: String(studioPort),
                 DOMAIN_STUDIO_HOST: '127.0.0.1',
+                ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
               },
             },
           ),
@@ -355,6 +367,7 @@ Examples:
                 DOMAIN_STUDIO_DIST: dist,
                 PORT: String(studioPort),
                 DOMAIN_STUDIO_HOST: '127.0.0.1',
+                ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
               },
             },
           ),

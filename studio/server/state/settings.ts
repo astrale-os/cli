@@ -4,13 +4,20 @@
  * `.domain-studio/settings.json`; missing keys fall back to DEFAULT_SETTINGS.
  * Surfaced subtly in the UI (command palette + a faint gear) for power users.
  */
-import { AGENT_EFFORT_LEVELS, type StudioSettings } from '../../shared/types'
+import {
+  parseStudioNumericSetting,
+  STUDIO_NUMERIC_LIMITS,
+  type NumericStudioSetting,
+} from '../../shared/settings-values'
+import { AGENT_ACCESS_LEVELS, AGENT_EFFORT_LEVELS, type StudioSettings } from '../../shared/types'
 import { readJson, writeJson } from './store'
 
 const PATH = 'settings.json'
 
 export const DEFAULT_SETTINGS: StudioSettings = {
   agentEffort: 'high',
+  agentAccess: 'full',
+  agentModels: {},
   integrationsDir: 'integrations',
   introspectTimeoutMs: 20000,
   instancePollMs: 30000,
@@ -20,8 +27,28 @@ export const DEFAULT_SETTINGS: StudioSettings = {
 
 function normalizeSettings(input: Partial<StudioSettings>): Partial<StudioSettings> {
   const out = { ...input }
+  for (const key of Object.keys(STUDIO_NUMERIC_LIMITS) as NumericStudioSetting[]) {
+    if (out[key] === undefined) continue
+    const value = parseStudioNumericSetting(key, out[key])
+    if (value === null) delete out[key]
+    else out[key] = value
+  }
   if (out.agentEffort !== undefined && !AGENT_EFFORT_LEVELS.includes(out.agentEffort as any))
     delete out.agentEffort
+  if (out.agentAccess !== undefined && !AGENT_ACCESS_LEVELS.includes(out.agentAccess as any))
+    delete out.agentAccess
+  if (out.agentModels !== undefined) {
+    if (!out.agentModels || typeof out.agentModels !== 'object' || Array.isArray(out.agentModels)) {
+      delete out.agentModels
+    } else {
+      out.agentModels = Object.fromEntries(
+        Object.entries(out.agentModels)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+          .map(([harness, model]) => [harness.trim().toLowerCase(), model.trim()])
+          .filter(([harness, model]) => !!harness && !!model),
+      )
+    }
+  }
   return out
 }
 
