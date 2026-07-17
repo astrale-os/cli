@@ -1,0 +1,19 @@
+packages:
+  - '.'
+
+# Keep pnpm 11's one-day default non-strict and never install implicitly before
+# `pnpm run` or `pnpm exec`.
+minimumReleaseAgeStrict: false
+verifyDepsBeforeRun: false
+
+# Native build scripts required by the standalone CLI dependency graph. Astrale
+# package preinstalls are guarded monorepo checks and are intentional no-ops here.
+allowBuilds:
+  '@astrale-os/kernel-api': false
+  '@astrale-os/kernel-client': false
+  '@astrale-os/kernel-core': false
+  '@astrale-os/kernel-dsl': false
+  '@astrale-os/shell': false
+  esbuild: true
+  lightningcss: true
+  msgpackr-extract: true
