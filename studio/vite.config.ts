@@ -32,5 +32,13 @@ export default defineConfig({
   // dev doesn't try to serve its entire shell→kernel source graph as thousands of
   // unbundled on-demand modules (which wedges the browser).
   optimizeDeps: { include: ['@astrale-os/shell'] },
-  build: { outDir: 'dist', emptyOutDir: true, sourcemap: false },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    sourcemap: false,
+    // The startup chunk is ~721 kB uncompressed after the Schema UI and its
+    // 1.6 MB ELK worker are deferred. Keep a tight budget around that measured
+    // baseline so real growth still warns without flagging the intentional app shell.
+    chunkSizeWarningLimit: 750,
+  },
 })
