@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.8.1-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.8.0-alpha.0...cli-v0.8.1-alpha.0) (2026-07-17)
+
+
+### Performance Improvements
+
+* defer schema layout bundle ([f9ff7dc](https://github.com/astrale-os/cli/commit/f9ff7dc70a98e366ec06bbfd5b0e98b23e2e5927))
+* defer schema layout bundle ([2707642](https://github.com/astrale-os/cli/commit/2707642cb15a0a1713f30d993c8c48cec082ac65))
+
+
+### Documentation
+
+* update astrale-domain skill ([e958239](https://github.com/astrale-os/cli/commit/e958239cecbeb0e13316b7d9867e1b34ebbd9126))
+* update astrale-domain skill ([dd38678](https://github.com/astrale-os/cli/commit/dd38678526d71161fef7d90613b490bcf911d91f))
+
 ## [0.8.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.7.0-alpha.0...cli-v0.8.0-alpha.0) (2026-07-16)
 
 
