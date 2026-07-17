@@ -1,6 +1,7 @@
 import type { Edge, Node } from '@xyflow/react'
+import type { ELK, ElkNode } from 'elkjs/lib/elk-api.js'
 
-import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
+import elkWorkerUrl from 'elkjs/lib/elk-worker.min.js?url'
 
 // Compound/nested auto-layout for the module graph. ELK is the only mainstream
 // engine with first-class nested-group support, which we need because our
@@ -8,13 +9,13 @@ import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
 // returns child x/y RELATIVE to the parent — exactly what React Flow expects, so
 // the flat-parentId ⇄ nested-children transform round-trips cleanly.
 
-type ElkLayoutEngine = InstanceType<typeof ELK>
+let enginePromise: Promise<ELK> | undefined
 
-let elk: ElkLayoutEngine | undefined
-
-function layoutEngine(): ElkLayoutEngine {
-  elk ??= new ELK()
-  return elk
+function layoutEngine(): Promise<ELK> {
+  enginePromise ??= import('elkjs/lib/elk-api.js').then(
+    ({ default: ElkConstructor }) => new ElkConstructor({ workerUrl: elkWorkerUrl }),
+  )
+  return enginePromise
 }
 
 const OPTS: Record<string, string> = {
@@ -76,7 +77,8 @@ export async function elkLayout(nodes: Node[], edges: Edge[]): Promise<Node[]> {
 
   let res: ElkNode
   try {
-    res = await layoutEngine().layout(graph)
+    const engine = await layoutEngine()
+    res = await engine.layout(graph)
   } catch {
     return nodes // fall back to whatever positions we had
   }

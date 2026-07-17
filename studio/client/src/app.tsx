@@ -11,7 +11,7 @@ import {
   Settings,
   Workflow,
 } from 'lucide-react'
-import { useCallback, useEffect } from 'react'
+import { lazy, Suspense, useCallback, useEffect } from 'react'
 
 import { AgentActivityDrawer, AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
@@ -32,10 +32,13 @@ import { useComments, useInvalidateDomain, useWorkspace } from '@/lib/hooks'
 import { useEventStream } from '@/lib/sse'
 import { type SectionKey, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { SchemaSection } from '@/schema-studio'
 import { CommentsSection } from '@/sections/comments'
 import { ContextSection } from '@/sections/context'
 import { ProcessSection } from '@/sections/process'
+
+const LazySchemaSection = lazy(() =>
+  import('./schema-studio/index').then(({ SchemaSection }) => ({ default: SchemaSection })),
+)
 
 const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
   { key: 'context', label: 'Context', icon: Library },
@@ -47,7 +50,17 @@ const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
 function SectionRouter({ section, domainId }: { section: SectionKey; domainId: string }) {
   switch (section) {
     case 'schema':
-      return <SchemaSection domainId={domainId} />
+      return (
+        <Suspense
+          fallback={
+            <div className="h-full flex items-center justify-center text-muted-foreground">
+              Loading schema studio…
+            </div>
+          }
+        >
+          <LazySchemaSection domainId={domainId} />
+        </Suspense>
+      )
     case 'context':
       return <ContextSection domainId={domainId} />
     case 'process':
