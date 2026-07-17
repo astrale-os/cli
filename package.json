@@ -41,7 +41,7 @@
     "prepare": "husky",
     "build": "bun scripts/build.ts",
     "prepack": "bun scripts/build.ts",
-    "typecheck": "tsgo --noEmit && tsgo --noEmit -p viewer",
+    "typecheck": "tsgo --noEmit && tsgo --noEmit -p viewer && tsgo --noEmit -p studio",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
@@ -87,8 +87,15 @@
       "oxfmt --write"
     ]
   },
-  "engines": {
-    "node": ">=20"
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=24 <25",
+      "onFail": "error"
+    }
   },
-  "packageManager": "pnpm@10.28.0"
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.13.1"
 }

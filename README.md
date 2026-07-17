@@ -33,7 +33,7 @@ The npm build bundles all dependencies, so no private-registry access is needed.
 `astrale studio` launches a local web GUI to author and inspect a domain, with
 local Claude Code and Codex agent harnesses (`--harness claude|codex`); it runs on
 [Bun](https://bun.sh), so install Bun and keep it on `PATH` to use that command
-(the rest of the CLI needs only Node ≥ 20). The curl-installed standalone binary
+(the rest of the CLI needs only Node ≥ 22). The curl-installed standalone binary
 above does not include the studio — use the npm install for `astrale studio`.
 
 > Pre-1.0, `npm install -g @astrale-os/cli` installs the latest published
@@ -139,6 +139,9 @@ CLI state lives under `~/.astrale/`:
 - cached IdP sessions
 
 ## Development
+
+Contributors use Node.js 24.18.0 and pnpm 11.13.1. The source-worktree runtime
+contract is enforced separately from the published CLI's Node ≥ 22 contract.
 
 ```bash
 # From the workspace root
