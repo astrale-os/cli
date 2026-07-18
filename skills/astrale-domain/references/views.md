@@ -69,6 +69,39 @@ protocol. A view with `none` is a standalone browser surface and receives no She
 applications normally use `shell`; direct rendered responses normally use `none`. React views consume
 the bridge through shell-react.
 
+## When does a View mount?
+
+Declaring a View does not mount it by itself. A browser host mounts it only when all of these conditions
+hold:
+
+1. The View is registered in `defineDomain({ views })`, installed on the instance, and resolves to a
+   served URL through its binding.
+2. Shell selects it: either the installed application's entrypoint edge points to it, or an explicit
+   open action selects a caller-visible View attached through `viewFor` or addressed by its semantic
+   ViewPath. Child-driven navigation also requires the host to grant and handle the `open` intent;
+   iframe sandbox tokens do not grant Shell intents.
+3. The caller passes the application's and View's graph authorization doors, and the View's `auth`
+   policy can be satisfied. A `required` shell View needs a valid delegated credential; a `public` or
+   standalone View does not gain a Shell credential implicitly.
+4. The browser host accepts the serving origin and applies an iframe policy. The domain's `defineView`
+   declaration cannot grant itself browser sandbox capabilities.
+5. For `handshake: 'shell'`, the child completes the origin-checked Shell handshake. A `none` mount is a
+   plain iframe with no Shell session, target, intents, or graph client.
+
+GUI v2 currently mounts every application iframe with the baseline
+`sandbox="allow-scripts allow-same-origin"`. This requires the application and GUI to have distinct
+origins: scripts plus same-origin would let a same-origin child remove its own sandbox. Forms, popups,
+popup escape, and modals are denied by default. If a View needs more, add a reviewed host-side exception
+for its exact serving origin and fail closed for lookalikes or origin migrations.
+
+OAuth is the common popup exception. A consent flow that pre-opens a window and later navigates it needs
+`allow-popups`; third-party identity pages should receive `allow-popups-to-escape-sandbox` so they do not
+inherit the application's restrictions. Add `allow-forms` only when the trusted flow submits forms.
+The current GUI exception grants those three flags only to the exact production origin
+`https://integration.astrale.ai`. The installed domain origin `integration.astrale.ai` also receives
+only the `open` Shell intent so its catalog can mount the selected connection View. Other Astrale and
+third-party applications keep the baseline and receive no child intents.
+
 ## How to develop a View locally?
 
 Use `astrale view` as the local Shell host for an installed View. It can resolve a semantic ViewPath
