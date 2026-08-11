@@ -4,11 +4,11 @@ import type { KernelCommandOpts } from '../../kernel'
 import type { Column } from '../../lib/output'
 import type { CommandDefinition } from '../../program/index'
 
-import { withAdminKernelClient } from '../../kernel/client'
+import { listOwnedInstances } from '../../kernel/client'
 import {
-  adminInstanceMethod,
   formatInstanceLocation,
   type InstanceInfo,
+  type OwnedInstanceInfo,
 } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance'
@@ -59,14 +59,10 @@ export default {
         createdAt: entry.createdAt ?? null,
       }))
 
-      let managed: InstanceInfo[] = []
+      let managed: OwnedInstanceInfo[] = []
       if (!opts.bookmarked) {
         managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
-          withAdminKernelClient(
-            opts,
-            async (ctx) =>
-              (await ctx.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[],
-          ),
+          listOwnedInstances(opts),
         )
       }
       if (isMachine(opts)) {

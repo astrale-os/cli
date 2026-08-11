@@ -215,10 +215,11 @@ boundaries.
 
 ## When to use a Class vs an Interface?
 
-Use a class for concrete instances. Use a node interface for a shared node contract and an edge
-interface for a shared relationship contract. An interface is not instantiated; classes implement it.
-Reach for an interface when multiple real types need the same typed properties or methods, not merely to
-group similarly named concepts.
+Use a class for concrete instances and an interface for a shared node or edge contract. Before
+finalizing the schema, inspect concrete classes for the same typed properties or methods, and for
+callers or edge endpoints that should target one capability instead of enumerating classes. Extract only
+an honest shared capability: an empty local interface map is valid after this pass, while marker
+interfaces and generic base entities are not.
 
 ## Should a fact live on an edge?
 
@@ -334,6 +335,22 @@ ContactRow
 InvoiceDTO
 ShipmentRecord
 ```
+
+## Put behavior on the node whose invariant changes
+
+Put a business method on the class whose existing node is the natural receiver: the node whose state,
+lifecycle, invariant, or resource authority the action governs. Cross-node writes do not make the action
+domain-level; choose the dominant invariant owner and pass collaborators as typed params or traverse
+relationships. Use a static method or standalone function only when no existing node is an honest
+receiver, and state that reason before implementation.
+
+## Review method ownership before implementing runtime
+
+Before implementing handlers, list each callable's owner, kind, receiver or reason none exists,
+invariant changed, and authorization target. Rework the schema when one class owns most business
+methods, all methods are static despite several stateful classes, a static method takes the entity it
+mutates, or a class needs filler properties at folder paths. Inspect repeated contracts using the
+interface capability pass.
 
 ## Follow the schema naming conventions
 
@@ -462,25 +479,32 @@ const assigned_to = edgeClass(
 )
 ```
 
-## Do NOT model every kind as one god class
+## Do NOT create a god class, command-bus workspace, or fake container
 
-A giant class with a discriminator and many unrelated optional properties erases the model the schema
-should enforce. Give each real kind its own class and put genuinely shared behavior on a interface. If
-most properties are meaningless for most nodes, the class combines several concepts.
+A god class erases ownership by absorbing unrelated data, behavior, or tree organization. Reject a class
+when its properties are meaningless on some instances, when it owns most business methods while the
+classes whose state changes remain behaviorless, or when collection paths instantiate it merely as a
+folder. Split real kinds, put behavior on the class whose lifecycle or invariant changes, and use an
+honest container capability or organizational type only when that node has real domain meaning.
 
 ```ts
-// Wrong: most fields are absent for every node.
-const Thing = nodeClass({
-  props: {
-    kind: z.string(),
-    email: z.string().optional(),
-    sku: z.string().optional(),
+// NO Workspace is only a namespace for behavior owned by NeedRequest.
+const LogisticsWorkspace = nodeClass({
+  methods: {
+    changePriority: fn({
+      static: true,
+      params: { request: pathSchema(), priority: z.string() },
+      returns: z.void(),
+    }),
   },
 })
 
-// Right: distinct kinds with their own required shape.
-const Contact = nodeClass({ props: { email: z.string().email() } })
-const Product = nodeClass({ props: { sku: z.string() } })
+// OK The existing request receives the lifecycle change.
+const NeedRequest = nodeClass({
+  methods: {
+    changePriority: fn({ params: { priority: z.string() }, returns: z.void() }),
+  },
+})
 ```
 
 ## Do NOT make every property optional
@@ -574,12 +598,13 @@ const reports_to = edgeClass(
 )
 ```
 
-## When to use a standalone function vs a static method?
+## When to use an instance method, static method, or standalone function?
 
-Authority does not decide: both are schema-declared callables, and both carry their own function
-identity, `deps`, `step`, `authorize`, and auth policy. Use a standalone function for domain-level
-behavior, for the postInstall target, or for a webhook that must read the raw request (`ctx.c`). Use a
-static method for schema-derived params, a schema-bound `ctx.kernel`, and stream or binary output.
+Choose by semantic ownership, not transport convenience. Use an instance method when an existing node is
+the natural receiver, its lifecycle or invariant changes, or authorization should follow it; use a
+static method for class-level construction or queries with no receiver; use a standalone function for
+domain-wide orchestration, postInstall, or raw-request webhooks. A static method that accepts the node
+it acts on is a receiver smell unless a cross-aggregate invariant justifies it.
 
 ## How to delete a node with children?
 

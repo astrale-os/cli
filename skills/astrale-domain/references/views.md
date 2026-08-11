@@ -69,6 +69,39 @@ protocol. A view with `none` is a standalone browser surface and receives no She
 applications normally use `shell`; direct rendered responses normally use `none`. React views consume
 the bridge through shell-react.
 
+## When does a View mount?
+
+Declaring a View does not mount it by itself. A browser host mounts it only when all of these conditions
+hold:
+
+1. The View is registered in `defineDomain({ views })`, installed on the instance, and resolves to a
+   served URL through its binding.
+2. Shell selects it: either the installed application's entrypoint edge points to it, or an explicit
+   open action selects a caller-visible View attached through `viewFor` or addressed by its semantic
+   ViewPath. Child-driven navigation also requires the host to grant and handle the `open` intent;
+   iframe sandbox tokens do not grant Shell intents.
+3. The caller passes the application's and View's graph authorization doors, and the View's `auth`
+   policy can be satisfied. A `required` shell View needs a valid delegated credential; a `public` or
+   standalone View does not gain a Shell credential implicitly.
+4. The browser host accepts the serving origin and applies an iframe policy. The domain's `defineView`
+   declaration cannot grant itself browser sandbox capabilities.
+5. For `handshake: 'shell'`, the child completes the origin-checked Shell handshake. A `none` mount is a
+   plain iframe with no Shell session, target, intents, or graph client.
+
+GUI v2 currently mounts every application iframe with the baseline
+`sandbox="allow-scripts allow-same-origin"`. This requires the application and GUI to have distinct
+origins: scripts plus same-origin would let a same-origin child remove its own sandbox. Forms, popups,
+popup escape, and modals are denied by default. If a View needs more, add a reviewed host-side exception
+for its exact serving origin and fail closed for lookalikes or origin migrations.
+
+OAuth is the common popup exception. A consent flow that pre-opens a window and later navigates it needs
+`allow-popups`; third-party identity pages should receive `allow-popups-to-escape-sandbox` so they do not
+inherit the application's restrictions. Add `allow-forms` only when the trusted flow submits forms.
+The current GUI exception grants those three flags only to the exact production origin
+`https://integration.astrale.ai`. The installed domain origin `integration.astrale.ai` also receives
+only the `open` Shell intent so its catalog can mount the selected connection View. Other Astrale and
+third-party applications keep the baseline and receive no child intents.
+
 ## How to develop a View locally?
 
 Use `astrale view` as the local Shell host for an installed View. It can resolve a semantic ViewPath
@@ -163,6 +196,111 @@ function FolderView() {
 }
 ```
 
+## Resolve target context through typed graph relationships
+
+A **target view** receives the resource selected by Shell, not every surrounding node needed by the
+screen. Validate `target.node.class` against the compiled class path, bind the node through the schema,
+then recover owners or related context with typed `useIn` or `useOut` edges. Do not infer context from
+URL or spatial path segments: graph ownership and containment may differ, and nodes can move. Render
+pending, unreadable, wrong-class, and missing-relation states explicitly.
+
+```tsx
+import { useNode, useOut, useTargetNode } from '@astrale-os/shell-react'
+
+function TargetTaskView() {
+  const target = useTargetNode()
+  const taskId =
+    target.node?.class.raw === D.Task.path.class.raw ? target.node.id : null
+  const task = useNode(schema, 'Task', taskId)
+  const assignee = useOut(task.node, 'assigned_to')
+
+  if (target.pending || task.pending || assignee.pending) return <Loading />
+  if (!task.node) return <WrongTarget />
+  if (!assignee.node) return <Unassigned task={task.node} />
+  return <TaskScreen task={task.node} assignee={assignee.node} />
+}
+```
+
+## Project graph nodes before rendering UI
+
+A **view projection** converts kernel `Node` values and qualified schema properties into a feature read
+model before render-only components see them. Keep this boundary beside view query logic, because it
+depends on the graph and compiled schema; keep the projected model free of `Node`, `Path`, and qualified
+keys. This localizes schema changes and lets live and standalone views share the same UI contract after
+an efficient graph read.
+
+```tsx
+import type { Node } from '@astrale-os/kernel-core'
+import { K } from '@astrale-os/kernel-core'
+
+interface AgentItem {
+  path: string
+  name: string
+}
+
+export function projectAgent(node: Node): AgentItem {
+  const name = node.props[K.Named.name.key]
+  return {
+    path: node.path.raw,
+    name: typeof name === 'string' ? name : 'Unnamed agent',
+  }
+}
+
+export function AgentRow({ agent }: { agent: AgentItem }) {
+  return <span>{agent.name}</span>
+}
+```
+
+## Lay out an Astrale client as a feature dependency DAG
+
+An **Astrale client feature DAG** organizes browser code first by bounded context, then by the smallest
+useful set of `model/`, `logic/`, `ui/`, and `view/` layers. Role suffixes make graph projection and
+Shell boundaries searchable: `.model`, `.projection`, `.query`, `.mutation`, `.hook`, and `.view`.
+Cross-feature imports use public feature exports and must stay acyclic, including type-only imports;
+composition features may depend on leaf features, never the reverse. Do not create empty layers or new
+suffixes for symmetry.
+
+```bash
+# src/
+# |-- task/                              leaf feature
+# |   |-- model/
+# |   |   |-- task.model.ts              TaskItem + pure status rules
+# |   |   `-- task-filter.model.ts       filter state + pure matching
+# |   |-- logic/
+# |   |   |-- task.projection.ts         Node + compiled keys -> TaskItem
+# |   |   |-- tasks-by-project.query.ts  non-React graph read
+# |   |   |-- create-task.mutation.ts    non-React method call
+# |   |   `-- use-task-board.hook.ts     React lifecycle and orchestration
+# |   |-- ui/
+# |   |   |-- task-card.tsx              props and callbacks only
+# |   |   |-- status-column.tsx          props and callbacks only
+# |   |   `-- task.css
+# |   |-- view/
+# |   |   `-- task-board.view.tsx        hooks + UI composition
+# |   `-- index.ts                       cross-feature exports only
+# |-- project/                           imports task through task/index.ts
+# |   |-- model/project.model.ts
+# |   |-- logic/project.projection.ts
+# |   |-- logic/use-project.hook.ts
+# |   |-- ui/project-header.tsx
+# |   |-- ui/project.css
+# |   |-- view/project.view.tsx
+# |   `-- index.ts
+# |-- views.tsx                          route registry -> feature views
+# |-- app.tsx                            ShellProvider + app composition
+# `-- main.tsx                           browser mount
+
+# Import direction:
+# logic -> model
+# ui -> model
+# view -> logic + ui + model
+# project -> task
+# task -/-> project
+# views/app -> project/view + task/view
+
+# Representative full feature. Omit roles the feature does not own.
+```
+
 ## Refresh the graph after a domain method call
 
 shell-react's graph memory invalidates only the writes made through it (`useGraph().create`, `.update`,
@@ -179,6 +317,50 @@ async function submit(body: string) {
   await addComment(issue.id, { body })
   // Written through the kernel, not the memory: refresh what it touched.
   await Promise.all([comments.refetch(), list.refetch()])
+}
+```
+
+## Keep optimistic graph items until reads converge
+
+An **optimistic graph overlay** is temporary client state merged with the latest Shell read. Keep it
+after a method returns and remove it only when that read contains the durable node, or when the
+operation fails and the user dismisses it. Method completion confirms the mutation, not that a separate
+Shell read observed it; dropping the item immediately creates a visible gap. When creation accepts one,
+send a stable client-generated id, then reconcile by the returned durable path.
+
+```tsx
+const [overlay, setOverlay] = useState<Item[]>([])
+
+const items = useMemo(() => {
+  const realPaths = new Set(realItems.map((item) => item.path))
+  return [...realItems, ...overlay.filter((item) => !realPaths.has(item.path))]
+}, [realItems, overlay])
+
+useEffect(() => {
+  const realPaths = new Set(realItems.map((item) => item.path))
+  setOverlay((current) => current.filter((item) => !realPaths.has(item.path)))
+}, [realItems])
+
+async function create(input: CreateInput) {
+  const id = crypto.randomUUID()
+  const temporaryPath = `optimistic:${id}`
+  setOverlay((current) => [...current, optimisticItem(id, temporaryPath, input)])
+
+  try {
+    const result = await createItem({ ...input, id })
+    setOverlay((current) =>
+      current.map((item) =>
+        item.path === temporaryPath ? { ...item, path: result.path } : item,
+      ),
+    )
+    await list.refetch()
+  } catch (error) {
+    setOverlay((current) =>
+      current.map((item) =>
+        item.path === temporaryPath ? { ...item, status: 'failed', error } : item,
+      ),
+    )
+  }
 }
 ```
 

@@ -10,15 +10,13 @@
  */
 import type { AnchorRef } from '../../shared/types'
 import type { DomainHandle } from '../domain'
-import type { AskResult } from './types'
+import type { AskResult } from './harness/adapter'
 
 import { getBundle } from '../cache'
-import { resolveHarnessEnv } from '../state/harness-gateway'
-import { readSettings } from '../state/settings'
-import { buildAskPrompt, buildAskSystemPrompt } from './prompt'
-import { getHarness } from './registry'
-import { forkableSession } from './runner'
-import { studioSessionId } from './session-id'
+import { readConversation } from './conversation'
+import { resolveHarnessConfiguration } from './harness/selection'
+import { buildAskPrompt, buildAskSystemPrompt } from './prompts/ask'
+import { studioSessionId } from './telemetry'
 
 export interface AskRequest {
   anchor?: AnchorRef
@@ -32,15 +30,22 @@ export async function runAsk(
   signal: AbortSignal,
   onDelta: (text: string) => void,
 ): Promise<AskResult> {
-  const harness = getHarness()
+  const question = String(body?.question ?? '').trim()
+  if (!question) return { text: '', isError: true, errorMessage: 'question is required' }
+  const resolved = await resolveHarnessConfiguration(handle.root)
+  if (!resolved.ok)
+    return {
+      text: '',
+      isError: true,
+      errorMessage: `model gateway auth failed — ${resolved.error}`,
+    }
+  const { harness, model, effort, env } = resolved.configuration
   if (!harness.ask)
     return {
       text: '',
       isError: true,
       errorMessage: `${harness.label} does not support side questions`,
     }
-  const question = String(body?.question ?? '').trim()
-  if (!question) return { text: '', isError: true, errorMessage: 'question is required' }
 
   const ref = body.anchor?.ref ?? '(no target)'
   const bundle = await getBundle(handle.id)
@@ -51,22 +56,15 @@ export async function runAsk(
     ir: bundle?.ir ?? null,
     overlay: bundle?.overlay,
   })
-  const settings = readSettings(handle.root)
-  const envResult = await resolveHarnessEnv(handle.root)
-  if (!envResult.ok)
-    return {
-      text: '',
-      isError: true,
-      errorMessage: `model gateway auth failed — ${envResult.error}`,
-    }
-
   return harness.ask({
     root: handle.root,
     prompt,
     appendSystemPrompt: buildAskSystemPrompt(),
-    sessionId: forkableSession(handle.id), // fork the live conversation (undefined ⇒ fresh)
-    effort: settings.agentEffort,
-    env: { ...envResult.env, ASTRALE_SESSION: studioSessionId(handle.id) },
+    sessionId: readConversation(handle.root, harness.id).sessionId,
+    model,
+    effort,
+    access: resolved.configuration.settings.agentAccess,
+    env: { ...env, ASTRALE_SESSION: studioSessionId(handle.id) },
     signal,
     onDelta,
   })

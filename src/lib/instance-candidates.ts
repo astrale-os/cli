@@ -1,11 +1,11 @@
 import type { InstanceEntry, InstanceStore } from './instance'
 
-import { formatInstanceLocation, type InstanceInfo } from './admin-instance'
+import { formatInstanceLocation, type OwnedInstanceInfo } from './admin-instance'
 import { normalizeInstanceKernelUrl, resolveInstanceKey } from './instance'
 
 export type InstanceCandidate =
   | { source: 'bookmark'; key: string; url: string; entry: InstanceEntry }
-  | { source: 'managed'; key: string; url: string; info: InstanceInfo }
+  | { source: 'managed'; key: string; url: string; info: OwnedInstanceInfo }
 
 /**
  * Gather every instance a bare name can refer to — the local bookmark
@@ -16,7 +16,7 @@ export type InstanceCandidate =
 export function collectInstanceCandidates(
   name: string,
   store: InstanceStore,
-  managed: InstanceInfo[],
+  managed: OwnedInstanceInfo[],
 ): InstanceCandidate[] {
   const out: InstanceCandidate[] = []
 

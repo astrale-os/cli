@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.8.1-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.8.0-alpha.0...cli-v0.8.1-alpha.0) (2026-07-17)
+
+
+### Performance Improvements
+
+* defer schema layout bundle ([f9ff7dc](https://github.com/astrale-os/cli/commit/f9ff7dc70a98e366ec06bbfd5b0e98b23e2e5927))
+* defer schema layout bundle ([2707642](https://github.com/astrale-os/cli/commit/2707642cb15a0a1713f30d993c8c48cec082ac65))
+
+
+### Documentation
+
+* update astrale-domain skill ([e958239](https://github.com/astrale-os/cli/commit/e958239cecbeb0e13316b7d9867e1b34ebbd9126))
+* update astrale-domain skill ([dd38678](https://github.com/astrale-os/cli/commit/dd38678526d71161fef7d90613b490bcf911d91f))
+
+## [0.8.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.7.0-alpha.0...cli-v0.8.0-alpha.0) (2026-07-16)
+
+
+### Features
+
+* **studio:** add Codex harness and model selection ([027701c](https://github.com/astrale-os/cli/commit/027701c0e274ce503805bc27f8799330fc3f0bfa))
+
+
+### Bug Fixes
+
+* **view:** resolve packaged viewer from module ([bbf647b](https://github.com/astrale-os/cli/commit/bbf647b34223970e11d5855ec7a9031444b2c160))
+* **view:** resolve packaged viewer from module ([d4264f7](https://github.com/astrale-os/cli/commit/d4264f7dd61190d031d8f174952c1334ba32bf1b))
+
+## [0.7.0-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.3-alpha.0...cli-v0.7.0-alpha.0) (2026-07-16)
+
+
+### Features
+
+* **commands:** adopt owned managed instances ([8fbbfd8](https://github.com/astrale-os/cli/commit/8fbbfd8d9beb5af82b915a88d4aa53be9c4bf4a7))
+* **commands:** adopt owned managed instances ([a674fbf](https://github.com/astrale-os/cli/commit/a674fbf40fb06a6fba55e5e3a83aabe9395e0261))
+
+
+### Bug Fixes
+
+* **commands:** clarify installed CLI runtimes ([d0b1f70](https://github.com/astrale-os/cli/commit/d0b1f70cf353300f0a6469888de1cd3bd6bf3128))
+* **commands:** clarify published cli runtime (issue iss_90fd577f) ([ae1ea16](https://github.com/astrale-os/cli/commit/ae1ea16553da99b1a881db5ffc3e96fef0642b15))
+* **commands:** correct call payload guidance ([1fc9e73](https://github.com/astrale-os/cli/commit/1fc9e738b9089265e463d6ee855b7ee2d309e333))
+* **commands:** document call payload inputs (issue iss_60382d35) ([2614053](https://github.com/astrale-os/cli/commit/26140535bebb8f4cafc126a890c1740f720cdff4))
+* **commands:** narrow view port lock boundary ([4414821](https://github.com/astrale-os/cli/commit/441482167697b535029be4a8ae25810ae2c21c51))
+* **commands:** serialize view port allocation (issue iss_414b7690) ([aa794c0](https://github.com/astrale-os/cli/commit/aa794c0b034512f9a6a08042b6ced70e80776052))
+* **commands:** serialize view session port allocation ([90538fb](https://github.com/astrale-os/cli/commit/90538fbcebcad6e81eed8f8771970f72a249d1f8))
+
+## [0.6.3-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.2-alpha.0...cli-v0.6.3-alpha.0) (2026-07-15)
+
+
+### Documentation
+
+* add frontend architecture guidance to astrale-domain skill ([5b5f311](https://github.com/astrale-os/cli/commit/5b5f311863daa8d6656d9fdb56b1dd58c3493d78))
+* add frontend architecture guidance to astrale-domain skill ([f18001d](https://github.com/astrale-os/cli/commit/f18001d24e224da918c3c3edd889e8819586026a))
+* update Shell domain search examples ([3aea636](https://github.com/astrale-os/cli/commit/3aea636422b8b4c61e46ecefadb0a8eb63503bab))
+* update Shell domain search examples ([ae5e517](https://github.com/astrale-os/cli/commit/ae5e517f671945d168da30a4605f90ac261aa847))
+
+## [0.6.2-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.1-alpha.0...cli-v0.6.2-alpha.0) (2026-07-15)
+
+
+### Bug Fixes
+
+* target native issues domain ([09b5e98](https://github.com/astrale-os/cli/commit/09b5e983fe828380c4c8396434ce44b7c1bfdacc))
+* target native issues domain ([cd24aaa](https://github.com/astrale-os/cli/commit/cd24aaa7a0846a80934700b94c6d900d50279fcc))
+
+
+### Documentation
+
+* teach issue listing through graph queries ([961de08](https://github.com/astrale-os/cli/commit/961de08576b90526308aeb14f404f42d8a1eb0c3))
+* teach issue listing through graph queries ([505f9f1](https://github.com/astrale-os/cli/commit/505f9f119623ef34ceb1ec42d42dc17b33be4001))
+
 ## [0.6.1-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.6.0-alpha.0...cli-v0.6.1-alpha.0) (2026-07-14)
 
 
@@ -16,7 +86,6 @@
 * add schema module tests and client package extraction ([5a9831f](https://github.com/astrale-os/cli/commit/5a9831f02e121a57b9bdd076a7657e47eaf8d07b))
 * astrale view — single-view sessions in an emulated shell host ([4df3125](https://github.com/astrale-os/cli/commit/4df3125de3e3d8a2a75d28510b197428ff8406cc))
 * astrale view — single-view sessions in an emulated shell host ([9f2d855](https://github.com/astrale-os/cli/commit/9f2d8554004254d21c0ab6756a8057a7817e85c3))
-* **cli:** connect-core seam + IdP device-flow onVerification ([#34](https://github.com/astrale-os/cli/issues/34)) ([1e495e4](https://github.com/astrale-os/cli/commit/1e495e40b1034c614f230fd624496abc91bfdba0))
 * local telemetry — session recorder, harness adapters, opportunistic DX analyzer ([46dbe55](https://github.com/astrale-os/cli/commit/46dbe55f391187792c71c3eb3871cd1fbd3895c0))
 * local telemetry — session recorder, harness adapters, opportunistic DX analyzer ([34fe32c](https://github.com/astrale-os/cli/commit/34fe32c35caf2586e00b42c37a287400e709cae5))
 * make Studio domain headers draggable ([0a6f502](https://github.com/astrale-os/cli/commit/0a6f502006b2774ededa4f6704f4452d66b2f131))

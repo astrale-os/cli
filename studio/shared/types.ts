@@ -605,8 +605,18 @@ export interface AgentEvent {
   commentId?: string
 }
 
-export const AGENT_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'] as const
+export const AGENT_EFFORT_LEVELS = [
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+  'ultracode',
+] as const
 export type AgentEffort = (typeof AGENT_EFFORT_LEVELS)[number]
+export const AGENT_ACCESS_LEVELS = ['workspace', 'full'] as const
+export type AgentAccess = (typeof AGENT_ACCESS_LEVELS)[number]
 
 export interface AgentPromptSnapshot {
   createdAt: string
@@ -619,8 +629,12 @@ export interface AgentPromptSnapshot {
   /** true when this turn used a prior harness session id */
   resumed: boolean
   sessionId?: string
-  /** Claude Code --effort value used for this turn. */
+  /** Explicit Studio model override used for this turn; absent means harness-native default. */
+  model?: string
+  /** Harness-native reasoning effort used for this turn. */
   effort?: AgentEffort
+  /** Filesystem/network authority granted to the harness for this turn. */
+  access?: AgentAccess
   /** generated MCP bridge tools exposed to the harness for live write-back */
   mcpTools: string[]
 }
@@ -659,7 +673,7 @@ export interface AgentRun {
   events: AgentEvent[]
   costUsd?: number
   numTurns?: number
-  /** total tokens processed this turn (input + output + cache) */
+  /** total token usage reported by the harness for this turn */
   tokens?: number
   error?: string
   /** how many threads the agent answered live via the bridge tools this turn */
@@ -670,8 +684,8 @@ export interface AgentRun {
   prompt?: AgentPromptSnapshot
 }
 
-/** The ongoing, resumable conversation for a domain — one continuous Claude Code
- *  session threaded across submits. Survives studio restarts (persisted on disk). */
+/** The ongoing, resumable conversation for a domain and selected harness.
+ *  Survives studio restarts (persisted on disk). */
 export interface ConversationInfo {
   /** a resumable session exists → the next submit continues it (vs. starting fresh) */
   active: boolean
@@ -688,7 +702,18 @@ export interface AgentSessionInfo {
   harness?: string
 }
 
-/** Whether the selected agent harness (e.g. Claude Code) is installed & invokable. */
+export interface HarnessCapabilities {
+  effortLevels: readonly AgentEffort[]
+  accessLevels: readonly AgentAccess[]
+  /** Stable aliases advertised even when the harness has no catalog API. */
+  modelOptions?: readonly HarnessModelOption[]
+  ask: boolean
+  loadout: boolean
+  /** Custom model-gateway wire contract this harness can consume in Studio. */
+  gateway: 'anthropic' | 'responses' | 'none'
+}
+
+/** Whether the selected agent harness is installed, invokable, and configurable. */
 export interface HarnessStatus {
   id: string
   label: string
@@ -700,6 +725,10 @@ export interface HarnessStatus {
   message: string
   /** known harnesses for the selector (locked to one for now) */
   options: { id: string; label: string }[]
+  /** an environment/CLI override owns the selection, so the GUI cannot change it */
+  locked: boolean
+  source: 'environment' | 'domain' | 'default'
+  capabilities: HarnessCapabilities
 }
 
 /** One MCP server the harness loaded, with its live connection status. */
@@ -736,7 +765,13 @@ export interface HarnessLoadout {
   ok: boolean
   /** reason when !ok (binary missing / probe timed out / no init event) */
   detail?: string
+  /** Model the harness resolves before Studio applies its optional override. */
+  nativeModel?: string
   model?: string
+  /** Where the effective model came from. */
+  modelSource?: 'studio' | 'config' | 'default' | 'runtime'
+  /** Models the harness currently advertises for easy selection. */
+  models?: HarnessModelOption[]
   permissionMode?: string
   /** how the harness is authed: 'none' | 'ANTHROPIC_API_KEY' | … */
   apiKeySource?: string
@@ -752,6 +787,18 @@ export interface HarnessLoadout {
   builtinCommandCount: number
   /** epoch ms when probed */
   probedAt: number
+  /** Claude exposes a live init event; Codex exposes configured/installed state. */
+  source?: 'runtime' | 'configured'
+}
+
+export interface HarnessModelOption {
+  /** Stable model slug passed to the harness, e.g. `gpt-5.6-sol`. */
+  id: string
+  /** Human-friendly catalog label. */
+  label: string
+  description?: string
+  /** The harness catalog's built-in default when no config layer overrides it. */
+  isDefault?: boolean
 }
 
 /** Domain-attributable agent spend — accumulated from this studio's own runs on
@@ -837,8 +884,12 @@ export type TypeDescriptor =
 /** Per-domain overrides for values the studio otherwise hard-codes. Stored at
  *  `.domain-studio/settings.json`; missing keys fall back to defaults. */
 export interface StudioSettings {
-  /** Claude Code reasoning effort passed as --effort (default 'high') */
+  /** Harness-native reasoning effort (default 'high') */
   agentEffort: AgentEffort
+  /** workspace = sandboxed edits; full = unrestricted local automation */
+  agentAccess: AgentAccess
+  /** Optional model override, independently remembered for each harness id. */
+  agentModels: Record<string, string>
   /** folder under the domain root scanned for integrations (default 'integrations') */
   integrationsDir: string
   /** schema/core extraction subprocess timeout in ms (default 20000) */

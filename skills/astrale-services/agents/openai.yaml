@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Service Deployer'
+  short_description: 'Build, deploy, and verify callable services'
+  default_prompt: 'Use $astrale-services to turn the code or requirements I provide into a deployed Astrale Service with the requested hosted Functions: infer the contract from authoritative code or requirements, ask only for missing deployment decisions, build or adapt the implementation, deploy it to the target instance and service path, verify graph state, invoke every Function end to end, fix failures, and return exact copy-paste calls with observed results.'

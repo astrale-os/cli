@@ -1,30 +1,35 @@
 import chalk from 'chalk'
 
+import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 import type { SetupContext, SetupStep } from '../types'
 
-import { withAdminKernelClient } from '../../kernel/client'
-import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
+import { AstraleError } from '../../errors'
+import { listOwnedInstances } from '../../kernel/client'
 import { normalizeInstanceKernelUrl, setActive, upsertManagedBookmark } from '../../lib/instance'
 import { readLocalStatus } from '../../lib/local-status'
 import { log, withSpinner } from '../../lib/log'
 import { renderInstanceHero } from '../../lib/panel'
 import { confirmDefaultYes, promptText, selectFrom } from '../../lib/prompt'
-import { provisionInstance } from '../../lib/provision-instance'
+import { provisionInstance, type ProvisionResult } from '../../lib/provision-instance'
 import { guiOrigin, slugError } from '../util'
 
-/** All admin-managed instances; degrades to [] when the admin kernel is unreachable. */
-async function fetchManaged(ctx: SetupContext): Promise<InstanceInfo[]> {
-  try {
-    return await withSpinner('Checking for existing instances', !ctx.machine, () =>
-      withAdminKernelClient(
-        ctx.opts,
-        async (client) =>
-          (await client.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[],
-      ),
-    )
-  } catch {
-    return []
-  }
+export type InstanceSetupDependencies = {
+  fetchOwned: (ctx: SetupContext) => Promise<OwnedInstanceInfo[]>
+  adopt: (info: OwnedInstanceInfo) => Promise<void>
+  selectReady: (instances: OwnedInstanceInfo[]) => Promise<OwnedInstanceInfo | null>
+  confirmCreate: () => Promise<boolean>
+  promptSlug: () => Promise<string | undefined>
+  provision: (slug: string) => Promise<ProvisionResult>
+}
+
+export type OwnedInstanceAdoptionDependencies = {
+  upsert: (
+    key: string,
+    slug: string,
+    url: string,
+    organizationId?: string,
+  ) => Promise<{ repointedFrom?: string }>
+  activate: (slug: string) => Promise<unknown>
 }
 
 /** Print the click-inviting hero for a freshly-active instance. */
@@ -34,9 +39,15 @@ function hero(slug: string, kernelUrl: string): void {
   console.log('')
 }
 
-async function adopt(info: InstanceInfo): Promise<void> {
-  const { repointedFrom } = await upsertManagedBookmark(info.slug, info.slug, info.url)
-  await setActive(info.slug)
+export async function adoptOwnedInstance(
+  info: OwnedInstanceInfo,
+  deps: OwnedInstanceAdoptionDependencies = {
+    upsert: upsertManagedBookmark,
+    activate: setActive,
+  },
+): Promise<void> {
+  const { repointedFrom } = await deps.upsert(info.slug, info.slug, info.url, info.organizationId)
+  await deps.activate(info.slug)
   if (repointedFrom) {
     log.warn(
       `Bookmark "${info.slug}" repointed: ${repointedFrom} → ${normalizeInstanceKernelUrl(info.url)}`,
@@ -46,10 +57,118 @@ async function adopt(info: InstanceInfo): Promise<void> {
   hero(info.slug, info.url)
 }
 
+function defaultDependencies(ctx: SetupContext): InstanceSetupDependencies {
+  return {
+    fetchOwned: (setupCtx) =>
+      withSpinner('Checking for existing instances', !setupCtx.machine, () =>
+        listOwnedInstances(setupCtx.opts),
+      ),
+    adopt: adoptOwnedInstance,
+    selectReady: (instances) =>
+      selectFrom(
+        'No active instance. Pick one:',
+        instances.map((info) => ({
+          label: `${info.slug}  ${chalk.dim(guiOrigin(info.url))}`,
+          value: info,
+        })),
+      ),
+    confirmCreate: () => confirmDefaultYes('No instances yet. Provision your first one now?'),
+    promptSlug: () =>
+      ctx.slug
+        ? Promise.resolve(ctx.slug)
+        : promptText('Pick a slug for your instance', { validate: slugError }),
+    provision: (slug) => provisionInstance(slug, ctx.opts),
+  }
+}
+
+/**
+ * Reconcile owner-scoped admin instances when no local active bookmark exists.
+ * A failed ownership lookup is never treated as an empty account: setup stops
+ * before creation so a transient auth/network failure cannot create a duplicate.
+ */
+export async function ensureOwnedInstance(
+  ctx: SetupContext,
+  deps: InstanceSetupDependencies = defaultDependencies(ctx),
+): Promise<'fixed' | 'skipped'> {
+  let owned: OwnedInstanceInfo[]
+  try {
+    owned = await deps.fetchOwned(ctx)
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    throw new AstraleError(
+      'INSTANCE_DISCOVERY_FAILED',
+      `Could not check your Astrale instances: ${detail}`,
+      'No instance was created. Check `astrale admin status`, then rerun `astrale setup`.',
+    )
+  }
+
+  const ready = owned.filter((info) => info.state === 'ready')
+  if (ready.length === 1) {
+    await deps.adopt(ready[0]!)
+    return 'fixed'
+  }
+
+  if (ready.length > 1) {
+    const choice = await deps.selectReady(ready)
+    if (choice === null) {
+      log.dim('  Skipped — no active instance set.')
+      return 'skipped'
+    }
+    await deps.adopt(choice)
+    return 'fixed'
+  }
+
+  if (owned.length > 0) {
+    reportNotReady(owned)
+    return 'skipped'
+  }
+
+  if (!(await deps.confirmCreate())) {
+    log.dim('  Skipped — create one later: astrale instance create <slug>')
+    return 'skipped'
+  }
+
+  const slug = await deps.promptSlug()
+  if (!slug) {
+    log.dim('  Skipped — no slug given.')
+    return 'skipped'
+  }
+
+  const { created, selectionError } = await deps.provision(slug)
+  if (selectionError) {
+    const detail = selectionError instanceof Error ? selectionError.message : String(selectionError)
+    throw new AstraleError(
+      'INSTANCE_SELECTION_FAILED',
+      `Instance "${slug}" was provisioned, but the CLI could not select it: ${detail}`,
+      `Fix local CLI storage, then run \`astrale instance use ${slug}\`.`,
+    )
+  }
+  hero(slug, created.url)
+  return 'fixed'
+}
+
+function reportNotReady(instances: OwnedInstanceInfo[]): void {
+  log.warn(
+    `${instances.length === 1 ? 'Your instance is' : 'Your instances are'} not ready; setup will not create another.`,
+  )
+  for (const info of instances) {
+    const phase = info.phase && info.phase !== info.state ? ` (${info.phase})` : ''
+    log.dim(`  ${info.slug}: ${info.state}${phase} · astrale instance status ${info.slug}`)
+    if (info.error) log.dim(`    ${info.error}`)
+  }
+  if (instances.some((info) => info.state === 'failed')) {
+    log.dim(
+      '  Inspect the failure, then deliberately delete/recreate it with `astrale instance` commands.',
+    )
+  } else {
+    log.dim('  Wait for provisioning to finish, then rerun `astrale setup`.')
+  }
+}
+
 /**
  * Step 3 — an active instance, the heart of the flow. If the user already has
- * managed instances, offer to adopt one or create another; otherwise offer to
- * provision their first. Either way ends on the instance hero.
+ * owned instances, adopt the sole ready one or ask among several; only a
+ * confirmed empty owner list may fall through to first-instance provisioning.
  */
 export const instanceStep: SetupStep = {
   id: 'instance',
@@ -75,45 +194,6 @@ export const instanceStep: SetupStep = {
       return 'unchanged'
     }
 
-    const managed = await fetchManaged(ctx)
-
-    // Pick an existing instance or fall through to creating a new one.
-    if (managed.length > 0) {
-      const choice = await selectFrom<InstanceInfo | 'create'>(
-        'No active instance. Pick one or create a new instance:',
-        [
-          ...managed.map((info) => ({
-            label: `${info.slug}  ${chalk.dim(guiOrigin(info.url))}`,
-            value: info as InstanceInfo | 'create',
-          })),
-          { label: chalk.cyan('➕  Create a new instance'), value: 'create' as const },
-        ],
-      )
-      if (choice === null) {
-        log.dim('  Skipped — no active instance set.')
-        return 'skipped'
-      }
-      if (choice !== 'create') {
-        await adopt(choice)
-        return 'fixed'
-      }
-    } else {
-      const yes = await confirmDefaultYes('No instances yet. Provision your first one now?')
-      if (!yes) {
-        log.dim('  Skipped — create one later: astrale instance create <slug>')
-        return 'skipped'
-      }
-    }
-
-    const slug =
-      ctx.slug ?? (await promptText('Pick a slug for your instance', { validate: slugError }))
-    if (!slug) {
-      log.dim('  Skipped — no slug given.')
-      return 'skipped'
-    }
-
-    const { created } = await provisionInstance(slug, ctx.opts)
-    hero(slug, created.url)
-    return 'fixed'
+    return ensureOwnedInstance(ctx)
   },
 }

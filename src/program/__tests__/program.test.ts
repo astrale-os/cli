@@ -302,6 +302,21 @@ describe('help contract — read command split', () => {
   })
 })
 
+describe('help contract — payload sources', () => {
+  test('call excludes --file while mutate supports it', async () => {
+    const program = await buildProgram()
+    const call = allCommands(program).find((command) => command.name() === 'call')
+    const mutate = allCommands(program).find((command) => command.name() === 'mutate')
+    const callHelp = call?.helpInformation() ?? ''
+    const mutateHelp = mutate?.helpInformation() ?? ''
+
+    expect(callHelp).toContain('--data <json>')
+    expect(callHelp).not.toContain('--file <path>')
+    expect(mutateHelp).toContain('--data <json>')
+    expect(mutateHelp).toContain('--file <path>')
+  })
+})
+
 describe('help contract — skill is single-source, not duplicated', () => {
   const canonical = join(cliRoot, 'skills/astrale-cli/SKILL.md')
   // Workspace mirror lives in the superrepo, outside this submodule. Absent

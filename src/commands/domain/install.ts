@@ -8,7 +8,7 @@ import { AstraleError } from '../../errors'
 import { runKernelCommand } from '../../kernel'
 import { withAdminKernelClient } from '../../kernel/client'
 import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
-import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
+import { callOwnedInstances, type OwnedInstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { getActive } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
@@ -125,7 +125,7 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
 
   try {
     await withAdminKernelClient(adminOpts, async (ctx) => {
-      const instances = (await ctx.client.call(adminInstanceMethod('list'), {})) as InstanceInfo[]
+      const instances = await callOwnedInstances(ctx.client)
 
       const ref = await resolveDomainRef(ctx, target, interactive)
       const slug = await resolveTargetSlug(opts, target, interactive, instances)
@@ -139,6 +139,7 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
           `Install the url directly onto it instead: astrale domain install <url> --direct -i ${slug}`,
         )
       }
+      assertInstallTargetReady(match)
 
       const label = ref.origin ?? ref.url ?? 'domain'
       const result = await withSpinner(
@@ -168,8 +169,18 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
       log.dim(`  url:    ${result.url}`)
     })
   } catch (e) {
-    fatal(e)
+    fatal(e, opts)
   }
+}
+
+function assertInstallTargetReady(instance: OwnedInstanceInfo): void {
+  if (instance.state === 'ready') return
+  const detail = instance.phase && instance.phase !== instance.state ? ` (${instance.phase})` : ''
+  throw new AstraleError(
+    'INSTANCE_NOT_READY',
+    `Instance "${instance.slug}" is ${instance.state}${detail}; domains cannot be installed yet.`,
+    instance.error ?? `Run: astrale instance status ${instance.slug}`,
+  )
 }
 
 /**
@@ -219,7 +230,7 @@ async function resolveTargetSlug(
   opts: InstallOpts,
   target: string | undefined,
   interactive: boolean,
-  instances: InstanceInfo[],
+  instances: OwnedInstanceInfo[],
 ): Promise<string> {
   if (opts.instance) return opts.instance
   const active = await activeSlug()

@@ -1,16 +1,18 @@
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
-import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { Readable } from 'node:stream'
 
 import type { ViewServeConfig } from './session'
 
 import { withKernelClient } from '../../kernel'
 import { fetchWithCaFile } from '../../kernel/ca-fetch'
+import { viewerDistDir } from './assets'
 import { removeSessionFiles } from './session'
+
+export { ensureViewerAssets, viewerDistDir } from './assets'
 
 /**
  * The view-session server: serves the host page, hands it config and fresh
@@ -195,41 +197,6 @@ export function startViewServer(config: ViewServeConfig): Server {
 
   server.listen(session.port, '127.0.0.1')
   return server
-}
-
-/**
- * The prebuilt host-page bundle, shipped next to the CLI entry
- * (`<pkg>/viewer/dist`). Dev runs (bun, no dist) build it on demand.
- */
-export function viewerDistDir(): string {
-  const override = process.env.ASTRALE_VIEWER_DIR
-  if (override) return override
-  return join(dirname(process.argv[1] ?? '.'), '..', 'viewer', 'dist')
-}
-
-/** Ensure the host bundle exists; on a dev checkout, build it with Bun. */
-export async function ensureViewerAssets(): Promise<string> {
-  const dist = viewerDistDir()
-  if (existsSync(join(dist, 'main.js')) && existsSync(join(dist, 'index.html'))) return dist
-  const srcDir = join(dist, '..')
-  const bun = (
-    globalThis as { Bun?: { build: (o: object) => Promise<{ success: boolean; logs: unknown[] }> } }
-  ).Bun
-  if (bun && existsSync(join(srcDir, 'main.ts'))) {
-    const result = await bun.build({
-      entrypoints: [join(srcDir, 'main.ts')],
-      outdir: dist,
-      target: 'browser',
-      minify: false,
-    })
-    if (!result.success) throw new Error(`viewer build failed: ${result.logs.join('\n')}`)
-    const { copyFile } = await import('node:fs/promises')
-    await copyFile(join(srcDir, 'index.html'), join(dist, 'index.html'))
-    return dist
-  }
-  throw new Error(
-    `viewer bundle missing at ${dist} — reinstall the CLI (or run \`bun scripts/build.ts\` in a dev checkout)`,
-  )
 }
 
 function jwtExpiry(token: string): number | null {

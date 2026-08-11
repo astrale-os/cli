@@ -5,7 +5,12 @@ import type { AdminTargetCommandOpts } from '../lib/admin-target'
 import type { KernelCommandOpts } from './types'
 
 import { AstraleError } from '../errors'
-import { adminInstanceMethod, type InstanceInfo } from '../lib/admin-instance'
+import {
+  callOwnedInstances,
+  findOwnedInstance,
+  type InstanceInfo,
+  type OwnedInstanceInfo,
+} from '../lib/admin-instance'
 import { readConfig } from '../lib/config'
 import { resolveInstanceTarget, type ResolvedInstanceTarget } from '../lib/instance-target'
 import { resolveCredential } from './auth'
@@ -37,18 +42,15 @@ export async function resolveKernelTarget(
   // Ad-hoc `--url` — unknown kernel. Stamp the URL itself as audience,
   // no slug for per-instance signing.
   if (opts.url && !opts.instance) {
-    const resolved = await resolveInstanceTarget(
-      { source: 'url', url: opts.url },
-      { config, admin: adminLookupOpts(opts) },
-    )
+    const resolved = await resolveInstanceTarget({ source: 'url', url: opts.url }, { config })
     return resolvedToKernelTarget(resolved)
   }
   const resolved = await resolveInstanceTarget(
     opts.instance ? { source: 'name', name: opts.instance } : { source: 'active' },
     {
       config,
-      admin: adminLookupOpts(opts),
-      managed: (slug) => lookupManagedInstance(slug, opts),
+      admin: {},
+      managed: (slug) => lookupImplicitOwnedInstance(slug, opts),
     },
   )
   return resolvedToKernelTarget(resolved, opts.url)
@@ -68,21 +70,46 @@ export async function withKernelClient<T>(
   return withResolvedKernelClient(opts, config, target, fn)
 }
 
-async function lookupManagedInstance(slug: string, opts: KernelCommandOpts): Promise<InstanceInfo> {
-  return await withAdminKernelClient(
-    adminLookupOpts(opts),
-    async (ctx) =>
-      (await ctx.client.call(adminInstanceMethod('info'), { id: slug })) as InstanceInfo,
-  )
+export async function listOwnedInstances(
+  opts: KernelCommandOpts & AdminTargetCommandOpts,
+): Promise<OwnedInstanceInfo[]> {
+  return await withAdminKernelClient(opts, async (ctx) => callOwnedInstances(ctx.client))
 }
 
-function adminLookupOpts(opts: KernelCommandOpts): KernelCommandOpts & AdminTargetCommandOpts {
-  return {
-    as: opts.as,
-    creds: opts.creds,
-    timeout: opts.timeout,
-    debug: opts.debug,
-  }
+export async function lookupOwnedInstance(
+  slug: string,
+  opts: KernelCommandOpts & AdminTargetCommandOpts,
+): Promise<OwnedInstanceInfo> {
+  const instance = findOwnedInstance(await listOwnedInstances(opts), slug)
+  if (instance) return instance
+  throw new AstraleError('INSTANCE_NOT_FOUND', `No owned instance matches "${slug}".`)
+}
+
+export type ImplicitOwnedInstanceLookupDependencies = {
+  lookupOwned: (
+    slug: string,
+    opts: KernelCommandOpts & AdminTargetCommandOpts,
+  ) => Promise<OwnedInstanceInfo>
+}
+
+/**
+ * Resolve an implicit managed target through the caller's owner inventory.
+ *
+ * Target `--as` / `--creds` belong to the eventual child-kernel call. They
+ * must not authenticate the admin discovery request: leaving them out lets
+ * `withAdminKernelClient` use the admin bookmark's default WorkOS identity.
+ */
+export async function lookupImplicitOwnedInstance(
+  slug: string,
+  targetOpts: KernelCommandOpts,
+  deps: ImplicitOwnedInstanceLookupDependencies = {
+    lookupOwned: lookupOwnedInstance,
+  },
+): Promise<InstanceInfo> {
+  return await deps.lookupOwned(slug, {
+    timeout: targetOpts.timeout,
+    debug: targetOpts.debug,
+  })
 }
 
 function resolvedToKernelTarget(

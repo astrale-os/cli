@@ -11,7 +11,7 @@
 import { existsSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import { setBridgePort } from './agent/bridge'
+import { setBridgePort } from './agent/bridge/grant'
 import { handleApi } from './api'
 import { resolveTarget } from './detect'
 import { allDomains } from './domain'
@@ -90,9 +90,10 @@ function serveStatic(pathname: string): Response {
   )
 }
 
-// Bind to loopback by default. The studio triggers a LOCAL agent that edits code
-// and runs shell (bypassPermissions) — exposing the trigger on 0.0.0.0 would be
-// RCE on the LAN. Power users behind a trusted tunnel can opt in via DOMAIN_STUDIO_HOST.
+// Bind to loopback by default. Studio can trigger a LOCAL harness that edits code
+// and runs commands with the configured access level — exposing the trigger on
+// 0.0.0.0 would be RCE on the LAN. Power users behind a trusted tunnel can opt in
+// via DOMAIN_STUDIO_HOST.
 const HOST = process.env.DOMAIN_STUDIO_HOST || '127.0.0.1'
 const LOOPBACK = HOST === '127.0.0.1' || HOST === 'localhost' || HOST === '::1'
 
@@ -136,7 +137,7 @@ if (!LOOPBACK) {
   console.warn(
     `  ⚠ SECURITY: bound to ${HOST} (not loopback). The Submit-to-agent trigger is the\n` +
       `    only thing standing between the network and an agent that edits code + runs shell\n` +
-      `    (bypassPermissions). Anyone who can reach this port can trigger it. Use only behind\n` +
+      `    with its configured access. Anyone who can reach this port can trigger it. Use only behind\n` +
       `    a trusted tunnel; unset DOMAIN_STUDIO_HOST to bind 127.0.0.1.\n`,
   )
 }

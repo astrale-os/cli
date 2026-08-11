@@ -14,10 +14,10 @@ import { readJson, writeJson } from './store'
 
 const FILE = 'comments.json'
 
-const EMPTY: CommentStore = { schemaVersion: '', comments: [] }
-
 export function readComments(root: string): CommentStore {
-  const store = readJson<CommentStore>(root, FILE, { ...EMPTY })
+  // Allocate a fresh array for every missing store. A module-level EMPTY object
+  // would share its nested `comments` array across domains until each persisted.
+  const store = readJson<CommentStore>(root, FILE, { schemaVersion: '', comments: [] })
   return {
     schemaVersion: store.schemaVersion ?? '',
     comments: Array.isArray(store.comments) ? store.comments : [],
