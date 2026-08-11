@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { fatal } from '../../lib/log'

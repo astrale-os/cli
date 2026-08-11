@@ -1,7 +1,7 @@
 import { CompactEncrypt } from 'jose'
 import { chmod, readFile, writeFile } from 'node:fs/promises'
 
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { getIdentity } from '../../lib/identity'
 import { keypairPaths } from '../../lib/keys'

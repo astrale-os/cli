@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { readIdpConfigOrBuiltin } from '../../lib/idp'
 import { output, RAW_OUTPUT_OPTIONS } from '../../lib/output'

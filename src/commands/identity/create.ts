@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { createIdentity } from '../../lib/identity'
 import { fatal, log } from '../../lib/log'

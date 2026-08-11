@@ -1,9 +1,9 @@
 import { rawOf } from '@astrale-os/kernel-client/graph'
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../command'
 import type { GraphNode, KernelCommandOpts, SelfExpansionMeta } from '../kernel'
 import type { ListProjection } from '../lib/output'
+import type { CommandDefinition } from '../program/index'
 
 import {
   bindGraph,

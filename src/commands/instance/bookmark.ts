@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { fetchWithCaFile } from '../../kernel/ca-fetch'
 import { normalizeInstanceKernelUrl, setActive, upsertInstance } from '../../lib/instance'

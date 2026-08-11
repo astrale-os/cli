@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { withAdminKernelClient } from '../../kernel/client'

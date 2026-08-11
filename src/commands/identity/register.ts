@@ -1,8 +1,8 @@
 import { importJWK, SignJWT, type JWK } from 'jose'
 import { readFile } from 'node:fs/promises'
 
-import type { CommandDefinition } from '../../command'
 import type { ClientContext, KernelCommandOpts } from '../../kernel'
+import type { CommandDefinition } from '../../program/index'
 
 import { bindGraph, runKernelCommand } from '../../kernel'
 import { KERNEL_PASSTHROUGH_OPTIONS } from '../../kernel/options'

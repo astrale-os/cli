@@ -2,8 +2,8 @@ import { compactDecrypt, importJWK } from 'jose'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
-import type { CommandDefinition } from '../../command'
 import type { RegistryMode } from '../../lib/validation'
+import type { CommandDefinition } from '../../program/index'
 
 import { createIdentity, upsertKeyIdentity } from '../../lib/identity'
 import { keypairPaths } from '../../lib/keys'

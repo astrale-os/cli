@@ -1,5 +1,5 @@
-import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
+import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../kernel'
 import { log } from '../lib/log'

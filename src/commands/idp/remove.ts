@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { readIdentities } from '../../lib/identity'
 import { removeIdpConfig } from '../../lib/idp'

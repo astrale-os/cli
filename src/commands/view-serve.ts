@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 
-import type { CommandDefinition } from '../command'
 import type { ViewServeConfig } from '../lib/view/session'
+import type { CommandDefinition } from '../program/index'
 
 import { startViewServer } from '../lib/view/server'
 

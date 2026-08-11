@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_NAME } from '../../lib/admin-target'
 import { readConfig, writeConfig } from '../../lib/config'

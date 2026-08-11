@@ -1,8 +1,8 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
 import type { Column } from '../../lib/output'
+import type { CommandDefinition } from '../../program/index'
 
 import { withAdminKernelClient } from '../../kernel/client'
 import {

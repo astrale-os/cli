@@ -2,7 +2,7 @@
 import { type Command, CommanderError } from 'commander'
 
 import { renderCommanderError } from '../src/lib/command-dx'
-import { buildProgram } from '../src/program'
+import { buildProgram } from '../src/program/index'
 import { beginInvocation } from '../src/telemetry/recorder'
 import { maybeTriggerAnalysis } from '../src/telemetry/trigger'
 

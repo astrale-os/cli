@@ -1,7 +1,7 @@
 import { K } from '@astrale-os/kernel-core'
 
-import type { CommandDefinition } from '../command'
 import type { CallCommandOpts, ClientContext, SelfExpansionMeta } from '../kernel'
+import type { CommandDefinition } from '../program/index'
 
 import {
   bindGraph,

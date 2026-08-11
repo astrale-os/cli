@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'

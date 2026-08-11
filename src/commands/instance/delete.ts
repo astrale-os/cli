@@ -1,5 +1,5 @@
-import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
+import type { CommandDefinition } from '../../program/index'
 
 import { withAdminKernelClient } from '../../kernel/client'
 import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'

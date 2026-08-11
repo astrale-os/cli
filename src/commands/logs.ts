@@ -10,9 +10,9 @@ import type { JournalEntry, JournalFilter } from '@astrale-os/kernel-core'
  */
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../command'
 import type { ClientContext, KernelCommandOpts } from '../kernel'
 import type { Column, ListProjection } from '../lib/output'
+import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand, withKernelClient } from '../kernel'
 import { fatal, withSpinner } from '../lib/log'

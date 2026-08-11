@@ -1,8 +1,8 @@
 import { getInputSchema, K } from '@astrale-os/kernel-core'
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../command'
 import type { GetResultWire, KernelCommandOpts, QueryASTInput, SelfExpansionMeta } from '../kernel'
+import type { CommandDefinition } from '../program/index'
 
 import { bindGraph, expandSelfInPath, runKernelCommand, withSelfHint } from '../kernel'
 import { log } from '../lib/log'

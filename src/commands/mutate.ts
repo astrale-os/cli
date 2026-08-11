@@ -4,9 +4,9 @@ import { patchDataSchema } from '@astrale-os/kernel-core'
 import chalk from 'chalk'
 import { readFile } from 'node:fs/promises'
 
-import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 import type { MutationResultWire } from '../kernel'
+import type { CommandDefinition } from '../program/index'
 
 import { bindGraph, runKernelCommand } from '../kernel'
 import { log } from '../lib/log'

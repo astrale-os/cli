@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { withAdminKernelClient } from '../../kernel/client'
 import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'

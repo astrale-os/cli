@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
-import type { CommandDefinition } from '../command'
+import type { CommandDefinition } from '../program/index'
 
 import { fatal, log } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'

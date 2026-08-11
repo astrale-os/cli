@@ -1,4 +1,4 @@
-import type { CommandOption } from '../command'
+import type { CommandOption } from '../program/index'
 
 /**
  * Flags consumed by `withKernelClient` (and therefore valid on any command

@@ -2,6 +2,8 @@ import { type Command, Option } from 'commander'
 
 import type { CommandDefinition, CommandGroup } from './command'
 
+type CommanderAction = Parameters<Command['action']>[0]
+
 /**
  * Register a single command on a Commander program or subcommand.
  */
@@ -36,7 +38,9 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
     }
   }
 
-  cmd.action(def.action)
+  // CommandDefinition keeps each callback tuple opaque; Commander materializes
+  // that tuple only after this definition has registered its arguments/options.
+  cmd.action(def.action as CommanderAction)
 
   if (def.afterHelpText) cmd.addHelpText('after', def.afterHelpText)
 }

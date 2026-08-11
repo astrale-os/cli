@@ -1,8 +1,8 @@
 import { ClassPath } from '@astrale-os/kernel-core/domain'
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../command'
 import type { GraphNode, KernelCommandOpts } from '../kernel'
+import type { CommandDefinition } from '../program/index'
 
 import {
   bindGraph,

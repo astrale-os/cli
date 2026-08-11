@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import { existsSync } from 'node:fs'
 
-import type { CommandDefinition } from '../command'
+import type { CommandDefinition } from '../program/index'
 
 import {
   ab,

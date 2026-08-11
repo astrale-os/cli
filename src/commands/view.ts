@@ -4,9 +4,9 @@ import { closeSync, existsSync, openSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import type { CommandDefinition } from '../command'
 import type { KernelCommandOpts } from '../kernel'
 import type { ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
+import type { CommandDefinition } from '../program/index'
 
 import { AstraleError } from '../errors'
 import { bindGraph, expandSelfInPath, resolveKernelTarget, withKernelClient } from '../kernel'

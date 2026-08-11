@@ -1,8 +1,8 @@
 import { K } from '@astrale-os/kernel-core'
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
 import type { KernelCommandOpts } from '../../kernel'
+import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { runKernelCommand } from '../../kernel'

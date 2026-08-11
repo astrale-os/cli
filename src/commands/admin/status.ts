@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { resolveAdminTargetFromStore } from '../../lib/admin-target'
 import { readConfig } from '../../lib/config'

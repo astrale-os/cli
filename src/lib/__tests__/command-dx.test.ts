@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { CommanderError } from 'commander'
 
-import { buildProgram } from '../../program'
+import { buildProgram } from '../../program/index'
 import { collectCommandCatalog, renderCommanderError } from '../command-dx'
 
 // `renderCommanderError` styles commands with `chalk.bold`, which emits ANSI
