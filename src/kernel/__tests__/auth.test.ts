@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import type { Identity } from '../../identity/index'
 import type { AstraleConfig } from '../../lib/config'
-import type { Identity } from '../../lib/identity'
 
 import { resolveKeyIdentityAuthOptions } from '../auth'
 

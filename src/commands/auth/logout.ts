@@ -1,6 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { getDefault, readIdentities } from '../../lib/identity'
+import { getDefault, readIdentities } from '../../identity/index'
 import { deleteIdpSession, listIdpSessions } from '../../lib/idp'
 import { log } from '../../lib/log'
 import { output, RAW_OUTPUT_OPTIONS } from '../../lib/output'

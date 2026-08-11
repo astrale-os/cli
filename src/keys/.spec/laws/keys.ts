@@ -19,3 +19,13 @@ export const CLI_KEYS_LEGACY_READABLE = defineLaw({
     { file: '__tests__/algorithm.test.ts', id: 'TEST-CLI-KEYS-INFERS-LEGACY-ALGORITHM' },
   ],
 })
+
+export const CLI_KEYS_PAIR_ADMITTED = defineLaw({
+  id: 'CLI-KEYS-PAIR-ADMITTED',
+  statement:
+    'A subject path remains inside the selected key directory, and imported or persisted material is returned only after supported-algorithm and private/public correspondence proof.',
+  tests: [
+    { file: '__tests__/keys.test.ts', id: 'TEST-CLI-KEYS-PAIR-ADMISSION' },
+    { file: '__tests__/keys.test.ts', id: 'TEST-CLI-KEYS-PATH-CONFINED' },
+  ],
+})

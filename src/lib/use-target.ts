@@ -1,4 +1,4 @@
-import type { IdentityStore } from './identity'
+import type { IdentityStore } from '../identity/index'
 import type { InstanceStore } from './instance'
 
 import { resolveInstanceKey } from './instance'

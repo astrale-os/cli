@@ -32,4 +32,8 @@ describe('inferAlg', () => {
   test('treats empty-string alg as missing', () => {
     expect(inferAlg({ alg: '', kty: 'EC', crv: 'P-256' })).toBe('ES256')
   })
+
+  test('rejects unsupported explicit algorithms', () => {
+    expect(() => inferAlg({ alg: 'HS256', kty: 'oct' })).toThrow(/unsupported signing algorithm/)
+  })
 })

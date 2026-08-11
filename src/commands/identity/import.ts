@@ -1,29 +1,14 @@
-import { compactDecrypt, importJWK } from 'jose'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { readFile } from 'node:fs/promises'
 
-import type { RegistryMode } from '../../lib/validation'
 import type { CommandDefinition } from '../../program/index'
 
-import { keypairPaths } from '../../keys/index'
-import { createIdentity, upsertKeyIdentity } from '../../lib/identity'
+import {
+  decodeIdentityExport,
+  importIdentity,
+  isEncryptedIdentityExport,
+} from '../../identity/index'
 import { fatal, log } from '../../lib/log'
 import { readPassphrase } from '../../lib/prompt'
-
-type ExportEnvelope = {
-  version?: number
-  subject: string
-  mode?: RegistryMode
-  kid?: string
-  issuer?: string
-  privateJwk: Record<string, unknown>
-  publicJwk: Record<string, unknown>
-}
-
-function looksEncrypted(raw: string): boolean {
-  // JOSE compact JWE is 5 base64 segments separated by `.`.
-  return raw.trim().split('.').length === 5 && !raw.trim().startsWith('{')
-}
 
 export default {
   name: 'import',
@@ -46,54 +31,20 @@ export default {
   action: async (path: string, opts: { name?: string; issuer?: string; replace?: boolean }) => {
     try {
       const raw = await readFile(path, 'utf-8')
+      const passphrase = isEncryptedIdentityExport(raw)
+        ? await readPassphrase('Passphrase: ')
+        : undefined
+      const envelope = await decodeIdentityExport(raw, passphrase)
+      const name = opts.name ?? envelope.subject
+      const identity = await importIdentity(envelope, {
+        name,
+        issuer: opts.issuer,
+        replace: opts.replace,
+      })
 
-      let envelopeJson: string
-      if (looksEncrypted(raw)) {
-        const passphrase = await readPassphrase('Passphrase: ')
-        const { plaintext } = await compactDecrypt(
-          raw.trim(),
-          new TextEncoder().encode(passphrase),
-          {
-            keyManagementAlgorithms: ['PBES2-HS256+A128KW'],
-          },
-        )
-        envelopeJson = new TextDecoder().decode(plaintext)
-      } else {
-        envelopeJson = raw
-      }
-
-      const env = JSON.parse(envelopeJson) as ExportEnvelope
-      if (!env?.subject || !env?.privateJwk || !env?.publicJwk) {
-        fatal(new Error('Invalid envelope: missing subject / privateJwk / publicJwk'))
-      }
-
-      // Validate the keypair parses before touching the registry.
-      await importJWK(env.privateJwk as never, 'ES256')
-
-      const name = opts.name ?? env.subject
-      // Create registry entry (without regenerating keys — we'll write the imported ones).
-      if (opts.replace) {
-        await upsertKeyIdentity(name, {
-          subject: env.subject,
-          mode: env.mode ?? 'local',
-          issuer: opts.issuer ?? env.issuer,
-          kid: env.kid,
-        })
-      } else {
-        await createIdentity(name, {
-          subject: env.subject,
-          mode: env.mode ?? 'local',
-          issuer: opts.issuer ?? env.issuer,
-          kid: env.kid,
-          skipKeygen: true,
-        })
-      }
-      const { privatePath, publicPath } = keypairPaths(env.subject)
-      await mkdir(dirname(privatePath), { recursive: true })
-      await writeFile(privatePath, JSON.stringify(env.privateJwk, null, 2), { mode: 0o600 })
-      await writeFile(publicPath, JSON.stringify(env.publicJwk, null, 2), { mode: 0o600 })
-
-      log.success(`Imported identity "${name}" (subject=${env.subject}, kid=${env.kid ?? '?'})`)
+      log.success(
+        `Imported identity "${name}" (subject=${identity.subject}, kid=${identity.kid ?? '?'})`,
+      )
     } catch (e) {
       fatal(e)
     }

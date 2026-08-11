@@ -1,8 +1,8 @@
 import type { AstraleConfig } from '../lib/config'
 
 import { AuthError } from '../errors'
+import { getDefault, getIdentity, type Identity } from '../identity/index'
 import { signAs } from '../keys/index'
-import { getDefault, getIdentity, type Identity } from '../lib/identity'
 import {
   accessTokenForAudience,
   classifyRefreshFailure,

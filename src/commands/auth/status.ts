@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import type { ListOpts, ListProjection } from '../../lib/output'
 import type { CommandDefinition } from '../../program/index'
 
-import { readIdentities } from '../../lib/identity'
+import { readIdentities } from '../../identity/index'
 import { isSessionExpired, listIdpSessions } from '../../lib/idp'
 import { log } from '../../lib/log'
 import { isMachine, presentList, RAW_OUTPUT_OPTIONS } from '../../lib/output'

@@ -13,7 +13,7 @@
  */
 import { decodeJwt } from 'jose'
 
-import type { Identity } from './identity'
+import type { Identity } from '../identity/index'
 
 /** Inputs to `resolveSelfNodeId`. All local — no kernel round-trip. */
 export type SelfResolverContext = {

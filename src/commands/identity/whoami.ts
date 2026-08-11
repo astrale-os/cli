@@ -2,7 +2,7 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program/index'
 
-import { getDefault } from '../../lib/identity'
+import { getDefault } from '../../identity/index'
 import { fatal } from '../../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 

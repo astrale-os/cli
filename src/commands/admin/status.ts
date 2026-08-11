@@ -2,9 +2,9 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program/index'
 
+import { getDefault } from '../../identity/index'
 import { resolveAdminTargetFromStore } from '../../lib/admin-target'
 import { readConfig } from '../../lib/config'
-import { getDefault } from '../../lib/identity'
 import { readInstances } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'

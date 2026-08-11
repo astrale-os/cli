@@ -1,4 +1,4 @@
-import { upsertIdpIdentity } from './identity'
+import { upsertIdpIdentity } from '../identity/index'
 import {
   decodeTokenClaims,
   exchangeAuthorizationCode,

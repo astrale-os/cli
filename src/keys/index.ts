@@ -1,13 +1,14 @@
 export {
+  acceptKeypair,
   fileExists,
   generateEd25519Jwk,
+  importKeypair,
   keypairPaths,
   listIdentityKeys,
-  loadAuth,
-  persistAuth,
   persistKeypair,
+  readKeypair,
   removeKeypair,
-  resolveAuth,
-  signAs,
-} from './keys'
-export type { AuthBinding, KeypairPaths } from './keys'
+} from './pair'
+export { loadAuth, persistAuth, resolveAuth, signAs } from './credential'
+export type { Keypair, KeypairInput, KeypairPaths } from './pair'
+export type { AuthBinding } from './credential'

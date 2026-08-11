@@ -1,9 +1,9 @@
 import type { KernelCommandOpts } from './types'
 
+import { getDefault, getIdentity, setRegistration } from '../identity/index'
 import { fileExists, keypairPaths } from '../keys/index'
 /** CLI bridge for @self resolution and stale-registration error hints. */
 import { readConfig } from '../lib/config'
-import { getDefault, getIdentity, setRegistration } from '../lib/identity'
 import { decodeTokenClaims, readIdpSession } from '../lib/idp'
 import { resolveInstanceTarget } from '../lib/instance-target'
 import {

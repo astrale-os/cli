@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { CompactEncrypt, compactDecrypt, decodeProtectedHeader } from 'jose'
+import { decodeProtectedHeader } from 'jose'
 import { access, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,12 +7,14 @@ import { join } from 'node:path'
 import { IdentityKeyMissingError } from '../../errors'
 import {
   generateEd25519Jwk,
+  importKeypair,
   keypairPaths,
   listIdentityKeys,
   persistKeypair,
+  readKeypair,
   removeKeypair,
   signAs,
-} from '../keys'
+} from '../index'
 
 describe('DESIGN — per-identity keys', () => {
   let tmp = ''
@@ -36,6 +38,13 @@ describe('DESIGN — per-identity keys', () => {
     const p = keypairPaths('alice', tmp)
     expect(p.privatePath.endsWith('alice.private.jwk')).toBe(true)
     expect(p.publicPath.endsWith('alice.public.jwk')).toBe(true)
+  })
+
+  /** @evidence TEST-CLI-KEYS-PATH-CONFINED */
+  test('keypairPaths rejects subjects that escape the selected key directory', () => {
+    expect(() => keypairPaths('../alice', tmp)).toThrow(/cannot name a key file/)
+    expect(() => keypairPaths('/alice', tmp)).toThrow(/cannot name a key file/)
+    expect(() => keypairPaths('', tmp)).toThrow(/cannot name a key file/)
   })
 
   /** @evidence TEST-CLI-KEYS-PRIVATE-MODE */
@@ -66,6 +75,38 @@ describe('DESIGN — per-identity keys', () => {
     expect(decodeProtectedHeader(jwt).alg).toBe('EdDSA')
   })
 
+  /** @evidence TEST-CLI-KEYS-PAIR-ADMISSION */
+  test('import and read prove one matching supported keypair before publication', async () => {
+    const alice = await persistKeypair('alice', { keysDir: join(tmp, 'alice-source') })
+    const bob = await persistKeypair('bob', { keysDir: join(tmp, 'bob-source') })
+    const importedDir = join(tmp, 'imported')
+
+    await expect(
+      importKeypair(
+        'alice',
+        { privateJwk: alice.privateJwk, publicJwk: { ...bob.publicJwk, kid: alice.kid } },
+        importedDir,
+      ),
+    ).rejects.toThrow(/do not form a valid matching pair/)
+    await expect(access(keypairPaths('alice', importedDir).privatePath)).rejects.toThrow()
+
+    const imported = await importKeypair(
+      'alice',
+      { privateJwk: alice.privateJwk, publicJwk: alice.publicJwk },
+      importedDir,
+    )
+    expect(imported.kid).toBe(alice.kid)
+    expect((await readKeypair('alice', importedDir)).publicJwk).toEqual(alice.publicJwk)
+
+    await expect(
+      importKeypair(
+        'unsafe-public',
+        { privateJwk: alice.privateJwk, publicJwk: alice.privateJwk },
+        importedDir,
+      ),
+    ).rejects.toThrow(/must not contain private key material/)
+  })
+
   /** @evidence TEST-CLI-KEYS-NO-MANAGER-FALLBACK */
   test('signAs(alice) never falls back to the manager key', async () => {
     await persistKeypair('manager', { keysDir: tmp })
@@ -90,34 +131,5 @@ describe('DESIGN — per-identity keys', () => {
     await persistKeypair('bob', { keysDir: tmp })
     const names = await listIdentityKeys(tmp)
     expect(names.sort()).toEqual(['alice', 'bob', 'manager'])
-  })
-
-  test('encrypted export envelope round-trip (JWE PBES2)', async () => {
-    await persistKeypair('alice', { keysDir: tmp })
-    const plain = JSON.stringify({ subject: 'alice', secret: 'x' })
-    const passphrase = 'correct-horse-battery'
-    const enc = await new CompactEncrypt(new TextEncoder().encode(plain))
-      .setProtectedHeader({ alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' })
-      .encrypt(new TextEncoder().encode(passphrase))
-
-    expect(enc.split('.').length).toBe(5)
-
-    const { plaintext } = await compactDecrypt(enc, new TextEncoder().encode(passphrase), {
-      keyManagementAlgorithms: ['PBES2-HS256+A128KW'],
-    })
-    expect(new TextDecoder().decode(plaintext)).toBe(plain)
-  })
-
-  test('encrypted export fails with wrong passphrase', async () => {
-    const plain = JSON.stringify({ subject: 'alice' })
-    const enc = await new CompactEncrypt(new TextEncoder().encode(plain))
-      .setProtectedHeader({ alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' })
-      .encrypt(new TextEncoder().encode('correct'))
-
-    await expect(
-      compactDecrypt(enc, new TextEncoder().encode('wrong'), {
-        keyManagementAlgorithms: ['PBES2-HS256+A128KW'],
-      }),
-    ).rejects.toThrow()
   })
 })

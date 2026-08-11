@@ -2,9 +2,9 @@ import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
+import { getDefault, setDefault } from '../../identity/index'
 import { listOwnedInstances } from '../../kernel/client'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
-import { getDefault, setDefault } from '../../lib/identity'
 import {
   getActive,
   readInstances,

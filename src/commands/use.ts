@@ -1,7 +1,6 @@
 import type { CommandDefinition } from '../program/index'
 
-import { setDefault } from '../lib/identity'
-import { readIdentities } from '../lib/identity'
+import { readIdentities, setDefault } from '../identity/index'
 import { readInstances } from '../lib/instance'
 import { fatal, log } from '../lib/log'
 import { resolveUseTarget } from '../lib/use-target'

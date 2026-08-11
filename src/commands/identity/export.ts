@@ -1,10 +1,6 @@
-import { CompactEncrypt } from 'jose'
-import { chmod, readFile, writeFile } from 'node:fs/promises'
-
 import type { CommandDefinition } from '../../program/index'
 
-import { keypairPaths } from '../../keys/index'
-import { getIdentity } from '../../lib/identity'
+import { encodeIdentityExport, exportIdentity, writeIdentityExport } from '../../identity/index'
 import { fatal, log } from '../../lib/log'
 import { readPassphrase } from '../../lib/prompt'
 
@@ -25,33 +21,11 @@ export default {
   ],
   action: async (name: string, path: string, opts: { encrypt?: boolean }) => {
     try {
-      const identity = await getIdentity(name)
-      const { privatePath, publicPath } = keypairPaths(identity.subject)
-      const [privateJwk, publicJwk] = await Promise.all([
-        readFile(privatePath, 'utf-8').then(JSON.parse),
-        readFile(publicPath, 'utf-8').then(JSON.parse),
-      ])
-      const envelope = {
-        version: 1,
-        subject: identity.subject,
-        mode: identity.mode ?? 'local',
-        kid: identity.kid,
-        issuer: identity.issuer,
-        privateJwk,
-        publicJwk,
-      }
-      const plain = JSON.stringify(envelope, null, 2)
-
-      if (opts.encrypt) {
-        const passphrase = await readPassphrase('Passphrase (min 8 chars): ', { minLength: 8 })
-        const enc = await new CompactEncrypt(new TextEncoder().encode(plain))
-          .setProtectedHeader({ alg: 'PBES2-HS256+A128KW', enc: 'A256GCM' })
-          .encrypt(new TextEncoder().encode(passphrase))
-        await writeFile(path, enc)
-      } else {
-        await writeFile(path, plain)
-      }
-      await chmod(path, 0o600)
+      const envelope = await exportIdentity(name)
+      const passphrase = opts.encrypt
+        ? await readPassphrase('Passphrase (min 8 chars): ', { minLength: 8 })
+        : undefined
+      await writeIdentityExport(path, await encodeIdentityExport(envelope, passphrase))
 
       log.success(`Exported identity "${name}" → ${path}${opts.encrypt ? ' (encrypted)' : ''}`)
       if (!opts.encrypt) {

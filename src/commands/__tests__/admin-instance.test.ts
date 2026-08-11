@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 
-import type { IdentityStore } from '../../lib/identity'
+import type { IdentityStore } from '../../identity/index'
 
 import { AuthError } from '../../errors'
 import {
