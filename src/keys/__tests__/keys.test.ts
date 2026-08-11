@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { CompactEncrypt, compactDecrypt, decodeProtectedHeader } from 'jose'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,19 +16,16 @@ import {
 
 describe('DESIGN — per-identity keys', () => {
   let tmp = ''
-  const savedStrict = process.env.ASTRALE_STRICT_IDENTITIES
 
   beforeEach(async () => {
     tmp = await mkdtemp(join(tmpdir(), 'astrale-keys-test-'))
-    delete process.env.ASTRALE_STRICT_IDENTITIES
   })
 
   afterEach(async () => {
-    if (savedStrict) process.env.ASTRALE_STRICT_IDENTITIES = savedStrict
-    else delete process.env.ASTRALE_STRICT_IDENTITIES
     await rm(tmp, { recursive: true, force: true })
   })
 
+  /** @evidence TEST-CLI-KEYS-LEGACY-FILENAMES */
   test('keypairPaths routes manager to legacy filenames', () => {
     const p = keypairPaths('manager', tmp)
     expect(p.privatePath.endsWith('manager.private.jwk')).toBe(true)
@@ -41,12 +38,15 @@ describe('DESIGN — per-identity keys', () => {
     expect(p.publicPath.endsWith('alice.public.jwk')).toBe(true)
   })
 
-  test('persistKeypair writes both files with kid', async () => {
+  /** @evidence TEST-CLI-KEYS-PRIVATE-MODE */
+  test('persistKeypair writes both files with kid and private mode', async () => {
     const result = await persistKeypair('alice', { keysDir: tmp })
     expect(result.kid).toMatch(/^alice-key-/)
     const { privatePath, publicPath } = keypairPaths('alice', tmp)
     await access(privatePath)
     await access(publicPath)
+    expect((await stat(privatePath)).mode & 0o777).toBe(0o600)
+    expect((await stat(publicPath)).mode & 0o777).toBe(0o600)
   })
 
   test('signAs(alice) works when alice has her own key', async () => {
@@ -66,15 +66,9 @@ describe('DESIGN — per-identity keys', () => {
     expect(decodeProtectedHeader(jwt).alg).toBe('EdDSA')
   })
 
-  test('signAs(alice) falls back to manager key with warning', async () => {
+  /** @evidence TEST-CLI-KEYS-NO-MANAGER-FALLBACK */
+  test('signAs(alice) never falls back to the manager key', async () => {
     await persistKeypair('manager', { keysDir: tmp })
-    const jwt = await signAs('alice', tmp)
-    expect(jwt.split('.').length).toBe(3)
-  })
-
-  test('signAs(alice) errors when strict mode and no alice key', async () => {
-    await persistKeypair('manager', { keysDir: tmp })
-    process.env.ASTRALE_STRICT_IDENTITIES = '1'
     await expect(signAs('alice', tmp)).rejects.toThrow(IdentityKeyMissingError)
   })
 

@@ -29,7 +29,7 @@
   ],
   "type": "module",
   "exports": {
-    "./keys": "./src/lib/keys.ts",
+    "./keys": "./src/keys/index.ts",
     "./paths": "./src/paths/index.ts"
   },
   "publishConfig": {

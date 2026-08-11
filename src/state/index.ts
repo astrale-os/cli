@@ -1,5 +1,15 @@
 export { atomicWrite, withFileLock } from './files'
 export type { FileLockOptions } from './files'
+export { IDENTITY_STORE_VERSION, readIdentityStore, updateIdentityStore } from './identities'
+export type {
+  Identity,
+  IdentityMode,
+  IdentitySource,
+  IdentityStore,
+  IdentityStoreOptions,
+  IdentityUpdate,
+  Registration,
+} from './identities'
 export {
   ASTRALE_HOME,
   CONFIG_PATH,

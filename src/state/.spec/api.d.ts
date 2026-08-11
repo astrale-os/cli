@@ -34,6 +34,56 @@ export const INSTANCES_PATH: string
 export const IDPS_PATH: string
 export const IDP_SESSIONS_DIR: string
 
+export type IdentitySource = 'key' | 'idp'
+export type IdentityMode = 'local' | 'remote'
+
+export interface Registration {
+  readonly iss: string
+  readonly sub: string
+  readonly registeredAt: string
+}
+
+export interface Identity {
+  readonly subject: string
+  readonly createdAt: string
+  readonly source?: IdentitySource
+  readonly mode?: IdentityMode
+  readonly kid?: string
+  readonly idp?: string
+  readonly issuer?: string
+  readonly audience?: string
+  readonly claims?: Readonly<Record<string, unknown>>
+  readonly registrations?: Readonly<Record<string, Registration>>
+}
+
+/** Decoded semantic identity state; persistence-version metadata is not exposed to consumers. */
+export interface IdentityStore {
+  readonly default: string
+  readonly identities: Readonly<Record<string, Identity>>
+}
+
+export const IDENTITY_STORE_VERSION: 1
+
+export interface IdentityStoreOptions {
+  readonly path?: string
+  readonly now?: () => Date
+  readonly lock?: FileLockOptions
+}
+
+export interface IdentityUpdate<Value> {
+  readonly next: IdentityStore
+  readonly value: Value
+}
+
+/** Decode the missing, legacy, or current identity file without writing or migrating it. */
+export function readIdentityStore(options?: IdentityStoreOptions): Promise<IdentityStore>
+
+/** Reread and commit one identity transition under the file's cross-process lock. */
+export function updateIdentityStore<Value>(
+  transition: (current: IdentityStore) => IdentityUpdate<Value> | Promise<IdentityUpdate<Value>>,
+  options?: IdentityStoreOptions,
+): Promise<Value>
+
 /** Atomically replace one private CLI state file through a same-directory temporary file. */
 export function atomicWrite(path: string, data: string): Promise<void>
 

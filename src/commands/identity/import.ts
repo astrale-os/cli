@@ -5,8 +5,8 @@ import { dirname } from 'node:path'
 import type { RegistryMode } from '../../lib/validation'
 import type { CommandDefinition } from '../../program/index'
 
+import { keypairPaths } from '../../keys/index'
 import { createIdentity, upsertKeyIdentity } from '../../lib/identity'
-import { keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { readPassphrase } from '../../lib/prompt'
 

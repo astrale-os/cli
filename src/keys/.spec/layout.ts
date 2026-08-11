@@ -1,6 +1,6 @@
 import { defineLayout } from '@astrale-os/spec/authoring'
 
 export default defineLayout({
-  entries: ['__tests__/', 'files.ts', 'identities.ts', 'index.ts', 'paths.ts'],
+  entries: ['__tests__/', 'algorithm.ts', 'index.ts', 'keys.ts'],
   exact: true,
 })

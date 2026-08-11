@@ -1,6 +1,7 @@
 import type { AstraleConfig } from '../lib/config'
 
 import { AuthError } from '../errors'
+import { signAs } from '../keys/index'
 import { getDefault, getIdentity, type Identity } from '../lib/identity'
 import {
   accessTokenForAudience,
@@ -12,7 +13,6 @@ import {
   IdpSessionMissingError,
   IdpSessionNoRefreshTokenError,
 } from '../lib/idp-session'
-import { signAs } from '../lib/keys'
 import { KEYS_DIR } from '../state/index'
 
 export type KeyIdentityAuthOptions = {

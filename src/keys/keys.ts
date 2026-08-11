@@ -5,8 +5,7 @@ import { join } from 'node:path'
 
 import { IdentityKeyMissingError } from '../errors'
 import { atomicWrite, KEYS_DIR } from '../state/index'
-import { inferAlg } from './domain-identity'
-import { log } from './log'
+import { inferAlg } from './algorithm'
 
 const LEGACY_MANAGER_PRIVATE = 'manager.private.jwk'
 const LEGACY_MANAGER_PUBLIC = 'manager.public.jwk'
@@ -16,19 +15,19 @@ const LEGACY_MANAGER_PUBLIC = 'manager.public.jwk'
 const DEFAULT_MANAGER_ISSUER = 'http://localhost:4400/host'
 
 type AuthOptions = {
-  issuer?: string
-  subject?: string
-  kid?: string
+  readonly issuer?: string
+  readonly subject?: string
+  readonly kid?: string
 }
 
 export type AuthBinding = {
-  credential: string
-  publicKey: { jwk: JWK }
+  readonly credential: string
+  readonly publicKey: { readonly jwk: JWK }
 }
 
 export type KeypairPaths = {
-  privatePath: string
-  publicPath: string
+  readonly privatePath: string
+  readonly publicPath: string
 }
 
 /**
@@ -52,8 +51,9 @@ export async function fileExists(path: string): Promise<boolean> {
   try {
     await access(path)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') return false
+    throw error
   }
 }
 
@@ -68,8 +68,9 @@ export async function listIdentityKeys(keysDir: string = KEYS_DIR): Promise<stri
       else if (entry.endsWith('.private.jwk')) names.add(entry.replace(/\.private\.jwk$/, ''))
     }
     return Array.from(names).sort()
-  } catch {
-    return []
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') return []
+    throw error
   }
 }
 
@@ -84,7 +85,7 @@ export async function listIdentityKeys(keysDir: string = KEYS_DIR): Promise<stri
  */
 export async function generateEd25519Jwk(
   kid: string,
-): Promise<{ privateJwk: JWK; publicJwk: JWK }> {
+): Promise<{ readonly privateJwk: JWK; readonly publicJwk: JWK }> {
   const { publicKey, privateKey } = await generateKeyPair('EdDSA', {
     crv: 'Ed25519',
     extractable: true,
@@ -104,8 +105,8 @@ export async function generateEd25519Jwk(
  */
 export async function persistKeypair(
   subject: string,
-  opts?: { keysDir?: string; kid?: string },
-): Promise<{ publicJwk: JWK; privateJwk: JWK; kid: string }> {
+  opts?: { readonly keysDir?: string; readonly kid?: string },
+): Promise<{ readonly publicJwk: JWK; readonly privateJwk: JWK; readonly kid: string }> {
   const keysDir = opts?.keysDir ?? KEYS_DIR
   const { privatePath, publicPath } = keypairPaths(subject, keysDir)
   await mkdir(keysDir, { recursive: true })
@@ -131,15 +132,11 @@ export async function removeKeypair(subject: string, keysDir: string = KEYS_DIR)
   for (const p of [privatePath, publicPath]) {
     try {
       await unlink(p)
-    } catch {
-      /* ignore */
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'ENOENT') throw error
     }
   }
 }
-
-// Legacy signal: warn once per session when an unknown subject falls back
-// to the manager key.
-const warnedFallback = new Set<string>()
 
 async function loadSigningMaterial(
   subject: string,
@@ -156,32 +153,7 @@ async function loadSigningMaterial(
       kid: (privateJwk.kid as string | undefined) ?? `${subject}-key`,
     }
   }
-
-  if (process.env.ASTRALE_STRICT_IDENTITIES === '1') {
-    throw new IdentityKeyMissingError(subject)
-  }
-
-  // Manager always uses its own file. Any other subject falls through
-  // to the manager key with a one-shot warning so the migration window
-  // stays visible without being noisy.
-  if (subject === 'manager') throw new IdentityKeyMissingError(subject)
-
-  const { privatePath: mgrPrivate, publicPath: mgrPublic } = keypairPaths('manager', keysDir)
-  if (!(await fileExists(mgrPrivate))) throw new IdentityKeyMissingError(subject)
-
-  if (!warnedFallback.has(subject)) {
-    log.warn(
-      `Legacy shared-key mode for "${subject}" — run \`astrale identity create ${subject}\` to generate a dedicated key.`,
-    )
-    warnedFallback.add(subject)
-  }
-  const privateJwk = JSON.parse(await readFile(mgrPrivate, 'utf-8')) as JWK
-  const publicJwk = JSON.parse(await readFile(mgrPublic, 'utf-8')) as JWK
-  return {
-    privateJwk,
-    publicJwk,
-    kid: (privateJwk.kid as string | undefined) ?? 'manager-key',
-  }
+  throw new IdentityKeyMissingError(subject)
 }
 
 /**
@@ -270,14 +242,12 @@ export async function resolveAuth(
 }
 
 /**
- * Sign a JWT as a specific subject. Uses the subject's own keypair when
- * present; falls back to the manager key (with a one-shot warning) for
- * unknown subjects until `ASTRALE_STRICT_IDENTITIES=1` is set.
+ * Sign a JWT as a specific subject using only that subject's keypair.
  */
 export async function signAs(
   subject: string,
   keysDir: string = KEYS_DIR,
-  opts?: { issuer?: string; audience?: string; subject?: string },
+  opts?: { readonly issuer?: string; readonly audience?: string; readonly subject?: string },
 ): Promise<string> {
   const issuer = opts?.issuer ?? DEFAULT_MANAGER_ISSUER
   const audience = opts?.audience ?? issuer

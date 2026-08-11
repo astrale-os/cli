@@ -27,3 +27,23 @@ export const CLI_STATE_LOCK_BOUNDED = defineLaw({
     { file: '__tests__/files.test.ts', id: 'TEST-CLI-STATE-LOCK-RELEASES-AND-BOUNDS' },
   ],
 })
+
+export const CLI_STATE_IDENTITY_READ_SAFE = defineLaw({
+  id: 'CLI-STATE-IDENTITY-READ-SAFE',
+  statement:
+    'Missing, legacy, and current identity files decode without a write; malformed or unsupported-version files fail without replacement.',
+  tests: [
+    { file: '__tests__/identities.test.ts', id: 'TEST-CLI-STATE-IDENTITY-READ-SAFE' },
+    { file: '__tests__/identities.test.ts', id: 'TEST-CLI-STATE-IDENTITY-FAILS-CLOSED' },
+  ],
+})
+
+export const CLI_STATE_IDENTITY_MIGRATION = defineLaw({
+  id: 'CLI-STATE-IDENTITY-MIGRATION',
+  statement:
+    'The first successful mutation of legacy identity state preserves its exact bytes once before publishing V1; concurrent mutations reread and retain every committed transition.',
+  tests: [
+    { file: '__tests__/identities.test.ts', id: 'TEST-CLI-STATE-IDENTITY-MIGRATES' },
+    { file: '__tests__/identities.test.ts', id: 'TEST-CLI-STATE-IDENTITY-CONCURRENT' },
+  ],
+})

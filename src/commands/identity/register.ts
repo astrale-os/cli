@@ -6,9 +6,9 @@ import type { CommandDefinition } from '../../program/index'
 
 import { bindGraph, runKernelCommand } from '../../kernel'
 import { KERNEL_PASSTHROUGH_OPTIONS } from '../../kernel/options'
+import { fileExists, keypairPaths } from '../../keys/index'
 import { getIdentity, setRegistration } from '../../lib/identity'
 import { getActive } from '../../lib/instance'
-import { fileExists, keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 

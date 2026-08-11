@@ -3,8 +3,8 @@ import { chmod, readFile, writeFile } from 'node:fs/promises'
 
 import type { CommandDefinition } from '../../program/index'
 
+import { keypairPaths } from '../../keys/index'
 import { getIdentity } from '../../lib/identity'
-import { keypairPaths } from '../../lib/keys'
 import { fatal, log } from '../../lib/log'
 import { readPassphrase } from '../../lib/prompt'
 
