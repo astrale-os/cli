@@ -5,8 +5,8 @@ import { z } from 'zod'
 import type { AstraleConfig } from './config'
 
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
+import { INSTANCES_PATH } from '../state/index'
 import { log } from './log'
-import { INSTANCES_PATH } from './paths'
 import {
   RESERVED_SLUGS,
   RegistryModeSchema,

@@ -4,10 +4,9 @@ import { readFile, mkdir, access, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { IdentityKeyMissingError } from '../errors'
+import { atomicWrite, KEYS_DIR } from '../state/index'
 import { inferAlg } from './domain-identity'
-import { atomicWrite } from './fs-atomic'
 import { log } from './log'
-import { KEYS_DIR } from './paths'
 
 const LEGACY_MANAGER_PRIVATE = 'manager.private.jwk'
 const LEGACY_MANAGER_PUBLIC = 'manager.public.jwk'

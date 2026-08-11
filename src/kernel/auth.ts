@@ -13,7 +13,7 @@ import {
   IdpSessionNoRefreshTokenError,
 } from '../lib/idp-session'
 import { signAs } from '../lib/keys'
-import { KEYS_DIR } from '../lib/paths'
+import { KEYS_DIR } from '../state/index'
 
 export type KeyIdentityAuthOptions = {
   issuer: string

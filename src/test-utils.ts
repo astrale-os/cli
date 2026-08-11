@@ -2,7 +2,7 @@ import { mkdtemp, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createPaths, type Paths } from './lib/env'
+import { createPaths, type Paths } from './state/index'
 
 export type TestEnv = {
   paths: Paths

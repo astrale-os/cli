@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { paths } from '../env'
+import { paths } from '../../state/index'
 
 /**
  * View-session records: one detached server process per open view, tracked as

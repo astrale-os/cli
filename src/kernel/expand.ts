@@ -6,7 +6,6 @@ import { getDefault, getIdentity, setRegistration } from '../lib/identity'
 import { decodeTokenClaims, readIdpSession } from '../lib/idp'
 import { resolveInstanceTarget } from '../lib/instance-target'
 import { fileExists, keypairPaths } from '../lib/keys'
-import { KEYS_DIR } from '../lib/paths'
 import {
   containsSelfRef,
   expandSelfReferences,
@@ -15,6 +14,7 @@ import {
   type SelfResolverContext,
   type SelfResolution,
 } from '../lib/self'
+import { KEYS_DIR } from '../state/index'
 import { lookupImplicitOwnedInstance, withKernelClient } from './client'
 
 /** Metadata attached to errors so the NotFoundError path can hint at stale `@self` expansions. */

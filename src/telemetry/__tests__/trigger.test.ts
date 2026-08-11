@@ -16,7 +16,7 @@ beforeAll(async () => {
   // leaves a telemetry-disabled config.json in the shared home) — own it here.
   delete process.env.ASTRALE_TELEMETRY
   delete process.env.ASTRALE_TELEMETRY_NO_TRIGGER
-  const { CONFIG_PATH } = await import('../../lib/paths')
+  const { CONFIG_PATH } = await import('../../state/index')
   rmSync(CONFIG_PATH, { force: true })
 })
 

@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs'
 
-import { createPaths } from '../lib/env'
+import { createPaths } from '../state/index'
 
 const OFF_VALUES = new Set(['0', 'false', 'off'])
 

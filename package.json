@@ -30,7 +30,7 @@
   "type": "module",
   "exports": {
     "./keys": "./src/lib/keys.ts",
-    "./paths": "./src/lib/paths.ts"
+    "./paths": "./src/paths/index.ts"
   },
   "publishConfig": {
     "access": "public",

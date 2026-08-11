@@ -2,10 +2,10 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
+import { IDENTITIES_PATH } from '../state/index'
 import { deleteIdpSession } from './idp'
 import { persistKeypair, removeKeypair } from './keys'
 import { log } from './log'
-import { IDENTITIES_PATH } from './paths'
 import { RegistryModeSchema, validateName, type RegistryMode } from './validation'
 
 export const RegistrationSchema = z.object({
