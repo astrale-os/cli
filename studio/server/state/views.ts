@@ -25,7 +25,6 @@ const TARGET_LIMIT = 200
 const NAMED_NAME = 'kernel.astrale.ai:interface.Named.property.name'
 const DESCRIPTABLE_DESCRIPTION = 'kernel.astrale.ai:interface.Descriptable.property.description'
 const STATUSED_STATUS = 'kernel.astrale.ai:interface.Statused.property.status'
-const DOMAIN_ORIGIN = 'kernel.astrale.ai:class.Domain.property.domain'
 
 interface StoredViewState {
   targets?: Record<string, Record<string, RememberedViewTarget>>
@@ -40,6 +39,10 @@ interface AstraleResult<T> {
 interface RawTargetRow {
   id?: unknown
   props?: Record<string, unknown>
+}
+
+interface RawQueryResult {
+  graph?: { nodes?: RawTargetRow[] }
 }
 
 // A modal cleanup and the next modal launch can arrive almost simultaneously.
@@ -144,14 +147,7 @@ export async function launchViewSession(
   const args = ['view', '--view-url', localViewUrl(server.url, view.mount), '--handshake', 'shell']
 
   if (target) {
-    const targetPath = await resolveTargetPath(target.id, instance, timeoutMs)
-    if (!targetPath) {
-      return {
-        status: 'unavailable',
-        reason: 'That target no longer exists or is no longer visible. Choose another target.',
-      }
-    }
-    args.push('--target', targetPath)
+    args.push('--target', target.ref)
   }
 
   args.push('--no-open', '--json', '-i', instance)
@@ -182,18 +178,6 @@ export async function closeViewSession(sessionId: string): Promise<{ ok: true }>
   return { ok: true }
 }
 
-async function resolveTargetPath(
-  id: string,
-  instance: string,
-  timeoutMs: number,
-): Promise<string | null> {
-  const result = await runAstraleJson<{ path?: unknown }>(
-    ['get', `@${id}`, '--json', '-i', instance],
-    timeoutMs,
-  )
-  return result.ok && typeof result.data?.path === 'string' ? result.data.path : null
-}
-
 async function listViewTargets(
   root: string,
   origin: string,
@@ -218,15 +202,26 @@ async function listViewTargets(
 
   const queried = await Promise.all(
     bindings.map(async (binding) => {
-      const cypher = targetQuery(binding.className, binding.classOrigin)
-      const result = await runAstraleJson<RawTargetRow[]>(
-        ['query', '--cypher', cypher, '--json', '-i', instance],
+      const definition = targetDefinition(binding.className, binding.classOrigin)
+      const result = await runAstraleJson<RawQueryResult>(
+        [
+          'query',
+          '--definition',
+          definition,
+          '--limit',
+          String(TARGET_LIMIT + 1),
+          '--json',
+          '-i',
+          instance,
+        ],
         timeoutMs,
       )
       return { binding, result }
     }),
   )
-  const successes = queried.filter((item) => item.result.ok && Array.isArray(item.result.data))
+  const successes = queried.filter(
+    (item) => item.result.ok && Array.isArray(item.result.data?.graph?.nodes),
+  )
   if (successes.length === 0) {
     const reason = queried.map((item) => item.result.detail).find(Boolean)
     return {
@@ -242,7 +237,7 @@ async function listViewTargets(
   const byId = new Map<string, ViewTargetCandidate>()
   let truncated = false
   for (const { binding, result } of successes) {
-    const rows = result.data ?? []
+    const rows = result.data?.graph?.nodes ?? []
     if (rows.length > TARGET_LIMIT) truncated = true
     for (const row of rows.slice(0, TARGET_LIMIT)) {
       const target = targetFromRow(row, binding.className, binding.classOrigin)
@@ -299,10 +294,8 @@ export function targetFromRow(
   }
 }
 
-export function targetQuery(className: string, classOrigin: string): string {
-  const name = JSON.stringify(assertSchemaName(className))
-  const origin = JSON.stringify(assertOrigin(classOrigin))
-  return `MATCH (n:Node)-[:instance_of]->(c:Class)-[:of_domain]->(d:Domain) WHERE c.\`${NAMED_NAME}\` = ${name} AND (d.origin = ${origin} OR d.\`${NAMED_NAME}\` = ${origin} OR d.\`${DOMAIN_ORIGIN}\` = ${origin}) RETURN n.id AS id, n AS props LIMIT ${TARGET_LIMIT + 1}`
+export function targetDefinition(className: string, classOrigin: string): string {
+  return `/:${assertOrigin(classOrigin)}:class.${assertSchemaName(className)}`
 }
 
 function viewClasses(view: ViewInfo): string[] {

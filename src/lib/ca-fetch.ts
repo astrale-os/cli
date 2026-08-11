@@ -7,16 +7,16 @@ import { request as httpsRequest } from 'node:https'
 /** Create a Fetch capability whose HTTPS requests trust one CLI-selected CA file. */
 export function fetchWithCaFile(
   caFile: string,
-  fallback: typeof fetch = globalThis.fetch,
-): typeof fetch {
+  fallback: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> = globalThis.fetch,
+): (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
   const ca = readFileSync(caFile)
   const fallbackFetch = fallback.bind(globalThis)
 
-  return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = requestUrl(input)
     if (url.protocol !== 'https:') return fallbackFetch(input, init)
     return fetchWithNode(url, init, ca)
-  }) as typeof fetch
+  }
 }
 
 function requestUrl(input: RequestInfo | URL): URL {

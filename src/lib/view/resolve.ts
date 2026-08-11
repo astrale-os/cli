@@ -1,4 +1,8 @@
-import type { ClientContext } from '../../kernel'
+import type { ResolvedView } from '@astrale-os/kernel-client/host'
+
+import { Path } from '@astrale-os/kernel-core/path'
+
+import type { ConnectionContext } from '../../connection'
 
 import { AstraleError } from '../../errors'
 
@@ -9,7 +13,6 @@ import { AstraleError } from '../../errors'
  * it via `view_for`.
  */
 
-const VIEW_RESOLVE_PATH = '/:kernel.astrale.ai:class.View:resolve'
 const VIEW_PATH_RE = /^\/:[^\s/:@]+:view\.[a-z][a-z0-9-]*$/
 
 export type ViewSpec = { kind: 'view' | 'target'; path: string }
@@ -29,25 +32,39 @@ export type ViewCandidate = {
   path: string
   url: string
   name?: string
-  handshake?: 'shell' | 'none'
+  handshake: 'shell' | 'none'
   origin: 'self' | 'class'
+  issuer: string
+  etag: string
+  revision: string
 }
 
 export async function resolveViewCandidates(
-  ctx: ClientContext,
+  ctx: ConnectionContext,
   nodePath: string,
 ): Promise<ViewCandidate[]> {
-  const result = await ctx.client.call(VIEW_RESOLVE_PATH, { node: nodePath })
-  if (!Array.isArray(result)) {
-    throw new AstraleError('UNEXPECTED_RESULT', `View:resolve returned a non-array for ${nodePath}`)
-  }
-  return result as ViewCandidate[]
+  const catalog = await ctx.host.viewsFor(Path.parse(nodePath))
+  return catalog.views.map(toCandidate)
+}
+
+function toCandidate(view: ResolvedView): ViewCandidate {
+  const key = String(view.key)
+  return Object.freeze({
+    id: key,
+    path: `/:${key}`,
+    url: view.href,
+    name: key.slice(key.lastIndexOf(':view.') + ':view.'.length),
+    handshake: view.handshake,
+    origin: view.declaration.target.kind === 'domain' ? 'self' : 'class',
+    issuer: view.issuer,
+    etag: view.etag,
+    revision: view.revision,
+  })
 }
 
 /** The slug tail of a candidate: `view.dashboard` → `dashboard`. */
 export function candidateSlug(candidate: ViewCandidate): string {
-  const fromPath = candidate.path?.split('/').pop() ?? ''
-  return candidate.name ?? fromPath
+  return candidate.name ?? candidate.id.slice(candidate.id.lastIndexOf(':view.') + ':view.'.length)
 }
 
 export function pickCandidate(

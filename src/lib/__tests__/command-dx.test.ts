@@ -22,7 +22,7 @@ describe('command DX suggestions', () => {
     expect(usages).toContain('admin use [bookmark]')
     expect(usages).toContain('use <name>')
     expect(usages).toContain('update')
-    expect(usages).toContain('ls [path]')
+    expect(usages).toContain('ls <source>')
     expect(usages).toContain('status')
   })
 

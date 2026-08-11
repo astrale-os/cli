@@ -1,5 +1,6 @@
 packages:
   - '.'
+  - 'studio'
 
 # Keep pnpm 11's one-day default non-strict and never install implicitly before
 # `pnpm run` or `pnpm exec`.

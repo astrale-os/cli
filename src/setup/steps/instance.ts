@@ -4,7 +4,7 @@ import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 import type { SetupContext, SetupStep } from '../types'
 
 import { AstraleError } from '../../errors'
-import { listOwnedInstances } from '../../kernel/client'
+import { listOwnedInstances } from '../../lib/admin-instance'
 import { normalizeInstanceKernelUrl, setActive, upsertManagedBookmark } from '../../lib/instance'
 import { readLocalStatus } from '../../lib/local-status'
 import { log, withSpinner } from '../../lib/log'

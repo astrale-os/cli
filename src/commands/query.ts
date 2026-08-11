@@ -1,319 +1,144 @@
-import { getInputSchema, K } from '@astrale-os/kernel-core'
-import chalk from 'chalk'
+import type { QueryDirection } from '@astrale-os/kernel-core/graph/query'
 
-import type { GetResultWire, KernelCommandOpts, QueryASTInput, SelfExpansionMeta } from '../kernel'
+import { readFile } from 'node:fs/promises'
+
+import type { KernelCommandOpts, SelfExpansionMeta } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
-import { bindGraph, expandSelfInPath, runKernelCommand, withSelfHint } from '../kernel'
+import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
+import { prepareQuery, type QueryCommandInput } from '../graph/index'
 import { log } from '../lib/log'
 import { isMachine, output } from '../lib/output'
 
 type QueryOpts = KernelCommandOpts & {
-  depth?: string
-  children?: string
-  edges?: string
   ast?: string
-  cypher?: string
-}
-
-type QueryMode =
-  | { kind: 'cypher'; cypher: string }
-  | { kind: 'ast'; ast: QueryASTInput }
-  | { kind: 'roots'; roots: string[]; meta: SelfExpansionMeta | undefined; query: BuiltQuery }
-
-export async function queryCommand(paths: string[], opts: QueryOpts): Promise<void> {
-  let mode: QueryMode
-  try {
-    mode = await parseMode(paths, opts)
-  } catch (e) {
-    log.error(e instanceof Error ? e.message : 'Invalid arguments')
-    process.exit(1)
-    return
-  }
-
-  if (mode.kind === 'cypher') {
-    await runKernelCommand({
-      opts,
-      label: 'Query',
-      fn: (ctx) => ctx.client.call(K.$.f('query').path.domain.raw, { cypher: mode.cypher }),
-      format: (result, fmtOpts) => output(result, fmtOpts),
-    })
-    return
-  }
-
-  await runKernelCommand<GetResultWire>({
-    opts,
-    label: mode.kind === 'roots' ? 'Query ' + mode.roots.join(' ') : 'Query',
-    fn: async (ctx) => {
-      const read = () => bindGraph(ctx).query(mode.kind === 'roots' ? mode.query.ast : mode.ast)
-      const result = mode.kind === 'roots' ? await withSelfHint(read, mode.meta) : await read()
-      return result.wire
-    },
-    format: (result, fmtOpts) => {
-      output(result, fmtOpts)
-      if (result.next && !isMachine(fmtOpts)) printCursorFooter(result.next)
-    },
-  })
-}
-
-async function parseMode(paths: string[], opts: QueryOpts): Promise<QueryMode> {
-  const rootsInput = paths ?? []
-  const hasRoots = rootsInput.length > 0
-  const hasAst = opts.ast !== undefined
-  const hasCypher = opts.cypher !== undefined
-  const hasSelectors =
-    opts.depth !== undefined || opts.children !== undefined || opts.edges !== undefined
-
-  if (hasCypher) {
-    if (hasAst || hasRoots || hasSelectors) {
-      throw new Error('--cypher cannot be used with roots, --ast, --depth, --children, or --edges')
-    }
-    return { kind: 'cypher', cypher: opts.cypher as string }
-  }
-
-  if (hasAst) {
-    if (hasRoots || hasSelectors) {
-      throw new Error('--ast cannot be used with positional roots or --depth/--children/--edges')
-    }
-    return { kind: 'ast', ast: parseAst(opts.ast as string) }
-  }
-
-  if (!hasRoots) {
-    throw new Error(
-      'Usage: astrale query <paths...> [--depth <n>] [--children <json>] [--edges <json>] | --ast <json> | --cypher <query>',
-    )
-  }
-
-  const { roots, meta } = await expandRoots(rootsInput, opts)
-  return { kind: 'roots', roots, meta, query: buildQuery(roots, opts) }
-}
-
-function parseAst(raw: string): QueryASTInput {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error('--ast must be JSON: ' + raw)
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('--ast must be a JSON object')
-  }
-  return parsed as QueryASTInput
-}
-
-async function expandRoots(
-  paths: string[],
-  opts: QueryOpts,
-): Promise<{ roots: string[]; meta: SelfExpansionMeta | undefined }> {
-  const roots: string[] = []
-  let meta: SelfExpansionMeta | undefined
-  for (const p of paths) {
-    const expanded = await expandSelfInPath(p, opts)
-    roots.push(expanded.path)
-    if (!meta && expanded.meta) meta = expanded.meta
-  }
-  return { roots, meta }
-}
-
-type QueryDir = 'in' | 'out' | 'both'
-type QueryOrder = { by: string; dir: 'asc' | 'desc' }
-type ChildrenSelector = { classes?: string[]; limit?: number; cursor?: string; order?: QueryOrder }
-type EdgeSelector = {
-  as?: string
-  classes?: string[]
-  direction?: QueryDir
-  limit?: number
+  file?: string
+  definition?: string
+  edge?: string
+  direction?: QueryDirection
+  limit?: string
   cursor?: string
-  order?: QueryOrder
-}
-type BuiltQuery = { ast: QueryASTInput; depth: number; hasEdges: boolean }
-
-function buildQuery(roots: string[], opts: QueryOpts): BuiltQuery {
-  const depth = opts.depth !== undefined ? parseRange('--depth', opts.depth, 0, 5) : 0
-  const children =
-    opts.children !== undefined
-      ? parseSelector<ChildrenSelector>('--children', opts.children, getInputSchema.shape.children)
-      : undefined
-  const edges =
-    opts.edges !== undefined
-      ? parseSelector<EdgeSelector | EdgeSelector[]>(
-          '--edges',
-          opts.edges,
-          getInputSchema.shape.edges,
-        )
-      : undefined
-
-  const steps: NonNullable<QueryASTInput['steps']> = []
-  if (depth > 0) steps.push({ expand: childExpand(depth, children) })
-  edgeSelectors(edges).forEach((selector, index) => {
-    steps.push({ expand: edgeExpand(selector, index) })
-  })
-
-  return {
-    ast: { version: 1, from: roots, ...(steps.length > 0 ? { steps } : {}) },
-    depth,
-    hasEdges: edges !== undefined,
-  }
 }
 
-function childExpand(depth: number, children: ChildrenSelector | undefined) {
-  return {
-    edge: 'has_parent',
-    dir: 'in' as const,
-    depth,
-    ...(children?.classes !== undefined ? { filter: { class: children.classes } } : {}),
-    ...pageFields(children),
-    ...(children?.order !== undefined ? { order: children.order } : {}),
-  }
-}
-
-function edgeExpand(selector: EdgeSelector, index: number) {
-  return {
-    ...(selector.classes !== undefined ? { edge: selector.classes } : {}),
-    dir: selector.direction ?? 'both',
-    as: selector.as ?? 'e' + index,
-    ...pageFields(selector),
-    ...(selector.order !== undefined ? { order: selector.order } : {}),
-  }
-}
-
-function pageFields(selector: { limit?: number; cursor?: string } | undefined) {
-  if (selector?.limit === undefined && selector?.cursor === undefined) return {}
-  return {
-    page: {
-      ...(selector.limit !== undefined ? { limit: selector.limit } : {}),
-      ...(selector.cursor !== undefined ? { cursor: selector.cursor } : {}),
-    },
-  }
-}
-
-function edgeSelectors(edges: EdgeSelector | EdgeSelector[] | undefined): EdgeSelector[] {
-  if (edges === undefined) return []
-  return Array.isArray(edges) ? edges : [edges]
-}
-
-function parseRange(flag: string, raw: string, min: number, max: number): number {
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n < min || n > max) {
-    throw new Error(flag + ' needs an integer in [' + min + ', ' + max + '], got "' + raw + '"')
-  }
-  return n
-}
-
-type SelectorIssue = { readonly path: readonly PropertyKey[]; readonly message: string }
-type SelectorSchema = {
-  safeParse(
-    value: unknown,
-  ): { success: true } | { success: false; error: { issues: readonly SelectorIssue[] } }
-}
-
-function parseSelector<T>(flag: string, raw: string, schema: SelectorSchema): T {
-  let parsed: unknown
+export async function queryCommand(sources: string[], opts: QueryOpts): Promise<void> {
+  let input: QueryCommandInput
+  let meta: SelfExpansionMeta | undefined
   try {
-    parsed = JSON.parse(raw)
-  } catch {
-    throw new Error(flag + ' must be JSON: ' + raw)
+    const ast = await readAst(opts)
+    if (ast === undefined) {
+      const expanded = await Promise.all(sources.map((source) => expandSelfInPath(source, opts)))
+      input = {
+        sources: expanded.map(({ path }) => path),
+        definition: opts.definition,
+        edge: opts.edge,
+        direction: opts.direction,
+        limit: opts.limit,
+        cursor: opts.cursor,
+      }
+      meta = expanded.find((entry) => entry.meta !== undefined)?.meta
+    } else {
+      input = {
+        sources,
+        ast,
+        definition: opts.definition,
+        edge: opts.edge,
+        direction: opts.direction,
+        limit: opts.limit,
+        cursor: opts.cursor,
+      }
+    }
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : 'Invalid query')
+    process.exit(1)
   }
-  if (parsed === null || typeof parsed !== 'object') {
+
+  let prepared
+  try {
+    prepared = prepareQuery(input)
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : 'Invalid Query V3 document')
+    process.exit(1)
+  }
+
+  await runKernelCommand({
+    opts,
+    label: 'Query',
+    fn: ({ graph }) =>
+      withSelfHint(
+        () => graph.query(prepared.ast, prepared.cursor ? { cursor: prepared.cursor } : {}),
+        meta,
+      ),
+    format: (result, format) => {
+      output(result, format)
+      if (result.cursor && !isMachine(format)) {
+        process.stderr.write(`  cursor: ${result.cursor}\n`)
+      }
+    },
+  })
+}
+
+async function readAst(opts: QueryOpts): Promise<unknown | undefined> {
+  if (opts.ast !== undefined && opts.file !== undefined) {
+    throw new TypeError('--ast and --file are mutually exclusive')
+  }
+  if (opts.ast !== undefined) return parseJson(opts.ast, '--ast')
+  if (opts.file === undefined) return undefined
+  let raw: string
+  try {
+    raw = await readFile(opts.file, 'utf8')
+  } catch (error) {
     throw new Error(
-      flag + ' must be a JSON selector object' + (flag === '--edges' ? ' or array' : ''),
+      `Cannot read --file ${opts.file}: ${error instanceof Error ? error.message : error}`,
     )
   }
-  const check = schema.safeParse(parsed)
-  if (!check.success) {
-    const detail = check.error.issues
-      .map((i) => (i.path.join('.') || '(root)') + ': ' + i.message)
-      .join('; ')
-    throw new Error(flag + ' invalid selector: ' + detail)
-  }
-  return parsed as T
+  return parseJson(raw, opts.file)
 }
 
-function printCursorFooter(next: NonNullable<GetResultWire['next']>): void {
-  const entries = Object.entries(next)
-  if (entries.length === 1) {
-    const cursors = entries[0]?.[1]
-    if (cursors?.children) {
-      process.stdout.write(
-        chalk.dim('  more: --children \'{"cursor":"' + cursors.children + '"}\'\n'),
-      )
-    }
-    for (const [alias, cursor] of Object.entries(cursors?.edges ?? {})) {
-      process.stdout.write(
-        chalk.dim(
-          '  more edges[' +
-            alias +
-            ']: --edges \'{"as":"' +
-            alias +
-            '","cursor":"' +
-            cursor +
-            '"}\'\n',
-        ),
-      )
-    }
-    return
+function parseJson(raw: string, source: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new TypeError(`${source} must contain valid JSON`)
   }
-  process.stdout.write(
-    chalk.dim('  more results - per-root cursors in .next (page each root by --cursor)\n'),
-  )
 }
 
 export default {
   name: 'query',
-  description: 'Run a structured graph read',
-  afterHelpText: [
-    '',
-    'Behavior:',
-    '  Structured read door for the query AST. Positional roots build a v1 AST',
-    '  with optional child and edge expansion, then lower through function.get',
-    '  today. A true query syscall may back this command later.',
-    '',
-    '  Output is always the full GraphData envelope { nodes, edges, aliases }',
-    '  with .roots and .next when returned. On a TTY, cursor footers are printed',
-    '  when .next has more pages.',
-    '',
-    '  --children takes { classes?, limit?, cursor?, order? } and shapes the',
-    '  depth-1 children page (needs --depth >= 1 to bite). --edges takes an edge',
-    '  selector, or a JSON array of selectors.',
-    '',
-    '  --ast (experimental) accepts a raw QueryASTInput JSON object. The AST shape',
-    '  is not a stable contract yet — prefer the flags above. @self is not expanded',
-    '  inside --ast JSON.',
-    '',
-    '  --cypher is a read-only escape hatch. The kernel rejects write keywords',
-    '  such as CREATE, DELETE, SET, MERGE, REMOVE, and DETACH.',
-    '',
-    'Examples:',
-    '  $ astrale query / --depth 1',
-    '  $ astrale query /a /b --edges \'{"direction":"both"}\'',
-    '  $ astrale query /kernel.astrale.ai --depth 2 --children \'{"classes":["/:kernel.astrale.ai:class.Folder"]}\'',
-    "  $ astrale query --cypher 'MATCH (n) RETURN count(n) AS total'",
-    '',
-  ].join('\n'),
-  arguments: [
-    {
-      name: 'paths...',
-      description: 'One or more root paths (/domain/Class) or IDs (@nodeId)',
-      required: false,
-    },
-  ],
+  description: 'Run one canonical Query V3 graph read',
+  afterHelpText: `
+Behavior:
+  Positional Paths and --definition author a finite Query V3 read. --edge adds
+  one exact Edge-Class expansion; --direction defaults to outgoing. --ast and
+  --file accept a complete canonical astrale.graph.query/v3 document. --cursor
+  resumes one caller-bound query scope.
+
+  Legacy depth/children selector JSON and raw Cypher are not portable Kernel
+  V2 query contracts and are not accepted.
+
+Examples:
+  $ astrale query /:notes.example.dev:class.Note --limit 50
+  $ astrale query --definition /:notes.example.dev:class.Note --limit 50
+  $ astrale query @note --edge /:notes.example.dev:class.references --direction outgoing --limit 25
+  $ astrale query --file query.v3.json --cursor "$CURSOR"
+`,
+  arguments: [{ name: 'sources...', description: 'Canonical source Paths', required: false }],
   options: [
-    { flags: '--depth <n>', description: 'Subtree depth to fetch (0-5, default 0)' },
+    { flags: '--ast <json>', description: 'Canonical Query V3 JSON document' },
+    { flags: '-f, --file <path>', description: 'Read a canonical Query V3 document from a file' },
     {
-      flags: '--children <json>',
-      description: 'Children selector { classes?, limit?, cursor?, order? } (needs --depth >= 1)',
+      flags: '--definition <path>',
+      description: 'Select Nodes implementing one exact Class or Interface',
     },
+    { flags: '--edge <class>', description: 'Expand one exact Edge Class' },
     {
-      flags: '--edges <json>',
-      description: 'Edge selector (or JSON array of selectors) to include',
+      flags: '--direction <direction>',
+      description: 'Edge direction (requires --edge)',
+      choices: ['outgoing', 'incoming', 'incident'],
     },
-    {
-      flags: '--ast <json>',
-      description: 'Raw QueryASTInput JSON object (experimental, unstable shape)',
-    },
-    { flags: '--cypher <query>', description: 'Read-only Cypher escape hatch' },
+    { flags: '--limit <n>', description: 'Finite selected binding limit (default: 100)' },
+    { flags: '--cursor <token>', description: 'Resume one live query scope' },
   ],
-  action: async (paths, opts) => {
-    await queryCommand(Array.isArray(paths) ? paths : [], opts as QueryOpts)
+  action: async (sources, opts) => {
+    await queryCommand((sources as string[] | undefined) ?? [], opts as QueryOpts)
   },
 } satisfies CommandDefinition

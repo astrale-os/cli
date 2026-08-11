@@ -1,6 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { fetchWithCaFile } from '../../kernel/ca-fetch'
+import { fetchWithCaFile } from '../../lib/ca-fetch'
 import { normalizeInstanceKernelUrl, setActive, upsertInstance } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'

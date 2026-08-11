@@ -12,6 +12,8 @@
 
 import { IssuerUnreachableError } from '../errors'
 
+type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 export type DiscoveryDocument = {
   /** OIDC issuer URL. */
   issuer: string
@@ -22,7 +24,7 @@ export type DiscoveryDocument = {
 export async function fetchDiscovery(
   url: string,
   timeoutMs = 5_000,
-  fetchImpl: typeof fetch = globalThis.fetch,
+  fetchImpl: FetchLike = globalThis.fetch,
 ): Promise<DiscoveryDocument> {
   const discoveryUrl = url.replace(/\/+$/, '') + '/.well-known/openid-configuration'
   try {
@@ -41,7 +43,7 @@ export async function fetchDiscovery(
 export async function fetchJwks(
   jwksUri: string,
   timeoutMs = 5_000,
-  fetchImpl: typeof fetch = globalThis.fetch,
+  fetchImpl: FetchLike = globalThis.fetch,
 ): Promise<{ keys: Array<{ kid?: string }> }> {
   try {
     const r = await fetchImpl(jwksUri, { signal: AbortSignal.timeout(timeoutMs) })
@@ -75,7 +77,7 @@ export async function fetchOrgHint(url: string, timeoutMs = 5_000): Promise<stri
 export async function checkIssuerReachability(
   url: string,
   issuerOverride?: string,
-  fetchImpl?: typeof fetch,
+  fetchImpl?: FetchLike,
 ): Promise<{ issuer: string; keys: Array<{ kid?: string }> }> {
   const discovery = await fetchDiscovery(url, 5_000, fetchImpl)
   const issuer = issuerOverride ?? discovery.issuer

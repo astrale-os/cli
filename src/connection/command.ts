@@ -1,19 +1,19 @@
 import chalk from 'chalk'
 
-import type { ClientContext } from './client'
-import type { KernelCommandOpts } from './types'
+import type { ConnectionContext } from './session'
+import type { ConnectionOptions } from './target'
 
 import { formatElapsed } from '../lib/format'
 import { spinner } from '../lib/log'
 import { isMachine, present } from '../lib/output'
-import { withKernelClient } from './client'
 import { formatKernelError } from './errors'
+import { withHostSession } from './session'
 
-type RunOpts<T> = {
-  opts: KernelCommandOpts
-  label: string
-  fn: (ctx: ClientContext) => Promise<T>
-  format?: (result: T, opts: KernelCommandOpts, isRaw: boolean) => void | Promise<void>
+export interface KernelCommandOpts extends ConnectionOptions {
+  readonly raw?: boolean
+  readonly json?: boolean
+  readonly format?: 'yaml' | 'json'
+  readonly debug?: boolean
 }
 
 /**
@@ -24,21 +24,30 @@ type RunOpts<T> = {
  * `format` callback for custom output. If `format` is omitted, the
  * result is passed to the standard `output()` function.
  */
-export async function runKernelCommand<T>(run: RunOpts<T>): Promise<void> {
-  const { opts, label, fn } = run
+export async function runKernelCommand<T>(input: {
+  readonly opts: KernelCommandOpts
+  readonly label: string
+  readonly fn: (context: ConnectionContext) => Promise<T>
+  readonly format?: (
+    result: T,
+    options: KernelCommandOpts,
+    machine: boolean,
+  ) => void | Promise<void>
+}): Promise<void> {
+  const { opts, label, fn } = input
   const isRaw = isMachine(opts)
   const spin = !isRaw ? spinner(`${label}...`) : null
   const startTime = performance.now()
 
   try {
-    const result = await withKernelClient(opts, fn)
+    const result = await withHostSession(opts, fn)
     const elapsed = performance.now() - startTime
 
     spin?.succeed(`${label} ${chalk.dim(formatElapsed(elapsed))}`)
     if (!isRaw) console.log('')
 
-    if (run.format) {
-      await run.format(result, opts, isRaw)
+    if (input.format) {
+      await input.format(result, opts, isRaw)
     } else {
       present(result, opts)
     }

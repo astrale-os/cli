@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { SelfResolverContext } from '../../lib/self'
 
-import { resolveSelfIdLazy } from '../expand'
+import { resolveSelfIdLazy } from '../self'
 
 describe('resolveSelfIdLazy', () => {
   test('refreshes a cached IdP @self registration via whoami', async () => {

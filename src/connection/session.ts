@@ -8,14 +8,12 @@ import { createGraph } from '@astrale-os/kernel-client/graph'
 import { HostSession } from '@astrale-os/kernel-client/host'
 import { Path } from '@astrale-os/kernel-core/path'
 
-import type { InstanceInfo } from '../lib/admin-instance'
 import type { AstraleConfig } from '../lib/config'
 import type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
-import { adminInstanceMethod } from '../lib/admin-instance'
+import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
-import { fetchWithCaFile } from './ca-fetch'
 import { createCliCredential } from './credential'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
@@ -149,15 +147,24 @@ function openConnection(
   }
 }
 
-async function lookupManagedInstance(
+export async function lookupManagedInstance(
   slug: string,
   options: ConnectionOptions,
-): Promise<InstanceInfo> {
-  return withAdminHostSession(
-    { as: options.as, creds: options.creds, timeout: options.timeout },
+  openAdmin: typeof withAdminHostSession = withAdminHostSession,
+): Promise<ManagedInstanceInfo> {
+  return openAdmin(
+    Object.freeze(options.timeout === undefined ? {} : { timeout: options.timeout }),
     async ({ host }) =>
       (await host.call(
-        pathCall(Path.parse(adminInstanceMethod('info')), { id: slug }),
-      )) as InstanceInfo,
+        pathCall(Path.parse('/:admin.astrale.ai:class.Instance:info'), { id: slug }),
+      )) as unknown as ManagedInstanceInfo,
   )
+}
+
+interface ManagedInstanceInfo {
+  readonly id: string
+  readonly slug: string
+  readonly url: string
+  readonly issuer?: string
+  readonly state?: 'provisioning' | 'ready' | 'failed'
 }

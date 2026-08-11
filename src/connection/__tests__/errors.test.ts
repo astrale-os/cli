@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-// We test the stripMethodSuffix behavior indirectly through the module's exports.
-// Since stripMethodSuffix is private, we test the pattern directly.
-const stripMethodSuffix = (msg: string): string => {
-  return msg.replace(/(\/[^"\s:]+)::([a-zA-Z]\w*)/g, '$1')
-}
+import { stripMethodSuffix } from '../errors'
 
 describe('stripMethodSuffix', () => {
   test('strips ::listChildren from path', () => {

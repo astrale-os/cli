@@ -1,12 +1,14 @@
-import { K } from '@astrale-os/kernel-core'
+import type { HostSession } from '@astrale-os/kernel-client/host'
+
+import { Path } from '@astrale-os/kernel-core/path'
+import { syscalls } from '@astrale-os/kernel-core/schema'
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../../kernel'
+import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
+import { createPathCall, runKernelCommand, withAdminHostSession } from '../../connection'
 import { AstraleError } from '../../errors'
-import { runKernelCommand } from '../../kernel'
-import { withAdminKernelClient } from '../../kernel/client'
 import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
 import { callOwnedInstances, type OwnedInstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
@@ -26,8 +28,12 @@ type DomainInstallResult = {
   error?: string | null
 }
 
-/** Mirrors the kernel's `Domain.install` return. */
-type DirectInstallResult = { domainId: string; origin: string }
+/** Exact output of the public Kernel install syscall for one requested root. */
+type DirectInstallResult = readonly {
+  origin: string
+  revision: string
+  etag?: string
+}[]
 
 type InstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -50,8 +56,8 @@ Behavior:
   interactively. The target instance is the active one, or -i <slug>; it must be
   admin-managed (otherwise the command fails loudly and points you at --direct).
 
-  --direct: installs a url STRAIGHT onto the instance kernel (Domain.install),
-  bypassing the admin/catalog. Works on any instance you can authenticate to
+  --direct: installs a url through the public Kernel install syscall,
+  bypassing the admin catalog. Works on any instance you can authenticate to
   (managed, bookmarked, or local), using your own authority. This is the only
   mode that runs the identity-override consent gate: when the domain's declared
   origin differs from its serving host, it requires explicit consent (an
@@ -121,13 +127,19 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
   }
   // Strip the install-target selector so the admin client resolves only the
   // admin kernel (via --admin/--admin-url/config), not the instance under `-i`.
-  const adminOpts: InstallOpts = { ...opts, instance: undefined }
+  const adminOpts = {
+    admin: opts.admin,
+    adminUrl: opts.adminUrl,
+    timeout: opts.timeout,
+    as: opts.as,
+    creds: opts.creds,
+  }
 
   try {
-    await withAdminKernelClient(adminOpts, async (ctx) => {
-      const instances = await callOwnedInstances(ctx.client)
+    await withAdminHostSession(adminOpts, async (ctx) => {
+      const instances = await callOwnedInstances(ctx.host)
 
-      const ref = await resolveDomainRef(ctx, target, interactive)
+      const ref = await resolveDomainRef(ctx.host, target, interactive)
       const slug = await resolveTargetSlug(opts, target, interactive, instances)
 
       const match = instances.find((i) => i.slug === slug)
@@ -146,10 +158,12 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
         `Installing ${label} on ${match.slug}`,
         !isMachine(opts),
         () =>
-          ctx.client.call(adminDomainMethod('install'), {
-            instanceId: match.slug,
-            ...ref,
-          }) as Promise<DomainInstallResult>,
+          ctx.host.call(
+            createPathCall(adminDomainMethod('install'), {
+              instanceId: match.slug,
+              ...ref,
+            }),
+          ) as Promise<DomainInstallResult>,
         { success: (r) => `Installed ${r.origin} on ${match.slug}` },
       )
 
@@ -194,14 +208,14 @@ export function domainRefFromTarget(target: string): { origin?: string; url?: st
 
 /** Resolve the domain to install: the positional `target`, or an interactive pick. */
 async function resolveDomainRef(
-  ctx: { client: { call: (path: string, params: unknown) => Promise<unknown> } },
+  host: Pick<HostSession, 'call'>,
   target: string | undefined,
   interactive: boolean,
 ): Promise<{ origin?: string; url?: string }> {
   if (target) return domainRefFromTarget(target)
   if (!interactive) throw new AstraleError('MISSING_ARG', 'No domain given.')
 
-  const catalog = (await ctx.client.call(adminDomainMethod('list'), {})) as DomainInfo[]
+  const catalog = (await host.call(createPathCall(adminDomainMethod('list'), {}))) as DomainInfo[]
   const installable = catalog.filter((d) => d.url)
   if (installable.length === 0) {
     throw new AstraleError(
@@ -271,8 +285,8 @@ async function activeSlug(): Promise<string | undefined> {
 // ── Direct path (--direct) ────────────────────────────────────────────────────
 
 /**
- * Install a url straight onto the instance kernel (`Domain.install`),
- * bypassing the admin/catalog — the classic path, with the §5 identity-override
+ * Install a url through the public Kernel install syscall,
+ * bypassing the admin catalog, with the identity-override
  * consent gate. Works on any instance the caller can authenticate to.
  */
 async function installDirect(target: string | undefined, opts: InstallOpts): Promise<void> {
@@ -300,26 +314,29 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
   await runKernelCommand<DirectInstallResult>({
     opts,
     label: `Installing domain from ${url}`,
-    fn: async (ctx) =>
-      (await ctx.client.call(K.Domain.install.path.method.raw, {
-        url,
-        ...(opts.token ? { token: opts.token } : {}),
-      })) as DirectInstallResult,
+    fn: async ({ host: kernel }) =>
+      (await kernel.call(
+        createPathCall(Path.member(syscalls.install.ref).raw, {
+          domains: [{ url, ...(opts.token ? { token: opts.token } : {}) }],
+        }),
+      )) as DirectInstallResult,
     format: (result, fmtOpts, isRaw) => {
       if (isRaw) {
         output(result, fmtOpts)
         return
       }
-      log.success(`Domain installed: ${result.origin}`)
-      log.dim(`  domainId: ${result.domainId}`)
+      const installed = result[0]
+      if (!installed) throw new Error('Kernel install returned no installed Domain receipt.')
+      log.success(`Domain installed: ${installed.origin}@${installed.revision}`)
+      if (installed.etag) log.dim(`  publication: ${installed.etag}`)
       // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
       // aliases the host and the pre-install gate never consented to THAT
       // origin (lying or absent `/meta`), say so loudly after the fact.
-      if (isIdentityOverride(result.origin, host) && result.origin !== consentedOrigin) {
+      if (isIdentityOverride(installed.origin, host) && installed.origin !== consentedOrigin) {
         log.warn(
-          `Installed origin "${result.origin}" differs from the serving host "${host}" ` +
+          `Installed origin "${installed.origin}" differs from the serving host "${host}" ` +
             `and was not confirmed before install (the worker's /meta did not declare it). ` +
-            `Every ${result.origin}/* call on this instance now routes to ${host}.`,
+            `Every ${installed.origin}/* call on this instance now routes to ${host}.`,
         )
       }
     },

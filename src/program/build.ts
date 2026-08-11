@@ -110,7 +110,7 @@ export async function buildProgram(): Promise<Command> {
     description: 'Manage CLI identities & delegation keypairs',
     commands: [
       (await import('../commands/identity/create')).default,
-      (await import('../commands/identity/register')).default,
+      withKernelOptions((await import('../commands/identity/register')).default),
       (await import('../commands/identity/list')).default,
       (await import('../commands/identity/use')).default,
       (await import('../commands/identity/whoami')).default,
@@ -165,16 +165,15 @@ Command groups:
   Studio        studio    (launch the local Domain Studio GUI for a workspace)
 
 Path syntax:
-  /domain                        Domain node
-  /domain/class.Name             Class node     (or /domain/interface.Name)
-  /domain/class.Name/method      Static method  — single slash
-                                 (interface-hosted static: /domain/interface.Name/method)
+  /:origin                       Domain root
+  /:origin:class.Name            Class node     (or /:origin:interface.Name)
+  /:origin:class.Name:method     Static callable
   <nodePath>::method             Instance method dispatch — double colon ::
   @nodeId                        Reference a node by its UID
   @nodeId::method                Instance method on a node by UID
 
 Examples:
-  $ astrale ls /
+  $ astrale ls @note --edge /:notes.example.dev:class.references
   $ astrale studio
   $ astrale admin status
   $ astrale update --check
@@ -182,8 +181,8 @@ Examples:
   $ astrale instance create my-app
   $ astrale instance status staging
   $ astrale token --audience shell.astrale.ai --ttl 3600
-  $ astrale query / --depth 1
-  $ astrale query --cypher 'MATCH (n) RETURN n LIMIT 5'
+  $ astrale query /:notes.example.dev:class.Note --limit 50
+  $ astrale query --file query.v3.json --cursor "$CURSOR"
 `,
   )
 

@@ -1,181 +1,86 @@
-import { ClassPath } from '@astrale-os/kernel-core/domain'
+import type { Node } from '@astrale-os/kernel-core/graph/node'
+
+import { ClassPath } from '@astrale-os/kernel-core/graph/class'
+import { Path } from '@astrale-os/kernel-core/path'
 import chalk from 'chalk'
 
-import type { GraphNode, KernelCommandOpts } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
-import {
-  bindGraph,
-  expandSelfInPath,
-  nodeProp,
-  runKernelCommand,
-  splitRoot,
-  unqualifyKey,
-  withSelfHint,
-} from '../kernel'
+import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
+import { unqualifyProperty } from '../graph/index'
 import { log } from '../lib/log'
 import { output } from '../lib/output'
 
-type DescribeResult = { node: GraphNode | undefined; children: GraphNode[] }
-
-// Commander turns `--no-schema` into `schema: false`.
 type DescribeOpts = KernelCommandOpts & { schema?: boolean }
+type DescribedNode = Omit<Node, 'props'> & { readonly props: Readonly<Record<string, unknown>> }
 
-export async function describeCommand(path: string, opts: DescribeOpts): Promise<void> {
-  let expandedPath: string
+/** Describe only facts present on the canonical Node; no hierarchy is inferred from its Path. */
+export async function describeCommand(target: string, opts: DescribeOpts): Promise<void> {
+  let path: string
   let meta
   try {
-    ;({ path: expandedPath, meta } = await expandSelfInPath(path, opts))
-  } catch (e) {
-    log.error(e instanceof Error ? e.message : 'Invalid @self expansion')
+    ;({ path, meta } = await expandSelfInPath(target, opts))
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : 'Invalid target')
     process.exit(1)
   }
-  await runKernelCommand<DescribeResult>({
+
+  await runKernelCommand({
     opts,
-    label: expandedPath,
-    // One function.get depth:1 = the node AND its children (was ::get +
-    // ::listChildren). Function-class children are the node's operations.
-    fn: async (ctx) => {
-      const result = await withSelfHint(
-        () => bindGraph(ctx).query((q) => q.from(expandedPath).children()),
-        meta,
-      )
-      const { root, children } = splitRoot(result.wire.nodes, expandedPath)
-      return { node: root, children }
-    },
-    format: (result, fmtOpts, isRaw) => {
-      const shown = opts.schema === false ? stripSchema(result) : result
-      if (isRaw) {
-        output(shown, fmtOpts)
-        return
-      }
-      printDescribe(shown, expandedPath)
+    label: `Describe ${path}`,
+    fn: ({ graph }) => withSelfHint(() => graph.getOrThrow(Path.parse(path)), meta),
+    format: (node, format, machine) => {
+      const shown = opts.schema === false ? withoutSchema(node) : node
+      if (machine || format.format !== undefined) output(shown, format)
+      else printDescription(path, shown)
     },
   })
 }
 
-function stripSchema(result: DescribeResult): DescribeResult {
-  if (!result.node) return result
-  const entries = Object.entries(result.node.props).filter(([k]) => unqualifyKey(k) !== 'schema')
-  return { ...result, node: { ...result.node, props: Object.fromEntries(entries) } }
-}
-
-// ── Pretty-print ────────────────────────────────────────────
-
-function printDescribe({ node, children }: DescribeResult, path: string): void {
-  const kind = classNameOf(node) ?? 'Node'
-  const name = basename(path) || path
-  console.log(`  ${chalk.bold.cyan(name)} ${chalk.dim(`(${kind})`)}`)
-
-  const description = nodeProp(node, 'description')
-  if (description) console.log(`  ${chalk.dim(String(description))}`)
-  console.log('')
-
-  const operations = children.filter(isFunction)
-  const otherChildren = children.filter((c) => !isFunction(c))
-
-  if (operations.length > 0) {
-    console.log(`  ${chalk.bold('Operations:')}`)
-    const names = operations.map((o) => basename(o.path))
-    const slugW = Math.max(4, ...names.map((n) => n.length))
-    operations.forEach((op, i) => {
-      const opName = names[i].padEnd(slugW)
-      const schema = formatInputSchema(op)
-      console.log(`    ${chalk.green(opName)}  ${chalk.dim(schema)}`)
-    })
-    console.log('')
-  }
-
-  if (otherChildren.length > 0) {
-    console.log(`  ${chalk.bold('Children:')}`)
-    for (const child of otherChildren) {
-      const childKind = classNameOf(child) ?? '?'
-      console.log(`    ${chalk.cyan(basename(child.path) || '?')}  ${chalk.dim(childKind)}`)
-    }
-    console.log('')
-  }
-
-  if (children.length === 0) {
-    printProperties(node)
+function withoutSchema(node: Node): DescribedNode {
+  return {
+    ...node,
+    props: Object.fromEntries(
+      Object.entries(node.props).filter(([key]) => unqualifyProperty(key) !== 'schema'),
+    ),
   }
 }
 
-/** `/a/b/c` → `c`; `/` → `/`. */
-function basename(path?: string): string {
-  if (!path || path === '/') return path ?? ''
-  return path.slice(path.lastIndexOf('/') + 1)
-}
+function printDescription(target: string, node: DescribedNode): void {
+  console.log(`  ${chalk.bold.cyan(target)}`)
+  console.log(`  ${chalk.dim('id')}     ${node.id}`)
+  console.log(
+    `  ${chalk.dim('class')}  ${ClassPath.name(node.class)} ${chalk.dim(`(${node.class})`)}`,
+  )
 
-/** Short class name from the contract field `class` (a serialized ClassPath). */
-function classNameOf(item: GraphNode | undefined): string | undefined {
-  return item?.class ? (ClassPath.tryParse(item.class)?.className ?? undefined) : undefined
-}
-
-function isFunction(item: GraphNode): boolean {
-  return classNameOf(item) === 'Function'
-}
-
-function printProperties(node: GraphNode | undefined): void {
-  if (!node) return
-  const entries = Object.entries(node.props)
-    .map(([k, v]) => [unqualifyKey(k), v] as const)
-    .filter(([k]) => k !== '__labels' && k !== 'id')
-  if (entries.length === 0) return
-
-  console.log(`  ${chalk.bold('Properties:')}`)
-  for (const [k, v] of entries) {
-    const val = typeof v === 'string' && v.length > 80 ? v.slice(0, 80) + '...' : String(v)
-    console.log(`    ${chalk.cyan(k)}: ${chalk.dim(val)}`)
-  }
-}
-
-function formatInputSchema(node: GraphNode): string {
-  const raw = nodeProp(node, 'inputSchema')
-  if (!raw) return '{}'
-
-  try {
-    const schema = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (typeof schema !== 'object' || schema === null) return '{}'
-
-    const props = (schema as { properties?: Record<string, { type?: string }> }).properties
-    if (!props || Object.keys(props).length === 0) return '{}'
-
-    const required = new Set((schema as { required?: string[] }).required ?? [])
-
-    const fields = Object.entries(props).map(([name, def]) => {
-      const type = def?.type ?? '?'
-      return required.has(name) ? `${name}: ${type}` : `${name}?: ${type}`
-    })
-
-    return `{ ${fields.join(', ')} }`
-  } catch {
-    return '{...}'
+  const properties = Object.entries(node.props)
+  if (properties.length === 0) return
+  console.log(`\n  ${chalk.bold('Properties:')}`)
+  for (const [key, value] of properties) {
+    const rendered = typeof value === 'string' ? value : JSON.stringify(value)
+    console.log(`    ${chalk.cyan(unqualifyProperty(key))}: ${chalk.dim(rendered)}`)
   }
 }
 
 export default {
   name: 'describe',
-  description: 'Describe a node: its kind, operations, children, and schemas',
+  description: 'Describe the canonical facts of one node',
   afterHelpText: `
 Behavior:
-  One function.get depth:1 — the node plus its children (Function-class
-  children are shown as Operations). Raw dump: full properties + children.
-  For Domain nodes the properties include a multi-kB serialized 'schema' —
-  use --no-schema, and pipe to jq rather than reading by eye.
+  Reads one canonical Node and presents its ID, Class, and properties.
+  It does not infer operations or children from path layout. --no-schema
+  omits schema-valued properties from Domain-sized results.
 
 Examples:
-  $ astrale describe /kernel.astrale.ai
-  $ astrale describe /host.astrale.ai --no-schema | jq .
+  $ astrale describe /:kernel.astrale.ai:class.Domain
+  $ astrale describe @self --no-schema
 `,
-  arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
+  arguments: [{ name: 'target', description: 'Canonical Node Path or @id' }],
   options: [
-    {
-      flags: '--no-schema',
-      description:
-        'Omit the serialized `schema` property (useful for Domain nodes, where it is multi-kB)',
-    },
+    { flags: '--no-schema', description: 'Omit properties whose qualified leaf is schema' },
   ],
-  action: async (path, opts) => {
-    await describeCommand(path as string, opts as DescribeOpts)
+  action: async (target, opts) => {
+    await describeCommand(target as string, opts as DescribeOpts)
   },
 } satisfies CommandDefinition

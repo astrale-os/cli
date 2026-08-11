@@ -46,7 +46,7 @@ describe('admin-backed instance commands', () => {
         state: 'ready',
       },
     ]
-    const call = mock(async () => owned)
+    const call = mock(async (_request: unknown) => owned)
 
     await expect(callOwnedInstances({ call })).resolves.toEqual([
       {
@@ -56,7 +56,14 @@ describe('admin-backed instance commands', () => {
         state: 'ready',
       },
     ])
-    expect(call).toHaveBeenCalledWith('/:admin.astrale.ai:class.Instance:listMine', {})
+    expect(call).toHaveBeenCalledTimes(1)
+    const request = call.mock.calls[0]?.[0] as {
+      target: { kind: string; path: unknown }
+      input: unknown
+    }
+    expect(request.target.kind).toBe('path')
+    expect(String(request.target.path)).toBe('/:admin.astrale.ai:class.Instance:listMine')
+    expect(request.input).toEqual({})
   })
 
   test('instance create preflight points fresh installs at WorkOS login', () => {

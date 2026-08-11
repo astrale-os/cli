@@ -3,6 +3,15 @@
  * list/status/create/delete`. The merged admin domain models instances as the
  * `Instance` class (provisioned via `Instance.init`); these commands target it.
  */
+import type { HostSession } from '@astrale-os/kernel-client/host'
+
+import { pathCall } from '@astrale-os/kernel-client'
+import { Path } from '@astrale-os/kernel-core/path'
+
+import type { AdminConnectionOptions } from '../connection'
+
+import { withAdminHostSession } from '../connection'
+
 export const ADMIN_INSTANCE = '/:admin.astrale.ai:class.Instance'
 
 export function adminInstanceMethod(
@@ -32,11 +41,18 @@ export type OwnedInstanceInfo = InstanceInfo & {
   state: InstanceState
 }
 
-/** Call the owner-scoped list contract through any admin client-shaped object. */
-export async function callOwnedInstances(client: {
-  call: (path: string, params: Record<string, never>) => Promise<unknown>
-}): Promise<OwnedInstanceInfo[]> {
-  return (await client.call(adminInstanceMethod('listMine'), {})) as OwnedInstanceInfo[]
+/** Call the owner-scoped list contract through the public Host Call boundary. */
+export async function callOwnedInstances(
+  host: Pick<HostSession, 'call'>,
+): Promise<OwnedInstanceInfo[]> {
+  return (await host.call(
+    pathCall(Path.parse(adminInstanceMethod('listMine')), {}),
+  )) as OwnedInstanceInfo[]
+}
+
+/** Resolve the Admin target and read only the caller-owned instance inventory. */
+export function listOwnedInstances(options: AdminConnectionOptions): Promise<OwnedInstanceInfo[]> {
+  return withAdminHostSession(options, ({ host }) => callOwnedInstances(host))
 }
 
 /** Match an owner-scoped instance by its stable node id or human slug. */

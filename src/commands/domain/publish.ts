@@ -1,9 +1,9 @@
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../../kernel'
+import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { withAdminKernelClient } from '../../kernel/client'
+import { createPathCall, withAdminHostSession } from '../../connection'
 import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, withSpinner } from '../../lib/log'
@@ -108,14 +108,14 @@ Examples:
         `Publishing ${name} → ${publicUrl}`,
         !isMachine(opts),
         () =>
-          withAdminKernelClient(opts, async (ctx) => {
+          withAdminHostSession(opts, async ({ host }) => {
             // Read the current catalog entry first: a re-publish that would write
             // the same origin/name/url/description/install flag is a no-op we
             // report as "already up to date" (and skip the write) rather than
             // silently bumping `updatedAt`. `info` throws when absent → treat as
             // a fresh publish.
-            const existing = (await ctx.client
-              .call(adminDomainMethod('info'), { origin })
+            const existing = (await host
+              .call(createPathCall(adminDomainMethod('info'), { origin }))
               .catch(() => null)) as DomainInfo | null
             if (
               existing &&
@@ -127,13 +127,15 @@ Examples:
             ) {
               return { entry: existing, changed: false as const, isNew: false }
             }
-            const entry = (await ctx.client.call(adminDomainMethod('publish'), {
-              origin,
-              name,
-              url: publicUrl,
-              ...(opts.description ? { description: opts.description } : {}),
-              ...(opts.installByDefault ? { installByDefault: true } : {}),
-            })) as DomainInfo
+            const entry = (await host.call(
+              createPathCall(adminDomainMethod('publish'), {
+                origin,
+                name,
+                url: publicUrl,
+                ...(opts.description ? { description: opts.description } : {}),
+                ...(opts.installByDefault ? { installByDefault: true } : {}),
+              }),
+            )) as DomainInfo
             return { entry, changed: true as const, isNew: !existing }
           }),
         {

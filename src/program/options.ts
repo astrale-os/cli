@@ -1,7 +1,21 @@
 import type { CommandDefinition, CommandOption } from './command'
 
-import { KERNEL_PASSTHROUGH_OPTIONS } from '../kernel/options'
 import { RAW_OUTPUT_OPTIONS } from '../lib/output'
+
+const KERNEL_PASSTHROUGH_OPTIONS: readonly CommandOption[] = Object.freeze([
+  {
+    flags: '--url <url>',
+    description: 'Target a kernel URL directly (overrides instance resolution)',
+  },
+  {
+    flags: '-i, --instance <name>',
+    description: 'Target a specific instance (overrides active)',
+  },
+  { flags: '--timeout <ms>', description: 'Request timeout in ms (default: 30000)' },
+  { flags: '--as <identity>', description: 'Call as a specific identity' },
+  { flags: '--creds <token>', description: 'Use a pre-signed credential (e.g. delegation token)' },
+  { flags: '--debug', description: 'Print full error diagnostics on failure' },
+])
 
 const KERNEL_OPTIONS: readonly CommandOption[] = Object.freeze([
   {

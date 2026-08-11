@@ -1,189 +1,120 @@
-import type { PatchInput } from '@astrale-os/kernel-client/graph'
+import type { MutationResult } from '@astrale-os/kernel-core/graph/mutate'
 
-import { patchDataSchema } from '@astrale-os/kernel-core'
 import chalk from 'chalk'
 import { readFile } from 'node:fs/promises'
 
-import type { KernelCommandOpts } from '../kernel'
-import type { MutationResultWire } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
-import { bindGraph, runKernelCommand } from '../kernel'
+import { runKernelCommand } from '../connection'
+import { prepareMutation } from '../graph/index'
 import { log } from '../lib/log'
 import { output } from '../lib/output'
 import { renderTable } from '../lib/table'
 
-type MutateOpts = KernelCommandOpts & { data?: string; file?: string; dry?: boolean }
+type MutateOpts = KernelCommandOpts & {
+  data?: string
+  file?: string
+  dry?: boolean
+}
 
 export async function mutateCommand(opts: MutateOpts): Promise<void> {
-  let raw: unknown
+  let mutation
   try {
-    raw = await readPatch(opts)
-  } catch (e) {
-    log.error(e instanceof Error ? e.message : 'Invalid patch')
+    mutation = prepareMutation(await readDocument(opts))
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : 'Invalid Mutation V2 document')
     process.exit(1)
-    return
   }
 
-  // --dry: validate the patch locally against the kernel's own schema and print
-  // the normalized form (every arm defaulted to []). No kernel round-trip.
   if (opts.dry) {
-    const parsed = patchDataSchema.safeParse(raw)
-    if (!parsed.success) {
-      log.error('Patch failed local validation:')
-      for (const issue of parsed.error.issues) {
-        log.dim(`  ${issue.path.join('.') || '(root)'}: ${issue.message}`)
-      }
-      process.exit(1)
-    }
-    output(parsed.data, opts)
+    output(mutation, opts)
     return
   }
 
-  await runKernelCommand<MutationResultWire>({
+  await runKernelCommand<MutationResult>({
     opts,
     label: 'Mutate',
-    fn: (ctx) => bindGraph(ctx).mutate(raw as PatchInput),
-    format: (result, fmtOpts, isRaw) => {
-      if (isRaw) {
-        output(result, fmtOpts)
-        return
-      }
-      printResult(result)
+    fn: ({ graph }) => graph.mutate(mutation),
+    format: (result, format, machine) => {
+      if (machine || format.format !== undefined) output(result, format)
+      else printResult(result)
     },
   })
 }
 
-/** Patch source ladder (highest wins): --data > --file > stdin. */
-async function readPatch(opts: MutateOpts): Promise<unknown> {
-  if (opts.data) {
+async function readDocument(opts: MutateOpts): Promise<unknown> {
+  const authored = [opts.data !== undefined, opts.file !== undefined].filter(Boolean).length
+  if (authored > 1) throw new TypeError('--data and --file are mutually exclusive')
+  if (opts.data !== undefined) return parseJson(opts.data, '--data')
+  if (opts.file !== undefined) {
+    let raw: string
     try {
-      return JSON.parse(opts.data)
-    } catch {
-      throw new Error(`Invalid JSON in --data: ${opts.data}`)
+      raw = await readFile(opts.file, 'utf8')
+    } catch (error) {
+      throw new Error(
+        `Cannot read --file ${opts.file}: ${error instanceof Error ? error.message : error}`,
+      )
     }
+    return parseJson(raw, opts.file)
   }
-  if (opts.file) {
-    let text: string
-    try {
-      text = await readFile(opts.file, 'utf-8')
-    } catch (e) {
-      throw new Error(`Cannot read --file ${opts.file}: ${e instanceof Error ? e.message : e}`)
-    }
-    try {
-      return JSON.parse(text)
-    } catch {
-      throw new Error(`Invalid JSON in ${opts.file}`)
-    }
+  if (process.stdin.isTTY) {
+    throw new TypeError('No mutation provided; use --data, --file, or stdin')
   }
-  const stdin = await readStdin()
-  if (stdin) {
-    try {
-      return JSON.parse(stdin)
-    } catch {
-      throw new Error('Invalid JSON from stdin')
-    }
-  }
-  throw new Error(
-    'No patch provided — pass --data <json>, --file <path>, or pipe a PatchData JSON on stdin',
-  )
-}
-
-async function readStdin(): Promise<string | null> {
-  if (process.stdin.isTTY) return null
   const chunks: Buffer[] = []
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer)
-  }
-  const text = Buffer.concat(chunks).toString('utf-8').trim()
-  return text || null
+  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk))
+  const raw = Buffer.concat(chunks).toString('utf8').trim()
+  if (raw.length === 0) throw new TypeError('No mutation provided on stdin')
+  return parseJson(raw, 'stdin')
 }
 
-function printResult(result: MutationResultWire): void {
-  const nodeRows = Object.entries(result.createdNodes ?? {})
-  const edgeRows = Object.entries(result.createdEdges ?? {})
+function parseJson(raw: string, source: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new TypeError(`${source} must contain valid JSON`)
+  }
+}
 
-  if (nodeRows.length === 0 && edgeRows.length === 0) {
-    console.log(chalk.dim('  applied — no nodes or edges minted (updates/deletes only)'))
+function printResult(result: MutationResult): void {
+  const rows = Object.entries(result.createdNodes).map(([binding, id]) => ({ binding, id }))
+  if (rows.length === 0) {
+    console.log(chalk.dim('  applied — no Nodes created'))
     return
   }
-
-  if (nodeRows.length > 0) {
-    console.log(`  ${chalk.bold('Created nodes:')}`)
-    console.log(
-      renderTable(
-        nodeRows.map(([at, id]) => ({ at, id })),
-        {
-          columns: [
-            { key: 'at', header: 'AT', color: chalk.cyan },
-            { key: 'id', header: 'ID', color: chalk.dim },
-          ],
-          showHeader: true,
-        },
-      ),
-    )
-    console.log('')
-  }
-
-  if (edgeRows.length > 0) {
-    console.log(`  ${chalk.bold('Created edges:')}`)
-    console.log(
-      renderTable(
-        edgeRows.map(([tuple, id]) => ({ tuple, id })),
-        {
-          columns: [
-            { key: 'tuple', header: 'CLASS|SOURCE|SLUG|TARGET', color: chalk.cyan },
-            { key: 'id', header: 'ID', color: chalk.dim },
-          ],
-          showHeader: true,
-        },
-      ),
-    )
-    console.log('')
-  }
+  console.log(`  ${chalk.bold('Created nodes:')}`)
+  console.log(
+    renderTable(rows, {
+      columns: [
+        { key: 'binding', header: 'BINDING', color: chalk.cyan },
+        { key: 'id', header: 'ID', color: chalk.dim },
+      ],
+      showHeader: true,
+    }),
+  )
 }
 
 export default {
   name: 'mutate',
-  description: 'Apply a batch graph write (create/update/delete nodes & edges) via function.mutate',
+  description: 'Apply one atomic Mutation V2 graph transition',
   afterHelpText: `
 Behavior:
-  Sends a PatchData patch through the kernel's function.mutate door — a
-  single all-or-nothing write. Patch source (highest wins): --data > --file
-  > stdin. Prints the minted id maps (createdNodes: at→id, createdEdges:
-  class|source|slug|target → id); --json emits the raw MutationResult.
+  Accepts a canonical astrale.graph.mutation/v2 document or its exact
+  { preconditions, operations } authoring input. Source is --data, --file,
+  or stdin. --dry admits and prints the canonical document without opening a
+  Kernel connection. The result contains the real createdNodes binding map.
 
-  Authorization is per-arm: a create needs USE on the class and EDIT on the
-  parent, an update/delete needs EDIT on the target. A denied arm fails the
-  whole patch. --dry validates the patch locally (kernel patchDataSchema) and
-  prints the normalized form without touching the kernel.
-
-PatchData shape:
-  {
-    "nodes": {
-      "create": [{ "class": "/:d:class.X", "at": "/d/x", "props": {} }],
-      "update": [{ "class": "/:d:class.X", "path": "/d/x", "props": {} }],
-      "delete": [{ "class": "/:d:class.X", "path": "/d/x" }]
-    },
-    "edges": {
-      "create": [{ "class": "/:d:class.e", "source": "/a", "target": "/b", "props": {} }],
-      "delete": [{ "class": "/:d:class.e", "source": "/a", "target": "/b" }]
-    }
-  }
+  Legacy PatchData nodes/edges arms and createdEdges IDs are not part of
+  Mutation V2 and are rejected rather than approximated.
 
 Examples:
-  $ astrale mutate --data '{"nodes":{"create":[{"class":"/:blog.acme.com:class.Author","at":"/blog.acme.com/authors/ada","props":{}}]}}'
-  $ astrale mutate --file patch.json
-  $ echo '{"nodes":{"delete":[{"class":"/:d:class.X","path":"/d/x"}]}}' | astrale mutate
-  $ astrale mutate --file patch.json --dry
+  $ astrale mutate --file mutation.v2.json
+  $ astrale mutate --data '{"preconditions":[],"operations":[]}' --dry
 `,
   options: [
-    { flags: '-d, --data <json>', description: 'PatchData as a JSON string' },
-    { flags: '-f, --file <path>', description: 'Read PatchData JSON from a file' },
-    {
-      flags: '--dry',
-      description: 'Validate locally (no kernel call) and print the normalized patch',
-    },
+    { flags: '-d, --data <json>', description: 'Mutation V2 JSON document' },
+    { flags: '-f, --file <path>', description: 'Read a Mutation V2 document from a file' },
+    { flags: '--dry', description: 'Admit and print canonical Mutation V2 without dispatch' },
   ],
   action: async (opts) => {
     await mutateCommand(opts as MutateOpts)

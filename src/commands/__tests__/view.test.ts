@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
-const getMock = mock(async (_path: string) => ({ id: 'issue-id' }))
-const clientCallMock = mock(async (): Promise<unknown> => {
+const getMock = mock(async (_path: unknown) => ({ id: 'issue-id' }))
+const viewsForMock = mock(async (): Promise<unknown> => {
   throw new Error('View:resolve must not run for a bare --view-url')
 })
 const abMock = mock(async (_args: string[]) => ({
@@ -10,14 +10,21 @@ const abMock = mock(async (_args: string[]) => ({
   error: null,
 }))
 
-mock.module('../../kernel', () => ({
-  bindGraph: () => ({ get: getMock }),
+mock.module('../../connection', () => ({
   expandSelfInPath: async (path: string) => ({ path }),
-  resolveKernelTarget: mock(),
-  withKernelClient: async (
+  withHostSession: async (
     _opts: unknown,
-    run: (ctx: { client: { call: typeof clientCallMock } }) => Promise<unknown>,
-  ) => run({ client: { call: clientCallMock } }),
+    run: (ctx: {
+      graph: { get: typeof getMock }
+      host: { viewsFor: typeof viewsForMock }
+      target: { url: string; issuer: string }
+    }) => Promise<unknown>,
+  ) =>
+    run({
+      graph: { get: getMock },
+      host: { viewsFor: viewsForMock },
+      target: { url: 'https://kernel.test', issuer: 'https://kernel.test' },
+    }),
 }))
 
 mock.module('../../lib/browser', () => ({
@@ -29,14 +36,14 @@ mock.module('../../lib/browser', () => ({
 
 beforeEach(() => {
   getMock.mockClear()
-  clientCallMock.mockClear()
+  viewsForMock.mockClear()
   abMock.mockClear()
 })
 
 describe('view session resolution', () => {
   test('uses a bare --view-url target only as shell context', async () => {
     const { resolveSession } = await import('../view')
-    const targetPath = '/users/user-1/issue-1'
+    const targetPath = '@issue-id'
 
     const result = await resolveSession(undefined, {
       viewUrl: 'http://127.0.0.1:5173/ui/issues',
@@ -44,8 +51,8 @@ describe('view session resolution', () => {
       target: targetPath,
     })
 
-    expect(getMock).toHaveBeenCalledWith(targetPath)
-    expect(clientCallMock).not.toHaveBeenCalled()
+    expect(String(getMock.mock.calls[0]?.[0])).toBe(targetPath)
+    expect(viewsForMock).not.toHaveBeenCalled()
     expect(result).toEqual({
       view: {
         url: 'http://127.0.0.1:5173/ui/issues',
@@ -60,28 +67,54 @@ describe('view session resolution', () => {
 
   test('lists every candidate without requiring a view selection', async () => {
     const { resolveSession } = await import('../view')
-    const targetPath = '/domains/ai-gateway.astrale.ai/core/gemini-3-5-flash'
-    const candidates = [
+    const targetPath = '@model-id'
+    const resolved = [
       {
-        id: 'chat-id',
-        path: '/domains/ai-gateway.astrale.ai/views/chat',
-        url: 'https://ai-gateway.astrale.ai/ui/chat',
-        origin: 'class' as const,
+        key: 'ai-gateway.astrale.ai:view.chat',
+        href: 'https://ai-gateway.astrale.ai/ui/chat',
+        handshake: 'shell' as const,
+        issuer: 'https://ai-gateway.astrale.ai',
+        etag: `sha256:${'a'.repeat(64)}`,
+        revision: `sha256:${'b'.repeat(64)}`,
+        declaration: {
+          target: { kind: 'definition' as const, definitions: [] },
+          auth: 'required' as const,
+        },
       },
       {
-        id: 'model-id',
-        path: '/domains/ai-gateway.astrale.ai/views/model',
-        url: 'https://ai-gateway.astrale.ai/ui/model',
-        origin: 'class' as const,
+        key: 'ai-gateway.astrale.ai:view.model',
+        href: 'https://ai-gateway.astrale.ai/ui/model',
+        handshake: 'none' as const,
+        issuer: 'https://ai-gateway.astrale.ai',
+        etag: `sha256:${'c'.repeat(64)}`,
+        revision: `sha256:${'d'.repeat(64)}`,
+        declaration: { target: { kind: 'domain' as const }, auth: 'public' as const },
       },
     ]
-    clientCallMock.mockImplementationOnce(async () => candidates)
+    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
 
     const result = await resolveSession(targetPath, { list: true })
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       target: { id: 'issue-id', path: targetPath },
-      candidates,
+      candidates: [
+        {
+          id: 'ai-gateway.astrale.ai:view.chat',
+          path: '/:ai-gateway.astrale.ai:view.chat',
+          url: 'https://ai-gateway.astrale.ai/ui/chat',
+          name: 'chat',
+          handshake: 'shell',
+          origin: 'class',
+        },
+        {
+          id: 'ai-gateway.astrale.ai:view.model',
+          path: '/:ai-gateway.astrale.ai:view.model',
+          url: 'https://ai-gateway.astrale.ai/ui/model',
+          name: 'model',
+          handshake: 'none',
+          origin: 'self',
+        },
+      ],
     })
   })
 })

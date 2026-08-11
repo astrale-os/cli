@@ -1,10 +1,10 @@
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../../kernel'
+import type { KernelCommandOpts } from '../../connection'
 import type { Column } from '../../lib/output'
 import type { CommandDefinition } from '../../program/index'
 
-import { listOwnedInstances } from '../../kernel/client'
+import { listOwnedInstances } from '../../lib/admin-instance'
 import {
   formatInstanceLocation,
   type InstanceInfo,

@@ -1,41 +1,53 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
-type Wire = { nodes: unknown[]; edges: unknown[]; roots: string[]; next?: Record<string, unknown> }
+type GraphContext = {
+  graph: {
+    query: typeof queryMock
+    getOrThrow: typeof getOrThrowMock
+    mutate: typeof mutateMock
+  }
+}
+
 type RunOpts = {
   opts: Record<string, unknown>
-  fn: (ctx: { client: { call: typeof clientCallMock } }) => Promise<unknown>
-  format?: (result: unknown, opts: Record<string, unknown>, isRaw: boolean) => void | Promise<void>
+  fn: (context: GraphContext) => Promise<unknown>
+  format?: (
+    result: unknown,
+    opts: Record<string, unknown>,
+    machine: boolean,
+  ) => void | Promise<void>
 }
 
 class ExitError extends Error {
   constructor(readonly code: string | number | null | undefined) {
-    super('process.exit(' + String(code) + ')')
+    super(`process.exit(${String(code)})`)
   }
 }
-
-const emptyWire = (): Wire => ({ nodes: [], edges: [], roots: [] })
 
 let stdout = ''
 let errors: string[] = []
 let originalStdoutWrite: typeof process.stdout.write
 let originalConsoleError: typeof console.error
 let originalExit: typeof process.exit
-let queryAsts: unknown[] = []
-let getPaths: string[] = []
-let queryResult: { wire: Wire } = { wire: emptyWire() }
-let getResult: unknown = null
-let clientCallResult: unknown = { rows: [] }
+let queryCalls: Array<{ ast: unknown; options: unknown }> = []
+let getTargets: string[] = []
+let mutations: unknown[] = []
+let queryResult: unknown
+let getResult: unknown
+let mutationResult: unknown
 
-const clientCallMock = mock(async () => clientCallResult)
-const queryMock = mock(async (ast: unknown) => {
-  queryAsts.push(ast)
+const queryMock = mock(async (ast: unknown, options?: unknown) => {
+  queryCalls.push({ ast, options })
   return queryResult
 })
-const getMock = mock(async (path: string) => {
-  getPaths.push(path)
+const getOrThrowMock = mock(async (target: { readonly raw?: string; toString(): string }) => {
+  getTargets.push(target.raw ?? target.toString())
   return getResult
 })
-const bindGraphMock = mock(() => ({ query: queryMock, get: getMock }))
+const mutateMock = mock(async (mutation: unknown) => {
+  mutations.push(mutation)
+  return mutationResult
+})
 const expandSelfInPathMock = mock(async (path: string) => {
   if (path === '@self') {
     return {
@@ -45,14 +57,15 @@ const expandSelfInPathMock = mock(async (path: string) => {
   }
   return { path, meta: undefined }
 })
-const withSelfHintMock = mock(async (fn: () => Promise<unknown>) => fn())
+const withSelfHintMock = mock(async (action: () => Promise<unknown>) => action())
 const runKernelCommandMock = mock(async (run: RunOpts) => {
-  const result = await run.fn({ client: { call: clientCallMock } })
-  if (run.format) await run.format(result, run.opts, true)
+  const result = await run.fn({
+    graph: { query: queryMock, getOrThrow: getOrThrowMock, mutate: mutateMock },
+  })
+  await run.format?.(result, run.opts, true)
 })
 
-mock.module('../../kernel', () => ({
-  bindGraph: bindGraphMock,
+mock.module('../../connection', () => ({
   expandSelfInPath: expandSelfInPathMock,
   runKernelCommand: runKernelCommandMock,
   withSelfHint: withSelfHintMock,
@@ -61,28 +74,28 @@ mock.module('../../kernel', () => ({
 beforeEach(() => {
   stdout = ''
   errors = []
-  queryAsts = []
-  getPaths = []
-  queryResult = { wire: emptyWire() }
-  getResult = null
-  clientCallResult = { rows: [] }
-  clientCallMock.mockClear()
+  queryCalls = []
+  getTargets = []
+  mutations = []
+  queryResult = { graph: { nodes: [], edges: [] } }
+  getResult = undefined
+  mutationResult = { createdNodes: {} }
   queryMock.mockClear()
-  getMock.mockClear()
-  bindGraphMock.mockClear()
+  getOrThrowMock.mockClear()
+  mutateMock.mockClear()
   expandSelfInPathMock.mockClear()
   withSelfHintMock.mockClear()
   runKernelCommandMock.mockClear()
 
-  originalStdoutWrite = process.stdout.write.bind(process.stdout)
+  originalStdoutWrite = process.stdout.write
   originalConsoleError = console.error
   originalExit = process.exit
   process.stdout.write = ((chunk: string | Uint8Array) => {
     stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
     return true
   }) as typeof process.stdout.write
-  console.error = ((...args: unknown[]) => {
-    errors.push(args.map(String).join(' '))
+  console.error = ((...values: unknown[]) => {
+    errors.push(values.map(String).join(' '))
   }) as typeof console.error
   process.exit = ((code?: string | number | null) => {
     throw new ExitError(code)
@@ -96,106 +109,154 @@ afterEach(() => {
 })
 
 describe('query command', () => {
-  test('lowers roots and selectors to the expected QueryASTInput', async () => {
+  /** @evidence TEST-CLI-QUERY-DISPATCHES-CANONICAL-V3 */
+  test('dispatches the supported source/edge subset as Query V3 with its cursor', async () => {
     const { queryCommand } = await import('../query')
 
-    await queryCommand(['/root', '@self'], {
+    await queryCommand(['/:notes.example.dev:class.Note'], {
       json: true,
-      depth: '2',
-      children:
-        '{"classes":["/:kernel.astrale.ai:class.Folder"],"limit":50,"cursor":"child-cursor","order":{"by":"id","dir":"asc"}}',
-      edges:
-        '[{"as":"perm","classes":["/:kernel.astrale.ai:class.has_perm"],"direction":"out","limit":10,"cursor":"edge-cursor","order":{"by":"id","dir":"desc"}},{"direction":"both"}]',
+      edge: '/:notes.example.dev:class.references',
+      direction: 'incoming',
+      limit: '25',
+      cursor: 'next-page',
     })
 
-    expect(queryAsts).toEqual([
+    expect(JSON.parse(JSON.stringify(queryCalls))).toEqual([
       {
-        version: 1,
-        from: ['/root', '@expanded-self'],
-        steps: [
-          {
-            expand: {
-              edge: 'has_parent',
-              dir: 'in',
-              depth: 2,
-              filter: { class: ['/:kernel.astrale.ai:class.Folder'] },
-              page: { limit: 50, cursor: 'child-cursor' },
-              order: { by: 'id', dir: 'asc' },
-            },
+        ast: {
+          format: 'astrale.graph.query',
+          version: 'v3',
+          source: {
+            terms: [{ kind: 'path', path: '/:notes.example.dev:class.Note' }],
+            binding: 'n0',
           },
-          {
-            expand: {
-              edge: ['/:kernel.astrale.ai:class.has_perm'],
-              dir: 'out',
-              as: 'perm',
-              page: { limit: 10, cursor: 'edge-cursor' },
-              order: { by: 'id', dir: 'desc' },
+          steps: [
+            {
+              op: 'expand',
+              from: 'n0',
+              edges: ['/:notes.example.dev:class.references'],
+              direction: 'incoming',
+              bindings: { edge: 'e0', node: 'n1' },
             },
-          },
-          { expand: { dir: 'both', as: 'e1' } },
-        ],
+          ],
+          select: { kind: 'graph', binding: 'n1', limit: 25 },
+        },
+        options: { cursor: 'next-page' },
       },
     ])
-    expect(expandSelfInPathMock.mock.calls.map((call) => call[0])).toEqual(['/root', '@self'])
-    expect(withSelfHintMock).toHaveBeenCalledTimes(1)
   })
 
-  test('rejects an invalid children selector before dispatch', async () => {
+  test('authors a Definition source through the same canonical Query V3 call', async () => {
     const { queryCommand } = await import('../query')
 
-    await expect(queryCommand(['/'], { json: true, children: '{"bogus":true}' })).rejects.toEqual(
-      new ExitError(1),
-    )
+    await queryCommand([], {
+      json: true,
+      definition: '/:issues.astrale.ai:class.Issue',
+      limit: '20',
+    })
 
-    expect(errors.join('\n')).toContain('--children invalid selector')
-    expect(queryMock).not.toHaveBeenCalled()
+    expect(JSON.parse(JSON.stringify(queryCalls))).toEqual([
+      {
+        ast: {
+          format: 'astrale.graph.query',
+          version: 'v3',
+          source: {
+            terms: [
+              {
+                kind: 'definition',
+                definition: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
+              },
+            ],
+            binding: 'n0',
+          },
+          steps: [],
+          select: { kind: 'graph', binding: 'n0', limit: 20 },
+        },
+        options: {},
+      },
+    ])
   })
 
-  test('rejects mixing --ast with positional roots', async () => {
+  /** @evidence TEST-CLI-QUERY-REJECTS-V1-BEFORE-CONNECTION */
+  test('rejects a legacy AST before opening the command connection', async () => {
     const { queryCommand } = await import('../query')
 
     await expect(
-      queryCommand(['/'], { json: true, ast: '{"version":1,"from":["/"]}' }),
+      queryCommand([], { json: true, ast: '{"version":1,"from":["/"]}' }),
     ).rejects.toEqual(new ExitError(1))
 
-    expect(errors.join('\n')).toContain(
-      '--ast cannot be used with positional roots or --depth/--children/--edges',
-    )
-    expect(queryMock).not.toHaveBeenCalled()
+    expect(runKernelCommandMock).not.toHaveBeenCalled()
+    expect(errors.join('\n')).toContain('expected "astrale.graph.query" at /format')
   })
 })
 
 describe('get command', () => {
-  test('dispatches a point read and prints the flat wire projection', async () => {
+  /** @evidence TEST-CLI-GET-RETURNS-CANONICAL-NODE */
+  test('point-reads the target and does not synthesize Path or backend fields', async () => {
     const { getCommand } = await import('../get')
-    const row = {
-      id: 'n1',
-      class: '/:demo:class.Widget',
-      path: '/demo/widget',
-      props: { name: 'Widget' },
-      __labels: ['Node', 'Widget'],
-      classId: 'class-1',
+    getResult = {
+      id: 'note-1',
+      class: '/:notes.example.dev:class.Note',
+      props: { 'notes.example.dev:class.Note.property.title': 'Hello' },
     }
-    getResult = row
 
-    await getCommand('/demo/widget', { json: true })
+    await getCommand('/:notes.example.dev:class.Note', { json: true })
 
-    expect(getPaths).toEqual(['/demo/widget'])
-    expect(JSON.parse(stdout)).toEqual({
-      id: 'n1',
-      class: '/:demo:class.Widget',
-      path: '/demo/widget',
-      props: { name: 'Widget' },
-    })
+    expect(getTargets).toEqual(['/:notes.example.dev:class.Note'])
+    expect(JSON.parse(stdout)).toEqual(getResult)
+    expect(stdout).not.toContain('__labels')
+    expect(stdout).not.toContain('classId')
   })
+})
 
-  test('errors with exit 1 when no node resolves', async () => {
-    const { getCommand } = await import('../get')
-    getResult = null
+describe('ls command', () => {
+  /** @evidence TEST-CLI-LS-REQUIRES-EXACT-EDGE-BEFORE-CONNECTION */
+  test('rejects a generic child listing before opening the command connection', async () => {
+    const { lsCommand } = await import('../ls')
 
-    await expect(getCommand('/missing', { json: true })).rejects.toEqual(new ExitError(1))
+    await expect(lsCommand('@node', { json: true })).rejects.toEqual(new ExitError(1))
 
-    expect(getPaths).toEqual(['/missing'])
-    expect(errors.join('\n')).toContain('node "/missing" not found or not visible')
+    expect(runKernelCommandMock).not.toHaveBeenCalled()
+    expect(errors.join('\n')).toContain('Kernel V2 has no universal child relation')
+  })
+})
+
+describe('mutate command', () => {
+  /** @evidence TEST-CLI-MUTATE-DISPATCHES-CANONICAL-V2 */
+  test('admits authoring input and dispatches one canonical Mutation V2 document', async () => {
+    const { mutateCommand } = await import('../mutate')
+    mutationResult = { createdNodes: { note: 'note-1' } }
+
+    await mutateCommand({
+      json: true,
+      data: JSON.stringify({
+        preconditions: [],
+        operations: [
+          {
+            op: 'node.create',
+            as: 'note',
+            class: '/:notes.example.dev:class.Note',
+            props: {},
+          },
+        ],
+      }),
+    })
+
+    expect(JSON.parse(JSON.stringify(mutations))).toEqual([
+      {
+        format: 'astrale.graph.mutation',
+        version: 'v2',
+        preconditions: [],
+        operations: [
+          {
+            op: 'node.create',
+            as: 'note',
+            class: '/:notes.example.dev:class.Note',
+            props: {},
+          },
+        ],
+      },
+    ])
+    expect(JSON.parse(stdout)).toEqual({ createdNodes: { note: 'note-1' } })
   })
 })

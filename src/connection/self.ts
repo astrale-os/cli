@@ -1,11 +1,9 @@
-import type { KernelCommandOpts } from './types'
+import type { KernelCommandOpts } from './command'
 
 import { getDefault, getIdentity, setRegistration } from '../identity/index'
 import { fileExists, keypairPaths } from '../keys/index'
 /** CLI bridge for @self resolution and stale-registration error hints. */
-import { readConfig } from '../lib/config'
 import { decodeTokenClaims, readIdpSession } from '../lib/idp'
-import { resolveInstanceTarget } from '../lib/instance-target'
 import {
   containsSelfRef,
   expandSelfReferences,
@@ -15,37 +13,22 @@ import {
   type SelfResolution,
 } from '../lib/self'
 import { KEYS_DIR } from '../state/index'
-import { lookupImplicitOwnedInstance, withKernelClient } from './client'
+import { withHostSession } from './session'
 
 /** Metadata attached to errors so the NotFoundError path can hint at stale `@self` expansions. */
-export type SelfExpansionMeta = {
-  original: string
-  expanded: string
-  selfId: string
-  identity?: string
-  slug?: string
+export interface SelfExpansionMeta {
+  readonly original: string
+  readonly expanded: string
+  readonly selfId: string
+  readonly identity?: string
+  readonly slug?: string
 }
 
-/** Build the same target/signing context `withKernelClient` will use. */
+/** Build the same target/signing context the command-scoped HostSession will use. */
 export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfResolverContext> {
-  const config = await readConfig()
-  // Mirror withKernelClient's slug logic: --url without -i ⇒ no slug.
-  let slug: string | undefined
-  let defaultIdentity: string | undefined
-  if (opts.url && !opts.instance) {
-    slug = undefined
-  } else {
-    const resolved = await resolveInstanceTarget(
-      opts.instance ? { source: 'name', name: opts.instance } : { source: 'active' },
-      {
-        config,
-        admin: {},
-        managed: (instanceSlug) => lookupImplicitOwnedInstance(instanceSlug, opts),
-      },
-    )
-    slug = resolved.name
-    defaultIdentity = resolved.defaultIdentity
-  }
+  const target = await withHostSession(opts, async ({ target }) => target)
+  const slug = target.slug
+  const defaultIdentity = target.defaultIdentity
 
   // Mirror resolveCredential's instance-signed branch: when targeting a
   // child for which the CLI generated a dedicated keypair, the call signs
@@ -87,25 +70,18 @@ export async function buildSelfContext(opts: KernelCommandOpts): Promise<SelfRes
  * error is re-thrown either way.
  */
 export async function withSelfHint<T>(
-  fn: () => Promise<T>,
+  action: () => Promise<T>,
   meta: SelfExpansionMeta | undefined,
 ): Promise<T> {
-  if (!meta) return fn()
+  if (!meta) return action()
   try {
-    return await fn()
+    return await action()
   } catch (err) {
     if (err instanceof Error && err.name === 'NotFoundError') {
       ;(err as Error & { expandedFromSelf?: SelfExpansionMeta }).expandedFromSelf = meta
     }
     throw err
   }
-}
-
-/** Convenience: resolve the nodeId once, or throw the typed refusal. */
-export function resolveOrThrow(selfCtx: SelfResolverContext): string {
-  const r: SelfResolution = resolveSelfNodeId(selfCtx)
-  if ('reason' in r) throw selfRefusalError(r)
-  return r.id
 }
 
 export type ResolveSelfIdLazyDeps = {
@@ -161,29 +137,62 @@ export async function resolveSelfIdLazy(
 }
 
 async function whoamiSelfId(opts: KernelCommandOpts): Promise<{ id?: unknown; kernelUrl: string }> {
-  let kernelUrl = ''
-  const me = await withKernelClient(opts, (ctx) => {
-    kernelUrl = ctx.url
-    return ctx.client.as(ctx.credential).auth.whoami()
-  })
-  return { id: me.id, kernelUrl }
+  return withHostSession(opts, async ({ auth, target }) => ({
+    ...(await auth.whoami()),
+    kernelUrl: target.url,
+  }))
 }
 
 /** Expand @self in path-like commands and return metadata for NotFound hints. */
 export async function expandSelfInPath(
   path: string,
-  opts: KernelCommandOpts,
-): Promise<{ path: string; meta: SelfExpansionMeta | undefined }> {
-  if (!containsSelfRef(path)) return { path, meta: undefined }
-  const selfCtx = await buildSelfContext(opts)
-  const id = await resolveSelfIdLazy(selfCtx, opts)
-  const expanded = expandSelfReferences(path, id)
-  if (expanded === path) return { path, meta: undefined }
+  options: KernelCommandOpts,
+): Promise<{ readonly path: string; readonly meta?: SelfExpansionMeta }> {
+  const expanded = await expandSelfValues(path, [], options)
+  return expanded.meta === undefined
+    ? { path: expanded.path }
+    : { path: expanded.path, meta: expanded.meta }
+}
+
+/** Expand @self once across one Call path and its CLI-authored string parameters. */
+export async function expandSelfInCall(
+  path: string,
+  parameters: readonly string[],
+  options: KernelCommandOpts,
+): Promise<{
+  readonly path: string
+  readonly parameters: readonly string[]
+  readonly meta?: SelfExpansionMeta
+}> {
+  return expandSelfValues(path, parameters, options)
+}
+
+async function expandSelfValues(
+  path: string,
+  parameters: readonly string[],
+  options: KernelCommandOpts,
+): Promise<{
+  readonly path: string
+  readonly parameters: readonly string[]
+  readonly meta?: SelfExpansionMeta
+}> {
+  if (!containsSelfRef(path) && !parameters.some(containsSelfRef)) {
+    return { path, parameters }
+  }
+  const selfCtx = await buildSelfContext(options)
+  const id = await resolveSelfIdLazy(selfCtx, options)
+  const expandedPath = expandSelfReferences(path, id)
+  const expandedParameters = parameters.map((parameter) => expandSelfReferences(parameter, id))
+  const changed =
+    expandedPath !== path ||
+    expandedParameters.some((parameter, index) => parameter !== parameters[index])
+  if (!changed) return { path, parameters }
   return {
-    path: expanded,
+    path: expandedPath,
+    parameters: expandedParameters,
     meta: {
       original: path,
-      expanded,
+      expanded: expandedPath,
       selfId: id,
       identity: selfCtx.identity?.name,
       slug: selfCtx.instanceSlug,

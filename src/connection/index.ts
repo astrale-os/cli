@@ -1,3 +1,7 @@
-export { fetchWithCaFile } from './ca-fetch'
+export { createPathCall } from './call'
+export { runKernelCommand } from './command'
+export type { KernelCommandOpts } from './command'
+export { expandSelfInCall, expandSelfInPath, withSelfHint } from './self'
+export type { SelfExpansionMeta } from './self'
 export { withAdminHostSession, withHostSession, type ConnectionContext } from './session'
 export type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'

@@ -54,7 +54,7 @@ type InspectedOption = Command['options'][number] & {
   readonly implied?: Readonly<Record<string, unknown>>
 }
 
-function frozenSurface(root: Command): readonly object[] {
+function ledgeredSurface(root: Command): readonly object[] {
   const rows: object[] = []
   const visit = (command: Command, parents: readonly string[]): void => {
     const inspected = command as InspectedCommand
@@ -120,9 +120,9 @@ function frozenSurface(root: Command): readonly object[] {
 }
 
 describe('program composition', () => {
-  /** @evidence TEST-CLI-PROGRAM-MATCHES-FROZEN-SURFACE */
-  test('matches the complete frozen command and help surface', async () => {
-    const surface = frozenSurface(await buildProgram())
+  /** @evidence TEST-CLI-PROGRAM-MATCHES-LEDGERED-SURFACE */
+  test('matches the complete ledgered command and help surface', async () => {
+    const surface = ledgeredSurface(await buildProgram())
     const paths = surface.map((entry) => (entry as { command: string }).command)
 
     expect(paths).toEqual([
@@ -187,7 +187,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      'a4250647b1e054d0de5b396d1d2ae0ef8bf736e908f97c22cd6999e4f3f868df',
+      '1fa3dd7b13988c2a141240f3675c6fce4a1ca1399628b409b13505d626e4d6ca',
     )
   })
 
@@ -286,19 +286,24 @@ describe('help contract — read command split', () => {
     const getHelp = get?.helpInformation() ?? ''
     const queryHelp = query?.helpInformation() ?? ''
 
-    expect(getHelp).toContain('Usage: astrale get [options] <path>')
-    expect(getHelp).toContain('-l, --long')
+    expect(getHelp).toContain('Usage: astrale get [options] <target>')
+    expect(getHelp).not.toContain('-l, --long')
     expect(getHelp).not.toContain('--depth')
     expect(getHelp).not.toContain('--children')
     expect(getHelp).not.toContain('--edges')
     expect(getHelp).not.toContain('--graph')
 
-    expect(queryHelp).toContain('Usage: astrale query [options] [paths...]')
-    expect(queryHelp).toContain('--depth <n>')
-    expect(queryHelp).toContain('--children <json>')
-    expect(queryHelp).toContain('--edges <json>')
+    expect(queryHelp).toContain('Usage: astrale query [options] [sources...]')
+    expect(queryHelp).not.toContain('--depth <n>')
+    expect(queryHelp).not.toContain('--children <json>')
+    expect(queryHelp).not.toContain('--edges <json>')
     expect(queryHelp).toContain('--ast <json>')
-    expect(queryHelp).toContain('--cypher <query>')
+    expect(queryHelp).toContain('--definition <path>')
+    expect(queryHelp).toContain('--edge <class>')
+    expect(queryHelp).toContain('--direction <direction>')
+    expect(queryHelp).toContain('--limit <n>')
+    expect(queryHelp).toContain('--cursor <token>')
+    expect(queryHelp).not.toContain('--cypher <query>')
   })
 })
 

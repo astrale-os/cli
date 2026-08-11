@@ -1,13 +1,13 @@
 import { defineLaw } from '@astrale-os/spec/authoring'
 
-export const CLI_PROGRAM_FROZEN_SURFACE = defineLaw({
-  id: 'CLI-PROGRAM-FROZEN-SURFACE',
+export const CLI_PROGRAM_LEDGERED_SURFACE = defineLaw({
+  id: 'CLI-PROGRAM-LEDGERED-SURFACE',
   statement:
-    'Program composition preserves the complete root and nested command metadata, options, aliases, visibility, Commander behavior, rendered help, and package-derived version.',
+    'Program composition exposes one exact root and nested command surface; metadata, options, aliases, visibility, Commander behavior, rendered help, and package-derived version change only through a deliberate compatibility-ledger entry.',
   tests: [
     {
       file: '__tests__/program.test.ts',
-      id: 'TEST-CLI-PROGRAM-MATCHES-FROZEN-SURFACE',
+      id: 'TEST-CLI-PROGRAM-MATCHES-LEDGERED-SURFACE',
     },
     {
       file: '__tests__/program.test.ts',

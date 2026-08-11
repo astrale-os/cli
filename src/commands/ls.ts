@@ -1,251 +1,123 @@
-import { rawOf } from '@astrale-os/kernel-client/graph'
+import type { Node } from '@astrale-os/kernel-core/graph/node'
+import type { QueryDirection } from '@astrale-os/kernel-core/graph/query'
+
+import { ClassPath } from '@astrale-os/kernel-core/graph/class'
 import chalk from 'chalk'
 
-import type { GraphNode, KernelCommandOpts, SelfExpansionMeta } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
 import type { ListProjection } from '../lib/output'
 import type { CommandDefinition } from '../program/index'
 
-import {
-  bindGraph,
-  childrenCursor,
-  expandSelfInPath,
-  formatKernelError,
-  runKernelCommand,
-  splitRoot,
-  withKernelClient,
-  withSelfHint,
-} from '../kernel'
-import { spinner } from '../lib/log'
-import { isMachine, output, presentList } from '../lib/output'
+import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
+import { nodeProperty, prepareQuery } from '../graph/index'
+import { log } from '../lib/log'
+import { isMachine, presentList } from '../lib/output'
 
 type LsOpts = KernelCommandOpts & {
+  edge?: string
+  direction?: QueryDirection
+  limit?: string
+  cursor?: string
   long?: boolean
   quiet?: boolean
-  recursive?: boolean
   count?: boolean
-  filter?: string
 }
 
-/** A child node row — the shared `function.get` node shape. */
-type Item = GraphNode
-
-// ── Display projection ──────────────────────────────────────
-
-/** `/example.astrale.ai` → `example.astrale.ai`; `/` stays `/`. */
-export function basename(path?: string): string {
-  if (!path || path === '/') return path ?? ''
-  return path.slice(path.lastIndexOf('/') + 1)
-}
-
-/** `/:kernel.astrale.ai:class.Domain` → `Domain`; falls back to the most specific label. */
-export function classNameOf(item: { class?: string; __labels?: string[] }): string {
-  const tail = item.class?.split(/[/:.]/).pop()
-  return tail || item.__labels?.[item.__labels.length - 1] || '?'
-}
-
-/** The addressable path of a child (for `-q` / tree descent). */
-function itemPath(item: Item): string {
-  return item.path ?? (item.id ? `@${item.id}` : '')
-}
-
-function lsProjection(items: Item[]): ListProjection {
-  return {
-    columns: [
-      { key: 'name', header: 'NAME', color: chalk.cyan },
-      { key: 'kind', header: 'KIND', color: chalk.dim },
-      { key: 'id', header: 'ID', color: chalk.dim },
-    ],
-    rows: items.map((i) => ({ name: basename(i.path), kind: classNameOf(i), id: i.id ?? '' })),
-    paths: items.map(itemPath),
-  }
-}
-
-function applyFilter(items: Item[], filter: string | undefined): Item[] {
-  if (!filter) return items
-  const f = filter.toLowerCase()
-  return items.filter((i) => {
-    const kindMatch = classNameOf(i).toLowerCase() === f
-    const labelMatch = i.__labels?.some((l) => l.toLowerCase() === f) ?? false
-    return kindMatch || labelMatch
-  })
-}
-
-// ── Command ─────────────────────────────────────────────────
-
-export async function lsCommand(path: string, opts: LsOpts): Promise<void> {
-  let expandedPath: string
-  let meta
-  try {
-    ;({ path: expandedPath, meta } = await expandSelfInPath(path, opts))
-  } catch (e) {
-    process.stderr.write((e instanceof Error ? e.message : 'Invalid @self expansion') + '\n')
+export async function lsCommand(source: string, opts: LsOpts): Promise<void> {
+  if (opts.edge === undefined) {
+    log.error('ls requires --edge <class>; Kernel V2 has no universal child relation')
     process.exit(1)
   }
 
-  if (opts.recursive) {
-    return recursiveLs(expandedPath, opts, meta)
+  let path: string
+  let meta
+  let prepared
+  try {
+    ;({ path, meta } = await expandSelfInPath(source, opts))
+    prepared = prepareQuery({
+      sources: [path],
+      edge: opts.edge,
+      direction: opts.direction,
+      limit: opts.limit,
+      cursor: opts.cursor,
+    })
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : 'Invalid edge neighborhood')
+    process.exit(1)
   }
 
   await runKernelCommand({
     opts,
-    label: `Children of ${expandedPath}`,
-    // Flat listing = ONE function.get depth:1; the root is dropped, the rest are
-    // the direct children (replaces the removed `::listChildren` syscall).
-    fn: async (ctx) => {
-      const result = await withSelfHint(
-        () => bindGraph(ctx).query((q) => q.from(expandedPath).children()),
+    label: `Neighbors of ${path}`,
+    fn: ({ graph }) =>
+      withSelfHint(
+        () => graph.query(prepared.ast, prepared.cursor ? { cursor: prepared.cursor } : {}),
         meta,
-      )
-      return {
-        children: splitRoot(result.wire.nodes, expandedPath).children,
-        next: childrenCursor(result.wire),
-      }
-    },
-    format: ({ children, next }, fmtOpts) => {
-      const items = applyFilter(children, opts.filter)
+      ),
+    format: (result, format) => {
       presentList(
-        items,
-        { ...fmtOpts, quiet: opts.quiet, count: opts.count, long: opts.long },
-        lsProjection,
+        [...result.graph.nodes],
+        { ...format, long: opts.long, quiet: opts.quiet, count: opts.count },
+        listProjection,
       )
-      if (next && !isMachine(fmtOpts) && !opts.quiet && !opts.count) {
-        process.stdout.write(
-          chalk.dim(
-            '  more children truncated - page with `query ' +
-              expandedPath +
-              ' --depth 1 --children \'{"cursor":"' +
-              next +
-              '"}\'`\n',
-          ),
-        )
+      if (result.cursor && !isMachine(format) && !opts.quiet && !opts.count) {
+        process.stderr.write(`  cursor: ${result.cursor}\n`)
       }
     },
   })
 }
 
-// ── Recursive tree ──────────────────────────────────────────
-
-const MAX_DEPTH = 5
-
-type TreeNode = Item & { children: TreeNode[] }
-
-async function recursiveLs(
-  path: string,
-  opts: LsOpts,
-  meta: SelfExpansionMeta | undefined,
-): Promise<void> {
-  const machine = isMachine(opts)
-  const spin = !machine ? spinner(`Listing ${path} recursively...`) : null
-
-  try {
-    await withKernelClient(opts, async (ctx) => {
-      // The recursive walk is now ONE function.get to the depth cap; the tree is
-      // reassembled client-side from the flat node page (was an N+1 buildTree).
-      const result = await withSelfHint(
-        () => bindGraph(ctx).query((q) => q.from(path).descend(MAX_DEPTH)),
-        meta,
-      )
-      const tree = buildTree(result.wire.nodes, path)
-      spin?.succeed(`Tree of ${path}`)
-      if (!machine) console.log('')
-
-      if (machine || opts.format) {
-        output(tree, opts)
-      } else if (opts.quiet) {
-        printTreeQuiet(tree)
-      } else {
-        printTree(tree, '')
-      }
-    })
-  } catch (error) {
-    if (!machine && spin) spin.fail('Failed')
-    await formatKernelError(error, machine, undefined, opts.debug, { credential: opts.creds })
-    process.exit(1)
+export function listProjection(nodes: Node[]): ListProjection {
+  return {
+    columns: [
+      { key: 'name', header: 'NAME', color: chalk.cyan },
+      { key: 'class', header: 'CLASS', color: chalk.dim },
+      { key: 'id', header: 'ID', color: chalk.dim },
+    ],
+    rows: nodes.map((node) => ({
+      name: displayName(node),
+      class: ClassPath.name(node.class),
+      id: node.id,
+    })),
+    paths: nodes.map((node) => `@${node.id}`),
   }
 }
 
-/** Parent absolute path of an absolute node path (`/a/b` → `/a`; `/a` → `/`). */
-function parentPathOf(path: string): string {
-  const i = path.lastIndexOf('/')
-  return i <= 0 ? '/' : path.slice(0, i)
-}
-
-/** Reassemble the flat `function.get` node page into a tree rooted at `rootPath`. */
-function buildTree(nodes: readonly GraphNode[], rootPath: string): TreeNode[] {
-  const rootRaw = rawOf(rootPath)
-  const byPath = new Map<string, TreeNode>()
-  for (const n of nodes) {
-    const raw = rawOf(n.path)
-    if (raw === rootRaw) continue
-    byPath.set(raw, { ...n, children: [] })
-  }
-
-  const roots: TreeNode[] = []
-  for (const [raw, node] of byPath) {
-    const parent = parentPathOf(raw)
-    const parentNode = parent === rootRaw ? undefined : byPath.get(parent)
-    if (parentNode) parentNode.children.push(node)
-    else roots.push(node)
-  }
-  return roots
-}
-
-function printTree(nodes: TreeNode[], prefix: string): void {
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i]
-    const isLast = i === nodes.length - 1
-    const connector = isLast ? '└── ' : '├── '
-    const childPrefix = isLast ? '    ' : '│   '
-
-    const name = basename(node.path) || node.id || '?'
-    console.log(`${prefix}${connector}${chalk.cyan(name)}  ${chalk.dim(classNameOf(node))}`)
-
-    if (node.children.length > 0) {
-      printTree(node.children, prefix + childPrefix)
-    }
-  }
-}
-
-function printTreeQuiet(nodes: TreeNode[]): void {
-  for (const node of nodes) {
-    process.stdout.write(itemPath(node) + '\n')
-    if (node.children.length > 0) printTreeQuiet(node.children)
-  }
+export function displayName(node: Node): string {
+  const value =
+    nodeProperty(node, 'name') ?? nodeProperty(node, 'title') ?? nodeProperty(node, 'slug')
+  return typeof value === 'string' && value.length > 0 ? value : `@${node.id}`
 }
 
 export default {
   name: 'ls',
-  description: 'List children of a node',
+  description: 'List one finite exact edge neighborhood',
   afterHelpText: `
 Behavior:
-  Default output is a NAME/KIND/ID table on a TTY, JSON when piped. One
-  function.get depth:1 fetches the direct children; -R fetches the whole
-  subtree (to depth ${MAX_DEPTH}) in a SINGLE call and renders it as a tree.
-  --filter matches a child KIND or label (post-filter): Folder, Function,
-  Domain. At a domain's tree position the children are Folder nodes
-  (class.X), not Class — so --filter Class returns nothing; use --filter
-  Folder, or descend into class.<X>. -q prints one absolute path per line
-  (pipeable).
+  Lists Nodes reached from one source through one exact Edge Class. Kernel V2
+  has no universal parent/child relation, so --edge is required and recursive
+  tree walking is intentionally absent. Direction defaults to outgoing and the
+  finite default limit is 100. -q emits one @id per line.
 
 Examples:
-  $ astrale ls /
-  $ astrale ls /kernel.astrale.ai --filter Folder
-  $ astrale ls / -q | xargs -I{} astrale describe {}
+  $ astrale ls @note --edge /:notes.example.dev:class.references
+  $ astrale ls @note --edge /:notes.example.dev:class.references --direction incoming --limit 25
 `,
-  arguments: [
-    { name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)', required: false },
-  ],
+  arguments: [{ name: 'source', description: 'Canonical source Path or @id' }],
   options: [
-    { flags: '-l, --long', description: 'Full node dump (default: compact)' },
-    { flags: '-q, --quiet', description: 'One path per line (unix-pipeable)' },
-    { flags: '-R, --recursive', description: 'List recursively (tree view)' },
-    { flags: '--count', description: 'Print only the number of children' },
+    { flags: '--edge <class>', description: 'Exact Edge Class to traverse' },
     {
-      flags: '--filter <kind>',
-      description: 'Filter children by kind or label (e.g., Folder, Function, Domain)',
+      flags: '--direction <direction>',
+      description: 'Traversal direction (default: outgoing)',
+      choices: ['outgoing', 'incoming', 'incident'],
     },
+    { flags: '--limit <n>', description: 'Finite selected Node limit (default: 100)' },
+    { flags: '--cursor <token>', description: 'Resume one live query scope' },
+    { flags: '-l, --long', description: 'Print complete canonical Nodes' },
+    { flags: '-q, --quiet', description: 'Print one @id per line' },
+    { flags: '--count', description: 'Print only the number of returned Nodes' },
   ],
-  action: async (path, opts) => {
-    await lsCommand((path as string | undefined) ?? '/', opts as LsOpts)
+  action: async (source, opts) => {
+    await lsCommand(source as string, opts as LsOpts)
   },
 } satisfies CommandDefinition

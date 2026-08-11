@@ -1,11 +1,11 @@
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
 import type { AdminTargetCommandOpts } from './admin-target'
 
+import { createPathCall, withAdminHostSession } from '../connection'
 import { AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
-import { withAdminKernelClient } from '../kernel/client'
 import { adminInstanceMethod } from './admin-instance'
 import { setActive, upsertManagedBookmark } from './instance'
 import { withSpinner } from './log'
@@ -71,13 +71,15 @@ export async function provisionInstance(
       `Provisioning instance ${slug}`,
       !machine,
       async () => {
-        const created = await withAdminKernelClient(
+        const created = await withAdminHostSession(
           createOpts,
           async (ctx) =>
-            (await ctx.client.call(adminInstanceMethod('alphaCreate'), {
-              slug,
-              ...(hostId ? { host_id: hostId } : {}),
-            })) as { url: string; organizationId?: string },
+            (await ctx.host.call(
+              createPathCall(adminInstanceMethod('alphaCreate'), {
+                slug,
+                ...(hostId ? { host_id: hostId } : {}),
+              }),
+            )) as { url: string; organizationId?: string },
         )
         try {
           // Org id from the create response — authoritative for token scoping

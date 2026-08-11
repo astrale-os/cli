@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 
-import type { SelfExpansionMeta } from './expand'
+import type { SelfExpansionMeta } from './self'
 
 import { AstraleError } from '../errors'
 import { decodeJwtExpiration, readLocalStatus, type LocalStatus } from '../lib/local-status'
@@ -194,7 +194,7 @@ export async function formatKernelError(
 }
 
 /** Strip internal `::methodName` suffixes from paths in error messages (e.g., "/path::listChildren" → "/path") */
-function stripMethodSuffix(msg: string): string {
+export function stripMethodSuffix(msg: string): string {
   return msg.replace(/(\/[^"\s:]+)::([a-zA-Z]\w*)/g, '$1')
 }
 

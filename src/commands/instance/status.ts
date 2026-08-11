@@ -1,10 +1,10 @@
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../../kernel'
+import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
-import { listOwnedInstances } from '../../kernel/client'
+import { listOwnedInstances } from '../../lib/admin-instance'
 import { findOwnedInstance } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, log, withSpinner } from '../../lib/log'

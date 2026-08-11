@@ -1,18 +1,18 @@
+import { Path } from '@astrale-os/kernel-core/path'
 import chalk from 'chalk'
 import { randomBytes } from 'node:crypto'
 import { closeSync, existsSync, openSync, statSync } from 'node:fs'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import type { KernelCommandOpts } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
 import type { ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
 import type { CommandDefinition } from '../program/index'
 
+import { expandSelfInPath, withHostSession } from '../connection'
 import { AstraleError } from '../errors'
 import { readIdentities } from '../identity/index'
-import { bindGraph, expandSelfInPath, resolveKernelTarget, withKernelClient } from '../kernel'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
-import { readConfig } from '../lib/config'
 import { readInstances } from '../lib/instance'
 import { fatal, log } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
@@ -92,11 +92,11 @@ export async function resolveSession(
   }
   const targetInput = parsed?.kind === 'target' ? parsed.path : opts.target
 
-  const resolved = await withKernelClient(opts, async (ctx) => {
+  const resolved = await withHostSession(opts, async (ctx) => {
     let target: ResolvedTarget | undefined
     if (targetInput) {
       const { path } = await expandSelfInPath(targetInput, opts)
-      const node = (await bindGraph(ctx).get(path)) as { id?: string } | null
+      const node = await ctx.graph.get(Path.parse(path))
       if (!node?.id) {
         throw new AstraleError('NOT_FOUND', `target ${path} not found or not visible`)
       }
@@ -231,8 +231,10 @@ async function startSession(
   opts: ViewOpts,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
-  const config = await readConfig()
-  const kernelTarget = await resolveKernelTarget(opts, config)
+  const kernelTarget = await withHostSession(
+    opts,
+    async ({ target: connectionTarget }) => connectionTarget,
+  )
   const [instances, identities, runtime] = await Promise.all([
     readInstances(),
     readIdentities(),

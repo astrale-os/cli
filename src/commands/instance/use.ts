@@ -3,7 +3,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { getDefault, setDefault } from '../../identity/index'
-import { listOwnedInstances } from '../../kernel/client'
+import { listOwnedInstances } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import {
   getActive,

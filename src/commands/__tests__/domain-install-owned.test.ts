@@ -14,21 +14,26 @@ class ExitError extends Error {
 const calls: Array<{ path: string; params: unknown }> = []
 let inventory: OwnedInstanceInfo[] = []
 
-const clientCall = mock(async (path: string, params: unknown): Promise<unknown> => {
-  calls.push({ path, params })
-  if (path === adminInstanceMethod('listMine')) return inventory
-  throw new Error(`Unexpected admin call: ${path}`)
-})
+const hostCall = mock(
+  async (call: { target: { kind: string; path: unknown }; input: unknown }): Promise<unknown> => {
+    const path = String(call.target.path)
+    const params = call.input
+    calls.push({ path, params })
+    if (path === adminInstanceMethod('listMine')) return inventory
+    throw new Error(`Unexpected admin call: ${path}`)
+  },
+)
 
-mock.module('../../kernel', () => ({
+mock.module('../../connection', () => ({
+  createPathCall: (path: string, input: unknown) => ({
+    target: { kind: 'path', path },
+    input,
+  }),
   runKernelCommand: mock(),
-}))
-
-mock.module('../../kernel/client', () => ({
-  withAdminKernelClient: async (
+  withAdminHostSession: async (
     _opts: unknown,
-    run: (ctx: { client: { call: typeof clientCall } }) => Promise<unknown>,
-  ) => run({ client: { call: clientCall } }),
+    run: (ctx: { host: { call: typeof hostCall } }) => Promise<unknown>,
+  ) => run({ host: { call: hostCall } }),
 }))
 
 let stderr = ''
@@ -39,7 +44,7 @@ beforeEach(() => {
   calls.length = 0
   inventory = []
   stderr = ''
-  clientCall.mockClear()
+  hostCall.mockClear()
   originalExit = process.exit
   originalStderrWrite = process.stderr.write.bind(process.stderr)
   process.exit = ((code?: string | number | null) => {

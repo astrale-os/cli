@@ -8,7 +8,7 @@ import { createAuth } from '@astrale-os/kernel-client/auth'
 import type { AstraleConfig } from '../lib/config'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
-import { resolveCredential } from '../kernel/auth'
+import { resolveCredential } from './auth'
 
 const DELEGATION_TTL_SECONDS = 3_600
 

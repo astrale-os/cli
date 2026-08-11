@@ -3,7 +3,7 @@ import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
-import { fetchWithCaFile } from '../ca-fetch'
+import { fetchWithCaFile } from '../../lib/ca-fetch'
 
 const certificateFile = fileURLToPath(new URL('fixtures/localhost-cert.pem', import.meta.url))
 // Public test-only key material is encoded so repository secret scanners do not mistake it for a credential.
