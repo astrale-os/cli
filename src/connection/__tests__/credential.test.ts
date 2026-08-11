@@ -105,8 +105,8 @@ describe('connection credential', () => {
 
 function sourceHop(source: IssuerId): HostHop {
   return {
-    kind: 'source',
-    issuer: source,
+    from: 'https://kernel.example/invoke',
+    publication: publication(source, 'kernel.example'),
     destination: { transport: 'http', url: 'https://kernel.example/invoke' },
     target: TARGET,
     protocol: 'envelope',
@@ -114,19 +114,21 @@ function sourceHop(source: IssuerId): HostHop {
 }
 
 function destinationHop(resolver: IssuerId, destination: IssuerId): HostHop {
-  type DestinationHop = Extract<HostHop, { readonly kind: 'destination' }>
-  type PublicationRef = DestinationHop['publication']
   return {
-    kind: 'destination',
+    from: 'https://kernel.example/invoke',
     resolver,
-    publication: {
-      origin: 'example.dev' as PublicationRef['origin'],
-      identity: { issuer: destination, subject: 'application' },
-      revision: `sha256:${'0'.repeat(64)}` as PublicationRef['revision'],
-      etag: '"publication"' as PublicationRef['etag'],
-    },
+    publication: publication(destination, 'example.dev'),
     destination: { transport: 'http', url: 'https://application.example/invoke' },
     target: TARGET,
     protocol: 'envelope',
-  } satisfies DestinationHop
+  }
+}
+
+function publication(issuer: IssuerId, origin: string): HostHop['publication'] {
+  return {
+    origin: origin as HostHop['publication']['origin'],
+    identity: { issuer, subject: origin },
+    revision: `sha256:${'0'.repeat(64)}` as HostHop['publication']['revision'],
+    etag: '"publication"' as HostHop['publication']['etag'],
+  }
 }

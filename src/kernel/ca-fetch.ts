@@ -1,2 +1,2 @@
 // Transitional import for unmigrated commands; remove with the legacy Kernel adapter.
-export { fetchWithCaFile } from '../connection/ca-fetch'
+export { fetchWithCaFile } from '../connection'

@@ -33,11 +33,10 @@ async function resolveHop(
   hop: HostHop,
   signal: AbortSignal,
 ): Promise<string> {
-  if (hop.kind === 'source') {
-    return resolveSourceCredential(target, options, hop.issuer, signal)
-  }
+  const audience = hop.publication.identity.issuer
+  if (hop.resolver === undefined) return resolveSourceCredential(target, options, audience, signal)
   const source = await resolveSourceCredential(target, options, hop.resolver, signal)
-  return delegateFromSource(source, hop.publication.identity.issuer, signal)
+  return delegateFromSource(source, audience, signal)
 }
 
 /** Open Host and source-Auth clients with the per-hop resolver bound once. */

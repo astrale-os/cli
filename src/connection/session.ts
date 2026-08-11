@@ -125,7 +125,6 @@ function openConnection(
   const credential = createCliCredential(target, options, config, sourceClient)
   const host = new HostSession({
     url: target.url,
-    sourceIssuer: target.issuer,
     fetch,
     credential,
     policy: {

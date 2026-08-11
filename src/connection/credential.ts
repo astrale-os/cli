@@ -33,9 +33,10 @@ export function createConnectionCredential(
   const delegate = destination.delegate.bind(destination)
   return Object.freeze({
     async resolve(hop: HostHop, signal: AbortSignal): Promise<string> {
-      if (hop.kind === 'source') return resolveSource(hop.issuer, signal)
+      const audience = hop.publication.identity.issuer
+      if (hop.resolver === undefined) return resolveSource(audience, signal)
       const sourceCredential = await resolveSource(hop.resolver, signal)
-      return delegate(sourceCredential, hop.publication.identity.issuer, signal)
+      return delegate(sourceCredential, audience, signal)
     },
   })
 }

@@ -15,7 +15,7 @@ export const CLI_CONNECTION_TARGET = defineLaw({
 export const CLI_CONNECTION_HOP_CREDENTIAL = defineLaw({
   id: 'CLI-CONNECTION-HOP-CREDENTIAL',
   statement:
-    'A source hop resolves a fresh credential for its exact issuer; a destination hop first authenticates to its admitted resolver and returns a fresh delegation for the destination Publication issuer, never the source credential.',
+    'A source hop resolves a fresh credential for its admitted Publication issuer; a redirected hop first authenticates to its admitted resolver and returns a fresh delegation for the destination Publication issuer, never the source credential.',
   tests: [
     {
       file: '__tests__/credential.test.ts',
