@@ -1,6 +1,9 @@
+import { ResponseError } from '@astrale-os/kernel-client'
 import { describe, expect, test } from 'bun:test'
 
-import { stripMethodSuffix } from '../errors'
+import { formatKernelError, stripMethodSuffix } from '../errors'
+
+const CONFLICT = 4001
 
 describe('stripMethodSuffix', () => {
   test('strips ::listChildren from path', () => {
@@ -35,5 +38,59 @@ describe('stripMethodSuffix', () => {
 
   test('does not strip single colon (not a method dispatch)', () => {
     expect(stripMethodSuffix('"/a/b:notMethod"')).toBe('"/a/b:notMethod"')
+  })
+})
+
+describe('formatKernelError', () => {
+  /** @evidence TEST-CLI-CONNECTION-PRESERVES-PUBLIC-SEMANTIC-REASON */
+  test('preserves a Kernel-admitted semantic reason in machine output', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new ResponseError(CONFLICT, 'Schema change requires migration.', {
+          code: 'DATA_MIGRATION_REQUIRED',
+          details: {
+            requirements: [
+              {
+                operation: 'validate-existing',
+                reason: 'invalid-existing',
+                subject: {
+                  kind: 'definition',
+                  ref: { origin: 'x.test', kind: 'class', name: 'X' },
+                },
+                work: { observedFacts: 1 },
+              },
+            ],
+          },
+        }),
+        true,
+      )
+    } finally {
+      process.stderr.write = original
+    }
+    expect(writes).toHaveLength(1)
+    expect(JSON.parse(writes[0]!)).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: CONFLICT,
+      message: 'Schema change requires migration.',
+      reason: {
+        code: 'DATA_MIGRATION_REQUIRED',
+        details: {
+          requirements: [
+            {
+              operation: 'validate-existing',
+              reason: 'invalid-existing',
+              subject: { kind: 'definition', ref: { origin: 'x.test', kind: 'class', name: 'X' } },
+              work: { observedFacts: 1 },
+            },
+          ],
+        },
+      },
+    })
   })
 })

@@ -1,3 +1,6 @@
+import type { Call } from '@astrale-os/kernel-client'
+import type { ProvisionRequest } from '@astrale-os/kernel-core/auth'
+import type { LocalBinding } from '@astrale-os/kernel-core/graph/graph'
 import type { JWK } from 'jose'
 
 import type {
@@ -32,6 +35,35 @@ export interface IdentityImportOptions extends IdentityFileOptions {
   readonly issuer?: string
   readonly replace?: boolean
 }
+
+export interface IdentityRegistrationResult {
+  readonly iss: string
+  readonly sub: string
+  readonly nodeId?: string
+}
+
+export interface IdentityProvisionSubmission {
+  readonly request: ProvisionRequest
+  readonly binding: LocalBinding
+  readonly via?: string
+  readonly direct: {
+    provision(request: ProvisionRequest): Promise<unknown>
+  }
+  readonly callable: {
+    call(call: Call): Promise<unknown>
+  }
+}
+
+/** Submit one prepared request either directly or through its explicit Domain authority owner. */
+export function submitIdentityProvision(
+  input: IdentityProvisionSubmission,
+): Promise<IdentityRegistrationResult>
+
+/** Admit only the exact binding the CLI prepared; remote callables remain untrusted input. */
+export function acceptProvisionedIdentity(
+  value: unknown,
+  binding: LocalBinding,
+): IdentityRegistrationResult
 
 export function readIdentities(): Promise<IdentityStore>
 

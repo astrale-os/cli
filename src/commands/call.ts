@@ -17,14 +17,16 @@ type CallOpts = KernelCommandOpts & {
 }
 
 type CallResult = Awaited<ReturnType<ConnectionContext['host']['dispatch']>>
+type MaterializedCallResult =
+  | Exclude<CallResult, { readonly kind: 'stream' }>
+  | { readonly kind: 'stream'; readonly values: readonly unknown[] }
 
 export async function callCommand(
   path: string,
   rawParams: string[],
   opts: CallOpts,
 ): Promise<void> {
-  // Expand @self before describe/execute so refusals are typed and stale IdP
-  // registrations can refresh through whoami.
+  // Expand @self before describe/execute through authenticated Identity.whoami.
   let expanded: Awaited<ReturnType<typeof expandSelfInCall>>
   try {
     expanded = await expandSelfInCall(path, rawParams, opts)
@@ -56,11 +58,15 @@ export async function callCommand(
   }
 
   // ── Execute ────────────────────────────────────────────
-  await runKernelCommand<CallResult>({
+  await runKernelCommand<MaterializedCallResult>({
     opts,
     label: expandedPath,
     fn: (ctx) =>
-      withSelfHint(() => ctx.host.dispatch(createPathCall(expandedPath, params)), expanded.meta),
+      withSelfHint(
+        async () =>
+          materializeCallResult(await ctx.host.dispatch(createPathCall(expandedPath, params))),
+        expanded.meta,
+      ),
     format: async (result, fmtOpts) => {
       switch (result.kind) {
         case 'value':
@@ -70,7 +76,7 @@ export async function callCommand(
           await presentBinary(result.value, fmtOpts, { outFile: opts.output })
           return
         case 'stream':
-          await presentStream(result.stream, fmtOpts)
+          output(result.values, fmtOpts)
           return
         case 'redirect':
           throw new Error('Host returned an unresolved redirect.')
@@ -79,13 +85,12 @@ export async function callCommand(
   })
 }
 
-async function presentStream(
-  stream: AsyncIterable<unknown>,
-  opts: KernelCommandOpts,
-): Promise<void> {
+/** Drain a session-backed stream before the command-scoped Host connection closes. */
+export async function materializeCallResult(result: CallResult): Promise<MaterializedCallResult> {
+  if (result.kind !== 'stream') return result
   const values: unknown[] = []
-  for await (const value of stream) values.push(value)
-  output(values, opts)
+  for await (const value of result.stream) values.push(value)
+  return Object.freeze({ kind: 'stream', values: Object.freeze(values) })
 }
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {
@@ -213,8 +218,8 @@ Self-reference:
   @self expands to your nodeId on the active instance (path head or
   bare param value, e.g. node=@self). --data and stdin payloads are
   sent verbatim — pre-resolve manually to a literal @<nodeId> there
-  (e.g. via 'astrale describe @self -q', or shell-substituted from the
-  registration record in ~/.astrale/identities.json).
+  (e.g. via 'astrale get @self --json'). Resolution authenticates to
+  the selected Kernel and never trusts a local registration or JWT sub.
 
 Examples:
   $ astrale call /:host.astrale.ai:class.KernelInstance:list

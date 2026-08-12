@@ -16,6 +16,7 @@ export interface ConnectionOptions {
   readonly timeout?: string
   readonly as?: string
   readonly creds?: string
+  readonly anonymous?: boolean
 }
 
 export interface AdminConnectionOptions extends ConnectionOptions {
@@ -34,6 +35,11 @@ export interface ConnectionTarget {
 export interface TargetDependencies {
   readonly instances?: InstanceStore
   readonly managed?: (slug: string) => Promise<InstanceInfo>
+}
+
+/** Stable local identity-registration key for the exact selected source Kernel. */
+export function registrationKeyForTarget(target: ConnectionTarget): string {
+  return target.slug ?? target.url
 }
 
 /** Resolve the existing URL / instance / active precedence into one exact source Kernel. */

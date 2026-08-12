@@ -14,7 +14,15 @@ allowBuilds:
   '@astrale-os/kernel-client': false
   '@astrale-os/kernel-core': false
   '@astrale-os/kernel-dsl': false
+  '@astrale-os/kernel-ports': false
   '@astrale-os/shell': false
   esbuild: true
   lightningcss: true
   msgpackr-extract: true
+
+overrides:
+  '@astrale-os/kernel-client': link:../../worktrees/kernel-platform-e2e/client
+  '@astrale-os/kernel-core': link:../../worktrees/kernel-platform-e2e/core
+  '@astrale-os/kernel-dsl': link:../../worktrees/kernel-platform-e2e/dsl
+  '@astrale-os/kernel-ports': link:../../worktrees/kernel-platform-e2e/ports
+  '@astrale-os/shell': file:/private/tmp/astrale-shell-current-pack/astrale-os-shell-0.3.7.tgz

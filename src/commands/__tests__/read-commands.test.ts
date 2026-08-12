@@ -77,7 +77,7 @@ beforeEach(() => {
   queryCalls = []
   getTargets = []
   mutations = []
-  queryResult = { graph: { nodes: [], edges: [] } }
+  queryResult = { kind: 'graph', graph: { nodes: [], edges: [] } }
   getResult = undefined
   mutationResult = { createdNodes: {} }
   queryMock.mockClear()
@@ -109,8 +109,8 @@ afterEach(() => {
 })
 
 describe('query command', () => {
-  /** @evidence TEST-CLI-QUERY-DISPATCHES-CANONICAL-V3 */
-  test('dispatches the supported source/edge subset as Query V3 with its cursor', async () => {
+  /** @evidence TEST-CLI-QUERY-DISPATCHES-CANONICAL-V5 */
+  test('dispatches the supported source/edge subset as Query V5 with its cursor', async () => {
     const { queryCommand } = await import('../query')
 
     await queryCommand(['/:notes.example.dev:class.Note'], {
@@ -125,7 +125,7 @@ describe('query command', () => {
       {
         ast: {
           format: 'astrale.graph.query',
-          version: 'v3',
+          version: 'v5',
           source: {
             terms: [{ kind: 'path', path: '/:notes.example.dev:class.Note' }],
             binding: 'n0',
@@ -146,7 +146,7 @@ describe('query command', () => {
     ])
   })
 
-  test('authors a Definition source through the same canonical Query V3 call', async () => {
+  test('authors a Definition source through the same canonical Query V5 call', async () => {
     const { queryCommand } = await import('../query')
 
     await queryCommand([], {
@@ -159,7 +159,7 @@ describe('query command', () => {
       {
         ast: {
           format: 'astrale.graph.query',
-          version: 'v3',
+          version: 'v5',
           source: {
             terms: [
               {

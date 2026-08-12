@@ -1,7 +1,7 @@
 import type { MutationAST } from '@astrale-os/kernel-core/graph/mutate'
 import type { QueryAST, QueryDirection } from '@astrale-os/kernel-core/graph/query'
 
-/** Untrusted CLI fields used to author or admit one exact Query V3 request. */
+/** Untrusted CLI fields used to author or admit one exact Query V5 request. */
 export interface QueryCommandInput {
   readonly sources: readonly string[]
   readonly definition?: string
@@ -18,7 +18,7 @@ export interface PreparedQuery {
   readonly cursor?: string
 }
 
-/** Admit canonical Query V3 or author its supported Path/Definition/one-edge CLI subset. */
+/** Admit canonical Query V5 or author its supported Path/Definition/one-edge CLI subset. */
 export function prepareQuery(input: QueryCommandInput): PreparedQuery
 
 /** Admit canonical Mutation V2 or its exact authoring input; legacy PatchData is rejected. */

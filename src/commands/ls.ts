@@ -1,5 +1,5 @@
 import type { Node } from '@astrale-os/kernel-core/graph/node'
-import type { QueryDirection } from '@astrale-os/kernel-core/graph/query'
+import type { QueryDirection, QueryResult } from '@astrale-os/kernel-core/graph/query'
 
 import { ClassPath } from '@astrale-os/kernel-core/graph/class'
 import chalk from 'chalk'
@@ -55,8 +55,9 @@ export async function lsCommand(source: string, opts: LsOpts): Promise<void> {
         meta,
       ),
     format: (result, format) => {
+      const graph = completeGraph(result)
       presentList(
-        [...result.graph.nodes],
+        [...graph.nodes],
         { ...format, long: opts.long, quiet: opts.quiet, count: opts.count },
         listProjection,
       )
@@ -65,6 +66,11 @@ export async function lsCommand(source: string, opts: LsOpts): Promise<void> {
       }
     },
   })
+}
+
+function completeGraph(result: QueryResult) {
+  if (result.kind !== 'graph') throw new TypeError('ls expected one complete graph Query result')
+  return result.graph
 }
 
 export function listProjection(nodes: Node[]): ListProjection {

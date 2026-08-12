@@ -75,4 +75,28 @@ describe('resolveKeyIdentityAuthOptions', () => {
       audience: 'https://prod.example.com',
     })
   })
+
+  /** @evidence TEST-CLI-AUTH-USES-DIRECT-URL-REGISTRATION */
+  test('uses a registration stored for a direct URL target', () => {
+    const url = 'https://kernel.example/invoke'
+    const identity: Identity = {
+      subject: 'alice',
+      source: 'key',
+      mode: 'local',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      registrations: {
+        [url]: {
+          iss: 'https://kernel.example/identity/alice',
+          sub: 'alice-node',
+          registeredAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+    }
+
+    expect(resolveKeyIdentityAuthOptions(identity, config, 'https://kernel.example', url)).toEqual({
+      issuer: 'https://kernel.example/identity/alice',
+      subject: 'alice-node',
+      audience: 'https://kernel.example',
+    })
+  })
 })

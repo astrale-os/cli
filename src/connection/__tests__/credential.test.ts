@@ -10,15 +10,18 @@ import type { AstraleConfig } from '../../lib/config'
 import {
   createCliCredential,
   createConnectionCredential,
+  delegationTtlSeconds,
   type SourceAuthClient,
 } from '../credential'
 
 const SOURCE = issuer.accept('https://kernel.example')
+const OTHER_SOURCE = issuer.accept('https://other-kernel.example')
 const DESTINATION = issuer.accept('https://application.example')
 const TARGET = {
   kind: 'path',
   path: Path.parse('/:example.dev:function.call').raw,
 } satisfies HostHop['target']
+type DestinationHop = Extract<HostHop, { readonly kind: 'destination' }>
 const config: AstraleConfig = {
   issuer: 'https://cli.example',
   admin: { name: 'admin', url: SOURCE, issuer: SOURCE },
@@ -31,6 +34,7 @@ describe('connection credential', () => {
     const sourceAudiences: IssuerId[] = []
     const delegations: Array<{ sourceCredential: string; audience: IssuerId }> = []
     const credential = createConnectionCredential(
+      SOURCE,
       {
         async resolve(audience) {
           sourceAudiences.push(audience)
@@ -54,6 +58,31 @@ describe('connection credential', () => {
     expect(sourceAudiences).toEqual([SOURCE, SOURCE])
     expect(delegations).toEqual([{ sourceCredential: `source:${SOURCE}`, audience: DESTINATION }])
     expect(`delegated:${DESTINATION}`).not.toBe(`source:${SOURCE}`)
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-REJECTS-HOP-SOURCE-ISSUER-MISMATCH */
+  test('rejects source and destination hops outside the selected source issuer', async () => {
+    const credential = createConnectionCredential(
+      SOURCE,
+      {
+        async resolve() {
+          return 'source'
+        },
+      },
+      {
+        async delegate() {
+          return 'destination'
+        },
+      },
+    )
+    const signal = new AbortController().signal
+
+    await expect(credential.resolve(sourceHop(OTHER_SOURCE), signal)).rejects.toMatchObject({
+      code: 'SOURCE_ISSUER_MISMATCH',
+    })
+    await expect(
+      credential.resolve(destinationHop(OTHER_SOURCE, DESTINATION), signal),
+    ).rejects.toMatchObject({ code: 'SOURCE_ISSUER_MISMATCH' })
   })
 
   /** @evidence TEST-CLI-CONNECTION-DELEGATES-VIA-SOURCE-AUTH */
@@ -85,6 +114,7 @@ describe('connection credential', () => {
       config,
       sourceClient,
     )
+    if (credential === undefined) throw new Error('expected authenticated credential')
     const signal = new AbortController().signal
 
     await expect(credential.resolve(sourceHop(SOURCE), signal)).resolves.toBe('raw-source-token')
@@ -101,12 +131,49 @@ describe('connection credential', () => {
       delegation: { kind: 'identity', self: true },
     })
   })
+
+  /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
+  test('omits the credential capability for an explicit anonymous session', () => {
+    let sourceAuthSelections = 0
+    const sourceClient = {
+      as() {
+        sourceAuthSelections += 1
+        throw new Error('anonymous connection must not select source auth')
+      },
+    } satisfies SourceAuthClient
+
+    const credential = createCliCredential(
+      { url: `${SOURCE}/invoke`, issuer: SOURCE, defaultIdentity: 'ambient-default' },
+      { anonymous: true },
+      config,
+      sourceClient,
+    )
+
+    expect(credential).toBeUndefined()
+    expect(sourceAuthSelections).toBe(0)
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-BOUNDS-DELEGATION-TO-SOURCE-EXPIRY */
+  test('keeps a destination delegation inside the source credential lifetime', async () => {
+    const nowMs = 1_000_000
+    const sourceCredential = jwt({ exp: 1_600 })
+
+    expect(delegationTtlSeconds(sourceCredential, nowMs)).toBe(595)
+    expect(delegationTtlSeconds(jwt({ exp: 10_000 }), nowMs)).toBe(3_600)
+    expect(delegationTtlSeconds('opaque-source-credential', nowMs)).toBe(3_600)
+    expect(() => delegationTtlSeconds(jwt({ exp: 1_005 }), nowMs)).toThrow(/too close to expiry/i)
+  })
 })
+
+function jwt(payload: Record<string, unknown>): string {
+  const encoded = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encoded({ alg: 'none' })}.${encoded(payload)}.signature`
+}
 
 function sourceHop(source: IssuerId): HostHop {
   return {
-    from: 'https://kernel.example/invoke',
-    publication: publication(source, 'kernel.example'),
+    kind: 'source',
+    issuer: source,
     destination: { transport: 'http', url: 'https://kernel.example/invoke' },
     target: TARGET,
     protocol: 'envelope',
@@ -115,7 +182,7 @@ function sourceHop(source: IssuerId): HostHop {
 
 function destinationHop(resolver: IssuerId, destination: IssuerId): HostHop {
   return {
-    from: 'https://kernel.example/invoke',
+    kind: 'destination',
     resolver,
     publication: publication(destination, 'example.dev'),
     destination: { transport: 'http', url: 'https://application.example/invoke' },
@@ -124,11 +191,11 @@ function destinationHop(resolver: IssuerId, destination: IssuerId): HostHop {
   }
 }
 
-function publication(issuer: IssuerId, origin: string): HostHop['publication'] {
+function publication(issuer: IssuerId, origin: string): DestinationHop['publication'] {
   return {
-    origin: origin as HostHop['publication']['origin'],
+    origin: origin as DestinationHop['publication']['origin'],
     identity: { issuer, subject: origin },
-    revision: `sha256:${'0'.repeat(64)}` as HostHop['publication']['revision'],
-    etag: '"publication"' as HostHop['publication']['etag'],
+    revision: `sha256:${'0'.repeat(64)}` as DestinationHop['publication']['revision'],
+    etag: '"publication"' as DestinationHop['publication']['etag'],
   }
 }

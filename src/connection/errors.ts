@@ -120,7 +120,7 @@ export async function formatKernelError(
       const selfMeta = (error as Error & { expandedFromSelf?: SelfExpansionMeta }).expandedFromSelf
       // kernel-client maps both NOT_FOUND (the node doesn't exist) and
       // METHOD_NOT_FOUND (the method doesn't exist on a real node) to
-      // `NotFoundError`. Firing the "refresh registration" hint for the
+      // `NotFoundError`. Firing the authenticated-principal hint for the
       // method case is misleading. Gate on the message referencing the
       // expanded id — node lookup errors mention `@<id>` whereas method
       // errors mention the method path.
@@ -133,13 +133,11 @@ export async function formatKernelError(
         log.error(`Not found: ${cleanMsg}`)
         log.dim('  Check the path/ID and that the instance is booted')
         if (selfHintApplies && selfMeta) {
-          const who = selfMeta.identity ?? 'your identity'
           const where = selfMeta.slug ? ` on "${selfMeta.slug}"` : ''
-          log.dim(`  @self expanded to @${selfMeta.selfId} from ${who}'s registration${where}.`)
-          const fixCmd = `astrale identity register${
-            selfMeta.identity ? ` ${selfMeta.identity}` : ''
-          }${selfMeta.slug ? ` -i ${selfMeta.slug}` : ''}`
-          log.dim(`  If the node was deleted, refresh with: ${fixCmd}`)
+          log.dim(
+            `  @self resolved through authenticated Identity.whoami to @${selfMeta.selfId}${where}.`,
+          )
+          log.dim('  Check that the requested node path still exists for that principal.')
         }
       }
       break
@@ -171,6 +169,31 @@ export async function formatKernelError(
         for (const e of errors) {
           console.log(chalk.red(`  ${e.code}: ${e.message}`))
           if (e.context) console.log(chalk.dim(`    ${JSON.stringify(e.context)}`))
+        }
+      }
+      break
+    }
+
+    case 'ResponseError': {
+      const code = (error as { readonly code?: unknown }).code
+      const reason = (error as { readonly reason?: unknown }).reason
+      if (isRaw) {
+        writeRaw({
+          error: 'RESPONSE_ERROR',
+          ...(code === undefined ? {} : { code }),
+          message: error.message,
+          ...(reason === undefined ? {} : { reason }),
+        })
+      } else {
+        log.error(
+          `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${error.message}`,
+        )
+        if (
+          reason !== null &&
+          typeof reason === 'object' &&
+          typeof (reason as { readonly code?: unknown }).code === 'string'
+        ) {
+          log.dim(`  reason: ${(reason as { readonly code: string }).code}`)
         }
       }
       break

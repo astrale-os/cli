@@ -14,6 +14,10 @@ const KERNEL_PASSTHROUGH_OPTIONS: readonly CommandOption[] = Object.freeze([
   { flags: '--timeout <ms>', description: 'Request timeout in ms (default: 30000)' },
   { flags: '--as <identity>', description: 'Call as a specific identity' },
   { flags: '--creds <token>', description: 'Use a pre-signed credential (e.g. delegation token)' },
+  {
+    flags: '--anonymous',
+    description: 'Send no credential (cannot be combined with --as or --creds)',
+  },
   { flags: '--debug', description: 'Print full error diagnostics on failure' },
 ])
 

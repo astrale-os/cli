@@ -12,8 +12,9 @@ declare const resolveTimeoutMs: (input: string | undefined) => number
 declare const createClientConnection: (
   target: ConnectionTarget,
   timeoutMs: number,
-  credential: HostCredential,
+  credential: HostCredential | undefined,
 ) => OwnedConnection
+declare const validateCredentialSelection: (options: ConnectionOptions) => void
 declare const resolveSourceCredential: (
   target: ConnectionTarget,
   options: ConnectionOptions,
@@ -33,11 +34,17 @@ async function resolveHop(
   hop: HostHop,
   signal: AbortSignal,
 ): Promise<string> {
+  if (hop.kind === 'source') {
+    requireSelectedIssuer(target.issuer, hop.issuer)
+    return resolveSourceCredential(target, options, target.issuer, signal)
+  }
+  requireSelectedIssuer(target.issuer, hop.resolver)
   const audience = hop.publication.identity.issuer
-  if (hop.resolver === undefined) return resolveSourceCredential(target, options, audience, signal)
-  const source = await resolveSourceCredential(target, options, hop.resolver, signal)
+  const source = await resolveSourceCredential(target, options, target.issuer, signal)
   return delegateFromSource(source, audience, signal)
 }
+
+declare const requireSelectedIssuer: (expected: string, actual: string) => void
 
 /** Open Host and source-Auth clients with the per-hop resolver bound once. */
 function openConnection(
@@ -45,9 +52,11 @@ function openConnection(
   timeoutMs: number,
   options: ConnectionOptions,
 ): OwnedConnection {
-  return createClientConnection(target, timeoutMs, {
-    resolve: (hop, signal) => resolveHop(target, options, hop, signal),
-  })
+  const credential =
+    options.anonymous === true
+      ? undefined
+      : { resolve: (hop: HostHop, signal: AbortSignal) => resolveHop(target, options, hop, signal) }
+  return createClientConnection(target, timeoutMs, credential)
 }
 
 /** One terminal command-scoped connection lifecycle. */
@@ -55,6 +64,7 @@ export async function withHostSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
 ): Promise<Value> {
+  validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
   const target = await resolveTarget(options)
   const connection = openConnection(target, timeoutMs, options)

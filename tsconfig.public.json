@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "outDir": "./dist/types",
+    "rootDir": "./src"
+  },
+  "include": ["src/connect-core.ts", "src/keys/index.ts", "src/paths/index.ts"],
+  "exclude": ["**/__tests__/**"]
+}

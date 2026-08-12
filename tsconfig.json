@@ -10,5 +10,5 @@
     "types": ["@types/bun", "@types/node"]
   },
   "include": ["bin", "src"],
-  "exclude": ["templates"]
+  "exclude": ["templates", "**/__tests__/**", "src/lib/view/open-intent.ts"]
 }

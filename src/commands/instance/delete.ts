@@ -1,8 +1,7 @@
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { createPathCall, withAdminHostSession } from '../../connection'
-import { adminInstanceMethod, type InstanceInfo } from '../../lib/admin-instance'
+import { deleteOwnedInstance } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { clearActive, readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
@@ -36,14 +35,7 @@ Behavior:
       const result = await withSpinner(
         `Deleting instance ${id}`,
         !isMachine(opts),
-        () =>
-          withAdminHostSession(
-            opts,
-            async ({ host }) =>
-              (await host.call(
-                createPathCall(adminInstanceMethod('delete'), { id }),
-              )) as InstanceInfo,
-          ),
+        () => deleteOwnedInstance(opts, id),
         { success: (deleted) => `Deleted instance: ${deleted.slug}` },
       )
 

@@ -1,20 +1,29 @@
 import type { AuthApi } from '@astrale-os/kernel-client/auth'
 import type { GraphApi } from '@astrale-os/kernel-client/graph'
-import type { HostSession as HostSessionValue } from '@astrale-os/kernel-client/host'
+import type {
+  HostCredential,
+  HostSession as HostSessionValue,
+  HostSessionOptions,
+} from '@astrale-os/kernel-client/host'
 
 import { Client, pathCall } from '@astrale-os/kernel-client'
 import { createAuth } from '@astrale-os/kernel-client/auth'
 import { createGraph } from '@astrale-os/kernel-client/graph'
 import { HostSession } from '@astrale-os/kernel-client/host'
-import { Path } from '@astrale-os/kernel-core/path'
 
 import type { AstraleConfig } from '../lib/config'
 import type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'
 
+import {
+  AdminInstanceNotFoundError,
+  connectAdminInstances,
+  findOwnedInstance,
+  type InstanceInfo,
+} from '../admin/instance'
 import { AstraleError } from '../errors'
 import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
-import { createCliCredential } from './credential'
+import { createCliCredential, validateCredentialSelection } from './credential'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -44,6 +53,7 @@ export async function withHostSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
 ): Promise<Value> {
+  validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
   const config = await readConfig()
   const target = await resolveConnectionTarget(options, config, {
@@ -57,6 +67,7 @@ export async function withAdminHostSession<Value>(
   options: AdminConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
 ): Promise<Value> {
+  validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
   const config = await readConfig()
   const target = await resolveAdminConnectionTarget(options, config)
@@ -71,6 +82,7 @@ export async function withResolvedHostSession<Value>(
   action: (context: ConnectionContext) => Promise<Value>,
   open: ConnectionFactory = openConnection,
 ): Promise<Value> {
+  validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
   return runResolvedHostSession(target, timeoutMs, options, config, action, open)
 }
@@ -121,18 +133,7 @@ function openConnection(
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
   const sourceClient = new Client({ url: target.url, fetch, timeoutMs })
   const credential = createCliCredential(target, options, config, sourceClient)
-  const host = new HostSession({
-    url: target.url,
-    fetch,
-    credential,
-    policy: {
-      maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
-      ...(new URL(target.url).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
-    },
-    protocol: 'envelope',
-    envelopeTransport: 'http',
-    timeoutMs,
-  })
+  const host = new HostSession(createHostSessionOptions(target, fetch, credential, timeoutMs))
   const graph = createGraph((call, request) => host.call(call, request))
   const auth = createAuth((path, input, request) => host.call(pathCall(path, input), request))
   return {
@@ -147,24 +148,40 @@ function openConnection(
   }
 }
 
+/** Owner-private construction seam proving that transport and source identity stay distinct. */
+export function createHostSessionOptions(
+  target: ConnectionTarget,
+  fetch: NonNullable<HostSessionOptions['fetch']>,
+  credential: HostCredential | undefined,
+  timeoutMs: number,
+): HostSessionOptions {
+  return {
+    url: target.url,
+    sourceIssuer: target.issuer,
+    fetch,
+    ...(credential === undefined ? {} : { credential }),
+    policy: {
+      maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
+      ...(new URL(target.url).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
+    },
+    protocol: 'envelope',
+    envelopeTransport: 'http',
+    timeoutMs,
+  }
+}
+
 export async function lookupManagedInstance(
   slug: string,
   options: ConnectionOptions,
   openAdmin: typeof withAdminHostSession = withAdminHostSession,
-): Promise<ManagedInstanceInfo> {
+  connect: typeof connectAdminInstances = connectAdminInstances,
+): Promise<InstanceInfo> {
   return openAdmin(
     Object.freeze(options.timeout === undefined ? {} : { timeout: options.timeout }),
-    async ({ host }) =>
-      (await host.call(
-        pathCall(Path.parse('/:admin.astrale.ai:class.Instance:info'), { id: slug }),
-      )) as unknown as ManagedInstanceInfo,
+    async (context) => {
+      const found = findOwnedInstance(await (await connect(context)).list(), slug)
+      if (found === undefined) throw new AdminInstanceNotFoundError(slug)
+      return found
+    },
   )
-}
-
-interface ManagedInstanceInfo {
-  readonly id: string
-  readonly slug: string
-  readonly url: string
-  readonly issuer?: string
-  readonly state?: 'provisioning' | 'ready' | 'failed'
 }

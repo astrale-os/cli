@@ -1,4 +1,5 @@
-import type { ResolvedView } from '@astrale-os/kernel-client/host'
+import type { ResolvedView as HostResolvedView } from '@astrale-os/kernel-client/host'
+import type { ResolvedView } from '@astrale-os/shell'
 
 import { Path } from '@astrale-os/kernel-core/path'
 
@@ -26,8 +27,17 @@ export function parseViewSpec(spec: string): ViewSpec {
   )
 }
 
-/** Wire shape of one `View:resolve` entry. */
-export type ViewCandidate = {
+/** The owning Domain principal used when an explicit ViewPath has no target override. */
+export function viewOwnerTarget(viewPath: string): string {
+  const parsed = Path.parse(viewPath)
+  if (parsed.ast.anchor.kind !== 'domain') {
+    throw new AstraleError('INVALID_ARGUMENT', `ViewPath has no Domain owner: ${viewPath}`)
+  }
+  return `/:${parsed.ast.anchor.origin}`
+}
+
+/** One exact Shell selection plus stable presentation fields for CLI output. */
+export type ViewCandidate = ResolvedView & {
   id: string
   path: string
   url: string
@@ -43,23 +53,31 @@ export async function resolveViewCandidates(
   ctx: ConnectionContext,
   nodePath: string,
 ): Promise<ViewCandidate[]> {
-  const catalog = await ctx.host.viewsFor(Path.parse(nodePath))
-  return catalog.views.map(toCandidate)
+  const target = Path.parse(nodePath).raw
+  const catalog = await ctx.host.viewsFor(target)
+  return catalog.views.map((placement) => toCandidate(target, placement))
 }
 
-function toCandidate(view: ResolvedView): ViewCandidate {
-  const key = String(view.key)
+function toCandidate(target: ResolvedView['target'], placement: HostResolvedView): ViewCandidate {
+  const key = String(placement.key)
   return Object.freeze({
+    target,
+    placement,
     id: key,
     path: `/:${key}`,
-    url: view.href,
+    url: placement.href,
     name: key.slice(key.lastIndexOf(':view.') + ':view.'.length),
-    handshake: view.handshake,
-    origin: view.declaration.target.kind === 'domain' ? 'self' : 'class',
-    issuer: view.issuer,
-    etag: view.etag,
-    revision: view.revision,
+    handshake: placement.handshake,
+    origin: placement.declaration.target.kind === 'domain' ? 'self' : 'class',
+    issuer: placement.issuer,
+    etag: placement.etag,
+    revision: placement.revision,
   })
+}
+
+/** Strip presentation aliases before crossing the Shell mount boundary. */
+export function selectedView(candidate: ViewCandidate): ResolvedView {
+  return Object.freeze({ target: candidate.target, placement: candidate.placement })
 }
 
 /** The slug tail of a candidate: `view.dashboard` → `dashboard`. */
@@ -73,7 +91,10 @@ export function pickCandidate(
   slug?: string,
 ): ViewCandidate | 'ambiguous' {
   if (slug) {
-    const match = candidates.find((c) => candidateSlug(c) === slug || c.path.endsWith(`/${slug}`))
+    const match = candidates.find(
+      (candidate) =>
+        candidate.id === slug || candidate.path === slug || candidateSlug(candidate) === slug,
+    )
     if (!match) {
       throw new AstraleError(
         'VIEW_NOT_FOUND',
@@ -87,35 +108,4 @@ export function pickCandidate(
   }
   if (candidates.length === 1) return candidates[0]
   return 'ambiguous'
-}
-
-/**
- * Apply a `--view-url` override: an origin-only value swaps the origin and
- * keeps the resolved path, a value with a path replaces the URL wholesale.
- */
-export function applyViewUrlOverride(resolvedUrl: string, override: string): string {
-  const parsed = parseUrl(override)
-  if (parsed.pathname !== '/') return parsed.toString()
-  const original = parseUrl(resolvedUrl)
-  return new URL(original.pathname + original.search + original.hash, parsed.origin).toString()
-}
-
-/**
- * The kernel addresses locally-served workers as `host.docker.internal`
- * (reachable from its container); the host browser reaches the same worker on
- * loopback. Rewrite so the iframe loads without an /etc/hosts entry.
- */
-export function rewriteLocalViewUrl(url: string): string {
-  const parsed = parseUrl(url)
-  if (parsed.hostname !== 'host.docker.internal') return url
-  parsed.hostname = '127.0.0.1'
-  return parsed.toString()
-}
-
-function parseUrl(raw: string): URL {
-  try {
-    return new URL(raw)
-  } catch {
-    throw new AstraleError('INVALID_URL', `Not a valid URL: ${raw}`)
-  }
 }

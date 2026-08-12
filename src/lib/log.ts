@@ -8,7 +8,9 @@ import { isMachine, type RawOutputOpts } from './output'
 export const log = {
   info: (msg: string) => console.log(chalk.blue('ℹ'), msg),
   success: (msg: string) => console.log(chalk.green('✔'), msg),
-  warn: (msg: string) => console.log(chalk.yellow('⚠'), msg),
+  // Diagnostics never share stdout with command results. In particular,
+  // --json/--raw consumers must receive exactly one parseable value there.
+  warn: (msg: string) => console.error(chalk.yellow('⚠'), msg),
   error: (msg: string) => console.error(chalk.red('✖'), msg),
   step: (msg: string) => console.log(chalk.cyan('→'), msg),
   dim: (msg: string) => console.log(chalk.dim(msg)),

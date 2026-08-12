@@ -14,21 +14,14 @@ describe('implicit managed target owner discovery', () => {
       state: 'ready',
     } as const
     let capturedOptions: AdminConnectionOptions | undefined
-    let capturedCall: unknown
     const openAdmin = async <Value>(
       options: AdminConnectionOptions,
       action: (context: ConnectionContext) => Promise<Value>,
     ): Promise<Value> => {
       capturedOptions = options
-      return action({
-        host: {
-          call: async (call: unknown) => {
-            capturedCall = call
-            return owned
-          },
-        },
-      } as unknown as ConnectionContext)
+      return action({} as ConnectionContext)
     }
+    const connect = async () => ({ list: async () => [owned] }) as never
 
     await lookupManagedInstance(
       'owned',
@@ -38,15 +31,9 @@ describe('implicit managed target owner discovery', () => {
         timeout: '45000',
       },
       openAdmin,
+      connect,
     )
 
     expect(capturedOptions).toEqual({ timeout: '45000' })
-    const call = capturedCall as {
-      target: { kind: string; path: unknown }
-      input: unknown
-    }
-    expect(call.target.kind).toBe('path')
-    expect(String(call.target.path)).toBe('/:admin.astrale.ai:class.Instance:info')
-    expect(call.input).toEqual({ id: 'owned' })
   })
 })

@@ -9,5 +9,5 @@ export const CLI_CONNECTION = defineCapability({
 export const CLI_AUTH = defineCapability({
   id: 'CLI-AUTH',
   statement:
-    'Resolves each admitted Host hop from CLI credential sources and delegates remote destinations without forwarding a prior bearer.',
+    'Pins the selected source issuer, explicitly admits either credential-less or target-bound authenticated sessions, and delegates remote destinations without forwarding a prior bearer.',
 })

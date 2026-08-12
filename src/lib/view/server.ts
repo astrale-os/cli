@@ -92,14 +92,9 @@ export function startViewServer(config: ViewServeConfig): Server {
     }
     if (sub === '/config.json' && req.method === 'GET') {
       json(res, 200, {
-        viewUrl: session.view.url,
-        viewPath: session.view.path ?? null,
-        viewName: session.view.name ?? null,
-        functionId: session.view.functionId,
-        handshake: session.view.handshake,
-        targetNodeId: session.target?.id ?? null,
-        targetPath: session.target?.path ?? null,
+        view: session.view,
         kernelUrl: proxy.direct ? proxy.kernelUrl : `${base}/k`,
+        kernelIssuer: proxy.issuer,
         identity: session.identity ?? null,
         instance: session.instance ?? null,
         sessionId: session.id,
@@ -107,6 +102,10 @@ export function startViewServer(config: ViewServeConfig): Server {
       return
     }
     if (sub === '/token' && req.method === 'POST') {
+      if (session.view.placement.handshake !== 'shell') {
+        json(res, 403, { error: 'plain views have no Astrale credential privilege' })
+        return
+      }
       const fresh = await freshGrant()
       json(res, 200, { token: fresh.token, expiresAt: fresh.expiresAt, kind: fresh.kind })
       return

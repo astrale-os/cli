@@ -40,9 +40,11 @@ describe('connection CA fetch', () => {
     const scoped = fetchWithCaFile(certificateFile, fallback)
     const init = { method: 'POST', body: 'payload' } satisfies RequestInit
 
-    await expect(
-      scoped(`https://127.0.0.1:${server.port}/invoke`).then((value) => value.text()),
-    ).resolves.toBe('trusted')
+    const httpsUrl = `https://127.0.0.1:${server.port}/invoke`
+    const httpsResponse = await scoped(httpsUrl)
+    expect(await httpsResponse.text()).toBe('trusted')
+    expect(httpsResponse.url).toBe(httpsUrl)
+    expect(httpsResponse.redirected).toBe(false)
     await expect(
       scoped('http://localhost:8080/invoke', init).then((value) => value.text()),
     ).resolves.toBe('fallback')

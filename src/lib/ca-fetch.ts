@@ -40,13 +40,15 @@ function fetchWithNode(url: URL, init: RequestInit | undefined, ca: Buffer): Pro
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
         )
         response.on('end', () => {
-          resolve(
-            new Response(Buffer.concat(chunks), {
-              status: response.statusCode ?? 0,
-              statusText: response.statusMessage,
-              headers: responseHeaders(response.headers),
-            }),
-          )
+          const result = new Response(Buffer.concat(chunks), {
+            status: response.statusCode ?? 0,
+            statusText: response.statusMessage,
+            headers: responseHeaders(response.headers),
+          })
+          // Synthetic Responses have no URL list. This transport does not follow
+          // redirects, so the exact request URL is also the final response URL.
+          Object.defineProperty(result, 'url', { value: url.toString() })
+          resolve(result)
         })
       },
     )

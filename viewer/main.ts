@@ -1,4 +1,4 @@
-import type { MountedWindow } from '@astrale-os/shell'
+import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
 
 import {
   createIframeShellAdapter,
@@ -7,25 +7,19 @@ import {
   replyToIntent,
 } from '@astrale-os/shell'
 
-import { installOpenIntentHandler, mountWithHandshakeFallback } from '../src/lib/view/open-intent'
+import { installOpenIntentHandler } from '../src/lib/view/open-intent'
 
 /**
- * The `astrale view` host page: a thin consumer of the real shell mount
- * machinery. It fetches its config and tokens from the nonce-scoped session
- * server (same origin), mounts the one view, and reports lifecycle states
- * back so the CLI can fail loudly instead of leaving a blank iframe.
+ * The `astrale view` host page: a thin consumer of Shell's exact V2 mount
+ * contract. Its nonce-scoped server supplies one target-bound Host placement;
+ * this page never reconstructs parallel URL, target, key, or handshake inputs.
  */
 
 type Config = {
-  viewUrl: string
-  viewPath: string | null
-  viewName: string | null
-  functionId: string
-  handshake: 'shell' | 'none'
-  targetNodeId: string | null
-  targetPath: string | null
+  view: ResolvedView
   /** Direct kernel URL (public https) or the nonce-scoped local proxy. */
   kernelUrl: string
+  kernelIssuer: ResolvedView['placement']['issuer']
   identity: string | null
   instance: string | null
   sessionId: string
@@ -35,7 +29,7 @@ type Token = { token: string; expiresAt: number; kind: string }
 
 const HEARTBEAT_MS = 5 * 60_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
-const SHELL_ATTEMPTS = 2
+const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
 
 const base = location.pathname.replace(/\/+$/, '')
 
@@ -79,61 +73,60 @@ function showIntentError(error: unknown): void {
 
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
-  el('view-label').textContent = cfg.viewPath ?? cfg.viewUrl
-  el('target-label').textContent = cfg.targetPath ?? cfg.targetNodeId ?? ''
+  const placement = cfg.view.placement
+  el('view-label').textContent = `/:${placement.key}`
+  el('target-label').textContent = cfg.view.target
   el('identity-label').textContent = [cfg.identity, cfg.instance].filter(Boolean).join(' @ ')
-  document.title = `astrale view — ${cfg.viewName ?? cfg.viewPath ?? 'dev'}`
+  document.title = `astrale view — ${placement.key}`
 
   report('mounting')
-  let current = await j<Token>('/token', { method: 'POST' })
+  let current: Token | null = null
+  if (placement.handshake === 'shell') {
+    current = await j<Token>('/token', { method: 'POST' })
+  }
+  const kernelUrl = new URL(cfg.kernelUrl, location.href).href
+
   const shell = createShell({
     mode: 'standalone',
-    kernelUrl: cfg.kernelUrl,
-    getCredential: () => current.token,
+    host: {
+      url: kernelUrl,
+      sourceIssuer: cfg.kernelIssuer,
+      credential: {
+        resolve: () => current?.token,
+      },
+      policy: {
+        maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
+        ...(new URL(kernelUrl).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
+      },
+      protocol: 'envelope',
+      envelopeTransport: 'http',
+    },
     adapter: createIframeShellAdapter(),
   })
+  await shell.init()
 
   const container = el('frame')
   let mounted: MountedWindow | null = null
 
-  const mountWith = (
-    view: { url: string; functionId: string },
-    targetNodeId: string | undefined,
-    handshake: 'shell' | 'none',
-  ) =>
-    shell.mount({
+  const mount = async (view: ResolvedView): Promise<MountedWindow> => {
+    const credential =
+      view.placement.handshake === 'shell'
+        ? {
+            token: current!.token,
+            expiresAt: current!.expiresAt,
+            refresh: async () => {
+              current = await j<Token>('/token', { method: 'POST' })
+              return { token: current.token, expiresAt: current.expiresAt }
+            },
+          }
+        : undefined
+    return shell.mount({
       host: container,
-      url: view.url,
-      functionId: view.functionId,
-      targetNodeId,
+      view,
       capabilities: { intents: ['open', 'receive', 'closeAck', 'closeRefuse'] },
       sandbox: null,
-      handshake,
       handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
-      credential: {
-        token: current.token,
-        expiresAt: current.expiresAt,
-        refresh: async () => {
-          current = await j<Token>('/token', { method: 'POST' })
-          return { token: current.token, expiresAt: current.expiresAt }
-        },
-      },
-    })
-
-  const mountResolved = async (
-    view: { url: string; functionId: string; handshake: 'shell' | 'none' },
-    targetNodeId: string | undefined,
-  ): Promise<{ mounted: MountedWindow; handshake: 'shell' | 'none' }> => {
-    const existing = new Set(container.children)
-    return mountWithHandshakeFallback({
-      handshake: view.handshake,
-      attempts: SHELL_ATTEMPTS,
-      mount: (handshake) => mountWith(view, targetNodeId, handshake),
-      cleanupFailedAttempt: () => {
-        for (const child of Array.from(container.children)) {
-          if (!existing.has(child)) child.remove()
-        }
-      },
+      ...(credential === undefined ? {} : { credential }),
     })
   }
 
@@ -142,20 +135,10 @@ async function main(): Promise<void> {
     setCurrent: (next) => {
       mounted = next
     },
-    mount: async (selected, nodeId) => {
-      const next = await mountResolved(
-        {
-          url: selected.url,
-          functionId: selected.id,
-          handshake: selected.handshake ?? 'shell',
-        },
-        nodeId,
-      )
-      return next.mounted
-    },
-    opened: (selected, nodeId) => {
-      el('view-label').textContent = selected.path
-      el('target-label').textContent = `@${nodeId}`
+    mount,
+    opened: (selected) => {
+      el('view-label').textContent = `/:${selected.placement.key}`
+      el('target-label').textContent = selected.target
       el('error').style.display = 'none'
     },
     failed: showIntentError,
@@ -167,29 +150,15 @@ async function main(): Promise<void> {
     },
   })
 
-  if (cfg.handshake !== 'shell') {
-    mounted = await mountWith(
-      { url: cfg.viewUrl, functionId: cfg.functionId },
-      cfg.targetNodeId ?? undefined,
-      'none',
-    )
+  // One placement means one mount attempt. Shell-handshake failures remain
+  // failures; changing them to `none` would grant a different public contract.
+  mounted = await mount(cfg.view)
+  if (placement.handshake === 'shell') {
+    setStatus('connected')
+    report('connected')
+  } else {
     setStatus('plain')
     report('plain')
-  } else {
-    // Cold SPA boots can miss the first handshake window — retry before
-    // downgrading to a plain iframe (the GUI host's fallback of last resort).
-    const initial = await mountResolved(
-      { url: cfg.viewUrl, functionId: cfg.functionId, handshake: 'shell' },
-      cfg.targetNodeId ?? undefined,
-    )
-    mounted = initial.mounted
-    if (initial.handshake === 'shell') {
-      setStatus('connected')
-      report('connected')
-    } else {
-      setStatus('plain')
-      report('plain')
-    }
   }
   setInterval(() => report('alive'), HEARTBEAT_MS)
 }

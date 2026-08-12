@@ -12,6 +12,7 @@ export default defineLayout({
     'self.ts',
     'session.ts',
     'target.ts',
+    'tsconfig.json',
   ],
   exact: true,
 })

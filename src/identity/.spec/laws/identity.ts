@@ -24,9 +24,33 @@ export const CLI_IDENTITY_TRANSFER_ROUNDTRIP = defineLaw({
   ],
 })
 
+export const CLI_IDENTITY_TRANSFER_SCHEMA = defineLaw({
+  id: 'CLI-IDENTITY-TRANSFER-SCHEMA',
+  statement:
+    'Plaintext IdentityExport V1 has one independently versioned portable JSON Schema; decoding additionally proves the JWK pair before any durable mutation.',
+  tests: [
+    {
+      file: '__tests__/transfer.test.ts',
+      id: 'TEST-CLI-IDENTITY-TRANSFER-SCHEMA',
+    },
+  ],
+})
+
 export const CLI_IDENTITY_IMPORT_ORDERED = defineLaw({
   id: 'CLI-IDENTITY-IMPORT-ORDERED',
   statement:
     'Import checks name and identity-source conflicts under the registry lock before replacing keys, then publishes the registry only after the admitted pair is durable.',
   tests: [{ file: '__tests__/transfer.test.ts', id: 'TEST-CLI-IDENTITY-IMPORT-ORDERED' }],
+})
+
+export const CLI_IDENTITY_REGISTRATION_AUTHORITY = defineLaw({
+  id: 'CLI-IDENTITY-REGISTRATION-AUTHORITY',
+  statement:
+    'Identity registration binds one self-proven Provision request to the selected Kernel; direct submission uses caller authority, while explicit Domain-mediated submission sends the same request to the named callable and persists only its admitted prepared binding.',
+  tests: [
+    {
+      file: '__tests__/registration.test.ts',
+      id: 'TEST-CLI-IDENTITY-REGISTER-DOMAIN-MEDIATED',
+    },
+  ],
 })

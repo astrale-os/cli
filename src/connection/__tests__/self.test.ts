@@ -1,123 +1,51 @@
 import { describe, expect, test } from 'bun:test'
+import { SignJWT } from 'jose'
+import { webcrypto } from 'node:crypto'
 
-import type { SelfResolverContext } from '../../lib/self'
+import { resolveSelfIdAuthenticated } from '../self'
 
-import { resolveSelfIdLazy } from '../self'
+describe('resolveSelfIdAuthenticated', () => {
+  /** @evidence TEST-CLI-SELF-USES-AUTHENTICATED-EFFECTIVE-PRINCIPAL */
+  test('uses child whoami for a manager-to-child Management carrier', async () => {
+    const key = await generateEs256()
+    const credential = await new SignJWT({ carrier: 'management' })
+      .setProtectedHeader({ alg: 'ES256' })
+      .setIssuer('https://manager.example')
+      .setSubject('manager-principal')
+      .setAudience('https://child.example')
+      .sign(key)
+    const opts = { creds: credential, url: 'https://manager.example/children/child/invoke' }
 
-describe('resolveSelfIdLazy', () => {
-  test('refreshes a cached IdP @self registration via whoami', async () => {
-    const writes: unknown[][] = []
-    const ctx: SelfResolverContext = {
-      identity: {
-        name: 'bryan',
-        subject: 'user_01KC9MW1M6S5J6V9ERSRJ8RDYF',
-        createdAt: '2026-06-25T08:00:00.000Z',
-        source: 'idp',
-        registrations: {
-          bryan: {
-            iss: 'https://old.example',
-            sub: '4ad8e4ce-5cf7-4c2e-ab29-5549023dc8bf',
-            registeredAt: '2026-06-25T08:00:00.000Z',
-          },
-        },
+    const resolved = await resolveSelfIdAuthenticated(opts, {
+      whoami: async (received) => {
+        expect(received).toBe(opts)
+        return { id: 'child-kernel-principal', slug: 'child' }
       },
-      instanceSlug: 'bryan',
-      instanceSigned: false,
-    }
+    })
 
-    const id = await resolveSelfIdLazy(
-      ctx,
-      {},
-      {
-        whoami: async () => ({
-          id: 'f011538e-9edc-4c29-92ce-9b81b6c1b6c7',
-          kernelUrl: 'https://bryan.example',
-        }),
-        setRegistration: async (...args) => {
-          writes.push(args)
-        },
-        now: () => new Date('2026-06-25T08:15:00.000Z'),
-      },
-    )
-
-    expect(id).toBe('f011538e-9edc-4c29-92ce-9b81b6c1b6c7')
-    expect(writes).toEqual([
-      [
-        'bryan',
-        'bryan',
-        {
-          iss: 'https://bryan.example',
-          sub: 'f011538e-9edc-4c29-92ce-9b81b6c1b6c7',
-          registeredAt: '2026-06-25T08:15:00.000Z',
-        },
-      ],
-    ])
+    expect(resolved).toEqual({ id: 'child-kernel-principal', slug: 'child' })
   })
 
-  test('keeps the cached IdP id when whoami is temporarily unavailable', async () => {
-    const ctx: SelfResolverContext = {
-      identity: {
-        name: 'bryan',
-        subject: 'user_01KC9MW1M6S5J6V9ERSRJ8RDYF',
-        createdAt: '2026-06-25T08:00:00.000Z',
-        source: 'idp',
-        registrations: {
-          bryan: {
-            iss: 'https://bryan.example',
-            sub: 'cached-id',
-            registeredAt: '2026-06-25T08:00:00.000Z',
-          },
-        },
-      },
-      instanceSlug: 'bryan',
-      instanceSigned: false,
-    }
-
+  test('resolves an imported root without requiring a local registration', async () => {
     await expect(
-      resolveSelfIdLazy(
-        ctx,
-        {},
-        {
-          whoami: async () => {
-            throw new Error('network down')
-          },
-        },
+      resolveSelfIdAuthenticated(
+        { as: 'platform-root', url: 'https://manager.example/invoke' },
+        { whoami: async () => ({ id: 'manager-kernel-principal' }) },
       ),
-    ).resolves.toBe('cached-id')
+    ).resolves.toEqual({ id: 'manager-kernel-principal' })
   })
 
-  test('does not run whoami for key-backed registrations', async () => {
-    const ctx: SelfResolverContext = {
-      identity: {
-        name: 'alice',
-        subject: 'alice',
-        createdAt: '2026-06-25T08:00:00.000Z',
-        source: 'key',
-        registrations: {
-          bryan: {
-            iss: 'https://bryan.example',
-            sub: 'key-node-id',
-            registeredAt: '2026-06-25T08:00:00.000Z',
-          },
-        },
-      },
-      instanceSlug: 'bryan',
-      instanceSigned: false,
-    }
-    let called = false
-
-    const id = await resolveSelfIdLazy(
-      ctx,
-      {},
-      {
-        whoami: async () => {
-          called = true
-          return { id: 'should-not-be-used', kernelUrl: 'https://bryan.example' }
-        },
-      },
-    )
-
-    expect(id).toBe('key-node-id')
-    expect(called).toBe(false)
+  test('fails closed when authenticated whoami returns no NodeId', async () => {
+    await expect(
+      resolveSelfIdAuthenticated({}, { whoami: async () => ({ id: '   ' }) }),
+    ).rejects.toMatchObject({ name: 'SelfResolutionError' })
   })
 })
+
+async function generateEs256(): Promise<CryptoKey> {
+  const pair = await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ])
+  return pair.privateKey
+}

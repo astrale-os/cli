@@ -29,8 +29,22 @@
   ],
   "type": "module",
   "exports": {
-    "./keys": "./src/keys/index.ts",
-    "./paths": "./src/paths/index.ts"
+    "./connect-core": {
+      "types": "./dist/types/connect-core.d.ts",
+      "import": "./dist/public/connect-core.js",
+      "default": "./dist/public/connect-core.js"
+    },
+    "./keys": {
+      "types": "./dist/types/keys/index.d.ts",
+      "import": "./dist/public/keys/index.js",
+      "default": "./dist/public/keys/index.js"
+    },
+    "./paths": {
+      "types": "./dist/types/paths/index.d.ts",
+      "import": "./dist/public/paths/index.js",
+      "default": "./dist/public/paths/index.js"
+    },
+    "./identity-export-v1.schema.json": "./src/identity/.spec/schemas/identity-export-v1.schema.json"
   },
   "publishConfig": {
     "access": "public",
@@ -40,8 +54,9 @@
     "preinstall": "node .check-workspace.cjs",
     "prepare": "husky",
     "build": "bun scripts/build.ts",
-    "prepack": "bun scripts/build.ts",
-    "typecheck": "tsgo --noEmit && tsgo --noEmit -p viewer && tsgo --noEmit -p studio",
+    "prepack": "pnpm run package:check",
+    "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs",
+    "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.tests.json && tsgo --noEmit -p viewer && tsgo --noEmit -p studio",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
@@ -50,8 +65,6 @@
     "test:watch": "bun test --watch src"
   },
   "dependencies": {
-    "@astrale-os/kernel-client": ">=0.3.1 <1.0.0",
-    "@astrale-os/kernel-core": ">=0.7.0 <1.0.0",
     "@inquirer/prompts": "^8.5.2",
     "chalk": "^5.6.2",
     "chokidar": "^4.0.3",
@@ -63,8 +76,10 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@astrale-os/kernel-client": ">=0.3.1 <1.0.0",
+    "@astrale-os/kernel-core": ">=0.7.0 <1.0.0",
     "@astrale-os/ox": ">=0.1.0 <1.0.0",
-    "@astrale-os/shell": ">=0.3.5 <1.0.0",
+    "@astrale-os/shell": ">=0.3.8 <1.0.0",
     "@astrale/commitlint-config": "jsr:~2.0.1",
     "@commitlint/cli": "~20.3.1",
     "@commitlint/config-conventional": "~20.3.1",

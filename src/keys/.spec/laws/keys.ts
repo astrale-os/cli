@@ -29,3 +29,15 @@ export const CLI_KEYS_PAIR_ADMITTED = defineLaw({
     { file: '__tests__/keys.test.ts', id: 'TEST-CLI-KEYS-PATH-CONFINED' },
   ],
 })
+
+export const CLI_KEYS_CREDENTIAL_GRANT_PROFILE = defineLaw({
+  id: 'CLI-KEYS-CREDENTIAL-GRANT-PROFILE',
+  statement:
+    'A self-issued Kernel credential carries the effective subject as an already-resolved identity Grant, while an externally issued primary credential carries an identity-self Grant for Runtime resolution.',
+  tests: [
+    {
+      file: '__tests__/keys.test.ts',
+      id: 'TEST-CLI-KEYS-DISTINGUISHES-KERNEL-ROOT-GRANT',
+    },
+  ],
+})

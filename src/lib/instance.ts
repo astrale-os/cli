@@ -113,6 +113,15 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
 
 let instancesMemo: InstanceStore | null = null
 
+/**
+ * Invalidate the one-process bookmark snapshot. Long-lived compatibility
+ * consumers call this before a read so CLI writes made by another process are
+ * observable; one-shot commands normally never need it.
+ */
+export function resetInstancesMemo(): void {
+  instancesMemo = null
+}
+
 export async function readInstances(
   _config?: AstraleConfig,
   opts: { persist?: boolean } = {},

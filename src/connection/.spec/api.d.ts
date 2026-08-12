@@ -11,6 +11,8 @@ export interface ConnectionOptions {
   readonly timeout?: string
   readonly as?: string
   readonly creds?: string
+  /** Omit caller credentials even when local or bookmark defaults exist. */
+  readonly anonymous?: boolean
 }
 
 /** Existing Admin-target overrides accepted only by Admin Domain operations. */
@@ -27,6 +29,9 @@ export interface ConnectionTarget {
   readonly defaultIdentity?: string
   readonly caFile?: string
 }
+
+/** Stable local identity-registration key for the exact selected source Kernel. */
+export function registrationKeyForTarget(target: ConnectionTarget): string
 
 /** Narrow capabilities available during one scoped CLI connection. */
 export interface ConnectionContext {
@@ -49,7 +54,6 @@ export interface SelfExpansionMeta {
   readonly original: string
   readonly expanded: string
   readonly selfId: string
-  readonly identity?: string
   readonly slug?: string
 }
 
@@ -68,7 +72,7 @@ export function withAdminHostSession<Value>(
   action: (context: ConnectionContext) => Promise<Value>,
 ): Promise<Value>
 
-/** Expand @self through CLI identity state and refresh an IdP registration when necessary. */
+/** Expand @self through the effective principal returned by authenticated Identity.whoami. */
 export function expandSelfInPath(
   path: string,
   options: KernelCommandOpts,

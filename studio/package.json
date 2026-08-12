@@ -19,7 +19,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@astrale-os/shell": ">=0.1.1 <1.0.0",
+    "@astrale-os/shell": ">=0.3.8 <1.0.0",
     "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-collapsible": "^1.1.0",
     "@radix-ui/react-dialog": "^1.1.6",

@@ -56,7 +56,7 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
   try {
     prepared = prepareQuery(input)
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid Query V3 document')
+    log.error(error instanceof Error ? error.message : 'Invalid Query V5 document')
     process.exit(1)
   }
 
@@ -104,13 +104,14 @@ function parseJson(raw: string, source: string): unknown {
 
 export default {
   name: 'query',
-  description: 'Run one canonical Query V3 graph read',
+  description: 'Run one canonical Query V5 graph read',
   afterHelpText: `
 Behavior:
-  Positional Paths and --definition author a finite Query V3 read. --edge adds
+  Positional Paths and --definition author a finite Query V5 read. --edge adds
   one exact Edge-Class expansion; --direction defaults to outgoing. --ast and
-  --file accept a complete canonical astrale.graph.query/v3 document. --cursor
-  resumes one caller-bound query scope.
+  --file accept a complete canonical astrale.graph.query/v5 document, including
+  Property ordering and Node or Edge reference/value projections. --cursor resumes
+  one caller-bound query scope.
 
   Legacy depth/children selector JSON and raw Cypher are not portable Kernel
   V2 query contracts and are not accepted.
@@ -119,12 +120,12 @@ Examples:
   $ astrale query /:notes.example.dev:class.Note --limit 50
   $ astrale query --definition /:notes.example.dev:class.Note --limit 50
   $ astrale query @note --edge /:notes.example.dev:class.references --direction outgoing --limit 25
-  $ astrale query --file query.v3.json --cursor "$CURSOR"
+  $ astrale query --file query.v5.json --cursor "$CURSOR"
 `,
   arguments: [{ name: 'sources...', description: 'Canonical source Paths', required: false }],
   options: [
-    { flags: '--ast <json>', description: 'Canonical Query V3 JSON document' },
-    { flags: '-f, --file <path>', description: 'Read a canonical Query V3 document from a file' },
+    { flags: '--ast <json>', description: 'Canonical Query V5 JSON document' },
+    { flags: '-f, --file <path>', description: 'Read a canonical Query V5 document from a file' },
     {
       flags: '--definition <path>',
       description: 'Select Nodes implementing one exact Class or Interface',

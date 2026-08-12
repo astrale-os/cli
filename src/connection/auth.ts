@@ -1,7 +1,7 @@
 import type { AstraleConfig } from '../lib/config'
 
 import { AuthError } from '../errors'
-import { getDefault, getIdentity, type Identity } from '../identity/index'
+import { getDefault, getIdentity, type Identity } from '../identity/registry'
 import { signAs } from '../keys/index'
 import {
   accessTokenForAudience,
@@ -37,7 +37,7 @@ export async function resolveCredential(
   opts: { as?: string; creds?: string; defaultIdentity?: string },
   config: AstraleConfig,
   audience: string = config.issuer,
-  instanceSlug?: string,
+  registrationKey?: string,
 ): Promise<string> {
   if (opts.creds) return opts.creds
   // Track the resolved identity so the catch block can tailor its hint: an
@@ -60,7 +60,7 @@ export async function resolveCredential(
       return await signAs(
         identity.subject,
         KEYS_DIR,
-        resolveKeyIdentityAuthOptions(identity, config, audience, instanceSlug),
+        resolveKeyIdentityAuthOptions(identity, config, audience, registrationKey),
       )
     }
 
@@ -74,7 +74,7 @@ export async function resolveCredential(
     return await signAs(
       identity.subject,
       KEYS_DIR,
-      resolveKeyIdentityAuthOptions(identity, config, audience, instanceSlug),
+      resolveKeyIdentityAuthOptions(identity, config, audience, registrationKey),
     )
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to resolve credentials'
@@ -128,9 +128,9 @@ export function resolveKeyIdentityAuthOptions(
   identity: Identity,
   config: AstraleConfig,
   audience: string = config.issuer,
-  instanceSlug?: string,
+  registrationKey?: string,
 ): KeyIdentityAuthOptions {
-  const registration = instanceSlug ? identity.registrations?.[instanceSlug] : undefined
+  const registration = registrationKey ? identity.registrations?.[registrationKey] : undefined
   return {
     issuer:
       registration?.iss ?? identity.issuer ?? systemIdentityIssuer(identity, audience, config),

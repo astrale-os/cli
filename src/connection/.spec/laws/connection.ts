@@ -15,7 +15,7 @@ export const CLI_CONNECTION_TARGET = defineLaw({
 export const CLI_CONNECTION_HOP_CREDENTIAL = defineLaw({
   id: 'CLI-CONNECTION-HOP-CREDENTIAL',
   statement:
-    'A source hop resolves a fresh credential for its admitted Publication issuer; a redirected hop first authenticates to its admitted resolver and returns a fresh delegation for the destination Publication issuer, never the source credential.',
+    'A source hop resolves a fresh credential only when its session-pinned issuer equals the selected source issuer; a destination hop requires the same selected resolver and returns a fresh delegation for the witnessed Publication issuer, never the source credential, with its TTL bounded strictly inside any source JWT expiry.',
   tests: [
     {
       file: '__tests__/credential.test.ts',
@@ -24,6 +24,82 @@ export const CLI_CONNECTION_HOP_CREDENTIAL = defineLaw({
     {
       file: '__tests__/credential.test.ts',
       id: 'TEST-CLI-CONNECTION-DELEGATES-VIA-SOURCE-AUTH',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-REJECTS-HOP-SOURCE-ISSUER-MISMATCH',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-BOUNDS-DELEGATION-TO-SOURCE-EXPIRY',
+    },
+  ],
+})
+
+export const CLI_CONNECTION_EXPLICIT_ANONYMOUS = defineLaw({
+  id: 'CLI-CONNECTION-EXPLICIT-ANONYMOUS',
+  statement:
+    'An explicit anonymous selection suppresses ambient, bookmark-default, and local credentials by omitting the Host credential capability; it is rejected before connection construction when combined with --as or --creds.',
+  tests: [
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL',
+    },
+    {
+      file: '__tests__/session.test.ts',
+      id: 'TEST-CLI-CONNECTION-REJECTS-ANONYMOUS-CREDENTIAL-CONFLICT',
+    },
+  ],
+})
+
+export const CLI_CONNECTION_SOURCE_ISSUER = defineLaw({
+  id: 'CLI-CONNECTION-SOURCE-ISSUER',
+  statement:
+    'CLI constructs HostSession once with sourceIssuer equal to the selected ConnectionTarget issuer independently from its invocation URL, so path-multiplexed Kernels do not substitute root Publication discovery; every credential hop repeats that pin.',
+  tests: [
+    {
+      file: '__tests__/session.test.ts',
+      id: 'TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER',
+    },
+  ],
+})
+
+export const CLI_CONNECTION_ISSUER_DISCOVERY = defineLaw({
+  id: 'CLI-CONNECTION-ISSUER-DISCOVERY',
+  statement:
+    'When invocation URL and issuer differ, liveness probes resolve OIDC metadata at the pinned issuer and reject metadata that declares any other issuer before fetching its keys.',
+  tests: [
+    {
+      file: '../lib/__tests__/meta.test.ts',
+      id: 'TEST-CLI-CONNECTION-PROBES-PINNED-ISSUER',
+    },
+    {
+      file: '../lib/__tests__/meta.test.ts',
+      id: 'TEST-CLI-CONNECTION-REJECTS-DISCOVERY-ISSUER-MISMATCH',
+    },
+  ],
+})
+
+export const CLI_AUTH_REGISTRATION_TARGET = defineLaw({
+  id: 'CLI-AUTH-REGISTRATION-TARGET',
+  statement:
+    'Key identity registration lookup uses the same target key for bookmark, managed, Admin, and direct URL calls that identity registration stores.',
+  tests: [
+    {
+      file: '__tests__/auth.test.ts',
+      id: 'TEST-CLI-AUTH-USES-DIRECT-URL-REGISTRATION',
+    },
+  ],
+})
+
+export const CLI_SELF_AUTHENTICATED_PRINCIPAL = defineLaw({
+  id: 'CLI-SELF-AUTHENTICATED-PRINCIPAL',
+  statement:
+    '@self resolves only from authenticated Identity.whoami on the selected target, so delegated carriers use their effective principal and never an unverified JWT subject or stale local registration.',
+  tests: [
+    {
+      file: '__tests__/self.test.ts',
+      id: 'TEST-CLI-SELF-USES-AUTHENTICATED-EFFECTIVE-PRINCIPAL',
     },
   ],
 })
@@ -72,6 +148,18 @@ export const CLI_CONNECTION_CALL_SHAPE = defineLaw({
     {
       file: '__tests__/call.test.ts',
       id: 'TEST-CLI-CONNECTION-CREATES-ONE-CANONICAL-CALL',
+    },
+  ],
+})
+
+export const CLI_CONNECTION_PUBLIC_SEMANTIC_REASON = defineLaw({
+  id: 'CLI-CONNECTION-PUBLIC-SEMANTIC-REASON',
+  statement:
+    'Machine-mode Kernel command failures preserve the admitted ResponseError code and public semantic reason so scripts can distinguish conflicts such as revision guards and required data migrations without parsing prose.',
+  tests: [
+    {
+      file: '__tests__/errors.test.ts',
+      id: 'TEST-CLI-CONNECTION-PRESERVES-PUBLIC-SEMANTIC-REASON',
     },
   ],
 })

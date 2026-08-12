@@ -1,10 +1,41 @@
 import { issuer, jwk, provision } from '@astrale-os/kernel-core/auth'
 import { ClassPath } from '@astrale-os/kernel-core/graph/class'
 import { normalizeProperties } from '@astrale-os/kernel-core/graph/properties'
-import { expect, test } from 'bun:test'
+import { expect, mock, test } from 'bun:test'
 import { exportJWK, generateKeyPair, jwtVerify } from 'jose'
 
-import { prepareIdentityProvision } from '../register'
+import { formatIdentityRegistration, prepareIdentityProvision } from '../register'
+
+/** @evidence TEST-CLI-IDENTITY-REGISTER-JSON-EXACT */
+test('emits exactly one structured value for machine registration output', () => {
+  const writes: string[] = []
+  const logs: string[] = []
+  const originalWrite = process.stdout.write
+  const originalLog = console.log
+  process.stdout.write = mock((chunk: string | Uint8Array) => {
+    writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+    return true
+  }) as typeof process.stdout.write
+  console.log = mock((...values: unknown[]) => logs.push(values.map(String).join(' ')))
+
+  try {
+    formatIdentityRegistration(
+      { iss: 'https://identity.example', sub: 'self', nodeId: 'operator-node' },
+      { json: true },
+      true,
+    )
+  } finally {
+    process.stdout.write = originalWrite
+    console.log = originalLog
+  }
+
+  expect(JSON.parse(writes.join(''))).toEqual({
+    iss: 'https://identity.example',
+    sub: 'self',
+    nodeId: 'operator-node',
+  })
+  expect(logs).toEqual([])
+})
 
 test('builds one exact Mutation V2 identity birth bound to a self proof', async () => {
   const { privateKey, publicKey } = await generateKeyPair('ES256', { extractable: true })

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { access, mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { keypairPaths, persistKeypair, readKeypair } from '../../keys/index'
 import { readIdentityStore, updateIdentityStore } from '../../state/index'
@@ -96,6 +97,28 @@ describe('identity transfer', () => {
     expect(isEncryptedIdentityExport(encrypted)).toBe(true)
     expect(await decodeIdentityExport(encrypted, 'correct-horse-battery')).toEqual(current)
     await expect(decodeIdentityExport(encrypted, 'wrong')).rejects.toThrow(/Could not decrypt/)
+  })
+
+  /** @evidence TEST-CLI-IDENTITY-TRANSFER-SCHEMA */
+  test('keeps the portable V1 JSON Schema aligned with the admitted Host envelope', async () => {
+    const schemaPath = fileURLToPath(
+      new URL('../.spec/schemas/identity-export-v1.schema.json', import.meta.url),
+    )
+    const schema = JSON.parse(await readFile(schemaPath, 'utf8')) as {
+      readonly $id: string
+      readonly additionalProperties: boolean
+      readonly required: readonly string[]
+      readonly properties: Readonly<Record<string, unknown>>
+    }
+    const hostEnvelope = await envelope('manager-principal', 'host-bootstrap')
+
+    expect(schema.$id).toBe('https://schemas.astrale.ai/cli/identity-export/1')
+    expect(schema.additionalProperties).toBe(false)
+    expect(schema.required).toEqual(['version', 'subject', 'privateJwk', 'publicJwk'])
+    expect(Object.keys(schema.properties).sort()).toEqual(
+      ['issuer', 'kid', 'mode', 'privateJwk', 'publicJwk', 'subject', 'version'].sort(),
+    )
+    await expect(decodeIdentityExport(JSON.stringify(hostEnvelope))).resolves.toEqual(hostEnvelope)
   })
 
   /** @evidence TEST-CLI-IDENTITY-IMPORT-ORDERED */

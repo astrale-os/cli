@@ -3,8 +3,7 @@ import chalk from 'chalk'
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { createPathCall, withAdminHostSession } from '../../connection'
-import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
+import { publishAdminDomain } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
@@ -108,35 +107,12 @@ Examples:
         `Publishing ${name} → ${publicUrl}`,
         !isMachine(opts),
         () =>
-          withAdminHostSession(opts, async ({ host }) => {
-            // Read the current catalog entry first: a re-publish that would write
-            // the same origin/name/url/description/install flag is a no-op we
-            // report as "already up to date" (and skip the write) rather than
-            // silently bumping `updatedAt`. `info` throws when absent → treat as
-            // a fresh publish.
-            const existing = (await host
-              .call(createPathCall(adminDomainMethod('info'), { origin }))
-              .catch(() => null)) as DomainInfo | null
-            if (
-              existing &&
-              existing.name === name &&
-              existing.url === publicUrl &&
-              (opts.description === undefined || existing.description === opts.description) &&
-              (opts.installByDefault === undefined ||
-                (existing.installByDefault ?? false) === opts.installByDefault)
-            ) {
-              return { entry: existing, changed: false as const, isNew: false }
-            }
-            const entry = (await host.call(
-              createPathCall(adminDomainMethod('publish'), {
-                origin,
-                name,
-                url: publicUrl,
-                ...(opts.description ? { description: opts.description } : {}),
-                ...(opts.installByDefault ? { installByDefault: true } : {}),
-              }),
-            )) as DomainInfo
-            return { entry, changed: true as const, isNew: !existing }
+          publishAdminDomain(opts, {
+            origin,
+            name,
+            url: publicUrl,
+            ...(opts.description ? { description: opts.description } : {}),
+            ...(opts.installByDefault ? { installByDefault: true } : {}),
           }),
         {
           success: ({ entry, changed, isNew }) =>

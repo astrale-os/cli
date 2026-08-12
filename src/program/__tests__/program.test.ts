@@ -187,7 +187,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '1fa3dd7b13988c2a141240f3675c6fce4a1ca1399628b409b13505d626e4d6ca',
+      '00ef09a169576e729fb50aa03c842f699db709519a3d962cf9108e4da961c195',
     )
   })
 
@@ -304,6 +304,16 @@ describe('help contract — read command split', () => {
     expect(queryHelp).toContain('--limit <n>')
     expect(queryHelp).toContain('--cursor <token>')
     expect(queryHelp).not.toContain('--cypher <query>')
+  })
+})
+
+describe('help contract — explicit anonymous authentication', () => {
+  test('kernel commands expose the credential-less session flag', async () => {
+    const program = await buildProgram()
+    const call = allCommands(program).find((command) => command.name() === 'call')
+
+    expect(call?.helpInformation()).toContain('--anonymous')
+    expect(call?.helpInformation()).toContain('Send no credential')
   })
 })
 

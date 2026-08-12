@@ -47,9 +47,12 @@ astrale admin ...
 ```
 
 Kernel-touching commands share `--format`, `--json`, `--raw`, `--url`,
-`-i/--instance`, `--timeout`, `--as`, `--creds`, and `--debug` where
+`-i/--instance`, `--timeout`, `--as`, `--creds`, `--anonymous`, and `--debug` where
 applicable. The CLI creates one public Kernel `Call`, and its Host session owns
 remote routing, fresh credentials, and one safe stale-route retry.
+
+Use `--anonymous` to omit a caller credential even when a local or bookmark-default identity exists.
+It cannot be combined with `--as` or `--creds`; required callables reject anonymous requests.
 
 ## Paths
 
@@ -126,6 +129,18 @@ astrale identity register alice \
 
 There is no caller-chosen storage `--path`: Kernel V2 Node IDs are opaque. The
 proof is bound to the exact provision fingerprint and target Kernel audience.
+For an application-owned Identity Class, direct Kernel submission is correctly
+denied unless the caller owns that Class. Name the Domain's authorizing
+registration callable explicitly; the CLI sends the same self-proven request
+through it and stores only the admitted target-bound result:
+
+```bash
+astrale identity register operator \
+  --class /:operations.example:class.Operator \
+  --props '{"operations.example:class.Operator.property.name":"Operator"}' \
+  --via /:operations.example:function.provisionOperator \
+  -i staging
+```
 
 `astrale token` delegates the selected authenticated identity. TTL defaults to
 3600 seconds; audience defaults to the target Kernel issuer. Use `--audience`

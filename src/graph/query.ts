@@ -25,7 +25,7 @@ export interface PreparedQuery {
 
 const DEFAULT_LIMIT = 100
 
-/** Admit canonical Query V3 or author the intentionally small Path/Definition/one-edge subset. */
+/** Admit canonical Query V5 or author the intentionally small Path/Definition/one-edge subset. */
 export function prepareQuery(input: QueryCommandInput): PreparedQuery {
   if (input.ast !== undefined) {
     if (
@@ -44,7 +44,7 @@ export function prepareQuery(input: QueryCommandInput): PreparedQuery {
 
   if (input.sources.length === 0 && input.definition === undefined) {
     throw new TypeError(
-      'query requires a Path source, --definition, or a canonical Query V3 document',
+      'query requires a Path source, --definition, or a canonical Query V5 document',
     )
   }
   if (input.direction !== undefined && input.edge === undefined) {

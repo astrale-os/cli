@@ -1,23 +1,12 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 
 import type { IdentityStore } from '../../identity/index'
 
 import { AuthError } from '../../errors'
-import {
-  ADMIN_INSTANCE,
-  adminInstanceMethod,
-  callOwnedInstances,
-  findOwnedInstance,
-  type OwnedInstanceInfo,
-} from '../../lib/admin-instance'
+import { findOwnedInstance, type OwnedInstanceInfo } from '../../lib/admin-instance'
 import { assertAlphaCreateIdentity } from '../instance/create'
 
 describe('admin-backed instance commands', () => {
-  test('target the merged Instance class', () => {
-    expect(ADMIN_INSTANCE).toBe('/:admin.astrale.ai:class.Instance')
-    expect(adminInstanceMethod('list')).toBe('/:admin.astrale.ai:class.Instance:list')
-  })
-
   test('findOwnedInstance matches owner inventory by slug or stable node id', () => {
     const owned = {
       id: 'instance-node',
@@ -35,35 +24,6 @@ describe('admin-backed instance commands', () => {
     expect(findOwnedInstance([owned], 'demo')).toBe(owned)
     expect(findOwnedInstance([owned], 'instance-node')).toBe(owned)
     expect(findOwnedInstance([owned], 'other')).toBeUndefined()
-  })
-
-  test('owner-scoped discovery calls listMine with an empty input', async () => {
-    const owned: OwnedInstanceInfo[] = [
-      {
-        id: 'instance-node',
-        slug: 'demo',
-        url: 'https://demo.eu.astrale.ai',
-        state: 'ready',
-      },
-    ]
-    const call = mock(async (_request: unknown) => owned)
-
-    await expect(callOwnedInstances({ call })).resolves.toEqual([
-      {
-        id: 'instance-node',
-        slug: 'demo',
-        url: 'https://demo.eu.astrale.ai',
-        state: 'ready',
-      },
-    ])
-    expect(call).toHaveBeenCalledTimes(1)
-    const request = call.mock.calls[0]?.[0] as {
-      target: { kind: string; path: unknown }
-      input: unknown
-    }
-    expect(request.target.kind).toBe('path')
-    expect(String(request.target.path)).toBe('/:admin.astrale.ai:class.Instance:listMine')
-    expect(request.input).toEqual({})
   })
 
   test('instance create preflight points fresh installs at WorkOS login', () => {

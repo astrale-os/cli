@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { decodeProtectedHeader } from 'jose'
+import { decodeJwt, decodeProtectedHeader } from 'jose'
 import { access, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -62,6 +62,39 @@ describe('DESIGN — per-identity keys', () => {
     await persistKeypair('alice', { keysDir: tmp })
     const jwt = await signAs('alice', tmp)
     expect(jwt.split('.').length).toBe(3)
+  })
+
+  /** @evidence TEST-CLI-KEYS-DISTINGUISHES-KERNEL-ROOT-GRANT */
+  test('signAs resolves self-issued Kernel root grants and preserves external self grants', async () => {
+    await persistKeypair('manager-principal', { keysDir: tmp })
+    await persistKeypair('alice', { keysDir: tmp })
+    const kernel = 'https://kernel.example/kernel/host'
+
+    const root = decodeJwt(
+      await signAs('manager-principal', tmp, {
+        issuer: kernel,
+        audience: kernel,
+      }),
+    )
+    expect(root).toMatchObject({
+      iss: kernel,
+      sub: 'manager-principal',
+      aud: kernel,
+      grant: { v: 1, expr: { kind: 'identity', id: 'manager-principal' } },
+    })
+
+    const external = decodeJwt(
+      await signAs('alice', tmp, {
+        issuer: 'https://identity.example',
+        audience: kernel,
+      }),
+    )
+    expect(external).toMatchObject({
+      iss: 'https://identity.example',
+      sub: 'alice',
+      aud: kernel,
+      grant: { v: 1, expr: { kind: 'identity', self: true } },
+    })
   })
 
   test('signAs(alice) uses the key file algorithm for EdDSA identities', async () => {

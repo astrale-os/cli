@@ -1,7 +1,10 @@
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import type { ResolvedView } from '@astrale-os/shell'
+
+import { closeSync, fchmodSync, openSync } from 'node:fs'
+import { chmod, mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { paths } from '../../state/index'
+import { atomicWrite, paths } from '../../state/index'
 
 /**
  * View-session records: one detached server process per open view, tracked as
@@ -18,15 +21,8 @@ export type ViewSessionRecord = {
   nonce: string
   /** Host page URL, nonce-scoped: `http://127.0.0.1:<port>/s/<nonce>/`. */
   pageUrl: string
-  view: {
-    url: string
-    functionId: string
-    handshake: 'shell' | 'none'
-    /** ViewPath or resolved view node path, when the view came from the graph. */
-    path?: string
-    name?: string
-  }
-  target?: { id?: string; path?: string }
+  /** Exact target-bound Host placement passed to Shell without split aliases. */
+  view: ResolvedView
   instance?: string
   identity?: string
   createdAt: string
@@ -44,24 +40,57 @@ export type ViewServeConfig = {
    * loopback proxy). Otherwise the child gets the nonce-scoped proxy, which
    * handles CORS and self-signed local CAs.
    */
-  proxy: { kernelUrl: string; caFile?: string; direct: boolean }
+  proxy: { kernelUrl: string; issuer: string; caFile?: string; direct: boolean }
   idleMs: number
 }
 
-export const recordPath = (id: string): string => join(VIEW_DIR, `${id}.json`)
-export const logPath = (id: string): string => join(VIEW_DIR, `${id}.log`)
-export const configPath = (id: string): string => join(VIEW_DIR, `${id}.config.json`)
+export const recordPath = (id: string, directory = VIEW_DIR): string =>
+  join(directory, `${id}.json`)
+export const logPath = (id: string, directory = VIEW_DIR): string => join(directory, `${id}.log`)
+export const configPath = (id: string, directory = VIEW_DIR): string =>
+  join(directory, `${id}.config.json`)
 
-export async function saveRecord(record: ViewSessionRecord): Promise<void> {
-  await mkdir(VIEW_DIR, { recursive: true })
-  await writeFile(recordPath(record.id), `${JSON.stringify(record, null, 2)}\n`)
+/** Create or repair the credential-bearing session directory as owner-only. */
+export async function ensureViewDirectory(directory = VIEW_DIR): Promise<void> {
+  await mkdir(directory, { recursive: true, mode: 0o700 })
+  await chmod(directory, 0o700)
 }
 
-export async function removeSessionFiles(id: string): Promise<void> {
+export async function saveRecord(record: ViewSessionRecord, directory = VIEW_DIR): Promise<void> {
+  await ensureViewDirectory(directory)
+  await atomicWrite(recordPath(record.id, directory), `${JSON.stringify(record, null, 2)}\n`)
+}
+
+/** Atomically publish the detached process config; it may contain raw `--creds`. */
+export async function saveServeConfig(
+  config: ViewServeConfig,
+  directory = VIEW_DIR,
+): Promise<void> {
+  await ensureViewDirectory(directory)
+  await atomicWrite(
+    configPath(config.session.id, directory),
+    `${JSON.stringify(config, null, 2)}\n`,
+  )
+}
+
+/** Open or repair a session log as owner-only and return its descriptor. */
+export async function openSessionLog(id: string, directory = VIEW_DIR): Promise<number> {
+  await ensureViewDirectory(directory)
+  const descriptor = openSync(logPath(id, directory), 'a', 0o600)
+  try {
+    fchmodSync(descriptor, 0o600)
+    return descriptor
+  } catch (error) {
+    closeSync(descriptor)
+    throw error
+  }
+}
+
+export async function removeSessionFiles(id: string, directory = VIEW_DIR): Promise<void> {
   await Promise.all([
-    rm(recordPath(id), { force: true }),
-    rm(configPath(id), { force: true }),
-    rm(logPath(id), { force: true }),
+    rm(recordPath(id, directory), { force: true }),
+    rm(configPath(id, directory), { force: true }),
+    rm(logPath(id, directory), { force: true }),
   ])
 }
 

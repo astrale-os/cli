@@ -1,4 +1,4 @@
-import type { InstanceInfo } from './admin-instance'
+import type { InstanceInfo } from '../admin/instance/model'
 import type { AstraleConfig } from './config'
 
 import { AstraleError } from '../errors'

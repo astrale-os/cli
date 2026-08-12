@@ -69,20 +69,22 @@ export async function fetchOrgHint(url: string, timeoutMs = 5_000): Promise<stri
   }
 }
 
-/**
- * Verify the issuer at `url` publishes OIDC discovery and a non-empty JWKS.
- * `issuerOverride` forces a specific expected issuer when discovery URL and
- * declared issuer differ.
- */
+/** Verify the pinned issuer publishes self-consistent OIDC discovery and a non-empty JWKS. */
 export async function checkIssuerReachability(
   url: string,
   issuerOverride?: string,
   fetchImpl?: FetchLike,
 ): Promise<{ issuer: string; keys: Array<{ kid?: string }> }> {
-  const discovery = await fetchDiscovery(url, 5_000, fetchImpl)
-  const issuer = issuerOverride ?? discovery.issuer
+  const discoveryBase = issuerOverride ?? url
+  const discovery = await fetchDiscovery(discoveryBase, 5_000, fetchImpl)
+  if (issuerOverride !== undefined && discovery.issuer !== issuerOverride) {
+    throw new IssuerUnreachableError(
+      `${discoveryBase.replace(/\/+$/, '')}/.well-known/openid-configuration`,
+      `discovery declared issuer "${discovery.issuer}" instead of "${issuerOverride}"`,
+    )
+  }
   const jwks = await fetchJwks(discovery.jwksUri, 5_000, fetchImpl)
   if (jwks.keys.length === 0)
     throw new IssuerUnreachableError(discovery.jwksUri, 'no keys published')
-  return { issuer, keys: jwks.keys }
+  return { issuer: discovery.issuer, keys: jwks.keys }
 }

@@ -1,4 +1,4 @@
-import { upsertIdpIdentity } from '../identity/index'
+import { upsertIdpIdentity } from '../identity/registry'
 import {
   decodeTokenClaims,
   exchangeAuthorizationCode,
@@ -42,6 +42,19 @@ export type LoginFlowOpts = {
   codeVerifier?: string
   /** Switch the default identity to the one we just logged in (default true). */
   use?: boolean
+  /**
+   * Optional device-flow presentation boundary. When supplied, the caller
+   * receives the verification coordinates instead of terminal log output.
+   */
+  onVerification?: (event: DeviceVerification) => void
+}
+
+export type DeviceVerification = {
+  verificationUri: string
+  verificationUriComplete?: string
+  userCode?: string
+  expiresIn?: number
+  message?: string
 }
 
 export type LoginResult = {
@@ -148,10 +161,24 @@ async function obtainToken(
     scope,
     audience: opts.audience,
   })
-  if (device.verification_uri_complete) log.info(`Open: ${device.verification_uri_complete}`)
-  else if (device.verification_uri) log.info(`Open: ${device.verification_uri}`)
-  if (device.user_code) log.info(`Code: ${device.user_code}`)
-  if (device.message) log.dim(`  ${device.message}`)
+  const verificationUri = device.verification_uri ?? device.verification_uri_complete
+  if (!verificationUri) {
+    throw new Error('IdP device authorization response did not include a verification URL')
+  }
+  const verification: DeviceVerification = {
+    verificationUri,
+    verificationUriComplete: device.verification_uri_complete,
+    userCode: device.user_code,
+    expiresIn: device.expires_in,
+    message: device.message,
+  }
+  if (opts.onVerification) opts.onVerification(verification)
+  else {
+    if (device.verification_uri_complete) log.info(`Open: ${device.verification_uri_complete}`)
+    else if (device.verification_uri) log.info(`Open: ${device.verification_uri}`)
+    if (device.user_code) log.info(`Code: ${device.user_code}`)
+    if (device.message) log.dim(`  ${device.message}`)
+  }
 
   return pollDeviceToken({
     idp,

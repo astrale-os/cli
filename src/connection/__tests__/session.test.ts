@@ -8,11 +8,11 @@ import { describe, expect, test } from 'bun:test'
 import type { AstraleConfig } from '../../lib/config'
 import type { ConnectionContext, ConnectionFactory } from '../session'
 
-import { withResolvedHostSession } from '../session'
+import { createHostSessionOptions, withResolvedHostSession } from '../session'
 
 const target = Object.freeze({
-  url: 'https://kernel.example/invoke',
-  issuer: issuer.accept('https://kernel.example'),
+  url: 'https://gateway.example/instances/child/invoke',
+  issuer: issuer.accept('https://child.example'),
 })
 
 const config: AstraleConfig = {
@@ -29,6 +29,24 @@ const context: ConnectionContext = Object.freeze({
 })
 
 describe('connection session', () => {
+  /** @evidence TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER */
+  test('pins the selected target issuer independently from its invocation URL', async () => {
+    const credential = { resolve: async () => 'credential' }
+    const options = createHostSessionOptions(target, globalThis.fetch, credential, 2_500)
+
+    expect(options.url).toBe('https://gateway.example/instances/child/invoke')
+    expect(options.sourceIssuer).toBe(target.issuer)
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
+  test('constructs an anonymous Host session without a credential resolver', () => {
+    const options = createHostSessionOptions(target, globalThis.fetch, undefined, 2_500)
+
+    expect(options.sourceIssuer).toBe(target.issuer)
+    expect(options.credential).toBeUndefined()
+    expect(Object.hasOwn(options, 'credential')).toBe(false)
+  })
+
   /** @evidence TEST-CLI-CONNECTION-CLOSES-OWNED-CLIENTS */
   test('closes its owned connection after success, failure, and cancellation', async () => {
     for (const outcome of ['success', 'failure', 'cancellation'] as const) {
@@ -88,5 +106,29 @@ describe('connection session', () => {
       },
     )
     expect(receivedTimeout).toBe(2_500)
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-REJECTS-ANONYMOUS-CREDENTIAL-CONFLICT */
+  test('rejects anonymous plus explicit credentials before opening a connection', async () => {
+    for (const options of [
+      { anonymous: true, as: 'alice' },
+      { anonymous: true, creds: 'token' },
+      { anonymous: true, as: 'alice', creds: 'token' },
+    ]) {
+      let opened = false
+      await expect(
+        withResolvedHostSession(
+          target,
+          options,
+          config,
+          async () => undefined,
+          () => {
+            opened = true
+            throw new Error('must not open')
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_FLAG' })
+      expect(opened).toBe(false)
+    }
   })
 })

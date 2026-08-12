@@ -38,7 +38,11 @@ async function signIdentityCredential(options: {
 }): Promise<string> {
   const alg = inferAlg(options.privateJwk as Record<string, unknown>)
   const privateKey = await importJWK(options.privateJwk, alg)
-  return new SignJWT({ grant: { v: 1, expr: { kind: 'identity', self: true } } })
+  const expr =
+    options.issuer === options.audience
+      ? { kind: 'identity' as const, id: options.subject }
+      : { kind: 'identity' as const, self: true as const }
+  return new SignJWT({ grant: { v: 1, expr } })
     .setProtectedHeader({ alg, kid: options.kid })
     .setIssuer(options.issuer)
     .setSubject(options.subject)

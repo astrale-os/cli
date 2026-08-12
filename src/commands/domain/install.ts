@@ -1,5 +1,3 @@
-import type { HostSession } from '@astrale-os/kernel-client/host'
-
 import { Path } from '@astrale-os/kernel-core/path'
 import { syscalls } from '@astrale-os/kernel-core/schema'
 import chalk from 'chalk'
@@ -9,24 +7,18 @@ import type { CommandDefinition } from '../../program/index'
 
 import { createPathCall, runKernelCommand, withAdminHostSession } from '../../connection'
 import { AstraleError } from '../../errors'
-import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
-import { callOwnedInstances, type OwnedInstanceInfo } from '../../lib/admin-instance'
+import {
+  installAdminDomainInContext,
+  listAdminDomainsInContext,
+  type DomainInfo,
+} from '../../lib/admin-domain'
+import { listOwnedInstancesInContext, type OwnedInstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { getActive } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
-
-/** Mirrors the admin worker's `DomainInstallResult` (schema/domains.ts). */
-type DomainInstallResult = {
-  name: string
-  origin: string
-  instanceId: string
-  url: string
-  ok: boolean
-  error?: string | null
-}
 
 /** Exact output of the public Kernel install syscall for one requested root. */
 type DirectInstallResult = readonly {
@@ -114,7 +106,12 @@ Examples:
  * an admin-kernel override). The admin kernel is chosen via --admin/--admin-url
  * or config, exactly like `domain publish`.
  */
-async function installViaAdmin(target: string | undefined, opts: InstallOpts): Promise<void> {
+export async function installViaAdmin(
+  target: string | undefined,
+  opts: InstallOpts,
+  dependencies: Partial<AdminInstallDependencies> = {},
+): Promise<void> {
+  const admin = { ...defaultAdminInstallDependencies, ...dependencies }
   const interactive = !!process.stdin.isTTY && !(opts.ci || opts.noPrompt || process.env.CI)
   if (!target && !interactive) {
     fatal(
@@ -137,9 +134,7 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
 
   try {
     await withAdminHostSession(adminOpts, async (ctx) => {
-      const instances = await callOwnedInstances(ctx.host)
-
-      const ref = await resolveDomainRef(ctx.host, target, interactive)
+      const instances = await admin.listInstances(ctx)
       const slug = await resolveTargetSlug(opts, target, interactive, instances)
 
       const match = instances.find((i) => i.slug === slug)
@@ -153,17 +148,14 @@ async function installViaAdmin(target: string | undefined, opts: InstallOpts): P
       }
       assertInstallTargetReady(match)
 
-      const label = ref.origin ?? ref.url ?? 'domain'
+      const domains = await admin.listDomains(ctx)
+      const domain = await resolveDomain(domains, target, interactive)
+
+      const label = domain.origin
       const result = await withSpinner(
         `Installing ${label} on ${match.slug}`,
         !isMachine(opts),
-        () =>
-          ctx.host.call(
-            createPathCall(adminDomainMethod('install'), {
-              instanceId: match.slug,
-              ...ref,
-            }),
-          ) as Promise<DomainInstallResult>,
+        () => admin.install(ctx, match, domain),
         { success: (r) => `Installed ${r.origin} on ${match.slug}` },
       )
 
@@ -207,15 +199,25 @@ export function domainRefFromTarget(target: string): { origin?: string; url?: st
 }
 
 /** Resolve the domain to install: the positional `target`, or an interactive pick. */
-async function resolveDomainRef(
-  host: Pick<HostSession, 'call'>,
+async function resolveDomain(
+  catalog: readonly DomainInfo[],
   target: string | undefined,
   interactive: boolean,
-): Promise<{ origin?: string; url?: string }> {
-  if (target) return domainRefFromTarget(target)
+): Promise<DomainInfo> {
+  if (target) {
+    const ref = domainRefFromTarget(target)
+    const found = catalog.find((domain) =>
+      ref.origin === undefined ? domain.url === ref.url : domain.origin === ref.origin,
+    )
+    if (found !== undefined) return found
+    throw new AstraleError(
+      'DOMAIN_NOT_FOUND',
+      `No published domain matches "${target}".`,
+      'Run `astrale domain list` to see the Admin catalog.',
+    )
+  }
   if (!interactive) throw new AstraleError('MISSING_ARG', 'No domain given.')
 
-  const catalog = (await host.call(createPathCall(adminDomainMethod('list'), {}))) as DomainInfo[]
   const installable = catalog.filter((d) => d.url)
   if (installable.length === 0) {
     throw new AstraleError(
@@ -232,8 +234,20 @@ async function resolveDomainRef(
     })),
   )
   if (!origin) throw new AstraleError('CANCELLED', 'No domain selected.')
-  return { origin }
+  return catalog.find((domain) => domain.origin === origin)!
 }
+
+interface AdminInstallDependencies {
+  readonly listInstances: typeof listOwnedInstancesInContext
+  readonly listDomains: typeof listAdminDomainsInContext
+  readonly install: typeof installAdminDomainInContext
+}
+
+const defaultAdminInstallDependencies: AdminInstallDependencies = Object.freeze({
+  listInstances: listOwnedInstancesInContext,
+  listDomains: listAdminDomainsInContext,
+  install: installAdminDomainInContext,
+})
 
 /**
  * Resolve the target instance slug: `-i`, else the active instance. When run
