@@ -31,20 +31,20 @@ const context: ConnectionContext = Object.freeze({
 describe('connection session', () => {
   /** @evidence TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER */
   test('pins the selected target issuer independently from its invocation URL', async () => {
-    const credential = { resolve: async () => 'credential' }
-    const options = createHostSessionOptions(target, globalThis.fetch, credential, 2_500)
+    const auth = { ttlSeconds: 3_600, resolve: async () => ({ credential: 'credential' }) }
+    const options = createHostSessionOptions(target, globalThis.fetch, auth, 2_500)
 
     expect(options.url).toBe('https://gateway.example/instances/child/invoke')
     expect(options.sourceIssuer).toBe(target.issuer)
   })
 
   /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
-  test('constructs an anonymous Host session without a credential resolver', () => {
+  test('constructs an anonymous Host session without an auth resolver', () => {
     const options = createHostSessionOptions(target, globalThis.fetch, undefined, 2_500)
 
     expect(options.sourceIssuer).toBe(target.issuer)
-    expect(options.credential).toBeUndefined()
-    expect(Object.hasOwn(options, 'credential')).toBe(false)
+    expect(options.auth).toBeUndefined()
+    expect(Object.hasOwn(options, 'auth')).toBe(false)
   })
 
   /** @evidence TEST-CLI-CONNECTION-CLOSES-OWNED-CLIENTS */

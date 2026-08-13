@@ -9,7 +9,7 @@ import type { CommandDefinition } from '../program/index'
 import { createPathCall, runKernelCommand, withHostSession } from '../connection'
 import { isMachine, output, presentList } from '../lib/output'
 
-const JOURNAL_PATH = Path.member(syscalls.journal.ref).raw
+const JOURNAL_PATH = Path.project(syscalls.journal.ref).raw
 const DEFAULT_LIMIT = 200
 const FOLLOW_INTERVAL_MS = 2_000
 

@@ -91,14 +91,14 @@ async function main(): Promise<void> {
     host: {
       url: kernelUrl,
       sourceIssuer: cfg.kernelIssuer,
-      credential: {
-        resolve: () => current?.token,
+      auth: {
+        ttlSeconds: 3_600,
+        resolve: () => (current === null ? {} : { credential: current.token }),
       },
       policy: {
         maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
         ...(new URL(kernelUrl).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
       },
-      protocol: 'envelope',
       envelopeTransport: 'http',
     },
     adapter: createIframeShellAdapter(),

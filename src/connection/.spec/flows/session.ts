@@ -1,4 +1,5 @@
-import type { HostCredential, HostHop } from '@astrale-os/kernel-client/host'
+import type { HostAuth } from '@astrale-os/kernel-client/host'
+import type { Call } from '@astrale-os/kernel-protocol/invocation'
 
 import type { ConnectionContext, ConnectionOptions, ConnectionTarget } from '../api.js'
 
@@ -12,7 +13,7 @@ declare const resolveTimeoutMs: (input: string | undefined) => number
 declare const createClientConnection: (
   target: ConnectionTarget,
   timeoutMs: number,
-  credential: HostCredential | undefined,
+  auth: HostAuth | undefined,
 ) => OwnedConnection
 declare const validateCredentialSelection: (options: ConnectionOptions) => void
 declare const resolveSourceCredential: (
@@ -21,42 +22,26 @@ declare const resolveSourceCredential: (
   audience: string,
   signal: AbortSignal,
 ) => Promise<string>
-declare const delegateFromSource: (
-  sourceCredential: string,
-  audience: string,
-  signal: AbortSignal,
-) => Promise<string>
-
-/** Resolve a credential for exactly the admitted hop; no credential crosses audiences unchanged. */
-async function resolveHop(
-  target: ConnectionTarget,
-  options: ConnectionOptions,
-  hop: HostHop,
-  signal: AbortSignal,
-): Promise<string> {
-  if (hop.kind === 'source') {
-    requireSelectedIssuer(target.issuer, hop.issuer)
-    return resolveSourceCredential(target, options, target.issuer, signal)
+/** Bind source authority without learning or minting destination credentials. */
+function createConnectionAuth(target: ConnectionTarget, options: ConnectionOptions): HostAuth {
+  return {
+    ttlSeconds: 3_600,
+    async resolve(_call: Call, signal: AbortSignal) {
+      return {
+        credential: await resolveSourceCredential(target, options, target.issuer, signal),
+      }
+    },
   }
-  requireSelectedIssuer(target.issuer, hop.resolver)
-  const audience = hop.publication.identity.issuer
-  const source = await resolveSourceCredential(target, options, target.issuer, signal)
-  return delegateFromSource(source, audience, signal)
 }
 
-declare const requireSelectedIssuer: (expected: string, actual: string) => void
-
-/** Open Host and source-Auth clients with the per-hop resolver bound once. */
+/** Open Host with one call-scoped source-authority resolver bound once. */
 function openConnection(
   target: ConnectionTarget,
   timeoutMs: number,
   options: ConnectionOptions,
 ): OwnedConnection {
-  const credential =
-    options.anonymous === true
-      ? undefined
-      : { resolve: (hop: HostHop, signal: AbortSignal) => resolveHop(target, options, hop, signal) }
-  return createClientConnection(target, timeoutMs, credential)
+  const auth = options.anonymous === true ? undefined : createConnectionAuth(target, options)
+  return createClientConnection(target, timeoutMs, auth)
 }
 
 /** One terminal command-scoped connection lifecycle. */

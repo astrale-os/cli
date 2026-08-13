@@ -11,18 +11,16 @@ class ExitError extends Error {
 const calls: Array<{ path: string; params: unknown }> = []
 let inventory: OwnedInstanceInfo[] = []
 
-const hostCall = mock(
-  async (call: { target: { kind: string; path: unknown }; input: unknown }): Promise<unknown> => {
-    const path = String(call.target.path)
-    const params = call.input
-    calls.push({ path, params })
-    throw new Error(`Unexpected admin call: ${path}`)
-  },
-)
+const hostCall = mock(async (call: { target: string; input: unknown }): Promise<unknown> => {
+  const path = call.target
+  const params = call.input
+  calls.push({ path, params })
+  throw new Error(`Unexpected admin call: ${path}`)
+})
 
 mock.module('../../connection', () => ({
   createPathCall: (path: string, input: unknown) => ({
-    target: { kind: 'path', path },
+    target: path,
     input,
   }),
   runKernelCommand: mock(),
