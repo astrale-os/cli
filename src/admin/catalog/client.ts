@@ -1,5 +1,5 @@
 import type { DomainBinding } from '@astrale-os/kernel-client/domain'
-import type { HostSession } from '@astrale-os/kernel-client/host'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/kernel-core/graph/node'
 
 import { bindDomain } from '@astrale-os/kernel-client/domain'
@@ -23,7 +23,7 @@ const DomainRef = Object.freeze({ origin: ADMIN_ORIGIN, kind: 'class' as const, 
 const fleetInstallsByDefault = ClassPath.from(ADMIN_ORIGIN, 'fleet_installs_domain_by_default')
 
 export interface AdminCatalogContext {
-  readonly host: HostSession
+  readonly session: ClientSession
   readonly graph: AdminGraphApi
 }
 
@@ -34,7 +34,7 @@ export interface AdminCatalogApi {
 }
 
 export interface AdminCatalogDependencies {
-  readonly bind?: (host: HostSession) => Promise<DomainBinding>
+  readonly bind?: (session: ClientSession) => Promise<DomainBinding>
   readonly operationId?: (kind: 'publish' | 'configure-default') => string
 }
 
@@ -43,7 +43,7 @@ export async function connectAdminCatalog(
   context: AdminCatalogContext,
   dependencies: AdminCatalogDependencies = {},
 ): Promise<AdminCatalogApi> {
-  const binding = await (dependencies.bind ?? bindDomain)(context.host)
+  const binding = await (dependencies.bind ?? bindDomain)(context.session)
   if (binding.publication.origin !== ADMIN_ORIGIN || binding.domain.$.origin !== ADMIN_ORIGIN) {
     throw new TypeError('Configured Admin target does not serve the Admin Domain.')
   }

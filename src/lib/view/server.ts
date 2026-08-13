@@ -7,7 +7,7 @@ import { Readable } from 'node:stream'
 
 import type { ViewServeConfig } from './session'
 
-import { withHostSession } from '../../connection'
+import { withClientSession } from '../../connection'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
 import { removeSessionFiles } from './session'
@@ -43,7 +43,7 @@ export function startViewServer(config: ViewServeConfig): Server {
   /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
-    grant = await withHostSession(config.kernel, async ({ auth, target }) => {
+    grant = await withClientSession(config.kernel, async ({ auth, target }) => {
       const token = await auth.mint({ audience: target.issuer, ttlSeconds: 3_600 })
       return {
         token,

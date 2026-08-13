@@ -7,7 +7,7 @@ import { formatElapsed } from '../lib/format'
 import { spinner } from '../lib/log'
 import { isMachine, present } from '../lib/output'
 import { formatKernelError } from './errors'
-import { withHostSession } from './session'
+import { withClientSession } from './session'
 
 export interface KernelCommandOpts extends ConnectionOptions {
   readonly raw?: boolean
@@ -40,7 +40,7 @@ export async function runKernelCommand<T>(input: {
   const startTime = performance.now()
 
   try {
-    const result = await withHostSession(opts, fn)
+    const result = await withClientSession(opts, fn)
     const elapsed = performance.now() - startTime
 
     spin?.succeed(`${label} ${chalk.dim(formatElapsed(elapsed))}`)

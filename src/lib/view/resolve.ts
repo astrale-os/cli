@@ -1,4 +1,4 @@
-import type { ResolvedView as HostResolvedView } from '@astrale-os/kernel-client/host'
+import type { ResolvedView as SessionResolvedView } from '@astrale-os/kernel-client/session'
 import type { ResolvedView } from '@astrale-os/shell'
 
 import { Path } from '@astrale-os/kernel-core/path'
@@ -54,11 +54,14 @@ export async function resolveViewCandidates(
   nodePath: string,
 ): Promise<ViewCandidate[]> {
   const target = Path.parse(nodePath).raw
-  const catalog = await ctx.host.viewsFor(target)
+  const catalog = await ctx.session.viewsFor(target)
   return catalog.views.map((placement) => toCandidate(target, placement))
 }
 
-function toCandidate(target: ResolvedView['target'], placement: HostResolvedView): ViewCandidate {
+function toCandidate(
+  target: ResolvedView['target'],
+  placement: SessionResolvedView,
+): ViewCandidate {
   const key = String(placement.key)
   return Object.freeze({
     target,

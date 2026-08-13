@@ -21,7 +21,7 @@ export type ViewSessionRecord = {
   nonce: string
   /** Host page URL, nonce-scoped: `http://127.0.0.1:<port>/s/<nonce>/`. */
   pageUrl: string
-  /** Exact target-bound Host placement passed to Shell without split aliases. */
+  /** Exact verified View placement passed to Shell without split aliases. */
   view: ResolvedView
   instance?: string
   identity?: string

@@ -1,5 +1,5 @@
 import type { DomainBinding } from '@astrale-os/kernel-client/domain'
-import type { HostSession } from '@astrale-os/kernel-client/host'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 
 import type { AdminGraphApi } from '../../graph/.spec/api.js'
 
@@ -32,7 +32,7 @@ export interface DomainInstallReceipt {
 }
 
 export interface AdminInstanceContext {
-  readonly host: HostSession
+  readonly session: ClientSession
   readonly graph: AdminGraphApi
 }
 
@@ -51,7 +51,7 @@ export class AdminInstanceNotFoundError extends Error {
 }
 
 export interface AdminInstanceDependencies {
-  readonly bind?: (host: HostSession) => Promise<DomainBinding>
+  readonly bind?: (session: ClientSession) => Promise<DomainBinding>
   readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
 }
 

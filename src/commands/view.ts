@@ -10,7 +10,7 @@ import type { KernelCommandOpts } from '../connection'
 import type { ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
 import type { CommandDefinition } from '../program/index'
 
-import { expandSelfInPath, withHostSession } from '../connection'
+import { expandSelfInPath, withClientSession } from '../connection'
 import { AstraleError } from '../errors'
 import { readIdentities } from '../identity/index'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
@@ -91,7 +91,7 @@ export async function resolveSession(
     parsed.kind === 'target' ? parsed.path : (opts.target ?? viewOwnerTarget(parsed.path))
   const { path: target } = await expandSelfInPath(targetInput, opts)
 
-  const candidates = await withHostSession(opts, (ctx) => resolveViewCandidates(ctx, target))
+  const candidates = await withClientSession(opts, (ctx) => resolveViewCandidates(ctx, target))
 
   if (opts.list) {
     return { candidates }
@@ -106,7 +106,7 @@ export async function resolveSession(
 
 /**
  * Retain the frozen command flags while failing closed: neither legacy flag
- * has a truthful representation in V2's untouched Host placement contract.
+ * has a truthful representation in V2's verified View placement contract.
  */
 export function rejectUnrepresentableOverrides(
   opts: Pick<ViewOpts, 'handshake' | 'viewUrl'>,
@@ -114,7 +114,7 @@ export function rejectUnrepresentableOverrides(
   if (opts.viewUrl === undefined && opts.handshake === undefined) return
   throw new AstraleError(
     'UNSUPPORTED_VIEW_OVERRIDE',
-    '--view-url and --handshake cannot override a V2 View: the Shell mounts one untouched Host-resolved placement with complete provenance.',
+    '--view-url and --handshake cannot override a V2 View: the Shell mounts one verified View placement with complete provenance.',
     'Pass a ViewPath or target and use the placement published by its Domain.',
   )
 }
@@ -202,7 +202,7 @@ async function newerThan(dir: string, mtimeMs: number): Promise<boolean> {
 /** Spawn the detached session server (the CLI re-invoking itself) and wait for it. */
 async function startSession(view: ResolvedView, opts: ViewOpts): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
-  const kernelTarget = await withHostSession(
+  const kernelTarget = await withClientSession(
     opts,
     async ({ target: connectionTarget }) => connectionTarget,
   )

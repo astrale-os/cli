@@ -1,4 +1,4 @@
-import type { HostAuth } from '@astrale-os/kernel-client/host'
+import type { SessionAuth } from '@astrale-os/kernel-client/session'
 
 import { issuer, type IssuerId } from '@astrale-os/kernel-core/auth'
 import { Path } from '@astrale-os/kernel-core/path'
@@ -12,7 +12,7 @@ const SOURCE = issuer.accept('https://kernel.example')
 const TARGET_CALL = Object.freeze({
   target: Path.parse('/:example.dev:function.call').raw,
   input: { value: 1 },
-}) satisfies Parameters<HostAuth['resolve']>[0]
+}) satisfies Parameters<SessionAuth['resolve']>[0]
 const config: AstraleConfig = {
   issuer: 'https://cli.example',
   admin: { name: 'admin', url: SOURCE, issuer: SOURCE },
@@ -68,7 +68,7 @@ describe('connection credential', () => {
   })
 
   /** @evidence TEST-CLI-CONNECTION-PROPAGATES-AUTH-CANCELLATION */
-  test('passes the live Host operation signal to source credential resolution', async () => {
+  test('passes the live Session operation signal to source credential resolution', async () => {
     const controller = new AbortController()
     const reason = new Error('cancelled')
     const auth = createConnectionCredential(SOURCE, {

@@ -5,7 +5,7 @@ import chalk from 'chalk'
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { createPathCall, runKernelCommand, withAdminHostSession } from '../../connection'
+import { createPathCall, runKernelCommand, withAdminClientSession } from '../../connection'
 import { AstraleError } from '../../errors'
 import {
   installAdminDomainInContext,
@@ -133,7 +133,7 @@ export async function installViaAdmin(
   }
 
   try {
-    await withAdminHostSession(adminOpts, async (ctx) => {
+    await withAdminClientSession(adminOpts, async (ctx) => {
       const instances = await admin.listInstances(ctx)
       const slug = await resolveTargetSlug(opts, target, interactive, instances)
 
@@ -328,8 +328,8 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
   await runKernelCommand<DirectInstallResult>({
     opts,
     label: `Installing domain from ${url}`,
-    fn: async ({ host: kernel }) =>
-      (await kernel.call(
+    fn: async ({ session }) =>
+      (await session.call(
         createPathCall(Path.project(syscalls.install.ref).raw, {
           domains: [{ url, ...(opts.token ? { token: opts.token } : {}) }],
         }),

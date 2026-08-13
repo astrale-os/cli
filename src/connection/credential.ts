@@ -1,4 +1,4 @@
-import type { HostAuth } from '@astrale-os/kernel-client/host'
+import type { SessionAuth } from '@astrale-os/kernel-client/session'
 import type { IssuerId } from '@astrale-os/kernel-core/auth'
 
 import type { AstraleConfig } from '../lib/config'
@@ -14,29 +14,29 @@ export interface SourceCredentialResolver {
   resolve(audience: IssuerId, signal: AbortSignal): Promise<string>
 }
 
-/** Resolve source authority; Host materializes the default self Delegate before route lookup. */
+/** Resolve source authority; ClientSession materializes the default self Delegate before lookup. */
 export function createConnectionCredential(
   expectedSourceIssuer: IssuerId,
   source: SourceCredentialResolver,
-): HostAuth {
+): SessionAuth {
   const resolveSource = source.resolve.bind(source)
   return Object.freeze({
     ttlSeconds: DELEGATION_TTL_SECONDS,
     async resolve(
-      _call: Parameters<HostAuth['resolve']>[0],
-      signal: Parameters<HostAuth['resolve']>[1],
+      _call: Parameters<SessionAuth['resolve']>[0],
+      signal: Parameters<SessionAuth['resolve']>[1],
     ) {
       return Object.freeze({ credential: await resolveSource(expectedSourceIssuer, signal) })
     },
   })
 }
 
-/** Bind CLI identity state and Core Auth delegation to one Host credential capability. */
+/** Bind CLI identity state and Core Auth delegation to one Session auth capability. */
 export function createCliCredential(
   target: ConnectionTarget,
   options: ConnectionOptions,
   config: AstraleConfig,
-): HostAuth | undefined {
+): SessionAuth | undefined {
   validateCredentialSelection(options)
   if (options.anonymous === true) return undefined
   const authOptions = Object.freeze({

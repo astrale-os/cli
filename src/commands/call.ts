@@ -16,7 +16,7 @@ type CallOpts = KernelCommandOpts & {
   output?: string
 }
 
-type CallResult = Awaited<ReturnType<ConnectionContext['host']['dispatch']>>
+type CallResult = Awaited<ReturnType<ConnectionContext['session']['dispatch']>>
 type MaterializedCallResult =
   | Exclude<CallResult, { readonly kind: 'stream' }>
   | { readonly kind: 'stream'; readonly values: readonly unknown[] }
@@ -64,7 +64,7 @@ export async function callCommand(
     fn: (ctx) =>
       withSelfHint(
         async () =>
-          materializeCallResult(await ctx.host.dispatch(createPathCall(expandedPath, params))),
+          materializeCallResult(await ctx.session.dispatch(createPathCall(expandedPath, params))),
         expanded.meta,
       ),
     format: async (result, fmtOpts) => {
@@ -79,13 +79,13 @@ export async function callCommand(
           output(result.values, fmtOpts)
           return
         case 'redirect':
-          throw new Error('Host returned an unresolved redirect.')
+          throw new Error('Client Session returned an unresolved redirect.')
       }
     },
   })
 }
 
-/** Drain a session-backed stream before the command-scoped Host connection closes. */
+/** Drain a session-backed stream before the command-scoped Client Session closes. */
 export async function materializeCallResult(result: CallResult): Promise<MaterializedCallResult> {
   if (result.kind !== 'stream') return result
   const values: unknown[] = []

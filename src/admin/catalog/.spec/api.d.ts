@@ -1,5 +1,5 @@
 import type { DomainBinding } from '@astrale-os/kernel-client/domain'
-import type { HostSession } from '@astrale-os/kernel-client/host'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 
 import type { AdminGraphApi } from '../../graph/.spec/api.js'
 
@@ -38,7 +38,7 @@ export interface InstallDomainResult {
 }
 
 export interface AdminCatalogContext {
-  readonly host: HostSession
+  readonly session: ClientSession
   readonly graph: AdminGraphApi
 }
 
@@ -55,7 +55,7 @@ export class AdminDomainNotFoundError extends Error {
 }
 
 export interface AdminCatalogDependencies {
-  readonly bind?: (host: HostSession) => Promise<DomainBinding>
+  readonly bind?: (session: ClientSession) => Promise<DomainBinding>
   readonly operationId?: (kind: 'publish' | 'configure-default') => string
 }
 

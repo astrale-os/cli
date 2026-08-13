@@ -1,7 +1,7 @@
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminInstances } from '../admin/instance'
-import { withAdminHostSession } from '../connection'
+import { withAdminClientSession } from '../connection'
 
 export {
   AdminInstanceNotFoundError,
@@ -14,7 +14,7 @@ export {
 
 /** Resolve the Admin target and read only the caller-visible Instance inventory. */
 export function listOwnedInstances(options: AdminConnectionOptions) {
-  return withAdminHostSession(options, async (context) =>
+  return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).list(),
   )
 }
@@ -30,21 +30,21 @@ export function createOwnedInstance(
   slug: string,
   hostId?: string,
 ) {
-  return withAdminHostSession(options, async (context) =>
+  return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).create(slug, hostId),
   )
 }
 
 /** Refresh one exact caller-visible Instance through its V2 receiver Method. */
 export function statusOwnedInstance(options: AdminConnectionOptions, identifier: string) {
-  return withAdminHostSession(options, async (context) =>
+  return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).status(identifier),
   )
 }
 
 /** Delete one exact caller-visible Instance through its V2 receiver Method. */
 export function deleteOwnedInstance(options: AdminConnectionOptions, identifier: string) {
-  return withAdminHostSession(options, async (context) =>
+  return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).delete(identifier),
   )
 }

@@ -7,7 +7,7 @@ declare const open: <Value>(
 declare const present: <Value>(value: Value) => void | Promise<void>
 declare const mapExpectedFailure: (error: unknown) => Promise<void>
 
-/** One command owns progress and error presentation around one terminal HostSession lifecycle. */
+/** One command owns progress and error presentation around one terminal ClientSession lifecycle. */
 export async function runKernelCommand<Value>(
   options: KernelCommandOpts,
   action: (context: ConnectionContext) => Promise<Value>,

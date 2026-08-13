@@ -55,7 +55,7 @@ export const CLI_CONNECTION_EXPLICIT_ANONYMOUS = defineLaw({
 export const CLI_CONNECTION_SOURCE_ISSUER = defineLaw({
   id: 'CLI-CONNECTION-SOURCE-ISSUER',
   statement:
-    'CLI constructs HostSession once with sourceIssuer equal to the selected ConnectionTarget issuer independently from its invocation URL, so path-multiplexed Kernels do not substitute root Publication discovery; every credential hop repeats that pin.',
+    'CLI constructs ClientSession once with sourceIssuer equal to the selected ConnectionTarget issuer independently from its invocation URL, so path-multiplexed Kernels do not substitute root Publication discovery; every credential hop repeats that pin.',
   tests: [
     {
       file: '__tests__/session.test.ts',
@@ -107,7 +107,7 @@ export const CLI_SELF_AUTHENTICATED_PRINCIPAL = defineLaw({
 export const CLI_CONNECTION_TERMINAL_CLOSE = defineLaw({
   id: 'CLI-CONNECTION-TERMINAL-CLOSE',
   statement:
-    'The Host session and direct source-Auth client close exactly once after action success, failure, or cancellation.',
+    'The Client Session and direct source-Auth client close exactly once after action success, failure, or cancellation.',
   tests: [
     {
       file: '__tests__/session.test.ts',
@@ -119,7 +119,7 @@ export const CLI_CONNECTION_TERMINAL_CLOSE = defineLaw({
 export const CLI_CONNECTION_TIMEOUT = defineLaw({
   id: 'CLI-CONNECTION-TIMEOUT',
   statement:
-    'The CLI accepts only a positive integer timeout before constructing a Host session and applies it to both source-Auth and Host operations.',
+    'The CLI accepts only a positive integer timeout before constructing a Client Session and applies it to both source-Auth and Session operations.',
   tests: [
     {
       file: '__tests__/session.test.ts',

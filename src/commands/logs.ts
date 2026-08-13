@@ -6,7 +6,7 @@ import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { Column, ListProjection } from '../lib/output'
 import type { CommandDefinition } from '../program/index'
 
-import { createPathCall, runKernelCommand, withHostSession } from '../connection'
+import { createPathCall, runKernelCommand, withClientSession } from '../connection'
 import { isMachine, output, presentList } from '../lib/output'
 
 const JOURNAL_PATH = Path.project(syscalls.journal.ref).raw
@@ -86,7 +86,7 @@ export function acceptJournalPage(input: unknown): JournalPage {
 
 async function fetchPage(context: ConnectionContext, opts: LogsOpts): Promise<JournalPage> {
   return acceptJournalPage(
-    await context.host.call(createPathCall(JOURNAL_PATH, buildJournalInput(opts))),
+    await context.session.call(createPathCall(JOURNAL_PATH, buildJournalInput(opts))),
   )
 }
 
@@ -106,7 +106,7 @@ async function runOnce(opts: LogsOpts): Promise<void> {
 }
 
 async function follow(opts: LogsOpts): Promise<void> {
-  await withHostSession(opts, async (context) => {
+  await withClientSession(opts, async (context) => {
     let cursor = opts.cursor
     for (;;) {
       const page = await fetchPage(context, { ...opts, cursor })
@@ -192,7 +192,7 @@ export default {
 Behavior:
   Calls the public Kernel journal syscall and emits its { records, cursor }
   page. Topic selection is exact or prefix-based; cursors and timestamps are
-  opaque strings owned by the journal backend. --follow reuses one Host session
+  opaque strings owned by the journal backend. --follow reuses one Client Session
   and advances only with the returned cursor.
 
   Historical event-glob lowering and the application-specific services-domain
