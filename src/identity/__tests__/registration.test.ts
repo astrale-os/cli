@@ -53,7 +53,7 @@ test('submits the exact self-proven request through an explicit Domain callable'
   expect(directCalls).toBe(0)
   expect(calls).toHaveLength(1)
   expect(JSON.parse(JSON.stringify(calls[0]))).toEqual({
-    target: { kind: 'path', path: '/:ops.example:function.provisionOperator' },
+    target: '/:ops.example:function.provisionOperator',
     input: JSON.parse(JSON.stringify(request)),
   })
   expect(result).toEqual({

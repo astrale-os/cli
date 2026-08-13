@@ -10,7 +10,7 @@ describe('createPathCall', () => {
         JSON.stringify(createPathCall('/:kernel.astrale.ai:function.query', { value: 1 })),
       ),
     ).toEqual({
-      target: { kind: 'path', path: '/:kernel.astrale.ai:function.query' },
+      target: '/:kernel.astrale.ai:function.query',
       input: { value: 1 },
     })
   })

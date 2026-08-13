@@ -330,7 +330,7 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
     label: `Installing domain from ${url}`,
     fn: async ({ host: kernel }) =>
       (await kernel.call(
-        createPathCall(Path.member(syscalls.install.ref).raw, {
+        createPathCall(Path.project(syscalls.install.ref).raw, {
           domains: [{ url, ...(opts.token ? { token: opts.token } : {}) }],
         }),
       )) as DirectInstallResult,

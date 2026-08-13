@@ -2,7 +2,7 @@ import type { Call } from '@astrale-os/kernel-client'
 import type { ProvisionRequest } from '@astrale-os/kernel-core/auth'
 import type { LocalBinding } from '@astrale-os/kernel-core/graph/graph'
 
-import { pathCall } from '@astrale-os/kernel-client'
+import { call } from '@astrale-os/kernel-client'
 import { issuer } from '@astrale-os/kernel-core/auth'
 import { NodeId } from '@astrale-os/kernel-core/graph/node'
 import { Path } from '@astrale-os/kernel-core/path'
@@ -35,7 +35,7 @@ export async function submitIdentityProvision(
       : await input.callable.call(
           // Host/Client admits the portable value before transport. ProvisionRequest is the
           // stricter semantic type but does not declare the portable Object index signature.
-          pathCall(Path.parse(input.via), input.request as unknown as Call['input']),
+          call(Path.parse(input.via), input.request as unknown as Call['input']),
         )
   return acceptProvisionedIdentity(result, input.binding)
 }

@@ -1,12 +1,12 @@
 import type { AuthApi } from '@astrale-os/kernel-client/auth'
 import type { GraphApi } from '@astrale-os/kernel-client/graph'
 import type {
-  HostCredential,
+  HostAuth,
   HostSession as HostSessionValue,
   HostSessionOptions,
 } from '@astrale-os/kernel-client/host'
 
-import { Client, pathCall } from '@astrale-os/kernel-client'
+import { call } from '@astrale-os/kernel-client'
 import { createAuth } from '@astrale-os/kernel-client/auth'
 import { createGraph } from '@astrale-os/kernel-client/graph'
 import { HostSession } from '@astrale-os/kernel-client/host'
@@ -131,19 +131,14 @@ function openConnection(
   config: AstraleConfig,
 ): OwnedConnection {
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
-  const sourceClient = new Client({ url: target.url, fetch, timeoutMs })
-  const credential = createCliCredential(target, options, config, sourceClient)
-  const host = new HostSession(createHostSessionOptions(target, fetch, credential, timeoutMs))
+  const auth = createCliCredential(target, options, config)
+  const host = new HostSession(createHostSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => host.call(call, request))
-  const auth = createAuth((path, input, request) => host.call(pathCall(path, input), request))
+  const authApi = createAuth((path, input, request) => host.call(call(path, input), request))
   return {
-    context: Object.freeze({ host, graph, auth, target }),
+    context: Object.freeze({ host, graph, auth: authApi, target }),
     close() {
-      try {
-        host.close()
-      } finally {
-        sourceClient.close()
-      }
+      host.close()
     },
   }
 }
@@ -152,19 +147,18 @@ function openConnection(
 export function createHostSessionOptions(
   target: ConnectionTarget,
   fetch: NonNullable<HostSessionOptions['fetch']>,
-  credential: HostCredential | undefined,
+  auth: HostAuth | undefined,
   timeoutMs: number,
 ): HostSessionOptions {
   return {
     url: target.url,
     sourceIssuer: target.issuer,
     fetch,
-    ...(credential === undefined ? {} : { credential }),
+    ...(auth === undefined ? {} : { auth }),
     policy: {
       maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
       ...(new URL(target.url).protocol === 'http:' ? { allowInsecureHttp: true } : {}),
     },
-    protocol: 'envelope',
     envelopeTransport: 'http',
     timeoutMs,
   }

@@ -76,15 +76,15 @@ function definitionRef(input: string): QueryDefinitionRef {
   if (
     path.ast.anchor.kind !== 'domain' ||
     path.ast.steps.length !== 1 ||
-    step?.kind !== 'member' ||
-    (step.member.kind !== 'class' && step.member.kind !== 'interface')
+    step?.kind !== 'projection' ||
+    (step.projection.kind !== 'class' && step.projection.kind !== 'interface')
   ) {
     throw new TypeError('--definition must be one canonical Class or Interface Path')
   }
   return Object.freeze({
     origin: path.ast.anchor.origin,
-    kind: step.member.kind,
-    name: step.member.name,
+    kind: step.projection.kind,
+    name: step.projection.name,
   })
 }
 
