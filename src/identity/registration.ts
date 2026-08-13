@@ -33,7 +33,7 @@ export async function submitIdentityProvision(
     input.via === undefined
       ? await input.direct.provision(input.request)
       : await input.callable.call(
-          // Host/Client admits the portable value before transport. ProvisionRequest is the
+          // Client admits the portable value before transport. ProvisionRequest is the
           // stricter semantic type but does not declare the portable Object index signature.
           call(Path.parse(input.via), input.request as unknown as Call['input']),
         )

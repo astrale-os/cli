@@ -81,7 +81,7 @@ function fixture(input: {
     invoke,
     connect: () =>
       connectAdminCatalog(
-        { host: {} as never, graph },
+        { session: {} as never, graph },
         {
           bind: async () => binding,
           operationId: (kind) => `cli.domain.${kind}:test`,

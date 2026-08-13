@@ -1,7 +1,7 @@
 import type { Call } from '@astrale-os/kernel-client'
 import type { AuthApi } from '@astrale-os/kernel-client/auth'
 import type { GraphApi } from '@astrale-os/kernel-client/graph'
-import type { HostSession } from '@astrale-os/kernel-client/host'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { IssuerId } from '@astrale-os/kernel-core/auth'
 
 /** Existing CLI connection flags accepted by Kernel-touching commands. */
@@ -35,7 +35,7 @@ export function registrationKeyForTarget(target: ConnectionTarget): string
 
 /** Narrow capabilities available during one scoped CLI connection. */
 export interface ConnectionContext {
-  readonly host: HostSession
+  readonly session: ClientSession
   readonly graph: GraphApi
   readonly auth: AuthApi
   readonly target: ConnectionTarget
@@ -61,13 +61,13 @@ export interface SelfExpansionMeta {
 export function createPathCall(path: string, input: unknown): Call
 
 /** Resolve one ordinary CLI target, run an action, and close every owned Client resource. */
-export function withHostSession<Value>(
+export function withClientSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
 ): Promise<Value>
 
 /** Resolve the configured Admin Domain target under the same scoped lifecycle. */
-export function withAdminHostSession<Value>(
+export function withAdminClientSession<Value>(
   options: AdminConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
 ): Promise<Value>

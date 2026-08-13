@@ -97,7 +97,7 @@ function fixture(input: {
     invoke,
     connect: () =>
       connectAdminInstances(
-        { host: {} as never, graph },
+        { session: {} as never, graph },
         {
           bind: async () => binding,
           operationId: (kind) => `cli.instance.${kind}:test`,

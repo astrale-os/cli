@@ -89,7 +89,7 @@ Example:
       await runKernelCommand<IdentityRegistrationResult>({
         opts,
         label: `Register "${name}"`,
-        fn: async ({ auth, host, target }) => {
+        fn: async ({ auth, session, target }) => {
           const registrationKey = registrationKeyForTarget(target)
           const existing = identity.registrations?.[registrationKey]
           if (existing) {
@@ -110,7 +110,7 @@ Example:
             binding: prepared.binding,
             ...(opts.via === undefined ? {} : { via: opts.via }),
             direct: auth,
-            callable: host,
+            callable: session,
           })
           await setRegistration(name, registrationKey, {
             iss: registered.iss,

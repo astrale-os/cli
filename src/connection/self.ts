@@ -1,7 +1,7 @@
 import type { KernelCommandOpts } from './command'
 
 import { containsSelfRef, expandSelfReferences } from '../lib/self'
-import { withHostSession } from './session'
+import { withClientSession } from './session'
 
 /** Metadata attached to errors after an authenticated caller-authored @self expansion. */
 export interface SelfExpansionMeta {
@@ -58,7 +58,7 @@ export async function resolveSelfIdAuthenticated(
 }
 
 async function whoamiSelfId(opts: KernelCommandOpts): Promise<AuthenticatedSelf> {
-  return withHostSession(opts, async ({ auth, target }) => ({
+  return withClientSession(opts, async ({ auth, target }) => ({
     ...(await auth.whoami()),
     ...(target.slug === undefined ? {} : { slug: target.slug }),
   }))

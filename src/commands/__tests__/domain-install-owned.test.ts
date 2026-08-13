@@ -24,10 +24,10 @@ mock.module('../../connection', () => ({
     input,
   }),
   runKernelCommand: mock(),
-  withAdminHostSession: async (
+  withAdminClientSession: async (
     _opts: unknown,
-    run: (ctx: { host: { call: typeof hostCall } }) => Promise<unknown>,
-  ) => run({ host: { call: hostCall } }),
+    run: (ctx: { session: { call: typeof hostCall } }) => Promise<unknown>,
+  ) => run({ session: { call: hostCall } }),
 }))
 
 let stderr = ''

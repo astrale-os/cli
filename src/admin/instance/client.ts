@@ -1,5 +1,5 @@
 import type { DomainBinding } from '@astrale-os/kernel-client/domain'
-import type { HostSession } from '@astrale-os/kernel-client/host'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/kernel-core/graph/node'
 
 import { bindDomain } from '@astrale-os/kernel-client/domain'
@@ -32,7 +32,7 @@ const instanceRunsOnHost = ClassPath.from(ADMIN_ORIGIN, 'instance_runs_on_host')
 const fleetReservesAdminHost = ClassPath.from(ADMIN_ORIGIN, 'fleet_reserves_admin_host')
 
 export interface AdminInstanceContext {
-  readonly host: HostSession
+  readonly session: ClientSession
   readonly graph: AdminGraphApi
 }
 
@@ -45,7 +45,7 @@ export interface AdminInstanceApi {
 }
 
 export interface AdminInstanceDependencies {
-  readonly bind?: (host: HostSession) => Promise<DomainBinding>
+  readonly bind?: (session: ClientSession) => Promise<DomainBinding>
   readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
 }
 
@@ -57,7 +57,7 @@ export async function connectAdminInstances(
   context: AdminInstanceContext,
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
-  const binding = await (dependencies.bind ?? bindDomain)(context.host)
+  const binding = await (dependencies.bind ?? bindDomain)(context.session)
   if (binding.publication.origin !== ADMIN_ORIGIN || binding.domain.$.origin !== ADMIN_ORIGIN) {
     throw new TypeError('Configured Admin target does not serve the Admin Domain.')
   }

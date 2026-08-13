@@ -88,7 +88,7 @@ async function main(): Promise<void> {
 
   const shell = createShell({
     mode: 'standalone',
-    host: {
+    session: {
       url: kernelUrl,
       sourceIssuer: cfg.kernelIssuer,
       auth: {

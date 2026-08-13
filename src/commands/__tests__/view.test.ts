@@ -12,15 +12,15 @@ const abMock = mock(async (_args: string[]) => ({
 
 mock.module('../../connection', () => ({
   expandSelfInPath: async (path: string) => ({ path }),
-  withHostSession: async (
+  withClientSession: async (
     _opts: unknown,
     run: (ctx: {
-      host: { viewsFor: typeof viewsForMock }
+      session: { viewsFor: typeof viewsForMock }
       target: { url: string; issuer: string }
     }) => Promise<unknown>,
   ) =>
     run({
-      host: { viewsFor: viewsForMock },
+      session: { viewsFor: viewsForMock },
       target: { url: 'https://kernel.test', issuer: 'https://kernel.test' },
     }),
 }))
@@ -127,10 +127,10 @@ describe('view session resolution', () => {
     const { rejectUnrepresentableOverrides } = await import('../view')
 
     expect(() => rejectUnrepresentableOverrides({ viewUrl: 'http://localhost:8787' })).toThrow(
-      'untouched Host-resolved placement',
+      'verified View placement',
     )
     expect(() => rejectUnrepresentableOverrides({ handshake: 'none' })).toThrow(
-      'untouched Host-resolved placement',
+      'verified View placement',
     )
   })
 })

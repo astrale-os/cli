@@ -1,6 +1,6 @@
 import type { AuthApi } from '@astrale-os/kernel-client/auth'
 import type { GraphApi } from '@astrale-os/kernel-client/graph'
-import type { HostSession } from '@astrale-os/kernel-client/host'
+import type { ClientSession } from '@astrale-os/kernel-client/session'
 
 import { issuer } from '@astrale-os/kernel-core/auth'
 import { describe, expect, test } from 'bun:test'
@@ -8,7 +8,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AstraleConfig } from '../../lib/config'
 import type { ConnectionContext, ConnectionFactory } from '../session'
 
-import { createHostSessionOptions, withResolvedHostSession } from '../session'
+import { createClientSessionOptions, withResolvedClientSession } from '../session'
 
 const target = Object.freeze({
   url: 'https://gateway.example/instances/child/invoke',
@@ -22,7 +22,7 @@ const config: AstraleConfig = {
 }
 
 const context: ConnectionContext = Object.freeze({
-  host: {} as HostSession,
+  session: {} as ClientSession,
   graph: {} as GraphApi,
   auth: {} as AuthApi,
   target,
@@ -32,15 +32,15 @@ describe('connection session', () => {
   /** @evidence TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER */
   test('pins the selected target issuer independently from its invocation URL', async () => {
     const auth = { ttlSeconds: 3_600, resolve: async () => ({ credential: 'credential' }) }
-    const options = createHostSessionOptions(target, globalThis.fetch, auth, 2_500)
+    const options = createClientSessionOptions(target, globalThis.fetch, auth, 2_500)
 
     expect(options.url).toBe('https://gateway.example/instances/child/invoke')
     expect(options.sourceIssuer).toBe(target.issuer)
   })
 
   /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
-  test('constructs an anonymous Host session without an auth resolver', () => {
-    const options = createHostSessionOptions(target, globalThis.fetch, undefined, 2_500)
+  test('constructs an anonymous Client Session without an auth resolver', () => {
+    const options = createClientSessionOptions(target, globalThis.fetch, undefined, 2_500)
 
     expect(options.sourceIssuer).toBe(target.issuer)
     expect(options.auth).toBeUndefined()
@@ -57,7 +57,7 @@ describe('connection session', () => {
           closes += 1
         },
       })
-      const pending = withResolvedHostSession(
+      const pending = withResolvedClientSession(
         target,
         {},
         config,
@@ -80,7 +80,7 @@ describe('connection session', () => {
     for (const timeout of ['0', '-1', '1.5', 'nope', '999999999999999999999']) {
       let opened = false
       await expect(
-        withResolvedHostSession(
+        withResolvedClientSession(
           target,
           { timeout },
           config,
@@ -95,7 +95,7 @@ describe('connection session', () => {
     }
 
     let receivedTimeout = 0
-    await withResolvedHostSession(
+    await withResolvedClientSession(
       target,
       { timeout: '2500' },
       config,
@@ -117,7 +117,7 @@ describe('connection session', () => {
     ]) {
       let opened = false
       await expect(
-        withResolvedHostSession(
+        withResolvedClientSession(
           target,
           options,
           config,

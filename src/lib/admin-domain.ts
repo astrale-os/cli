@@ -2,13 +2,13 @@ import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminCatalog, type DomainInfo, type PublishDomainInput } from '../admin/catalog'
 import { connectAdminInstances, type OwnedInstanceInfo } from '../admin/instance'
-import { withAdminHostSession } from '../connection'
+import { withAdminClientSession } from '../connection'
 
 export type { DomainInfo, InstallDomainResult, PublishDomainInput } from '../admin/catalog'
 
 /** Read the caller-visible V2 Admin Domain catalog. */
 export function listAdminDomains(options: AdminConnectionOptions): Promise<DomainInfo[]> {
-  return withAdminHostSession(options, async (context) =>
+  return withAdminClientSession(options, async (context) =>
     (await connectAdminCatalog(context)).list(),
   )
 }
@@ -20,7 +20,7 @@ export async function listAdminDomainsInContext(context: ConnectionContext): Pro
 
 /** Publish and optionally configure default installation through V2 receiver Methods. */
 export function publishAdminDomain(options: AdminConnectionOptions, input: PublishDomainInput) {
-  return withAdminHostSession(options, async (context) =>
+  return withAdminClientSession(options, async (context) =>
     (await connectAdminCatalog(context)).publish(input),
   )
 }

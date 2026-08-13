@@ -100,7 +100,7 @@ describe('identity transfer', () => {
   })
 
   /** @evidence TEST-CLI-IDENTITY-TRANSFER-SCHEMA */
-  test('keeps the portable V1 JSON Schema aligned with the admitted Host envelope', async () => {
+  test('keeps the portable V1 JSON Schema aligned with the admitted identity envelope', async () => {
     const schemaPath = fileURLToPath(
       new URL('../.spec/schemas/identity-export-v1.schema.json', import.meta.url),
     )
@@ -110,7 +110,7 @@ describe('identity transfer', () => {
       readonly required: readonly string[]
       readonly properties: Readonly<Record<string, unknown>>
     }
-    const hostEnvelope = await envelope('manager-principal', 'host-bootstrap')
+    const identityEnvelope = await envelope('manager-principal', 'host-bootstrap')
 
     expect(schema.$id).toBe('https://schemas.astrale.ai/cli/identity-export/1')
     expect(schema.additionalProperties).toBe(false)
@@ -118,7 +118,9 @@ describe('identity transfer', () => {
     expect(Object.keys(schema.properties).sort()).toEqual(
       ['issuer', 'kid', 'mode', 'privateJwk', 'publicJwk', 'subject', 'version'].sort(),
     )
-    await expect(decodeIdentityExport(JSON.stringify(hostEnvelope))).resolves.toEqual(hostEnvelope)
+    await expect(decodeIdentityExport(JSON.stringify(identityEnvelope))).resolves.toEqual(
+      identityEnvelope,
+    )
   })
 
   /** @evidence TEST-CLI-IDENTITY-IMPORT-ORDERED */

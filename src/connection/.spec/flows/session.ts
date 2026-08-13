@@ -1,4 +1,4 @@
-import type { HostAuth } from '@astrale-os/kernel-client/host'
+import type { SessionAuth } from '@astrale-os/kernel-client/session'
 import type { Call } from '@astrale-os/kernel-protocol/invocation'
 
 import type { ConnectionContext, ConnectionOptions, ConnectionTarget } from '../api.js'
@@ -13,7 +13,7 @@ declare const resolveTimeoutMs: (input: string | undefined) => number
 declare const createClientConnection: (
   target: ConnectionTarget,
   timeoutMs: number,
-  auth: HostAuth | undefined,
+  auth: SessionAuth | undefined,
 ) => OwnedConnection
 declare const validateCredentialSelection: (options: ConnectionOptions) => void
 declare const resolveSourceCredential: (
@@ -23,7 +23,7 @@ declare const resolveSourceCredential: (
   signal: AbortSignal,
 ) => Promise<string>
 /** Bind source authority without learning or minting destination credentials. */
-function createConnectionAuth(target: ConnectionTarget, options: ConnectionOptions): HostAuth {
+function createConnectionAuth(target: ConnectionTarget, options: ConnectionOptions): SessionAuth {
   return {
     ttlSeconds: 3_600,
     async resolve(_call: Call, signal: AbortSignal) {
@@ -34,7 +34,7 @@ function createConnectionAuth(target: ConnectionTarget, options: ConnectionOptio
   }
 }
 
-/** Open Host with one call-scoped source-authority resolver bound once. */
+/** Open one Client Session with a call-scoped source-authority resolver bound once. */
 function openConnection(
   target: ConnectionTarget,
   timeoutMs: number,
@@ -45,7 +45,7 @@ function openConnection(
 }
 
 /** One terminal command-scoped connection lifecycle. */
-export async function withHostSession<Value>(
+export async function withClientSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
 ): Promise<Value> {
