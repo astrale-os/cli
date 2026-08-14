@@ -2,7 +2,7 @@ import type { Call } from '@astrale-os/kernel-client'
 import type { AuthApi } from '@astrale-os/kernel-client/auth'
 import type { GraphApi } from '@astrale-os/kernel-client/graph'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
-import type { IssuerId } from '@astrale-os/kernel-core/auth'
+import type { IssuerId } from '@astrale-os/sdk/auth'
 
 /** Existing CLI connection flags accepted by Kernel-touching commands. */
 export interface ConnectionOptions {

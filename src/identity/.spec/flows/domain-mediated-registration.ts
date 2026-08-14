@@ -1,5 +1,5 @@
-import type { ProvisionRequest, ProvisionResult } from '@astrale-os/kernel-core/auth'
-import type { LocalBinding } from '@astrale-os/kernel-core/graph/mutate'
+import type { ProvisionRequest, ProvisionResult } from '@astrale-os/sdk/auth'
+import type { LocalBinding } from '@astrale-os/sdk/mutation'
 
 interface RegistrationAuthority {
   prepareSelfProven(input: {

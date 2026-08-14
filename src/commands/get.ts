@@ -1,4 +1,4 @@
-import { Path } from '@astrale-os/kernel-core/path'
+import { Path } from '@astrale-os/sdk/graph/path'
 
 import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'

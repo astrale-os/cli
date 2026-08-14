@@ -2,26 +2,15 @@
 
 # Debugging
 
-Read when encountering unexpected domain behavior. Prove the serving URL, installed schema hash, physical
-placement, caller identity, authority gate, path form, and page/cursor state before changing code. Reproduce
-through the same bound session and adapter used by the failing path.
+Read when encountering unexpected Domain behavior. Prove the serving URL, installed Schema revision,
+physical placement, caller identity, Policy decision, path form, and page or cursor state before
+changing code. Reproduce through the same bound session and adapter used by the failing path.
 
 ## Physical Domain Path vs Semantic Origin
 
-`defineDomain({ path })` controls where the Domain node sits in the physical tree and defaults to
-`/domains/<origin>`. It does not move the semantic namespace: compiled addresses remain rooted at
-`/:<origin>`. Use the physical path for containment and the origin for types, functions, and views. This
-is a domain-level application of spatial versus semantic paths and is independent of the serving URL.
-
-```ts
-defineDomain({
-  schema,
-  methods,
-  path: '/domains/contacts.example.dev',
-})
-
-D.Contact.path.class.raw // still /:contacts.example.dev:class.Contact
-```
+The Kernel owns installed physical placement; the Schema origin owns semantic Class, Policy, and
+callable identities. A physical move does not rename the origin. Do not diagnose placement by adding a
+legacy `path` field to `defineDomain`; inspect the installed graph and deployment evidence.
 
 ## Schema Hash
 
@@ -38,57 +27,12 @@ changing classes, method contracts, views, core data, or bindings requires the d
 updates that snapshot. The presentation manifest is worker `/meta` data, so changing it affects future
 metadata reads after deployment rather than the installed schema graph.
 
-## Wire every function, method, and view into the domain
+## Preserve exact signed webhook evidence
 
-A standalone function or view exists only when it is present in the `functions` or `views` map passed to
-the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
-map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
-before debugging dispatch.
-
-```ts
-export const domain = defineDomain({
-  schema,
-  methods,
-  functions: { search },
-  views: { dashboard },
-  deps,
-})
-```
-
-## Do NOT expect a caller kernel in a public handler
-
-For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
-caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
-policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
-reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
-providers also require the SDK fix described by the auxiliary-route limitation.
-
-```ts
-export const webhook = defineRemoteFunction({
-  auth: 'public',
-  inputSchema: EventSchema,
-  outputSchema: z.object({ accepted: z.boolean() }),
-  authorize: ({ c, params, deps }) =>
-    deps.provider.verifySignedEvent({
-      event: params,
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-    }),
-  execute: async ({ fn, params }) => {
-    const own = await fn.kernel()
-    await recordProviderEvent(own, params)
-    return { accepted: true }
-  },
-})
-```
-
-## Exact raw webhook bodies are consumed before handlers
-
-The current standalone-function auxiliary route parses JSON before `authorize` and `execute`, so
-`c.req.raw` no longer provides untouched bytes to the handler. A provider that signs exact request bytes
-cannot be verified safely through this route until the SDK preserves a clone; never reconstruct the
-signed body from parsed JSON. Providers that sign explicit headers or canonical parsed fields can still
-use the public webhook pattern.
+Treat the raw body, signed headers, and provider timestamp as boundary evidence. Admit and verify that
+evidence in the Integration or Capability owner before translating it into Domain values; never
+reconstruct signed bytes from parsed JSON. Kernel-v2 handler admission remains Schema Policy and is
+separate from provider-signature verification.
 
 ## Do NOT call a static method as an instance method
 
@@ -104,40 +48,11 @@ await kernel.call(D.Contact.create.path.method.raw, { at, email })
 await kernel.call(`${contact.path.raw}::rename`, { name: 'Ada' })
 ```
 
-## How to debug a permission denied?
+## How to debug a Policy denial?
 
-First confirm the actual principal with `kernel.auth.whoami()`. Then check the exact node and verb
-through `kernel.auth.check`, inspect the relevant ancestor grant, and distinguish standing grants from a
-narrowed credential. In a handler, separately ask whether the caller or the function identity was
-expected to supply the permission. This follows composed authority and AuthApi checks.
-
-```ts
-const principal = await kernel.auth.whoami()
-const allowed = await kernel.auth.check({
-  who: principal.id,
-  on: '/projects/apollo',
-  perms: EDIT,
-})
-```
-
-## Composed Handler Authority vs Caller Authority
-
-An authenticated handler's `ctx.kernel` is bound to the **union** of the caller's delegated authority
-and the function identity's own grants. Either side can make a graph operation succeed. That makes
-function-owned capabilities usable, but it also means success does not prove the caller personally held
-the permission. For caller-sensitive operations, gate `ctx.auth.principal` explicitly with
-`kernel.auth.require` in `authorize`. This is the operational consequence of identity composition and
-business authorization.
-
-```ts
-authorize: ({ auth, kernel, self }) =>
-  kernel.auth.require({
-    who: auth.principal,
-    on: self.path,
-    perms: EDIT,
-    context: 'Contact.rename',
-  })
-```
+Confirm the active identity with `kernel.auth.whoami()`, then observe the exact installed Policy and
+object with `kernel.auth.can()`. Inspect the Domain relationship facts used by that Policy. The probe
+is diagnostic only; the callable's Runtime admission remains authoritative.
 
 ## Missing Read vs Masked Read
 
@@ -254,12 +169,6 @@ A `GraphResult` can begin from several roots, but continuation through `next()` 
 supports only a single root. If every root may paginate, run a separate query per root or design an
 explicit resume plan rather than assuming one cursor covers the whole graph result.
 
-## Hold SHARE and every right you grant
-
-Holding `SHARE` lets an identity create a grant, but it cannot grant a verb it does not hold. A caller
-with READ and SHARE can pass READ, not EDIT. When a grant is denied or narrower than intended, inspect
-both SHARE and the rights being delegated on the target.
-
 ## Renaming a property does not migrate stored data
 
 A node stores properties under fully qualified keys. Renaming a schema property creates a new key but
@@ -270,7 +179,8 @@ the name or run an explicit data migration from the old qualified key to the new
 
 The origin qualifies schema keys, semantic paths, dependencies, and callable identities. Changing it
 creates a new semantic namespace rather than editing a display name. Treat an origin change as an
-explicit migration of stored properties, grants, cross-domain requirements, and external callers.
+explicit migration of stored properties, Policy references, cross-Domain requirements, and external
+callers.
 
 ## Do NOT rely on self-referential edge constraints as write guards
 

@@ -1,11 +1,11 @@
 import type { Call } from '@astrale-os/kernel-client'
-import type { ProvisionRequest } from '@astrale-os/kernel-core/auth'
-import type { LocalBinding } from '@astrale-os/kernel-core/graph/graph'
+import type { ProvisionRequest } from '@astrale-os/sdk/auth'
+import type { LocalBinding } from '@astrale-os/sdk/graph/model'
 
 import { call } from '@astrale-os/kernel-client'
-import { issuer } from '@astrale-os/kernel-core/auth'
-import { NodeId } from '@astrale-os/kernel-core/graph/node'
-import { Path } from '@astrale-os/kernel-core/path'
+import { issuer } from '@astrale-os/sdk/auth'
+import { NodeId } from '@astrale-os/sdk/graph/node'
+import { Path } from '@astrale-os/sdk/graph/path'
 
 export interface IdentityRegistrationResult {
   readonly iss: string

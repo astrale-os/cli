@@ -1,7 +1,7 @@
 import type { SessionAuth } from '@astrale-os/kernel-client/session'
 
-import { issuer, type IssuerId } from '@astrale-os/kernel-core/auth'
-import { Path } from '@astrale-os/kernel-core/path'
+import { issuer, type IssuerId } from '@astrale-os/sdk/auth'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 
 import type { AstraleConfig } from '../../lib/config'

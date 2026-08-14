@@ -1,5 +1,5 @@
 import type { SessionAuth } from '@astrale-os/kernel-client/session'
-import type { IssuerId } from '@astrale-os/kernel-core/auth'
+import type { IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
 import type { ConnectionOptions, ConnectionTarget } from './target'

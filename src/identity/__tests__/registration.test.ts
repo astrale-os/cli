@@ -1,6 +1,6 @@
-import type { ProvisionRequest } from '@astrale-os/kernel-core/auth'
+import type { ProvisionRequest } from '@astrale-os/sdk/auth'
 
-import { LocalBinding } from '@astrale-os/kernel-core/graph/graph'
+import { LocalBinding } from '@astrale-os/sdk/graph/model'
 import { expect, test } from 'bun:test'
 
 import { submitIdentityProvision } from '../registration'

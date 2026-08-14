@@ -1,4 +1,4 @@
-import type { MutationResult } from '@astrale-os/kernel-core/graph/mutate'
+import type { MutationResult } from '@astrale-os/sdk/mutation'
 
 import chalk from 'chalk'
 import { readFile } from 'node:fs/promises'

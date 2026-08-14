@@ -1,10 +1,10 @@
 import type { DomainBinding } from '@astrale-os/kernel-client/domain'
-import type { Node } from '@astrale-os/kernel-core/graph/node'
-import type { QueryAST, QueryResult } from '@astrale-os/kernel-core/graph/query'
+import type { Node } from '@astrale-os/sdk/graph/node'
+import type { QueryAST, QueryResult } from '@astrale-os/sdk/query'
 
-import { ClassPath } from '@astrale-os/kernel-core/graph/class'
-import { NodeId } from '@astrale-os/kernel-core/graph/node'
-import { Path } from '@astrale-os/kernel-core/path'
+import { ClassPath } from '@astrale-os/sdk/graph/class'
+import { NodeId } from '@astrale-os/sdk/graph/node'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, mock, test } from 'bun:test'
 
 import type { AdminGraphApi } from '../../graph'
