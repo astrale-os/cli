@@ -2,11 +2,11 @@ import type {
   QueryAST as QueryASTValue,
   QueryDefinitionRef,
   QueryDirection,
-} from '@astrale-os/kernel-core/graph/query'
+} from '@astrale-os/sdk/query'
 
-import { ClassPath } from '@astrale-os/kernel-core/graph/class'
-import { Query, QueryAST } from '@astrale-os/kernel-core/graph/query'
-import { Path } from '@astrale-os/kernel-core/path'
+import { ClassPath } from '@astrale-os/sdk/graph/class'
+import { Path } from '@astrale-os/sdk/graph/path'
+import { Query, QueryAST } from '@astrale-os/sdk/query'
 
 export interface QueryCommandInput {
   readonly sources: readonly string[]

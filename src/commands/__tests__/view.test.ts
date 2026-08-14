@@ -1,6 +1,6 @@
 import type { ResolvedView } from '@astrale-os/shell'
 
-import { Path } from '@astrale-os/kernel-core/path'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))

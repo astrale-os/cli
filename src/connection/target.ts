@@ -1,6 +1,6 @@
-import type { IssuerId } from '@astrale-os/kernel-core/auth'
+import type { IssuerId } from '@astrale-os/sdk/auth'
 
-import { issuer } from '@astrale-os/kernel-core/auth'
+import { issuer } from '@astrale-os/sdk/auth'
 
 import type { InstanceInfo } from '../lib/admin-instance'
 import type { AdminTargetCommandOpts } from '../lib/admin-target'

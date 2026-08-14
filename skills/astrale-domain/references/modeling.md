@@ -191,18 +191,18 @@ instead of copying native property shapes into local interfaces.
 methods to the class, and kernel schema members may target that interface. Keep domain-specific
 capabilities in the domain's own interfaces.
 
-## Domain Imports
+## Schema dependencies
 
-**Schema imports** let definitions refer to types owned by another schema. Import the kernel schema to
-implement native interfaces such as `Identity` or `Container`, or import another domain's schema when
-your endpoint types truly cross that vocabulary. Imports describe type relationships; runtime
-installation ordering is declared separately with requires.
+**Schema dependencies** let definitions refer to declarations owned by another Schema. Import
+`KernelSchema` through `@astrale-os/sdk/schema/kernel` to implement native interfaces such as
+`Identity` or `Container`, or import another Domain's public Schema when your endpoint types truly
+cross that vocabulary.
 
 ```ts
 export const schema = defineSchema('tasks.example.dev', {
+  dependencies: [KernelSchema],
   interfaces,
   classes,
-  imports: [KernelSchema],
 })
 ```
 
@@ -485,24 +485,30 @@ A god class erases ownership by absorbing unrelated data, behavior, or tree orga
 when its properties are meaningless on some instances, when it owns most business methods while the
 classes whose state changes remain behaviorless, or when collection paths instantiate it merely as a
 folder. Split real kinds, put behavior on the class whose lifecycle or invariant changes, and use an
-honest container capability or organizational type only when that node has real domain meaning.
+honest container only when that node has real Domain meaning.
 
 ```ts
-// NO Workspace is only a namespace for behavior owned by NeedRequest.
-const LogisticsWorkspace = nodeClass({
+import { fn, nodeClass, path } from '@astrale-os/sdk/schema'
+
+const NeedRequest = nodeClass({
   methods: {
     changePriority: fn({
-      static: true,
-      params: { request: pathSchema(), priority: z.string() },
-      returns: z.void(),
+      input: z.strictObject({ priority: z.string() }),
+      output: z.void(),
+      auth: 'required',
     }),
   },
 })
 
-// OK The existing request receives the lifecycle change.
-const NeedRequest = nodeClass({
+// NO: Workspace is only a namespace for behavior owned by NeedRequest.
+const LogisticsWorkspace = nodeClass({
   methods: {
-    changePriority: fn({ params: { priority: z.string() }, returns: z.void() }),
+    changePriority: fn({
+      static: true,
+      input: z.strictObject({ request: path(NeedRequest), priority: z.string() }),
+      output: z.void(),
+      auth: 'required',
+    }),
   },
 })
 ```
@@ -603,7 +609,7 @@ const reports_to = edgeClass(
 Choose by semantic ownership, not transport convenience. Use an instance method when an existing node is
 the natural receiver, its lifecycle or invariant changes, or authorization should follow it; use a
 static method for class-level construction or queries with no receiver; use a standalone function for
-domain-wide orchestration, postInstall, or raw-request webhooks. A static method that accepts the node
+Domain-wide behavior or raw-request webhooks. A static method that accepts the node
 it acts on is a receiver smell unless a cross-aggregate invariant justifies it.
 
 ## How to delete a node with children?
@@ -633,8 +639,8 @@ await step.run('delete-issue-and-comments', () =>
 
 Delete treats the two relationships oppositely. A node that still has children cannot be deleted at all:
 the kernel throws `NodeNotEmptyError` and the whole patch writes nothing. A node's edges never block it:
-every incident edge, inbound and outbound, is removed with the node, along with the grants held on it,
-while the node at the far end survives and silently loses the relationship. See how to drain a subtree.
+every incident edge, inbound and outbound, is removed with the node, while the node at the far end
+survives and silently loses the relationship. See how to drain a subtree.
 
 ## Relative vs Absolute Path (./x vs /x)
 
@@ -650,33 +656,36 @@ const withinTree = RelativePath.parse('./contacts/ada')
 
 ## Path vs PathLike vs raw string
 
-A `Path` is a parsed address with `.raw`, `.equals()`, and subclasses such as `AbsolutePath`. `PathLike`
-is exactly `string | Path`: the input type an API accepts at a boundary. `rawOf(value)` normalizes a
-`PathLike` to its string; `.raw` reads the string off a value already known to be a `Path`. Call `rawOf`
-only where both forms genuinely arrive, never on an already-typed value such as a compiled accessor, and
-compare addresses with `equals`, not `===`.
+`Path` is the immutable rich authoring value. `NodePath` is admitted canonical serialized text, and
+v2 `PathLike` is exactly `Path | NodePath`—not an arbitrary string. Use `Path.from(value)` when
+both admitted forms genuinely arrive, compare rich values with `.equals()`, and read `.raw` only at
+a serialization boundary.
 
 ```ts
-import { rawOf, type PathLike } from '@astrale-os/kernel-core'
+import { Path, type PathLike } from '@astrale-os/sdk/graph/path'
 
-if (issue.path.equals(other.path)) return // structural, not `===`
-const key = issue.path.raw // serialize at the wire boundary
-
-// A helper that genuinely admits both forms normalizes once.
-const leaf = (ref: PathLike) => rawOf(ref).split('/').at(-1)
+const canonical = (value: PathLike) => Path.from(value)
+if (canonical(left).equals(canonical(right))) return
+const wire = canonical(left).raw
 ```
 
 ## Type graph addresses as paths, not strings
 
-Declare a param that names a graph location with `pathSchema()` or `absolutePathSchema()`, never
-`z.string()`. Import them from `@astrale-os/kernel-core`; the SDK barrel does not re-export them. The
-handler then receives a parsed `Path`; keep it typed throughout and call `.raw` only at a wire boundary.
+In Schema, declare an address with the v2 DSL's `path(...)` and list the Node Definitions it accepts.
+At runtime import the rich path values from the SDK's semantic path facade.
 
 ```ts
-import { pathSchema } from '@astrale-os/kernel-core'
+import { path } from '@astrale-os/sdk/schema'
+import { Path, type PathLike } from '@astrale-os/sdk/graph/path'
 
-assign: fn({
-  params: { identity: pathSchema() },
-  returns: IssueInfoSchema,
+const assign = fn({
+  input: z.strictObject({ identity: path(User) }),
+  output: assignmentResult,
+  auth: 'required',
 })
+
+const canonical = (value: PathLike) => Path.from(value).raw
 ```
+
+`path(...)` is declaration metadata tied to accepted Definitions. `Path.from(...)` normalizes an
+already-admitted `PathLike` at an in-process boundary.

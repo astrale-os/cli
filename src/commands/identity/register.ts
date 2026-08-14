@@ -1,11 +1,11 @@
-import type { IssuerId, JsonWebKey, ProvisionRequest } from '@astrale-os/kernel-core/auth'
+import type { IssuerId, JsonWebKey, ProvisionRequest } from '@astrale-os/sdk/auth'
 import type { JWK } from 'jose'
 
-import { provision, jwk } from '@astrale-os/kernel-core/auth'
-import { ClassPath } from '@astrale-os/kernel-core/graph/class'
-import { LocalBinding } from '@astrale-os/kernel-core/graph/graph'
-import { MutationAST } from '@astrale-os/kernel-core/graph/mutate'
-import { normalizeProperties } from '@astrale-os/kernel-core/graph/properties'
+import { provision, jwk } from '@astrale-os/sdk/auth'
+import { ClassPath } from '@astrale-os/sdk/graph/class'
+import { LocalBinding } from '@astrale-os/sdk/graph/model'
+import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
+import { MutationAST } from '@astrale-os/sdk/mutation'
 import { importJWK, SignJWT } from 'jose'
 import { readFile } from 'node:fs/promises'
 

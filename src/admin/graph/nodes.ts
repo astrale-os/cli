@@ -1,8 +1,8 @@
 import type { GraphQueryOptions, NeighborsOptions, NodePage } from '@astrale-os/kernel-client/graph'
-import type { ClassPath } from '@astrale-os/kernel-core/graph/class'
-import type { Node } from '@astrale-os/kernel-core/graph/node'
-import type { QueryAST, QueryResult } from '@astrale-os/kernel-core/graph/query'
-import type { PathLike } from '@astrale-os/kernel-core/path'
+import type { ClassPath } from '@astrale-os/sdk/graph/class'
+import type { Node } from '@astrale-os/sdk/graph/node'
+import type { PathLike } from '@astrale-os/sdk/graph/path'
+import type { QueryAST, QueryResult } from '@astrale-os/sdk/query'
 
 export interface AdminGraphQueryApi {
   query(ast: QueryAST, options?: GraphQueryOptions): Promise<QueryResult>

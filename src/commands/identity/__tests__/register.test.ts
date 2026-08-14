@@ -1,6 +1,6 @@
-import { issuer, jwk, provision } from '@astrale-os/kernel-core/auth'
-import { ClassPath } from '@astrale-os/kernel-core/graph/class'
-import { normalizeProperties } from '@astrale-os/kernel-core/graph/properties'
+import { issuer, jwk, provision } from '@astrale-os/sdk/auth'
+import { ClassPath } from '@astrale-os/sdk/graph/class'
+import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { expect, mock, test } from 'bun:test'
 import { exportJWK, generateKeyPair, jwtVerify } from 'jose'
 

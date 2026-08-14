@@ -9,7 +9,7 @@ describe('parseSdkOutdated', () => {
   test('keeps only deps with a strictly newer latest; uses wanted when current is absent', () => {
     const json = JSON.stringify({
       '@astrale-os/sdk': { current: '0.1.5', wanted: '0.1.5', latest: '0.1.9' }, // behind
-      '@astrale-os/kernel-dsl': { current: '0.1.2', wanted: '0.1.2', latest: '0.1.2' }, // current
+      '@astrale-os/sdk/schema': { current: '0.1.2', wanted: '0.1.2', latest: '0.1.2' }, // current
       '@astrale-os/shell': { wanted: '0.1.0', latest: '0.1.1' }, // no `current` (not installed)
     })
     expect(parseSdkOutdated(json)).toEqual([

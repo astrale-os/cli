@@ -77,8 +77,8 @@
   },
   "devDependencies": {
     "@astrale-os/kernel-client": ">=0.3.1 <1.0.0",
-    "@astrale-os/kernel-core": ">=0.7.0 <1.0.0",
     "@astrale-os/ox": ">=0.1.0 <1.0.0",
+    "@astrale-os/sdk": ">=0.4.20 <1.0.0",
     "@astrale-os/shell": ">=0.3.8 <1.0.0",
     "@astrale/commitlint-config": "jsr:~2.0.1",
     "@commitlint/cli": "~20.3.1",

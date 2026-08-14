@@ -1,4 +1,4 @@
-import { issuer } from '@astrale-os/kernel-core/auth'
+import { issuer } from '@astrale-os/sdk/auth'
 import { describe, expect, test } from 'bun:test'
 
 import type { AstraleConfig } from '../../lib/config'

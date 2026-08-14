@@ -1,7 +1,7 @@
-import type { Node } from '@astrale-os/kernel-core/graph/node'
-import type { QueryDirection, QueryResult } from '@astrale-os/kernel-core/graph/query'
+import type { Node } from '@astrale-os/sdk/graph/node'
+import type { QueryDirection, QueryResult } from '@astrale-os/sdk/query'
 
-import { ClassPath } from '@astrale-os/kernel-core/graph/class'
+import { ClassPath } from '@astrale-os/sdk/graph/class'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../connection'

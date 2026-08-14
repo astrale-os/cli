@@ -1,4 +1,4 @@
-import type { QueryDirection } from '@astrale-os/kernel-core/graph/query'
+import type { QueryDirection } from '@astrale-os/sdk/query'
 
 import { readFile } from 'node:fs/promises'
 

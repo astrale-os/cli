@@ -1,5 +1,5 @@
-import type { MutationAST } from '@astrale-os/kernel-core/graph/mutate'
-import type { QueryAST, QueryDirection } from '@astrale-os/kernel-core/graph/query'
+import type { MutationAST } from '@astrale-os/sdk/mutation'
+import type { QueryAST, QueryDirection } from '@astrale-os/sdk/query'
 
 /** Untrusted CLI fields used to author or admit one exact Query V5 request. */
 export interface QueryCommandInput {

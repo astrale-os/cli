@@ -1,5 +1,5 @@
-import { Path } from '@astrale-os/kernel-core/path'
-import { syscalls } from '@astrale-os/kernel-core/schema'
+import { Path } from '@astrale-os/sdk/graph/path'
+import { syscalls } from '@astrale-os/sdk/schema/kernel'
 import chalk from 'chalk'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'

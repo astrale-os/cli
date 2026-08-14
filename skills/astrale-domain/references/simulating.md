@@ -8,19 +8,20 @@ Read when creating fake/sample/demo data, test fixtures, scripted demo flows, in
 
 Simulation should prove the domain's real world behavior as closely as possible.
 
-- Put throwaway demo data behind an explicit demo function, script, or test helper, not hidden in normal `postInstall`.
+- Put throwaway demo data behind an explicit demo function, script, or test helper, never in normal
+  Domain composition or Core.
 - Prefer when possible to truly integrate with the integrations domain rather than mocking it.
 
 ## How to test a domain's handlers?
 
-The SDK ships no test kernel. Export each handler body as a plain function over `{ kernel, step }`, then
-drive it with a domain-owned kernel double and `createInlineStep()`, the inline step executor from
-`@astrale-os/sdk/step`. Assert the patch it built and the pages it drained, not only its return value.
-Invoke the exported handler's `authorize` hook against a denied caller too, and keep a real kernel for
-one end-to-end install.
+The SDK ships no test Kernel. Drive direct handlers with a Domain-owned Kernel double and
+`createInlineStep()`, the inline step executor from `@astrale-os/sdk/workflow/step`. Assert the
+Query or Mutation it built and the pages it drained, not only its return value. Prove Policy denial
+through the Kernel-v2 admission path or a Runtime harness; handlers have no `authorize` hook. Keep a
+real Kernel for one end-to-end install.
 
 ```ts
-import { createInlineStep } from '@astrale-os/sdk/step'
+import { createInlineStep } from '@astrale-os/sdk/workflow/step'
 
 const capture = new CaptureKernel(issueGraph({ path: '/issues/one', comments: 2 }))
 
@@ -39,84 +40,24 @@ expect(capture.patches[0].nodes.delete).toHaveLength(3)
 A fake that accepts what the kernel rejects (a duplicate edge, a path-keyed cursor) turns a live failure
 into a green suite: encode the invariant in the fake, not the assertion.
 
-## Declare authorize on every callable
-
-Give every `remoteMethod` and `defineRemoteFunction` an `authorize` hook. Gate the principal with
-`kernel.auth.require`; when a callable is genuinely open, write an empty hook rather than none.
-
-```ts
-// Gated: the caller must personally hold EDIT on the receiver.
-export const deleteIssueMethod = remoteMethod<Deps>()(schema, 'Issue', 'delete', {
-  authorize: ({ kernel, auth, self }) =>
-    kernel.auth.require({
-      who: auth.principal,
-      on: self.path,
-      perms: EDIT,
-      context: 'Issue.delete',
-    }),
-  execute: ({ self, kernel, step }) => deleteIssue(self.path, { kernel, step }),
-})
-
-// Open to any authenticated caller: declare it, do not omit it.
-export const listTagsMethod = remoteMethod<Deps>()(schema, 'Tag', 'list', {
-  authorize: () => {},
-  execute: ({ kernel }) => listTags(kernel),
-})
-```
-
-## Core vs Post-install Function (seed)
+## Core vs runtime setup
 
 Core is declarative install-graph data: fixed nodes and edges shipped in the signed bundle and
-materialized by the kernel. A post-install function is executable setup run after installation for
-grants, environment-aware work, or idempotent convergence. Use core when the data is part of the
-definition; use `postInstall` when setup needs runtime logic.
-
-## What to put in a seed?
-
-Put fixed install-graph data in core. Use the standalone `postInstall` function for logic, grants,
-environment-dependent setup, and idempotent convergence that cannot be represented declaratively.
-Register the function in both the schema `functions` group and `defineDomain({ functions })`, then
-reference the same object as `postInstall`. Use step.run and reconcile for repeatable work.
-
-```ts
-export const functions = {
-  seed: defineRemoteFunction({
-    inputSchema: z.object({}),
-    outputSchema: z.object({ seeded: z.boolean() }),
-    execute: ({ kernel, step }) =>
-      step.run('ensure-domain-roots', async () => {
-        await ensureDomainRoots(kernel)
-        return { seeded: true }
-      }),
-  }),
-}
-
-export const domain = defineDomain({
-  schema,
-  methods,
-  functions,
-  postInstall: functions.seed,
-})
-```
+materialized by the Kernel. Kernel-v2 has no `postInstall` hook. Use an explicit Migration for data
+transformation, a Workflow for durable Domain behavior, or an operator script for environment setup.
 
 ## Core
 
 **Core** is declarative genesis data serialized into the install bundle. Use it for invariant nodes and
-edges known entirely from the schema package. Core data lives under the installed domain's core member,
-not a global `/core` folder. Use post-install when creation needs runtime logic, permissions, external
-information, or convergence against existing state.
-
-## Seed
-
-A domain **seed** is conventionally a standalone function registered as `postInstall`. It runs as the
-system identity after installation and should converge safely when repeated. It complements declarative
-core with runtime setup such as grants. Its procedural contract belongs in what to put in a seed.
+edges known entirely from the Schema package. Core data lives under the installed Domain's Core member,
+not a global `/core` folder. Runtime or environment-dependent setup belongs to an explicit,
+independently invoked owner.
 
 ## Ship fixed reference data as Core
 
-Declare fixed, domain-owned reference data as Core so every installation receives the same nodes at
-stable paths. Use a seed only when setup requires execution, such as grants or runtime-dependent data.
-User-owned resources do not belong in Core.
+Declare fixed, Domain-owned reference data as Core so every installation receives the same nodes at
+stable paths. Runtime-dependent data does not belong in Core; create it through an explicit Migration,
+Workflow, or operator path. User-owned resources do not belong in Core.
 
 ```ts
 export const Catalog = defineCore(schema, {

@@ -2,41 +2,34 @@
 
 # Migration
 
-Read when changing an installed domain's schema, moving data, renaming properties/origins, deciding seed vs core, or making reinstall behavior converge.
+Read when changing an installed Domain's Schema, moving data, renaming properties or origins, deciding
+Migration versus Core, or making reinstall behavior converge.
 
 ## How to evolve a domain's schema?
 
-Treat a schema change and a data migration as separate operations. Reinstall reconciles the installed
-schema graph; it does not automatically transform existing domain data. Use an idempotent post-install
-function or an explicit migration to backfill data, and keep old readers/writers compatible until the
-migration is proven. Additive changes are usually safest; renames and removals need a deliberate
-core-versus-runtime plan.
+Treat a Schema change and a data Migration as separate operations. Reinstall reconciles the installed
+Schema graph; it does not automatically transform existing Domain data. Use an explicit, restart-safe
+Migration to backfill data, and keep old readers and writers compatible until the Migration is proven.
+Additive changes are usually safest; renames and removals need a deliberate Core-versus-runtime plan.
 
-## Core vs Post-install Function (seed)
+## Core vs runtime setup
 
 Core is declarative install-graph data: fixed nodes and edges shipped in the signed bundle and
-materialized by the kernel. A post-install function is executable setup run after installation for
-grants, environment-aware work, or idempotent convergence. Use core when the data is part of the
-definition; use `postInstall` when setup needs runtime logic.
+materialized by the Kernel. Kernel-v2 has no `postInstall` hook. Use an explicit Migration for data
+transformation, a Workflow for durable Domain behavior, or an operator script for environment setup.
 
 ## Core
 
 **Core** is declarative genesis data serialized into the install bundle. Use it for invariant nodes and
-edges known entirely from the schema package. Core data lives under the installed domain's core member,
-not a global `/core` folder. Use post-install when creation needs runtime logic, permissions, external
-information, or convergence against existing state.
-
-## Seed
-
-A domain **seed** is conventionally a standalone function registered as `postInstall`. It runs as the
-system identity after installation and should converge safely when repeated. It complements declarative
-core with runtime setup such as grants. Its procedural contract belongs in what to put in a seed.
+edges known entirely from the Schema package. Core data lives under the installed Domain's Core member,
+not a global `/core` folder. Runtime or environment-dependent setup belongs to an explicit,
+independently invoked owner.
 
 ## Ship fixed reference data as Core
 
-Declare fixed, domain-owned reference data as Core so every installation receives the same nodes at
-stable paths. Use a seed only when setup requires execution, such as grants or runtime-dependent data.
-User-owned resources do not belong in Core.
+Declare fixed, Domain-owned reference data as Core so every installation receives the same nodes at
+stable paths. Runtime-dependent data does not belong in Core; create it through an explicit Migration,
+Workflow, or operator path. User-owned resources do not belong in Core.
 
 ```ts
 export const Catalog = defineCore(schema, {
@@ -180,7 +173,8 @@ the name or run an explicit data migration from the old qualified key to the new
 
 The origin qualifies schema keys, semantic paths, dependencies, and callable identities. Changing it
 creates a new semantic namespace rather than editing a display name. Treat an origin change as an
-explicit migration of stored properties, grants, cross-domain requirements, and external callers.
+explicit migration of stored properties, Policy references, cross-Domain requirements, and external
+callers.
 
 ## GraphResult data is not wired yet
 
@@ -198,8 +192,7 @@ actual diff before deciding whether reinstall or migration is safe.
 
 ## Install Bundle
 
-An **install bundle** is the serialized, id-independent graph and metadata the kernel consumes to
-install a domain. It includes schema members, bindings, views, core data, and physical placement. The
-install response also carries signed `requires` and `postInstall` fields. Presentation manifest data is
-served separately from `/meta` and is not part of this bundle. Runtime ids are minted during
-installation, which is why bundles can be published and installed on more than one instance.
+An **install bundle** is the serialized, id-independent graph and metadata the Kernel consumes to
+install a Domain. It includes Schema members, callable bindings, and declarative Core data. Runtime ids
+are minted during installation, which is why bundles can be published and installed on more than one
+instance. Do not add legacy `requires`, `postInstall`, or `manifest` fields to `defineDomain`.

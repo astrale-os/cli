@@ -2,7 +2,7 @@ import type { AuthApi } from '@astrale-os/kernel-client/auth'
 import type { GraphApi } from '@astrale-os/kernel-client/graph'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
 
-import { issuer } from '@astrale-os/kernel-core/auth'
+import { issuer } from '@astrale-os/sdk/auth'
 import { describe, expect, test } from 'bun:test'
 
 import type { AstraleConfig } from '../../lib/config'

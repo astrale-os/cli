@@ -1,8 +1,8 @@
-import type { Node } from '@astrale-os/kernel-core/graph/node'
+import type { Node } from '@astrale-os/sdk/graph/node'
 
-import { ClassPath } from '@astrale-os/kernel-core/graph/class'
-import { NodeId } from '@astrale-os/kernel-core/graph/node'
-import { normalizeProperties } from '@astrale-os/kernel-core/graph/properties'
+import { ClassPath } from '@astrale-os/sdk/graph/class'
+import { NodeId } from '@astrale-os/sdk/graph/node'
+import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { describe, expect, test } from 'bun:test'
 
 import { displayName, listProjection } from '../ls'

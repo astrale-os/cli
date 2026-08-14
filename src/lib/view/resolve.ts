@@ -1,7 +1,7 @@
 import type { ResolvedView as SessionResolvedView } from '@astrale-os/kernel-client/session'
 import type { ResolvedView } from '@astrale-os/shell'
 
-import { Path } from '@astrale-os/kernel-core/path'
+import { Path } from '@astrale-os/sdk/graph/path'
 
 import type { ConnectionContext } from '../../connection'
 

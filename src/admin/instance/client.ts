@@ -1,11 +1,11 @@
 import type { DomainBinding } from '@astrale-os/kernel-client/domain'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
-import type { Node } from '@astrale-os/kernel-core/graph/node'
+import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { bindDomain } from '@astrale-os/kernel-client/domain'
-import { ClassPath } from '@astrale-os/kernel-core/graph/class'
-import { Query } from '@astrale-os/kernel-core/graph/query'
-import { Path } from '@astrale-os/kernel-core/path'
+import { ClassPath } from '@astrale-os/sdk/graph/class'
+import { Path } from '@astrale-os/sdk/graph/path'
+import { Query } from '@astrale-os/sdk/query'
 
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import {

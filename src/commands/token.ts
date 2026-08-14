@@ -1,4 +1,4 @@
-import { issuer } from '@astrale-os/kernel-core/auth'
+import { issuer } from '@astrale-os/sdk/auth'
 
 import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
