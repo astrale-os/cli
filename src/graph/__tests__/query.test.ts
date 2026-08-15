@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import { prepareQuery } from '../query'
 
 describe('prepareQuery', () => {
-  /** @evidence TEST-CLI-GRAPH-AUTHORS-QUERY-V5 */
-  test('authors the supported Path and exact-edge subset as canonical Query V5', () => {
+  /** @evidence TEST-CLI-GRAPH-AUTHORS-QUERY-V6 */
+  test('authors the supported Path and exact-edge subset as canonical Query V6', () => {
     const prepared = prepareQuery({
       sources: ['/:notes.example.dev:class.Note'],
       edge: '/:notes.example.dev:class.references',
@@ -16,8 +16,9 @@ describe('prepareQuery', () => {
     expect(JSON.parse(JSON.stringify(prepared))).toEqual({
       ast: {
         format: 'astrale.graph.query',
-        version: 'v5',
+        version: 'v6',
         source: {
+          kind: 'node',
           terms: [{ kind: 'path', path: '/:notes.example.dev:class.Note' }],
           binding: 'n0',
         },
@@ -25,14 +26,14 @@ describe('prepareQuery', () => {
           {
             op: 'expand',
             from: 'n0',
-            edges: ['/:notes.example.dev:class.references'],
+            via: [{ origin: 'notes.example.dev', kind: 'class', name: 'references' }],
             direction: 'incoming',
             bindings: { edge: 'e0', node: 'n1' },
           },
         ],
-        select: { kind: 'graph', binding: 'n1', limit: 25 },
+        select: { kind: 'graph', binding: 'n1' },
       },
-      cursor: 'next-page',
+      page: { size: 25, after: 'next-page' },
     })
   })
 
@@ -46,8 +47,9 @@ describe('prepareQuery', () => {
 
     expect(JSON.parse(JSON.stringify(prepared.ast))).toEqual({
       format: 'astrale.graph.query',
-      version: 'v5',
+      version: 'v6',
       source: {
+        kind: 'node',
         terms: [
           {
             kind: 'definition',
@@ -57,16 +59,18 @@ describe('prepareQuery', () => {
         binding: 'n0',
       },
       steps: [],
-      select: { kind: 'graph', binding: 'n0', limit: 201 },
+      select: { kind: 'graph', binding: 'n0' },
     })
+    expect(prepared.page).toEqual({ size: 201 })
   })
 
-  /** @evidence TEST-CLI-GRAPH-ADMITS-QUERY-V5-ORDERING */
-  test('admits one exact Property-ordered Query V5 document', () => {
+  /** @evidence TEST-CLI-GRAPH-ADMITS-QUERY-V6-ORDERING */
+  test('admits one exact Property-ordered Query V6 document', () => {
     const ast = {
       format: 'astrale.graph.query',
-      version: 'v5',
+      version: 'v6',
       source: {
+        kind: 'node',
         terms: [
           {
             kind: 'definition',
@@ -79,7 +83,6 @@ describe('prepareQuery', () => {
       select: {
         kind: 'graph',
         binding: 'n0',
-        limit: 3,
         order: {
           property: 'notes.example.dev:class.Note.property.sequence',
           direction: 'desc',
@@ -88,47 +91,51 @@ describe('prepareQuery', () => {
       },
     }
 
-    expect(JSON.parse(JSON.stringify(prepareQuery({ sources: [], ast }).ast))).toEqual(ast)
+    const prepared = prepareQuery({ sources: [], ast, limit: '3' })
+    expect(JSON.parse(JSON.stringify(prepared.ast))).toEqual(ast)
+    expect(prepared.page).toEqual({ size: 3 })
   })
 
-  /** @evidence TEST-CLI-GRAPH-ADMITS-QUERY-V5-PROJECTIONS */
-  test('admits exact Node and Edge projection profiles in Query V5 documents', () => {
+  /** @evidence TEST-CLI-GRAPH-ADMITS-QUERY-V6-PROJECTIONS */
+  test('admits exact Node and Edge projection profiles in Query V6 documents', () => {
     const source = {
       terms: [{ kind: 'path', path: '/:notes.example.dev:class.Note' }],
       binding: 'n0',
+      kind: 'node',
     } as const
     const node = {
       format: 'astrale.graph.query',
-      version: 'v5',
+      version: 'v6',
       source,
       steps: [],
-      select: { kind: 'node', binding: 'n0', shape: 'reference', limit: 5 },
+      select: { kind: 'nodes', binding: 'n0', projection: { kind: 'reference' } },
     }
     const edge = {
       format: 'astrale.graph.query',
-      version: 'v5',
+      version: 'v6',
       source,
       steps: [
         {
           op: 'expand',
           from: 'n0',
-          edges: ['/:notes.example.dev:class.references'],
+          via: [{ origin: 'notes.example.dev', kind: 'class', name: 'references' }],
           direction: 'outgoing',
           bindings: { edge: 'e0', node: 'n1' },
         },
       ],
       select: {
-        kind: 'edge',
+        kind: 'edges',
         binding: 'e0',
-        edge: 'value',
-        source: 'reference',
-        target: 'value',
-        limit: 5,
+        projection: { edge: 'value', source: 'reference', target: 'value' },
       },
     }
 
-    expect(JSON.parse(JSON.stringify(prepareQuery({ sources: [], ast: node }).ast))).toEqual(node)
-    expect(JSON.parse(JSON.stringify(prepareQuery({ sources: [], ast: edge }).ast))).toEqual(edge)
+    expect(
+      JSON.parse(JSON.stringify(prepareQuery({ sources: [], ast: node, limit: '5' }).ast)),
+    ).toEqual(node)
+    expect(
+      JSON.parse(JSON.stringify(prepareQuery({ sources: [], ast: edge, limit: '5' }).ast)),
+    ).toEqual(edge)
   })
 
   /** @evidence TEST-CLI-GRAPH-REJECTS-LEGACY-QUERY */

@@ -37,10 +37,10 @@ beforeEach(() => {
   abMock.mockClear()
 })
 
-const placement = (value: unknown) => value as ResolvedView['placement']
+const route = (value: unknown) => value as ResolvedView['route']
 
 const resolved = [
-  placement({
+  route({
     key: 'ai-gateway.astrale.ai:view.chat',
     href: 'https://ai-gateway.astrale.ai/ui/chat',
     handshake: 'shell' as const,
@@ -55,7 +55,7 @@ const resolved = [
       auth: 'required' as const,
     },
   }),
-  placement({
+  route({
     key: 'ai-gateway.astrale.ai:view.model',
     href: 'https://ai-gateway.astrale.ai/ui/model',
     handshake: 'none' as const,
@@ -76,7 +76,7 @@ describe('view session resolution', () => {
 
     expect(viewsForMock).toHaveBeenCalledTimes(1)
     expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('@model-id')
-    expect(result.view).toEqual({ target: Path.parse('@model-id').raw, placement: resolved[0] })
+    expect(result.view).toEqual({ target: Path.parse('@model-id').raw, route: resolved[0] })
     expect(result.view).not.toHaveProperty('url')
     expect(result.view).not.toHaveProperty('functionId')
     expect(result.view).not.toHaveProperty('handshake')
@@ -92,7 +92,7 @@ describe('view session resolution', () => {
     expect(result.candidates).toEqual([
       expect.objectContaining({
         target: '@model-id',
-        placement: resolved[0],
+        route: resolved[0],
         id: 'ai-gateway.astrale.ai:view.chat',
         path: '/:ai-gateway.astrale.ai:view.chat',
         url: 'https://ai-gateway.astrale.ai/ui/chat',
@@ -102,7 +102,7 @@ describe('view session resolution', () => {
       }),
       expect.objectContaining({
         target: '@model-id',
-        placement: resolved[1],
+        route: resolved[1],
         id: 'ai-gateway.astrale.ai:view.model',
         handshake: 'none',
         origin: 'self',
@@ -119,7 +119,7 @@ describe('view session resolution', () => {
     expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('/:ai-gateway.astrale.ai')
     expect(result.view).toEqual({
       target: Path.parse('/:ai-gateway.astrale.ai').raw,
-      placement: resolved[1],
+      route: resolved[1],
     })
   })
 

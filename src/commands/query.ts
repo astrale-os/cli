@@ -56,22 +56,18 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
   try {
     prepared = prepareQuery(input)
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid Query V5 document')
+    log.error(error instanceof Error ? error.message : 'Invalid Query V6 document')
     process.exit(1)
   }
 
   await runKernelCommand({
     opts,
     label: 'Query',
-    fn: ({ graph }) =>
-      withSelfHint(
-        () => graph.query(prepared.ast, prepared.cursor ? { cursor: prepared.cursor } : {}),
-        meta,
-      ),
-    format: (result, format) => {
-      output(result, format)
-      if (result.cursor && !isMachine(format)) {
-        process.stderr.write(`  cursor: ${result.cursor}\n`)
+    fn: ({ graph }) => withSelfHint(() => graph.query(prepared.ast, { page: prepared.page }), meta),
+    format: (response, format) => {
+      output(response.result, format)
+      if (response.page.next && !isMachine(format)) {
+        process.stderr.write(`  cursor: ${response.page.next}\n`)
       }
     },
   })
@@ -104,12 +100,12 @@ function parseJson(raw: string, source: string): unknown {
 
 export default {
   name: 'query',
-  description: 'Run one canonical Query V5 graph read',
+  description: 'Run one canonical Query V6 graph read',
   afterHelpText: `
 Behavior:
-  Positional Paths and --definition author a finite Query V5 read. --edge adds
+  Positional Paths and --definition author a finite Query V6 read. --edge adds
   one exact Edge-Class expansion; --direction defaults to outgoing. --ast and
-  --file accept a complete canonical astrale.graph.query/v5 document, including
+  --file accept a complete canonical astrale.graph.query/v6 document, including
   Property ordering and Node or Edge reference/value projections. --cursor resumes
   one caller-bound query scope.
 
@@ -124,8 +120,8 @@ Examples:
 `,
   arguments: [{ name: 'sources...', description: 'Canonical source Paths', required: false }],
   options: [
-    { flags: '--ast <json>', description: 'Canonical Query V5 JSON document' },
-    { flags: '-f, --file <path>', description: 'Read a canonical Query V5 document from a file' },
+    { flags: '--ast <json>', description: 'Canonical Query V6 JSON document' },
+    { flags: '-f, --file <path>', description: 'Read a canonical Query V6 document from a file' },
     {
       flags: '--definition <path>',
       description: 'Select Nodes implementing one exact Class or Interface',

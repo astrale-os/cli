@@ -34,7 +34,7 @@ export default {
   description: 'Atomically provision a local key identity and its V2 graph Node',
   afterHelpText: `
 Behavior:
-  Creates one Node through Mutation V2 and designates it as a self-proven
+  Creates one Node through Mutation V3 and designates it as a self-proven
   Identity in the same atomic Auth.provision request. --class is required;
   --props must use fully-qualified Property keys owned by that Class.
 

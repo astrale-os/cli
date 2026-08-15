@@ -23,7 +23,7 @@ export async function mutateCommand(opts: MutateOpts): Promise<void> {
   try {
     mutation = prepareMutation(await readDocument(opts))
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid Mutation V2 document')
+    log.error(error instanceof Error ? error.message : 'Invalid Mutation V3 document')
     process.exit(1)
   }
 
@@ -96,25 +96,25 @@ function printResult(result: MutationResult): void {
 
 export default {
   name: 'mutate',
-  description: 'Apply one atomic Mutation V2 graph transition',
+  description: 'Apply one atomic Mutation V3 graph transition',
   afterHelpText: `
 Behavior:
-  Accepts a canonical astrale.graph.mutation/v2 document or its exact
+  Accepts a canonical astrale.graph.mutation/v3 document or its exact
   { preconditions, operations } authoring input. Source is --data, --file,
   or stdin. --dry admits and prints the canonical document without opening a
   Kernel connection. The result contains the real createdNodes binding map.
 
   Legacy PatchData nodes/edges arms and createdEdges IDs are not part of
-  Mutation V2 and are rejected rather than approximated.
+  Mutation V3 and are rejected rather than approximated.
 
 Examples:
   $ astrale mutate --file mutation.v2.json
   $ astrale mutate --data '{"preconditions":[],"operations":[]}' --dry
 `,
   options: [
-    { flags: '-d, --data <json>', description: 'Mutation V2 JSON document' },
-    { flags: '-f, --file <path>', description: 'Read a Mutation V2 document from a file' },
-    { flags: '--dry', description: 'Admit and print canonical Mutation V2 without dispatch' },
+    { flags: '-d, --data <json>', description: 'Mutation V3 JSON document' },
+    { flags: '-f, --file <path>', description: 'Read a Mutation V3 document from a file' },
+    { flags: '--dry', description: 'Admit and print canonical Mutation V3 without dispatch' },
   ],
   action: async (opts) => {
     await mutateCommand(opts as MutateOpts)

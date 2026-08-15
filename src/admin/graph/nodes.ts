@@ -1,16 +1,9 @@
-import type { GraphQueryOptions, NeighborsOptions, NodePage } from '@astrale-os/kernel-client/graph'
-import type { ClassPath } from '@astrale-os/sdk/graph/class'
+import type { GraphApi } from '@astrale-os/kernel-client/graph'
 import type { Node } from '@astrale-os/sdk/graph/node'
-import type { PathLike } from '@astrale-os/sdk/graph/path'
-import type { QueryAST, QueryResult } from '@astrale-os/sdk/query'
+import type { QueryAST } from '@astrale-os/sdk/query'
 
-export interface AdminGraphQueryApi {
-  query(ast: QueryAST, options?: GraphQueryOptions): Promise<QueryResult>
-}
-
-export interface AdminGraphApi extends AdminGraphQueryApi {
-  neighbors(source: PathLike, edge: ClassPath, options: NeighborsOptions): Promise<NodePage>
-}
+export type AdminGraphQueryApi = Pick<GraphApi, 'query'>
+export type AdminGraphApi = Pick<GraphApi, 'query' | 'neighbors'>
 
 export interface ReadAllNodesOptions {
   readonly label: string
@@ -29,13 +22,17 @@ export async function readAllNodes(
   const cursors = new Set<string>()
   let cursor: string | undefined
   let pages = 0
+  const pageSize = Math.min(options.maximum, 256)
   do {
     pages += 1
     if (pages > options.maximumPages) {
       throw new TypeError(`${options.label} exceeded its page bound.`)
     }
-    const result = await graph.query(ast, cursor === undefined ? undefined : { cursor })
-    if (result.kind !== 'node')
+    const response = await graph.query(ast, {
+      page: { size: pageSize, ...(cursor === undefined ? {} : { after: cursor }) },
+    })
+    const result = response.result
+    if (result.kind !== 'nodes')
       throw new TypeError(`${options.label} returned the wrong projection.`)
     for (const projection of result.nodes) {
       if (projection.kind !== 'value') {
@@ -49,7 +46,7 @@ export async function readAllNodes(
     if (nodes.length > options.maximum) {
       throw new TypeError(`${options.label} exceeded its Node bound.`)
     }
-    cursor = result.cursor
+    cursor = response.page.next
     if (cursor !== undefined && cursors.has(cursor)) {
       throw new TypeError(`${options.label} repeated a cursor.`)
     }

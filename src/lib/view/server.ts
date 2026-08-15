@@ -102,7 +102,7 @@ export function startViewServer(config: ViewServeConfig): Server {
       return
     }
     if (sub === '/token' && req.method === 'POST') {
-      if (session.view.placement.handshake !== 'shell') {
+      if (session.view.route.handshake !== 'shell') {
         json(res, 403, { error: 'plain views have no Astrale credential privilege' })
         return
       }

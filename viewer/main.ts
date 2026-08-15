@@ -1,6 +1,7 @@
 import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
 
 import {
+  admitHostCapabilities,
   createIframeShellAdapter,
   createShell,
   rejectIntent,
@@ -19,7 +20,7 @@ type Config = {
   view: ResolvedView
   /** Direct kernel URL (public https) or the nonce-scoped local proxy. */
   kernelUrl: string
-  kernelIssuer: ResolvedView['placement']['issuer']
+  kernelIssuer: ResolvedView['route']['issuer']
   identity: string | null
   instance: string | null
   sessionId: string
@@ -30,6 +31,13 @@ type Token = { token: string; expiresAt: number; kind: string }
 const HEARTBEAT_MS = 5 * 60_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
+const VIEW_HOST_CAPABILITIES = admitHostCapabilities({
+  version: 1,
+  navigation: { openView: {} },
+  actions: {},
+  browser: {},
+  access: {},
+})
 
 const base = location.pathname.replace(/\/+$/, '')
 
@@ -73,22 +81,22 @@ function showIntentError(error: unknown): void {
 
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
-  const placement = cfg.view.placement
-  el('view-label').textContent = `/:${placement.key}`
+  const route = cfg.view.route
+  el('view-label').textContent = `/:${route.key}`
   el('target-label').textContent = cfg.view.target
   el('identity-label').textContent = [cfg.identity, cfg.instance].filter(Boolean).join(' @ ')
-  document.title = `astrale view — ${placement.key}`
+  document.title = `astrale view — ${route.key}`
 
   report('mounting')
   let current: Token | null = null
-  if (placement.handshake === 'shell') {
+  if (route.handshake === 'shell') {
     current = await j<Token>('/token', { method: 'POST' })
   }
   const kernelUrl = new URL(cfg.kernelUrl, location.href).href
 
   const shell = createShell({
     mode: 'standalone',
-    host: {
+    session: {
       url: kernelUrl,
       sourceIssuer: cfg.kernelIssuer,
       auth: {
@@ -110,7 +118,7 @@ async function main(): Promise<void> {
 
   const mount = async (view: ResolvedView): Promise<MountedWindow> => {
     const credential =
-      view.placement.handshake === 'shell'
+      view.route.handshake === 'shell'
         ? {
             token: current!.token,
             expiresAt: current!.expiresAt,
@@ -120,10 +128,10 @@ async function main(): Promise<void> {
             },
           }
         : undefined
-    return shell.mount({
+    return shell.openView({
       host: container,
       view,
-      capabilities: { intents: ['open', 'receive', 'closeAck', 'closeRefuse'] },
+      capabilities: VIEW_HOST_CAPABILITIES,
       sandbox: null,
       handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
       ...(credential === undefined ? {} : { credential }),
@@ -137,7 +145,7 @@ async function main(): Promise<void> {
     },
     mount,
     opened: (selected) => {
-      el('view-label').textContent = `/:${selected.placement.key}`
+      el('view-label').textContent = `/:${selected.route.key}`
       el('target-label').textContent = selected.target
       el('error').style.display = 'none'
     },
@@ -153,7 +161,7 @@ async function main(): Promise<void> {
   // One placement means one mount attempt. Shell-handshake failures remain
   // failures; changing them to `none` would grant a different public contract.
   mounted = await mount(cfg.view)
-  if (placement.handshake === 'shell') {
+  if (route.handshake === 'shell') {
     setStatus('connected')
     report('connected')
   } else {

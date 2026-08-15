@@ -37,7 +37,7 @@ test('emits exactly one structured value for machine registration output', () =>
   expect(logs).toEqual([])
 })
 
-test('builds one exact Mutation V2 identity birth bound to a self proof', async () => {
+test('builds one exact Mutation V3 identity birth bound to a self proof', async () => {
   const { privateKey, publicKey } = await generateKeyPair('ES256', { extractable: true })
   const privateJwk = { ...(await exportJWK(privateKey)), alg: 'ES256', kid: 'alice-key' }
   const publicJwk = jwk.acceptPublic({
@@ -64,7 +64,7 @@ test('builds one exact Mutation V2 identity birth bound to a self proof', async 
   expect(prepared.request.idempotencyKey).toBe('identity-register:alice')
   expect(JSON.parse(JSON.stringify(prepared.request.mutation))).toEqual({
     format: 'astrale.graph.mutation',
-    version: 'v2',
+    version: 'v3',
     preconditions: [],
     operations: [
       {

@@ -77,7 +77,14 @@ beforeEach(() => {
   queryCalls = []
   getTargets = []
   mutations = []
-  queryResult = { kind: 'graph', graph: { nodes: [], edges: [] } }
+  queryResult = {
+    result: {
+      kind: 'graph',
+      graph: { nodes: [], edges: [] },
+      selection: { kind: 'node', ids: [] },
+    },
+    page: {},
+  }
   getResult = undefined
   mutationResult = { createdNodes: {} }
   queryMock.mockClear()
@@ -109,8 +116,8 @@ afterEach(() => {
 })
 
 describe('query command', () => {
-  /** @evidence TEST-CLI-QUERY-DISPATCHES-CANONICAL-V5 */
-  test('dispatches the supported source/edge subset as Query V5 with its cursor', async () => {
+  /** @evidence TEST-CLI-QUERY-DISPATCHES-CANONICAL-V6 */
+  test('dispatches the supported source/edge subset as Query V6 with its cursor', async () => {
     const { queryCommand } = await import('../query')
 
     await queryCommand(['/:notes.example.dev:class.Note'], {
@@ -125,8 +132,9 @@ describe('query command', () => {
       {
         ast: {
           format: 'astrale.graph.query',
-          version: 'v5',
+          version: 'v6',
           source: {
+            kind: 'node',
             terms: [{ kind: 'path', path: '/:notes.example.dev:class.Note' }],
             binding: 'n0',
           },
@@ -134,19 +142,19 @@ describe('query command', () => {
             {
               op: 'expand',
               from: 'n0',
-              edges: ['/:notes.example.dev:class.references'],
+              via: [{ origin: 'notes.example.dev', kind: 'class', name: 'references' }],
               direction: 'incoming',
               bindings: { edge: 'e0', node: 'n1' },
             },
           ],
-          select: { kind: 'graph', binding: 'n1', limit: 25 },
+          select: { kind: 'graph', binding: 'n1' },
         },
-        options: { cursor: 'next-page' },
+        options: { page: { size: 25, after: 'next-page' } },
       },
     ])
   })
 
-  test('authors a Definition source through the same canonical Query V5 call', async () => {
+  test('authors a Definition source through the same canonical Query V6 call', async () => {
     const { queryCommand } = await import('../query')
 
     await queryCommand([], {
@@ -159,8 +167,9 @@ describe('query command', () => {
       {
         ast: {
           format: 'astrale.graph.query',
-          version: 'v5',
+          version: 'v6',
           source: {
+            kind: 'node',
             terms: [
               {
                 kind: 'definition',
@@ -170,9 +179,9 @@ describe('query command', () => {
             binding: 'n0',
           },
           steps: [],
-          select: { kind: 'graph', binding: 'n0', limit: 20 },
+          select: { kind: 'graph', binding: 'n0' },
         },
-        options: {},
+        options: { page: { size: 20 } },
       },
     ])
   })
@@ -222,8 +231,8 @@ describe('ls command', () => {
 })
 
 describe('mutate command', () => {
-  /** @evidence TEST-CLI-MUTATE-DISPATCHES-CANONICAL-V2 */
-  test('admits authoring input and dispatches one canonical Mutation V2 document', async () => {
+  /** @evidence TEST-CLI-MUTATE-DISPATCHES-CANONICAL-V3 */
+  test('admits authoring input and dispatches one canonical Mutation V3 document', async () => {
     const { mutateCommand } = await import('../mutate')
     mutationResult = { createdNodes: { note: 'note-1' } }
 
@@ -245,7 +254,7 @@ describe('mutate command', () => {
     expect(JSON.parse(JSON.stringify(mutations))).toEqual([
       {
         format: 'astrale.graph.mutation',
-        version: 'v2',
+        version: 'v3',
         preconditions: [],
         operations: [
           {

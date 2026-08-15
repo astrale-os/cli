@@ -1,6 +1,6 @@
 import type { DomainBinding } from '@astrale-os/kernel-client/domain'
 import type { Node } from '@astrale-os/sdk/graph/node'
-import type { QueryAST, QueryResult } from '@astrale-os/sdk/query'
+import type { QueryAST } from '@astrale-os/sdk/query'
 
 import { ClassPath } from '@astrale-os/sdk/graph/class'
 import { NodeId } from '@astrale-os/sdk/graph/node'
@@ -37,11 +37,13 @@ function node(id: string, props: Record<string, unknown>): Node {
   }
 }
 
-function graphResult(nodes: readonly Node[], cursor?: string): QueryResult {
+function graphResult(nodes: readonly Node[], cursor?: string) {
   return {
-    kind: 'node',
-    nodes: nodes.map((value) => ({ kind: 'value' as const, value })),
-    ...(cursor === undefined ? {} : { cursor }),
+    result: {
+      kind: 'nodes' as const,
+      nodes: nodes.map((value) => ({ kind: 'value' as const, value })),
+    },
+    page: cursor === undefined ? {} : { next: cursor },
   }
 }
 
@@ -64,20 +66,18 @@ function fixture(input: {
     input.invoke?.(method as { owner: string; name: string }, receiver, value),
   )
   const binding = {
-    publication: { origin: 'admin.astrale.ai' },
-    domain: {
-      $: {
-        origin: 'admin.astrale.ai',
-        class(name: string) {
-          if (name === 'Instance') return Instance
-          if (name === 'Host') return Host
-          if (name === 'Fleet') return Fleet
-          throw new Error(`Unexpected class ${name}`)
-        },
-        core: { nodes: { fleet: { path: Path.id(NodeId('fleet')) } } },
+    $: {
+      publication: { origin: 'admin.astrale.ai' },
+      origin: 'admin.astrale.ai',
+      class(name: string) {
+        if (name === 'Instance') return Instance
+        if (name === 'Host') return Host
+        if (name === 'Fleet') return Fleet
+        throw new Error(`Unexpected class ${name}`)
       },
+      core: { nodes: { fleet: { path: Path.id(NodeId('fleet')) } } },
+      invoke,
     },
-    invoke,
   } as unknown as DomainBinding
   const query = mock(async (ast: QueryAST) => {
     const name = sourceName(ast)
@@ -85,9 +85,9 @@ function fixture(input: {
     if (name === 'Host') return graphResult(input.hosts ?? [])
     throw new Error(`Unexpected graph query ${String(name)}`)
   })
-  const neighbors = mock(async (source: unknown, edge: { raw?: string }) => {
+  const neighbors = mock(async (source: unknown, edge: { name?: string }) => {
     if (String(source) === '@fleet') return page(input.reserved ?? null)
-    if (String(edge).includes('instance_runs_on_host')) return page(input.hosts?.[0] ?? null)
+    if (edge.name === 'instance_runs_on_host') return page(input.hosts?.[0] ?? null)
     throw new Error(`Unexpected neighbor query ${String(source)} ${String(edge)}`)
   })
   const graph = { query, neighbors } as unknown as AdminGraphApi

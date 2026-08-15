@@ -187,7 +187,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '00ef09a169576e729fb50aa03c842f699db709519a3d962cf9108e4da961c195',
+      '2c4be8ed6881e5617048f36c7fb6ce49ded508dfed3945521186c81b1bac4167',
     )
   })
 

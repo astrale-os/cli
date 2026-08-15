@@ -58,7 +58,7 @@ export function selectResolvedView(
   viewId: string | undefined,
 ): ResolvedView {
   const selected = viewId
-    ? views.find((view) => view.placement.key === viewId || `/:${view.placement.key}` === viewId)
+    ? views.find((view) => view.route.key === viewId || `/:${view.route.key}` === viewId)
     : views[0]
   if (selected) return selected
   throw new Error(

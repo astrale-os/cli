@@ -1,5 +1,6 @@
 import type { IntentMessage, MountedWindow, ResolvedView, Shell } from '@astrale-os/shell'
 
+import { NO_HOST_CAPABILITIES } from '@astrale-os/shell'
 import { describe, expect, test } from 'bun:test'
 
 import {
@@ -10,12 +11,12 @@ import {
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const
 const target = (value: string) => value as ResolvedView['target']
-const issuer = (value: string) => value as ResolvedView['placement']['issuer']
-const revision = (character: string) => digest(character) as ResolvedView['placement']['revision']
+const issuer = (value: string) => value as ResolvedView['route']['issuer']
+const revision = (character: string) => digest(character) as ResolvedView['route']['revision']
 
 const profile: ResolvedView = {
   target: target('@person-1'),
-  placement: {
+  route: {
     key: 'shell.test:view.profile',
     declaration: {
       target: {
@@ -33,7 +34,7 @@ const profile: ResolvedView = {
 }
 const card: ResolvedView = {
   target: target('@person-1'),
-  placement: {
+  route: {
     key: 'shell.test:view.card',
     declaration: {
       target: {
@@ -70,12 +71,19 @@ function mounted(windowId: string, onClose?: () => void): MountedWindow {
       windowId,
       functionId: 'shell.test:view.profile',
       targetNodeId: '@person-1',
+      children: [],
+      view: profile,
+      location: { target: '@person-1', params: {} },
+      presentation: { kind: 'inline', constrained: false },
       isolation: 'shared',
-      state: 'active',
-      delegationToken: null,
-      capabilities: { intents: [] },
+      state: 'ready',
+      credential: { state: 'none' },
+      capabilities: NO_HOST_CAPABILITIES,
     },
     handle: { element: {} as HTMLElement },
+    credential: { state: 'none' },
+    presentation: { kind: 'inline', constrained: false },
+    focus() {},
     close: async () => {
       onClose?.()
       return { kind: 'closed' }
@@ -103,10 +111,10 @@ function harness(views: readonly ResolvedView[] = [profile, card]) {
       current = next
     },
     mount: async (view) => {
-      events.push(`mount:${view.placement.key}:${view.target}`)
+      events.push(`mount:${view.route.key}:${view.target}`)
       return mounted('new-window')
     },
-    opened: (view) => events.push(`opened:${view.placement.key}:${view.target}`),
+    opened: (view) => events.push(`opened:${view.route.key}:${view.target}`),
     failed: (error) => events.push(`failed:${error instanceof Error ? error.message : error}`),
     reply: (message, windowId) => {
       if (!message.envelope.correlationId) return
@@ -201,7 +209,7 @@ describe('open intent host', () => {
     let attempts = 0
     h.host.mount = async (view) => {
       attempts++
-      h.events.push(`mount:${view.placement.handshake}:failed`)
+      h.events.push(`mount:${view.route.handshake}:failed`)
       throw new Error('handshake failed')
     }
 
