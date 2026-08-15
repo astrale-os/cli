@@ -182,7 +182,7 @@ Examples:
   $ astrale instance status staging
   $ astrale token --audience shell.astrale.ai --ttl 3600
   $ astrale query /:notes.example.dev:class.Note --limit 50
-  $ astrale query --file query.v5.json --cursor "$CURSOR"
+  $ astrale query --file query.v6.json --cursor "$CURSOR"
 `,
   )
 

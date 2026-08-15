@@ -116,7 +116,7 @@ Examples:
   $ astrale query /:notes.example.dev:class.Note --limit 50
   $ astrale query --definition /:notes.example.dev:class.Note --limit 50
   $ astrale query @note --edge /:notes.example.dev:class.references --direction outgoing --limit 25
-  $ astrale query --file query.v5.json --cursor "$CURSOR"
+  $ astrale query --file query.v6.json --cursor "$CURSOR"
 `,
   arguments: [{ name: 'sources...', description: 'Canonical source Paths', required: false }],
   options: [

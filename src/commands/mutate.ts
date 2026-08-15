@@ -108,7 +108,7 @@ Behavior:
   Mutation V3 and are rejected rather than approximated.
 
 Examples:
-  $ astrale mutate --file mutation.v2.json
+  $ astrale mutate --file mutation.v3.json
   $ astrale mutate --data '{"preconditions":[],"operations":[]}' --dry
 `,
   options: [
