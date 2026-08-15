@@ -55,32 +55,29 @@ export async function resolveViewCandidates(
 ): Promise<ViewCandidate[]> {
   const target = Path.parse(nodePath).raw
   const catalog = await ctx.session.viewsFor(target)
-  return catalog.views.map((placement) => toCandidate(target, placement))
+  return catalog.views.map((route) => toCandidate(target, route))
 }
 
-function toCandidate(
-  target: ResolvedView['target'],
-  placement: SessionResolvedView,
-): ViewCandidate {
-  const key = String(placement.key)
+function toCandidate(target: ResolvedView['target'], route: SessionResolvedView): ViewCandidate {
+  const key = String(route.key)
   return Object.freeze({
     target,
-    placement,
+    route,
     id: key,
     path: `/:${key}`,
-    url: placement.href,
+    url: route.href,
     name: key.slice(key.lastIndexOf(':view.') + ':view.'.length),
-    handshake: placement.handshake,
-    origin: placement.declaration.target.kind === 'domain' ? 'self' : 'class',
-    issuer: placement.issuer,
-    etag: placement.etag,
-    revision: placement.revision,
+    handshake: route.handshake,
+    origin: route.declaration.target.kind === 'domain' ? 'self' : 'class',
+    issuer: route.issuer,
+    etag: route.etag,
+    revision: route.revision,
   })
 }
 
 /** Strip presentation aliases before crossing the Shell mount boundary. */
 export function selectedView(candidate: ViewCandidate): ResolvedView {
-  return Object.freeze({ target: candidate.target, placement: candidate.placement })
+  return Object.freeze({ target: candidate.target, route: candidate.route })
 }
 
 /** The slug tail of a candidate: `view.dashboard` → `dashboard`. */

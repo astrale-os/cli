@@ -49,20 +49,16 @@ export async function lsCommand(source: string, opts: LsOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: `Neighbors of ${path}`,
-    fn: ({ graph }) =>
-      withSelfHint(
-        () => graph.query(prepared.ast, prepared.cursor ? { cursor: prepared.cursor } : {}),
-        meta,
-      ),
-    format: (result, format) => {
-      const graph = completeGraph(result)
+    fn: ({ graph }) => withSelfHint(() => graph.query(prepared.ast, { page: prepared.page }), meta),
+    format: (response, format) => {
+      const graph = completeGraph(response.result)
       presentList(
         [...graph.nodes],
         { ...format, long: opts.long, quiet: opts.quiet, count: opts.count },
         listProjection,
       )
-      if (result.cursor && !isMachine(format) && !opts.quiet && !opts.count) {
-        process.stderr.write(`  cursor: ${result.cursor}\n`)
+      if (response.page.next && !isMachine(format) && !opts.quiet && !opts.count) {
+        process.stderr.write(`  cursor: ${response.page.next}\n`)
       }
     },
   })

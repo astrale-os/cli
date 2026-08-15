@@ -3,7 +3,6 @@ import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { bindDomain } from '@astrale-os/kernel-client/domain'
-import { ClassPath } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
@@ -20,7 +19,11 @@ const PAGE_SIZE = 256
 const MAXIMUM_DOMAINS = 10_000
 const MAXIMUM_PAGES = Math.ceil(MAXIMUM_DOMAINS / PAGE_SIZE) + 1
 const DomainRef = Object.freeze({ origin: ADMIN_ORIGIN, kind: 'class' as const, name: 'Domain' })
-const fleetInstallsByDefault = ClassPath.from(ADMIN_ORIGIN, 'fleet_installs_domain_by_default')
+const fleetInstallsByDefault = Object.freeze({
+  origin: ADMIN_ORIGIN,
+  kind: 'class' as const,
+  name: 'fleet_installs_domain_by_default',
+})
 
 export interface AdminCatalogContext {
   readonly session: ClientSession
@@ -44,12 +47,12 @@ export async function connectAdminCatalog(
   dependencies: AdminCatalogDependencies = {},
 ): Promise<AdminCatalogApi> {
   const binding = await (dependencies.bind ?? bindDomain)(context.session)
-  if (binding.publication.origin !== ADMIN_ORIGIN || binding.domain.$.origin !== ADMIN_ORIGIN) {
+  if (binding.$.publication.origin !== ADMIN_ORIGIN || binding.$.origin !== ADMIN_ORIGIN) {
     throw new TypeError('Configured Admin target does not serve the Admin Domain.')
   }
-  const Domain = binding.domain.$.class('Domain')
-  const Fleet = binding.domain.$.class('Fleet')
-  const fleet = binding.domain.$.core.nodes.fleet?.path
+  const Domain = binding.$.class('Domain')
+  const Fleet = binding.$.class('Fleet')
+  const fleet = binding.$.core.nodes.fleet?.path
   if (fleet === undefined) throw new TypeError('Admin Domain has no singleton Fleet receiver.')
   const operationId = dependencies.operationId ?? defaultOperationId
 
@@ -57,10 +60,9 @@ export async function connectAdminCatalog(
     const [nodes, defaultsPage] = await Promise.all([
       readAllNodes(
         context.graph,
-        Query.source({ definitions: [DomainRef] }).select({
-          kind: 'node',
-          shape: 'value',
-          limit: PAGE_SIZE,
+        Query.from({ kind: 'node', definitions: [DomainRef] }).select({
+          kind: 'nodes',
+          projection: { kind: 'value' },
         }),
         {
           label: 'Admin Domain catalog',
@@ -70,7 +72,7 @@ export async function connectAdminCatalog(
       ),
       context.graph.neighbors(fleet, fleetInstallsByDefault, {
         direction: 'outgoing',
-        limit: PAGE_SIZE,
+        page: { size: PAGE_SIZE },
       }),
     ])
     const defaults = await defaultsPage.collect({ maximumPages: MAXIMUM_PAGES })
@@ -106,7 +108,7 @@ export async function connectAdminCatalog(
       let entry = existing
       if (registryChanged) {
         entry = domainFromSummary(
-          await binding.invoke(Fleet.$.method('publishDomain') as never, fleet, {
+          await binding.$.invoke(Fleet.$.method('publishDomain') as never, fleet, {
             operationId: operationId('publish'),
             origin: input.origin,
             name: input.name,
@@ -123,10 +125,14 @@ export async function connectAdminCatalog(
         (entry.installByDefault ?? false) !== input.installByDefault
       if (defaultChanged) {
         entry = domainFromSummary(
-          await binding.invoke(Domain.$.method('configureDefault') as never, Path.parse(entry.id), {
-            operationId: operationId('configure-default'),
-            enabled: input.installByDefault,
-          } as never),
+          await binding.$.invoke(
+            Domain.$.method('configureDefault') as never,
+            Path.parse(entry.id),
+            {
+              operationId: operationId('configure-default'),
+              enabled: input.installByDefault,
+            } as never,
+          ),
           input.installByDefault === true,
         )
       }
@@ -139,7 +145,7 @@ export async function connectAdminCatalog(
   })
 }
 
-type DynamicDefinition = ReturnType<DomainBinding['domain']['$']['class']>
+type DynamicDefinition = ReturnType<DomainBinding['$']['class']>
 
 function domainFromNode(
   definition: DynamicDefinition,

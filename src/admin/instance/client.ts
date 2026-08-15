@@ -3,7 +3,6 @@ import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { bindDomain } from '@astrale-os/kernel-client/domain'
-import { ClassPath } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
@@ -28,8 +27,16 @@ const InstanceRef = Object.freeze({
   name: 'Instance',
 })
 const HostRef = Object.freeze({ origin: ADMIN_ORIGIN, kind: 'class' as const, name: 'Host' })
-const instanceRunsOnHost = ClassPath.from(ADMIN_ORIGIN, 'instance_runs_on_host')
-const fleetReservesAdminHost = ClassPath.from(ADMIN_ORIGIN, 'fleet_reserves_admin_host')
+const instanceRunsOnHost = Object.freeze({
+  origin: ADMIN_ORIGIN,
+  kind: 'class' as const,
+  name: 'instance_runs_on_host',
+})
+const fleetReservesAdminHost = Object.freeze({
+  origin: ADMIN_ORIGIN,
+  kind: 'class' as const,
+  name: 'fleet_reserves_admin_host',
+})
 
 export interface AdminInstanceContext {
   readonly session: ClientSession
@@ -58,14 +65,14 @@ export async function connectAdminInstances(
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
   const binding = await (dependencies.bind ?? bindDomain)(context.session)
-  if (binding.publication.origin !== ADMIN_ORIGIN || binding.domain.$.origin !== ADMIN_ORIGIN) {
+  if (binding.$.publication.origin !== ADMIN_ORIGIN || binding.$.origin !== ADMIN_ORIGIN) {
     throw new TypeError('Configured Admin target does not serve the Admin Domain.')
   }
 
-  const Instance = binding.domain.$.class('Instance')
-  const Host = binding.domain.$.class('Host')
-  const Fleet = binding.domain.$.class('Fleet')
-  const fleet = binding.domain.$.core.nodes.fleet?.path
+  const Instance = binding.$.class('Instance')
+  const Host = binding.$.class('Host')
+  const Fleet = binding.$.class('Fleet')
+  const fleet = binding.$.core.nodes.fleet?.path
   if (fleet === undefined) throw new TypeError('Admin Domain has no singleton Fleet receiver.')
 
   const operationId = dependencies.operationId ?? defaultOperationId
@@ -73,10 +80,9 @@ export async function connectAdminInstances(
   const list = async (): Promise<OwnedInstanceInfo[]> => {
     const nodes = await readAllNodes(
       context.graph,
-      Query.source({ definitions: [InstanceRef] }).select({
-        kind: 'node',
-        shape: 'value',
-        limit: PAGE_SIZE,
+      Query.from({ kind: 'node', definitions: [InstanceRef] }).select({
+        kind: 'nodes',
+        projection: { kind: 'value' },
       }),
       {
         label: 'Admin Instance inventory',
@@ -89,7 +95,7 @@ export async function connectAdminInstances(
         const base = instanceFromNode(Instance, node)
         const host = await context.graph.neighbors(Path.id(node.id), instanceRunsOnHost, {
           direction: 'outgoing',
-          limit: 2,
+          page: { size: 2 },
         })
         if (host.nodes.length > 1) {
           throw new TypeError(`Admin Instance ${base.id} has more than one Host relation.`)
@@ -117,7 +123,7 @@ export async function connectAdminInstances(
     identifier: string,
   ): Promise<InstanceInfo> => {
     const instance = await requireInstance(identifier)
-    const output = await binding.invoke(
+    const output = await binding.$.invoke(
       Instance.$.method(method) as never,
       Path.parse(instance.id),
       { operationId: operationId(method) } as never,
@@ -136,7 +142,7 @@ export async function connectAdminInstances(
           throw new AdminInstanceNotFoundError(hostId)
         }
         return instanceFromSummary(
-          await binding.invoke(
+          await binding.$.invoke(
             Host.$.method('createInstance') as never,
             Path.parse(selected.path),
             input as never,
@@ -154,14 +160,14 @@ export async function connectAdminInstances(
       if (eligible.length > 1) throw hostSelectionRequired(eligible.map((host) => host.id))
 
       return instanceFromSummary(
-        await binding.invoke(Fleet.$.method('createInstance') as never, fleet, input as never),
+        await binding.$.invoke(Fleet.$.method('createInstance') as never, fleet, input as never),
       )
     },
     status: (identifier: string) => invokeInstance('status', identifier),
     delete: (identifier: string) => invokeInstance('delete', identifier),
     async installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt> {
       const instance = await requireInstance(identifier)
-      const output = await binding.invoke(
+      const output = await binding.$.invoke(
         Instance.$.method('installDomain') as never,
         Path.parse(instance.id),
         {
@@ -184,16 +190,15 @@ interface HostInventoryItem {
 async function hostInventory(
   graph: AdminGraphApi,
   binding: DomainBinding,
-  Host: ReturnType<DomainBinding['domain']['$']['class']>,
+  Host: ReturnType<DomainBinding['$']['class']>,
   fleet: Path,
 ): Promise<{ readonly hosts: readonly HostInventoryItem[]; readonly reserved?: string }> {
   const [nodes, reservedPage] = await Promise.all([
     readAllNodes(
       graph,
-      Query.source({ definitions: [HostRef] }).select({
-        kind: 'node',
-        shape: 'value',
-        limit: PAGE_SIZE,
+      Query.from({ kind: 'node', definitions: [HostRef] }).select({
+        kind: 'nodes',
+        projection: { kind: 'value' },
       }),
       {
         label: 'Admin Host inventory',
@@ -201,7 +206,10 @@ async function hostInventory(
         maximumPages: MAXIMUM_PAGES,
       },
     ),
-    graph.neighbors(fleet, fleetReservesAdminHost, { direction: 'outgoing', limit: 1 }),
+    graph.neighbors(fleet, fleetReservesAdminHost, {
+      direction: 'outgoing',
+      page: { size: 1 },
+    }),
   ])
   const reserved = reservedPage.first === null ? undefined : Path.id(reservedPage.first.id).raw
   return Object.freeze({
@@ -230,7 +238,7 @@ function hostSelectionRequired(ids: readonly string[]): Error {
   )
 }
 
-type DynamicDefinition = ReturnType<DomainBinding['domain']['$']['class']>
+type DynamicDefinition = ReturnType<DomainBinding['$']['class']>
 
 function instanceFromNode(definition: DynamicDefinition, node: Node): OwnedInstanceInfo {
   return Object.freeze({

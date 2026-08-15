@@ -4,7 +4,6 @@ import type {
   QueryDirection,
 } from '@astrale-os/sdk/query'
 
-import { ClassPath } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query, QueryAST } from '@astrale-os/sdk/query'
 
@@ -20,31 +19,31 @@ export interface QueryCommandInput {
 
 export interface PreparedQuery {
   readonly ast: QueryASTValue
-  readonly cursor?: string
+  readonly page: Readonly<{ readonly size: number; readonly after?: string }>
 }
 
 const DEFAULT_LIMIT = 100
 
-/** Admit canonical Query V5 or author the intentionally small Path/Definition/one-edge subset. */
+/** Admit canonical Query V6 or author the intentionally small Path/Definition/one-edge subset. */
 export function prepareQuery(input: QueryCommandInput): PreparedQuery {
+  const limit = positiveInteger(input.limit, '--limit', DEFAULT_LIMIT)
   if (input.ast !== undefined) {
     if (
       input.sources.length > 0 ||
       input.definition !== undefined ||
       input.edge !== undefined ||
-      input.direction !== undefined ||
-      input.limit !== undefined
+      input.direction !== undefined
     ) {
       throw new TypeError(
-        '--ast/--file cannot be combined with sources, --definition, --edge, --direction, or --limit',
+        '--ast/--file cannot be combined with sources, --definition, --edge, or --direction',
       )
     }
-    return withCursor(QueryAST.decode(input.ast), input.cursor)
+    return withPage(QueryAST.decode(input.ast), limit, input.cursor)
   }
 
   if (input.sources.length === 0 && input.definition === undefined) {
     throw new TypeError(
-      'query requires a Path source, --definition, or a canonical Query V5 document',
+      'query requires a Path source, --definition, or a canonical Query V6 document',
     )
   }
   if (input.direction !== undefined && input.edge === undefined) {
@@ -53,21 +52,24 @@ export function prepareQuery(input: QueryCommandInput): PreparedQuery {
 
   const paths = input.sources.map((source) => Path.parse(source))
   const definition = input.definition === undefined ? undefined : definitionRef(input.definition)
-  const limit = positiveInteger(input.limit, '--limit', DEFAULT_LIMIT)
-  let query =
+  const query =
     paths.length > 0
-      ? Query.source({
+      ? Query.from({
+          kind: 'node',
           paths: paths as [Path, ...Path[]],
           ...(definition === undefined ? {} : { definitions: [definition] }),
         })
-      : Query.source({ definitions: [definition!] })
-  if (input.edge !== undefined) {
-    query = query.expand({
-      edges: [ClassPath.parse(input.edge)],
-      direction: input.direction ?? 'outgoing',
-    })
-  }
-  return withCursor(query.select({ limit }), input.cursor)
+      : Query.from({ kind: 'node', definitions: [definition!] })
+  const ast =
+    input.edge === undefined
+      ? query.select({ kind: 'graph' })
+      : query
+          .expand({
+            via: [definitionRef(input.edge)],
+            direction: input.direction ?? 'outgoing',
+          })
+          .select({ kind: 'graph' })
+  return withPage(ast, limit, input.cursor)
 }
 
 function definitionRef(input: string): QueryDefinitionRef {
@@ -98,6 +100,9 @@ function positiveInteger(raw: string | undefined, name: string, fallback: number
   return value
 }
 
-function withCursor(ast: QueryASTValue, cursor: string | undefined): PreparedQuery {
-  return Object.freeze({ ast, ...(cursor === undefined ? {} : { cursor }) })
+function withPage(ast: QueryASTValue, size: number, cursor: string | undefined): PreparedQuery {
+  return Object.freeze({
+    ast,
+    page: Object.freeze({ size, ...(cursor === undefined ? {} : { after: cursor }) }),
+  })
 }

@@ -385,7 +385,7 @@ async function reportOpened(
     )
     return
   }
-  const label = `/:${record.view.placement.key}`
+  const label = `/:${record.view.route.key}`
   log.success(`View session ${chalk.bold(record.id)} — ${chalk.bold(label)}`)
   log.dim(`  target    ${record.view.target}`)
   log.dim(
@@ -442,7 +442,7 @@ async function closeCommand(opts: ViewOpts): Promise<void> {
     return fatal(
       new Error(
         `${sessions.length} sessions open — pass --close <id> or --close --all:\n${sessions
-          .map((s) => `  ${s.id}  /:${s.view.placement.key}`)
+          .map((s) => `  ${s.id}  /:${s.view.route.key}`)
           .join('\n')}`,
       ),
     )
@@ -465,7 +465,7 @@ async function sessionsCommand(opts: ViewOpts): Promise<void> {
   }
   for (const s of sessions) {
     console.log(
-      `${chalk.bold(s.id)}  /:${s.view.placement.key}  target ${s.view.target}  ${chalk.dim(s.pageUrl)}`,
+      `${chalk.bold(s.id)}  /:${s.view.route.key}  target ${s.view.target}  ${chalk.dim(s.pageUrl)}`,
     )
   }
 }

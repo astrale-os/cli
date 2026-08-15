@@ -3,8 +3,8 @@ import { describe, expect, test } from 'bun:test'
 import { prepareMutation } from '../mutation'
 
 describe('prepareMutation', () => {
-  /** @evidence TEST-CLI-GRAPH-ADMITS-MUTATION-V2 */
-  test('creates one canonical Mutation V2 document from exact authoring input', () => {
+  /** @evidence TEST-CLI-GRAPH-ADMITS-MUTATION-V3 */
+  test('creates one canonical Mutation V3 document from exact authoring input', () => {
     expect(
       JSON.parse(
         JSON.stringify(
@@ -23,7 +23,7 @@ describe('prepareMutation', () => {
       ),
     ).toEqual({
       format: 'astrale.graph.mutation',
-      version: 'v2',
+      version: 'v3',
       preconditions: [],
       operations: [
         {

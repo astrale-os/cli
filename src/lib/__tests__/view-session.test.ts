@@ -29,9 +29,9 @@ function mode(value: Awaited<ReturnType<typeof stat>>): number {
 }
 
 const target = (value: string) => value as ViewServeConfig['session']['view']['target']
-const issuer = (value: string) => value as ViewServeConfig['session']['view']['placement']['issuer']
+const issuer = (value: string) => value as ViewServeConfig['session']['view']['route']['issuer']
 const revision = (character: string) =>
-  `sha256:${character.repeat(64)}` as ViewServeConfig['session']['view']['placement']['revision']
+  `sha256:${character.repeat(64)}` as ViewServeConfig['session']['view']['route']['revision']
 
 describe('view session private state', () => {
   /** @evidence TEST-CLI-VIEW-CREDENTIAL-CONFIG-IS-OWNER-ONLY */
@@ -51,7 +51,7 @@ describe('view session private state', () => {
         pageUrl: 'http://127.0.0.1:4419/s/nonce/',
         view: {
           target: target('/:example.test'),
-          placement: {
+          route: {
             key: 'example.test:view.main',
             href: 'https://example.test/ui',
             handshake: 'shell',

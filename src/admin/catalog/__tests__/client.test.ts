@@ -50,23 +50,24 @@ function fixture(input: {
     input.invoke?.(method as { owner: string; name: string }, receiver, value),
   )
   const binding = {
-    publication: { origin: 'admin.astrale.ai' },
-    domain: {
-      $: {
-        origin: 'admin.astrale.ai',
-        class(name: string) {
-          if (name === 'Domain') return Domain
-          if (name === 'Fleet') return Fleet
-          throw new Error(`Unexpected class ${name}`)
-        },
-        core: { nodes: { fleet: { path: Path.id(NodeId('fleet')) } } },
+    $: {
+      publication: { origin: 'admin.astrale.ai' },
+      origin: 'admin.astrale.ai',
+      class(name: string) {
+        if (name === 'Domain') return Domain
+        if (name === 'Fleet') return Fleet
+        throw new Error(`Unexpected class ${name}`)
       },
+      core: { nodes: { fleet: { path: Path.id(NodeId('fleet')) } } },
+      invoke,
     },
-    invoke,
   } as unknown as DomainBinding
   const query = mock(async (_ast: QueryAST) => ({
-    kind: 'node' as const,
-    nodes: (input.domains ?? []).map((value) => ({ kind: 'value' as const, value })),
+    result: {
+      kind: 'nodes' as const,
+      nodes: (input.domains ?? []).map((value) => ({ kind: 'value' as const, value })),
+    },
+    page: {},
   }))
   const defaultNodes = input.defaults ?? []
   const neighbors = mock(async () => ({
