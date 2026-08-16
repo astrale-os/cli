@@ -11,7 +11,7 @@ const config: AstraleConfig = {
   admin: {
     name: 'control',
     url: 'https://admin.example/api',
-    issuer: 'https://admin.example/issuer',
+    kernelIssuer: 'https://admin.example/issuer',
     domainIssuer: 'https://admin-domain.example',
   },
   telemetry: { enabled: false },
@@ -38,12 +38,12 @@ describe('connection target', () => {
       }),
     ).toEqual({
       url: 'https://direct.example/invoke',
-      issuer: issuer.accept('https://direct.example/invoke'),
+      kernelIssuer: issuer.accept('https://direct.example/invoke'),
     })
 
     expect(await resolveConnectionTarget({}, config, { instances })).toEqual({
       url: 'https://staging.example/api',
-      issuer: issuer.accept('https://identity.staging.example'),
+      kernelIssuer: issuer.accept('https://identity.staging.example'),
       slug: 'staging',
       defaultIdentity: 'alice',
       caFile: '/etc/astrale/staging-ca.pem',
@@ -57,7 +57,7 @@ describe('connection target', () => {
       ),
     ).toMatchObject({
       url: 'https://override.example/invoke',
-      issuer: 'https://identity.staging.example',
+      kernelIssuer: 'https://identity.staging.example',
       slug: 'staging',
     })
 
@@ -72,20 +72,20 @@ describe('connection target', () => {
       }),
     ).toEqual({
       url: 'https://managed.example',
-      issuer: issuer.accept('https://managed.example'),
+      kernelIssuer: issuer.accept('https://managed.example'),
       slug: 'remote',
     })
 
     expect(await resolveConnectionTarget({ instance: 'control' }, config, { instances })).toEqual({
       url: 'https://admin.example/api',
-      issuer: issuer.accept('https://admin.example/issuer'),
+      kernelIssuer: issuer.accept('https://admin.example/issuer'),
       domainIssuer: issuer.accept('https://admin-domain.example'),
       slug: 'control',
     })
 
     expect(await resolveAdminConnectionTarget({}, config, instances)).toEqual({
       url: 'https://admin.example/api',
-      issuer: issuer.accept('https://admin.example/issuer'),
+      kernelIssuer: issuer.accept('https://admin.example/issuer'),
       domainIssuer: issuer.accept('https://admin-domain.example'),
       slug: 'control',
     })

@@ -103,7 +103,7 @@ Example:
             properties,
             privateKey,
             publicKey,
-            kernelIssuer: target.issuer,
+            kernelIssuer: target.kernelIssuer,
           })
           const registered = await submitIdentityProvision({
             request: prepared.request,

@@ -4,8 +4,8 @@ import type { InstanceStore } from '../instance'
 
 import {
   DEFAULT_ADMIN_TARGET_NAME,
-  DEFAULT_ADMIN_TARGET_URL,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
+  DEFAULT_ADMIN_TARGET_URL,
   resolveAdminTargetFromStore,
 } from '../admin-target'
 import { DEFAULT_CONFIG, type AstraleConfig } from '../config'
@@ -37,7 +37,7 @@ describe('resolveAdminTargetFromStore', () => {
       name: DEFAULT_ADMIN_TARGET_NAME,
       registrationSlug: DEFAULT_ADMIN_TARGET_NAME,
       url: DEFAULT_ADMIN_TARGET_URL,
-      issuer: DEFAULT_ADMIN_TARGET_URL,
+      kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
       domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
       source: 'default',
       configured: false,
@@ -54,11 +54,41 @@ describe('resolveAdminTargetFromStore', () => {
       name: 'admin',
       registrationSlug: 'admin',
       url: 'https://bookmarked-admin.example.com',
-      issuer: 'https://bookmarked-issuer.example.com',
+      kernelIssuer: 'https://bookmarked-issuer.example.com',
       domainIssuer: 'https://bookmarked-domain.example.com',
       defaultIdentity: 'admin-workos',
       source: 'config-instance',
       configured: true,
+    })
+  })
+
+  test('keeps an exact beta Domain issuer separate from the Admin Kernel target', () => {
+    const config: AstraleConfig = {
+      ...DEFAULT_CONFIG,
+      admin: {
+        url: 'https://admin.eu.beta.astrale.ai/api',
+        kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
+        domainIssuer: 'https://admin.beta.astrale.ai',
+      },
+    }
+
+    expect(resolveAdminTargetFromStore({}, config, instances)).toMatchObject({
+      url: 'https://admin.eu.beta.astrale.ai/api',
+      kernelIssuer: 'https://admin.eu.beta.astrale.ai/api',
+      domainIssuer: 'https://admin.beta.astrale.ai',
+      source: 'config-url',
+      configured: true,
+    })
+
+    expect(
+      resolveAdminTargetFromStore(
+        { adminUrl: 'https://override.eu.beta.astrale.ai/api' },
+        config,
+        instances,
+      ),
+    ).toMatchObject({
+      url: 'https://override.eu.beta.astrale.ai/api',
+      domainIssuer: 'https://admin.beta.astrale.ai',
     })
   })
 
@@ -68,7 +98,7 @@ describe('resolveAdminTargetFromStore', () => {
     ).toMatchObject({
       name: 'alias',
       url: 'https://alias-admin.example.com',
-      issuer: 'https://alias-admin.example.com',
+      kernelIssuer: 'https://alias-admin.example.com',
       domainIssuer: 'https://alias-domain.example.com',
       source: 'admin',
     })
@@ -85,7 +115,7 @@ describe('resolveAdminTargetFromStore', () => {
     ).toMatchObject({
       name: 'admin',
       url: 'https://override-admin.example.com',
-      issuer: 'https://override-admin.example.com',
+      kernelIssuer: 'https://override-admin.example.com',
       domainIssuer: 'https://override-domain.example.com',
       source: 'admin-url',
     })
@@ -127,13 +157,16 @@ describe('resolveAdminTargetFromStore', () => {
     ).toThrow('Choose one admin target override')
   })
 
-  test('requires explicit Domain evidence and never infers it from the Kernel issuer', () => {
-    expect(() =>
+  test('retains configured Domain evidence instead of inferring it from the Kernel issuer', () => {
+    expect(
       resolveAdminTargetFromStore(
         { adminUrl: 'https://override-admin.example.com' },
         DEFAULT_CONFIG,
         instances,
       ),
-    ).toThrow(/no Domain issuer/i)
+    ).toMatchObject({
+      kernelIssuer: 'https://override-admin.example.com',
+      domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
+    })
   })
 })

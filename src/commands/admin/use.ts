@@ -1,6 +1,10 @@
 import type { CommandDefinition } from '../../program/index'
 
-import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_NAME } from '../../lib/admin-target'
+import {
+  AdminTargetConfigSchema,
+  DEFAULT_ADMIN_DOMAIN_ISSUER,
+  DEFAULT_ADMIN_TARGET_NAME,
+} from '../../lib/admin-target'
 import { readConfig, writeConfig } from '../../lib/config'
 import { resolveInstance } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
@@ -8,7 +12,7 @@ import { fatal, log } from '../../lib/log'
 type AdminUseOpts = {
   url?: string
   name?: string
-  issuer?: string
+  kernelIssuer?: string
   domainIssuer?: string
 }
 
@@ -34,8 +38,14 @@ Examples:
       flags: '--name <name>',
       description: 'Friendly name / registration slug for direct URL admin target',
     },
-    { flags: '--issuer <url>', description: 'Admin kernel issuer/audience if different from URL' },
-    { flags: '--domain-issuer <url>', description: 'Admin Domain issuer for token exchange' },
+    {
+      flags: '--kernel-issuer <url>',
+      description: 'Admin Kernel issuer/audience if different from URL',
+    },
+    {
+      flags: '--domain-issuer <url>',
+      description: 'Exact native Admin Domain issuer used for token exchange',
+    },
   ],
   action: async (bookmark: string | undefined, opts: AdminUseOpts) => {
     try {
@@ -54,7 +64,7 @@ Examples:
           admin: AdminTargetConfigSchema.parse({
             name,
             url: opts.url,
-            issuer: opts.issuer ?? opts.url,
+            kernelIssuer: opts.kernelIssuer ?? opts.url,
             domainIssuer: opts.domainIssuer,
           }),
         })
@@ -78,6 +88,8 @@ Examples:
         ...config,
         admin: AdminTargetConfigSchema.parse({
           instance: resolved.name,
+          domainIssuer:
+            opts.domainIssuer ?? config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
         }),
       })
       log.success(`Admin target: ${resolved.name} (${resolved.url})`)

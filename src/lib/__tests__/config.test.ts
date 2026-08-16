@@ -18,7 +18,7 @@ describe('AstraleConfigSchema', () => {
     expect(result.admin).toEqual({
       name: 'admin',
       url: DEFAULT_ADMIN_TARGET_URL,
-      issuer: DEFAULT_ADMIN_TARGET_URL,
+      kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
       domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
     })
   })

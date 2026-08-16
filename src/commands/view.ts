@@ -224,7 +224,7 @@ async function startSession(view: ResolvedView, opts: ViewOpts): Promise<ViewSes
 async function startSessionLocked(
   view: ResolvedView,
   opts: ViewOpts,
-  kernelTarget: { url: string; issuer: string; caFile?: string },
+  kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
   activeInstance: string | undefined,
   defaultIdentity: string | undefined,
   runtime: { file: string; args: string[] },
@@ -260,7 +260,7 @@ async function startSessionLocked(
     },
     proxy: {
       kernelUrl: kernelTarget.url,
-      issuer: kernelTarget.issuer,
+      issuer: kernelTarget.kernelIssuer,
       caFile: kernelTarget.caFile,
       direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
     },

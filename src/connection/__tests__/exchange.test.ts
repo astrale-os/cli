@@ -11,7 +11,7 @@ import { createExchangeCredentialResolver } from '../exchange'
 
 const KERNEL = issuer.accept('https://kernel.example')
 const DOMAIN = issuer.accept('https://admin.example')
-const TARGET = { url: `${KERNEL}/api`, issuer: KERNEL, domainIssuer: DOMAIN }
+const TARGET = { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainIssuer: DOMAIN }
 const EXPIRES_AT = Math.floor(Date.now() / 1_000) + 500
 let directory: string
 

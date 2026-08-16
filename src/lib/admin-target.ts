@@ -14,7 +14,7 @@ export const DEFAULT_ADMIN_DOMAIN_ISSUER = 'https://admin.beta.astrale.ai'
 export const DEFAULT_ADMIN_TARGET_CONFIG = {
   name: DEFAULT_ADMIN_TARGET_NAME,
   url: DEFAULT_ADMIN_TARGET_URL,
-  issuer: DEFAULT_ADMIN_TARGET_URL,
+  kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
   domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
 } satisfies AdminTargetConfig
 
@@ -29,8 +29,8 @@ export const AdminTargetConfigSchema = z
     /** Direct admin kernel URL. */
     url: HttpUrlSchema.optional(),
     /** Kernel issuer / JWT audience when different from url. */
-    issuer: HttpUrlSchema.optional(),
-    /** Installed Admin Domain issuer used for standard token exchange. */
+    kernelIssuer: HttpUrlSchema.optional(),
+    /** Exact native Admin Domain issuer used by the standard token exchange. */
     domainIssuer: HttpUrlSchema.optional(),
     /** Bookmark name for the admin kernel. */
     instance: z.string().min(1).optional(),
@@ -49,11 +49,11 @@ export const AdminTargetConfigSchema = z
         message: 'admin target requires url or instance',
       })
     }
-    if (value.issuer && !value.url) {
+    if (value.kernelIssuer && !value.url) {
       ctx.addIssue({
         code: 'custom',
-        path: ['issuer'],
-        message: 'admin issuer is only valid with a direct url target',
+        path: ['kernelIssuer'],
+        message: 'admin kernel issuer is only valid with a direct url target',
       })
     }
     if (value.domainIssuer && !value.url) {
@@ -80,7 +80,7 @@ export type AdminTargetSource = 'admin-url' | 'admin' | 'config-instance' | 'con
 export type ResolvedAdminTarget = {
   name: string
   url: string
-  issuer: string
+  kernelIssuer: string
   domainIssuer: string
   defaultIdentity?: string
   caFile?: string
@@ -131,26 +131,38 @@ export function resolveAdminTargetFromStore(
           name: DEFAULT_ADMIN_TARGET_NAME,
           source: override.source,
           configured: false,
-          domainIssuer: opts.domainIssuer,
+          domainIssuer: opts.domainIssuer ?? config.admin.domainIssuer,
         })
-      : bookmarkTarget(store, override.instance, override.source, false)
+      : bookmarkTarget(
+          store,
+          override.instance,
+          override.source,
+          false,
+          config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+        )
   }
 
   const admin = config.admin
   if (admin.instance) {
-    return bookmarkTarget(store, admin.instance, 'config-instance', true)
+    return bookmarkTarget(
+      store,
+      admin.instance,
+      'config-instance',
+      true,
+      admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+    )
   }
 
   const isDefaultDirectTarget =
     admin.url === DEFAULT_ADMIN_TARGET_URL &&
-    admin.issuer === DEFAULT_ADMIN_TARGET_URL &&
-    admin.domainIssuer === DEFAULT_ADMIN_DOMAIN_ISSUER &&
+    admin.kernelIssuer === DEFAULT_ADMIN_TARGET_URL &&
+    (admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER) === DEFAULT_ADMIN_DOMAIN_ISSUER &&
     admin.name === DEFAULT_ADMIN_TARGET_NAME
 
   return directTarget({
     url: admin.url ?? DEFAULT_ADMIN_TARGET_URL,
-    issuer: admin.issuer,
-    domainIssuer: admin.domainIssuer,
+    kernelIssuer: admin.kernelIssuer,
+    domainIssuer: admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
     name: admin.name ?? DEFAULT_ADMIN_TARGET_NAME,
     source: isDefaultDirectTarget ? 'default' : 'config-url',
     configured: !isDefaultDirectTarget,
@@ -203,6 +215,7 @@ function bookmarkTarget(
   identifier: string,
   source: AdminTargetSource,
   configured: boolean,
+  domainIssuer: string,
 ): ResolvedAdminTarget {
   const key = resolveInstanceKey(store, identifier)
   const entry = key ? store.instances[key] : undefined
@@ -217,8 +230,11 @@ function bookmarkTarget(
     name: key,
     registrationSlug: key,
     url: entry.url,
-    issuer: entry.issuer ?? entry.url,
-    domainIssuer: requireDomainIssuer(entry.domainIssuer, `Admin bookmark "${key}"`),
+    kernelIssuer: entry.issuer ?? entry.url,
+    domainIssuer: requireDomainIssuer(
+      entry.domainIssuer ?? (configured ? domainIssuer : undefined),
+      `Admin bookmark "${key}"`,
+    ),
     defaultIdentity: entry.defaultIdentity,
     ...(entry.caFile ? { caFile: entry.caFile } : {}),
     source,
@@ -228,7 +244,7 @@ function bookmarkTarget(
 
 function directTarget(input: {
   url: string
-  issuer?: string
+  kernelIssuer?: string
   domainIssuer?: string
   name: string
   source: AdminTargetSource
@@ -238,7 +254,7 @@ function directTarget(input: {
     name: input.name,
     registrationSlug: input.name,
     url: input.url,
-    issuer: input.issuer ?? input.url,
+    kernelIssuer: input.kernelIssuer ?? input.url,
     domainIssuer: requireDomainIssuer(input.domainIssuer, 'Direct Admin target'),
     source: input.source,
     configured: input.configured,

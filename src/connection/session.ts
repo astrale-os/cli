@@ -148,7 +148,7 @@ export function createClientSessionOptions(
 ): ClientSessionOptions {
   return {
     url: target.url,
-    sourceIssuer: target.issuer,
+    sourceIssuer: target.kernelIssuer,
     fetch,
     ...(auth === undefined ? {} : { auth }),
     policy: {

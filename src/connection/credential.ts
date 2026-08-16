@@ -70,7 +70,7 @@ export function createCliCredential(
           fetch,
           timeoutMs,
         )
-  return createConnectionCredential(target.issuer, effective)
+  return createConnectionCredential(target.kernelIssuer, effective)
 }
 
 /** Reject contradictory explicit credential selections before identity or network access. */

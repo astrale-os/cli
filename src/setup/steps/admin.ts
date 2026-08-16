@@ -1,6 +1,10 @@
 import type { SetupContext, SetupStep } from '../types'
 
-import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_NAME } from '../../lib/admin-target'
+import {
+  AdminTargetConfigSchema,
+  DEFAULT_ADMIN_DOMAIN_ISSUER,
+  DEFAULT_ADMIN_TARGET_NAME,
+} from '../../lib/admin-target'
 import { readConfig, writeConfig } from '../../lib/config'
 import { readLocalStatus } from '../../lib/local-status'
 import { log } from '../../lib/log'
@@ -13,13 +17,24 @@ async function setAdminUrl(url: string): Promise<void> {
   const config = await readConfig()
   await writeConfig({
     ...config,
-    admin: AdminTargetConfigSchema.parse({ name: DEFAULT_ADMIN_TARGET_NAME, url, issuer: url }),
+    admin: AdminTargetConfigSchema.parse({
+      name: DEFAULT_ADMIN_TARGET_NAME,
+      url,
+      kernelIssuer: url,
+      domainIssuer: config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+    }),
   })
 }
 
 async function setAdminBookmark(bookmark: string): Promise<void> {
   const config = await readConfig()
-  await writeConfig({ ...config, admin: AdminTargetConfigSchema.parse({ instance: bookmark }) })
+  await writeConfig({
+    ...config,
+    admin: AdminTargetConfigSchema.parse({
+      instance: bookmark,
+      domainIssuer: config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+    }),
+  })
 }
 
 /**

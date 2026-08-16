@@ -187,7 +187,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '471fbdb4c52ab08db768dcf23a8e7a22b290671fd9587b5c40832187f3f68c8d',
+      'e030c6f672dea850a90bef16cf4222ea6af45e60f50cfc829c85bd90d9543632',
     )
   })
 
@@ -242,6 +242,13 @@ describe('help contract — admin target surface is registered', () => {
     expect(program.helpInformation()).toContain('admin')
     expect(instanceCreate?.helpInformation()).toContain('--admin <name>')
     expect(instanceCreate?.helpInformation()).toContain('--admin-url <url>')
+
+    const adminUse = program.commands
+      .find((command) => command.name() === 'admin')
+      ?.commands.find((command) => command.name() === 'use')
+    expect(adminUse?.helpInformation()).toContain('--kernel-issuer <url>')
+    expect(adminUse?.helpInformation()).toContain('--domain-issuer <url>')
+    expect(adminUse?.helpInformation()).not.toContain('--issuer <url>')
   })
 
   test('instance create is the alphaCreate flow, not legacy Instance.init DX', async () => {

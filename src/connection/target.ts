@@ -27,7 +27,7 @@ export interface AdminConnectionOptions extends ConnectionOptions {
 
 export interface ConnectionTarget {
   readonly url: string
-  readonly issuer: IssuerId
+  readonly kernelIssuer: IssuerId
   readonly domainIssuer?: IssuerId
   readonly slug?: string
   readonly defaultIdentity?: string
@@ -98,7 +98,7 @@ function connectionTarget(
 ): ConnectionTarget {
   return Object.freeze({
     url: urlOverride ?? resolved.url,
-    issuer: issuer.accept(resolved.issuer),
+    kernelIssuer: issuer.accept(resolved.kernelIssuer),
     ...(resolved.domainIssuer === undefined
       ? {}
       : { domainIssuer: issuer.accept(resolved.domainIssuer) }),
