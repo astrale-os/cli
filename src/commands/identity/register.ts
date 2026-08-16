@@ -42,7 +42,7 @@ Behavior:
   Auth.provision. Use --via for an application-owned identity Class: the CLI
   sends the exact self-proven request through that Domain callable, then admits
   its result and stores the same target-bound registration. The callable owns
-  authorization; the CLI never receives application authority.
+  authorization; the CLI never receives installed Domain authority.
 
   Kernel V2 Nodes have opaque identity and no caller-assigned storage path, so
   the historical --path option no longer exists. The CLI binds the key proof

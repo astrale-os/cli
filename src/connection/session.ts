@@ -127,7 +127,7 @@ function openConnection(
   config: AstraleConfig,
 ): OwnedConnection {
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
-  const auth = createCliCredential(target, options, config)
+  const auth = createCliCredential(target, options, config, fetch, timeoutMs)
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
   const authApi = createAuth((path, input, request) => session.call(call(path, input), request))

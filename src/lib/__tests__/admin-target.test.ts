@@ -5,6 +5,7 @@ import type { InstanceStore } from '../instance'
 import {
   DEFAULT_ADMIN_TARGET_NAME,
   DEFAULT_ADMIN_TARGET_URL,
+  DEFAULT_ADMIN_DOMAIN_ISSUER,
   resolveAdminTargetFromStore,
 } from '../admin-target'
 import { DEFAULT_CONFIG, type AstraleConfig } from '../config'
@@ -19,9 +20,14 @@ const instances: InstanceStore = {
     admin: {
       url: 'https://bookmarked-admin.example.com',
       issuer: 'https://bookmarked-issuer.example.com',
+      domainIssuer: 'https://bookmarked-domain.example.com',
       defaultIdentity: 'admin-workos',
     },
-    alias: { url: 'https://alias-admin.example.com', name: 'named-admin' },
+    alias: {
+      url: 'https://alias-admin.example.com',
+      domainIssuer: 'https://alias-domain.example.com',
+      name: 'named-admin',
+    },
   },
 }
 
@@ -32,6 +38,7 @@ describe('resolveAdminTargetFromStore', () => {
       registrationSlug: DEFAULT_ADMIN_TARGET_NAME,
       url: DEFAULT_ADMIN_TARGET_URL,
       issuer: DEFAULT_ADMIN_TARGET_URL,
+      domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
       source: 'default',
       configured: false,
     })
@@ -48,6 +55,7 @@ describe('resolveAdminTargetFromStore', () => {
       registrationSlug: 'admin',
       url: 'https://bookmarked-admin.example.com',
       issuer: 'https://bookmarked-issuer.example.com',
+      domainIssuer: 'https://bookmarked-domain.example.com',
       defaultIdentity: 'admin-workos',
       source: 'config-instance',
       configured: true,
@@ -61,12 +69,16 @@ describe('resolveAdminTargetFromStore', () => {
       name: 'alias',
       url: 'https://alias-admin.example.com',
       issuer: 'https://alias-admin.example.com',
+      domainIssuer: 'https://alias-domain.example.com',
       source: 'admin',
     })
 
     expect(
       resolveAdminTargetFromStore(
-        { adminUrl: 'https://override-admin.example.com' },
+        {
+          adminUrl: 'https://override-admin.example.com',
+          domainIssuer: 'https://override-domain.example.com',
+        },
         DEFAULT_CONFIG,
         instances,
       ),
@@ -74,6 +86,7 @@ describe('resolveAdminTargetFromStore', () => {
       name: 'admin',
       url: 'https://override-admin.example.com',
       issuer: 'https://override-admin.example.com',
+      domainIssuer: 'https://override-domain.example.com',
       source: 'admin-url',
     })
   })
@@ -89,13 +102,17 @@ describe('resolveAdminTargetFromStore', () => {
 
     expect(
       resolveAdminTargetFromStore(
-        { url: 'https://override.example.com' },
+        {
+          url: 'https://override.example.com',
+          domainIssuer: 'https://override-domain.example.com',
+        },
         DEFAULT_CONFIG,
         instances,
       ),
     ).toMatchObject({
       name: 'admin',
       url: 'https://override.example.com',
+      domainIssuer: 'https://override-domain.example.com',
       source: 'admin-url',
     })
   })
@@ -108,5 +125,15 @@ describe('resolveAdminTargetFromStore', () => {
         instances,
       ),
     ).toThrow('Choose one admin target override')
+  })
+
+  test('requires explicit Domain evidence and never infers it from the Kernel issuer', () => {
+    expect(() =>
+      resolveAdminTargetFromStore(
+        { adminUrl: 'https://override-admin.example.com' },
+        DEFAULT_CONFIG,
+        instances,
+      ),
+    ).toThrow(/no Domain issuer/i)
   })
 })

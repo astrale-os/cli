@@ -12,6 +12,7 @@ const config: AstraleConfig = {
     name: 'control',
     url: 'https://admin.example/api',
     issuer: 'https://admin.example/issuer',
+    domainIssuer: 'https://admin-domain.example',
   },
   telemetry: { enabled: false },
 }
@@ -78,12 +79,14 @@ describe('connection target', () => {
     expect(await resolveConnectionTarget({ instance: 'control' }, config, { instances })).toEqual({
       url: 'https://admin.example/api',
       issuer: issuer.accept('https://admin.example/issuer'),
+      domainIssuer: issuer.accept('https://admin-domain.example'),
       slug: 'control',
     })
 
     expect(await resolveAdminConnectionTarget({}, config, instances)).toEqual({
       url: 'https://admin.example/api',
       issuer: issuer.accept('https://admin.example/issuer'),
+      domainIssuer: issuer.accept('https://admin-domain.example'),
       slug: 'control',
     })
   })

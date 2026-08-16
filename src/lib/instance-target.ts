@@ -28,6 +28,7 @@ export type ResolvedInstanceTarget = {
   source: 'bookmark' | 'managed' | 'admin' | 'url'
   url: string
   issuer: string
+  domainIssuer?: string
   defaultIdentity?: string
   caFile?: string
 }
@@ -120,6 +121,7 @@ async function resolveBookmarkedInstanceTarget(
       source: 'bookmark',
       url,
       issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : url,
+      domainIssuer: entry.domainIssuer,
       defaultIdentity: entry.defaultIdentity,
       caFile: entry.caFile,
     }
@@ -131,6 +133,7 @@ async function resolveBookmarkedInstanceTarget(
     source: 'bookmark',
     url: resolved.url,
     issuer: resolved.issuer ?? resolved.url,
+    domainIssuer: resolved.domainIssuer,
     defaultIdentity: resolved.defaultIdentity,
     caFile: resolved.caFile,
   }
@@ -164,6 +167,7 @@ export function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInst
     source: 'admin',
     url: target.url,
     issuer: target.issuer,
+    domainIssuer: target.domainIssuer,
     defaultIdentity: target.defaultIdentity,
     ...(target.caFile ? { caFile: target.caFile } : {}),
   }

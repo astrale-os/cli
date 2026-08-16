@@ -16,6 +16,7 @@ export interface Paths {
   readonly instances: string
   readonly idps: string
   readonly idpSessionsDir: string
+  readonly exchangeCredentials: string
   idpDir(name: string): string
   idpSession(identityName: string): string
 }
@@ -33,6 +34,37 @@ export const IDENTITIES_PATH: string
 export const INSTANCES_PATH: string
 export const IDPS_PATH: string
 export const IDP_SESSIONS_DIR: string
+export const EXCHANGE_CREDENTIALS_PATH: string
+
+export namespace exchange {
+  interface Artifact {
+    readonly version: 1
+    readonly entries: Record<string, Entry>
+  }
+
+  interface Key {
+    readonly kernelIssuer: string
+    readonly domainIssuer: string
+    readonly user: string
+  }
+
+  interface Entry {
+    readonly credential: string
+    readonly expiresAt: number
+  }
+}
+
+/** Persist exact Domain bearer tokens under a private, cross-process synchronized cache. */
+export class ExchangeCredentialCache {
+  constructor(path?: string)
+  getOrRefresh(
+    key: exchange.Key,
+    refresh: () => Promise<exchange.Entry>,
+    now?: () => number,
+  ): Promise<string>
+  deleteKernel(kernelIssuer: string): Promise<void>
+  clear(): Promise<void>
+}
 
 export type IdentitySource = 'key' | 'idp'
 export type IdentityMode = 'local' | 'remote'

@@ -8,6 +8,7 @@ import {
   type IdentityMode,
   type IdentityStore,
   type Registration,
+  ExchangeCredentialCache,
 } from '../state/index'
 
 export type { Identity, IdentityStore, Registration } from '../state/index'
@@ -61,6 +62,7 @@ export async function deleteIdentity(name: string): Promise<void> {
     const { [name]: _, ...identities } = store.identities
     return { next: { ...store, identities }, value: undefined }
   })
+  await new ExchangeCredentialCache().clear()
 }
 
 function hasAnotherKeyIdentity(store: IdentityStore, name: string, subject: string): boolean {

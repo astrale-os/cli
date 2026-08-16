@@ -11,6 +11,11 @@ The identity registry decodes the legacy unversioned shape and current V1 envelo
 exact bytes at `identities.json.v0.bak` before publishing V1. Invalid or newer files remain untouched
 and fail closed. Identity orchestration owns key and IdP-session effects above this module.
 
+The exchange registry owns a versioned `exchange.Artifact`. Each entry is keyed by the atomic
+`(Kernel issuer, Domain issuer, registered User)` identity and stores only one inspected Domain
+credential and expiry. It reuses the same atomic-write and bounded file-lock primitives, maintains
+owner-only directory and file modes, and remains distinct from Client's process-local route cache.
+
 Shape decoding, migrations, and backup policy remain with each semantic registry. Commands do not
 call these primitives directly, and Kernel Client owns no CLI filesystem state.
 

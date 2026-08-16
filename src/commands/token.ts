@@ -32,7 +32,7 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
       return ctx.auth.delegate(self.id, {
         audience,
         ttlSeconds: ttl,
-        delegation: { kind: 'identity', self: true },
+        attenuation: { kind: 'identity', self: true },
       })
     },
     format: (token, fmtOpts, isRaw) => {

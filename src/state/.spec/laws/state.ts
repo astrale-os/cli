@@ -47,3 +47,27 @@ export const CLI_STATE_IDENTITY_MIGRATION = defineLaw({
     { file: '__tests__/identities.test.ts', id: 'TEST-CLI-STATE-IDENTITY-CONCURRENT' },
   ],
 })
+
+export const CLI_STATE_EXCHANGE_CACHE = defineLaw({
+  id: 'CLI-STATE-EXCHANGE-CACHE',
+  statement:
+    'The durable exchange Artifact partitions Domain credentials by exact Kernel issuer, Domain issuer, and registered User, admits matching token claims and expiry, refreshes under process and file-lock singleflight, and publishes only owner-private atomic state.',
+  tests: [
+    {
+      file: '__tests__/exchange-credentials.test.ts',
+      id: 'TEST-CLI-EXCHANGE-CACHE-EXACT-KEY-AND-PRIVATE-MODE',
+    },
+    {
+      file: '__tests__/exchange-credentials.test.ts',
+      id: 'TEST-CLI-EXCHANGE-CACHE-SINGLEFLIGHT-CROSS-INSTANCE',
+    },
+    {
+      file: '__tests__/exchange-credentials.test.ts',
+      id: 'TEST-CLI-EXCHANGE-CACHE-REJECTS-STALE-OR-MISBOUND',
+    },
+    {
+      file: '__tests__/exchange-credentials.test.ts',
+      id: 'TEST-CLI-EXCHANGE-CACHE-LIFECYCLE-INVALIDATION',
+    },
+  ],
+})

@@ -1,5 +1,7 @@
 export { atomicWrite, withFileLock } from './files'
 export type { FileLockOptions } from './files'
+export { ExchangeCredentialCache } from './exchange-credentials'
+export type { exchange } from './exchange-credentials'
 export { IDENTITY_STORE_VERSION, readIdentityStore, updateIdentityStore } from './identities'
 export type {
   Identity,
@@ -17,6 +19,7 @@ export {
   IDENTITIES_PATH,
   IDPS_PATH,
   IDP_SESSIONS_DIR,
+  EXCHANGE_CREDENTIALS_PATH,
   INSTALL_PATH,
   INSTANCES_PATH,
   KEYS_DIR,
