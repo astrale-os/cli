@@ -12,12 +12,16 @@ import { createClientSessionOptions, withResolvedClientSession } from '../sessio
 
 const target = Object.freeze({
   url: 'https://gateway.example/instances/child/invoke',
-  issuer: issuer.accept('https://child.example'),
+  kernelIssuer: issuer.accept('https://child.example'),
 })
 
 const config: AstraleConfig = {
   issuer: 'https://cli.example',
-  admin: { name: 'admin', url: 'https://admin.example', issuer: 'https://admin.example' },
+  admin: {
+    name: 'admin',
+    url: 'https://admin.example',
+    kernelIssuer: 'https://admin.example',
+  },
   telemetry: { enabled: false },
 }
 
@@ -35,14 +39,14 @@ describe('connection session', () => {
     const options = createClientSessionOptions(target, globalThis.fetch, auth, 2_500)
 
     expect(options.url).toBe('https://gateway.example/instances/child/invoke')
-    expect(options.sourceIssuer).toBe(target.issuer)
+    expect(options.sourceIssuer).toBe(target.kernelIssuer)
   })
 
   /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
   test('constructs an anonymous Client Session without an auth resolver', () => {
     const options = createClientSessionOptions(target, globalThis.fetch, undefined, 2_500)
 
-    expect(options.sourceIssuer).toBe(target.issuer)
+    expect(options.sourceIssuer).toBe(target.kernelIssuer)
     expect(options.auth).toBeUndefined()
     expect(Object.hasOwn(options, 'auth')).toBe(false)
   })

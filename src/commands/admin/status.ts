@@ -46,7 +46,7 @@ export default {
 
       console.log(chalk.bold('Admin'))
       console.log(`  ${chalk.bold(target.name)} ${chalk.dim(target.url)}`)
-      console.log(`  issuer: ${chalk.dim(target.issuer)}`)
+      console.log(`  kernel issuer: ${chalk.dim(target.kernelIssuer)}`)
       console.log(`  source: ${target.source}`)
       if (status.identity) {
         const mark = status.identity.registered ? chalk.green('yes') : chalk.yellow('no')

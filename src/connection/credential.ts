@@ -44,7 +44,7 @@ export function createCliCredential(
     ...(options.creds === undefined ? {} : { creds: options.creds }),
     ...(target.defaultIdentity === undefined ? {} : { defaultIdentity: target.defaultIdentity }),
   })
-  return createConnectionCredential(target.issuer, {
+  return createConnectionCredential(target.kernelIssuer, {
     async resolve(audience, signal) {
       requireLive(signal)
       const credential = await resolveCredential(

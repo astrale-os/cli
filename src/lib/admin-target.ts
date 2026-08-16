@@ -9,11 +9,13 @@ import { isHttpUrl } from './validation'
 
 export const DEFAULT_ADMIN_TARGET_NAME = 'admin'
 export const DEFAULT_ADMIN_TARGET_URL = 'https://admin.eu.astrale.ai/api'
+export const DEFAULT_ADMIN_DOMAIN_ISSUER = 'https://admin.astrale.ai'
 
 export const DEFAULT_ADMIN_TARGET_CONFIG = {
   name: DEFAULT_ADMIN_TARGET_NAME,
   url: DEFAULT_ADMIN_TARGET_URL,
-  issuer: DEFAULT_ADMIN_TARGET_URL,
+  kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
+  domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
 } satisfies AdminTargetConfig
 
 const HttpUrlSchema = z.string().refine(isHttpUrl, {
@@ -27,7 +29,9 @@ export const AdminTargetConfigSchema = z
     /** Direct admin kernel URL. */
     url: HttpUrlSchema.optional(),
     /** Kernel issuer / JWT audience when different from url. */
-    issuer: HttpUrlSchema.optional(),
+    kernelIssuer: HttpUrlSchema.optional(),
+    /** Exact native Admin Domain issuer used by the standard token exchange. */
+    domainIssuer: HttpUrlSchema.optional(),
     /** Bookmark name for the admin kernel. */
     instance: z.string().min(1).optional(),
   })
@@ -45,11 +49,11 @@ export const AdminTargetConfigSchema = z
         message: 'admin target requires url or instance',
       })
     }
-    if (value.issuer && !value.url) {
+    if (value.kernelIssuer && !value.url) {
       ctx.addIssue({
         code: 'custom',
-        path: ['issuer'],
-        message: 'admin issuer is only valid with a direct url target',
+        path: ['kernelIssuer'],
+        message: 'admin kernel issuer is only valid with a direct url target',
       })
     }
   })
@@ -68,7 +72,8 @@ export type AdminTargetSource = 'admin-url' | 'admin' | 'config-instance' | 'con
 export type ResolvedAdminTarget = {
   name: string
   url: string
-  issuer: string
+  kernelIssuer: string
+  domainIssuer: string
   defaultIdentity?: string
   caFile?: string
   source: AdminTargetSource
@@ -105,26 +110,41 @@ export function resolveAdminTargetFromStore(
     return override.kind === 'url'
       ? directTarget({
           url: override.url,
+          domainIssuer: config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
           name: DEFAULT_ADMIN_TARGET_NAME,
           source: override.source,
           configured: false,
         })
-      : bookmarkTarget(store, override.instance, override.source, false)
+      : bookmarkTarget(
+          store,
+          override.instance,
+          override.source,
+          false,
+          config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+        )
   }
 
   const admin = config.admin
   if (admin.instance) {
-    return bookmarkTarget(store, admin.instance, 'config-instance', true)
+    return bookmarkTarget(
+      store,
+      admin.instance,
+      'config-instance',
+      true,
+      admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+    )
   }
 
   const isDefaultDirectTarget =
     admin.url === DEFAULT_ADMIN_TARGET_URL &&
-    admin.issuer === DEFAULT_ADMIN_TARGET_URL &&
+    admin.kernelIssuer === DEFAULT_ADMIN_TARGET_URL &&
+    (admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER) === DEFAULT_ADMIN_DOMAIN_ISSUER &&
     admin.name === DEFAULT_ADMIN_TARGET_NAME
 
   return directTarget({
     url: admin.url ?? DEFAULT_ADMIN_TARGET_URL,
-    issuer: admin.issuer,
+    kernelIssuer: admin.kernelIssuer,
+    domainIssuer: admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
     name: admin.name ?? DEFAULT_ADMIN_TARGET_NAME,
     source: isDefaultDirectTarget ? 'default' : 'config-url',
     configured: !isDefaultDirectTarget,
@@ -177,6 +197,7 @@ function bookmarkTarget(
   identifier: string,
   source: AdminTargetSource,
   configured: boolean,
+  domainIssuer: string,
 ): ResolvedAdminTarget {
   const key = resolveInstanceKey(store, identifier)
   const entry = key ? store.instances[key] : undefined
@@ -191,7 +212,8 @@ function bookmarkTarget(
     name: key,
     registrationSlug: key,
     url: entry.url,
-    issuer: entry.issuer ?? entry.url,
+    kernelIssuer: entry.issuer ?? entry.url,
+    domainIssuer,
     defaultIdentity: entry.defaultIdentity,
     ...(entry.caFile ? { caFile: entry.caFile } : {}),
     source,
@@ -201,7 +223,8 @@ function bookmarkTarget(
 
 function directTarget(input: {
   url: string
-  issuer?: string
+  kernelIssuer?: string
+  domainIssuer: string
   name: string
   source: AdminTargetSource
   configured: boolean
@@ -210,7 +233,8 @@ function directTarget(input: {
     name: input.name,
     registrationSlug: input.name,
     url: input.url,
-    issuer: input.issuer ?? input.url,
+    kernelIssuer: input.kernelIssuer ?? input.url,
+    domainIssuer: input.domainIssuer,
     source: input.source,
     configured: input.configured,
   }

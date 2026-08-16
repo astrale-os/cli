@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import { DEFAULT_ADMIN_TARGET_URL } from '../admin-target'
+import { DEFAULT_ADMIN_DOMAIN_ISSUER, DEFAULT_ADMIN_TARGET_URL } from '../admin-target'
 import { AstraleConfigSchema } from '../config'
 
 describe('AstraleConfigSchema', () => {
@@ -18,7 +18,8 @@ describe('AstraleConfigSchema', () => {
     expect(result.admin).toEqual({
       name: 'admin',
       url: DEFAULT_ADMIN_TARGET_URL,
-      issuer: DEFAULT_ADMIN_TARGET_URL,
+      kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
+      domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
     })
   })
 

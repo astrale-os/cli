@@ -15,7 +15,7 @@ const TARGET_CALL = Object.freeze({
 }) satisfies Parameters<SessionAuth['resolve']>[0]
 const config: AstraleConfig = {
   issuer: 'https://cli.example',
-  admin: { name: 'admin', url: SOURCE, issuer: SOURCE },
+  admin: { name: 'admin', url: SOURCE, kernelIssuer: SOURCE },
   telemetry: { enabled: false },
 }
 
@@ -45,7 +45,7 @@ describe('connection credential', () => {
   /** @evidence TEST-CLI-CONNECTION-USES-RAW-SOURCE-CREDENTIAL */
   test('binds explicit CLI credentials to source-Kernel auth only', async () => {
     const auth = createCliCredential(
-      { url: `${SOURCE}/invoke`, issuer: SOURCE, slug: 'source' },
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, slug: 'source' },
       { creds: 'raw-source-token' },
       config,
     )
@@ -59,7 +59,7 @@ describe('connection credential', () => {
   /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
   test('omits the auth capability for an explicit anonymous session', () => {
     const auth = createCliCredential(
-      { url: `${SOURCE}/invoke`, issuer: SOURCE, defaultIdentity: 'ambient-default' },
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, defaultIdentity: 'ambient-default' },
       { anonymous: true },
       config,
     )

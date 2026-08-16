@@ -16,12 +16,12 @@ mock.module('../../connection', () => ({
     _opts: unknown,
     run: (ctx: {
       session: { viewsFor: typeof viewsForMock }
-      target: { url: string; issuer: string }
+      target: { url: string; kernelIssuer: string }
     }) => Promise<unknown>,
   ) =>
     run({
       session: { viewsFor: viewsForMock },
-      target: { url: 'https://kernel.test', issuer: 'https://kernel.test' },
+      target: { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' },
     }),
 }))
 
