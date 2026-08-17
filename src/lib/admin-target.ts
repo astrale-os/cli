@@ -9,11 +9,13 @@ import { isHttpUrl } from './validation'
 
 export const DEFAULT_ADMIN_TARGET_NAME = 'admin'
 export const DEFAULT_ADMIN_TARGET_URL = 'https://admin.eu.astrale.ai/api'
+export const DEFAULT_ADMIN_DOMAIN_ISSUER = 'https://admin.beta.astrale.ai'
 
 export const DEFAULT_ADMIN_TARGET_CONFIG = {
   name: DEFAULT_ADMIN_TARGET_NAME,
   url: DEFAULT_ADMIN_TARGET_URL,
-  issuer: DEFAULT_ADMIN_TARGET_URL,
+  kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
+  domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
 } satisfies AdminTargetConfig
 
 const HttpUrlSchema = z.string().refine(isHttpUrl, {
@@ -27,7 +29,9 @@ export const AdminTargetConfigSchema = z
     /** Direct admin kernel URL. */
     url: HttpUrlSchema.optional(),
     /** Kernel issuer / JWT audience when different from url. */
-    issuer: HttpUrlSchema.optional(),
+    kernelIssuer: HttpUrlSchema.optional(),
+    /** Exact native Admin Domain issuer used by the standard token exchange. */
+    domainIssuer: HttpUrlSchema.optional(),
     /** Bookmark name for the admin kernel. */
     instance: z.string().min(1).optional(),
   })
@@ -45,11 +49,18 @@ export const AdminTargetConfigSchema = z
         message: 'admin target requires url or instance',
       })
     }
-    if (value.issuer && !value.url) {
+    if (value.kernelIssuer && !value.url) {
       ctx.addIssue({
         code: 'custom',
-        path: ['issuer'],
-        message: 'admin issuer is only valid with a direct url target',
+        path: ['kernelIssuer'],
+        message: 'admin kernel issuer is only valid with a direct url target',
+      })
+    }
+    if (value.domainIssuer && !value.url) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['domainIssuer'],
+        message: 'admin domain issuer is only valid with a direct url target',
       })
     }
   })
@@ -59,6 +70,7 @@ export type AdminTargetConfig = z.infer<typeof AdminTargetConfigSchema>
 export type AdminTargetCommandOpts = {
   admin?: string
   adminUrl?: string
+  domainIssuer?: string
   instance?: string
   url?: string
 }
@@ -68,7 +80,8 @@ export type AdminTargetSource = 'admin-url' | 'admin' | 'config-instance' | 'con
 export type ResolvedAdminTarget = {
   name: string
   url: string
-  issuer: string
+  kernelIssuer: string
+  domainIssuer: string
   defaultIdentity?: string
   caFile?: string
   source: AdminTargetSource
@@ -84,6 +97,10 @@ export const ADMIN_TARGET_OPTIONS = [
   {
     flags: '--admin-url <url>',
     description: 'Admin kernel URL to use for this admin operation',
+  },
+  {
+    flags: '--domain-issuer <url>',
+    description: 'Admin Domain issuer used for token exchange with an explicit URL',
   },
 ]
 
@@ -102,29 +119,50 @@ export function resolveAdminTargetFromStore(
 ): ResolvedAdminTarget {
   const override = readOverride(opts)
   if (override) {
+    if (override.kind === 'instance' && opts.domainIssuer !== undefined) {
+      throw new AstraleError(
+        'INVALID_FLAG',
+        '--domain-issuer is only valid with --admin-url or --url.',
+      )
+    }
     return override.kind === 'url'
       ? directTarget({
           url: override.url,
           name: DEFAULT_ADMIN_TARGET_NAME,
           source: override.source,
           configured: false,
+          domainIssuer: opts.domainIssuer ?? config.admin.domainIssuer,
         })
-      : bookmarkTarget(store, override.instance, override.source, false)
+      : bookmarkTarget(
+          store,
+          override.instance,
+          override.source,
+          false,
+          config.admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+        )
   }
 
   const admin = config.admin
   if (admin.instance) {
-    return bookmarkTarget(store, admin.instance, 'config-instance', true)
+    return bookmarkTarget(
+      store,
+      admin.instance,
+      'config-instance',
+      true,
+      admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
+    )
   }
 
   const isDefaultDirectTarget =
     admin.url === DEFAULT_ADMIN_TARGET_URL &&
-    admin.issuer === DEFAULT_ADMIN_TARGET_URL &&
+    admin.kernelIssuer === DEFAULT_ADMIN_TARGET_URL &&
+    (admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER) === DEFAULT_ADMIN_DOMAIN_ISSUER &&
     admin.name === DEFAULT_ADMIN_TARGET_NAME
 
   return directTarget({
     url: admin.url ?? DEFAULT_ADMIN_TARGET_URL,
-    issuer: admin.issuer,
+    kernelIssuer: admin.kernelIssuer,
+    domainIssuer: admin.domainIssuer ?? DEFAULT_ADMIN_DOMAIN_ISSUER,
     name: admin.name ?? DEFAULT_ADMIN_TARGET_NAME,
     source: isDefaultDirectTarget ? 'default' : 'config-url',
     configured: !isDefaultDirectTarget,
@@ -177,6 +215,7 @@ function bookmarkTarget(
   identifier: string,
   source: AdminTargetSource,
   configured: boolean,
+  domainIssuer: string,
 ): ResolvedAdminTarget {
   const key = resolveInstanceKey(store, identifier)
   const entry = key ? store.instances[key] : undefined
@@ -191,7 +230,11 @@ function bookmarkTarget(
     name: key,
     registrationSlug: key,
     url: entry.url,
-    issuer: entry.issuer ?? entry.url,
+    kernelIssuer: entry.issuer ?? entry.url,
+    domainIssuer: requireDomainIssuer(
+      entry.domainIssuer ?? (configured ? domainIssuer : undefined),
+      `Admin bookmark "${key}"`,
+    ),
     defaultIdentity: entry.defaultIdentity,
     ...(entry.caFile ? { caFile: entry.caFile } : {}),
     source,
@@ -201,7 +244,8 @@ function bookmarkTarget(
 
 function directTarget(input: {
   url: string
-  issuer?: string
+  kernelIssuer?: string
+  domainIssuer?: string
   name: string
   source: AdminTargetSource
   configured: boolean
@@ -210,8 +254,18 @@ function directTarget(input: {
     name: input.name,
     registrationSlug: input.name,
     url: input.url,
-    issuer: input.issuer ?? input.url,
+    kernelIssuer: input.kernelIssuer ?? input.url,
+    domainIssuer: requireDomainIssuer(input.domainIssuer, 'Direct Admin target'),
     source: input.source,
     configured: input.configured,
   }
+}
+
+function requireDomainIssuer(value: string | undefined, label: string): string {
+  if (value !== undefined) return value
+  throw new AstraleError(
+    'ADMIN_DOMAIN_ISSUER_MISSING',
+    `${label} has no Domain issuer for token exchange.`,
+    'Configure domainIssuer or pass --domain-issuer <url>; there is no legacy token fallback.',
+  )
 }

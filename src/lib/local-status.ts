@@ -123,7 +123,7 @@ function buildAdminStatus(config: AstraleConfig, instances: InstanceStore): Loca
     return {
       name: target.name,
       url: target.url,
-      issuer: target.issuer,
+      issuer: target.kernelIssuer,
       source: target.source,
       configured: target.configured,
     }

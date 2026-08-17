@@ -10,7 +10,7 @@ const config: AstraleConfig = {
   admin: {
     name: 'admin',
     url: 'https://admin.eu.astrale.ai/api',
-    issuer: 'https://admin.eu.astrale.ai/api',
+    kernelIssuer: 'https://admin.eu.astrale.ai/api',
   },
   telemetry: { enabled: true },
 }

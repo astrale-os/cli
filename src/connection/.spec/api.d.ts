@@ -19,12 +19,15 @@ export interface ConnectionOptions {
 export interface AdminConnectionOptions extends ConnectionOptions {
   readonly admin?: string
   readonly adminUrl?: string
+  readonly domainIssuer?: string
 }
 
 /** Exact source Kernel selected from flags and local CLI state. */
 export interface ConnectionTarget {
   readonly url: string
   readonly issuer: IssuerId
+  /** Installed Domain issuer; presence activates standard token exchange. */
+  readonly domainIssuer?: IssuerId
   readonly slug?: string
   readonly defaultIdentity?: string
   readonly caFile?: string

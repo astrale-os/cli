@@ -8,6 +8,7 @@ export default defineLayout({
     'command.ts',
     'credential.ts',
     'errors.ts',
+    'exchange.ts',
     'index.ts',
     'self.ts',
     'session.ts',

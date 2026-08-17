@@ -25,14 +25,16 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
     label: 'Minting delegation token',
     fn: async (ctx) => {
       const audience =
-        commandOpts.audience === undefined ? ctx.target.issuer : issuer.accept(commandOpts.audience)
+        commandOpts.audience === undefined
+          ? ctx.target.kernelIssuer
+          : issuer.accept(commandOpts.audience)
       const parsedTtl = Number(commandOpts.ttl)
       const ttl = Number.isFinite(parsedTtl) && parsedTtl > 0 ? parsedTtl : 3600
       const self = await ctx.auth.whoami()
       return ctx.auth.delegate(self.id, {
         audience,
         ttlSeconds: ttl,
-        delegation: { kind: 'identity', self: true },
+        attenuation: { kind: 'identity', self: true },
       })
     },
     format: (token, fmtOpts, isRaw) => {

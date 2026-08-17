@@ -12,6 +12,22 @@ export const CLI_CONNECTION_TARGET = defineLaw({
   ],
 })
 
+export const CLI_CONNECTION_DOMAIN_EXCHANGE = defineLaw({
+  id: 'CLI-CONNECTION-DOMAIN-EXCHANGE',
+  statement:
+    'A target with an explicit Domain issuer resolves the source credential, authenticates whoami at the exact Kernel, requests explicit self attenuation for that User and Domain audience, posts the resulting envelope to the discovered standard endpoint, and returns only a Domain token bound back to the same Kernel; there is no inferred issuer or legacy broker fallback.',
+  tests: [
+    {
+      file: '__tests__/exchange.test.ts',
+      id: 'TEST-CLI-EXCHANGE-WHOAMI-DELEGATE-EXCHANGE-CACHE',
+    },
+    {
+      file: '__tests__/exchange.test.ts',
+      id: 'TEST-CLI-EXCHANGE-NO-LEGACY-FALLBACK',
+    },
+  ],
+})
+
 export const CLI_CONNECTION_HOP_CREDENTIAL = defineLaw({
   id: 'CLI-CONNECTION-HOP-CREDENTIAL',
   statement:

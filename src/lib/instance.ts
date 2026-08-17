@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { AstraleConfig } from './config'
 
 import { AstraleError, IdentifierCollisionError, ReservedSlugError } from '../errors'
-import { INSTANCES_PATH } from '../state/index'
+import { ExchangeCredentialCache, INSTANCES_PATH } from '../state/index'
 import { log } from './log'
 import {
   RESERVED_SLUGS,
@@ -21,6 +21,7 @@ export type InstanceKind = z.infer<typeof InstanceKindSchema>
 export const InstanceEntrySchema = z.object({
   url: z.string().optional(),
   issuer: z.string().optional(),
+  domainIssuer: z.string().optional(),
   createdAt: z.string().optional(),
   slug: z.string().optional(),
   name: z.string().optional(),
@@ -48,6 +49,7 @@ export type AddInstanceOpts = {
   kind?: InstanceKind
   mode?: RegistryMode
   issuer?: string
+  domainIssuer?: string
   defaultIdentity?: string
   caFile?: string
   organizationId?: string
@@ -58,6 +60,7 @@ export type ResolvedInstance = {
   kind: InstanceKind | 'managed'
   url: string
   issuer?: string
+  domainIssuer?: string
   createdAt?: string
   defaultIdentity?: string
   caFile?: string
@@ -88,6 +91,7 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
       ...entry,
       url: normalizedUrl,
       issuer: normalizedIssuer,
+      domainIssuer: entry.domainIssuer,
       kind: 'bookmark',
     }
     // VALUE comparison only. The old `next !== entry` (object identity) was
@@ -213,6 +217,7 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
     ...opts,
     url: normalizedUrl,
     issuer: opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : opts.issuer,
+    domainIssuer: opts.domainIssuer ? normalizeIssuerUrl(opts.domainIssuer) : opts.domainIssuer,
     kind: 'bookmark',
     createdAt: new Date().toISOString(),
   }
@@ -237,11 +242,15 @@ export async function upsertInstance(
 
   const existing = store.instances[key]
   const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
+  const normalizedDomainIssuer = opts.domainIssuer
+    ? normalizeIssuerUrl(opts.domainIssuer)
+    : undefined
   const entry: InstanceEntry = {
     ...existing,
     ...definedEntry(opts),
     url: normalizedUrl,
     ...(normalizedIssuer ? { issuer: normalizedIssuer } : {}),
+    ...(normalizedDomainIssuer ? { domainIssuer: normalizedDomainIssuer } : {}),
     kind: 'bookmark',
     createdAt: existing?.createdAt ?? new Date().toISOString(),
   }
@@ -282,10 +291,12 @@ export async function upsertManagedBookmark(
 
 export async function removeInstance(key: string): Promise<void> {
   const store = await readInstances()
-  if (!store.instances[key]) throw new Error(`Instance "${key}" not found`)
+  const removed = store.instances[key]
+  if (!removed) throw new Error(`Instance "${key}" not found`)
   delete store.instances[key]
   if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
   await writeInstances(store)
+  await new ExchangeCredentialCache().deleteKernel(removed.issuer ?? removed.url!)
 }
 
 export async function setActive(identifier: string): Promise<string> {
@@ -337,6 +348,7 @@ export async function resolveInstance(
     kind: 'bookmark',
     url: normalizeInstanceKernelUrl(entry.url),
     issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer,
+    domainIssuer: entry.domainIssuer,
     createdAt: entry.createdAt,
     defaultIdentity: entry.defaultIdentity,
     caFile: entry.caFile,
@@ -387,6 +399,17 @@ export function normalizeInstanceKernelUrl(url: string): string {
 
   parsed.pathname = '/api'
   return parsed.toString().replace(/\/$/, '')
+}
+
+export function normalizeIssuerUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) return url
+    parsed.pathname = parsed.pathname.replace(/\/+$/u, '') || '/'
+    return parsed.toString().replace(/\/$/u, '')
+  } catch {
+    return url
+  }
 }
 
 function isRegionRoutedInstanceRoot(url: URL): boolean {

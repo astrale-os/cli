@@ -1,3 +1,4 @@
+import type { Fetch } from '@astrale-os/kernel-client'
 import type { SessionAuth } from '@astrale-os/kernel-client/session'
 import type { IssuerId } from '@astrale-os/sdk/auth'
 
@@ -6,6 +7,7 @@ import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
 import { resolveCredential } from './auth'
+import { createExchangeCredentialResolver } from './exchange'
 import { registrationKeyForTarget } from './target'
 
 const DELEGATION_TTL_SECONDS = 3_600
@@ -14,7 +16,7 @@ export interface SourceCredentialResolver {
   resolve(audience: IssuerId, signal: AbortSignal): Promise<string>
 }
 
-/** Resolve source authority; ClientSession materializes the default self Delegate before lookup. */
+/** Resolve source authority; an omitted Session delegation preserves exact current authority. */
 export function createConnectionCredential(
   expectedSourceIssuer: IssuerId,
   source: SourceCredentialResolver,
@@ -36,6 +38,8 @@ export function createCliCredential(
   target: ConnectionTarget,
   options: ConnectionOptions,
   config: AstraleConfig,
+  fetch: Fetch = globalThis.fetch,
+  timeoutMs = 30_000,
 ): SessionAuth | undefined {
   validateCredentialSelection(options)
   if (options.anonymous === true) return undefined
@@ -44,7 +48,7 @@ export function createCliCredential(
     ...(options.creds === undefined ? {} : { creds: options.creds }),
     ...(target.defaultIdentity === undefined ? {} : { defaultIdentity: target.defaultIdentity }),
   })
-  return createConnectionCredential(target.issuer, {
+  const source: SourceCredentialResolver = {
     async resolve(audience, signal) {
       requireLive(signal)
       const credential = await resolveCredential(
@@ -56,7 +60,17 @@ export function createCliCredential(
       requireLive(signal)
       return credential
     },
-  })
+  }
+  const effective =
+    target.domainIssuer === undefined || options.creds !== undefined
+      ? source
+      : createExchangeCredentialResolver(
+          { ...target, domainIssuer: target.domainIssuer },
+          source,
+          fetch,
+          timeoutMs,
+        )
+  return createConnectionCredential(target.kernelIssuer, effective)
 }
 
 /** Reject contradictory explicit credential selections before identity or network access. */

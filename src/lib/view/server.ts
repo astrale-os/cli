@@ -44,7 +44,7 @@ export function startViewServer(config: ViewServeConfig): Server {
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
     grant = await withClientSession(config.kernel, async ({ auth, target }) => {
-      const token = await auth.mint({ audience: target.issuer, ttlSeconds: 3_600 })
+      const token = await auth.mint({ audience: target.kernelIssuer, ttlSeconds: 3_600 })
       return {
         token,
         expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,

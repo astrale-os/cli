@@ -22,11 +22,13 @@ export interface ConnectionOptions {
 export interface AdminConnectionOptions extends ConnectionOptions {
   readonly admin?: string
   readonly adminUrl?: string
+  readonly domainIssuer?: string
 }
 
 export interface ConnectionTarget {
   readonly url: string
-  readonly issuer: IssuerId
+  readonly kernelIssuer: IssuerId
+  readonly domainIssuer?: IssuerId
   readonly slug?: string
   readonly defaultIdentity?: string
   readonly caFile?: string
@@ -84,6 +86,7 @@ export function adminLookupOptions(options: AdminConnectionOptions): AdminTarget
   return {
     ...(options.admin === undefined ? {} : { admin: options.admin }),
     ...(options.adminUrl === undefined ? {} : { adminUrl: options.adminUrl }),
+    ...(options.domainIssuer === undefined ? {} : { domainIssuer: options.domainIssuer }),
     ...(options.instance === undefined ? {} : { instance: options.instance }),
     ...(options.url === undefined ? {} : { url: options.url }),
   }
@@ -95,7 +98,10 @@ function connectionTarget(
 ): ConnectionTarget {
   return Object.freeze({
     url: urlOverride ?? resolved.url,
-    issuer: issuer.accept(resolved.issuer),
+    kernelIssuer: issuer.accept(resolved.kernelIssuer),
+    ...(resolved.domainIssuer === undefined
+      ? {}
+      : { domainIssuer: issuer.accept(resolved.domainIssuer) }),
     ...(resolved.name === undefined ? {} : { slug: resolved.name }),
     ...(resolved.defaultIdentity === undefined
       ? {}
