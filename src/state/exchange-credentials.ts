@@ -1,4 +1,4 @@
-import { credential } from '@astrale-os/sdk/auth'
+import { credential, grant } from '@astrale-os/sdk/auth'
 import { chmod, mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
@@ -150,10 +150,36 @@ function validEntry(
   }
   try {
     const inspected = credential.inspect(entry.credential)
+    const carried = grant.acceptUnresolved(inspected.claims.grant).expr
+    if (
+      carried.kind !== 'identity' ||
+      !('credential' in carried) ||
+      typeof carried.credential !== 'string'
+    ) {
+      return false
+    }
+    const proof = credential.inspect(carried.credential)
+    const issued = proof.claims.delegation
+    if (
+      issued === null ||
+      typeof issued !== 'object' ||
+      Array.isArray(issued) ||
+      Reflect.ownKeys(issued).length !== 2 ||
+      !Object.hasOwn(issued, 'v') ||
+      !Object.hasOwn(issued, 'expr') ||
+      Reflect.get(issued, 'v') !== 1
+    ) {
+      return false
+    }
+    grant.accept({ expr: Reflect.get(issued, 'expr') })
     return (
       inspected.iss === key.domainIssuer &&
       inspected.aud === key.kernelIssuer &&
-      inspected.claims.exp === entry.expiresAt
+      inspected.claims.exp === entry.expiresAt &&
+      !Object.hasOwn(inspected.claims, 'delegation') &&
+      proof.iss === key.kernelIssuer &&
+      proof.sub === key.user &&
+      proof.aud === key.kernelIssuer
     )
   } catch {
     return false

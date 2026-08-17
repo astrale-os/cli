@@ -27,7 +27,7 @@ describe('Domain token exchange', () => {
   /** @evidence TEST-CLI-EXCHANGE-WHOAMI-DELEGATE-EXCHANGE-CACHE */
   test('runs the exact User to Kernel to Domain journey and reuses the bound token', async () => {
     const observed: Array<{ url: string; init: RequestInit | undefined; body?: unknown }> = []
-    const exchanged = token(DOMAIN, KERNEL, EXPIRES_AT)
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
     const fetch: Fetch = async (input, init) => {
       const url = String(input)
       if (url === TARGET.url) {
@@ -131,7 +131,7 @@ describe('Domain token exchange', () => {
   })
 
   test('rejects an exchanged token bound to another Kernel', async () => {
-    const wrong = token(DOMAIN, issuer.accept('https://other-kernel.example'), EXPIRES_AT)
+    const wrong = token(DOMAIN, issuer.accept('https://other-kernel.example'), 'user-1', EXPIRES_AT)
     const fetch = exchangeFetch(wrong)
     const resolver = createExchangeCredentialResolver(
       TARGET,
@@ -191,7 +191,20 @@ function jsonResponse(value: unknown, status = 200, contentType = 'application/j
   })
 }
 
-function token(iss: string, aud: string, exp: number): string {
+function token(iss: string, aud: string, user: string, exp: number): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
-  return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({ iss, sub: 'admin-domain', aud, exp })}.signature`
+  const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
+    iss: aud,
+    sub: user,
+    aud,
+    exp,
+    delegation: { v: 1, expr: { kind: 'identity', id: user } },
+  })}.signature`
+  return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
+    iss,
+    sub: 'admin-domain',
+    aud,
+    exp,
+    grant: { v: 1, expr: { kind: 'identity', credential: proof } },
+  })}.signature`
 }

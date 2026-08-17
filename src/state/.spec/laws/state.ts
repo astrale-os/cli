@@ -51,7 +51,7 @@ export const CLI_STATE_IDENTITY_MIGRATION = defineLaw({
 export const CLI_STATE_EXCHANGE_CACHE = defineLaw({
   id: 'CLI-STATE-EXCHANGE-CACHE',
   statement:
-    'The durable exchange Artifact partitions Domain credentials by exact Kernel issuer, Domain issuer, and registered User, admits matching token claims and expiry, refreshes under process and file-lock singleflight, and publishes only owner-private atomic state.',
+    'The durable exchange Artifact partitions Domain credentials by exact Kernel issuer, Domain issuer, and registered User, requires the sole nested Kernel proof subject to equal that User, admits matching token claims and expiry, refreshes under process and file-lock singleflight, and publishes only owner-private atomic state.',
   tests: [
     {
       file: '__tests__/exchange-credentials.test.ts',

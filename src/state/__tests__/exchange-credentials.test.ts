@@ -32,18 +32,16 @@ describe('exchange credential cache', () => {
         async () => {
           refreshes += 1
           return {
-            credential: token(candidate.domainIssuer, candidate.kernelIssuer, 200),
+            credential: token(candidate, 200),
             expiresAt: 200,
           }
         },
         now,
       )
 
-    await expect(resolve(first)).resolves.toBe(token(first.domainIssuer, first.kernelIssuer, 200))
-    await expect(resolve(first)).resolves.toBe(token(first.domainIssuer, first.kernelIssuer, 200))
-    await expect(resolve(second)).resolves.toBe(
-      token(second.domainIssuer, second.kernelIssuer, 200),
-    )
+    await expect(resolve(first)).resolves.toBe(token(first, 200))
+    await expect(resolve(first)).resolves.toBe(token(first, 200))
+    await expect(resolve(second)).resolves.toBe(token(second, 200))
     expect(refreshes).toBe(2)
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect((await stat(join(directory, 'private'))).mode & 0o777).toBe(0o700)
@@ -59,7 +57,7 @@ describe('exchange credential cache', () => {
       refreshes += 1
       await new Promise((resolve) => setTimeout(resolve, 10))
       return {
-        credential: token(candidate.domainIssuer, candidate.kernelIssuer, 200),
+        credential: token(candidate, 200),
         expiresAt: 200,
       }
     }
@@ -80,7 +78,7 @@ describe('exchange credential cache', () => {
     await cache.getOrRefresh(
       candidate,
       async () => ({
-        credential: token(candidate.domainIssuer, candidate.kernelIssuer, 120),
+        credential: token(candidate, 120),
         expiresAt: 120,
       }),
       () => 50,
@@ -91,7 +89,7 @@ describe('exchange credential cache', () => {
       async () => {
         refreshes += 1
         return {
-          credential: token(candidate.domainIssuer, candidate.kernelIssuer, 220),
+          credential: token(candidate, 220),
           expiresAt: 220,
         }
       },
@@ -103,12 +101,38 @@ describe('exchange credential cache', () => {
       cache.getOrRefresh(
         key('https://other-kernel.example', candidate.domainIssuer, candidate.user),
         async () => ({
-          credential: token(candidate.domainIssuer, candidate.kernelIssuer, 220),
+          credential: token(candidate, 220),
           expiresAt: 220,
         }),
         () => 100,
       ),
     ).rejects.toThrow(/inconsistent with its cache key/i)
+
+    await expect(
+      cache.getOrRefresh(
+        key(candidate.kernelIssuer, candidate.domainIssuer, 'other-user'),
+        async () => ({ credential: token(candidate, 220), expiresAt: 220 }),
+        () => 100,
+      ),
+    ).rejects.toThrow(/inconsistent with its cache key/i)
+
+    for (const malformed of ['outer-delegation', 'proof-without-delegation'] as const) {
+      const malformedCandidate = key(
+        candidate.kernelIssuer,
+        candidate.domainIssuer,
+        `user-${malformed}`,
+      )
+      await expect(
+        cache.getOrRefresh(
+          malformedCandidate,
+          async () => ({
+            credential: token(malformedCandidate, 220, malformed),
+            expiresAt: 220,
+          }),
+          () => 100,
+        ),
+      ).rejects.toThrow(/inconsistent with its cache key/i)
+    }
   })
 
   /** @evidence TEST-CLI-EXCHANGE-CACHE-LIFECYCLE-INVALIDATION */
@@ -120,7 +144,7 @@ describe('exchange credential cache', () => {
       await cache.getOrRefresh(
         candidate,
         async () => ({
-          credential: token(candidate.domainIssuer, candidate.kernelIssuer, 200),
+          credential: token(candidate, 200),
           expiresAt: 200,
         }),
         () => 100,
@@ -138,7 +162,27 @@ function key(kernelIssuer: string, domainIssuer: string, user: string) {
   return { kernelIssuer, domainIssuer, user }
 }
 
-function token(iss: string, aud: string, exp: number): string {
+function token(
+  candidate: ReturnType<typeof key>,
+  exp: number,
+  malformed?: 'outer-delegation' | 'proof-without-delegation',
+): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
-  return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({ iss, sub: 'domain', aud, exp })}.signature`
+  const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
+    iss: candidate.kernelIssuer,
+    sub: candidate.user,
+    aud: candidate.kernelIssuer,
+    exp,
+    ...(malformed === 'proof-without-delegation'
+      ? {}
+      : { delegation: { v: 1, expr: { kind: 'identity', id: candidate.user } } }),
+  })}.signature`
+  return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
+    iss: candidate.domainIssuer,
+    sub: 'domain',
+    aud: candidate.kernelIssuer,
+    exp,
+    grant: { v: 1, expr: { kind: 'identity', credential: proof } },
+    ...(malformed === 'outer-delegation' ? { delegation: { credential: proof } } : {}),
+  })}.signature`
 }
