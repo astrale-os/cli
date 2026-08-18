@@ -27,15 +27,16 @@ export function createExchangeCredentialResolver(
     async resolve(kernelIssuer: IssuerId, signal: AbortSignal): Promise<string> {
       requireLive(signal)
       const sourceToken = await source.resolve(kernelIssuer, signal)
+      const delegationTtlSeconds = delegationLifetime(sourceToken)
       requireLive(signal)
 
-      const client = new Client({ url: target.url, fetch, timeoutMs })
+      const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
       try {
         const authenticated = client.as(sourceToken)
         const auth = createAuth((path, input, options) =>
           authenticated.call(call(path, input), {
             ...options,
-            delegate: { ttlSeconds: EXCHANGE_TTL_SECONDS },
+            delegate: { ttlSeconds: delegationTtlSeconds },
           }),
         )
         const user = await auth.whoami({ signal })
@@ -49,7 +50,7 @@ export function createExchangeCredentialResolver(
             user.id,
             {
               audience: target.domainIssuer,
-              ttlSeconds: EXCHANGE_TTL_SECONDS,
+              ttlSeconds: delegationTtlSeconds,
               attenuation: { kind: 'identity', self: true },
             },
             { signal },
@@ -61,6 +62,24 @@ export function createExchangeCredentialResolver(
       }
     },
   })
+}
+
+function delegationLifetime(sourceToken: string): number {
+  const expiresAt = credential.inspect(sourceToken).claims.exp
+  if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt)) {
+    throw new AstraleError(
+      'TOKEN_EXCHANGE_SOURCE_INVALID',
+      'The source identity credential has no valid expiration.',
+    )
+  }
+  const remaining = expiresAt - Math.ceil(Date.now() / 1_000) - 1
+  if (!Number.isSafeInteger(remaining) || remaining < 1) {
+    throw new AstraleError(
+      'TOKEN_EXCHANGE_SOURCE_EXPIRED',
+      'The source identity credential has no lifetime available for token exchange.',
+    )
+  }
+  return Math.min(EXCHANGE_TTL_SECONDS, remaining)
 }
 
 async function exchange(
@@ -147,7 +166,7 @@ async function exchange(
 function requireExchangeTransport(
   target: ConnectionTarget & { readonly domainIssuer: IssuerId },
 ): void {
-  const kernel = new URL(target.url)
+  const kernel = new URL(target.kernelIssuer)
   const domain = new URL(target.domainIssuer)
   if (domain.protocol === 'https:') return
   if (domain.protocol === 'http:' && kernel.protocol === 'http:') return
