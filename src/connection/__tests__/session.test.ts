@@ -27,6 +27,7 @@ const config: AstraleConfig = {
 
 const context: ConnectionContext = Object.freeze({
   session: {} as ClientSession,
+  callerSession: {} as ClientSession,
   graph: {} as GraphApi,
   auth: {} as AuthApi,
   target,
@@ -34,19 +35,20 @@ const context: ConnectionContext = Object.freeze({
 
 describe('connection session', () => {
   /** @evidence TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER */
-  test('pins the selected target issuer independently from its invocation URL', async () => {
+  test('pins the selected canonical Kernel issuer without a transport escape hatch', async () => {
     const auth = { ttlSeconds: 3_600, resolve: async () => ({ credential: 'credential' }) }
     const options = createClientSessionOptions(target, globalThis.fetch, auth, 2_500)
 
-    expect(options.url).toBe('https://gateway.example/instances/child/invoke')
-    expect(options.sourceIssuer).toBe(target.kernelIssuer)
+    expect(options.kernel).toBe(target.kernelIssuer)
+    expect(options).not.toHaveProperty('url')
+    expect(options).not.toHaveProperty('sourceIssuer')
   })
 
   /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */
   test('constructs an anonymous Client Session without an auth resolver', () => {
     const options = createClientSessionOptions(target, globalThis.fetch, undefined, 2_500)
 
-    expect(options.sourceIssuer).toBe(target.kernelIssuer)
+    expect(options.kernel).toBe(target.kernelIssuer)
     expect(options.auth).toBeUndefined()
     expect(Object.hasOwn(options, 'auth')).toBe(false)
   })

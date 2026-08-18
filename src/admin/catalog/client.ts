@@ -2,7 +2,7 @@ import type { DomainBinding } from '@astrale-os/kernel-client/domain'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
 
-import { bindDomain } from '@astrale-os/kernel-client/domain'
+import { bind } from '@astrale-os/kernel-client/domain'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
@@ -46,8 +46,8 @@ export async function connectAdminCatalog(
   context: AdminCatalogContext,
   dependencies: AdminCatalogDependencies = {},
 ): Promise<AdminCatalogApi> {
-  const binding = await (dependencies.bind ?? bindDomain)(context.session)
-  if (binding.$.publication.origin !== ADMIN_ORIGIN || binding.$.origin !== ADMIN_ORIGIN) {
+  const binding = await (dependencies.bind ?? bindInstalledAdmin)(context.session)
+  if (binding.$.publication?.origin !== ADMIN_ORIGIN || binding.$.origin !== ADMIN_ORIGIN) {
     throw new TypeError('Configured Admin target does not serve the Admin Domain.')
   }
   const Domain = binding.$.class('Domain')
@@ -143,6 +143,12 @@ export async function connectAdminCatalog(
       })
     },
   })
+}
+
+async function bindInstalledAdmin(
+  session: ClientSession,
+): Promise<DomainBinding> {
+  return bind(session, await session.installed(ADMIN_ORIGIN))
 }
 
 type DynamicDefinition = ReturnType<DomainBinding['$']['class']>

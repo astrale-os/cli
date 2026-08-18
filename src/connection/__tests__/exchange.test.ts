@@ -12,7 +12,10 @@ import { createExchangeCredentialResolver } from '../exchange'
 const KERNEL = issuer.accept('https://kernel.example')
 const DOMAIN = issuer.accept('https://admin.example')
 const TARGET = { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainIssuer: DOMAIN }
+const INVOCATION = `${KERNEL}/invoke`
 const EXPIRES_AT = Math.floor(Date.now() / 1_000) + 500
+const SOURCE_EXPIRES_AT = Math.floor(Date.now() / 1_000) + 120
+const SOURCE_TOKEN = token(issuer.accept('https://workos.example'), KERNEL, 'user-1', SOURCE_EXPIRES_AT)
 let directory: string
 
 beforeEach(async () => {
@@ -26,14 +29,18 @@ afterEach(async () => {
 describe('Domain token exchange', () => {
   /** @evidence TEST-CLI-EXCHANGE-WHOAMI-DELEGATE-EXCHANGE-CACHE */
   test('runs the exact User to Kernel to Domain journey and reuses the bound token', async () => {
-    const observed: Array<{ url: string; init: RequestInit | undefined; body?: unknown }> = []
+    const observed: Array<{
+      url: string
+      init: RequestInit | undefined
+      body?: Record<string, any>
+    }> = []
     const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
     const fetch: Fetch = async (input, init) => {
       const url = String(input)
-      if (url === TARGET.url) {
+      if (url === INVOCATION) {
         const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
         observed.push({ url, init, body })
-        const index = observed.filter((entry) => entry.url === TARGET.url).length
+        const index = observed.filter((entry) => entry.url === INVOCATION).length
         return invocationResponse(
           body.id,
           index === 1
@@ -67,7 +74,7 @@ describe('Domain token exchange', () => {
       {
         async resolve(audience) {
           sourceAudiences.push(audience)
-          return 'workos-source-token'
+          return SOURCE_TOKEN
         },
       },
       fetch,
@@ -78,22 +85,24 @@ describe('Domain token exchange', () => {
     expect(await resolver.resolve(KERNEL, new AbortController().signal)).toBe(exchanged)
     await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
 
-    const kernelRequests = observed.filter((entry) => entry.url === TARGET.url)
+    const kernelRequests = observed.filter((entry) => entry.url === INVOCATION)
     expect(kernelRequests).toHaveLength(3)
     expect(kernelRequests[0]!.body).toMatchObject({
-      credential: 'workos-source-token',
+      credential: SOURCE_TOKEN,
       call: { input: {} },
     })
     expect(kernelRequests[1]!.body).toMatchObject({
-      credential: 'workos-source-token',
+      credential: SOURCE_TOKEN,
       call: {
         input: {
           audience: DOMAIN,
-          ttlSeconds: 300,
           attenuation: { kind: 'identity', self: true },
         },
       },
     })
+    const delegatedTtl = kernelRequests[1]!.body!.call.input.ttlSeconds
+    expect(delegatedTtl).toBeGreaterThan(0)
+    expect(delegatedTtl).toBeLessThan(120)
     expect(sourceAudiences).toEqual([KERNEL, KERNEL])
     expect(
       observed.filter((entry) => entry.url.endsWith('/.well-known/astrale/token')),
@@ -104,7 +113,7 @@ describe('Domain token exchange', () => {
   test('fails closed when issuer discovery does not advertise exchange', async () => {
     const fetch: Fetch = async (input, init) => {
       const url = String(input)
-      if (url === TARGET.url) {
+      if (url === INVOCATION) {
         const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
         return invocationResponse(
           body.id,
@@ -120,7 +129,7 @@ describe('Domain token exchange', () => {
     }
     const resolver = createExchangeCredentialResolver(
       TARGET,
-      { resolve: async () => 'workos-source-token' },
+      { resolve: async () => SOURCE_TOKEN },
       fetch,
       5_000,
       new ExchangeCredentialCache(join(directory, 'credentials.json')),
@@ -135,7 +144,7 @@ describe('Domain token exchange', () => {
     const fetch = exchangeFetch(wrong)
     const resolver = createExchangeCredentialResolver(
       TARGET,
-      { resolve: async () => 'workos-source-token' },
+      { resolve: async () => SOURCE_TOKEN },
       fetch,
       5_000,
       new ExchangeCredentialCache(join(directory, 'credentials.json')),
@@ -149,7 +158,7 @@ describe('Domain token exchange', () => {
 function exchangeFetch(exchanged: string): Fetch {
   return async (input, init) => {
     const url = String(input)
-    if (url === TARGET.url) {
+    if (url === INVOCATION) {
       const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
       return invocationResponse(
         body.id,

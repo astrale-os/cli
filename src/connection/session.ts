@@ -147,8 +147,7 @@ export function createClientSessionOptions(
   timeoutMs: number,
 ): ClientSessionOptions {
   return {
-    url: target.url,
-    sourceIssuer: target.kernelIssuer,
+    kernel: target.kernelIssuer,
     fetch,
     ...(auth === undefined ? {} : { auth }),
     policy: {
