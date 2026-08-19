@@ -42,6 +42,21 @@ describe('connection credential', () => {
     expect(calls).toEqual([TARGET_CALL])
   })
 
+  /** @evidence TEST-CLI-CONNECTION-BOUNDS-REMOTE-CARRIER-TO-SOURCE-LIFETIME */
+  test('bounds destination delegation to the current source credential lifetime', async () => {
+    const expiresAt = Math.ceil(Date.now() / 1_000) + 120
+    const auth = createConnectionCredential(SOURCE, {
+      async resolve() {
+        return token(expiresAt)
+      },
+    })
+
+    const resolved = await auth.resolve(TARGET_CALL, new AbortController().signal)
+    expect(resolved.credential).toBe(token(expiresAt))
+    expect(resolved.delegate?.ttlSeconds).toBeGreaterThan(0)
+    expect(resolved.delegate?.ttlSeconds).toBeLessThan(120)
+  })
+
   /** @evidence TEST-CLI-CONNECTION-USES-RAW-SOURCE-CREDENTIAL */
   test('binds explicit CLI credentials to source-Kernel auth only', async () => {
     const auth = createCliCredential(
@@ -82,3 +97,13 @@ describe('connection credential', () => {
     await expect(auth.resolve(TARGET_CALL, controller.signal)).rejects.toBe(reason)
   })
 })
+
+function token(exp: number): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
+    iss: SOURCE,
+    sub: 'principal',
+    aud: SOURCE,
+    exp,
+  })}.signature`
+}

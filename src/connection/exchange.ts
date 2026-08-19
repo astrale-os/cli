@@ -11,7 +11,7 @@ import type { ConnectionTarget } from './target'
 import { AstraleError } from '../errors'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
 
-const EXCHANGE_TTL_SECONDS = 300
+const EXCHANGE_TTL_SECONDS = 120
 const MAXIMUM_RESPONSE_BYTES = 256 * 1024
 
 /** Exchange exact authenticated User authority for a Domain bearer bound to this Kernel. */
@@ -46,15 +46,24 @@ export function createExchangeCredentialResolver(
           user: user.id,
         })
         return await cache.getOrRefresh(key, async () => {
-          const envelope = await auth.delegate(
-            user.id,
-            {
-              audience: target.domainIssuer,
-              ttlSeconds: delegationTtlSeconds,
-              attenuation: { kind: 'identity', self: true },
-            },
-            { signal },
-          )
+          let envelope: string | undefined
+          for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+              envelope = await auth.delegate(
+                user.id,
+                {
+                  audience: target.domainIssuer,
+                  ttlSeconds: delegationTtlSeconds,
+                  attenuation: { kind: 'identity', self: true },
+                },
+                { signal },
+              )
+              break
+            } catch (cause) {
+              if (attempt === 2 || !unknownFunctionOutcome(cause)) throw cause
+            }
+          }
+          if (envelope === undefined) throw new Error('Token delegation returned no credential.')
           return exchange(target.domainIssuer, kernelIssuer, envelope, fetch, signal)
         })
       } finally {
@@ -62,6 +71,14 @@ export function createExchangeCredentialResolver(
       }
     },
   })
+}
+
+function unknownFunctionOutcome(cause: unknown): boolean {
+  if (cause === null || typeof cause !== 'object') return false
+  const error = cause as { readonly code?: unknown; readonly reason?: unknown }
+  if (error.code === 5002) return true
+  if (error.reason === null || typeof error.reason !== 'object') return false
+  return (error.reason as { readonly code?: unknown }).code === 'FUNCTION_OUTCOME_UNKNOWN'
 }
 
 function delegationLifetime(sourceToken: string): number {

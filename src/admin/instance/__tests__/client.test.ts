@@ -116,15 +116,24 @@ function page(item: Node | null) {
 }
 
 describe('V2 Admin Instance adapter', () => {
-  test('lists caller-visible Instance nodes through GraphApi and projects Host location', async () => {
-    const instance = node('instance-node', {
-      slug: 'demo',
-      url: 'https://demo.eu.astrale.ai',
-      state: 'ready',
-      createdAt: '2026-08-12T00:00:00.000Z',
+  test('lists caller-visible Instances through the Admin-owned Fleet operation', async () => {
+    const contract = fixture({
+      invoke: (method) =>
+        method.name === 'listInstances'
+          ? [
+              {
+                id: '@instance-node',
+                slug: 'demo',
+                url: 'https://demo.eu.astrale.ai',
+                state: 'ready',
+                createdAt: '2026-08-12T00:00:00.000Z',
+                updatedAt: '2026-08-12T00:00:00.000Z',
+                hostId: '@host-node',
+                region: 'fr-par',
+              },
+            ]
+          : undefined,
     })
-    const host = node('host-node', { id: 'host-paris', state: 'ready', region: 'fr-par' })
-    const contract = fixture({ instances: [instance], hosts: [host] })
 
     await expect((await contract.connect()).list()).resolves.toEqual([
       {
@@ -137,6 +146,11 @@ describe('V2 Admin Instance adapter', () => {
         region: 'fr-par',
       },
     ])
+    expect(contract.invoke).toHaveBeenCalledWith(
+      expect.objectContaining({ owner: 'Fleet', name: 'listInstances' }),
+      Path.id(NodeId('fleet')),
+      {},
+    )
   })
 
   test('invokes Fleet.createInstance with an internal operation identity', async () => {
@@ -199,19 +213,33 @@ describe('V2 Admin Instance adapter', () => {
     })
     const contract = fixture({
       instances: [instance],
-      invoke: (method) => ({
-        id: '@instance-node',
-        slug: 'demo',
-        url: 'https://demo.eu.astrale.ai',
-        state: method.name === 'delete' ? 'deleted' : 'ready',
-      }),
+      invoke: (method) =>
+        method.name === 'listInstances'
+          ? [
+              {
+                id: '@instance-node',
+                slug: 'demo',
+                url: 'https://demo.eu.astrale.ai',
+                state: 'ready',
+                createdAt: '2026-08-12T00:00:00.000Z',
+                updatedAt: '2026-08-12T00:00:00.000Z',
+              },
+            ]
+          : {
+              id: '@instance-node',
+              slug: 'demo',
+              url: 'https://demo.eu.astrale.ai',
+              state: method.name === 'delete' ? 'deleted' : 'ready',
+            },
     })
     const api = await contract.connect()
 
     await expect(api.status('demo')).resolves.toMatchObject({ state: 'ready' })
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
     expect(contract.invoke.mock.calls.map(([method]) => method)).toEqual([
+      expect.objectContaining({ owner: 'Fleet', name: 'listInstances' }),
       expect.objectContaining({ owner: 'Instance', name: 'status' }),
+      expect.objectContaining({ owner: 'Fleet', name: 'listInstances' }),
       expect.objectContaining({ owner: 'Instance', name: 'delete' }),
     ])
   })
@@ -224,13 +252,25 @@ describe('V2 Admin Instance adapter', () => {
     })
     const contract = fixture({
       instances: [instance],
-      invoke: () => ({
-        domain: '@crm-domain',
-        instance: '@instance-node',
-        origin: 'crm.acme.dev',
-        ok: true,
-        installedRevision: `sha256:${'a'.repeat(64)}`,
-      }),
+      invoke: (method) =>
+        method.name === 'listInstances'
+          ? [
+              {
+                id: '@instance-node',
+                slug: 'demo',
+                url: 'https://demo.eu.astrale.ai',
+                state: 'ready',
+                createdAt: '2026-08-12T00:00:00.000Z',
+                updatedAt: '2026-08-12T00:00:00.000Z',
+              },
+            ]
+          : {
+              domain: '@crm-domain',
+              instance: '@instance-node',
+              origin: 'crm.acme.dev',
+              ok: true,
+              installedRevision: `sha256:${'a'.repeat(64)}`,
+            },
     })
     const api = await contract.connect()
 

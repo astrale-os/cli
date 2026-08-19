@@ -63,11 +63,8 @@ describe('IdP schemas and token helpers', () => {
     expect(config?.client.token_request_format).toBe('json')
   })
 
-  test('builds built-in WorkOS IdP config with the public alpha client id by default', () => {
-    const config = builtinIdpConfig('workos', undefined, {})
-
-    expect(config?.entry.builtIn).toBe(true)
-    expect(config?.client.client_id).toBe('client_01KC29HEGD7B40TV2C4QZ436BG')
+  test('does not invent a WorkOS environment when no client id is configured', () => {
+    expect(builtinIdpConfig('workos', undefined, {})).toBeNull()
   })
 
   test('reads WorkOS client id from WORKOS_CLIENT_ID before VITE_WORKOS_CLIENT_ID', () => {
@@ -78,7 +75,8 @@ describe('IdP schemas and token helpers', () => {
       }),
     ).toBe('client_primary')
     expect(workosClientIdFromEnv({ VITE_WORKOS_CLIENT_ID: 'client_vite' })).toBe('client_vite')
-    expect(workosClientIdFromEnv({})).toBe('client_01KC29HEGD7B40TV2C4QZ436BG')
+    expect(workosClientIdFromEnv({})).toBeUndefined()
+    expect(workosClientIdFromEnv({ WORKOS_CLIENT_ID: '   ' })).toBeUndefined()
   })
 
   test('stores client secret env names, not secret material', () => {
