@@ -212,7 +212,6 @@ export type IdpConfig = {
 
 export const BUILTIN_WORKOS_IDP_NAME = 'workos'
 const DEFAULT_WORKOS_API_HOST = 'https://api.workos.com'
-const DEFAULT_WORKOS_CLIENT_ID = 'client_01KC29HEGD7B40TV2C4QZ436BG'
 const WORKOS_CLIENT_ID_ENV_NAMES = ['WORKOS_CLIENT_ID', 'VITE_WORKOS_CLIENT_ID'] as const
 
 export function idpDir(name: string): string {
@@ -412,10 +411,8 @@ export function builtinIdpConfig(
 }
 
 export function workosClientIdFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return (
-    WORKOS_CLIENT_ID_ENV_NAMES.map((name) => env[name]).find(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    ) ?? DEFAULT_WORKOS_CLIENT_ID
+  return WORKOS_CLIENT_ID_ENV_NAMES.map((name) => env[name]?.trim()).find(
+    (value): value is string => typeof value === 'string' && value.length > 0,
   )
 }
 

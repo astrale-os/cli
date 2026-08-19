@@ -15,14 +15,20 @@ allowBuilds:
   '@astrale-os/kernel-core': false
   '@astrale-os/kernel-dsl': false
   '@astrale-os/kernel-ports': false
+  '@astrale-os/kernel-protocol@file:../astrale-kernel-beta17-packs/astrale-os-kernel-protocol-0.5.0-beta.1.tgz': set this to true or false
+  '@astrale-os/kernel-server@file:../astrale-kernel-beta17-packs/astrale-os-kernel-server-0.5.0-beta.1.tgz': set this to true or false
+  '@astrale-os/sdk@file:../astrale-sdk-publication-v2-pack/astrale-os-sdk-0.5.0-beta.1.tgz': set this to true or false
   '@astrale-os/shell': false
   esbuild: true
   lightningcss: true
   msgpackr-extract: true
 
 overrides:
-  '@astrale-os/kernel-client': link:../../worktrees/kernel-platform-e2e/client
-  '@astrale-os/kernel-core': link:../../worktrees/kernel-platform-e2e/core
-  '@astrale-os/kernel-dsl': link:../../worktrees/kernel-platform-e2e/dsl
-  '@astrale-os/kernel-ports': link:../../worktrees/kernel-platform-e2e/ports
-  '@astrale-os/shell': file:/private/tmp/astrale-shell-current-pack/astrale-os-shell-0.3.7.tgz
+  '@astrale-os/kernel-client': file:/private/tmp/astrale-kernel-beta17-packs/astrale-os-kernel-client-0.6.0-beta.1.tgz
+  '@astrale-os/kernel-core': file:/private/tmp/astrale-kernel-beta17-packs/astrale-os-kernel-core-0.9.0-beta.1.tgz
+  '@astrale-os/kernel-dsl': file:/private/tmp/astrale-kernel-beta17-packs/astrale-os-kernel-dsl-0.2.0-beta.1.tgz
+  '@astrale-os/kernel-ports': file:/private/tmp/astrale-kernel-beta17-packs/astrale-os-kernel-ports-0.6.0-beta.1.tgz
+  '@astrale-os/kernel-protocol': file:/private/tmp/astrale-kernel-beta17-packs/astrale-os-kernel-protocol-0.5.0-beta.1.tgz
+  '@astrale-os/kernel-server': file:/private/tmp/astrale-kernel-beta17-packs/astrale-os-kernel-server-0.5.0-beta.1.tgz
+  '@astrale-os/sdk': file:/private/tmp/astrale-sdk-publication-v2-pack/astrale-os-sdk-0.5.0-beta.1.tgz
+  '@astrale-os/shell': file:/private/tmp/astrale-os-shell-0.3.8-beta.1.tgz

@@ -21,17 +21,7 @@ const PAGE_SIZE = 256
 const MAXIMUM_INSTANCES = 10_000
 const MAXIMUM_PAGES = Math.ceil(MAXIMUM_INSTANCES / PAGE_SIZE) + 1
 
-const InstanceRef = Object.freeze({
-  origin: ADMIN_ORIGIN,
-  kind: 'class' as const,
-  name: 'Instance',
-})
 const HostRef = Object.freeze({ origin: ADMIN_ORIGIN, kind: 'class' as const, name: 'Host' })
-const instanceRunsOnHost = Object.freeze({
-  origin: ADMIN_ORIGIN,
-  kind: 'class' as const,
-  name: 'instance_runs_on_host',
-})
 const fleetReservesAdminHost = Object.freeze({
   origin: ADMIN_ORIGIN,
   kind: 'class' as const,
@@ -78,38 +68,13 @@ export async function connectAdminInstances(
   const operationId = dependencies.operationId ?? defaultOperationId
 
   const list = async (): Promise<OwnedInstanceInfo[]> => {
-    const nodes = await readAllNodes(
-      context.graph,
-      Query.from({ kind: 'node', definitions: [InstanceRef] }).select({
-        kind: 'nodes',
-        projection: { kind: 'value' },
-      }),
-      {
-        label: 'Admin Instance inventory',
-        maximum: MAXIMUM_INSTANCES,
-        maximumPages: MAXIMUM_PAGES,
-      },
+    const result = await binding.$.invoke(
+      Fleet.$.method('listInstances') as never,
+      fleet,
+      {} as never,
     )
-    return Promise.all(
-      nodes.map(async (node) => {
-        const base = instanceFromNode(Instance, node)
-        const host = await context.graph.neighbors(Path.id(node.id), instanceRunsOnHost, {
-          direction: 'outgoing',
-          page: { size: 2 },
-        })
-        if (host.nodes.length > 1) {
-          throw new TypeError(`Admin Instance ${base.id} has more than one Host relation.`)
-        }
-        const related = host.first
-        return related === null
-          ? base
-          : Object.freeze({
-              ...base,
-              hostId: Path.id(related.id).raw,
-              ...optionalStringProperty(Host, related, 'region'),
-            })
-      }),
-    )
+    if (!Array.isArray(result)) throw new TypeError('Admin Instance inventory is invalid.')
+    return result.map((value) => instanceFromSummary(value) as OwnedInstanceInfo)
   }
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
@@ -134,21 +99,15 @@ export async function connectAdminInstances(
   return Object.freeze({
     list,
     async create(slug: string, hostId?: string) {
-      const input = Object.freeze({ operationId: operationId('create'), slug })
-      if (hostId !== undefined) {
-        const inventory = await hostInventory(context.graph, binding, Host, fleet)
-        const selected = inventory.hosts.find((host) => hostMatches(host, hostId))
-        if (selected === undefined || selected.path === inventory.reserved) {
-          throw new AdminInstanceNotFoundError(hostId)
-        }
+      const input = Object.freeze({
+        operationId: operationId('create'),
+        slug,
+        ...(hostId === undefined ? {} : { hostId }),
+      })
+      if (hostId !== undefined)
         return instanceFromSummary(
-          await binding.$.invoke(
-            Host.$.method('createInstance') as never,
-            Path.parse(selected.path),
-            input as never,
-          ),
+          await binding.$.invoke(Fleet.$.method('createInstance') as never, fleet, input as never),
         )
-      }
 
       // Preserve the existing interactive multi-Host picker without accepting a
       // doomed operation first. Graph read policy exposes only caller-usable
@@ -233,10 +192,6 @@ async function hostInventory(
   })
 }
 
-function hostMatches(host: HostInventoryItem, identifier: string): boolean {
-  return host.id === identifier || host.nodeId === identifier || host.path === identifier
-}
-
 function hostSelectionRequired(ids: readonly string[]): Error {
   return new Error(
     `alphaCreate could not choose a host: ${ids.length} ready hosts are assigned (${[...ids].sort().join(', ')}). ` +
@@ -245,18 +200,6 @@ function hostSelectionRequired(ids: readonly string[]): Error {
 }
 
 type DynamicDefinition = ReturnType<DomainBinding['$']['class']>
-
-function instanceFromNode(definition: DynamicDefinition, node: Node): OwnedInstanceInfo {
-  return Object.freeze({
-    id: Path.id(node.id).raw,
-    slug: requiredStringProperty(definition, node, 'slug'),
-    url: optionalStringValue(node.props[definition.$.property('url').key]) ?? '',
-    state: instanceState(node.props[definition.$.property('state').key]),
-    ...optionalStringProperty(definition, node, 'phase'),
-    ...optionalFailureProperty(definition, node),
-    ...optionalStringProperty(definition, node, 'createdAt'),
-  })
-}
 
 function instanceFromSummary(input: unknown): InstanceInfo {
   const value = record(input, 'Admin Instance summary')

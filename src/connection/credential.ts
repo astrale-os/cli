@@ -1,6 +1,6 @@
 import type { Fetch } from '@astrale-os/kernel-client'
 import type { SessionAuth } from '@astrale-os/kernel-client/session'
-import type { IssuerId } from '@astrale-os/sdk/auth'
+import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
 import type { ConnectionOptions, ConnectionTarget } from './target'
@@ -10,7 +10,7 @@ import { resolveCredential } from './auth'
 import { createExchangeCredentialResolver } from './exchange'
 import { registrationKeyForTarget } from './target'
 
-const DELEGATION_TTL_SECONDS = 3_600
+const DELEGATION_TTL_SECONDS = 60
 
 export interface SourceCredentialResolver {
   resolve(audience: IssuerId, signal: AbortSignal): Promise<string>
@@ -28,9 +28,27 @@ export function createConnectionCredential(
       _call: Parameters<SessionAuth['resolve']>[0],
       signal: Parameters<SessionAuth['resolve']>[1],
     ) {
-      return Object.freeze({ credential: await resolveSource(expectedSourceIssuer, signal) })
+      const resolved = await resolveSource(expectedSourceIssuer, signal)
+      const ttlSeconds = sourceBoundDelegationTtl(resolved)
+      return Object.freeze({
+        credential: resolved,
+        ...(ttlSeconds === undefined ? {} : { delegate: { ttlSeconds } }),
+      })
     },
   })
+}
+
+/** Never request a destination carrier that could outlive its current source bearer. */
+function sourceBoundDelegationTtl(input: string): number | undefined {
+  try {
+    const expiresAt = credential.inspect(input).claims.exp
+    if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt)) return undefined
+    const remaining = expiresAt - Math.ceil(Date.now() / 1_000) - 1
+    return Math.max(1, Math.min(DELEGATION_TTL_SECONDS, remaining))
+  } catch {
+    // Preserve opaque explicit credentials; the Kernel remains their authority.
+    return undefined
+  }
 }
 
 /** Bind CLI identity state and Core Auth delegation to one Session auth capability. */
