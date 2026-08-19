@@ -171,7 +171,6 @@ describe('program composition', () => {
       'instance status',
       'instance use',
       'logs',
-      'ls',
       'mutate',
       'query',
       'session',
@@ -187,7 +186,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '4a57bfc347f9abebcea239427214eb25fbaf9ca704170c8b4a933d0c9ba4d14e',
+      '4b053fe80827aeb40aecc13cd17c293b8701e59cb04f5ccb8185e9e255376dd1',
     )
   })
 
@@ -267,7 +266,7 @@ describe('help contract — connect-only command surface', () => {
     const program = await buildProgram()
     const names = allCommands(program).map((command) => command.name())
 
-    // `logs` and `domain` have managed/admin meanings, so only retired local-runtime verbs are absent.
+    // `logs` and `domain` have managed/admin meanings, so only retired verbs are absent.
     for (const removed of [
       'init',
       'start',
@@ -279,6 +278,7 @@ describe('help contract — connect-only command surface', () => {
       'graph',
       'server',
       'env',
+      'ls',
     ]) {
       expect(names).not.toContain(removed)
     }

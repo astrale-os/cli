@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.1-alpha.4](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.3...cli-v0.8.1-alpha.4) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** remove `astrale ls`; list graph neighborhoods with `astrale query`
+
+
+### Features
+
+* **commands:** remove `astrale ls` in favor of `query`
+
 ## [0.8.1-alpha.3](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.2...cli-v0.8.1-alpha.3) (2026-08-19)
 
 

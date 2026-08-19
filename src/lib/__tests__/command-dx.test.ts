@@ -22,8 +22,9 @@ describe('command DX suggestions', () => {
     expect(usages).toContain('admin use [bookmark]')
     expect(usages).toContain('use <name>')
     expect(usages).toContain('update')
-    expect(usages).toContain('ls <source>')
+    expect(usages).toContain('query [sources...]')
     expect(usages).toContain('status')
+    expect(usages).not.toContain('ls <source>')
   })
 
   test('explains shared verbs as namespaced commands, not arity errors', async () => {
@@ -40,6 +41,17 @@ describe('command DX suggestions', () => {
     expect(rendered).toContain('astrale identity delete <name>')
     expect(rendered).toContain('astrale instance delete <id>')
     expect(rendered).not.toContain('too many arguments')
+  })
+
+  test('points retired ls at query', async () => {
+    const program = await buildProgram()
+    const error = new CommanderError(1, 'commander.unknownCommand', "error: unknown command 'ls'")
+    const rendered = stripAnsi(renderCommanderError(program, error, ['ls', '@note']))
+
+    expect(rendered).toContain('Unknown command: astrale ls @note')
+    expect(rendered).toContain('astrale ls` was removed')
+    expect(rendered).toContain('astrale query <source> --edge <class>')
+    expect(rendered).not.toContain('Did you mean:')
   })
 
   test('suggests nearest command for typo paths', async () => {
