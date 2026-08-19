@@ -74,6 +74,7 @@ export function renderCommanderError(
 
 const RETIRED_COMMANDS: Record<string, string> = {
   ls: 'astrale query <source> --edge <class>',
+  describe: 'astrale get <target>',
 }
 
 function renderUnknownCommand(tokens: string[], catalog: CommandCatalogEntry[]): string {

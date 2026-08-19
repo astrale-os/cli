@@ -23,8 +23,10 @@ describe('command DX suggestions', () => {
     expect(usages).toContain('use <name>')
     expect(usages).toContain('update')
     expect(usages).toContain('query [sources...]')
+    expect(usages).toContain('get <target>')
     expect(usages).toContain('status')
     expect(usages).not.toContain('ls <source>')
+    expect(usages).not.toContain('describe <target>')
   })
 
   test('explains shared verbs as namespaced commands, not arity errors', async () => {
@@ -41,6 +43,21 @@ describe('command DX suggestions', () => {
     expect(rendered).toContain('astrale identity delete <name>')
     expect(rendered).toContain('astrale instance delete <id>')
     expect(rendered).not.toContain('too many arguments')
+  })
+
+  test('points retired describe at get', async () => {
+    const program = await buildProgram()
+    const error = new CommanderError(
+      1,
+      'commander.unknownCommand',
+      "error: unknown command 'describe'",
+    )
+    const rendered = stripAnsi(renderCommanderError(program, error, ['describe', '@note']))
+
+    expect(rendered).toContain('Unknown command: astrale describe @note')
+    expect(rendered).toContain('astrale describe` was removed')
+    expect(rendered).toContain('astrale get <target>')
+    expect(rendered).not.toContain('Did you mean:')
   })
 
   test('points retired ls at query', async () => {

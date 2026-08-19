@@ -138,7 +138,6 @@ describe('program composition', () => {
       'auth token',
       'browser',
       'call',
-      'describe',
       'domain',
       'domain install',
       'domain list',
@@ -186,7 +185,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '4b053fe80827aeb40aecc13cd17c293b8701e59cb04f5ccb8185e9e255376dd1',
+      '369e7d1d51871f0ca1c6007d2a5c45023d093e70b85db07c1f58b06b7a0b17d4',
     )
   })
 
@@ -279,6 +278,7 @@ describe('help contract — connect-only command surface', () => {
       'server',
       'env',
       'ls',
+      'describe',
     ]) {
       expect(names).not.toContain(removed)
     }

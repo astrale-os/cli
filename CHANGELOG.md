@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.1-alpha.5](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.4...cli-v0.8.1-alpha.5) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** remove `astrale describe`; read one Node with `astrale get`
+
+
+### Features
+
+* **commands:** remove `astrale describe` in favor of `get`
+
 ## [0.8.1-alpha.4](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.3...cli-v0.8.1-alpha.4) (2026-08-19)
 
 
