@@ -110,7 +110,7 @@ Main command groups:
 
 | Group | What it covers |
 |-------|----------------|
-| Kernel | `get`, `call`, `query`, `describe`, `token` |
+| Kernel | `get`, `call`, `query`, `token` |
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser` |

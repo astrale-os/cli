@@ -30,7 +30,6 @@ astrale status
 astrale whoami
 astrale use <name>
 astrale get <target>
-astrale describe <target>
 astrale query [sources...]
 astrale mutate
 astrale call <path> [key=value...]
@@ -157,7 +156,7 @@ astrale call /:notes.example:class.Note:list --creds "$TOKEN" -i staging
 
 ## Graph Reads
 
-### `get` and `describe`
+### `get`
 
 `get` reads one exact canonical Node:
 
@@ -166,13 +165,15 @@ astrale call /:notes.example:class.Note:list --creds "$TOKEN" -i staging
 ```
 
 Nodes do not carry synthetic `path`, `__labels`, or backend `classId` fields.
-`describe` presents the same admitted facts and can omit schema-valued
-properties with `--no-schema`; it does not infer operations or children.
+It does not infer operations or children.
 
 ```bash
 astrale get @note --json
-astrale describe /:notes.example:class.Note --no-schema
+astrale get /:notes.example:class.Note
 ```
+
+`astrale describe` is not a command. Use `get` for one Node. Callable
+input/output remains `astrale call <path> --describe`.
 
 ### `query`
 
