@@ -4,8 +4,8 @@ import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
-import { log } from '../lib/log'
-import { output } from '../lib/output'
+import { formatKernelError } from '../connection/errors'
+import { isMachine, output } from '../lib/output'
 
 type GetOpts = KernelCommandOpts
 
@@ -16,7 +16,7 @@ export async function getCommand(target: string, opts: GetOpts): Promise<void> {
   try {
     ;({ path, meta } = await expandSelfInPath(target, opts))
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid target')
+    await formatKernelError(error, isMachine(opts), undefined, opts.debug)
     process.exit(1)
   }
 

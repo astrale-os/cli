@@ -66,4 +66,27 @@ describe('acceptJournalPage', () => {
     expect(() => acceptJournalPage({ records: [{}] })).toThrow('record 0')
     expect(() => acceptJournalPage({ records: [], cursor: 7 })).toThrow('cursor')
   })
+
+  test('admits journal v2 records that use occurredAt instead of timestamp', () => {
+    const page = acceptJournalPage({
+      records: [
+        {
+          sequence: 10241,
+          topic: 'function.invoke',
+          occurredAt: '2026-08-19T16:51:10.049Z',
+          committedAt: '2026-08-19T16:51:10.070Z',
+          payload: { outcome: 'rejected' },
+          correlation: { invocationId: 'cf862a64-3aa1-4343-ba86-f9b516c4ff95' },
+        },
+      ],
+    })
+    expect(page.records[0]).toMatchObject({
+      sequence: 10241,
+      topic: 'function.invoke',
+      timestamp: '2026-08-19T16:51:10.049Z',
+      occurredAt: '2026-08-19T16:51:10.049Z',
+      committedAt: '2026-08-19T16:51:10.070Z',
+      correlationId: 'cf862a64-3aa1-4343-ba86-f9b516c4ff95',
+    })
+  })
 })

@@ -8,6 +8,7 @@ import { nodeProperty } from '../graph/index'
 import { presentBinary } from '../lib/binary'
 import { log } from '../lib/log'
 import { output, present } from '../lib/output'
+import { describeCallableFromSchema, missingCallableDescription } from './call-describe'
 
 type CallOpts = KernelCommandOpts & {
   data?: string
@@ -97,26 +98,18 @@ async function describeOperation(path: string, opts: CallOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: `Schema for ${path}`,
-    // The Function node carries the schemas as props (function.get depth:0).
-    fn: async ({ graph }) => await graph.get(Path.parse(path)),
-    format: (node, fmtOpts) => {
-      const input = nodeProperty(node, 'inputSchema')
-      const outputSchema = nodeProperty(node, 'outputSchema')
-      const schema: Record<string, unknown> = {}
-      if (input) schema.input = tryParseJson(input)
-      if (outputSchema) schema.output = tryParseJson(outputSchema)
-      output(Object.keys(schema).length > 0 ? schema : node, fmtOpts)
+    fn: async ({ graph }) => {
+      const parsed = Path.parse(path)
+      if (parsed.ast.anchor.kind !== 'domain') {
+        throw missingCallableDescription(path)
+      }
+      const domain = await graph.getOrThrow(Path.parse(`/:${parsed.ast.anchor.origin}`))
+      const described = describeCallableFromSchema(parsed, nodeProperty(domain, 'schema'))
+      if (described === undefined) throw missingCallableDescription(path)
+      return described
     },
+    format: (schema, fmtOpts) => output(schema, fmtOpts),
   })
-}
-
-function tryParseJson(value: unknown): unknown {
-  if (typeof value !== 'string') return value
-  try {
-    return JSON.parse(value)
-  } catch {
-    return value
-  }
 }
 
 // ── Param parsing ───────────────────────────────────────────
@@ -221,17 +214,20 @@ Self-reference:
   (e.g. via 'astrale get @self --json'). Resolution authenticates to
   the selected Kernel and never trusts a local registration or JWT sub.
 
+  --describe reads the callable's input/output from the installed Domain
+  schema. Method Paths are not Function nodes.
+
 Examples:
-  $ astrale call /:host.astrale.ai:class.KernelInstance:list
+  $ astrale call /:host.astrale.ai:class.Manager:createInstance --describe
   $ astrale call /:blog.acme.com:class.Author:list limit=10
   $ astrale call '@self::deactivate'
-  $ astrale call /:shell.astrale.ai:function.search-domains --json
+  $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
 `,
   arguments: [
     {
       name: 'path',
       description:
-        'Operation path (e.g., /:host.astrale.ai:class.KernelInstance:list or /node::method)',
+        'Operation path (e.g., /:host.astrale.ai:class.Manager:createInstance or /node::method)',
     },
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
