@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.8.1-alpha.3](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.2...cli-v0.8.1-alpha.3) (2026-08-19)
+
+
+### Bug Fixes
+
+* **commands:** admit Kernel journal v2 `occurredAt` records in `astrale logs`
+* **commands:** describe callables from the installed Domain schema
+* **commands:** send the current remote install syscall from `domain install --direct`
+* **commands:** explain that managed `instance list` needs Admin + IdP
+* **commands:** reject PatchData on `mutate --dry` with a Mutation V3 error
+
 ## [0.8.1-alpha.2](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.1...cli-v0.8.1-alpha.2) (2026-08-19)
 
 

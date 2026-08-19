@@ -38,6 +38,8 @@ describe('prepareMutation', () => {
 
   /** @evidence TEST-CLI-GRAPH-REJECTS-PATCH-DATA */
   test('rejects legacy PatchData instead of narrowing it', () => {
-    expect(() => prepareMutation({ nodes: { create: [] }, edges: { create: [] } })).toThrow()
+    expect(() => prepareMutation({ nodes: { create: [] }, edges: { create: [] } })).toThrow(
+      /Legacy PatchData/,
+    )
   })
 })

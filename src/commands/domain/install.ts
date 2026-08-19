@@ -20,12 +20,35 @@ import { isMachine, output } from '../../lib/output'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
 
-/** Exact output of the public Kernel install syscall for one requested root. */
-type DirectInstallResult = readonly {
-  origin: string
-  revision: string
-  etag?: string
-}[]
+/** Public Kernel install syscall input for one remote URL. */
+export function directInstallCallInput(
+  url: string,
+  token?: string,
+  operation: string = crypto.randomUUID(),
+) {
+  return Object.freeze({
+    operation,
+    domains: [
+      Object.freeze({
+        source: Object.freeze({
+          kind: 'remote' as const,
+          url,
+          ...(token === undefined ? {} : { token }),
+        }),
+      }),
+    ],
+  })
+}
+
+type DirectInstallResult = {
+  readonly operation: string
+  readonly transitions: readonly {
+    readonly intent: {
+      readonly origin: string
+      readonly target?: { readonly schemaRevision?: string } | null
+    }
+  }[]
+}
 
 type InstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
@@ -330,19 +353,22 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
     label: `Installing domain from ${url}`,
     fn: async ({ session }) =>
       (await session.call(
-        createPathCall(Path.project(syscalls.install.ref).raw, {
-          domains: [{ url, ...(opts.token ? { token: opts.token } : {}) }],
-        }),
+        createPathCall(
+          Path.project(syscalls.install.ref).raw,
+          directInstallCallInput(url, opts.token),
+        ),
       )) as DirectInstallResult,
     format: (result, fmtOpts, isRaw) => {
       if (isRaw) {
         output(result, fmtOpts)
         return
       }
-      const installed = result[0]
-      if (!installed) throw new Error('Kernel install returned no installed Domain receipt.')
-      log.success(`Domain installed: ${installed.origin}@${installed.revision}`)
-      if (installed.etag) log.dim(`  publication: ${installed.etag}`)
+      const installed = result.transitions[0]?.intent
+      if (installed === undefined) {
+        throw new Error('Kernel install returned no committed Domain transition.')
+      }
+      const revision = installed.target?.schemaRevision ?? result.operation
+      log.success(`Domain installed: ${installed.origin}@${revision}`)
       // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
       // aliases the host and the pre-install gate never consented to THAT
       // origin (lying or absent `/meta`), say so loudly after the fact.

@@ -29,6 +29,8 @@ export interface JournalRecord {
   readonly timestamp: string
   readonly topic: string
   readonly payload: unknown
+  readonly occurredAt?: string
+  readonly committedAt?: string
   readonly principal?: string
   readonly correlationId?: string
   readonly causationId?: string
@@ -146,25 +148,43 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
   if (
     !isRecord(input) ||
     !Number.isSafeInteger(input.sequence) ||
-    typeof input.timestamp !== 'string' ||
     typeof input.topic !== 'string'
   ) {
     throw new TypeError(`Kernel journal record ${index} is invalid`)
   }
-  for (const key of ['principal', 'correlationId', 'causationId'] as const) {
-    if (input[key] !== undefined && typeof input[key] !== 'string') {
-      throw new TypeError(`Kernel journal record ${index}.${key} must be text`)
-    }
+  const occurredAt = optionalText(input.occurredAt, index, 'occurredAt')
+  const timestamp = optionalText(input.timestamp, index, 'timestamp') ?? occurredAt
+  if (timestamp === undefined) {
+    throw new TypeError(`Kernel journal record ${index} is missing occurredAt/timestamp`)
   }
+  const correlation = isRecord(input.correlation) ? input.correlation : undefined
+  const correlationId =
+    optionalText(input.correlationId, index, 'correlationId') ??
+    optionalText(correlation?.invocationId, index, 'correlation.invocationId')
+  const principal = optionalText(input.principal, index, 'principal')
   return Object.freeze({
     sequence: input.sequence as number,
-    timestamp: input.timestamp,
+    timestamp,
     topic: input.topic,
     payload: input.payload,
-    ...(input.principal === undefined ? {} : { principal: input.principal as string }),
-    ...(input.correlationId === undefined ? {} : { correlationId: input.correlationId as string }),
-    ...(input.causationId === undefined ? {} : { causationId: input.causationId as string }),
+    ...(occurredAt === undefined ? {} : { occurredAt }),
+    ...(optionalText(input.committedAt, index, 'committedAt') === undefined
+      ? {}
+      : { committedAt: input.committedAt as string }),
+    ...(principal === undefined ? {} : { principal }),
+    ...(correlationId === undefined ? {} : { correlationId }),
+    ...(optionalText(input.causationId, index, 'causationId') === undefined
+      ? {}
+      : { causationId: input.causationId as string }),
   })
+}
+
+function optionalText(input: unknown, index: number, field: string): string | undefined {
+  if (input === undefined) return undefined
+  if (typeof input !== 'string') {
+    throw new TypeError(`Kernel journal record ${index}.${field} must be text`)
+  }
+  return input
 }
 
 function positiveInteger(flag: string, raw: string): number {

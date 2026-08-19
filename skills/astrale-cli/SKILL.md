@@ -92,6 +92,9 @@ astrale instance forget staging
 
 Use explicit `-i <instance>` in scripts. `instance delete` affects an
 admin-managed instance; `instance forget` removes only the local bookmark.
+Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
+instances (key-backed identities have no Admin token). Use
+`astrale instance list --bookmarked`.
 
 The CLI is connect-only: it does not build or run domains. The SDK's
 `astrale-domain` binary owns `dev`, `prod`, `build`, and deploy workflows.
@@ -174,8 +177,8 @@ astrale describe /:notes.example:class.Note --no-schema
 
 ### `query`
 
-`query` executes canonical `astrale.graph.query/v3`. Its result is
-`{ graph: { nodes, edges }, cursor? }`.
+`query` executes canonical `astrale.graph.query/v6`. Its result is
+`{ kind: "graph", graph: { nodes, edges } }` plus an optional page cursor.
 
 - Positional Paths create Path source terms.
 - `--definition <path>` selects Nodes implementing one exact Class or
@@ -184,7 +187,7 @@ astrale describe /:notes.example:class.Note --no-schema
   `incoming`, or `incident`.
 - `--limit` is finite and defaults to 100.
 - `--cursor` resumes the same caller-bound query scope.
-- `--ast` and `--file` admit a complete canonical Query V3 document.
+- `--ast` and `--file` admit a complete canonical Query V6 document.
 
 ```bash
 astrale query /:notes.example:class.Note --limit 50 --json
@@ -192,7 +195,7 @@ astrale query --definition /:notes.example:class.Note --limit 50 --json
 astrale query @note \
   --edge /:notes.example:class.references \
   --direction outgoing --limit 25 --json
-astrale query --file query.v3.json --cursor "$CURSOR"
+astrale query --file query.v6.json --cursor "$CURSOR"
 ```
 
 Raw Cypher, recursive depth, and historical children/edges selector JSON are
@@ -213,13 +216,14 @@ astrale ls @note --edge /:notes.example:class.references -q
 
 ## Mutations
 
-`astrale mutate` accepts canonical `astrale.graph.mutation/v2` or its exact
+`astrale mutate` accepts canonical `astrale.graph.mutation/v3` or its exact
 `{ preconditions, operations }` authoring input from `--data`, `--file`, or
 stdin. The transition is atomic. `--dry` admits and prints the canonical
-document without opening a Kernel connection.
+document without opening a Kernel connection. Legacy PatchData `{ nodes, edges }`
+is rejected.
 
 ```bash
-astrale mutate --file mutation.v2.json
+astrale mutate --file mutation.v3.json
 astrale mutate --data '{"preconditions":[],"operations":[]}' --dry
 ```
 
@@ -229,9 +233,10 @@ The result is `{ createdNodes }`. Historical PatchData arms and
 ## Calls
 
 `astrale call` creates one Path-targeted Call. Input priority is `--data`,
-piped stdin, `key=value`, then `{}`. `--describe` reads the callable Node
-without invoking it; `--dry-run` prints the call input. Value, binary, and
-stream results are handled explicitly, and `--output` writes binary data.
+piped stdin, `key=value`, then `{}`. `--describe` reads the callable's
+input/output from the installed Domain schema (method Paths are not Function
+nodes); `--dry-run` prints the call input. Value, binary, and stream results
+are handled explicitly, and `--output` writes binary data.
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10

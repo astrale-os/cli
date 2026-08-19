@@ -4,6 +4,7 @@ import type { KernelCommandOpts } from '../../connection'
 import type { Column } from '../../lib/output'
 import type { CommandDefinition } from '../../program/index'
 
+import { AstraleError } from '../../errors'
 import { listOwnedInstances } from '../../lib/admin-instance'
 import {
   formatInstanceLocation,
@@ -61,9 +62,13 @@ export default {
 
       let managed: OwnedInstanceInfo[] = []
       if (!opts.bookmarked) {
-        managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
-          listOwnedInstances(opts),
-        )
+        try {
+          managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
+            listOwnedInstances(opts),
+          )
+        } catch (error) {
+          throw adminInventoryUnavailable(error)
+        }
       }
       if (isMachine(opts)) {
         output(
@@ -147,4 +152,32 @@ export function buildInstanceRows(
   }
 
   return rows
+}
+
+const ADMIN_INVENTORY_CODES = new Set([
+  'TOKEN_EXCHANGE_SOURCE_INVALID',
+  'TOKEN_EXCHANGE_SOURCE_EXPIRED',
+  'TOKEN_EXCHANGE_UNSUPPORTED',
+  'TOKEN_EXCHANGE_DISCOVERY_FAILED',
+  'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+  'TOKEN_EXCHANGE_INSECURE',
+  'ADMIN_DOMAIN_ISSUER_MISSING',
+])
+
+/** Admin-managed inventory is not available without a deployed Admin Domain + IdP identity. */
+export function adminInventoryUnavailable(cause: unknown): AstraleError {
+  const code = cause instanceof AstraleError ? cause.code : undefined
+  if (code !== undefined && ADMIN_INVENTORY_CODES.has(code)) {
+    return new AstraleError(
+      'ADMIN_INVENTORY_UNAVAILABLE',
+      'Managed instance listing needs the Admin Domain and an IdP-backed identity. Admin is not deployed in this environment.',
+      'Use `astrale instance list --bookmarked` for local kernel bookmarks. Key-backed identities cannot mint an Admin Domain token.',
+    )
+  }
+  if (cause instanceof AstraleError) return cause
+  return new AstraleError(
+    'ADMIN_INVENTORY_UNAVAILABLE',
+    cause instanceof Error ? cause.message : String(cause),
+    'Use `astrale instance list --bookmarked` for local kernel bookmarks.',
+  )
 }
