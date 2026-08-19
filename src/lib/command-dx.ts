@@ -72,9 +72,21 @@ export function renderCommanderError(
   ].join('\n')
 }
 
+const RETIRED_COMMANDS: Record<string, string> = {
+  ls: 'astrale query <source> --edge <class>',
+}
+
 function renderUnknownCommand(tokens: string[], catalog: CommandCatalogEntry[]): string {
   const command = tokens.join(' ')
   const first = tokens[0]
+  const retired = first === undefined ? undefined : RETIRED_COMMANDS[first]
+  if (retired !== undefined) {
+    return [
+      `Unknown command: ${chalk.bold(`astrale ${command}`)}`,
+      '',
+      `\`astrale ${first}\` was removed. Use ${chalk.bold(retired)} instead.`,
+    ].join('\n')
+  }
   const namespaceMatches = catalog.filter((entry) => entry.path.at(-1) === first)
   if (namespaceMatches.length > 0) {
     return [

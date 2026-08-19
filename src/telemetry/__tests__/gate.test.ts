@@ -49,7 +49,7 @@ describe('extractSignals / hasSignals', () => {
   })
 
   test('quiet session has no signals until a transcript is attached', () => {
-    const s = extractSignals([ev(['status'], 0), ev(['ls', '/'], 0)])
+    const s = extractSignals([ev(['status'], 0), ev(['query', '/'], 0)])
     expect(hasSignals(s)).toBe(false)
     s.harnessSessions = [
       {

@@ -218,18 +218,6 @@ describe('get command', () => {
   })
 })
 
-describe('ls command', () => {
-  /** @evidence TEST-CLI-LS-REQUIRES-EXACT-EDGE-BEFORE-CONNECTION */
-  test('rejects a generic child listing before opening the command connection', async () => {
-    const { lsCommand } = await import('../ls')
-
-    await expect(lsCommand('@node', { json: true })).rejects.toEqual(new ExitError(1))
-
-    expect(runKernelCommandMock).not.toHaveBeenCalled()
-    expect(errors.join('\n')).toContain('Kernel V2 has no universal child relation')
-  })
-})
-
 describe('mutate command', () => {
   /** @evidence TEST-CLI-MUTATE-DISPATCHES-CANONICAL-V3 */
   test('admits authoring input and dispatches one canonical Mutation V3 document', async () => {

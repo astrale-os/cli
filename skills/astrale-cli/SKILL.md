@@ -31,7 +31,6 @@ astrale whoami
 astrale use <name>
 astrale get <target>
 astrale describe <target>
-astrale ls <source> --edge <class>
 astrale query [sources...]
 astrale mutate
 astrale call <path> [key=value...]
@@ -201,18 +200,8 @@ astrale query --file query.v6.json --cursor "$CURSOR"
 Raw Cypher, recursive depth, and historical children/edges selector JSON are
 not portable Kernel V2 contracts and are not accepted.
 
-### `ls`
-
-Kernel V2 has no universal parent/child edge, so `ls` keeps the familiar name
-but requires the relation explicitly:
-
-```bash
-astrale ls @note --edge /:notes.example:class.references
-astrale ls @note --edge /:notes.example:class.references -q
-```
-
-`-l` prints complete canonical Nodes, `-q` prints one `@id` per line, and
-`--count` prints only the returned count. There is no generic recursive mode.
+`astrale ls` is not a command. Use `query` with `--edge` for an exact
+neighborhood.
 
 ## Mutations
 

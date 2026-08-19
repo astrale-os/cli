@@ -61,7 +61,6 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, withKernelOptions((await import('../commands/token')).default))
   registerCommand(program, withKernelOptions((await import('../commands/get')).default))
   registerCommand(program, withKernelOptions((await import('../commands/mutate')).default))
-  registerCommand(program, withKernelOptions((await import('../commands/ls')).default))
   registerCommand(program, withKernelOptions((await import('../commands/describe')).default))
   registerCommand(program, withKernelOptions((await import('../commands/query')).default))
   registerCommand(program, withKernelOptions((await import('../commands/logs')).default))
@@ -159,7 +158,7 @@ export async function buildProgram(): Promise<Command> {
     `
 Command groups:
   Getting started  setup     (sign in, pick an instance, equip your workspace)
-  Kernel        ls, get, mutate, call, query, describe, token
+  Kernel        get, mutate, call, query, describe, token
   Management    admin, instance, domain, identity, auth, idp, update
   Agent         browser   (drive the GUI via agent-browser)
   Studio        studio    (launch the local Domain Studio GUI for a workspace)
@@ -173,7 +172,6 @@ Path syntax:
   @nodeId::method                Instance method on a node by UID
 
 Examples:
-  $ astrale ls @note --edge /:notes.example.dev:class.references
   $ astrale studio
   $ astrale admin status
   $ astrale update --check

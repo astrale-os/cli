@@ -66,7 +66,7 @@ Behavior:
   Reads the admin catalog — every domain that has been \`publish\`ed
   (origin → published worker URL). Listing only shows what is INSTALLABLE;
   what is actually mounted where lives on each instance's own graph
-  (\`astrale ls /\` against that instance).
+  (\`astrale query\` against that instance).
 
   Default output is a NAME/ORIGIN/URL/DEFAULT table on a TTY, JSON when piped
   or with --json/--raw (agent-friendly — full DomainInfo objects). -q prints
