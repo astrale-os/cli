@@ -10,6 +10,9 @@ on:
       - 'install.sh'
       - 'package.json'
       - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'studio/**'
+      - 'vendor/**'
       - 'tsconfig.json'
       - '.github/workflows/cli-release.yml'
   workflow_dispatch:

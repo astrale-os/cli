@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1-alpha.2](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.1...cli-v0.8.1-alpha.2) (2026-08-19)
+
+
+### Bug Fixes
+
+* **ci:** resolve unpublished Shell for standalone Studio `bun install`
+
 ## [0.8.1-alpha.1](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.0...cli-v0.8.1-alpha.1) (2026-08-19)
 
 

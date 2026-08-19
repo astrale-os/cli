@@ -15,7 +15,12 @@ const TARGET = { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainIssuer: DOMAI
 const INVOCATION = `${KERNEL}/invoke`
 const EXPIRES_AT = Math.floor(Date.now() / 1_000) + 500
 const SOURCE_EXPIRES_AT = Math.floor(Date.now() / 1_000) + 120
-const SOURCE_TOKEN = token(issuer.accept('https://workos.example'), KERNEL, 'user-1', SOURCE_EXPIRES_AT)
+const SOURCE_TOKEN = token(
+  issuer.accept('https://workos.example'),
+  KERNEL,
+  'user-1',
+  SOURCE_EXPIRES_AT,
+)
 let directory: string
 
 beforeEach(async () => {

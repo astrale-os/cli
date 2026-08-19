@@ -107,8 +107,7 @@ export async function connectAdminInstances(
       if (hostId !== undefined) {
         const selected = await hostInventory(context.graph, binding, Host, fleet)
         const host = selected.hosts.find(
-          (item) =>
-            item.id === hostId && item.state === 'ready' && item.path !== selected.reserved,
+          (item) => item.id === hostId && item.state === 'ready' && item.path !== selected.reserved,
         )
         if (host === undefined) throw new AdminHostNotFoundError(hostId)
         return instanceFromSummary(
@@ -150,9 +149,7 @@ export async function connectAdminInstances(
   })
 }
 
-async function bindInstalledAdmin(
-  session: ClientSession,
-): Promise<DomainBinding> {
+async function bindInstalledAdmin(session: ClientSession): Promise<DomainBinding> {
   return bind(session, await session.installed(ADMIN_ORIGIN))
 }
 
@@ -264,25 +261,6 @@ function requiredStringProperty(definition: DynamicDefinition, node: Node, name:
     node.props[definition.$.property(name).key],
     `Admin ${definition.name}.${name}`,
   )
-}
-
-function optionalStringProperty(
-  definition: DynamicDefinition,
-  node: Node,
-  name: string,
-): Readonly<Record<string, string>> {
-  const value = optionalStringValue(node.props[definition.$.property(name).key])
-  return value === undefined ? {} : { [name]: value }
-}
-
-function optionalFailureProperty(
-  definition: DynamicDefinition,
-  node: Node,
-): Readonly<{ error?: string }> {
-  const value = node.props[definition.$.property('failure').key]
-  if (value === undefined) return {}
-  const failure = record(value, 'Admin Instance failure')
-  return { error: requiredString(failure.message, 'Admin Instance failure message') }
 }
 
 function instanceState(input: unknown): InstanceState {

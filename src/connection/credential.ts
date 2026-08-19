@@ -1,5 +1,6 @@
 import type { Fetch } from '@astrale-os/kernel-client'
 import type { SessionAuth } from '@astrale-os/kernel-client/session'
+
 import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
 import type { AstraleConfig } from '../lib/config'
