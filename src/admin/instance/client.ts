@@ -8,6 +8,7 @@ import { Query } from '@astrale-os/sdk/query'
 
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import {
+  AdminHostNotFoundError,
   AdminInstanceNotFoundError,
   findOwnedInstance,
   type DomainInstallReceipt,
@@ -68,7 +69,7 @@ export async function connectAdminInstances(
   const operationId = dependencies.operationId ?? defaultOperationId
 
   const list = async (): Promise<OwnedInstanceInfo[]> => {
-    const result = await binding.$.invoke(
+    const result: unknown = await binding.$.invoke(
       Fleet.$.method('listInstances') as never,
       fleet,
       {} as never,
@@ -102,12 +103,22 @@ export async function connectAdminInstances(
       const input = Object.freeze({
         operationId: operationId('create'),
         slug,
-        ...(hostId === undefined ? {} : { hostId }),
       })
-      if (hostId !== undefined)
-        return instanceFromSummary(
-          await binding.$.invoke(Fleet.$.method('createInstance') as never, fleet, input as never),
+      if (hostId !== undefined) {
+        const selected = await hostInventory(context.graph, binding, Host, fleet)
+        const host = selected.hosts.find(
+          (item) =>
+            item.id === hostId && item.state === 'ready' && item.path !== selected.reserved,
         )
+        if (host === undefined) throw new AdminHostNotFoundError(hostId)
+        return instanceFromSummary(
+          await binding.$.invoke(
+            Host.$.method('createInstance') as never,
+            Path.parse(host.path),
+            input as never,
+          ),
+        )
+      }
 
       // Preserve the existing interactive multi-Host picker without accepting a
       // doomed operation first. Graph read policy exposes only caller-usable

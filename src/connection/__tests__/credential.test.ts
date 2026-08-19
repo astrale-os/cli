@@ -37,7 +37,7 @@ describe('connection credential', () => {
       credential: `source:${SOURCE}`,
     })
 
-    expect(auth.ttlSeconds).toBe(3_600)
+    expect(auth.ttlSeconds).toBe(60)
     expect(audiences).toEqual([SOURCE])
     expect(calls).toEqual([TARGET_CALL])
   })
