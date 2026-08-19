@@ -145,9 +145,7 @@ export async function connectAdminCatalog(
   })
 }
 
-async function bindInstalledAdmin(
-  session: ClientSession,
-): Promise<DomainBinding> {
+async function bindInstalledAdmin(session: ClientSession): Promise<DomainBinding> {
   return bind(session, await session.installed(ADMIN_ORIGIN))
 }
 

@@ -107,8 +107,7 @@ export async function connectAdminInstances(
       if (hostId !== undefined) {
         const selected = await hostInventory(context.graph, binding, Host, fleet)
         const host = selected.hosts.find(
-          (item) =>
-            item.id === hostId && item.state === 'ready' && item.path !== selected.reserved,
+          (item) => item.id === hostId && item.state === 'ready' && item.path !== selected.reserved,
         )
         if (host === undefined) throw new AdminHostNotFoundError(hostId)
         return instanceFromSummary(
@@ -150,9 +149,7 @@ export async function connectAdminInstances(
   })
 }
 
-async function bindInstalledAdmin(
-  session: ClientSession,
-): Promise<DomainBinding> {
+async function bindInstalledAdmin(session: ClientSession): Promise<DomainBinding> {
   return bind(session, await session.installed(ADMIN_ORIGIN))
 }
 
