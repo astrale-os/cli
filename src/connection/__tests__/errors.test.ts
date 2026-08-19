@@ -93,4 +93,24 @@ describe('formatKernelError', () => {
       },
     })
   })
+
+  test('maps SDK class names to stable CLI error codes', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      const pathError = new Error('Path must have an Id or Domain anchor.')
+      pathError.name = 'PathError'
+      await formatKernelError(pathError, true)
+    } finally {
+      process.stderr.write = original
+    }
+    expect(JSON.parse(writes[0]!)).toEqual({
+      error: 'PATH_INVALID',
+      message: 'Path must have an Id or Domain anchor.',
+    })
+  })
 })

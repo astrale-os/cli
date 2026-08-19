@@ -3,7 +3,7 @@ import ora, { type Ora } from 'ora'
 
 import { AstraleError, NotImplementedError } from '../errors'
 import { formatElapsed } from './format'
-import { isMachine, type RawOutputOpts } from './output'
+import { isMachine, type MachineOpts } from './output'
 
 export const log = {
   info: (msg: string) => console.log(chalk.blue('ℹ'), msg),
@@ -16,24 +16,32 @@ export const log = {
   dim: (msg: string) => console.log(chalk.dim(msg)),
 }
 
-/** Report an error with hint (when present) and exit. Commands that carry
- *  RawOutputOpts should pass them so machine consumers (--json/--raw/piped)
- *  get one structured JSON line on stderr instead of the pretty ✖ view. */
-export function fatal(e: unknown, opts?: RawOutputOpts): never {
+/** Report an error with hint (when present) and exit. `--json` / `--ci` / a
+ *  non-TTY stdout always get one structured JSON line on stderr. */
+export function fatal(e: unknown, opts?: MachineOpts): never {
   // Ctrl-C at an interactive (@inquirer/prompts) prompt — exit quietly with the
   // SIGINT convention, not a red error line.
   if (e instanceof Error && e.name === 'ExitPromptError') process.exit(130)
   const msg = e instanceof Error ? e.message : String(e)
-  if (opts && isMachine(opts)) {
-    const error = e instanceof AstraleError ? e.code : e instanceof Error ? e.name : 'Error'
-    const payload: Record<string, unknown> = { error, message: msg }
+  const code = e instanceof AstraleError ? e.code : e instanceof Error ? e.name : 'Error'
+  if (isMachine(opts)) {
+    const payload: Record<string, unknown> = { error: code, message: msg }
     if (e instanceof AstraleError && e.hint) payload.hint = e.hint
     process.stderr.write(JSON.stringify(payload) + '\n')
     process.exit(1)
   }
-  log.error(msg)
+  log.error(e instanceof AstraleError ? `${code}: ${msg}` : msg)
   if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
   process.exit(1)
+}
+
+/** Admit expected invalid input and exit through {@link fatal}. */
+export function failClosed(error: unknown, opts?: MachineOpts): never {
+  if (error instanceof AstraleError) fatal(error, opts)
+  fatal(
+    new AstraleError('INVALID_INPUT', error instanceof Error ? error.message : String(error)),
+    opts,
+  )
 }
 
 /** Shortcut for stub commands that aren't wired in v1 (§15). */

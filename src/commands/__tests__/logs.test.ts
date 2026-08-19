@@ -29,6 +29,11 @@ describe('buildJournalInput', () => {
     expect(buildJournalInput({})).toEqual({ limit: 200 })
     expect(() => buildJournalInput({ limit: '0' })).toThrow('--limit')
     expect(() => buildJournalInput({ limit: 'all' })).toThrow('--limit')
+    expect(() => buildJournalInput({ since: 'not-a-date' })).toThrow('--since')
+    expect(() =>
+      buildJournalInput({ since: '2026-01-01T00:00:00Z', until: '1999-01-01T00:00:00Z' }),
+    ).toThrow('--since')
+    expect(() => buildJournalInput({ cursor: 'junk' })).toThrow('--cursor')
   })
 })
 

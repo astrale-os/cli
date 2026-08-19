@@ -183,17 +183,10 @@ function hasVersion(input: unknown): input is { readonly version: unknown } {
   return typeof input === 'object' && input !== null && Object.hasOwn(input, 'version')
 }
 
-function seed(now: Date): IdentityStore {
+function seed(_now: Date): IdentityStore {
   return {
-    default: 'manager',
-    identities: {
-      manager: {
-        subject: 'manager',
-        createdAt: now.toISOString(),
-        source: 'key',
-        mode: 'local',
-      },
-    },
+    default: '',
+    identities: {},
   }
 }
 

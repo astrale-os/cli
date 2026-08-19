@@ -2,6 +2,7 @@
 import { type Command, CommanderError } from 'commander'
 
 import { renderCommanderError } from '../src/lib/command-dx'
+import { configureInvocation } from '../src/lib/invocation'
 import { buildProgram } from '../src/program/index'
 import { beginInvocation } from '../src/telemetry/recorder'
 import { maybeTriggerAnalysis } from '../src/telemetry/trigger'
@@ -23,6 +24,8 @@ const finalize = process.argv[2] === 'session' ? undefined : beginInvocation(pro
 let errorName: string | undefined
 if (finalize) process.on('exit', (code) => finalize(code ?? 0, errorName))
 maybeTriggerAnalysis(process.argv)
+
+configureInvocation(process.argv)
 
 const program = await buildProgram()
 overrideExits(program)

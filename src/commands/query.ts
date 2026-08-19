@@ -7,7 +7,7 @@ import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
 import { prepareQuery, type QueryCommandInput } from '../graph/index'
-import { log } from '../lib/log'
+import { failClosed } from '../lib/log'
 import { isMachine, output } from '../lib/output'
 
 type QueryOpts = KernelCommandOpts & {
@@ -48,16 +48,14 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
       }
     }
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid query')
-    process.exit(1)
+    failClosed(error, opts)
   }
 
   let prepared
   try {
     prepared = prepareQuery(input)
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid Query V6 document')
-    process.exit(1)
+    failClosed(error, opts)
   }
 
   await runKernelCommand({

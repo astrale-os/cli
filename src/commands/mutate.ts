@@ -8,7 +8,7 @@ import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../connection'
 import { prepareMutation } from '../graph/index'
-import { log } from '../lib/log'
+import { failClosed } from '../lib/log'
 import { output } from '../lib/output'
 import { renderTable } from '../lib/table'
 
@@ -23,8 +23,7 @@ export async function mutateCommand(opts: MutateOpts): Promise<void> {
   try {
     mutation = prepareMutation(await readDocument(opts))
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid Mutation V3 document')
-    process.exit(1)
+    failClosed(error, opts)
   }
 
   if (opts.dry) {

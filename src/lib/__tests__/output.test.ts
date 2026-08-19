@@ -112,6 +112,18 @@ describe('denoise', () => {
     })
     expect(out).toEqual({ id: 'x', props: { name: 'n' } })
   })
+
+  test('strips qualified property keys whose leaf is schema', () => {
+    const out = denoise({
+      props: {
+        'kernel.astrale.ai:class.Domain.property.schema': { huge: true },
+        'kernel.astrale.ai:class.Domain.property.origin': 'kernel.astrale.ai',
+      },
+    })
+    expect(out).toEqual({
+      props: { 'kernel.astrale.ai:class.Domain.property.origin': 'kernel.astrale.ai' },
+    })
+  })
 })
 
 describe('presentList', () => {

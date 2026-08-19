@@ -169,6 +169,7 @@ describe('program composition', () => {
       'instance list',
       'instance status',
       'instance use',
+      'introspect',
       'logs',
       'mutate',
       'query',
@@ -185,7 +186,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '369e7d1d51871f0ca1c6007d2a5c45023d093e70b85db07c1f58b06b7a0b17d4',
+      '0f4739269db4c1dc8e1ba8cdf7840d7fbbe9c809234d2e21eef143a9de856382',
     )
   })
 
@@ -334,6 +335,7 @@ describe('help contract — payload sources', () => {
 
     expect(callHelp).toContain('--data <json>')
     expect(callHelp).not.toContain('--file <path>')
+    expect(callHelp).not.toContain('--describe')
     expect(mutateHelp).toContain('--data <json>')
     expect(mutateHelp).toContain('--file <path>')
   })

@@ -1,6 +1,7 @@
 import chalk from 'chalk'
 import { stringify as yamlStringify } from 'yaml'
 
+import { invocationWantsMachine } from './invocation'
 import { renderTable, type Column } from './table'
 
 export type { Column } from './table'
@@ -13,6 +14,8 @@ export type OutputOpts = {
 
 export type RawOutputOpts = Pick<OutputOpts, 'raw' | 'json'>
 
+export type MachineOpts = RawOutputOpts & { readonly ci?: boolean }
+
 export const RAW_OUTPUT_OPTIONS = [
   { flags: '--json', description: 'Always-valid JSON (for jq)' },
   { flags: '--raw', description: 'Unwrapped: bare scalar / raw bytes / JSON for objects' },
@@ -20,10 +23,15 @@ export const RAW_OUTPUT_OPTIONS = [
 
 /**
  * Is the consumer a machine (emit structured data, not a pretty view)?
- * True for `--json`, `--raw`, or any non-TTY stdout (pipe, redirect, CI, agent).
+ * True for `--json`, `--raw`, `--ci`, a process-wide `--ci/--json/--raw` on argv,
+ * or any non-TTY stdout (pipe, redirect, agent).
  */
-export function isMachine(opts?: RawOutputOpts): boolean {
-  return !!(opts?.raw || opts?.json) || !(process.stdout.isTTY ?? false)
+export function isMachine(opts?: MachineOpts): boolean {
+  return (
+    !!(opts?.raw || opts?.json || opts?.ci) ||
+    invocationWantsMachine() ||
+    !(process.stdout.isTTY ?? false)
+  )
 }
 
 /**
@@ -132,6 +140,14 @@ export type ListOpts = OutputOpts & {
 
 const NOISE_KEYS = new Set(['schema', 'icon', 'code', 'inputSchema', 'outputSchema'])
 
+function isNoiseKey(key: string): boolean {
+  if (NOISE_KEYS.has(key)) return true
+  const dot = key.lastIndexOf('.')
+  const colon = key.lastIndexOf(':')
+  const split = Math.max(dot, colon)
+  return split >= 0 && NOISE_KEYS.has(key.slice(split + 1))
+}
+
 /**
  * Strip heavy, low-signal keys (serialized schema blobs, SVG icons, code) at any
  * depth — so machine output is the kernel's data minus the noise, never a wall.
@@ -141,7 +157,7 @@ export function denoise(value: unknown): unknown {
   if (value && typeof value === 'object') {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(value)) {
-      if (NOISE_KEYS.has(k)) continue
+      if (isNoiseKey(k)) continue
       out[k] = v && typeof v === 'object' ? denoise(v) : v
     }
     return out

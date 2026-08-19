@@ -4,7 +4,10 @@ import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../connection'
-import { log } from '../lib/log'
+import { AstraleError } from '../errors'
+import { decodeJwtExpiration } from '../lib/local-status'
+import { failClosed, log } from '../lib/log'
+import { output } from '../lib/output'
 
 /**
  * `astrale token` — mint a fresh delegation token for the active instance
@@ -20,6 +23,7 @@ export type TokenOpts = KernelCommandOpts & {
 
 export async function tokenCommand(opts: TokenOpts): Promise<void> {
   const commandOpts: TokenOpts = opts.for && !opts.as ? { ...opts, as: opts.for } : opts
+  const ttl = parseTtl(commandOpts.ttl)
   await runKernelCommand<string>({
     opts: commandOpts,
     label: 'Minting delegation token',
@@ -28,8 +32,6 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
         commandOpts.audience === undefined
           ? ctx.target.kernelIssuer
           : issuer.accept(commandOpts.audience)
-      const parsedTtl = Number(commandOpts.ttl)
-      const ttl = Number.isFinite(parsedTtl) && parsedTtl > 0 ? parsedTtl : 3600
       const self = await ctx.auth.whoami()
       return ctx.auth.delegate(self.id, {
         audience,
@@ -37,15 +39,35 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
         attenuation: { kind: 'identity', self: true },
       })
     },
-    format: (token, fmtOpts, isRaw) => {
-      if (isRaw) {
-        process.stdout.write(token + '\n')
+    format: (token, fmtOpts) => {
+      if (fmtOpts.json || fmtOpts.format !== undefined) {
+        output({ token, expiresAt: decodeJwtExpiration(token)?.expiresAt ?? null }, fmtOpts)
         return
       }
-      log.dim('  (delegation token — ES256, self-identity)')
+      if (!fmtOpts.raw && (process.stdout.isTTY ?? false)) {
+        log.dim('  (delegation token — ES256, self-identity)')
+      }
       process.stdout.write(`${token}\n`)
     },
   })
+}
+
+export function parseTtl(raw: string | undefined): number {
+  if (raw === undefined) return 3600
+  if (!/^\d+$/.test(raw)) {
+    throw new AstraleError(
+      'INVALID_FLAG',
+      `Invalid --ttl value "${raw}" — expected a positive integer (seconds)`,
+    )
+  }
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new AstraleError(
+      'INVALID_FLAG',
+      `Invalid --ttl value "${raw}" — must be a positive integer`,
+    )
+  }
+  return value
 }
 
 export default {
@@ -63,6 +85,7 @@ Behavior:
 
 Examples:
   $ export TOKEN=$(astrale token --audience shell.astrale.ai --raw)
+  $ astrale token --json -i staging
   $ astrale token --audience worker.example.com --for alice -i staging
 `,
   options: [
@@ -74,6 +97,10 @@ Examples:
     { flags: '--for <identity>', description: 'Mint the token for this identity (alias of --as)' },
   ],
   action: async (opts) => {
-    await tokenCommand(opts as Parameters<typeof tokenCommand>[0])
+    try {
+      await tokenCommand(opts as Parameters<typeof tokenCommand>[0])
+    } catch (error) {
+      failClosed(error, opts as TokenOpts)
+    }
   },
 } satisfies CommandDefinition

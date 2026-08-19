@@ -94,8 +94,8 @@ async function resolveNamedInstanceTarget(
   try {
     managed = await opts.managed(identifier)
   } catch (e) {
-    if (!isManagedInstanceNotFound(e)) throw e
-    throw notFound
+    if (isManagedInstanceNotFound(e) || isAdminDiscoveryFailure(e)) throw notFound
+    throw e
   }
 
   const url = normalizeInstanceKernelUrl(managed.url)
@@ -171,6 +171,22 @@ export function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInst
     defaultIdentity: target.defaultIdentity,
     ...(target.caFile ? { caFile: target.caFile } : {}),
   }
+}
+
+const ADMIN_DISCOVERY_CODES = new Set([
+  'TOKEN_EXCHANGE_SOURCE_INVALID',
+  'TOKEN_EXCHANGE_SOURCE_EXPIRED',
+  'TOKEN_EXCHANGE_UNSUPPORTED',
+  'TOKEN_EXCHANGE_DISCOVERY_FAILED',
+  'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+  'TOKEN_EXCHANGE_INSECURE',
+  'ADMIN_DOMAIN_ISSUER_MISSING',
+  'ADMIN_INVENTORY_UNAVAILABLE',
+])
+
+/** Admin lookup failed before it could say whether the slug exists. */
+export function isAdminDiscoveryFailure(error: unknown): boolean {
+  return error instanceof AstraleError && ADMIN_DISCOVERY_CODES.has(error.code)
 }
 
 export function isManagedInstanceNotFound(error: unknown): boolean {

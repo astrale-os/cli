@@ -82,6 +82,16 @@ describe('connection credential', () => {
     expect(auth).toBeUndefined()
   })
 
+  test('rejects --as combined with --creds', () => {
+    expect(() =>
+      createCliCredential(
+        { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
+        { as: 'alice', creds: 'token' },
+        config,
+      ),
+    ).toThrow('--as cannot be combined with --creds')
+  })
+
   /** @evidence TEST-CLI-CONNECTION-PROPAGATES-AUTH-CANCELLATION */
   test('passes the live Session operation signal to source credential resolution', async () => {
     const controller = new AbortController()

@@ -6,7 +6,13 @@ import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { Column, ListProjection } from '../lib/output'
 import type { CommandDefinition } from '../program/index'
 
-import { createPathCall, runKernelCommand, withClientSession } from '../connection'
+import {
+  createPathCall,
+  expandSelfInPath,
+  runKernelCommand,
+  withClientSession,
+} from '../connection'
+import { failClosed } from '../lib/log'
 import { isMachine, output, presentList } from '../lib/output'
 
 const JOURNAL_PATH = Path.project(syscalls.journal.ref).raw
@@ -50,10 +56,18 @@ export interface JournalInput {
   readonly limit: number
 }
 
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+const CURSOR_TOKEN = /^[A-Za-z0-9._:+=/-]{8,}$/
+
 /** Map flags to the exact public journal syscall input without legacy glob/sequence lowering. */
 export function buildJournalInput(opts: LogsOpts): JournalInput {
   const exact = nonEmpty(opts.topic)
   const prefix = nonEmpty(opts.topicPrefix)
+  const since = timestampFlag('--since', opts.since)
+  const until = timestampFlag('--until', opts.until)
+  if (since !== undefined && until !== undefined && Date.parse(since) > Date.parse(until)) {
+    throw new TypeError('--since must be earlier than or equal to --until')
+  }
   return {
     ...(exact === undefined && prefix === undefined
       ? {}
@@ -64,11 +78,28 @@ export function buildJournalInput(opts: LogsOpts): JournalInput {
           },
         }),
     ...(nonEmpty(opts.principal) === undefined ? {} : { principal: opts.principal }),
-    ...(nonEmpty(opts.since) === undefined ? {} : { since: opts.since }),
-    ...(nonEmpty(opts.until) === undefined ? {} : { until: opts.until }),
-    ...(nonEmpty(opts.cursor) === undefined ? {} : { cursor: opts.cursor }),
+    ...(since === undefined ? {} : { since }),
+    ...(until === undefined ? {} : { until }),
+    ...(opts.cursor === undefined ? {} : { cursor: cursorFlag(opts.cursor) }),
     limit: opts.limit === undefined ? DEFAULT_LIMIT : positiveInteger('--limit', opts.limit),
   }
+}
+
+function timestampFlag(name: string, raw: string | undefined): string | undefined {
+  const value = nonEmpty(raw)
+  if (value === undefined) return undefined
+  if (!ISO_TIMESTAMP.test(value) || Number.isNaN(Date.parse(value))) {
+    throw new TypeError(`${name} must be an ISO-8601 timestamp (e.g. 2026-08-19T16:51:10.049Z)`)
+  }
+  return value
+}
+
+function cursorFlag(raw: string): string {
+  const value = raw.trim()
+  if (!CURSOR_TOKEN.test(value)) {
+    throw new TypeError('--cursor must be an opaque journal resume token (at least 8 characters)')
+  }
+  return value
 }
 
 /** Validate the record fields the CLI presentation consumes and retain the opaque cursor. */
@@ -196,6 +227,14 @@ function positiveInteger(flag: string, raw: string): number {
   return value
 }
 
+async function prepareLogsOpts(opts: LogsOpts): Promise<LogsOpts> {
+  buildJournalInput(opts)
+  const principal = nonEmpty(opts.principal)
+  if (principal !== '@self') return opts
+  const { path } = await expandSelfInPath('@self', opts)
+  return { ...opts, principal: path.startsWith('@') ? path.slice(1) : path }
+}
+
 function nonEmpty(input: string | undefined): string | undefined {
   const value = input?.trim()
   return value ? value : undefined
@@ -234,7 +273,12 @@ Examples:
     { flags: '--follow', description: 'Poll using returned cursors until interrupted' },
   ],
   action: async (opts: LogsOpts) => {
-    if (opts.follow) await follow(opts)
-    else await runOnce(opts)
+    try {
+      const prepared = await prepareLogsOpts(opts)
+      if (prepared.follow) await follow(prepared)
+      else await runOnce(prepared)
+    } catch (error) {
+      failClosed(error, opts)
+    }
   },
 } satisfies CommandDefinition

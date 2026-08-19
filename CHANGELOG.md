@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.8.1-alpha.6](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.5...cli-v0.8.1-alpha.6) (2026-08-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** add `astrale introspect`; drop `call --describe`
+* **commands:** empty identity home no longer seeds a fake `manager`
+* **commands:** `--json`/`--ci`/non-TTY emit structured errors on stderr
+* **commands:** `token --json` is `{ token, expiresAt }`; `--ttl` is a positive integer
+* **commands:** `--as` cannot be combined with `--creds`
+
+
+### Features
+
+* **commands:** add `astrale introspect` on the Kernel Schema syscall
+* **commands:** identity write commands accept `--json`
+* **commands:** `view --list` without a spec lists sessions
+
+
+### Bug Fixes
+
+* **commands:** map unknown `-i` to `INSTANCE_NOT_FOUND` before Admin exchange
+* **commands:** reject method Paths on `get`; denoise schema unless `--schema`
+* **commands:** admit `call --dry-run` Paths and prefer key=value over hanging stdin
+* **commands:** validate journal `--since`/`--until`/`--cursor` and expand `@self` principal
+* **commands:** `update --check` reports the running binary against npm `latest`
+* **lib:** drop unused `--offline-ok` / `--log-level` / `--log-format`
+* **commands:** Mutation V3 empty operations fail in CLI language
+
 ## [0.8.1-alpha.5](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.4...cli-v0.8.1-alpha.5) (2026-08-19)
 
 

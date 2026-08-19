@@ -9,8 +9,21 @@ export function prepareMutation(input: unknown): MutationASTValue {
       'Legacy PatchData { nodes, edges } is not Mutation V3. Author { preconditions, operations } or a canonical astrale.graph.mutation/v3 document.',
     )
   }
+  if (hasEmptyOperations(input)) {
+    throw new TypeError('Mutation V3 requires at least one operation')
+  }
   if (isCanonicalCandidate(input)) return MutationAST.decode(input)
   return MutationAST.create(input as MutationInput)
+}
+
+function hasEmptyOperations(input: unknown): boolean {
+  return (
+    input !== null &&
+    typeof input === 'object' &&
+    !Array.isArray(input) &&
+    Array.isArray((input as { operations?: unknown }).operations) &&
+    (input as { operations: unknown[] }).operations.length === 0
+  )
 }
 
 function isCanonicalCandidate(input: unknown): boolean {

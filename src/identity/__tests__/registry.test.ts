@@ -49,7 +49,7 @@ describe('identity registry journey', () => {
       bobKey: boolean
     }
     expect(result.store.default).toBe('alice')
-    expect(Object.keys(result.store.identities).sort()).toEqual(['alice', 'manager', 'workos'])
+    expect(Object.keys(result.store.identities).sort()).toEqual(['alice', 'workos'])
     expect(result.store.identities.alice.registrations?.production).toEqual({
       iss: 'https://kernel.example',
       sub: 'node-alice',

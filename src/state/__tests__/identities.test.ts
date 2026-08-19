@@ -46,7 +46,7 @@ describe('identity state', () => {
       path,
       now: () => new Date('2025-01-01T00:00:00.000Z'),
     })
-    expect(missing.identities.manager.createdAt).toBe('2025-01-01T00:00:00.000Z')
+    expect(missing).toEqual({ default: '', identities: {} })
     await expect(readFile(path, 'utf-8')).rejects.toThrow()
 
     await writeFile(path, legacy)
@@ -56,7 +56,7 @@ describe('identity state', () => {
 
     const current = `${JSON.stringify({ version: IDENTITY_STORE_VERSION, ...missing })}\n`
     await writeFile(path, current)
-    expect((await readIdentityStore({ path })).identities.manager.subject).toBe('manager')
+    expect((await readIdentityStore({ path })).identities).toEqual({})
     expect(await readFile(path, 'utf-8')).toBe(current)
   })
 

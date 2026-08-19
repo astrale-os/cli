@@ -19,11 +19,19 @@ import {
 import { AstraleError } from '../errors'
 import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
+import { log } from '../lib/log'
+import { isMachine } from '../lib/output'
 import { createCliCredential, validateCredentialSelection } from './credential'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
+
+function warnMissingExplicitTarget(options: ConnectionOptions, target: ConnectionTarget): void {
+  if (options.instance !== undefined || options.url !== undefined) return
+  if (!isMachine(options)) return
+  log.warn(`No -i/--url; using ${target.slug ?? target.url}`)
+}
 
 export interface ConnectionContext {
   readonly session: ClientSession
@@ -55,6 +63,7 @@ export async function withClientSession<Value>(
   const target = await resolveConnectionTarget(options, config, {
     managed: (slug) => lookupManagedInstance(slug, options),
   })
+  warnMissingExplicitTarget(options, target)
   return runResolvedClientSession(target, timeoutMs, options, config, action, openConnection)
 }
 

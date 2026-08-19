@@ -1,9 +1,10 @@
 import type { CommandDefinition } from '../../program/index'
 
+import { AstraleError } from '../../errors'
 import { getDefault, getIdentity, readIdentities } from '../../identity/index'
 import { isSessionExpired, readIdpSession, type IdpSession } from '../../lib/idp'
 import { ensureFreshSession } from '../../lib/idp-session'
-import { log } from '../../lib/log'
+import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 
 type AuthTokenType = 'access' | 'id'
@@ -66,7 +67,12 @@ Examples:
   $ astrale auth token --name alice --type id --json
 `,
   action: async (opts: AuthTokenOpts) => {
-    const result = await resolveAuthToken(opts)
+    let result: AuthTokenResult
+    try {
+      result = await resolveAuthToken(opts)
+    } catch (error) {
+      fatal(error, opts)
+    }
 
     if (opts.raw) {
       process.stdout.write(result.token + '\n')
@@ -118,10 +124,11 @@ async function resolveIdentityName(opts: AuthTokenOpts): Promise<string> {
   if (opts.name) {
     const identity = await getIdentity(opts.name)
     if ((identity.source ?? 'key') !== 'idp') {
-      throw new Error(`Identity "${opts.name}" is not IdP-backed`)
+      throw new AstraleError('AUTH_ERROR', `Identity "${opts.name}" is not IdP-backed`)
     }
     if (opts.idp && identity.idp !== opts.idp) {
-      throw new Error(
+      throw new AstraleError(
+        'AUTH_ERROR',
         `Identity "${opts.name}" is backed by IdP "${identity.idp ?? '?'}", not "${opts.idp}"`,
       )
     }
@@ -135,20 +142,25 @@ async function resolveIdentityName(opts: AuthTokenOpts): Promise<string> {
       .map(([name]) => name)
 
     if (matches.length === 0) {
-      throw new Error(
+      throw new AstraleError(
+        'AUTH_ERROR',
         `No IdP-backed identities found for IdP "${opts.idp}". Run: astrale auth login --idp ${opts.idp}`,
       )
     }
     if (matches.includes(store.default)) return store.default
     if (matches.length === 1) return matches[0]
-    throw new Error(
+    throw new AstraleError(
+      'AUTH_ERROR',
       `Multiple IdP-backed identities found for IdP "${opts.idp}": ${matches.join(', ')}. Pass --name.`,
     )
   }
 
   const identity = await getDefault()
   if ((identity.source ?? 'key') !== 'idp') {
-    throw new Error('Default identity is not IdP-backed. Pass --name or --idp.')
+    throw new AstraleError(
+      'AUTH_ERROR',
+      'Default identity is not IdP-backed. Pass --name or --idp.',
+    )
   }
   return identity.name
 }
