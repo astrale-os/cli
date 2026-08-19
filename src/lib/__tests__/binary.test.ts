@@ -4,8 +4,7 @@ import { readFile, unlink } from 'node:fs/promises'
 import { presentBinary, type BinaryLike } from '../binary'
 
 const png = (): BinaryLike => ({
-  status: 200,
-  contentType: 'image/png',
+  mediaType: 'image/png',
   body: new Uint8Array([1, 2, 3, 4]),
 })
 
@@ -40,7 +39,7 @@ describe('presentBinary', () => {
 
   test('--json inlines text for text-like content types', async () => {
     await presentBinary(
-      { status: 200, contentType: 'text/plain', body: new TextEncoder().encode('hi') },
+      { mediaType: 'text/plain', body: new TextEncoder().encode('hi') },
       { json: true },
     )
     const obj = JSON.parse(Buffer.concat(chunks).toString())

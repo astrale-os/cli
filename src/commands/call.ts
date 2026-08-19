@@ -1,59 +1,40 @@
-import { K } from '@astrale-os/kernel-core'
+import { Path } from '@astrale-os/sdk/graph/path'
 
-import type { CommandDefinition } from '../command'
-import type { CallCommandOpts, ClientContext, SelfExpansionMeta } from '../kernel'
+import type { ConnectionContext, KernelCommandOpts } from '../connection'
+import type { CommandDefinition } from '../program/index'
 
-import {
-  bindGraph,
-  buildSelfContext,
-  nodeProp,
-  resolveSelfIdLazy,
-  runKernelCommand,
-  withSelfHint,
-} from '../kernel'
-import { presentBinary, type BinaryLike } from '../lib/binary'
+import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
+import { nodeProperty } from '../graph/index'
+import { presentBinary } from '../lib/binary'
 import { log } from '../lib/log'
 import { output, present } from '../lib/output'
-import { containsSelfRef, expandSelfReferences } from '../lib/self'
 
-type CallOpts = CallCommandOpts & { describe?: boolean; dryRun?: boolean; output?: string }
+type CallOpts = KernelCommandOpts & {
+  data?: string
+  describe?: boolean
+  dryRun?: boolean
+  output?: string
+}
 
-/** A call resolves to either a JSON value or a binary response. */
-type CallResult = { kind: 'binary'; response: BinaryLike } | { kind: 'value'; value: unknown }
+type CallResult = Awaited<ReturnType<ConnectionContext['session']['dispatch']>>
+type MaterializedCallResult =
+  | Exclude<CallResult, { readonly kind: 'stream' }>
+  | { readonly kind: 'stream'; readonly values: readonly unknown[] }
 
 export async function callCommand(
   path: string,
   rawParams: string[],
   opts: CallOpts,
 ): Promise<void> {
-  // Expand @self before describe/execute so refusals are typed and stale IdP
-  // registrations can refresh through whoami.
-  let expandedPath = path
-  let expandedRaw = rawParams
-  let selfMeta: SelfExpansionMeta | undefined
-  const inputsHaveSelf = containsSelfRef(path) || rawParams.some(containsSelfRef)
-  if (inputsHaveSelf) {
-    try {
-      const selfCtx = await buildSelfContext(opts)
-      const selfId = await resolveSelfIdLazy(selfCtx, opts)
-      expandedPath = expandSelfReferences(path, selfId)
-      expandedRaw = rawParams.map((p) => expandSelfReferences(p, selfId))
-      // Stale-registration hints apply when @self appears in either path or params.
-      const rawMutated = expandedRaw.some((p, i) => p !== rawParams[i])
-      if (expandedPath !== path || rawMutated) {
-        selfMeta = {
-          original: path,
-          expanded: expandedPath,
-          selfId,
-          identity: selfCtx.identity?.name,
-          slug: selfCtx.instanceSlug,
-        }
-      }
-    } catch (e) {
-      log.error(e instanceof Error ? e.message : 'Invalid @self expansion')
-      process.exit(1)
-    }
+  // Expand @self before describe/execute through authenticated Identity.whoami.
+  let expanded: Awaited<ReturnType<typeof expandSelfInCall>>
+  try {
+    expanded = await expandSelfInCall(path, rawParams, opts)
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : 'Invalid @self expansion')
+    process.exit(1)
   }
+  const expandedPath = expanded.path
 
   // ── Describe mode: show schema without executing ────────
   // Runs AFTER expansion so `astrale call @self::m --describe` works.
@@ -64,7 +45,7 @@ export async function callCommand(
   // ── Parse params ────────────────────────────────────────
   let params: Record<string, unknown>
   try {
-    params = await parseParams(expandedRaw, opts.data)
+    params = await parseParams([...expanded.parameters], opts.data)
   } catch (e) {
     log.error(e instanceof Error ? e.message : 'Invalid params')
     process.exit(1)
@@ -77,56 +58,39 @@ export async function callCommand(
   }
 
   // ── Execute ────────────────────────────────────────────
-  await runKernelCommand<CallResult>({
+  await runKernelCommand<MaterializedCallResult>({
     opts,
     label: expandedPath,
-    fn: async (ctx): Promise<CallResult> => {
-      // Binary outputs must be routed before dispatch; JSON decoding would corrupt bytes.
-      if (await isBinaryOutput(ctx, expandedPath)) {
-        const response = await withSelfHint(() => ctx.client.binary(expandedPath, params), selfMeta)
-        return { kind: 'binary', response }
-      }
-      const value = await withSelfHint(() => ctx.client.call(expandedPath, params), selfMeta)
-      return { kind: 'value', value }
-    },
+    fn: (ctx) =>
+      withSelfHint(
+        async () =>
+          materializeCallResult(await ctx.session.dispatch(createPathCall(expandedPath, params))),
+        expanded.meta,
+      ),
     format: async (result, fmtOpts) => {
-      if (result.kind === 'binary') {
-        await presentBinary(result.response, fmtOpts, { outFile: opts.output })
-        return
+      switch (result.kind) {
+        case 'value':
+          present(result.value, fmtOpts)
+          return
+        case 'binary':
+          await presentBinary(result.value, fmtOpts, { outFile: opts.output })
+          return
+        case 'stream':
+          output(result.values, fmtOpts)
+          return
+        case 'redirect':
+          throw new Error('Client Session returned an unresolved redirect.')
       }
-      present(result.value, fmtOpts)
     },
   })
 }
 
-/**
- * Best-effort binary preflight. Static paths read the Function node directly;
- * instance paths probe the class method node and fall back to value transport on miss.
- */
-async function isBinaryOutput(ctx: ClientContext, path: string): Promise<boolean> {
-  try {
-    const target = path.includes('::') ? await instanceMethodNodePath(ctx, path) : path
-    if (!target) return false
-    const node = await bindGraph(ctx).get(target)
-    // Props travel under fully-qualified keys; `output.key` IS that key.
-    return node?.props?.[K.$.i('Function').output.key] === 'binary'
-  } catch {
-    return false
-  }
-}
-
-/** `<node>::method` → the method's Function-node MethodPath, via the node's class. */
-async function instanceMethodNodePath(
-  ctx: ClientContext,
-  path: string,
-): Promise<string | undefined> {
-  const sep = path.lastIndexOf('::')
-  const source = path.slice(0, sep)
-  const method = path.slice(sep + 2)
-  if (!source || !method) return undefined
-  const node = await bindGraph(ctx).get(source)
-  // ClassPath + method name forms the class-owned Function MethodPath.
-  return node?.class ? `${node.class.raw}:${method}` : undefined
+/** Drain a session-backed stream before the command-scoped Client Session closes. */
+export async function materializeCallResult(result: CallResult): Promise<MaterializedCallResult> {
+  if (result.kind !== 'stream') return result
+  const values: unknown[] = []
+  for await (const value of result.stream) values.push(value)
+  return Object.freeze({ kind: 'stream', values: Object.freeze(values) })
 }
 
 async function describeOperation(path: string, opts: CallOpts): Promise<void> {
@@ -134,10 +98,10 @@ async function describeOperation(path: string, opts: CallOpts): Promise<void> {
     opts,
     label: `Schema for ${path}`,
     // The Function node carries the schemas as props (function.get depth:0).
-    fn: async (ctx) => await bindGraph(ctx).get(path),
+    fn: async ({ graph }) => await graph.get(Path.parse(path)),
     format: (node, fmtOpts) => {
-      const input = nodeProp(node, 'inputSchema')
-      const outputSchema = nodeProp(node, 'outputSchema')
+      const input = nodeProperty(node, 'inputSchema')
+      const outputSchema = nodeProperty(node, 'outputSchema')
       const schema: Record<string, unknown> = {}
       if (input) schema.input = tryParseJson(input)
       if (outputSchema) schema.output = tryParseJson(outputSchema)
@@ -254,8 +218,8 @@ Self-reference:
   @self expands to your nodeId on the active instance (path head or
   bare param value, e.g. node=@self). --data and stdin payloads are
   sent verbatim — pre-resolve manually to a literal @<nodeId> there
-  (e.g. via 'astrale describe @self -q', or shell-substituted from the
-  registration record in ~/.astrale/identities.json).
+  (e.g. via 'astrale get @self --json'). Resolution authenticates to
+  the selected Kernel and never trusts a local registration or JWT sub.
 
 Examples:
   $ astrale call /:host.astrale.ai:class.KernelInstance:list

@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../command'
+import type { CommandDefinition } from '../program/index'
 
 import pkg from '../../package.json' with { type: 'json' }
 import { fatal, log } from '../lib/log'

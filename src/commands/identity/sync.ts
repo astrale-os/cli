@@ -1,6 +1,6 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
-import { getIdentity, setIdentityMode } from '../../lib/identity'
+import { getIdentity, setIdentityMode } from '../../identity/index'
 import { fatal, fatalNotImplemented, log } from '../../lib/log'
 
 export default {

@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { log } from '../../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'

@@ -1,10 +1,10 @@
-import type { CommandDefinition } from '../../command'
 import type { OwnedInstanceInfo } from '../../lib/admin-instance'
+import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
-import { listOwnedInstances } from '../../kernel/client'
+import { getDefault, setDefault } from '../../identity/index'
+import { listOwnedInstances } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
-import { getDefault, setDefault } from '../../lib/identity'
 import {
   getActive,
   readInstances,

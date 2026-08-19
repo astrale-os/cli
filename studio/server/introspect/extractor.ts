@@ -23,7 +23,7 @@ async function main() {
   const loadDsl = async (): Promise<Record<string, any>> => {
     if (dsl) return dsl
     const loaded: Record<string, any> = await import(
-      Bun.resolveSync('@astrale-os/kernel-dsl', domainDir)
+      Bun.resolveSync('@astrale-os/sdk/schema', domainDir)
     )
     dsl = loaded
     return loaded

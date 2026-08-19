@@ -5,81 +5,57 @@
 Read when implementing schema-bound methods, standalone functions, durable-shaped steps, graph reads and
 writes, cross-domain calls, or semantic dispatch. Prefer schema-derived types and the handler's
 schema-bound client (`kernel.classes`) for typed `BoundNode`s and traversals; use `withSchema` at
-cross-domain boundaries. Keep compiled accessors for low-level graph work, use explicit caller gates,
-and choose the narrowest operation that preserves the invariant.
+cross-domain boundaries. Keep compiled accessors for low-level graph work, declare caller admission in
+Schema Policy, and choose the narrowest operation that preserves the
+invariant.
 
 ## Function Handler
 
-A **handler** is the executable implementation of a declared function. The schema says what a call
-means; the handler supplies behavior. Authorization, orchestration, and effects are separate concerns
-inside that behavior, while kernel permissions remain the resource boundary. Their implementation
-belongs in method handlers or standalone handlers.
+A **handler** is the executable implementation of a declared Function or Method. The Schema says what
+a call means and its Policy owns admission; the handler supplies only admitted behavior, orchestration,
+and effects.
 
 ## How to implement a method?
 
-Use `remoteMethod<Deps>()(schema, owner, method, impl)` so parameters, result, `self`, auth nullability,
-and dependencies all come from the declared contract. Put caller-sensitive checks in `authorize`, keep
-the execution body focused on state changes, and register every implementation through
-`remoteClassMethods` or `remoteInterfaceMethods`. This prevents a handler from silently drifting from
-its function.
+Declare authentication and Policy in Schema, then implement only the callable behavior. A synchronous
+handler can be written directly; a durable multi-step operation binds the exact compiled callable to a
+Workflow. Register the result in the exhaustive `defineDomain` handler map.
 
 ```ts
-import { EDIT } from '@astrale-os/kernel-core'
-import {
-  remoteClassMethods,
-  remoteMethod,
-  type SchemaMethodsImpl,
-} from '@astrale-os/sdk'
+import { bindWorkflow, type WorkflowBinding } from '@astrale-os/sdk/workflow'
 
-export const renameContact = remoteMethod<Deps>()(schema, 'Contact', 'rename', {
-  authorize: ({ auth, kernel, self }) =>
-    kernel.auth.require({
-      who: auth.principal,
-      on: self.path,
-      perms: EDIT,
-      context: 'Contact.rename',
-    }),
-  execute: async ({ kernel, self, params, step }) => {
-    await step.run('update-contact-name', async () => {
-      await kernel.updateNode(D.Contact.path.class, self.path, {
-        [D.Contact.name.key]: params.name,
-      })
-    })
-  },
-})
-
-const classMethods = remoteClassMethods<Deps>()
-export const methods: SchemaMethodsImpl<typeof schema, Deps> = {
-  class: { Contact: classMethods(schema, 'Contact', { rename: renameContact }) },
-  interface: {},
-}
+export const renameProject: WorkflowBinding<
+  typeof Projects.Project.rename,
+  RenameProjectCapabilities
+> = bindWorkflow(
+  Projects.$.class('Project').$.method('rename'),
+  renameProjectWorkflow,
+)
 ```
+
+Do not add handler-local permission checks. Kernel-v2 evaluates the Schema Policy before invoking the
+handler.
 
 ## Implement methods from the schema contract
 
-Implement a schema method with `remoteMethod`, and aggregate implementations with `remoteClassMethods`
-or `remoteInterfaceMethods`. These helpers derive params, result, static-versus-instance self, and auth
-policy from the schema, so the handler cannot silently drift from the declared function.
+Build the handler map from the compiled Domain so missing or extra callables fail at the SDK boundary.
+Use `HandlerOf` for direct handlers and `bindWorkflow` for durable handlers.
 
 ```ts
-export const renameContact = remoteMethod<Deps>()(
-  schema,
-  'Contact',
-  'rename',
-  {
-    authorize: ({ kernel, auth, self }) =>
-      kernel.auth.require({
-        who: auth.principal,
-        on: self.path,
-        perms: EDIT,
-        context: 'Contact.rename',
-      }),
-    execute: async ({ self, params }) => {
-      const contact = await self.node()
-      await contact.update({ name: params.name })
-    },
+import { defineDomain, type HandlerOf } from '@astrale-os/sdk'
+
+const rename: HandlerOf<typeof Projects.Project.rename> = ({ input }) => ({
+  name: input.name,
+})
+
+export const ProjectsDomain = defineDomain({
+  schema: ProjectsSchema,
+  handlers: {
+    functions: {},
+    classes: { Project: { rename } },
+    interfaces: {},
   },
-)
+})
 ```
 
 ## One file per callable, named verb-object
@@ -105,97 +81,12 @@ a static method. Use this SDK convenience through the canonical method implement
 keeping the conceptual distinction in static versus instance methods and the read semantics in get
 versus getOrThrow.
 
-## What are ctx.fn identity tools for?
+## Handler authority
 
-`ctx.fn` exposes the currently executing callable's identity tools. `fn.ref` is a schema ref used for
-naming, not an addressable graph path; `fn.credential()` signs as the function, and `fn.kernel()`
-creates a self-only session. Use that session only when the function identity should act, most notably
-after a public endpoint verifies its upstream. See public entry points, handler versus self-only
-authority, and the raw-body limitation.
-
-## Composed Handler Kernel vs fn.kernel()
-
-For required authentication, `ctx.kernel` is a bound session using `union(caller delegation, function
-identity)`. For optional authentication it may be null; for public handlers it is always null. `await
-ctx.fn.kernel()` creates a **self-only** session for the current function identity. Use it after
-authenticating an external webhook, not to pretend an anonymous caller was authorized. See composed
-authority and public entry points.
-
-```ts
-export const webhook = defineRemoteFunction({
-  auth: 'public',
-  inputSchema: webhookInput,
-  outputSchema: webhookOutput,
-  authorize: ({ c }) =>
-    verifySignedEvent({
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-  }),
-  execute: async ({ fn, step }) => {
-    const kernel = await fn.kernel()
-    await step.run('store-event', () => storeEvent(kernel))
-    return { accepted: true }
-  },
-})
-```
-
-## Composed Handler Authority
-
-An authenticated handler's kernel is bound to the **union** of the delegated caller authority and the
-current function identity. That lets a function use its own operational grants, but it means a
-successful graph write does not prove the caller could perform it personally. Put caller-sensitive
-checks in an explicit authorization gate before the first effect, naming the principal whose standing
-authority is required.
-
-## Declare authorize on every callable
-
-Give every `remoteMethod` and `defineRemoteFunction` an `authorize` hook. Gate the principal with
-`kernel.auth.require`; when a callable is genuinely open, write an empty hook rather than none.
-
-```ts
-// Gated: the caller must personally hold EDIT on the receiver.
-export const deleteIssueMethod = remoteMethod<Deps>()(schema, 'Issue', 'delete', {
-  authorize: ({ kernel, auth, self }) =>
-    kernel.auth.require({
-      who: auth.principal,
-      on: self.path,
-      perms: EDIT,
-      context: 'Issue.delete',
-    }),
-  execute: ({ self, kernel, step }) => deleteIssue(self.path, { kernel, step }),
-})
-
-// Open to any authenticated caller: declare it, do not omit it.
-export const listTagsMethod = remoteMethod<Deps>()(schema, 'Tag', 'list', {
-  authorize: () => {},
-  execute: ({ kernel }) => listTags(kernel),
-})
-```
-
-## Gate the caller explicitly when the rule is about the caller
-
-A remote handler's kernel session carries the union of the caller delegation and the function identity.
-Therefore, a successful graph operation does not prove that the caller personally held the right. Put
-caller-specific business gates in the authorize hook and check the caller with `kernel.auth.require`
-before execution.
-
-```ts
-export const installApplication = remoteMethod<Deps>()(
-  schema,
-  'Application',
-  'install',
-  {
-    authorize: ({ kernel, auth, params }) =>
-      kernel.auth.require({
-        who: auth.principal,
-        on: params.space,
-        perms: EDIT,
-        context: 'Application.install',
-      }),
-    execute: ({ params, kernel }) => install(params, { kernel }),
-  },
-)
-```
+Kernel-v2 establishes authority before handler execution. A required-authentication handler receives an
+authenticated `caller` plus non-null `app`, `kernel`, `query`, and `mutate` values. A public
+handler receives an anonymous caller and null for those Domain execution surfaces. There is no
+`ctx.fn`, self-credential, or handler-local authorization escape hatch.
 
 ## Run every effect inside a step
 
@@ -336,63 +227,18 @@ export function deps(env: Env): Deps {
 
 ## How to implement a standalone function?
 
-Declare the contract with `func` in the schema, implement the same map key with `defineRemoteFunction`,
-then pass that map to `defineDomain`. The SDK rejects a missing or extra handler. A public webhook has
-`auth: null` and `kernel: null`; verify its upstream request first, then acquire a self-only session
-through `fn.kernel()`. Providers that sign exact raw bytes currently hit the raw-body route limitation;
-never reconstruct signed bytes from parsed JSON. This follows public-entry discipline.
-
-```ts
-export const functions = {
-  ingest: defineRemoteFunction({
-    inputSchema: z.object({ eventId: z.string(), payload: z.unknown() }),
-    outputSchema: z.object({ accepted: z.boolean() }),
-    auth: 'public',
-    authorize: ({ c, deps, params }) => deps.provider.verifySignedEvent({
-      event: params,
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-    }),
-    execute: async ({ params, fn, step }) => {
-      const kernel = await fn.kernel()
-      await step.run('store-webhook-event', async () => {
-        const id = await kernel.createNode(D.Event.path.class, `/events/${params.eventId}`, {
-          [D.Event.payload.key]: params.payload,
-        })
-        return { id }
-      })
-      return { accepted: true }
-    },
-  }),
-}
-
-export const domain = defineDomain({ schema, methods, functions })
-```
+Declare the Function with `fn(...)` in Schema and register its exact name under
+`handlers.functions`. Its authentication mode and Policy stay on the Schema declaration; its handler
+owns behavior only. Use `defineDomain.public(...)` only when the package intentionally exposes the
+public deployment contract.
 
 ## When to use an instance method, static method, or standalone function?
 
 Choose by semantic ownership, not transport convenience. Use an instance method when an existing node is
 the natural receiver, its lifecycle or invariant changes, or authorization should follow it; use a
 static method for class-level construction or queries with no receiver; use a standalone function for
-domain-wide orchestration, postInstall, or raw-request webhooks. A static method that accepts the node
+Domain-wide behavior or raw-request webhooks. A static method that accepts the node
 it acts on is a receiver smell unless a cross-aggregate invariant justifies it.
-
-## Wire every function, method, and view into the domain
-
-A standalone function or view exists only when it is present in the `functions` or `views` map passed to
-the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
-map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
-before debugging dispatch.
-
-```ts
-export const domain = defineDomain({
-  schema,
-  methods,
-  functions: { search },
-  views: { dashboard },
-  deps,
-})
-```
 
 ## Use the graph API before raw calls
 
@@ -464,8 +310,8 @@ await step.run('delete-issue-and-comments', () =>
 
 Delete treats the two relationships oppositely. A node that still has children cannot be deleted at all:
 the kernel throws `NodeNotEmptyError` and the whole patch writes nothing. A node's edges never block it:
-every incident edge, inbound and outbound, is removed with the node, along with the grants held on it,
-while the node at the far end survives and silently loses the relationship. See how to drain a subtree.
+every incident edge, inbound and outbound, is removed with the node, while the node at the far end
+survives and silently loses the relationship. See how to drain a subtree.
 
 ## How to read and find nodes?
 
@@ -725,33 +571,17 @@ produce a transparent redirect.
 
 ## How to use another Domain?
 
-Declare the other domain's origin in `requires`, import its schema package when you need typed members,
-and call through the schema-bound view (or its compiled semantic accessor). `requires` enforces a
-presence precondition: the required domain must already be installed; it neither installs the dependency
-nor grants permission. Calls use the same local-or-remote surface, while graph access still depends on
-authority.
-
-```ts
-export const domain = defineDomain({
-  schema,
-  methods,
-  requires: ['billing.example.dev'],
-})
-
-// Raw semantic path
-await kernel.call(Billing.Invoice.issue.path.method.raw, { amount: 2500 })
-
-// With imported schema (recommended for typed work)
-import { schema as billing } from '@acme/billing-schema'
-const billingClient = kernel.withSchema(billing)
-await billingClient.classes.Invoice.issue({ amount: 2500 })
-```
+Define a consumer-owned Capability and implement it in an Integration that binds the foreign Domain's
+public Schema revision. The Function or Workflow imports and calls only that invocation-scoped
+Capability client. If your Schema references the foreign Domain's graph declarations, separately add
+its public Schema to `defineSchema(..., { dependencies: [...] })`.
 
 ## Cross-Domain Calls
 
-A **cross-domain call** invokes a callable owned by another installed domain. It has the same call
-semantics as a local call. The session follows any remote redirect and remints the next-hop delegation
-under the current bound authority.
+A **cross-Domain call** is an Integration boundary. Bind one exact remote public Schema, invoke at most
+one public callable per Capability operation, translate declared delivery and business failures, and
+let unexpected defects propagate. Several calls or any call combined with other effects belong in a
+Workflow.
 
 ## Local Execution vs Remote Execution
 
@@ -805,35 +635,38 @@ D.Task.complete.path.method
 
 ## Type graph addresses as paths, not strings
 
-Declare a param that names a graph location with `pathSchema()` or `absolutePathSchema()`, never
-`z.string()`. Import them from `@astrale-os/kernel-core`; the SDK barrel does not re-export them. The
-handler then receives a parsed `Path`; keep it typed throughout and call `.raw` only at a wire boundary.
+In Schema, declare an address with the v2 DSL's `path(...)` and list the Node Definitions it accepts.
+At runtime import the rich path values from the SDK's semantic path facade.
 
 ```ts
-import { pathSchema } from '@astrale-os/kernel-core'
+import { path } from '@astrale-os/sdk/schema'
+import { Path, type PathLike } from '@astrale-os/sdk/graph/path'
 
-assign: fn({
-  params: { identity: pathSchema() },
-  returns: IssueInfoSchema,
+const assign = fn({
+  input: z.strictObject({ identity: path(User) }),
+  output: assignmentResult,
+  auth: 'required',
 })
+
+const canonical = (value: PathLike) => Path.from(value).raw
 ```
+
+`path(...)` is declaration metadata tied to accepted Definitions. `Path.from(...)` normalizes an
+already-admitted `PathLike` at an in-process boundary.
 
 ## Path vs PathLike vs raw string
 
-A `Path` is a parsed address with `.raw`, `.equals()`, and subclasses such as `AbsolutePath`. `PathLike`
-is exactly `string | Path`: the input type an API accepts at a boundary. `rawOf(value)` normalizes a
-`PathLike` to its string; `.raw` reads the string off a value already known to be a `Path`. Call `rawOf`
-only where both forms genuinely arrive, never on an already-typed value such as a compiled accessor, and
-compare addresses with `equals`, not `===`.
+`Path` is the immutable rich authoring value. `NodePath` is admitted canonical serialized text, and
+v2 `PathLike` is exactly `Path | NodePath`—not an arbitrary string. Use `Path.from(value)` when
+both admitted forms genuinely arrive, compare rich values with `.equals()`, and read `.raw` only at
+a serialization boundary.
 
 ```ts
-import { rawOf, type PathLike } from '@astrale-os/kernel-core'
+import { Path, type PathLike } from '@astrale-os/sdk/graph/path'
 
-if (issue.path.equals(other.path)) return // structural, not `===`
-const key = issue.path.raw // serialize at the wire boundary
-
-// A helper that genuinely admits both forms normalizes once.
-const leaf = (ref: PathLike) => rawOf(ref).split('/').at(-1)
+const canonical = (value: PathLike) => Path.from(value)
+if (canonical(left).equals(canonical(right))) return
+const wire = canonical(left).raw
 ```
 
 ## Path: Spatial vs Semantic

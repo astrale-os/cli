@@ -2,9 +2,9 @@ import { decodeJwt } from 'jose'
 
 import type { AstraleConfig } from './config'
 
+import { readIdentities, type IdentityStore } from '../identity/index'
 import { resolveAdminTargetFromStore } from './admin-target'
 import { DEFAULT_CONFIG, readConfig } from './config'
-import { readIdentities, type IdentityStore } from './identity'
 import { isSessionExpired, readIdpSession, type IdpSession } from './idp'
 import { readInstances, type InstanceStore } from './instance'
 
@@ -123,7 +123,7 @@ function buildAdminStatus(config: AstraleConfig, instances: InstanceStore): Loca
     return {
       name: target.name,
       url: target.url,
-      issuer: target.issuer,
+      issuer: target.kernelIssuer,
       source: target.source,
       configured: target.configured,
     }

@@ -1,347 +1,220 @@
-import type { JournalEntry, JournalFilter } from '@astrale-os/kernel-core'
-
-/**
- * `astrale logs` — tail the kernel event journal (function.journal) for the target
- * instance. Defaults to the kernel journal syscall
- * `/kernel.astrale.ai/functions/journal`; `--service <name>` switches to the
- * per-instance `services` domain log buffer (the historical behavior).
- *
- * Target the instance with `-i <instance>` (inherited from withKernelOptions).
- */
+import { Path } from '@astrale-os/sdk/graph/path'
+import { syscalls } from '@astrale-os/sdk/schema/kernel'
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../command'
-import type { ClientContext, KernelCommandOpts } from '../kernel'
+import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { Column, ListProjection } from '../lib/output'
+import type { CommandDefinition } from '../program/index'
 
-import { runKernelCommand, withKernelClient } from '../kernel'
-import { fatal, withSpinner } from '../lib/log'
+import { createPathCall, runKernelCommand, withClientSession } from '../connection'
 import { isMachine, output, presentList } from '../lib/output'
 
-const JOURNAL_FN_PATH = '/kernel.astrale.ai/functions/journal'
-const DEFAULT_SERVICES_ORIGIN = 'services.astrale.ai'
+const JOURNAL_PATH = Path.project(syscalls.journal.ref).raw
 const DEFAULT_LIMIT = 200
-const FOLLOW_INTERVAL_MS = 2000
-// The journal-read syscall journals its own ops; hide them by default so polling
-// doesn't self-pollute the view. `--all` shows them.
-const SELF_READ_PREFIX = 'op:function.journal:'
-
-// The published @astrale-os/kernel-core@0.5.0 JournalFilter has no `cursor` yet
-// (added on the kernel branch). Type against the augmented shape so the
-// incremental cursor compiles against the consumer dependency.
-type EventsParams = JournalFilter & { cursor?: number }
+const FOLLOW_INTERVAL_MS = 2_000
 
 type LogsOpts = KernelCommandOpts & {
   since?: string
   until?: string
   topic?: string
+  topicPrefix?: string
   principal?: string
   limit?: string
   cursor?: string
   follow?: boolean
-  all?: boolean
-  timing?: boolean
-  // service mode
-  service?: string
-  tail?: string
-  servicesOrigin?: string
 }
 
-/**
- * Kernel journal page. The function.journal syscall returns a BARE `JournalEntry[]`;
- * the client derives the next cursor from the max `seq`. We still model a
- * `nextCursor` field so the TTY footer / incremental tail share one shape, and
- * so a future paged kernel response degrades gracefully.
- */
-type EventsPage = {
-  entries: JournalEntry[]
-  nextCursor?: number | null
+export interface JournalRecord {
+  readonly sequence: number
+  readonly timestamp: string
+  readonly topic: string
+  readonly payload: unknown
+  readonly principal?: string
+  readonly correlationId?: string
+  readonly causationId?: string
 }
 
-// ── function.journal (default) ───────────────────────────────────
-
-/** The highest `seq` across entries, or null when empty. */
-function maxSeq(entries: JournalEntry[]): number | null {
-  let max: number | null = null
-  for (const e of entries) {
-    if (typeof e.seq === 'number' && (max === null || e.seq > max)) max = e.seq
-  }
-  return max
+export interface JournalPage {
+  readonly records: readonly JournalRecord[]
+  readonly cursor?: string
 }
 
-/**
- * Accept the bare `JournalEntry[]` the syscall returns (and tolerate a paged
- * `{ entries, nextCursor }` shape if the kernel ever switches). `nextCursor` is
- * the max `seq` — the client passes it back as `cursor` to tail incrementally.
- */
-export function normalizePage(raw: unknown): EventsPage {
-  if (Array.isArray(raw)) {
-    const entries = raw as JournalEntry[]
-    return { entries, nextCursor: maxSeq(entries) }
-  }
-  const obj = (raw ?? {}) as { entries?: unknown; nextCursor?: unknown }
-  const entries = Array.isArray(obj.entries) ? (obj.entries as JournalEntry[]) : []
-  const nextCursor = typeof obj.nextCursor === 'number' ? obj.nextCursor : maxSeq(entries)
-  return { entries, nextCursor }
+export interface JournalInput {
+  readonly topics?: { readonly exact?: readonly string[]; readonly prefixes?: readonly string[] }
+  readonly principal?: string
+  readonly since?: string
+  readonly until?: string
+  readonly cursor?: string
+  readonly limit: number
 }
 
-/** Build the JournalFilter (+ optional seq cursor) from typed flags. */
-export function buildEventsParams(opts: LogsOpts): EventsParams {
-  const params: EventsParams = {}
-  if (opts.topic) params.topic = opts.topic
-  if (opts.principal) params.principal = opts.principal as JournalFilter['principal']
-  if (opts.since !== undefined) params.since = parseTimeFlag('--since', opts.since)
-  if (opts.until !== undefined) params.until = parseTimeFlag('--until', opts.until)
-  params.limit = opts.limit !== undefined ? parsePositiveInt('--limit', opts.limit) : DEFAULT_LIMIT
-  if (opts.cursor !== undefined) params.cursor = parsePositiveInt('--cursor', opts.cursor)
-  return params
-}
-
-/** Accept epoch-ms or an ISO-8601 string → epoch ms. */
-export function parseTimeFlag(flag: string, raw: string): number {
-  if (/^-?\d+$/.test(raw)) return Number(raw)
-  const ms = Date.parse(raw)
-  if (Number.isNaN(ms)) throw new Error(`${flag} needs epoch-ms or ISO-8601, got "${raw}"`)
-  return ms
-}
-
-function parsePositiveInt(flag: string, raw: string): number {
-  const n = Number(raw)
-  if (!Number.isInteger(n) || n <= 0) {
-    throw new Error(`${flag} needs a positive integer, got "${raw}"`)
-  }
-  return n
-}
-
-const TOPIC_COLOR = (s: string): string =>
-  s.startsWith('op:') ? chalk.cyan(s) : s.startsWith('sys:') ? chalk.magenta(s) : chalk.dim(s)
-
-/** op:*:completed|failed carry `durationMs` in their payload; started does not. */
-const latencyOf = (e: JournalEntry): string => {
-  const d = (e.event.payload as { durationMs?: number } | undefined)?.durationMs
-  return typeof d === 'number' ? `${d}ms` : ''
-}
-
-/** Highlight slow ops: green < 100ms, yellow < 500ms, red beyond. */
-const LATENCY_COLOR = (s: string): string => {
-  if (!s) return s
-  const ms = Number.parseInt(s, 10)
-  if (ms >= 500) return chalk.red(s)
-  if (ms >= 100) return chalk.yellow(s)
-  return chalk.green(s)
-}
-
-/** Short labels for the per-step dispatch timing (payload.timing). */
-const STEP_LABEL: Record<string, string> = {
-  authenticate: 'auth',
-  validateInput: 'in',
-  authorize: 'authz',
-  resolve: 'resolve',
-  invariants: 'inv',
-  execute: 'exec',
-  validateOutput: 'out',
-  effects: 'fx',
-}
-
-/** Compact per-step breakdown, non-zero steps only: e.g. "auth:7 authz:13 exec:12". */
-const timingOf = (e: JournalEntry): string => {
-  const t = (e.event.payload as { timing?: Record<string, number> } | undefined)?.timing
-  if (!t || typeof t !== 'object') return ''
-  return Object.entries(t)
-    .filter(([, ms]) => typeof ms === 'number' && ms > 0)
-    .map(([k, ms]) => `${STEP_LABEL[k] ?? k}:${ms}`)
-    .join(' ')
-}
-
-function eventsProjection(entries: JournalEntry[], showTiming = false): ListProjection {
-  const columns: Column[] = [
-    { key: 'seq', header: 'SEQ', color: chalk.dim },
-    { key: 'ts', header: 'TIME', color: chalk.dim },
-    { key: 'topic', header: 'TOPIC', color: TOPIC_COLOR },
-    { key: 'latency', header: 'LATENCY', color: LATENCY_COLOR },
-    ...(showTiming ? [{ key: 'steps', header: 'STEPS', color: chalk.dim } as Column] : []),
-    { key: 'principal', header: 'PRINCIPAL', color: chalk.dim },
-  ]
+/** Map flags to the exact public journal syscall input without legacy glob/sequence lowering. */
+export function buildJournalInput(opts: LogsOpts): JournalInput {
+  const exact = nonEmpty(opts.topic)
+  const prefix = nonEmpty(opts.topicPrefix)
   return {
-    columns,
-    rows: entries.map((e) => ({
-      seq: String(e.seq),
-      ts: new Date(e.event.metadata.timestamp).toISOString(),
-      topic: e.event.topic,
-      latency: latencyOf(e),
-      ...(showTiming ? { steps: timingOf(e) } : {}),
-      principal: String(e.event.metadata.principal),
-    })),
-    paths: entries.map((e) => String(e.seq)),
+    ...(exact === undefined && prefix === undefined
+      ? {}
+      : {
+          topics: {
+            ...(exact === undefined ? {} : { exact: [exact] }),
+            ...(prefix === undefined ? {} : { prefixes: [prefix] }),
+          },
+        }),
+    ...(nonEmpty(opts.principal) === undefined ? {} : { principal: opts.principal }),
+    ...(nonEmpty(opts.since) === undefined ? {} : { since: opts.since }),
+    ...(nonEmpty(opts.until) === undefined ? {} : { until: opts.until }),
+    ...(nonEmpty(opts.cursor) === undefined ? {} : { cursor: opts.cursor }),
+    limit: opts.limit === undefined ? DEFAULT_LIMIT : positiveInteger('--limit', opts.limit),
   }
 }
 
-async function fetchEventsPage(ctx: ClientContext, opts: LogsOpts): Promise<EventsPage> {
-  const raw = await ctx.client.call(JOURNAL_FN_PATH, buildEventsParams(opts))
-  const page = normalizePage(raw)
-  // Strip the journal's own read ops by default (but keep nextCursor past them).
-  const entries = opts.all
-    ? page.entries
-    : page.entries.filter((e) => !e.event.topic.startsWith(SELF_READ_PREFIX))
-  return { entries, nextCursor: page.nextCursor }
+/** Validate the record fields the CLI presentation consumes and retain the opaque cursor. */
+export function acceptJournalPage(input: unknown): JournalPage {
+  if (!isRecord(input) || !Array.isArray(input.records)) {
+    throw new TypeError('Kernel journal response must contain a records array')
+  }
+  const records = input.records.map((record, index) => acceptRecord(record, index))
+  if (input.cursor !== undefined && typeof input.cursor !== 'string') {
+    throw new TypeError('Kernel journal cursor must be text')
+  }
+  return Object.freeze({
+    records: Object.freeze(records),
+    ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+  })
 }
 
-function printEventLine(e: JournalEntry, showTiming = false): void {
-  const ts = new Date(e.event.metadata.timestamp).toISOString()
-  const lat = latencyOf(e)
-  const steps = showTiming ? timingOf(e) : ''
-  process.stdout.write(
-    `${chalk.dim(String(e.seq).padStart(6))} ${chalk.dim(ts)} ${TOPIC_COLOR(e.event.topic)} ${chalk.dim(String(e.event.metadata.principal))}${lat ? ` ${LATENCY_COLOR(lat)}` : ''}${steps ? ` ${chalk.dim(`[${steps}]`)}` : ''}\n`,
+async function fetchPage(context: ConnectionContext, opts: LogsOpts): Promise<JournalPage> {
+  return acceptJournalPage(
+    await context.session.call(createPathCall(JOURNAL_PATH, buildJournalInput(opts))),
   )
 }
 
-async function runEvents(opts: LogsOpts): Promise<void> {
-  if (opts.follow) return followEvents(opts)
-
-  await runKernelCommand<EventsPage>({
+async function runOnce(opts: LogsOpts): Promise<void> {
+  await runKernelCommand({
     opts,
-    label: 'Kernel events',
-    fn: (ctx) => fetchEventsPage(ctx, opts),
-    format: (page, fmtOpts) => {
-      if (isMachine(fmtOpts) || fmtOpts.format) {
-        // Machine surface: the kernel's own entries array, no projection.
-        output(page.entries, fmtOpts)
-        return
-      }
-      presentList(page.entries, fmtOpts, (entries) => eventsProjection(entries, opts.timing))
-      if (typeof page.nextCursor === 'number') {
-        process.stdout.write(chalk.dim(`  tail: --follow  (or --cursor ${page.nextCursor})\n`))
+    label: 'Kernel journal',
+    fn: (context) => fetchPage(context, opts),
+    format: (page, format) => {
+      if (isMachine(format) || format.format !== undefined) output(page, format)
+      else {
+        presentList([...page.records], format, journalProjection)
+        if (page.cursor) process.stderr.write(`  cursor: ${page.cursor}\n`)
       }
     },
   })
 }
 
-/**
- * Client-side polling follow (ctx.client exposes no stream transport). Take the
- * max `seq` from each page and pass it back as `cursor` (exclusive cursor) so
- * the next poll only returns new entries.
- */
-async function followEvents(opts: LogsOpts): Promise<void> {
-  await withKernelClient(opts, async (ctx) => {
-    let cursor = opts.cursor !== undefined ? parsePositiveInt('--cursor', opts.cursor) : undefined
+async function follow(opts: LogsOpts): Promise<void> {
+  await withClientSession(opts, async (context) => {
+    let cursor = opts.cursor
     for (;;) {
-      const page = await fetchEventsPage(ctx, { ...opts, cursor: cursor?.toString() })
-      for (const e of page.entries) printEventLine(e, opts.timing)
-      if (typeof page.nextCursor === 'number') cursor = page.nextCursor
+      const page = await fetchPage(context, { ...opts, cursor })
+      for (const record of page.records) printRecord(record)
+      cursor = page.cursor ?? cursor
       await new Promise((resolve) => setTimeout(resolve, FOLLOW_INTERVAL_MS))
     }
   })
 }
 
-// ── --service (legacy services-domain log buffer) ───────────
-
-type ServiceLogs = {
-  name: string
-  lines: Array<{ ts: number; level: string; line: string }>
+function journalProjection(records: JournalRecord[]): ListProjection {
+  const columns: Column[] = [
+    { key: 'sequence', header: 'SEQ', color: chalk.dim },
+    { key: 'timestamp', header: 'TIME', color: chalk.dim },
+    { key: 'topic', header: 'TOPIC', color: chalk.cyan },
+    { key: 'principal', header: 'PRINCIPAL', color: chalk.dim },
+  ]
+  return {
+    columns,
+    rows: records.map((record) => ({
+      sequence: String(record.sequence),
+      timestamp: record.timestamp,
+      topic: record.topic,
+      principal: record.principal ?? '',
+    })),
+    paths: records.map((record) => String(record.sequence)),
+  }
 }
 
-const LEVEL_COLOR: Record<string, (s: string) => string> = {
-  error: chalk.red,
-  warn: chalk.yellow,
-  access: chalk.cyan,
-  debug: chalk.dim,
+function printRecord(record: JournalRecord): void {
+  process.stdout.write(
+    `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')}\n`,
+  )
 }
 
-/** Accept a bare service name, a `<name>.…` host, or a full https URL → the service name. */
-export function parseServiceName(ref: string): string {
-  let host = ref.trim()
-  if (host.includes('://')) {
-    try {
-      host = new URL(host).hostname
-    } catch {
-      // keep the raw value — the call will fail loud with the name
+function acceptRecord(input: unknown, index: number): JournalRecord {
+  if (
+    !isRecord(input) ||
+    !Number.isSafeInteger(input.sequence) ||
+    typeof input.timestamp !== 'string' ||
+    typeof input.topic !== 'string'
+  ) {
+    throw new TypeError(`Kernel journal record ${index} is invalid`)
+  }
+  for (const key of ['principal', 'correlationId', 'causationId'] as const) {
+    if (input[key] !== undefined && typeof input[key] !== 'string') {
+      throw new TypeError(`Kernel journal record ${index}.${key} must be text`)
     }
   }
-  return host.includes('.') ? (host.split('.')[0] ?? host) : host
+  return Object.freeze({
+    sequence: input.sequence as number,
+    timestamp: input.timestamp,
+    topic: input.topic,
+    payload: input.payload,
+    ...(input.principal === undefined ? {} : { principal: input.principal as string }),
+    ...(input.correlationId === undefined ? {} : { correlationId: input.correlationId as string }),
+    ...(input.causationId === undefined ? {} : { causationId: input.causationId as string }),
+  })
 }
 
-async function runService(opts: LogsOpts): Promise<void> {
-  const name = parseServiceName(opts.service as string)
-  const origin = opts.servicesOrigin ?? DEFAULT_SERVICES_ORIGIN
-  const tail = opts.tail !== undefined ? Number(opts.tail) : undefined
-  if (tail !== undefined && (!Number.isInteger(tail) || tail <= 0)) {
-    throw new Error(`--tail needs a positive integer, got "${opts.tail}"`)
+function positiveInteger(flag: string, raw: string): number {
+  if (!/^\d+$/.test(raw)) throw new TypeError(`${flag} must be a positive integer`)
+  const value = Number.parseInt(raw, 10)
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${flag} must be a positive integer`)
   }
-  const result = await withSpinner(`Fetching logs for ${name}`, !isMachine(opts), () =>
-    withKernelClient(
-      opts,
-      async (ctx) =>
-        (await ctx.client.call(
-          `/${origin}/services/${name}::logs`,
-          tail !== undefined ? { tail } : {},
-        )) as ServiceLogs,
-    ),
-  )
-  if (isMachine(opts)) {
-    output(result, opts)
-    return
-  }
-  if (result.lines.length === 0) {
-    console.log(chalk.dim(`no log lines captured yet for ${result.name}`))
-    return
-  }
-  for (const entry of result.lines) {
-    const ts = new Date(entry.ts).toISOString()
-    const paint = LEVEL_COLOR[entry.level] ?? ((s: string) => s)
-    console.log(`${chalk.dim(ts)} ${paint(entry.level.padEnd(6))} ${entry.line}`)
-  }
+  return value
+}
+
+function nonEmpty(input: string | undefined): string | undefined {
+  const value = input?.trim()
+  return value ? value : undefined
+}
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return input !== null && typeof input === 'object' && !Array.isArray(input)
 }
 
 export default {
   name: 'logs',
-  description: 'Tail the kernel event journal (or a service log buffer with --service)',
-  options: [
-    { flags: '--since <t>', description: 'Events at/after this time (epoch-ms or ISO-8601)' },
-    { flags: '--until <t>', description: 'Events at/before this time (epoch-ms or ISO-8601)' },
-    { flags: '--topic <glob>', description: 'Topic glob (e.g. op:*:failed, graph:node:**)' },
-    { flags: '--principal <id>', description: 'Filter by the triggering identity' },
-    { flags: '--limit <n>', description: `Max entries (default ${DEFAULT_LIMIT})` },
-    { flags: '--cursor <n>', description: 'Start after this journal sequence number' },
-    { flags: '--follow', description: 'Poll for new events (Ctrl-C to stop)' },
-    { flags: '--all', description: 'Include the journal-read syscall ops (hidden by default)' },
-    { flags: '--timing', description: 'Show the per-step dispatch breakdown (auth/authz/exec/…)' },
-    { flags: '--service <name>', description: 'Tail a deployed service log buffer instead' },
-    { flags: '--tail <n>', description: '[--service] lines to return (default 200, max 500)' },
-    {
-      flags: '--services-origin <origin>',
-      description: `[--service] services-domain origin (default ${DEFAULT_SERVICES_ORIGIN})`,
-    },
-  ],
+  description: 'Read or follow the authorized Kernel journal',
   afterHelpText: `
-Default: tails the kernel event journal via ${JOURNAL_FN_PATH} on the target
-instance (-i <instance>). Topics use ':'-segmented globs ('*' one segment,
-'**' zero-or-more). Machine output (--json / pipe) emits the JournalEntry[]
-array; a TTY shows a SEQ/TIME/TOPIC/LATENCY/PRINCIPAL table (LATENCY is the
-op's durationMs, present on :completed/:failed). --timing adds a STEPS column
-with the per-step dispatch breakdown (auth/in/authz/resolve/inv/exec/out/fx,
-non-zero only). --follow polls for new entries (client-side, tailing by
-sequence number). The journal-read syscall's own ops are hidden unless --all.
+Behavior:
+  Calls the public Kernel journal syscall and emits its { records, cursor }
+  page. Topic selection is exact or prefix-based; cursors and timestamps are
+  opaque strings owned by the journal backend. --follow reuses one Client Session
+  and advances only with the returned cursor.
 
---service <name> switches to the per-instance 'services' domain log buffer
-(console output, 5xx accesses, uncaught exceptions). Requires the services
-domain installed on the target instance.
+  Historical event-glob lowering and the application-specific services-domain
+  log buffer are not part of the Kernel V2 journal contract.
 
 Examples:
-  astrale logs -i staging
-  astrale logs -i staging --topic 'op:*:failed' --limit 50
-  astrale logs -i staging --topic 'op:*:completed' --timing
-  astrale logs -i staging --since 2026-06-20T00:00:00Z --follow
-  astrale logs --service my-notes -i staging --tail 50
+  $ astrale logs -i staging --limit 50
+  $ astrale logs --topic op:function.failed
+  $ astrale logs --topic-prefix op:function. --follow
 `,
+  options: [
+    { flags: '--since <timestamp>', description: 'Inclusive journal timestamp lower bound' },
+    { flags: '--until <timestamp>', description: 'Inclusive journal timestamp upper bound' },
+    { flags: '--topic <topic>', description: 'Match one exact topic' },
+    { flags: '--topic-prefix <prefix>', description: 'Match one topic prefix' },
+    { flags: '--principal <id>', description: 'Filter by triggering identity ID' },
+    { flags: '--limit <n>', description: `Maximum records (default: ${DEFAULT_LIMIT})` },
+    { flags: '--cursor <token>', description: 'Resume from an opaque journal cursor' },
+    { flags: '--follow', description: 'Poll using returned cursors until interrupted' },
+  ],
   action: async (opts: LogsOpts) => {
-    try {
-      if (opts.service) {
-        await runService(opts)
-      } else {
-        await runEvents(opts)
-      }
-    } catch (e) {
-      fatal(e)
-    }
+    if (opts.follow) await follow(opts)
+    else await runOnce(opts)
   },
 } satisfies CommandDefinition

@@ -1,25 +1,29 @@
+import type { Node } from '@astrale-os/sdk/graph/node'
+
+import { ClassPath } from '@astrale-os/sdk/graph/class'
+import { NodeId } from '@astrale-os/sdk/graph/node'
+import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { describe, expect, test } from 'bun:test'
 
-import { basename, classNameOf } from '../ls'
+import { displayName, listProjection } from '../ls'
 
-// Regression: the formatter used to read `item.slug` (never returned by the
-// kernel), blanking the name column and breaking `-q`/`-R`. The real fields are
-// `path` (absolute) and `class` (serialized ClassPath).
-describe('ls — display projection (slug-bug regression)', () => {
-  test('basename derives the display name from the absolute path', () => {
-    expect(basename('/example.astrale.ai')).toBe('example.astrale.ai')
-    expect(basename('/kernel.astrale.ai')).toBe('kernel.astrale.ai')
-    expect(basename('/')).toBe('/')
-    expect(basename(undefined)).toBe('')
+describe('ls display projection', () => {
+  const node = {
+    id: NodeId('note-1'),
+    class: ClassPath.parse('/:notes.example.dev:class.Note'),
+    props: normalizeProperties({ 'notes.example.dev:class.Note.property.title': 'Hello' }),
+  } satisfies Node
+
+  /** @evidence TEST-CLI-LS-PROJECTS-CANONICAL-NODES */
+  test('uses canonical properties for display and @id for pipeable output', () => {
+    expect(displayName(node)).toBe('Hello')
+    expect(listProjection([node])).toMatchObject({
+      rows: [{ name: 'Hello', class: 'Note', id: 'note-1' }],
+      paths: ['@note-1'],
+    })
   })
 
-  test('classNameOf parses the kind from the serialized class path', () => {
-    expect(classNameOf({ class: '/:kernel.astrale.ai:class.Domain' })).toBe('Domain')
-    expect(classNameOf({ class: '/:kernel.astrale.ai:class.Folder' })).toBe('Folder')
-  })
-
-  test('classNameOf falls back to the most specific label, then ?', () => {
-    expect(classNameOf({ __labels: ['Node', 'Domain', 'Container'] })).toBe('Container')
-    expect(classNameOf({})).toBe('?')
+  test('falls back to the canonical Node ID when no display property exists', () => {
+    expect(displayName({ ...node, props: normalizeProperties({}) })).toBe('@note-1')
   })
 })

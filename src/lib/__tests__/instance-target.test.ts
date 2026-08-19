@@ -22,6 +22,7 @@ const store: InstanceStore = {
     admin: {
       url: 'https://bookmarked-admin.example.com/api',
       issuer: 'https://bookmarked-admin-issuer.example.com',
+      domainIssuer: 'https://bookmarked-admin-domain.example.com',
     },
   },
 }
@@ -36,7 +37,8 @@ const directAdminConfig: AstraleConfig = {
   admin: {
     name: 'admin',
     url: 'https://admin.eu.astrale.ai/api',
-    issuer: 'https://admin.eu.astrale.ai/api',
+    kernelIssuer: 'https://admin.eu.astrale.ai/api',
+    domainIssuer: 'https://admin.beta.astrale.ai',
   },
 }
 
@@ -83,7 +85,8 @@ describe('resolveInstanceTarget', () => {
       name: 'admin',
       source: 'admin',
       url: 'https://admin.eu.astrale.ai/api',
-      issuer: 'https://admin.eu.astrale.ai/api',
+      kernelIssuer: 'https://admin.eu.astrale.ai/api',
+      domainIssuer: 'https://admin.beta.astrale.ai',
     })
     expect(managedCalls).toEqual([])
   })
@@ -116,7 +119,7 @@ describe('resolveInstanceTarget', () => {
       name: 'bryan',
       source: 'managed',
       url: 'https://bryan.eu.astrale.ai/api',
-      issuer: 'https://bryan.eu.astrale.ai/api',
+      kernelIssuer: 'https://bryan.eu.astrale.ai/api',
     })
   })
 
@@ -147,7 +150,7 @@ describe('resolveInstanceTarget', () => {
     ).resolves.toEqual({
       source: 'url',
       url: 'https://kernel.example.com/api',
-      issuer: 'https://kernel.example.com/api',
+      kernelIssuer: 'https://kernel.example.com/api',
       name: undefined,
     })
   })

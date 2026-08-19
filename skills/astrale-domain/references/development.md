@@ -82,9 +82,10 @@ export default deploy(domain, cloudflare({
 
 ## How to install a Domain?
 
-Install mounts a deployed domain onto one kernel instance. The kernel verifies and materializes the
-install graph, then invokes `postInstall` if one is configured. Install by catalog name for a published
-release, or directly from a URL while developing.
+Install mounts a deployed Domain onto one Kernel instance. The Kernel verifies and materializes the
+install graph. Runtime setup is an explicit Migration, Workflow, or operator action; Kernel-v2 has no
+`postInstall` field. Install by catalog name for a published release, or directly from a URL while
+developing.
 
 ```bash
 astrale domain install contacts.example.dev -i staging
@@ -118,52 +119,18 @@ metadata reads after deployment rather than the installed schema graph.
 
 ## Domain Definition
 
-A **domain definition** is the deployable composition of a domain's schema, complete method map,
-dependency mapper, views, standalone functions, presentation manifest, installation dependencies,
-physical path, and optional post-install function. It packages what the domain is; deployment adapters
-remain outside this worker-safe object.
+A **Domain definition** is the worker-safe composition of one Schema and one exhaustive handler map.
+Add a synchronous environment-to-deps mapper only for local dependencies. Capability requirements and
+their provider factory are an exact pair. Deployment metadata, physical placement, installation
+dependencies, `manifest`, `requires`, and `postInstall` are not Domain-definition fields.
 
 ```ts
 export const domain = defineDomain({
   schema,
-  methods,
-  deps,
-  views,
-  functions,
-  manifest: {
-    logo: DOMAIN_LOGO,
-    entrypoint: views.home,
-    roles: [{ slug: 'editor', name: 'Editor', default: true }],
-  },
-  postInstall: functions.seed,
-  requires: ['identity.example.dev'],
-  path: '/domains/tasks.example.dev',
-})
-```
-
-## Domain Manifest
-
-A **domain manifest** is optional presentation and role metadata served from the deployed domain. `logo`
-is inline SVG or a data URL, `entrypoint` names the registered main view, and `roles` declares named
-capability identities. A role declaration does not grant permissions by itself; the domain provisions
-its grants, usually in post-install.
-
-```ts
-export const domain = defineDomain({
-  schema,
-  methods,
-  views,
-  manifest: {
-    logo: DOMAIN_LOGO,
-    entrypoint: views.home,
-    roles: [
-      {
-        slug: 'editor',
-        name: 'Editor',
-        description: 'Can create and edit tasks',
-        default: true,
-      },
-    ],
+  handlers: {
+    functions,
+    classes,
+    interfaces,
   },
 })
 ```
@@ -195,67 +162,42 @@ astrale view /:tasks.example.dev:view.home --view-url http://127.0.0.1:5173 -i d
 
 ## Domain Placement
 
-**Domain placement** is the physical tree path of the Domain node. It defaults to `/domains/<origin>`,
-and its final segment must equal the origin. Placement does not move semantic addresses:
-`/:tasks.example.dev:class.Task` remains root-anchored, so a physical placement change does not rename
-domain members or their call addresses.
-
-```ts
-defineDomain({
-  schema,
-  methods,
-  path: '/domains/tasks.example.dev',
-})
-
-D.Task.path.class.raw
-// '/:tasks.example.dev:class.Task'
-```
+**Domain placement** is installation state owned by the Kernel and deployment workflow. It is not a
+`defineDomain` input. Placement does not rename the Schema origin or its semantic Class, Policy, and
+callable identities.
 
 ## Physical Domain Path vs Semantic Origin
 
-`defineDomain({ path })` controls where the Domain node sits in the physical tree and defaults to
-`/domains/<origin>`. It does not move the semantic namespace: compiled addresses remain rooted at
-`/:<origin>`. Use the physical path for containment and the origin for types, functions, and views. This
-is a domain-level application of spatial versus semantic paths and is independent of the serving URL.
-
-```ts
-defineDomain({
-  schema,
-  methods,
-  path: '/domains/contacts.example.dev',
-})
-
-D.Contact.path.class.raw // still /:contacts.example.dev:class.Contact
-```
+The Kernel owns the installed Domain node's physical placement. The Schema origin owns semantic
+addresses. Do not add a legacy `path` field to `defineDomain`; inspect installation state when
+debugging physical placement.
 
 ## Same Domain on Two Instances
 
 A domain is a reusable definition; installation and data are per kernel instance. Two instances can
-install the same origin and still share no graph data or grants. They may call the same worker
+install the same origin and still share no graph data or Policy state. They may call the same worker
 deployment, whose cold-isolate dependencies are not per-instance state; keep durable and
 instance-specific state in each instance's graph. Each instance owns its installed version even when the
 serving URL is shared.
 
 ## What to do after modeling a Domain?
 
-Implement every declared method with schema-derived types, register those handlers in a complete method
-map, wire external clients through `deps`, and add narrow tests around authorization and graph effects.
-Then run the domain locally and exercise one real call before deployment. A model is not complete until
-its runtime contract and security boundary are executable.
+Implement every declared callable with Schema-derived types, register those handlers in one exhaustive
+map, bind external boundaries through Capabilities and providers, and add narrow tests around Policy
+admission and graph effects. Then run the Domain locally and exercise one real call before deployment.
+A model is not complete until its runtime contract and security boundary are executable.
 
 ## How to validate a domain without an instance?
 
-Prove a freshly built domain is sound before any kernel instance exists to install it, in three offline
-layers, cheapest first. The spec build shows the schema compiles and the install graph assembles and
-hashes, but at a placeholder origin, so its schema hash will not match a deployed worker. The dev worker
-goes deeper with no kernel attached: its probes return the real hash and manifest, publish the signing
-key a kernel verifies the install against, and assemble the full signed bundle on demand, while handler
-tests cover logic off the graph. None of this proves a kernel accepts the bundle, writes the graph, and
-runs `postInstall`; only a real install closes that gap.
+Prove a freshly built Domain is sound before any Kernel instance exists to install it, in three layers,
+cheapest first. Typecheck and build prove the Schema and worker artifact compile; focused tests prove
+handler behavior with owned doubles; a dev worker proves the deployed metadata and signed bundle path.
+None proves that a Kernel accepts and installs the bundle—only a real install closes that gap.
 
 ```bash
-# 1. Spec build: schema + install graph assemble and hash, at a placeholder origin
-pnpm build                                      # writes .astrale/spec.json
+# 1. Static and package evidence; no Domain .spec directory is created
+pnpm typecheck
+pnpm build
 
 # 2. Dev worker probes: a real signed bundle, still no kernel
 pnpm dev                                        # boots http://localhost:8787
@@ -271,89 +213,42 @@ pnpm test
 
 ## How to implement a method?
 
-Use `remoteMethod<Deps>()(schema, owner, method, impl)` so parameters, result, `self`, auth nullability,
-and dependencies all come from the declared contract. Put caller-sensitive checks in `authorize`, keep
-the execution body focused on state changes, and register every implementation through
-`remoteClassMethods` or `remoteInterfaceMethods`. This prevents a handler from silently drifting from
-its function.
+Declare authentication and Policy in Schema, then implement only the callable behavior. A synchronous
+handler can be written directly; a durable multi-step operation binds the exact compiled callable to a
+Workflow. Register the result in the exhaustive `defineDomain` handler map.
 
 ```ts
-import { EDIT } from '@astrale-os/kernel-core'
-import {
-  remoteClassMethods,
-  remoteMethod,
-  type SchemaMethodsImpl,
-} from '@astrale-os/sdk'
+import { bindWorkflow, type WorkflowBinding } from '@astrale-os/sdk/workflow'
 
-export const renameContact = remoteMethod<Deps>()(schema, 'Contact', 'rename', {
-  authorize: ({ auth, kernel, self }) =>
-    kernel.auth.require({
-      who: auth.principal,
-      on: self.path,
-      perms: EDIT,
-      context: 'Contact.rename',
-    }),
-  execute: async ({ kernel, self, params, step }) => {
-    await step.run('update-contact-name', async () => {
-      await kernel.updateNode(D.Contact.path.class, self.path, {
-        [D.Contact.name.key]: params.name,
-      })
-    })
-  },
-})
-
-const classMethods = remoteClassMethods<Deps>()
-export const methods: SchemaMethodsImpl<typeof schema, Deps> = {
-  class: { Contact: classMethods(schema, 'Contact', { rename: renameContact }) },
-  interface: {},
-}
+export const renameProject: WorkflowBinding<
+  typeof Projects.Project.rename,
+  RenameProjectCapabilities
+> = bindWorkflow(
+  Projects.$.class('Project').$.method('rename'),
+  renameProjectWorkflow,
+)
 ```
+
+Do not add handler-local permission checks. Kernel-v2 evaluates the Schema Policy before invoking the
+handler.
 
 ## How to implement a standalone function?
 
-Declare the contract with `func` in the schema, implement the same map key with `defineRemoteFunction`,
-then pass that map to `defineDomain`. The SDK rejects a missing or extra handler. A public webhook has
-`auth: null` and `kernel: null`; verify its upstream request first, then acquire a self-only session
-through `fn.kernel()`. Providers that sign exact raw bytes currently hit the raw-body route limitation;
-never reconstruct signed bytes from parsed JSON. This follows public-entry discipline.
-
-```ts
-export const functions = {
-  ingest: defineRemoteFunction({
-    inputSchema: z.object({ eventId: z.string(), payload: z.unknown() }),
-    outputSchema: z.object({ accepted: z.boolean() }),
-    auth: 'public',
-    authorize: ({ c, deps, params }) => deps.provider.verifySignedEvent({
-      event: params,
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-    }),
-    execute: async ({ params, fn, step }) => {
-      const kernel = await fn.kernel()
-      await step.run('store-webhook-event', async () => {
-        const id = await kernel.createNode(D.Event.path.class, `/events/${params.eventId}`, {
-          [D.Event.payload.key]: params.payload,
-        })
-        return { id }
-      })
-      return { accepted: true }
-    },
-  }),
-}
-
-export const domain = defineDomain({ schema, methods, functions })
-```
+Declare the Function with `fn(...)` in Schema and register its exact name under
+`handlers.functions`. Its authentication mode and Policy stay on the Schema declaration; its handler
+owns behavior only. Use `defineDomain.public(...)` only when the package intentionally exposes the
+public deployment contract.
 
 ## How to test a domain's handlers?
 
-The SDK ships no test kernel. Export each handler body as a plain function over `{ kernel, step }`, then
-drive it with a domain-owned kernel double and `createInlineStep()`, the inline step executor from
-`@astrale-os/sdk/step`. Assert the patch it built and the pages it drained, not only its return value.
-Invoke the exported handler's `authorize` hook against a denied caller too, and keep a real kernel for
-one end-to-end install.
+The SDK ships no test Kernel. Drive direct handlers with a Domain-owned Kernel double and
+`createInlineStep()`, the inline step executor from `@astrale-os/sdk/workflow/step`. Assert the
+Query or Mutation it built and the pages it drained, not only its return value. Prove Policy denial
+through the Kernel-v2 admission path or a Runtime harness; handlers have no `authorize` hook. Keep a
+real Kernel for one end-to-end install.
 
 ```ts
-import { createInlineStep } from '@astrale-os/sdk/step'
+import { createInlineStep } from '@astrale-os/sdk/workflow/step'
 
 const capture = new CaptureKernel(issueGraph({ path: '/issues/one', comments: 2 }))
 
@@ -367,23 +262,6 @@ expect(capture.patches).toHaveLength(1)
 expect(capture.patches[0].nodes.delete).toHaveLength(3)
 ```
 
-## Wire every function, method, and view into the domain
-
-A standalone function or view exists only when it is present in the `functions` or `views` map passed to
-the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
-map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
-before debugging dispatch.
-
-```ts
-export const domain = defineDomain({
-  schema,
-  methods,
-  functions: { search },
-  views: { dashboard },
-  deps,
-})
-```
-
 ## Schema Hash
 
 The **schema hash** identifies the complete id-independent install graph, not only the user-authored
@@ -393,8 +271,7 @@ actual diff before deciding whether reinstall or migration is safe.
 
 ## Install Bundle
 
-An **install bundle** is the serialized, id-independent graph and metadata the kernel consumes to
-install a domain. It includes schema members, bindings, views, core data, and physical placement. The
-install response also carries signed `requires` and `postInstall` fields. Presentation manifest data is
-served separately from `/meta` and is not part of this bundle. Runtime ids are minted during
-installation, which is why bundles can be published and installed on more than one instance.
+An **install bundle** is the serialized, id-independent graph and metadata the Kernel consumes to
+install a Domain. It includes Schema members, callable bindings, and declarative Core data. Runtime ids
+are minted during installation, which is why bundles can be published and installed on more than one
+instance. Do not add legacy `requires`, `postInstall`, or `manifest` fields to `defineDomain`.

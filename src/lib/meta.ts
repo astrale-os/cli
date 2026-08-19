@@ -12,6 +12,8 @@
 
 import { IssuerUnreachableError } from '../errors'
 
+type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
 export type DiscoveryDocument = {
   /** OIDC issuer URL. */
   issuer: string
@@ -22,7 +24,7 @@ export type DiscoveryDocument = {
 export async function fetchDiscovery(
   url: string,
   timeoutMs = 5_000,
-  fetchImpl: typeof fetch = globalThis.fetch,
+  fetchImpl: FetchLike = globalThis.fetch,
 ): Promise<DiscoveryDocument> {
   const discoveryUrl = url.replace(/\/+$/, '') + '/.well-known/openid-configuration'
   try {
@@ -41,7 +43,7 @@ export async function fetchDiscovery(
 export async function fetchJwks(
   jwksUri: string,
   timeoutMs = 5_000,
-  fetchImpl: typeof fetch = globalThis.fetch,
+  fetchImpl: FetchLike = globalThis.fetch,
 ): Promise<{ keys: Array<{ kid?: string }> }> {
   try {
     const r = await fetchImpl(jwksUri, { signal: AbortSignal.timeout(timeoutMs) })
@@ -67,20 +69,22 @@ export async function fetchOrgHint(url: string, timeoutMs = 5_000): Promise<stri
   }
 }
 
-/**
- * Verify the issuer at `url` publishes OIDC discovery and a non-empty JWKS.
- * `issuerOverride` forces a specific expected issuer when discovery URL and
- * declared issuer differ.
- */
+/** Verify the pinned issuer publishes self-consistent OIDC discovery and a non-empty JWKS. */
 export async function checkIssuerReachability(
   url: string,
   issuerOverride?: string,
-  fetchImpl?: typeof fetch,
+  fetchImpl?: FetchLike,
 ): Promise<{ issuer: string; keys: Array<{ kid?: string }> }> {
-  const discovery = await fetchDiscovery(url, 5_000, fetchImpl)
-  const issuer = issuerOverride ?? discovery.issuer
+  const discoveryBase = issuerOverride ?? url
+  const discovery = await fetchDiscovery(discoveryBase, 5_000, fetchImpl)
+  if (issuerOverride !== undefined && discovery.issuer !== issuerOverride) {
+    throw new IssuerUnreachableError(
+      `${discoveryBase.replace(/\/+$/, '')}/.well-known/openid-configuration`,
+      `discovery declared issuer "${discovery.issuer}" instead of "${issuerOverride}"`,
+    )
+  }
   const jwks = await fetchJwks(discovery.jwksUri, 5_000, fetchImpl)
   if (jwks.keys.length === 0)
     throw new IssuerUnreachableError(discovery.jwksUri, 'no keys published')
-  return { issuer, keys: jwks.keys }
+  return { issuer: discovery.issuer, keys: jwks.keys }
 }

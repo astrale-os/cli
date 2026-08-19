@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
 import type { ListOpts, ListProjection } from '../../lib/output'
+import type { CommandDefinition } from '../../program/index'
 
 import { listIdpConfigs } from '../../lib/idp'
 import { log } from '../../lib/log'

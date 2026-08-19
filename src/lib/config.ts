@@ -2,9 +2,9 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 
+import { CONFIG_PATH } from '../state/index'
 import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_CONFIG } from './admin-target'
 import { log } from './log'
-import { CONFIG_PATH } from './paths'
 
 export const AstraleConfigSchema = z.object({
   issuer: z.string().url().default('https://unregistered.invalid'),

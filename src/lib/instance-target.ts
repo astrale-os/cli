@@ -1,4 +1,4 @@
-import type { InstanceInfo } from './admin-instance'
+import type { InstanceInfo } from '../admin/instance/model'
 import type { AstraleConfig } from './config'
 
 import { AstraleError } from '../errors'
@@ -21,13 +21,14 @@ export type InstanceTargetRequest =
   | { source: 'active' }
   | { source: 'name'; name: string }
   | { source: 'admin' }
-  | { source: 'url'; url: string; name?: string; issuer?: string }
+  | { source: 'url'; url: string; name?: string; kernelIssuer?: string }
 
 export type ResolvedInstanceTarget = {
   name?: string
   source: 'bookmark' | 'managed' | 'admin' | 'url'
   url: string
-  issuer: string
+  kernelIssuer: string
+  domainIssuer?: string
   defaultIdentity?: string
   caFile?: string
 }
@@ -59,7 +60,7 @@ export async function resolveInstanceTarget(
         name: request.name,
         source: 'url',
         url: request.url,
-        issuer: request.issuer ?? request.url,
+        kernelIssuer: request.kernelIssuer ?? request.url,
       }
   }
 }
@@ -102,7 +103,7 @@ async function resolveNamedInstanceTarget(
     name: managed.slug,
     source: 'managed',
     url,
-    issuer: url,
+    kernelIssuer: url,
   }
 }
 
@@ -119,7 +120,8 @@ async function resolveBookmarkedInstanceTarget(
       name: key,
       source: 'bookmark',
       url,
-      issuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : url,
+      kernelIssuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : url,
+      domainIssuer: entry.domainIssuer,
       defaultIdentity: entry.defaultIdentity,
       caFile: entry.caFile,
     }
@@ -130,7 +132,8 @@ async function resolveBookmarkedInstanceTarget(
     name: resolved.name,
     source: 'bookmark',
     url: resolved.url,
-    issuer: resolved.issuer ?? resolved.url,
+    kernelIssuer: resolved.issuer ?? resolved.url,
+    domainIssuer: resolved.domainIssuer,
     defaultIdentity: resolved.defaultIdentity,
     caFile: resolved.caFile,
   }
@@ -163,7 +166,8 @@ export function adminTargetToInstance(target: ResolvedAdminTarget): ResolvedInst
     name: target.registrationSlug,
     source: 'admin',
     url: target.url,
-    issuer: target.issuer,
+    kernelIssuer: target.kernelIssuer,
+    ...(target.domainIssuer === undefined ? {} : { domainIssuer: target.domainIssuer }),
     defaultIdentity: target.defaultIdentity,
     ...(target.caFile ? { caFile: target.caFile } : {}),
   }

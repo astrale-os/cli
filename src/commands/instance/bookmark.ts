@@ -1,6 +1,6 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
-import { fetchWithCaFile } from '../../kernel/ca-fetch'
+import { fetchWithCaFile } from '../../lib/ca-fetch'
 import { normalizeInstanceKernelUrl, setActive, upsertInstance } from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
@@ -12,6 +12,10 @@ export default {
   options: [
     { flags: '--url <url>', description: 'URL of the remote instance (required)' },
     { flags: '--issuer <url>', description: 'Kernel issuer/audience if different from URL' },
+    {
+      flags: '--domain-issuer <url>',
+      description: 'Product Domain issuer for standard token exchange',
+    },
     { flags: '--ca <path>', description: 'CA certificate file to trust for this bookmark' },
     {
       flags: '--as <identity>',
@@ -25,6 +29,7 @@ export default {
     opts: {
       url?: string
       issuer?: string
+      domainIssuer?: string
       ca?: string
       as?: string
       use?: boolean
@@ -53,6 +58,7 @@ export default {
       const { entry, created } = await upsertInstance(name, {
         url,
         issuer: expectedIssuer,
+        domainIssuer: opts.domainIssuer,
         caFile: opts.ca,
         name,
         kind: 'bookmark',

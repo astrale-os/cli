@@ -1,85 +1,52 @@
-import type { CommandDefinition } from '../command'
-import type { KernelCommandOpts } from '../kernel'
+import { Path } from '@astrale-os/sdk/graph/path'
 
-import { bindGraph, expandSelfInPath, runKernelCommand, withSelfHint } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
+import type { CommandDefinition } from '../program/index'
+
+import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
 import { log } from '../lib/log'
 import { output } from '../lib/output'
 
-type GetOpts = KernelCommandOpts & {
-  long?: boolean
-}
+type GetOpts = KernelCommandOpts
 
-const INTERNAL_KEYS = new Set(['__labels', 'classId'])
-
-export async function getCommand(pathArg: string, opts: GetOpts): Promise<void> {
-  if (!pathArg) {
-    log.error('Usage: astrale get <path>')
-    process.exit(1)
-    return
-  }
-
+/** Read one exact canonical Node. The caller's Path is not fabricated into the Node value. */
+export async function getCommand(target: string, opts: GetOpts): Promise<void> {
   let path: string
   let meta
   try {
-    ;({ path, meta } = await expandSelfInPath(pathArg, opts))
-  } catch (e) {
-    log.error(e instanceof Error ? e.message : 'Invalid @self expansion')
+    ;({ path, meta } = await expandSelfInPath(target, opts))
+  } catch (error) {
+    log.error(error instanceof Error ? error.message : 'Invalid target')
     process.exit(1)
-    return
   }
 
   await runKernelCommand({
     opts,
-    label: 'Node ' + path,
-    fn: async (ctx) => {
-      const node = await withSelfHint(() => bindGraph(ctx).get(path), meta)
-      if (node === null) {
-        log.error('node "' + path + '" not found or not visible')
-        process.exit(1)
-      }
-      return node
-    },
-    format: (node, fmtOpts) => {
-      output(opts.long ? node : cleanNode(node), fmtOpts)
-    },
+    label: `Node ${path}`,
+    fn: ({ graph }) => withSelfHint(() => graph.getOrThrow(Path.parse(path)), meta),
+    format: (node, format) => output(node, format),
   })
-}
-
-function cleanNode(data: unknown): unknown {
-  if (!data || typeof data !== 'object') return data
-  const result: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
-    if (INTERNAL_KEYS.has(k)) continue
-    result[k] = v
-  }
-  return result
 }
 
 export default {
   name: 'get',
-  description: 'Get one node by path or id',
-  afterHelpText: [
-    '',
-    'Behavior:',
-    '  Point read through the kernel-client GraphApi.get shorthand. Accepts exactly',
-    '  one node path (tree path /domain/class.Name, or an id @nodeId). @self is',
-    '  expanded before dispatch. Missing and masked nodes share one opaque error:',
-    '  node "<path>" not found or not visible.',
-    '',
-    '  Output is the historical flat wire node projection { id, class, path, props }.',
-    '  Add -l to keep the internal fields (__labels, classId). Richer reads -',
-    '  multiple roots, child expansion, edge expansion, cursors, or full GraphData -',
-    '  live on astrale query.',
-    '',
-    'Examples:',
-    '  $ astrale get /kernel.astrale.ai/class.Root',
-    '  $ astrale get @abc123 -l',
-    '  $ astrale get @self --json',
-    '',
-  ].join('\n'),
-  arguments: [{ name: 'path', description: 'Node path (/domain/Class) or ID (@nodeId)' }],
-  options: [{ flags: '-l, --long', description: 'Include internal fields (__labels, classId)' }],
-  action: async (path, opts) => {
-    await getCommand(path as string, opts as GetOpts)
+  description: 'Get one canonical node by Path or ID',
+  afterHelpText: `
+Behavior:
+  Resolves one exact Kernel V2 Path and prints the canonical Node
+  { id, class, props }. Missing and authorization-masked nodes remain
+  intentionally indistinguishable. @self is expanded before dispatch.
+
+  A Node does not contain a synthetic path, labels, or backend class ID.
+  Use astrale query for graph-shaped reads.
+
+Examples:
+  $ astrale get /:notes.example.dev:class.Note
+  $ astrale get @abc123 --json
+  $ astrale get @self
+`,
+  arguments: [{ name: 'target', description: 'Canonical Node Path or @id' }],
+  action: async (target, opts) => {
+    await getCommand(target as string, opts as GetOpts)
   },
 } satisfies CommandDefinition

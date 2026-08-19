@@ -2,101 +2,80 @@
 
 # Integrations
 
-Read when wrapping an outside API, building deps/ports, receiving webhooks, using public functions, or deciding whether to reuse another domain instead of integrating anew.
+Read when wrapping an outside API, implementing Capability providers, receiving webhooks, using public
+Functions, or deciding whether to reuse another Domain instead of integrating anew.
 
 ## How to integrate an external API?
 
-Expose the capability as your own typed function and hide the vendor client behind `deps`. Derive a
-stable idempotency key from the domain operation, pass it to the provider, and record the provider
-result in graph state so a retry can converge instead of duplicating the remote effect. Keep caller
-authorization outside the effect. Use the canonical step pattern for the read/effect/write sequence and
-step-and-graph convergence when the remote system cannot participate in an atomic write.
+Declare a provider-neutral Capability owned by the consuming Domain, implement it behind an Integration,
+and bind the provider through the SDK's exact `capabilities` plus `providers` pair. Derive stable
+idempotency from the Domain operation, preserve provider evidence, and translate only declared boundary
+failures. Schema Policy owns callable admission; the Integration owns trust-boundary admission.
 
 ## Reuse an existing domain before integrating
 
 Before wrapping an external service, check whether an installed or native domain already owns the
 capability and its lifecycle. Reusing that domain preserves one vocabulary and authority boundary; a new
-integration creates a second owner. If the capability exists, declare requires and import its schema
-only when your model references its types.
+Integration creates a second owner. If the capability exists, implement the consumer-owned Capability
+through a remote-Domain Integration and import its public Schema facade only when your model references
+its graph types.
 
 ## Depend on a domain instead of copying it
 
-When another domain already owns a concept, declare it in requires and call or link to its vocabulary.
-Import its schema only when your own schema implements or references its types. Copying its classes
-creates a second source of truth that will drift.
+When another Domain already owns a concept, declare its exact Schema in
+`defineSchema(..., { dependencies: [...] })` only when your Schema references its graph declarations.
+Copying its Classes creates a second source of truth that will drift. Callable use goes through a
+consumer-owned Capability implemented by an Integration, never a `requires` field on `defineDomain`.
+
+```ts
+export const schema = defineSchema('orders.example.dev', {
+  dependencies: [BillingSchema],
+  classes: { Order },
+})
+```
+
+## Remote-Domain Integrations
+
+Bind one exact public remote Schema revision in the Integration, invoke at most one public callable per
+Capability operation, and translate its result into the consumer's vocabulary. Functions and Workflows
+import the Capability only; they do not import the foreign Domain or transport client.
+
+## Build external clients in Capability providers
+
+Construct external clients in the Domain's Capability provider factory and expose only the
+provider-neutral Capability to handlers. Construction should be deterministic and free of network work;
+perform request-specific I/O inside the Capability operation.
 
 ```ts
 export const domain = defineDomain({
   schema,
-  methods,
-  requires: ['billing.acme.dev'],
+  handlers,
+  capabilities,
+  providers: (env: Env) => ({
+    emailDelivery: createEmailDelivery(createEmailClient(env.EMAIL_TOKEN)),
+  }),
 })
-```
-
-## Requires
-
-**`requires`** declares other domain origins that must already be installed on the target kernel
-instance. Installation verifies that the dependency is present. It expresses a runtime dependency; use
-schema imports for cross-schema type references. Neither mechanism grants permission to the dependent
-domain.
-
-```ts
-defineDomain({
-  schema,
-  methods,
-  requires: ['identity.example.dev'],
-})
-```
-
-## Domain Imports
-
-**Schema imports** let definitions refer to types owned by another schema. Import the kernel schema to
-implement native interfaces such as `Identity` or `Container`, or import another domain's schema when
-your endpoint types truly cross that vocabulary. Imports describe type relationships; runtime
-installation ordering is declared separately with requires.
-
-```ts
-export const schema = defineSchema('tasks.example.dev', {
-  interfaces,
-  classes,
-  imports: [KernelSchema],
-})
-```
-
-## Build external clients in deps
-
-Construct external clients in the domain's `deps` function and read them from each handler. Dependencies
-are resolved once for the worker lifecycle, so construction should be deterministic and free of network
-work; perform request-specific I/O inside the handler. Keep module imports declarative and side-effect
-free; see the module-load antipattern.
-
-```ts
-export function deps(env: Env): Deps {
-  return { email: createEmailClient({ token: env.EMAIL_TOKEN }) }
-}
 ```
 
 ## Do NOT import clients at module load
 
-Importing an external client at module load bypasses the domain's dependency lifecycle and can make
-imports perform work before the worker is configured. Define clients in `deps`, following the dependency
-construction seam, then perform request-specific I/O inside the handler. Do not patch global `fetch` or
-hide a second client singleton elsewhere.
+Importing an external client at module load bypasses the provider lifecycle and can make imports perform
+work before the worker is configured. Define clients in the provider factory, then perform
+request-specific I/O inside the Capability operation. Do not patch global `fetch` or hide a second
+client singleton elsewhere.
 
 ## Do NOT store secrets in the graph
 
-An API key, password, or bearer token is not a normal property. The graph is shared by installed domains
-and exposed through grants, so a readable secret node expands the blast radius of ordinary graph access.
-Keep service credentials in the worker environment and expose only a purpose-built client through
-`deps`.
+An API key, password, or bearer token is not a normal graph property. Keep service credentials in the
+worker environment and expose only a provider-neutral Capability client to Domain behavior.
 
 ```ts
 // Wrong: any reader of this node receives the key.
 props: { providerToken: z.string() }
 
-// Right: the graph stores provider identity; deps holds the credentialed client.
-export const deps = (env: Env) => ({
-  provider: createProviderClient(env.PROVIDER_TOKEN),
+// Right: the graph stores provider identity; the provider owns the credentialed client.
+export const providers = (env: Env) => ({
+  payment: createPaymentCapability(createProviderClient(env.PROVIDER_TOKEN)),
 })
 ```
 
@@ -286,133 +265,17 @@ await step.run('connect-provider', async () => {
 })
 ```
 
-## Verify a public webhook, then act as the function
+## Preserve exact signed webhook evidence
 
-A public webhook has no Astrale caller, so its handler first verifies the provider's supported signed
-fields in `authorize`, then asks `ctx.fn.kernel()` for a session owned by the function identity. Grant
-that identity only the permission its webhook needs. This keeps upstream authentication separate from
-Astrale authority, while a stable event path plus reconcile makes provider redelivery converge.
-Providers that sign exact raw bytes are blocked by the current auxiliary route; never rebuild signed
-bytes from parsed JSON.
-
-```ts
-export const onStripeEvent = defineRemoteFunction({
-  auth: 'public',
-  inputSchema: StripeEvent,
-  outputSchema: z.object({ accepted: z.boolean() }),
-  authorize: ({ c, params, deps }) =>
-    deps.provider.verifySignedEvent({
-      event: params,
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-    }),
-  execute: async ({ params, fn }) => {
-    const eventPath = AbsolutePath.from('events', params.id)
-
-    const kernel = await fn.kernel()
-    await kernel.reconcile({
-      spec: {
-        nodes: [{
-          class: D.Event.path.class,
-          path: eventPath,
-          props: { [D.Event.payload.key]: params.payload },
-          onConflict: 'skip',
-        }],
-      },
-      scope: { roots: [eventPath], depth: 0, classes: [D.Event.path.class] },
-      policy: {
-        onConflict: 'skip',
-        onRemoved: { nodes: 'preserve', edges: 'preserve' },
-      },
-    })
-    return { accepted: true }
-  },
-})
-```
-
-## Exact raw webhook bodies are consumed before handlers
-
-The current standalone-function auxiliary route parses JSON before `authorize` and `execute`, so
-`c.req.raw` no longer provides untouched bytes to the handler. A provider that signs exact request bytes
-cannot be verified safely through this route until the SDK preserves a clone; never reconstruct the
-signed body from parsed JSON. Providers that sign explicit headers or canonical parsed fields can still
-use the public webhook pattern.
-
-## Do NOT act on an unverified webhook
-
-A public standalone function has no Astrale caller credential. Minting the function's own kernel session
-before authenticating the upstream request lets any sender trigger privileged graph work. Verify the
-provider's supported signed fields in `authorize`, then use the function identity only for the narrow
-operation the webhook owns. If the provider requires exact raw bytes, the current route boundary must be
-fixed first; the complete replay-safe shape is the public webhook pattern.
-
-```ts
-export const webhook = defineRemoteFunction({
-  auth: 'public',
-  inputSchema: ProviderEvent,
-  outputSchema: z.object({ accepted: z.boolean() }),
-  authorize: ({ c, params, deps }) =>
-    deps.provider.verifySignedEvent({
-      event: params,
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-    }),
-  execute: async ({ params, fn }) => {
-    const kernel = await fn.kernel()
-    await recordProviderEvent(kernel, params)
-    return { accepted: true }
-  },
-})
-```
+Declare the signed envelope fields in the public callable input and admit them before the handler. If a
+provider signs exact raw bytes, the deployment boundary must supply those exact bytes as request evidence;
+never reconstruct a signature preimage from parsed JSON. Verification belongs to an Integration-backed
+Capability, not a private handler authorization rule.
 
 ## When should an entry point be public?
 
 Use `public` only when a caller cannot present an Astrale credential: for example a sign-in page or a
-third-party webhook. Public function and method contexts have `auth: null` and `kernel: null`; a view
-context has `auth: null` and never exposes a `kernel` property. Validate the upstream request before
-acquiring `ctx.fn.kernel()`. Use `optional` only when both authenticated and anonymous behavior are
-genuinely needed. Everything else should keep the default required policy and follow the public webhook
-pattern and function security.
-
-## Do NOT expect a caller kernel in a public handler
-
-For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
-caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
-policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
-reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
-providers also require the SDK fix described by the auxiliary-route limitation.
-
-```ts
-export const webhook = defineRemoteFunction({
-  auth: 'public',
-  inputSchema: EventSchema,
-  outputSchema: z.object({ accepted: z.boolean() }),
-  authorize: ({ c, params, deps }) =>
-    deps.provider.verifySignedEvent({
-      event: params,
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-    }),
-  execute: async ({ fn, params }) => {
-    const own = await fn.kernel()
-    await recordProviderEvent(own, params)
-    return { accepted: true }
-  },
-})
-```
-
-## How to give a function its own permissions?
-
-Grant the callable's function identity exactly the resources its implementation needs. `ctx.fn.ref` is a
-schema ref used for naming, not an addressable path. In a post-install function, target the callable
-through its compiled FunctionPath or MethodPath and call `kernel.auth.grant`. A required handler's
-normal kernel uses the union of caller and function authority, while `ctx.fn.kernel()` is self-only. See
-function identity and the two handler sessions.
-
-```ts
-await kernel.auth.grant({
-  to: D.$.f('ingest').path.domain,
-  on: '/events',
-  perms: toMask(READ, EDIT),
-})
-```
+third-party webhook. A public v2 handler has an anonymous `caller` and null `app`, `kernel`, `query`, and
+`mutate`; it may invoke only its declared Capability clients. Verify the upstream evidence before any
+provider effect. Use `optional` only when both authenticated and anonymous behavior are genuinely needed.
+Everything else should use `auth: 'required'` and, when object authority matters, a Schema Policy.

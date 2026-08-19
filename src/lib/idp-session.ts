@@ -1,4 +1,4 @@
-import { withFileLock } from './fs-atomic'
+import { withFileLock } from '../state/index'
 import {
   accessTokenForAudience,
   classifyRefreshFailure,

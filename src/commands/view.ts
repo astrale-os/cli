@@ -1,18 +1,19 @@
+import type { ResolvedView } from '@astrale-os/shell'
+
 import chalk from 'chalk'
 import { randomBytes } from 'node:crypto'
-import { closeSync, existsSync, openSync, statSync } from 'node:fs'
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { closeSync, existsSync, statSync } from 'node:fs'
+import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import type { CommandDefinition } from '../command'
-import type { KernelCommandOpts } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
 import type { ViewServeConfig, ViewSessionRecord } from '../lib/view/session'
+import type { CommandDefinition } from '../program/index'
 
+import { expandSelfInPath, withClientSession } from '../connection'
 import { AstraleError } from '../errors'
-import { bindGraph, expandSelfInPath, resolveKernelTarget, withKernelClient } from '../kernel'
+import { readIdentities } from '../identity/index'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
-import { readConfig } from '../lib/config'
-import { readIdentities } from '../lib/identity'
 import { readInstances } from '../lib/instance'
 import { fatal, log } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
@@ -20,13 +21,13 @@ import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
-  applyViewUrlOverride,
   candidateSlug,
   parseViewSpec,
   pickCandidate,
   resolveViewCandidates,
-  rewriteLocalViewUrl,
+  selectedView,
   type ViewCandidate,
+  viewOwnerTarget,
 } from '../lib/view/resolve'
 import { ensureViewerAssets } from '../lib/view/server'
 import {
@@ -34,8 +35,9 @@ import {
   configPath,
   listSessions,
   logPath,
+  openSessionLog,
   saveRecord,
-  VIEW_DIR,
+  saveServeConfig,
 } from '../lib/view/session'
 import { snapshotText, waitForSettledSnapshot } from '../lib/view/snapshot'
 
@@ -73,84 +75,57 @@ const VIEW_PROFILE = `${BROWSER_DIR}/_view`
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-type ResolvedTarget = { id: string; path: string }
-type ResolvedView = {
-  url: string
-  functionId: string
-  handshake: 'shell' | 'none'
-  path?: string
-  name?: string
-}
-
 export async function resolveSession(
-  spec: string | undefined,
+  spec: string,
   opts: ViewOpts,
-): Promise<{ view?: ResolvedView; target?: ResolvedTarget; candidates: ViewCandidate[] }> {
-  const parsed = spec ? parseViewSpec(spec) : undefined
-  if (parsed?.kind === 'target' && opts.target) {
+): Promise<{ view?: ResolvedView; candidates: ViewCandidate[] }> {
+  rejectUnrepresentableOverrides(opts)
+  const parsed = parseViewSpec(spec)
+  if (parsed.kind === 'target' && opts.target) {
     fatal(new Error('Pass the target either as the positional or as --target, not both'))
   }
-  const targetInput = parsed?.kind === 'target' ? parsed.path : opts.target
-
-  const resolved = await withKernelClient(opts, async (ctx) => {
-    let target: ResolvedTarget | undefined
-    if (targetInput) {
-      const { path } = await expandSelfInPath(targetInput, opts)
-      const node = (await bindGraph(ctx).get(path)) as { id?: string } | null
-      if (!node?.id) {
-        throw new AstraleError('NOT_FOUND', `target ${path} not found or not visible`)
-      }
-      target = { id: node.id, path }
-    }
-    // A bare --view-url already identifies the frontend. Its target is only
-    // shell context, so asking View:resolve for installed candidates is both
-    // unnecessary and incorrect for classes without a class-owned self view.
-    const anchor = parsed ? (parsed.kind === 'view' ? parsed.path : target?.path) : undefined
-    const candidates = anchor ? await resolveViewCandidates(ctx, anchor) : []
-    return { target, candidates }
-  })
-
-  // Bare --view-url: mount an arbitrary URL as a view (nothing installed yet).
-  if (!parsed) {
-    return {
-      view: {
-        url: rewriteLocalViewUrl(opts.viewUrl!),
-        functionId: 'dev-view',
-        handshake: opts.handshake ?? 'shell',
-        name: 'dev',
-      },
-      target: resolved.target,
-      candidates: [],
-    }
+  if (parsed.kind === 'view' && opts.view) {
+    fatal(new Error('An explicit ViewPath cannot be combined with --view <slug>'))
   }
+  const targetInput =
+    parsed.kind === 'target' ? parsed.path : (opts.target ?? viewOwnerTarget(parsed.path))
+  const { path: target } = await expandSelfInPath(targetInput, opts)
 
-  const anchor = parsed.kind === 'view' ? parsed.path : resolved.target!.path
+  const candidates = await withClientSession(opts, (ctx) => resolveViewCandidates(ctx, target))
+
   if (opts.list) {
-    return { target: resolved.target, candidates: resolved.candidates }
+    return { candidates }
   }
-  const picked = await chooseCandidate(resolved.candidates, anchor, opts)
-  let url = picked.url
-  if (opts.viewUrl) url = applyViewUrlOverride(url, opts.viewUrl)
-  url = rewriteLocalViewUrl(url)
+  const selector = parsed.kind === 'view' ? parsed.path : opts.view
+  const picked = await chooseCandidate(candidates, target, selector, opts)
   return {
-    view: {
-      url,
-      functionId: picked.id,
-      handshake: opts.handshake ?? picked.handshake ?? 'shell',
-      path: picked.path,
-      name: candidateSlug(picked),
-    },
-    target: resolved.target,
-    candidates: resolved.candidates,
+    view: selectedView(picked),
+    candidates,
   }
+}
+
+/**
+ * Retain the frozen command flags while failing closed: neither legacy flag
+ * has a truthful representation in V2's verified View placement contract.
+ */
+export function rejectUnrepresentableOverrides(
+  opts: Pick<ViewOpts, 'handshake' | 'viewUrl'>,
+): void {
+  if (opts.viewUrl === undefined && opts.handshake === undefined) return
+  throw new AstraleError(
+    'UNSUPPORTED_VIEW_OVERRIDE',
+    '--view-url and --handshake cannot override a V2 View: the Shell mounts one verified View placement with complete provenance.',
+    'Pass a ViewPath or target and use the placement published by its Domain.',
+  )
 }
 
 async function chooseCandidate(
   candidates: ViewCandidate[],
   anchor: string,
+  selector: string | undefined,
   opts: ViewOpts,
 ): Promise<ViewCandidate> {
-  const picked = pickCandidate(candidates, anchor, opts.view)
+  const picked = pickCandidate(candidates, anchor, selector)
   if (picked !== 'ambiguous') return picked
   if (process.stdin.isTTY && !isMachine(opts)) {
     const { select } = await import('@inquirer/prompts')
@@ -225,29 +200,19 @@ async function newerThan(dir: string, mtimeMs: number): Promise<boolean> {
 }
 
 /** Spawn the detached session server (the CLI re-invoking itself) and wait for it. */
-async function startSession(
-  view: ResolvedView,
-  target: ResolvedTarget | undefined,
-  opts: ViewOpts,
-): Promise<ViewSessionRecord> {
+async function startSession(view: ResolvedView, opts: ViewOpts): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
-  const config = await readConfig()
-  const kernelTarget = await resolveKernelTarget(opts, config)
+  const kernelTarget = await withClientSession(
+    opts,
+    async ({ target: connectionTarget }) => connectionTarget,
+  )
   const [instances, identities, runtime] = await Promise.all([
     readInstances(),
     readIdentities(),
     resolveServeRuntime(),
   ])
   return withViewPortAllocationLock(() =>
-    startSessionLocked(
-      view,
-      target,
-      opts,
-      kernelTarget,
-      instances.active,
-      identities.default,
-      runtime,
-    ),
+    startSessionLocked(view, opts, kernelTarget, instances.active, identities.default, runtime),
   )
 }
 
@@ -258,9 +223,8 @@ async function startSession(
  */
 async function startSessionLocked(
   view: ResolvedView,
-  target: ResolvedTarget | undefined,
   opts: ViewOpts,
-  kernelTarget: { url: string; caFile?: string },
+  kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
   activeInstance: string | undefined,
   defaultIdentity: string | undefined,
   runtime: { file: string; args: string[] },
@@ -281,7 +245,6 @@ async function startSessionLocked(
     nonce,
     pageUrl: `http://127.0.0.1:${port}/s/${nonce}/`,
     view,
-    target,
     instance: opts.instance ?? (opts.url ? opts.url : activeInstance),
     identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? defaultIdentity),
     createdAt: new Date().toISOString(),
@@ -297,15 +260,15 @@ async function startSessionLocked(
     },
     proxy: {
       kernelUrl: kernelTarget.url,
+      issuer: kernelTarget.kernelIssuer,
       caFile: kernelTarget.caFile,
       direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
     },
     idleMs: IDLE_MS,
   }
 
-  await mkdir(VIEW_DIR, { recursive: true })
-  await writeFile(configPath(id), JSON.stringify(serveConfig, null, 2))
-  const logFd = openSync(logPath(id), 'a')
+  await saveServeConfig(serveConfig)
+  const logFd = await openSessionLog(id)
   const child = spawnHandle(
     runtime.file,
     [...runtime.args, '__view-serve', '--config', configPath(id)],
@@ -422,9 +385,9 @@ async function reportOpened(
     )
     return
   }
-  const label = record.view.path ?? record.view.url
+  const label = `/:${record.view.route.key}`
   log.success(`View session ${chalk.bold(record.id)} — ${chalk.bold(label)}`)
-  if (record.target) log.dim(`  target    ${record.target.path} (${record.target.id})`)
+  log.dim(`  target    ${record.view.target}`)
   log.dim(
     `  identity  ${record.identity ?? '(default)'}  instance  ${record.instance ?? '(active)'}`,
   )
@@ -479,7 +442,7 @@ async function closeCommand(opts: ViewOpts): Promise<void> {
     return fatal(
       new Error(
         `${sessions.length} sessions open — pass --close <id> or --close --all:\n${sessions
-          .map((s) => `  ${s.id}  ${s.view.path ?? s.view.url}`)
+          .map((s) => `  ${s.id}  /:${s.view.route.key}`)
           .join('\n')}`,
       ),
     )
@@ -502,7 +465,7 @@ async function sessionsCommand(opts: ViewOpts): Promise<void> {
   }
   for (const s of sessions) {
     console.log(
-      `${chalk.bold(s.id)}  ${s.view.path ?? s.view.url}${s.target ? `  target ${s.target.path}` : ''}  ${chalk.dim(s.pageUrl)}`,
+      `${chalk.bold(s.id)}  /:${s.view.route.key}  target ${s.view.target}  ${chalk.dim(s.pageUrl)}`,
     )
   }
 }
@@ -555,27 +518,22 @@ What it does:
   agent-browser's job; auth follows --as/--creds/-i like any kernel command.
 
   A session stays up ~30 min idle (heartbeat while the page is open). The view
-  gets exactly what the GUI would hand it: a delegation token, a kernel URL,
-  and your target node id.
+  gets exactly what the GUI would hand it: one target-bound resolved placement,
+  an audience-bound credential for shell mounts, and the kernel endpoint.
 
 Examples:
   $ astrale view /crm/customers/ada                      # views on a node
   $ astrale view /:crm.acme.dev:view.dashboard           # explicit ViewPath
   $ astrale view /:agents.astrale.ai:view.agent --target @f00d1234 --as alice
   $ astrale view /crm/customers/ada --snapshot           # open + show it
-  $ astrale view /:d:view.x --view-url http://localhost:8787   # local frontend, live data
-  $ astrale view --view-url http://localhost:8787/ui/x --handshake shell --target /a/b
   $ astrale view --sessions ; astrale view --close --all
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
     if (opts.close !== undefined) return closeCommand(opts)
     if (opts.sessions) return sessionsCommand(opts)
 
-    if (!spec && !opts.viewUrl) {
-      return fatal(
-        new Error('Nothing to open — pass a ViewPath or target node, or --view-url <url>.'),
-      )
-    }
+    rejectUnrepresentableOverrides(opts)
+    if (!spec) return fatal(new Error('Nothing to open — pass a ViewPath or target node.'))
     const wantsAgentBrowser = !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
       return fatal(
@@ -590,14 +548,14 @@ Examples:
       process.exit(1)
     }
 
-    const { view, target, candidates } = await resolveSession(spec, opts)
+    const { view, candidates } = await resolveSession(spec, opts)
     if (opts.list) {
       if (isMachine(opts)) output(candidates, opts)
       else if (candidates.length === 0) log.dim('No views resolve here.')
       else {
         for (const c of candidates) {
           console.log(
-            `${chalk.bold(candidateSlug(c))}  ${c.handshake ?? 'shell'}  ${c.origin}  ${chalk.dim(c.url)}  ${c.path}`,
+            `${chalk.bold(candidateSlug(c))}  ${c.handshake}  ${c.origin}  ${chalk.dim(c.url)}  ${c.path}`,
           )
         }
       }
@@ -605,7 +563,7 @@ Examples:
     }
     if (!view) throw new Error('View resolution completed without a selected view')
 
-    const record = await startSession(view, target, opts)
+    const record = await startSession(view, opts)
 
     let mode: 'agent' | 'system' | 'none' = 'none'
     if (wantsAgentBrowser) {

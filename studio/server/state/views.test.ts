@@ -6,8 +6,8 @@ import {
   conciseCliFailure,
   localViewUrl,
   reconcileRememberedTarget,
+  targetDefinition,
   targetFromRow,
-  targetQuery,
 } from './views'
 
 describe('managed local view URLs', () => {
@@ -80,11 +80,7 @@ describe('target candidates', () => {
     })
   })
 
-  test('queries exact class instances through instance_of', () => {
-    const query = targetQuery('Issue', 'issues.astrale.ai')
-    expect(query).toContain('(n:Node)-[:instance_of]->(c:Class)-[:of_domain]->(d:Domain)')
-    expect(query).toContain('"Issue"')
-    expect(query).toContain('"issues.astrale.ai"')
-    expect(query).toContain('LIMIT 201')
+  test('addresses exact class instances through a canonical Definition source', () => {
+    expect(targetDefinition('Issue', 'issues.astrale.ai')).toBe('/:issues.astrale.ai:class.Issue')
   })
 })

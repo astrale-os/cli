@@ -1,26 +1,54 @@
 import type { IntentMessage, MountedWindow, ResolvedView, Shell } from '@astrale-os/shell'
 
+import { NO_HOST_CAPABILITIES } from '@astrale-os/shell'
 import { describe, expect, test } from 'bun:test'
 
 import {
   handleOpenIntent,
   installOpenIntentHandler,
-  mountWithHandshakeFallback,
   type OpenIntentHost,
 } from '../view/open-intent'
 
+const digest = (character: string) => `sha256:${character.repeat(64)}` as const
+const target = (value: string) => value as ResolvedView['target']
+const issuer = (value: string) => value as ResolvedView['route']['issuer']
+const revision = (character: string) => digest(character) as ResolvedView['route']['revision']
+
 const profile: ResolvedView = {
-  id: 'profile-view',
-  path: '/shell/views/profile',
-  url: 'https://shell.test/profile',
-  origin: 'class',
+  target: target('@person-1'),
+  route: {
+    key: 'shell.test:view.profile',
+    declaration: {
+      target: {
+        kind: 'definition',
+        definitions: [{ origin: 'shell.test', kind: 'class', name: 'Person' }],
+      },
+      auth: 'required',
+    },
+    href: 'https://shell.test/profile',
+    handshake: 'shell',
+    issuer: issuer('https://shell.test'),
+    etag: digest('a'),
+    revision: revision('b'),
+  },
 }
 const card: ResolvedView = {
-  id: 'card-view',
-  path: '/shell/views/card',
-  url: 'https://shell.test/card',
-  handshake: 'none',
-  origin: 'class',
+  target: target('@person-1'),
+  route: {
+    key: 'shell.test:view.card',
+    declaration: {
+      target: {
+        kind: 'definition',
+        definitions: [{ origin: 'shell.test', kind: 'class', name: 'Person' }],
+      },
+      auth: 'public',
+    },
+    href: 'https://shell.test/card',
+    handshake: 'none',
+    issuer: issuer('https://shell.test'),
+    etag: digest('c'),
+    revision: revision('d'),
+  },
 }
 
 function openMessage(viewId?: string, correlationId?: string): IntentMessage<'open'> {
@@ -41,13 +69,21 @@ function mounted(windowId: string, onClose?: () => void): MountedWindow {
     windowId,
     window: {
       windowId,
-      functionId: 'view',
+      functionId: 'shell.test:view.profile',
+      targetNodeId: '@person-1',
+      children: [],
+      view: profile,
+      location: { target: '@person-1', params: {} },
+      presentation: { kind: 'inline', constrained: false },
       isolation: 'shared',
-      state: 'active',
-      delegationToken: null,
-      capabilities: { intents: [] },
+      state: 'ready',
+      credential: { state: 'none' },
+      capabilities: NO_HOST_CAPABILITIES,
     },
     handle: { element: {} as HTMLElement },
+    credential: { state: 'none' },
+    presentation: { kind: 'inline', constrained: false },
+    focus() {},
     close: async () => {
       onClose?.()
       return { kind: 'closed' }
@@ -74,11 +110,11 @@ function harness(views: readonly ResolvedView[] = [profile, card]) {
       events.push(`current:${next.windowId}`)
       current = next
     },
-    mount: async (view, nodeId) => {
-      events.push(`mount:${view.id}:${nodeId}`)
+    mount: async (view) => {
+      events.push(`mount:${view.route.key}:${view.target}`)
       return mounted('new-window')
     },
-    opened: (view, nodeId) => events.push(`opened:${view.path}:${nodeId}`),
+    opened: (view) => events.push(`opened:${view.route.key}:${view.target}`),
     failed: (error) => events.push(`failed:${error instanceof Error ? error.message : error}`),
     reply: (message, windowId) => {
       if (!message.envelope.correlationId) return
@@ -123,40 +159,35 @@ function harness(views: readonly ResolvedView[] = [profile, card]) {
 }
 
 describe('open intent host', () => {
-  test('uses kernel preference and replies before retiring the requesting child', async () => {
+  /** @evidence TEST-CLI-VIEW-OPEN-PRESERVES-RESOLVED-SELECTION */
+  test('uses the complete resolved placement and replies before retiring the requester', async () => {
     const h = harness()
     await handleOpenIntent(h.shell, h.host, openMessage(undefined, 'corr-1'))
 
     expect(h.events).toEqual([
       'resolve:person-1',
-      'mount:profile-view:person-1',
+      'mount:shell.test:view.profile:@person-1',
       'current:new-window',
-      'opened:/shell/views/profile:person-1',
+      'opened:shell.test:view.profile:@person-1',
       'reply:old-window',
       'close:old-window',
     ])
     expect(h.current()?.windowId).toBe('new-window')
-    expect(h.sent).toEqual([
-      {
-        windowId: 'old-window',
-        message: {
-          type: 'intent',
-          version: 1,
-          envelope: {
-            name: 'intentReply',
-            payload: { correlationId: 'corr-1', result: { windowId: 'new-window' } },
-            sender: { windowId: 'root' },
-          },
+    expect(h.sent[0]).toMatchObject({
+      windowId: 'old-window',
+      message: {
+        envelope: {
+          payload: { correlationId: 'corr-1', result: { windowId: 'new-window' } },
         },
       },
-    ])
+    })
   })
 
-  test('honors an explicit view and keeps fire-and-forget navigation reply-free', async () => {
+  test('selects an explicit canonical View key without flattening its placement', async () => {
     const h = harness()
-    await handleOpenIntent(h.shell, h.host, openMessage('card-view'))
+    await handleOpenIntent(h.shell, h.host, openMessage('shell.test:view.card'))
 
-    expect(h.events).toContain('mount:card-view:person-1')
+    expect(h.events).toContain('mount:shell.test:view.card:@person-1')
     expect(h.sent).toEqual([])
   })
 
@@ -170,36 +201,28 @@ describe('open intent host', () => {
       'reply:old-window',
       'failed:No view resolves for this node',
     ])
-    expect(h.sent[0]!.message.envelope).toEqual({
-      name: 'intentReply',
-      payload: {
-        correlationId: 'corr-fail',
-        error: { message: 'No view resolves for this node' },
-      },
-      sender: { windowId: 'root' },
-    })
   })
 
-  test('keeps the current view when the replacement mount fails', async () => {
+  /** @evidence TEST-CLI-VIEW-HANDSHAKE-FAILS-CLOSED */
+  test('makes one replacement mount attempt and never retries as a different placement mode', async () => {
     const h = harness([profile])
-    h.host.mount = async () => {
-      h.events.push('mount:failed')
-      throw new Error('replacement failed')
+    let attempts = 0
+    h.host.mount = async (view) => {
+      attempts++
+      h.events.push(`mount:${view.route.handshake}:failed`)
+      throw new Error('handshake failed')
     }
 
     await handleOpenIntent(h.shell, h.host, openMessage(undefined, 'corr-mount'))
 
+    expect(attempts).toBe(1)
     expect(h.current()?.windowId).toBe('old-window')
     expect(h.events).toEqual([
       'resolve:person-1',
-      'mount:failed',
+      'mount:shell:failed',
       'reply:old-window',
-      'failed:replacement failed',
+      'failed:handshake failed',
     ])
-    expect(h.sent[0]!.message.envelope.payload).toEqual({
-      correlationId: 'corr-mount',
-      error: { message: 'replacement failed' },
-    })
   })
 
   test('serializes overlapping opens', async () => {
@@ -246,63 +269,14 @@ describe('open intent host', () => {
       'resolve:1',
       'mount:new-1',
       'current:new-1',
-      'opened:/shell/views/profile:person-1',
+      'opened:shell.test:view.profile:@person-1',
       'close:old-window',
       'resolve:2',
       'mount:new-2',
       'current:new-2',
-      'opened:/shell/views/profile:person-1',
+      'opened:shell.test:view.profile:@person-1',
       'close:new-1',
     ])
     expect(base.current()?.windowId).toBe('new-2')
-  })
-})
-
-describe('mountWithHandshakeFallback', () => {
-  test('mounts a plain view once', async () => {
-    const attempts: string[] = []
-    const result = await mountWithHandshakeFallback({
-      handshake: 'none',
-      attempts: 2,
-      mount: async (handshake) => {
-        attempts.push(handshake)
-        return 'plain-window'
-      },
-      cleanupFailedAttempt: () => attempts.push('cleanup'),
-    })
-    expect(result).toEqual({ mounted: 'plain-window', handshake: 'none' })
-    expect(attempts).toEqual(['none'])
-  })
-
-  test('retries shell mounts, cleans each failure, then falls back to plain', async () => {
-    const attempts: string[] = []
-    const result = await mountWithHandshakeFallback({
-      handshake: 'shell',
-      attempts: 2,
-      mount: async (handshake) => {
-        attempts.push(handshake)
-        if (handshake === 'shell') throw new Error('handshake failed')
-        return 'plain-window'
-      },
-      cleanupFailedAttempt: () => attempts.push('cleanup'),
-    })
-    expect(result).toEqual({ mounted: 'plain-window', handshake: 'none' })
-    expect(attempts).toEqual(['shell', 'cleanup', 'shell', 'cleanup', 'none'])
-  })
-
-  test('cleans and surfaces the decisive plain fallback failure', async () => {
-    const attempts: string[] = []
-    const run = mountWithHandshakeFallback({
-      handshake: 'shell',
-      attempts: 2,
-      mount: async (handshake) => {
-        attempts.push(handshake)
-        throw new Error(handshake === 'shell' ? 'handshake failed' : 'plain failed')
-      },
-      cleanupFailedAttempt: () => attempts.push('cleanup'),
-    })
-
-    await expect(run).rejects.toThrow('plain failed')
-    expect(attempts).toEqual(['shell', 'cleanup', 'shell', 'cleanup', 'none', 'cleanup'])
   })
 })

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { z } from 'zod'
 
 import { AstraleError } from '../errors'
-import { INSTALL_PATH } from './paths'
+import { INSTALL_PATH } from '../state/index'
 import { run } from './proc'
 
 const DEFAULT_REPO = 'astrale-os/cli'

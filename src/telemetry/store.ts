@@ -11,7 +11,7 @@ import { join } from 'node:path'
 
 import type { AnalyzedMarker, SessionMeta } from './types'
 
-import { createPaths } from '../lib/env'
+import { createPaths } from '../state/index'
 
 export const IDLE_WINDOW_MS = 30 * 60 * 1000
 

@@ -3,8 +3,8 @@ import type { IntentMessage, MountedWindow, ResolvedView, Shell } from '@astrale
 export interface OpenIntentHost {
   current(): MountedWindow | null
   setCurrent(window: MountedWindow): void
-  mount(view: ResolvedView, nodeId: string): Promise<MountedWindow>
-  opened(view: ResolvedView, nodeId: string): void
+  mount(view: ResolvedView): Promise<MountedWindow>
+  opened(view: ResolvedView): void
   failed(error: unknown): void
   reply(message: IntentMessage<'open'>, windowId: string): void
   reject(message: IntentMessage<'open'>, error: unknown): void
@@ -29,10 +29,10 @@ export async function handleOpenIntent(
   try {
     const selected = selectResolvedView(await shell.views.resolve(nodeId), viewId)
     const previous = host.current()
-    const next = await host.mount(selected, nodeId)
+    const next = await host.mount(selected)
 
     host.setCurrent(next)
-    host.opened(selected, nodeId)
+    host.opened(selected)
     // A correlated requester is normally `previous`; answer while its channel
     // still exists, then retire the old mount.
     host.reply(message, next.windowId)
@@ -57,41 +57,11 @@ export function selectResolvedView(
   views: readonly ResolvedView[],
   viewId: string | undefined,
 ): ResolvedView {
-  const selected = viewId ? views.find((view) => view.id === viewId) : views[0]
+  const selected = viewId
+    ? views.find((view) => view.route.key === viewId || `/:${view.route.key}` === viewId)
+    : views[0]
   if (selected) return selected
   throw new Error(
     viewId ? `View ${viewId} does not resolve for this node` : 'No view resolves for this node',
   )
-}
-
-/** Mount a shell view with bounded handshake retries and a plain fallback. */
-export async function mountWithHandshakeFallback<T>(opts: {
-  handshake: 'shell' | 'none'
-  attempts: number
-  mount(handshake: 'shell' | 'none'): Promise<T>
-  cleanupFailedAttempt(): void
-}): Promise<{ mounted: T; handshake: 'shell' | 'none' }> {
-  if (opts.handshake === 'none') {
-    try {
-      return { mounted: await opts.mount('none'), handshake: 'none' }
-    } catch (error) {
-      opts.cleanupFailedAttempt()
-      throw error
-    }
-  }
-  let lastError: unknown
-  for (let attempt = 0; attempt < opts.attempts; attempt++) {
-    try {
-      return { mounted: await opts.mount('shell'), handshake: 'shell' }
-    } catch (error) {
-      lastError = error
-      opts.cleanupFailedAttempt()
-    }
-  }
-  try {
-    return { mounted: await opts.mount('none'), handshake: 'none' }
-  } catch (error) {
-    opts.cleanupFailedAttempt()
-    throw error ?? lastError
-  }
 }

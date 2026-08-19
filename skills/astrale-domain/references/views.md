@@ -28,33 +28,6 @@ authenticated caller, `optional` supports either authenticated or anonymous use,
 caller identity. The choice is part of the view's security contract; see when public access is justified
 and resource permissions.
 
-## Domain Manifest
-
-A **domain manifest** is optional presentation and role metadata served from the deployed domain. `logo`
-is inline SVG or a data URL, `entrypoint` names the registered main view, and `roles` declares named
-capability identities. A role declaration does not grant permissions by itself; the domain provisions
-its grants, usually in post-install.
-
-```ts
-export const domain = defineDomain({
-  schema,
-  methods,
-  views,
-  manifest: {
-    logo: DOMAIN_LOGO,
-    entrypoint: views.home,
-    roles: [
-      {
-        slug: 'editor',
-        name: 'Editor',
-        description: 'Can create and edit tasks',
-        default: true,
-      },
-    ],
-  },
-})
-```
-
 ## Rendered View vs Mounted View
 
 A rendered view returns a `Response` directly from its worker. A mounted view points to a client
@@ -74,17 +47,16 @@ the bridge through shell-react.
 Declaring a View does not mount it by itself. A browser host mounts it only when all of these conditions
 hold:
 
-1. The View is registered in `defineDomain({ views })`, installed on the instance, and resolves to a
-   served URL through its binding.
+1. The View is declared in the installed Schema and resolves to a served URL through its binding.
 2. Shell selects it: either the installed application's entrypoint edge points to it, or an explicit
-   open action selects a caller-visible View attached through `viewFor` or addressed by its semantic
+   open action selects a caller-visible View attached through `target` or addressed by its semantic
    ViewPath. Child-driven navigation also requires the host to grant and handle the `open` intent;
    iframe sandbox tokens do not grant Shell intents.
 3. The caller passes the application's and View's graph authorization doors, and the View's `auth`
    policy can be satisfied. A `required` shell View needs a valid delegated credential; a `public` or
    standalone View does not gain a Shell credential implicitly.
-4. The browser host accepts the serving origin and applies an iframe policy. The domain's `defineView`
-   declaration cannot grant itself browser sandbox capabilities.
+4. The browser host accepts the serving origin and applies an iframe policy. A Schema View declaration
+   cannot grant itself browser sandbox capabilities.
 5. For `handshake: 'shell'`, the child completes the origin-checked Shell handshake. A `none` mount is a
    plain iframe with no Shell session, target, intents, or graph client.
 
@@ -223,15 +195,14 @@ function TargetTaskView() {
 
 ## Project graph nodes before rendering UI
 
-A **view projection** converts kernel `Node` values and qualified schema properties into a feature read
+A view projection converts Kernel `Node` values and qualified Schema properties into a feature read
 model before render-only components see them. Keep this boundary beside view query logic, because it
-depends on the graph and compiled schema; keep the projected model free of `Node`, `Path`, and qualified
-keys. This localizes schema changes and lets live and standalone views share the same UI contract after
-an efficient graph read.
+depends on graph and compiled Schema values; keep the projected model free of `Node`, `Path`, and
+qualified keys.
 
 ```tsx
-import type { Node } from '@astrale-os/kernel-core'
-import { K } from '@astrale-os/kernel-core'
+import type { Node } from '@astrale-os/sdk/graph/node'
+import { K } from '@astrale-os/sdk/schema/kernel'
 
 interface AgentItem {
   path: string
@@ -373,46 +344,38 @@ function's typed output.
 
 ## How to create a View?
 
-Define a view with `defineView`, choose either a client `mount` or a worker `render`, set its
-authentication policy deliberately, and register the same value in `defineDomain({ views })`. If it is
-the application entry surface, pass the view object, not a duplicate slug, to `manifest.entrypoint` so
-renames cannot drift. See render versus mount and the domain manifest.
+Declare the View in Schema with `view(...)`, choose its authentication mode deliberately, and export it
+from the owning Schema submodule. Domain implementation composition contains handlers, not a parallel
+`views` map or `manifest.entrypoint`.
 
 ```ts
-export const views = {
-  contacts: defineView({ mount: '/ui/contacts', auth: 'required' }),
-}
+import { view } from '@astrale-os/sdk/schema'
 
-export const domain = defineDomain({
-  schema,
-  methods,
-  views,
-  manifest: { entrypoint: views.contacts },
+export const contacts = view({
+  description: 'Contacts application surface.',
+  auth: 'required',
 })
 ```
 
 ## How to attach a View to a class?
 
-Set `viewFor: selfOf(Class)` on the view and register it in the domain's `views` map. The association is
-semantic: the view belongs to the class, while an application entrypoint is separately declared through
-`manifest.entrypoint`. Use the self-view pattern instead of duplicating a class path string.
+Set the Schema View's `target` to the rich Class definition. The association is semantic and
+identity-preserving; do not duplicate a Class path string.
 
 ```ts
-export const contactCard = defineView({
-  mount: '/ui/contact',
+export const contactCard = view({
+  target: Contact,
   auth: 'required',
-  viewFor: selfOf(Contact),
 })
 ```
 
 ## When should an entry point be public?
 
 Use `public` only when a caller cannot present an Astrale credential: for example a sign-in page or a
-third-party webhook. Public function and method contexts have `auth: null` and `kernel: null`; a view
-context has `auth: null` and never exposes a `kernel` property. Validate the upstream request before
-acquiring `ctx.fn.kernel()`. Use `optional` only when both authenticated and anonymous behavior are
-genuinely needed. Everything else should keep the default required policy and follow the public webhook
-pattern and function security.
+third-party webhook. Public Function and Method contexts have an anonymous caller and null `app`,
+`kernel`, `query`, and `mutate` values; they cannot self-elevate after entry. Use `optional` only
+when both authenticated and anonymous behavior are genuinely needed. Everything else should keep the
+default required mode and declare its Policy in Schema.
 
 ## Let a node serve as its own view
 
@@ -420,55 +383,3 @@ A node can serve as its own view when its class implements the kernel's UI capab
 view binding itself. In that shape, view resolution returns the node instead of following a separately
 attached view. Use it when the modeled resource and its browser surface have the same identity and
 lifecycle.
-
-## What are ctx.fn identity tools for?
-
-`ctx.fn` exposes the currently executing callable's identity tools. `fn.ref` is a schema ref used for
-naming, not an addressable graph path; `fn.credential()` signs as the function, and `fn.kernel()`
-creates a self-only session. Use that session only when the function identity should act, most notably
-after a public endpoint verifies its upstream. See public entry points, handler versus self-only
-authority, and the raw-body limitation.
-
-## Wire every function, method, and view into the domain
-
-A standalone function or view exists only when it is present in the `functions` or `views` map passed to
-the domain definition. A schema method also needs a `remoteMethod` implementation in the typed `methods`
-map. If the worker serves metadata but a callable is absent, inspect that explicit composition root
-before debugging dispatch.
-
-```ts
-export const domain = defineDomain({
-  schema,
-  methods,
-  functions: { search },
-  views: { dashboard },
-  deps,
-})
-```
-
-## Do NOT expect a caller kernel in a public handler
-
-For a public standalone function or method, `ctx.auth` and `ctx.kernel` are `null` because no Astrale
-caller was authenticated. A `ViewRenderContext` never exposes `kernel` at all, regardless of auth
-policy. After verifying an external request, use `ctx.fn.kernel()` to act as the function identity;
-reaching for an ordinary kernel in a public handler is an authority-model mistake. Exact raw-body
-providers also require the SDK fix described by the auxiliary-route limitation.
-
-```ts
-export const webhook = defineRemoteFunction({
-  auth: 'public',
-  inputSchema: EventSchema,
-  outputSchema: z.object({ accepted: z.boolean() }),
-  authorize: ({ c, params, deps }) =>
-    deps.provider.verifySignedEvent({
-      event: params,
-      signature: c.req.header('x-provider-signature'),
-      timestamp: c.req.header('x-provider-timestamp'),
-    }),
-  execute: async ({ fn, params }) => {
-    const own = await fn.kernel()
-    await recordProviderEvent(own, params)
-    return { accepted: true }
-  },
-})
-```

@@ -1,6 +1,6 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
-import { getDefault, getIdentity, readIdentities } from '../../lib/identity'
+import { getDefault, getIdentity, readIdentities } from '../../identity/index'
 import { isSessionExpired, readIdpSession, type IdpSession } from '../../lib/idp'
 import { ensureFreshSession } from '../../lib/idp-session'
 import { log } from '../../lib/log'

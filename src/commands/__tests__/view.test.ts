@@ -1,23 +1,28 @@
+import type { ResolvedView } from '@astrale-os/shell'
+
+import { Path } from '@astrale-os/sdk/graph/path'
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
-const getMock = mock(async (_path: string) => ({ id: 'issue-id' }))
-const clientCallMock = mock(async (): Promise<unknown> => {
-  throw new Error('View:resolve must not run for a bare --view-url')
-})
+const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
 const abMock = mock(async (_args: string[]) => ({
   ok: true,
   data: { snapshot: '- button "Ready" [ref=e1]' },
   error: null,
 }))
 
-mock.module('../../kernel', () => ({
-  bindGraph: () => ({ get: getMock }),
+mock.module('../../connection', () => ({
   expandSelfInPath: async (path: string) => ({ path }),
-  resolveKernelTarget: mock(),
-  withKernelClient: async (
+  withClientSession: async (
     _opts: unknown,
-    run: (ctx: { client: { call: typeof clientCallMock } }) => Promise<unknown>,
-  ) => run({ client: { call: clientCallMock } }),
+    run: (ctx: {
+      session: { viewsFor: typeof viewsForMock }
+      target: { url: string; kernelIssuer: string }
+    }) => Promise<unknown>,
+  ) =>
+    run({
+      session: { viewsFor: viewsForMock },
+      target: { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' },
+    }),
 }))
 
 mock.module('../../lib/browser', () => ({
@@ -28,61 +33,105 @@ mock.module('../../lib/browser', () => ({
 }))
 
 beforeEach(() => {
-  getMock.mockClear()
-  clientCallMock.mockClear()
+  viewsForMock.mockClear()
   abMock.mockClear()
 })
 
-describe('view session resolution', () => {
-  test('uses a bare --view-url target only as shell context', async () => {
-    const { resolveSession } = await import('../view')
-    const targetPath = '/users/user-1/issue-1'
+const route = (value: unknown) => value as ResolvedView['route']
 
-    const result = await resolveSession(undefined, {
-      viewUrl: 'http://127.0.0.1:5173/ui/issues',
-      handshake: 'shell',
-      target: targetPath,
-    })
-
-    expect(getMock).toHaveBeenCalledWith(targetPath)
-    expect(clientCallMock).not.toHaveBeenCalled()
-    expect(result).toEqual({
-      view: {
-        url: 'http://127.0.0.1:5173/ui/issues',
-        functionId: 'dev-view',
-        handshake: 'shell',
-        name: 'dev',
+const resolved = [
+  route({
+    key: 'ai-gateway.astrale.ai:view.chat',
+    href: 'https://ai-gateway.astrale.ai/ui/chat',
+    handshake: 'shell' as const,
+    issuer: 'https://ai-gateway.astrale.ai',
+    etag: `sha256:${'a'.repeat(64)}`,
+    revision: `sha256:${'b'.repeat(64)}`,
+    declaration: {
+      target: {
+        kind: 'definition' as const,
+        definitions: [{ origin: 'ai-gateway.astrale.ai', kind: 'class' as const, name: 'Model' }],
       },
-      target: { id: 'issue-id', path: targetPath },
-      candidates: [],
+      auth: 'required' as const,
+    },
+  }),
+  route({
+    key: 'ai-gateway.astrale.ai:view.model',
+    href: 'https://ai-gateway.astrale.ai/ui/model',
+    handshake: 'none' as const,
+    issuer: 'https://ai-gateway.astrale.ai',
+    etag: `sha256:${'c'.repeat(64)}`,
+    revision: `sha256:${'d'.repeat(64)}`,
+    declaration: { target: { kind: 'domain' as const }, auth: 'public' as const },
+  }),
+]
+
+describe('view session resolution', () => {
+  /** @evidence TEST-CLI-VIEW-PRESERVES-HOST-PROVENANCE */
+  test('returns one exact target-bound placement without split mount coordinates', async () => {
+    const { resolveSession } = await import('../view')
+    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
+
+    const result = await resolveSession('@model-id', { view: 'chat' })
+
+    expect(viewsForMock).toHaveBeenCalledTimes(1)
+    expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('@model-id')
+    expect(result.view).toEqual({ target: Path.parse('@model-id').raw, route: resolved[0] })
+    expect(result.view).not.toHaveProperty('url')
+    expect(result.view).not.toHaveProperty('functionId')
+    expect(result.view).not.toHaveProperty('handshake')
+  })
+
+  test('lists every candidate with its complete placement provenance', async () => {
+    const { resolveSession } = await import('../view')
+    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
+
+    const result = await resolveSession('@model-id', { list: true })
+
+    expect(result.view).toBeUndefined()
+    expect(result.candidates).toEqual([
+      expect.objectContaining({
+        target: '@model-id',
+        route: resolved[0],
+        id: 'ai-gateway.astrale.ai:view.chat',
+        path: '/:ai-gateway.astrale.ai:view.chat',
+        url: 'https://ai-gateway.astrale.ai/ui/chat',
+        name: 'chat',
+        handshake: 'shell',
+        origin: 'class',
+      }),
+      expect.objectContaining({
+        target: '@model-id',
+        route: resolved[1],
+        id: 'ai-gateway.astrale.ai:view.model',
+        handshake: 'none',
+        origin: 'self',
+      }),
+    ])
+  })
+
+  test('resolves an explicit ViewPath against its Domain owner when no target is supplied', async () => {
+    const { resolveSession } = await import('../view')
+    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
+
+    const result = await resolveSession('/:ai-gateway.astrale.ai:view.model', {})
+
+    expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('/:ai-gateway.astrale.ai')
+    expect(result.view).toEqual({
+      target: Path.parse('/:ai-gateway.astrale.ai').raw,
+      route: resolved[1],
     })
   })
 
-  test('lists every candidate without requiring a view selection', async () => {
-    const { resolveSession } = await import('../view')
-    const targetPath = '/domains/ai-gateway.astrale.ai/core/gemini-3-5-flash'
-    const candidates = [
-      {
-        id: 'chat-id',
-        path: '/domains/ai-gateway.astrale.ai/views/chat',
-        url: 'https://ai-gateway.astrale.ai/ui/chat',
-        origin: 'class' as const,
-      },
-      {
-        id: 'model-id',
-        path: '/domains/ai-gateway.astrale.ai/views/model',
-        url: 'https://ai-gateway.astrale.ai/ui/model',
-        origin: 'class' as const,
-      },
-    ]
-    clientCallMock.mockImplementationOnce(async () => candidates)
+  test('retains legacy override flags but refuses to forge V2 placement provenance', async () => {
+    const { rejectUnrepresentableOverrides } = await import('../view')
 
-    const result = await resolveSession(targetPath, { list: true })
-
-    expect(result).toEqual({
-      target: { id: 'issue-id', path: targetPath },
-      candidates,
-    })
+    expect(() => rejectUnrepresentableOverrides({ viewUrl: 'http://localhost:8787' })).toThrow(
+      'verified View placement',
+    )
+    expect(() => rejectUnrepresentableOverrides({ handshake: 'none' })).toThrow(
+      'verified View placement',
+    )
   })
 })
 

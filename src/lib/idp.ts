@@ -3,10 +3,8 @@ import { mkdir, readFile, readdir, unlink } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 
-import { paths } from './env'
-import { atomicWrite } from './fs-atomic'
+import { atomicWrite, IDPS_PATH, IDP_SESSIONS_DIR, paths } from '../state/index'
 import { log } from './log'
-import { IDPS_PATH, IDP_SESSIONS_DIR } from './paths'
 import { validateName, validateUrl } from './validation'
 
 /**

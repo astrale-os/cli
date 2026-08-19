@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.astrale.ai/cli/identity-export/1",
+  "title": "Astrale Identity Export V1",
+  "description": "Portable plaintext key-identity transfer envelope consumed by the Astrale CLI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "subject", "privateJwk", "publicJwk"],
+  "properties": {
+    "version": { "const": 1 },
+    "subject": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["local", "remote"] },
+    "kid": { "type": "string", "minLength": 1 },
+    "issuer": { "type": "string", "format": "uri" },
+    "privateJwk": { "$ref": "#/$defs/jwk" },
+    "publicJwk": { "$ref": "#/$defs/jwk" }
+  },
+  "$defs": {
+    "jwk": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": true
+    }
+  }
+}

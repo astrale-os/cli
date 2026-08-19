@@ -27,9 +27,9 @@ describe('redactArgv', () => {
   })
 
   test('leaves non-secret flags and their values intact', () => {
-    expect(redactArgv(['get', '--depth', '3', '--format=json'])).toEqual([
-      'get',
-      '--depth',
+    expect(redactArgv(['query', '--limit', '3', '--format=json'])).toEqual([
+      'query',
+      '--limit',
       '3',
       '--format=json',
     ])

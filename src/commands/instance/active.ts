@@ -1,8 +1,8 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
-import { listOwnedInstances } from '../../kernel/client'
+import { listOwnedInstances } from '../../lib/admin-instance'
 import { findOwnedInstance } from '../../lib/admin-instance'
 import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance'
 import { log } from '../../lib/log'

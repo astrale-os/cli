@@ -1,4 +1,9 @@
-import type { ClientContext } from '../../kernel'
+import type { ResolvedView as SessionResolvedView } from '@astrale-os/kernel-client/session'
+import type { ResolvedView } from '@astrale-os/shell'
+
+import { Path } from '@astrale-os/sdk/graph/path'
+
+import type { ConnectionContext } from '../../connection'
 
 import { AstraleError } from '../../errors'
 
@@ -9,7 +14,6 @@ import { AstraleError } from '../../errors'
  * it via `view_for`.
  */
 
-const VIEW_RESOLVE_PATH = '/:kernel.astrale.ai:class.View:resolve'
 const VIEW_PATH_RE = /^\/:[^\s/:@]+:view\.[a-z][a-z0-9-]*$/
 
 export type ViewSpec = { kind: 'view' | 'target'; path: string }
@@ -23,31 +27,62 @@ export function parseViewSpec(spec: string): ViewSpec {
   )
 }
 
-/** Wire shape of one `View:resolve` entry. */
-export type ViewCandidate = {
+/** The owning Domain principal used when an explicit ViewPath has no target override. */
+export function viewOwnerTarget(viewPath: string): string {
+  const parsed = Path.parse(viewPath)
+  if (parsed.ast.anchor.kind !== 'domain') {
+    throw new AstraleError('INVALID_ARGUMENT', `ViewPath has no Domain owner: ${viewPath}`)
+  }
+  return `/:${parsed.ast.anchor.origin}`
+}
+
+/** One exact Shell selection plus stable presentation fields for CLI output. */
+export type ViewCandidate = ResolvedView & {
   id: string
   path: string
   url: string
   name?: string
-  handshake?: 'shell' | 'none'
+  handshake: 'shell' | 'none'
   origin: 'self' | 'class'
+  issuer: string
+  etag: string
+  revision: string
 }
 
 export async function resolveViewCandidates(
-  ctx: ClientContext,
+  ctx: ConnectionContext,
   nodePath: string,
 ): Promise<ViewCandidate[]> {
-  const result = await ctx.client.call(VIEW_RESOLVE_PATH, { node: nodePath })
-  if (!Array.isArray(result)) {
-    throw new AstraleError('UNEXPECTED_RESULT', `View:resolve returned a non-array for ${nodePath}`)
-  }
-  return result as ViewCandidate[]
+  const target = Path.parse(nodePath).raw
+  const catalog = await ctx.session.viewsFor(target)
+  return catalog.views.map((route) => toCandidate(target, route))
+}
+
+function toCandidate(target: ResolvedView['target'], route: SessionResolvedView): ViewCandidate {
+  const key = String(route.key)
+  return Object.freeze({
+    target,
+    route,
+    id: key,
+    path: `/:${key}`,
+    url: route.href,
+    name: key.slice(key.lastIndexOf(':view.') + ':view.'.length),
+    handshake: route.handshake,
+    origin: route.declaration.target.kind === 'domain' ? 'self' : 'class',
+    issuer: route.issuer,
+    etag: route.etag,
+    revision: route.revision,
+  })
+}
+
+/** Strip presentation aliases before crossing the Shell mount boundary. */
+export function selectedView(candidate: ViewCandidate): ResolvedView {
+  return Object.freeze({ target: candidate.target, route: candidate.route })
 }
 
 /** The slug tail of a candidate: `view.dashboard` → `dashboard`. */
 export function candidateSlug(candidate: ViewCandidate): string {
-  const fromPath = candidate.path?.split('/').pop() ?? ''
-  return candidate.name ?? fromPath
+  return candidate.name ?? candidate.id.slice(candidate.id.lastIndexOf(':view.') + ':view.'.length)
 }
 
 export function pickCandidate(
@@ -56,7 +91,10 @@ export function pickCandidate(
   slug?: string,
 ): ViewCandidate | 'ambiguous' {
   if (slug) {
-    const match = candidates.find((c) => candidateSlug(c) === slug || c.path.endsWith(`/${slug}`))
+    const match = candidates.find(
+      (candidate) =>
+        candidate.id === slug || candidate.path === slug || candidateSlug(candidate) === slug,
+    )
     if (!match) {
       throw new AstraleError(
         'VIEW_NOT_FOUND',
@@ -70,35 +108,4 @@ export function pickCandidate(
   }
   if (candidates.length === 1) return candidates[0]
   return 'ambiguous'
-}
-
-/**
- * Apply a `--view-url` override: an origin-only value swaps the origin and
- * keeps the resolved path, a value with a path replaces the URL wholesale.
- */
-export function applyViewUrlOverride(resolvedUrl: string, override: string): string {
-  const parsed = parseUrl(override)
-  if (parsed.pathname !== '/') return parsed.toString()
-  const original = parseUrl(resolvedUrl)
-  return new URL(original.pathname + original.search + original.hash, parsed.origin).toString()
-}
-
-/**
- * The kernel addresses locally-served workers as `host.docker.internal`
- * (reachable from its container); the host browser reaches the same worker on
- * loopback. Rewrite so the iframe loads without an /etc/hosts entry.
- */
-export function rewriteLocalViewUrl(url: string): string {
-  const parsed = parseUrl(url)
-  if (parsed.hostname !== 'host.docker.internal') return url
-  parsed.hostname = '127.0.0.1'
-  return parsed.toString()
-}
-
-function parseUrl(raw: string): URL {
-  try {
-    return new URL(raw)
-  } catch {
-    throw new AstraleError('INVALID_URL', `Not a valid URL: ${raw}`)
-  }
 }

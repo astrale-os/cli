@@ -1,9 +1,10 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
-import { getDefault, readIdentities } from '../../lib/identity'
+import { getDefault, readIdentities } from '../../identity/index'
 import { deleteIdpSession, listIdpSessions } from '../../lib/idp'
 import { log } from '../../lib/log'
 import { output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
+import { ExchangeCredentialCache } from '../../state/index'
 
 export default {
   name: 'logout',
@@ -28,6 +29,7 @@ export default {
     }
 
     for (const name of names) await deleteIdpSession(name)
+    await new ExchangeCredentialCache().clear()
 
     if (opts.raw || opts.json) {
       output({ cleared: names }, opts)

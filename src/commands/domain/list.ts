@@ -1,11 +1,10 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../../command'
-import type { KernelCommandOpts } from '../../kernel'
+import type { KernelCommandOpts } from '../../connection'
 import type { ListProjection, RawOutputOpts } from '../../lib/output'
+import type { CommandDefinition } from '../../program/index'
 
-import { withAdminKernelClient } from '../../kernel/client'
-import { adminDomainMethod, type DomainInfo } from '../../lib/admin-domain'
+import { listAdminDomains, type DomainInfo } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, withSpinner } from '../../lib/log'
 import { isMachine, presentList } from '../../lib/output'
@@ -100,10 +99,7 @@ Examples:
         'Fetching domains',
         !isMachine(opts),
         async (): Promise<DomainRow[]> => {
-          const list = await withAdminKernelClient(
-            opts,
-            async (ctx) => (await ctx.client.call(adminDomainMethod('list'), {})) as DomainInfo[],
-          )
+          const list = await listAdminDomains(opts)
           const filtered = opts.defaultOnly ? list.filter((d) => d.installByDefault) : list
           filtered.sort(byDefaultThenName)
           if (!opts.check) return filtered as DomainRow[]

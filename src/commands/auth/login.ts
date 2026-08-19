@@ -1,4 +1,4 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
 import { type IdpSession } from '../../lib/idp'
 import { log } from '../../lib/log'

@@ -7,8 +7,8 @@ import { Readable } from 'node:stream'
 
 import type { ViewServeConfig } from './session'
 
-import { withKernelClient } from '../../kernel'
-import { fetchWithCaFile } from '../../kernel/ca-fetch'
+import { withClientSession } from '../../connection'
+import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
 import { removeSessionFiles } from './session'
 
@@ -29,7 +29,7 @@ const IDLE_SWEEP_MS = 60_000
 
 export type PageStatus = { state: string; error?: string; at: string }
 
-type TokenGrant = { token: string; expiresAt: number; kind: 'minted' | 'raw' }
+type TokenGrant = { token: string; expiresAt: number; kind: 'minted' }
 
 export function startViewServer(config: ViewServeConfig): Server {
   const { session, proxy } = config
@@ -40,31 +40,15 @@ export function startViewServer(config: ViewServeConfig): Server {
   let grant: TokenGrant | null = null
   let lastActivity = Date.now()
 
-  /**
-   * Prefer a kernel-minted TTL-bound identity credential (what the GUI hands
-   * its iframes); fall back to the raw CLI credential so the session works
-   * anywhere the CLI itself can call.
-   */
+  /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
-    grant = await withKernelClient(config.kernel, async (ctx) => {
-      try {
-        const token = await ctx.client.as(ctx.credential).auth.mint()
-        return {
-          token,
-          expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
-          kind: 'minted' as const,
-        }
-      } catch (error) {
-        console.log(
-          `mint failed (${error instanceof Error ? error.message : String(error)}) — falling back to the raw CLI credential`,
-        )
-        const token = ctx.credential
-        return {
-          token,
-          expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
-          kind: 'raw' as const,
-        }
+    grant = await withClientSession(config.kernel, async ({ auth, target }) => {
+      const token = await auth.mint({ audience: target.kernelIssuer, ttlSeconds: 3_600 })
+      return {
+        token,
+        expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
+        kind: 'minted' as const,
       }
     })
     return grant
@@ -108,14 +92,9 @@ export function startViewServer(config: ViewServeConfig): Server {
     }
     if (sub === '/config.json' && req.method === 'GET') {
       json(res, 200, {
-        viewUrl: session.view.url,
-        viewPath: session.view.path ?? null,
-        viewName: session.view.name ?? null,
-        functionId: session.view.functionId,
-        handshake: session.view.handshake,
-        targetNodeId: session.target?.id ?? null,
-        targetPath: session.target?.path ?? null,
+        view: session.view,
         kernelUrl: proxy.direct ? proxy.kernelUrl : `${base}/k`,
+        kernelIssuer: proxy.issuer,
         identity: session.identity ?? null,
         instance: session.instance ?? null,
         sessionId: session.id,
@@ -123,6 +102,10 @@ export function startViewServer(config: ViewServeConfig): Server {
       return
     }
     if (sub === '/token' && req.method === 'POST') {
+      if (session.view.route.handshake !== 'shell') {
+        json(res, 403, { error: 'plain views have no Astrale credential privilege' })
+        return
+      }
       const fresh = await freshGrant()
       json(res, 200, { token: fresh.token, expiresAt: fresh.expiresAt, kind: fresh.kind })
       return

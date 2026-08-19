@@ -1,12 +1,11 @@
 import chalk from 'chalk'
 
-import type { KernelCommandOpts } from '../kernel'
+import type { KernelCommandOpts } from '../connection'
 import type { AdminTargetCommandOpts } from './admin-target'
 
 import { AuthError } from '../errors'
-import { withAdminKernelClient } from '../kernel/client'
-import { adminInstanceMethod } from './admin-instance'
-import { readIdentities, type IdentityStore } from './identity'
+import { readIdentities, type IdentityStore } from '../identity/index'
+import { createOwnedInstance } from './admin-instance'
 import { setActive, upsertManagedBookmark } from './instance'
 import { withSpinner } from './log'
 import { isMachine } from './output'
@@ -71,14 +70,7 @@ export async function provisionInstance(
       `Provisioning instance ${slug}`,
       !machine,
       async () => {
-        const created = await withAdminKernelClient(
-          createOpts,
-          async (ctx) =>
-            (await ctx.client.call(adminInstanceMethod('alphaCreate'), {
-              slug,
-              ...(hostId ? { host_id: hostId } : {}),
-            })) as { url: string; organizationId?: string },
-        )
+        const created = await createOwnedInstance(createOpts, slug, hostId)
         try {
           // Org id from the create response — authoritative for token scoping
           // (the router's /auth/org is eventually consistent).

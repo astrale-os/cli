@@ -2,9 +2,6 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 
-import { adminDomainMethod } from '../../lib/admin-domain'
-import { adminInstanceMethod } from '../../lib/admin-instance'
-
 class ExitError extends Error {
   constructor(readonly code: string | number | null | undefined) {
     super(`process.exit(${String(code)})`)
@@ -14,21 +11,23 @@ class ExitError extends Error {
 const calls: Array<{ path: string; params: unknown }> = []
 let inventory: OwnedInstanceInfo[] = []
 
-const clientCall = mock(async (path: string, params: unknown): Promise<unknown> => {
+const hostCall = mock(async (call: { target: string; input: unknown }): Promise<unknown> => {
+  const path = call.target
+  const params = call.input
   calls.push({ path, params })
-  if (path === adminInstanceMethod('listMine')) return inventory
   throw new Error(`Unexpected admin call: ${path}`)
 })
 
-mock.module('../../kernel', () => ({
+mock.module('../../connection', () => ({
+  createPathCall: (path: string, input: unknown) => ({
+    target: path,
+    input,
+  }),
   runKernelCommand: mock(),
-}))
-
-mock.module('../../kernel/client', () => ({
-  withAdminKernelClient: async (
+  withAdminClientSession: async (
     _opts: unknown,
-    run: (ctx: { client: { call: typeof clientCall } }) => Promise<unknown>,
-  ) => run({ client: { call: clientCall } }),
+    run: (ctx: { session: { call: typeof hostCall } }) => Promise<unknown>,
+  ) => run({ session: { call: hostCall } }),
 }))
 
 let stderr = ''
@@ -39,7 +38,7 @@ beforeEach(() => {
   calls.length = 0
   inventory = []
   stderr = ''
-  clientCall.mockClear()
+  hostCall.mockClear()
   originalExit = process.exit
   originalStderrWrite = process.stderr.write.bind(process.stderr)
   process.exit = ((code?: string | number | null) => {
@@ -57,20 +56,20 @@ afterEach(() => {
 })
 
 async function runInstall(instance: string): Promise<void> {
-  const command = (await import('../domain/install')).default
-  const action = command.action as (
-    target: string | undefined,
-    opts: Record<string, unknown>,
-  ) => Promise<void>
-  await action('crm.acme.dev', {
-    instance,
-    json: true,
-    noPrompt: true,
-  })
+  const { installViaAdmin } = await import('../domain/install')
+  await installViaAdmin(
+    'crm.acme.dev',
+    {
+      instance,
+      json: true,
+      noPrompt: true,
+    },
+    { listInstances: async () => inventory },
+  )
 }
 
 describe('admin domain install owner boundary', () => {
-  test('rejects a foreign target after listMine without attempting an install', async () => {
+  test('rejects a foreign target after the V2 graph inventory without attempting an install', async () => {
     inventory = [
       {
         id: 'owned-id',
@@ -86,7 +85,7 @@ describe('admin domain install owner boundary', () => {
       error: 'INSTANCE_NOT_MANAGED',
       message: 'Instance "foreign" is not admin-managed (managed: owned).',
     })
-    expect(calls).toEqual([{ path: adminInstanceMethod('listMine'), params: {} }])
+    expect(calls).toEqual([])
   })
 
   test.each([
@@ -116,7 +115,7 @@ describe('admin domain install owner boundary', () => {
     expect(payload.error).toBe('INSTANCE_NOT_READY')
     expect(payload.message).toContain(`Instance "owned" is ${status.state}`)
     expect(payload.hint).toBe(status.error ?? 'Run: astrale instance status owned')
-    expect(calls).toEqual([{ path: adminInstanceMethod('listMine'), params: {} }])
-    expect(calls.some((call) => call.path === adminDomainMethod('install'))).toBe(false)
+    expect(calls).toEqual([])
+    expect(calls).toEqual([])
   })
 })

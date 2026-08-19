@@ -1,55 +1,50 @@
-/**
- * The admin `Instance` surface used by `astrale instance
- * list/status/create/delete`. The merged admin domain models instances as the
- * `Instance` class (provisioned via `Instance.init`); these commands target it.
- */
-export const ADMIN_INSTANCE = '/:admin.astrale.ai:class.Instance'
+import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
-export function adminInstanceMethod(
-  method: 'alphaCreate' | 'delete' | 'info' | 'list' | 'listMine',
-): string {
-  return `${ADMIN_INSTANCE}:${method}`
+import { connectAdminInstances } from '../admin/instance'
+import { withAdminClientSession } from '../connection'
+
+export {
+  AdminInstanceNotFoundError,
+  findOwnedInstance,
+  formatInstanceLocation,
+  type InstanceInfo,
+  type InstanceState,
+  type OwnedInstanceInfo,
+} from '../admin/instance'
+
+/** Resolve the Admin target and read only the caller-visible Instance inventory. */
+export function listOwnedInstances(options: AdminConnectionOptions) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).list(),
+  )
 }
 
-export type InstanceState = 'provisioning' | 'ready' | 'failed'
-
-/** Read shape returned by `Instance.list` / `info` / `delete` (domain `InstanceInfoSchema`). */
-export type InstanceInfo = {
-  id: string
-  slug: string
-  url: string
-  hostId?: string
-  region?: string
-  state?: InstanceState
-  phase?: string
-  error?: string | null
-  createdAt?: string
-  organizationId?: string
+/** Reuse an already-open Admin session for a caller-visible Instance inventory. */
+export async function listOwnedInstancesInContext(context: ConnectionContext) {
+  return (await connectAdminInstances(context)).list()
 }
 
-/** Owner-scoped read shape returned by `Instance.listMine`. */
-export type OwnedInstanceInfo = InstanceInfo & {
-  state: InstanceState
+/** Provision through Fleet placement or one explicitly resolved Host receiver. */
+export function createOwnedInstance(
+  options: AdminConnectionOptions,
+  slug: string,
+  hostId?: string,
+) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).create(slug, hostId),
+  )
 }
 
-/** Call the owner-scoped list contract through any admin client-shaped object. */
-export async function callOwnedInstances(client: {
-  call: (path: string, params: Record<string, never>) => Promise<unknown>
-}): Promise<OwnedInstanceInfo[]> {
-  return (await client.call(adminInstanceMethod('listMine'), {})) as OwnedInstanceInfo[]
+/** Refresh one exact caller-visible Instance through its V2 receiver Method. */
+export function statusOwnedInstance(options: AdminConnectionOptions, identifier: string) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).status(identifier),
+  )
 }
 
-/** Match an owner-scoped instance by its stable node id or human slug. */
-export function findOwnedInstance(
-  instances: readonly OwnedInstanceInfo[],
-  identifier: string,
-): OwnedInstanceInfo | undefined {
-  return instances.find((instance) => instance.id === identifier || instance.slug === identifier)
-}
-
-/** Human-readable location of a managed instance ("region · hostId"). */
-export function formatInstanceLocation(info: InstanceInfo): string {
-  return [info.state && info.state !== 'ready' ? info.state : undefined, info.region, info.hostId]
-    .filter(Boolean)
-    .join(' · ')
+/** Delete one exact caller-visible Instance through its V2 receiver Method. */
+export function deleteOwnedInstance(options: AdminConnectionOptions, identifier: string) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).delete(identifier),
+  )
 }

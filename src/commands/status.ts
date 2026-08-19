@@ -1,6 +1,6 @@
 import chalk from 'chalk'
 
-import type { CommandDefinition } from '../command'
+import type { CommandDefinition } from '../program/index'
 
 import { readLocalStatus } from '../lib/local-status'
 import { log } from '../lib/log'

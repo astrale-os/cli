@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { paths } from './env'
+import { paths } from '../state/index'
 import { run } from './proc'
 
 /**

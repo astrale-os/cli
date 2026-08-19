@@ -1,0 +1,8 @@
+export { createPathCall } from './call'
+export { runKernelCommand } from './command'
+export type { KernelCommandOpts } from './command'
+export { expandSelfInCall, expandSelfInPath, withSelfHint } from './self'
+export type { SelfExpansionMeta } from './self'
+export { withAdminClientSession, withClientSession, type ConnectionContext } from './session'
+export { registrationKeyForTarget } from './target'
+export type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'

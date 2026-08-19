@@ -1,6 +1,6 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
-import { deleteIdentity } from '../../lib/identity'
+import { deleteIdentity } from '../../identity/index'
 import { fatal, log } from '../../lib/log'
 
 export default {

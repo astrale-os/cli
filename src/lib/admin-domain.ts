@@ -1,29 +1,43 @@
-/**
- * The admin `DomainEntry` surface used by `astrale domain publish`. The merged
- * admin domain models the installable-domain REGISTRY as the `DomainEntry`
- * class (named `DomainEntry`, not `Domain`, because `Domain` is a reserved
- * kernel node-kind); `publish` upserts a `name → url` catalog entry the child
- * kernel later installs from. Publishing only makes a domain INSTALLABLE —
- * mounting it on an instance is the separate `domain install` step (or the
- * admin's install-by-default policy).
- */
-export const ADMIN_DOMAIN = '/:admin.astrale.ai:class.DomainEntry'
+import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
-export function adminDomainMethod(method: 'info' | 'install' | 'list' | 'publish'): string {
-  return `${ADMIN_DOMAIN}:${method}`
+import { connectAdminCatalog, type DomainInfo, type PublishDomainInput } from '../admin/catalog'
+import { connectAdminInstances, type OwnedInstanceInfo } from '../admin/instance'
+import { withAdminClientSession } from '../connection'
+
+export type { DomainInfo, InstallDomainResult, PublishDomainInput } from '../admin/catalog'
+
+/** Read the caller-visible V2 Admin Domain catalog. */
+export function listAdminDomains(options: AdminConnectionOptions): Promise<DomainInfo[]> {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminCatalog(context)).list(),
+  )
 }
 
-/** Read shape returned by `DomainEntry.publish` / `info` / `list` (domain `DomainInfoSchema`). */
-export type DomainInfo = {
-  id: string
-  /** shell.astrale.ai — the authority origin (== JWT aud + kernel path prefix). */
-  origin: string
-  /** 'shell' — the node slug + the id used in install plans / the CLI. */
-  name: string
-  /** https://shell.astrale.ai — the published worker URL the kernel installs from. */
-  url?: string
-  description?: string
-  installByDefault?: boolean
-  createdAt: string
-  updatedAt: string
+/** Reuse one open Admin session for catalog reads. */
+export async function listAdminDomainsInContext(context: ConnectionContext): Promise<DomainInfo[]> {
+  return (await connectAdminCatalog(context)).list()
+}
+
+/** Publish and optionally configure default installation through V2 receiver Methods. */
+export function publishAdminDomain(options: AdminConnectionOptions, input: PublishDomainInput) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminCatalog(context)).publish(input),
+  )
+}
+
+/** Install one resolved catalog Domain on one caller-visible Instance. */
+export async function installAdminDomainInContext(
+  context: ConnectionContext,
+  instance: OwnedInstanceInfo,
+  domain: DomainInfo,
+) {
+  const receipt = await (await connectAdminInstances(context)).installDomain(instance.id, domain.id)
+  return Object.freeze({
+    name: domain.name,
+    origin: receipt.origin,
+    instanceId: instance.slug,
+    url: domain.url ?? '',
+    ok: receipt.ok,
+    ...(receipt.error === undefined ? {} : { error: receipt.error }),
+  })
 }

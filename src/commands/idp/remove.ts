@@ -1,6 +1,6 @@
-import type { CommandDefinition } from '../../command'
+import type { CommandDefinition } from '../../program/index'
 
-import { readIdentities } from '../../lib/identity'
+import { readIdentities } from '../../identity/index'
 import { removeIdpConfig } from '../../lib/idp'
 import { log } from '../../lib/log'
 import { output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
