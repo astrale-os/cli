@@ -36,6 +36,14 @@ export class AdminInstanceNotFoundError extends Error {
   }
 }
 
+export class AdminHostNotFoundError extends Error {
+  readonly name = 'NotFoundError'
+
+  constructor(readonly identifier: string) {
+    super(`No caller-usable Admin Host matches ${JSON.stringify(identifier)}.`)
+  }
+}
+
 /** Match an owner-scoped Instance by slug, canonical Node Path, or bare Node id. */
 export function findOwnedInstance(
   instances: readonly OwnedInstanceInfo[],

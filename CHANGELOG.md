@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1-alpha.1](https://github.com/astrale-os/cli/compare/cli-v0.8.1-alpha.0...cli-v0.8.1-alpha.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **deps:** decode Kernel V2 explicit edge direction and drop private tmp packs
+* **ci:** install build-time Kernel packages before compiling the standalone binary
+
 ## [0.8.1-alpha.0](https://github.com/astrale-os/cli/compare/cli-v0.8.0-alpha.0...cli-v0.8.1-alpha.0) (2026-07-17)
 
 
