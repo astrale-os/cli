@@ -266,25 +266,6 @@ function requiredStringProperty(definition: DynamicDefinition, node: Node, name:
   )
 }
 
-function optionalStringProperty(
-  definition: DynamicDefinition,
-  node: Node,
-  name: string,
-): Readonly<Record<string, string>> {
-  const value = optionalStringValue(node.props[definition.$.property(name).key])
-  return value === undefined ? {} : { [name]: value }
-}
-
-function optionalFailureProperty(
-  definition: DynamicDefinition,
-  node: Node,
-): Readonly<{ error?: string }> {
-  const value = node.props[definition.$.property('failure').key]
-  if (value === undefined) return {}
-  const failure = record(value, 'Admin Instance failure')
-  return { error: requiredString(failure.message, 'Admin Instance failure message') }
-}
-
 function instanceState(input: unknown): InstanceState {
   if (
     input === 'provisioning' ||
