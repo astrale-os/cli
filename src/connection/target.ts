@@ -17,6 +17,7 @@ export interface ConnectionOptions {
   readonly as?: string
   readonly creds?: string
   readonly anonymous?: boolean
+  readonly ci?: boolean
 }
 
 export interface AdminConnectionOptions extends ConnectionOptions {

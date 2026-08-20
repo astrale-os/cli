@@ -31,6 +31,7 @@ astrale whoami
 astrale use <name>
 astrale get <target>
 astrale query [sources...]
+astrale introspect <origin-or-path>
 astrale mutate
 astrale call <path> [key=value...]
 astrale token
@@ -170,10 +171,25 @@ It does not infer operations or children.
 ```bash
 astrale get @note --json
 astrale get /:notes.example:class.Note
+astrale get /:host.astrale.ai --schema
 ```
 
-`astrale describe` is not a command. Use `get` for one Node. Callable
-input/output remains `astrale call <path> --describe`.
+`astrale describe` is not a command. Use `get` for one Node. Method Paths
+are not Nodes — use `call` or `introspect`. Schema-valued properties are
+omitted unless `--schema` is passed.
+
+### `introspect`
+
+`introspect` reads the Kernel Schema syscall for one installed Domain.
+
+```bash
+astrale introspect host.astrale.ai
+astrale introspect /:host.astrale.ai --bundle
+astrale introspect /:host.astrale.ai:class.Manager:createInstance
+```
+
+A method or Function Path projects that callable's input/output from the
+installed bundle. `astrale call --describe` is not a flag.
 
 ### `query`
 
@@ -223,10 +239,9 @@ The result is `{ createdNodes }`. Historical PatchData arms and
 ## Calls
 
 `astrale call` creates one Path-targeted Call. Input priority is `--data`,
-piped stdin, `key=value`, then `{}`. `--describe` reads the callable's
-input/output from the installed Domain schema (method Paths are not Function
-nodes); `--dry-run` prints the call input. Value, binary, and stream results
-are handled explicitly, and `--output` writes binary data.
+piped stdin, `key=value`, then `{}`. `--dry-run` admits the Path and prints
+the call input. Value, binary, and stream results are handled explicitly, and
+`--output` writes binary data. Callable input/output is `astrale introspect <path>`.
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10
@@ -293,7 +308,7 @@ astrale whoami
 
 Add `--debug` for full Kernel error diagnostics. A missing and an
 authorization-masked graph Node may intentionally be indistinguishable. For
-callable input/output shape, use `astrale call <path> --describe`.
+callable input/output shape, use `astrale introspect <path>`.
 
 ## Storage
 

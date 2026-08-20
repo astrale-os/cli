@@ -156,7 +156,7 @@ export async function formatKernelError(
           // Server often sends details in message but empty errors array
           console.log(chalk.red(`  ${error.message}`))
         }
-        log.dim('  Use `astrale call <path> --describe` to see the expected schema')
+        log.dim('  Use `astrale introspect <path>` to see the expected schema')
       }
       break
     }
@@ -177,24 +177,30 @@ export async function formatKernelError(
     case 'ResponseError': {
       const code = (error as { readonly code?: unknown }).code
       const reason = (error as { readonly reason?: unknown }).reason
+      const reasonCode =
+        reason !== null &&
+        typeof reason === 'object' &&
+        typeof (reason as { readonly code?: unknown }).code === 'string'
+          ? (reason as { readonly code: string }).code
+          : undefined
+      const hint =
+        reasonCode === 'FUNCTION_INPUT_INVALID'
+          ? 'Use `astrale introspect <path>` to see the callable input.'
+          : undefined
       if (isRaw) {
         writeRaw({
           error: 'RESPONSE_ERROR',
           ...(code === undefined ? {} : { code }),
           message: error.message,
           ...(reason === undefined ? {} : { reason }),
+          ...(hint === undefined ? {} : { hint }),
         })
       } else {
         log.error(
           `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${error.message}`,
         )
-        if (
-          reason !== null &&
-          typeof reason === 'object' &&
-          typeof (reason as { readonly code?: unknown }).code === 'string'
-        ) {
-          log.dim(`  reason: ${(reason as { readonly code: string }).code}`)
-        }
+        if (reasonCode !== undefined) log.dim(`  reason: ${reasonCode}`)
+        if (hint !== undefined) log.dim(`  ${hint}`)
       }
       break
     }
@@ -207,10 +213,20 @@ export async function formatKernelError(
       break
     }
 
-    default:
-      // Catch-all: include class name so diagnosis is possible even without --debug
-      if (isRaw) writeRaw({ error: name || 'UNKNOWN', message: error.message })
-      else log.error(`${chalk.bold(name || 'Error')}: ${error.message}`)
+    default: {
+      const mapped = mapPublicError(error)
+      if (isRaw) {
+        writeRaw({
+          error: mapped.code,
+          message: mapped.message,
+          ...(mapped.hint === undefined ? {} : { hint: mapped.hint }),
+          ...(mapped.timeoutMs === undefined ? {} : { timeoutMs: mapped.timeoutMs }),
+        })
+      } else {
+        log.error(`${chalk.bold(mapped.code)}: ${mapped.message}`)
+        if (mapped.hint) log.dim(`  ${mapped.hint}`)
+      }
+    }
   }
 
   if (debug) printDebug(error, url)
@@ -219,6 +235,52 @@ export async function formatKernelError(
 /** Strip internal `::methodName` suffixes from paths in error messages (e.g., "/path::listChildren" → "/path") */
 export function stripMethodSuffix(msg: string): string {
   return msg.replace(/(\/[^"\s:]+)::([a-zA-Z]\w*)/g, '$1')
+}
+
+function mapPublicError(error: Error): {
+  code: string
+  message: string
+  hint?: string
+  timeoutMs?: number
+} {
+  const name = error.name
+  if (name === 'PathError') {
+    return { code: 'PATH_INVALID', message: error.message }
+  }
+  if (name === 'NodeUnavailableError') {
+    return {
+      code: 'NODE_UNAVAILABLE',
+      message: error.message,
+      hint: 'If this is a callable Path, use `astrale call` or `astrale introspect`.',
+    }
+  }
+  if (name === 'AuthValueError') {
+    return { code: 'AUTH_VALUE_INVALID', message: error.message }
+  }
+  if (name === 'ClientError' && /timed out/i.test(error.message)) {
+    const timeoutMs = (error as { timeoutMs?: number }).timeoutMs
+    return {
+      code: 'TIMEOUT',
+      message: error.message,
+      hint: 'Try increasing with --timeout',
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    }
+  }
+  if (name === 'ClientError' && /Publication discovery returned HTTP/i.test(error.message)) {
+    return {
+      code: 'KERNEL_DISCOVERY_FAILED',
+      message: error.message,
+      hint: 'Pass the Kernel issuer URL (no /invoke suffix), e.g. https://host/kernel/host',
+    }
+  }
+  if (name === 'Error' && /unable to connect/i.test(error.message)) {
+    return {
+      code: 'CONNECTION_ERROR',
+      message: error.message,
+      hint: 'Check --url / -i and that the Kernel is reachable. Try: astrale status',
+    }
+  }
+  return { code: name && name !== 'Error' ? name : 'UNKNOWN', message: error.message }
 }
 
 function writeRaw(payload: Record<string, unknown>): void {

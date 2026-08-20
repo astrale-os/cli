@@ -2,6 +2,8 @@ import type { Command, CommanderError } from 'commander'
 
 import chalk from 'chalk'
 
+import { isMachine } from './output'
+
 export type CommandCatalogEntry = {
   path: string[]
   usage: string
@@ -34,42 +36,48 @@ export function renderCommanderError(
   const matched = matchRegisteredPrefix(program, tokens)
 
   if (matched.path.length === 0 && tokens.length > 0) {
-    return renderUnknownCommand(tokens, catalog)
+    return maybeMachine(renderUnknownCommand(tokens, catalog))
   }
 
   if (error.code === 'commander.missingArgument') {
     const usage = usageFor(matched.path, matched.command)
     const argName = error.message.match(/'([^']+)'/)?.[1]
-    return [
-      `Missing required argument${argName ? ` ${chalk.bold(`<${argName}>`)}` : ''} for ${chalk.bold(
-        `astrale ${matched.path.join(' ')}`,
-      )}`,
-      '',
-      'Usage:',
-      `  astrale ${usage}`,
-    ].join('\n')
+    return maybeMachine(
+      [
+        `Missing required argument${argName ? ` ${chalk.bold(`<${argName}>`)}` : ''} for ${chalk.bold(
+          `astrale ${matched.path.join(' ')}`,
+        )}`,
+        '',
+        'Usage:',
+        `  astrale ${usage}`,
+      ].join('\n'),
+    )
   }
 
   if (error.code === 'commander.excessArguments') {
     const usage = usageFor(matched.path, matched.command)
     const extra = tokens.slice(matched.path.length).join(' ')
-    return [
-      `Unexpected argument${extra.includes(' ') ? 's' : ''} for ${chalk.bold(
-        `astrale ${matched.path.join(' ')}`,
-      )}${extra ? `: ${extra}` : ''}`,
-      '',
-      'Usage:',
-      `  astrale ${usage}`,
-    ].join('\n')
+    return maybeMachine(
+      [
+        `Unexpected argument${extra.includes(' ') ? 's' : ''} for ${chalk.bold(
+          `astrale ${matched.path.join(' ')}`,
+        )}${extra ? `: ${extra}` : ''}`,
+        '',
+        'Usage:',
+        `  astrale ${usage}`,
+      ].join('\n'),
+    )
   }
 
   const suggestions = nearestCommands(tokens.join(' '), catalog)
-  return [
-    error.message,
-    ...(suggestions.length > 0
-      ? ['', 'Did you mean:', ...suggestions.map((s) => `  astrale ${s}`)]
-      : []),
-  ].join('\n')
+  return maybeMachine(
+    [
+      error.message,
+      ...(suggestions.length > 0
+        ? ['', 'Did you mean:', ...suggestions.map((s) => `  astrale ${s}`)]
+        : []),
+    ].join('\n'),
+  )
 }
 
 const RETIRED_COMMANDS: Record<string, string> = {
@@ -131,6 +139,15 @@ function usageFor(path: string[], command: Command): string {
     .replace(/\s+/g, ' ')
     .trim()
   return [path.join(' '), suffix].filter(Boolean).join(' ')
+}
+
+const ANSI_RE = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g')
+
+function maybeMachine(text: string): string {
+  if (!isMachine()) return text
+  const plain = text.replace(ANSI_RE, '')
+  const first = plain.split('\n').find((line) => line.trim().length > 0) ?? plain
+  return JSON.stringify({ error: 'USAGE_ERROR', message: first, detail: plain })
 }
 
 function stripOptions(argv: string[]): string[] {

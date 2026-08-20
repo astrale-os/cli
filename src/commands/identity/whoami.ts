@@ -28,7 +28,7 @@ export default {
       }
       console.log(`${chalk.bold(result.name)} (subject: ${result.subject})`)
     } catch (e) {
-      fatal(e)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition

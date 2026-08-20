@@ -27,6 +27,7 @@ class ExitError extends Error {
 let stdout = ''
 let errors: string[] = []
 let originalStdoutWrite: typeof process.stdout.write
+let originalStderrWrite: typeof process.stderr.write
 let originalConsoleError: typeof console.error
 let originalExit: typeof process.exit
 let queryCalls: Array<{ ast: unknown; options: unknown }> = []
@@ -95,12 +96,17 @@ beforeEach(() => {
   runKernelCommandMock.mockClear()
 
   originalStdoutWrite = process.stdout.write
+  originalStderrWrite = process.stderr.write
   originalConsoleError = console.error
   originalExit = process.exit
   process.stdout.write = ((chunk: string | Uint8Array) => {
     stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
     return true
   }) as typeof process.stdout.write
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    errors.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
+    return true
+  }) as typeof process.stderr.write
   console.error = ((...values: unknown[]) => {
     errors.push(values.map(String).join(' '))
   }) as typeof console.error
@@ -111,6 +117,7 @@ beforeEach(() => {
 
 afterEach(() => {
   process.stdout.write = originalStdoutWrite
+  process.stderr.write = originalStderrWrite
   console.error = originalConsoleError
   process.exit = originalExit
 })
@@ -195,7 +202,10 @@ describe('query command', () => {
     ).rejects.toEqual(new ExitError(1))
 
     expect(runKernelCommandMock).not.toHaveBeenCalled()
-    expect(errors.join('\n')).toContain('expected "astrale.graph.query" at /format')
+    expect(JSON.parse(errors.join('\n'))).toMatchObject({
+      error: 'INVALID_INPUT',
+      message: 'Invalid input: expected "astrale.graph.query" at /format.',
+    })
   })
 })
 

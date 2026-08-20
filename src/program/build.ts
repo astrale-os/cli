@@ -23,13 +23,6 @@ export async function buildProgram(): Promise<Command> {
     .showSuggestionAfterError(true)
     .addOption(new Option('--ci', 'Machine mode: no prompts, structured errors on stderr'))
     .addOption(new Option('--no-prompt', 'Disable interactive prompts'))
-    .addOption(
-      new Option('--offline-ok', 'Tolerate offline state for commands that can operate locally'),
-    )
-    .addOption(
-      new Option('--log-level <level>', 'Log level').choices(['debug', 'info', 'warn', 'error']),
-    )
-    .addOption(new Option('--log-format <format>', 'Log output format').choices(['text', 'json']))
     .action(async () => {
       // Bare `astrale` in an interactive terminal with nothing connected yet →
       // launch the guided setup. Otherwise (configured, piped, or CI) show help.
@@ -62,6 +55,7 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, withKernelOptions((await import('../commands/get')).default))
   registerCommand(program, withKernelOptions((await import('../commands/mutate')).default))
   registerCommand(program, withKernelOptions((await import('../commands/query')).default))
+  registerCommand(program, withKernelOptions((await import('../commands/introspect')).default))
   registerCommand(program, withKernelOptions((await import('../commands/logs')).default))
   registerCommand(program, withKernelOptions((await import('../commands/view')).default))
   registerCommand(program, (await import('../commands/status')).default)
@@ -157,7 +151,7 @@ export async function buildProgram(): Promise<Command> {
     `
 Command groups:
   Getting started  setup     (sign in, pick an instance, equip your workspace)
-  Kernel        get, mutate, call, query, token
+  Kernel        get, mutate, call, query, introspect, logs, view, token
   Management    admin, instance, domain, identity, auth, idp, update
   Agent         browser   (drive the GUI via agent-browser)
   Studio        studio    (launch the local Domain Studio GUI for a workspace)
@@ -179,6 +173,7 @@ Examples:
   $ astrale instance status staging
   $ astrale token --audience shell.astrale.ai --ttl 3600
   $ astrale query /:notes.example.dev:class.Note --limit 50
+  $ astrale introspect /:host.astrale.ai:class.Manager:createInstance
   $ astrale query --file query.v6.json --cursor "$CURSOR"
 `,
   )

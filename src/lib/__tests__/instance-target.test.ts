@@ -225,4 +225,21 @@ describe('isManagedInstanceNotFound: kernel InternalKernelError wrap', () => {
     expect(caught).toBeInstanceOf(AstraleError)
     expect((caught as AstraleError).code).toBe('INSTANCE_NOT_FOUND')
   })
+
+  test('maps Admin token-exchange failure to INSTANCE_NOT_FOUND', async () => {
+    const managed = async () => {
+      throw new AstraleError(
+        'TOKEN_EXCHANGE_SOURCE_INVALID',
+        'The source identity credential has no valid expiration.',
+      )
+    }
+    const opts = {
+      config: DEFAULT_CONFIG,
+      instances: { instances: {} },
+      managed,
+    } as unknown as Parameters<typeof resolveInstanceTarget>[1]
+    await expect(
+      resolveInstanceTarget({ source: 'name', name: 'ghost' }, opts),
+    ).rejects.toMatchObject({ code: 'INSTANCE_NOT_FOUND' })
+  })
 })

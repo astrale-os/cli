@@ -4,15 +4,12 @@ import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
-import { nodeProperty } from '../graph/index'
 import { presentBinary } from '../lib/binary'
-import { log } from '../lib/log'
+import { failClosed, log } from '../lib/log'
 import { output, present } from '../lib/output'
-import { describeCallableFromSchema, missingCallableDescription } from './call-describe'
 
 type CallOpts = KernelCommandOpts & {
   data?: string
-  describe?: boolean
   dryRun?: boolean
   output?: string
 }
@@ -32,15 +29,13 @@ export async function callCommand(
   try {
     expanded = await expandSelfInCall(path, rawParams, opts)
   } catch (error) {
-    log.error(error instanceof Error ? error.message : 'Invalid @self expansion')
-    process.exit(1)
+    failClosed(error, opts)
   }
   const expandedPath = expanded.path
-
-  // ── Describe mode: show schema without executing ────────
-  // Runs AFTER expansion so `astrale call @self::m --describe` works.
-  if (opts.describe) {
-    return describeOperation(expandedPath, opts)
+  try {
+    Path.parse(expandedPath)
+  } catch (error) {
+    failClosed(error, opts)
   }
 
   // ── Parse params ────────────────────────────────────────
@@ -48,8 +43,7 @@ export async function callCommand(
   try {
     params = await parseParams([...expanded.parameters], opts.data)
   } catch (e) {
-    log.error(e instanceof Error ? e.message : 'Invalid params')
-    process.exit(1)
+    failClosed(e, opts)
   }
 
   // ── Dry-run: show what would be sent ─────────────────────
@@ -94,24 +88,6 @@ export async function materializeCallResult(result: CallResult): Promise<Materia
   return Object.freeze({ kind: 'stream', values: Object.freeze(values) })
 }
 
-async function describeOperation(path: string, opts: CallOpts): Promise<void> {
-  await runKernelCommand({
-    opts,
-    label: `Schema for ${path}`,
-    fn: async ({ graph }) => {
-      const parsed = Path.parse(path)
-      if (parsed.ast.anchor.kind !== 'domain') {
-        throw missingCallableDescription(path)
-      }
-      const domain = await graph.getOrThrow(Path.parse(`/:${parsed.ast.anchor.origin}`))
-      const described = describeCallableFromSchema(parsed, nodeProperty(domain, 'schema'))
-      if (described === undefined) throw missingCallableDescription(path)
-      return described
-    },
-    format: (schema, fmtOpts) => output(schema, fmtOpts),
-  })
-}
-
 // ── Param parsing ───────────────────────────────────────────
 
 export async function parseParams(
@@ -129,6 +105,10 @@ export async function parseParams(
     }
   }
 
+  if (rawParams.length > 0) {
+    return parseKeyValue(rawParams)
+  }
+
   const stdin = await readStdin()
   if (stdin) {
     try {
@@ -136,10 +116,6 @@ export async function parseParams(
     } catch {
       throw new Error('Invalid JSON from stdin')
     }
-  }
-
-  if (rawParams.length > 0) {
-    return parseKeyValue(rawParams)
   }
 
   return {}
@@ -201,11 +177,12 @@ export default {
   description: 'Call a kernel operation',
   afterHelpText: `
 Behavior:
-  Param priority (highest wins): --data > stdin > key=value > {}. If
+  Param priority (highest wins): --data > key=value > stdin > {}. If
   both --data and key=value are given, key=value is ignored (warned).
-  Stdin is read only when piped (ignored on a TTY). --describe and
-  --dry-run short-circuit (no execution). Remote-bound functions
-  auto-mint a worker-scoped credential; --creds overrides it.
+  Stdin is read only when piped and no --data/key=value is present
+  (ignored on a TTY). --dry-run admits the Path and prints the call
+  input without executing. Remote-bound functions auto-mint a
+  worker-scoped credential; --creds overrides it.
 
 Self-reference:
   @self expands to your nodeId on the active instance (path head or
@@ -214,11 +191,10 @@ Self-reference:
   (e.g. via 'astrale get @self --json'). Resolution authenticates to
   the selected Kernel and never trusts a local registration or JWT sub.
 
-  --describe reads the callable's input/output from the installed Domain
-  schema. Method Paths are not Function nodes.
+  Callable input/output lives on astrale introspect <path>.
 
 Examples:
-  $ astrale call /:host.astrale.ai:class.Manager:createInstance --describe
+  $ astrale introspect /:host.astrale.ai:class.Manager:createInstance
   $ astrale call /:blog.acme.com:class.Author:list limit=10
   $ astrale call '@self::deactivate'
   $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
@@ -234,7 +210,6 @@ Examples:
   options: [
     { flags: '-d, --data <json>', description: 'Params as JSON string' },
     { flags: '-o, --output <file>', description: 'Write binary/raw output to a file' },
-    { flags: '--describe', description: 'Show operation schema without executing' },
     { flags: '--dry-run', description: 'Show what would be sent without executing' },
   ],
   action: async (path, params, opts) => {

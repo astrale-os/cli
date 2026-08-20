@@ -16,7 +16,8 @@ const KERNEL_PASSTHROUGH_OPTIONS: readonly CommandOption[] = Object.freeze([
   { flags: '--creds <token>', description: 'Use a pre-signed credential (e.g. delegation token)' },
   {
     flags: '--anonymous',
-    description: 'Send no credential (cannot be combined with --as or --creds)',
+    description:
+      'Send no credential (cannot be combined with --as or --creds; --as and --creds are mutually exclusive)',
   },
   { flags: '--debug', description: 'Print full error diagnostics on failure' },
 ])

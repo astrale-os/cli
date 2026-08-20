@@ -522,15 +522,17 @@ What it does:
   an audience-bound credential for shell mounts, and the kernel endpoint.
 
 Examples:
-  $ astrale view /crm/customers/ada                      # views on a node
-  $ astrale view /:crm.acme.dev:view.dashboard           # explicit ViewPath
+  $ astrale view @customer
+  $ astrale view /:crm.example.dev:view.dashboard
   $ astrale view /:agents.astrale.ai:view.agent --target @f00d1234 --as alice
-  $ astrale view /crm/customers/ada --snapshot           # open + show it
+  $ astrale view @customer --snapshot
+  $ astrale view --list
   $ astrale view --sessions ; astrale view --close --all
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
     if (opts.close !== undefined) return closeCommand(opts)
     if (opts.sessions) return sessionsCommand(opts)
+    if (opts.list && !spec) return sessionsCommand(opts)
 
     rejectUnrepresentableOverrides(opts)
     if (!spec) return fatal(new Error('Nothing to open — pass a ViewPath or target node.'))

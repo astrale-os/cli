@@ -94,6 +94,9 @@ export function createCliCredential(
 
 /** Reject contradictory explicit credential selections before identity or network access. */
 export function validateCredentialSelection(options: ConnectionOptions): void {
+  if (options.as !== undefined && options.creds !== undefined) {
+    throw new AstraleError('INVALID_FLAG', '--as cannot be combined with --creds.')
+  }
   if (options.anonymous !== true) return
   const conflicting = [
     ...(options.as === undefined ? [] : ['--as']),

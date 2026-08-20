@@ -116,26 +116,47 @@ export type StaleReport = {
 }
 
 async function cliStale(opts: UpdateOpts): Promise<StaleReport['cli']> {
+  const running = pkg.version
+  const latest = await fetchNpmLatestVersion().catch(() => undefined)
   try {
     const r = await updateAstrale({
       check: true,
       channel: opts.channel,
       version: opts.version,
-      currentVersion: pkg.version,
+      currentVersion: running,
     })
-    // `check: true` never returns 'updated'; narrow for the type checker.
-    if (r.status === 'updated') return { stale: false, managed: false, current: r.currentVersion }
+    if (r.status === 'updated') {
+      return { stale: false, managed: false, current: running, latest: latest ?? running }
+    }
     return {
-      stale: r.status === 'available',
+      stale: latest !== undefined ? latest !== running : r.status === 'available',
       managed: false,
-      current: r.currentVersion,
-      latest: r.latestVersion,
-      channel: r.channel,
+      current: running,
+      latest: latest ?? r.latestVersion,
+      channel: latest !== undefined ? 'npm' : r.channel,
     }
   } catch {
-    // A package-managed install (or missing metadata) can't self-update — not stale.
-    return { stale: false, managed: true }
+    return {
+      stale: latest !== undefined && latest !== running,
+      managed: true,
+      current: running,
+      ...(latest === undefined ? {} : { latest, channel: 'npm' }),
+    }
   }
+}
+
+async function fetchNpmLatestVersion(): Promise<string> {
+  const response = await fetch('https://registry.npmjs.org/@astrale-os/cli/latest')
+  if (!response.ok) throw new Error(`npm registry HTTP ${response.status}`)
+  const body: unknown = await response.json()
+  if (
+    body === null ||
+    typeof body !== 'object' ||
+    typeof (body as { version?: unknown }).version !== 'string'
+  ) {
+    throw new Error('npm registry latest document is missing version')
+  }
+  return (body as { version: string }).version
 }
 
 async function sdkStale(): Promise<StaleReport['sdk']> {

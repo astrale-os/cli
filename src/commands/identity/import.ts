@@ -8,6 +8,7 @@ import {
   isEncryptedIdentityExport,
 } from '../../identity/index'
 import { fatal, log } from '../../lib/log'
+import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 import { readPassphrase } from '../../lib/prompt'
 
 export default {
@@ -27,8 +28,12 @@ export default {
       flags: '--replace',
       description: 'Replace an existing key-backed identity with the imported keypair',
     },
+    ...RAW_OUTPUT_OPTIONS,
   ],
-  action: async (path: string, opts: { name?: string; issuer?: string; replace?: boolean }) => {
+  action: async (
+    path: string,
+    opts: { name?: string; issuer?: string; replace?: boolean } & RawOutputOpts,
+  ) => {
     try {
       const raw = await readFile(path, 'utf-8')
       const passphrase = isEncryptedIdentityExport(raw)
@@ -42,11 +47,15 @@ export default {
         replace: opts.replace,
       })
 
+      if (isMachine(opts)) {
+        output({ name, ...identity }, opts)
+        return
+      }
       log.success(
         `Imported identity "${name}" (subject=${identity.subject}, kid=${identity.kid ?? '?'})`,
       )
     } catch (e) {
-      fatal(e)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition

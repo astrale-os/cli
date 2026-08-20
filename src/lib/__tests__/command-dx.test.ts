@@ -11,6 +11,20 @@ import { collectCommandCatalog, renderCommanderError } from '../command-dx'
 const ANSI_RE = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g')
 const stripAnsi = (s: string): string => s.replace(ANSI_RE, '')
 
+function dx(
+  program: Awaited<ReturnType<typeof buildProgram>>,
+  error: CommanderError,
+  argv: string[],
+) {
+  const rendered = JSON.parse(stripAnsi(renderCommanderError(program, error, argv))) as {
+    error: string
+    message: string
+    detail: string
+  }
+  expect(rendered.error).toBe('USAGE_ERROR')
+  return rendered
+}
+
 describe('command DX suggestions', () => {
   test('collects command paths from the registered program tree', async () => {
     const program = await buildProgram()
@@ -24,6 +38,7 @@ describe('command DX suggestions', () => {
     expect(usages).toContain('update')
     expect(usages).toContain('query [sources...]')
     expect(usages).toContain('get <target>')
+    expect(usages).toContain('introspect <target>')
     expect(usages).toContain('status')
     expect(usages).not.toContain('ls <source>')
     expect(usages).not.toContain('describe <target>')
@@ -36,13 +51,13 @@ describe('command DX suggestions', () => {
       'commander.excessArguments',
       'error: too many arguments. Expected 0 arguments but got 2.',
     )
-    const rendered = stripAnsi(renderCommanderError(program, error, ['delete', 'demo-system']))
+    const rendered = dx(program, error, ['delete', 'demo-system'])
 
-    expect(rendered).toContain('Unknown command: astrale delete demo-system')
-    expect(rendered).toContain('"delete" is available under:')
-    expect(rendered).toContain('astrale identity delete <name>')
-    expect(rendered).toContain('astrale instance delete <id>')
-    expect(rendered).not.toContain('too many arguments')
+    expect(rendered.message).toContain('Unknown command: astrale delete demo-system')
+    expect(rendered.detail).toContain('"delete" is available under:')
+    expect(rendered.detail).toContain('astrale identity delete <name>')
+    expect(rendered.detail).toContain('astrale instance delete <id>')
+    expect(rendered.detail).not.toContain('too many arguments')
   })
 
   test('points retired describe at get', async () => {
@@ -52,23 +67,23 @@ describe('command DX suggestions', () => {
       'commander.unknownCommand',
       "error: unknown command 'describe'",
     )
-    const rendered = stripAnsi(renderCommanderError(program, error, ['describe', '@note']))
+    const rendered = dx(program, error, ['describe', '@note'])
 
-    expect(rendered).toContain('Unknown command: astrale describe @note')
-    expect(rendered).toContain('astrale describe` was removed')
-    expect(rendered).toContain('astrale get <target>')
-    expect(rendered).not.toContain('Did you mean:')
+    expect(rendered.message).toContain('Unknown command: astrale describe @note')
+    expect(rendered.detail).toContain('astrale describe` was removed')
+    expect(rendered.detail).toContain('astrale get <target>')
+    expect(rendered.detail).not.toContain('Did you mean:')
   })
 
   test('points retired ls at query', async () => {
     const program = await buildProgram()
     const error = new CommanderError(1, 'commander.unknownCommand', "error: unknown command 'ls'")
-    const rendered = stripAnsi(renderCommanderError(program, error, ['ls', '@note']))
+    const rendered = dx(program, error, ['ls', '@note'])
 
-    expect(rendered).toContain('Unknown command: astrale ls @note')
-    expect(rendered).toContain('astrale ls` was removed')
-    expect(rendered).toContain('astrale query <source> --edge <class>')
-    expect(rendered).not.toContain('Did you mean:')
+    expect(rendered.message).toContain('Unknown command: astrale ls @note')
+    expect(rendered.detail).toContain('astrale ls` was removed')
+    expect(rendered.detail).toContain('astrale query <source> --edge <class>')
+    expect(rendered.detail).not.toContain('Did you mean:')
   })
 
   test('suggests nearest command for typo paths', async () => {
@@ -78,10 +93,10 @@ describe('command DX suggestions', () => {
       'commander.excessArguments',
       'error: too many arguments. Expected 0 arguments but got 2.',
     )
-    const rendered = stripAnsi(renderCommanderError(program, error, ['indetityl', 'ist']))
+    const rendered = dx(program, error, ['indetityl', 'ist'])
 
-    expect(rendered).toContain('Unknown command: astrale indetityl ist')
-    expect(rendered).toContain('Did you mean:')
-    expect(rendered).toContain('astrale identity list')
+    expect(rendered.message).toContain('Unknown command: astrale indetityl ist')
+    expect(rendered.detail).toContain('Did you mean:')
+    expect(rendered.detail).toContain('astrale identity list')
   })
 })

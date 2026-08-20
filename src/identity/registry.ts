@@ -1,3 +1,4 @@
+import { AstraleError } from '../errors'
 import { persistKeypair, removeKeypair } from '../keys/index'
 import { deleteIdpSession } from '../lib/idp'
 import { validateName } from '../lib/validation'
@@ -40,8 +41,12 @@ export async function createIdentity(
       kid: generated.kid,
       issuer: options.issuer,
     }
+    const hasDefault = store.default !== '' && store.identities[store.default] !== undefined
     return {
-      next: { ...store, identities: { ...store.identities, [name]: identity } },
+      next: {
+        default: hasDefault ? store.default : name,
+        identities: { ...store.identities, [name]: identity },
+      },
       value: identity,
     }
   })
@@ -83,12 +88,14 @@ export async function setDefault(name: string): Promise<void> {
 
 export async function getDefault(): Promise<Identity & { readonly name: string }> {
   const store = await readIdentities()
-  const identity = store.identities[store.default]
-  if (!identity) {
-    throw new Error(
-      `Default identity "${store.default}" not found. Run: astrale identity create ${store.default}`,
+  if (store.default === '' || store.identities[store.default] === undefined) {
+    throw new AstraleError(
+      'NO_IDENTITY',
+      'No default identity.',
+      'Run: astrale identity create <name>',
     )
   }
+  const identity = store.identities[store.default]!
   return { ...identity, name: store.default }
 }
 

@@ -42,4 +42,10 @@ describe('prepareMutation', () => {
       /Legacy PatchData/,
     )
   })
+
+  test('rejects an empty operations list in CLI language', () => {
+    expect(() => prepareMutation({ preconditions: [], operations: [] })).toThrow(
+      'Mutation V3 requires at least one operation',
+    )
+  })
 })
