@@ -1,7 +1,12 @@
 import { ResponseError } from '@astrale-os/kernel-client'
 import { describe, expect, test } from 'bun:test'
 
-import { formatKernelError, schemaUpgradeHint, stripMethodSuffix } from '../errors'
+import {
+  formatKernelError,
+  functionInputIssues,
+  schemaUpgradeHint,
+  stripMethodSuffix,
+} from '../errors'
 
 const CONFLICT = 4001
 
@@ -214,5 +219,130 @@ describe('formatKernelError', () => {
       'Expose the Domain through a public HTTPS URL or public tunnel, then retry.',
     )
     expect(hints).toEqual([])
+  })
+
+  test('preserves structured Function input issues in machine output', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new ResponseError(1003, 'Function input is invalid.', {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: {
+            issues: [
+              {
+                code: 'INVALID_FORMAT',
+                path: '/customer/email',
+                message: 'Must be a valid email address.',
+              },
+            ],
+          },
+        }),
+        true,
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: 1003,
+      message: 'Function input is invalid.',
+      reason: {
+        code: 'FUNCTION_INPUT_INVALID',
+        details: {
+          issues: [
+            {
+              code: 'INVALID_FORMAT',
+              path: '/customer/email',
+              message: 'Must be a valid email address.',
+            },
+          ],
+        },
+      },
+      hint: 'Use `astrale introspect <path>` to see the callable input.',
+    })
+  })
+
+  test('prints Kernel-provided Function input messages in interactive output', async () => {
+    const errors: string[] = []
+    const details: string[] = []
+    const originalError = console.error
+    const originalLog = console.log
+    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
+    console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
+    try {
+      await formatKernelError(
+        new ResponseError(1003, 'Function input is invalid.', {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: {
+            issues: [
+              {
+                code: 'INVALID_FORMAT',
+                path: '/customer/email',
+                message: 'Must be a valid email address.',
+              },
+            ],
+          },
+        }),
+        false,
+      )
+    } finally {
+      console.error = originalError
+      console.log = originalLog
+    }
+
+    expect(errors.join('\n')).toContain('Function input is invalid.')
+    expect(details.join('\n')).toContain(
+      '/customer/email: Must be a valid email address. (INVALID_FORMAT)',
+    )
+    expect(details.join('\n')).not.toContain('astrale introspect')
+  })
+
+  test('keeps the introspection fallback for legacy Function input issues', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new ResponseError(1003, 'Function input is invalid.', {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: { issues: [{ code: 'INVALID_FORMAT', path: '/customer/email' }] },
+        }),
+        true,
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toMatchObject({
+      reason: {
+        code: 'FUNCTION_INPUT_INVALID',
+        details: { issues: [{ code: 'INVALID_FORMAT', path: '/customer/email' }] },
+      },
+      hint: 'Use `astrale introspect <path>` to see the callable input.',
+    })
+  })
+
+  test('rejects malformed public Function issue messages', () => {
+    expect(
+      functionInputIssues({
+        code: 'FUNCTION_INPUT_INVALID',
+        details: {
+          issues: [
+            { code: 'INVALID_FORMAT', path: '/safe', message: 'Safe message.' },
+            { code: 'INVALID_FORMAT', path: 'not-a-pointer', message: 'Unsafe path.' },
+            { code: 'INVALID_FORMAT', path: '/unsafe', message: 'Unsafe\nmessage.' },
+          ],
+        },
+      }),
+    ).toEqual([{ code: 'INVALID_FORMAT', path: '/safe', message: 'Safe message.' }])
   })
 })

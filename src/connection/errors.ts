@@ -14,6 +14,17 @@ type SchemaUpgradeDetails = {
   readonly expected?: string
   readonly actual?: string
 }
+type FunctionInputIssue = {
+  readonly code: string
+  readonly path?: string
+  readonly message: string
+}
+
+const FUNCTION_ISSUE_CODE = /^[A-Z][A-Z0-9_]{0,127}$/u
+const JSON_POINTER = /^(?:\/(?:[^~/]|~[01])*)*$/u
+const MAXIMUM_FUNCTION_ISSUES = 32
+const MAXIMUM_FUNCTION_ISSUE_PATH_LENGTH = 1_024
+const MAXIMUM_FUNCTION_ISSUE_MESSAGE_LENGTH = 512
 
 /**
  * Format and display a kernel client error.
@@ -190,12 +201,13 @@ export async function formatKernelError(
           ? (reason as { readonly code: string }).code
           : undefined
       const upgrade = schemaUpgradeDetails(reason)
+      const inputIssues = functionInputIssues(reason)
       const domainAddressNotPublic = reasonCode === 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC'
       const displayMessage = domainAddressNotPublic
         ? 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.'
         : error.message
       const hint =
-        reasonCode === 'FUNCTION_INPUT_INVALID'
+        reasonCode === 'FUNCTION_INPUT_INVALID' && (isRaw || inputIssues.length === 0)
           ? 'Use `astrale introspect <path>` to see the callable input.'
           : upgrade !== undefined
             ? schemaUpgradeHint(upgrade)
@@ -215,6 +227,10 @@ export async function formatKernelError(
             : `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${displayMessage}`,
         )
         if (reasonCode !== undefined && !domainAddressNotPublic) log.dim(`  reason: ${reasonCode}`)
+        for (const issue of inputIssues) {
+          const location = issue.path === undefined || issue.path === '' ? '<input>' : issue.path
+          console.log(chalk.red(`  ${location}: ${issue.message} (${chalk.dim(issue.code)})`))
+        }
         if (upgrade?.expected !== undefined) {
           log.dim(`  installed issuer: ${upgrade.expected}`)
         }
@@ -251,6 +267,54 @@ export async function formatKernelError(
   }
 
   if (debug) printDebug(error, url)
+}
+
+/** Admit only bounded caller-safe Function input issues from the public ErrorReason. */
+export function functionInputIssues(reason: unknown): readonly FunctionInputIssue[] {
+  if (reason === null || typeof reason !== 'object') return []
+  const value = reason as { readonly code?: unknown; readonly details?: unknown }
+  if (
+    value.code !== 'FUNCTION_INPUT_INVALID' ||
+    value.details === null ||
+    typeof value.details !== 'object'
+  ) {
+    return []
+  }
+  const issues = (value.details as { readonly issues?: unknown }).issues
+  if (!Array.isArray(issues)) return []
+
+  return Object.freeze(
+    issues.slice(0, MAXIMUM_FUNCTION_ISSUES).flatMap((issue): FunctionInputIssue[] => {
+      if (issue === null || typeof issue !== 'object' || Array.isArray(issue)) return []
+      const candidate = issue as {
+        readonly code?: unknown
+        readonly path?: unknown
+        readonly message?: unknown
+      }
+      if (
+        typeof candidate.code !== 'string' ||
+        !FUNCTION_ISSUE_CODE.test(candidate.code) ||
+        typeof candidate.message !== 'string' ||
+        candidate.message.length === 0 ||
+        candidate.message.length > MAXIMUM_FUNCTION_ISSUE_MESSAGE_LENGTH ||
+        candidate.message.normalize('NFC') !== candidate.message ||
+        /[\u0000-\u001f\u007f]/u.test(candidate.message) ||
+        (candidate.path !== undefined &&
+          (typeof candidate.path !== 'string' ||
+            candidate.path.length > MAXIMUM_FUNCTION_ISSUE_PATH_LENGTH ||
+            !JSON_POINTER.test(candidate.path)))
+      ) {
+        return []
+      }
+      return [
+        Object.freeze({
+          code: candidate.code,
+          ...(candidate.path === undefined ? {} : { path: candidate.path }),
+          message: candidate.message,
+        }),
+      ]
+    }),
+  )
 }
 
 /**
