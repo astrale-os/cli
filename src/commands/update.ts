@@ -115,27 +115,46 @@ export type StaleReport = {
   sdk: { stale: boolean; inProject: boolean; outdated: SdkOutdated[] }
 }
 
-async function cliStale(opts: UpdateOpts): Promise<StaleReport['cli']> {
+type CliStaleDependencies = {
+  update: typeof updateAstrale
+  fetchPackageVersion: (opts: Pick<UpdateOpts, 'channel' | 'version'>) => Promise<string>
+}
+
+const CLI_STALE_DEPENDENCIES: CliStaleDependencies = {
+  update: updateAstrale,
+  fetchPackageVersion: fetchNpmTargetVersion,
+}
+
+export async function cliStale(
+  opts: Pick<UpdateOpts, 'channel' | 'version'>,
+  dependencies: CliStaleDependencies = CLI_STALE_DEPENDENCIES,
+): Promise<StaleReport['cli']> {
   const running = pkg.version
-  const latest = await fetchNpmLatestVersion().catch(() => undefined)
   try {
-    const r = await updateAstrale({
+    const r = await dependencies.update({
       check: true,
       channel: opts.channel,
       version: opts.version,
       currentVersion: running,
     })
     if (r.status === 'updated') {
-      return { stale: false, managed: false, current: running, latest: latest ?? running }
+      return {
+        stale: false,
+        managed: false,
+        current: r.currentVersion,
+        latest: r.currentVersion,
+        channel: r.channel,
+      }
     }
     return {
-      stale: latest !== undefined ? latest !== running : r.status === 'available',
+      stale: r.status === 'available',
       managed: false,
-      current: running,
-      latest: latest ?? r.latestVersion,
-      channel: latest !== undefined ? 'npm' : r.channel,
+      current: r.currentVersion,
+      latest: r.latestVersion,
+      channel: r.channel,
     }
   } catch {
+    const latest = await dependencies.fetchPackageVersion(opts).catch(() => undefined)
     return {
       stale: latest !== undefined && latest !== running,
       managed: true,
@@ -145,8 +164,11 @@ async function cliStale(opts: UpdateOpts): Promise<StaleReport['cli']> {
   }
 }
 
-async function fetchNpmLatestVersion(): Promise<string> {
-  const response = await fetch('https://registry.npmjs.org/@astrale-os/cli/latest')
+export async function fetchNpmTargetVersion(
+  opts: Pick<UpdateOpts, 'channel' | 'version'>,
+): Promise<string> {
+  const target = opts.version ?? (opts.channel === 'stable' ? 'latest' : opts.channel) ?? 'latest'
+  const response = await fetch(`https://registry.npmjs.org/@astrale-os/cli/${target}`)
   if (!response.ok) throw new Error(`npm registry HTTP ${response.status}`)
   const body: unknown = await response.json()
   if (
