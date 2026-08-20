@@ -68,6 +68,11 @@ export type ResolvedInstance = {
   status?: string
 }
 
+export type BookmarkTrustConflict = {
+  readonly name: string
+  readonly caFile: string | null
+}
+
 function seed(): InstanceStore {
   return { active: '', instances: {} }
 }
@@ -196,6 +201,32 @@ export function resolveInstanceKey(store: InstanceStore, identifier: string): st
     if (entry.slug === identifier || entry.name === identifier) return key
   }
   return null
+}
+
+/**
+ * Find other bookmarks for the same normalized Kernel URL whose TLS trust
+ * configuration differs. System trust (`undefined`) is a configuration too:
+ * mixing it with a custom CA is exactly as significant as mixing two CA files.
+ */
+export function findBookmarkTrustConflicts(
+  store: InstanceStore,
+  name: string,
+  url: string,
+  caFile?: string,
+): BookmarkTrustConflict[] {
+  const normalizedUrl = normalizeInstanceKernelUrl(url)
+  const configuredCa = caFile ?? null
+  return Object.entries(store.instances).flatMap(([candidateName, entry]) => {
+    if (
+      candidateName === name ||
+      entry.url === undefined ||
+      normalizeInstanceKernelUrl(entry.url) !== normalizedUrl ||
+      (entry.caFile ?? null) === configuredCa
+    ) {
+      return []
+    }
+    return [{ name: candidateName, caFile: entry.caFile ?? null }]
+  })
 }
 
 export async function addInstance(key: string, opts: AddInstanceOpts = {}): Promise<InstanceEntry> {

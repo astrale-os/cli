@@ -8,6 +8,12 @@ import { log } from '../lib/log'
 
 type FieldError = { path: string[]; code: string; message: string }
 type InvariantError = { code: string; message: string; context?: unknown }
+type SchemaUpgradeDetails = {
+  readonly origin?: string
+  readonly issue?: string
+  readonly expected?: string
+  readonly actual?: string
+}
 
 /**
  * Format and display a kernel client error.
@@ -183,10 +189,13 @@ export async function formatKernelError(
         typeof (reason as { readonly code?: unknown }).code === 'string'
           ? (reason as { readonly code: string }).code
           : undefined
+      const upgrade = schemaUpgradeDetails(reason)
       const hint =
         reasonCode === 'FUNCTION_INPUT_INVALID'
           ? 'Use `astrale introspect <path>` to see the callable input.'
-          : undefined
+          : upgrade !== undefined
+            ? schemaUpgradeHint(upgrade)
+            : undefined
       if (isRaw) {
         writeRaw({
           error: 'RESPONSE_ERROR',
@@ -200,6 +209,12 @@ export async function formatKernelError(
           `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${error.message}`,
         )
         if (reasonCode !== undefined) log.dim(`  reason: ${reasonCode}`)
+        if (upgrade?.expected !== undefined) {
+          log.dim(`  installed issuer: ${upgrade.expected}`)
+        }
+        if (upgrade?.actual !== undefined) {
+          log.dim(`  replacement issuer: ${upgrade.actual}`)
+        }
         if (hint !== undefined) log.dim(`  ${hint}`)
       }
       break
@@ -230,6 +245,45 @@ export async function formatKernelError(
   }
 
   if (debug) printDebug(error, url)
+}
+
+/**
+ * Decode the public Kernel reason without depending on a kernel-client error
+ * subclass. The reason is intentionally kept intact in machine output; this
+ * helper only adds the human recovery guidance that the generic ResponseError
+ * message cannot provide.
+ */
+export function schemaUpgradeDetails(reason: unknown): SchemaUpgradeDetails | undefined {
+  if (reason === null || typeof reason !== 'object') return undefined
+  const value = reason as {
+    readonly code?: unknown
+    readonly details?: unknown
+  }
+  if (value.code !== 'SCHEMA_UPGRADE_INCOMPATIBLE') return undefined
+
+  const details =
+    value.details !== null && typeof value.details === 'object'
+      ? (value.details as Record<string, unknown>)
+      : {}
+  return {
+    ...(typeof details.origin === 'string' ? { origin: details.origin } : {}),
+    ...(typeof details.issue === 'string' ? { issue: details.issue } : {}),
+    ...(typeof details.expected === 'string' ? { expected: details.expected } : {}),
+    ...(typeof details.actual === 'string' ? { actual: details.actual } : {}),
+  }
+}
+
+export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
+  const target = details.origin ?? '<origin>'
+  const explanation =
+    details.expected !== undefined && details.actual !== undefined
+      ? 'A replacement cannot change an installed Domain issuer.'
+      : 'The replacement changes an immutable part of the installed Domain.'
+  return (
+    `${explanation} If this change is intentional, first run ` +
+    `\`astrale domain uninstall ${target}\`, then install it again. ` +
+    'Uninstall is destructive and the Kernel may refuse it while dependents remain.'
+  )
 }
 
 /** Strip internal `::methodName` suffixes from paths in error messages (e.g., "/path::listChildren" → "/path") */

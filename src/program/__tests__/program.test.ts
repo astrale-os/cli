@@ -142,6 +142,7 @@ describe('program composition', () => {
       'domain install',
       'domain list',
       'domain publish',
+      'domain uninstall',
       'get',
       'identity',
       'identity create',
@@ -186,7 +187,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '0f4739269db4c1dc8e1ba8cdf7840d7fbbe9c809234d2e21eef143a9de856382',
+      '8c009c885439d6cf9b6ca90ad0e3f91a83b493729c696a04291fdadcfbdfa8af',
     )
   })
 

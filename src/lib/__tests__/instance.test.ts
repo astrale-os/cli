@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
-import { InstanceStoreSchema, normalizeInstanceKernelUrl, sanitizeStore } from '../instance'
+import {
+  findBookmarkTrustConflicts,
+  InstanceStoreSchema,
+  normalizeInstanceKernelUrl,
+  sanitizeStore,
+} from '../instance'
 
 describe('InstanceStoreSchema', () => {
   test('parses valid store with url', () => {
@@ -132,5 +137,50 @@ describe('sanitizeStore — read must not rewrite', () => {
     const { store: out, changed } = sanitizeStore(store)
     expect(out.instances.a.organizationId).toBe('org_123')
     expect(changed).toBe(false)
+  })
+})
+
+describe('bookmark TLS trust collisions', () => {
+  test('finds the same normalized URL with a different CA configuration', () => {
+    const store = InstanceStoreSchema.parse({
+      active: 'stable',
+      instances: {
+        stable: {
+          url: 'https://local.example/kernel/',
+          caFile: '/certs/stable.pem',
+        },
+        alias: {
+          url: 'https://local.example/kernel',
+          caFile: '/certs/old.pem',
+        },
+        other: {
+          url: 'https://other.example/kernel',
+          caFile: '/certs/old.pem',
+        },
+      },
+    })
+
+    expect(
+      findBookmarkTrustConflicts(
+        store,
+        'stable',
+        'https://local.example/kernel',
+        '/certs/stable.pem',
+      ),
+    ).toEqual([{ name: 'alias', caFile: '/certs/old.pem' }])
+  })
+
+  test('treats custom CA versus system trust as a meaningful difference', () => {
+    const store = InstanceStoreSchema.parse({
+      active: 'custom',
+      instances: {
+        custom: { url: 'https://local.example', caFile: '/certs/local.pem' },
+        system: { url: 'https://local.example' },
+      },
+    })
+
+    expect(
+      findBookmarkTrustConflicts(store, 'custom', 'https://local.example', '/certs/local.pem'),
+    ).toEqual([{ name: 'system', caFile: null }])
   })
 })

@@ -1,7 +1,13 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { fetchWithCaFile } from '../../lib/ca-fetch'
-import { normalizeInstanceKernelUrl, setActive, upsertInstance } from '../../lib/instance'
+import {
+  findBookmarkTrustConflicts,
+  normalizeInstanceKernelUrl,
+  readInstances,
+  setActive,
+  upsertInstance,
+} from '../../lib/instance'
 import { fatal, log } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
 
@@ -39,14 +45,27 @@ export default {
     try {
       if (!opts.url) fatal(new Error('Missing required flag: --url <url>'))
       const url = normalizeInstanceKernelUrl(opts.url)
-      const expectedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
+      const store = await readInstances()
+      const expectedIssuer = opts.issuer
+        ? normalizeInstanceKernelUrl(opts.issuer)
+        : store.instances[name]?.issuer
+      const effectiveCa = opts.ca ?? store.instances[name]?.caFile
+      const trustConflicts = findBookmarkTrustConflicts(store, name, url, effectiveCa)
+      if (trustConflicts.length > 0) {
+        log.warn(
+          `TLS trust differs for the same Kernel URL ${url}: ` +
+            `"${name}" uses ${describeCa(effectiveCa)}, while ${trustConflicts
+              .map((conflict) => `"${conflict.name}" uses ${describeCa(conflict.caFile)}`)
+              .join(', ')}. Remove or update stale bookmarks to avoid certificate surprises.`,
+        )
+      }
 
       if (!opts.skipProbe) {
         try {
           const { issuer, keys } = await checkIssuerReachability(
             url,
             expectedIssuer,
-            opts.ca ? fetchWithCaFile(opts.ca) : undefined,
+            effectiveCa ? fetchWithCaFile(effectiveCa) : undefined,
           )
           log.dim(`  iss=${issuer} keys=${keys.length}`)
         } catch (e) {
@@ -76,3 +95,7 @@ export default {
     }
   },
 } satisfies CommandDefinition
+
+function describeCa(caFile: string | null | undefined): string {
+  return caFile ? `CA ${caFile}` : 'the system trust store'
+}

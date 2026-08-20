@@ -5,7 +5,9 @@ import { AstraleError } from '../../errors'
 import { getDefault, setDefault } from '../../identity/index'
 import { listOwnedInstances } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
+import { fetchWithCaFile } from '../../lib/ca-fetch'
 import {
+  findBookmarkTrustConflicts,
   getActive,
   readInstances,
   resolveInstance,
@@ -48,12 +50,8 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
 
     const resolved = await resolveUseTarget(name, opts)
 
-    if (!opts.skipJwksCheck && resolved.issuer) {
-      try {
-        await checkIssuerReachability(resolved.url, resolved.issuer)
-      } catch (e) {
-        fatal(e)
-      }
+    if (!opts.skipJwksCheck) {
+      await probeBookmark(resolved)
     }
 
     await setActive(resolved.name)
@@ -93,6 +91,55 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
     fatal(e)
   }
 }
+
+/** Probe with the exact TLS trust configuration stored on this bookmark. */
+export async function probeBookmark(
+  resolved: ResolvedInstance,
+  dependencies: Partial<BookmarkProbeDependencies> = {},
+): Promise<void> {
+  const probe = { ...defaultBookmarkProbeDependencies, ...dependencies }
+  const store = await probe.readInstances()
+  const conflicts = findBookmarkTrustConflicts(store, resolved.name, resolved.url, resolved.caFile)
+  try {
+    await probe.checkIssuerReachability(
+      resolved.url,
+      resolved.issuer,
+      resolved.caFile ? probe.fetchWithCaFile(resolved.caFile) : undefined,
+    )
+  } catch (cause) {
+    const original = cause instanceof AstraleError ? cause.hint : undefined
+    const trust = resolved.caFile
+      ? `Bookmark "${resolved.name}" trusts CA ${resolved.caFile}.`
+      : `Bookmark "${resolved.name}" uses the system trust store.`
+    const collision =
+      conflicts.length === 0
+        ? ''
+        : ` The same URL is bookmarked with different TLS trust as ${conflicts
+            .map((conflict) =>
+              conflict.caFile
+                ? `"${conflict.name}" (CA ${conflict.caFile})`
+                : `"${conflict.name}" (system trust)`,
+            )
+            .join(', ')}.`
+    throw new AstraleError(
+      cause instanceof AstraleError ? cause.code : 'ISSUER_UNREACHABLE',
+      `Issuer/JWKS probe failed for bookmark "${resolved.name}" at ${resolved.url}.`,
+      `${trust}${collision}${original ? ` ${original}` : ''} Inspect with \`astrale instance list --bookmarked --json\`.`,
+    )
+  }
+}
+
+interface BookmarkProbeDependencies {
+  readonly readInstances: typeof readInstances
+  readonly checkIssuerReachability: typeof checkIssuerReachability
+  readonly fetchWithCaFile: typeof fetchWithCaFile
+}
+
+const defaultBookmarkProbeDependencies: BookmarkProbeDependencies = Object.freeze({
+  readInstances,
+  checkIssuerReachability,
+  fetchWithCaFile,
+})
 
 async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedInstance> {
   const [store, managed] = await Promise.all([readInstances(), fetchManagedInstances(name, opts)])
@@ -204,7 +251,7 @@ Examples:
       flags: '--adopt-default',
       description: 'Adopt instance default identity without prompt',
     },
-    { flags: '--skip-jwks-check', description: 'Skip the /meta ↔ JWKS match check' },
+    { flags: '--skip-jwks-check', description: 'Skip the OIDC discovery + JWKS liveness probe' },
   ],
   action: async (name: string | undefined, opts: UseOpts) => {
     await useInstance(name, opts)
