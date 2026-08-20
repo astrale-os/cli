@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0-beta.1](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.0...cli/v1.0.0-beta.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **admin:** delegate default Host placement ([b0b8033](https://github.com/astrale-os/cli/commit/b0b8033ee0159aa9df8f5a5a7db8a5a5291ad1cf))
+* **admin:** delegate default Host placement ([86d2078](https://github.com/astrale-os/cli/commit/86d20786f35be87ee0e61fb2d15d5c82f60c7af8))
+* **cli:** respect update release channel ([b19e6d2](https://github.com/astrale-os/cli/commit/b19e6d2902d7f0719ad75ccbd47ce970beac2b1f))
+* **cli:** respect update release channel ([4f1091c](https://github.com/astrale-os/cli/commit/4f1091ccd51f1fbfb090f7bca6dc612af262f22a))
+
 ## [1.0.0-beta.0](https://github.com/astrale-os/cli/compare/cli/v0.8.1-alpha.7...cli/v1.0.0-beta.0) (2026-08-20)
 
 
