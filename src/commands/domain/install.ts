@@ -1,11 +1,12 @@
-import { Path } from '@astrale-os/sdk/graph/path'
-import { syscalls } from '@astrale-os/sdk/schema/kernel'
+import type { InstallReceipt, InstallRequest, OperationId } from '@astrale-os/kernel-client/schema'
+
+import { acceptOperationId, createOperationId } from '@astrale-os/kernel-client/schema'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { createPathCall, runKernelCommand, withAdminClientSession } from '../../connection'
+import { runKernelCommand, withAdminClientSession } from '../../connection'
 import { AstraleError } from '../../errors'
 import {
   installAdminDomainInContext,
@@ -23,9 +24,9 @@ import { isHttpUrl } from '../../lib/validation'
 /** Public Kernel install syscall input for one remote URL. */
 export function directInstallCallInput(
   url: string,
+  operation: OperationId,
   token?: string,
-  operation: string = crypto.randomUUID(),
-) {
+): InstallRequest {
   return Object.freeze({
     operation,
     domains: [
@@ -39,20 +40,10 @@ export function directInstallCallInput(
     ],
   })
 }
-
-type DirectInstallResult = {
-  readonly operation: string
-  readonly transitions: readonly {
-    readonly intent: {
-      readonly origin: string
-      readonly target?: { readonly schemaRevision?: string } | null
-    }
-  }[]
-}
-
 type InstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
     direct?: boolean
+    operation?: string
     token?: string
     allowIdentityOverride?: boolean
     // Global flags (program.ts) that force non-interactive.
@@ -77,6 +68,10 @@ Behavior:
   mode that runs the identity-override consent gate: when the domain's declared
   origin differs from its serving host, it requires explicit consent (an
   interactive DANGER prompt, or --allow-identity-override in scripts).
+
+  A fresh, strong operation id is generated automatically. Use --operation
+  only to retry or recover the exact same direct install after an outcome-unknown
+  timeout or disconnect.
 
 Examples:
   $ astrale domain install crm.acme.dev -i staging          # by origin, via admin
@@ -104,11 +99,25 @@ Examples:
       description: 'Bearer token for private domain install endpoints (--direct only)',
     },
     {
+      flags: '--operation <uuid>',
+      description: 'Reuse an exact direct-install operation id for explicit retry/recovery',
+    },
+    {
       flags: '--allow-identity-override',
       description: 'Consent to a domain whose origin differs from its serving host (--direct only)',
     },
   ],
   action: async (target: string | undefined, opts: InstallOpts) => {
+    if (opts.operation !== undefined && !opts.direct) {
+      fatal(
+        new AstraleError(
+          'INVALID_FLAG',
+          '--operation is valid only with --direct.',
+          'Ordinary direct installs generate a fresh operation id automatically.',
+        ),
+        opts,
+      )
+    }
     if (opts.direct) {
       await installDirect(target, opts)
       return
@@ -326,9 +335,27 @@ async function activeSlug(): Promise<string | undefined> {
  * bypassing the admin catalog, with the identity-override
  * consent gate. Works on any instance the caller can authenticate to.
  */
-async function installDirect(target: string | undefined, opts: InstallOpts): Promise<void> {
+interface DirectInstallDependencies {
+  readonly acceptOperationId: typeof acceptOperationId
+  readonly createOperationId: typeof createOperationId
+  readonly runKernelCommand: typeof runKernelCommand
+}
+
+const defaultDirectInstallDependencies: DirectInstallDependencies = Object.freeze({
+  acceptOperationId,
+  createOperationId,
+  runKernelCommand,
+})
+
+export async function installDirect(
+  target: string | undefined,
+  opts: InstallOpts,
+  dependencies: Partial<DirectInstallDependencies> = {},
+): Promise<void> {
+  const direct = { ...defaultDirectInstallDependencies, ...dependencies }
   let host = ''
   let consentedOrigin: string | undefined
+  let operation: OperationId
   try {
     if (!target) {
       throw new AstraleError(
@@ -338,37 +365,38 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
       )
     }
     host = validateInstallUrl(target)
+    operation =
+      opts.operation === undefined
+        ? direct.createOperationId()
+        : direct.acceptOperationId(opts.operation)
     consentedOrigin = await ensureIdentityOverrideConsent(
       target,
       host,
       opts.allowIdentityOverride ?? false,
     )
   } catch (e) {
-    fatal(e)
+    fatal(e, opts)
   }
   const url = target as string
+  const retry = directInstallRetry(url, operation, opts)
 
-  await runKernelCommand<DirectInstallResult>({
+  await direct.runKernelCommand<InstallReceipt>({
     opts,
-    label: `Installing domain from ${url}`,
-    fn: async ({ session }) =>
-      (await session.call(
-        createPathCall(
-          Path.project(syscalls.install.ref).raw,
-          directInstallCallInput(url, opts.token),
-        ),
-      )) as DirectInstallResult,
+    label: `Installing domain from ${url} (operation ${operation})`,
+    recovery: { operation, retry },
+    fn: ({ session }) => session.schema.install(directInstallCallInput(url, operation, opts.token)),
     format: (result, fmtOpts, isRaw) => {
       if (isRaw) {
         output(result, fmtOpts)
         return
       }
-      const installed = result.transitions[0]?.intent
-      if (installed === undefined) {
-        throw new Error('Kernel install returned no committed Domain transition.')
+      const installed = result.transitions[0]?.intent.target
+      if (!installed) throw new Error('Kernel install returned no installed Domain receipt.')
+      log.success(`Domain installed: ${installed.origin}@${installed.schemaRevision}`)
+      log.dim(`  operation:   ${result.operation}`)
+      if (installed.service.kind === 'remote') {
+        log.dim(`  publication: ${installed.service.etag}`)
       }
-      const revision = installed.target?.schemaRevision ?? result.operation
-      log.success(`Domain installed: ${installed.origin}@${revision}`)
       // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
       // aliases the host and the pre-install gate never consented to THAT
       // origin (lying or absent `/meta`), say so loudly after the fact.
@@ -381,6 +409,11 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
       }
     },
   })
+}
+
+function directInstallRetry(url: string, operation: OperationId, opts: InstallOpts): string {
+  const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
+  return `astrale domain install ${url} --direct --operation ${operation}${instance}`
 }
 
 function validateInstallUrl(value: string): string {

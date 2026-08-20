@@ -37,6 +37,46 @@ describe('formatKernelError', () => {
     expect(writes[0]).not.toContain('ECONNREFUSED')
   })
 
+  test('retains operation recovery only for outcome-unknown transport failure', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new TransportError('Request timed out.', {
+          cause: new Error('timeout'),
+          phase: 'timeout',
+          delivery: 'unknown',
+        }),
+        true,
+        undefined,
+        false,
+        {
+          recovery: {
+            operation: '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
+            retry:
+              'astrale domain install https://crm.test --direct --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
+          },
+        },
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(writes).toHaveLength(1)
+    expect(JSON.parse(writes[0]!)).toMatchObject({
+      error: 'TIMEOUT',
+      phase: 'timeout',
+      delivery: 'unknown',
+      operation: '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
+      retry:
+        'astrale domain install https://crm.test --direct --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
+    })
+  })
+
   /** @evidence TEST-CLI-CONNECTION-PRESERVES-PUBLIC-SEMANTIC-REASON */
   test('preserves a Kernel-admitted semantic reason in machine output', async () => {
     const writes: string[] = []
