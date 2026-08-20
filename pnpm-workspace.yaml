@@ -8,6 +8,12 @@ minimumReleaseAgeStrict: false
 minimumReleaseAgeExclude:
   # Exact exception for the Bun 1.4 toolchain migration; future releases remain gated.
   - 'bun-types@1.4.0'
+  - '@astrale-os/kernel-client@0.6.0-beta.3 || 0.6.0-beta.4'
+  - '@astrale-os/kernel-core@0.9.0-beta.2 || 0.9.0-beta.3'
+  - '@astrale-os/kernel-dsl@0.2.0-beta.2'
+  - '@astrale-os/kernel-protocol@0.5.0-beta.2 || 0.5.0-beta.3'
+  - '@astrale-os/kernel-server@0.5.0-beta.3 || 0.5.0-beta.4'
+  - '@astrale-os/sdk@0.5.0-beta.3 || 0.5.0-beta.4'
 verifyDepsBeforeRun: false
 
 # Native build scripts required by the standalone CLI dependency graph. Astrale
@@ -24,14 +30,7 @@ allowBuilds:
   lightningcss: true
   msgpackr-extract: true
 
-# Keep the coordinated unpublished cohort local until all public packages have
-# landed on the registry. Kernel Ports is intentionally absent: it is the
-# private Runtime-to-provider boundary, not part of the CLI dependency closure.
+# Shell beta.2 is the only cohort package not published yet. Every published
+# dependency resolves through the SemVer ranges declared by the packages.
 overrides:
-  '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz
-  '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz
-  '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz
-  '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz
-  '@astrale-os/kernel-server': file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.3.tgz
-  '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz
   '@astrale-os/shell': file:vendor/astrale-os-shell-0.3.8-beta.2.tgz

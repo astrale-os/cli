@@ -5,6 +5,10 @@ import { formatKernelError, functionInputIssues, schemaUpgradeHint } from '../er
 
 const CONFLICT = 4001
 const VALIDATION = 1003
+const TEST_INVOCATION = {
+  source: 'https://kernel.test',
+  id: 'connection-errors',
+} as ConstructorParameters<typeof ResponseError>[2]
 
 describe('formatKernelError', () => {
   /** @evidence TEST-CLI-CONNECTION-MAPS-TYPED-TRANSPORT */
@@ -87,7 +91,7 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new ResponseError(CONFLICT, 'Schema change requires migration.', {
+        new ResponseError(CONFLICT, 'Schema change requires migration.', TEST_INVOCATION, {
           code: 'DATA_MIGRATION_REQUIRED',
           details: {
             requirements: [
@@ -138,7 +142,7 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new ResponseError(CONFLICT, 'Schema change requires migration.', {
+        new ResponseError(CONFLICT, 'Schema change requires migration.', TEST_INVOCATION, {
           code: 'DATA_MIGRATION_REQUIRED',
           details: {
             requirements: [
@@ -193,7 +197,7 @@ describe('formatKernelError', () => {
     console.log = (...values: unknown[]) => hints.push(values.map(String).join(' '))
     try {
       await formatKernelError(
-        new ResponseError(CONFLICT, 'Schema change requires migration.', {
+        new ResponseError(CONFLICT, 'Schema change requires migration.', TEST_INVOCATION, {
           code: 'DATA_MIGRATION_REQUIRED',
           details: {
             requirements: [
@@ -254,7 +258,7 @@ describe('formatKernelError', () => {
     console.log = (...values: unknown[]) => lines.push(values.join(' '))
     try {
       await formatKernelError(
-        new ResponseError(VALIDATION, 'Function input is invalid.', {
+        new ResponseError(VALIDATION, 'Function input is invalid.', TEST_INVOCATION, {
           code: 'FUNCTION_INPUT_INVALID',
           details: {
             issues: [
@@ -279,7 +283,7 @@ describe('formatKernelError', () => {
         false,
       )
       await formatKernelError(
-        new ResponseError(VALIDATION, 'Query input is invalid.', {
+        new ResponseError(VALIDATION, 'Query input is invalid.', TEST_INVOCATION, {
           code: 'QUERY_INPUT_INVALID',
           details: {
             phase: 'plan',
@@ -310,7 +314,7 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new ResponseError(5001, 'Schema operation is not supported.', {
+        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
           code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
           details: {
             phase: 'upgrade',
@@ -358,7 +362,7 @@ describe('formatKernelError', () => {
     console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
     try {
       await formatKernelError(
-        new ResponseError(5001, 'Schema operation is not supported.', {
+        new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
           code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
           details: {
             phase: 'upgrade',
@@ -391,7 +395,7 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', {
+        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
           code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
           details: { phase: 'publication', requiredScope: 'public' },
         }),
@@ -421,7 +425,7 @@ describe('formatKernelError', () => {
     console.log = (...values: unknown[]) => hints.push(values.map(String).join(' '))
     try {
       await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', {
+        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
           code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
           details: { phase: 'publication', requiredScope: 'public' },
         }),
@@ -448,7 +452,7 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', {
+        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
           code: 'FUNCTION_INPUT_INVALID',
           details: {
             issues: [
@@ -495,7 +499,7 @@ describe('formatKernelError', () => {
     console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
     try {
       await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', {
+        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
           code: 'FUNCTION_INPUT_INVALID',
           details: {
             issues: [
@@ -530,7 +534,7 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new ResponseError(1003, 'Function input is invalid.', {
+        new ResponseError(1003, 'Function input is invalid.', TEST_INVOCATION, {
           code: 'FUNCTION_INPUT_INVALID',
           details: { issues: [{ code: 'INVALID_FORMAT', path: '/customer/email' }] },
         }),

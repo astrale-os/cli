@@ -14,7 +14,11 @@ describe('call command result lifetime', () => {
     }
 
     const sessionStream = Object.assign(stream(), { async cancel() {} })
-    const materialized = await materializeCallResult({ kind: 'stream', stream: sessionStream })
+    const materialized = await materializeCallResult({
+      kind: 'stream',
+      invocation: { source: 'https://kernel.test' as never, id: 'test-stream' },
+      stream: sessionStream,
+    })
     sessionOpen = false
 
     expect(materialized).toEqual({ kind: 'stream', values: ['first', 'second'] })

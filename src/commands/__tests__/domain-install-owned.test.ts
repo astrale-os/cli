@@ -11,6 +11,10 @@ class ExitError extends Error {
 
 const calls: Array<{ path: string; params: unknown }> = []
 let inventory: OwnedInstanceInfo[] = []
+const TEST_INVOCATION = {
+  source: 'https://kernel.test',
+  id: 'domain-install-owned',
+} as ConstructorParameters<typeof ResponseError>[2]
 
 const hostCall = mock(async (call: { target: string; input: unknown }): Promise<unknown> => {
   const path = call.target
@@ -137,7 +141,7 @@ describe('admin domain install owner boundary', () => {
       createdAt: '2026-08-20T00:00:00.000Z',
       updatedAt: '2026-08-20T00:00:00.000Z',
     }
-    const failure = new ResponseError(5001, 'Schema operation is not supported.', {
+    const failure = new ResponseError(5001, 'Schema operation is not supported.', TEST_INVOCATION, {
       code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
       details: {
         phase: 'upgrade',

@@ -47,7 +47,7 @@ describe('Domain token exchange', () => {
         observed.push({ url, init, body })
         const index = observed.filter((entry) => entry.url === INVOCATION).length
         return invocationResponse(
-          body.id,
+          body.requestId,
           index === 1
             ? { id: 'user-1' }
             : index === 2
@@ -121,7 +121,7 @@ describe('Domain token exchange', () => {
       if (url === INVOCATION) {
         const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
         return invocationResponse(
-          body.id,
+          body.requestId,
           body.call.input && Object.keys(body.call.input).length === 0
             ? { id: 'user-1' }
             : 'kernel-destination-envelope',
@@ -201,7 +201,7 @@ function exchangeFetch(
     if (url === INVOCATION) {
       const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
       return invocationResponse(
-        body.id,
+        body.requestId,
         body.call.input && Object.keys(body.call.input).length === 0
           ? { id: 'user-1' }
           : 'kernel-destination-envelope',
@@ -233,8 +233,9 @@ function configuration(enabled: boolean) {
   }
 }
 
-function invocationResponse(id: number, result: unknown, contentType: string): Response {
-  return new Response(JSON.stringify({ id, result }), {
+function invocationResponse(requestId: unknown, result: unknown, contentType: string): Response {
+  const invocation = { source: KERNEL, id: `exchange-${String(requestId)}` }
+  return new Response(JSON.stringify({ requestId, invocation, result }), {
     headers: { 'content-type': contentType, 'cache-control': 'no-store' },
   })
 }

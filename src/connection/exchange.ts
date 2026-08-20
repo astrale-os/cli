@@ -33,12 +33,13 @@ export function createExchangeCredentialResolver(
       const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
       try {
         const authenticated = client.as(sourceToken)
-        const auth = createAuth((path, input, options) =>
-          authenticated.call(call(path, input), {
+        const auth = createAuth(async (path, input, options) => {
+          const result = await authenticated.call(call(path, input), {
             ...options,
             delegate: { ttlSeconds: delegationTtlSeconds },
-          }),
-        )
+          })
+          return result.value
+        })
         const user = await auth.whoami({ signal })
         const key = Object.freeze({
           kernelIssuer,
