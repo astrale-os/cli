@@ -18,7 +18,7 @@ astrale <command> --help
 
 - Binary: `astrale`
 - Package: `@astrale-os/cli`
-- Runtime: Node 22 or newer; source development uses Node 24 and Bun
+- Runtime: Node 22 or newer; source development defaults to Node 26 and also supports Node 24 and Bun
 - Dev entrypoint: `bun cli/bin/astrale.ts <command>`
 
 ## Command Surface

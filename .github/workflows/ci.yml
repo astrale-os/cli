@@ -24,11 +24,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['22', '24']
+        node-version: ['26', '24', '22']
     env:
-      # Contributors use Node 24. The Node 22 lane deliberately exercises the
-      # published runtime contract against the source worktree.
-      PNPM_CONFIG_RUNTIME_ON_FAIL: ignore
+      # Node 26 is primary, Node 24 is supported for development, and Node 22
+      # deliberately exercises the published runtime contract against source.
+      PNPM_CONFIG_RUNTIME_ON_FAIL: ${{ matrix.node-version == '22' && 'ignore' || 'error' }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

@@ -140,8 +140,9 @@ CLI state lives under `~/.astrale/`:
 
 ## Development
 
-Contributors use Node.js 24.18.0 and pnpm 11.13.1. The source-worktree runtime
-contract is enforced separately from the published CLI's Node ≥ 22 contract.
+Contributors use Node.js 26.7.0 by default; Node.js 24 is also supported. pnpm is
+pinned to 11.13.1. The source-worktree runtime contract is enforced separately
+from the published CLI's Node ≥ 22 contract.
 
 ```bash
 # From the workspace root

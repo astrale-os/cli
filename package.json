@@ -105,7 +105,7 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": ">=24 <25",
+      "version": ">=24 <25 || >=26 <27",
       "onFail": "error"
     }
   },
