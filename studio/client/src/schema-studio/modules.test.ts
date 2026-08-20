@@ -1,8 +1,20 @@
-import type { IrClass, SchemaIR, StudioSchemaBundle } from '@shared/types'
+import type { IrClass, IrDefinitionRef, SchemaIR, StudioSchemaBundle } from '@shared/types'
 
 import { describe, expect, test } from 'bun:test'
 
-import { buildModuleTree, folderModules, moduleMembers, moduleOfClass } from './modules'
+import {
+  buildModuleTree,
+  domainInterfacesOf,
+  externalInterfaceOrigin,
+  folderModules,
+  implementedInterfaceRefsOf,
+  interfaceBadge,
+  interfaceIdentity,
+  interfaceSelectionId,
+  moduleMembers,
+  moduleOfClass,
+  parseInterfaceSelectionToken,
+} from './modules'
 
 const node = (name: string): IrClass => ({
   type: 'node',
@@ -32,6 +44,7 @@ function bundle(classes: SchemaIR['classes'], files: Record<string, string>): St
       interfaces: {},
       classes,
       imports: {},
+      functions: {},
     },
     overlay: {
       origin: 'example.test',
@@ -159,5 +172,127 @@ describe('schema folder modules', () => {
         edges: ['agent_calls'],
       },
     ])
+  })
+})
+
+test('keeps implemented interfaces qualified across origin and kind collisions', () => {
+  const localShared = {
+    origin: 'example.test',
+    kind: 'interface',
+    name: 'Shared',
+  } satisfies IrDefinitionRef
+  const externalShared = {
+    origin: 'dependency.example.dev',
+    kind: 'interface',
+    name: 'Shared',
+  } satisfies IrDefinitionRef
+  const otherExternalShared = {
+    origin: 'other.example.dev',
+    kind: 'interface',
+    name: 'Shared',
+  } satisfies IrDefinitionRef
+  const externalClassCollision = {
+    origin: 'dependency.example.dev',
+    kind: 'class',
+    name: 'Shared',
+  } satisfies IrDefinitionRef
+  const kernelNamed = {
+    origin: 'kernel.astrale.ai',
+    kind: 'interface',
+    name: 'Named',
+  } satisfies IrDefinitionRef
+  const input = bundle(
+    {
+      Record: {
+        ...node('Record'),
+        implements: ['Shared', 'Shared', 'Shared', 'Named'],
+        implementsRefs: [localShared, externalShared, otherExternalShared, kernelNamed],
+      },
+    },
+    { 'class.Record': '/domains/example/schema/record.ts' },
+  )
+  input.ir!.interfaces.Shared = {
+    type: 'interface',
+    name: 'Shared',
+    origin: input.ir!.domain,
+    ref: localShared,
+    properties: {},
+    methods: {},
+  }
+  input.ir!.importsByKey = {
+    'dependency.example.dev:interface.Shared': {
+      origin: externalShared.origin,
+      definition: 'interface',
+      ref: externalShared,
+    },
+    'dependency.example.dev:class.Shared': {
+      origin: externalClassCollision.origin,
+      definition: 'class',
+      ref: externalClassCollision,
+    },
+    'other.example.dev:interface.Shared': {
+      origin: otherExternalShared.origin,
+      definition: 'interface',
+      ref: otherExternalShared,
+    },
+    'kernel.astrale.ai:interface.Named': {
+      origin: kernelNamed.origin,
+      definition: 'interface',
+      ref: kernelNamed,
+    },
+  }
+
+  expect(implementedInterfaceRefsOf(input, 'Record')).toEqual([
+    localShared,
+    externalShared,
+    otherExternalShared,
+    kernelNamed,
+  ])
+  expect(domainInterfacesOf(input, 'Record')).toEqual([
+    localShared,
+    externalShared,
+    otherExternalShared,
+  ])
+  expect([externalShared, otherExternalShared].map(interfaceIdentity)).toEqual([
+    'dependency.example.dev:interface.Shared',
+    'other.example.dev:interface.Shared',
+  ])
+  expect(
+    [externalShared, otherExternalShared].map((ref) => interfaceSelectionId(ref, input.ir!.domain)),
+  ).toEqual([
+    'interface.dependency.example.dev:interface.Shared',
+    'interface.other.example.dev:interface.Shared',
+  ])
+  expect(interfaceSelectionId(localShared, input.ir!.domain)).toBe('interface.Shared')
+  expect(parseInterfaceSelectionToken('dependency.example.dev:interface.$Shared')).toEqual({
+    origin: 'dependency.example.dev',
+    kind: 'interface',
+    name: '$Shared',
+  })
+  expect(externalInterfaceOrigin(input, externalShared)).toBe('dependency.example.dev')
+  expect(externalInterfaceOrigin(input, externalClassCollision)).toBeNull()
+  expect(externalInterfaceOrigin(input, 'Shared')).toBeNull()
+})
+
+test('keeps legacy interface badges on their short-name selection path', () => {
+  const input = bundle(
+    {
+      Record: {
+        ...node('Record'),
+        implements: ['Shared'],
+      },
+    },
+    { 'class.Record': '/domains/example/schema/record.ts' },
+  )
+  input.ir!.imports.Shared = {
+    origin: 'dependency.example.dev',
+    definition: 'interface',
+  }
+
+  expect(domainInterfacesOf(input, 'Record')).toEqual(['Shared'])
+  expect(interfaceBadge('Shared', input.ir!.domain)).toEqual({
+    name: 'Shared',
+    identity: 'legacy:interface.Shared',
+    selectionId: 'interface.Shared',
   })
 })

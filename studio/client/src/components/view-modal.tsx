@@ -14,7 +14,6 @@ import {
   MonitorPlay,
   RefreshCw,
   Search,
-  Server,
   Unplug,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -32,9 +31,9 @@ type SessionState =
   | { phase: 'error'; reason: string }
 
 /**
- * A local-first view workbench. Studio owns the Vite lifecycle; the CLI-owned
- * session still owns identity, active-instance data, delegation, and the shell
- * handshake. Opening the dialog is the only start action the user needs.
+ * A View workbench backed by the CLI-owned session. `astrale view` resolves the
+ * installed placement and owns identity, active-instance data, delegation, and
+ * the Shell mount. Opening the dialog is the only start action the user needs.
  */
 export function ViewModal({
   domainId,
@@ -72,10 +71,7 @@ export function ViewModal({
   const targetReady =
     !!runtime &&
     (!runtime.targetRequired || runtime.targets.items.some((target) => target.id === targetId))
-  const serverGeneration =
-    runtime?.server.status === 'running' ? runtime.server.startedAt : 'not-running'
-  const launchReady =
-    open && !restarting && !!runtime?.instance && runtime.server.status === 'running' && targetReady
+  const launchReady = open && !restarting && !!runtime?.instance && targetReady
 
   useEffect(() => {
     if (!launchReady) {
@@ -108,7 +104,7 @@ export function ViewModal({
       disposed = true
       if (openedSessionId) void api.closeViewSession(domainId, openedSessionId)
     }
-  }, [attempt, domainId, launchReady, runtime?.instance, serverGeneration, targetId, view.slug])
+  }, [attempt, domainId, launchReady, runtime?.instance, targetId, view.slug])
 
   useEffect(() => {
     if (session.phase !== 'ready') return
@@ -130,7 +126,6 @@ export function ViewModal({
     setRestarting(true)
     setSession({ phase: 'idle' })
     try {
-      await api.restartViewServer(domainId)
       await runtimeQuery.refetch()
       setAttempt((value) => value + 1)
     } catch (error) {
@@ -143,7 +138,6 @@ export function ViewModal({
     }
   }
 
-  const runningServer = runtime?.server.status === 'running' ? runtime.server : null
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="grid h-[90vh] w-[95vw] max-w-[1500px] grid-rows-[auto_auto_1fr] gap-0 overflow-hidden rounded-2xl p-0">
@@ -176,8 +170,8 @@ export function ViewModal({
             <button
               type="button"
               onClick={() => void restart()}
-              disabled={!runtime || restarting}
-              title="Restart the managed local preview"
+              disabled={restarting}
+              title="Retry the CLI-resolved View session"
               className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
             >
               <RefreshCw className={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
@@ -205,19 +199,13 @@ export function ViewModal({
             <div
               className={cn(
                 'inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-[10px]',
-                runningServer
+                runtime?.instance
                   ? 'border-emerald-500/20 bg-emerald-500/8 text-emerald-200'
                   : 'bg-background/60 text-muted-foreground',
               )}
-              title={
-                runningServer
-                  ? `Studio-managed server; sleeps after ${formatDuration(runningServer.idleTimeoutMs)} without an open view.`
-                  : runtime?.server.status === 'failed' || runtime?.server.status === 'unavailable'
-                    ? runtime.server.reason
-                    : 'Starting the local frontend…'
-              }
+              title="The Astrale CLI resolves the verified View placement installed on this instance."
             >
-              {runningServer ? (
+              {runtime?.instance ? (
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-30" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
@@ -227,9 +215,8 @@ export function ViewModal({
               ) : (
                 <Loader2 className="h-3 w-3 animate-spin" />
               )}
-              <Server className="h-3.5 w-3.5" />
-              <span className="font-medium">Managed locally</span>
-              {runningServer && <code className="opacity-65">:{runningServer.port}</code>}
+              <MonitorPlay className="h-3.5 w-3.5" />
+              <span className="font-medium">CLI-resolved View</span>
             </div>
             <div className="h-9 rounded-xl border bg-background/60 px-3 py-1.5 text-right text-[9px] uppercase leading-tight tracking-wider text-muted-foreground">
               <div>Data instance</div>
@@ -241,7 +228,7 @@ export function ViewModal({
         </div>
 
         <main className="relative min-h-0 overflow-hidden bg-[#0d0d11]">
-          {session.phase === 'ready' && runningServer ? (
+          {session.phase === 'ready' ? (
             <iframe
               key={session.session.sessionId}
               src={session.session.pageUrl}
@@ -437,22 +424,22 @@ function PreviewState({
 }) {
   if (loading) {
     return (
-      <StateFrame icon={<Loader2 className="animate-spin" />} title="Preparing local preview">
-        Studio is starting the domain frontend and connecting it to the active data instance.
+      <StateFrame icon={<Loader2 className="animate-spin" />} title="Resolving installed View">
+        The Astrale CLI is resolving the View and connecting it to the active data instance.
       </StateFrame>
     )
   }
   if (runtimeError) {
     return (
       <StateFrame icon={<Unplug />} title="The Studio runtime did not respond" action={onRetry}>
-        Retry the managed preview. The schema canvas is unaffected.
+        Retry the View session. The schema canvas is unaffected.
       </StateFrame>
     )
   }
   if (!runtime?.instance) {
     return (
       <StateFrame icon={<Unplug />} title="Choose an Astrale instance">
-        The local frontend always reads data from the active instance in the Studio header.
+        The installed View reads data from the active instance in the Studio header.
       </StateFrame>
     )
   }
@@ -478,16 +465,9 @@ function PreviewState({
       </StateFrame>
     )
   }
-  if (runtime.server.status !== 'running') {
-    return (
-      <StateFrame icon={<Server />} title="Local preview could not start" action={onRetry}>
-        {runtime.server.reason}
-      </StateFrame>
-    )
-  }
   return (
     <StateFrame icon={<Loader2 className="animate-spin" />} title="Opening view session">
-      The frontend is ready. Studio is preparing its authenticated shell session.
+      Studio is preparing the authenticated CLI-owned Shell session.
     </StateFrame>
   )
 }
@@ -521,9 +501,4 @@ function StateFrame({
       )}
     </div>
   )
-}
-
-function formatDuration(ms: number): string {
-  const minutes = Math.max(1, Math.round(ms / 60_000))
-  return `${minutes} minute${minutes === 1 ? '' : 's'}`
 }

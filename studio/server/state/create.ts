@@ -15,7 +15,8 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { getBundle } from '../cache'
-import { registerDomain } from '../domain'
+import { isDomainDir, registerDomain } from '../domain'
+import { findSchemaDefinition } from '../introspect/anatomy-extras'
 import { bootDomain } from '../lifecycle'
 import { stoppers, workspaceRoot, workspaceSchemaDirName } from '../workspace-state'
 
@@ -87,7 +88,8 @@ export async function createDomain(
     ...(instance ? ['--instance', instance] : []),
   ]
   const scaffold = await run('npx', scaffoldArgs, root)
-  if (!existsSync(join(dir, 'domain.ts')) || !existsSync(join(dir, 'astrale.config.ts'))) {
+  const schemaDirName = workspaceSchemaDirName()
+  if (!isDomainDir(dir, schemaDirName)) {
     return {
       ok: false,
       error: 'Scaffolding did not produce a domain. See the log.',
@@ -97,7 +99,7 @@ export async function createDomain(
 
   // 1b. Flag the placeholder origin for the agent (we ask for the name only, so the
   //     origin is `<name>.example.dev` until someone — or the agent — sets the real one).
-  annotateOrigin(dir)
+  annotateOrigin(dir, schemaDirName)
 
   // 2. Install deps so the domain is fully introspectable + deployable. Best-effort:
   //    a scaffolded-but-uninstalled domain still loads (static fallback), so a failed
@@ -106,11 +108,11 @@ export async function createDomain(
 
   // 3. Register + boot with deps present. The live watcher may have already booted a
   //    deps-less fallback for this dir mid-install — stop it and boot fresh.
-  const handle = registerDomain(dir, workspaceSchemaDirName())
+  const handle = registerDomain(dir, schemaDirName)
   if (!handle) {
     return {
       ok: false,
-      error: 'Scaffold incomplete — the domain triple is missing.',
+      error: 'Scaffold incomplete — config, composition entry, or schema index is missing.',
       output: combine(scaffold, install),
     }
   }
@@ -129,27 +131,31 @@ function combine(a: { output: string }, b: { output: string }): string {
 }
 
 /**
- * Drop an agent-actionable marker on the origin line of the scaffolded
- * schema/index.ts. We only ask for the NAME, so the origin starts as the
+ * Drop an agent-actionable marker on the origin line of the scaffolded schema.
+ * The public schema/index.ts is now commonly a barrel, so the definition is
+ * located statically below it. We only ask for the NAME, so the origin starts as the
  * `<name>.example.dev` placeholder — this comment tells a human (or the studio's
  * agent) it's a placeholder to change, and that the studio re-parses the literal
  * as the source of truth so the rename takes effect on save. Best-effort: the
  * template already explains the origin, so a parse miss is harmless.
  */
-function annotateOrigin(dir: string): void {
-  const file = join(dir, workspaceSchemaDirName(), 'index.ts')
+export function annotateOrigin(dir: string, schemaDirName = 'schema'): void {
+  const definition = findSchemaDefinition(dir, schemaDirName)
+  if (!definition) return
+  const file = definition.file
   try {
     const src = readFileSync(file, 'utf8')
     if (src.includes('ORIGIN —')) return // already annotated (idempotent)
-    const m = src.match(/^([ \t]*)export const schema = defineSchema\(/m)
-    if (!m) return
-    const pad = m[1] ?? ''
+    const lines = src.split('\n')
+    const index = Math.max(0, definition.line - 1)
+    const pad = lines[index]?.match(/^[ \t]*/)?.[0] ?? ''
     const note =
       `${pad}// ORIGIN — the domain's permanent identity in the graph. It was set from the name as a\n` +
-      `${pad}// PLACEHOLDER below; change it to your real domain (e.g. "crm.acme.dev"), ideally BEFORE\n` +
+      `${pad}// PLACEHOLDER; change the literal or constant used here (e.g. to "crm.acme.dev"), ideally BEFORE\n` +
       `${pad}// the first deploy (the origin is hard to change once installed). The studio parses this\n` +
-      `${pad}// literal as the source of truth, so the rename refreshes on save — no other file to touch.\n`
-    writeFileSync(file, src.replace(m[0], note + m[0]))
+      `${pad}// schema statically as the source of truth, so the rename refreshes on save.\n`
+    lines.splice(index, 0, note.trimEnd())
+    writeFileSync(file, lines.join('\n'))
   } catch {
     /* best-effort */
   }

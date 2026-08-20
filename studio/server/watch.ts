@@ -11,20 +11,24 @@ import type { DomainHandle } from './domain'
 
 import { getBundle, invalidate } from './cache'
 import { broadcast } from './sse'
+import { ANATOMY_GLOBS } from './state/baseline'
 
-const ANATOMY = [
-  'domain.ts',
-  'core.ts',
-  'core',
-  'runtime',
-  'views',
+export const ANATOMY_PATHS = [...ANATOMY_GLOBS.files, ...ANATOMY_GLOBS.dirs]
+
+// These paths can feed the ts-morph handler/source overlay. Their content is
+// part of the schema bundle cache even though they are outside schema/ itself.
+const BUNDLE_SOURCE_DIRS = new Set([
+  'actions',
+  'capabilities',
   'functions',
-  'client/src',
-  'deps.ts',
-  'env.ts',
-  'package.json',
-  'astrale.config.ts',
-]
+  'handlers',
+  'mutations',
+  'queries',
+  'rules',
+  'runtime',
+  'utils',
+  'workflows',
+])
 
 function ignored(p: string): boolean {
   return (
@@ -35,15 +39,16 @@ function ignored(p: string): boolean {
   )
 }
 
-function affectsBundle(handle: DomainHandle, path: string): boolean {
+export function affectsBundle(handle: DomainHandle, path: string): boolean {
   const rel = relative(handle.root, path).split('\\').join('/')
-  return rel === 'domain.ts' || rel === 'runtime' || rel.startsWith('runtime/')
+  const topLevel = rel.split('/')[0]
+  return rel === 'implementation.ts' || rel === 'domain.ts' || BUNDLE_SOURCE_DIRS.has(topLevel)
 }
 
 export function watchDomain(handle: DomainHandle): () => void {
   const schemaW = chokidar.watch(handle.schemaDir, { ignoreInitial: true, ignored })
   const anatomyW = chokidar.watch(
-    ANATOMY.map((p) => join(handle.root, p)),
+    ANATOMY_PATHS.map((p) => join(handle.root, p)),
     { ignoreInitial: true, ignored },
   )
 
@@ -53,7 +58,9 @@ export function watchDomain(handle: DomainHandle): () => void {
   schemaW.on('all', () => {
     clearTimeout(st)
     st = setTimeout(async () => {
-      invalidate(handle.id, 'schema')
+      // Origin and View declarations are part of the current schema, so schema
+      // edits invalidate both render surfaces.
+      invalidate(handle.id, 'all')
       broadcast({ type: 'resolving', domainId: handle.id })
       const b = await getBundle(handle.id, true)
       if (b?.error)
@@ -63,6 +70,7 @@ export function watchDomain(handle: DomainHandle): () => void {
         domainId: handle.id,
         schemaHash: b?.schemaHash ?? 'sha-none',
       })
+      broadcast({ type: 'anatomy-diff', domainId: handle.id })
     }, 150)
   })
 

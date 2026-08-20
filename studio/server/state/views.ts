@@ -3,8 +3,8 @@
  *
  * Discovery and launches deliberately go through the public `astrale view`
  * and `astrale query` commands. The Studio therefore shares the CLI's real
- * View:resolve, identity, instance, delegation, proxy, and shell-handshake
- * behavior instead of maintaining a second preview implementation.
+ * View resolution, identity, instance, delegation, proxy, and Shell behavior
+ * instead of maintaining a second preview implementation.
  */
 import type {
   RememberedViewTarget,
@@ -16,7 +16,6 @@ import type {
   ViewTargetResult,
 } from '../../shared/types'
 
-import { ensureViewDevServer } from '../view-dev-server'
 import { activeInstanceName } from './instance'
 import { readJson, writeJson } from './store'
 
@@ -50,10 +49,6 @@ interface RawQueryResult {
 // commands and make the close complete before the next open allocates a port.
 let viewSessionCommandTail: Promise<void> = Promise.resolve()
 
-export function localViewUrl(serverUrl: string, mount: string): string {
-  return new URL(mount.replace(/^\//, ''), `${new URL(serverUrl).origin}/`).toString()
-}
-
 export async function getViewRuntime(
   root: string,
   origin: string,
@@ -62,46 +57,67 @@ export async function getViewRuntime(
   timeoutMs: number,
 ): Promise<ViewRuntime> {
   const instance = await activeInstanceName()
-  const serverPromise = !instance
-    ? Promise.resolve({
-        status: 'unavailable' as const,
-        reason: 'Choose an Astrale instance before opening a local view.',
-      })
-    : view.mount
-      ? ensureViewDevServer(root)
-      : Promise.resolve({
-          status: 'unavailable' as const,
-          reason: 'This view has no local SPA mount.',
-        })
-
-  const targetRequired = viewClasses(view).length > 0
-  const targetsPromise = targetRequired
+  const targetRequired = viewDefinitionBindings(origin, view, bundle).length > 0
+  const targets = targetRequired
     ? instance
-      ? listViewTargets(root, origin, view, bundle, instance, timeoutMs)
-      : Promise.resolve<ViewTargetResult>({
+      ? await listViewTargets(root, origin, view, bundle, instance, timeoutMs)
+      : ({
           status: 'unavailable',
           items: [],
           selected: null,
           stale: null,
           truncated: false,
           reason: 'No active Astrale instance.',
-        })
-    : Promise.resolve<ViewTargetResult>({
+        } satisfies ViewTargetResult)
+    : ({
         status: 'available',
         items: [],
         selected: null,
         stale: null,
         truncated: false,
-      })
-
-  const [server, targets] = await Promise.all([serverPromise, targetsPromise])
+      } satisfies ViewTargetResult)
 
   return {
     slug: view.slug,
     instance,
     targetRequired,
-    server,
     targets,
+  }
+}
+
+export function viewSessionArgs(
+  origin: string,
+  slug: string,
+  instance: string,
+  targetRef?: string,
+): string[] {
+  const args = ['view', `/:${assertOrigin(origin)}:view.${assertViewSlug(slug)}`]
+  if (targetRef) args.push('--target', targetRef)
+  args.push('--no-open', '--json', '-i', instance)
+  return args
+}
+
+interface OpenedViewPayload {
+  session?: {
+    id?: string
+    pageUrl?: string
+    view?: { route?: { href?: string } }
+  }
+}
+
+export function readyViewSession(
+  opened: OpenedViewPayload | null,
+  target: ViewTargetCandidate | null,
+): Extract<ViewSessionResult, { status: 'ready' }> | null {
+  const session = opened?.session
+  const viewUrl = session?.view?.route?.href
+  if (!session?.id || !session.pageUrl || !viewUrl) return null
+  return {
+    status: 'ready',
+    sessionId: session.id,
+    pageUrl: session.pageUrl,
+    viewUrl,
+    target,
   }
 }
 
@@ -115,12 +131,9 @@ export async function launchViewSession(
 ): Promise<ViewSessionResult> {
   const instance = await activeInstanceName()
   if (!instance) return { status: 'unavailable', reason: 'No active Astrale instance.' }
-  if (!view.mount) {
-    return { status: 'unavailable', reason: 'This view has no local SPA mount.' }
-  }
 
   let target: ViewTargetCandidate | null = null
-  if (viewClasses(view).length > 0) {
+  if (viewDefinitionBindings(origin, view, bundle).length > 0) {
     const targetId = typeof request.targetId === 'string' ? request.targetId.trim() : ''
     if (!targetId) return { status: 'unavailable', reason: 'Select a target before opening.' }
     const targets = await listViewTargets(root, origin, view, bundle, instance, timeoutMs)
@@ -136,26 +149,13 @@ export async function launchViewSession(
     }
   }
 
-  const server = await ensureViewDevServer(root)
-  if (server.status !== 'running') {
-    return {
-      status: 'unavailable',
-      reason: server.reason,
-    }
-  }
-
-  const args = ['view', '--view-url', localViewUrl(server.url, view.mount), '--handshake', 'shell']
-
-  if (target) {
-    args.push('--target', target.ref)
-  }
-
-  args.push('--no-open', '--json', '-i', instance)
-  const opened = await runViewSessionCommand<{
-    session?: { id?: string; pageUrl?: string; view?: { url?: string } }
-  }>(args, Math.max(20_000, timeoutMs + 12_000))
-  const session = opened.data?.session
-  if (!opened.ok || !session?.id || !session.pageUrl || !session.view?.url) {
+  const args = viewSessionArgs(origin, view.slug, instance, target?.ref)
+  const opened = await runViewSessionCommand<OpenedViewPayload>(
+    args,
+    Math.max(20_000, timeoutMs + 12_000),
+  )
+  const session = opened.ok ? readyViewSession(opened.data, target) : null
+  if (!session) {
     return {
       status: 'unavailable',
       reason: opened.detail || '`astrale view` could not start the preview session.',
@@ -163,13 +163,7 @@ export async function launchViewSession(
   }
 
   if (target) rememberTarget(root, instance, view.slug, target)
-  return {
-    status: 'ready',
-    sessionId: session.id,
-    pageUrl: session.pageUrl,
-    viewUrl: session.view.url,
-    target,
-  }
+  return session
 }
 
 export async function closeViewSession(sessionId: string): Promise<{ ok: true }> {
@@ -186,10 +180,7 @@ async function listViewTargets(
   instance: string,
   timeoutMs: number,
 ): Promise<ViewTargetResult> {
-  const bindings = viewClasses(view).map((className) => ({
-    className,
-    classOrigin: bundle?.ir?.imports[className]?.origin ?? origin,
-  }))
+  const bindings = viewDefinitionBindings(origin, view, bundle)
   if (bindings.length === 0) {
     return {
       status: 'available',
@@ -202,7 +193,7 @@ async function listViewTargets(
 
   const queried = await Promise.all(
     bindings.map(async (binding) => {
-      const definition = targetDefinition(binding.className, binding.classOrigin)
+      const definition = targetDefinition(binding.className, binding.classOrigin, binding.kind)
       const result = await runAstraleJson<RawQueryResult>(
         [
           'query',
@@ -294,12 +285,123 @@ export function targetFromRow(
   }
 }
 
-export function targetDefinition(className: string, classOrigin: string): string {
-  return `/:${assertOrigin(classOrigin)}:class.${assertSchemaName(className)}`
+export function targetDefinition(
+  className: string,
+  classOrigin: string,
+  kind: 'class' | 'interface' = 'class',
+): string {
+  return `/:${assertOrigin(classOrigin)}:${kind}.${assertSchemaName(className)}`
 }
 
-function viewClasses(view: ViewInfo): string[] {
-  return Array.isArray(view.viewFor) ? view.viewFor : view.viewFor ? [view.viewFor] : []
+interface ViewDefinitionBinding {
+  className: string
+  classOrigin: string
+  kind: 'class' | 'interface'
+}
+
+/** Preserve exact canonical View target coordinates. The short-name anatomy
+ * fallback exists only for legacy defineView registries. */
+export function viewDefinitionBindings(
+  origin: string,
+  view: ViewInfo,
+  bundle: StudioSchemaBundle | null,
+): ViewDefinitionBinding[] {
+  const target = bundle?.ir?.views?.[view.slug]?.target
+  if (target) {
+    if (target.kind === 'domain') return []
+    return uniqueViewBindings(
+      target.definitions
+        .filter(
+          (definition): definition is typeof definition & { kind: 'class' | 'interface' } =>
+            definition.kind === 'class' || definition.kind === 'interface',
+        )
+        .map((definition) => ({
+          className: definition.name,
+          classOrigin: definition.origin,
+          kind: definition.kind,
+        })),
+    )
+  }
+
+  const names = Array.isArray(view.viewFor) ? view.viewFor : view.viewFor ? [view.viewFor] : []
+  const ir = bundle?.ir
+  if (!ir) {
+    return uniqueViewBindings(
+      names.map((className) => ({ className, classOrigin: origin, kind: 'class' })),
+    )
+  }
+
+  return uniqueViewBindings(
+    names.flatMap((className) => {
+      const local: ViewDefinitionBinding[] = []
+      const localClass = ir.classes[className]
+      const localInterface = ir.interfaces[className]
+      if (localClass) {
+        local.push({
+          className,
+          classOrigin: localClass.ref?.origin ?? localClass.origin ?? ir.domain ?? origin,
+          kind: 'class',
+        })
+      }
+      if (localInterface) {
+        local.push({
+          className,
+          classOrigin: localInterface.ref?.origin ?? localInterface.origin ?? ir.domain ?? origin,
+          kind: 'interface',
+        })
+      }
+
+      // Presence of the exact index makes it authoritative, including when it
+      // has no candidate for this short anatomy name. Since this API is plural,
+      // retain every exact homonym instead of picking one by object order.
+      if (ir.importsByKey !== undefined) {
+        const imported = Object.keys(ir.importsByKey).flatMap((key) => {
+          const binding = viewBindingFromDefinitionKey(key)
+          return binding?.className === className ? [binding] : []
+        })
+        return [...local, ...imported]
+      }
+
+      const legacy = ir.imports[className]
+      if (legacy) {
+        return [
+          ...local,
+          {
+            className,
+            classOrigin: legacy.origin,
+            kind: legacy.definition,
+          } satisfies ViewDefinitionBinding,
+        ]
+      }
+
+      // Old serializer projections did not retain exact indexes or declaration
+      // refs. Preserve their historical local-class assumption only here.
+      return local.length > 0 ? local : [{ className, classOrigin: origin, kind: 'class' }]
+    }),
+  )
+}
+
+function viewBindingFromDefinitionKey(key: string): ViewDefinitionBinding | null {
+  const separator = key.lastIndexOf(':')
+  if (separator <= 0) return null
+  const classOrigin = key.slice(0, separator)
+  const ref = key.slice(separator + 1)
+  const match = /^(class|interface)\.([A-Za-z_$][\w$]*)$/.exec(ref)
+  if (!match) return null
+  return {
+    className: match[2]!,
+    classOrigin,
+    kind: match[1] as ViewDefinitionBinding['kind'],
+  }
+}
+
+function uniqueViewBindings(bindings: ViewDefinitionBinding[]): ViewDefinitionBinding[] {
+  const unique = new Map<string, ViewDefinitionBinding>()
+  for (const binding of bindings) {
+    const key = `${binding.classOrigin}:${binding.kind}.${binding.className}`
+    if (!unique.has(key)) unique.set(key, binding)
+  }
+  return [...unique.values()]
 }
 
 function rememberTarget(
@@ -335,6 +437,11 @@ function assertOrigin(value: string): string {
 
 function assertSchemaName(value: string): string {
   if (!/^[A-Za-z_$][\w$]*$/.test(value)) throw new Error(`Invalid class name: ${value}`)
+  return value
+}
+
+function assertViewSlug(value: string): string {
+  if (!/^[a-z][a-z0-9-]*$/.test(value)) throw new Error(`Invalid view slug: ${value}`)
   return value
 }
 

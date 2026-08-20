@@ -3,13 +3,22 @@
  * The whole-domain schema map is intentionally not embedded in agent turns; the
  * agent reads schema/ directly when it needs broader context.
  */
-import type { Comment, IrMethod, JsonSchema, SchemaIR, SchemaOverlay } from '../../../shared/types'
+import type {
+  Comment,
+  IrDefinitionKey,
+  IrFunction,
+  IrInterface,
+  IrMethod,
+  JsonSchema,
+  SchemaIR,
+  SchemaOverlay,
+} from '../../../shared/types'
 
 /** Terse JSON-Schema type label (mirrors the client's format.tsx describe/typeLabel). */
-function propType(s: JsonSchema | undefined): string {
+function propType(s: JsonSchema | undefined, optionalOverride?: boolean): string {
   if (!s) return 'any'
   const t = s.type
-  const optional = Array.isArray(t) ? t.includes('null') : false
+  const optional = optionalOverride ?? (Array.isArray(t) ? t.includes('null') : false)
   const base = Array.isArray(t) ? t.find((x) => x !== 'null') : t
   let label: string
   if (s.enum) label = `enum(${s.enum.map(String).join('|')})`
@@ -23,14 +32,33 @@ function propType(s: JsonSchema | undefined): string {
   return label + (optional ? '?' : '')
 }
 
-function methodSig(name: string, m: IrMethod): string {
+function methodSig(name: string, m: IrMethod | IrFunction): string {
   const params = Object.entries(m.params ?? {})
-    .map(([p, s]) => `${p}:${propType(s)}`)
+    .map(
+      ([p, s]) =>
+        `${p}:${propType(s, m.requiredParams ? !m.requiredParams.includes(p) : undefined)}`,
+    )
     .join(', ')
-  const tags = [m.static ? 'static' : '', m.inheritance === 'abstract' ? 'abstract' : ''].filter(
-    Boolean,
-  )
-  return `${name}(${params})→${propType(m.returns)}${tags.length ? ` [${tags.join(',')}]` : ''}`
+  const output =
+    m.output?.mode === 'stream'
+      ? `stream<${propType(m.output.item)}>`
+      : m.output?.mode === 'binary'
+        ? 'binary'
+        : propType(m.output?.mode === 'value' ? m.output.schema : m.returns)
+  const tags = [
+    m.static ? 'static' : '',
+    m.inheritance === 'abstract' ? 'abstract' : '',
+    m.auth ?? '',
+  ].filter(Boolean)
+  return `${name}(${params})→${output}${tags.length ? ` [${tags.join(',')}]` : ''}`
+}
+
+function interfaceByToken(ir: SchemaIR, token: string): IrInterface | undefined {
+  const exact = /^(.+):interface\.([A-Za-z_$][\w$]*)$/.exec(token)
+  if (!exact) return ir.interfaces?.[token]
+  const [, origin, name] = exact
+  if (origin === ir.domain) return ir.interfaces?.[name]
+  return ir.importedInterfacesByKey?.[`${origin}:interface.${name}` as IrDefinitionKey]
 }
 
 /**
@@ -54,7 +82,7 @@ export function describeAnchor(
     const [, cls, kind, name] = member
     const c = ir.classes?.[cls]
     if (c && kind === 'property' && c.properties?.[name])
-      return `**${cls}.${name}** : ${propType(c.properties[name])}${loc ? `  (${loc})` : ''}${doc}`
+      return `**${cls}.${name}** : ${propType(c.properties[name], c.required ? !c.required.includes(name) : undefined)}${loc ? `  (${loc})` : ''}${doc}`
     if (c && kind === 'method' && c.methods?.[name])
       return `**${cls}.${name}** — ${methodSig(name, c.methods[name])}${loc ? `  (${loc})` : ''}${doc}`
   }
@@ -67,23 +95,65 @@ export function describeAnchor(
       const L = [`**${c.name}** (${c.type})${loc ? `  (${loc})` : ''}${doc}`]
       const props = Object.entries(c.properties ?? {})
       if (props.length)
-        L.push(`  props: ${props.map(([p, s]) => `${p}:${propType(s)}`).join(' · ')}`)
+        L.push(
+          `  props: ${props
+            .map(
+              ([p, s]) => `${p}:${propType(s, c.required ? !c.required.includes(p) : undefined)}`,
+            )
+            .join(' · ')}`,
+        )
       const ms = Object.entries(c.methods ?? {})
       if (ms.length) L.push(`  methods: ${ms.map(([n, m]) => methodSig(n, m)).join(' · ')}`)
       if (c.type === 'edge' && c.endpoints?.length)
-        L.push(`  endpoints: ${c.endpoints.map((e) => e.types?.join('|') || e.name).join(' → ')}`)
+        L.push(
+          `  endpoints: ${c.endpoints
+            .map(
+              (e) =>
+                e.refs
+                  ?.map((target) => `${target.origin}:${target.kind}.${target.name}`)
+                  .join('|') ||
+                e.types?.join('|') ||
+                e.name,
+            )
+            .join(' → ')}`,
+        )
       return L.join('\n')
     }
   }
 
-  // interface.X
+  // interface.X.property.y / interface.<origin>:interface.X.method.m
+  const interfaceMember = ref.match(/^interface\.(.+)\.(property|method)\.([^.]+)$/)
+  if (interfaceMember && ir) {
+    const [, token, kind, name] = interfaceMember
+    const iface = interfaceByToken(ir, token)
+    if (iface && kind === 'property' && iface.properties?.[name]) {
+      return `**${iface.name}.${name}** : ${propType(iface.properties[name], iface.required ? !iface.required.includes(name) : undefined)}${loc ? `  (${loc})` : ''}${doc}`
+    }
+    if (iface && kind === 'method' && iface.methods?.[name]) {
+      return `**${iface.name}.${name}** — ${methodSig(name, iface.methods[name])}${loc ? `  (${loc})` : ''}${doc}`
+    }
+  }
+
+  // interface.X or exact interface.<origin>:interface.X
   const im = ref.match(/^interface\.(.+)$/)
   if (im && ir) {
-    const i = ir.interfaces?.[im[1]]
+    const i = interfaceByToken(ir, im[1])
     if (i) {
+      const props = Object.entries(i.properties ?? {}).map(
+        ([name, schema]) =>
+          `${name}:${propType(schema, i.required ? !i.required.includes(name) : undefined)}`,
+      )
       const ms = Object.entries(i.methods ?? {}).map(([n, m]) => methodSig(n, m))
-      return `**${i.name}** (interface)${loc ? `  (${loc})` : ''}${doc}${ms.length ? `\n  methods: ${ms.join(' · ')}` : ''}`
+      return `**${i.name}** (interface)${i.origin && i.origin !== ir.domain ? ` from ${i.origin}` : ''}${loc ? `  (${loc})` : ''}${doc}${props.length ? `\n  props: ${props.join(' · ')}` : ''}${ms.length ? `\n  methods: ${ms.join(' · ')}` : ''}`
     }
+  }
+
+  // Standalone canonical Function.
+  const fm = ref.match(/^function\.([A-Za-z_$][\w$]*)$/)
+  if (fm && ir) {
+    const fn = ir.functions?.[fm[1]]
+    if (fn)
+      return `**${fn.name}** (function) — ${methodSig(fn.name, fn)}${loc ? `  (${loc})` : ''}${doc}`
   }
 
   // module / section / file / free — not a specific code element

@@ -1,4 +1,11 @@
-import type { IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/types'
+import type {
+  IrDefinitionKey,
+  IrDefinitionRef,
+  IrEndpoint,
+  IrSchemaRef,
+  SchemaIR,
+  StudioSchemaBundle,
+} from '@shared/types'
 
 /**
  * external.ts — the CROSS-DOMAIN data layer.
@@ -13,6 +20,8 @@ import type { IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/types'
 export interface ExternalMember {
   name: string
   definition: 'interface' | 'class'
+  /** Exact imported Definition. Absent only for legacy name-only endpoints. */
+  ref?: IrDefinitionRef
 }
 export interface ExternalDomain {
   origin: string
@@ -27,10 +36,49 @@ export interface CrossDomainEdge {
   from: string
   origin: string
   to: string
+  /** Exact endpoint coordinates. Absent only for legacy name-only endpoints. */
+  fromRef?: IrDefinitionRef
+  toRef?: IrDefinitionRef
   /** declared cardinality of the local (`from`) and external (`to`) endpoints — so the
    *  canvas can draw the same ERD markers as internal edges (see cardinality-markers). */
   fromCard?: IrEndpoint['cardinality']
   toCard?: IrEndpoint['cardinality']
+}
+
+/** Canvas identity for an imported endpoint definition. Kind is part of the key by contract. */
+export function externalMemberNodeId(
+  origin: string,
+  name: string,
+  definition: ExternalMember['definition'],
+): string {
+  return `extmember.${origin}.${definition}.${name}`
+}
+
+interface EndpointDefinition {
+  name: string
+  ref?: IrDefinitionRef
+}
+
+function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
+  return ref.kind === 'class' || ref.kind === 'interface'
+}
+
+function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
+  return `${ref.origin}:${ref.kind}.${ref.name}`
+}
+
+function sameDefinition(a: IrDefinitionRef, b: IrDefinitionRef): boolean {
+  return a.origin === b.origin && a.kind === b.kind && a.name === b.name
+}
+
+/** Canonical endpoint refs are authoritative; `types` is consulted only for legacy IR. */
+function endpointDefinitions(
+  endpoint: Pick<IrEndpoint, 'types' | 'refs'> | undefined,
+): EndpointDefinition[] {
+  if (!endpoint) return []
+  if (endpoint.refs !== undefined)
+    return endpoint.refs.filter(isDefinitionRef).map((ref) => ({ name: ref.name, ref }))
+  return (endpoint.types ?? []).map((name) => ({ name }))
 }
 
 export interface LocalEndpointTarget {
@@ -46,22 +94,30 @@ export interface LocalEndpointTarget {
  */
 export function localEndpointTargets(
   ir: SchemaIR,
-  endpoint: { types?: string[] } | undefined,
+  endpoint: Pick<IrEndpoint, 'types' | 'refs'> | undefined,
   interfaceRendered: (name: string) => boolean,
 ): LocalEndpointTarget[] {
   const out: LocalEndpointTarget[] = []
   const seen = new Set<string>()
-  for (const type of endpoint?.types ?? []) {
-    if (ir.classes[type]?.type === 'node') {
-      if (!seen.has(type)) {
-        seen.add(type)
-        out.push({ cls: type, ifaceNode: null, viaInterface: null })
+  for (const target of endpointDefinitions(endpoint)) {
+    const { name, ref } = target
+    if (ref && ref.origin !== ir.domain) continue
+
+    const exactClass = ref?.kind === 'class'
+    const exactInterface = ref?.kind === 'interface'
+    const legacyClass = !ref && ir.classes[name]?.type === 'node'
+    const legacyInterface = !ref && ir.interfaces[name] !== undefined
+
+    if ((exactClass || legacyClass) && ir.classes[name]?.type === 'node') {
+      if (!seen.has(name)) {
+        seen.add(name)
+        out.push({ cls: name, ifaceNode: null, viaInterface: null })
       }
       continue
     }
-    if (!ir.interfaces[type]) continue
-    if (interfaceRendered(type)) {
-      const ifaceNode = `iface.${type}`
+    if (!(exactInterface || legacyInterface) || !ir.interfaces[name]) continue
+    if (interfaceRendered(name)) {
+      const ifaceNode = `iface.${name}`
       if (!seen.has(ifaceNode)) {
         seen.add(ifaceNode)
         out.push({ cls: null, ifaceNode, viaInterface: null })
@@ -69,9 +125,14 @@ export function localEndpointTargets(
       continue
     }
     for (const [className, cls] of Object.entries(ir.classes)) {
-      if (cls.type === 'node' && (cls.implements ?? []).includes(type) && !seen.has(className)) {
+      const implementsTarget = ref
+        ? cls.implementsRefs
+            ?.filter(isDefinitionRef)
+            .some((candidate) => sameDefinition(candidate, ref)) === true
+        : (cls.implements ?? []).includes(name)
+      if (cls.type === 'node' && implementsTarget && !seen.has(className)) {
         seen.add(className)
-        out.push({ cls: className, ifaceNode: null, viaInterface: type })
+        out.push({ cls: className, ifaceNode: null, viaInterface: name })
       }
     }
   }
@@ -92,18 +153,36 @@ export function crossDomainEdges(bundle: StudioSchemaBundle): CrossDomainEdge[] 
       [a, b],
       [b, a],
     ] as const) {
-      const local = localEndpoint.types.filter(
-        (type) => ir.classes[type]?.type === 'node' || ir.interfaces[type] !== undefined,
-      )
-      const external = externalEndpoint.types.filter((type) => ir.imports[type] !== undefined)
-      for (const to of external) {
-        const origin = ir.imports[to].origin
-        for (const from of local) {
+      const local = endpointDefinitions(localEndpoint).filter(({ name: memberName, ref }) => {
+        if (ref)
+          return (
+            ref.origin === ir.domain &&
+            (ref.kind === 'interface' || ir.classes[memberName]?.type === 'node') &&
+            (ref.kind !== 'interface' || ir.interfaces[memberName] !== undefined)
+          )
+        return ir.classes[memberName]?.type === 'node' || ir.interfaces[memberName] !== undefined
+      })
+      const external = endpointDefinitions(externalEndpoint).flatMap((target) => {
+        if (target.ref) {
+          if (target.ref.origin === ir.domain) return []
+          const descriptor = ir.importsByKey?.[definitionKey(target.ref)]
+          // The exact endpoint remains sufficient when a partial projection lacks the index; an
+          // exact ref must never fall through to the collision-prone short-name map.
+          return [{ ...target, ref: descriptor?.ref ?? target.ref }]
+        }
+        return ir.imports[target.name] ? [target] : []
+      })
+      for (const target of external) {
+        const origin = target.ref?.origin ?? ir.imports[target.name]?.origin
+        if (!origin) continue
+        for (const source of local) {
           out.push({
             edge: name,
-            from,
+            from: source.name,
             origin,
-            to,
+            to: target.name,
+            ...(source.ref ? { fromRef: source.ref } : {}),
+            ...(target.ref ? { toRef: target.ref } : {}),
             fromCard: localEndpoint.cardinality,
             toCard: externalEndpoint.cardinality,
           })
@@ -121,16 +200,22 @@ export function externalDomains(bundle: StudioSchemaBundle): ExternalDomain[] {
   const byOrigin = new Map<string, Map<string, ExternalMember>>()
   for (const e of crossDomainEdges(bundle)) {
     if (!byOrigin.has(e.origin)) byOrigin.set(e.origin, new Map())
-    byOrigin
-      .get(e.origin)!
-      .set(e.to, { name: e.to, definition: ir.imports[e.to]?.definition ?? 'class' })
+    const definition = e.toRef?.kind ?? ir.imports[e.to]?.definition ?? 'class'
+    const identity = e.toRef ? definitionKey(e.toRef) : `${definition}.${e.to}`
+    byOrigin.get(e.origin)!.set(identity, {
+      name: e.to,
+      definition,
+      ...(e.toRef ? { ref: e.toRef } : {}),
+    })
   }
   const domains: ExternalDomain[] = []
   for (const [origin, members] of byOrigin) {
     domains.push({
       origin,
       kind: origin === 'kernel.astrale.ai' ? 'kernel' : 'external',
-      members: [...members.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      members: [...members.values()].sort(
+        (a, b) => a.name.localeCompare(b.name) || a.definition.localeCompare(b.definition),
+      ),
     })
   }
   return domains.sort((a, b) =>

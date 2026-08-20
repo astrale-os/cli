@@ -45,6 +45,8 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > Bun-only ESM that Node can't resolve). The target domain's deps must be installed
 > (`pnpm install` at the workspace root) for full-fidelity schema rendering;
 > otherwise the studio falls back to a static parse.
+> Current projects are detected through `astrale.config.ts`, `implementation.ts`,
+> and `schema/index.ts`; legacy `domain.ts` projects remain supported.
 
 ### Local agent harness
 
@@ -80,26 +82,23 @@ not present the existing gateway card for Codex yet; Codex uses its own login.
 
 ### View previews
 
-Opening a SPA view lazily starts that domain's `client` `dev:hmr` script. Studio
-asks the OS for a free loopback port, so several domain frontends can run at once
-without inheriting or competing for their Vite config ports. The process is reused
-while a view stays open, stops after 10 minutes without a view heartbeat, and is
-always terminated with Studio. Set `DOMAIN_STUDIO_VIEW_IDLE_MS` to override the
-idle window (minimum 30 seconds). The frontend is local, but its `astrale view` shell session is minted
-for the active Studio instance, so graph data and permissions remain instance-real.
+Studio opens the canonical `/:origin:view.slug` through `astrale view`. The CLI
+resolves the installed, verified View placement and owns the loopback Shell
+session, identity, delegation, and cleanup. Target-bound Views query the active
+instance first so Studio can pass an exact `@id`; Studio does not inject a local
+URL or override the View handshake.
 
 ## What it does
 
 | Section | What it shows |
 |---|---|
-| **Overview** | origin, deploy adapter, prod target, `postInstall`, package + `@astrale-os` versions, schemaHash, deps/git badges |
+| **Overview** | origin, deploy adapter/target, package + `@astrale-os` versions, schemaHash, deps/git badges |
 | **Schema** ★ | classes grouped by **module** (schema/ folders), interface chips on each class, only real relationship edges (cross-module ones highlighted); click a class → props (types + JSDoc), methods (signatures, handler file, kernel calls, core refs) |
-| **Methods** | flat list: `Class.method → handler file`, kernel ops, port, `contract-only`/`unlinked` badges |
-| **Surfaces** | views (kind/auth/mount/viewFor), functions, client tree + routes |
+| **Process** | standalone Functions and class Methods, exact auth/handler links, canonical Core genesis, and View entrypoints |
 | **Data** | sample rows per class, versioned by schemaHash, additive/breaking migration |
 | **Context** | deliberate **user** context vs auto-computed digests (separate, opt-in to handoff) |
 | **Integrations** | independent, hand-maintained list (+ a shallow `integrations/` dir hint) |
-| **Cross-domains** | `requires` + non-kernel imports + kernel mixins + a wishlist |
+| **Cross-domains** | exact canonical dependencies/imported definitions + kernel mixins + a wishlist |
 | **Comments** | open-questions & comments; **Submit to agent** live loop (drives the selected local Claude Code or Codex harness, streams its work, merges its replies back into the threads) + **Copy for agent** / **Merge reply** manual fallback |
 | **Changes** | baseline-first diff (git as enrichment); **Mark reviewed** |
 
@@ -108,8 +107,7 @@ for the active Studio instance, so graph data and permissions remain instance-re
 ```
 shared/types.ts          the one contract (DSL IR mirror + studio overlay/state)
 server/
-  view-dev-server.ts     lazy per-domain Vite supervisor (ports · reuse · teardown)
-  introspect/            extractor (Bun import → D.$.ir) · runtime driver · ts-morph
+  introspect/            extractor (Bun import → canonical DomainSchema V1) · runtime driver · ts-morph
                          overlay (handler links, source spans, JSDoc) · anatomy · hash · diff · bundle
   state/                 store (write-allowlist) · comments · copy · baseline · git
                          · context · integrations · crossdomains · data
@@ -121,8 +119,9 @@ client/src/
 ```
 
 Schema parsing uses the Astrale DSL's own output: a Bun subprocess imports the
-domain's `schema/index.ts` and reads the compiled `D.$.ir` (the canonical
-`SchemaIR`) — no hand-rolled parser. A ts-morph overlay adds what the IR can't
-carry (handler-file links, source spans, JSDoc). All state lives in a
+domain's `schema/index.ts`, admits its canonical DomainSchema V1 through that
+domain's own SDK cohort, and projects it into Studio's render model. Legacy
+compiled `D.$.ir` domains remain a fallback. A ts-morph overlay adds source-only
+details (handler-file links, source spans, JSDoc). All state lives in a
 `.domain-studio/` dotted folder in each domain; the server's only write path is
 allow-listed to that folder, so domain source is never modified.

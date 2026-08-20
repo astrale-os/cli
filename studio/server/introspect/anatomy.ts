@@ -4,8 +4,8 @@
  * (dir names only — a hint, never a parse).
  *
  * Overview is implemented here; views/client/env are filled by the
- * introspection swarm in anatomy-extras.ts. domain.ts is statically parsed,
- * never executed (its deps→integrations chain has import side effects).
+ * introspection swarm in anatomy-extras.ts. The composition entry is statically
+ * parsed, never executed (its dependency graph may have import side effects).
  */
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -13,7 +13,7 @@ import { join, relative } from 'node:path'
 import type { DomainAnatomy, DomainOverview } from '../../shared/types'
 
 import { readSettings } from '../state/settings'
-import { buildClientTree, buildEnvFields, buildViews } from './anatomy-extras'
+import { buildClientTree, buildEnvFields, buildViews, findSchemaDefinition } from './anatomy-extras'
 
 export interface AnatomyArgs {
   root: string
@@ -22,16 +22,24 @@ export interface AnatomyArgs {
 }
 
 export function buildAnatomy({ root, schemaDirName, clientDir }: AnatomyArgs): DomainAnatomy {
+  const schema = findSchemaDefinition(root, schemaDirName)
+  const authoredClientDir =
+    clientDir ?? (existsSync(join(root, 'ui')) ? join(root, 'ui') : undefined)
   return {
-    overview: buildOverview(root, schemaDirName, clientDir),
-    views: buildViews(root),
+    overview: buildOverview(root, schemaDirName, authoredClientDir, schema?.origin),
+    views: buildViews(root, schemaDirName),
     client: buildClientTree(root, clientDir ?? null),
     env: buildEnvFields(root),
     detectedIntegrations: detectIntegrations(root),
   }
 }
 
-function buildOverview(root: string, schemaDirName: string, clientDir?: string): DomainOverview {
+function buildOverview(
+  root: string,
+  schemaDirName: string,
+  clientDir?: string,
+  schemaOrigin?: string,
+): DomainOverview {
   const pkg = readJsonSafe(join(root, 'package.json'))
   const astraleDeps: Record<string, string> = {}
   for (const [k, v] of Object.entries({
@@ -52,8 +60,14 @@ function buildOverview(root: string, schemaDirName: string, clientDir?: string):
     config.match(/dev\s*:\s*\{[^}]*secrets\s*:\s*['"]([^'"]+)['"]/)?.[1] ??
     config.match(/secrets\s*:\s*['"]([^'"]+)['"]/)?.[1]
 
-  const domainSrc = readTextSafe(join(root, 'domain.ts'))
+  const compositionFile = existsSync(join(root, 'implementation.ts'))
+    ? 'implementation.ts'
+    : existsSync(join(root, 'domain.ts'))
+      ? 'domain.ts'
+      : undefined
+  const domainSrc = compositionFile ? readTextSafe(join(root, compositionFile)) : ''
   const origin =
+    schemaOrigin ??
     domainSrc.match(/defineSchema\(\s*['"]([^'"]+)['"]/)?.[1] ??
     readTextSafe(join(root, schemaDirName, 'index.ts')).match(
       /defineSchema\(\s*['"]([^'"]+)['"]/,
@@ -62,6 +76,7 @@ function buildOverview(root: string, schemaDirName: string, clientDir?: string):
 
   return {
     origin,
+    compositionFile,
     adapter,
     prodTarget: instance ? `instance: ${instance}` : route ? `route: ${route}` : undefined,
     devSecrets,

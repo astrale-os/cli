@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
 /**
  * ts-morph overlay for IR gaps: handler links, source spans, and annotations.
@@ -37,7 +37,14 @@ function tryAddFile(project: Project, file: string): SourceFile | undefined {
 /** Path relative to `root`, POSIX-style ('schema/monitor.ts'), never absolute. */
 function relToRoot(root: string, file: string): string {
   const abs = isAbsolute(file) ? file : resolvePath(root, file)
-  return relative(root, abs).split('\\').join('/')
+  const canonical = (value: string) => {
+    try {
+      return realpathSync(value)
+    } catch {
+      return value
+    }
+  }
+  return relative(canonical(root), canonical(abs)).split('\\').join('/')
 }
 
 /** 1-based start line of a node. */
@@ -111,6 +118,9 @@ interface WiredMethod {
   /** the object literal / call expression carrying the handler config */
   config: Node
   wiringLine: number
+  wiringFile: string
+  ownerKind?: 'class' | 'interface' | 'function'
+  style?: 'legacy-config' | 'direct-handler'
 }
 
 const SINGLE_METHOD_HELPERS = new Set(['method', 'remoteMethod'])
@@ -529,7 +539,19 @@ function resolveViaModuleSpecifier(id: Node): { file: string; line: number } | u
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
 function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
-  if (!spec.startsWith('.')) return undefined
+  if (!spec.startsWith('.')) {
+    // Current SDK projects use package `imports` aliases such as
+    // `#actions/risk`. Resolve them from the authored file's directory through
+    // Bun so the overlay follows the same project-local map as runtime imports.
+    if (!spec.startsWith('#')) return undefined
+    try {
+      const resolved = Bun.resolveSync(spec, dirname(from.getFilePath()))
+      if (existsSync(resolved)) return resolved
+    } catch {
+      return undefined
+    }
+    return undefined
+  }
   const baseDir = dirname(from.getFilePath())
   const base = resolvePath(baseDir, spec)
   const sourceBase = base.replace(/\.(?:[cm]?js|jsx)$/, '')
@@ -625,55 +647,98 @@ export function buildHandlerLinks(args: {
 }): HandlerLink[] {
   const { ir, domainRoot } = args
   if (!domainRoot) return []
-  const wiringRel = 'runtime/index.ts'
-  const wiringAbs = resolvePath(domainRoot, wiringRel)
   const project = newProject()
-  const sf = tryAddFile(project, wiringAbs)
-  if (!sf) return []
+  const legacyWiringRel = 'runtime/index.ts'
+  const legacySf = tryAddFile(project, resolvePath(domainRoot, legacyWiringRel))
 
   const interfaceNames = new Set(ir ? Object.keys(ir.interfaces ?? {}) : [])
 
   const wired: WiredMethod[] = []
 
-  for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    const name = calleeName(call)
-    if (!name) continue
+  if (legacySf) {
+    for (const call of legacySf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      const name = calleeName(call)
+      if (!name) continue
 
-    // Style A: single-method helper — method(schema, 'Owner', 'name', { … }).
-    if (SINGLE_METHOD_HELPERS.has(name)) {
-      const owner = stringArg(call, 1)
-      const method = stringArg(call, 2)
-      const config = call.getArguments()[3]
-      if (owner && method && config) {
-        wired.push({ owner, method, config, wiringLine: call.getStartLineNumber() })
+      // Style A: single-method helper — method(schema, 'Owner', 'name', { … }).
+      if (SINGLE_METHOD_HELPERS.has(name)) {
+        const owner = stringArg(call, 1)
+        const method = stringArg(call, 2)
+        const config = call.getArguments()[3]
+        if (owner && method && config) {
+          wired.push({
+            owner,
+            method,
+            config,
+            wiringLine: call.getStartLineNumber(),
+            wiringFile: legacyWiringRel,
+            style: 'legacy-config',
+          })
+        }
+        continue
       }
-      continue
+
+      // Style B: group helper — classMethods(schema, 'Owner', { name: cfg, … }).
+      if (GROUP_HELPERS.has(name)) {
+        const owner = stringArg(call, 1)
+        const mapArg = call.getArguments()[2]
+        if (!owner || !mapArg || !Node.isObjectLiteralExpression(mapArg)) continue
+        for (const prop of mapArg.getProperties()) {
+          const valueNode = objectPropertyValue(prop)
+          const methodName = propertyKey(prop)
+          if (!methodName || !valueNode) continue
+          wired.push({
+            owner,
+            method: methodName,
+            config: valueNode,
+            wiringLine: prop.getStartLineNumber(),
+            wiringFile: legacyWiringRel,
+            style: 'legacy-config',
+          })
+        }
+        continue
+      }
+    }
+  }
+
+  // Current SDK layout: `implementation.ts` owns a plain
+  // `handlers: { classes, interfaces, functions }` object passed to
+  // `defineDomain` / `defineDomain.public`. Start from that call so inline
+  // handler maps and arbitrarily named handler variables are both visible.
+  // Class/interface entries point directly at handler functions; there is no
+  // legacy `{ authorize, execute }` wrapper.
+  for (const wiringRel of ['implementation.ts', 'domain.ts']) {
+    const sf = tryAddFile(project, resolvePath(domainRoot, wiringRel))
+    if (!sf) continue
+
+    const handlerObjects: import('ts-morph').ObjectLiteralExpression[] = []
+    const seenHandlerObjects = new Set<string>()
+    const addHandlerObject = (candidate: Node | undefined) => {
+      const handlersObject = candidate ? resolveObjectLiteral(candidate) : undefined
+      if (!handlersObject) return
+      const key = `${handlersObject.getSourceFile().getFilePath()}:${handlersObject.getStart()}`
+      if (seenHandlerObjects.has(key)) return
+      seenHandlerObjects.add(key)
+      handlerObjects.push(handlersObject)
     }
 
-    // Style B: group helper — classMethods(schema, 'Owner', { name: cfg, … }).
-    if (GROUP_HELPERS.has(name)) {
-      const owner = stringArg(call, 1)
-      const mapArg = call.getArguments()[2]
-      if (!owner || !mapArg || !Node.isObjectLiteralExpression(mapArg)) continue
-      for (const prop of mapArg.getProperties()) {
-        let methodName: string | undefined
-        let valueNode: Node | undefined
-        if (Node.isPropertyAssignment(prop)) {
-          methodName = prop.getName()
-          valueNode = prop.getInitializer()
-        } else if (Node.isShorthandPropertyAssignment(prop)) {
-          methodName = prop.getName()
-          valueNode = prop.getNameNode()
-        }
-        if (!methodName || !valueNode) continue
-        wired.push({
-          owner,
-          method: methodName,
-          config: valueNode,
-          wiringLine: prop.getStartLineNumber(),
-        })
-      }
-      continue
+    for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+      if (!isDefineDomainCall(call)) continue
+      const input = call.getArguments()[0]
+      const inputObject = input ? resolveObjectLiteral(input) : undefined
+      addHandlerObject(inputObject ? getProp(inputObject, 'handlers') : undefined)
+    }
+
+    // Tolerate pre-composition fixtures that expose a conventional `handlers`
+    // variable without a parseable defineDomain call.
+    const handlersDecl = sf.getVariableDeclaration('handlers')
+    addHandlerObject(handlersDecl?.getInitializer())
+
+    for (const handlersObject of handlerObjects) {
+      const handlersFile = relToRoot(domainRoot, handlersObject.getSourceFile().getFilePath())
+      collectDirectHandlerSection(wired, handlersObject, 'classes', 'class', handlersFile)
+      collectDirectHandlerSection(wired, handlersObject, 'interfaces', 'interface', handlersFile)
+      collectDirectFunctionHandlers(wired, handlersObject, ir?.domain ?? 'domain', handlersFile)
     }
   }
 
@@ -683,7 +748,7 @@ export function buildHandlerLinks(args: {
   // falling back to the group entry (which references a variable / todo()).
   const byKey = new Map<string, WiredMethod>()
   for (const w of wired) {
-    const key = `${w.owner}.${w.method}`
+    const key = `${w.ownerKind ?? 'legacy'}:${w.owner}.${w.method}`
     const existing = byKey.get(key)
     if (!existing) {
       byKey.set(key, w)
@@ -697,7 +762,8 @@ export function buildHandlerLinks(args: {
 
   const links: HandlerLink[] = []
   for (const w of byKey.values()) {
-    const ownerKind: 'class' | 'interface' = interfaceNames.has(w.owner) ? 'interface' : 'class'
+    const ownerKind: 'class' | 'interface' | 'function' =
+      w.ownerKind ?? (interfaceNames.has(w.owner) ? 'interface' : 'class')
     const isStatic = irMethodStatic(ir, w.owner, w.method, ownerKind)
 
     const link: HandlerLink = {
@@ -705,20 +771,24 @@ export function buildHandlerLinks(args: {
       ownerKind,
       method: w.method,
       static: isStatic,
-      wiringFile: wiringRel,
+      wiringFile: w.wiringFile,
       wiringLine: w.wiringLine,
       implemented: true,
     }
 
-    const resolution = resolveConfigObject(w.config)
-    link.implemented = resolution.implemented
-    if (resolution.auth) link.auth = resolution.auth
-    if (resolution.authorize) link.authorize = resolution.authorize
-    if (resolution.authorizeSnippet) link.authorizeSnippet = resolution.authorizeSnippet
-
     let target: { file: string; line: number } | undefined
-    if (resolution.executeNode) {
-      target = resolveExecuteTarget(resolution.executeNode)
+    if (w.style === 'direct-handler') {
+      const direct = resolveDirectHandler(w.config)
+      link.implemented = direct.implemented
+      target = direct.target
+      applyCanonicalMethodAuth(link, ir, w.owner, w.method, ownerKind)
+    } else {
+      const resolution = resolveConfigObject(w.config)
+      link.implemented = resolution.implemented
+      if (resolution.auth) link.auth = resolution.auth
+      if (resolution.authorize) link.authorize = resolution.authorize
+      if (resolution.authorizeSnippet) link.authorizeSnippet = resolution.authorizeSnippet
+      if (resolution.executeNode) target = resolveExecuteTarget(resolution.executeNode)
     }
 
     if (target) {
@@ -740,14 +810,159 @@ export function buildHandlerLinks(args: {
   return links
 }
 
+/** Whether a call is the current SDK composition entrypoint. */
+function isDefineDomainCall(call: CallExpression): boolean {
+  const expression = unwrapExpression(call.getExpression())
+  if (Node.isIdentifier(expression)) return expression.getText() === 'defineDomain'
+  if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== 'public') {
+    return false
+  }
+  const receiver = unwrapExpression(expression.getExpression())
+  return Node.isIdentifier(receiver) && receiver.getText() === 'defineDomain'
+}
+
+/** Resolve a value to an object literal, following local/imported identifiers. */
+function resolveObjectLiteral(
+  node: Node,
+  seen = new Set<string>(),
+): import('ts-morph').ObjectLiteralExpression | undefined {
+  const value = unwrapExpression(node)
+  const key = `${value.getSourceFile().getFilePath()}:${value.getStart()}`
+  if (seen.has(key)) return undefined
+  seen.add(key)
+  if (Node.isObjectLiteralExpression(value)) return value
+  if (Node.isIdentifier(value)) {
+    const resolved = valueOfIdentifier(value)
+    if (resolved) return resolveObjectLiteral(resolved, seen)
+  }
+  return undefined
+}
+
+/** Value carried by an object-literal property, including shorthand/method syntax. */
+function objectPropertyValue(prop: Node): Node | undefined {
+  if (Node.isPropertyAssignment(prop)) return prop.getInitializer()
+  if (Node.isShorthandPropertyAssignment(prop)) return prop.getNameNode()
+  if (Node.isMethodDeclaration(prop)) return prop
+  return undefined
+}
+
+/** Collect current `handlers.classes/interfaces.Owner.method = fn` bindings. */
+function collectDirectHandlerSection(
+  out: WiredMethod[],
+  handlers: import('ts-morph').ObjectLiteralExpression,
+  section: 'classes' | 'interfaces',
+  ownerKind: 'class' | 'interface',
+  wiringFile: string,
+): void {
+  const sectionValue = getProp(handlers, section)
+  const sectionObject = sectionValue ? resolveObjectLiteral(sectionValue) : undefined
+  if (!sectionObject) return
+  for (const ownerProp of sectionObject.getProperties()) {
+    const owner = propertyKey(ownerProp)
+    const ownerValue = objectPropertyValue(ownerProp)
+    const ownerObject = ownerValue ? resolveObjectLiteral(ownerValue) : undefined
+    if (!owner || !ownerObject) continue
+    for (const methodProp of ownerObject.getProperties()) {
+      const method = propertyKey(methodProp)
+      const handler = objectPropertyValue(methodProp)
+      if (!method || !handler) continue
+      out.push({
+        owner,
+        ownerKind,
+        method,
+        config: handler,
+        wiringLine: methodProp.getStartLineNumber(),
+        wiringFile,
+        style: 'direct-handler',
+      })
+    }
+  }
+}
+
+/** Collect current standalone `handlers.functions.name = fn` bindings. */
+function collectDirectFunctionHandlers(
+  out: WiredMethod[],
+  handlers: import('ts-morph').ObjectLiteralExpression,
+  owner: string,
+  wiringFile: string,
+): void {
+  const functionsValue = getProp(handlers, 'functions')
+  const functions = functionsValue ? resolveObjectLiteral(functionsValue) : undefined
+  if (!functions) return
+  for (const functionProp of functions.getProperties()) {
+    const method = propertyKey(functionProp)
+    const handler = objectPropertyValue(functionProp)
+    if (!method || !handler) continue
+    out.push({
+      owner,
+      ownerKind: 'function',
+      method,
+      config: handler,
+      wiringLine: functionProp.getStartLineNumber(),
+      wiringFile,
+      style: 'direct-handler',
+    })
+  }
+}
+
+/** Follow a direct SDK handler to its defining source node. */
+function resolveDirectHandler(config: Node): {
+  implemented: boolean
+  target?: { file: string; line: number }
+} {
+  let value = unwrapExpression(config)
+  if (Node.isIdentifier(value)) value = valueOfIdentifier(value) ?? value
+  value = unwrapExpression(value)
+  const concrete =
+    Node.isArrowFunction(value) ||
+    Node.isFunctionExpression(value) ||
+    Node.isFunctionDeclaration(value) ||
+    Node.isMethodDeclaration(value) ||
+    Node.isCallExpression(value)
+  if (!concrete) return { implemented: false }
+  return {
+    implemented: Node.isCallExpression(value) ? true : !isStubFunction(value),
+    target: { file: value.getSourceFile().getFilePath(), line: value.getStartLineNumber() },
+  }
+}
+
+/** Map the canonical callable auth declaration onto the existing Studio badge model. */
+function applyCanonicalMethodAuth(
+  link: HandlerLink,
+  ir: SchemaIR | null,
+  owner: string,
+  method: string,
+  ownerKind: 'class' | 'interface' | 'function',
+): void {
+  const callable =
+    ownerKind === 'function'
+      ? ir?.functions?.[method]
+      : ownerKind === 'interface'
+        ? ir?.interfaces?.[owner]?.methods?.[method]
+        : ir?.classes?.[owner]?.methods?.[method]
+  const auth = callable?.auth
+  if (auth) link.callableAuth = auth
+  if (auth === 'anonymous') {
+    link.auth = 'public'
+    link.authorize = 'absent'
+  } else if (auth === 'authorized') {
+    link.auth = 'required'
+    link.authorize = 'custom'
+  } else if (auth === 'authenticated') {
+    link.auth = 'required'
+    link.authorize = 'absent'
+  }
+}
+
 /** Look up a method's `static` flag from the IR (class or interface bucket). */
 function irMethodStatic(
   ir: SchemaIR | null,
   owner: string,
   method: string,
-  ownerKind: 'class' | 'interface',
+  ownerKind: 'class' | 'interface' | 'function',
 ): boolean {
   if (!ir) return false
+  if (ownerKind === 'function') return true
   const bucket = ownerKind === 'interface' ? ir.interfaces?.[owner] : ir.classes?.[owner]
   const m = bucket?.methods?.[method]
   return m ? m.static === true : false
@@ -755,10 +970,29 @@ function irMethodStatic(
 
 // ───────────────────────────── source spans ─────────────────────────────
 
-const DECL_HELPERS: Record<string, 'node' | 'interface' | 'edge'> = {
+const DECL_HELPERS: Record<string, 'node' | 'interface' | 'edge' | 'function'> = {
   nodeClass: 'node',
   nodeInterface: 'interface',
   edgeClass: 'edge',
+  fn: 'function',
+}
+
+/** Recognize both legacy `edgeClass(...)` and current
+ * `edgeClass.directed/undirected({...})` authoring forms. */
+function declarationHelper(
+  call: CallExpression,
+): 'node' | 'interface' | 'edge' | 'function' | undefined {
+  const direct = calleeName(call)
+  if (direct && direct in DECL_HELPERS) return DECL_HELPERS[direct]
+  const expression = call.getExpression()
+  if (
+    Node.isPropertyAccessExpression(expression) &&
+    (expression.getName() === 'directed' || expression.getName() === 'undirected') &&
+    expression.getExpression().getText() === 'edgeClass'
+  ) {
+    return 'edge'
+  }
+  return undefined
 }
 
 /**
@@ -772,46 +1006,71 @@ const DECL_HELPERS: Record<string, 'node' | 'interface' | 'edge'> = {
  */
 interface MemberName {
   schemaName: string
-  section: 'interface' | 'class' // the `classes` map also holds edge classes
+  section: 'interface' | 'class' | 'function' // the `classes` map also holds edge classes
+}
+
+interface MemberNameMap {
+  /** Exact declaration initializer, robust to imported/local aliases. */
+  byValue: Map<string, MemberName>
+  /** Legacy fallback when a symbol cannot be resolved. */
+  byIdentifier: Map<string, MemberName>
+}
+
+/** Stable source coordinate for the value behind a local/imported alias. */
+function memberValueKey(node: Node, seen = new Set<string>()): string | undefined {
+  const value = unwrapExpression(node)
+  const key = `${value.getSourceFile().getFilePath()}:${value.getStart()}`
+  if (seen.has(key)) return undefined
+  seen.add(key)
+  if (Node.isIdentifier(value)) {
+    const resolved = valueOfIdentifier(value)
+    if (resolved) return memberValueKey(resolved, seen)
+  }
+  return key
 }
 
 /** Map each registered member VARIABLE (as referenced in `defineSchema`) to its
  *  schema name + section, from the domain's own schema files — never node_modules
  *  (a dependency's `defineSchema` is not this domain's). */
-function buildMemberNameMap(files: SourceFile[]): Map<string, MemberName> {
-  const map = new Map<string, MemberName>()
+function buildMemberNameMap(files: SourceFile[]): MemberNameMap {
+  const map: MemberNameMap = {
+    byValue: new Map<string, MemberName>(),
+    byIdentifier: new Map<string, MemberName>(),
+  }
   for (const sf of files) {
     if (sf.getFilePath().includes('/node_modules/')) continue
     for (const call of sf.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       if (calleeName(call) !== 'defineSchema') continue
-      const cfg = call.getArguments()[1]
-      if (!cfg || !Node.isObjectLiteralExpression(cfg)) continue
+      const input = call.getArguments()[1]
+      const cfg = input ? resolveObjectLiteral(input) : undefined
+      if (!cfg) continue
       collectSchemaSection(map, cfg, 'interfaces', 'interface')
       collectSchemaSection(map, cfg, 'classes', 'class')
+      collectSchemaSection(map, cfg, 'functions', 'function')
     }
   }
   return map
 }
 
-/** Record `variable → { schemaName, section }` for one `defineSchema` section
- *  (`interfaces` / `classes`), handling both `Key: alias` and shorthand `Key`. */
+/** Record `variable → { schemaName, section }` for one `defineSchema` section,
+ *  handling both `Key: alias` and shorthand `Key`. */
 function collectSchemaSection(
-  map: Map<string, MemberName>,
+  map: MemberNameMap,
   cfg: Node,
-  prop: 'interfaces' | 'classes',
-  section: 'interface' | 'class',
+  prop: 'interfaces' | 'classes' | 'functions',
+  section: 'interface' | 'class' | 'function',
 ): void {
   const obj = getObjectProp(cfg, prop)
   if (!obj) return
   for (const p of obj.getProperties()) {
-    if (Node.isShorthandPropertyAssignment(p)) {
-      map.set(p.getName(), { schemaName: p.getName(), section })
-    } else if (Node.isPropertyAssignment(p)) {
-      const init = p.getInitializer()
-      if (init && Node.isIdentifier(init)) {
-        map.set(init.getText(), { schemaName: p.getName(), section })
-      }
-    }
+    const schemaName = propertyKey(p)
+    const memberValue = objectPropertyValue(p)
+    if (!schemaName || !memberValue) continue
+    const member = { schemaName, section } satisfies MemberName
+    const valueKey = memberValueKey(memberValue)
+    if (valueKey) map.byValue.set(valueKey, member)
+    const unwrapped = unwrapExpression(memberValue)
+    if (Node.isIdentifier(unwrapped)) map.byIdentifier.set(unwrapped.getText(), member)
   }
 }
 
@@ -826,9 +1085,10 @@ function collectSchemaSection(
 function resolveMemberKind(
   ir: SchemaIR | null,
   name: string,
-  section: 'interface' | 'class' | undefined,
-  helperKind: 'node' | 'interface' | 'edge',
-): 'class' | 'interface' | 'edge' {
+  section: 'interface' | 'class' | 'function' | undefined,
+  helperKind: 'node' | 'interface' | 'edge' | 'function',
+): 'class' | 'interface' | 'edge' | 'function' {
+  if (section === 'function' || helperKind === 'function') return 'function'
   if (section === 'interface') return 'interface'
   const isEdge = helperKind === 'edge' || ir?.classes?.[name]?.type === 'edge'
   if (section === 'class') return isEdge ? 'edge' : 'class'
@@ -870,19 +1130,22 @@ export function buildSourceSpans(args: {
       if (!v.isExported()) continue
       const init = v.getInitializer()
       if (!init || !Node.isCallExpression(init)) continue
-      const helper = calleeName(init)
-      if (!helper || !(helper in DECL_HELPERS)) continue
-      const helperKind = DECL_HELPERS[helper]
-      const member = memberNames.get(v.getName())
+      const helperKind = declarationHelper(init)
+      if (!helperKind) continue
+      const valueKey = memberValueKey(init)
+      const member =
+        (valueKey ? memberNames.byValue.get(valueKey) : undefined) ??
+        memberNames.byIdentifier.get(v.getName())
       const name = member?.schemaName ?? v.getName()
       const ns = resolveMemberKind(ir, name, member?.section, helperKind)
 
       const stmt = v.getVariableStatement() ?? v
       spans[`${ns}.${name}`] = makeSpan(domainRoot, fileRel, stmt, v)
 
-      // The single object-literal argument: nodeClass({ props, methods }) etc.
+      // The single object-literal argument: nodeClass({ properties, methods })
+      // and current edgeClass.directed({ source, target, properties }).
       const cfgArg = init.getArguments()[0]
-      if (cfgArg && Node.isObjectLiteralExpression(cfgArg)) {
+      if (ns !== 'function' && cfgArg && Node.isObjectLiteralExpression(cfgArg)) {
         collectPropsAndMethods(spans, ns, name, cfgArg, domainRoot, fileRel)
       }
 
@@ -918,7 +1181,7 @@ function collectPropsAndMethods(
   fileRel: string,
 ): void {
   if (!Node.isObjectLiteralExpression(cfg)) return
-  const propsObj = getObjectProp(cfg, 'props')
+  const propsObj = getObjectProp(cfg, 'properties') ?? getObjectProp(cfg, 'props')
   if (propsObj) {
     for (const p of propsObj.getProperties()) {
       const pName = propertyKey(p)
@@ -945,6 +1208,34 @@ function collectEdge(
   fileRel: string,
 ): void {
   const argsList = init.getArguments()
+  const expression = init.getExpression()
+  const currentObjectForm =
+    Node.isPropertyAccessExpression(expression) &&
+    (expression.getName() === 'directed' || expression.getName() === 'undirected') &&
+    argsList[0] &&
+    Node.isObjectLiteralExpression(argsList[0])
+
+  if (currentObjectForm) {
+    const config = argsList[0]
+    if (Node.isObjectLiteralExpression(config)) {
+      for (const endpointName of ['source', 'target'] as const) {
+        const ep = getObjectProp(config, endpointName)
+        if (!ep) continue
+        const role = stringLiteralOfProp(ep, 'as') ?? stringLiteralOfProp(ep, 'role')
+        if (role) spans[`edge.${name}.endpoint.${role}`] = makeSpan(domainRoot, fileRel, ep, ep)
+      }
+      const properties = getObjectProp(config, 'properties') ?? getObjectProp(config, 'props')
+      if (properties) {
+        for (const p of properties.getProperties()) {
+          const pName = propertyKey(p)
+          if (!pName) continue
+          spans[`edge.${name}.property.${pName}`] = makeSpan(domainRoot, fileRel, p, p)
+        }
+      }
+    }
+    return
+  }
+
   for (let i = 0; i < Math.min(2, argsList.length); i++) {
     const ep = argsList[i]
     if (!Node.isObjectLiteralExpression(ep)) continue
@@ -952,10 +1243,10 @@ function collectEdge(
     if (!role) continue
     spans[`edge.${name}.endpoint.${role}`] = makeSpan(domainRoot, fileRel, ep, ep)
   }
-  // Edge props live in the third (config) arg's `props`.
+  // Legacy edge props live in the third (config) arg.
   const cfgArg = argsList[2]
   if (cfgArg && Node.isObjectLiteralExpression(cfgArg)) {
-    const propsObj = getObjectProp(cfgArg, 'props')
+    const propsObj = getObjectProp(cfgArg, 'properties') ?? getObjectProp(cfgArg, 'props')
     if (propsObj) {
       for (const p of propsObj.getProperties()) {
         const pName = propertyKey(p)
@@ -977,8 +1268,7 @@ function getObjectProp(
   let value: Node | undefined
   if (Node.isPropertyAssignment(prop)) value = prop.getInitializer()
   else if (Node.isShorthandPropertyAssignment(prop)) value = prop.getNameNode()
-  if (value && Node.isObjectLiteralExpression(value)) return value
-  return undefined
+  return value ? resolveObjectLiteral(value) : undefined
 }
 
 /** A string-literal property value, e.g. `as: 'page'` → 'page'. */
@@ -1010,23 +1300,8 @@ function propertyKey(prop: Node): string | undefined {
 
 // ───────────────────────────── annotations ─────────────────────────────
 
-export function buildSchemaAnnotations(args: { ir: SchemaIR | null }): SchemaAnnotation[] {
-  const { ir } = args
-  if (!ir) return []
-  const out: SchemaAnnotation[] = []
-  for (const cls of Object.values(ir.classes ?? {})) {
-    const ns = cls.type === 'edge' ? 'edge' : 'class'
-    for (const [propName, schema] of Object.entries(cls.properties ?? {})) {
-      if (Array.isArray(schema?.enum) && schema.enum.length > 0) {
-        out.push({
-          target: `${ns}.${cls.name}.property.${propName}`,
-          severity: 'warn',
-          code: 'ENUM_DROPPED_BY_UPDATE',
-          message:
-            'z.enum props are silently dropped by ::update — track as a plain string if it must be updated.',
-        })
-      }
-    }
-  }
-  return out
+export function buildSchemaAnnotations(_args: { ir: SchemaIR | null }): SchemaAnnotation[] {
+  // The current Kernel admits updated values against their exact Value Schema;
+  // enum properties therefore need no Studio-specific compatibility warning.
+  return []
 }

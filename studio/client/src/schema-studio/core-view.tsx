@@ -126,6 +126,8 @@ interface CoreNodeData extends Record<string, unknown> {
   icon?: string
   fields: [string, string][]
   selected: boolean
+  /** A semantic endpoint (currently the owning Domain), not a materialized Core node. */
+  virtual?: boolean
 }
 
 function CoreNodeCard({ data }: NodeProps) {
@@ -139,11 +141,13 @@ function CoreNodeCard({ data }: NodeProps) {
       )}
       style={{ borderLeft: `3px solid oklch(0.72 0.15 ${d.hue})` }}
     >
-      <NodeCommentPin
-        anchorRef={nodeAnchor(d.path)}
-        kind="section"
-        excerpt={`${d.title} (${d.className})`}
-      />
+      {!d.virtual && (
+        <NodeCommentPin
+          anchorRef={nodeAnchor(d.path)}
+          kind="section"
+          excerpt={`${d.title} (${d.className})`}
+        />
+      )}
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div className="px-2.5 py-1.5">
         <div className="flex items-center gap-2">
@@ -183,7 +187,7 @@ const nodeTypes = { coreNode: CoreNodeCard }
 
 // ── structure (nodes + edges, pre-layout) ───────────────────────────────────
 
-function buildCoreGraph(
+export function buildCoreGraph(
   core: StudioCore,
   bundle: StudioSchemaBundle,
   hues: Map<string, number>,
@@ -207,6 +211,35 @@ function buildCoreGraph(
       style: { width: 184, height: 50 + fields.length * 15 },
     }
   })
+
+  // Canonical Core edges may connect a concrete Core node to the owning Domain
+  // (`domain()`, serialized as `/:origin`). Materialize that semantic endpoint
+  // as a small virtual card so the edge is visible without pretending it is
+  // another genesis node in the tree or detail panel.
+  const domainPath = `/:${core.domain}`
+  for (const path of new Set(core.edges.flatMap((edge) => [edge.from, edge.to]))) {
+    const id = nodeAnchor(path)
+    if (ids.has(id)) continue
+    const domainEndpoint = path === domainPath
+    nodes.push({
+      id,
+      type: 'coreNode',
+      position: { x: 0, y: 0 },
+      selectable: false,
+      focusable: false,
+      data: {
+        path,
+        className: domainEndpoint ? 'Domain' : 'External',
+        title: domainEndpoint ? core.domain : lastSeg(path),
+        hue: domainEndpoint ? 210 : 264,
+        fields: [],
+        selected: false,
+        virtual: true,
+      } satisfies CoreNodeData,
+      style: { width: 184, height: 50 },
+    })
+    ids.add(id)
+  }
 
   const edges: Edge[] = []
   // structural parent → child (subtle dashed) so the hierarchy reads on the canvas
@@ -293,8 +326,13 @@ export function CoreView({
 
   const visibleNodes = useMemo(
     () =>
-      showStructure ? nodes : nodes.filter((n) => (n.data as CoreNodeData).className !== 'Folder'),
-    [nodes, showStructure],
+      nodes.filter((node) => {
+        const data = node.data as CoreNodeData
+        if (!showStructure && data.className === 'Folder') return false
+        if (!showSemantics && data.virtual) return false
+        return true
+      }),
+    [nodes, showSemantics, showStructure],
   )
   const visibleIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
@@ -326,7 +364,10 @@ export function CoreView({
       edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
       onEdgesChange={onEdgesChange}
-      onNodeClick={(_, n) => onSelect((n.data as CoreNodeData).path)}
+      onNodeClick={(_, n) => {
+        const data = n.data as CoreNodeData
+        if (!data.virtual) onSelect(data.path)
+      }}
       onPaneClick={() => {
         onSelect(null)
         setOpenAnchor(null)

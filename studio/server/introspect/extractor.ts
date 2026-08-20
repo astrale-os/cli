@@ -1,15 +1,22 @@
 /**
  * extractor.ts — the Bun-executed island. Spawned as a short-lived subprocess by
  * runtime.ts. It imports ONLY the domain's pure `schema/index.ts` module graph
- * (never astrale.config.ts or domain.ts → deps → integrations), reads the
- * compiled `D.$.ir`, and prints the SchemaIR as JSON to stdout.
+ * (never astrale.config.ts or the composition entry → integrations). Canonical
+ * DomainSchema V1 roots are projected directly; legacy `D.$.ir` / serialize
+ * domains retain their existing fallback.
  *
  *   bun extractor.ts <schemaIndexPath> <domainDir>
  *
- * `compileDomain`/`serialize` are PURE (no IO, no env), so importing the schema
- * is side-effect-free. A thrown error prints { ok:false } and exits 0 — the
- * driver treats it as a render state, never a crash.
+ * A thrown error prints { ok:false } and exits 0 — the driver treats it as a
+ * render state, never a crash.
  */
+import {
+  closureFromSdk,
+  findCanonicalDomainSchemaExport,
+  normalizeLegacySchemaIR,
+  projectCanonicalSchema,
+} from './canonical-schema'
+
 const schemaPath = process.argv[2]
 const domainDir = process.argv[3] ?? process.cwd()
 
@@ -17,16 +24,34 @@ async function main() {
   if (!schemaPath) throw new Error('extractor: missing <schemaIndexPath>')
   const mod: Record<string, any> = await import(schemaPath)
 
-  // Lazily resolve the domain's own kernel-dsl serializer (used by the fallback
-  // path AND to recover imported-interface bodies). Cached after first load.
-  let dsl: Record<string, any> | null = null
-  const loadDsl = async (): Promise<Record<string, any>> => {
-    if (dsl) return dsl
+  // Resolve through the DOMAIN's dependency graph. This prevents Studio's own
+  // SDK version from accepting or resolving a root authored by another cohort.
+  let sdk: Record<string, any> | null = null
+  const loadSdkSchema = async (): Promise<Record<string, any>> => {
+    if (sdk) return sdk
     const loaded: Record<string, any> = await import(
       Bun.resolveSync('@astrale-os/sdk/schema', domainDir)
     )
-    dsl = loaded
+    sdk = loaded
     return loaded
+  }
+
+  const canonicalRoot = findCanonicalDomainSchemaExport(mod)
+  if (canonicalRoot) {
+    const domainSdk = await loadSdkSchema()
+    const projected = projectCanonicalSchema(
+      canonicalRoot,
+      closureFromSdk(domainSdk, canonicalRoot),
+    )
+    process.stdout.write(
+      JSON.stringify({
+        ok: true,
+        ir: projected.ir,
+        root: canonicalRoot,
+        importedInterfaces: projected.importedInterfaces,
+      }),
+    )
+    return
   }
 
   // Prefer the conventional `D` (compiled), but accept a compiled domain exported
@@ -56,7 +81,7 @@ async function main() {
         'schema entry exports no compiled domain (a `compileDomain(...)` value with `.$.ir`, e.g. `D`) nor a raw `schema`',
       )
     }
-    const d = await loadDsl()
+    const d = await loadSdkSchema()
     if (typeof d.serialize !== 'function') throw new Error('kernel-dsl.serialize unavailable')
     ir = d.serialize(schema)
   }
@@ -70,7 +95,7 @@ async function main() {
   const importSchemas: any[] = Array.isArray(mod?.schema?.imports) ? mod.schema.imports : []
   if (importSchemas.length > 0) {
     try {
-      const d = await loadDsl()
+      const d = await loadSdkSchema()
       if (typeof d.serialize === 'function') {
         for (const imp of importSchemas) {
           try {
@@ -88,7 +113,14 @@ async function main() {
     }
   }
 
-  process.stdout.write(JSON.stringify({ ok: true, ir, importedInterfaces }))
+  process.stdout.write(
+    JSON.stringify({
+      ok: true,
+      ir: normalizeLegacySchemaIR(ir),
+      root: null,
+      importedInterfaces,
+    }),
+  )
 }
 
 main().catch((err: any) => {

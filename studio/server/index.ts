@@ -17,7 +17,6 @@ import { resolveTarget } from './detect'
 import { allDomains } from './domain'
 import { bootDomain } from './lifecycle'
 import { broadcast, sseResponse } from './sse'
-import { shutdownViewDevServers } from './view-dev-server'
 import { initWorkspaceState, stoppers } from './workspace-state'
 import { watchWorkspace } from './workspace-watch'
 
@@ -43,7 +42,7 @@ const domains = resolveTarget(target, schemaDir)
 if (!domains.length) {
   console.error(`\n  ✗ No Astrale domains found at ${target}`)
   console.error(
-    `    (looking for the triple: astrale.config.ts + domain.ts + ${schemaDir}/index.ts)\n`,
+    `    (looking for: astrale.config.ts + implementation.ts (or legacy domain.ts) + ${schemaDir}/index.ts)\n`,
   )
   process.exit(1)
 }
@@ -122,7 +121,6 @@ let shuttingDown = false
 async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (shuttingDown) return
   shuttingDown = true
-  await shutdownViewDevServers()
   for (const stop of stoppers.values()) stop()
   server.stop(true)
   process.exit(signal === 'SIGINT' ? 130 : 143)

@@ -33,7 +33,6 @@ import type {
   StudioCore,
   StudioSchemaBundle,
   ThreadEntry,
-  ViewDevServerStatus,
   ViewRuntime,
   ViewSessionResult,
   VisibilityState,
@@ -75,8 +74,6 @@ export const api = {
   anatomy: (id: string) => get<DomainAnatomy>(`${d(id)}/anatomy`),
   viewRuntime: (id: string, slug: string) =>
     get<ViewRuntime>(`${d(id)}/views/${encodeURIComponent(slug)}/runtime`),
-  restartViewServer: (id: string) =>
-    post<ViewDevServerStatus>(`${d(id)}/views/dev-server/restart`, {}),
   launchView: (id: string, slug: string, request: { targetId?: string }) =>
     post<ViewSessionResult>(`${d(id)}/views/${encodeURIComponent(slug)}/session`, request),
   closeViewSession: (id: string, sessionId: string) =>

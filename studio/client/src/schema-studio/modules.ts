@@ -1,4 +1,9 @@
-import type { StudioSchemaBundle } from '@shared/types'
+import type {
+  IrDefinitionKey,
+  IrDefinitionRef,
+  IrSchemaRef,
+  StudioSchemaBundle,
+} from '@shared/types'
 
 /**
  * Modules are schema folders. Every member (interface, class, edge) is authored
@@ -8,6 +13,20 @@ import type { StudioSchemaBundle } from '@shared/types'
  */
 
 export type MemberKind = 'interface' | 'class' | 'edge'
+
+export type InterfaceDefinitionRef = IrDefinitionRef & { kind: 'interface' }
+export type InterfaceReference = InterfaceDefinitionRef | string
+
+export interface InterfaceBadge {
+  /** Short display label. */
+  name: string
+  /** Canonical key, or a stable compatibility identity for a name-only legacy reference. */
+  identity: string
+  /** Canonical ref. Absent only for name-only legacy projections. */
+  ref?: InterfaceDefinitionRef
+  /** Detail-pane selection token; exact for imported canonical refs, short for legacy refs. */
+  selectionId: string
+}
 
 export interface MemberRef {
   name: string
@@ -36,6 +55,47 @@ export interface FolderModule {
 }
 
 const HUES = [264, 190, 150, 90, 30, 320, 220, 55, 0, 170, 120, 290]
+const KERNEL_ORIGIN = 'kernel.astrale.ai'
+
+function isInterfaceRef(ref: IrSchemaRef): ref is InterfaceDefinitionRef {
+  return ref.kind === 'interface'
+}
+
+function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
+  return `${ref.origin}:${ref.kind}.${ref.name}`
+}
+
+/** Collision-free identity for a canonical ref; stable short identity for legacy input. */
+export function interfaceIdentity(ref: InterfaceReference): string {
+  return typeof ref === 'string' ? `legacy:interface.${ref}` : definitionKey(ref)
+}
+
+/**
+ * Detail-pane selection for an interface. Local refs retain the legacy short selection while
+ * imported refs use their canonical key so homonyms from different origins stay distinct.
+ */
+export function interfaceSelectionId(ref: InterfaceReference, localOrigin?: string): string {
+  if (typeof ref === 'string') return `interface.${ref}`
+  return ref.origin === localOrigin
+    ? `interface.${ref.name}`
+    : `interface.${interfaceIdentity(ref)}`
+}
+
+/** Parse the qualified portion after `interface.` from an imported-interface selection. */
+export function parseInterfaceSelectionToken(token: string): InterfaceDefinitionRef | undefined {
+  const match = /^(.+):interface\.([A-Za-z_$][\w$]*)$/.exec(token)
+  if (!match) return undefined
+  return { origin: match[1], kind: 'interface', name: match[2] }
+}
+
+export function interfaceBadge(ref: InterfaceReference, localOrigin?: string): InterfaceBadge {
+  return {
+    name: typeof ref === 'string' ? ref : ref.name,
+    identity: interfaceIdentity(ref),
+    ...(typeof ref === 'string' ? {} : { ref }),
+    selectionId: interfaceSelectionId(ref, localOrigin),
+  }
+}
 export function moduleHue(index: number): number {
   return HUES[index % HUES.length]
 }
@@ -200,22 +260,64 @@ export function folderModules(bundle: StudioSchemaBundle, schemaDir = 'schema'):
 
 /** Interfaces a class implements, shown as badges: its OWN + EXTERNAL non-kernel ones.
  *  Kernel interfaces (Node, Named, Iconable…) are structural noise — never badged. */
-export function domainInterfacesOf(bundle: StudioSchemaBundle, className: string): string[] {
+export function implementedInterfaceRefsOf(
+  bundle: StudioSchemaBundle,
+  className: string,
+): InterfaceDefinitionRef[] {
+  const ir = bundle.ir
+  const cls = ir?.classes[className]
+  if (!ir || !cls) return []
+  if (cls.implementsRefs !== undefined) return cls.implementsRefs.filter(isInterfaceRef)
+
+  // Legacy projections carry only names. Reconstruct a ref only where their local/import maps
+  // identify one interface; canonical consumers never enter this branch.
+  return (cls.implements ?? []).flatMap((name) => {
+    if (ir.interfaces[name]) return [{ origin: ir.domain, kind: 'interface' as const, name }]
+    const descriptor = ir.imports[name]
+    if (!descriptor || descriptor.definition !== 'interface') return []
+    return [
+      descriptor.ref?.kind === 'interface'
+        ? { origin: descriptor.ref.origin, kind: 'interface' as const, name: descriptor.ref.name }
+        : { origin: descriptor.origin, kind: 'interface' as const, name },
+    ]
+  })
+}
+
+export function domainInterfacesOf(
+  bundle: StudioSchemaBundle,
+  className: string,
+): InterfaceReference[] {
   const ir = bundle.ir
   if (!ir) return []
-  return (ir.classes[className]?.implements ?? []).filter((i) => {
-    if (ir.interfaces[i]) return true // own domain interface
-    const imp = ir.imports[i]
-    return !!imp && imp.definition === 'interface' && imp.origin !== 'kernel.astrale.ai' // external, non-kernel
+  const cls = ir.classes[className]
+  if (!cls) return []
+  if (cls.implementsRefs === undefined) {
+    return (cls.implements ?? []).filter((name) => {
+      if (ir.interfaces[name]) return true
+      const descriptor = ir.imports[name]
+      return descriptor?.definition === 'interface' && descriptor.origin !== KERNEL_ORIGIN
+    })
+  }
+  return implementedInterfaceRefsOf(bundle, className).filter((ref) => {
+    if (ref.origin === ir.domain) return ir.interfaces[ref.name] !== undefined
+    return ref.origin !== KERNEL_ORIGIN
   })
 }
 
 /** Origin of an implemented EXTERNAL non-kernel interface (so a badge can mark it cross-domain). */
-export function externalInterfaceOrigin(bundle: StudioSchemaBundle, iface: string): string | null {
-  const imp = bundle.ir?.imports[iface]
-  return imp && imp.definition === 'interface' && imp.origin !== 'kernel.astrale.ai'
-    ? imp.origin
-    : null
+export function externalInterfaceOrigin(
+  bundle: StudioSchemaBundle,
+  iface: string | IrDefinitionRef,
+): string | null {
+  const ir = bundle.ir
+  if (!ir) return null
+  if (typeof iface !== 'string') {
+    if (iface.kind !== 'interface' || iface.origin === ir.domain || iface.origin === KERNEL_ORIGIN)
+      return null
+    return iface.origin
+  }
+  const imp = ir.imports[iface]
+  return imp && imp.definition === 'interface' && imp.origin !== KERNEL_ORIGIN ? imp.origin : null
 }
 
 export function moduleOfClass(

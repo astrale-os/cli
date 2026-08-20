@@ -4,7 +4,15 @@
  * produce the studio's view model: each view's bound class, whether it's unbound,
  * and its drift status. Pure derivation over server-provided ground truths.
  */
-import type { DomainAnatomy, StudioSchemaBundle, ViewInfo } from '@shared/types'
+import type {
+  DomainAnatomy,
+  IrDefinitionKey,
+  IrDefinitionRef,
+  IrSchemaRef,
+  SchemaIR,
+  StudioSchemaBundle,
+  ViewInfo,
+} from '@shared/types'
 
 export type ViewDrift =
   | 'ok'
@@ -33,6 +41,27 @@ export interface ViewsModel {
   hasDrift: boolean
 }
 
+function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
+  return ref.kind === 'class' || ref.kind === 'interface'
+}
+
+function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
+  return `${ref.origin}:${ref.kind}.${ref.name}` as IrDefinitionKey
+}
+
+function exactDefinitionExists(ir: SchemaIR, ref: IrDefinitionRef): boolean {
+  if (ref.origin === ir.domain) {
+    return ref.kind === 'class' ? !!ir.classes[ref.name] : !!ir.interfaces[ref.name]
+  }
+  if (ir.importsByKey !== undefined) return !!ir.importsByKey[definitionKey(ref)]
+  const imported = ir.imports?.[ref.name]
+  return (
+    imported?.origin === ref.origin &&
+    imported.definition === ref.kind &&
+    (!imported.ref || definitionKey(imported.ref) === definitionKey(ref))
+  )
+}
+
 export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBundle): ViewsModel {
   const views = anatomy?.views ?? []
   const routes = anatomy?.client.routes ?? {}
@@ -42,14 +71,54 @@ export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBu
   const schemaKnown = !!bundle?.depsInstalled && !!bundle?.ir
 
   const all: ViewModel[] = views.map((v) => {
-    const declared = Array.isArray(v.viewFor) ? v.viewFor : v.viewFor ? [v.viewFor] : []
-    const boundClasses = declared.filter((n) => classNames.has(n))
+    const canonicalTarget = bundle?.ir?.views?.[v.slug]?.target
+    const canonicalDefinitions = canonicalTarget
+      ? canonicalTarget.kind === 'definition'
+        ? canonicalTarget.definitions.filter(isDefinitionRef)
+        : []
+      : undefined
+    const declared = canonicalDefinitions
+      ? canonicalDefinitions.map((definition) => definition.name)
+      : Array.isArray(v.viewFor)
+        ? v.viewFor
+        : v.viewFor
+          ? [v.viewFor]
+          : []
+    const exactResolved = canonicalDefinitions?.filter((definition) =>
+      bundle?.ir ? exactDefinitionExists(bundle.ir, definition) : false,
+    )
+    const legacyResolved = canonicalDefinitions
+      ? undefined
+      : declared.filter((name) => classNames.has(name))
+    // Existing panels and detail routes use member labels. Keep those stable
+    // while resolution itself remains keyed by the exact canonical coordinate.
+    const boundClasses = [
+      ...new Set(
+        exactResolved
+          ? exactResolved
+              .filter(
+                (definition) =>
+                  definition.origin === bundle?.ir?.domain && definition.kind === 'class',
+              )
+              .map((definition) => definition.name)
+          : (legacyResolved ?? []),
+      ),
+    ]
+    const resolvedCount = exactResolved?.length ?? legacyResolved?.length ?? 0
     const boundClass = boundClasses[0] ?? null
     let drift: ViewDrift = 'ok'
-    if (declared.length && boundClasses.length < declared.length) {
+    if (declared.length && resolvedCount < declared.length) {
       // a declared class didn't resolve — a real mistake only if we can trust the schema
       drift = schemaKnown ? 'unbound-class' : 'schema-unavailable'
-    } else if (v.kind === 'spa' && v.mount && !(v.mount in routes)) {
+    } else if (
+      v.kind === 'spa' &&
+      v.mount &&
+      !(v.mount in routes) &&
+      !bundle?.ir?.views?.[v.slug]
+    ) {
+      // Current frontends declare their route as a verified SDK artifact rather
+      // than a legacy client ROUTES registry. The canonical View declaration
+      // plus the statically discovered artifact route is already the contract.
       drift = 'missing-impl'
     }
     // unbound = declared no class at all (global), OR none of its declared classes resolved

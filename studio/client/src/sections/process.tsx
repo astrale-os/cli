@@ -1,8 +1,9 @@
 import type { IrMethod, StudioSchemaBundle, ViewInfo } from '@shared/types'
 
-import { ArrowUpRight, Box, LayoutTemplate, Radio, Sprout, Workflow } from 'lucide-react'
+import { ArrowUpRight, Box, Braces, LayoutTemplate, Radio, Sprout, Workflow } from 'lucide-react'
 import { useMemo } from 'react'
 
+import { MethodAuthBadge } from '@/components/method-auth'
 import {
   Chip,
   EmptyState,
@@ -14,12 +15,14 @@ import {
 } from '@/components/studio-kit'
 import { methodGlyph } from '@/lib/friendly'
 import { useAnatomy, useBundle } from '@/lib/hooks'
+import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-/** A domain function = a class method, enriched with its wired handler (if any). */
+/** A callable = a standalone Function or class Method, enriched with its handler. */
 interface Fn {
   owner: string
+  ownerKind: 'class' | 'function'
   name: string
   method: IrMethod
   link?: StudioSchemaBundle['overlay']['handlerLinks'][number]
@@ -35,6 +38,17 @@ function parseSeed(postInstall?: string): { owner: string; method: string } | nu
   const owner = segs[i].slice('class.'.length)
   const method = segs[i + 1]
   return owner && method ? { owner, method } : null
+}
+
+/** Count the portable genesis elements in a canonical DomainSchema V1 Core. */
+export function canonicalCoreCount(value: unknown): number {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0
+  const core = value as { nodes?: unknown; edges?: unknown }
+  const nodes =
+    core.nodes && typeof core.nodes === 'object' && !Array.isArray(core.nodes)
+      ? Object.keys(core.nodes).length
+      : 0
+  return nodes + (Array.isArray(core.edges) ? core.edges.length : 0)
 }
 
 /** Distinct classes a list of views binds to (UI entrypoints), in first-seen order. */
@@ -64,25 +78,53 @@ export function ProcessSection({ domainId }: { domainId: string }) {
   const ir = bundle?.ir ?? null
 
   const seed = useMemo(() => parseSeed(bundle?.overlay.postInstall), [bundle?.overlay.postInstall])
+  const canonicalV1 = ir?.format === 'astrale.dsl'
+  const coreCount = useMemo(() => canonicalCoreCount(ir?.core), [ir?.core])
 
   // every class method, grouped by its owning class (the "process actor")
   const groups = useMemo(() => {
-    if (!ir || !bundle) return [] as { owner: string; fns: Fn[] }[]
-    const out: { owner: string; fns: Fn[] }[] = []
+    if (!ir || !bundle)
+      return [] as { owner: string; label: string; className: string | null; fns: Fn[] }[]
+    const out: { owner: string; label: string; className: string | null; fns: Fn[] }[] = []
+
+    const domainFunctions = Object.entries(ir.functions ?? {})
+    if (domainFunctions.length > 0) {
+      out.push({
+        owner: ir.domain,
+        label: 'Domain functions',
+        className: null,
+        fns: domainFunctions.map(([name, method]) => ({
+          owner: ir.domain,
+          ownerKind: 'function',
+          name,
+          method,
+          link: handlerLinkFor(bundle.overlay.handlerLinks, ir.domain, name, 'function'),
+          isSeed: false,
+        })),
+      })
+    }
+
     for (const c of Object.values(ir.classes)) {
       const entries = Object.entries(c.methods ?? {})
       if (entries.length === 0) continue
       const fns: Fn[] = entries.map(([name, method]) => ({
         owner: c.name,
+        ownerKind: 'class',
         name,
         method,
-        link: bundle.overlay.handlerLinks.find((h) => h.owner === c.name && h.method === name),
+        link: handlerLinkFor(bundle.overlay.handlerLinks, c.name, name, 'class'),
         isSeed: !!seed && seed.owner === c.name && seed.method === name,
       }))
-      out.push({ owner: c.name, fns })
+      out.push({ owner: c.name, label: c.name, className: c.name, fns })
     }
     // float the seed's class to the top — it's the install entrypoint
-    return out.sort((a, b) => (a.owner === seed?.owner ? -1 : b.owner === seed?.owner ? 1 : 0))
+    return out.sort((a, b) => {
+      if (a.owner === seed?.owner) return -1
+      if (b.owner === seed?.owner) return 1
+      if (a.className === null && b.className !== null) return -1
+      if (a.className !== null && b.className === null) return 1
+      return 0
+    })
   }, [ir, bundle, seed])
 
   const fnCount = groups.reduce((n, g) => n + g.fns.length, 0)
@@ -121,8 +163,32 @@ export function ProcessSection({ domainId }: { domainId: string }) {
           {/* ── Entrypoints: how a process starts ── */}
           <Group label="Entrypoints">
             <div className="space-y-2">
-              {/* seed — runs on install */}
-              {seed ? (
+              {/* Canonical V1 installs portable Core data; legacy projects may expose a seed Method. */}
+              {canonicalV1 ? (
+                coreCount > 0 ? (
+                  <Surface className="flex items-center gap-3 border-emerald-500/30 bg-emerald-500/[0.04] px-4 py-3">
+                    <IconTile tone="emerald">
+                      <Sprout />
+                    </IconTile>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold">Core genesis</div>
+                      <div className="mt-0.5 text-[13px] text-muted-foreground">
+                        {coreCount} portable element{coreCount === 1 ? '' : 's'} installed with the
+                        schema
+                      </div>
+                    </div>
+                  </Surface>
+                ) : (
+                  <Surface className="flex items-center gap-3 px-4 py-3 text-muted-foreground">
+                    <IconTile tone="muted">
+                      <Sprout />
+                    </IconTile>
+                    <div className="min-w-0 flex-1 text-[13px]">
+                      No Core genesis data declared in this schema.
+                    </div>
+                  </Surface>
+                )
+              ) : seed ? (
                 <Surface
                   onClick={() => gotoClass(seed.owner)}
                   className="flex cursor-pointer items-center gap-3 border-emerald-500/30 bg-emerald-500/[0.04] px-4 py-3 transition-colors hover:bg-emerald-500/[0.08]"
@@ -146,8 +212,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
                     <Sprout />
                   </IconTile>
                   <div className="min-w-0 flex-1 text-[13px]">
-                    No seed — add <span className="font-mono">postInstall</span> to run a function
-                    on install.
+                    This legacy domain has no post-install seed Method.
                   </div>
                 </Surface>
               )}
@@ -203,7 +268,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
             <EmptyState
               icon={<Workflow />}
               title="No functions yet"
-              hint="Functions are class methods — add one in your schema to see it here."
+              hint="Add a standalone Function or class Method to the schema to see it here."
             />
           ) : (
             <Group label="Functions" hint={`${fnCount}`}>
@@ -212,20 +277,27 @@ export function ProcessSection({ domainId }: { domainId: string }) {
                   <Surface key={g.owner} className="overflow-hidden">
                     <button
                       type="button"
-                      onClick={() => gotoClass(g.owner)}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/40"
+                      onClick={g.className ? () => gotoClass(g.className!) : undefined}
+                      className={cn(
+                        'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
+                        g.className && 'hover:bg-accent/40',
+                      )}
                     >
                       <IconTile tone="muted" size="sm">
-                        <Box />
+                        {g.className ? <Box /> : <Braces />}
                       </IconTile>
-                      <span className="flex-1 truncate text-[13px] font-semibold">{g.owner}</span>
+                      <span className="flex-1 truncate text-[13px] font-semibold">{g.label}</span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">
                         {g.fns.length} fn
                       </span>
                     </button>
                     <div className="border-t">
                       {g.fns.map((fn) => (
-                        <FnRow key={fn.name} fn={fn} onClick={() => gotoClass(fn.owner)} />
+                        <FnRow
+                          key={fn.name}
+                          fn={fn}
+                          onClick={fn.ownerKind === 'class' ? () => gotoClass(fn.owner) : undefined}
+                        />
                       ))}
                     </div>
                   </Surface>
@@ -239,7 +311,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
   )
 }
 
-function FnRow({ fn, onClick }: { fn: Fn; onClick: () => void }) {
+function FnRow({ fn, onClick }: { fn: Fn; onClick?: () => void }) {
   const glyph = methodGlyph(fn.method)
   const Glyph = glyph.icon
   const calls = fn.link?.kernelCalls ?? []
@@ -256,6 +328,8 @@ function FnRow({ fn, onClick }: { fn: Fn; onClick: () => void }) {
       title={
         <span className="flex items-center gap-1.5">
           <span className="font-semibold">{fn.name}</span>
+          <MethodAuthBadge method={fn.method} link={fn.link} interactive={!onClick} />
+          {fn.ownerKind === 'function' && <Chip tone="primary">function</Chip>}
           {fn.isSeed && <Chip tone="success">seed</Chip>}
           {fn.method.static && <Chip tone="default">static</Chip>}
           {fn.method.inheritance === 'abstract' && <Chip tone="fuchsia">contract</Chip>}

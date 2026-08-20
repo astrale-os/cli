@@ -1,11 +1,12 @@
 /**
  * core-extractor.ts — the Bun-executed island for a domain's CORE (genesis) data.
  * Spawned as a short-lived subprocess by runtime.ts (cwd = domain dir, so the
- * domain's own node_modules resolve @astrale-os/*). It imports the domain's
- * worker-safe `domain.ts`, finds the `defineCore(schema, { nodes, edges })`
- * output wired in as `domain.core`, and prints its resolved nodes/edges as JSON.
+ * domain's own node_modules resolve @astrale-os/*). It imports the pure schema
+ * entry and reads canonical V1 `schema.core` directly. Importing the composition
+ * entry and discovering legacy `defineCore(...)` output is retained only as a
+ * fallback.
  *
- *   bun core-extractor.ts <domainFile> <domainDir>
+ *   bun core-extractor.ts <schemaIndexPath> <domainFile> <domainDir>
  *
  * Contract mirrors extractor.ts exactly: NEVER crash. A thrown error prints
  * { ok:false } and exits 0 — the driver treats it as a render state. A domain
@@ -24,11 +25,13 @@
 export {} // module marker — see header note
 import { isAbsolute, resolve } from 'node:path'
 
-const domainDir = process.argv[3] ?? process.cwd()
-// the driver passes an absolute path; resolve a relative one against the domain dir
-// (a bare relative path would otherwise resolve against THIS script's location).
-const rawFile = process.argv[2]
-const domainFile = rawFile && !isAbsolute(rawFile) ? resolve(domainDir, rawFile) : rawFile
+import { findCanonicalDomainSchemaExport, projectCanonicalCore } from './canonical-schema'
+
+const domainDir = process.argv[4] ?? process.cwd()
+const resolveInput = (file: string | undefined): string | undefined =>
+  file && !isAbsolute(file) ? resolve(domainDir, file) : file
+const schemaFile = resolveInput(process.argv[2])
+const domainFile = resolveInput(process.argv[3])
 
 type AnyRec = Record<string, any>
 
@@ -72,7 +75,24 @@ function classNameMap(schema: AnyRec): Map<any, string> {
 }
 
 async function main() {
-  if (!domainFile) throw new Error('core-extractor: missing <domainFile>')
+  if (!schemaFile) throw new Error('core-extractor: missing <schemaIndexPath>')
+
+  // Current SDK roots embed genesis data in the canonical, portable schema.
+  // Do not import implementation.ts/domain.ts when that source of truth exists.
+  try {
+    const schemaModule: AnyRec = await import(schemaFile)
+    const canonical = findCanonicalDomainSchemaExport(schemaModule)
+    if (canonical) {
+      const core = projectCanonicalCore(canonical)
+      const empty = core.nodes.length === 0 && core.edges.length === 0
+      process.stdout.write(JSON.stringify({ ok: true, core: empty ? null : core }))
+      return
+    }
+  } catch {
+    // A legacy composition entry may still expose a valid defineCore result.
+  }
+
+  if (!domainFile) throw new Error('core-extractor: missing <domainFile> legacy fallback')
   const mod: AnyRec = await import(domainFile)
   const core = findCore(mod)
   if (!core) {

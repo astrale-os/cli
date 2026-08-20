@@ -31,8 +31,37 @@ const SKIP_DIRS = new Set(['node_modules', '.dist', 'dist', '.domain-studio', '.
  * is NOT listed here — see hashAnatomyFiles. Everything else is a fixed contract.
  */
 export const ANATOMY_GLOBS = {
-  dirs: ['runtime', 'views', 'functions', 'client/src'],
-  files: ['domain.ts', 'deps.ts', 'env.ts', 'package.json', 'astrale.config.ts'],
+  dirs: [
+    'actions',
+    'capabilities',
+    'core',
+    'runtime',
+    'views',
+    'functions',
+    'handlers',
+    'integrations',
+    'migrations',
+    'mutations',
+    'queries',
+    'rules',
+    'scripts',
+    'states',
+    'ui',
+    'utils',
+    'workflows',
+    'client/src',
+  ],
+  files: [
+    'implementation.ts',
+    'domain.ts',
+    'index.ts',
+    'core.ts',
+    'deps.ts',
+    'env.ts',
+    'package.json',
+    'pnpm-workspace.yaml',
+    'astrale.config.ts',
+  ],
 } as const
 
 function sha256(buf: Buffer): string {

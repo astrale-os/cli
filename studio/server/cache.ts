@@ -22,13 +22,15 @@ const anatomies = new Map<string, Promise<DomainAnatomy>>()
 const cores = new Map<string, StudioCore>()
 
 const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
-const BUNDLE_CACHE_VERSION = 2
+const BUNDLE_CACHE_VERSION = 3
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',
+  'domain.ts',
   'introspect/bundle.ts',
   'introspect/runtime.ts',
   'introspect/extractor.ts',
+  'introspect/canonical-schema.ts',
   'introspect/overlay.ts',
   'introspect/overlay-tsmorph.ts',
   'introspect/hash.ts',
@@ -144,6 +146,7 @@ export function invalidate(id: string, what: 'schema' | 'anatomy' | 'all'): void
     const domain = getDomain(id)
     if (domain) invalidateClientPackage(domain.root)
   }
-  // Core is derived from domain.ts (in the anatomy fileset), so it tracks anatomy.
+  // Core is derived from the canonical schema (or the legacy composition entry),
+  // both of which belong to the anatomy invalidation set.
   if (what !== 'schema') cores.delete(id)
 }

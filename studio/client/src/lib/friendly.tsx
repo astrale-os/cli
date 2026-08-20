@@ -18,13 +18,16 @@ import {
 import { describe } from './format'
 
 /** A human-friendly name + icon for a property's type (hides zod/JSON-Schema jargon). */
-export function friendlyType(schema?: JsonSchema): {
+export function friendlyType(
+  schema?: JsonSchema,
+  optionalOverride?: boolean,
+): {
   label: string
   icon: LucideIcon
   optional: boolean
 } {
   const d = describe(schema)
-  const optional = d.optional
+  const optional = optionalOverride ?? d.optional
   switch (d.kind) {
     case 'string':
       return { label: 'Text', icon: Type, optional }

@@ -37,10 +37,31 @@ export function schemaRefs(bundle: StudioSchemaBundle): string[] {
         if (ep.name) refs.add(`edge.${name}.endpoint.${ep.name}`)
   }
 
+  for (const name of Object.keys(ir.functions ?? {})) refs.add(`function.${name}`)
+
   // Imported interfaces (kernel mixins + cross-domain) are rendered — and so are
   // commentable — in the Inherited section, keyed under the `interface.` namespace.
-  for (const [name, iface] of Object.entries(bundle.importedInterfaces ?? {}))
-    addMember(`interface.${name}`, iface.properties, iface.methods)
+  // Canonical bundles retain every exact `(origin, kind, name)` identity. Iterate
+  // all of them: a short-name map must never pick one homonym by traversal order.
+  // The name-keyed bundle field remains a legacy-only fallback.
+  if (ir.importedInterfacesByKey !== undefined) {
+    for (const [key, iface] of Object.entries(ir.importedInterfacesByKey)) {
+      const anchor = importedInterfaceAnchor(key)
+      if (anchor) addMember(anchor, iface.properties, iface.methods)
+    }
+  } else {
+    for (const [name, iface] of Object.entries(bundle.importedInterfaces ?? {}))
+      addMember(`interface.${name}`, iface.properties, iface.methods)
+  }
 
   return [...refs]
+}
+
+function importedInterfaceAnchor(key: string): string | null {
+  const separator = key.lastIndexOf(':')
+  if (separator <= 0) return null
+  const ref = key.slice(separator + 1)
+  if (!ref.startsWith('interface.')) return null
+  const name = ref.slice('interface.'.length)
+  return /^[A-Za-z_$][\w$]*$/.test(name) ? `interface.${key}` : null
 }

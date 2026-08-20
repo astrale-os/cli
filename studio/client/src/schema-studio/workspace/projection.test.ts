@@ -11,7 +11,7 @@ import { expect, test } from 'bun:test'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
-import { workspaceExternalNodeId } from './external-frames'
+import { workspaceExternalMemberNodeId, workspaceExternalNodeId } from './external-frames'
 import { DOMAIN_MIN_SIZE, WORKSPACE_DOMAIN_GAP } from './geometry'
 import {
   composeWorkspaceCanvas,
@@ -51,7 +51,15 @@ function bundle(
     schemaHash: `${id}-hash`,
     extractedBy: 'runtime-bun',
     depsInstalled: true,
-    ir: { version: '1', domain: origin, types: {}, interfaces: {}, classes, imports },
+    ir: {
+      version: '1',
+      domain: origin,
+      types: {},
+      interfaces: {},
+      classes,
+      imports,
+      functions: {},
+    },
     overlay: {
       origin,
       requires: [],
@@ -380,4 +388,70 @@ test('does not guess when two selected folders declare the same semantic origin'
   const result = composeWorkspaceCanvas([source, first, second], { activeDomainId: 'source' })
   expect(result.diagnostics.join(' ')).toContain('Multiple selected folders declare shared.dev')
   expect(result.edges[0].target).toContain('workspace-external-member')
+})
+
+test('keeps homonymous exact endpoint refs distinct by origin and kind', () => {
+  const source = prepared(
+    bundle('source', 'source.dev', {
+      Source: nodeClass('Source'),
+      Shared: nodeClass('Shared'),
+      links_to: {
+        type: 'edge',
+        name: 'links_to',
+        properties: {},
+        methods: {},
+        endpoints: [
+          {
+            name: 'source',
+            types: ['Source'],
+            refs: [{ origin: 'source.dev', kind: 'class', name: 'Source' }],
+          },
+          {
+            name: 'target',
+            types: ['Shared', 'Shared', 'Shared'],
+            refs: [
+              { origin: 'a.dev', kind: 'interface', name: 'Shared' },
+              { origin: 'b.dev', kind: 'interface', name: 'Shared' },
+              { origin: 'a.dev', kind: 'class', name: 'Shared' },
+            ],
+          },
+        ],
+      },
+    }),
+    ['Source', 'Shared'],
+  )
+  source.input.bundle.ir!.format = 'astrale.dsl'
+  source.input.bundle.ir!.importsByKey = {
+    'a.dev:interface.Shared': {
+      origin: 'a.dev',
+      definition: 'interface',
+      ref: { origin: 'a.dev', kind: 'interface', name: 'Shared' },
+      key: 'a.dev:interface.Shared',
+    },
+    'b.dev:interface.Shared': {
+      origin: 'b.dev',
+      definition: 'interface',
+      ref: { origin: 'b.dev', kind: 'interface', name: 'Shared' },
+      key: 'b.dev:interface.Shared',
+    },
+    'a.dev:class.Shared': {
+      origin: 'a.dev',
+      definition: 'class',
+      ref: { origin: 'a.dev', kind: 'class', name: 'Shared' },
+      key: 'a.dev:class.Shared',
+    },
+  }
+
+  const result = composeWorkspaceCanvas([source], { activeDomainId: 'source' })
+  const targetIds = [
+    workspaceExternalMemberNodeId('a.dev', 'Shared', 'interface'),
+    workspaceExternalMemberNodeId('b.dev', 'Shared', 'interface'),
+    workspaceExternalMemberNodeId('a.dev', 'Shared', 'class'),
+  ]
+
+  expect(targetIds.every((id) => result.nodes.some((node) => node.id === id))).toBe(true)
+  expect(new Set(result.edges.map((edge) => edge.target))).toEqual(new Set(targetIds))
+  expect(
+    result.edges.some((edge) => edge.target === qualifiedNodeId('source', 'class.Shared')),
+  ).toBe(false)
 })

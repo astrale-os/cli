@@ -1,10 +1,24 @@
-import type { IrInterface, StudioSchemaBundle } from '@shared/types'
+import type {
+  IrDefinitionKey,
+  IrDefinitionRef,
+  IrEndpoint,
+  IrInterface,
+  IrSchemaRef,
+  SchemaIR,
+  StudioSchemaBundle,
+} from '@shared/types'
 
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
 import { cardinalityMarkers } from './cardinality-markers'
 import { localEndpointTargets } from './external'
-import { folderModules, moduleOfClass, moduleOfInterface } from './modules'
+import {
+  type InterfaceBadge,
+  folderModules,
+  interfaceBadge,
+  moduleOfClass,
+  moduleOfInterface,
+} from './modules'
 import {
   type Hidden,
   type Materialized,
@@ -20,10 +34,11 @@ export type SchemaCoreRole = 'container' | 'identity' | 'function'
 
 export interface ClassNodeData extends Record<string, unknown> {
   domainId: string
+  domainOrigin: string
   name: string
   props: number
   methods: number
-  interfaces: string[]
+  interfaces: InterfaceBadge[]
   coreRole?: SchemaCoreRole | null
   hue: number
   icon?: string
@@ -38,10 +53,11 @@ export interface InterfaceNodeData extends Record<string, unknown> {
 
 export interface GroupNodeData extends Record<string, unknown> {
   domainId: string
+  domainOrigin: string
   label: string
   path: string
   hue: number
-  interfaces: string[]
+  interfaces: InterfaceBadge[]
   collapsed: boolean
   classCount: number
   onToggleModule?: (domainId: string, path: string) => void
@@ -64,39 +80,117 @@ function schemaRefList(refs: unknown): string[] {
   return Array.isArray(refs) ? refs.map(String) : refs ? [String(refs)] : []
 }
 
-function schemaInterfaceMap(bundle: StudioSchemaBundle): Record<string, IrInterface> {
-  const out: Record<string, IrInterface> = {}
-  for (const source of [bundle.importedInterfaces, bundle.ir?.interfaces]) {
-    for (const [name, definition] of Object.entries(source ?? {})) {
-      out[schemaRefName(name)] = definition
-    }
-  }
-  return out
+function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
+  return ref.kind === 'class' || ref.kind === 'interface'
 }
 
-function schemaCoreRole(refs: unknown, bundle: StudioSchemaBundle): SchemaCoreRole | null {
-  const interfaces = schemaInterfaceMap(bundle)
-  const seen = new Set<string>()
-  const stack = schemaRefList(refs).map(schemaRefName)
-  while (stack.length) {
-    const name = stack.pop()
-    if (!name || seen.has(name)) continue
-    seen.add(name)
-    const definition = interfaces[name] as
-      | (IrInterface & { implements?: string[]; interfaces?: string[] })
-      | undefined
-    for (const parent of [
-      ...schemaRefList(definition?.extends),
-      ...schemaRefList(definition?.implements),
-      ...schemaRefList(definition?.interfaces),
-    ]) {
-      stack.push(schemaRefName(parent))
-    }
+function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
+  return `${ref.origin}:${ref.kind}.${ref.name}` as IrDefinitionKey
+}
+
+function isInterfaceRef(value: unknown): value is IrDefinitionRef {
+  if (!value || typeof value !== 'object') return false
+  const ref = value as Partial<IrDefinitionRef>
+  return typeof ref.origin === 'string' && ref.kind === 'interface' && typeof ref.name === 'string'
+}
+
+function resolveExactInterface(
+  bundle: StudioSchemaBundle,
+  ref: IrDefinitionRef,
+): IrInterface | undefined {
+  const ir = bundle.ir
+  if (!ir || ref.kind !== 'interface') return undefined
+  if (ref.origin === ir.domain) return ir.interfaces[ref.name]
+  const exact = ir.importedInterfacesByKey
+  if (exact !== undefined) return exact[definitionKey(ref)]
+  const descriptor = ir.imports[ref.name]
+  if (
+    descriptor?.origin !== ref.origin ||
+    descriptor.definition !== 'interface' ||
+    (descriptor.ref && definitionKey(descriptor.ref) !== definitionKey(ref))
+  ) {
+    return undefined
   }
-  if (seen.has('Function')) return 'function'
-  if (seen.has('Identity')) return 'identity'
-  if (seen.has('Container')) return 'container'
+  return bundle.importedInterfaces?.[ref.name]
+}
+
+function resolveLegacyInterface(bundle: StudioSchemaBundle, name: string): IrInterface | undefined {
+  const ir = bundle.ir
+  if (!ir) return undefined
+  if (ir.interfaces[name]) return ir.interfaces[name]
+  if (ir.importedInterfacesByKey !== undefined) {
+    const candidates = Object.values(ir.importedInterfacesByKey).filter(
+      (definition) => definition.name === name,
+    )
+    return candidates.length === 1 ? candidates[0] : undefined
+  }
+  return bundle.importedInterfaces?.[name]
+}
+
+type InterfaceRefInput = IrDefinitionRef | string
+
+function interfaceParents(definition: IrInterface): InterfaceRefInput[] {
+  if (definition.extendsRefs !== undefined) {
+    return definition.extendsRefs.filter(isDefinitionRef).filter(isInterfaceRef)
+  }
+  return schemaRefList(definition.extends)
+}
+
+function schemaCoreRole(
+  refs: readonly InterfaceRefInput[],
+  bundle: StudioSchemaBundle,
+): SchemaCoreRole | null {
+  const seen = new Set<string>()
+  const roles = new Set<SchemaCoreRole>()
+  const stack = [...refs]
+  while (stack.length) {
+    const ref = stack.pop()
+    if (!ref) continue
+    if (typeof ref === 'string') {
+      const name = schemaRefName(ref)
+      const key = `legacy:${name}`
+      if (!name || seen.has(key)) continue
+      seen.add(key)
+      if (name === 'Function') roles.add('function')
+      else if (name === 'Identity') roles.add('identity')
+      else if (name === 'Container') roles.add('container')
+      const definition = resolveLegacyInterface(bundle, name)
+      if (definition) stack.push(...interfaceParents(definition))
+      continue
+    }
+    const key = definitionKey(ref)
+    if (seen.has(key)) continue
+    seen.add(key)
+    if (ref.origin === 'kernel.astrale.ai') {
+      if (ref.name === 'Function') roles.add('function')
+      else if (ref.name === 'Identity') roles.add('identity')
+      else if (ref.name === 'Container') roles.add('container')
+    }
+    const definition = resolveExactInterface(bundle, ref)
+    if (definition) stack.push(...interfaceParents(definition))
+  }
+  if (roles.has('function')) return 'function'
+  if (roles.has('identity')) return 'identity'
+  if (roles.has('container')) return 'container'
   return null
+}
+
+function localInterfaceNames(
+  ir: SchemaIR,
+  exact: IrSchemaRef[] | undefined,
+  legacy: string[] | undefined,
+): string[] {
+  const names =
+    exact !== undefined
+      ? exact
+          .filter(isDefinitionRef)
+          .filter(
+            (ref) =>
+              ref.kind === 'interface' && ref.origin === ir.domain && !!ir.interfaces[ref.name],
+          )
+          .map((ref) => ref.name)
+      : (legacy ?? []).filter((name) => !!ir.interfaces[name])
+  return [...new Set(names)]
 }
 
 export function localInterfaceRendered(
@@ -147,10 +241,13 @@ export function projectDomainCanvas(
       selectable: true,
       data: {
         domainId: bundle.domainId,
+        domainOrigin: ir.domain,
         label: module.label,
         path: module.path,
         hue: module.hue,
-        interfaces: module.interfaces.filter((name) => !renderedInterfaces.has(name)),
+        interfaces: module.interfaces
+          .filter((name) => !renderedInterfaces.has(name))
+          .map((name) => interfaceBadge({ origin: ir.domain, kind: 'interface', name }, ir.domain)),
         collapsed: isCollapsed,
         classCount: module.classes.length,
       } satisfies GroupNodeData,
@@ -170,11 +267,17 @@ export function projectDomainCanvas(
         position: { x: 0, y: 0 },
         data: {
           domainId: bundle.domainId,
+          domainOrigin: ir.domain,
           name: className,
           props: Object.keys(definition?.properties ?? {}).length,
           methods: Object.keys(definition?.methods ?? {}).length,
           interfaces: visibleInterfaceBadges(bundle, className, renderedInterfaces),
-          coreRole: schemaCoreRole(definition?.implements ?? [], bundle),
+          coreRole: schemaCoreRole(
+            definition?.implementsRefs !== undefined
+              ? definition.implementsRefs.filter(isDefinitionRef).filter(isInterfaceRef)
+              : (definition?.implements ?? []),
+            bundle,
+          ),
           hue: module.hue,
           icon: definition?.icon,
         } satisfies ClassNodeData,
@@ -205,8 +308,7 @@ export function projectDomainCanvas(
     const modulePath = moduleOfClass(bundle, className)
     return collapsed.has(modulePath) ? `grp-${modulePath}` : `class.${className}`
   }
-  const targetsOf = (endpoint?: { types?: string[] }) =>
-    localEndpointTargets(ir, endpoint, interfaceRendered)
+  const targetsOf = (endpoint?: IrEndpoint) => localEndpointTargets(ir, endpoint, interfaceRendered)
   const targetModule = (target: { cls: string | null; ifaceNode: string | null }): string =>
     target.cls !== null
       ? moduleOfClass(bundle, target.cls)
@@ -273,7 +375,11 @@ export function projectDomainCanvas(
 
   for (const [className, definition] of Object.entries(ir.classes)) {
     if (definition.type !== 'node' || isHidden(classRef(className), hidden)) continue
-    for (const interfaceName of definition.implements ?? []) {
+    for (const interfaceName of localInterfaceNames(
+      ir,
+      definition.implementsRefs,
+      definition.implements,
+    )) {
       if (!interfaceRendered(interfaceName)) continue
       const source = representative(className)
       const target = `iface.${interfaceName}`
@@ -297,7 +403,7 @@ export function projectDomainCanvas(
 
   for (const [interfaceName, definition] of Object.entries(ir.interfaces)) {
     if (!interfaceRendered(interfaceName)) continue
-    for (const parent of definition.extends ?? []) {
+    for (const parent of localInterfaceNames(ir, definition.extendsRefs, definition.extends)) {
       if (!interfaceRendered(parent)) continue
       edges.push({
         id: `extends-${interfaceName}__${parent}`,

@@ -44,8 +44,12 @@ const EXTERNAL_VERTICAL_GAP = 40
 export const workspaceExternalNodeId = (origin: string) =>
   `workspace-external:${encodeURIComponent(origin)}`
 
-export const workspaceExternalMemberNodeId = (origin: string, name: string) =>
-  `workspace-external-member:${encodeURIComponent(origin)}:${encodeURIComponent(name)}`
+export const workspaceExternalMemberNodeId = (
+  origin: string,
+  name: string,
+  definition?: WorkspaceExternalReference['definition'],
+) =>
+  `workspace-external-member:${encodeURIComponent(origin)}:${definition ? `${definition}:` : ''}${encodeURIComponent(name)}`
 
 function overlaps(a: Rect, b: Rect, gap: number): boolean {
   return (
@@ -148,7 +152,7 @@ export function projectExternalFrames(
     })
     frame.members.forEach((member, index) => {
       nodes.push({
-        id: workspaceExternalMemberNodeId(frame.origin, member.name),
+        id: workspaceExternalMemberNodeId(frame.origin, member.name, member.definition),
         type: 'extMember',
         parentId: domainId,
         extent: 'parent',

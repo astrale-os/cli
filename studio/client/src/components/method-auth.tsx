@@ -3,7 +3,7 @@ import type { HandlerLink } from '@shared/types'
 
 import { Chip, CodeBlock, IconTile } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
-import { methodAuth } from '@/lib/method-auth'
+import { type AuthCallable, methodAuth } from '@/lib/method-auth'
 import { cn } from '@/lib/utils'
 
 const TRIGGER_TONE: Record<string, string> = {
@@ -13,35 +13,52 @@ const TRIGGER_TONE: Record<string, string> = {
   rose: 'text-rose-400 hover:text-rose-300',
 }
 
+interface MethodAuthProps {
+  method?: AuthCallable
+  link?: HandlerLink
+}
+
+interface MethodAuthBadgeProps extends MethodAuthProps {
+  /** Use a non-interactive trigger when the badge sits inside a clickable Row. */
+  interactive?: boolean
+}
+
 /** Row glyph; hover reveals the full card. */
-export function MethodAuthBadge({ link }: { link?: HandlerLink }) {
-  const v = methodAuth(link)
+export function MethodAuthBadge({ method, link, interactive = true }: MethodAuthBadgeProps) {
+  const v = methodAuth(method, link)
   if (!v) return null
   const Icon = v.icon
+  const triggerClassName = cn(
+    'inline-flex items-center justify-center rounded-md transition-colors',
+    TRIGGER_TONE[v.tone],
+  )
   return (
     <HoverCard openDelay={80}>
       <HoverCardTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Authorization: ${v.label}`}
-          className={cn(
-            'inline-flex items-center justify-center rounded-md transition-colors',
-            TRIGGER_TONE[v.tone],
-          )}
-        >
-          <Icon className="h-3.5 w-3.5" />
-        </button>
+        {interactive ? (
+          <button
+            type="button"
+            aria-label={`Authorization: ${v.label}`}
+            className={triggerClassName}
+          >
+            <Icon className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          <span role="img" aria-label={`Authorization: ${v.label}`} className={triggerClassName}>
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+        )}
       </HoverCardTrigger>
       <HoverCardContent align="start" className="w-96 p-0 overflow-hidden">
-        <MethodAuthCard link={link} />
+        <MethodAuthCard method={method} link={link} />
       </HoverCardContent>
     </HoverCard>
   )
 }
 
 /** Full verdict: headline, auth/authorize chips, authorize + handler source. */
-export function MethodAuthCard({ link }: { link?: HandlerLink }) {
-  const v = methodAuth(link)
+export function MethodAuthCard({ method, link }: MethodAuthProps) {
+  const v = methodAuth(method, link)
   if (!v) return null
   const Icon = v.icon
   return (

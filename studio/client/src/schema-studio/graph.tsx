@@ -68,6 +68,7 @@ import {
   type ExternalDomain,
   crossDomainEdges,
   externalDomains,
+  externalMemberNodeId,
   localEndpointTargets,
 } from './external'
 import { edgeTypes, separateParallelEdges } from './floating-edge'
@@ -163,20 +164,24 @@ function ClassNode({ data }: NodeProps) {
           <div className="rf-meta mt-1.5">
             {d.interfaces.length > 0 && (
               <div className="flex flex-wrap gap-1">
-                {d.interfaces.map((i) => (
+                {d.interfaces.map((interfaceRef) => (
                   <button
-                    key={i}
+                    key={interfaceRef.identity}
                     type="button"
-                    title={`interface ${i}`}
+                    title={
+                      interfaceRef.ref
+                        ? `interface ${interfaceRef.name} (${interfaceRef.ref.origin})`
+                        : `interface ${interfaceRef.name}`
+                    }
                     onClick={(e) => {
                       e.stopPropagation()
                       if (useUI.getState().domainId !== d.domainId) setDomain(d.domainId)
-                      selectClass(`interface.${i}`)
+                      selectClass(interfaceRef.selectionId)
                     }}
                     className="inline-flex items-center gap-0.5 rounded bg-fuchsia-500/15 text-fuchsia-300 px-1 py-0.5 text-[9px] font-mono hover:bg-fuchsia-500/25"
                   >
                     <Shapes className="h-2.5 w-2.5" />
-                    {i}
+                    {interfaceRef.name}
                   </button>
                 ))}
               </div>
@@ -293,19 +298,24 @@ export function GroupNode({ data }: NodeProps) {
         {d.collapsed ? (
           <span className="ml-auto text-[10px] opacity-60 shrink-0 pr-1">{d.classCount}</span>
         ) : (
-          d.interfaces.map((i) => (
+          d.interfaces.map((interfaceRef) => (
             <button
-              key={i}
+              key={interfaceRef.identity}
               type="button"
+              title={
+                interfaceRef.ref
+                  ? `interface ${interfaceRef.name} (${interfaceRef.ref.origin})`
+                  : `interface ${interfaceRef.name}`
+              }
               onClick={(e) => {
                 e.stopPropagation()
                 if (useUI.getState().domainId !== d.domainId) setDomain(d.domainId)
-                selectClass(`interface.${i}`)
+                selectClass(interfaceRef.selectionId)
               }}
               className="inline-flex items-center gap-0.5 rounded bg-fuchsia-500/15 text-fuchsia-300 px-1 py-0.5 text-[9px] hover:bg-fuchsia-500/25 shrink-0"
             >
               <Shapes className="h-2.5 w-2.5" />
-              {i}
+              {interfaceRef.name}
             </button>
           ))
         )}
@@ -521,7 +531,7 @@ function buildExternalLayout(
     })
     d.members.forEach((member, j) => {
       extNodes.push({
-        id: `extmember.${d.origin}.${member.name}`,
+        id: externalMemberNodeId(d.origin, member.name, member.definition),
         type: 'extMember',
         parentId: gid,
         extent: 'parent',
@@ -584,9 +594,14 @@ function buildCrossEdges(
     localInterfaceRendered(bundle, collapsed, materialized, name)
   for (const e of cross) {
     if (!visible.has(e.origin)) continue
-    const target = `extmember.${e.origin}.${e.to}`
+    const target = externalMemberNodeId(
+      e.origin,
+      e.to,
+      e.toRef?.kind ?? ir.imports[e.to]?.definition ?? 'class',
+    )
     if (!ids.has(target)) continue
-    for (const local of localEndpointTargets(ir, { types: [e.from] }, ifaceRendered)) {
+    const localEndpoint = e.fromRef ? { types: [e.from], refs: [e.fromRef] } : { types: [e.from] }
+    for (const local of localEndpointTargets(ir, localEndpoint, ifaceRendered)) {
       const viaInterfaces = local.viaInterface ? [local.viaInterface] : []
       if (
         !edgeVisible(

@@ -15,6 +15,7 @@ import { runtimeExtract } from './runtime'
 export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBundle> {
   const installed = depsInstalled(handle.root)
   let ir = null
+  let schemaRoot: unknown | undefined
   let importedInterfaces: StudioSchemaBundle['importedInterfaces']
   let error: StudioSchemaBundle['error'] = null
   let extractedBy: StudioSchemaBundle['extractedBy'] = 'runtime-bun'
@@ -27,6 +28,7 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
     )
     if (r.ok) {
       ir = r.ir
+      if (r.root !== null) schemaRoot = r.root
       importedInterfaces = r.importedInterfaces
     } else {
       error = { message: r.error?.message ?? 'schema failed to compile' }
@@ -45,10 +47,14 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
 
   return {
     domainId: handle.id,
-    schemaHash: ir ? schemaHashOf(ir) : 'sha-none',
+    // The Kernel installs the canonical DomainSchema root, not the Studio's
+    // lossy render projection. Legacy domains have no root and retain IR hashing.
+    schemaHash:
+      schemaRoot !== undefined ? schemaHashOf(schemaRoot) : ir ? schemaHashOf(ir) : 'sha-none',
     extractedBy,
     depsInstalled: installed,
     ir,
+    ...(schemaRoot === undefined ? {} : { schemaRoot }),
     overlay,
     importedInterfaces,
     error,

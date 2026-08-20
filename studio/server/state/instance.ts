@@ -4,8 +4,9 @@
  * The ACTIVE instance is GLOBAL (not per-domain) and the `astrale` CLI owns it —
  * we never keep our own copy: `listInstances` reads `astrale instance list`,
  * `setActiveInstance` runs `astrale instance use`. Install + drift are GROUND
- * TRUTH, queried from the target instance (`astrale get /<origin>`) — NOT a local
- * record — so a deploy done outside the studio (CLI/terminal) is still seen.
+ * TRUTH, queried from the target instance (`astrale introspect <origin>`) — NOT
+ * a local record — so a deploy done outside the studio (CLI/terminal) is still
+ * seen.
  *
  * Deploy (`pnpm prod`) = the managed astrale adapter: deploy + auto-install on
  * the configured instance; we capture the printed service URL.
@@ -117,18 +118,70 @@ export function lastDeploy(root: string): DeployRecord | null {
 }
 
 /**
- * Ask the target instance for the domain node (`astrale get /<origin> -i <instance>`).
- * Installed ⇒ the kernel returns the Domain node (with the installed schema in
- * `props.schema`); `NOT_FOUND` ⇒ not installed; anything else (offline / not
- * authed / unknown instance) ⇒ unknown (never falsely "not installed").
+ * Ask the target instance for its public installation introspection. Installed
+ * ⇒ the Kernel returns the admitted Bundle, whose root is the exact schema value
+ * hashed locally; `DOMAIN_NOT_INSTALLED` ⇒ not installed; anything else
+ * (offline / not authed / unknown instance) ⇒ unknown (never falsely
+ * "not installed").
  */
+export function installedDomainCommand(origin: string, instance: string): string[] {
+  return ['astrale', 'introspect', origin, '--bundle', '--json', '-i', instance]
+}
+
+type InstalledDomainProbe =
+  | { state: 'installed'; root: unknown }
+  | { state: 'not-installed' | 'unknown'; root: null }
+
+function jsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const value = JSON.parse(text)
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function installedDomainProbeResult(
+  stdout: string,
+  stderr: string,
+  exitCode: number,
+): InstalledDomainProbe {
+  const output = jsonObject(stdout)
+  const diagnostic = jsonObject(stderr)
+  const error = output?.error ?? diagnostic?.error
+  if (
+    error === 'DOMAIN_NOT_INSTALLED' ||
+    error === 'NOT_FOUND' ||
+    /\b(?:DOMAIN_NOT_INSTALLED|NOT_FOUND)\b/.test(`${stdout}\n${stderr}`)
+  ) {
+    return { state: 'not-installed', root: null }
+  }
+
+  if (exitCode === 0) {
+    const bundle = output?.bundle
+    if (
+      bundle !== null &&
+      typeof bundle === 'object' &&
+      !Array.isArray(bundle) &&
+      Object.prototype.hasOwnProperty.call(bundle, 'root')
+    ) {
+      return { state: 'installed', root: (bundle as { root: unknown }).root }
+    }
+  }
+  return { state: 'unknown', root: null }
+}
+
+export function installedBundleRootHash(probe: InstalledDomainProbe): string | null {
+  return probe.state === 'installed' ? schemaHashOf(probe.root) : null
+}
+
 async function getInstalledDomain(
   origin: string,
   instance: string,
   timeoutMs = 8000,
-): Promise<{ state: 'installed' | 'not-installed' | 'unknown'; schema: unknown | null }> {
+): Promise<InstalledDomainProbe> {
   try {
-    const proc = Bun.spawn(['astrale', 'get', `/${origin}`, '-i', instance, '--json'], {
+    const proc = Bun.spawn(installedDomainCommand(origin, instance), {
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -144,30 +197,13 @@ async function getInstalledDomain(
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
       ])
-      await proc.exited
-      let parsed: any = null
-      try {
-        parsed = JSON.parse(out)
-      } catch {
-        /* non-JSON */
-      }
-      if (parsed?.error === 'NOT_FOUND' || /\bNOT_FOUND\b/.test(`${out}\n${err}`))
-        return { state: 'not-installed', schema: null }
-      if (parsed?.path && parsed?.props) {
-        let schema: unknown = null
-        try {
-          schema = parsed.props.schema ? JSON.parse(parsed.props.schema) : null
-        } catch {
-          /* schema absent/unparseable — still installed */
-        }
-        return { state: 'installed', schema }
-      }
-      return { state: 'unknown', schema: null }
+      const code = await proc.exited
+      return installedDomainProbeResult(out, err, code)
     } finally {
       clearTimeout(timer)
     }
   } catch {
-    return { state: 'unknown', schema: null }
+    return { state: 'unknown', root: null }
   }
 }
 
@@ -187,7 +223,7 @@ export async function instanceStatus(
     const probe = await getInstalledDomain(origin, deployTarget)
     if (probe.state === 'installed') {
       install = 'installed'
-      installedHash = probe.schema ? schemaHashOf(probe.schema) : null
+      installedHash = installedBundleRootHash(probe)
       drift =
         installedHash && localHash
           ? installedHash === localHash

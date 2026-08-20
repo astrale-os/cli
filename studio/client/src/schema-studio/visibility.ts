@@ -1,6 +1,6 @@
 import type { StudioSchemaBundle, VisibilityState } from '@shared/types'
 
-import { domainInterfacesOf, memberRefKey } from './modules'
+import { type InterfaceBadge, domainInterfacesOf, interfaceBadge, memberRefKey } from './modules'
 
 /**
  * visibility.ts — the SINGLE policy for what the schema canvas renders.
@@ -105,6 +105,12 @@ export function visibleInterfaceBadges(
   bundle: StudioSchemaBundle,
   className: string,
   renderedInterfaces: ReadonlySet<string>,
-): string[] {
-  return domainInterfacesOf(bundle, className).filter((i) => !renderedInterfaces.has(i))
+): InterfaceBadge[] {
+  const localOrigin = bundle.ir?.domain
+  return domainInterfacesOf(bundle, className)
+    .filter((ref) => {
+      if (typeof ref === 'string') return !renderedInterfaces.has(ref)
+      return ref.origin !== localOrigin || !renderedInterfaces.has(ref.name)
+    })
+    .map((ref) => interfaceBadge(ref, localOrigin))
 }

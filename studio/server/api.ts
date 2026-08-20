@@ -51,7 +51,6 @@ import { readSettings, updateSettings } from './state/settings'
 import { applyUpdates, getUpdates } from './state/updates'
 import { closeViewSession, getViewRuntime, launchViewSession } from './state/views'
 import { readVisibility, resetVisibility, saveVisibility } from './state/visibility'
-import { restartViewDevServer } from './view-dev-server'
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -186,10 +185,7 @@ export async function handleApi(req: Request, url: URL, notify: Notify): Promise
   // ── core (genesis) data ──
   if (rest === '/core') return json(await getCore(id, url.searchParams.has('fresh')))
 
-  // ── views: Studio-owned local Vite lifecycle + `astrale view` auth/session ──
-  if (rest === '/views/dev-server/restart' && req.method === 'POST') {
-    return json(await restartViewDevServer(root))
-  }
+  // ── views: CLI-owned resolution, identity, publication, and Shell session ──
   if (rest === '/views/sessions/close' && req.method === 'POST') {
     return json(await closeViewSession(String(body.sessionId ?? '')))
   }

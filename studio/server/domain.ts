@@ -1,7 +1,9 @@
 /**
  * domain.ts — DomainHandle resolution + the in-process registry. A "domain" is
- * confirmed by the triple: astrale.config.ts + domain.ts + <schemaDir>/index.ts.
- * The schema dir is configurable (default 'schema') and threaded everywhere.
+ * confirmed by astrale.config.ts + a composition entry + <schemaDir>/index.ts.
+ * Current SDK projects use implementation.ts; domain.ts remains the legacy
+ * fallback. The schema dir is configurable (default 'schema') and threaded
+ * everywhere.
  */
 import { existsSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
@@ -10,6 +12,7 @@ export interface DomainHandle {
   id: string
   root: string
   configFile: string
+  /** Active composition entry (implementation.ts when present, otherwise legacy domain.ts). */
   domainFile: string
   schemaDirName: string
   schemaDir: string
@@ -19,8 +22,20 @@ export interface DomainHandle {
 
 const registry = new Map<string, DomainHandle>()
 
+export const DOMAIN_ENTRY_FILES = ['implementation.ts', 'domain.ts'] as const
+
 export function makeId(root: string): string {
   return basename(resolve(root)).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain'
+}
+
+/** Resolve the current composition entry, preferring the SDK layout. */
+export function resolveDomainEntry(root: string): string | null {
+  const r = resolve(root)
+  for (const file of DOMAIN_ENTRY_FILES) {
+    const candidate = join(r, file)
+    if (existsSync(candidate)) return candidate
+  }
+  return null
 }
 
 /** The single definition of "is this dir an Astrale domain": the triple must all exist. */
@@ -28,7 +43,7 @@ export function isDomainDir(root: string, schemaDirName = 'schema'): boolean {
   const r = resolve(root)
   return (
     existsSync(join(r, 'astrale.config.ts')) &&
-    existsSync(join(r, 'domain.ts')) &&
+    resolveDomainEntry(r) !== null &&
     existsSync(join(r, schemaDirName, 'index.ts'))
   )
 }
@@ -37,12 +52,14 @@ export function isDomainDir(root: string, schemaDirName = 'schema'): boolean {
 export function registerDomain(root: string, schemaDirName = 'schema'): DomainHandle | null {
   const r = resolve(root)
   if (!isDomainDir(r, schemaDirName)) return null
+  const domainFile = resolveDomainEntry(r)
+  if (!domainFile) return null
   const schemaDir = join(r, schemaDirName)
   const handle: DomainHandle = {
     id: makeId(r),
     root: r,
     configFile: join(r, 'astrale.config.ts'),
-    domainFile: join(r, 'domain.ts'),
+    domainFile,
     schemaDirName,
     schemaDir,
     schemaIndex: join(schemaDir, 'index.ts'),
@@ -64,7 +81,13 @@ export function allDomains(): DomainHandle[] {
   return [...registry.values()]
 }
 
-/** Does the domain have @astrale-os deps installed (precondition for runtime introspection)? */
+/** Does the domain have the dependency cohort required by its project layout installed? */
 export function depsInstalled(root: string): boolean {
-  return existsSync(join(root, 'node_modules', '@astrale-os', 'kernel-core'))
+  const sdk = existsSync(join(root, 'node_modules', '@astrale-os', 'sdk'))
+  const entry = resolveDomainEntry(root)
+
+  // implementation.ts is an SDK boundary by contract. Legacy domain.ts
+  // projects may predate the SDK facade and depend on kernel-core directly.
+  if (entry?.endsWith('implementation.ts')) return sdk
+  return sdk || existsSync(join(root, 'node_modules', '@astrale-os', 'kernel-core'))
 }

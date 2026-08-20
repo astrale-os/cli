@@ -1,8 +1,19 @@
-import type { IrClass, IrInterface, SchemaIR, StudioSchemaBundle } from '@shared/types'
+import type {
+  IrClass,
+  IrDefinitionRef,
+  IrInterface,
+  SchemaIR,
+  StudioSchemaBundle,
+} from '@shared/types'
 
 import { expect, test } from 'bun:test'
 
-import { crossDomainEdges, externalDomains, localEndpointTargets } from './external'
+import {
+  crossDomainEdges,
+  externalDomains,
+  externalMemberNodeId,
+  localEndpointTargets,
+} from './external'
 
 const node = (name: string): IrClass => ({
   type: 'node',
@@ -30,6 +41,7 @@ function bundle(
       interfaces,
       classes,
       imports,
+      functions: {},
     },
     overlay: {
       origin: 'example.test',
@@ -158,4 +170,106 @@ test('discovers a kernel class relation declared through a local interface', () 
   expect(localEndpointTargets(input.ir!, serviceEndpoint, (name) => name === 'Service')).toEqual([
     { cls: null, ifaceNode: 'iface.Service', viaInterface: null },
   ])
+})
+
+test('uses exact endpoint refs across local and imported class/interface name collisions', () => {
+  const localInterface = {
+    origin: 'example.test',
+    kind: 'interface',
+    name: 'Thing',
+  } satisfies IrDefinitionRef
+  const externalClass = {
+    origin: 'catalog.example.dev',
+    kind: 'class',
+    name: 'Thing',
+  } satisfies IrDefinitionRef
+  const externalInterface = {
+    origin: 'catalog.example.dev',
+    kind: 'interface',
+    name: 'Thing',
+  } satisfies IrDefinitionRef
+  const input = bundle(
+    {
+      Thing: node('Thing'),
+      ThingImplementer: {
+        ...node('ThingImplementer'),
+        implements: ['Thing'],
+        implementsRefs: [localInterface],
+      },
+      relates_to_thing: {
+        type: 'edge',
+        name: 'relates_to_thing',
+        properties: {},
+        methods: {},
+        endpoints: [
+          { name: 'local', types: ['Thing'], refs: [localInterface] },
+          {
+            name: 'external',
+            types: ['Thing', 'Thing'],
+            refs: [externalClass, externalInterface],
+          },
+        ],
+      },
+    },
+    { Thing: iface('Thing') },
+    {},
+  )
+  input.ir!.importsByKey = {
+    'catalog.example.dev:class.Thing': {
+      origin: externalClass.origin,
+      definition: 'class',
+      ref: externalClass,
+    },
+    'catalog.example.dev:interface.Thing': {
+      origin: externalInterface.origin,
+      definition: 'interface',
+      ref: externalInterface,
+    },
+  }
+
+  const localEndpoint = input.ir!.classes.relates_to_thing.endpoints![0]
+  expect(localEndpointTargets(input.ir!, localEndpoint, () => false)).toEqual([
+    { cls: 'ThingImplementer', ifaceNode: null, viaInterface: 'Thing' },
+  ])
+  expect(localEndpointTargets(input.ir!, localEndpoint, () => true)).toEqual([
+    { cls: null, ifaceNode: 'iface.Thing', viaInterface: null },
+  ])
+  expect(crossDomainEdges(input)).toEqual([
+    {
+      edge: 'relates_to_thing',
+      from: 'Thing',
+      fromRef: localInterface,
+      origin: 'catalog.example.dev',
+      to: 'Thing',
+      toRef: externalClass,
+      fromCard: undefined,
+      toCard: undefined,
+    },
+    {
+      edge: 'relates_to_thing',
+      from: 'Thing',
+      fromRef: localInterface,
+      origin: 'catalog.example.dev',
+      to: 'Thing',
+      toRef: externalInterface,
+      fromCard: undefined,
+      toCard: undefined,
+    },
+  ])
+  expect(externalDomains(input)).toEqual([
+    {
+      origin: 'catalog.example.dev',
+      kind: 'external',
+      members: [
+        { name: 'Thing', definition: 'class', ref: externalClass },
+        { name: 'Thing', definition: 'interface', ref: externalInterface },
+      ],
+    },
+  ])
+  expect(externalMemberNodeId(externalClass.origin, externalClass.name, 'class')).toBe(
+    'extmember.catalog.example.dev.class.Thing',
+  )
+  expect(externalMemberNodeId(externalInterface.origin, externalInterface.name, 'interface')).toBe(
+    'extmember.catalog.example.dev.interface.Thing',
+  )
 })

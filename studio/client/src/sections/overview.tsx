@@ -81,6 +81,7 @@ export function OverviewSection({ domainId }: { domainId: string }) {
   const ov = anatomy.overview
   const origin = bundle.overlay.origin
   const ir = bundle.ir
+  const compositionFile = ov.compositionFile ?? 'domain.ts'
 
   const classCount = ir ? Object.values(ir.classes).filter((c) => c.type === 'node').length : 0
   const edgeCount = ir ? Object.values(ir.classes).filter((c) => c.type === 'edge').length : 0
@@ -91,13 +92,21 @@ export function OverviewSection({ domainId }: { domainId: string }) {
 
   const subtitle = `${ov.adapter}${ov.prodTarget ? ` · deploys to ${ov.prodTarget}` : ''}`
 
-  const sectionAnchor: AnchorRef = { ref: 'section.overview', kind: 'section', file: 'domain.ts' }
+  const sectionAnchor: AnchorRef = {
+    ref: 'section.overview',
+    kind: 'section',
+    file: compositionFile,
+  }
   const statsAnchor: AnchorRef = {
     ref: 'section.overview.stats',
     kind: 'section',
-    file: 'domain.ts',
+    file: compositionFile,
   }
-  const depsAnchor: AnchorRef = { ref: 'section.overview.deps', kind: 'section', file: 'domain.ts' }
+  const depsAnchor: AnchorRef = {
+    ref: 'section.overview.deps',
+    kind: 'section',
+    file: compositionFile,
+  }
 
   return (
     <SectionShell title={origin} subtitle={subtitle}>

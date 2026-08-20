@@ -1,12 +1,14 @@
 /**
  * shared/types.ts — the ONE contract shared by the Bun server and the React
- * client. Shapes under "DSL Schema IR" mirror EXACTLY what `D.$.ir` /
- * `serialize(schema)` emit (verified empirically against my-domain + evaluation):
- *   ir = { version, domain, types, interfaces, classes, imports }
+ * client. Shapes under "DSL Schema IR" retain the legacy `D.$.ir` projection
+ * while carrying the richer canonical DomainSchema V1 coordinates when they
+ * are available:
+ *   ir = { version, domain, types, interfaces, classes, imports, functions, views? }
  *   class = { type:'node'|'edge', name, implements?, endpoints?(edge), properties, methods }
  *   interface = { type:'interface', name, extends?, properties, methods }
  *   method = { name, params:{name->JsonSchema}, returns:JsonSchema, static, inheritance }
- *   imports = { name -> { origin, definition:'interface'|'class' } }
+ *   importsByKey = { 'origin:kind.Name' -> exact imported definition }
+ *   imports = unambiguous legacy aliases by short name
  * Everything under "Studio overlay/state" is the studio's own augmentation.
  */
 
@@ -30,25 +32,91 @@ export interface JsonSchema {
 
 export type MethodInheritance = 'default' | 'abstract' | 'sealed'
 
+/** Exact structural coordinate embedded in a canonical DomainSchema V1 root. */
+export interface IrSchemaRef {
+  origin: string
+  kind: 'type' | 'interface' | 'class' | 'function' | 'policy' | 'view' | 'core'
+  name: string
+}
+
+/** Canonical DSL Key for a schema member: `origin:kind.name`. */
+export type IrSchemaKey = `${string}:${IrSchemaRef['kind']}.${string}`
+
+export type IrDefinitionRef = Omit<IrSchemaRef, 'kind'> & {
+  kind: 'class' | 'interface'
+}
+
+export type IrDefinitionKey = `${string}:${IrDefinitionRef['kind']}.${string}`
+
+export type IrCallableAuth = 'anonymous' | 'authenticated' | 'authorized'
+
+export type IrCallableOutput =
+  | { mode: 'value'; schema: JsonSchema }
+  | { mode: 'stream'; item: JsonSchema }
+  | { mode: 'binary' }
+
 export interface IrMethod {
   name: string
+  /** Canonical callable input. Legacy projections expose only `params`. */
+  input?: JsonSchema
   params: Record<string, JsonSchema>
+  /** Names required by canonical `input.required`; absent on legacy Methods. */
+  requiredParams?: string[]
+  /** Canonical discriminated output. Legacy projections expose only `returns`. */
+  output?: IrCallableOutput
   returns: JsonSchema
   static: boolean
   inheritance: MethodInheritance
+  description?: string
+  auth?: IrCallableAuth
+  policy?: unknown
+}
+
+/** Standalone Domain Function projected into the Studio's callable vocabulary. */
+export interface IrFunction {
+  name: string
+  input: JsonSchema
+  params: Record<string, JsonSchema>
+  /** Names required by canonical `input.required`. */
+  requiredParams?: string[]
+  output: IrCallableOutput
+  returns: JsonSchema
+  /** Standalone Functions have no receiver; these legacy-compatible fields let
+   * existing callable renderers consume them alongside static Methods. */
+  static: true
+  inheritance: 'default'
+  description?: string
+  auth?: IrCallableAuth
+  policy?: unknown
 }
 
 export interface IrInterface {
   type: 'interface'
   name: string
+  /** Canonical declaration owner/family; absent on legacy projections. */
+  origin?: string
+  family?: 'node' | 'edge' | 'both'
+  ref?: IrSchemaRef
   extends?: string[]
+  extendsRefs?: IrSchemaRef[]
   properties: Record<string, JsonSchema>
+  /** Canonical `properties.required`; absence, unlike null, encodes optionality. */
+  required?: string[]
   methods: Record<string, IrMethod>
+  endpoints?: IrEndpoint[]
+  orientation?: 'directed' | 'undirected'
+  constraints?: { noSelf?: true; acyclic?: true }
+  description?: string
+  propertyMetadata?: Record<string, unknown>
+  /** Canonical data declaration; `mediaType` is required and extensions stay lossless. */
+  data?: { mediaType: string; [key: string]: unknown }
 }
 
 export interface IrEndpoint {
   name: string
   types: string[]
+  /** Exact accepted Definition coordinates. `types` remains for existing UI consumers. */
+  refs?: IrSchemaRef[]
   /** declared multiplicity for this end; max:null = unbounded ("many"). Absent ⇒ unconstrained. */
   cardinality?: { min: number; max: number | null }
 }
@@ -56,37 +124,78 @@ export interface IrEndpoint {
 export interface IrClass {
   type: 'node' | 'edge'
   name: string
+  /** Canonical declaration owner/ref; absent on legacy projections. */
+  origin?: string
+  ref?: IrSchemaRef
   implements?: string[]
+  implementsRefs?: IrSchemaRef[]
   /** edges only: the two (source,target) endpoints with role names + allowed types */
   endpoints?: IrEndpoint[]
+  orientation?: 'directed' | 'undirected'
+  constraints?: { noSelf?: true; acyclic?: true }
   properties: Record<string, JsonSchema>
+  /** Canonical `properties.required`; absence, unlike null, encodes optionality. */
+  required?: string[]
   methods: Record<string, IrMethod>
   /** class-level icon: raw (lucide-style) SVG markup, `stroke="currentColor"` */
   icon?: string
+  description?: string
+  propertyMetadata?: Record<string, unknown>
+  /** Canonical data declaration; `mediaType` is required and extensions stay lossless. */
+  data?: { mediaType: string; [key: string]: unknown }
+  policies?: Record<string, IrSchemaRef>
 }
 
 export interface IrImportDescriptor {
   origin: string
   definition: 'interface' | 'class'
+  ref?: IrDefinitionRef
+  /** Canonical qualified identity; absent on legacy import descriptors. */
+  key?: IrDefinitionKey
+}
+
+export type IrViewTarget = { kind: 'domain' } | { kind: 'definition'; definitions: IrSchemaRef[] }
+
+export interface IrView {
+  name: string
+  target: IrViewTarget
+  auth: 'required' | 'optional' | 'public'
+  description?: string
 }
 
 export interface SchemaIR {
   version: string
   domain: string
+  /** Canonical document format; absent on legacy projections. */
+  format?: 'astrale.dsl'
   types: Record<string, JsonSchema>
   interfaces: Record<string, IrInterface>
   classes: Record<string, IrClass>
   imports: Record<string, IrImportDescriptor>
+  /**
+   * Canonical authoritative import index, keyed by `origin:kind.name`.
+   * `imports` remains the unambiguous short-name compatibility index.
+   */
+  importsByKey?: Record<IrDefinitionKey, IrImportDescriptor>
+  /** Exact imported Interface bodies under the same collision-free identity. */
+  importedInterfacesByKey?: Record<IrDefinitionKey, IrInterface>
+  /** Canonical V1 members absent from the legacy serializer projection. */
+  functions: Record<string, IrFunction>
+  views?: Record<string, IrView>
+  policies?: Record<string, unknown>
+  dependencies?: Array<{ origin: string; revision: string }>
+  /** Exact canonical genesis declaration; absent on legacy projections. */
+  core?: unknown
 }
 
 // ─────────────────────────── Studio schema overlay ───────────────────────────
 
 export interface HandlerLink {
   owner: string
-  ownerKind: 'class' | 'interface'
+  ownerKind: 'class' | 'interface' | 'function'
   method: string
   static: boolean
-  /** the runtime/index.ts wiring site */
+  /** the legacy runtime registry or current implementation.ts wiring site */
   wiringFile?: string
   wiringLine?: number
   /** the resolved handler file (followed from the `execute` import) */
@@ -96,6 +205,8 @@ export interface HandlerLink {
   kernelCalls?: string[]
   /** declared auth policy on the runtime config; absent ⇒ defaults to 'required'. */
   auth?: 'public' | 'optional' | 'required'
+  /** Canonical V1 callable auth, when the handler comes from implementation.ts. */
+  callableAuth?: IrCallableAuth
   /** authorize hook shape: 'absent' (none), 'noop' (allow-all), 'custom' (real check). */
   authorize?: 'absent' | 'noop' | 'custom'
   /** raw source of the authorize hook (for the hover preview). */
@@ -117,7 +228,7 @@ export interface SchemaAnnotation {
   /** anchor ref key, e.g. 'class.Monitor.property.status' */
   target: string
   severity: 'warn' | 'info'
-  code: 'ENUM_DROPPED_BY_UPDATE' | 'COMPILE_ERROR' | 'EDGE_PROP_TYPE_MISSING'
+  code: 'COMPILE_ERROR' | 'EDGE_PROP_TYPE_MISSING'
   message: string
 }
 
@@ -153,15 +264,17 @@ export interface StudioSchemaBundle {
   extractedBy: 'runtime-bun' | 'static-tsmorph-fallback'
   depsInstalled: boolean
   ir: SchemaIR | null
+  /**
+   * Exact canonical DomainSchema V1 root emitted by the domain. This is kept
+   * separate from the render-oriented IR so drift hashes the same root the
+   * Kernel installs. Absent for legacy `D.$.ir` domains.
+   */
+  schemaRoot?: unknown
   overlay: SchemaOverlay
   /**
-   * Member bodies of the interfaces this domain IMPORTS — kernel mixins (Named,
-   * Iconable, Timestamped…) and cross-domain interfaces (e.g. Notifiable). The
-   * serializer drops these from `ir` (they appear in `ir.imports` as
-   * {origin,definition} descriptors only), so the extractor re-serializes each
-   * imported schema to recover them. Keyed by interface name; the origin lives in
-   * `ir.imports[name]`. Lets the detail pane surface inherited members like
-   * Named→name without re-parsing the kernel. Empty when deps aren't installed.
+   * Unambiguous short-name aliases for imported Interface bodies, retained for
+   * legacy renderers. Canonical consumers use `ir.importedInterfacesByKey`, whose
+   * `origin:interface.Name` keys cannot collide. Empty when deps aren't installed.
    */
   importedInterfaces?: Record<string, IrInterface>
   /** present when the runtime import failed to compile (render state, not a crash) */
@@ -173,6 +286,8 @@ export interface StudioSchemaBundle {
 
 export interface DomainOverview {
   origin: string
+  /** Active SDK composition entry; `domain.ts` is retained for legacy projects. */
+  compositionFile?: 'implementation.ts' | 'domain.ts'
   adapter: 'astrale' | 'cloudflare' | 'unknown'
   prodTarget?: string
   devSecrets?: string
@@ -217,17 +332,6 @@ export interface RememberedViewTarget {
   label: string
 }
 
-export type ViewDevServerStatus =
-  | {
-      status: 'running'
-      url: string
-      port: number
-      startedAt: string
-      idleTimeoutMs: number
-    }
-  | { status: 'failed'; reason: string }
-  | { status: 'unavailable'; reason: string }
-
 export interface ViewTargetResult {
   status: 'available' | 'unavailable'
   items: ViewTargetCandidate[]
@@ -237,12 +341,11 @@ export interface ViewTargetResult {
   reason?: string
 }
 
-/** Full launch context shown before Studio asks `astrale view` to open locally. */
+/** Full launch context shown before Studio asks `astrale view` to resolve and open the View. */
 export interface ViewRuntime {
   slug: string
   instance: string | null
   targetRequired: boolean
-  server: ViewDevServerStatus
   targets: ViewTargetResult
 }
 
@@ -349,7 +452,7 @@ export interface InstanceStatus {
   deployTarget: string | null
   /** has a `prod` script → deployable via `pnpm prod` */
   deployable: boolean
-  /** GROUND TRUTH — queried from the target instance (`astrale get /<origin>`), not local state.
+  /** GROUND TRUTH — queried from `astrale introspect <origin> --bundle`, not local state.
    *  'unknown' = the instance couldn't be reached/queried (no target, not authed, offline). */
   install: 'installed' | 'not-installed' | 'unknown'
   /** local schema vs the schema actually INSTALLED on the instance (ground truth) */
@@ -427,19 +530,47 @@ export interface MergeResult {
 // ─────────────────────────── Change tracking ───────────────────────────
 
 export type SchemaChangeKind =
+  | 'schema-metadata-changed'
+  | 'type-added'
+  | 'type-removed'
+  | 'type-changed'
+  | 'import-added'
+  | 'import-removed'
+  | 'import-changed'
   | 'class-added'
   | 'class-removed'
+  | 'class-contract-changed'
   | 'interface-added'
   | 'interface-removed'
+  | 'interface-contract-changed'
   | 'edge-added'
   | 'edge-removed'
+  | 'edge-contract-changed'
+  | 'definition-metadata-changed'
   | 'prop-added'
   | 'prop-removed'
   | 'prop-type-changed'
+  | 'prop-schema-changed'
   | 'prop-required-changed'
   | 'method-added'
   | 'method-removed'
   | 'method-signature-changed'
+  | 'method-metadata-changed'
+  | 'function-added'
+  | 'function-removed'
+  | 'function-signature-changed'
+  | 'function-metadata-changed'
+  | 'view-added'
+  | 'view-removed'
+  | 'view-changed'
+  | 'view-metadata-changed'
+  | 'policy-added'
+  | 'policy-removed'
+  | 'policy-changed'
+  | 'dependency-added'
+  | 'dependency-removed'
+  | 'dependency-changed'
+  | 'core-changed'
 
 export interface SchemaChange {
   kind: SchemaChangeKind
@@ -465,13 +596,13 @@ export interface ChangeSet {
 }
 
 // ─────────────────────────── Core (genesis) data ───────────────────────────
-// A domain's `core` is its baked-in genesis graph: the concrete node/edge
-// instances `defineCore(schema, { nodes, edges })` ships in the install bundle.
+// A domain's `core` is its baked-in genesis graph. Canonical V1 stores it in the
+// DomainSchema; legacy projects may still expose `defineCore(...)` separately.
 // Read-only here — the studio renders it and lets you comment to request changes.
 
 /** One materialized node instance in a domain's core graph. */
 export interface StudioCoreNode {
-  /** stable slash-path identity, e.g. `/big-shop.example.dev/core/brands/acme` (also the comment anchor key) */
+  /** canonical CoreRef identity, e.g. `/:big-shop.example.dev:core.acme` */
   path: string
   /** the IR class this node instantiates (keys into StudioSchemaBundle.ir.classes) */
   className: string
@@ -483,9 +614,9 @@ export interface StudioCoreNode {
 
 /** One materialized edge instance wiring two core nodes. */
 export interface StudioCoreEdge {
-  /** source node `path` (or `self(ClassName)` for a meta-node endpoint) */
+  /** source Core path, owning Domain path, or a legacy meta-node endpoint */
   from: string
-  /** target node `path` (or `self(ClassName)`) */
+  /** target Core path, owning Domain path, or a legacy meta-node endpoint */
   to: string
   /** the IR edge class name (keys into StudioSchemaBundle.ir.classes, type:'edge') */
   edgeName: string

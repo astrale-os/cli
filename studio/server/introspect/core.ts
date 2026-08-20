@@ -1,7 +1,8 @@
 /**
  * core.ts — assembles a domain's StudioCore: the genesis node/edge graph
- * extracted from `defineCore`, gated on installed deps. Never throws; a failed
- * import or a domain with no core both become a well-formed (empty) render state.
+ * extracted from canonical `schema.core` (or legacy `defineCore` fallback), gated
+ * on installed deps. Never throws; a failed import or a domain with no core both
+ * become a well-formed (empty) render state.
  */
 import type { StudioCore } from '../../shared/types'
 
@@ -26,6 +27,7 @@ export async function buildCore(handle: DomainHandle): Promise<StudioCore> {
   }
 
   const r = await coreExtract(
+    handle.schemaIndex,
     handle.domainFile,
     handle.root,
     readSettings(handle.root).introspectTimeoutMs,

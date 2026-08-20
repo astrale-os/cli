@@ -1,9 +1,12 @@
 import type {
   HandlerLink,
   IrClass,
+  IrDefinitionKey,
+  IrDefinitionRef,
   IrEndpoint,
   IrInterface,
   IrMethod,
+  IrSchemaRef,
   JsonSchema,
   SchemaIR,
   StudioSchemaBundle,
@@ -41,7 +44,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { describe, TypeChip, typeLabel } from '@/lib/format'
 import { friendlyType, methodGlyph } from '@/lib/friendly'
 import { useCatalog, useViewsModel } from '@/lib/hooks'
-import { unguardedCount } from '@/lib/method-auth'
+import { handlerLinkFor, unguardedCount } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { anchorData, schemaMemberRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
@@ -53,8 +56,18 @@ import {
   inheritedCount,
   inheritedGroupsOfClass,
   inheritedGroupsOfInterface,
+  interfaceTier,
+  resolveInterface,
 } from './inheritance'
-import { type MemberRef, moduleMembers } from './modules'
+import {
+  type InterfaceDefinitionRef,
+  type InterfaceReference,
+  type MemberRef,
+  implementedInterfaceRefsOf,
+  interfaceSelectionId,
+  moduleMembers,
+  parseInterfaceSelectionToken,
+} from './modules'
 import { SchemaIcon } from './schema-icon'
 import { ViewRow } from './views-panel'
 
@@ -88,6 +101,63 @@ function BackBar() {
   )
 }
 
+interface InterfaceRelation {
+  name: string
+  reference: InterfaceReference
+  identity: string
+  tier: InterfaceTier
+  origin?: string
+  selectionId: string
+  navigable: boolean
+}
+
+function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
+  return ref.kind === 'class' || ref.kind === 'interface'
+}
+
+function isInterfaceRef(ref: IrSchemaRef): ref is IrDefinitionRef & { kind: 'interface' } {
+  return ref.kind === 'interface'
+}
+
+function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
+  return `${ref.origin}:${ref.kind}.${ref.name}`
+}
+
+function selectedInterfaceRef(ir: SchemaIR, token: string): InterfaceDefinitionRef | undefined {
+  const parsed = parseInterfaceSelectionToken(token)
+  if (!parsed) return undefined
+  if (parsed.origin === ir.domain) return ir.interfaces[parsed.name] ? parsed : undefined
+  const key = definitionKey(parsed)
+  const descriptor = ir.importsByKey?.[key]
+  if (descriptor?.ref && isInterfaceRef(descriptor.ref)) return descriptor.ref
+  const body = ir.importedInterfacesByKey?.[key]
+  if (body?.ref && isInterfaceRef(body.ref)) return body.ref
+  return body ? parsed : undefined
+}
+
+function interfaceRelations(
+  bundle: StudioSchemaBundle,
+  refs: IrSchemaRef[] | undefined,
+  legacyNames: string[] | undefined,
+): InterfaceRelation[] {
+  const references: InterfaceReference[] =
+    refs !== undefined ? refs.filter(isInterfaceRef) : (legacyNames ?? [])
+  return references.map((reference) => ({
+    name: typeof reference === 'string' ? reference : reference.name,
+    reference,
+    identity: typeof reference === 'string' ? `legacy:${reference}` : definitionKey(reference),
+    tier: interfaceTier(bundle, reference),
+    origin:
+      typeof reference === 'string'
+        ? bundle.ir?.imports[reference]?.origin
+        : reference.origin === bundle.ir?.domain
+          ? undefined
+          : reference.origin,
+    selectionId: interfaceSelectionId(reference, bundle.ir?.domain),
+    navigable: resolveInterface(bundle, reference) !== undefined,
+  }))
+}
+
 export function SchemaDetail({
   bundle,
   selected,
@@ -119,13 +189,26 @@ export function SchemaDetail({
   if (selected.startsWith('module.'))
     return <ModuleDetail bundle={bundle} path={selected.slice('module.'.length)} />
 
-  const [kind, name] = splitId(selected)
+  const [kind, selectedName] = splitId(selected)
+  const exactSelectedInterface =
+    kind === 'interface' ? selectedInterfaceRef(ir, selectedName) : undefined
+  const name = exactSelectedInterface?.name ?? selectedName
   const localMember: IrClass | IrInterface | undefined =
-    kind === 'interface' ? ir.interfaces[name] : ir.classes[name]
+    kind === 'interface'
+      ? exactSelectedInterface
+        ? exactSelectedInterface.origin === ir.domain
+          ? ir.interfaces[name]
+          : undefined
+        : ir.interfaces[name]
+      : ir.classes[name]
   // imported (kernel/cross-domain) interfaces live in ir.imports, not ir.interfaces —
   // fall back to their recovered body so an inherited-group header opens read-only detail.
   const importedIface =
-    kind === 'interface' && !localMember ? bundle.importedInterfaces?.[name] : undefined
+    kind === 'interface' && !localMember
+      ? exactSelectedInterface
+        ? resolveInterface(bundle, exactSelectedInterface)
+        : bundle.importedInterfaces?.[name]
+      : undefined
   const member: IrClass | IrInterface | undefined = localMember ?? importedIface
   if (!member) {
     return (
@@ -137,29 +220,46 @@ export function SchemaDetail({
 
   const isEdge = (member as IrClass).type === 'edge'
   const memberKind = kind === 'interface' ? 'interface' : isEdge ? 'edge' : 'class'
-  const refBase = schemaMemberRef(memberKind, name)
+  const importedRef =
+    importedIface?.ref && isInterfaceRef(importedIface.ref)
+      ? importedIface.ref
+      : exactSelectedInterface?.origin !== ir.domain
+        ? exactSelectedInterface
+        : undefined
+  const refBase = importedRef
+    ? interfaceSelectionId(importedRef, ir.domain)
+    : schemaMemberRef(memberKind, name)
   const span = bundle.overlay.sourceSpans[refBase]
 
   const props = Object.entries(member.properties ?? {})
+  const requiredProperties = member.required
   const methods = Object.entries(member.methods ?? {})
   const endpoints = (member as IrClass).endpoints ?? []
 
   // implements → split into domain interfaces (clickable chips) vs kernel mixins (tucked away)
-  const impls = (member as IrClass).implements ?? []
-  const domainIfaces = impls.filter((i) => !!ir.interfaces[i])
-  const kernelMixins = impls.filter((i) => !ir.interfaces[i])
-  const extendsList = (member as IrInterface).extends ?? []
+  const cls = member as IrClass
+  const iface = member as IrInterface
+  const implementedRefs =
+    memberKind === 'interface' ? undefined : implementedInterfaceRefsOf(bundle, name)
+  const impls = interfaceRelations(
+    bundle,
+    cls.implementsRefs !== undefined ? implementedRefs : undefined,
+    cls.implements,
+  )
+  const domainIfaces = impls.filter((relation) => relation.tier !== 'kernel')
+  const kernelMixins = impls.filter((relation) => relation.tier === 'kernel')
+  const extendsList = interfaceRelations(bundle, iface.extendsRefs, iface.extends)
 
   // inherited members (from implemented interfaces / extended interfaces), grouped
   // by source interface — the IR doesn't flatten these into the member's own fields.
   const inherited =
     memberKind === 'interface'
-      ? inheritedGroupsOfInterface(bundle, name)
+      ? inheritedGroupsOfInterface(bundle, importedRef ?? name)
       : inheritedGroupsOfClass(bundle, name)
 
   const tone = memberKind === 'interface' ? 'fuchsia' : memberKind === 'edge' ? 'violet' : 'violet'
   const icon = (member as IrClass).icon
-  const classViews = viewsForClass(viewsModel, name)
+  const classViews = memberKind === 'interface' ? [] : viewsForClass(viewsModel, name)
 
   return (
     // The pane is a comment SCOPE: any click that doesn't land on a more specific
@@ -185,7 +285,9 @@ export function SchemaDetail({
                 <h2 className="text-lg font-extrabold tracking-tight truncate">{name}</h2>
                 {memberKind === 'interface' && <Chip tone="fuchsia">interface</Chip>}
                 {importedIface && (
-                  <Chip tone="outline">{originLabel(ir.imports[name]?.origin)}</Chip>
+                  <Chip tone="outline">
+                    {originLabel(importedRef?.origin ?? ir.imports[name]?.origin)}
+                  </Chip>
                 )}
                 {memberKind === 'edge' && <Chip tone="outline">edge</Chip>}
                 <AnchorButton
@@ -203,20 +305,47 @@ export function SchemaDetail({
           {/* relations: domain interface chips + tucked-away kernel mixins */}
           {(domainIfaces.length > 0 || kernelMixins.length > 0 || extendsList.length > 0) && (
             <div className="flex flex-wrap items-center gap-1.5 pl-[3.25rem]">
-              {extendsList.map((i) => (
-                <Chip key={`ext-${i}`} tone="outline">
-                  extends {i}
-                </Chip>
-              ))}
-              {domainIfaces.map((i) => (
+              {extendsList.map((relation) => (
                 <button
-                  key={i}
+                  key={`ext-${relation.identity}`}
                   type="button"
-                  onClick={() => selectClass(`interface.${i}`)}
-                  className="rounded-full transition-transform hover:-translate-y-px"
+                  disabled={!relation.navigable}
+                  onClick={() =>
+                    relation.navigable ? selectClass(relation.selectionId) : undefined
+                  }
+                  className={cn(
+                    'rounded-full',
+                    relation.navigable && 'transition-transform hover:-translate-y-px',
+                  )}
                 >
-                  <Chip tone="fuchsia" className="cursor-pointer hover:bg-fuchsia-500/20">
-                    <Shapes className="h-3 w-3" /> {i}
+                  <Chip
+                    tone="outline"
+                    className={cn(relation.navigable && 'cursor-pointer hover:bg-accent/70')}
+                  >
+                    extends {relation.name}
+                    {relation.origin ? ` · ${originLabel(relation.origin)}` : ''}
+                  </Chip>
+                </button>
+              ))}
+              {domainIfaces.map((relation) => (
+                <button
+                  key={relation.identity}
+                  type="button"
+                  disabled={!relation.navigable}
+                  onClick={() =>
+                    relation.navigable ? selectClass(relation.selectionId) : undefined
+                  }
+                  className={cn(
+                    'rounded-full',
+                    relation.navigable && 'transition-transform hover:-translate-y-px',
+                  )}
+                >
+                  <Chip
+                    tone="fuchsia"
+                    className={cn(relation.navigable && 'cursor-pointer hover:bg-fuchsia-500/20')}
+                  >
+                    <Shapes className="h-3 w-3" /> {relation.name}
+                    {relation.origin ? ` · ${originLabel(relation.origin)}` : ''}
                   </Chip>
                 </button>
               ))}
@@ -234,9 +363,9 @@ export function SchemaDetail({
                       Kernel mixins
                     </p>
                     <div className="flex flex-wrap gap-1.5">
-                      {kernelMixins.map((i) => (
-                        <Chip key={i} tone="outline">
-                          {i}
+                      {kernelMixins.map((relation) => (
+                        <Chip key={relation.identity} tone="outline">
+                          {relation.name}
                         </Chip>
                       ))}
                     </div>
@@ -250,7 +379,7 @@ export function SchemaDetail({
         {/* ── Edge relationship ── */}
         {isEdge && endpoints.length >= 2 && (
           <Group label="Relationship">
-            <EdgeRelationship ir={ir} endpoints={endpoints} edgeName={name} />
+            <EdgeRelationship bundle={bundle} endpoints={endpoints} edgeName={name} />
           </Group>
         )}
 
@@ -265,6 +394,7 @@ export function SchemaDetail({
                   refBase={refBase}
                   pname={pname}
                   schema={schema as JsonSchema}
+                  optional={requiredProperties ? !requiredProperties.includes(pname) : undefined}
                 />
               ))}
             </Surface>
@@ -277,9 +407,17 @@ export function SchemaDetail({
             label="Methods"
             hint={(() => {
               const unguarded = unguardedCount(
-                methods.map(([mname]) =>
-                  bundle.overlay.handlerLinks.find((h) => h.owner === name && h.method === mname),
-                ),
+                methods.map(([mname, method]) => ({
+                  method,
+                  link: importedIface
+                    ? undefined
+                    : handlerLinkFor(
+                        bundle.overlay.handlerLinks,
+                        name,
+                        mname,
+                        memberKind === 'interface' ? 'interface' : 'class',
+                      ),
+                })),
               )
               return (
                 <span className="inline-flex items-center gap-2">
@@ -295,6 +433,8 @@ export function SchemaDetail({
                   key={mname}
                   bundle={bundle}
                   owner={name}
+                  ownerKind={memberKind === 'interface' ? 'interface' : 'class'}
+                  handlerOwnerLocal={!importedIface}
                   refBase={refBase}
                   mname={mname}
                   method={method}
@@ -338,11 +478,11 @@ export function SchemaDetail({
 // tile(s) with a cardinality chip, and a connector whose markers (crow's-foot = many,
 // solid dot = one, hollow dot = optional) reflect the real declared multiplicity.
 function EdgeRelationship({
-  ir,
+  bundle,
   endpoints,
   edgeName,
 }: {
-  ir: SchemaIR
+  bundle: StudioSchemaBundle
   endpoints: IrEndpoint[]
   edgeName: string
 }) {
@@ -350,9 +490,9 @@ function EdgeRelationship({
   return (
     <Surface className="px-3 py-5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-1">
-        <EndpointCard ir={ir} endpoint={from} edgeName={edgeName} />
+        <EndpointCard bundle={bundle} endpoint={from} edgeName={edgeName} />
         <RelConnector edgeName={edgeName} from={from} to={to} />
-        <EndpointCard ir={ir} endpoint={to} edgeName={edgeName} />
+        <EndpointCard bundle={bundle} endpoint={to} edgeName={edgeName} />
       </div>
     </Surface>
   )
@@ -373,34 +513,69 @@ const isOptional = (c?: Card) => !c || c.min <= 0
 // One endpoint: the connected class/interface as entity tile(s) with role + cardinality.
 // Single type → one prominent clickable tile; a union → an icon+name chip per type.
 function EndpointCard({
-  ir,
+  bundle,
   endpoint,
   edgeName,
 }: {
-  ir: SchemaIR
+  bundle: StudioSchemaBundle
   endpoint?: IrEndpoint
   edgeName: string
 }) {
   const selectClass = useUI((s) => s.selectClass)
   if (!endpoint) return null
-  const types = endpoint.types.length ? endpoint.types : ['—']
+  const ir = bundle.ir
+  if (!ir) return null
+  const targets: { name: string; ref?: IrDefinitionRef }[] =
+    endpoint.refs !== undefined
+      ? endpoint.refs.filter(isDefinitionRef).map((ref) => ({ name: ref.name, ref }))
+      : endpoint.types.map((name) => ({ name }))
+  if (targets.length === 0) targets.push({ name: '—' })
   const card = endpoint.cardinality
   // each end is itself a comment target — `edge.<Name>.endpoint.<role>`
   const epAnchor = endpoint.name
     ? anchorData(`edge.${edgeName}.endpoint.${endpoint.name}`, endpoint.name)
     : {}
-  const meta = (t: string) => {
+  const meta = ({ name: t, ref }: (typeof targets)[number]) => {
+    if (ref) {
+      const local = ref.origin === ir.domain
+      const cls = local && ref.kind === 'class' ? ir.classes[t] : undefined
+      const iface =
+        ref.kind === 'interface'
+          ? local
+            ? ir.interfaces[t]
+            : resolveInterface(bundle, ref)
+          : undefined
+      const resolvable = !!cls || !!iface
+      return {
+        t,
+        key: definitionKey(ref),
+        origin: local ? undefined : ref.origin,
+        isInterface: ref.kind === 'interface',
+        resolvable,
+        selectionId: isInterfaceRef(ref)
+          ? interfaceSelectionId(ref, ir.domain)
+          : local
+            ? `class.${ref.name}`
+            : undefined,
+        icon: cls?.icon as string | undefined,
+      }
+    }
     const cls = ir.classes[t]
     const iface = ir.interfaces[t]
+    // A name-only legacy endpoint cannot choose safely between a same-named Class and Interface.
+    const resolvable = (!!cls || !!iface) && !(cls && iface)
     return {
       t,
+      key: `legacy:${t}`,
+      origin: undefined,
       isInterface: !cls && !!iface,
-      resolvable: !!cls || !!iface,
+      resolvable,
+      selectionId: resolvable ? (!cls && iface ? `interface.${t}` : `class.${t}`) : undefined,
       icon: cls?.icon as string | undefined,
     }
   }
-  const go = (m: { t: string; isInterface: boolean; resolvable: boolean }) => () => {
-    if (m.resolvable) selectClass(m.isInterface ? `interface.${m.t}` : `class.${m.t}`)
+  const go = (m: { resolvable: boolean; selectionId?: string }) => () => {
+    if (m.resolvable && m.selectionId) selectClass(m.selectionId)
   }
   const roleChip = (
     <div className="inline-flex max-w-full items-center rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
@@ -417,14 +592,14 @@ function EndpointCard({
   )
 
   // single type — prominent tile
-  if (types.length === 1) {
-    const m = meta(types[0])
+  if (targets.length === 1) {
+    const m = meta(targets[0])
     return (
       <button
         type="button"
         onClick={m.resolvable ? go(m) : undefined}
         disabled={!m.resolvable}
-        title={m.resolvable ? `Open ${m.t}` : m.t}
+        title={m.resolvable ? `Open ${m.t}` : m.origin ? `${m.t} · ${m.origin}` : m.t}
         {...epAnchor}
         className={cn(
           'group/ep flex flex-col items-center gap-2.5 rounded-xl px-2 py-3 text-center min-w-0 transition-colors',
@@ -462,15 +637,15 @@ function EndpointCard({
       className="flex flex-col items-center gap-2.5 rounded-xl px-2 py-3 text-center min-w-0"
     >
       <div className="flex flex-wrap items-center justify-center gap-1.5">
-        {types.map((t) => {
-          const m = meta(t)
+        {targets.map((target) => {
+          const m = meta(target)
           return (
             <button
-              key={t}
+              key={m.key}
               type="button"
               onClick={m.resolvable ? go(m) : undefined}
               disabled={!m.resolvable}
-              title={m.resolvable ? `Open ${t}` : t}
+              title={m.resolvable ? `Open ${m.t}` : m.origin ? `${m.t} · ${m.origin}` : m.t}
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-lg border border-border/70 pl-1 pr-2 py-1 transition-colors',
                 m.resolvable ? 'hover:bg-accent/60 cursor-pointer' : 'cursor-default',
@@ -485,7 +660,7 @@ function EndpointCard({
                   <Box />
                 )}
               </IconTile>
-              <span className="text-[13px] font-semibold">{t}</span>
+              <span className="text-[13px] font-semibold">{m.t}</span>
             </button>
           )
         })}
@@ -613,15 +788,18 @@ function PropertyRow({
   refBase,
   pname,
   schema,
+  optional,
 }: {
   bundle: StudioSchemaBundle
   refBase: string
   pname: string
   schema: JsonSchema
+  /** Canonical required membership; undefined lets legacy nullable schemas decide. */
+  optional?: boolean
 }) {
   const pref = `${refBase}.property.${pname}`
   const pdoc = bundle.overlay.sourceSpans[pref]?.doc
-  const ft = friendlyType(schema)
+  const ft = friendlyType(schema, optional)
   const Icon = ft.icon
   const warns = bundle.overlay.annotations.filter((a) => a.target === pref)
   const d = describe(schema)
@@ -642,7 +820,7 @@ function PropertyRow({
           {ft.optional && <Chip tone="default">optional</Chip>}
           {warns.map((w) => (
             <Chip key={w.code} tone="warning" title={w.message}>
-              {w.code === 'ENUM_DROPPED_BY_UPDATE' ? 'enum changes need migration' : w.code}
+              {w.code}
             </Chip>
           ))}
         </span>
@@ -676,6 +854,8 @@ function PropertyRow({
 function MethodCard({
   bundle,
   owner,
+  ownerKind = 'class',
+  handlerOwnerLocal = true,
   refBase,
   mname,
   method,
@@ -683,13 +863,17 @@ function MethodCard({
 }: {
   bundle: StudioSchemaBundle
   owner: string
+  ownerKind?: HandlerLink['ownerKind']
+  handlerOwnerLocal?: boolean
   refBase: string
   mname: string
   method: IrMethod
   overridden?: boolean
 }) {
   const mref = `${refBase}.method.${mname}`
-  const link = bundle.overlay.handlerLinks.find((h) => h.owner === owner && h.method === mname)
+  const link = handlerOwnerLocal
+    ? handlerLinkFor(bundle.overlay.handlerLinks, owner, mname, ownerKind)
+    : undefined
   const doc = bundle.overlay.sourceSpans[mref]?.doc
   const glyph = methodGlyph(method)
   const Glyph = glyph.icon
@@ -716,7 +900,7 @@ function MethodCard({
             <span className={cn(overridden && 'line-through text-muted-foreground/70')}>
               {mname}
             </span>
-            <MethodAuthBadge link={link} />
+            <MethodAuthBadge method={method} link={link} />
             {doc && <DocHint doc={doc} />}
             {method.inheritance === 'sealed' && <Chip tone="warning">sealed</Chip>}
             {method.inheritance === 'abstract' && <Chip tone="fuchsia">contract</Chip>}
@@ -762,7 +946,10 @@ function MethodDetails({
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
             {params.map(([pn, ps]) => {
-              const ft = friendlyType(ps as JsonSchema)
+              const optional = method.requiredParams
+                ? !method.requiredParams.includes(pn)
+                : undefined
+              const ft = friendlyType(ps as JsonSchema, optional)
               return (
                 <span key={pn} className="inline-flex items-baseline gap-1.5">
                   <span className="font-medium">{pn}</span>
@@ -861,9 +1048,11 @@ function InheritedSection({
                 ? 'border-l-sky-500/40'
                 : 'border-l-border'
           const tileTone = g.tier === 'local' ? 'fuchsia' : g.tier === 'external' ? 'sky' : 'muted'
-          const refBase = `interface.${g.iface}`
+          const refBase = g.ref
+            ? interfaceSelectionId(g.ref, bundle.ir?.domain)
+            : `interface.${g.iface}`
           return (
-            <div key={g.iface} className={cn('border-l-2 pl-3.5', rail)}>
+            <div key={refBase} className={cn('border-l-2 pl-3.5', rail)}>
               {/* interface header — substantial + clickable → its detail */}
               <button
                 type="button"
@@ -888,13 +1077,14 @@ function InheritedSection({
               <div className="space-y-2.5">
                 {g.props.length > 0 && (
                   <Surface className="divide-y divide-border/70">
-                    {g.props.map(([pname, schema]) => (
+                    {g.props.map(([pname, schema, optional]) => (
                       <PropertyRow
                         key={`p-${pname}`}
                         bundle={bundle}
                         refBase={refBase}
                         pname={pname}
                         schema={schema as JsonSchema}
+                        optional={optional}
                       />
                     ))}
                   </Surface>
@@ -904,6 +1094,8 @@ function InheritedSection({
                     key={`m-${m.name}`}
                     bundle={bundle}
                     owner={g.iface}
+                    ownerKind="interface"
+                    handlerOwnerLocal={g.tier === 'local'}
                     refBase={refBase}
                     mname={m.name}
                     method={m.method}

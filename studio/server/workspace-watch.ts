@@ -1,7 +1,7 @@
 /**
  * workspace-watch.ts — keeps the domain registry in sync with the workspace while
  * the studio is running. A domain dropped in (or one whose astrale.config.ts +
- * domain.ts + schema/index.ts triple just completed) is registered, booted, and
+ * composition entry + schema/index.ts triple just completed) is registered, booted, and
  * announced over SSE; one whose triple vanished is unregistered. It reuses
  * `scanWorkspace` (detection) + `bootDomain` (lifecycle), so there is no second
  * source of truth for "what is a domain" or "how a domain comes online".
@@ -17,7 +17,12 @@ import { broadcast } from './sse'
 const IGNORED =
   /(^|[/\\])(node_modules|\.git|\.astrale|\.domain-studio|dist|\.dist|\.next|\.cache|\.turbo|\.vercel|coverage)([/\\]|$)/
 // only these file changes can change the domain SET (vs. ordinary in-domain edits)
-const TRIGGERS = new Set(['astrale.config.ts', 'domain.ts', 'index.ts'])
+export const DOMAIN_SET_TRIGGER_FILES = new Set([
+  'astrale.config.ts',
+  'implementation.ts',
+  'domain.ts',
+  'index.ts',
+])
 
 /**
  * Watch `root` for domains appearing/disappearing.
@@ -84,7 +89,7 @@ export function watchWorkspace(
     timer = setTimeout(() => void run(), 400)
   }
   const onFile = (p: string) => {
-    if (TRIGGERS.has(basename(p))) schedule()
+    if (DOMAIN_SET_TRIGGER_FILES.has(basename(p))) schedule()
   }
 
   const watcher = chokidar.watch(root, {

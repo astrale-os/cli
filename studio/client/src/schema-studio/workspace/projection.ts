@@ -1,4 +1,10 @@
-import type { DomainCatalogEntry } from '@shared/types'
+import type {
+  DomainCatalogEntry,
+  IrDefinitionRef,
+  IrEndpoint,
+  IrSchemaRef,
+  SchemaIR,
+} from '@shared/types'
 
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
@@ -127,12 +133,31 @@ export async function prepareWorkspaceDomain(
   }
 }
 
-function localTargets(domain: WorkspaceDomainProjection, type: string): ResolvedTarget[] {
+type DefinitionInput = IrDefinitionRef | string
+
+function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
+  return ref.kind === 'class' || ref.kind === 'interface'
+}
+
+function endpointDefinitions(endpoint: IrEndpoint): DefinitionInput[] {
+  return endpoint.refs !== undefined ? endpoint.refs.filter(isDefinitionRef) : endpoint.types
+}
+
+function localTargets(
+  domain: WorkspaceDomainProjection,
+  definition: DefinitionInput,
+): ResolvedTarget[] {
   const ir = domain.input.bundle.ir
   if (!ir) return []
+  const name = typeof definition === 'string' ? definition : definition.name
   const rendered = (name: string) =>
     localInterfaceRendered(domain.input.bundle, domain.collapsed, domain.materialized, name)
-  return localEndpointTargets(ir, { types: [type] }, rendered)
+  const endpoint: IrEndpoint = {
+    name: 'workspace-target',
+    types: [name],
+    ...(typeof definition === 'string' ? {} : { refs: [definition] }),
+  }
+  return localEndpointTargets(ir, endpoint, rendered)
     .filter(
       (target) => !target.cls || !isHidden(classRef(target.cls), domain.input.visibility.hidden),
     )
@@ -153,42 +178,81 @@ function localTargets(domain: WorkspaceDomainProjection, type: string): Resolved
 
 function resolveType(
   owner: WorkspaceDomainProjection,
-  type: string,
+  definition: DefinitionInput,
   origins: Map<string, WorkspaceDomainProjection[]>,
   diagnostics: Set<string>,
 ): ResolvedTarget[] {
   const ir = owner.input.bundle.ir
   if (!ir) return []
-  if (ir.classes[type]?.type === 'node' || ir.interfaces[type]) return localTargets(owner, type)
+  const name = typeof definition === 'string' ? definition : definition.name
+  let ref: IrDefinitionRef
+  if (typeof definition !== 'string') {
+    ref = definition
+    if (ref.origin === ir.domain) {
+      const exists =
+        ref.kind === 'interface' ? !!ir.interfaces[ref.name] : ir.classes[ref.name]?.type === 'node'
+      return exists ? localTargets(owner, ref) : []
+    }
+  } else {
+    if (ir.classes[name]?.type === 'node' || ir.interfaces[name]) {
+      return localTargets(owner, name)
+    }
+    const imported = ir.imports[name]
+    if (!imported) return []
+    ref =
+      imported.ref ??
+      ({ origin: imported.origin, kind: imported.definition, name } satisfies IrDefinitionRef)
+  }
 
-  const imported = ir.imports[type]
-  if (!imported) return []
-  const candidates = origins.get(imported.origin) ?? []
+  const candidates = origins.get(ref.origin) ?? []
   if (candidates.length > 1) {
-    diagnostics.add(`Multiple selected folders declare ${imported.origin}; ${type} stays external.`)
+    diagnostics.add(`Multiple selected folders declare ${ref.origin}; ${name} stays external.`)
   }
   if (candidates.length === 1) {
     const target = candidates[0]
     const targetIr = target.input.bundle.ir
     const exists =
-      imported.definition === 'interface'
-        ? !!targetIr?.interfaces[type]
-        : targetIr?.classes[type]?.type === 'node'
-    if (exists) return localTargets(target, type)
+      ref.kind === 'interface'
+        ? !!targetIr?.interfaces[name]
+        : targetIr?.classes[name]?.type === 'node'
+    if (exists) return localTargets(target, ref)
     diagnostics.add(
-      `${owner.input.summary.origin} imports ${imported.origin}.${type}, but the selected schema does not expose it.`,
+      `${owner.input.summary.origin} imports ${ref.origin}:${ref.kind}.${name}, but the selected schema does not expose it.`,
     )
   }
 
   return [
     {
-      nodeId: workspaceExternalMemberNodeId(imported.origin, type),
+      nodeId: workspaceExternalMemberNodeId(ref.origin, name, ref.kind),
       domainId: null,
       className: null,
       viaInterface: null,
-      unresolved: { origin: imported.origin, name: type, definition: imported.definition },
+      unresolved: { origin: ref.origin, name, definition: ref.kind },
     },
   ]
+}
+
+function exactOrLegacyInterfaces(
+  ir: SchemaIR,
+  exact: IrSchemaRef[] | undefined,
+  legacy: string[] | undefined,
+): DefinitionInput[] {
+  if (exact !== undefined) {
+    return exact.filter(isDefinitionRef).filter((ref) => ref.kind === 'interface')
+  }
+  return legacy ?? []
+}
+
+function externalInterfaceRef(ir: SchemaIR, input: DefinitionInput): IrDefinitionRef | undefined {
+  if (typeof input !== 'string') {
+    return input.kind === 'interface' && input.origin !== ir.domain ? input : undefined
+  }
+  const imported = ir.imports[input]
+  if (!imported || imported.definition !== 'interface') return undefined
+  return (
+    imported.ref ??
+    ({ origin: imported.origin, kind: 'interface', name: input } satisfies IrDefinitionRef)
+  )
 }
 
 function edgeId(ownerId: string, name: string, source: string, target: string): string {
@@ -213,7 +277,10 @@ function crossDomainEdges(
       members: new Map(),
       ownerDomainIds: new Set(),
     }
-    cluster.members.set(target.unresolved.name, target.unresolved)
+    cluster.members.set(
+      `${target.unresolved.definition}:${target.unresolved.name}`,
+      target.unresolved,
+    )
     cluster.ownerDomainIds.add(ownerDomainId)
     unresolved.set(target.unresolved.origin, cluster)
   }
@@ -224,11 +291,11 @@ function crossDomainEdges(
     for (const edgeClass of Object.values(ir.classes)) {
       if (edgeClass.type !== 'edge' || edgeClass.endpoints?.length !== 2) continue
       if (isHidden(edgeRef(edgeClass.name), owner.input.visibility.hidden)) continue
-      const aTargets = edgeClass.endpoints[0].types.flatMap((type) =>
-        resolveType(owner, type, origins, diagnostics),
+      const aTargets = endpointDefinitions(edgeClass.endpoints[0]).flatMap((definition) =>
+        resolveType(owner, definition, origins, diagnostics),
       )
-      const bTargets = edgeClass.endpoints[1].types.flatMap((type) =>
-        resolveType(owner, type, origins, diagnostics),
+      const bTargets = endpointDefinitions(edgeClass.endpoints[1]).flatMap((definition) =>
+        resolveType(owner, definition, origins, diagnostics),
       )
       const cardinality = cardinalityMarkers(
         edgeClass.endpoints[0].cardinality,
@@ -284,7 +351,9 @@ function crossDomainEdges(
     edges,
     unresolved: [...unresolved.entries()].map(([origin, cluster]) => ({
       origin,
-      members: [...cluster.members.values()].sort((a, b) => a.name.localeCompare(b.name)),
+      members: [...cluster.members.values()].sort(
+        (a, b) => a.name.localeCompare(b.name) || a.definition.localeCompare(b.definition),
+      ),
       ownerDomainIds: [...cluster.ownerDomainIds],
     })),
   }
@@ -308,12 +377,20 @@ function contractEdges(
     if (!ir) continue
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node') continue
-      const source = localTargets(owner, className)[0]
+      const source = localTargets(owner, {
+        origin: ir.domain,
+        kind: 'class',
+        name: className,
+      })[0]
       if (!source) continue
-      for (const interfaceName of definition.implements ?? []) {
-        const imported = ir.imports[interfaceName]
+      for (const input of exactOrLegacyInterfaces(
+        ir,
+        definition.implementsRefs,
+        definition.implements,
+      )) {
+        const imported = externalInterfaceRef(ir, input)
         if (!imported || imported.origin === 'kernel.astrale.ai') continue
-        for (const target of resolveType(owner, interfaceName, origins, diagnostics)) {
+        for (const target of resolveType(owner, imported, origins, diagnostics)) {
           if (target.unresolved) continue
           const id = `workspace-implements:${source.nodeId}:${target.nodeId}`
           push({
@@ -335,12 +412,21 @@ function contractEdges(
     }
 
     for (const interfaceName of Object.keys(ir.interfaces)) {
-      const source = localTargets(owner, interfaceName)[0]
+      const source = localTargets(owner, {
+        origin: ir.domain,
+        kind: 'interface',
+        name: interfaceName,
+      })[0]
       if (!source) continue
-      for (const parent of ir.interfaces[interfaceName]?.extends ?? []) {
-        const imported = ir.imports[parent]
+      const definition = ir.interfaces[interfaceName]
+      for (const input of exactOrLegacyInterfaces(
+        ir,
+        definition?.extendsRefs,
+        definition?.extends,
+      )) {
+        const imported = externalInterfaceRef(ir, input)
         if (!imported || imported.origin === 'kernel.astrale.ai') continue
-        for (const target of resolveType(owner, parent, origins, diagnostics)) {
+        for (const target of resolveType(owner, imported, origins, diagnostics)) {
           if (target.unresolved) continue
           const id = `workspace-extends:${source.nodeId}:${target.nodeId}`
           push({

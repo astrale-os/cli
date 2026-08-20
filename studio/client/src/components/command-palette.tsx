@@ -20,18 +20,20 @@ function propTypeLabel(
   schema:
     | { type?: string | string[]; enum?: unknown[]; items?: { type?: string | string[] } }
     | undefined,
+  optionalOverride?: boolean,
 ): string {
   if (!schema) return 'unknown'
-  if (Array.isArray(schema.enum) && schema.enum.length) return 'enum'
+  if (Array.isArray(schema.enum) && schema.enum.length) return optionalOverride ? 'enum?' : 'enum'
   const t = schema.type
   if (Array.isArray(t)) {
     const base = t.filter((x) => x !== 'null')
-    const optional = t.includes('null')
+    const optional = optionalOverride ?? t.includes('null')
     const name = base.length === 1 ? base[0] : base.join(' | ') || 'unknown'
     return optional ? `${name}?` : name
   }
-  if (t === 'array') return `${schema.items?.type ?? 'unknown'}[]`
-  return (t as string) ?? 'unknown'
+  const label =
+    t === 'array' ? `${schema.items?.type ?? 'unknown'}[]` : ((t as string) ?? 'unknown')
+  return optionalOverride ? `${label}?` : label
 }
 
 /** Row icon + label + muted meta — the shared visual for every item. */
@@ -144,25 +146,27 @@ export function CommandPalette() {
     for (const c of Object.values(ir.classes)) {
       if (c.type !== 'node') continue
       for (const [prop, schema] of Object.entries(c.properties)) {
+        const optional = c.required ? !c.required.includes(prop) : undefined
         properties.push({
           id: `class.${c.name}.property.${prop}`,
           owner: c.name,
           ownerKind: 'class',
           prop,
-          value: `${c.name}.${prop} property ${propTypeLabel(schema)}`,
-          meta: propTypeLabel(schema),
+          value: `${c.name}.${prop} property ${propTypeLabel(schema, optional)}`,
+          meta: propTypeLabel(schema, optional),
         })
       }
     }
     for (const i of Object.values(ir.interfaces)) {
       for (const [prop, schema] of Object.entries(i.properties)) {
+        const optional = i.required ? !i.required.includes(prop) : undefined
         properties.push({
           id: `interface.${i.name}.property.${prop}`,
           owner: i.name,
           ownerKind: 'interface',
           prop,
-          value: `${i.name}.${prop} property ${propTypeLabel(schema)}`,
-          meta: propTypeLabel(schema),
+          value: `${i.name}.${prop} property ${propTypeLabel(schema, optional)}`,
+          meta: propTypeLabel(schema, optional),
         })
       }
     }
