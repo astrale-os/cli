@@ -158,9 +158,44 @@ describe('Domain token exchange', () => {
       code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
     })
   })
+
+  test('rejects success responses without no-store or with malformed fields', async () => {
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
+    const cache = () => new ExchangeCredentialCache(join(directory, crypto.randomUUID()))
+    const resolver = (fetch: Fetch) =>
+      createExchangeCredentialResolver(
+        TARGET,
+        { resolve: async () => SOURCE_TOKEN },
+        fetch,
+        5_000,
+        cache(),
+      )
+
+    await expect(
+      resolver(exchangeFetch(exchanged, { cacheControl: false })).resolve(
+        KERNEL,
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+      message: 'Token exchange response is missing Cache-Control: no-store.',
+    })
+    await expect(
+      resolver(exchangeFetch(exchanged, { body: { token: 7, expiresAt: 'soon' } })).resolve(
+        KERNEL,
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+      message: 'Token exchange returned an invalid success response.',
+    })
+  })
 })
 
-function exchangeFetch(exchanged: string): Fetch {
+function exchangeFetch(
+  exchanged: string,
+  options: { readonly body?: unknown; readonly cacheControl?: boolean } = {},
+): Fetch {
   return async (input, init) => {
     const url = String(input)
     if (url === INVOCATION) {
@@ -174,11 +209,17 @@ function exchangeFetch(exchanged: string): Fetch {
       )
     }
     if (url.endsWith('/.well-known/openid-configuration')) return jsonResponse(configuration(true))
-    return jsonResponse(
-      { token: exchanged, expiresAt: EXPIRES_AT },
-      200,
-      'application/vnd.astrale+json',
+    const response = new Response(
+      JSON.stringify(options.body ?? { token: exchanged, expiresAt: EXPIRES_AT }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'application/vnd.astrale+json',
+          ...(options.cacheControl === false ? {} : { 'cache-control': 'no-store' }),
+        },
+      },
     )
+    return response
   }
 }
 
