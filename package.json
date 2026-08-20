@@ -96,10 +96,10 @@
   "lint-staged": {
     "*.{js,cjs,mjs,ts,tsx}": [
       "oxlint --fix --no-error-on-unmatched-pattern",
-      "oxfmt --write"
+      "oxfmt --write --no-error-on-unmatched-pattern"
     ],
     "*.{json,yml,yaml}": [
-      "oxfmt --write"
+      "oxfmt --write --no-error-on-unmatched-pattern"
     ]
   },
   "devEngines": {
