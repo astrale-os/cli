@@ -11,13 +11,32 @@ concurrency:
 
 permissions:
   contents: write
+  packages: read
   pull-requests: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.release.outputs.releases_created }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - uses: astrale-os/config/.github/actions/release@main
+      - id: version
+        name: Resolve package version
+        shell: bash
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - id: release
+        uses: astrale-os/config/.github/actions/release@main
         with:
           token: ${{ github.token }}
+
+  binary:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: ./.github/workflows/cli-release.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    secrets: inherit

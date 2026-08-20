@@ -13,6 +13,12 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 The installer places a verified standalone binary at
 `~/.astrale/bin/astrale` by default. No local runtime is installed.
 
+During the prerelease period, install the current standalone beta explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_CHANNEL=beta sh
+```
+
 Optional installer environment:
 
 ```bash
@@ -29,6 +35,12 @@ ships the [Domain Studio](studio/README.md) (`astrale studio`):
 npm install -g @astrale-os/cli
 ```
 
+During the prerelease period, install the current beta explicitly:
+
+```bash
+npm install -g @astrale-os/cli@beta
+```
+
 The npm build bundles all dependencies, so no private-registry access is needed.
 `astrale studio` launches a local web GUI to author and inspect a domain, with
 local Claude Code and Codex agent harnesses (`--harness claude|codex`); it runs on
@@ -36,9 +48,9 @@ local Claude Code and Codex agent harnesses (`--harness claude|codex`); it runs 
 (the rest of the CLI needs only Node ≥ 22). The curl-installed standalone binary
 above does not include the studio — use the npm install for `astrale studio`.
 
-> Pre-1.0, `npm install -g @astrale-os/cli` installs the latest published
-> build (currently an alpha). The curl installer's channels (alpha/beta/rc) are
-> a binary-only concept.
+> Prereleases use their matching npm dist-tag (`alpha`, `beta`, or `rc`); bare
+> `npm install -g @astrale-os/cli` follows the stable `latest` tag. The curl
+> installer has separate binary channels with the same names.
 
 ## Quickstart
 
