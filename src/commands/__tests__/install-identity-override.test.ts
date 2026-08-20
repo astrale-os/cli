@@ -41,16 +41,27 @@ describe('declared-origin probe (/meta)', () => {
     return `http://localhost:${server.port}`
   }
 
-  test('reads domainName from a well-formed /meta', async () => {
+  test('reads origin from a well-formed /meta', async () => {
+    // The exact shape SDK workers serve (adapter-cloudflare worker `/meta`).
     const url = serveMeta((req) =>
       new URL(req.url).pathname === '/meta'
-        ? Response.json({ iss: 'https://x', domainName: 'crm.acme.dev' })
+        ? Response.json({
+            origin: 'crm.acme.dev',
+            issuer: 'https://crm.acme.dev',
+            schemaRevision: 'sha256:abc',
+            deploymentVersion: 'v1',
+          })
         : new Response('nope', { status: 404 }),
     )
     expect(await probeDeclaredOrigin(url)).toBe('crm.acme.dev')
   })
 
-  test('degrades to undefined on missing domainName, non-200, bad JSON, or dead host', async () => {
+  test('falls back to the pre-Kernel-V2 domainName field', async () => {
+    const legacy = serveMeta(() => Response.json({ iss: 'https://x', domainName: 'crm.acme.dev' }))
+    expect(await probeDeclaredOrigin(legacy)).toBe('crm.acme.dev')
+  })
+
+  test('degrades to undefined on missing origin, non-200, bad JSON, or dead host', async () => {
     const noName = serveMeta(() => Response.json({ iss: 'https://x' }))
     expect(await probeDeclaredOrigin(noName)).toBeUndefined()
 
