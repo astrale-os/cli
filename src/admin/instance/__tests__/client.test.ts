@@ -153,7 +153,7 @@ describe('V2 Admin Instance adapter', () => {
     )
   })
 
-  test('invokes Fleet.createInstance with an internal operation identity', async () => {
+  test('delegates default placement to Fleet without reading Host inventory', async () => {
     const created = {
       id: '@instance-node',
       slug: 'demo',
@@ -179,6 +179,8 @@ describe('V2 Admin Instance adapter', () => {
       Path.id(NodeId('fleet')),
       { operationId: 'cli.instance.create:test', slug: 'demo' },
     )
+    expect(contract.graph.query).not.toHaveBeenCalled()
+    expect(contract.graph.neighbors).not.toHaveBeenCalled()
   })
 
   test('resolves --host-id to an exact Host receiver and rejects the reserved Admin Host', async () => {
