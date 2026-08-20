@@ -1,52 +1,42 @@
-import { ResponseError } from '@astrale-os/kernel-client'
+import { ResponseError, TransportError } from '@astrale-os/kernel-client'
 import { describe, expect, test } from 'bun:test'
 
-import {
-  formatKernelError,
-  functionInputIssues,
-  schemaUpgradeHint,
-  stripMethodSuffix,
-} from '../errors'
+import { formatKernelError, functionInputIssues, schemaUpgradeHint } from '../errors'
 
 const CONFLICT = 4001
-
-describe('stripMethodSuffix', () => {
-  test('strips ::listChildren from path', () => {
-    expect(stripMethodSuffix('Path not found: "/nonexistent::listChildren"')).toBe(
-      'Path not found: "/nonexistent"',
-    )
-  })
-
-  test('strips ::get from path', () => {
-    expect(stripMethodSuffix('Path not found: "/some/path::get"')).toBe(
-      'Path not found: "/some/path"',
-    )
-  })
-
-  test('strips any method name', () => {
-    expect(stripMethodSuffix('"/kernel.astrale.ai/Root::describe"')).toBe(
-      '"/kernel.astrale.ai/Root"',
-    )
-  })
-
-  test('does not strip from non-path strings', () => {
-    expect(stripMethodSuffix('regular::text')).toBe('regular::text')
-  })
-
-  test('handles multiple paths in one message', () => {
-    expect(stripMethodSuffix('"/a/b::get" and "/c/d::list"')).toBe('"/a/b" and "/c/d"')
-  })
-
-  test('preserves messages without method suffixes', () => {
-    expect(stripMethodSuffix('No path found')).toBe('No path found')
-  })
-
-  test('does not strip single colon (not a method dispatch)', () => {
-    expect(stripMethodSuffix('"/a/b:notMethod"')).toBe('"/a/b:notMethod"')
-  })
-})
+const VALIDATION = 1003
 
 describe('formatKernelError', () => {
+  /** @evidence TEST-CLI-CONNECTION-MAPS-TYPED-TRANSPORT */
+  test('maps typed discovery transport evidence without inspecting its cause message', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    const error = new TransportError('Publication discovery request failed.', {
+      cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      phase: 'connect',
+      delivery: 'unknown',
+    }) as TransportError & { url?: string }
+    error.url = 'https://localhost:8443/kernel/host'
+    try {
+      await formatKernelError(error, true)
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toMatchObject({
+      error: 'CONNECTION_ERROR',
+      message: 'Publication discovery request failed.',
+      url: 'https://localhost:8443/kernel/host',
+      phase: 'connect',
+      delivery: 'unknown',
+    })
+    expect(writes[0]).not.toContain('ECONNREFUSED')
+  })
+
   /** @evidence TEST-CLI-CONNECTION-PRESERVES-PUBLIC-SEMANTIC-REASON */
   test('preserves a Kernel-admitted semantic reason in machine output', async () => {
     const writes: string[] = []
@@ -213,6 +203,62 @@ describe('formatKernelError', () => {
       error: 'PATH_INVALID',
       message: 'Path must have an Id or Domain anchor.',
     })
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-PRESENTS-BOUNDED-REPAIRS */
+  test('renders callable and Query repair coordinates for humans', async () => {
+    const lines: string[] = []
+    const originalError = console.error
+    const originalLog = console.log
+    console.error = (...values: unknown[]) => lines.push(values.join(' '))
+    console.log = (...values: unknown[]) => lines.push(values.join(' '))
+    try {
+      await formatKernelError(
+        new ResponseError(VALIDATION, 'Function input is invalid.', {
+          code: 'FUNCTION_INPUT_INVALID',
+          details: {
+            issues: [
+              {
+                code: 'VALUE_SCHEMA_INSTANCE_INVALID',
+                path: '/issuer',
+                message: 'Object is missing required property issuer.',
+              },
+              {
+                code: 'VALUE_SCHEMA_INSTANCE_INVALID',
+                path: '/operationId',
+                message: 'Object is missing required property operationId.',
+              },
+              {
+                code: 'VALUE_SCHEMA_INSTANCE_INVALID',
+                path: '/slug',
+                message: 'Object is missing required property slug.',
+              },
+            ],
+          },
+        }),
+        false,
+      )
+      await formatKernelError(
+        new ResponseError(VALIDATION, 'Query input is invalid.', {
+          code: 'QUERY_INPUT_INVALID',
+          details: {
+            phase: 'plan',
+            issue: 'QUERY_DEFINITION_NOT_EDGE',
+            path: '/steps/0/via/0',
+          },
+        }),
+        false,
+      )
+    } finally {
+      console.error = originalError
+      console.log = originalLog
+    }
+
+    const rendered = lines.join('\n')
+    expect(rendered).toContain('/issuer: Object is missing required property issuer.')
+    expect(rendered).toContain('/operationId: Object is missing required property operationId.')
+    expect(rendered).toContain('/slug: Object is missing required property slug.')
+    expect(rendered).toContain('/steps/0/via/0  QUERY_DEFINITION_NOT_EDGE')
   })
 
   test('explains immutable issuer replacements and preserves the Kernel reason', async () => {

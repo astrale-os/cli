@@ -1,38 +1,24 @@
 import chalk from 'chalk'
 
-import type { SelfExpansionMeta } from './self'
-
 import { AstraleError } from '../errors'
-import { decodeJwtExpiration, readLocalStatus, type LocalStatus } from '../lib/local-status'
+import { readLocalStatus, type LocalStatus } from '../lib/local-status'
 import { log } from '../lib/log'
+import {
+  functionInputIssues,
+  queryInputRepair,
+  reasonCode,
+  schemaUpgradeDetails,
+  schemaUpgradeHint,
+  type FunctionInputIssue,
+  type QueryInputRepair,
+} from './reasons'
 
-type FieldError = { path: string[]; code: string; message: string }
-type InvariantError = { code: string; message: string; context?: unknown }
-type SchemaUpgradeDetails = {
-  readonly origin?: string
-  readonly issue?: string
-  readonly expected?: string
-  readonly actual?: string
-}
-type FunctionInputIssue = {
-  readonly code: string
-  readonly path?: string
-  readonly message: string
-}
-
-const FUNCTION_ISSUE_CODE = /^[A-Z][A-Z0-9_]{0,127}$/u
-const JSON_POINTER = /^(?:\/(?:[^~/]|~[01])*)*$/u
-const MAXIMUM_FUNCTION_ISSUES = 32
-const MAXIMUM_FUNCTION_ISSUE_PATH_LENGTH = 1_024
-const MAXIMUM_FUNCTION_ISSUE_MESSAGE_LENGTH = 512
+export { functionInputIssues, schemaUpgradeHint } from './reasons'
 
 /**
  * Format and display a kernel client error.
  *
- * Handles AstraleError (CLI-local) and every error class exported by
- * @astrale-os/kernel-client: ConnectionError, DisconnectedError,
- * TimeoutError, AuthenticationError, PermissionDeniedError, NotFoundError,
- * KernelError and its subclasses (ValidationError, InvariantViolationError).
+ * Handles CLI-local errors plus the current Kernel Client public error families.
  *
  * When `debug` is true, additional diagnostic information (class name, full
  * error chain, attached url/details) is printed after the user-facing line.
@@ -42,12 +28,10 @@ export async function formatKernelError(
   isRaw: boolean,
   urlArg = '',
   debug = false,
-  opts: { credential?: string } = {},
 ): Promise<void> {
   const url =
     urlArg || (error instanceof Error ? ((error as Error & { url?: string }).url ?? '') : '')
   const localContext = await contextForError(error)
-  const credentialExpiration = opts.credential ? decodeJwtExpiration(opts.credential) : null
   // Handle AstraleError (AuthError, etc.) with structured hints
   if (error instanceof AstraleError) {
     if (isRaw) {
@@ -69,148 +53,26 @@ export async function formatKernelError(
   const name = error.name
 
   switch (name) {
-    case 'ConnectionError':
-      if (isRaw)
-        writeRaw({ error: 'CONNECTION_ERROR', message: error.message, url, context: localContext })
-      else {
-        log.error(`Could not connect to ${chalk.bold(url || 'kernel')}`)
-        log.dim(`  ${error.message}`)
-        log.dim('  Is the kernel running? Try: astrale status')
-        printLocalContext(localContext)
-      }
+    case 'TransportError':
+      presentTransportError(error, isRaw, url, localContext)
       break
-
-    case 'DisconnectedError':
-      if (isRaw) writeRaw({ error: 'DISCONNECTED', message: error.message })
-      else {
-        log.error('Connection closed while request was pending')
-        log.dim('  The kernel may have been stopped or restarted. Retry the command.')
-      }
-      break
-
-    case 'TimeoutError': {
-      const timeoutMs = (error as { timeoutMs?: number }).timeoutMs
-      if (isRaw) writeRaw({ error: 'TIMEOUT', message: error.message, timeoutMs })
-      else {
-        log.error(`Request timed out after ${timeoutMs ?? '?'}ms`)
-        log.dim('  Try increasing with --timeout')
-      }
-      break
-    }
-
-    case 'AuthenticationError': {
-      const reason = (error as { reason?: string }).reason ?? 'unknown'
-      if (isRaw)
-        writeRaw({
-          error: 'AUTH_ERROR',
-          reason,
-          message: error.message,
-          credential: credentialExpiration,
-          context: localContext,
-        })
-      else {
-        log.error(`Authentication failed: ${error.message}`)
-        if (reason === 'missing')
-          log.dim('  No credential was sent. Run: astrale identity create <name>')
-        else if (reason === 'invalid')
-          log.dim('  Credential is invalid — check issuer/keypair. Try: astrale identity whoami')
-        else if (reason === 'expired') log.dim('  Credential expired — sign a fresh one')
-        if (credentialExpiration) {
-          const state = credentialExpiration.expired ? 'expired' : 'expires'
-          log.dim(`  Credential ${state} at ${credentialExpiration.expiresAt}`)
-        }
-        printLocalContext(localContext)
-      }
-      break
-    }
-
-    case 'PermissionDeniedError':
-      if (isRaw) writeRaw({ error: 'PERMISSION_DENIED', message: error.message })
-      else {
-        log.error(`Permission denied: ${error.message}`)
-        log.dim('  Your identity does not have the required permissions for this operation')
-      }
-      break
-
-    case 'NotFoundError': {
-      const cleanMsg = stripMethodSuffix(error.message)
-      const selfMeta = (error as Error & { expandedFromSelf?: SelfExpansionMeta }).expandedFromSelf
-      // kernel-client maps both NOT_FOUND (the node doesn't exist) and
-      // METHOD_NOT_FOUND (the method doesn't exist on a real node) to
-      // `NotFoundError`. Firing the authenticated-principal hint for the
-      // method case is misleading. Gate on the message referencing the
-      // expanded id — node lookup errors mention `@<id>` whereas method
-      // errors mention the method path.
-      const selfHintApplies = selfMeta && error.message.includes(`@${selfMeta.selfId}`)
-      if (isRaw) {
-        const payload: Record<string, unknown> = { error: 'NOT_FOUND', message: cleanMsg }
-        if (selfHintApplies) payload.expandedFromSelf = selfMeta
-        writeRaw(payload)
-      } else {
-        log.error(`Not found: ${cleanMsg}`)
-        log.dim('  Check the path/ID and that the instance is booted')
-        if (selfHintApplies && selfMeta) {
-          const where = selfMeta.slug ? ` on "${selfMeta.slug}"` : ''
-          log.dim(
-            `  @self resolved through authenticated Identity.whoami to @${selfMeta.selfId}${where}.`,
-          )
-          log.dim('  Check that the requested node path still exists for that principal.')
-        }
-      }
-      break
-    }
-
-    case 'ValidationError': {
-      const errors = (error as { errors?: FieldError[] }).errors ?? []
-      if (isRaw) writeRaw({ error: 'VALIDATION_ERROR', message: error.message, details: errors })
-      else {
-        log.error('Validation Error')
-        if (errors.length > 0) {
-          for (const e of errors) {
-            console.log(chalk.red(`  ${e.path.join('.')}: ${e.message} (${chalk.dim(e.code)})`))
-          }
-        } else {
-          // Server often sends details in message but empty errors array
-          console.log(chalk.red(`  ${error.message}`))
-        }
-        log.dim('  Use `astrale introspect <path>` to see the expected schema')
-      }
-      break
-    }
-
-    case 'InvariantViolationError': {
-      const errors = (error as { errors?: InvariantError[] }).errors ?? []
-      if (isRaw) writeRaw({ error: 'INVARIANT_VIOLATION', message: error.message, details: errors })
-      else {
-        log.error('Invariant Violation')
-        for (const e of errors) {
-          console.log(chalk.red(`  ${e.code}: ${e.message}`))
-          if (e.context) console.log(chalk.dim(`    ${JSON.stringify(e.context)}`))
-        }
-      }
-      break
-    }
 
     case 'ResponseError': {
       const code = (error as { readonly code?: unknown }).code
       const reason = (error as { readonly reason?: unknown }).reason
-      const reasonCode =
-        reason !== null &&
-        typeof reason === 'object' &&
-        typeof (reason as { readonly code?: unknown }).code === 'string'
-          ? (reason as { readonly code: string }).code
-          : undefined
-      const upgrade = schemaUpgradeDetails(reason)
+      const codeOfReason = reasonCode(reason)
       const inputIssues = functionInputIssues(reason)
+      const queryRepair = queryInputRepair(reason)
+      const upgrade = schemaUpgradeDetails(reason)
       const removalHint = schemaDataRemovalHint(reason)
-      const domainAddressNotPublic = reasonCode === 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC'
+      const domainAddressNotPublic = codeOfReason === 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC'
       const displayMessage = domainAddressNotPublic
         ? 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.'
         : removalHint !== undefined && !isRaw
           ? 'Existing business data still uses schema definitions being removed.'
           : error.message
       const hint =
-        reasonCode === 'FUNCTION_INPUT_INVALID' && (isRaw || inputIssues.length === 0)
+        codeOfReason === 'FUNCTION_INPUT_INVALID' && (isRaw || inputIssues.length === 0)
           ? 'Use `astrale introspect <path>` to see the callable input.'
           : (removalHint ?? (upgrade === undefined ? undefined : schemaUpgradeHint(upgrade)))
       if (isRaw) {
@@ -229,13 +91,11 @@ export async function formatKernelError(
               ? `${chalk.bold('DATA_MIGRATION_REQUIRED')}: ${displayMessage}`
               : `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${displayMessage}`,
         )
-        if (reasonCode !== undefined && !domainAddressNotPublic && removalHint === undefined) {
-          log.dim(`  reason: ${reasonCode}`)
+        if (codeOfReason !== undefined && !domainAddressNotPublic && removalHint === undefined) {
+          log.dim(`  reason: ${codeOfReason}`)
         }
-        for (const issue of inputIssues) {
-          const location = issue.path === undefined || issue.path === '' ? '<input>' : issue.path
-          console.log(chalk.red(`  ${location}: ${issue.message} (${chalk.dim(issue.code)})`))
-        }
+        presentFunctionInputIssues(inputIssues)
+        if (queryRepair !== undefined) presentQueryInputRepair(queryRepair)
         if (upgrade?.expected !== undefined) {
           log.dim(`  installed issuer: ${upgrade.expected}`)
         }
@@ -244,14 +104,6 @@ export async function formatKernelError(
         }
         if (hint !== undefined) log.dim(`  ${hint}`)
       }
-      break
-    }
-
-    case 'KernelError': {
-      const code = (error as { code?: number | string }).code ?? 'UNKNOWN'
-      const type = (error as { type?: string }).type ?? 'KERNEL_ERROR'
-      if (isRaw) writeRaw({ error: type, code, message: error.message })
-      else log.error(`${chalk.bold(`${type}(${code})`)}: ${error.message}`)
       break
     }
 
@@ -272,93 +124,6 @@ export async function formatKernelError(
   }
 
   if (debug) printDebug(error, url)
-}
-
-/** Admit only bounded caller-safe Function input issues from the public ErrorReason. */
-export function functionInputIssues(reason: unknown): readonly FunctionInputIssue[] {
-  if (reason === null || typeof reason !== 'object') return []
-  const value = reason as { readonly code?: unknown; readonly details?: unknown }
-  if (
-    value.code !== 'FUNCTION_INPUT_INVALID' ||
-    value.details === null ||
-    typeof value.details !== 'object'
-  ) {
-    return []
-  }
-  const issues = (value.details as { readonly issues?: unknown }).issues
-  if (!Array.isArray(issues)) return []
-
-  return Object.freeze(
-    issues.slice(0, MAXIMUM_FUNCTION_ISSUES).flatMap((issue): FunctionInputIssue[] => {
-      if (issue === null || typeof issue !== 'object' || Array.isArray(issue)) return []
-      const candidate = issue as {
-        readonly code?: unknown
-        readonly path?: unknown
-        readonly message?: unknown
-      }
-      if (
-        typeof candidate.code !== 'string' ||
-        !FUNCTION_ISSUE_CODE.test(candidate.code) ||
-        typeof candidate.message !== 'string' ||
-        candidate.message.length === 0 ||
-        candidate.message.length > MAXIMUM_FUNCTION_ISSUE_MESSAGE_LENGTH ||
-        candidate.message.normalize('NFC') !== candidate.message ||
-        /[\u0000-\u001f\u007f]/u.test(candidate.message) ||
-        (candidate.path !== undefined &&
-          (typeof candidate.path !== 'string' ||
-            candidate.path.length > MAXIMUM_FUNCTION_ISSUE_PATH_LENGTH ||
-            !JSON_POINTER.test(candidate.path)))
-      ) {
-        return []
-      }
-      return [
-        Object.freeze({
-          code: candidate.code,
-          ...(candidate.path === undefined ? {} : { path: candidate.path }),
-          message: candidate.message,
-        }),
-      ]
-    }),
-  )
-}
-
-/**
- * Decode the public Kernel reason without depending on a kernel-client error
- * subclass. The reason is intentionally kept intact in machine output; this
- * helper only adds the human recovery guidance that the generic ResponseError
- * message cannot provide.
- */
-export function schemaUpgradeDetails(reason: unknown): SchemaUpgradeDetails | undefined {
-  if (reason === null || typeof reason !== 'object') return undefined
-  const value = reason as {
-    readonly code?: unknown
-    readonly details?: unknown
-  }
-  if (value.code !== 'SCHEMA_UPGRADE_INCOMPATIBLE') return undefined
-
-  const details =
-    value.details !== null && typeof value.details === 'object'
-      ? (value.details as Record<string, unknown>)
-      : {}
-  return {
-    ...(typeof details.origin === 'string' ? { origin: details.origin } : {}),
-    ...(typeof details.issue === 'string' ? { issue: details.issue } : {}),
-    ...(typeof details.expected === 'string' ? { expected: details.expected } : {}),
-    ...(typeof details.actual === 'string' ? { actual: details.actual } : {}),
-  }
-}
-
-export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
-  const target = details.origin ?? '<origin>'
-  const explanation =
-    details.expected !== undefined && details.actual !== undefined
-      ? 'A replacement cannot change an installed Domain issuer.'
-      : 'The replacement changes an immutable part of the installed Domain.'
-  return (
-    `${explanation} If this change is intentional, first run ` +
-    `\`astrale domain uninstall ${target}\`, then install it again. ` +
-    'The Kernel refuses uninstall while dependents or business data remain; uninstall never deletes business data.'
-  )
 }
 
 function schemaDataRemovalHint(reason: unknown): string | undefined {
@@ -383,11 +148,6 @@ function schemaDataRemovalHint(reason: unknown): string | undefined {
   }
 
   return 'Delete this data explicitly, then retry. No data was deleted.'
-}
-
-/** Strip internal `::methodName` suffixes from paths in error messages (e.g., "/path::listChildren" → "/path") */
-export function stripMethodSuffix(msg: string): string {
-  return msg.replace(/(\/[^"\s:]+)::([a-zA-Z]\w*)/g, '$1')
 }
 
 function mapPublicError(error: Error): {
@@ -426,14 +186,80 @@ function mapPublicError(error: Error): {
       hint: 'Pass the Kernel issuer URL (no /invoke suffix), e.g. https://host/kernel/host',
     }
   }
-  if (name === 'Error' && /unable to connect/i.test(error.message)) {
-    return {
-      code: 'CONNECTION_ERROR',
-      message: error.message,
-      hint: 'Check --url / -i and that the Kernel is reachable. Try: astrale status',
-    }
-  }
   return { code: name && name !== 'Error' ? name : 'UNKNOWN', message: error.message }
+}
+
+function presentTransportError(
+  error: Error,
+  isRaw: boolean,
+  url: string,
+  context: LocalStatus | undefined,
+): void {
+  const phase = transportPhase(error)
+  const delivery = transportDelivery(error)
+  const code =
+    phase === 'connect'
+      ? 'CONNECTION_ERROR'
+      : phase === 'timeout'
+        ? 'TIMEOUT'
+        : phase === 'closed'
+          ? 'DISCONNECTED'
+          : 'TRANSPORT_ERROR'
+  if (isRaw) {
+    writeRaw({
+      error: code,
+      message: error.message,
+      ...(url === '' ? {} : { url }),
+      ...(phase === undefined ? {} : { phase }),
+      ...(delivery === undefined ? {} : { delivery }),
+      ...(context === undefined ? {} : { context }),
+    })
+    return
+  }
+  log.error(`${chalk.bold(code)}: ${error.message}`)
+  if (url !== '') log.dim(`  target: ${url}`)
+  if (phase !== undefined) log.dim(`  phase: ${phase}`)
+  if (phase === 'connect') log.dim('  Check the target and run `astrale status`.')
+  else if (phase === 'timeout') log.dim('  Try increasing `--timeout`.')
+  else if (delivery === 'unknown') {
+    log.dim('  Delivery is unknown; do not automatically retry a mutating call.')
+  }
+  printLocalContext(context)
+}
+
+function presentFunctionInputIssues(issues: readonly FunctionInputIssue[]): void {
+  for (const issue of issues) {
+    const location = issue.path === undefined || issue.path === '' ? '<input>' : issue.path
+    console.log(chalk.red(`  ${location}: ${issue.message} (${chalk.dim(issue.code)})`))
+  }
+}
+
+function presentQueryInputRepair(repair: QueryInputRepair): void {
+  if (repair.phase === 'plan') {
+    log.dim(`  ${repair.path ?? '/'}  ${repair.issue}`)
+    return
+  }
+  if (repair.phase === 'limit') {
+    log.dim(`  ${repair.path ?? '/'}  ${repair.limit} limit ${repair.actual}/${repair.maximum}`)
+    return
+  }
+  log.dim(`  ${repair.path}  ${repair.phase} input`)
+}
+
+function transportPhase(error: Error): string | undefined {
+  const phase = (error as Error & { readonly phase?: unknown }).phase
+  return phase === 'connect' ||
+    phase === 'send' ||
+    phase === 'receive' ||
+    phase === 'timeout' ||
+    phase === 'closed'
+    ? phase
+    : undefined
+}
+
+function transportDelivery(error: Error): string | undefined {
+  const delivery = (error as Error & { readonly delivery?: unknown }).delivery
+  return delivery === 'not-sent' || delivery === 'unknown' ? delivery : undefined
 }
 
 function writeRaw(payload: Record<string, unknown>): void {
@@ -442,7 +268,7 @@ function writeRaw(payload: Record<string, unknown>): void {
 
 async function contextForError(error: unknown): Promise<LocalStatus | undefined> {
   if (!(error instanceof Error)) return undefined
-  if (error.name !== 'AuthenticationError' && error.name !== 'ConnectionError') return undefined
+  if (error.name !== 'TransportError') return undefined
   return readLocalStatus().catch(() => undefined)
 }
 

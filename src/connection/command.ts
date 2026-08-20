@@ -53,7 +53,7 @@ export async function runKernelCommand<T>(input: {
     }
   } catch (error) {
     if (!isRaw && spin) spin.fail(`${label} failed`)
-    await formatKernelError(error, isRaw, undefined, opts.debug, { credential: opts.creds })
+    await formatKernelError(error, isRaw, undefined, opts.debug)
     process.exit(1)
   }
 }

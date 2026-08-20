@@ -179,3 +179,23 @@ export const CLI_CONNECTION_PUBLIC_SEMANTIC_REASON = defineLaw({
     },
   ],
 })
+
+export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
+  id: 'CLI-CONNECTION-TYPED-ERROR-PRESENTATION',
+  statement:
+    'The command boundary maps typed Client transport phase and delivery evidence without parsing a private cause, preserves the admitted Kernel reason in machine output, and renders only bounded public Function issues or one exact Query repair variant for humans.',
+  tests: [
+    {
+      file: '__tests__/errors.test.ts',
+      id: 'TEST-CLI-CONNECTION-MAPS-TYPED-TRANSPORT',
+    },
+    {
+      file: '__tests__/errors.test.ts',
+      id: 'TEST-CLI-CONNECTION-PRESENTS-BOUNDED-REPAIRS',
+    },
+    {
+      file: '__tests__/reasons.test.ts',
+      id: 'TEST-CLI-CONNECTION-ADMITS-BOUNDED-REASONS',
+    },
+  ],
+})
