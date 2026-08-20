@@ -114,8 +114,9 @@ astrale domain uninstall crm.example -i staging
 
 A replacement cannot change an installed Domain issuer. If that identity
 change is intentional, uninstall the origin first and then install it again.
-Uninstall is destructive, requires typing the exact origin interactively (or
-`--yes` in automation), and is refused by the Kernel while dependents remain.
+Uninstall removes the installed Domain but never deletes business data. It
+requires typing the exact origin interactively (or `--yes` in automation), and
+is refused by the Kernel while dependents or business data remain.
 
 Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
 JWKS with that exact CA. If two bookmarks point to the same normalized URL with

@@ -202,16 +202,17 @@ export async function formatKernelError(
           : undefined
       const upgrade = schemaUpgradeDetails(reason)
       const inputIssues = functionInputIssues(reason)
+      const removalHint = schemaDataRemovalHint(reason)
       const domainAddressNotPublic = reasonCode === 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC'
       const displayMessage = domainAddressNotPublic
         ? 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.'
-        : error.message
+        : removalHint !== undefined && !isRaw
+          ? 'Existing business data still uses schema definitions being removed.'
+          : error.message
       const hint =
         reasonCode === 'FUNCTION_INPUT_INVALID' && (isRaw || inputIssues.length === 0)
           ? 'Use `astrale introspect <path>` to see the callable input.'
-          : upgrade !== undefined
-            ? schemaUpgradeHint(upgrade)
-            : undefined
+          : (removalHint ?? (upgrade === undefined ? undefined : schemaUpgradeHint(upgrade)))
       if (isRaw) {
         writeRaw({
           error: 'RESPONSE_ERROR',
@@ -224,9 +225,13 @@ export async function formatKernelError(
         log.error(
           domainAddressNotPublic
             ? `${chalk.bold('SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC')}: ${displayMessage}`
-            : `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${displayMessage}`,
+            : removalHint !== undefined
+              ? `${chalk.bold('DATA_MIGRATION_REQUIRED')}: ${displayMessage}`
+              : `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${displayMessage}`,
         )
-        if (reasonCode !== undefined && !domainAddressNotPublic) log.dim(`  reason: ${reasonCode}`)
+        if (reasonCode !== undefined && !domainAddressNotPublic && removalHint === undefined) {
+          log.dim(`  reason: ${reasonCode}`)
+        }
         for (const issue of inputIssues) {
           const location = issue.path === undefined || issue.path === '' ? '<input>' : issue.path
           console.log(chalk.red(`  ${location}: ${issue.message} (${chalk.dim(issue.code)})`))
@@ -352,8 +357,32 @@ export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   return (
     `${explanation} If this change is intentional, first run ` +
     `\`astrale domain uninstall ${target}\`, then install it again. ` +
-    'Uninstall is destructive and the Kernel may refuse it while dependents remain.'
+    'The Kernel refuses uninstall while dependents or business data remain; uninstall never deletes business data.'
   )
+}
+
+function schemaDataRemovalHint(reason: unknown): string | undefined {
+  if (reason === null || typeof reason !== 'object') return undefined
+  const value = reason as { readonly code?: unknown; readonly details?: unknown }
+  if (value.code !== 'DATA_MIGRATION_REQUIRED') return undefined
+  if (value.details === null || typeof value.details !== 'object') return undefined
+
+  const requirements = (value.details as { readonly requirements?: unknown }).requirements
+  if (
+    !Array.isArray(requirements) ||
+    requirements.length === 0 ||
+    !requirements.every(
+      (requirement) =>
+        requirement !== null &&
+        typeof requirement === 'object' &&
+        (requirement as { readonly operation?: unknown }).operation === 'remove-facts' &&
+        (requirement as { readonly reason?: unknown }).reason === 'destructive-change',
+    )
+  ) {
+    return undefined
+  }
+
+  return 'Delete this data explicitly, then retry. No data was deleted.'
 }
 
 /** Strip internal `::methodName` suffixes from paths in error messages (e.g., "/path::listChildren" → "/path") */

@@ -99,6 +99,102 @@ describe('formatKernelError', () => {
     })
   })
 
+  test('explains deletion-only schema work without changing the Kernel reason', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new ResponseError(CONFLICT, 'Schema change requires migration.', {
+          code: 'DATA_MIGRATION_REQUIRED',
+          details: {
+            requirements: [
+              {
+                operation: 'remove-facts',
+                reason: 'destructive-change',
+                subject: {
+                  kind: 'definition',
+                  ref: { origin: 'x.test', kind: 'class', name: 'X' },
+                },
+                work: { observedFacts: 1 },
+              },
+            ],
+          },
+        }),
+        true,
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: CONFLICT,
+      message: 'Schema change requires migration.',
+      reason: {
+        code: 'DATA_MIGRATION_REQUIRED',
+        details: {
+          requirements: [
+            {
+              operation: 'remove-facts',
+              reason: 'destructive-change',
+              subject: {
+                kind: 'definition',
+                ref: { origin: 'x.test', kind: 'class', name: 'X' },
+              },
+              work: { observedFacts: 1 },
+            },
+          ],
+        },
+      },
+      hint: 'Delete this data explicitly, then retry. No data was deleted.',
+    })
+  })
+
+  test('prints an actionable message for deletion-only schema work', async () => {
+    const errors: string[] = []
+    const hints: string[] = []
+    const originalError = console.error
+    const originalLog = console.log
+    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
+    console.log = (...values: unknown[]) => hints.push(values.map(String).join(' '))
+    try {
+      await formatKernelError(
+        new ResponseError(CONFLICT, 'Schema change requires migration.', {
+          code: 'DATA_MIGRATION_REQUIRED',
+          details: {
+            requirements: [
+              {
+                operation: 'remove-facts',
+                reason: 'destructive-change',
+                subject: {
+                  kind: 'definition',
+                  ref: { origin: 'x.test', kind: 'class', name: 'X' },
+                },
+                work: { observedFacts: 1 },
+              },
+            ],
+          },
+        }),
+        false,
+      )
+    } finally {
+      console.error = originalError
+      console.log = originalLog
+    }
+
+    expect(errors.join('\n')).toContain('DATA_MIGRATION_REQUIRED')
+    expect(errors.join('\n')).toContain(
+      'Existing business data still uses schema definitions being removed.',
+    )
+    expect(hints.join('\n')).toContain(
+      'Delete this data explicitly, then retry. No data was deleted.',
+    )
+  })
+
   test('maps SDK class names to stable CLI error codes', async () => {
     const writes: string[] = []
     const original = process.stderr.write

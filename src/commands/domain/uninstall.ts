@@ -40,8 +40,9 @@ export default {
   afterHelpText: `
 Behavior:
   Removes one installed Domain origin from the target instance. The Kernel
-  refuses the operation while another installed Domain depends on it. This is
-  destructive: type the exact origin to confirm, or pass --yes in automation.
+  refuses the operation while another installed Domain depends on it or while
+  business data still uses its schema. Uninstall never deletes business data.
+  Type the exact origin to confirm, or pass --yes in automation.
 
   Use this before reinstalling only when an immutable Domain property (such as
   its issuer) intentionally changed. Ordinary compatible upgrades should use
@@ -61,7 +62,7 @@ Examples:
   options: [
     {
       flags: '--yes',
-      description: 'Confirm destructive uninstall without prompting',
+      description: 'Confirm Domain uninstall without prompting',
     },
   ],
   action: async (origin: string, opts: UninstallOpts) => {
@@ -118,7 +119,9 @@ async function confirmUninstall(origin: string, opts: UninstallOpts): Promise<vo
     chalk.dim('│') +
     '  This removes the installed Domain from the target instance.\n' +
     chalk.dim('│') +
-    '  The Kernel will refuse removal while active dependents remain.'
+    '  This command never deletes business data.\n' +
+    chalk.dim('│') +
+    '  The Kernel refuses removal while dependents or business data remain.'
   if (!(await confirmWithInput(warning, origin))) {
     throw new AstraleError('UNINSTALL_CANCELLED', `Domain uninstall cancelled for "${origin}".`)
   }
