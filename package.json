@@ -1,6 +1,6 @@
 {
   "name": "@astrale-os/cli",
-  "version": "0.8.1-alpha.6",
+  "version": "0.8.1-alpha.7",
   "description": "Astrale CLI — connect to existing Astrale kernels",
   "keywords": [
     "astrale",
@@ -55,7 +55,7 @@
     "prepare": "husky",
     "build": "bun scripts/build.ts",
     "prepack": "pnpm run package:check",
-    "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs",
+    "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs && node scripts/verify-private-ports-boundary.mjs",
     "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.tests.json && tsgo --noEmit -p viewer && tsgo --noEmit -p studio",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
@@ -76,9 +76,9 @@
     "zod": "^3.25.0"
   },
   "devDependencies": {
-    "@astrale-os/kernel-client": "0.6.0-beta.1",
+    "@astrale-os/kernel-client": "0.6.0-beta.3",
     "@astrale-os/ox": ">=0.1.0 <1.0.0",
-    "@astrale-os/sdk": "0.5.0-beta.1",
+    "@astrale-os/sdk": "0.5.0-beta.3",
     "@astrale-os/shell": "0.3.8-beta.2",
     "@astrale/commitlint-config": "jsr:~2.0.1",
     "@commitlint/cli": "~20.3.1",

@@ -5,13 +5,12 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz
-  '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz
-  '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz
-  '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz
-  '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz
-  '@astrale-os/kernel-server': file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.1.tgz
-  '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz
+  '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz
+  '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz
+  '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz
+  '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz
+  '@astrale-os/kernel-server': file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.3.tgz
+  '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz
   '@astrale-os/shell': file:vendor/astrale-os-shell-0.3.8-beta.2.tgz
 
 importers:
@@ -47,14 +46,14 @@ importers:
         version: 3.25.76
     devDependencies:
       '@astrale-os/kernel-client':
-        specifier: file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz
-        version: file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@6.0.3)
+        specifier: file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz
+        version: file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz(typescript@6.0.3)
       '@astrale-os/ox':
         specifier: '>=0.1.0 <1.0.0'
         version: 0.1.2(oxfmt@0.52.0)(oxlint@1.79.0)
       '@astrale-os/sdk':
-        specifier: file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz
-        version: file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)
+        specifier: file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz
+        version: file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)
       '@astrale-os/shell':
         specifier: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz
         version: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@6.0.3)
@@ -212,36 +211,32 @@ importers:
 
 packages:
 
-  '@astrale-os/kernel-client@file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz':
-    resolution: {integrity: sha512-kK8I8biHVsq3DsRaZ5ajVB6lQ2PxSQXB8AKHusnOGcv8l+jQoyANVQ693arfn2ycBxNMX+4pxQPMgqRQOGNUgg==, tarball: file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz}
-    version: 0.6.0-beta.1
+  '@astrale-os/kernel-client@file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz':
+    resolution: {integrity: sha512-zSuuyVWKWZWm0oVm6JwIo6xR3Pe5Q0MFDaAUaevWgyGzlGllYvKLFGkcS+RdLMX3dWe2jvWLRrdmladmjmH7Bg==, tarball: file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz}
+    version: 0.6.0-beta.3
 
-  '@astrale-os/kernel-core@file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz':
-    resolution: {integrity: sha512-x52vo7BqTLLcSeMgMQE7E0p8t4PuIQaUIuY2AdrmUrcqGbQb7iRFB2ujaZeQvdJSsGpUziRmdGAkQO7yQXixeg==, tarball: file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz}
-    version: 0.9.0-beta.1
+  '@astrale-os/kernel-core@file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz':
+    resolution: {integrity: sha512-iEDapzAHGZy3goyt9UNY8/WCq2s+bCUiIVMTEJMLwWrU1vPSzFrS2aLH4a96Ddp9AUhvGZd8US8LtzAIe6vjLA==, tarball: file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz}
+    version: 0.9.0-beta.2
 
-  '@astrale-os/kernel-dsl@file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz':
-    resolution: {integrity: sha512-oQAATzreT7ypRzIwatcYwFT46A3bZkrGacPnV0nZASdGhyHPgYEFJGs9isdq7KzgRbsGHNFrCgEsJ+qFT40ndQ==, tarball: file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz}
-    version: 0.2.0-beta.1
+  '@astrale-os/kernel-dsl@file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz':
+    resolution: {integrity: sha512-OTN7/61RDxKFI7HPkaXulqpnOGwWKAyeenYMsYHEz9gM3r94MU/YSlamVVNKHfH38DxaDgv82ruy9sgL/MHifQ==, tarball: file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz}
+    version: 0.2.0-beta.2
     peerDependencies:
       typescript: ~6.0.1-rc
 
-  '@astrale-os/kernel-ports@file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz':
-    resolution: {integrity: sha512-NMJHQyz4mkFhKtyNqIkM8qU+RPgaQpiRNiyo3d5SJ2VuvWPymRmBUEct4QAo9Tj1EqjspuizNoQHqn5oVuh8GA==, tarball: file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz}
-    version: 0.6.0-beta.1
-
-  '@astrale-os/kernel-protocol@file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz':
-    resolution: {integrity: sha512-vfS6JTpjcOFgp3qLXgwgozhoh/rULLJxitLA6eNGfvF0S9tEbTNxI5buiwFGuQ6tMKYGE45FHROc7Fksa1Y6Uw==, tarball: file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz}
-    version: 0.5.0-beta.1
+  '@astrale-os/kernel-protocol@file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz':
+    resolution: {integrity: sha512-QIMUlzQeNML/XPx2MMNoEkH1FmOD7aU4Mjj/LFq9bzRypfIMeuR0GDs635KUWQ1iVxY3TGoSK1fEY1b3ZbM6wQ==, tarball: file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz}
+    version: 0.5.0-beta.2
     peerDependencies:
       msgpackr: ^1.11.0
     peerDependenciesMeta:
       msgpackr:
         optional: true
 
-  '@astrale-os/kernel-server@file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.1.tgz':
-    resolution: {integrity: sha512-hVOPSL/ljokp3E9lju89Km1LsrbG7Ss0IpmsPeouTTxtvNhHz2UrFyed3o2oadr8UqL8pIY0MXUyqIL0iAL8EA==, tarball: file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.1.tgz}
-    version: 0.5.0-beta.1
+  '@astrale-os/kernel-server@file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.3.tgz':
+    resolution: {integrity: sha512-vGudfgSzHq/Ng/snMXxUfxwKl/9En8xbfq5D779sN/IzGiZh52jNV5ADVRLAsq4Uh6o0Rbw2eK3+vOnQyPIZ0g==, tarball: file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.3.tgz}
+    version: 0.5.0-beta.3
 
   '@astrale-os/ox@0.1.2':
     resolution: {integrity: sha512-od+y7YRWsKNgJMZty6smKKds+XEosSWRfUTs+8iahCpZdU8KjBvRdHhtABSasFPbe6FZ6TQRKh+AZl7Gj9rFBg==}
@@ -249,9 +244,9 @@ packages:
       oxfmt: '>=0.1.0'
       oxlint: '>=1.0.0'
 
-  '@astrale-os/sdk@file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz':
-    resolution: {integrity: sha512-RAupU7zzzDVwGqPKSHicvD/aoaqDvIRirnLYgbGHt3WKcBWtV991XoKUcl7TS7CN5GxiY0xGRkZ1ktopxDNOPA==, tarball: file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz}
-    version: 0.5.0-beta.1
+  '@astrale-os/sdk@file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz':
+    resolution: {integrity: sha512-hcDpkgzZerYLmpFucCi6w1d9bXNlw/UxgWDYG6M6m/6Gj63UPAx9Vy7zJGNhIu3aXU0ZwtcFRo29aVZvqsalvQ==, tarball: file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz}
+    version: 0.5.0-beta.3
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -267,7 +262,7 @@ packages:
         optional: true
 
   '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.2.tgz':
-    resolution: {integrity: sha512-1MDnQw0i+6IRjYel3tTPhgeOucav7JMbqO4qQRBQ9sfdXY3vL0r5ApbnSVCOqCakLqinHUHxjJQP56s3IWWw+Q==, tarball: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz}
+    resolution: {integrity: sha512-sqnbsumb5YtcAB11VAGgK+GtQmMpzEvI/CRczDd0z5nLTsPUWf1fvuGka7QM3chqRJJR+aC5FOPmDGsTlONUEQ==, tarball: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz}
     version: 0.3.8-beta.2
 
   '@babel/code-frame@7.29.7':
@@ -3142,31 +3137,29 @@ packages:
 
 snapshots:
 
-  '@astrale-os/kernel-client@file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@5.9.3)':
+  '@astrale-os/kernel-client@file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz(typescript@5.9.3)':
     dependencies:
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@5.9.3)
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@5.9.3)
-      '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@5.9.3)
-      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@5.9.3)
+      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@5.9.3)
+      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@5.9.3)
+      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz(msgpackr@1.12.1)(typescript@5.9.3)
       '@tanstack/pacer': 0.20.1
       msgpackr: 1.12.1
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-client@file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@6.0.3)':
+  '@astrale-os/kernel-client@file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
-      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
+      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz(msgpackr@1.12.1)(typescript@6.0.3)
       '@tanstack/pacer': 0.20.1
       msgpackr: 1.12.1
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-core@file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@5.9.3)':
+  '@astrale-os/kernel-core@file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@5.9.3)':
     dependencies:
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@5.9.3)
+      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@5.9.3)
       '@noble/hashes': 2.2.0
       '@types/json-schema': 7.0.15
       dequal: 2.0.3
@@ -3174,9 +3167,9 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-core@file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@6.0.3)':
+  '@astrale-os/kernel-core@file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@6.0.3)
       '@noble/hashes': 2.2.0
       '@types/json-schema': 7.0.15
       dequal: 2.0.3
@@ -3184,7 +3177,7 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-dsl@file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@5.9.3)':
+  '@astrale-os/kernel-dsl@file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@5.9.3)':
     dependencies:
       '@noble/hashes': 2.2.0
       jsonc-parser: 3.3.1
@@ -3192,7 +3185,7 @@ snapshots:
       typescript: 5.9.3
       zod: 4.4.3
 
-  '@astrale-os/kernel-dsl@file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@6.0.3)':
+  '@astrale-os/kernel-dsl@file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@6.0.3)':
     dependencies:
       '@noble/hashes': 2.2.0
       jsonc-parser: 3.3.1
@@ -3200,49 +3193,30 @@ snapshots:
       typescript: 6.0.3
       zod: 4.4.3
 
-  '@astrale-os/kernel-ports@file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@5.9.3)':
+  '@astrale-os/kernel-protocol@file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz(msgpackr@1.12.1)(typescript@5.9.3)':
     dependencies:
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@5.9.3)
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@5.9.3)
-      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@5.9.3)
-    transitivePeerDependencies:
-      - msgpackr
-      - typescript
-
-  '@astrale-os/kernel-ports@file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)':
-    dependencies:
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
-    transitivePeerDependencies:
-      - msgpackr
-      - typescript
-
-  '@astrale-os/kernel-protocol@file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@5.9.3)':
-    dependencies:
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@5.9.3)
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@5.9.3)
+      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@5.9.3)
+      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@5.9.3)
       '@noble/hashes': 2.2.0
     optionalDependencies:
       msgpackr: 1.12.1
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-protocol@file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)':
+  '@astrale-os/kernel-protocol@file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz(msgpackr@1.12.1)(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@6.0.3)
       '@noble/hashes': 2.2.0
     optionalDependencies:
       msgpackr: 1.12.1
     transitivePeerDependencies:
       - typescript
 
-  '@astrale-os/kernel-server@file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.1.tgz(typescript@6.0.3)':
+  '@astrale-os/kernel-server@file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.3.tgz(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
-      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
+      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz(msgpackr@1.12.1)(typescript@6.0.3)
       hono: 4.13.3
       msgpackr: 1.12.1
     transitivePeerDependencies:
@@ -3253,14 +3227,13 @@ snapshots:
       oxfmt: 0.52.0
       oxlint: 1.79.0
 
-  '@astrale-os/sdk@file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)':
+  '@astrale-os/sdk@file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)':
     dependencies:
-      '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
-      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
-      '@astrale-os/kernel-server': file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.1.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-core': file:vendor/kernel/astrale-os-kernel-core-0.9.0-beta.2.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-dsl': file:vendor/kernel/astrale-os-kernel-dsl-0.2.0-beta.2.tgz(typescript@6.0.3)
+      '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.2.tgz(msgpackr@1.12.1)(typescript@6.0.3)
+      '@astrale-os/kernel-server': file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.3.tgz(typescript@6.0.3)
       hono: 4.13.3
       jose: 6.2.3
       typescript: 6.0.3
@@ -3273,9 +3246,8 @@ snapshots:
 
   '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.2.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@5.9.3)':
     dependencies:
-      '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@5.9.3)
-      '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@5.9.3)
-      '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)
+      '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz(typescript@5.9.3)
+      '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)
       jose: 6.2.3
       zod: 4.4.3
     transitivePeerDependencies:
@@ -3287,9 +3259,8 @@ snapshots:
 
   '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.2.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@6.0.3)':
     dependencies:
-      '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@6.0.3)
-      '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)
-      '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)
+      '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.3.tgz(typescript@6.0.3)
+      '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.3.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)
       jose: 6.2.3
       zod: 4.4.3
     transitivePeerDependencies:
