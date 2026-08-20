@@ -3,6 +3,7 @@ import type { IncomingHttpHeaders, request as httpRequest } from 'node:http'
 import { Buffer } from 'node:buffer'
 import { readFileSync } from 'node:fs'
 import { request as httpsRequest } from 'node:https'
+import { rootCertificates } from 'node:tls'
 
 /** Create a Fetch capability whose HTTPS requests trust one CLI-selected CA file. */
 export function fetchWithCaFile(
@@ -32,7 +33,9 @@ function fetchWithNode(url: URL, init: RequestInit | undefined, ca: Buffer): Pro
       {
         method: init?.method ?? 'GET',
         headers: headersInitToRecord(init?.headers),
-        ca,
+        // `ca` replaces Node's default trust set. Retain public roots because one
+        // Client Session may reach both a private Kernel and a public Domain issuer.
+        ca: [...rootCertificates, ca],
       },
       (response) => {
         const chunks: Buffer[] = []
@@ -40,8 +43,11 @@ function fetchWithNode(url: URL, init: RequestInit | undefined, ca: Buffer): Pro
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)),
         )
         response.on('end', () => {
-          const result = new Response(Buffer.concat(chunks), {
-            status: response.statusCode ?? 0,
+          const status = response.statusCode ?? 0
+          const body =
+            status === 204 || status === 205 || status === 304 ? null : Buffer.concat(chunks)
+          const result = new Response(body, {
+            status,
             statusText: response.statusMessage,
             headers: responseHeaders(response.headers),
           })

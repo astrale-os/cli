@@ -29,7 +29,10 @@ describe('connection CA fetch', () => {
       hostname: '127.0.0.1',
       port: 0,
       tls: { cert: certificate, key },
-      fetch: () => new Response('trusted'),
+      fetch: (request) =>
+        new URL(request.url).pathname === '/cached'
+          ? new Response(null, { status: 304, headers: { etag: 'retained' } })
+          : new Response('trusted'),
     })
 
     const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
@@ -45,6 +48,10 @@ describe('connection CA fetch', () => {
     expect(await httpsResponse.text()).toBe('trusted')
     expect(httpsResponse.url).toBe(httpsUrl)
     expect(httpsResponse.redirected).toBe(false)
+    const cachedResponse = await scoped(`https://127.0.0.1:${server.port}/cached`)
+    expect(cachedResponse.status).toBe(304)
+    expect(cachedResponse.body).toBeNull()
+    expect(cachedResponse.headers.get('etag')).toBe('retained')
     await expect(
       scoped('http://localhost:8080/invoke', init).then((value) => value.text()),
     ).resolves.toBe('fallback')
