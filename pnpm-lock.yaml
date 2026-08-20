@@ -12,7 +12,7 @@ overrides:
   '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz
   '@astrale-os/kernel-server': file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.1.tgz
   '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz
-  '@astrale-os/shell': file:vendor/astrale-os-shell-0.3.8-beta.1.tgz
+  '@astrale-os/shell': file:vendor/astrale-os-shell-0.3.8-beta.2.tgz
 
 importers:
 
@@ -56,8 +56,8 @@ importers:
         specifier: file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz
         version: file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)
       '@astrale-os/shell':
-        specifier: file:vendor/astrale-os-shell-0.3.8-beta.1.tgz
-        version: file:vendor/astrale-os-shell-0.3.8-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@6.0.3)
+        specifier: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz
+        version: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@6.0.3)
       '@astrale/commitlint-config':
         specifier: jsr:~2.0.1
         version: '@jsr/astrale__commitlint-config@2.0.2'
@@ -98,8 +98,8 @@ importers:
   studio:
     dependencies:
       '@astrale-os/shell':
-        specifier: file:../vendor/astrale-os-shell-0.3.8-beta.1.tgz
-        version: file:vendor/astrale-os-shell-0.3.8-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@5.9.3)
+        specifier: file:../vendor/astrale-os-shell-0.3.8-beta.2.tgz
+        version: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@5.9.3)
       '@dagrejs/dagre':
         specifier: ^3.0.0
         version: 3.1.1
@@ -266,9 +266,9 @@ packages:
       oxlint:
         optional: true
 
-  '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.1.tgz':
-    resolution: {integrity: sha512-VdWTXNwhWn2FUuQeNBoybHXNHDce3ttxeexxTaqRy58GfcWAap62U1EtcxkmX3DkyMMtKocve4hFsFR5PAwq8w==, tarball: file:vendor/astrale-os-shell-0.3.8-beta.1.tgz}
-    version: 0.3.8-beta.1
+  '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.2.tgz':
+    resolution: {integrity: sha512-1MDnQw0i+6IRjYel3tTPhgeOucav7JMbqO4qQRBQ9sfdXY3vL0r5ApbnSVCOqCakLqinHUHxjJQP56s3IWWw+Q==, tarball: file:vendor/astrale-os-shell-0.3.8-beta.2.tgz}
+    version: 0.3.8-beta.2
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -3271,7 +3271,7 @@ snapshots:
     transitivePeerDependencies:
       - msgpackr
 
-  '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@5.9.3)':
+  '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.2.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@5.9.3)':
     dependencies:
       '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@5.9.3)
       '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@5.9.3)
@@ -3285,7 +3285,7 @@ snapshots:
       - oxlint
       - typescript
 
-  '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.1.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@6.0.3)':
+  '@astrale-os/shell@file:vendor/astrale-os-shell-0.3.8-beta.2.tgz(@astrale-os/ox@0.1.2(oxfmt@0.52.0)(oxlint@1.79.0))(msgpackr@1.12.1)(oxlint@1.79.0)(typescript@6.0.3)':
     dependencies:
       '@astrale-os/kernel-client': file:vendor/kernel/astrale-os-kernel-client-0.6.0-beta.1.tgz(typescript@6.0.3)
       '@astrale-os/kernel-ports': file:vendor/kernel/astrale-os-kernel-ports-0.6.0-beta.1.tgz(msgpackr@1.12.1)(typescript@6.0.3)

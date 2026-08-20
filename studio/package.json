@@ -19,7 +19,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@astrale-os/shell": "file:../vendor/astrale-os-shell-0.3.8-beta.1.tgz",
+    "@astrale-os/shell": "file:../vendor/astrale-os-shell-0.3.8-beta.2.tgz",
     "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-collapsible": "^1.1.0",
     "@radix-ui/react-dialog": "^1.1.6",

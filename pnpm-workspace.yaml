@@ -34,4 +34,4 @@ overrides:
   '@astrale-os/kernel-protocol': file:vendor/kernel/astrale-os-kernel-protocol-0.5.0-beta.1.tgz
   '@astrale-os/kernel-server': file:vendor/kernel/astrale-os-kernel-server-0.5.0-beta.1.tgz
   '@astrale-os/sdk': file:vendor/astrale-os-sdk-0.5.0-beta.1.tgz
-  '@astrale-os/shell': file:vendor/astrale-os-shell-0.3.8-beta.1.tgz
+  '@astrale-os/shell': file:vendor/astrale-os-shell-0.3.8-beta.2.tgz
