@@ -1,5 +1,7 @@
 import chalk from 'chalk'
 
+import type { OperationRecovery } from './command'
+
 import { AstraleError } from '../errors'
 import { readLocalStatus, type LocalStatus } from '../lib/local-status'
 import { log } from '../lib/log'
@@ -28,6 +30,7 @@ export async function formatKernelError(
   isRaw: boolean,
   urlArg = '',
   debug = false,
+  opts: { recovery?: OperationRecovery } = {},
 ): Promise<void> {
   const url =
     urlArg || (error instanceof Error ? ((error as Error & { url?: string }).url ?? '') : '')
@@ -54,7 +57,7 @@ export async function formatKernelError(
 
   switch (name) {
     case 'TransportError':
-      presentTransportError(error, isRaw, url, localContext)
+      presentTransportError(error, isRaw, url, localContext, opts.recovery)
       break
 
     case 'ResponseError': {
@@ -194,6 +197,7 @@ function presentTransportError(
   isRaw: boolean,
   url: string,
   context: LocalStatus | undefined,
+  recovery: OperationRecovery | undefined,
 ): void {
   const phase = transportPhase(error)
   const delivery = transportDelivery(error)
@@ -213,6 +217,7 @@ function presentTransportError(
       ...(phase === undefined ? {} : { phase }),
       ...(delivery === undefined ? {} : { delivery }),
       ...(context === undefined ? {} : { context }),
+      ...(delivery === 'unknown' && recovery !== undefined ? recovery : {}),
     })
     return
   }
@@ -221,10 +226,18 @@ function presentTransportError(
   if (phase !== undefined) log.dim(`  phase: ${phase}`)
   if (phase === 'connect') log.dim('  Check the target and run `astrale status`.')
   else if (phase === 'timeout') log.dim('  Try increasing `--timeout`.')
-  else if (delivery === 'unknown') {
-    log.dim('  Delivery is unknown; do not automatically retry a mutating call.')
-  }
+  else if (delivery === 'unknown') printOperationRecovery(recovery)
   printLocalContext(context)
+}
+
+function printOperationRecovery(recovery: OperationRecovery | undefined): void {
+  if (recovery === undefined) {
+    log.dim('  Delivery is unknown; do not automatically retry a mutating call.')
+    return
+  }
+  log.dim('  Delivery is unknown; retry with the same operation id:')
+  log.dim(`  operation: ${recovery.operation}`)
+  log.dim(`  ${recovery.retry}`)
 }
 
 function presentFunctionInputIssues(issues: readonly FunctionInputIssue[]): void {

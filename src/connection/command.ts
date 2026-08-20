@@ -16,6 +16,11 @@ export interface KernelCommandOpts extends ConnectionOptions {
   readonly debug?: boolean
 }
 
+export interface OperationRecovery {
+  readonly operation: string
+  readonly retry: string
+}
+
 /**
  * Encapsulates the standard kernel command lifecycle:
  * spinner → connect → call → timing → output → error handling.
@@ -27,6 +32,7 @@ export interface KernelCommandOpts extends ConnectionOptions {
 export async function runKernelCommand<T>(input: {
   readonly opts: KernelCommandOpts
   readonly label: string
+  readonly recovery?: OperationRecovery
   readonly fn: (context: ConnectionContext) => Promise<T>
   readonly format?: (
     result: T,
@@ -53,7 +59,9 @@ export async function runKernelCommand<T>(input: {
     }
   } catch (error) {
     if (!isRaw && spin) spin.fail(`${label} failed`)
-    await formatKernelError(error, isRaw, undefined, opts.debug)
+    await formatKernelError(error, isRaw, undefined, opts.debug, {
+      recovery: input.recovery,
+    })
     process.exit(1)
   }
 }

@@ -21,11 +21,7 @@ import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
 
 /** Public Kernel install syscall input for one remote URL. */
-export function directInstallCallInput(
-  url: string,
-  token?: string,
-  operation: string = crypto.randomUUID(),
-) {
+export function directInstallCallInput(url: string, operation: string, token?: string) {
   return Object.freeze({
     operation,
     domains: [
@@ -50,9 +46,28 @@ type DirectInstallResult = {
   }[]
 }
 
+const OPERATION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
+
+function acceptOperationId(input: unknown): string {
+  if (typeof input !== 'string' || !OPERATION_ID_PATTERN.test(input)) {
+    throw new AstraleError(
+      'INVALID_FLAG',
+      '--operation must be a canonical lowercase UUIDv4.',
+      'Omit --operation for a fresh install; use it only with the exact UUID printed for recovery.',
+    )
+  }
+  return input
+}
+
+function createOperationId(): string {
+  return acceptOperationId(globalThis.crypto.randomUUID())
+}
+
 type InstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
     direct?: boolean
+    operation?: string
     token?: string
     allowIdentityOverride?: boolean
     // Global flags (program.ts) that force non-interactive.
@@ -77,6 +92,10 @@ Behavior:
   mode that runs the identity-override consent gate: when the domain's declared
   origin differs from its serving host, it requires explicit consent (an
   interactive DANGER prompt, or --allow-identity-override in scripts).
+
+  A fresh, strong operation id is generated automatically. Use --operation
+  only to retry or recover the exact same direct install after an outcome-unknown
+  timeout or disconnect.
 
 Examples:
   $ astrale domain install crm.acme.dev -i staging          # by origin, via admin
@@ -104,11 +123,25 @@ Examples:
       description: 'Bearer token for private domain install endpoints (--direct only)',
     },
     {
+      flags: '--operation <uuid>',
+      description: 'Reuse an exact direct-install operation id for explicit retry/recovery',
+    },
+    {
       flags: '--allow-identity-override',
       description: 'Consent to a domain whose origin differs from its serving host (--direct only)',
     },
   ],
   action: async (target: string | undefined, opts: InstallOpts) => {
+    if (opts.operation !== undefined && !opts.direct) {
+      fatal(
+        new AstraleError(
+          'INVALID_FLAG',
+          '--operation is valid only with --direct.',
+          'Ordinary direct installs generate a fresh operation id automatically.',
+        ),
+        opts,
+      )
+    }
     if (opts.direct) {
       await installDirect(target, opts)
       return
@@ -326,9 +359,27 @@ async function activeSlug(): Promise<string | undefined> {
  * bypassing the admin catalog, with the identity-override
  * consent gate. Works on any instance the caller can authenticate to.
  */
-async function installDirect(target: string | undefined, opts: InstallOpts): Promise<void> {
+interface DirectInstallDependencies {
+  readonly acceptOperationId: (input: unknown) => string
+  readonly createOperationId: () => string
+  readonly runKernelCommand: typeof runKernelCommand
+}
+
+const defaultDirectInstallDependencies: DirectInstallDependencies = Object.freeze({
+  acceptOperationId,
+  createOperationId,
+  runKernelCommand,
+})
+
+export async function installDirect(
+  target: string | undefined,
+  opts: InstallOpts,
+  dependencies: Partial<DirectInstallDependencies> = {},
+): Promise<void> {
+  const direct = { ...defaultDirectInstallDependencies, ...dependencies }
   let host = ''
   let consentedOrigin: string | undefined
+  let operation: string
   try {
     if (!target) {
       throw new AstraleError(
@@ -338,24 +389,30 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
       )
     }
     host = validateInstallUrl(target)
+    operation =
+      opts.operation === undefined
+        ? direct.createOperationId()
+        : direct.acceptOperationId(opts.operation)
     consentedOrigin = await ensureIdentityOverrideConsent(
       target,
       host,
       opts.allowIdentityOverride ?? false,
     )
   } catch (e) {
-    fatal(e)
+    fatal(e, opts)
   }
   const url = target as string
+  const retry = directInstallRetry(url, operation, opts)
 
-  await runKernelCommand<DirectInstallResult>({
+  await direct.runKernelCommand<DirectInstallResult>({
     opts,
-    label: `Installing domain from ${url}`,
+    label: `Installing domain from ${url} (operation ${operation})`,
+    recovery: { operation, retry },
     fn: async ({ session }) =>
       (await session.call(
         createPathCall(
           Path.project(syscalls.install.ref).raw,
-          directInstallCallInput(url, opts.token),
+          directInstallCallInput(url, operation, opts.token),
         ),
       )) as DirectInstallResult,
     format: (result, fmtOpts, isRaw) => {
@@ -364,11 +421,10 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
         return
       }
       const installed = result.transitions[0]?.intent
-      if (installed === undefined) {
-        throw new Error('Kernel install returned no committed Domain transition.')
-      }
+      if (!installed) throw new Error('Kernel install returned no committed Domain transition.')
       const revision = installed.target?.schemaRevision ?? result.operation
       log.success(`Domain installed: ${installed.origin}@${revision}`)
+      log.dim(`  operation:   ${result.operation}`)
       // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
       // aliases the host and the pre-install gate never consented to THAT
       // origin (lying or absent `/meta`), say so loudly after the fact.
@@ -381,6 +437,11 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
       }
     },
   })
+}
+
+function directInstallRetry(url: string, operation: string, opts: InstallOpts): string {
+  const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
+  return `astrale domain install ${url} --direct --operation ${operation}${instance}`
 }
 
 function validateInstallUrl(value: string): string {
