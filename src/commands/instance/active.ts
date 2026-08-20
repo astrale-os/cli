@@ -19,13 +19,19 @@ export default {
       const { name } = active
       const url = active.url ?? null
       const createdAt = active.createdAt ?? null
+      const issuer = active.issuer ?? null
+      const defaultIdentity = active.defaultIdentity ?? null
+      const caFile = active.caFile ?? null
 
       if (isRaw) {
-        output({ name, url, createdAt }, opts)
+        output({ name, url, issuer, defaultIdentity, caFile, createdAt }, opts)
         return
       }
 
       console.log(`${chalk.bold(name)} (${url ?? 'local'})`)
+      if (issuer && issuer !== url) log.dim(`  issuer:   ${issuer}`)
+      if (defaultIdentity) log.dim(`  identity: ${defaultIdentity}`)
+      if (caFile) log.dim(`  ca:       ${caFile}`)
     } catch (e) {
       log.error(e instanceof Error ? e.message : String(e))
       process.exit(1)
@@ -36,6 +42,9 @@ export default {
 async function resolveActiveForDisplay(): Promise<{
   name: string
   url?: string
+  issuer?: string
+  defaultIdentity?: string
+  caFile?: string
   createdAt?: string
 }> {
   const active = await getActive()
@@ -43,6 +52,9 @@ async function resolveActiveForDisplay(): Promise<{
     return {
       name: active.name,
       url: active.url,
+      issuer: active.issuer,
+      defaultIdentity: active.defaultIdentity,
+      caFile: active.caFile,
       createdAt: active.createdAt,
     }
   }

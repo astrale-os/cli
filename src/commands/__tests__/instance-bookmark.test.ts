@@ -72,6 +72,63 @@ describe('instance bookmark command', () => {
     expect(store.instances.testmarc.caFile).toBe('/tmp/ca.pem')
     expect(store.instances.testmarc.createdAt).toBe('2026-06-10T00:00:00.000Z')
   })
+
+  test('warns when another bookmark uses different TLS trust for the same URL', async () => {
+    await writeFile(
+      join(tmp, 'instances.json'),
+      JSON.stringify({
+        active: 'stable',
+        instances: {
+          stable: {
+            url: 'https://local.example/kernel',
+            caFile: '/certs/stable.pem',
+          },
+        },
+      }),
+    )
+
+    const result = await runBookmark(
+      'stale',
+      '--url',
+      'https://local.example/kernel/',
+      '--ca',
+      '/certs/old.pem',
+      '--skip-probe',
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toContain('TLS trust differs for the same Kernel URL')
+    expect(result.stderr).toContain('"stable" uses CA /certs/stable.pem')
+  })
+
+  test('active --json exposes the TLS and identity configuration', async () => {
+    await writeFile(
+      join(tmp, 'instances.json'),
+      JSON.stringify({
+        active: 'stable',
+        instances: {
+          stable: {
+            url: 'https://local.example/kernel',
+            issuer: 'https://issuer.example',
+            defaultIdentity: 'marc',
+            caFile: '/certs/stable.pem',
+            createdAt: '2026-08-20T00:00:00.000Z',
+          },
+        },
+      }),
+    )
+
+    const result = await runCli('instance', 'active', '--json')
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual({
+      name: 'stable',
+      url: 'https://local.example/kernel',
+      issuer: 'https://issuer.example',
+      defaultIdentity: 'marc',
+      caFile: '/certs/stable.pem',
+      createdAt: '2026-08-20T00:00:00.000Z',
+    })
+  })
 })
 
 async function readInstances(): Promise<{
@@ -86,8 +143,16 @@ async function runBookmark(...args: string[]): Promise<{
   stdout: string
   stderr: string
 }> {
+  return runCli('instance', 'bookmark', ...args)
+}
+
+async function runCli(...args: string[]): Promise<{
+  exitCode: number
+  stdout: string
+  stderr: string
+}> {
   const proc = Bun.spawn({
-    cmd: ['bun', join(cliRoot, 'bin/astrale.ts'), 'instance', 'bookmark', ...args],
+    cmd: ['bun', join(cliRoot, 'bin/astrale.ts'), ...args],
     env: { ...process.env, ASTRALE_HOME: tmp },
     stdout: 'pipe',
     stderr: 'pipe',

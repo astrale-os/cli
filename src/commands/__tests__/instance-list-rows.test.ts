@@ -15,6 +15,7 @@ function bookmark(overrides: Partial<Bookmark> = {}): Bookmark {
     issuer: null,
     active: false,
     defaultIdentity: null,
+    caFile: null,
     createdAt: null,
     ...overrides,
   }

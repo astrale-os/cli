@@ -80,11 +80,12 @@ export async function buildProgram(): Promise<Command> {
 
   registerGroup(program, {
     name: 'domain',
-    description: 'List, publish, and install domains (admin catalog + per-instance install)',
+    description: 'List, publish, install, and uninstall domains',
     commands: [
       withKernelOptions((await import('../commands/domain/list')).default),
       withKernelOptions((await import('../commands/domain/publish')).default),
       withKernelOptions((await import('../commands/domain/install')).default),
+      withKernelOptions((await import('../commands/domain/uninstall')).default),
     ],
   })
 

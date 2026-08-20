@@ -1,7 +1,7 @@
 import { ResponseError } from '@astrale-os/kernel-client'
 import { describe, expect, test } from 'bun:test'
 
-import { formatKernelError, stripMethodSuffix } from '../errors'
+import { formatKernelError, schemaUpgradeHint, stripMethodSuffix } from '../errors'
 
 const CONFLICT = 4001
 
@@ -111,6 +111,51 @@ describe('formatKernelError', () => {
     expect(JSON.parse(writes[0]!)).toEqual({
       error: 'PATH_INVALID',
       message: 'Path must have an Id or Domain anchor.',
+    })
+  })
+
+  test('explains immutable issuer replacements and preserves the Kernel reason', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new ResponseError(5001, 'Schema operation is not supported.', {
+          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+          details: {
+            phase: 'upgrade',
+            origin: 'grc.example',
+            expected: 'https://old.example',
+            actual: 'https://new.example',
+          },
+        }),
+        true,
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: 5001,
+      message: 'Schema operation is not supported.',
+      reason: {
+        code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+        details: {
+          phase: 'upgrade',
+          origin: 'grc.example',
+          expected: 'https://old.example',
+          actual: 'https://new.example',
+        },
+      },
+      hint: schemaUpgradeHint({
+        origin: 'grc.example',
+        expected: 'https://old.example',
+        actual: 'https://new.example',
+      }),
     })
   })
 })

@@ -30,6 +30,7 @@ export type Bookmark = {
   issuer: string | null
   active: boolean
   defaultIdentity: string | null
+  caFile: string | null
   createdAt: string | null
 }
 
@@ -57,6 +58,7 @@ export default {
         issuer: entry.issuer ?? null,
         active: name === store.active,
         defaultIdentity: entry.defaultIdentity ?? null,
+        caFile: entry.caFile ?? null,
         createdAt: entry.createdAt ?? null,
       }))
 
@@ -111,13 +113,13 @@ export function buildInstanceRows(
   const rows: Array<Record<string, string>> = []
   const merged = new Set<string>()
 
-  const bookmarkByName = new Map<string, { url: string; active: boolean }>()
+  const bookmarkByName = new Map<string, Bookmark & { url: string }>()
   if (show.managed && show.bookmarks) {
     for (const bookmark of bookmarks) {
       if (bookmark.url === null) continue
       bookmarkByName.set(bookmark.name, {
+        ...bookmark,
         url: normalizeInstanceKernelUrl(bookmark.url),
-        active: bookmark.active,
       })
     }
   }
@@ -134,7 +136,9 @@ export function buildInstanceRows(
         name: twin?.active ? `${item.slug} ${chalk.green('*')}` : item.slug,
         kind: 'managed',
         url: item.url ?? '',
-        extra: formatInstanceLocation(item),
+        extra: [formatInstanceLocation(item), twin ? formatBookmarkConnection(twin) : '']
+          .filter(Boolean)
+          .join(' · '),
       })
     }
   }
@@ -146,12 +150,22 @@ export function buildInstanceRows(
         name: item.active ? `${item.name} ${chalk.green('*')}` : item.name,
         kind: 'bookmark',
         url: String(item.url ?? ''),
-        extra: '',
+        extra: formatBookmarkConnection(item),
       })
     }
   }
 
   return rows
+}
+
+function formatBookmarkConnection(bookmark: Bookmark): string {
+  return [
+    bookmark.issuer && bookmark.issuer !== bookmark.url ? `issuer=${bookmark.issuer}` : '',
+    bookmark.caFile ? `ca=${bookmark.caFile}` : '',
+    bookmark.defaultIdentity ? `identity=${bookmark.defaultIdentity}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 const ADMIN_INVENTORY_CODES = new Set([

@@ -109,7 +109,18 @@ The CLI is connect-only: it does not build or run domains. The SDK's
 ```bash
 astrale domain install crm.example -i staging
 astrale domain install https://crm.example --direct -i staging
+astrale domain uninstall crm.example -i staging
 ```
+
+A replacement cannot change an installed Domain issuer. If that identity
+change is intentional, uninstall the origin first and then install it again.
+Uninstall is destructive, requires typing the exact origin interactively (or
+`--yes` in automation), and is refused by the Kernel while dependents remain.
+
+Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
+JWKS with that exact CA. If two bookmarks point to the same normalized URL with
+different CA settings, the CLI warns and `instance list --bookmarked --json`
+shows each bookmark's `caFile`, issuer, and default identity.
 
 A deployment-only Publication change does not inherently require reinstalling
 the Domain. Reinstall or run a schema plan only when installation/schema intent
