@@ -162,7 +162,7 @@ async function resolveIdpAccessToken(
       )
     }
     if (e instanceof IdpSessionNoRefreshTokenError) {
-      throw new Error(wrongAudienceHint(identityName, identity, audience))
+      throw classifyNoRefreshTokenError(audience, identity.audience, e)
     }
     // An audience mismatch means the session is healthy but the IdP won't
     // mint this audience — re-login is futile, so propagate it verbatim for
@@ -180,6 +180,16 @@ async function resolveIdpAccessToken(
   }
 
   return token
+}
+
+export function classifyNoRefreshTokenError(
+  requestedAudience: string,
+  sourceAudience: string | undefined,
+  error: IdpSessionNoRefreshTokenError,
+): IdpSessionNoRefreshTokenError | IdpAudienceMismatchError {
+  return sourceAudience !== undefined && sourceAudience !== requestedAudience
+    ? new IdpAudienceMismatchError(requestedAudience, sourceAudience)
+    : error
 }
 
 /** A refresh attempt failed for a reason that re-login will NOT fix. */
@@ -223,12 +233,4 @@ function refreshFailureError(identityName: string, identity: Identity, cause: un
           `The cached session has expired or ended — run: astrale auth login --name ${identityName}${idpFlag}`,
       )
   }
-}
-
-function wrongAudienceHint(identityName: string, identity: Identity, audience: string): string {
-  return (
-    `IdP token for "${identityName}" was not minted for target audience ${audience}, ` +
-    'and the cached session cannot be refreshed. ' +
-    `Run: astrale auth login --name ${identityName} --idp ${identity.idp ?? '<idp>'} --audience ${audience}`
-  )
 }
