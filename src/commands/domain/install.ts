@@ -415,7 +415,7 @@ export function isIdentityOverride(origin: string, host: string): boolean {
  * Claiming an origin that differs from the serving host is an explicit actAs
  * and needs typed consent (or `--allow-identity-override` in scripts).
  *
- * The pre-install check reads the worker's self-reported `/meta.domainName`,
+ * The pre-install check reads the worker's self-reported `/meta.origin`,
  * so it is consent UX, not enforcement — a hostile worker can lie here, and
  * the kernel anchors the cryptographic identity (`iss`) on the real URL
  * regardless. When `/meta` is unreachable or silent on the origin, the gate
@@ -476,10 +476,11 @@ export async function probeDeclaredOrigin(url: string): Promise<string | undefin
   try {
     const res = await fetch(new URL('/meta', url), { signal: AbortSignal.timeout(10_000) })
     if (!res.ok) return undefined
-    const body = (await res.json()) as { domainName?: unknown }
-    return typeof body.domainName === 'string' && body.domainName.length > 0
-      ? body.domainName
-      : undefined
+    // SDK workers serve `origin`; `domainName` is the pre-Kernel-V2 name, kept
+    // as a fallback for workers deployed before the rename.
+    const body = (await res.json()) as { origin?: unknown; domainName?: unknown }
+    const declared = body.origin ?? body.domainName
+    return typeof declared === 'string' && declared.length > 0 ? declared : undefined
   } catch {
     // Unreachable /meta is not fatal here: the caller warns and the install
     // itself will surface a dead worker with its own error.
