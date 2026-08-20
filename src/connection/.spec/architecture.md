@@ -39,3 +39,8 @@ The target, timeout, and optional CA file are resolved before constructing the s
 customizes only the Fetch capability passed to Client. `withClientSession` and
 `withAdminClientSession` are terminal lifecycle boundaries: success, failure, and cancellation all
 close both the Client Session and its direct source-Auth client.
+
+The command boundary maps typed Client transport phase and delivery evidence without inspecting a
+private cause message. It preserves every admitted Kernel reason in machine output; human repair
+details are rendered only after the connection owner admits bounded public Function issues or one
+exact Query reason variant.

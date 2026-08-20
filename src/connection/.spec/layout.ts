@@ -10,6 +10,7 @@ export default defineLayout({
     'errors.ts',
     'exchange.ts',
     'index.ts',
+    'reasons.ts',
     'self.ts',
     'session.ts',
     'target.ts',
