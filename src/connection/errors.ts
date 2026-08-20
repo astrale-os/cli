@@ -190,6 +190,10 @@ export async function formatKernelError(
           ? (reason as { readonly code: string }).code
           : undefined
       const upgrade = schemaUpgradeDetails(reason)
+      const domainAddressNotPublic = reasonCode === 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC'
+      const displayMessage = domainAddressNotPublic
+        ? 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.'
+        : error.message
       const hint =
         reasonCode === 'FUNCTION_INPUT_INVALID'
           ? 'Use `astrale introspect <path>` to see the callable input.'
@@ -200,15 +204,17 @@ export async function formatKernelError(
         writeRaw({
           error: 'RESPONSE_ERROR',
           ...(code === undefined ? {} : { code }),
-          message: error.message,
+          message: displayMessage,
           ...(reason === undefined ? {} : { reason }),
           ...(hint === undefined ? {} : { hint }),
         })
       } else {
         log.error(
-          `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${error.message}`,
+          domainAddressNotPublic
+            ? `${chalk.bold('SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC')}: ${displayMessage}`
+            : `${chalk.bold(code === undefined ? 'RESPONSE_ERROR' : `RESPONSE_ERROR(${String(code)})`)}: ${displayMessage}`,
         )
-        if (reasonCode !== undefined) log.dim(`  reason: ${reasonCode}`)
+        if (reasonCode !== undefined && !domainAddressNotPublic) log.dim(`  reason: ${reasonCode}`)
         if (upgrade?.expected !== undefined) {
           log.dim(`  installed issuer: ${upgrade.expected}`)
         }

@@ -158,4 +158,61 @@ describe('formatKernelError', () => {
       }),
     })
   })
+
+  test('explains a private Domain source without exposing transport diagnostics', async () => {
+    const writes: string[] = []
+    const original = process.stderr.write
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
+      return true
+    }) as typeof process.stderr.write
+    try {
+      await formatKernelError(
+        new ResponseError(1003, 'Function input is invalid.', {
+          code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
+          details: { phase: 'publication', requiredScope: 'public' },
+        }),
+        true,
+      )
+    } finally {
+      process.stderr.write = original
+    }
+
+    expect(JSON.parse(writes[0]!)).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: 1003,
+      message: 'Expose the Domain through a public HTTPS URL or public tunnel, then retry.',
+      reason: {
+        code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
+        details: { phase: 'publication', requiredScope: 'public' },
+      },
+    })
+  })
+
+  test('prints the actionable private-source message in interactive output', async () => {
+    const errors: string[] = []
+    const hints: string[] = []
+    const originalError = console.error
+    const originalLog = console.log
+    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
+    console.log = (...values: unknown[]) => hints.push(values.map(String).join(' '))
+    try {
+      await formatKernelError(
+        new ResponseError(1003, 'Function input is invalid.', {
+          code: 'SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC',
+          details: { phase: 'publication', requiredScope: 'public' },
+        }),
+        false,
+      )
+    } finally {
+      console.error = originalError
+      console.log = originalLog
+    }
+
+    expect(errors.join('\n')).toContain('SCHEMA_DOMAIN_ADDRESS_NOT_PUBLIC')
+    expect(errors.join('\n')).toContain(
+      'Expose the Domain through a public HTTPS URL or public tunnel, then retry.',
+    )
+    expect(hints).toEqual([])
+  })
 })
