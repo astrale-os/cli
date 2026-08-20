@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -59,6 +68,29 @@ describe('viewer asset resolution', () => {
     )
     expect(await readFile(join(dist, 'index.html'), 'utf8')).toContain('<body>')
     expect(await readFile(join(dist, 'main.js'), 'utf8')).toContain('viewer ready')
+  })
+
+  test('rebuilds stale viewer assets in a source checkout', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-view-stale-'))
+    temporaryDirectories.push(root)
+    const module = join(root, 'src', 'lib', 'view', 'assets.ts')
+    const source = join(root, 'viewer')
+    const dist = join(source, 'dist')
+
+    await mkdir(dirname(module), { recursive: true })
+    await mkdir(dist, { recursive: true })
+    await writeFile(module, '')
+    await writeFile(join(source, 'main.ts'), 'document.body.textContent = "fresh viewer"\n')
+    await writeFile(join(source, 'index.html'), '<!doctype html><body>fresh</body>\n')
+    await writeFile(join(dist, 'main.js'), 'document.body.textContent = "stale viewer"\n')
+    await writeFile(join(dist, 'index.html'), '<!doctype html><body>stale</body>\n')
+    const future = new Date(Date.now() + 2_000)
+    await utimes(join(source, 'main.ts'), future, future)
+
+    await ensureViewerAssets(pathToFileURL(module).href, join(root, 'bin', 'astrale'))
+
+    expect(await readFile(join(dist, 'main.js'), 'utf8')).toContain('fresh viewer')
+    expect(await readFile(join(dist, 'index.html'), 'utf8')).toContain('fresh')
   })
 
   test('uses the bundled module location when invoked through a global bin symlink', async () => {

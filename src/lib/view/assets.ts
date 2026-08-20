@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -34,8 +34,8 @@ export async function ensureViewerAssets(
   entry = process.argv[1] ?? '.',
 ): Promise<string> {
   const dist = viewerDistDir(moduleUrl, entry)
-  if (hasViewerBundle(dist)) return dist
   const srcDir = join(dist, '..')
+  if (hasViewerBundle(dist) && !viewerSourceIsNewer(srcDir, dist)) return dist
   const bun = (
     globalThis as { Bun?: { build: (o: object) => Promise<{ success: boolean; logs: unknown[] }> } }
   ).Bun
@@ -61,4 +61,18 @@ function hasViewerBundle(directory: string): boolean {
 
 function hasViewerSource(directory: string): boolean {
   return existsSync(join(directory, 'main.ts')) && existsSync(join(directory, 'index.html'))
+}
+
+function viewerSourceIsNewer(source: string, dist: string): boolean {
+  if (!hasViewerSource(source)) return false
+  if (!hasViewerBundle(dist)) return true
+  const newestSource = Math.max(
+    statSync(join(source, 'main.ts')).mtimeMs,
+    statSync(join(source, 'index.html')).mtimeMs,
+  )
+  const oldestOutput = Math.min(
+    statSync(join(dist, 'main.js')).mtimeMs,
+    statSync(join(dist, 'index.html')).mtimeMs,
+  )
+  return newestSource > oldestOutput
 }

@@ -172,22 +172,34 @@ async function findOnPath(name: string): Promise<string | null> {
 
 /** Dev checkout: (re)build the node-runnable CLI bundle when missing or stale. */
 async function ensureDevDist(entry: string, dist: string): Promise<void> {
-  const bun = (
-    globalThis as {
-      Bun?: { build: (o: object) => Promise<{ success: boolean; logs: unknown[] }> }
-    }
-  ).Bun
-  if (!bun) return
-  const srcDir = join(dirname(entry), '..', 'src')
-  if (existsSync(dist) && !(await newerThan(srcDir, statSync(dist).mtimeMs))) return
-  // stderr: --json consumers parse stdout.
-  console.error('(dev) building dist/astrale.js for the session server…')
-  await bun.build({
-    entrypoints: [entry],
-    outdir: dirname(dist),
-    target: 'node',
-    format: 'esm',
-  })
+  if (!(await devDistIsStale(entry, dist))) return
+  const projectDir = join(dirname(entry), '..')
+  const buildScript = join(projectDir, 'scripts', 'build.ts')
+  const bun = await findOnPath('bun')
+  if (!bun || !existsSync(buildScript)) return
+
+  // Build output goes to stderr so --json stdout remains valid.
+  console.error('(dev) dist/astrale.js is stale — running the official CLI build…')
+  const built = await run(bun, [buildScript], { cwd: projectDir })
+  if (built.stdout) process.stderr.write(built.stdout)
+  if (built.stderr) process.stderr.write(built.stderr)
+  if (built.code !== 0) throw new Error(`Official CLI build failed with exit code ${built.code}.`)
+}
+
+export async function devDistIsStale(entry: string, dist: string): Promise<boolean> {
+  if (!existsSync(dist)) return true
+  const projectDir = join(dirname(entry), '..')
+  const builtAt = statSync(dist).mtimeMs
+  const directories = [join(projectDir, 'src'), join(projectDir, 'bin'), join(projectDir, 'vendor')]
+  const files = [
+    join(projectDir, 'scripts', 'build.ts'),
+    join(projectDir, 'package.json'),
+    join(projectDir, 'pnpm-lock.yaml'),
+  ]
+  for (const directory of directories) {
+    if (existsSync(directory) && (await newerThan(directory, builtAt))) return true
+  }
+  return files.some((file) => existsSync(file) && statSync(file).mtimeMs > builtAt)
 }
 
 async function newerThan(dir: string, mtimeMs: number): Promise<boolean> {
