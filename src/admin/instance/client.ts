@@ -119,15 +119,9 @@ export async function connectAdminInstances(
         )
       }
 
-      // Preserve the existing interactive multi-Host picker without accepting a
-      // doomed operation first. Graph read policy exposes only caller-usable
-      // Hosts; the reserved Admin Host is excluded explicitly.
-      const inventory = await hostInventory(context.graph, binding, Host, fleet)
-      const eligible = inventory.hosts.filter(
-        (host) => host.state === 'ready' && host.path !== inventory.reserved,
-      )
-      if (eligible.length > 1) throw hostSelectionRequired(eligible.map((host) => host.id))
-
+      // Default placement belongs to Admin. Avoid a redundant Host graph read:
+      // it requires broader graph authority than this Fleet operation and can
+      // deny an otherwise authorized caller before the server selects a Host.
       return instanceFromSummary(
         await binding.$.invoke(Fleet.$.method('createInstance') as never, fleet, input as never),
       )
@@ -198,13 +192,6 @@ async function hostInventory(
     ),
     ...(reserved === undefined ? {} : { reserved }),
   })
-}
-
-function hostSelectionRequired(ids: readonly string[]): Error {
-  return new Error(
-    `alphaCreate could not choose a host: ${ids.length} ready hosts are assigned (${[...ids].sort().join(', ')}). ` +
-      'Specify host_id once multi-host placement is enabled.',
-  )
 }
 
 type DynamicDefinition = ReturnType<DomainBinding['$']['class']>
