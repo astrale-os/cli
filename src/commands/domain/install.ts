@@ -1,6 +1,7 @@
 import { Path } from '@astrale-os/sdk/graph/path'
 import { syscalls } from '@astrale-os/sdk/schema/kernel'
 import chalk from 'chalk'
+import { randomUUID } from 'node:crypto'
 
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
@@ -331,7 +332,16 @@ async function installDirect(target: string | undefined, opts: InstallOpts): Pro
     fn: async ({ session }) =>
       (await session.call(
         createPathCall(Path.project(syscalls.install.ref).raw, {
-          domains: [{ url, ...(opts.token ? { token: opts.token } : {}) }],
+          operation: randomUUID(),
+          domains: [
+            {
+              source: {
+                kind: 'remote',
+                url,
+                ...(opts.token ? { token: opts.token } : {}),
+              },
+            },
+          ],
         }),
       )) as DirectInstallResult,
     format: (result, fmtOpts, isRaw) => {
