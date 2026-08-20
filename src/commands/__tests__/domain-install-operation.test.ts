@@ -1,13 +1,13 @@
-import type { OperationId } from '@astrale-os/kernel-client/schema'
-
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 import { installDirect } from '../domain/install'
 
-const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8' as OperationId
-const RETRY = '139137b5-af47-47ce-92b2-b64a2b0c63d7' as OperationId
+const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
+const RETRY = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
 
 const originalFetch = globalThis.fetch
+
+class ExitError extends Error {}
 
 afterEach(() => {
   globalThis.fetch = originalFetch
@@ -32,7 +32,7 @@ describe('direct domain install operation identity', () => {
           requests.push(
             await input.fn({
               session: {
-                schema: { install: async (request: unknown) => request },
+                call: async (call: { input: unknown }) => call.input,
               },
             } as never),
           )
@@ -74,7 +74,7 @@ describe('direct domain install operation identity', () => {
           requests.push(
             await input.fn({
               session: {
-                schema: { install: async (request: unknown) => request },
+                call: async (call: { input: unknown }) => call.input,
               },
             } as never),
           )
@@ -90,5 +90,32 @@ describe('direct domain install operation identity', () => {
         domains: [{ source: { kind: 'remote', url: 'https://crm.test' } }],
       },
     ])
+  })
+
+  test('rejects a non-UUID operation before metadata or Kernel transport', async () => {
+    const originalExit = process.exit
+    const originalWrite = process.stderr.write
+    const fetch = mock(async () => Response.json({ domainName: 'crm.test' }))
+    const run = mock(async () => undefined)
+    globalThis.fetch = fetch as unknown as typeof globalThis.fetch
+    process.exit = (() => {
+      throw new ExitError('exit')
+    }) as typeof process.exit
+    process.stderr.write = (() => true) as typeof process.stderr.write
+    try {
+      await expect(
+        installDirect(
+          'https://crm.test',
+          { direct: true, operation: 'guessable-operation', json: true },
+          { runKernelCommand: run },
+        ),
+      ).rejects.toBeInstanceOf(ExitError)
+    } finally {
+      process.exit = originalExit
+      process.stderr.write = originalWrite
+    }
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(run).not.toHaveBeenCalled()
   })
 })
