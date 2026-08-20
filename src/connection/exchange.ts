@@ -156,6 +156,7 @@ async function exchange(
     try {
       admitted = exchangeProtocol.acceptErrorResponse(body)
     } catch (cause) {
+      if (!(cause instanceof TypeError)) throw cause
       throw new AstraleError(
         'TOKEN_EXCHANGE_PROTOCOL_ERROR',
         `Token exchange failed with HTTP ${response.status} and an invalid error response.`,
@@ -165,8 +166,19 @@ async function exchange(
     throw new AstraleError(String(admitted.error.code), admitted.error.message)
   }
   requireExchangeResponseHeaders(response)
-  const exchanged = exchangeProtocol.acceptResponse(body)
-  const inspected = credential.inspect(exchanged.token)
+  let exchanged: exchangeProtocol.Response
+  let inspected: ReturnType<typeof credential.inspect>
+  try {
+    exchanged = exchangeProtocol.acceptResponse(body)
+    inspected = credential.inspect(exchanged.token)
+  } catch (cause) {
+    if (!(cause instanceof TypeError)) throw cause
+    throw new AstraleError(
+      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+      'Token exchange returned an invalid success response.',
+      cause.message,
+    )
+  }
   if (
     inspected.iss !== domainIssuer ||
     inspected.aud !== kernelIssuer ||

@@ -3,7 +3,9 @@ import { describe, expect, test } from 'bun:test'
 import type { Identity } from '../../identity/index'
 import type { AstraleConfig } from '../../lib/config'
 
-import { resolveKeyIdentityAuthOptions } from '../auth'
+import { IdpAudienceMismatchError } from '../../lib/idp'
+import { IdpSessionNoRefreshTokenError } from '../../lib/idp-session'
+import { classifyNoRefreshTokenError, resolveKeyIdentityAuthOptions } from '../auth'
 
 const config: AstraleConfig = {
   issuer: 'https://unregistered.invalid',
@@ -97,6 +99,30 @@ describe('resolveKeyIdentityAuthOptions', () => {
       issuer: 'https://kernel.example/identity/alice',
       subject: 'alice-node',
       audience: 'https://kernel.example',
+    })
+  })
+})
+
+describe('classifyNoRefreshTokenError', () => {
+  test('preserves expiry when the non-refreshable session already targets the required audience', () => {
+    const expired = new IdpSessionNoRefreshTokenError('alice')
+
+    expect(
+      classifyNoRefreshTokenError('https://kernel.example', 'https://kernel.example', expired),
+    ).toBe(expired)
+  })
+
+  test('reports a real audience mismatch when the source audience differs', () => {
+    const result = classifyNoRefreshTokenError(
+      'https://child.example',
+      'https://manager.example',
+      new IdpSessionNoRefreshTokenError('alice'),
+    )
+
+    expect(result).toBeInstanceOf(IdpAudienceMismatchError)
+    expect(result).toMatchObject({
+      requested: 'https://child.example',
+      actual: 'https://manager.example',
     })
   })
 })
