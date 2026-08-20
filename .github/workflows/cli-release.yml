@@ -1,24 +1,23 @@
 name: CLI Release
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Immutable package version created by Release Please
+        required: true
+        type: string
   push:
-    branches: [main]
     tags: ['cli/v*']
-    paths:
-      - 'bin/**'
-      - 'src/**'
-      - 'install.sh'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'studio/**'
-      - 'vendor/**'
-      - 'tsconfig.json'
-      - '.github/workflows/cli-release.yml'
   workflow_dispatch:
+    inputs:
+      version:
+        description: Immutable package version to recover; leave empty for canary
+        required: false
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: cli-release-${{ inputs.version || github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -129,38 +128,10 @@ jobs:
           merge-multiple: true
       - id: meta
         name: Resolve release metadata
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          set -eu
-          short_sha="$(printf '%s' "$GITHUB_SHA" | cut -c1-12)"
-          binary_version="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -n 1)"
-          if [ -z "$binary_version" ]; then
-            echo "Could not resolve package version from package.json" >&2
-            exit 2
-          fi
-          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && printf '%s' "$GITHUB_REF_NAME" | grep -q '^cli/v'; then
-            version="${GITHUB_REF_NAME#cli/v}"
-            immutable_tag="$GITHUB_REF_NAME"
-            case "$version" in
-              *-alpha*) channel="alpha"; prerelease="true" ;;
-              *-beta*) channel="beta"; prerelease="true" ;;
-              *-rc*) channel="rc"; prerelease="true" ;;
-              *-*)
-                echo "Unsupported pre-release tag '$GITHUB_REF_NAME' (use -alpha.N, -beta.N, or -rc.N)" >&2
-                exit 2
-                ;;
-              *) channel="stable"; prerelease="false" ;;
-            esac
-          else
-            version="main-$short_sha"
-            immutable_tag=""
-            channel="canary"
-            prerelease="true"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "binary_version=$binary_version" >> "$GITHUB_OUTPUT"
-          echo "immutable_tag=$immutable_tag" >> "$GITHUB_OUTPUT"
-          echo "channel=$channel" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          node scripts/resolve-cli-release.mjs
       - name: Generate checksums
         run: |
           set -eu
@@ -229,5 +200,5 @@ jobs:
 
           - Version: \`${{ steps.meta.outputs.version }}\`
           - Channel: \`${{ steps.meta.outputs.channel }}\`
-          - Install: \`curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh\`
+          - Install: \`curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_CHANNEL=${{ steps.meta.outputs.channel }} sh\`
           EOF

@@ -11,7 +11,8 @@ name: Publish
 # studio/client/dist), so `npm i -g @astrale-os/cli` gives the CLI under Node
 # and `astrale studio` (which additionally needs Bun on PATH).
 #
-# This is independent of the binary release (cli-release.yml, the curl installer).
+# Release Please owns the version. The binary release consumes the same version
+# through release.yml; this workflow publishes its npm/GitHub Packages form.
 
 on:
   push:
@@ -56,6 +57,6 @@ jobs:
           # pnpm: pnpm v10 hard-fails on un-approved dep build scripts; studio/.npmrc
           # resolves @astrale-os/shell from public npm).
           build-command: 'cd studio && bun install'
-          # Pre-1.0: publish every alpha straight to `latest` so a bare
-          # `npm i -g @astrale-os/cli` always gets the newest build we push.
-          prerelease-tag: latest
+          # Derive prerelease dist-tags from the version (alpha/beta/rc).
+          # Stable versions automatically publish to latest.
+          prerelease-tag: auto
