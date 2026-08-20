@@ -5,6 +5,9 @@ packages:
 # Keep pnpm 11's one-day default non-strict and never install implicitly before
 # `pnpm run` or `pnpm exec`.
 minimumReleaseAgeStrict: false
+minimumReleaseAgeExclude:
+  # Exact exception for the Bun 1.4 toolchain migration; future releases remain gated.
+  - 'bun-types@1.4.0'
 verifyDepsBeforeRun: false
 
 # Native build scripts required by the standalone CLI dependency graph. Astrale

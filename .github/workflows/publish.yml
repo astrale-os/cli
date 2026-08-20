@@ -40,7 +40,7 @@ jobs:
       # shells out to Bun too — the shared action only sets up Node/pnpm.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.0
       - uses: astrale-os/config/.github/actions/publish/packages@main
         with:
           dirs: '.'
