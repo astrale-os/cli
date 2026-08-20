@@ -315,8 +315,9 @@ describe('formatKernelError', () => {
           details: {
             phase: 'upgrade',
             origin: 'grc.example',
-            expected: 'https://old.example',
-            actual: 'https://new.example',
+            issue: 'issuer-changed',
+            installedIssuer: 'https://old.example',
+            replacementIssuer: 'https://new.example',
           },
         }),
         true,
@@ -334,16 +335,51 @@ describe('formatKernelError', () => {
         details: {
           phase: 'upgrade',
           origin: 'grc.example',
-          expected: 'https://old.example',
-          actual: 'https://new.example',
+          issue: 'issuer-changed',
+          installedIssuer: 'https://old.example',
+          replacementIssuer: 'https://new.example',
         },
       },
       hint: schemaUpgradeHint({
         origin: 'grc.example',
-        expected: 'https://old.example',
-        actual: 'https://new.example',
+        issue: 'issuer-changed',
+        installedIssuer: 'https://old.example',
+        replacementIssuer: 'https://new.example',
       }),
     })
+  })
+
+  test('prints both issuers and the recovery command for an incompatible replacement', async () => {
+    const errors: string[] = []
+    const details: string[] = []
+    const originalError = console.error
+    const originalLog = console.log
+    console.error = (...values: unknown[]) => errors.push(values.map(String).join(' '))
+    console.log = (...values: unknown[]) => details.push(values.map(String).join(' '))
+    try {
+      await formatKernelError(
+        new ResponseError(5001, 'Schema operation is not supported.', {
+          code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+          details: {
+            phase: 'upgrade',
+            origin: 'grc.example',
+            issue: 'issuer-changed',
+            installedIssuer: 'https://old.example',
+            replacementIssuer: 'https://new.example',
+          },
+        }),
+        false,
+      )
+    } finally {
+      console.error = originalError
+      console.log = originalLog
+    }
+
+    expect(errors.join('\n')).toContain('RESPONSE_ERROR(5001)')
+    expect(details.join('\n')).toContain('reason: SCHEMA_UPGRADE_INCOMPATIBLE')
+    expect(details.join('\n')).toContain('installed issuer: https://old.example')
+    expect(details.join('\n')).toContain('replacement issuer: https://new.example')
+    expect(details.join('\n')).toContain('astrale domain uninstall grc.example')
   })
 
   test('explains a private Domain source without exposing transport diagnostics', async () => {

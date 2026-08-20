@@ -99,11 +99,9 @@ export async function formatKernelError(
         }
         presentFunctionInputIssues(inputIssues)
         if (queryRepair !== undefined) presentQueryInputRepair(queryRepair)
-        if (upgrade?.expected !== undefined) {
-          log.dim(`  installed issuer: ${upgrade.expected}`)
-        }
-        if (upgrade?.actual !== undefined) {
-          log.dim(`  replacement issuer: ${upgrade.actual}`)
+        if (upgrade?.issue === 'issuer-changed') {
+          log.dim(`  installed issuer: ${upgrade.installedIssuer}`)
+          log.dim(`  replacement issuer: ${upgrade.replacementIssuer}`)
         }
         if (hint !== undefined) log.dim(`  ${hint}`)
       }

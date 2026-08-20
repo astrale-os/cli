@@ -1,3 +1,4 @@
+import { ResponseError } from '@astrale-os/kernel-client'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import type { OwnedInstanceInfo } from '../../lib/admin-instance'
@@ -117,5 +118,70 @@ describe('admin domain install owner boundary', () => {
     expect(payload.hint).toBe(status.error ?? 'Run: astrale instance status owned')
     expect(calls).toEqual([])
     expect(calls).toEqual([])
+  })
+
+  test('preserves an incompatible issuer reason returned through Admin', async () => {
+    inventory = [
+      {
+        id: 'owned-id',
+        slug: 'owned',
+        url: 'https://owned.eu.astrale.ai',
+        state: 'ready',
+      },
+    ]
+    const domain = {
+      id: 'crm-id',
+      origin: 'crm.acme.dev',
+      name: 'CRM',
+      url: 'https://crm.acme.dev',
+      createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
+    }
+    const failure = new ResponseError(5001, 'Schema operation is not supported.', {
+      code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+      details: {
+        phase: 'upgrade',
+        origin: domain.origin,
+        issue: 'issuer-changed',
+        installedIssuer: 'https://old.example',
+        replacementIssuer: 'https://new.example',
+      },
+    })
+    const { installViaAdmin } = await import('../domain/install')
+
+    await expect(
+      installViaAdmin(
+        domain.origin,
+        {
+          instance: 'owned',
+          json: true,
+          noPrompt: true,
+        },
+        {
+          listInstances: async () => inventory,
+          listDomains: async () => [domain],
+          install: async () => {
+            throw failure
+          },
+        },
+      ),
+    ).rejects.toEqual(new ExitError(1))
+
+    expect(JSON.parse(stderr)).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: 5001,
+      message: 'Schema operation is not supported.',
+      reason: {
+        code: 'SCHEMA_UPGRADE_INCOMPATIBLE',
+        details: {
+          phase: 'upgrade',
+          origin: 'crm.acme.dev',
+          issue: 'issuer-changed',
+          installedIssuer: 'https://old.example',
+          replacementIssuer: 'https://new.example',
+        },
+      },
+      hint: expect.stringContaining('astrale domain uninstall crm.acme.dev'),
+    })
   })
 })

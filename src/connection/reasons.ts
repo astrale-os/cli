@@ -15,12 +15,17 @@ export type QueryInputRepair =
       path?: string
     }>
 
-export type SchemaUpgradeDetails = {
-  readonly origin?: string
-  readonly issue?: string
-  readonly expected?: string
-  readonly actual?: string
-}
+export type SchemaUpgradeDetails =
+  | {
+      readonly origin?: string
+      readonly issue?: undefined
+    }
+  | {
+      readonly origin: string
+      readonly issue: 'issuer-changed'
+      readonly installedIssuer: string
+      readonly replacementIssuer: string
+    }
 
 const JSON_POINTER = /^(?:\/(?:[^~/]|~[01])*)*$/u
 const MAXIMUM_FUNCTION_ISSUES = 32
@@ -115,18 +120,27 @@ export function queryInputRepair(reason: unknown): QueryInputRepair | undefined 
 export function schemaUpgradeDetails(reason: unknown): SchemaUpgradeDetails | undefined {
   if (!record(reason) || reason.code !== 'SCHEMA_UPGRADE_INCOMPATIBLE') return undefined
   const details = record(reason.details) ? reason.details : {}
-  return {
-    ...(typeof details.origin === 'string' ? { origin: details.origin } : {}),
-    ...(typeof details.issue === 'string' ? { issue: details.issue } : {}),
-    ...(typeof details.expected === 'string' ? { expected: details.expected } : {}),
-    ...(typeof details.actual === 'string' ? { actual: details.actual } : {}),
+  const origin = typeof details.origin === 'string' ? details.origin : undefined
+  if (
+    details.issue === 'issuer-changed' &&
+    origin !== undefined &&
+    typeof details.installedIssuer === 'string' &&
+    typeof details.replacementIssuer === 'string'
+  ) {
+    return {
+      origin,
+      issue: details.issue,
+      installedIssuer: details.installedIssuer,
+      replacementIssuer: details.replacementIssuer,
+    }
   }
+  return origin === undefined ? {} : { origin }
 }
 
 export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   const target = details.origin ?? '<origin>'
   const explanation =
-    details.expected !== undefined && details.actual !== undefined
+    details.issue === 'issuer-changed'
       ? 'A replacement cannot change an installed Domain issuer.'
       : 'The replacement changes an immutable part of the installed Domain.'
   return (

@@ -6,6 +6,7 @@ import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
 import { createPathCall, runKernelCommand, withAdminClientSession } from '../../connection'
+import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
 import {
   installAdminDomainInContext,
@@ -230,8 +231,9 @@ export async function installViaAdmin(
       log.dim(`  origin: ${result.origin}`)
       log.dim(`  url:    ${result.url}`)
     })
-  } catch (e) {
-    fatal(e, opts)
+  } catch (error) {
+    await formatKernelError(error, isMachine(opts), undefined, opts.debug)
+    process.exit(1)
   }
 }
 
