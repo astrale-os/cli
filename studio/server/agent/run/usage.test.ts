@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import type { AgentRun } from '../../../shared/types'
 
+import { writeJson } from '../../state/store'
 import { readUsage, recordRun } from './usage'
 
 const roots: string[] = []
@@ -43,4 +44,27 @@ test('records only reported usage and accumulates domain totals', () => {
     lastTokens: 5,
     lastCostUsd: 0.1,
   })
+})
+
+test('normalizes malformed usage fields while accepting future fields', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-agent-usage-boundary-'))
+  roots.push(root)
+  writeJson(root, 'usage.json', {
+    runs: -2,
+    tokens: 'many',
+    costUsd: -1,
+    lastRunAt: 42,
+    lastTokens: -10,
+    futureUsageField: { version: 2 },
+  })
+
+  expect(readUsage(root)).toEqual({ runs: 0, tokens: 0, costUsd: 0 })
+
+  writeJson(root, 'usage.json', {
+    runs: 3,
+    tokens: 120,
+    costUsd: 1.25,
+    futureUsageField: { version: 2 },
+  })
+  expect(readUsage(root)).toEqual({ runs: 3, tokens: 120, costUsd: 1.25 })
 })

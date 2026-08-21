@@ -1,26 +1,38 @@
 /**
  * baseline.ts — the PRIMARY change tracker. On first launch we capture a
- * snapshot (the schema IR + a content hash of the "anatomy + schema fileset")
+ * versioned snapshot (canonical revision/root, render IR, and a content hash of
+ * the "anatomy + schema fileset")
  * under `.domain-studio/.cache/baseline/`. Subsequent runs diff the live state
  * against that baseline to compute a ChangeSet. Git (git.ts) only enriches when
  * a real repo is present; the fixtures are not repos, so baseline stands alone.
  *
  * Layout under `.cache/baseline/`:
- *   ir.json     — the captured SchemaIR (or null)
- *   files.json  — { [relpathFromRoot]: sha256 }
- *   meta.json   — { capturedAt }
+ *   ir.json           — the captured render SchemaIR (or null)
+ *   schema-root.json  — the admitted portable V1 root (or null)
+ *   files.json        — { [relpathFromRoot]: sha256 }
+ *   meta.json         — format/projection versions, revision, capturedAt
  */
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 
-import type { ChangeSet, FileChange, SchemaChange, SchemaIR } from '../../shared/types'
+import type {
+  ChangeSet,
+  FileChange,
+  SchemaChange,
+  SchemaIR,
+  SchemaRevision,
+} from '../../shared/types'
 
-import { classify, diffSchemas } from '../introspect/diff'
-import { detectGit, gitDiff } from './git'
-import { readJson, writeJson } from './store'
+import { isSchemaRevision, STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/types'
+import { isCanonicalDomainSchemaV1 } from '../introspect/canonical-schema'
+import { diffSchemas, structuralStatusOf } from '../introspect/diff'
+import { decodeSchemaIR } from '../introspect/schema-ir-json'
+import { asFiniteNumber, asJsonRecord, asStringRecord, parseJson } from '../json'
+import { readState, writeJson } from './store'
 
 const BASE = '.cache/baseline'
+export const BASELINE_FORMAT_VERSION = 2
 
 /** Directories to never descend into when hashing the fileset. */
 const SKIP_DIRS = new Set(['node_modules', '.dist', 'dist', '.domain-studio', '.git'])
@@ -140,30 +152,128 @@ export function hashAnatomyFiles(root: string, schemaDirName: string): Record<st
 }
 
 export interface Baseline {
+  formatVersion: typeof BASELINE_FORMAT_VERSION
+  projectionVersion: number
   ir: SchemaIR | null
+  /** Admitted canonical root only; null for legacy/preview snapshots. */
+  root: unknown | null
+  revision: SchemaRevision | null
   files: Record<string, string>
   capturedAt?: string
+}
+
+export interface BaselineSchemaSnapshot {
+  ir: SchemaIR | null
+  /** Admitted canonical root only; preview roots must be passed as null. */
+  root: unknown | null
+  revision: SchemaRevision | null
+}
+
+interface BaselineMeta {
+  formatVersion: number
+  projectionVersion: number
+  revision: SchemaRevision | null
+  capturedAt?: string
+}
+
+function decodeBaselineMeta(value: unknown): BaselineMeta | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const formatVersion = asFiniteNumber(record.formatVersion)
+  const projectionVersion = asFiniteNumber(record.projectionVersion)
+  const revision =
+    record.revision === null
+      ? null
+      : isSchemaRevision(record.revision)
+        ? record.revision
+        : undefined
+  const capturedAt = record.capturedAt
+  if (
+    formatVersion === undefined ||
+    projectionVersion === undefined ||
+    revision === undefined ||
+    (capturedAt !== undefined && typeof capturedAt !== 'string')
+  ) {
+    return undefined
+  }
+  return {
+    formatVersion,
+    projectionVersion,
+    revision,
+    ...(capturedAt === undefined ? {} : { capturedAt }),
+  }
+}
+
+function decodeNullableSchemaIR(value: unknown): SchemaIR | null | undefined {
+  return value === null ? null : decodeSchemaIR(value)
+}
+
+function decodeNullableSchemaRoot(value: unknown): unknown | null | undefined {
+  return value === null ? null : isCanonicalDomainSchemaV1(value) ? value : undefined
+}
+
+function readBaselineJson<T>(
+  root: string,
+  subpath: string,
+  decode: (value: unknown) => T | undefined,
+): T | undefined {
+  const raw = readState(root, subpath)
+  if (raw === null) return undefined
+  const parsed = parseJson(raw)
+  return parsed === undefined ? undefined : decode(parsed)
 }
 
 /** Persist a baseline snapshot under `.cache/baseline/`. All writes go through the store. */
 export function captureBaseline(
   root: string,
-  ir: SchemaIR | null,
+  snapshot: BaselineSchemaSnapshot,
   fileHashes: Record<string, string>,
 ): void {
-  writeJson(root, `${BASE}/ir.json`, ir)
+  writeJson(root, `${BASE}/ir.json`, snapshot.ir)
+  writeJson(root, `${BASE}/schema-root.json`, snapshot.root)
   writeJson(root, `${BASE}/files.json`, fileHashes)
-  writeJson(root, `${BASE}/meta.json`, { capturedAt: new Date().toISOString() })
+  writeJson(root, `${BASE}/meta.json`, {
+    formatVersion: BASELINE_FORMAT_VERSION,
+    projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION,
+    revision: snapshot.revision,
+    capturedAt: new Date().toISOString(),
+  } satisfies BaselineMeta)
 }
 
-/** Load a previously-captured baseline, or null if none exists. Never throws. */
+/**
+ * Load a current baseline. Older/unrecognised formats and render-projection
+ * versions are explicitly invalidated so adapter changes cannot masquerade as
+ * authored schema changes. The lifecycle will seed a replacement snapshot.
+ */
 export function loadBaseline(root: string): Baseline | null {
-  const irPath = join(resolve(root), '.domain-studio', BASE, 'meta.json')
-  if (!existsSync(irPath)) return null
-  const ir = readJson<SchemaIR | null>(root, `${BASE}/ir.json`, null)
-  const files = readJson<Record<string, string>>(root, `${BASE}/files.json`, {})
-  const meta = readJson<{ capturedAt?: string }>(root, `${BASE}/meta.json`, {})
-  return { ir, files, capturedAt: meta.capturedAt }
+  const meta = readBaselineJson(root, `${BASE}/meta.json`, decodeBaselineMeta)
+  if (
+    !meta ||
+    meta.formatVersion !== BASELINE_FORMAT_VERSION ||
+    meta.projectionVersion !== STUDIO_SCHEMA_PROJECTION_VERSION ||
+    !isSchemaRevisionOrNull(meta.revision)
+  ) {
+    return null
+  }
+  const ir = readBaselineJson(root, `${BASE}/ir.json`, decodeNullableSchemaIR)
+  const schemaRoot = readBaselineJson(root, `${BASE}/schema-root.json`, decodeNullableSchemaRoot)
+  const files = readBaselineJson(root, `${BASE}/files.json`, asStringRecord)
+  if (ir === undefined || schemaRoot === undefined || files === undefined) return null
+  if (meta.revision !== null && (schemaRoot === null || ir === null)) return null
+  if (meta.revision === null && schemaRoot !== null) return null
+  return {
+    formatVersion: BASELINE_FORMAT_VERSION,
+    projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION,
+    ir,
+    root: schemaRoot,
+    revision: meta.revision ?? null,
+    files,
+    capturedAt: meta.capturedAt,
+  }
+}
+
+function isSchemaRevisionOrNull(value: unknown): value is SchemaRevision | null {
+  return value === null || isSchemaRevision(value)
 }
 
 /** Compare two file-hash maps into added/modified/removed FileChange[]. */
@@ -185,9 +295,8 @@ function summarizeSchemaChanges(changes: SchemaChange[]): string {
   if (changes.length === 0) return 'No schema changes.'
   return changes
     .map((c) => {
-      const flag = c.breaking ? 'breaking' : 'additive'
       const detail = c.detail ? `: ${c.detail}` : ''
-      return `${c.kind} ${c.target}${detail} (${flag})`
+      return `${c.kind} ${c.target}${detail}`
     })
     .join('\n')
 }
@@ -202,9 +311,12 @@ export function computeChanges(
   root: string,
   currentIr: SchemaIR | null,
   currentFiles: Record<string, string>,
-  opts: { schemaDirName: string },
+  opts: {
+    currentRevision?: SchemaRevision | null
+    git: { hasGit: boolean; diffText?: string }
+  },
 ): ChangeSet {
-  const { hasGit } = detectGit(root)
+  const { hasGit } = opts.git
   const source: ChangeSet['source'] = hasGit ? 'git' : 'baseline'
   const baseline = loadBaseline(root)
 
@@ -215,17 +327,19 @@ export function computeChanges(
       hasBaseline: false,
       schemaChanges: [],
       fileChanges: [],
-      classification: 'none',
+      structuralStatus: 'none',
+      ...(opts.currentRevision ? { currentRevision: opts.currentRevision } : {}),
     }
   }
 
-  const schemaChanges = diffSchemas(baseline.ir ?? null, currentIr)
-  const classification = classify(schemaChanges)
+  const schemaChanges =
+    baseline.revision && opts.currentRevision === baseline.revision
+      ? []
+      : diffSchemas(baseline.ir ?? null, currentIr)
+  const structuralStatus = structuralStatusOf(schemaChanges)
   const fileChanges = diffFiles(baseline.files ?? {}, currentFiles)
 
-  const schemaDiffText = hasGit
-    ? (gitDiff(root, opts.schemaDirName) ?? undefined)
-    : summarizeSchemaChanges(schemaChanges)
+  const schemaDiffText = hasGit ? opts.git.diffText : summarizeSchemaChanges(schemaChanges)
 
   return {
     source,
@@ -234,7 +348,9 @@ export function computeChanges(
     schemaChanges,
     fileChanges,
     schemaDiffText,
-    classification,
+    structuralStatus,
+    ...(baseline.revision ? { baselineRevision: baseline.revision } : {}),
+    ...(opts.currentRevision ? { currentRevision: opts.currentRevision } : {}),
     baselineCapturedAt: baseline.capturedAt,
   }
 }

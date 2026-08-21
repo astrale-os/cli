@@ -26,7 +26,11 @@ export async function bootDomain(handle: DomainHandle): Promise<BootedDomain> {
   if (!loadBaseline(handle.root))
     captureBaseline(
       handle.root,
-      bundle?.ir ?? null,
+      {
+        ir: bundle?.ir ?? null,
+        root: bundle?.schemaMode === 'canonical-admitted' ? (bundle.schemaRoot ?? null) : null,
+        revision: bundle?.schemaRevision ?? null,
+      },
       hashAnatomyFiles(handle.root, handle.schemaDirName),
     )
   const stop = watchDomain(handle)

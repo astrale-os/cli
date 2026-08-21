@@ -1,12 +1,22 @@
 /**
- * store.ts — the ONLY filesystem-write gateway in the studio. It REJECTS any
- * write whose resolved path is not under `<domain>/.domain-studio/`. This makes
- * the read-only-domain rule a code-enforced invariant (§17 of the spec): the
- * studio can never write domain source. Reads of domain source are allowed and
- * done elsewhere; this module never writes outside the dotted folder.
+ * store.ts — the gateway for Studio-owned persistence under
+ * `<domain>/.domain-studio/`. It rejects every target outside that directory.
+ * Explicit user-requested domain edits (for example environment files or
+ * workspace creation) belong to their own feature boundary, not this state store.
  */
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve, sep } from 'node:path'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
+import { dirname, join, relative, resolve, sep } from 'node:path'
+
+import { parseJson, type JsonDecoder } from '../json'
 
 export const DOT = '.domain-studio'
 
@@ -18,7 +28,43 @@ function assertInsideDot(domainRoot: string, target: string): string {
   const abs = resolve(target)
   const root = resolve(dotDir(domainRoot))
   if (abs !== root && !abs.startsWith(root + sep)) {
-    throw new Error(`write-allowlist violation: ${abs} is outside ${root}`)
+    throw new Error(`state-allowlist violation: ${abs} is outside ${root}`)
+  }
+
+  // Lexical containment alone is insufficient: an existing `.domain-studio`
+  // symlink (or any symlink below it) could otherwise redirect an allowed path
+  // outside the state directory. Resolve every existing prefix against the
+  // physical domain root. Resolving domainRoot first intentionally permits the
+  // domain root itself to be a symlink.
+  let physicalDomainRoot: string
+  try {
+    physicalDomainRoot = realpathSync(domainRoot)
+  } catch {
+    physicalDomainRoot = resolve(domainRoot)
+  }
+  const physicalRoot = resolve(physicalDomainRoot, DOT)
+  const relativeTarget = relative(root, abs)
+  const parts = relativeTarget === '' ? [] : relativeTarget.split(sep)
+  let prefix = root
+  for (const part of ['', ...parts]) {
+    if (part) prefix = join(prefix, part)
+    try {
+      lstatSync(prefix)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') break
+      throw error
+    }
+
+    let physicalPrefix: string
+    try {
+      physicalPrefix = realpathSync(prefix)
+    } catch {
+      throw new Error(`state-allowlist violation: ${prefix} is an unresolved symlink`)
+    }
+    if (physicalPrefix !== physicalRoot && !physicalPrefix.startsWith(physicalRoot + sep)) {
+      throw new Error(`state-allowlist violation: ${prefix} resolves outside ${physicalRoot}`)
+    }
   }
   return abs
 }
@@ -55,23 +101,26 @@ export function statePath(domainRoot: string, subpath: string): string {
 }
 
 export function readState(domainRoot: string, subpath: string): string | null {
-  const target = join(dotDir(domainRoot), subpath)
+  const target = assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath))
   if (!existsSync(target)) return null
   return readFileSync(target, 'utf8')
 }
 
-export function readJson<T>(domainRoot: string, subpath: string, fallback: T): T {
+export function readJson<T>(
+  domainRoot: string,
+  subpath: string,
+  decode: JsonDecoder<T>,
+  fallback: T,
+): T {
   const raw = readState(domainRoot, subpath)
   if (raw == null) return fallback
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    return fallback
-  }
+  const parsed = parseJson(raw)
+  if (parsed === undefined) return fallback
+  return decode(parsed) ?? fallback
 }
 
 export function listState(domainRoot: string, subpath: string): string[] {
-  const target = join(dotDir(domainRoot), subpath)
+  const target = assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath))
   if (!existsSync(target)) return []
   return readdirSync(target)
 }
@@ -83,7 +132,7 @@ export function removeState(domainRoot: string, subpath: string): void {
 }
 
 export function stateExists(domainRoot: string, subpath: string): boolean {
-  return existsSync(join(dotDir(domainRoot), subpath))
+  return existsSync(assertInsideDot(domainRoot, join(dotDir(domainRoot), subpath)))
 }
 
 /** Initialise the dotted folder skeleton + a .cache/.gitignore (never touches the user's root .gitignore). */

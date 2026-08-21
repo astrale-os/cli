@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { asJsonRecord } from '../json'
 import { readJson, writeJson } from '../state/store'
 import {
   clearConversation,
@@ -60,10 +61,14 @@ describe('per-harness conversations', () => {
     expect(readConversation(dir, 'claude').turns).toBe(4)
 
     setConversationSession(dir, 'codex', 'codex-thread')
-    const stored = readJson<any>(dir, '.cache/agent/session.json', {})
-    expect(stored.version).toBe(1)
-    expect(stored.conversations.claude.sessionId).toBe('legacy-session')
-    expect(stored.conversations.codex.sessionId).toBe('codex-thread')
+    const stored = readJson(dir, '.cache/agent/session.json', asJsonRecord, {})
+    expect(stored).toMatchObject({
+      version: 1,
+      conversations: {
+        claude: { sessionId: 'legacy-session' },
+        codex: { sessionId: 'codex-thread' },
+      },
+    })
   })
 
   test('fails closed without rewriting a future conversation-store version', () => {
@@ -79,6 +84,6 @@ describe('per-harness conversations', () => {
     expect(() => setConversationSession(dir, 'claude', 'new-session')).toThrow(
       'unsupported agent conversation store version: 2',
     )
-    expect(readJson<any>(dir, '.cache/agent/session.json', {})).toEqual(future)
+    expect(readJson(dir, '.cache/agent/session.json', asJsonRecord, {})).toEqual(future)
   })
 })

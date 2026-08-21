@@ -25,6 +25,23 @@ type StudioOpts = RawOutputOpts & {
 const STUDIO_PORT_BASE = 4319
 const VITE_PORT_BASE = 5273
 const PORT_SPAN = 20
+const STUDIO_CLI_DESCRIPTOR_ENV = 'DOMAIN_STUDIO_CLI_DESCRIPTOR'
+
+/**
+ * Describe this exact CLI invocation for the Studio server. A source/published
+ * script needs its entrypoint after node/bun; a Bun-compiled executable is
+ * self-contained and therefore has no prefix argument.
+ */
+export function encodeStudioCliDescriptor(
+  executable = process.execPath,
+  entry = process.argv[1],
+): string {
+  const args =
+    entry && entry !== executable && !entry.startsWith('/$bunfs') && existsSync(entry)
+      ? [realpathSync(entry)]
+      : []
+  return JSON.stringify({ version: 1, executable, args })
+}
 
 /**
  * Locate the studio package shipped with / alongside the CLI. Anchored to the
@@ -217,6 +234,7 @@ Examples:
         log.dim(`  using ASTRALE_STUDIO_DIR=${studioDir}`)
       }
       await ensureBun()
+      const cliDescriptor = encodeStudioCliDescriptor()
 
       // Default to PROD — serve the prebuilt client. It always renders, is what a
       // published/global install runs, and avoids dev's heavy source-module graph.
@@ -342,6 +360,7 @@ Examples:
                 VITE_URL: `http://127.0.0.1:${vitePort}`,
                 PORT: String(studioPort),
                 DOMAIN_STUDIO_HOST: '127.0.0.1',
+                [STUDIO_CLI_DESCRIPTOR_ENV]: cliDescriptor,
                 ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
               },
             },
@@ -367,6 +386,7 @@ Examples:
                 DOMAIN_STUDIO_DIST: dist,
                 PORT: String(studioPort),
                 DOMAIN_STUDIO_HOST: '127.0.0.1',
+                [STUDIO_CLI_DESCRIPTOR_ENV]: cliDescriptor,
                 ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
               },
             },

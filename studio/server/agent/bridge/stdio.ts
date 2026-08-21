@@ -10,6 +10,7 @@
  */
 import { readFileSync } from 'node:fs'
 
+import { asJsonRecord, asString, parseJson } from '../../json'
 import { forwardBridgeTool } from './client'
 
 function configFromArgv(): { base?: string; token?: string } {
@@ -17,7 +18,13 @@ function configFromArgv(): { base?: string; token?: string } {
   const path = i >= 0 ? process.argv[i + 1] : undefined
   if (!path) return {}
   try {
-    return JSON.parse(readFileSync(path, 'utf8')) as { base?: string; token?: string }
+    const record = asJsonRecord(parseJson(readFileSync(path, 'utf8')))
+    const base = asString(record?.base)
+    const token = asString(record?.token)
+    return {
+      ...(base === undefined ? {} : { base }),
+      ...(token === undefined ? {} : { token }),
+    }
   } catch {
     return {}
   }

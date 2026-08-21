@@ -1,7 +1,7 @@
 /**
  * workspace-state.ts — process-global workspace context shared by the entrypoint
  * (index.ts), the live watcher (workspace-watch.ts), and the create-domain
- * endpoint (state/create.ts): the scanned ROOT (where new domains are
+ * endpoint (workspace/create.ts): the scanned ROOT (where new domains are
  * scaffolded), the schema-dir name, and the `domainId → file-watcher stop` map.
  *
  * It exists so the create endpoint can scaffold into the same root the studio

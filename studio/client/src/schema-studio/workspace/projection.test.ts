@@ -48,7 +48,8 @@ function bundle(
 ): StudioSchemaBundle {
   return {
     domainId: id,
-    schemaHash: `${id}-hash`,
+    renderFingerprint: `${id}-fingerprint`,
+    schemaMode: 'legacy',
     extractedBy: 'runtime-bun',
     depsInstalled: true,
     ir: {

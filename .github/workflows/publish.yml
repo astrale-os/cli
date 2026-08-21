@@ -49,14 +49,11 @@ jobs:
           # resolve @astrale-os/kernel-* for the bundle; falls back to the repo
           # token. Same secret the binary build uses.
           github-token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
-          # The CLI's `build` is its prepack (bun scripts/build.ts), which the
-          # action's `pnpm pack` runs during publish. That prepack also builds the
-          # studio client — but only if the studio toolchain is installed (the cli
-          # repo is single-package, so the action's root install doesn't pull it).
-          # So the build-command's job is just to install that toolchain (bun, not
-          # pnpm: pnpm v10 hard-fails on un-approved dep build scripts; studio/.npmrc
-          # resolves @astrale-os/shell from public npm).
-          build-command: 'cd studio && bun install'
+          # Studio is part of the pnpm workspace, so one frozen workspace install
+          # materializes both toolchains. Do not mix Bun's package manager into
+          # that tree: it replaces pnpm links and can make the following prepack
+          # nondeterministic.
+          build-command: 'pnpm install --frozen-lockfile --ignore-scripts'
           # Derive prerelease dist-tags from the version (alpha/beta/rc).
           # Stable versions automatically publish to latest.
           prerelease-tag: auto

@@ -261,6 +261,8 @@ export function App() {
                     <TooltipTrigger asChild>
                       <button
                         type="button"
+                        aria-label={n.label}
+                        aria-current={active ? 'page' : undefined}
                         onClick={() => setSection(n.key)}
                         className={cn(
                           'relative h-11 w-11 rounded-xl flex items-center justify-center transition-all duration-150',

@@ -7,17 +7,49 @@
  */
 import type { ContextItem, ContextStore } from '../../shared/types'
 
+import { asBoolean, asJsonRecord, asString } from '../json'
 import { readJson, writeJson, writeState } from './store'
 
 const USER_PATH = 'context/user/index.json'
 const AUTO_PATH = 'context/auto/index.json'
 
+function decodeContextItem(value: unknown): ContextItem | undefined {
+  const record = asJsonRecord(value)
+  const id = asString(record?.id)
+  const bucket = record?.bucket === 'user' || record?.bucket === 'auto' ? record.bucket : undefined
+  const title = asString(record?.title)
+  const body = asString(record?.body)
+  const updatedAt = asString(record?.updatedAt)
+  if (!id || !bucket || title === undefined || body === undefined || !updatedAt) return undefined
+  const source = asString(record?.source)
+  const includeInHandoff = asBoolean(record?.includeInHandoff)
+  const freshness = asString(record?.freshness)
+  return {
+    id,
+    bucket,
+    title,
+    body,
+    updatedAt,
+    ...(source === undefined ? {} : { source }),
+    ...(includeInHandoff === undefined ? {} : { includeInHandoff }),
+    ...(freshness === undefined ? {} : { freshness }),
+  }
+}
+
+function decodeContextItems(value: unknown): ContextItem[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.flatMap((item) => {
+    const decoded = decodeContextItem(item)
+    return decoded ? [decoded] : []
+  })
+}
+
 function readUser(root: string): ContextItem[] {
-  return readJson<ContextItem[]>(root, USER_PATH, [])
+  return readJson(root, USER_PATH, decodeContextItems, [])
 }
 
 function readAuto(root: string): ContextItem[] {
-  return readJson<ContextItem[]>(root, AUTO_PATH, [])
+  return readJson(root, AUTO_PATH, decodeContextItems, [])
 }
 
 function writeUser(root: string, items: ContextItem[]): void {

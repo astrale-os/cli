@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import type { DomainHandle } from '../domain'
 
 import { buildBundle } from './bundle'
-import { schemaHashOf } from './hash'
+import { renderFingerprintOf } from './hash'
+import { admittedBundleRevision } from './revision'
 import { coreExtract, runtimeExtract } from './runtime'
 
 const roots: string[] = []
@@ -40,7 +41,7 @@ function currentFixture(): DomainHandle {
     schemaIndex,
     `
 import {
-  defineSchema, domain, edge, edgeClass, fn, node, nodeClass,
+  bundle, defineSchema, domain, edge, edgeClass, fn, node, nodeClass,
   nodeInterface, output, property, view,
 } from '@astrale-os/sdk/schema'
 
@@ -84,6 +85,7 @@ export const schema = defineSchema('documents.runtime.test', {
     edges: [edge(welcome, owned_by, domain(), {})],
   },
 })
+export const installedBundle = bundle.create(schema)
 `,
   )
   // Canonical core extraction must not import the effectful composition entry.
@@ -105,6 +107,8 @@ describe('current SDK schema extractor', () => {
     const result = await runtimeExtract(handle.schemaIndex, handle.root)
 
     expect(result.ok).toBe(true)
+    expect(result.schemaMode).toBe('canonical-admitted')
+    expect(result.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(result.root).toMatchObject({
       format: 'astrale.dsl',
       version: 'v1',
@@ -133,15 +137,48 @@ describe('current SDK schema extractor', () => {
     })
   })
 
-  test('hashes the raw canonical root instead of the render projection', async () => {
+  test('transports the DSL revision and fingerprints the root only for rendering', async () => {
     const handle = currentFixture()
     const extracted = await runtimeExtract(handle.schemaIndex, handle.root)
     expect(extracted.ok).toBe(true)
+    if (extracted.revision === null) throw new Error('expected an admitted schema revision')
 
     const bundle = await buildBundle(handle)
     expect(bundle.schemaRoot).toEqual(extracted.root)
-    expect(bundle.schemaHash).toBe(schemaHashOf(extracted.root))
-    expect(bundle.schemaHash).not.toBe(schemaHashOf(extracted.ir))
+    expect(bundle.schemaMode).toBe('canonical-admitted')
+    expect(bundle.schemaRevision).toBe(extracted.revision)
+    expect(bundle.renderFingerprint).toBe(renderFingerprintOf(extracted.root))
+    expect(bundle.renderFingerprint).not.toBe(renderFingerprintOf(extracted.ir))
+  })
+
+  test('re-admits installed Bundle JSON before comparing its DSL revision', async () => {
+    const handle = currentFixture()
+    const extracted = await runtimeExtract(handle.schemaIndex, handle.root)
+    if (extracted.revision === null) throw new Error('expected an admitted local schema revision')
+    const fixture = (await import(handle.schemaIndex)) as { installedBundle: unknown }
+    const installedWire = JSON.parse(JSON.stringify(fixture.installedBundle))
+
+    expect(await admittedBundleRevision(handle.root, installedWire)).toBe(extracted.revision)
+  })
+
+  test('renders a V1-shaped but unadmitted root only as a structural preview', async () => {
+    const root = fixtureRoot('canonical-preview')
+    linkCurrentSdk(root)
+    const schemaIndex = join(root, 'schema', 'index.ts')
+    writeFileSync(
+      schemaIndex,
+      `export const schema = {
+        format: 'astrale.dsl', version: 'v1', origin: 'not an origin',
+        dependencies: [], types: {}, interfaces: {}, classes: {}, functions: {},
+        policies: {}, views: {}, core: { nodes: {}, edges: [] },
+      }\n`,
+    )
+
+    const result = await runtimeExtract(schemaIndex, root)
+    expect(result.ok).toBe(true)
+    expect(result.schemaMode).toBe('canonical-preview')
+    expect(result.revision).toBeNull()
+    expect(result.root).toMatchObject({ format: 'astrale.dsl', version: 'v1' })
   })
 
   test('extracts canonical core without importing implementation.ts', async () => {
@@ -169,6 +206,27 @@ describe('current SDK schema extractor', () => {
         ],
       },
     })
+  })
+})
+
+test('runtime extractor preserves the legacy compiled-IR envelope', async () => {
+  const root = fixtureRoot('legacy-runtime')
+  const schemaIndex = join(root, 'schema', 'index.ts')
+  writeFileSync(
+    schemaIndex,
+    `export const D = { $: { ir: {
+      version: 'legacy', domain: 'legacy.runtime.test', types: {}, interfaces: {},
+      classes: {}, imports: {}, functions: {},
+    } } }\n`,
+  )
+
+  const result = await runtimeExtract(schemaIndex, root)
+  expect(result).toMatchObject({
+    ok: true,
+    schemaMode: 'legacy',
+    revision: null,
+    root: null,
+    ir: { domain: 'legacy.runtime.test', functions: {} },
   })
 })
 

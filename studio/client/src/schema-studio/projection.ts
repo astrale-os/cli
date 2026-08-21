@@ -1,5 +1,4 @@
 import type {
-  IrDefinitionKey,
   IrDefinitionRef,
   IrEndpoint,
   IrInterface,
@@ -8,6 +7,7 @@ import type {
   StudioSchemaBundle,
 } from '@shared/types'
 
+import { definitionRefKey, isIrDefinitionRef, isIrInterfaceRef } from '@shared/schema/identity'
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
 import { cardinalityMarkers } from './cardinality-markers'
@@ -80,20 +80,6 @@ function schemaRefList(refs: unknown): string[] {
   return Array.isArray(refs) ? refs.map(String) : refs ? [String(refs)] : []
 }
 
-function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
-  return ref.kind === 'class' || ref.kind === 'interface'
-}
-
-function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
-  return `${ref.origin}:${ref.kind}.${ref.name}` as IrDefinitionKey
-}
-
-function isInterfaceRef(value: unknown): value is IrDefinitionRef {
-  if (!value || typeof value !== 'object') return false
-  const ref = value as Partial<IrDefinitionRef>
-  return typeof ref.origin === 'string' && ref.kind === 'interface' && typeof ref.name === 'string'
-}
-
 function resolveExactInterface(
   bundle: StudioSchemaBundle,
   ref: IrDefinitionRef,
@@ -102,12 +88,12 @@ function resolveExactInterface(
   if (!ir || ref.kind !== 'interface') return undefined
   if (ref.origin === ir.domain) return ir.interfaces[ref.name]
   const exact = ir.importedInterfacesByKey
-  if (exact !== undefined) return exact[definitionKey(ref)]
+  if (exact !== undefined) return exact[definitionRefKey(ref)]
   const descriptor = ir.imports[ref.name]
   if (
     descriptor?.origin !== ref.origin ||
     descriptor.definition !== 'interface' ||
-    (descriptor.ref && definitionKey(descriptor.ref) !== definitionKey(ref))
+    (descriptor.ref && definitionRefKey(descriptor.ref) !== definitionRefKey(ref))
   ) {
     return undefined
   }
@@ -131,7 +117,7 @@ type InterfaceRefInput = IrDefinitionRef | string
 
 function interfaceParents(definition: IrInterface): InterfaceRefInput[] {
   if (definition.extendsRefs !== undefined) {
-    return definition.extendsRefs.filter(isDefinitionRef).filter(isInterfaceRef)
+    return definition.extendsRefs.filter(isIrDefinitionRef).filter(isIrInterfaceRef)
   }
   return schemaRefList(definition.extends)
 }
@@ -158,7 +144,7 @@ function schemaCoreRole(
       if (definition) stack.push(...interfaceParents(definition))
       continue
     }
-    const key = definitionKey(ref)
+    const key = definitionRefKey(ref)
     if (seen.has(key)) continue
     seen.add(key)
     if (ref.origin === 'kernel.astrale.ai') {
@@ -183,7 +169,7 @@ function localInterfaceNames(
   const names =
     exact !== undefined
       ? exact
-          .filter(isDefinitionRef)
+          .filter(isIrDefinitionRef)
           .filter(
             (ref) =>
               ref.kind === 'interface' && ref.origin === ir.domain && !!ir.interfaces[ref.name],
@@ -274,7 +260,7 @@ export function projectDomainCanvas(
           interfaces: visibleInterfaceBadges(bundle, className, renderedInterfaces),
           coreRole: schemaCoreRole(
             definition?.implementsRefs !== undefined
-              ? definition.implementsRefs.filter(isDefinitionRef).filter(isInterfaceRef)
+              ? definition.implementsRefs.filter(isIrDefinitionRef).filter(isIrInterfaceRef)
               : (definition?.implements ?? []),
             bundle,
           ),

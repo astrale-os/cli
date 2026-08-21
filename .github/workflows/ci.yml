@@ -48,9 +48,6 @@ jobs:
           printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install dependencies
         run: STANDALONE=true pnpm install --frozen-lockfile
-      - name: Install Studio dependencies
-        working-directory: studio
-        run: bun install --no-save
       - name: Lint
         run: pnpm lint
       - name: Check formatting
@@ -65,3 +62,30 @@ jobs:
         run: |
           node dist/astrale.js --version
           node dist/astrale.js --help >/dev/null
+
+  studio-browser:
+    name: Studio browser smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Configure GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.ASTRALE_PACKAGES_TOKEN || github.token }}
+        run: |
+          set -eu
+          printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
+          printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
+      - name: Install dependencies
+        run: STANDALONE=true pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm --dir studio exec playwright install --with-deps chromium
+      - name: Run Studio browser smoke
+        run: pnpm --dir studio test:e2e

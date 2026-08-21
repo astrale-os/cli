@@ -2,6 +2,7 @@ import type { AgentEffort, StudioSettings } from '../../../shared/types'
 import type { AgentHarness } from './adapter'
 
 import { effectiveAgentEffort } from '../../../shared/agent-effort'
+import { asJsonRecord, asString } from '../../json'
 import { readSettings } from '../../state/settings'
 import { readJson, writeJson } from '../../state/store'
 import { resolveHarnessEnv } from './gateway/config'
@@ -27,11 +28,18 @@ export type HarnessConfigurationResult =
   | { ok: true; configuration: HarnessConfiguration }
   | { ok: false; error: string }
 
+function decodeStoredSelection(value: unknown): { id?: string } | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const id = asString(record.id)
+  return id === undefined ? {} : { id }
+}
+
 export function getHarnessSelection(root: string): HarnessSelection {
   const environment = process.env.DOMAIN_STUDIO_HARNESS?.trim().toLowerCase()
   if (environment && hasHarness(environment))
     return { id: environment, locked: true, source: 'environment' }
-  const stored = readJson<{ id?: string }>(root, SELECTION_FILE, {})
+  const stored = readJson(root, SELECTION_FILE, decodeStoredSelection, {})
   const id = stored.id?.toLowerCase()
   if (id && hasHarness(id)) return { id, locked: false, source: 'domain' }
   return { id: 'claude', locked: false, source: 'default' }

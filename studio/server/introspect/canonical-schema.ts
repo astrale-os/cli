@@ -9,19 +9,20 @@ import type {
   IrCallableOutput,
   IrClass,
   IrDefinitionKey,
-  IrDefinitionRef,
   IrEndpoint,
   IrFunction,
   IrImportDescriptor,
   IrInterface,
   IrMethod,
-  IrSchemaKey,
   IrSchemaRef,
   IrView,
   JsonSchema,
   SchemaIR,
   StudioCore,
 } from '../../shared/types'
+
+import { definitionRefKey, isIrDefinitionRef, schemaRefKey } from '../../shared/schema/identity'
+import { isSchemaRevision } from '../../shared/types'
 
 type AnyRecord = Record<string, unknown>
 
@@ -35,6 +36,20 @@ export interface CanonicalSchemaProjection {
   ir: SchemaIR
   importedInterfaces: Record<string, IrInterface>
 }
+
+export type CanonicalSchemaAdmission =
+  | {
+      status: 'admitted'
+      root: CanonicalDomainSchemaV1
+      closure: CanonicalDomainSchemaV1[]
+      revision: `sha256:${string}`
+    }
+  | {
+      status: 'preview'
+      root: CanonicalDomainSchemaV1
+      closure: CanonicalDomainSchemaV1[]
+      revision: null
+    }
 
 export function isCanonicalDomainSchemaV1(value: unknown): value is CanonicalDomainSchemaV1 {
   const candidate = asRecord(value)
@@ -101,6 +116,65 @@ export function closureFromSdk(
   }
 
   return []
+}
+
+/**
+ * Re-admit a structurally V1-looking export through the Domain's own SDK cohort.
+ * Retained Builder context supplies the exact dependency closure. If that proof
+ * is unavailable or admission fails, Studio may still render the document as a
+ * structural preview, but it must not assign a canonical revision to it.
+ */
+export function admitCanonicalSchemaFromSdk(
+  sdkModule: Record<string, unknown>,
+  candidate: CanonicalDomainSchemaV1,
+): CanonicalSchemaAdmission {
+  const retainedClosure = closureFromSdk(sdkModule, candidate)
+  const schemaApi = asRecord(sdkModule.schema)
+  const accept = schemaApi?.accept
+  const revision = schemaApi?.revision
+  if (!schemaApi || typeof accept !== 'function' || typeof revision !== 'function') {
+    return { status: 'preview', root: candidate, closure: retainedClosure, revision: null }
+  }
+
+  try {
+    const revisions = new Map<string, string>()
+    for (const dependency of retainedClosure) {
+      const value = Reflect.apply(revision, schemaApi, [dependency])
+      if (!isSchemaRevision(value)) throw new TypeError('SDK returned an invalid schema revision')
+      revisions.set(dependency.origin, value)
+    }
+    const lookup = {
+      get(origin: string, expected: string): CanonicalDomainSchemaV1 | undefined {
+        const dependency = retainedClosure.find((entry) => entry.origin === origin)
+        return dependency && revisions.get(origin) === expected ? dependency : undefined
+      },
+    }
+    const accepted = Reflect.apply(accept, schemaApi, [candidate, lookup])
+    if (!isCanonicalDomainSchemaV1(accepted) || accepted.origin !== candidate.origin) {
+      throw new TypeError('SDK admission returned a different schema root')
+    }
+    const acceptedRevision = Reflect.apply(revision, schemaApi, [accepted])
+    if (!isSchemaRevision(acceptedRevision)) {
+      throw new TypeError('SDK returned an invalid schema revision')
+    }
+
+    // Resolve the newly accepted value once more so its retained closure, rather
+    // than Studio's structural candidate, is what feeds exact-ref projection.
+    const resolve = schemaApi.resolve
+    let closure = retainedClosure
+    if (typeof resolve === 'function') {
+      const resolved = asRecord(Reflect.apply(resolve, schemaApi, [accepted]))
+      const proof = asRecord(resolved?.$)
+      if (proof?.schema !== accepted) throw new TypeError('SDK resolution did not retain the root')
+      const admitted = admitClosure(proof.closure, accepted)
+      if (!admitted) throw new TypeError('SDK resolution returned an invalid dependency closure')
+      closure = admitted
+    }
+
+    return { status: 'admitted', root: accepted, closure, revision: acceptedRevision }
+  } catch {
+    return { status: 'preview', root: candidate, closure: retainedClosure, revision: null }
+  }
 }
 
 /** Add fields required by the current shared contract to a legacy serializer IR. */
@@ -174,8 +248,8 @@ export function projectCanonicalSchema(
 
   for (let index = 0; index < pending.length; index++) {
     const ref = pending[index]
-    if (!isDefinitionRef(ref) || ref.origin === origin) continue
-    const key = definitionKey(ref)
+    if (!isIrDefinitionRef(ref) || ref.origin === origin) continue
+    const key = definitionRefKey(ref)
     if (visited.has(key)) continue
     visited.add(key)
 
@@ -556,7 +630,7 @@ function collectDefinitionRefs(root: CanonicalDomainSchemaV1): IrSchemaRef[] {
     addRef(declaration?.source, refs)
     addRef(declaration?.target, refs)
   }
-  collectPolicyRefs(root.policies, refs)
+  for (const [, policy] of entriesOf(root.policies)) collectPolicyRefs(policy, refs)
   return uniqueRefs(refs)
 }
 
@@ -636,23 +710,11 @@ function addRef(value: unknown, refs: IrSchemaRef[]): void {
 function uniqueRefs(refs: readonly IrSchemaRef[]): IrSchemaRef[] {
   const seen = new Set<string>()
   return refs.filter((ref) => {
-    const key = refKey(ref)
+    const key = schemaRefKey(ref)
     if (seen.has(key)) return false
     seen.add(key)
     return true
   })
-}
-
-function refKey(ref: IrSchemaRef): IrSchemaKey {
-  return `${ref.origin}:${ref.kind}.${ref.name}`
-}
-
-function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
-  return ref.kind === 'class' || ref.kind === 'interface'
-}
-
-function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
-  return `${ref.origin}:${ref.kind}.${ref.name}`
 }
 
 function coreEndpoint(value: unknown, rootOrigin: string): string {

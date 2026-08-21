@@ -34,7 +34,8 @@ const edge = (name: string): IrClass => ({
 function bundle(classes: SchemaIR['classes'], files: Record<string, string>): StudioSchemaBundle {
   return {
     domainId: 'example',
-    schemaHash: 'test',
+    renderFingerprint: 'test',
+    schemaMode: 'legacy',
     extractedBy: 'runtime-bun',
     depsInstalled: true,
     ir: {

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { IrClass, IrFunction, SchemaIR } from '../../shared/types'
 
-import { classify, diffSchemas } from './diff'
+import { diffSchemas, structuralStatusOf } from './diff'
 
 const callable = (returnsType = 'string'): IrFunction => ({
   name: 'inspect',
@@ -31,21 +31,19 @@ const withClass = (member: IrClass): SchemaIR => ({
 })
 
 describe('canonical standalone Function diffs', () => {
-  test('classifies addition as additive and removal as breaking', () => {
+  test('reports additions and removals without claiming Runtime compatibility', () => {
     const empty = schema({})
     const populated = schema({ inspect: callable() })
-    expect(diffSchemas(empty, populated)).toEqual([
-      { kind: 'function-added', target: 'inspect', breaking: false },
-    ])
+    expect(diffSchemas(empty, populated)).toEqual([{ kind: 'function-added', target: 'inspect' }])
     const removed = diffSchemas(populated, empty)
-    expect(removed).toEqual([{ kind: 'function-removed', target: 'inspect', breaking: true }])
-    expect(classify(removed)).toBe('breaking')
+    expect(removed).toEqual([{ kind: 'function-removed', target: 'inspect' }])
+    expect(structuralStatusOf(removed)).toBe('changed')
   })
 
   test('detects a standalone Function signature change', () => {
     expect(
       diffSchemas(schema({ inspect: callable() }), schema({ inspect: callable('number') })),
-    ).toEqual([{ kind: 'function-signature-changed', target: 'inspect', breaking: true }])
+    ).toEqual([{ kind: 'function-signature-changed', target: 'inspect' }])
   })
 
   test('detects auth and output-mode changes in callable contracts', () => {
@@ -57,7 +55,7 @@ describe('canonical standalone Function diffs', () => {
     }
 
     expect(diffSchemas(schema({ inspect: before }), schema({ inspect: after }))).toEqual([
-      { kind: 'function-signature-changed', target: 'inspect', breaking: true },
+      { kind: 'function-signature-changed', target: 'inspect' },
     ])
   })
 
@@ -75,13 +73,11 @@ describe('canonical standalone Function diffs', () => {
         kind: 'prop-schema-changed',
         target: 'Person.name',
         detail: 'value constraints changed',
-        breaking: true,
       },
       {
         kind: 'prop-required-changed',
         target: 'Person.name',
         detail: 'optional → required',
-        breaking: true,
       },
     ])
   })
