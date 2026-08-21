@@ -27,7 +27,7 @@ function statusOf(s: InstanceStatus): { word: string; tone: string; dot: string 
 /**
  * The single domain/instance status chip in the header — merges "is the schema
  * healthy here" with "is it installed on the instance". Deliberately minimal:
- * the deploy target, one status word, the schema hash, and a gated deploy.
+ * the deploy target, one status word, the admitted schema revision, and a gated deploy.
  */
 export function InstanceBadge({ domainId }: { domainId: string }) {
   const { data } = useInstance(domainId)
@@ -105,14 +105,14 @@ export function InstanceBadge({ domainId }: { domainId: string }) {
         {/* schema identity — when drifted, show local vs the schema actually on the instance */}
         {data.drift === 'drifted' ? (
           <div className="space-y-0.5 font-mono text-[11px]">
-            <div className="text-warning">local {shortHash(data.localHash ?? '')}</div>
+            <div className="text-warning">local {shortHash(data.localRevision ?? '')}</div>
             <div className="text-muted-foreground">
-              on instance {shortHash(data.installedHash ?? '')}
+              on instance {shortHash(data.installedRevision ?? '')}
             </div>
           </div>
         ) : (
           <div className="font-mono text-[11px] text-muted-foreground">
-            {shortHash(data.localHash ?? '')}
+            {data.localRevision ? shortHash(data.localRevision) : 'revision unavailable'}
           </div>
         )}
 

@@ -68,7 +68,7 @@ export function watchDomain(handle: DomainHandle): () => void {
       broadcast({
         type: 'schema-diff',
         domainId: handle.id,
-        schemaHash: b?.schemaHash ?? 'sha-none',
+        renderFingerprint: b?.renderFingerprint ?? 'sha-none',
       })
       broadcast({ type: 'anatomy-diff', domainId: handle.id })
     }, 150)

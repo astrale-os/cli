@@ -9,13 +9,54 @@ import { extname } from 'node:path'
 
 import type { DocMeta } from '../../shared/types'
 
+import { asFiniteNumber, asJsonRecord, asString } from '../json'
 import { readJson, removeState, statePath, writeJson, writeStateBuffer } from './store'
 
 const INDEX = 'context/documents/index.json'
 const storedPath = (id: string, name: string) => `context/documents/${id}${extname(name)}`
 
+function decodeDocument(value: unknown): DocMeta | undefined {
+  const record = asJsonRecord(value)
+  const id = asString(record?.id)
+  const name = asString(record?.name)
+  const type = asString(record?.type)
+  const size = asFiniteNumber(record?.size)
+  const addedAt = asString(record?.addedAt)
+  const stored = asString(record?.stored)
+  if (
+    !id ||
+    name === undefined ||
+    type === undefined ||
+    size === undefined ||
+    size < 0 ||
+    !addedAt ||
+    !stored?.startsWith('context/documents/') ||
+    stored.split('/').includes('..')
+  ) {
+    return undefined
+  }
+  const updatedAt = asString(record?.updatedAt)
+  return {
+    id,
+    name,
+    type,
+    size,
+    addedAt,
+    stored,
+    ...(updatedAt === undefined ? {} : { updatedAt }),
+  }
+}
+
+function decodeDocuments(value: unknown): DocMeta[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  return value.flatMap((item) => {
+    const document = decodeDocument(item)
+    return document ? [document] : []
+  })
+}
+
 export function listDocuments(root: string): DocMeta[] {
-  return readJson<DocMeta[]>(root, INDEX, [])
+  return readJson(root, INDEX, decodeDocuments, [])
 }
 
 export function addDocument(root: string, name: string, type: string, data: Uint8Array): DocMeta {

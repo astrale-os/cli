@@ -11,7 +11,7 @@
  * render state, never a crash.
  */
 import {
-  closureFromSdk,
+  admitCanonicalSchemaFromSdk,
   findCanonicalDomainSchemaExport,
   normalizeLegacySchemaIR,
   projectCanonicalSchema,
@@ -39,15 +39,15 @@ async function main() {
   const canonicalRoot = findCanonicalDomainSchemaExport(mod)
   if (canonicalRoot) {
     const domainSdk = await loadSdkSchema()
-    const projected = projectCanonicalSchema(
-      canonicalRoot,
-      closureFromSdk(domainSdk, canonicalRoot),
-    )
+    const admission = admitCanonicalSchemaFromSdk(domainSdk, canonicalRoot)
+    const projected = projectCanonicalSchema(admission.root, admission.closure)
     process.stdout.write(
       JSON.stringify({
         ok: true,
         ir: projected.ir,
-        root: canonicalRoot,
+        root: admission.root,
+        schemaMode: admission.status === 'admitted' ? 'canonical-admitted' : 'canonical-preview',
+        revision: admission.revision,
         importedInterfaces: projected.importedInterfaces,
       }),
     )
@@ -118,6 +118,8 @@ async function main() {
       ok: true,
       ir: normalizeLegacySchemaIR(ir),
       root: null,
+      schemaMode: 'legacy',
+      revision: null,
       importedInterfaces,
     }),
   )

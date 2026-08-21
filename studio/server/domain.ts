@@ -83,11 +83,23 @@ export function allDomains(): DomainHandle[] {
 
 /** Does the domain have the dependency cohort required by its project layout installed? */
 export function depsInstalled(root: string): boolean {
-  const sdk = existsSync(join(root, 'node_modules', '@astrale-os', 'sdk'))
+  const installed = (packageDir: string, specifier: string): boolean => {
+    if (existsSync(join(root, 'node_modules', '@astrale-os', packageDir))) return true
+    try {
+      Bun.resolveSync(specifier, root)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // A workspace may hoist the package above the Domain root. Check both the
+  // conventional local link and Bun's real resolver from the Domain boundary.
+  const sdk = installed('sdk', '@astrale-os/sdk/schema')
   const entry = resolveDomainEntry(root)
 
   // implementation.ts is an SDK boundary by contract. Legacy domain.ts
   // projects may predate the SDK facade and depend on kernel-core directly.
   if (entry?.endsWith('implementation.ts')) return sdk
-  return sdk || existsSync(join(root, 'node_modules', '@astrale-os', 'kernel-core'))
+  return sdk || installed('kernel-core', '@astrale-os/kernel-core')
 }

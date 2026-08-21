@@ -2,6 +2,8 @@ import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
 import { parse as parseYaml } from 'yaml'
 
+import { asJsonRecord, asStringArray, parseJson } from './json'
+
 export type ClientPackageResolution =
   | {
       status: 'available'
@@ -203,7 +205,29 @@ function packageWorkspacePatterns(pkg?: PackageManifest): string[] {
 }
 
 function readPackage(packageFile: string): PackageManifest {
-  return JSON.parse(readFileSync(packageFile, 'utf8')) as PackageManifest
+  const record = asJsonRecord(parseJson(readFileSync(packageFile, 'utf8')))
+  if (!record) throw new TypeError('package.json must contain an object')
+  const scriptsRecord = asJsonRecord(record.scripts)
+  const scripts = scriptsRecord
+    ? Object.fromEntries(
+        Object.entries(scriptsRecord).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      )
+    : undefined
+  let workspaces: PackageManifest['workspaces']
+  const workspaceList = asStringArray(record.workspaces)
+  if (workspaceList) {
+    workspaces = workspaceList
+  } else {
+    const workspaceObject = asJsonRecord(record.workspaces)
+    const packages = asStringArray(workspaceObject?.packages)
+    if (workspaceObject) workspaces = packages ? { packages } : {}
+  }
+  return {
+    ...(scripts === undefined ? {} : { scripts }),
+    ...(workspaces === undefined ? {} : { workspaces }),
+  }
 }
 
 function previewScript(pkg?: PackageManifest): string | undefined {

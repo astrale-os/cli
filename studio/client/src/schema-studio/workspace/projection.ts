@@ -6,6 +6,7 @@ import type {
   SchemaIR,
 } from '@shared/types'
 
+import { isIrDefinitionRef } from '@shared/schema/identity'
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
@@ -135,12 +136,8 @@ export async function prepareWorkspaceDomain(
 
 type DefinitionInput = IrDefinitionRef | string
 
-function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
-  return ref.kind === 'class' || ref.kind === 'interface'
-}
-
 function endpointDefinitions(endpoint: IrEndpoint): DefinitionInput[] {
-  return endpoint.refs !== undefined ? endpoint.refs.filter(isDefinitionRef) : endpoint.types
+  return endpoint.refs !== undefined ? endpoint.refs.filter(isIrDefinitionRef) : endpoint.types
 }
 
 function localTargets(
@@ -238,7 +235,7 @@ function exactOrLegacyInterfaces(
   legacy: string[] | undefined,
 ): DefinitionInput[] {
   if (exact !== undefined) {
-    return exact.filter(isDefinitionRef).filter((ref) => ref.kind === 'interface')
+    return exact.filter(isIrDefinitionRef).filter((ref) => ref.kind === 'interface')
   }
   return legacy ?? []
 }

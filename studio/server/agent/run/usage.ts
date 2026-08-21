@@ -6,14 +6,39 @@
  */
 import type { AgentRun, DomainUsage } from '../../../shared/types'
 
+import { asFiniteNumber, asJsonRecord, asString } from '../../json'
 import { readJson, writeJson } from '../../state/store'
 
 const PATH = 'usage.json'
 
 const EMPTY: DomainUsage = { runs: 0, tokens: 0, costUsd: 0 }
 
+function nonNegative(value: unknown): number | undefined {
+  const number = asFiniteNumber(value)
+  return number !== undefined && number >= 0 ? number : undefined
+}
+
+function decodeUsage(value: unknown): DomainUsage | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const runs = nonNegative(record.runs)
+  const tokens = nonNegative(record.tokens)
+  const costUsd = nonNegative(record.costUsd)
+  const lastRunAt = asString(record.lastRunAt)
+  const lastTokens = nonNegative(record.lastTokens)
+  const lastCostUsd = nonNegative(record.lastCostUsd)
+  return {
+    runs: runs !== undefined && Number.isInteger(runs) ? runs : EMPTY.runs,
+    tokens: tokens ?? EMPTY.tokens,
+    costUsd: costUsd ?? EMPTY.costUsd,
+    ...(lastRunAt === undefined ? {} : { lastRunAt }),
+    ...(lastTokens === undefined ? {} : { lastTokens }),
+    ...(lastCostUsd === undefined ? {} : { lastCostUsd }),
+  }
+}
+
 export function readUsage(root: string): DomainUsage {
-  return { ...EMPTY, ...readJson<Partial<DomainUsage>>(root, PATH, {}) }
+  return readJson(root, PATH, decodeUsage, { ...EMPTY })
 }
 
 /** Fold a finished run into the running total. A run with no reported usage (e.g. it

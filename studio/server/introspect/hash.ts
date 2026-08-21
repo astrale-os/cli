@@ -15,7 +15,10 @@ function sortKeys(v: any): any {
   return v
 }
 
-/** sha256 over canonical JSON, short-prefixed — the schemaHash (identifies a schema version). */
-export function schemaHashOf(value: unknown): string {
+/**
+ * Short, deterministic identity for Studio rendering/cache invalidation only.
+ * This is deliberately not the DSL-owned `schema.revision()`.
+ */
+export function renderFingerprintOf(value: unknown): string {
   return 'sha-' + createHash('sha256').update(canonicalJSON(value)).digest('hex').slice(0, 12)
 }

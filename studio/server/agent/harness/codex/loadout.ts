@@ -1,17 +1,10 @@
 import type { HarnessLoadout } from '../../../../shared/types'
 import type { HarnessLoadoutOptions } from '../adapter'
 
+import { asJsonArray, asJsonRecord, asString, parseJson } from '../../../json'
 import { captureCommand } from '../process'
 import { probeCodexModels } from './models'
 import { scanCodexSkills, type CodexPlugin } from './skills'
-
-function parseJson<T>(text: string, fallback: T): T {
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    return fallback
-  }
-}
 
 /** Inspect Codex configuration, plugins, skills, MCP servers, and models. */
 export async function loadCodexConfiguration(
@@ -24,15 +17,15 @@ export async function loadCodexConfiguration(
     captureCommand(bin, ['plugin', 'list', '--json'], root),
     probeCodexModels(bin, root, options?.model, options?.env),
   ])
-  const pluginWire = parseJson<any>(pluginResult.stdout, {})
-  const plugins: CodexPlugin[] = (Array.isArray(pluginWire?.installed) ? pluginWire.installed : [])
-    .map((plugin: any) => ({
-      name: String(plugin?.name ?? plugin?.pluginId?.split('@')[0] ?? ''),
-      path: String(plugin?.source?.path ?? ''),
-      enabled: plugin?.enabled === true,
-    }))
-    .filter((plugin: CodexPlugin) => !!plugin.name && !!plugin.path)
-  const mcpWire = parseJson<any[]>(mcpResult.stdout, [])
+  const pluginWire = asJsonRecord(parseJson(pluginResult.stdout))
+  const plugins: CodexPlugin[] = (asJsonArray(pluginWire?.installed) ?? []).flatMap((value) => {
+    const plugin = asJsonRecord(value)
+    const pluginId = asString(plugin?.pluginId)
+    const name = asString(plugin?.name) ?? pluginId?.split('@')[0] ?? ''
+    const path = asString(asJsonRecord(plugin?.source)?.path) ?? ''
+    return name && path ? [{ name, path, enabled: plugin?.enabled === true }] : []
+  })
+  const mcpWire = asJsonArray(parseJson(mcpResult.stdout)) ?? []
   return {
     ok: mcpResult.code === 0 && pluginResult.code === 0 && modelResult.ok,
     detail:
@@ -50,10 +43,14 @@ export async function loadCodexConfiguration(
     models: modelResult.models,
     cwd: root,
     tools: [],
-    mcpServers: mcpWire.map((server) => ({
-      name: String(server?.name ?? ''),
-      status: server?.enabled === false ? 'disabled' : String(server?.auth_status ?? 'configured'),
-    })),
+    mcpServers: mcpWire.map((value) => {
+      const server = asJsonRecord(value)
+      return {
+        name: asString(server?.name) ?? '',
+        status:
+          server?.enabled === false ? 'disabled' : (asString(server?.auth_status) ?? 'configured'),
+      }
+    }),
     skills: scanCodexSkills(root, plugins),
     agents: [],
     builtinCommandCount: 0,

@@ -1,12 +1,10 @@
 /**
- * diff.ts — structural diff of two Schema IRs + breaking/additive classification.
- * Shared by change tracking (baseline) and data versioning. Pure.
+ * diff.ts — indicative structural diff of two Studio render IRs. Pure.
  *
  * Canonical V1 keeps optionality in the owning `required` arrays and nullability
- * in each value schema. Legacy nullable projections remain supported. Contract
- * changes are classified conservatively: removals, tightened value schemas,
- * callable/auth/policy changes, topology changes, dependency revisions and Core
- * changes are breaking; pure additions and descriptions are additive.
+ * in each value schema. Legacy nullable projections remain supported. This
+ * inventory deliberately makes no installation or data-migration claim;
+ * only the Kernel Runtime can assess those transitions against installed data.
  */
 import type {
   IrClass,
@@ -75,7 +73,7 @@ export function diffSchemas(prev: SchemaIR | null, next: SchemaIR | null): Schem
       },
     )
   ) {
-    changes.push({ kind: 'schema-metadata-changed', target: next.domain, breaking: true })
+    changes.push({ kind: 'schema-metadata-changed', target: next.domain })
   }
 
   diffValueRecord(prev.types ?? {}, next.types ?? {}, 'type', changes)
@@ -92,7 +90,7 @@ export function diffSchemas(prev: SchemaIR | null, next: SchemaIR | null): Schem
   diffValueRecord(prev.policies ?? {}, next.policies ?? {}, 'policy', changes)
   diffDependencies(prev.dependencies ?? [], next.dependencies ?? [], changes)
   if (!same(prev.core, next.core) && (prev.core !== undefined || next.core !== undefined)) {
-    changes.push({ kind: 'core-changed', target: next.domain, breaking: prev.core !== undefined })
+    changes.push({ kind: 'core-changed', target: next.domain })
   }
   return changes
 }
@@ -105,14 +103,14 @@ function diffValueRecord(
 ): void {
   for (const name of sortedKeys(next)) {
     if (!(name in prev)) {
-      out.push({ kind: `${scope}-added`, target: name, breaking: false })
+      out.push({ kind: `${scope}-added`, target: name })
     }
   }
   for (const name of sortedKeys(prev)) {
     if (!(name in next)) {
-      out.push({ kind: `${scope}-removed`, target: name, breaking: true })
+      out.push({ kind: `${scope}-removed`, target: name })
     } else if (!same(prev[name], next[name])) {
-      out.push({ kind: `${scope}-changed`, target: name, breaking: true })
+      out.push({ kind: `${scope}-changed`, target: name })
     }
   }
 }
@@ -123,18 +121,18 @@ function diffFunctions(
   out: SchemaChange[],
 ): void {
   for (const name of sortedKeys(next)) {
-    if (!prev[name]) out.push({ kind: 'function-added', target: name, breaking: false })
+    if (!prev[name]) out.push({ kind: 'function-added', target: name })
   }
   for (const name of sortedKeys(prev)) {
     if (!next[name]) {
-      out.push({ kind: 'function-removed', target: name, breaking: true })
+      out.push({ kind: 'function-removed', target: name })
       continue
     }
     if (!same(callableContract(prev[name]), callableContract(next[name]))) {
-      out.push({ kind: 'function-signature-changed', target: name, breaking: true })
+      out.push({ kind: 'function-signature-changed', target: name })
     }
     if (prev[name].description !== next[name].description) {
-      out.push({ kind: 'function-metadata-changed', target: name, breaking: false })
+      out.push({ kind: 'function-metadata-changed', target: name })
     }
   }
 }
@@ -145,11 +143,11 @@ function diffViews(
   out: SchemaChange[],
 ): void {
   for (const name of sortedKeys(next)) {
-    if (!(name in prev)) out.push({ kind: 'view-added', target: name, breaking: false })
+    if (!(name in prev)) out.push({ kind: 'view-added', target: name })
   }
   for (const name of sortedKeys(prev)) {
     if (!(name in next)) {
-      out.push({ kind: 'view-removed', target: name, breaking: true })
+      out.push({ kind: 'view-removed', target: name })
       continue
     }
     if (
@@ -161,10 +159,10 @@ function diffViews(
         },
       )
     ) {
-      out.push({ kind: 'view-changed', target: name, breaking: true })
+      out.push({ kind: 'view-changed', target: name })
     }
     if (prev[name].description !== next[name].description) {
-      out.push({ kind: 'view-metadata-changed', target: name, breaking: false })
+      out.push({ kind: 'view-metadata-changed', target: name })
     }
   }
 }
@@ -182,18 +180,17 @@ function diffDependencies(
   )
   for (const origin of sortedKeys(after)) {
     if (!(origin in before)) {
-      out.push({ kind: 'dependency-added', target: origin, breaking: true })
+      out.push({ kind: 'dependency-added', target: origin })
     }
   }
   for (const origin of sortedKeys(before)) {
     if (!(origin in after)) {
-      out.push({ kind: 'dependency-removed', target: origin, breaking: true })
+      out.push({ kind: 'dependency-removed', target: origin })
     } else if (before[origin] !== after[origin]) {
       out.push({
         kind: 'dependency-changed',
         target: origin,
         detail: `${before[origin]} → ${after[origin]}`,
-        breaking: true,
       })
     }
   }
@@ -213,13 +210,13 @@ function diffMembers(
   for (const name of sortedKeys(next)) {
     if (!prev[name]) {
       const k = memberKind(next[name])
-      out.push({ kind: `${k}-added` as SchemaChange['kind'], target: name, breaking: false })
+      out.push({ kind: `${k}-added` as SchemaChange['kind'], target: name })
     }
   }
   for (const name of sortedKeys(prev)) {
     if (!next[name]) {
       const k = memberKind(prev[name])
-      out.push({ kind: `${k}-removed` as SchemaChange['kind'], target: name, breaking: true })
+      out.push({ kind: `${k}-removed` as SchemaChange['kind'], target: name })
       continue
     }
     diffMemberBody(name, prev[name], next[name], out)
@@ -241,13 +238,12 @@ function diffMemberBody(
         kind: 'prop-added',
         target: `${name}.${p}`,
         detail: required ? 'required' : 'optional',
-        breaking: required,
       })
     }
   }
   for (const p of sortedKeys(pa)) {
     if (!pb[p]) {
-      out.push({ kind: 'prop-removed', target: `${name}.${p}`, breaking: true })
+      out.push({ kind: 'prop-removed', target: `${name}.${p}` })
       continue
     }
     if (!same(pa[p], pb[p])) {
@@ -258,7 +254,6 @@ function diffMemberBody(
         detail: baseChanged
           ? `${baseType(pa[p])} → ${baseType(pb[p])}`
           : 'value constraints changed',
-        breaking: true,
       })
     }
     const wasOpt = !propertyRequired(a, p)
@@ -268,7 +263,6 @@ function diffMemberBody(
         kind: 'prop-required-changed',
         target: `${name}.${p}`,
         detail: wasOpt ? 'optional → required' : 'required → optional',
-        breaking: wasOpt && !nowOpt, // optional→required is breaking
       })
     }
   }
@@ -280,20 +274,19 @@ function diffMemberBody(
       out.push({
         kind: 'method-added',
         target: `${name}.${m}`,
-        breaking: b.type === 'interface' && mb[m].inheritance === 'abstract',
       })
     }
   }
   for (const m of sortedKeys(ma)) {
     if (!mb[m]) {
-      out.push({ kind: 'method-removed', target: `${name}.${m}`, breaking: true })
+      out.push({ kind: 'method-removed', target: `${name}.${m}` })
       continue
     }
     if (!same(callableContract(ma[m]), callableContract(mb[m]))) {
-      out.push({ kind: 'method-signature-changed', target: `${name}.${m}`, breaking: true })
+      out.push({ kind: 'method-signature-changed', target: `${name}.${m}` })
     }
     if (ma[m].description !== mb[m].description) {
-      out.push({ kind: 'method-metadata-changed', target: `${name}.${m}`, breaking: false })
+      out.push({ kind: 'method-metadata-changed', target: `${name}.${m}` })
     }
   }
 
@@ -302,11 +295,10 @@ function diffMemberBody(
     out.push({
       kind: `${kind}-contract-changed`,
       target: name,
-      breaking: true,
     })
   }
   if (!same(memberMetadata(a), memberMetadata(b))) {
-    out.push({ kind: 'definition-metadata-changed', target: name, breaking: false })
+    out.push({ kind: 'definition-metadata-changed', target: name })
   }
 }
 
@@ -356,7 +348,6 @@ function canonical(value: unknown): unknown {
   )
 }
 
-export function classify(changes: SchemaChange[]): 'none' | 'additive' | 'breaking' {
-  if (changes.length === 0) return 'none'
-  return changes.some((c) => c.breaking) ? 'breaking' : 'additive'
+export function structuralStatusOf(changes: SchemaChange[]): 'none' | 'changed' {
+  return changes.length === 0 ? 'none' : 'changed'
 }

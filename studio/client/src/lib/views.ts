@@ -6,13 +6,13 @@
  */
 import type {
   DomainAnatomy,
-  IrDefinitionKey,
   IrDefinitionRef,
-  IrSchemaRef,
   SchemaIR,
   StudioSchemaBundle,
   ViewInfo,
 } from '@shared/types'
+
+import { definitionRefKey, isIrDefinitionRef } from '@shared/schema/identity'
 
 export type ViewDrift =
   | 'ok'
@@ -41,24 +41,16 @@ export interface ViewsModel {
   hasDrift: boolean
 }
 
-function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
-  return ref.kind === 'class' || ref.kind === 'interface'
-}
-
-function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
-  return `${ref.origin}:${ref.kind}.${ref.name}` as IrDefinitionKey
-}
-
 function exactDefinitionExists(ir: SchemaIR, ref: IrDefinitionRef): boolean {
   if (ref.origin === ir.domain) {
     return ref.kind === 'class' ? !!ir.classes[ref.name] : !!ir.interfaces[ref.name]
   }
-  if (ir.importsByKey !== undefined) return !!ir.importsByKey[definitionKey(ref)]
+  if (ir.importsByKey !== undefined) return !!ir.importsByKey[definitionRefKey(ref)]
   const imported = ir.imports?.[ref.name]
   return (
     imported?.origin === ref.origin &&
     imported.definition === ref.kind &&
-    (!imported.ref || definitionKey(imported.ref) === definitionKey(ref))
+    (!imported.ref || definitionRefKey(imported.ref) === definitionRefKey(ref))
   )
 }
 
@@ -74,7 +66,7 @@ export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBu
     const canonicalTarget = bundle?.ir?.views?.[v.slug]?.target
     const canonicalDefinitions = canonicalTarget
       ? canonicalTarget.kind === 'definition'
-        ? canonicalTarget.definitions.filter(isDefinitionRef)
+        ? canonicalTarget.definitions.filter(isIrDefinitionRef)
         : []
       : undefined
     const declared = canonicalDefinitions

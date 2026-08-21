@@ -10,24 +10,32 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-import type { DomainAnatomy, DomainOverview } from '../../shared/types'
+import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/types'
 
+import { asJsonRecord, asString, parseJson } from '../json'
 import { readSettings } from '../state/settings'
 import { buildClientTree, buildEnvFields, buildViews, findSchemaDefinition } from './anatomy-extras'
+import { readConfigPreview } from './config-preview'
 
 export interface AnatomyArgs {
   root: string
   schemaDirName: string
   clientDir?: string
+  canonicalViews?: NonNullable<SchemaIR['views']>
 }
 
-export function buildAnatomy({ root, schemaDirName, clientDir }: AnatomyArgs): DomainAnatomy {
+export function buildAnatomy({
+  root,
+  schemaDirName,
+  clientDir,
+  canonicalViews,
+}: AnatomyArgs): DomainAnatomy {
   const schema = findSchemaDefinition(root, schemaDirName)
   const authoredClientDir =
     clientDir ?? (existsSync(join(root, 'ui')) ? join(root, 'ui') : undefined)
   return {
     overview: buildOverview(root, schemaDirName, authoredClientDir, schema?.origin),
-    views: buildViews(root, schemaDirName),
+    views: buildViews(root, schemaDirName, canonicalViews),
     client: buildClientTree(root, clientDir ?? null),
     env: buildEnvFields(root),
     detectedIntegrations: detectIntegrations(root),
@@ -40,7 +48,7 @@ function buildOverview(
   clientDir?: string,
   schemaOrigin?: string,
 ): DomainOverview {
-  const pkg = readJsonSafe(join(root, 'package.json'))
+  const pkg = readPackageJsonSafe(join(root, 'package.json'))
   const astraleDeps: Record<string, string> = {}
   for (const [k, v] of Object.entries({
     ...(pkg?.dependencies ?? {}),
@@ -49,16 +57,7 @@ function buildOverview(
     if (k.startsWith('@astrale-os/')) astraleDeps[k] = String(v)
   }
 
-  const config = readTextSafe(join(root, 'astrale.config.ts'))
-  let adapter: DomainOverview['adapter'] = 'unknown'
-  if (/\bastrale\s*\(/.test(config)) adapter = 'astrale'
-  else if (/\bcloudflare\s*\(/.test(config)) adapter = 'cloudflare'
-
-  const instance = config.match(/instance\s*:\s*['"]([^'"]+)['"]/)?.[1]
-  const route = config.match(/route\s*:\s*['"]([^'"]+)['"]/)?.[1]
-  const devSecrets =
-    config.match(/dev\s*:\s*\{[^}]*secrets\s*:\s*['"]([^'"]+)['"]/)?.[1] ??
-    config.match(/secrets\s*:\s*['"]([^'"]+)['"]/)?.[1]
+  const config = readConfigPreview(root)
 
   const compositionFile = existsSync(join(root, 'implementation.ts'))
     ? 'implementation.ts'
@@ -77,9 +76,9 @@ function buildOverview(
   return {
     origin,
     compositionFile,
-    adapter,
-    prodTarget: instance ? `instance: ${instance}` : route ? `route: ${route}` : undefined,
-    devSecrets,
+    adapter: config.adapter,
+    prodTarget: config.prodTarget,
+    devSecrets: config.devSecrets,
     postInstall: undefined,
     requires: [],
     packageName: pkg?.name,
@@ -114,9 +113,37 @@ function readTextSafe(f: string): string {
   }
 }
 
-function readJsonSafe(f: string): any {
+interface PackageOverview {
+  name?: string
+  version?: string
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+}
+
+function decodeDependencyMap(value: unknown): Record<string, string> | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  return Object.fromEntries(
+    Object.entries(record).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    ),
+  )
+}
+
+function readPackageJsonSafe(f: string): PackageOverview | null {
   try {
-    return JSON.parse(readFileSync(f, 'utf8'))
+    const record = asJsonRecord(parseJson(readFileSync(f, 'utf8')))
+    if (!record) return null
+    const name = asString(record.name)
+    const version = asString(record.version)
+    const dependencies = decodeDependencyMap(record.dependencies)
+    const devDependencies = decodeDependencyMap(record.devDependencies)
+    return {
+      ...(name === undefined ? {} : { name }),
+      ...(version === undefined ? {} : { version }),
+      ...(dependencies === undefined ? {} : { dependencies }),
+      ...(devDependencies === undefined ? {} : { devDependencies }),
+    }
   } catch {
     return null
   }

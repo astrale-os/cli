@@ -3,7 +3,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { hashAnatomyFiles } from './baseline'
+import type { SchemaIR } from '../../shared/types'
+
+import { STUDIO_SCHEMA_PROJECTION_VERSION } from '../../shared/types'
+import {
+  BASELINE_FORMAT_VERSION,
+  captureBaseline,
+  computeChanges,
+  hashAnatomyFiles,
+  loadBaseline,
+} from './baseline'
+import { writeJson, writeState } from './store'
 
 const roots: string[] = []
 
@@ -48,4 +58,205 @@ test('hashes current implementation and semantic layer files alongside legacy an
     'ui/risk/screen.tsx',
     'views/risk/index.ts',
   ])
+})
+
+const schema = (domain: string): SchemaIR => ({
+  format: 'astrale.dsl',
+  version: 'v1',
+  domain,
+  types: {},
+  interfaces: {},
+  classes: {},
+  imports: {},
+  functions: {},
+})
+
+const canonicalRoot = {
+  format: 'astrale.dsl',
+  version: 'v1',
+  origin: 'notes.example.dev',
+} as const
+
+test('persists a versioned canonical baseline with revision and raw root', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-versioned-baseline-'))
+  roots.push(root)
+  const revision = `sha256:${'b'.repeat(64)}` as const
+
+  captureBaseline(
+    root,
+    { ir: schema('notes.example.dev'), root: canonicalRoot, revision },
+    { source: 'hash' },
+  )
+
+  expect(loadBaseline(root)).toMatchObject({
+    formatVersion: BASELINE_FORMAT_VERSION,
+    revision,
+    root: canonicalRoot,
+    files: { source: 'hash' },
+  })
+})
+
+test('invalidates an unversioned baseline instead of diffing it through a new projection', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-legacy-baseline-'))
+  roots.push(root)
+  writeJson(root, '.cache/baseline/meta.json', { capturedAt: '2026-01-01T00:00:00.000Z' })
+  writeJson(root, '.cache/baseline/ir.json', schema('notes.example.dev'))
+  writeJson(root, '.cache/baseline/files.json', {})
+
+  expect(loadBaseline(root)).toBeNull()
+})
+
+const corruptBaselineCases = [
+  {
+    name: 'missing meta',
+    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/meta.json')),
+  },
+  {
+    name: 'syntactically invalid meta',
+    mutate: (root: string) => writeState(root, '.cache/baseline/meta.json', '{'),
+  },
+  {
+    name: 'structurally invalid meta',
+    mutate: (root: string) =>
+      writeJson(root, '.cache/baseline/meta.json', {
+        formatVersion: BASELINE_FORMAT_VERSION,
+        projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION,
+      }),
+  },
+  {
+    name: 'future baseline format',
+    mutate: (root: string) =>
+      writeJson(root, '.cache/baseline/meta.json', {
+        formatVersion: BASELINE_FORMAT_VERSION + 1,
+        projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION,
+        revision: `sha256:${'d'.repeat(64)}`,
+      }),
+  },
+  {
+    name: 'future projection format',
+    mutate: (root: string) =>
+      writeJson(root, '.cache/baseline/meta.json', {
+        formatVersion: BASELINE_FORMAT_VERSION,
+        projectionVersion: STUDIO_SCHEMA_PROJECTION_VERSION + 1,
+        revision: `sha256:${'d'.repeat(64)}`,
+      }),
+  },
+  {
+    name: 'missing IR',
+    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/ir.json')),
+  },
+  {
+    name: 'syntactically invalid IR',
+    mutate: (root: string) => writeState(root, '.cache/baseline/ir.json', '{'),
+  },
+  {
+    name: 'structurally invalid IR',
+    mutate: (root: string) =>
+      writeJson(root, '.cache/baseline/ir.json', {
+        ...schema('notes.example.dev'),
+        classes: { Broken: null },
+      }),
+  },
+  {
+    name: 'missing canonical root',
+    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/schema-root.json')),
+  },
+  {
+    name: 'syntactically invalid canonical root',
+    mutate: (root: string) => writeState(root, '.cache/baseline/schema-root.json', '{'),
+  },
+  {
+    name: 'structurally invalid canonical root',
+    mutate: (root: string) =>
+      writeJson(root, '.cache/baseline/schema-root.json', { canonical: true }),
+  },
+  {
+    name: 'missing file hashes',
+    mutate: (root: string) => rmSync(join(root, '.domain-studio/.cache/baseline/files.json')),
+  },
+  {
+    name: 'syntactically invalid file hashes',
+    mutate: (root: string) => writeState(root, '.cache/baseline/files.json', '{'),
+  },
+  {
+    name: 'structurally invalid file hashes',
+    mutate: (root: string) => writeJson(root, '.cache/baseline/files.json', { source: 42 }),
+  },
+] as const
+
+for (const scenario of corruptBaselineCases) {
+  test(`invalidates a baseline with ${scenario.name}`, () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-corrupt-baseline-'))
+    roots.push(root)
+    const revision = `sha256:${'d'.repeat(64)}` as const
+    captureBaseline(root, { ir: schema('notes.example.dev'), root: canonicalRoot, revision }, {})
+
+    scenario.mutate(root)
+
+    expect(loadBaseline(root)).toBeNull()
+  })
+}
+
+test('keeps a valid current-format legacy baseline without a canonical root or revision', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-legacy-v2-baseline-'))
+  roots.push(root)
+  const legacyIr = { ...schema('notes.example.dev'), version: 'legacy' }
+
+  captureBaseline(root, { ir: legacyIr, root: null, revision: null }, { source: 'hash' })
+
+  expect(loadBaseline(root)).toMatchObject({
+    formatVersion: BASELINE_FORMAT_VERSION,
+    ir: legacyIr,
+    root: null,
+    revision: null,
+    files: { source: 'hash' },
+  })
+})
+
+test('uses equal admitted revisions to suppress projection-only schema churn', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-revision-baseline-'))
+  roots.push(root)
+  const revision = `sha256:${'c'.repeat(64)}` as const
+  captureBaseline(
+    root,
+    {
+      ir: schema('old-projection.example.dev'),
+      root: { ...canonicalRoot, origin: 'old-projection.example.dev' },
+      revision,
+    },
+    {},
+  )
+
+  const changes = computeChanges(
+    root,
+    schema('new-projection.example.dev'),
+    {},
+    {
+      currentRevision: revision,
+      git: { hasGit: false },
+    },
+  )
+  expect(changes.schemaChanges).toEqual([])
+  expect(changes.structuralStatus).toBe('none')
+  expect(changes.baselineRevision).toBe(revision)
+  expect(changes.currentRevision).toBe(revision)
+})
+
+test('uses caller-provided Git enrichment without importing workspace effects', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-enriched-baseline-'))
+  roots.push(root)
+  captureBaseline(root, { ir: schema('notes.example.dev'), root: null, revision: null }, {})
+
+  const changes = computeChanges(
+    root,
+    schema('notes.example.dev'),
+    {},
+    {
+      git: { hasGit: true, diffText: 'diff --git a/schema/index.ts b/schema/index.ts' },
+    },
+  )
+
+  expect(changes.source).toBe('git')
+  expect(changes.hasGit).toBe(true)
+  expect(changes.schemaDiffText).toBe('diff --git a/schema/index.ts b/schema/index.ts')
 })

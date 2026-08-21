@@ -41,7 +41,9 @@ export function sseResponse(domains: string[]): Response {
   })
 }
 
-export function broadcast(event: StudioEvent): void {
+/** Broadcast an event and report how many clients were registered at dispatch start. */
+export function broadcast(event: StudioEvent): number {
+  const recipients = clients.size
   const payload = encoder.encode(frame(event))
   for (const [id, c] of clients) {
     try {
@@ -50,6 +52,7 @@ export function broadcast(event: StudioEvent): void {
       clients.delete(id)
     }
   }
+  return recipients
 }
 
 function frame(event: StudioEvent): string {

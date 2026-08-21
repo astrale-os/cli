@@ -13,10 +13,10 @@ import type { Bridge } from '../bridge/grant'
 import type { AgentHarness } from '../harness/adapter'
 
 import { getBundle } from '../../cache'
+import { refreshAuto } from '../../handoff/service'
 import { readComments } from '../../state/comments'
 import { readContext } from '../../state/context'
 import { listDocuments } from '../../state/documents'
-import { refreshAuto } from '../../state/handoff'
 import { startBridge } from '../bridge/grant'
 import { readConversation } from '../conversation'
 import { getHarness, resolveHarnessConfiguration } from '../harness/selection'
@@ -36,7 +36,7 @@ export interface PreparedRun {
   settings: StudioSettings
   session: ReturnType<typeof readConversation>
   resume?: string
-  schemaHash: string
+  renderFingerprint: string
   model?: string
   effort?: AgentEffort
   harnessEnv: Record<string, string>
@@ -80,7 +80,7 @@ export async function prepareRun(
   const bundle = await getBundle(domainId)
   if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
 
-  const schemaHash = bundle?.schemaHash ?? ''
+  const renderFingerprint = bundle?.renderFingerprint ?? ''
   const context = readContext(root)
   const documents = listDocuments(root)
   const configuration = await resolveHarnessConfiguration(root, harness)
@@ -96,7 +96,8 @@ export async function prepareRun(
       : buildTurnPrompt({
           origin: bundle?.overlay.origin ?? domainId,
           root,
-          schemaHash,
+          renderFingerprint,
+          schemaRevision: bundle?.schemaRevision,
           awaitingThreads: awaiting,
           userContext: context.user,
           autoContext: context.auto.filter((item) => item.includeInHandoff),
@@ -150,7 +151,7 @@ export async function prepareRun(
       settings,
       session,
       resume,
-      schemaHash,
+      renderFingerprint,
       model,
       effort,
       harnessEnv,

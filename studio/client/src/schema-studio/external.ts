@@ -1,11 +1,6 @@
-import type {
-  IrDefinitionKey,
-  IrDefinitionRef,
-  IrEndpoint,
-  IrSchemaRef,
-  SchemaIR,
-  StudioSchemaBundle,
-} from '@shared/types'
+import type { IrDefinitionRef, IrEndpoint, SchemaIR, StudioSchemaBundle } from '@shared/types'
+
+import { definitionRefKey, isIrDefinitionRef } from '@shared/schema/identity'
 
 /**
  * external.ts — the CROSS-DOMAIN data layer.
@@ -59,14 +54,6 @@ interface EndpointDefinition {
   ref?: IrDefinitionRef
 }
 
-function isDefinitionRef(ref: IrSchemaRef): ref is IrDefinitionRef {
-  return ref.kind === 'class' || ref.kind === 'interface'
-}
-
-function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
-  return `${ref.origin}:${ref.kind}.${ref.name}`
-}
-
 function sameDefinition(a: IrDefinitionRef, b: IrDefinitionRef): boolean {
   return a.origin === b.origin && a.kind === b.kind && a.name === b.name
 }
@@ -77,7 +64,7 @@ function endpointDefinitions(
 ): EndpointDefinition[] {
   if (!endpoint) return []
   if (endpoint.refs !== undefined)
-    return endpoint.refs.filter(isDefinitionRef).map((ref) => ({ name: ref.name, ref }))
+    return endpoint.refs.filter(isIrDefinitionRef).map((ref) => ({ name: ref.name, ref }))
   return (endpoint.types ?? []).map((name) => ({ name }))
 }
 
@@ -127,7 +114,7 @@ export function localEndpointTargets(
     for (const [className, cls] of Object.entries(ir.classes)) {
       const implementsTarget = ref
         ? cls.implementsRefs
-            ?.filter(isDefinitionRef)
+            ?.filter(isIrDefinitionRef)
             .some((candidate) => sameDefinition(candidate, ref)) === true
         : (cls.implements ?? []).includes(name)
       if (cls.type === 'node' && implementsTarget && !seen.has(className)) {
@@ -165,7 +152,7 @@ export function crossDomainEdges(bundle: StudioSchemaBundle): CrossDomainEdge[] 
       const external = endpointDefinitions(externalEndpoint).flatMap((target) => {
         if (target.ref) {
           if (target.ref.origin === ir.domain) return []
-          const descriptor = ir.importsByKey?.[definitionKey(target.ref)]
+          const descriptor = ir.importsByKey?.[definitionRefKey(target.ref)]
           // The exact endpoint remains sufficient when a partial projection lacks the index; an
           // exact ref must never fall through to the collision-prone short-name map.
           return [{ ...target, ref: descriptor?.ref ?? target.ref }]
@@ -201,7 +188,7 @@ export function externalDomains(bundle: StudioSchemaBundle): ExternalDomain[] {
   for (const e of crossDomainEdges(bundle)) {
     if (!byOrigin.has(e.origin)) byOrigin.set(e.origin, new Map())
     const definition = e.toRef?.kind ?? ir.imports[e.to]?.definition ?? 'class'
-    const identity = e.toRef ? definitionKey(e.toRef) : `${definition}.${e.to}`
+    const identity = e.toRef ? definitionRefKey(e.toRef) : `${definition}.${e.to}`
     byOrigin.get(e.origin)!.set(identity, {
       name: e.to,
       definition,

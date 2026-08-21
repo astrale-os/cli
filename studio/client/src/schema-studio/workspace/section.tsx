@@ -31,7 +31,7 @@ function domainPreparationKey(
   return [
     input.summary.id,
     input.summary.origin,
-    input.bundle.schemaHash,
+    input.bundle.renderFingerprint,
     Object.keys(input.visibility.hidden).sort().join(','),
     input.visibility.showInheritedEdges,
     Object.entries(input.layout.positions)
@@ -193,7 +193,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const viewsCount = inputs.reduce((count, input) => count + input.anatomy.views.length, 0)
   const ready = prepared.length === inputs.length && inputs.length === domainIds.length
   const providerKey = prepared
-    .map((domain) => `${domain.input.summary.id}:${domain.input.bundle.schemaHash}`)
+    .map((domain) => `${domain.input.summary.id}:${domain.input.bundle.renderFingerprint}`)
     .join('|')
 
   if ((pending || !ready) && errors.length === 0) {

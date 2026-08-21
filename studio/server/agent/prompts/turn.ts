@@ -1,12 +1,20 @@
-import type { Comment, ContextItem, DocMeta, SchemaIR, SchemaOverlay } from '../../../shared/types'
+import type {
+  Comment,
+  ContextItem,
+  DocMeta,
+  SchemaIR,
+  SchemaOverlay,
+  SchemaRevision,
+} from '../../../shared/types'
 
-import { buildCopyMarkdown } from '../../state/copy'
+import { buildCopyMarkdown } from '../../handoff/copy'
 import { resolveThreadAnchors } from './anchors'
 
 export interface TurnParts {
   origin: string
   root: string
-  schemaHash: string
+  renderFingerprint: string
+  schemaRevision?: SchemaRevision
   awaitingThreads: Comment[]
   userContext: ContextItem[]
   autoContext: ContextItem[]
@@ -22,7 +30,8 @@ export function buildTurnPrompt(parts: TurnParts): string {
   const body = buildCopyMarkdown({
     origin: parts.origin,
     root: parts.root,
-    schemaHash: parts.schemaHash,
+    renderFingerprint: parts.renderFingerprint,
+    schemaRevision: parts.schemaRevision,
     openComments: parts.awaitingThreads,
     userContext: parts.userContext,
     autoContext: parts.autoContext,

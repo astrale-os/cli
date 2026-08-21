@@ -5,13 +5,10 @@
  * stable refs, so they survive schema edits (a removed ref is harmless).
  * Persisted via the allow-listed store (visibility.json).
  */
-import { readJson, removeState, writeJson } from './store'
+import type { VisibilityState } from '../../shared/types'
 
-export interface VisibilityState {
-  hidden: Record<string, true>
-  showInheritedEdges: boolean
-  materializedInterfaces: Record<string, true>
-}
+import { asBoolean, asJsonRecord } from '../json'
+import { readJson, removeState, writeJson } from './store'
 
 const FILE = 'visibility.json'
 const DEFAULT: VisibilityState = {
@@ -20,10 +17,28 @@ const DEFAULT: VisibilityState = {
   materializedInterfaces: {},
 }
 
+function trueSet(value: unknown): Record<string, true> {
+  return Object.fromEntries(
+    Object.entries(asJsonRecord(value) ?? {}).filter(
+      (entry): entry is [string, true] => entry[1] === true,
+    ),
+  )
+}
+
+function decodeVisibility(value: unknown): VisibilityState | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  return {
+    hidden: trueSet(record.hidden),
+    showInheritedEdges: asBoolean(record.showInheritedEdges) ?? DEFAULT.showInheritedEdges,
+    materializedInterfaces: trueSet(record.materializedInterfaces),
+  }
+}
+
 export function readVisibility(root: string): VisibilityState {
   // merge over DEFAULT so a file written before a field existed (e.g. pre-materialize)
   // still returns the complete shape — the client reads every field unconditionally.
-  return { ...DEFAULT, ...readJson<Partial<VisibilityState>>(root, FILE, DEFAULT) }
+  return readJson(root, FILE, decodeVisibility, { ...DEFAULT })
 }
 
 export function saveVisibility(root: string, state: VisibilityState): VisibilityState {

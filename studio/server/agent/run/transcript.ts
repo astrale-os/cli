@@ -1,9 +1,175 @@
-import type { AgentRun } from '../../../shared/types'
-
+import {
+  AGENT_ACCESS_LEVELS,
+  AGENT_EFFORT_LEVELS,
+  type AgentEvent,
+  type AgentPromptSnapshot,
+  type AgentRun,
+  type MergeResult,
+} from '../../../shared/types'
+import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
 import { readJson, writeJson } from '../../state/store'
 
 const LAST_RUN_FILE = '.cache/agent/last-run.json'
 const runFile = (id: string) => `.cache/agent/runs/${id}.json`
+
+const RUN_STATUSES = new Set<AgentRun['status']>([
+  'queued',
+  'running',
+  'succeeded',
+  'failed',
+  'canceled',
+  'interrupted',
+])
+const EVENT_KINDS = new Set<AgentEvent['kind']>([
+  'status',
+  'thinking',
+  'message',
+  'tool',
+  'reply',
+  'error',
+])
+
+function decodeAgentEvent(value: unknown): AgentEvent | undefined {
+  const record = asJsonRecord(value)
+  const id = asString(record?.id)
+  const ts = asString(record?.ts)
+  const kind = asString(record?.kind)
+  const text = asString(record?.text)
+  if (!id || !ts || !kind || !EVENT_KINDS.has(kind as AgentEvent['kind']) || text === undefined)
+    return undefined
+  const tool = asString(record?.tool)
+  const target = asString(record?.target)
+  const commentId = asString(record?.commentId)
+  return {
+    id,
+    ts,
+    kind: kind as AgentEvent['kind'],
+    text,
+    ...(tool === undefined ? {} : { tool }),
+    ...(target === undefined ? {} : { target }),
+    ...(commentId === undefined ? {} : { commentId }),
+  }
+}
+
+function decodeMergeResult(value: unknown): MergeResult | undefined {
+  const record = asJsonRecord(value)
+  const merged = asFiniteNumber(record?.merged)
+  const closed = asFiniteNumber(record?.closed)
+  const unknownIds = asStringArray(record?.unknownIds)
+  const schemaMismatch = asBoolean(record?.schemaMismatch)
+  if (
+    merged === undefined ||
+    !Number.isInteger(merged) ||
+    closed === undefined ||
+    !Number.isInteger(closed) ||
+    !unknownIds ||
+    schemaMismatch === undefined
+  ) {
+    return undefined
+  }
+  const pastedSchemaVersion = asString(record?.pastedSchemaVersion)
+  return {
+    merged,
+    closed,
+    unknownIds,
+    schemaMismatch,
+    ...(pastedSchemaVersion === undefined ? {} : { pastedSchemaVersion }),
+  }
+}
+
+function decodePrompt(value: unknown): AgentPromptSnapshot | undefined {
+  const record = asJsonRecord(value)
+  const createdAt = asString(record?.createdAt)
+  const systemPrompt = asString(record?.systemPrompt)
+  const turnPrompt = asString(record?.turnPrompt)
+  const firstTurn = asBoolean(record?.firstTurn)
+  const resumed = asBoolean(record?.resumed)
+  const mcpTools = asStringArray(record?.mcpTools)
+  if (
+    !createdAt ||
+    systemPrompt === undefined ||
+    turnPrompt === undefined ||
+    firstTurn === undefined ||
+    resumed === undefined ||
+    !mcpTools
+  ) {
+    return undefined
+  }
+  const sessionId = asString(record?.sessionId)
+  const model = asString(record?.model)
+  const effort = AGENT_EFFORT_LEVELS.find((candidate) => candidate === record?.effort)
+  const access = AGENT_ACCESS_LEVELS.find((candidate) => candidate === record?.access)
+  return {
+    createdAt,
+    systemPrompt,
+    turnPrompt,
+    firstTurn,
+    resumed,
+    mcpTools,
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(model === undefined ? {} : { model }),
+    ...(effort === undefined ? {} : { effort }),
+    ...(access === undefined ? {} : { access }),
+  }
+}
+
+function decodeAgentRun(value: unknown): AgentRun | undefined {
+  const record = asJsonRecord(value)
+  const id = asString(record?.id)
+  const domainId = asString(record?.domainId)
+  const harness = asString(record?.harness)
+  const status = asString(record?.status)
+  const createdAt = asString(record?.createdAt)
+  const summary = asString(record?.summary)
+  const targetCommentIds = asStringArray(record?.targetCommentIds)
+  if (
+    !id ||
+    !domainId ||
+    !harness ||
+    !status ||
+    !RUN_STATUSES.has(status as AgentRun['status']) ||
+    !createdAt ||
+    summary === undefined ||
+    !targetCommentIds ||
+    !Array.isArray(record?.events)
+  ) {
+    return undefined
+  }
+  const events = record.events.flatMap((event) => {
+    const decoded = decodeAgentEvent(event)
+    return decoded ? [decoded] : []
+  })
+  const finishedAt = asString(record.finishedAt)
+  const sessionId = asString(record.sessionId)
+  const resumed = asBoolean(record.resumed)
+  const costUsd = asFiniteNumber(record.costUsd)
+  const numTurns = asFiniteNumber(record.numTurns)
+  const tokens = asFiniteNumber(record.tokens)
+  const error = asString(record.error)
+  const liveReplies = asFiniteNumber(record.liveReplies)
+  const merge = decodeMergeResult(record.merge)
+  const prompt = decodePrompt(record.prompt)
+  return {
+    id,
+    domainId,
+    harness,
+    status: status as AgentRun['status'],
+    createdAt,
+    summary,
+    targetCommentIds,
+    events,
+    ...(finishedAt === undefined ? {} : { finishedAt }),
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(resumed === undefined ? {} : { resumed }),
+    ...(costUsd === undefined ? {} : { costUsd }),
+    ...(numTurns === undefined ? {} : { numTurns }),
+    ...(tokens === undefined ? {} : { tokens }),
+    ...(error === undefined ? {} : { error }),
+    ...(liveReplies === undefined ? {} : { liveReplies }),
+    ...(merge === undefined ? {} : { merge }),
+    ...(prompt === undefined ? {} : { prompt }),
+  }
+}
 
 /** Persist the latest run pointer and, when terminal, its transcript. */
 export function persistRun(root: string, run: AgentRun, transcript = false): void {
@@ -17,7 +183,7 @@ export function persistRun(root: string, run: AgentRun, transcript = false): voi
 
 /** Rehydrate the latest run and reconcile one orphaned by a Studio restart. */
 export function readLastRun(domainId: string, root: string): AgentRun | null {
-  const last = readJson<AgentRun | null>(root, LAST_RUN_FILE, null)
+  const last = readJson(root, LAST_RUN_FILE, decodeAgentRun, null)
   if (!last || last.domainId !== domainId) return null
   if (last.status === 'running' || last.status === 'queued') {
     last.status = 'interrupted'

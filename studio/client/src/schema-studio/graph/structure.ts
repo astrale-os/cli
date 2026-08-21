@@ -1,0 +1,266 @@
+import type {
+  AnchorRef,
+  Comment,
+  DomainCatalogEntry,
+  NodePosition,
+  StudioSchemaBundle,
+} from '@shared/types'
+import type { Edge, Node } from '@xyflow/react'
+
+import { cardinalityMarkers } from '../cardinality-markers'
+import {
+  type CrossDomainEdge,
+  type ExternalDomain,
+  externalMemberNodeId,
+  localEndpointTargets,
+} from '../external'
+import { moduleOfClass } from '../modules'
+import { localInterfaceRendered } from '../projection'
+import { type Hidden, type Materialized, edgeVisible } from '../visibility'
+
+export interface CanvasCommentNodeData extends Record<string, unknown> {
+  comments: Comment[]
+  anchor: AnchorRef
+  excerpt: string
+}
+
+// ── layout: a rectangle around THIS domain's internal nodes; imported domains sit outside it ──
+export function buildExternalLayout(
+  internal: Node[],
+  domains: ExternalDomain[],
+  catalog: DomainCatalogEntry[] | undefined,
+  saved: Record<string, NodePosition> | undefined,
+) {
+  let minX = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const n of internal) {
+    if (n.parentId) continue
+    const pos = saved?.[n.id] ?? n.position
+    const w = (n.style?.width as number) ?? 200
+    const h = (n.style?.height as number) ?? 120
+    minX = Math.min(minX, pos.x)
+    maxX = Math.max(maxX, pos.x + w)
+    minY = Math.min(minY, pos.y)
+    maxY = Math.max(maxY, pos.y + h)
+  }
+  if (!Number.isFinite(minX)) {
+    minX = 0
+    minY = 0
+    maxX = 400
+    maxY = 400
+  }
+
+  // imported domains: a column just OUTSIDE the internal bounding box, to its right
+  // (the dashed internal rectangle itself is derived live from the modules, so it
+  //  auto-resizes when you drag one — see `regionNode` in SchemaGraph)
+  const PAD = 56
+  const rx = minX - PAD
+  const ry = minY - PAD
+  const rw = maxX - minX + 2 * PAD
+  const byOrigin = new Map((catalog ?? []).map((e) => [e.origin, e]))
+  const HEADER = 36
+  const IFACE_H = 44
+  const IFACE_GAP = 8
+  const extX = rx + rw + 96
+  const extNodes: Node[] = []
+  let y = ry + 24
+  for (const d of domains) {
+    const entry = byOrigin.get(d.origin)
+    const boxH = HEADER + d.members.length * (IFACE_H + IFACE_GAP) + 8
+    const gid = `extdom.${d.origin}`
+    extNodes.push({
+      id: gid,
+      type: 'extDomain',
+      position: saved?.[gid] ?? { x: extX, y },
+      draggable: true,
+      selectable: false,
+      data: {
+        name: entry?.name ?? d.origin.split('.')[0],
+        origin: d.origin,
+        kind: d.kind,
+        icon: entry?.icon,
+      },
+      style: { width: 216, height: boxH },
+    })
+    d.members.forEach((member, j) => {
+      extNodes.push({
+        id: externalMemberNodeId(d.origin, member.name, member.definition),
+        type: 'extMember',
+        parentId: gid,
+        extent: 'parent',
+        draggable: false,
+        position: { x: 12, y: HEADER + j * (IFACE_H + IFACE_GAP) },
+        data: { name: member.name, kind: d.kind, definition: member.definition },
+        style: { width: 192, height: IFACE_H },
+      })
+    })
+    y += boxH + 40
+  }
+  return { extNodes }
+}
+
+/** The internal rectangle, derived LIVE from the current module positions so it auto-resizes on drag. */
+export function deriveRegion(nodes: Node[], label: string): Node | null {
+  let minX = Number.POSITIVE_INFINITY
+  let minY = Number.POSITIVE_INFINITY
+  let maxX = Number.NEGATIVE_INFINITY
+  let maxY = Number.NEGATIVE_INFINITY
+  for (const n of nodes) {
+    if (!n.id.startsWith('grp-')) continue // internal module boxes only (classes are their children)
+    const w = (n.style?.width as number) ?? 200
+    const h = (n.style?.height as number) ?? 120
+    minX = Math.min(minX, n.position.x)
+    minY = Math.min(minY, n.position.y)
+    maxX = Math.max(maxX, n.position.x + w)
+    maxY = Math.max(maxY, n.position.y + h)
+  }
+  if (!Number.isFinite(minX)) return null
+  const PAD = 56
+  return {
+    id: 'region',
+    type: 'internalRegion',
+    position: { x: minX - PAD, y: minY - PAD },
+    draggable: false,
+    selectable: false,
+    zIndex: -1,
+    data: { label },
+    style: { width: maxX - minX + 2 * PAD, height: maxY - minY + 2 * PAD },
+  }
+}
+
+export const EMPTY_MATERIALIZED: Record<string, true> = {}
+
+export function buildCrossEdges(
+  cross: CrossDomainEdge[],
+  visible: Set<string>,
+  ids: Set<string>,
+  bundle: StudioSchemaBundle,
+  collapsed: Set<string>,
+  hidden: Hidden,
+  showInheritedEdges: boolean,
+  materialized: Materialized,
+): Edge[] {
+  const ir = bundle.ir
+  if (!ir) return []
+  const out: Edge[] = []
+  const ifaceRendered = (name: string) =>
+    localInterfaceRendered(bundle, collapsed, materialized, name)
+  for (const e of cross) {
+    if (!visible.has(e.origin)) continue
+    const target = externalMemberNodeId(
+      e.origin,
+      e.to,
+      e.toRef?.kind ?? ir.imports[e.to]?.definition ?? 'class',
+    )
+    if (!ids.has(target)) continue
+    const localEndpoint = e.fromRef ? { types: [e.from], refs: [e.fromRef] } : { types: [e.from] }
+    for (const local of localEndpointTargets(ir, localEndpoint, ifaceRendered)) {
+      const viaInterfaces = local.viaInterface ? [local.viaInterface] : []
+      if (
+        !edgeVisible(
+          {
+            edgeName: e.edge,
+            aClass: local.cls ?? '',
+            bClass: '',
+            viaInterfaces,
+          },
+          hidden,
+          showInheritedEdges,
+        )
+      )
+        continue
+      const source =
+        local.ifaceNode ??
+        (collapsed.has(moduleOfClass(bundle, local.cls!))
+          ? `grp-${moduleOfClass(bundle, local.cls!)}`
+          : `class.${local.cls}`)
+      if (!ids.has(source)) continue
+      const color = 'oklch(0.72 0.16 35)'
+      const card = cardinalityMarkers(e.fromCard, e.toCard)
+      const polymorphic = viaInterfaces.length > 0
+      out.push({
+        id: `edge-${e.edge}__${source}__${target}`,
+        source,
+        target,
+        type: 'floating',
+        data: { label: e.edge, edgeClass: e.edge, polymorphic },
+        markerStart: card.markerStart,
+        markerEnd: card.markerEnd,
+        style: {
+          stroke: color,
+          strokeWidth: 2,
+          ...(polymorphic ? { strokeDasharray: '7 4' } : {}),
+        },
+      })
+    }
+  }
+  return out
+}
+
+function canvasPoint(a: AnchorRef | undefined): { x: number; y: number } | null {
+  if (!a || !Number.isFinite(a.x) || !Number.isFinite(a.y)) return null
+  return { x: a.x as number, y: a.y as number }
+}
+
+export function schemaCanvasCommentGroups(
+  comments: Comment[] | undefined,
+): { key: string; anchor: AnchorRef; comments: Comment[] }[] {
+  const byKey = new Map<string, { key: string; anchor: AnchorRef; comments: Comment[] }>()
+  for (const comment of comments ?? []) {
+    const anchor = comment.anchorRefs.find((a) => a.ref === 'section.schema')
+    if (!anchor) continue
+    const pt = canvasPoint(anchor)
+    if (!pt) continue
+    const key = `${Math.round(pt.x / 12) * 12}:${Math.round(pt.y / 12) * 12}`
+    const group = byKey.get(key)
+    if (group) group.comments.push(comment)
+    else byKey.set(key, { key, anchor, comments: [comment] })
+  }
+  return [...byKey.values()]
+}
+
+export function schemaCanvasFallbackComments(comments: Comment[] | undefined): Comment[] {
+  return (comments ?? []).filter((comment) => {
+    const anchor = comment.anchorRefs.find((a) => a.ref === 'section.schema')
+    return !!anchor && !canvasPoint(anchor)
+  })
+}
+
+export function commentNodes(
+  groups: { key: string; anchor: AnchorRef; comments: Comment[] }[],
+): Node[] {
+  return groups.map((g) => {
+    const pt = canvasPoint(g.anchor) ?? { x: 0, y: 0 }
+    return {
+      id: `canvas-comment.${g.key}`,
+      type: 'canvasComment',
+      position: { x: pt.x, y: pt.y },
+      draggable: false,
+      selectable: false,
+      data: {
+        comments: g.comments,
+        anchor: g.anchor,
+        excerpt: 'Schema canvas',
+      } satisfies CanvasCommentNodeData,
+      style: { width: 24, height: 24 },
+      zIndex: 40,
+    }
+  })
+}
+
+export function neighborSet(activeId: string, edges: Edge[]) {
+  const nodeIds = new Set<string>([activeId])
+  const edgeIds = new Set<string>()
+  for (const e of edges) {
+    if (e.source === activeId) {
+      nodeIds.add(e.target)
+      edgeIds.add(e.id)
+    } else if (e.target === activeId) {
+      nodeIds.add(e.source)
+      edgeIds.add(e.id)
+    }
+  }
+  return { nodeIds, edgeIds }
+}

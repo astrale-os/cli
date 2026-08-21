@@ -1,12 +1,12 @@
 import type {
-  IrDefinitionKey,
   IrDefinitionRef,
   IrInterface,
   IrMethod,
-  IrSchemaRef,
   JsonSchema,
   StudioSchemaBundle,
 } from '@shared/types'
+
+import { definitionRefKey, isIrInterfaceRef } from '@shared/schema/identity'
 
 /**
  * Inherited members — the properties/methods a class (or interface) gets from the
@@ -48,16 +48,8 @@ export interface InheritedGroup {
 
 type InterfaceReference = string | (IrDefinitionRef & { kind: 'interface' })
 
-function isInterfaceRef(ref: IrSchemaRef): ref is IrDefinitionRef & { kind: 'interface' } {
-  return ref.kind === 'interface'
-}
-
-function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
-  return `${ref.origin}:${ref.kind}.${ref.name}`
-}
-
 function referenceIdentity(ref: InterfaceReference): string {
-  return typeof ref === 'string' ? `legacy:${ref}` : definitionKey(ref)
+  return typeof ref === 'string' ? `legacy:${ref}` : definitionRefKey(ref)
 }
 
 function referenceName(ref: InterfaceReference): string {
@@ -65,7 +57,7 @@ function referenceName(ref: InterfaceReference): string {
 }
 
 function parentReferences(def: IrInterface): InterfaceReference[] {
-  if (def.extendsRefs !== undefined) return def.extendsRefs.filter(isInterfaceRef)
+  if (def.extendsRefs !== undefined) return def.extendsRefs.filter(isIrInterfaceRef)
   return def.extends ?? []
 }
 
@@ -89,7 +81,7 @@ export function resolveInterface(
   }
   if (reference.kind !== 'interface') return undefined
   if (reference.origin === ir.domain) return ir.interfaces[reference.name]
-  return ir.importedInterfacesByKey?.[definitionKey(reference)]
+  return ir.importedInterfacesByKey?.[definitionRefKey(reference)]
 }
 
 /** Where an implemented interface comes from, for icon/tone selection. */
@@ -200,7 +192,7 @@ export function inheritedGroupsOfClass(
   return buildGroups(
     bundle,
     cls.implementsRefs !== undefined
-      ? cls.implementsRefs.filter(isInterfaceRef)
+      ? cls.implementsRefs.filter(isIrInterfaceRef)
       : (cls.implements ?? []),
     new Set(Object.keys(cls.properties ?? {})),
     new Set(Object.keys(cls.methods ?? {})),

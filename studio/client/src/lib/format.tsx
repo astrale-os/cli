@@ -73,5 +73,8 @@ export function TypeChip({ schema, className }: { schema?: JsonSchema; className
 
 export function shortHash(h?: string): string {
   if (!h) return '—'
-  return h.replace(/^sha-?/, '').slice(0, 8)
+  return h
+    .replace(/^sha256:/, '')
+    .replace(/^sha-?/, '')
+    .slice(0, 8)
 }

@@ -1,9 +1,6 @@
-import type {
-  IrDefinitionKey,
-  IrDefinitionRef,
-  IrSchemaRef,
-  StudioSchemaBundle,
-} from '@shared/types'
+import type { IrDefinitionRef, StudioSchemaBundle } from '@shared/types'
+
+import { definitionRefKey, isIrInterfaceRef, parseDefinitionRefKey } from '@shared/schema/identity'
 
 /**
  * Modules are schema folders. Every member (interface, class, edge) is authored
@@ -57,17 +54,9 @@ export interface FolderModule {
 const HUES = [264, 190, 150, 90, 30, 320, 220, 55, 0, 170, 120, 290]
 const KERNEL_ORIGIN = 'kernel.astrale.ai'
 
-function isInterfaceRef(ref: IrSchemaRef): ref is InterfaceDefinitionRef {
-  return ref.kind === 'interface'
-}
-
-function definitionKey(ref: IrDefinitionRef): IrDefinitionKey {
-  return `${ref.origin}:${ref.kind}.${ref.name}`
-}
-
 /** Collision-free identity for a canonical ref; stable short identity for legacy input. */
 export function interfaceIdentity(ref: InterfaceReference): string {
-  return typeof ref === 'string' ? `legacy:interface.${ref}` : definitionKey(ref)
+  return typeof ref === 'string' ? `legacy:interface.${ref}` : definitionRefKey(ref)
 }
 
 /**
@@ -83,9 +72,8 @@ export function interfaceSelectionId(ref: InterfaceReference, localOrigin?: stri
 
 /** Parse the qualified portion after `interface.` from an imported-interface selection. */
 export function parseInterfaceSelectionToken(token: string): InterfaceDefinitionRef | undefined {
-  const match = /^(.+):interface\.([A-Za-z_$][\w$]*)$/.exec(token)
-  if (!match) return undefined
-  return { origin: match[1], kind: 'interface', name: match[2] }
+  const ref = parseDefinitionRefKey(token)
+  return isIrInterfaceRef(ref) && /^[A-Za-z_$][\w$]*$/.test(ref.name) ? ref : undefined
 }
 
 export function interfaceBadge(ref: InterfaceReference, localOrigin?: string): InterfaceBadge {
@@ -267,7 +255,7 @@ export function implementedInterfaceRefsOf(
   const ir = bundle.ir
   const cls = ir?.classes[className]
   if (!ir || !cls) return []
-  if (cls.implementsRefs !== undefined) return cls.implementsRefs.filter(isInterfaceRef)
+  if (cls.implementsRefs !== undefined) return cls.implementsRefs.filter(isIrInterfaceRef)
 
   // Legacy projections carry only names. Reconstruct a ref only where their local/import maps
   // identify one interface; canonical consumers never enter this branch.

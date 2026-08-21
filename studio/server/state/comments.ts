@@ -2,26 +2,129 @@
  * comments.ts — the comments / open-questions store. ALL persistence goes through
  * store.ts (writes are allow-listed to <domain>/.domain-studio/). The on-disk file
  * is `comments.json`, shaped { schemaVersion, comments: Comment[] }.
+ * `schemaVersion` is the historical annotate wire key for Studio's render
+ * fingerprint; it is not a canonical DSL schema revision.
  *
  * Comments are annotate-compatible: each thread entry is
  *   { id, role:'user'|'author', type:'text'|'choice', text, options?, answer? }
  * and `kind` is derived from the FIRST thread entry's role
  * (author-seeded ⇒ 'question', else 'comment').
  */
-import type { Comment, CommentStore, ThreadEntry } from '../../shared/types'
+import type { AnchorRef, Comment, CommentStore, ThreadEntry } from '../../shared/types'
 
+import {
+  asBoolean,
+  asFiniteNumber,
+  asJsonRecord,
+  asString,
+  asStringArray,
+  parseJson,
+} from '../json'
 import { readJson, writeJson } from './store'
 
 const FILE = 'comments.json'
 
+function decodeAnchorRef(value: unknown): AnchorRef | undefined {
+  const record = asJsonRecord(value)
+  const ref = asString(record?.ref)
+  const kind = record?.kind
+  if (!ref || !['schema', 'section', 'file', 'free'].includes(String(kind))) return undefined
+  const file = asString(record?.file)
+  const startLine = asFiniteNumber(record?.startLine)
+  const endLine = asFiniteNumber(record?.endLine)
+  const label = asString(record?.label)
+  const x = asFiniteNumber(record?.x)
+  const y = asFiniteNumber(record?.y)
+  return {
+    ref,
+    kind: kind as AnchorRef['kind'],
+    ...(file === undefined ? {} : { file }),
+    ...(startLine === undefined ? {} : { startLine }),
+    ...(endLine === undefined ? {} : { endLine }),
+    ...(label === undefined ? {} : { label }),
+    ...(x === undefined ? {} : { x }),
+    ...(y === undefined ? {} : { y }),
+  }
+}
+
+function decodeThreadEntry(value: unknown): ThreadEntry | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const id = asString(record.id)
+  const role = record.role
+  const type = record.type
+  const text = asString(record.text)
+  if (
+    !id ||
+    (role !== 'user' && role !== 'author') ||
+    (type !== 'text' && type !== 'choice') ||
+    text === undefined
+  ) {
+    return undefined
+  }
+  const options = asStringArray(record.options)
+  const answer = record.answer === null ? null : asString(record.answer)
+  return {
+    id,
+    role,
+    type,
+    text,
+    ...(options === undefined ? {} : { options }),
+    ...(answer === undefined ? {} : { answer }),
+  }
+}
+
+function decodeComment(value: unknown): Comment | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const id = asString(record.id)
+  if (!id) return undefined
+  const anchors = asStringArray(record.anchors) ?? []
+  const anchorRefs = Array.isArray(record.anchorRefs)
+    ? record.anchorRefs.flatMap((anchor) => {
+        const decoded = decodeAnchorRef(anchor)
+        return decoded ? [decoded] : []
+      })
+    : []
+  const thread = Array.isArray(record.thread)
+    ? record.thread.flatMap((entry) => {
+        const decoded = decodeThreadEntry(entry)
+        return decoded ? [decoded] : []
+      })
+    : []
+  const status = record.status === 'closed' ? 'closed' : 'open'
+  const closeNote = asString(record.closeNote)
+  const createdAt = asString(record.createdAt) ?? ''
+  const orphaned = asBoolean(record.orphaned)
+  return {
+    id,
+    anchors,
+    anchorRefs,
+    status,
+    thread,
+    createdAt,
+    kind: deriveKind(thread),
+    ...(closeNote === undefined ? {} : { closeNote }),
+    ...(orphaned === undefined ? {} : { orphaned }),
+  }
+}
+
+function decodeCommentStore(value: unknown): CommentStore | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const comments = Array.isArray(record.comments)
+    ? record.comments.flatMap((comment) => {
+        const decoded = decodeComment(comment)
+        return decoded ? [decoded] : []
+      })
+    : []
+  return { schemaVersion: asString(record.schemaVersion) ?? '', comments }
+}
+
 export function readComments(root: string): CommentStore {
   // Allocate a fresh array for every missing store. A module-level EMPTY object
   // would share its nested `comments` array across domains until each persisted.
-  const store = readJson<CommentStore>(root, FILE, { schemaVersion: '', comments: [] })
-  return {
-    schemaVersion: store.schemaVersion ?? '',
-    comments: Array.isArray(store.comments) ? store.comments : [],
-  }
+  return readJson(root, FILE, decodeCommentStore, { schemaVersion: '', comments: [] })
 }
 
 function persist(root: string, store: CommentStore): void {
@@ -206,6 +309,63 @@ interface PastedStore {
   comments?: PastedComment[]
 }
 
+function decodePastedEntry(value: unknown): PastedThreadEntry | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const role = record.role === 'user' || record.role === 'author' ? record.role : undefined
+  const type = record.type === 'text' || record.type === 'choice' ? record.type : undefined
+  const id = asString(record.id)
+  const text = asString(record.text)
+  const options = asStringArray(record.options)
+  const answer = record.answer === null ? null : asString(record.answer)
+  return {
+    ...(id === undefined ? {} : { id }),
+    ...(role === undefined ? {} : { role }),
+    ...(type === undefined ? {} : { type }),
+    ...(text === undefined ? {} : { text }),
+    ...(options === undefined ? {} : { options }),
+    ...(answer === undefined ? {} : { answer }),
+  }
+}
+
+function decodePastedComment(value: unknown): PastedComment | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const id = asString(record.id)
+  const anchors = asStringArray(record.anchors)
+  const status = record.status === 'open' || record.status === 'closed' ? record.status : undefined
+  const closeNote = asString(record.closeNote)
+  const thread = Array.isArray(record.thread)
+    ? record.thread.flatMap((entry) => {
+        const decoded = decodePastedEntry(entry)
+        return decoded ? [decoded] : []
+      })
+    : undefined
+  return {
+    ...(id === undefined ? {} : { id }),
+    ...(anchors === undefined ? {} : { anchors }),
+    ...(status === undefined ? {} : { status }),
+    ...(closeNote === undefined ? {} : { closeNote }),
+    ...(thread === undefined ? {} : { thread }),
+  }
+}
+
+function decodePastedStore(value: unknown): PastedStore | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const schemaVersion = asString(record.schemaVersion)
+  const comments = Array.isArray(record.comments)
+    ? record.comments.flatMap((comment) => {
+        const decoded = decodePastedComment(comment)
+        return decoded ? [decoded] : []
+      })
+    : undefined
+  return {
+    ...(schemaVersion === undefined ? {} : { schemaVersion }),
+    ...(comments === undefined ? {} : { comments }),
+  }
+}
+
 /** Extract the LAST fenced ```json … ``` block from arbitrary prose. */
 function extractLastJsonBlock(text: string): string | null {
   const fence = /```json\s*\n?([\s\S]*?)```/gi
@@ -234,11 +394,11 @@ function normalizePastedEntry(e: PastedThreadEntry): ThreadEntry {
  * - LAST ```json``` block is parsed.
  * - For each pasted comment by id: if known locally, append NEW thread entries
  *   (dedupe by entry id) and apply status/closeNote; if unknown → unknownIds.
- * - schemaMismatch when parsed.schemaVersion differs from currentSchemaHash.
+ * - schemaMismatch when parsed.schemaVersion differs from the current render fingerprint.
  */
 export function mergeReply(
   root: string,
-  currentSchemaHash: string,
+  currentRenderFingerprint: string,
   pastedText: string,
   opts?: {
     /** live loop: skip ONLY the texts already applied live this run, per comment id */
@@ -252,7 +412,8 @@ export function mergeReply(
   if (block == null) {
     throw new Error('no machine-state json block found in pasted text')
   }
-  const parsed = JSON.parse(block) as PastedStore
+  const parsed = decodePastedStore(parseJson(block))
+  if (!parsed) throw new Error('invalid machine-state json block')
   const pastedComments = Array.isArray(parsed.comments) ? parsed.comments : []
 
   const store = readComments(root)
@@ -309,7 +470,9 @@ export function mergeReply(
   persist(root, store)
 
   const pastedSchemaVersion = parsed.schemaVersion
-  const schemaMismatch = Boolean(pastedSchemaVersion && pastedSchemaVersion !== currentSchemaHash)
+  const schemaMismatch = Boolean(
+    pastedSchemaVersion && pastedSchemaVersion !== currentRenderFingerprint,
+  )
 
   return {
     merged,

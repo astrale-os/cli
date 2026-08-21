@@ -31,7 +31,7 @@ export async function completeRun(
     settings,
     session,
     resume,
-    schemaHash,
+    renderFingerprint,
     model,
     effort,
     harnessEnv,
@@ -141,7 +141,7 @@ export async function completeRun(
       result.finalText.trim()
     ) {
       try {
-        const merged = mergeReply(root, schemaHash, result.finalText, {
+        const merged = mergeReply(root, renderFingerprint, result.finalText, {
           skipByComment: liveByComment,
         })
         run.merge = merged

@@ -31,7 +31,8 @@ function bundle(
 ): StudioSchemaBundle {
   return {
     domainId: 'example',
-    schemaHash: 'test',
+    renderFingerprint: 'test',
+    schemaMode: 'legacy',
     extractedBy: 'runtime-bun',
     depsInstalled: true,
     ir: {

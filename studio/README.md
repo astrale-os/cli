@@ -1,15 +1,12 @@
 # Domain Studio
 
-A local, **read-only** GUI for working with Astrale **domains**. Point it at a
+A local GUI for inspecting and working with Astrale **domains**. Point it at a
 domain (or a workspace) and it parses the whole thing — the **schema** above all —
-and renders it far more legibly than raw code. Attach **comments / open-questions**
-to any element, then hit **Submit to agent**: a *local* coding-agent harness
-(Claude Code or Codex, using your existing local login) reads the context, edits
-the domain code on disk, and **replies straight back into the comment threads** —
-live, no copy/paste. The studio re-renders as the code changes and still never
-edits domain code itself. **Copy for agent** + paste-back remain as manual
-fallbacks. See
-[`AGENT_LOOP.md`](./AGENT_LOOP.md).
+and renders it far more legibly than raw code. Attach **comments / open questions**
+to any element, then hit **Submit to agent**: a local Claude Code or Codex harness,
+using your existing login, reads the context, edits the domain code on disk, and
+replies straight back into the comment threads. **Copy for agent** and
+**Merge reply** provide the same handoff as a manual fallback.
 
 Lives in the astrale CLI repo (`cli/studio`) and is launched by **`astrale studio`**.
 
@@ -90,38 +87,59 @@ URL or override the View handshake.
 
 ## What it does
 
+The header selects the active instance and domain and exposes settings,
+environment values, search, comment mode, and the agent loop. A bottom dock
+switches between the four current sections:
+
 | Section | What it shows |
 |---|---|
-| **Overview** | origin, deploy adapter/target, package + `@astrale-os` versions, schemaHash, deps/git badges |
-| **Schema** ★ | classes grouped by **module** (schema/ folders), interface chips on each class, only real relationship edges (cross-module ones highlighted); click a class → props (types + JSDoc), methods (signatures, handler file, kernel calls, core refs) |
-| **Process** | standalone Functions and class Methods, exact auth/handler links, canonical Core genesis, and View entrypoints |
-| **Data** | sample rows per class, versioned by schemaHash, additive/breaking migration |
-| **Context** | deliberate **user** context vs auto-computed digests (separate, opt-in to handoff) |
-| **Integrations** | independent, hand-maintained list (+ a shallow `integrations/` dir hint) |
-| **Cross-domains** | exact canonical dependencies/imported definitions + kernel mixins + a wishlist |
-| **Comments** | open-questions & comments; **Submit to agent** live loop (drives the selected local Claude Code or Codex harness, streams its work, merges its replies back into the threads) + **Copy for agent** / **Merge reply** manual fallback |
-| **Changes** | baseline-first diff (git as enrichment); **Mark reviewed** |
+| **Context** | Saved notes, auto-computed context and local reference documents used in agent handoffs. |
+| **Schema** ★ | A module tree, relationship canvas and definition details. The canvas also exposes canonical Core data plus Domains, Views and detected Integrations panels, and can compose multiple workspace domains. |
+| **Process** | Canonical Core genesis, standalone Functions, class Methods, their auth/handler links and View entrypoints. |
+| **Comments** | Anchored open/resolved threads, the streamed local agent loop, and **Copy for agent** / **Merge reply** manual handoff. |
 
 ## How it's built
 
 ```
-shared/types.ts          the one contract (DSL IR mirror + studio overlay/state)
+shared/
+  contracts/            schema, workspace, agent and runtime wire contracts
+  schema/               canonical reference identity helpers
 server/
-  introspect/            extractor (Bun import → canonical DomainSchema V1) · runtime driver · ts-morph
-                         overlay (handler links, source spans, JSDoc) · anatomy · hash · diff · bundle
-  state/                 store (write-allowlist) · comments · copy · baseline · git
-                         · context · integrations · crossdomains · data
-  detect · domain · cache · api · watch · sse · index
+  agent/                 harness adapters, live bridge, run lifecycle and routes
+  api/                   capability route handlers behind the thin api.ts router
+  introspect/            canonical projection, source overlay, anatomy and structural diff
+  state/                 repositories confined to persisted `.domain-studio` state
+  instances/             instance discovery, schema probe, status and deployment
+  views/                 View model, target selection and verified CLI sessions
+  workspace/             domain creation, catalogue, updates and Git inspection
+  environment/           explicit `.env.dev` / `.env.prod` editing and preview parsing
+  handoff/               agent handoff projection and orchestration
+  index.ts               process composition and lifecycle
 client/src/
-  schema-studio/         the isolated visualization module (graph + detail + modules)
-  sections/              the read-only section components
-  components/ lib/        shadcn primitives, anchor/composer, copy-merge, hooks, store
+  schema-studio/         canvases plus private graph/detail/Core component owners
+  sections/              Context, Process and Comments screens
+  components/            shared UI, settings, comment/agent surfaces and manual handoff
+  lib/                   API client, queries, event stream and UI state
 ```
 
 Schema parsing uses the Astrale DSL's own output: a Bun subprocess imports the
 domain's `schema/index.ts`, admits its canonical DomainSchema V1 through that
 domain's own SDK cohort, and projects it into Studio's render model. Legacy
 compiled `D.$.ir` domains remain a fallback. A ts-morph overlay adds source-only
-details (handler-file links, source spans, JSDoc). All state lives in a
-`.domain-studio/` dotted folder in each domain; the server's only write path is
-allow-listed to that folder, so domain source is never modified.
+details (handler-file links, source spans, JSDoc).
+
+Schema inspection does not rewrite an existing schema. Studio does perform
+explicit writes requested by the user: comments, context, documents, settings,
+layout and visibility are stored under `.domain-studio/`; the environment editor
+writes `.env.dev` or `.env.prod`; creating a domain scaffolds a new source tree and
+installs its dependencies. A submitted agent may edit source and run commands at
+the selected access level, and install/deploy actions can change the selected
+Astrale instance. The HTTP server remains bound to loopback.
+
+## Tests
+
+From the CLI root, `pnpm test` runs the CLI suite plus every Studio client,
+server and shared unit test. `pnpm --dir studio test` runs only the complete
+Studio unit suite, and `pnpm --dir studio typecheck` checks its server/client
+boundary. `pnpm --dir studio test:e2e` builds the client and runs the Chromium
+smoke against a real canonical fixture; CI runs that browser gate separately.

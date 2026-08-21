@@ -22,6 +22,7 @@ import type {
   HarnessGatewayState,
 } from '../../../../shared/types'
 
+import { asJsonRecord, asString, parseJson } from '../../../json'
 import { readJson, removeState, statePath, writeJson } from '../../../state/store'
 import { acquireGatewayToken } from './token'
 
@@ -32,27 +33,33 @@ const GLOBAL_FILE = join(homedir(), '.domain-studio', 'harness-gateway.json')
 
 /** Coerce a wire/disk auth block into a well-formed discriminated union. Default
  *  is `mint` (no secret on disk). A legacy `{ apiKey }` shape maps to `token` mode. */
-function normalizeAuth(input: any): HarnessGatewayAuth {
-  if (input?.mode === 'token' || (input?.token != null && input?.mode == null))
-    return { mode: 'token', token: typeof input.token === 'string' ? input.token.trim() : '' }
-  if (input?.mode === 'host') return { mode: 'host' }
-  const instance = typeof input?.instance === 'string' ? input.instance.trim() : ''
+function normalizeAuth(input: unknown): HarnessGatewayAuth {
+  const record = asJsonRecord(input)
+  if (record?.mode === 'token' || (record?.token != null && record?.mode == null))
+    return { mode: 'token', token: asString(record.token)?.trim() ?? '' }
+  if (record?.mode === 'host') return { mode: 'host' }
+  const instance = asString(record?.instance)?.trim() ?? ''
   return { mode: 'mint', ...(instance ? { instance } : {}) }
 }
 
 /** Coerce a wire/disk value into a well-formed config (trim, drop blanks). */
-function normalize(input: any): HarnessGatewayConfig {
-  const model = typeof input?.model === 'string' ? input.model.trim() : ''
+function normalize(input: unknown): HarnessGatewayConfig {
+  const record = asJsonRecord(input) ?? {}
+  const model = asString(record.model)?.trim() ?? ''
   // back-compat: a pre-union config stored only `apiKey` → treat as a static token
   const authInput =
-    input?.auth ??
-    (typeof input?.apiKey === 'string' ? { mode: 'token', token: input.apiKey } : undefined)
+    record.auth ??
+    (typeof record.apiKey === 'string' ? { mode: 'token', token: record.apiKey } : undefined)
   return {
-    enabled: input?.enabled === true,
-    baseUrl: typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : '',
+    enabled: record.enabled === true,
+    baseUrl: asString(record.baseUrl)?.trim() ?? '',
     ...(model ? { model } : {}),
     auth: normalizeAuth(authInput),
   }
+}
+
+function decodeConfig(value: unknown): HarnessGatewayConfig | undefined {
+  return asJsonRecord(value) ? normalize(value) : undefined
 }
 
 function validateEnabledConfig(config: HarnessGatewayConfig): void {
@@ -71,17 +78,12 @@ function validateEnabledConfig(config: HarnessGatewayConfig): void {
 }
 
 function readLocal(root: string): HarnessGatewayConfig | null {
-  const raw = readJson<HarnessGatewayConfig | null>(root, LOCAL_FILE, null)
-  return raw ? normalize(raw) : null
+  return readJson(root, LOCAL_FILE, decodeConfig, null)
 }
 
 function readGlobal(): HarnessGatewayConfig | null {
   if (!existsSync(GLOBAL_FILE)) return null
-  try {
-    return normalize(JSON.parse(readFileSync(GLOBAL_FILE, 'utf8')))
-  } catch {
-    return null
-  }
+  return decodeConfig(parseJson(readFileSync(GLOBAL_FILE, 'utf8'))) ?? null
 }
 
 /** Write (or, on null, delete) the global default. Not under any domain root, so

@@ -1,5 +1,6 @@
 import type { AgentSessionInfo, ConversationInfo } from '../../shared/types'
 
+import { asFiniteNumber, asJsonRecord, asString } from '../json'
 import { readJson, removeState, writeJson } from '../state/store'
 
 const SESSION_FILE = '.cache/agent/session.json'
@@ -19,22 +20,69 @@ interface LegacySessionState extends HarnessConversation {
   harness?: string
 }
 
+type DecodedConversationWire =
+  | {
+      kind: 'versioned'
+      version: number | undefined
+      conversations: Record<string, HarnessConversation>
+    }
+  | { kind: 'legacy'; state: LegacySessionState }
+
+function decodeHarnessConversation(value: unknown): HarnessConversation | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const sessionId = asString(record.sessionId)
+  const turnsValue = asFiniteNumber(record.turns)
+  const turns =
+    turnsValue !== undefined && turnsValue >= 0 && Number.isInteger(turnsValue)
+      ? turnsValue
+      : undefined
+  const updatedAt = asString(record.updatedAt)
+  return {
+    ...(sessionId === undefined ? {} : { sessionId }),
+    ...(turns === undefined ? {} : { turns }),
+    ...(updatedAt === undefined ? {} : { updatedAt }),
+  }
+}
+
+function decodeConversationWire(value: unknown): DecodedConversationWire | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  if ('conversations' in record) {
+    const conversations: Record<string, HarnessConversation> = {}
+    for (const [harness, candidate] of Object.entries(asJsonRecord(record.conversations) ?? {})) {
+      const conversation = decodeHarnessConversation(candidate)
+      if (conversation) conversations[harness] = conversation
+    }
+    return {
+      kind: 'versioned',
+      version: asFiniteNumber(record.version),
+      conversations,
+    }
+  }
+  const state = decodeHarnessConversation(record)
+  if (!state) return undefined
+  const harness = asString(record.harness)
+  return { kind: 'legacy', state: { ...state, ...(harness === undefined ? {} : { harness }) } }
+}
+
 function readStore(root: string): ConversationStore {
-  const raw = readJson<ConversationStore | LegacySessionState | null>(root, SESSION_FILE, null)
+  const raw = readJson(root, SESSION_FILE, decodeConversationWire, null)
   if (!raw) return { version: 1, conversations: {} }
-  if ('conversations' in raw) {
+  if (raw.kind === 'versioned') {
     if (raw.version !== 1)
       throw new Error(`unsupported agent conversation store version: ${String(raw.version)}`)
-    if (raw.conversations) return { version: 1, conversations: { ...raw.conversations } }
+    return { version: 1, conversations: { ...raw.conversations } }
   }
-  if ('harness' in raw && raw.harness && raw.sessionId) {
+  const legacy = raw.state
+  if (legacy.harness && legacy.sessionId) {
     return {
       version: 1,
       conversations: {
-        [raw.harness]: {
-          sessionId: raw.sessionId,
-          turns: raw.turns ?? 0,
-          updatedAt: raw.updatedAt,
+        [legacy.harness]: {
+          sessionId: legacy.sessionId,
+          turns: legacy.turns ?? 0,
+          updatedAt: legacy.updatedAt,
         },
       },
     }

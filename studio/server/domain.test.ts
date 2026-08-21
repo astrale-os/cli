@@ -20,8 +20,8 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-function fixture(entry: 'implementation.ts' | 'domain.ts'): string {
-  const root = mkdtempSync(join(tmpdir(), 'studio-domain-layout-'))
+function fixture(entry: 'implementation.ts' | 'domain.ts', parent = tmpdir()): string {
+  const root = mkdtempSync(join(parent, 'studio-domain-layout-'))
   roots.push(root)
   mkdirSync(join(root, 'schema'), { recursive: true })
   writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
@@ -64,4 +64,32 @@ test('prefers implementation.ts when both composition entries exist', () => {
   writeFileSync(join(root, 'implementation.ts'), 'export const domain = {}\n')
 
   expect(basename(resolveDomainEntry(root)!)).toBe('implementation.ts')
+})
+
+test('recognizes only an SDK that resolves from the Domain through an autonomous hoist', () => {
+  const isolatedWorkspace = mkdtempSync(join(tmpdir(), 'studio-domain-no-hoist-'))
+  roots.push(isolatedWorkspace)
+  mkdirSync(join(isolatedWorkspace, 'packages'))
+  const isolatedRoot = fixture('implementation.ts', join(isolatedWorkspace, 'packages'))
+  expect(depsInstalled(isolatedRoot)).toBe(false)
+
+  const hoistedWorkspace = mkdtempSync(join(tmpdir(), 'studio-domain-hoist-'))
+  roots.push(hoistedWorkspace)
+  mkdirSync(join(hoistedWorkspace, 'packages'))
+  mkdirSync(join(hoistedWorkspace, 'node_modules', '@astrale-os', 'sdk'), { recursive: true })
+  writeFileSync(
+    join(hoistedWorkspace, 'node_modules', '@astrale-os', 'sdk', 'package.json'),
+    JSON.stringify({
+      name: '@astrale-os/sdk',
+      type: 'module',
+      exports: { './schema': './schema.js' },
+    }),
+  )
+  writeFileSync(
+    join(hoistedWorkspace, 'node_modules', '@astrale-os', 'sdk', 'schema.js'),
+    'export const schema = {}\n',
+  )
+  const hoistedRoot = fixture('implementation.ts', join(hoistedWorkspace, 'packages'))
+
+  expect(depsInstalled(hoistedRoot)).toBe(true)
 })

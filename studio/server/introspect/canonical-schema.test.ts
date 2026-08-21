@@ -344,6 +344,85 @@ describe('canonical DomainSchema V1 projection', () => {
     expect(projected.importedInterfaces.Named).toBeUndefined()
   })
 
+  test('collects an exact external Definition referenced only by a top-level Policy', () => {
+    const policyOrigin = 'authorization.example.dev'
+    const subjectRef = { origin: policyOrigin, kind: 'class', name: 'Subject' } as const
+    const objectRef = { origin: policyOrigin, kind: 'class', name: 'Object' } as const
+    const policyOnlyRef = { origin: policyOrigin, kind: 'class', name: 'may_access' } as const
+    const policyDependency = {
+      format: 'astrale.dsl',
+      version: 'v1',
+      origin: policyOrigin,
+      dependencies: [],
+      types: {},
+      interfaces: {},
+      classes: {
+        Subject: {
+          family: 'node',
+          implements: [],
+          properties: emptyProperties,
+          propertyMetadata: {},
+          methods: {},
+          policies: {},
+        },
+        Object: {
+          family: 'node',
+          implements: [],
+          properties: emptyProperties,
+          propertyMetadata: {},
+          methods: {},
+          policies: {},
+        },
+        may_access: {
+          family: 'edge',
+          implements: [],
+          properties: emptyProperties,
+          propertyMetadata: {},
+          orientation: 'directed',
+          endpoints: {
+            source: { role: 'subject', accepts: [subjectRef], outgoing: '0..*' },
+            target: { role: 'object', accepts: [objectRef], incoming: '0..*' },
+          },
+          policies: {},
+          constraints: {},
+        },
+      },
+      functions: {},
+      policies: {},
+      views: {},
+      core: { nodes: {}, edges: [] },
+    } satisfies CanonicalDomainSchemaV1
+    const policyOnlyRoot = {
+      format: 'astrale.dsl',
+      version: 'v1',
+      origin: 'policy-consumer.example.dev',
+      dependencies: [{ origin: policyDependency.origin, revision: `sha256:${'2'.repeat(64)}` }],
+      types: {},
+      interfaces: {},
+      classes: {},
+      functions: {},
+      policies: {
+        canRead: {
+          match: {
+            source: { kind: 'subject' },
+            class: policyOnlyRef,
+            target: { kind: 'object' },
+          },
+        },
+      },
+      views: {},
+      core: { nodes: {}, edges: [] },
+    } satisfies CanonicalDomainSchemaV1
+
+    const projected = projectCanonicalSchema(policyOnlyRoot, [policyDependency])
+    expect(projected.ir.importsByKey?.['authorization.example.dev:class.may_access']).toEqual({
+      origin: policyDependency.origin,
+      definition: 'class',
+      ref: policyOnlyRef,
+      key: 'authorization.example.dev:class.may_access',
+    })
+  })
+
   test('projects canonical core paths and the owning Domain endpoint', () => {
     expect(projectCanonicalCore(root)).toEqual({
       domain: root.origin,

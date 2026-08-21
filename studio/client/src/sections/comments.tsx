@@ -1,13 +1,16 @@
 import type { Comment, ThreadEntry } from '@shared/types'
 
-import { Check, HelpCircle, MessageSquare, Trash2 } from 'lucide-react'
+import { Check, ClipboardCopy, GitMerge, HelpCircle, MessageSquare, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
+import { CopyDialog, MergeDialog } from '@/components/copy-merge'
 import { Chip, EmptyState, Row, SectionShell, Surface } from '@/components/studio-kit'
 import { ChoiceOptions, EntryText } from '@/components/thread-popover'
+import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useCommentMutations, useComments } from '@/lib/hooks'
+import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 function anchorLabel(ref: string): string {
@@ -24,6 +27,8 @@ function anchorLabel(ref: string): string {
 export function CommentsSection({ domainId }: { domainId: string }) {
   const { data: store, isLoading } = useComments(domainId)
   const [tab, setTab] = useState<'open' | 'closed'>('open')
+  const setCopyOpen = useUI((state) => state.setCopyOpen)
+  const setMergeOpen = useUI((state) => state.setMergeOpen)
 
   const subtitle =
     'Pin notes to any element, then Submit to the agent — it edits the code and replies here.'
@@ -53,58 +58,72 @@ export function CommentsSection({ domainId }: { domainId: string }) {
   ]
 
   return (
-    <SectionShell
-      title="Comments"
-      subtitle={subtitle}
-      icon={<MessageSquare className="h-5 w-5" />}
-      actions={
-        <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
-          {segments.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => setTab(s.key)}
-              className={cn(
-                'inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[13px] font-medium transition-colors',
-                tab === s.key
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {s.label}
-              <span
-                className={cn(
-                  'text-xs',
-                  tab === s.key ? 'text-muted-foreground' : 'text-muted-foreground/60',
-                )}
-              >
-                {s.count}
-              </span>
-            </button>
-          ))}
-        </div>
-      }
-    >
-      {shown.length === 0 ? (
-        <Surface>
-          <EmptyState
-            icon={<MessageSquare />}
-            title={tab === 'open' ? 'No open threads' : 'No resolved threads yet'}
-            hint={
-              tab === 'open'
-                ? 'Hover any element and click the comment icon to start one.'
-                : undefined
-            }
-          />
-        </Surface>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {shown.map((c) => (
-            <CommentCard key={c.id} domainId={domainId} comment={c} />
-          ))}
-        </div>
-      )}
-    </SectionShell>
+    <>
+      <SectionShell
+        title="Comments"
+        subtitle={subtitle}
+        icon={<MessageSquare className="h-5 w-5" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setCopyOpen(true)}>
+              <ClipboardCopy className="h-3.5 w-3.5" />
+              Copy for agent
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(true)}>
+              <GitMerge className="h-3.5 w-3.5" />
+              Merge reply
+            </Button>
+            <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
+              {segments.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setTab(s.key)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[13px] font-medium transition-colors',
+                    tab === s.key
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {s.label}
+                  <span
+                    className={cn(
+                      'text-xs',
+                      tab === s.key ? 'text-muted-foreground' : 'text-muted-foreground/60',
+                    )}
+                  >
+                    {s.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        }
+      >
+        {shown.length === 0 ? (
+          <Surface>
+            <EmptyState
+              icon={<MessageSquare />}
+              title={tab === 'open' ? 'No open threads' : 'No resolved threads yet'}
+              hint={
+                tab === 'open'
+                  ? 'Hover any element and click the comment icon to start one.'
+                  : undefined
+              }
+            />
+          </Surface>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {shown.map((c) => (
+              <CommentCard key={c.id} domainId={domainId} comment={c} />
+            ))}
+          </div>
+        )}
+      </SectionShell>
+      <CopyDialog />
+      <MergeDialog />
+    </>
   )
 }
 

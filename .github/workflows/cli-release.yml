@@ -50,9 +50,6 @@ jobs:
           printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install dependencies
         run: STANDALONE=true pnpm install --frozen-lockfile --ignore-scripts
-      - name: Install Studio test dependencies
-        working-directory: studio
-        run: bun install --no-save
       - name: Test
         run: pnpm test
 

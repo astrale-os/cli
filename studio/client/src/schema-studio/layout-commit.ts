@@ -29,7 +29,7 @@ export function useLayoutCommitter(): {
   const commitLayout = useCallback(
     (domainId: string, updates: Geometry) => {
       queryClient.setQueryData<LayoutState>(qk.layout(domainId), (current) => ({
-        schemaHash: current?.schemaHash,
+        renderFingerprint: current?.renderFingerprint,
         positions: { ...current?.positions, ...updates },
       }))
       dirty.current.set(domainId, { ...dirty.current.get(domainId), ...updates })
