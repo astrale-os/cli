@@ -29,7 +29,7 @@ describe('view session server credentials', () => {
           target: target('/:example.test'),
           route: {
             key: 'example.test:view.public',
-            declaration: { target: { kind: 'domain' }, auth: 'required' },
+            declaration: { target: { kind: 'domain' } },
             href: 'https://example.test/ui/public',
             handshake: 'none',
             issuer: issuer('https://example.test'),

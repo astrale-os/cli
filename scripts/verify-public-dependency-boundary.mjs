@@ -20,7 +20,7 @@ for (const path of checkedFiles) {
   }
 }
 
-const vendored = [...(await readdir('vendor')), ...(await readdir('vendor/kernel'))]
+const vendored = await readdir('vendor', { recursive: true })
 for (const privatePackage of privatePackages) {
   const packageName = privatePackage.slice('@astrale-os/'.length)
   assert.equal(

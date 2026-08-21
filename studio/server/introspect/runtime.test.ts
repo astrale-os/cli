@@ -79,7 +79,7 @@ export const schema = defineSchema('documents.runtime.test', {
       auth: 'authenticated',
     }),
   },
-  views: { editor: view({ target: Document, auth: 'optional' }) },
+  views: { editor: view({ target: Document }) },
   core: {
     nodes: { welcome },
     edges: [edge(welcome, owned_by, domain(), {})],
@@ -126,7 +126,7 @@ describe('current SDK schema extractor', () => {
       },
       views: {
         editor: {
-          auth: 'optional',
+          auth: 'required',
           target: { kind: 'definition' },
         },
       },
