@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.4](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.3...cli/v1.0.0-beta.4) (2026-08-21)
+
+
+### Bug Fixes
+
+* select Admin target from release channel ([aba0771](https://github.com/astrale-os/cli/commit/aba077115c6c86080c0760d2c086d39a0644a517))
+* set default WorkOS client ID ([1e016af](https://github.com/astrale-os/cli/commit/1e016af7bc17121594207fce63b8a4002c428942))
+* set default WorkOS client ID ([c91a51a](https://github.com/astrale-os/cli/commit/c91a51aba93bb41bffe82a6fc523066d9b2b3cb4))
+
+
+### Documentation
+
+* document astrale-dev for testing local CLI source live ([d123c73](https://github.com/astrale-os/cli/commit/d123c73df452c2c9a49b6e7061c409b07aff1c54))
+
 ## [1.0.0-beta.3](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.2...cli/v1.0.0-beta.3) (2026-08-21)
 
 
