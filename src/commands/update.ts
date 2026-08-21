@@ -12,7 +12,7 @@ import {
   type SdkOutdated,
 } from '../lib/sdk-deps'
 import { ASTRALE_CLI_SKILL, detectSkill, installSkills, SKILL_INSTALL_HINT } from '../lib/skills'
-import { updateAstrale } from '../lib/update'
+import { DEFAULT_UPDATE_CHANNEL, updateAstrale } from '../lib/update'
 
 type UpdateOpts = RawOutputOpts & {
   check?: boolean
@@ -130,11 +130,12 @@ export async function cliStale(
   dependencies: CliStaleDependencies = CLI_STALE_DEPENDENCIES,
 ): Promise<StaleReport['cli']> {
   const running = pkg.version
+  const target = { ...opts, channel: opts.channel ?? DEFAULT_UPDATE_CHANNEL }
   try {
     const r = await dependencies.update({
       check: true,
-      channel: opts.channel,
-      version: opts.version,
+      channel: target.channel,
+      version: target.version,
       currentVersion: running,
     })
     if (r.status === 'updated') {
@@ -154,7 +155,7 @@ export async function cliStale(
       channel: r.channel,
     }
   } catch {
-    const latest = await dependencies.fetchPackageVersion(opts).catch(() => undefined)
+    const latest = await dependencies.fetchPackageVersion(target).catch(() => undefined)
     return {
       stale: latest !== undefined && latest !== running,
       managed: true,
@@ -167,7 +168,8 @@ export async function cliStale(
 export async function fetchNpmTargetVersion(
   opts: Pick<UpdateOpts, 'channel' | 'version'>,
 ): Promise<string> {
-  const target = opts.version ?? (opts.channel === 'stable' ? 'latest' : opts.channel) ?? 'latest'
+  const channel = opts.channel ?? DEFAULT_UPDATE_CHANNEL
+  const target = opts.version ?? (channel === 'stable' ? 'latest' : channel)
   const response = await fetch(`https://registry.npmjs.org/@astrale-os/cli/${target}`)
   if (!response.ok) throw new Error(`npm registry HTTP ${response.status}`)
   const body: unknown = await response.json()
@@ -197,6 +199,7 @@ export default {
     {
       flags: '--channel <name>',
       description: 'Update from a release channel (alpha, beta, rc, canary, stable)',
+      default: DEFAULT_UPDATE_CHANNEL,
     },
     { flags: '--version <version>', description: 'Update to an exact version tag' },
     { flags: '--no-skills', description: 'Skip refreshing the astrale agent skills' },
@@ -221,6 +224,7 @@ Behavior:
   the lockfile, honoring your registry + supply-chain age policy; run "pnpm
   install" to materialize).
 
+  The default release channel is beta; --channel overrides it for one run.
   --check is a dry run (binary + SDK deps; exit 10 if anything is available) and
   never writes. With --json it emits a unified staleness report
   ({ stale, cli, sdk }) for tooling — non-throwing, skills omitted (they ride

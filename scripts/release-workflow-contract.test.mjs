@@ -59,6 +59,12 @@ describe('release workflow contract', () => {
     assert.deepEqual(platforms.sort(), ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'])
   })
 
+  it('defaults standalone installs to beta while retaining the channel override', () => {
+    const installer = read('install.sh')
+    assert.equal(installer.match(/\$\{ASTRALE_CHANNEL:-beta\}/g)?.length, 2)
+    assert.doesNotMatch(installer, /\$\{ASTRALE_CHANNEL:-alpha\}/)
+  })
+
   it('documents both the one-time beta entry and stable promotion', () => {
     const guide = read('docs/release.md')
     assert.match(guide, /fix\(ci\): automate CLI beta releases/)

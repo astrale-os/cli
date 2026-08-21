@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  DEFAULT_UPDATE_CHANNEL,
+  InstallMetadataSchema,
   releaseBase,
   shouldUpdate,
   updateAstrale,
@@ -84,6 +86,16 @@ async function makeInstall(
 }
 
 describe('update helpers', () => {
+  test('defaults missing install metadata to the beta channel', () => {
+    expect(DEFAULT_UPDATE_CHANNEL).toBe('beta')
+    expect(
+      InstallMetadataSchema.parse({
+        method: 'script',
+        bin: '/tmp/astrale',
+      }).channel,
+    ).toBe('beta')
+  })
+
   test('releaseBase resolves exact versions and channels', () => {
     const meta: InstallMetadata = {
       method: 'script',

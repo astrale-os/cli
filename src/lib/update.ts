@@ -9,11 +9,11 @@ import { INSTALL_PATH } from '../state/index'
 import { run } from './proc'
 
 const DEFAULT_REPO = 'astrale-os/cli'
-const DEFAULT_CHANNEL = 'alpha'
+export const DEFAULT_UPDATE_CHANNEL = 'beta'
 
 export const InstallMetadataSchema = z.object({
   method: z.literal('script'),
-  channel: z.string().min(1).default(DEFAULT_CHANNEL),
+  channel: z.string().min(1).default(DEFAULT_UPDATE_CHANNEL),
   version: z.string().min(1).optional(),
   repo: z.string().min(1).default(DEFAULT_REPO),
   bin: z.string().min(1),
@@ -162,7 +162,7 @@ export function releaseBase(
     const version = req.version.replace(/^cli\/v/, '').replace(/^v/, '')
     return `https://github.com/${repo}/releases/download/cli/v${version}`
   }
-  return `https://github.com/${repo}/releases/download/${req.channel ?? meta.channel ?? DEFAULT_CHANNEL}`
+  return `https://github.com/${repo}/releases/download/${req.channel ?? meta.channel ?? DEFAULT_UPDATE_CHANNEL}`
 }
 
 export async function fetchManifest(base: string): Promise<UpdateManifest> {
@@ -177,7 +177,7 @@ export function shouldUpdate(currentVersion: string, manifestVersion: string): b
 export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
   const meta = await readInstallMetadata(req.installPath)
   const currentVersion = meta.version ?? req.currentVersion
-  const channel = req.channel ?? meta.channel ?? DEFAULT_CHANNEL
+  const channel = req.channel ?? meta.channel ?? DEFAULT_UPDATE_CHANNEL
   const platform = req.platform ?? detectPlatform()
   const key = platformKey(platform)
   const base = releaseBase(meta, { channel, version: req.version })
