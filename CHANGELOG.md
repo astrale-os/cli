@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.3](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.2...cli/v1.0.0-beta.3) (2026-08-21)
+
+
+### Bug Fixes
+
+* **deps:** adopt public SDK beta.9 cohort ([82ca54f](https://github.com/astrale-os/cli/commit/82ca54f7926d62911b81abb3c78fbdbcad7003cc))
+* **deps:** adopt public SDK beta.9 cohort ([cc4a7af](https://github.com/astrale-os/cli/commit/cc4a7afca76ac328214bb14194d271fe5f86af3e))
+
 ## [1.0.0-beta.2](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.1...cli/v1.0.0-beta.2) (2026-08-21)
 
 
