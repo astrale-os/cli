@@ -81,12 +81,12 @@ gh release view --repo astrale-os/cli beta
 npm view @astrale-os/cli@beta version
 ```
 
-Install and verify the standalone beta without changing the installer's default channel:
+Install and verify the standalone beta through the default channel:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_CHANNEL=beta sh
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 astrale --version
-astrale update --check --channel beta --json
+astrale update --check --json
 ```
 
 Install and verify the npm package, including Domain Studio:

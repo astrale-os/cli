@@ -86,7 +86,7 @@ resolve_download_base() {
     return
   fi
 
-  channel="${ASTRALE_CHANNEL:-alpha}"
+  channel="${ASTRALE_CHANNEL:-beta}"
   printf 'https://github.com/%s/releases/download/%s' "$repo" "$channel"
 }
 
@@ -135,7 +135,7 @@ main() {
   install -m 0755 "$tmp/astrale" "$install_dir/astrale"
 
   installed_version="$("$install_dir/astrale" --version)"
-  channel="${ASTRALE_CHANNEL:-alpha}"
+  channel="${ASTRALE_CHANNEL:-beta}"
   repo="${ASTRALE_REPO:-astrale-os/cli}"
   release_version="$(json_string_field "$tmp/manifest.json" version)"
   release_channel="$(json_string_field "$tmp/manifest.json" channel)"

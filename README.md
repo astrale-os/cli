@@ -11,19 +11,15 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
 The installer places a verified standalone binary at
-`~/.astrale/bin/astrale` by default. No local runtime is installed.
-
-During the prerelease period, install the current standalone beta explicitly:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_CHANNEL=beta sh
-```
+`~/.astrale/bin/astrale` by default. No local runtime is installed. During the
+prerelease period, it follows the beta channel by default.
 
 Optional installer environment:
 
 ```bash
-ASTRALE_INSTALL_DIR=/usr/local/bin curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
-ASTRALE_VERSION=<version> curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_CHANNEL=canary sh
+curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_VERSION=<version> sh
 ```
 
 ### npm (CLI + Domain Studio)
@@ -105,8 +101,8 @@ astrale update --check
 astrale update
 ```
 
-`astrale update` upgrades official script installs. Use `--check`,
-`--channel <channel>`, or `--version <version>` to control the target release.
+`astrale update` upgrades official script installs and follows the beta channel by default.
+Use `--check`, `--channel <channel>`, or `--version <version>` to control the target release.
 
 ## Commands
 
