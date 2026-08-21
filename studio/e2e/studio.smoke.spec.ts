@@ -48,9 +48,10 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   const coreNode = page.getByRole('button', { name: /Primary monitor/ }).first()
   await expect(coreNode).toBeVisible()
   await coreNode.click()
-  await expect(page.getByText('Browser fixture', { exact: true })).toBeVisible()
+  const detailPanel = page.getByRole('button', { name: 'Close panel' }).locator('..')
+  await expect(detailPanel.getByText('Browser fixture', { exact: true })).toBeVisible()
   await expect(
-    page.getByText('/:studio-e2e.astrale.ai:core.primary', { exact: true }),
+    detailPanel.getByText('/:studio-e2e.astrale.ai:core.primary', { exact: true }),
   ).toBeVisible()
 
   expect(pageErrors).toEqual([])
