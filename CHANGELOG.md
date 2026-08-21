@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.0.0-beta.2](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.1...cli/v1.0.0-beta.2) (2026-08-21)
+
+
+### Features
+
+* modernize Studio kernel integration ([57c29b0](https://github.com/astrale-os/cli/commit/57c29b0f9f27c4203dfd5569254496384292e9a7))
+* modernize Studio kernel integration ([68f8b16](https://github.com/astrale-os/cli/commit/68f8b1670524512fcd71fb00d9768b794d69a335))
+
+
+### Bug Fixes
+
+* bind admin calls through current session ([a0b3f49](https://github.com/astrale-os/cli/commit/a0b3f4978ec8194232b79079610ac6f71012c9d2))
+* bind Admin calls through current sessions ([ec772e8](https://github.com/astrale-os/cli/commit/ec772e8f433e341471336529d1a720e71d6cc98b))
+* **lib:** persist OAuth client per IdP session ([39f2f93](https://github.com/astrale-os/cli/commit/39f2f93606c0b3c598a9f7e15e343c4704fccaf0))
+* **lib:** persist OAuth client per IdP session ([d9c20fe](https://github.com/astrale-os/cli/commit/d9c20fe8c2ecd0aa55f5056a1857b431c5f40f29))
+* migrate CLI to current beta cohort ([eb3b999](https://github.com/astrale-os/cli/commit/eb3b9998673713f92d21beee00acafa4c8f80f82))
+* restore public SDK dependency cohort ([951b2e6](https://github.com/astrale-os/cli/commit/951b2e6f61679feb7c15487976f76d46bdbc173d))
+* restore public SDK dependency cohort ([9b3e9b5](https://github.com/astrale-os/cli/commit/9b3e9b5b9f0d70084014a4bfe96fc7a3f9b9479c))
+* support environment-scoped instance routes ([2925693](https://github.com/astrale-os/cli/commit/2925693d744b3cdc7e5a2bdc834b5598202a8e31))
+* support environment-scoped instance routes ([b32b82a](https://github.com/astrale-os/cli/commit/b32b82ae0b74bb82988c2866474b9b41d5d821d4))
+* support published client binding API ([49ef52f](https://github.com/astrale-os/cli/commit/49ef52ff586c3e9764f8fd4435561f9d4259b101))
+* use canonical Domain Publication ([4fb1814](https://github.com/astrale-os/cli/commit/4fb1814c7bbf56a724ef3f3a94142241ed587f85))
+* use canonical Domain Publication ([f2ecbce](https://github.com/astrale-os/cli/commit/f2ecbce70ea4666c90c0493f2d28e5de7e8d9bcb))
+
 ## [1.0.0-beta.1](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.0...cli/v1.0.0-beta.1) (2026-08-20)
 
 
