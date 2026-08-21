@@ -15,6 +15,7 @@ import {
 } from '../../lib/admin-domain'
 import { listOwnedInstancesInContext, type OwnedInstanceInfo } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import { fetchDomainPublication } from '../../lib/domain-publication'
 import { getActive } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
@@ -429,11 +430,11 @@ export async function installDirect(
       log.dim(`  operation:   ${result.operation}`)
       // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
       // aliases the host and the pre-install gate never consented to THAT
-      // origin (lying or absent `/meta`), say so loudly after the fact.
+      // origin (lying or unavailable Publication), say so loudly after the fact.
       if (isIdentityOverride(installed.origin, host) && installed.origin !== consentedOrigin) {
         log.warn(
           `Installed origin "${installed.origin}" differs from the serving host "${host}" ` +
-            `and was not confirmed before install (the worker's /meta did not declare it). ` +
+            `and was not confirmed before install (the worker Publication was unavailable). ` +
             `Every ${installed.origin}/* call on this instance now routes to ${host}.`,
         )
       }
@@ -478,10 +479,10 @@ export function isIdentityOverride(origin: string, host: string): boolean {
  * Claiming an origin that differs from the serving host is an explicit actAs
  * and needs typed consent (or `--allow-identity-override` in scripts).
  *
- * The pre-install check reads the worker's self-reported `/meta.origin`,
+ * The pre-install check reads the worker's canonical Publication origin,
  * so it is consent UX, not enforcement — a hostile worker can lie here, and
  * the kernel anchors the cryptographic identity (`iss`) on the real URL
- * regardless. When `/meta` is unreachable or silent on the origin, the gate
+ * regardless. When the Publication is unreachable or invalid, the gate
  * degrades to a warning and the kernel-confirmed origin is re-checked after
  * install (see `format` above).
  *
@@ -496,7 +497,8 @@ async function ensureIdentityOverrideConsent(
   const origin = await probeDeclaredOrigin(url)
   if (origin === undefined) {
     log.warn(
-      `Could not read a declared origin from ${new URL('/meta', url).href} — ` +
+      `Could not read a declared origin from ` +
+        `${new URL('/.well-known/astrale/domain.json', url).href} — ` +
         `skipping the pre-install identity check (the installed origin is verified after install).`,
     )
     return undefined
@@ -534,19 +536,13 @@ async function ensureIdentityOverrideConsent(
   return origin
 }
 
-/** Best-effort read of the worker's declared origin from its `/meta` probe. */
+/** Best-effort read of the worker's origin from its admitted canonical Publication. */
 export async function probeDeclaredOrigin(url: string): Promise<string | undefined> {
   try {
-    const res = await fetch(new URL('/meta', url), { signal: AbortSignal.timeout(10_000) })
-    if (!res.ok) return undefined
-    // SDK workers serve `origin`; `domainName` is the pre-Kernel-V2 name, kept
-    // as a fallback for workers deployed before the rename.
-    const body = (await res.json()) as { origin?: unknown; domainName?: unknown }
-    const declared = body.origin ?? body.domainName
-    return typeof declared === 'string' && declared.length > 0 ? declared : undefined
+    return (await fetchDomainPublication(url, AbortSignal.timeout(10_000))).origin
   } catch {
-    // Unreachable /meta is not fatal here: the caller warns and the install
-    // itself will surface a dead worker with its own error.
+    // An unreachable or invalid Publication is not fatal here: the caller warns
+    // and the install itself will surface a dead worker with its own error.
     return undefined
   }
 }

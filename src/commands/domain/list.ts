@@ -6,6 +6,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { listAdminDomains, type DomainInfo } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import { fetchDomainPublication } from '../../lib/domain-publication'
 import { fatal, withSpinner } from '../../lib/log'
 import { isMachine, presentList } from '../../lib/output'
 
@@ -23,7 +24,7 @@ type ListOpts = KernelCommandOpts &
 /** A catalog entry, optionally enriched with a live `--check` probe. */
 export type DomainRow = DomainInfo & {
   reachable?: boolean
-  schemaHash?: string
+  schemaRevision?: string
   checkError?: string | null
 }
 
@@ -73,8 +74,8 @@ Behavior:
   one install URL per line (pipeable into \`domain install\`); --count prints
   only the number. --default-only keeps the install-by-default entries (what
   every new instance gets via alphaCreate). --check probes each published URL's
-  /meta and adds a live/unreachable STATUS column (+ reachable/schemaHash in
-  machine output).
+  canonical Publication and adds a live/unreachable STATUS column
+  (+ reachable/schemaRevision in machine output).
 
   The admin kernel is selected like every admin op — the configured default,
   or --admin <bookmark> / --admin-url <url>.
@@ -87,7 +88,10 @@ Examples:
 `,
   options: [
     ...ADMIN_TARGET_OPTIONS,
-    { flags: '--check', description: "Probe each domain's URL for reachability + schema hash" },
+    {
+      flags: '--check',
+      description: "Probe each domain's canonical Publication + schema revision",
+    },
     { flags: '--default-only', description: 'Only show install-by-default domains' },
     { flags: '-q, --quiet', description: 'One install URL per line (unix-pipeable)' },
     { flags: '--count', description: 'Print only the number of published domains' },
@@ -103,7 +107,7 @@ Examples:
           const filtered = opts.defaultOnly ? list.filter((d) => d.installByDefault) : list
           filtered.sort(byDefaultThenName)
           if (!opts.check) return filtered as DomainRow[]
-          // Reachability is a direct client-side /meta fetch per entry, in
+          // Reachability is a direct client-side Publication fetch per entry, in
           // parallel — no admin round-trip, and version-independent of the
           // admin worker (mirrors `domain install`'s probeDeclaredOrigin).
           return Promise.all(filtered.map(probe))
@@ -129,19 +133,20 @@ export function byDefaultThenName(a: DomainInfo, b: DomainInfo): number {
 
 /**
  * Enrich one entry with a reachability probe: fetch the published worker's
- * `/meta` (the same endpoint the admin `DomainEntry.check` hits) and read its
- * schema hash. A dead / missing url is itself a result, not a throw.
+ * canonical Publication and read its schema revision. A dead or missing URL is
+ * itself a result, not a throw.
  */
-async function probe(d: DomainInfo): Promise<DomainRow> {
+export async function probe(d: DomainInfo): Promise<DomainRow> {
   if (!d.url) return { ...d, reachable: false, checkError: 'no url published' }
   try {
-    const res = await fetch(new URL('/meta', d.url), { signal: AbortSignal.timeout(10_000) })
-    if (!res.ok) return { ...d, reachable: false, checkError: `meta HTTP ${res.status}` }
-    const meta = (await res.json()) as { schemaHash?: unknown }
+    const deployed = await fetchDomainPublication(d.url, AbortSignal.timeout(10_000))
+    if (deployed.origin !== d.origin) {
+      throw new Error(`Domain origin mismatch: deployed=${deployed.origin} expected=${d.origin}`)
+    }
     return {
       ...d,
       reachable: true,
-      ...(typeof meta.schemaHash === 'string' ? { schemaHash: meta.schemaHash } : {}),
+      schemaRevision: deployed.schema.revision,
       checkError: null,
     }
   } catch (err) {
