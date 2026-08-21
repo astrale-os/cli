@@ -9,6 +9,7 @@ import {
   IdpSessionSchema,
   isSessionExpired,
   issuerFromToken,
+  legacyBuiltinWorkosReplacement,
   normalizeTokenResponse,
   OAuthTokenError,
   OidcMetadataSchema,
@@ -82,6 +83,30 @@ describe('IdP schemas and token helpers', () => {
     expect(workosClientIdFromEnv({ WORKOS_CLIENT_ID: '   ' })).toBe(
       'client_01KC29HET5F3QAQ8GNTPZ7F320',
     )
+  })
+
+  test('replaces only the legacy persisted built-in WorkOS client', () => {
+    const legacy = builtinIdpConfig('workos', 'client_01KC29HEGD7B40TV2C4QZ436BG', {})!
+    const replacement = legacyBuiltinWorkosReplacement(legacy, undefined, {})
+
+    expect(replacement?.client.client_id).toBe('client_01KC29HET5F3QAQ8GNTPZ7F320')
+    expect(replacement?.metadata.jwks_uri).toBe(
+      'https://api.workos.com/sso/jwks/client_01KC29HET5F3QAQ8GNTPZ7F320',
+    )
+    expect(
+      legacyBuiltinWorkosReplacement(
+        { ...legacy, entry: { ...legacy.entry, builtIn: false } },
+        undefined,
+        {},
+      ),
+    ).toBeUndefined()
+    expect(
+      legacyBuiltinWorkosReplacement(
+        { ...legacy, client: { ...legacy.client, client_id: 'client_custom' } },
+        undefined,
+        {},
+      ),
+    ).toBeUndefined()
   })
 
   test('stores client secret env names, not secret material', () => {
