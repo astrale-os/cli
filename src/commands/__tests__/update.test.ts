@@ -35,9 +35,11 @@ describe('CLI update staleness', () => {
     const result = await cliStale(
       { channel: 'canary' },
       {
-        update: async () => {
-          throw new Error('package managed')
-        },
+        update: async () => ({
+          status: 'managed',
+          currentVersion: '1.0.0-beta.0',
+          executable: '/opt/homebrew/bin/node',
+        }),
         fetchPackageVersion: async ({ channel }) => {
           expect(channel).toBe('canary')
           return '1.0.0-canary.0'
@@ -50,6 +52,26 @@ describe('CLI update staleness', () => {
       latest: '1.0.0-canary.0',
       channel: 'npm',
     })
+  })
+
+  test('does not misclassify a script update failure as package-managed', async () => {
+    const fetchPackageVersion = mock(async () => '9.9.9')
+    const result = await cliStale(
+      {},
+      {
+        update: async () => {
+          throw new Error('release endpoint unavailable')
+        },
+        fetchPackageVersion,
+      },
+    )
+
+    expect(result).toMatchObject({
+      stale: false,
+      managed: false,
+      error: 'release endpoint unavailable',
+    })
+    expect(fetchPackageVersion).not.toHaveBeenCalled()
   })
 
   test('maps the default to beta and the stable channel to npm latest', async () => {

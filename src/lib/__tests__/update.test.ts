@@ -1,16 +1,20 @@
 import { describe, expect, test } from 'bun:test'
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import {
+  admitScriptInstall,
+  classifyUpdateExecution,
   DEFAULT_UPDATE_CHANNEL,
   InstallMetadataSchema,
+  readInstallMetadata,
   releaseBase,
   shouldUpdate,
   updateAstrale,
   writeInstallMetadata,
   type InstallMetadata,
+  type UpdateExecution,
 } from '../update'
 
 async function makeFakeRelease(
@@ -65,7 +69,7 @@ async function makeFakeRelease(
 async function makeInstall(
   root: string,
   version: string,
-): Promise<{ meta: InstallMetadata; path: string }> {
+): Promise<{ meta: InstallMetadata; path: string; execution: UpdateExecution }> {
   const bin = join(root, 'bin', 'astrale')
   await mkdir(join(root, 'bin'), { recursive: true })
   await writeFile(
@@ -82,10 +86,33 @@ async function makeInstall(
     bin,
   }
   await writeInstallMetadata(meta, path)
-  return { meta, path }
+  return { meta, path, execution: { kind: 'standalone', executable: bin } }
 }
 
 describe('update helpers', () => {
+  test('classifies only a Bun-compiled executable as standalone', () => {
+    expect(
+      classifyUpdateExecution({
+        bunVersion: '1.3.14',
+        executable: '/tmp/astrale',
+        entry: '/$bunfs/root/astrale',
+      }),
+    ).toEqual({ kind: 'standalone', executable: '/tmp/astrale' })
+    expect(
+      classifyUpdateExecution({
+        bunVersion: '1.3.14',
+        executable: '/opt/homebrew/bin/bun',
+        entry: '/tmp/astrale.ts',
+      }),
+    ).toEqual({ kind: 'package-managed', executable: '/opt/homebrew/bin/bun' })
+    expect(
+      classifyUpdateExecution({
+        executable: '/opt/homebrew/bin/node',
+        entry: '/tmp/astrale.js',
+      }),
+    ).toEqual({ kind: 'package-managed', executable: '/opt/homebrew/bin/node' })
+  })
+
   test('defaults missing install metadata to the beta channel', () => {
     expect(DEFAULT_UPDATE_CHANNEL).toBe('beta')
     expect(
@@ -118,10 +145,70 @@ describe('update helpers', () => {
   })
 })
 
+describe('script install admission', () => {
+  test('rejects malformed JSON with the stable metadata error', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
+    const path = join(root, 'install.json')
+    await writeFile(path, '{')
+
+    await expect(readInstallMetadata(path)).rejects.toMatchObject({
+      code: 'UPDATE_BAD_INSTALL_METADATA',
+    })
+  })
+
+  test('admits a symlink only when it resolves to the recorded binary', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
+    const { meta } = await makeInstall(root, '1.0.0')
+    const alias = join(root, 'astrale-alias')
+    await symlink(meta.bin, alias)
+
+    const admitted = await admitScriptInstall(meta, {
+      kind: 'standalone',
+      executable: alias,
+    })
+
+    expect(admitted.metadata).toEqual(meta)
+  })
+
+  test('rejects a standalone binary that does not own the recorded target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
+    const { meta } = await makeInstall(root, '1.0.0')
+    const other = join(root, 'other-astrale')
+    await writeFile(other, '#!/bin/sh\n')
+
+    await expect(
+      admitScriptInstall(meta, { kind: 'standalone', executable: other }),
+    ).rejects.toMatchObject({ code: 'UPDATE_INSTALL_MISMATCH' })
+  })
+})
+
 describe('updateAstrale', () => {
+  test('a package-managed process never consults or mutates a coexisting script install', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
+    const { path, meta } = await makeInstall(root, '1.0.0')
+    const before = await readFile(meta.bin, 'utf8')
+    process.env.ASTRALE_UPDATE_BASE = 'file:///definitely-not-a-release'
+    try {
+      const result = await updateAstrale({
+        currentVersion: '2.0.0',
+        installPath: path,
+        execution: { kind: 'package-managed', executable: '/opt/homebrew/bin/node' },
+      })
+
+      expect(result).toEqual({
+        status: 'managed',
+        currentVersion: '2.0.0',
+        executable: '/opt/homebrew/bin/node',
+      })
+      expect(await readFile(meta.bin, 'utf8')).toBe(before)
+    } finally {
+      delete process.env.ASTRALE_UPDATE_BASE
+    }
+  })
+
   test('check compares the installed release identity from metadata', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path } = await makeInstall(root, 'main-abc123')
+    const { path, execution } = await makeInstall(root, 'main-abc123')
     const release = await makeFakeRelease(root, 'main-abc123', { binaryVersion: '1.0.0' })
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
     try {
@@ -130,6 +217,7 @@ describe('updateAstrale', () => {
         currentVersion: '1.0.0',
         platform: { os: 'darwin', arch: 'arm64' },
         installPath: path,
+        execution,
       })
 
       expect(result).toMatchObject({
@@ -144,7 +232,7 @@ describe('updateAstrale', () => {
 
   test('check reports available update without replacing the binary', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta } = await makeInstall(root, '1.0.0')
+    const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0')
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
     try {
@@ -153,6 +241,7 @@ describe('updateAstrale', () => {
         currentVersion: '1.0.0',
         platform: { os: 'darwin', arch: 'arm64' },
         installPath: path,
+        execution,
       })
 
       expect(result).toMatchObject({
@@ -168,7 +257,7 @@ describe('updateAstrale', () => {
 
   test('supports legacy string asset manifests', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta } = await makeInstall(root, '1.0.0')
+    const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0', { legacyManifest: true })
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
     try {
@@ -177,6 +266,7 @@ describe('updateAstrale', () => {
         currentVersion: '1.0.0',
         platform: { os: 'darwin', arch: 'arm64' },
         installPath: path,
+        execution,
       })
 
       expect(check).toMatchObject({
@@ -188,6 +278,7 @@ describe('updateAstrale', () => {
         currentVersion: '1.0.0',
         platform: { os: 'darwin', arch: 'arm64' },
         installPath: path,
+        execution,
       })
 
       expect(result).toMatchObject({
@@ -204,7 +295,7 @@ describe('updateAstrale', () => {
 
   test('updates the binary and install metadata', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta } = await makeInstall(root, '1.0.0')
+    const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0')
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
     try {
@@ -212,6 +303,7 @@ describe('updateAstrale', () => {
         currentVersion: '1.0.0',
         platform: { os: 'darwin', arch: 'arm64' },
         installPath: path,
+        execution,
       })
 
       expect(result).toMatchObject({
@@ -231,7 +323,7 @@ describe('updateAstrale', () => {
 
   test('updates canary-style releases whose binary reports the package version', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta } = await makeInstall(root, 'main-old123')
+    const { path, meta, execution } = await makeInstall(root, 'main-old123')
     const release = await makeFakeRelease(root, 'main-new456', { binaryVersion: '1.0.0' })
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
     try {
@@ -239,6 +331,7 @@ describe('updateAstrale', () => {
         currentVersion: '1.0.0',
         platform: { os: 'darwin', arch: 'arm64' },
         installPath: path,
+        execution,
       })
 
       expect(result).toMatchObject({

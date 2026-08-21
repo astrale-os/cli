@@ -12,7 +12,7 @@ import {
   type SdkOutdated,
 } from '../lib/sdk-deps'
 import { ASTRALE_CLI_SKILL, detectSkill, installSkills, SKILL_INSTALL_HINT } from '../lib/skills'
-import { DEFAULT_UPDATE_CHANNEL, updateAstrale } from '../lib/update'
+import { DEFAULT_UPDATE_CHANNEL, packageManagedUpdateError, updateAstrale } from '../lib/update'
 
 type UpdateOpts = RawOutputOpts & {
   check?: boolean
@@ -104,14 +104,22 @@ async function refreshSdkDeps(check: boolean, assumeYes = false): Promise<boolea
 /**
  * Read-only staleness report for tooling — `astrale update --check --json`.
  * domain-studio polls this on load to drive its "update available" badge. It is
- * unified and NON-THROWING: the CLI axis catches the package-managed / no-metadata
- * case (reported as `managed`, never stale), and the SDK axis is already
- * best-effort. Skills are intentionally absent — they ride along with `astrale
- * update`, so a stale CLI or SDK is the only signal worth surfacing.
+ * unified and NON-THROWING: an explicit package-managed result uses npm release
+ * identity, while script-install failures remain script failures in `error`
+ * instead of being recategorized. The SDK axis is already best-effort. Skills are
+ * intentionally absent — they ride along with `astrale update`, so a stale CLI or
+ * SDK is the only signal worth surfacing.
  */
 export type StaleReport = {
   stale: boolean
-  cli: { stale: boolean; managed: boolean; current?: string; latest?: string; channel?: string }
+  cli: {
+    stale: boolean
+    managed: boolean
+    current?: string
+    latest?: string
+    channel?: string
+    error?: string
+  }
   sdk: { stale: boolean; inProject: boolean; outdated: SdkOutdated[] }
 }
 
@@ -138,6 +146,15 @@ export async function cliStale(
       version: target.version,
       currentVersion: running,
     })
+    if (r.status === 'managed') {
+      const latest = await dependencies.fetchPackageVersion(target).catch(() => undefined)
+      return {
+        stale: latest !== undefined && latest !== running,
+        managed: true,
+        current: running,
+        ...(latest === undefined ? {} : { latest, channel: 'npm' }),
+      }
+    }
     if (r.status === 'updated') {
       return {
         stale: false,
@@ -154,13 +171,12 @@ export async function cliStale(
       latest: r.latestVersion,
       channel: r.channel,
     }
-  } catch {
-    const latest = await dependencies.fetchPackageVersion(target).catch(() => undefined)
+  } catch (error) {
     return {
-      stale: latest !== undefined && latest !== running,
-      managed: true,
+      stale: false,
+      managed: false,
       current: running,
-      ...(latest === undefined ? {} : { latest, channel: 'npm' }),
+      error: error instanceof Error ? error.message : String(error),
     }
   }
 }
@@ -294,6 +310,10 @@ Examples:
         log.success(`Updated astrale ${result.previousVersion} -> ${result.currentVersion}`)
         log.dim(`  channel: ${result.channel}`)
         log.dim(`  binary: ${result.bin}`)
+      } else if (result?.status === 'managed') {
+        const error = packageManagedUpdateError(result.executable)
+        if (!opts.yes) throw error
+        log.warn(`CLI self-update skipped: ${error.message}`)
       }
 
       // Axis B — agent skills. Keep an existing install current with the CLI.
