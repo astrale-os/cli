@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AstraleConfig } from '../config'
 import type { InstanceStore } from '../instance'
 
+import { AdminInstanceNotFoundError } from '../../admin/instance/model'
 import { AstraleError } from '../../errors'
 import { DEFAULT_CONFIG } from '../config'
 import {
@@ -124,9 +125,6 @@ describe('resolveInstanceTarget', () => {
   })
 
   test('unknown slugs surface the original instance-not-found error', async () => {
-    const notFound = new Error('Path not found: "/admin/instances/missing"')
-    notFound.name = 'NotFoundError'
-
     await expect(
       resolveInstanceTarget(
         { source: 'name', name: 'missing' },
@@ -134,7 +132,7 @@ describe('resolveInstanceTarget', () => {
           config: DEFAULT_CONFIG,
           instances: emptyStore,
           managed: async () => {
-            throw notFound
+            throw new AdminInstanceNotFoundError('missing')
           },
         },
       ),
@@ -168,14 +166,8 @@ describe('instance target helpers', () => {
     expect(couldBeConfiguredAdminInstance('bryan', directAdminConfig)).toBe(false)
   })
 
-  test('treats wrapped remote Instance.info misses as managed lookup not-found', () => {
-    const wrapped = new Error('Path not found: "/admin/instances/admin"') as Error & {
-      data?: unknown
-    }
-    wrapped.name = 'KernelError'
-    wrapped.data = { type: 'NotFoundError' }
-
-    expect(isManagedInstanceNotFound(wrapped)).toBe(true)
+  test('treats the owner-scoped Admin error as managed lookup not-found', () => {
+    expect(isManagedInstanceNotFound(new AdminInstanceNotFoundError('admin'))).toBe(true)
   })
 
   test('does not hide non-not-found managed lookup failures', () => {
@@ -194,36 +186,11 @@ describe('instance target helpers', () => {
   })
 })
 
-describe('isManagedInstanceNotFound: kernel InternalKernelError wrap', () => {
-  test('NOT_FOUND-prefixed InternalKernelError is an instance miss', () => {
-    const e = new Error('NOT_FOUND: no instance node for "knowledge"')
-    e.name = 'InternalKernelError'
-    expect(isManagedInstanceNotFound(e)).toBe(true)
-  })
-  test('other InternalKernelError messages are not swallowed', () => {
+describe('isManagedInstanceNotFound: unknown errors', () => {
+  test('does not infer a miss from an InternalKernelError message', () => {
     const e = new Error('DISPATCH_FAILED: handler crashed')
     e.name = 'InternalKernelError'
     expect(isManagedInstanceNotFound(e)).toBe(false)
-  })
-  test('resolveNamedInstanceTarget maps the wrap to typed INSTANCE_NOT_FOUND', async () => {
-    const managed = async () => {
-      const e = new Error('NOT_FOUND: no instance node for "ghost"')
-      e.name = 'InternalKernelError'
-      throw e
-    }
-    const opts = {
-      config: DEFAULT_CONFIG,
-      instances: { instances: {} },
-      managed,
-    } as unknown as Parameters<typeof resolveInstanceTarget>[1]
-    let caught: unknown
-    try {
-      await resolveInstanceTarget({ source: 'name', name: 'ghost' }, opts)
-    } catch (e) {
-      caught = e
-    }
-    expect(caught).toBeInstanceOf(AstraleError)
-    expect((caught as AstraleError).code).toBe('INSTANCE_NOT_FOUND')
   })
 
   test('maps Admin token-exchange failure to INSTANCE_NOT_FOUND', async () => {

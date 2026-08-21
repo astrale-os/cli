@@ -40,7 +40,8 @@ customizes only the Fetch capability passed to Client. `withClientSession` and
 `withAdminClientSession` are terminal lifecycle boundaries: success, failure, and cancellation all
 close both the Client Session and its direct source-Auth client.
 
-The command boundary maps typed Client transport phase and delivery evidence without inspecting a
-private cause message. It preserves every admitted Kernel reason in machine output; human repair
-details are rendered only after the connection owner admits bounded public Function issues or one
-exact Query reason variant.
+The command boundary projects typed Client failure identity, transport context, phase, and
+invocation-only delivery evidence without inspecting a private cause message. Unknown native
+failures become one honest unexpected diagnostic; their bounded cause graph is visible only under
+explicit debug output. Every admitted Kernel reason remains available in machine output, while
+human repair details require a bounded public Function issue or exact Query reason variant.

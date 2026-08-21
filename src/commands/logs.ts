@@ -6,13 +6,8 @@ import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { Column, ListProjection } from '../lib/output'
 import type { CommandDefinition } from '../program/index'
 
-import {
-  createPathCall,
-  expandSelfInPath,
-  runKernelCommand,
-  withClientSession,
-} from '../connection'
-import { failClosed } from '../lib/log'
+import { createPathCall, expandSelfInPath, runKernelCommand } from '../connection'
+import { failInput } from '../lib/log'
 import { isMachine, output, presentList } from '../lib/output'
 
 const JOURNAL_PATH = Path.project(syscalls.journal.ref).raw
@@ -127,7 +122,7 @@ async function runOnce(opts: LogsOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: 'Kernel journal',
-    fn: (context) => fetchPage(context, opts),
+    fn: async (context) => fetchPage(context, await resolveLogsOpts(opts, context)),
     format: (page, format) => {
       if (isMachine(format) || format.format !== undefined) output(page, format)
       else {
@@ -139,14 +134,19 @@ async function runOnce(opts: LogsOpts): Promise<void> {
 }
 
 async function follow(opts: LogsOpts): Promise<void> {
-  await withClientSession(opts, async (context) => {
-    let cursor = opts.cursor
-    for (;;) {
-      const page = await fetchPage(context, { ...opts, cursor })
-      for (const record of page.records) printRecord(record)
-      cursor = page.cursor ?? cursor
-      await new Promise((resolve) => setTimeout(resolve, FOLLOW_INTERVAL_MS))
-    }
+  await runKernelCommand({
+    opts,
+    label: 'Kernel journal',
+    fn: async (context): Promise<never> => {
+      const resolved = await resolveLogsOpts(opts, context)
+      let cursor = resolved.cursor
+      for (;;) {
+        const page = await fetchPage(context, { ...resolved, cursor })
+        for (const record of page.records) printRecord(record)
+        cursor = page.cursor ?? cursor
+        await new Promise((resolve) => setTimeout(resolve, FOLLOW_INTERVAL_MS))
+      }
+    },
   })
 }
 
@@ -227,11 +227,10 @@ function positiveInteger(flag: string, raw: string): number {
   return value
 }
 
-async function prepareLogsOpts(opts: LogsOpts): Promise<LogsOpts> {
-  buildJournalInput(opts)
+async function resolveLogsOpts(opts: LogsOpts, context: ConnectionContext): Promise<LogsOpts> {
   const principal = nonEmpty(opts.principal)
   if (principal !== '@self') return opts
-  const { path } = await expandSelfInPath('@self', opts)
+  const { path } = await expandSelfInPath('@self', context)
   return { ...opts, principal: path.startsWith('@') ? path.slice(1) : path }
 }
 
@@ -274,11 +273,11 @@ Examples:
   ],
   action: async (opts: LogsOpts) => {
     try {
-      const prepared = await prepareLogsOpts(opts)
-      if (prepared.follow) await follow(prepared)
-      else await runOnce(prepared)
+      buildJournalInput(opts)
     } catch (error) {
-      failClosed(error, opts)
+      failInput(error, opts)
     }
+    if (opts.follow) await follow(opts)
+    else await runOnce(opts)
   },
 } satisfies CommandDefinition

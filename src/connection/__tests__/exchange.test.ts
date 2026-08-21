@@ -190,6 +190,35 @@ describe('Domain token exchange', () => {
       message: 'Token exchange returned an invalid success response.',
     })
   })
+
+  test('normalizes native issuer Fetch failures without exposing their message', async () => {
+    const native = new AggregateError([new Error('private DNS state')], '')
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => SOURCE_TOKEN },
+      async (input, init) => {
+        if (String(input) === INVOCATION) {
+          const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
+          return invocationResponse(
+            body.requestId,
+            body.call.input && Object.keys(body.call.input).length === 0
+              ? { id: 'user-1' }
+              : 'kernel-destination-envelope',
+            new Headers(init?.headers).get('accept')!,
+          )
+        }
+        throw native
+      },
+      5_000,
+      new ExchangeCredentialCache(join(directory, 'native-failure.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_UNAVAILABLE',
+      message: 'Domain issuer discovery could not be reached.',
+      cause: native,
+    })
+  })
 })
 
 function exchangeFetch(

@@ -36,6 +36,8 @@ let mutations: unknown[] = []
 let queryResult: unknown
 let getResult: unknown
 let mutationResult: unknown
+let selfFailure: unknown
+let selfContexts: unknown[] = []
 
 const queryMock = mock(async (ast: unknown, options?: unknown) => {
   queryCalls.push({ ast, options })
@@ -49,7 +51,9 @@ const mutateMock = mock(async (mutation: unknown) => {
   mutations.push(mutation)
   return mutationResult
 })
-const expandSelfInPathMock = mock(async (path: string) => {
+const expandSelfInPathMock = mock(async (path: string, context: unknown) => {
+  selfContexts.push(context)
+  if (selfFailure !== undefined) throw selfFailure
   if (path === '@self') {
     return {
       path: '@expanded-self',
@@ -59,10 +63,11 @@ const expandSelfInPathMock = mock(async (path: string) => {
   return { path, meta: undefined }
 })
 const withSelfHintMock = mock(async (action: () => Promise<unknown>) => action())
+const commandContext = {
+  graph: { query: queryMock, getOrThrow: getOrThrowMock, mutate: mutateMock },
+}
 const runKernelCommandMock = mock(async (run: RunOpts) => {
-  const result = await run.fn({
-    graph: { query: queryMock, getOrThrow: getOrThrowMock, mutate: mutateMock },
-  })
+  const result = await run.fn(commandContext)
   await run.format?.(result, run.opts, true)
 })
 
@@ -88,6 +93,8 @@ beforeEach(() => {
   }
   getResult = undefined
   mutationResult = { createdNodes: {} }
+  selfFailure = undefined
+  selfContexts = []
   queryMock.mockClear()
   getOrThrowMock.mockClear()
   mutateMock.mockClear()
@@ -193,6 +200,17 @@ describe('query command', () => {
     ])
   })
 
+  test('resolves @self inside the command session and never relabels transport failure as input', async () => {
+    const { queryCommand } = await import('../query')
+    await queryCommand(['@self'], { json: true, limit: '2' })
+    expect(selfContexts).toEqual([commandContext])
+
+    const aggregate = new AggregateError([], '')
+    selfFailure = aggregate
+    await expect(queryCommand(['@self'], { json: true, limit: '2' })).rejects.toBe(aggregate)
+    expect(errors.join('\n')).not.toContain('INVALID_INPUT')
+  })
+
   /** @evidence TEST-CLI-QUERY-REJECTS-V1-BEFORE-CONNECTION */
   test('rejects a legacy AST before opening the command connection', async () => {
     const { queryCommand } = await import('../query')
@@ -225,6 +243,13 @@ describe('get command', () => {
     expect(JSON.parse(stdout)).toEqual(getResult)
     expect(stdout).not.toContain('__labels')
     expect(stdout).not.toContain('classId')
+  })
+
+  test('resolves @self through the same point-read command context', async () => {
+    const { getCommand } = await import('../get')
+    await getCommand('@self', { json: true })
+    expect(selfContexts).toEqual([commandContext])
+    expect(getTargets).toEqual(['@expanded-self'])
   })
 })
 

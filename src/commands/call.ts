@@ -5,7 +5,7 @@ import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
 import { presentBinary } from '../lib/binary'
-import { failClosed, log } from '../lib/log'
+import { failInput, log } from '../lib/log'
 import { output, present } from '../lib/output'
 
 type CallOpts = KernelCommandOpts & {
@@ -24,60 +24,47 @@ export async function callCommand(
   rawParams: string[],
   opts: CallOpts,
 ): Promise<void> {
-  // Expand @self before describe/execute through authenticated Identity.whoami.
-  let expanded: Awaited<ReturnType<typeof expandSelfInCall>>
-  try {
-    expanded = await expandSelfInCall(path, rawParams, opts)
-  } catch (error) {
-    failClosed(error, opts)
-  }
-  const expandedPath = expanded.path
-  try {
-    Path.parse(expandedPath)
-  } catch (error) {
-    failClosed(error, opts)
-  }
-
-  // ── Parse params ────────────────────────────────────────
   let params: Record<string, unknown>
   try {
-    params = await parseParams([...expanded.parameters], opts.data)
-  } catch (e) {
-    failClosed(e, opts)
+    Path.parse(path)
+    params = await parseParams(rawParams, opts.data)
+  } catch (error) {
+    failInput(error, opts)
   }
 
-  // ── Dry-run: show what would be sent ─────────────────────
-  if (opts.dryRun) {
-    output({ method: expandedPath, params }, opts)
-    return
-  }
-
-  // ── Execute ────────────────────────────────────────────
-  await runKernelCommand<MaterializedCallResult>({
-    opts,
-    label: expandedPath,
-    fn: (ctx) =>
-      withSelfHint(
-        async () =>
-          materializeCallResult(await ctx.session.dispatch(createPathCall(expandedPath, params))),
-        expanded.meta,
-      ),
-    format: async (result, fmtOpts) => {
-      switch (result.kind) {
-        case 'value':
-          present(result.value, fmtOpts)
-          return
-        case 'binary':
-          await presentBinary(result.value, fmtOpts, { outFile: opts.output })
-          return
-        case 'stream':
-          output(result.values, fmtOpts)
-          return
-        case 'redirect':
-          throw new Error('Client Session returned an unresolved redirect.')
-      }
+  await runKernelCommand<MaterializedCallResult | { readonly kind: 'dry'; readonly call: unknown }>(
+    {
+      opts,
+      label: path,
+      fn: async (ctx) => {
+        const expanded = await expandSelfInCall(path, params, ctx)
+        const request = createPathCall(expanded.path, expanded.parameters)
+        if (opts.dryRun) return { kind: 'dry', call: request }
+        return withSelfHint(
+          async () => materializeCallResult(await ctx.session.dispatch(request)),
+          expanded.meta,
+        )
+      },
+      format: async (result, fmtOpts) => {
+        switch (result.kind) {
+          case 'dry':
+            output(result.call, fmtOpts)
+            return
+          case 'value':
+            present(result.value, fmtOpts)
+            return
+          case 'binary':
+            await presentBinary(result.value, fmtOpts, { outFile: opts.output })
+            return
+          case 'stream':
+            output(result.values, fmtOpts)
+            return
+          case 'redirect':
+            throw new Error('Client Session returned an unresolved redirect.')
+        }
+      },
     },
-  })
+  )
 }
 
 /** Drain a session-backed stream before the command-scoped Client Session closes. */
@@ -101,7 +88,7 @@ export async function parseParams(
     try {
       return JSON.parse(dataFlag)
     } catch {
-      throw new Error(`Invalid JSON in --data: ${dataFlag}`)
+      throw new TypeError(`Invalid JSON in --data: ${dataFlag}`)
     }
   }
 
@@ -114,7 +101,7 @@ export async function parseParams(
     try {
       return JSON.parse(stdin)
     } catch {
-      throw new Error('Invalid JSON from stdin')
+      throw new TypeError('Invalid JSON from stdin')
     }
   }
 
@@ -142,7 +129,7 @@ export function parseKeyValue(pairs: string[]): Record<string, unknown> {
   for (const pair of pairs) {
     const eqIdx = pair.indexOf('=')
     if (eqIdx === -1) {
-      throw new Error(`Invalid param "${pair}" — expected key=value format`)
+      throw new TypeError(`Invalid param "${pair}" — expected key=value format`)
     }
     const key = pair.slice(0, eqIdx)
     const raw = pair.slice(eqIdx + 1)
@@ -150,7 +137,7 @@ export function parseKeyValue(pairs: string[]): Record<string, unknown> {
       const hint = key.endsWith(':')
         ? ` (looks like httpie's "key:=value" syntax — Astrale CLI doesn't support it; use --data '{"${key.slice(0, -1)}":<value>}' for nested values)`
         : ` (keys must be identifier-shaped: letters, digits, underscore, hyphen)`
-      throw new Error(`Invalid param key "${key}" in "${pair}"${hint}`)
+      throw new TypeError(`Invalid param key "${key}" in "${pair}"${hint}`)
     }
     result[key] = coerceValue(raw)
   }

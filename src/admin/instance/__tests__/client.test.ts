@@ -198,7 +198,7 @@ describe('V2 Admin Instance adapter', () => {
     })
     const api = await contract.connect()
 
-    await expect(api.create('demo', 'admin')).rejects.toMatchObject({ name: 'NotFoundError' })
+    await expect(api.create('demo', 'admin')).rejects.toMatchObject({ code: 'HOST_NOT_FOUND' })
     await expect(api.create('demo', 'consumer-paris')).resolves.toMatchObject({ slug: 'demo' })
     expect(contract.invoke).toHaveBeenCalledWith(
       expect.objectContaining({ owner: 'Host', name: 'createInstance' }),

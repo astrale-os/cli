@@ -2,8 +2,9 @@ export class AstraleError extends Error {
   code: string
   hint?: string
 
-  constructor(code: string, message: string, hint?: string) {
-    super(message)
+  constructor(code: string, message: string, hint?: string, options?: ErrorOptions) {
+    if (message.trim() === '') throw new TypeError('CLI error message must be non-blank.')
+    super(message, options)
     this.name = 'AstraleError'
     this.code = code
     this.hint = hint
