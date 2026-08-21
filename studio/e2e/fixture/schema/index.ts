@@ -21,7 +21,6 @@ export const schema = defineSchema('studio-e2e.astrale.ai', {
     overview: view({
       description: 'Fixture overview.',
       target: 'domain',
-      auth: 'public',
     }),
   },
   core: { nodes: { primary } },

@@ -126,6 +126,7 @@ const INTENTIONAL_BARREL_ADDITIONS = [
 
 function productionFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
+    if (entry === 'node_modules') return []
     const path = join(dir, entry)
     if (statSync(path).isDirectory()) return productionFiles(path)
     return /\.(?:ts|tsx)$/.test(path) && !/\.test\.(?:ts|tsx)$/.test(path) ? [path] : []

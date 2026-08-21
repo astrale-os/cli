@@ -58,7 +58,7 @@ describe('view session private state', () => {
             issuer: issuer('https://example.test'),
             etag: `sha256:${'a'.repeat(64)}`,
             revision: revision('b'),
-            declaration: { target: { kind: 'domain' }, auth: 'required' },
+            declaration: { target: { kind: 'domain' } },
           },
         },
         createdAt: '2026-08-12T00:00:00.000Z',
