@@ -68,11 +68,29 @@ describe('ensureFreshSession', () => {
       expect(result.orgHintCalls).toBe(1)
       expect(server.refreshCount()).toBe(1)
       const session = await readSession()
+      expect(session.clientId).toBe('c_1')
       expect(session.refresh_token).toBe('rt-1')
       expect((session.tokens as Record<string, { access_token: string }>)[AUD].access_token).toBe(
         result.token as string,
       )
       expect(server.lastOrganizationId()).toBe('org_1')
+      expect(server.lastClientId()).toBe('c_1')
+    } finally {
+      await server.stop()
+    }
+  })
+
+  test('refreshes with the client that issued the session instead of the IdP default', async () => {
+    const server = rotationServer()
+    try {
+      await writeIdpConfig(server.url)
+      await writeSession({ clientId: 'c_session', expires_at: past() })
+
+      const result = await runDriver('ensure', { DRIVER_AUDIENCE: AUD })
+
+      expect(result.ok).toBe(true)
+      expect(server.lastClientId()).toBe('c_session')
+      expect((await readSession()).clientId).toBe('c_session')
     } finally {
       await server.stop()
     }
@@ -273,6 +291,7 @@ function rotationServer(opts?: {
 }): {
   url: string
   refreshCount: () => number
+  lastClientId: () => string | undefined
   lastOrganizationId: () => string | undefined
   stop: () => Promise<void>
 } {
@@ -280,6 +299,7 @@ function rotationServer(opts?: {
   // refresh token is invalid_grant.
   let current = 'rt-0'
   let count = 0
+  let lastClientId: string | undefined
   let lastOrgId: string | undefined
   const server = Bun.serve({
     port: 0,
@@ -300,6 +320,7 @@ function rotationServer(opts?: {
       if (opts?.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs))
       count += 1
       current = `rt-${count}`
+      lastClientId = form.get('client_id') ?? undefined
       lastOrgId = form.get('organization_id') ?? undefined
       return Response.json({
         access_token: unsignedJwt({ aud: AUD, exp: futureEpoch() }),
@@ -312,6 +333,7 @@ function rotationServer(opts?: {
   return {
     url: `http://${server.hostname}:${server.port}`,
     refreshCount: () => count,
+    lastClientId: () => lastClientId,
     lastOrganizationId: () => lastOrgId,
     stop: () => server.stop(true),
   }

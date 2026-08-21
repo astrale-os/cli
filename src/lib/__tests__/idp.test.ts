@@ -100,6 +100,7 @@ describe('IdP schemas and token helpers', () => {
       idp: 'workos',
       issuer: 'https://example.authkit.app',
       subject: 'user_123',
+      clientId: 'client_123',
       access_token: 'opaque-token',
       refresh_token: 'refresh-token',
       token_type: 'Bearer',
@@ -110,6 +111,7 @@ describe('IdP schemas and token helpers', () => {
     })
 
     expect(session.claims?.email).toBe('alice@example.com')
+    expect(session.clientId).toBe('client_123')
     expect(session.refresh_token).toBe('refresh-token')
   })
 

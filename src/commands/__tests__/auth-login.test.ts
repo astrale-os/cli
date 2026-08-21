@@ -81,7 +81,52 @@ describe('auth login command', () => {
       expect(result.exitCode).toBe(0)
       const session = JSON.parse(await readFile(join(tmp, 'idp-sessions', 'alice.json'), 'utf-8'))
       expect(session.audience).toBe('https://kernel.example.com')
+      expect(session.clientId).toBe('client_123')
       expect(session.subject).toBe('user_123')
+    } finally {
+      await server.stop()
+    }
+  })
+
+  test('persists an explicit client id and reuses it for a named login', async () => {
+    const server = oauthServer({
+      accessToken: unsignedJwt({
+        iss: 'http://127.0.0.1',
+        sub: 'user_123',
+        exp: 1893456000,
+      }),
+    })
+    try {
+      await writeIdpConfig(server.url)
+
+      const explicit = await runAuthLogin(
+        '--idp',
+        'test',
+        '--name',
+        'alice',
+        '--client-id',
+        'client_override',
+        '--client-credentials',
+        '--client-secret-env',
+        'TEST_CLIENT_SECRET',
+        '--raw',
+      )
+      const reused = await runAuthLogin(
+        '--idp',
+        'test',
+        '--name',
+        'alice',
+        '--client-credentials',
+        '--client-secret-env',
+        'TEST_CLIENT_SECRET',
+        '--raw',
+      )
+
+      expect(explicit.exitCode).toBe(0)
+      expect(reused.exitCode).toBe(0)
+      expect(server.clientIds()).toEqual(['client_override', 'client_override'])
+      const session = JSON.parse(await readFile(join(tmp, 'idp-sessions', 'alice.json'), 'utf-8'))
+      expect(session.clientId).toBe('client_override')
     } finally {
       await server.stop()
     }
@@ -131,12 +176,19 @@ async function writeIdpConfig(baseUrl: string): Promise<void> {
   )
 }
 
-function oauthServer(args: { accessToken: string }): { url: string; stop: () => Promise<void> } {
+function oauthServer(args: { accessToken: string }): {
+  url: string
+  clientIds: () => Array<string | null>
+  stop: () => Promise<void>
+} {
+  const clientIds: Array<string | null> = []
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
       const url = new URL(request.url)
       if (url.pathname !== '/token') return new Response('not found', { status: 404 })
+      const form = new URLSearchParams(await request.text())
+      clientIds.push(form.get('client_id'))
       return Response.json({
         access_token: args.accessToken,
         token_type: 'Bearer',
@@ -146,6 +198,7 @@ function oauthServer(args: { accessToken: string }): { url: string; stop: () => 
   })
   return {
     url: `http://${server.hostname}:${server.port}`,
+    clientIds: () => clientIds,
     stop: () => server.stop(true),
   }
 }
