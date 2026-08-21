@@ -112,10 +112,10 @@ astrale domain install contacts.example.dev -i staging
 ## Handler Code vs Installed Schema
 
 Handler code is served by the deployed worker and can hot-reload at the same URL during development
-without reinstalling the domain. The installed schema graph is a snapshot identified by its schema hash;
-changing classes, method contracts, views, core data, or bindings requires the deploy/install path that
-updates that snapshot. The presentation manifest is worker `/meta` data, so changing it affects future
-metadata reads after deployment rather than the installed schema graph.
+without reinstalling the domain. The installed schema graph is a snapshot identified by its schema
+revision; changing classes, method contracts, views, core data, or bindings requires the deploy/install
+path that updates that snapshot. The presentation manifest is part of the canonical Domain Publication,
+so changing it changes the Publication ETag and future discovery reads, not the installed schema graph.
 
 ## Domain Definition
 
@@ -199,13 +199,11 @@ None proves that a Kernel accepts and installs the bundle—only a real install 
 pnpm typecheck
 pnpm build
 
-# 2. Dev worker probes: a real signed bundle, still no kernel
-pnpm dev                                        # boots http://localhost:8787
-curl -s localhost:8787/meta                     # real schemaHash + manifest for this URL
-curl -s localhost:8787/.well-known/jwks.json    # public key a kernel verifies the install against
-curl -sX POST localhost:8787/_astrale/install-domain \
-  -H 'content-type: application/json' \
-  -d '{"kernelIssuer":"https://probe.local","nonce":"probe-1"}'   # full signed bundle
+# 2. Dev worker probes: canonical Publication + issuer evidence, still no kernel
+pnpm dev
+curl -s localhost:8787/.well-known/astrale/domain.json # origin, schema.revision, manifest, bundle
+curl -s localhost:8787/.well-known/openid-configuration # issuer discovery
+curl -s localhost:8787/.well-known/jwks.json             # key that signs deployment evidence
 
 # 3. Handler logic: no worker at all
 pnpm test

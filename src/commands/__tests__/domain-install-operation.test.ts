@@ -1,3 +1,7 @@
+import { defineDomain } from '@astrale-os/sdk'
+import { issuer } from '@astrale-os/sdk/auth'
+import { createDeployment } from '@astrale-os/sdk/deployment'
+import { defineSchema } from '@astrale-os/sdk/schema/v1'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 import { installDirect } from '../domain/install'
@@ -7,6 +11,22 @@ const RETRY = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
 
 const originalFetch = globalThis.fetch
 
+const schema = defineSchema('crm.test', {})
+const definition = defineDomain({
+  schema,
+  handlers: { functions: {}, classes: {}, interfaces: {} },
+})
+const deployed = createDeployment({
+  definition,
+  issuer: issuer.accept('https://crm.test'),
+  bundleHref: 'https://crm.test/domain.bundle.json',
+  bindings: { callables: [] },
+}).publication
+
+function publicationResponse(): Response {
+  return Response.json(deployed)
+}
+
 class ExitError extends Error {}
 
 afterEach(() => {
@@ -15,9 +35,7 @@ afterEach(() => {
 
 describe('direct domain install operation identity', () => {
   test('generates one operation before transport and exposes it for recovery', async () => {
-    globalThis.fetch = mock(async () =>
-      Response.json({ domainName: 'crm.test' }),
-    ) as unknown as typeof fetch
+    globalThis.fetch = mock(async () => publicationResponse()) as unknown as typeof fetch
     const create = mock(() => GENERATED)
     const requests: unknown[] = []
     let recovery: unknown
@@ -54,9 +72,7 @@ describe('direct domain install operation identity', () => {
   })
 
   test('accepts an explicit operation only as the exact retry identity', async () => {
-    globalThis.fetch = mock(async () =>
-      Response.json({ domainName: 'crm.test' }),
-    ) as unknown as typeof fetch
+    globalThis.fetch = mock(async () => publicationResponse()) as unknown as typeof fetch
     const create = mock(() => GENERATED)
     const accepted: string[] = []
     const requests: unknown[] = []
@@ -95,7 +111,7 @@ describe('direct domain install operation identity', () => {
   test('rejects a non-UUID operation before metadata or Kernel transport', async () => {
     const originalExit = process.exit
     const originalWrite = process.stderr.write
-    const fetch = mock(async () => Response.json({ domainName: 'crm.test' }))
+    const fetch = mock(async () => publicationResponse())
     const run = mock(async () => undefined)
     globalThis.fetch = fetch as unknown as typeof globalThis.fetch
     process.exit = (() => {

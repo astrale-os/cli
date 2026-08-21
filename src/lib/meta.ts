@@ -6,8 +6,8 @@
  * `jwks_uri`) and JWKS at `/.well-known/jwks.json`. These helpers probe
  * both to verify the issuer is alive and publishes at least one key.
  *
- * Domain workers may expose `/meta` for deployment drift detection; that is
- * outside this connect-only CLI surface.
+ * Domain deployment readiness uses the canonical Domain Publication; that is
+ * outside this issuer-connectivity helper.
  */
 
 import { IssuerUnreachableError } from '../errors'

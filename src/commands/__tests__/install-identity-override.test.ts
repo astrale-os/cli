@@ -1,3 +1,7 @@
+import { defineDomain } from '@astrale-os/sdk'
+import { issuer } from '@astrale-os/sdk/auth'
+import { createDeployment } from '@astrale-os/sdk/deployment'
+import { defineSchema } from '@astrale-os/sdk/schema/v1'
 import { afterAll, describe, expect, test } from 'bun:test'
 
 import { domainRefFromTarget, isIdentityOverride, probeDeclaredOrigin } from '../domain/install'
@@ -29,46 +33,53 @@ describe('identity-override detection', () => {
   })
 })
 
-describe('declared-origin probe (/meta)', () => {
+describe('declared-origin Publication probe', () => {
   const servers: { stop(): void }[] = []
   afterAll(() => {
     for (const s of servers) s.stop()
   })
 
-  function serveMeta(handler: (req: Request) => Response): string {
+  function servePublication(handler: (req: Request) => Response): string {
     const server = Bun.serve({ port: 0, fetch: handler })
     servers.push(server)
     return `http://localhost:${server.port}`
   }
 
-  test('reads origin from a well-formed /meta', async () => {
-    // The exact shape SDK workers serve (adapter-cloudflare worker `/meta`).
-    const url = serveMeta((req) =>
-      new URL(req.url).pathname === '/meta'
-        ? Response.json({
-            origin: 'crm.acme.dev',
-            issuer: 'https://crm.acme.dev',
-            schemaRevision: 'sha256:abc',
-            deploymentVersion: 'v1',
-          })
+  test('reads origin from a well-formed canonical Publication', async () => {
+    const schema = defineSchema('crm.acme.dev', {})
+    const definition = defineDomain({
+      schema,
+      handlers: { functions: {}, classes: {}, interfaces: {} },
+    })
+    const deployed = createDeployment({
+      definition,
+      issuer: issuer.accept('https://crm.acme.dev'),
+      bundleHref: 'https://crm.acme.dev/domain.bundle.json',
+      bindings: { callables: [] },
+    }).publication
+    const url = servePublication((req) =>
+      new URL(req.url).pathname === '/.well-known/astrale/domain.json'
+        ? Response.json(deployed)
         : new Response('nope', { status: 404 }),
     )
     expect(await probeDeclaredOrigin(url)).toBe('crm.acme.dev')
   })
 
-  test('falls back to the pre-Kernel-V2 domainName field', async () => {
-    const legacy = serveMeta(() => Response.json({ iss: 'https://x', domainName: 'crm.acme.dev' }))
-    expect(await probeDeclaredOrigin(legacy)).toBe('crm.acme.dev')
+  test('does not accept the removed pre-Kernel-V2 domainName shape', async () => {
+    const legacy = servePublication(() =>
+      Response.json({ iss: 'https://x', domainName: 'crm.acme.dev' }),
+    )
+    expect(await probeDeclaredOrigin(legacy)).toBeUndefined()
   })
 
-  test('degrades to undefined on missing origin, non-200, bad JSON, or dead host', async () => {
-    const noName = serveMeta(() => Response.json({ iss: 'https://x' }))
+  test('degrades to undefined on invalid Publication, non-200, bad JSON, or dead host', async () => {
+    const noName = servePublication(() => Response.json({ iss: 'https://x' }))
     expect(await probeDeclaredOrigin(noName)).toBeUndefined()
 
-    const error = serveMeta(() => new Response('boom', { status: 500 }))
+    const error = servePublication(() => new Response('boom', { status: 500 }))
     expect(await probeDeclaredOrigin(error)).toBeUndefined()
 
-    const badJson = serveMeta(() => new Response('<html>', { status: 200 }))
+    const badJson = servePublication(() => new Response('<html>', { status: 200 }))
     expect(await probeDeclaredOrigin(badJson)).toBeUndefined()
 
     expect(await probeDeclaredOrigin('http://127.0.0.1:1')).toBeUndefined()

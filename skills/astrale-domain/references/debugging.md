@@ -12,20 +12,20 @@ The Kernel owns installed physical placement; the Schema origin owns semantic Cl
 callable identities. A physical move does not rename the origin. Do not diagnose placement by adding a
 legacy `path` field to `defineDomain`; inspect the installed graph and deployment evidence.
 
-## Schema Hash
+## Schema Revision
 
-The **schema hash** identifies the complete id-independent install graph, not only the user-authored
+The **schema revision** identifies the complete id-independent install graph, not only the user-authored
 class definitions. It lets the kernel detect whether an installed bundle matches the deployed domain
-definition. Treat a hash change as evidence that the installable graph contract changed; inspect the
+definition. Treat a revision change as evidence that the installable graph contract changed; inspect the
 actual diff before deciding whether reinstall or migration is safe.
 
 ## Handler Code vs Installed Schema
 
 Handler code is served by the deployed worker and can hot-reload at the same URL during development
-without reinstalling the domain. The installed schema graph is a snapshot identified by its schema hash;
-changing classes, method contracts, views, core data, or bindings requires the deploy/install path that
-updates that snapshot. The presentation manifest is worker `/meta` data, so changing it affects future
-metadata reads after deployment rather than the installed schema graph.
+without reinstalling the domain. The installed schema graph is a snapshot identified by its schema
+revision; changing classes, method contracts, views, core data, or bindings requires the deploy/install
+path that updates that snapshot. The presentation manifest is part of the canonical Domain Publication,
+so changing it changes the Publication ETag and future discovery reads, not the installed schema graph.
 
 ## Preserve exact signed webhook evidence
 

@@ -1,8 +1,12 @@
-import { describe, expect, test } from 'bun:test'
+import { defineDomain } from '@astrale-os/sdk'
+import { issuer } from '@astrale-os/sdk/auth'
+import { createDeployment } from '@astrale-os/sdk/deployment'
+import { defineSchema } from '@astrale-os/sdk/schema/v1'
+import { afterAll, describe, expect, test } from 'bun:test'
 
 import type { DomainInfo } from '../../lib/admin-domain'
 
-import { byDefaultThenName, domainProjection, type DomainRow } from '../domain/list'
+import { byDefaultThenName, domainProjection, probe, type DomainRow } from '../domain/list'
 
 const strip = (s: string): string => s.replace(/\[[0-9;]*m/g, '')
 
@@ -68,7 +72,82 @@ describe('domain list — projection', () => {
     const live: DomainRow = { ...base, reachable: true, checkError: null }
     expect(strip(domainProjection([live]).rows[0].status)).toBe('● live')
 
-    const down: DomainRow = { ...base, reachable: false, checkError: 'meta HTTP 502' }
-    expect(strip(domainProjection([down]).rows[0].status)).toBe('○ meta HTTP 502')
+    const down: DomainRow = { ...base, reachable: false, checkError: 'Publication HTTP 502' }
+    expect(strip(domainProjection([down]).rows[0].status)).toBe('○ Publication HTTP 502')
+  })
+})
+
+describe('domain list — canonical Publication check', () => {
+  const servers: { stop(): void }[] = []
+  afterAll(() => {
+    for (const server of servers) server.stop()
+  })
+
+  test('reports the admitted schema revision in machine data', async () => {
+    const schema = defineSchema('catalog-check.example.dev', {})
+    const definition = defineDomain({
+      schema,
+      handlers: { functions: {}, classes: {}, interfaces: {} },
+    })
+    const deployed = createDeployment({
+      definition,
+      issuer: issuer.accept('https://catalog-check.example.dev'),
+      bundleHref: 'https://catalog-check.example.dev/domain.bundle.json',
+      bindings: { callables: [] },
+    }).publication
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        return new URL(request.url).pathname === '/.well-known/astrale/domain.json'
+          ? Response.json(deployed)
+          : new Response('not found', { status: 404 })
+      },
+    })
+    servers.push(server)
+
+    await expect(
+      probe(
+        entry({
+          origin: schema.origin,
+          url: `http://localhost:${server.port}`,
+        }),
+      ),
+    ).resolves.toMatchObject({
+      reachable: true,
+      schemaRevision: definition.domain.$.revision,
+      checkError: null,
+    })
+  })
+
+  test('rejects a Publication whose origin differs from the catalog entry', async () => {
+    const schema = defineSchema('deployed.example.dev', {})
+    const definition = defineDomain({
+      schema,
+      handlers: { functions: {}, classes: {}, interfaces: {} },
+    })
+    const deployed = createDeployment({
+      definition,
+      issuer: issuer.accept('https://deployed.example.dev'),
+      bundleHref: 'https://deployed.example.dev/domain.bundle.json',
+      bindings: { callables: [] },
+    }).publication
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => Response.json(deployed),
+    })
+    servers.push(server)
+
+    await expect(
+      probe(
+        entry({
+          origin: 'catalog.example.dev',
+          url: `http://localhost:${server.port}`,
+        }),
+      ),
+    ).resolves.toMatchObject({
+      reachable: false,
+      checkError:
+        'Domain origin mismatch: deployed=deployed.example.dev expected=catalog.example.dev',
+    })
   })
 })

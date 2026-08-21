@@ -42,6 +42,9 @@ importers:
       '@astrale-os/kernel-client':
         specifier: '>=0.6.0-beta.4 <1.0.0'
         version: 0.6.0-beta.4(typescript@6.0.3)
+      '@astrale-os/kernel-protocol':
+        specifier: '>=0.5.0-beta.3 <1.0.0'
+        version: 0.5.0-beta.3(msgpackr@1.12.1)(typescript@6.0.3)
       '@astrale-os/ox':
         specifier: '>=0.1.0 <1.0.0'
         version: 0.1.2(oxfmt@0.52.0)(oxlint@1.79.0)
