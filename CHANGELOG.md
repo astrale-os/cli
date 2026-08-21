@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.5](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.4...cli/v1.0.0-beta.5) (2026-08-21)
+
+
+### Bug Fixes
+
+* adopt the official Kernel cohort ([#127](https://github.com/astrale-os/cli/issues/127)) ([153bd19](https://github.com/astrale-os/cli/commit/153bd19e9d01bf382441c1a64ec6a405ac7fb582))
+* bind admin domains through current session APIs ([5058d8c](https://github.com/astrale-os/cli/commit/5058d8c79becd0ee93bc93cad7cc35418982a051))
+* bind updates to executable ownership ([3c97711](https://github.com/astrale-os/cli/commit/3c97711ecd8076c01b34bcf820cf2588d30102b0))
+* **host:** sandbox all mounted views [skip ci] ([24a2dd7](https://github.com/astrale-os/cli/commit/24a2dd7ae41a35e025492e5e7d83e05f0536da20))
+* **lib:** bind updates to executable ownership ([e5a44e2](https://github.com/astrale-os/cli/commit/e5a44e2dfc4e4db1c6fc60a426667acffb3338ae))
+* migrate legacy WorkOS client ID ([50ee228](https://github.com/astrale-os/cli/commit/50ee228004d284fc84e6f7ab8206e962f6d01cd4))
+* migrate legacy WorkOS client ID ([6344a76](https://github.com/astrale-os/cli/commit/6344a765333ac589cc692f545e88253155dddb86))
+
 ## [1.0.0-beta.4](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.3...cli/v1.0.0-beta.4) (2026-08-21)
 
 
