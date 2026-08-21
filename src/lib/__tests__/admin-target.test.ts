@@ -6,6 +6,7 @@ import {
   DEFAULT_ADMIN_TARGET_NAME,
   DEFAULT_ADMIN_DOMAIN_ISSUER,
   DEFAULT_ADMIN_TARGET_URL,
+  defaultAdminTargetForChannel,
   resolveAdminTargetFromStore,
 } from '../admin-target'
 import { DEFAULT_CONFIG, type AstraleConfig } from '../config'
@@ -32,6 +33,17 @@ const instances: InstanceStore = {
 }
 
 describe('resolveAdminTargetFromStore', () => {
+  test('derives hosted Admin defaults from the release channel', () => {
+    expect(defaultAdminTargetForChannel('beta')).toEqual({
+      url: 'https://admin.eu.beta.astrale.ai/api',
+      domainIssuer: 'https://admin.beta.astrale.ai',
+    })
+    expect(defaultAdminTargetForChannel('stable')).toEqual({
+      url: 'https://admin.eu.astrale.ai/api',
+      domainIssuer: 'https://admin.astrale.ai',
+    })
+  })
+
   test('uses hosted admin default without active instance coupling', () => {
     expect(resolveAdminTargetFromStore({}, DEFAULT_CONFIG, instances)).toEqual({
       name: DEFAULT_ADMIN_TARGET_NAME,
