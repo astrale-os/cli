@@ -1,5 +1,15 @@
 import { createHash } from 'node:crypto'
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
@@ -61,9 +71,26 @@ export type UpdateRequest = {
   currentVersion: string
   platform?: Platform
   installPath?: string
+  execution?: UpdateExecution
 }
 
+export type UpdateExecution =
+  | { kind: 'standalone'; executable: string }
+  | { kind: 'package-managed'; executable: string }
+
+const admittedScriptInstall = Symbol('admittedScriptInstall')
+export type AdmittedScriptInstall = Readonly<{
+  metadata: InstallMetadata
+  executable: string
+  [admittedScriptInstall]: true
+}>
+
 export type UpdateResult =
+  | {
+      status: 'managed'
+      currentVersion: string
+      executable: string
+    }
   | {
       status: 'up-to-date'
       currentVersion: string
@@ -106,42 +133,99 @@ export function platformKey(platform: Platform): string {
   return `${platform.os}-${platform.arch}`
 }
 
-/**
- * True when running as the Bun-compiled standalone binary (Linux/macOS), which
- * self-updates by swapping its own file. The Node/npm build does not expose
- * `process.versions.bun`; it is managed by the user's package manager instead.
- */
-function isStandaloneBinary(): boolean {
-  return Boolean((process.versions as { bun?: string }).bun)
+export function classifyUpdateExecution(input: {
+  bunVersion?: string
+  executable: string
+  entry?: string
+}): UpdateExecution {
+  return input.bunVersion && input.entry?.startsWith('/$bunfs/')
+    ? { kind: 'standalone', executable: input.executable }
+    : { kind: 'package-managed', executable: input.executable }
+}
+
+export function detectUpdateExecution(): UpdateExecution {
+  return classifyUpdateExecution({
+    bunVersion: (process.versions as { bun?: string }).bun,
+    executable: process.execPath,
+    entry: process.argv[1],
+  })
+}
+
+export function packageManagedUpdateError(executable: string): AstraleError {
+  return new AstraleError(
+    'UPDATE_PACKAGE_MANAGED',
+    'This Astrale build is managed by your package manager.',
+    `Active binary: ${executable}. Update it with npm, pnpm, or bun; or put the official script installation first on PATH.`,
+  )
 }
 
 export async function readInstallMetadata(path = INSTALL_PATH): Promise<InstallMetadata> {
   let raw: string
   try {
     raw = await readFile(path, 'utf8')
-  } catch {
-    throw isStandaloneBinary()
-      ? new AstraleError(
-          'UPDATE_NOT_SCRIPT_INSTALLED',
-          'Astrale was not installed by the official install script.',
-          'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
-        )
-      : new AstraleError(
-          'UPDATE_PACKAGE_MANAGED',
-          'This Astrale build is managed by your package manager.',
-          'Update with: npm install -g @astrale-os/cli@latest  (or pnpm/bun)',
-        )
-  }
-
-  const parsed = InstallMetadataSchema.safeParse(JSON.parse(raw))
-  if (!parsed.success) {
+  } catch (error) {
+    if (!isMissingFile(error)) throw error
     throw new AstraleError(
-      'UPDATE_BAD_INSTALL_METADATA',
-      `Invalid install metadata at ${path}.`,
+      'UPDATE_NOT_SCRIPT_INSTALLED',
+      'Astrale was not installed by the official install script.',
       'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
     )
   }
+
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(raw)
+  } catch {
+    throw badInstallMetadata(path)
+  }
+  const parsed = InstallMetadataSchema.safeParse(decoded)
+  if (!parsed.success) {
+    throw badInstallMetadata(path)
+  }
   return parsed.data
+}
+
+function isMissingFile(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+function badInstallMetadata(path: string): AstraleError {
+  return new AstraleError(
+    'UPDATE_BAD_INSTALL_METADATA',
+    `Invalid install metadata at ${path}.`,
+    'Reinstall with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
+  )
+}
+
+export async function admitScriptInstall(
+  meta: InstallMetadata,
+  execution: Extract<UpdateExecution, { kind: 'standalone' }>,
+): Promise<AdmittedScriptInstall> {
+  const [running, recorded] = await Promise.all([
+    realpathIfExists(execution.executable),
+    realpathIfExists(meta.bin),
+  ])
+  if (running === undefined || recorded === undefined || running !== recorded) {
+    throw new AstraleError(
+      'UPDATE_INSTALL_MISMATCH',
+      'The running Astrale binary does not own the recorded script installation.',
+      `Running binary: ${execution.executable}; recorded binary: ${meta.bin}. Refusing to replace a different installation.`,
+    )
+  }
+  return Object.freeze({
+    metadata: meta,
+    executable: running,
+    [admittedScriptInstall]: true as const,
+  })
+}
+
+async function realpathIfExists(path: string): Promise<string | undefined> {
+  try {
+    return await realpath(path)
+  } catch (error) {
+    if (isMissingFile(error)) return undefined
+    throw error
+  }
 }
 
 export async function writeInstallMetadata(
@@ -175,7 +259,17 @@ export function shouldUpdate(currentVersion: string, manifestVersion: string): b
 }
 
 export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
-  const meta = await readInstallMetadata(req.installPath)
+  const execution = req.execution ?? detectUpdateExecution()
+  if (execution.kind === 'package-managed') {
+    return {
+      status: 'managed',
+      currentVersion: req.currentVersion,
+      executable: execution.executable,
+    }
+  }
+
+  const install = await admitScriptInstall(await readInstallMetadata(req.installPath), execution)
+  const meta = install.metadata
   const currentVersion = meta.version ?? req.currentVersion
   const channel = req.channel ?? meta.channel ?? DEFAULT_UPDATE_CHANNEL
   const platform = req.platform ?? detectPlatform()
