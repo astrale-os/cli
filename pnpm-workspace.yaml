@@ -13,7 +13,8 @@ minimumReleaseAgeExclude:
   - '@astrale-os/kernel-dsl@0.2.0-beta.2'
   - '@astrale-os/kernel-protocol@0.5.0-beta.2 || 0.5.0-beta.3'
   - '@astrale-os/kernel-server@0.5.0-beta.3 || 0.5.0-beta.4'
-  - '@astrale-os/sdk@0.5.0-beta.3 || 0.5.0-beta.4'
+  - '@astrale-os/ox@0.1.3'
+  - '@astrale-os/sdk@0.5.0-beta.3 || 0.5.0-beta.4 || 0.5.0-beta.9'
 verifyDepsBeforeRun: false
 
 # Native build scripts required by the standalone CLI dependency graph. Astrale

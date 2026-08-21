@@ -10,9 +10,9 @@ These archives are one coordinated, locally qualified publication cohort:
 - `@astrale-os/sdk@0.5.0-beta.3`
 - `@astrale-os/shell@0.3.8-beta.2`
 
-`@astrale-os/kernel-ports` is deliberately not vendored. Ports is the private
-Runtime-to-provider boundary and no SDK, CLI, Shell, Client, Protocol, or Server
-artifact may depend on it.
+`@astrale-os/kernel-ports` and `@astrale-os/kernel-runtime` are deliberately not
+vendored. They are private Kernel boundaries and no SDK, CLI, Shell, Client,
+Protocol, or Server artifact may depend on them.
 
 `astrale-os-shell-0.3.8-beta.2.tgz` remains part of this unpublished local cohort.
 

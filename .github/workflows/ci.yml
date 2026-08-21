@@ -12,7 +12,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: read
 
 env:
   BUN_VERSION: 1.4.0
@@ -39,15 +38,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
-      - name: Configure GitHub Packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.ASTRALE_PACKAGES_TOKEN || github.token }}
-        run: |
-          set -eu
-          printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
-          printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install dependencies
         run: STANDALONE=true pnpm install --frozen-lockfile
+      - name: Check public dependency closure
+        run: node scripts/verify-public-dependency-boundary.mjs
       - name: Lint
         run: pnpm lint
       - name: Check formatting
@@ -76,13 +70,6 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
-      - name: Configure GitHub Packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.ASTRALE_PACKAGES_TOKEN || github.token }}
-        run: |
-          set -eu
-          printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
-          printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install dependencies
         run: STANDALONE=true pnpm install --frozen-lockfile
       - name: Install Chromium
