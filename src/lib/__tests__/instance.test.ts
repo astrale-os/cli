@@ -74,6 +74,12 @@ describe('InstanceStoreSchema', () => {
     expect(normalizeInstanceKernelUrl('https://testmarc.eu.astrale.ai/')).toBe(
       'https://testmarc.eu.astrale.ai/api',
     )
+    expect(normalizeInstanceKernelUrl('https://testmarc.eu.beta.astrale.ai')).toBe(
+      'https://testmarc.eu.beta.astrale.ai/api',
+    )
+    expect(normalizeInstanceKernelUrl('https://shell.beta.astrale.ai')).toBe(
+      'https://shell.beta.astrale.ai',
+    )
   })
 
   test('does not rewrite explicit kernel or non-managed URLs', () => {

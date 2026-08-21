@@ -448,7 +448,12 @@ function isRegionRoutedInstanceRoot(url: URL): boolean {
   if (url.search || url.hash) return false
 
   const labels = url.hostname.toLowerCase().split('.')
-  return labels.length === 4 && labels[2] === 'astrale' && labels[3] === 'ai'
+  return (
+    (labels.length === 4 || labels.length === 5) &&
+    /^[a-z]{2}(?:-[a-z0-9]+)*$/u.test(labels[1] ?? '') &&
+    labels.at(-2) === 'astrale' &&
+    labels.at(-1) === 'ai'
+  )
 }
 
 function definedEntry(entry: AddInstanceOpts): AddInstanceOpts {
