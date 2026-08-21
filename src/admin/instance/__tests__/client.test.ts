@@ -1,4 +1,3 @@
-import type { DomainBinding } from '@astrale-os/kernel-client/domain'
 import type { Node } from '@astrale-os/sdk/graph/node'
 import type { QueryAST } from '@astrale-os/sdk/query'
 
@@ -7,6 +6,7 @@ import { NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, mock, test } from 'bun:test'
 
+import type { AdminBinding } from '../../binding'
 import type { AdminGraphApi } from '../../graph'
 
 import { connectAdminInstances } from '../client'
@@ -78,7 +78,7 @@ function fixture(input: {
       core: { nodes: { fleet: { path: Path.id(NodeId('fleet')) } } },
       invoke,
     },
-  } as unknown as DomainBinding
+  } as unknown as AdminBinding
   const query = mock(async (ast: QueryAST) => {
     const name = sourceName(ast)
     if (name === 'Instance') return graphResult(input.instances ?? [])
