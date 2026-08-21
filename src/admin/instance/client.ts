@@ -1,11 +1,10 @@
-import type { DomainBinding } from '@astrale-os/kernel-client/domain'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
 
-import { bind } from '@astrale-os/kernel-client/domain'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
+import { bindAdmin, type AdminBinding } from '../binding'
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import {
   AdminHostNotFoundError,
@@ -43,7 +42,7 @@ export interface AdminInstanceApi {
 }
 
 export interface AdminInstanceDependencies {
-  readonly bind?: (session: ClientSession) => Promise<DomainBinding>
+  readonly bind?: (session: ClientSession) => Promise<AdminBinding>
   readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
 }
 
@@ -55,7 +54,7 @@ export async function connectAdminInstances(
   context: AdminInstanceContext,
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
-  const binding = await (dependencies.bind ?? bindInstalledAdmin)(context.session)
+  const binding = await (dependencies.bind ?? bindAdmin)(context.session)
   if (binding.$.publication?.origin !== ADMIN_ORIGIN || binding.$.origin !== ADMIN_ORIGIN) {
     throw new TypeError('Configured Admin target does not serve the Admin Domain.')
   }
@@ -143,10 +142,6 @@ export async function connectAdminInstances(
   })
 }
 
-async function bindInstalledAdmin(session: ClientSession): Promise<DomainBinding> {
-  return bind(session, await session.installed(ADMIN_ORIGIN))
-}
-
 interface HostInventoryItem {
   readonly id: string
   readonly nodeId: string
@@ -156,8 +151,8 @@ interface HostInventoryItem {
 
 async function hostInventory(
   graph: AdminGraphApi,
-  binding: DomainBinding,
-  Host: ReturnType<DomainBinding['$']['class']>,
+  binding: AdminBinding,
+  Host: ReturnType<AdminBinding['$']['class']>,
   fleet: Path,
 ): Promise<{ readonly hosts: readonly HostInventoryItem[]; readonly reserved?: string }> {
   const [nodes, reservedPage] = await Promise.all([
@@ -194,7 +189,7 @@ async function hostInventory(
   })
 }
 
-type DynamicDefinition = ReturnType<DomainBinding['$']['class']>
+type DynamicDefinition = ReturnType<AdminBinding['$']['class']>
 
 function instanceFromSummary(input: unknown): InstanceInfo {
   const value = record(input, 'Admin Instance summary')
