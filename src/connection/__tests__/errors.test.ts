@@ -1,8 +1,9 @@
-import { ResponseError, TransportError } from '@astrale-os/kernel-client'
+import { ResponseError } from '@astrale-os/kernel-client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 
 import { formatKernelError, functionInputIssues, schemaUpgradeHint } from '../errors'
+import { transportFailure } from './failure-fixtures'
 
 const CONFLICT = 4001
 const VALIDATION = 1003
@@ -20,12 +21,16 @@ describe('formatKernelError', () => {
       writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
       return true
     }) as typeof process.stderr.write
-    const error = TransportError.acquisition('Publication discovery request failed.', {
-      cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
-      phase: 'unknown',
-      resource: 'publication',
-    }) as TransportError & { url?: string }
-    error.url = 'https://localhost:8443/kernel/host'
+    const error = Object.assign(
+      transportFailure('Publication discovery request failed.', 'unknown', {
+        kind: 'acquisition',
+        resource: 'publication',
+      }),
+      {
+        url: 'https://localhost:8443/kernel/host',
+        cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      },
+    )
     try {
       await formatKernelError(error, true, 'https://localhost:8443/kernel/host')
     } finally {
@@ -51,9 +56,8 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        TransportError.invocation('Request timed out.', {
-          cause: new Error('timeout'),
-          phase: 'timeout',
+        transportFailure('Request timed out.', 'timeout', {
+          kind: 'invocation',
           delivery: 'unknown',
         }),
         true,

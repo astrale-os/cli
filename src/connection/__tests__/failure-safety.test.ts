@@ -1,7 +1,7 @@
-import { SessionError, TransportError } from '@astrale-os/kernel-client'
 import { expect, test } from 'bun:test'
 
 import { formatKernelError } from '../errors'
+import { legacyTransportFailure, sessionFailure, transportFailure } from './failure-fixtures'
 
 /** @evidence TEST-CLI-CONNECTION-FAILURE-SAFETY */
 test('unknown and empty native failures never become ordinary diagnostics', async () => {
@@ -28,17 +28,14 @@ test('Aggregate children are available only under explicit debug output', async 
 
 test('Session and acquisition failures remain typed without unsafe recovery advice', async () => {
   const session = await capture(() =>
-    formatKernelError(
-      new SessionError('Session operation timed out.', { failure: 'timeout' }),
-      true,
-    ),
+    formatKernelError(sessionFailure('Session operation timed out.', 'timeout'), true),
   )
   expect(JSON.parse(session)).toEqual({ error: 'TIMEOUT', message: 'Session operation timed out.' })
 
   const acquisition = await capture(() =>
     formatKernelError(
-      TransportError.acquisition('Publication failed.', {
-        phase: 'unknown',
+      transportFailure('Publication failed.', 'unknown', {
+        kind: 'acquisition',
         resource: 'publication',
       }),
       true,
@@ -52,6 +49,14 @@ test('Session and acquisition failures remain typed without unsafe recovery advi
     transport: { kind: 'acquisition', resource: 'publication' },
   })
   expect(acquisition).not.toContain('must-not-leak')
+
+  const legacy = await capture(() =>
+    formatKernelError(legacyTransportFailure('Legacy send failed.', 'send', 'not-sent'), true),
+  )
+  expect(JSON.parse(legacy)).toMatchObject({
+    error: 'TRANSPORT_ERROR',
+    transport: { kind: 'invocation', delivery: 'not-sent' },
+  })
 })
 
 async function capture(action: () => Promise<void>): Promise<string> {

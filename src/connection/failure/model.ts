@@ -1,3 +1,11 @@
+export type TransportDiagnosticContext =
+  | { readonly kind: 'acquisition'; readonly resource: 'publication' | 'bundle' }
+  | {
+      readonly kind: 'invocation'
+      readonly delivery: 'not-sent' | 'unknown'
+      readonly invocation?: unknown
+    }
+
 export type FailureDiagnostic =
   | {
       readonly kind: 'simple'
@@ -16,5 +24,5 @@ export type FailureDiagnostic =
       readonly code: 'CONNECTION_ERROR' | 'DISCONNECTED' | 'TIMEOUT' | 'TRANSPORT_ERROR'
       readonly message: string
       readonly phase: string
-      readonly context: Readonly<Record<string, unknown>>
+      readonly context: TransportDiagnosticContext
     }
