@@ -214,6 +214,8 @@ export type IdpConfig = {
 
 export const BUILTIN_WORKOS_IDP_NAME = 'workos'
 const DEFAULT_WORKOS_API_HOST = 'https://api.workos.com'
+const DEFAULT_WORKOS_CLIENT_ID = 'client_01KC29HET5F3QAQ8GNTPZ7F320'
+const LEGACY_WORKOS_CLIENT_ID = 'client_01KC29HEGD7B40TV2C4QZ436BG'
 const WORKOS_CLIENT_ID_ENV_NAMES = ['WORKOS_CLIENT_ID', 'VITE_WORKOS_CLIENT_ID'] as const
 
 export function idpDir(name: string): string {
@@ -280,7 +282,17 @@ export async function readIdpConfigOrBuiltin(
   validateName(name, 'IdP')
   const store = await readIdpStore()
   if (store.idps[name]) {
-    return await readIdpConfig(name)
+    const existing = await readIdpConfig(name)
+    const replacement = opts.persist
+      ? legacyBuiltinWorkosReplacement(existing, opts.clientId)
+      : undefined
+    if (!replacement) return existing
+    return upsertIdpConfig({
+      name: replacement.name,
+      metadata: replacement.metadata,
+      client: replacement.client,
+      builtIn: true,
+    })
   }
 
   const builtin = builtinIdpConfig(name, opts.clientId)
@@ -413,9 +425,28 @@ export function builtinIdpConfig(
 }
 
 export function workosClientIdFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  return WORKOS_CLIENT_ID_ENV_NAMES.map((name) => env[name]?.trim()).find(
-    (value): value is string => typeof value === 'string' && value.length > 0,
+  return (
+    WORKOS_CLIENT_ID_ENV_NAMES.map((name) => env[name]?.trim()).find(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    ) ?? DEFAULT_WORKOS_CLIENT_ID
   )
+}
+
+export function legacyBuiltinWorkosReplacement(
+  existing: IdpConfig,
+  clientIdOverride?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): IdpConfig | undefined {
+  if (
+    existing.name !== BUILTIN_WORKOS_IDP_NAME ||
+    !existing.entry.builtIn ||
+    existing.client.client_id !== LEGACY_WORKOS_CLIENT_ID
+  ) {
+    return undefined
+  }
+  const replacement = builtinIdpConfig(existing.name, clientIdOverride, env)
+  if (!replacement || replacement.client.client_id === LEGACY_WORKOS_CLIENT_ID) return undefined
+  return replacement
 }
 
 async function fetchOAuthAuthorizationServerMetadata(
