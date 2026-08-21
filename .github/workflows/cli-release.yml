@@ -22,7 +22,6 @@ concurrency:
 
 permissions:
   contents: write
-  packages: read
 
 env:
   BUN_VERSION: 1.4.0
@@ -41,15 +40,10 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11.13.1
-      - name: Configure GitHub Packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.ASTRALE_PACKAGES_TOKEN || github.token }}
-        run: |
-          set -eu
-          printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
-          printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install dependencies
         run: STANDALONE=true pnpm install --frozen-lockfile --ignore-scripts
+      - name: Check public dependency closure
+        run: node scripts/verify-public-dependency-boundary.mjs
       - name: Test
         run: pnpm test
 
@@ -87,13 +81,6 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11.13.1
-      - name: Configure GitHub Packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.ASTRALE_PACKAGES_TOKEN || github.token }}
-        run: |
-          set -eu
-          printf '%s\n' '@astrale-os:registry=https://npm.pkg.github.com' >> "$HOME/.npmrc"
-          printf '%s\n' "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> "$HOME/.npmrc"
       - name: Install dependencies
         run: STANDALONE=true pnpm install --frozen-lockfile --ignore-scripts
       - name: Build binary

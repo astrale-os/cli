@@ -45,9 +45,8 @@ jobs:
       - uses: astrale-os/config/.github/actions/publish/packages@main
         with:
           dirs: '.'
-          # PAT (cross-repo GitHub Packages read) so the action's install can
-          # resolve @astrale-os/kernel-* for the bundle; falls back to the repo
-          # token. Same secret the binary build uses.
+          # The action uses this token for the GitHub Packages publication target.
+          # Dependency installation resolves the public Astrale cohort from npm.
           github-token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           # Studio is part of the pnpm workspace, so one frozen workspace install
           # materializes both toolchains. Do not mix Bun's package manager into
