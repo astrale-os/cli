@@ -1,4 +1,4 @@
-import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
+import type { MountedWindow, ResolvedView, SandboxProfile } from '@astrale-os/shell'
 
 import {
   admitHostCapabilities,
@@ -31,6 +31,14 @@ type Token = { token: string; expiresAt: number; kind: string }
 const HEARTBEAT_MS = 5 * 60_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
+const VIEW_SANDBOX: SandboxProfile = Object.freeze({
+  allowScripts: true,
+  allowForms: false,
+  allowPopups: false,
+  allowPopupsToEscapeSandbox: false,
+  allowSameOrigin: true,
+  allowModals: false,
+})
 const VIEW_HOST_CAPABILITIES = admitHostCapabilities({
   version: 1,
   navigation: { openView: {} },
@@ -65,7 +73,7 @@ function setStatus(state: string): void {
 }
 
 function fail(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error)
+  const message = errorMessage(error)
   setStatus('failed')
   const box = el('error')
   box.style.display = 'block'
@@ -76,7 +84,20 @@ function fail(error: unknown): void {
 function showIntentError(error: unknown): void {
   const box = el('error')
   box.style.display = 'block'
-  box.textContent = error instanceof Error ? error.message : String(error)
+  box.textContent = errorMessage(error)
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+  ) {
+    return error.message
+  }
+  return String(error)
 }
 
 async function main(): Promise<void> {
@@ -131,7 +152,7 @@ async function main(): Promise<void> {
       host: container,
       view,
       capabilities: VIEW_HOST_CAPABILITIES,
-      sandbox: null,
+      sandbox: VIEW_SANDBOX,
       handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
       ...(credential === undefined ? {} : { credential }),
     })
