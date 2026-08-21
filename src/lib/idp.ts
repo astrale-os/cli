@@ -145,6 +145,8 @@ export const IdpSessionSchema = z
     idp: z.string(),
     issuer: z.string().url(),
     subject: z.string(),
+    /** OAuth client that issued this session's refresh token. */
+    clientId: z.string().optional(),
     audience: z.string().optional(),
     organizationId: z.string().optional(),
     access_token: z.string(),
@@ -644,10 +646,11 @@ export async function refreshSession(
   if (!session.refresh_token)
     throw new Error(`IdP session for "${identityName}" has no refresh token`)
   const idp = await readIdpConfig(session.idp)
+  const clientId = requireClientId(idp, session.clientId)
   const params = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: session.refresh_token,
-    client_id: requireClientId(idp),
+    client_id: clientId,
   })
   const audience = opts.audience ?? session.audience
   if (audience) params.set('audience', audience)
@@ -674,6 +677,7 @@ export async function refreshSession(
   const expiresAt = tokenExpiresAt(token)
   const next: IdpSession = {
     ...session,
+    clientId,
     access_token: token.access_token,
     id_token: token.id_token ?? session.id_token,
     refresh_token: token.refresh_token ?? session.refresh_token,

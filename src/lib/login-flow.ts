@@ -7,7 +7,9 @@ import {
   normalizeTokenResponse,
   pollDeviceToken,
   readIdpConfigOrBuiltin,
+  readIdpSession,
   readIdpStore,
+  requireClientId,
   requestClientCredentials,
   requestDeviceAuthorization,
   saveIdpSession,
@@ -71,10 +73,17 @@ export type LoginResult = {
  */
 export async function loginViaIdp(opts: LoginFlowOpts): Promise<LoginResult> {
   const idpName = await resolveIdpName(opts.idp)
-  const idp = await readIdpConfigOrBuiltin(idpName, { clientId: opts.clientId, persist: true })
+  const previous = opts.name && !opts.clientId ? await readIdpSession(opts.name) : null
+  const savedClientId = previous?.idp === idpName ? previous.clientId : undefined
+  const requestedClientId = opts.clientId ?? savedClientId
+  const idp = await readIdpConfigOrBuiltin(idpName, {
+    clientId: requestedClientId,
+    persist: true,
+  })
+  const clientId = requireClientId(idp, requestedClientId)
   const scope = opts.scope ?? idp.client.scope ?? 'openid profile email offline_access'
 
-  const token = normalizeTokenResponse(await obtainToken(idp, opts, scope))
+  const token = normalizeTokenResponse(await obtainToken(idp, { ...opts, clientId }, scope))
   if (!token.access_token) throw new Error('IdP response did not include access_token')
   if (opts.audience && !tokenAudienceMatches(token.access_token, opts.audience)) {
     throw new Error(
@@ -83,7 +92,7 @@ export async function loginViaIdp(opts: LoginFlowOpts): Promise<LoginResult> {
   }
 
   const claims = decodeTokenClaims(token.id_token ?? token.access_token)
-  const subject = subjectFromToken(token, opts.clientId ?? idp.client.client_id ?? idpName)
+  const subject = subjectFromToken(token, clientId)
   const issuer = issuerFromToken(token, idp.metadata.issuer)
   const identityName = opts.name ?? identityNameFromClaims(claims, idpName)
   const session: IdpSession = {
@@ -91,6 +100,7 @@ export async function loginViaIdp(opts: LoginFlowOpts): Promise<LoginResult> {
     idp: idpName,
     issuer,
     subject,
+    clientId,
     audience: opts.audience,
     access_token: token.access_token,
     id_token: token.id_token,
