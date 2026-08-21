@@ -20,7 +20,7 @@ const deployment = createDeployment({
 })
 
 test('binds the installed Admin Domain instead of the source Kernel publication', async () => {
-  const installed = mock(async () => ({
+  const installation = mock(async () => ({
     state: 'ready' as const,
     target: 'sha256:admin-target' as const,
     source: { kind: 'remote' as const, publication: deployment.publication },
@@ -28,11 +28,11 @@ test('binds the installed Admin Domain instead of the source Kernel publication'
     readiness: 'sha256:admin-readiness' as const,
     capabilities: { requested: [], materialized: [] },
   }))
-  const session = { installed } as unknown as ClientSession
+  const session = { installation } as unknown as ClientSession
 
   const binding = await bindAdmin(session)
 
-  expect(installed).toHaveBeenCalledWith('admin.astrale.ai')
+  expect(installation).toHaveBeenCalledWith('admin.astrale.ai')
   expect(binding.$.origin).toBe('admin.astrale.ai')
   expect(String(binding.$.publication?.identity.issuer)).toBe('https://admin.beta.astrale.ai')
 })

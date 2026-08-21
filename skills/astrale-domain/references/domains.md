@@ -46,7 +46,7 @@ only the resulting invocation-scoped Capability client.
 
 ```ts
 import { Directory, DirectorySchema } from '@example/directory-domain'
-import type { DomainBinding } from '@astrale-os/kernel-client/domain'
+import type { DomainBinding } from '@astrale-os/shell'
 
 import type { MemberDirectory } from '#capabilities/member-directory'
 

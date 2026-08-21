@@ -1,5 +1,5 @@
-import type { DomainBinding } from '@astrale-os/kernel-client/domain'
 import type { ClientSession } from '@astrale-os/kernel-client/session'
+import type { DomainBinding } from '@astrale-os/shell'
 
 import type { AdminGraphApi } from '../../graph/.spec/api.js'
 
