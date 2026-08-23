@@ -30,10 +30,12 @@
 
 - Typecheck, lint, format, all tests, build, package checks, public export checks, and dependency
   boundary checks pass on the exact cohort.
-- Representative command E2E proves status/whoami, graph read, callable invocation, Domain
-  introspection, and View resolution against a current Kernel.
-- Authority-sensitive fresh install/setup proof waits for the required Kernel authority work on
-  `main`; no anonymous or local bypass counts.
+- Representative command E2E proves status, automatic bookmark identity selection, graph reads,
+  callable invocation, Domain installation, and exact receiver Methods against an
+  authority-enabled tunneled Kernel and remotely deployed Cloudflare Shell.
+- Authority-sensitive fresh install/setup proves Root-only bootstrap followed by ordinary external
+  administrator/Member identities, Policy denial, promotion, revocation, and restart persistence.
+  No anonymous or local bypass counts.
 
 ## Evidence retained so far
 
@@ -47,5 +49,6 @@
   command or Studio journey was removed.
 - Package dry-run succeeds with 590 files. Its source-bearing shape is pre-existing and remains
   unchanged in intent because Studio executes server/shared source from the installed CLI package.
-- Live representative Kernel commands and authority-dependent fresh setup remain the only acceptance
-  gates not proven by this local migration branch.
+- Live representative Kernel commands and authority-dependent fresh Shell setup are green. The only
+  remote gate is repository administration: CLI Actions needs a credential that can check out the
+  exact private Kernel, SDK, and Shell cohort.

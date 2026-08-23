@@ -15,3 +15,7 @@ Rules:
 
 Use `pnpm migration:inventory` to refresh the census and `pnpm migration:check` for the structural
 target gate.
+
+Until the exact cohort is published, GitHub workflows require `COHORT_REPOSITORY_TOKEN` with read
+access to the private Kernel, SDK, and Shell repositories. Registry and job tokens are not accepted
+as substitutes for cross-repository authority.
