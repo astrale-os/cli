@@ -46,7 +46,7 @@ test('reads the discovered client directory', () => {
   })
 })
 
-test('resolves views declared in the registry file itself', () => {
+test('does not treat a removed view registry as Schema authority', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-inline-view-registry-'))
   roots.push(root)
   const viewsDir = join(root, 'views')
@@ -68,29 +68,10 @@ export const views = { services, service }
 `,
   )
 
-  expect(buildViews(root)).toEqual([
-    {
-      slug: 'services',
-      kind: 'spa',
-      url: undefined,
-      file: 'views/index.ts',
-      auth: 'required',
-      mount: '/ui/services',
-      description: 'Browse services.',
-    },
-    {
-      slug: 'service',
-      kind: 'spa',
-      url: undefined,
-      file: 'views/index.ts',
-      auth: 'required',
-      mount: '/ui/service',
-      viewFor: 'CloudflareWorker',
-    },
-  ])
+  expect(buildViews(root)).toEqual([])
 })
 
-test('joins canonical Bundle Views with reactFrontend route metadata', () => {
+test('joins canonical Bundle Views with defineFrontend route metadata', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-current-react-view-'))
   roots.push(root)
   mkdirSync(join(root, 'schema', 'application'), { recursive: true })
@@ -118,11 +99,13 @@ export const schema = defineSchema(ORIGIN, schemaInput)
   )
   writeFileSync(
     join(root, 'views', 'routes.ts'),
-    `import { reactFrontend, reactRoute } from '@astrale-os/sdk/react'
-const routes = {
-  issue: reactRoute({ path: '/ui/issues/:id', component: { module: './views/issue.tsx' } }),
-}
-export const frontend = reactFrontend({ schema, routes, entrypoint: 'issue' })
+    `import { defineFrontend, vite } from '@astrale-os/sdk/application'
+export const frontend = defineFrontend({
+  schema,
+  source: vite(),
+  routes: { issue: '/ui/issues/:id' },
+  entrypoint: 'issue',
+})
 `,
   )
 
@@ -137,7 +120,7 @@ export const frontend = reactFrontend({ schema, routes, entrypoint: 'issue' })
           kind: 'definition',
           definitions: [
             { origin: 'issues.example.dev', kind: 'class', name: 'Issue' },
-            { origin: 'accounts.example.dev', kind: 'interface', name: 'Group' },
+            { origin: 'accounts.example.dev', kind: 'class', name: 'Group' },
           ],
         },
       },
@@ -156,7 +139,7 @@ export const frontend = reactFrontend({ schema, routes, entrypoint: 'issue' })
   ])
 })
 
-test('discovers generated frontend routes without deriving canonical View defaults', () => {
+test('discovers Vite frontend default routes from canonical View names', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-current-generated-view-'))
   roots.push(root)
   mkdirSync(join(root, 'schema'), { recursive: true })
@@ -170,11 +153,10 @@ test('discovers generated frontend routes without deriving canonical View defaul
   )
   writeFileSync(
     join(root, 'views', 'summary', 'index.ts'),
-    `const source = generatedFrontend({ files: [{ path: 'index.html', content: '<h1>Hi</h1>' }] })
-export const frontend = frontendArtifact({
+    `const source = vite()
+export const frontend = defineFrontend({
   schema,
   source,
-  routes: { summary: frontendRoute({}) },
   entrypoint: 'summary',
 })
 `,
@@ -191,9 +173,9 @@ export const frontend = frontendArtifact({
   ).toEqual([
     {
       slug: 'summary',
-      kind: 'inline-html',
+      kind: 'spa',
       auth: 'required',
-      mount: '/ui/summary',
+      mount: '/summary',
       url: undefined,
       file: 'views/summary/index.ts',
     },
@@ -215,12 +197,13 @@ test('canonical Bundle views reject static schema and route-only identities', ()
 })`,
   )
   writeFileSync(
-    join(root, 'implementation.ts'),
-    `export const frontend = frontendArtifact({
-  source: externalFrontend({ href: 'https://shell.example.dev' }),
+    join(root, 'application.ts'),
+    `export const frontend = defineFrontend({
+  schema,
+  source: external('https://shell.example.dev'),
   routes: {
-    account: frontendRoute({ href: 'https://shell.example.dev/account' }),
-    routeOnly: frontendRoute({ href: 'https://shell.example.dev/route-only' }),
+    account: '/account',
+    routeOnly: '/route-only',
   },
 })`,
   )
@@ -251,14 +234,15 @@ test('canonical Bundle views reject static schema and route-only identities', ()
       description: 'Admitted account view.',
       viewFor: 'Account',
       url: 'https://shell.example.dev/account',
-      file: 'implementation.ts',
+      file: 'application.ts',
     },
     {
       slug: 'sourceOnly',
-      kind: 'unknown',
+      kind: 'spa',
       auth: 'optional',
       description: 'Admitted source-only view.',
-      file: 'schema/index.ts',
+      url: 'https://shell.example.dev/source-only',
+      file: 'application.ts',
     },
   ])
   expect(buildViews(root, 'schema', {})).toEqual([])

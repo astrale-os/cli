@@ -1,7 +1,5 @@
 /** Method security affordance: badge (row glyph + hover), card, inline chip. */
-import type { HandlerLink } from '@shared/types'
-
-import { Chip, CodeBlock, IconTile } from '@/components/studio-kit'
+import { Chip, IconTile } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { type AuthCallable, methodAuth } from '@/lib/method-auth'
 import { cn } from '@/lib/utils'
@@ -15,7 +13,6 @@ const TRIGGER_TONE: Record<string, string> = {
 
 interface MethodAuthProps {
   method?: AuthCallable
-  link?: HandlerLink
 }
 
 interface MethodAuthBadgeProps extends MethodAuthProps {
@@ -24,8 +21,8 @@ interface MethodAuthBadgeProps extends MethodAuthProps {
 }
 
 /** Row glyph; hover reveals the full card. */
-export function MethodAuthBadge({ method, link, interactive = true }: MethodAuthBadgeProps) {
-  const v = methodAuth(method, link)
+export function MethodAuthBadge({ method, interactive = true }: MethodAuthBadgeProps) {
+  const v = methodAuth(method)
   if (!v) return null
   const Icon = v.icon
   const triggerClassName = cn(
@@ -50,15 +47,15 @@ export function MethodAuthBadge({ method, link, interactive = true }: MethodAuth
         )}
       </HoverCardTrigger>
       <HoverCardContent align="start" className="w-96 p-0 overflow-hidden">
-        <MethodAuthCard method={method} link={link} />
+        <MethodAuthCard method={method} />
       </HoverCardContent>
     </HoverCard>
   )
 }
 
-/** Full verdict: headline, auth/authorize chips, authorize + handler source. */
-export function MethodAuthCard({ method, link }: MethodAuthProps) {
-  const v = methodAuth(method, link)
+/** Full verdict from the canonical callable authentication contract. */
+export function MethodAuthCard({ method }: MethodAuthProps) {
+  const v = methodAuth(method)
   if (!v) return null
   const Icon = v.icon
   return (
@@ -70,7 +67,6 @@ export function MethodAuthCard({ method, link }: MethodAuthProps) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-foreground">{v.label}</span>
-            {v.warn && <Chip tone={v.chipTone}>review</Chip>}
           </div>
           <p className="mt-1 leading-relaxed text-muted-foreground">{v.blurb}</p>
         </div>
@@ -80,19 +76,7 @@ export function MethodAuthCard({ method, link }: MethodAuthProps) {
         <Chip tone="outline" className="font-mono">
           auth: {v.auth}
         </Chip>
-        <Chip tone="outline" className="font-mono">
-          authorize: {v.authorize}
-        </Chip>
       </div>
-
-      {v.authorize === 'custom' && link?.authorizeSnippet && (
-        <div className="border-t px-3 py-2">
-          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            authorize
-          </p>
-          <CodeBlock>{link.authorizeSnippet}</CodeBlock>
-        </div>
-      )}
     </div>
   )
 }

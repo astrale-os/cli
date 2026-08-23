@@ -16,7 +16,7 @@ import { buildAnatomy } from './introspect/anatomy'
 import { buildBundle } from './introspect/bundle'
 import { isCanonicalDomainSchemaV1 } from './introspect/canonical-schema'
 import { buildCore } from './introspect/core'
-import { decodeIrInterfaceRecord, decodeSchemaIR } from './introspect/schema-ir-json'
+import { decodeSchemaIR } from './introspect/schema-ir-json'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from './json'
 import { hashAnatomyFiles } from './state/baseline'
 import { readJson, writeJson } from './state/store'
@@ -26,7 +26,7 @@ const anatomies = new Map<string, Promise<DomainAnatomy>>()
 const cores = new Map<string, StudioCore>()
 
 const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
-const BUNDLE_CACHE_VERSION = 4
+const BUNDLE_CACHE_VERSION = 5
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',
@@ -55,10 +55,13 @@ interface BundleCacheEntry {
 
 function isCrossDomainImport(value: unknown): boolean {
   const record = asJsonRecord(value)
+  const ref = asJsonRecord(record?.ref)
   return (
     typeof record?.name === 'string' &&
     typeof record.origin === 'string' &&
-    (record.definition === 'class' || record.definition === 'interface')
+    ref?.kind === 'class' &&
+    typeof ref.origin === 'string' &&
+    typeof ref.name === 'string'
   )
 }
 
@@ -66,7 +69,8 @@ function isHandlerLink(value: unknown): boolean {
   const record = asJsonRecord(value)
   return (
     typeof record?.owner === 'string' &&
-    ['class', 'interface', 'function'].includes(String(record.ownerKind)) &&
+    ['class', 'function'].includes(String(record.ownerKind)) &&
+    ['action', 'workflow'].includes(String(record.kind)) &&
     typeof record.method === 'string' &&
     typeof record.static === 'boolean' &&
     typeof record.implemented === 'boolean'
@@ -125,9 +129,9 @@ function decodeBundle(value: unknown): StudioSchemaBundle | undefined {
   if (!record) return undefined
   const domainId = asString(record.domainId)
   const renderFingerprint = asString(record.renderFingerprint)
-  const schemaMode = (
-    ['canonical-admitted', 'canonical-preview', 'legacy', 'unavailable'] as const
-  ).find((candidate) => candidate === record.schemaMode)
+  const schemaMode = (['canonical-admitted', 'canonical-preview', 'unavailable'] as const).find(
+    (candidate) => candidate === record.schemaMode,
+  )
   const extractedBy = record.extractedBy
   const depsInstalled = asBoolean(record.depsInstalled)
   const ir = record.ir === null ? null : decodeSchemaIR(record.ir)
@@ -153,11 +157,6 @@ function decodeBundle(value: unknown): StudioSchemaBundle | undefined {
   ) {
     return undefined
   }
-  const importedInterfaces =
-    record.importedInterfaces === undefined
-      ? undefined
-      : decodeIrInterfaceRecord(record.importedInterfaces)
-  if (record.importedInterfaces !== undefined && importedInterfaces === undefined) return undefined
   const errorRecord = record.error === null ? null : asJsonRecord(record.error)
   const errorMessage = asString(errorRecord?.message)
   if (record.error !== undefined && record.error !== null && errorMessage === undefined) {
@@ -173,7 +172,6 @@ function decodeBundle(value: unknown): StudioSchemaBundle | undefined {
     ir,
     ...(record.schemaRoot === undefined ? {} : { schemaRoot: record.schemaRoot }),
     overlay,
-    ...(importedInterfaces === undefined ? {} : { importedInterfaces }),
     ...(record.error === undefined
       ? {}
       : record.error === null
@@ -300,7 +298,6 @@ export function invalidate(id: string, what: 'schema' | 'anatomy' | 'all'): void
     const domain = getDomain(id)
     if (domain) invalidateClientPackage(domain.root)
   }
-  // Core is derived from the canonical schema (or the legacy composition entry),
-  // both of which belong to the anatomy invalidation set.
+  // Core is derived from the canonical Schema and belongs to the anatomy set.
   if (what !== 'schema') cores.delete(id)
 }

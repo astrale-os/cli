@@ -1,6 +1,6 @@
 import type { Call } from '@astrale-os/kernel-client'
 import type { ProvisionRequest } from '@astrale-os/sdk/auth'
-import type { LocalBinding } from '@astrale-os/sdk/graph/model'
+import type { LocalBinding } from '@astrale-os/sdk/graph'
 
 import { call } from '@astrale-os/kernel-client'
 import { issuer } from '@astrale-os/sdk/auth'

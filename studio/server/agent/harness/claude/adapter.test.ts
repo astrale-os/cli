@@ -323,10 +323,20 @@ test('Claude Ask cancellation kills the entire stubborn subprocess group', async
     onDelta: () => {},
   })
 
-  await waitFor(() => existsSync(pidLog))
-  const pids = JSON.parse(readFileSync(pidLog, 'utf8')) as { parent: number; child: number }
-  expect(processExists(pids.parent)).toBe(true)
-  expect(processExists(pids.child)).toBe(true)
+  let pids: { parent: number; child: number } | undefined
+  await waitFor(() => {
+    if (!existsSync(pidLog)) return false
+    try {
+      pids = JSON.parse(readFileSync(pidLog, 'utf8')) as { parent: number; child: number }
+      return Number.isInteger(pids.parent) && Number.isInteger(pids.child)
+    } catch {
+      return false
+    }
+  })
+  if (!pids) throw new Error('fake Claude did not publish complete process evidence')
+  const processIds = pids
+  expect(processExists(processIds.parent)).toBe(true)
+  expect(processExists(processIds.child)).toBe(true)
   controller.abort()
 
   expect(await resultPromise).toEqual({
@@ -334,5 +344,5 @@ test('Claude Ask cancellation kills the entire stubborn subprocess group', async
     isError: true,
     errorMessage: 'canceled',
   })
-  await waitFor(() => !processExists(pids.parent) && !processExists(pids.child))
+  await waitFor(() => !processExists(processIds.parent) && !processExists(processIds.child))
 })

@@ -19,8 +19,8 @@ const IGNORED =
 // only these file changes can change the domain SET (vs. ordinary in-domain edits)
 export const DOMAIN_SET_TRIGGER_FILES = new Set([
   'astrale.config.ts',
-  'implementation.ts',
-  'domain.ts',
+  'application.ts',
+  'schema.ts',
   'index.ts',
 ])
 

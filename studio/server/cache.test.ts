@@ -4,23 +4,27 @@ import { decodeBundleCacheEntry } from './cache'
 
 function entry(): Record<string, unknown> {
   return {
-    version: 4,
+    version: 5,
     key: 'cache-key',
     futureEntryField: { version: 5 },
     bundle: {
       domainId: 'notes',
       renderFingerprint: 'render-hash',
-      schemaMode: 'legacy',
+      schemaMode: 'canonical-preview',
       extractedBy: 'runtime-bun',
       depsInstalled: true,
       ir: {
-        version: 'legacy',
+        format: 'astrale.dsl',
+        version: 'v1',
         domain: 'notes.example.dev',
-        types: {},
-        interfaces: {},
         classes: {},
-        imports: {},
+        importsByKey: {},
+        importedClassesByKey: {},
         functions: {},
+        views: {},
+        policies: {},
+        dependencies: [],
+        core: {},
       },
       overlay: {
         origin: 'notes.example.dev',
@@ -31,7 +35,11 @@ function entry(): Record<string, unknown> {
         sourceSpans: {},
         annotations: [],
       },
-      importedInterfaces: {},
+      schemaRoot: {
+        format: 'astrale.dsl',
+        version: 'v1',
+        origin: 'notes.example.dev',
+      },
       error: null,
       extractedAt: '2026-08-20T00:00:00.000Z',
       futureBundleField: true,
@@ -43,9 +51,9 @@ test('bundle cache admits known structure while ignoring future fields', () => {
   const decoded = decodeBundleCacheEntry(entry())
 
   expect(decoded).toMatchObject({
-    version: 4,
+    version: 5,
     key: 'cache-key',
-    bundle: { domainId: 'notes', schemaMode: 'legacy' },
+    bundle: { domainId: 'notes', schemaMode: 'canonical-preview' },
   })
   expect(decoded && 'futureEntryField' in decoded).toBe(false)
   expect(decoded && 'futureBundleField' in decoded.bundle).toBe(false)
@@ -60,11 +68,14 @@ function canonicalEntry(): Record<string, unknown> {
     format: 'astrale.dsl',
     version: 'v1',
     domain: 'notes.example.dev',
-    types: {},
-    interfaces: {},
     classes: {},
-    imports: {},
+    importsByKey: {},
+    importedClassesByKey: {},
     functions: {},
+    views: {},
+    policies: {},
+    dependencies: [],
+    core: {},
   }
   bundle.schemaRoot = {
     format: 'astrale.dsl',

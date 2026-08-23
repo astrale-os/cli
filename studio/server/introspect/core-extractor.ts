@@ -1,139 +1,30 @@
-/**
- * core-extractor.ts — the Bun-executed island for a domain's CORE (genesis) data.
- * Spawned as a short-lived subprocess by runtime.ts (cwd = domain dir, so the
- * domain's own node_modules resolve @astrale-os/*). It imports the pure schema
- * entry and reads canonical V1 `schema.core` directly. Importing the composition
- * entry and discovering legacy `defineCore(...)` output is retained only as a
- * fallback.
- *
- *   bun core-extractor.ts <schemaIndexPath> <domainFile> <domainDir>
- *
- * Contract mirrors extractor.ts exactly: NEVER crash. A thrown error prints
- * { ok:false } and exits 0 — the driver treats it as a render state. A domain
- * with no core prints { ok:true, core:null }.
- *
- * NOTE: the `export {}` below marks this as a module so its top-level `domainDir`/
- * `main` are module-scoped (extractor.ts is a sibling script with the same names).
- *
- * className resolution: a core node's `def` is the runtime class-definition
- * object (shape `{ __kind, config }` — it carries NO name field). We resolve the
- * name by identity-matching `def` against the core's own `schema.classes` /
- * `schema.interfaces`, AND every `schema.imports[*]` group — imported kernel
- * classes like `Folder` ONLY resolve via the imports walk. `data` is passed
- * through as the author wrote it in `node(Class, {...})` (most readable form).
- */
-export {} // module marker — see header note
+/** Bun subprocess that projects canonical Core directly from the pure Schema entry. */
 import { isAbsolute, resolve } from 'node:path'
 
 import { findCanonicalDomainSchemaExport, projectCanonicalCore } from './canonical-schema'
 
-const domainDir = process.argv[4] ?? process.cwd()
-const resolveInput = (file: string | undefined): string | undefined =>
-  file && !isAbsolute(file) ? resolve(domainDir, file) : file
-const schemaFile = resolveInput(process.argv[2])
-const domainFile = resolveInput(process.argv[3])
+const projectRoot = process.argv[3] ?? process.cwd()
+const input = process.argv[2]
+const schemaFile = input && !isAbsolute(input) ? resolve(projectRoot, input) : input
 
-type AnyRec = Record<string, any>
-
-/** A defineCore() result: flat __nodes/__edges arrays + its schema + domain. */
-function looksLikeCore(v: any): boolean {
-  return (
-    !!v &&
-    typeof v === 'object' &&
-    Array.isArray(v.__nodes) &&
-    Array.isArray(v.__edges) &&
-    !!v.schema &&
-    typeof v.domain === 'string'
+async function main(): Promise<void> {
+  if (!schemaFile) throw new Error('core-extractor: missing <schemaPath>')
+  const exports = (await import(schemaFile)) as Record<string, unknown>
+  const schema = findCanonicalDomainSchemaExport(exports)
+  if (schema === null) throw new Error('Schema entry exports no canonical V1 DomainSchema.')
+  const core = projectCanonicalCore(schema)
+  process.stdout.write(
+    JSON.stringify({
+      ok: true,
+      core: core.nodes.length === 0 && core.edges.length === 0 ? null : core,
+    }),
   )
 }
 
-/** Find the Core object — wired as `domain.core`, exported directly, or by shape. */
-function findCore(mod: AnyRec): any {
-  const wired = mod?.domain?.core ?? mod?.default?.core ?? mod?.core
-  if (looksLikeCore(wired)) return wired
-  // export name varies per domain (GatewayCore / IntegrationCore / …) — scan by shape
-  for (const v of Object.values(mod ?? {})) {
-    if (looksLikeCore(v)) return v
-    if (v && typeof v === 'object' && looksLikeCore((v as AnyRec).core)) return (v as AnyRec).core
-  }
-  return null
-}
-
-/** Build def→className from the schema's own classes/interfaces + imported schemas. */
-function classNameMap(schema: AnyRec): Map<any, string> {
-  const m = new Map<any, string>()
-  const add = (group?: AnyRec) => {
-    for (const [name, def] of Object.entries(group ?? {})) if (def && !m.has(def)) m.set(def, name)
-  }
-  add(schema?.interfaces)
-  add(schema?.classes)
-  for (const imp of schema?.imports ?? []) {
-    add(imp?.interfaces)
-    add(imp?.classes)
-  }
-  return m
-}
-
-async function main() {
-  if (!schemaFile) throw new Error('core-extractor: missing <schemaIndexPath>')
-
-  // Current SDK roots embed genesis data in the canonical, portable schema.
-  // Do not import implementation.ts/domain.ts when that source of truth exists.
-  try {
-    const schemaModule: AnyRec = await import(schemaFile)
-    const canonical = findCanonicalDomainSchemaExport(schemaModule)
-    if (canonical) {
-      const core = projectCanonicalCore(canonical)
-      const empty = core.nodes.length === 0 && core.edges.length === 0
-      process.stdout.write(JSON.stringify({ ok: true, core: empty ? null : core }))
-      return
-    }
-  } catch {
-    // A legacy composition entry may still expose a valid defineCore result.
-  }
-
-  if (!domainFile) throw new Error('core-extractor: missing <domainFile> legacy fallback')
-  const mod: AnyRec = await import(domainFile)
-  const core = findCore(mod)
-  if (!core) {
-    process.stdout.write(JSON.stringify({ ok: true, core: null }))
-    return
-  }
-
-  const names = classNameMap(core.schema)
-  const nameOf = (def: any): string => names.get(def) ?? def?.config?.name ?? def?.name ?? '?'
-  // CorePath is a branded string; nested parents are objects with toString/valueOf,
-  // so String() is the correct universal coercion (never JSON.stringify a path).
-  const pathStr = (p: any): string => (p == null ? '' : String(p))
-  // An edge endpoint is a CorePath OR a SelfMarker ({ type:'core-self', __def }).
-  const endpoint = (e: any): string =>
-    e && typeof e === 'object' && (e.type === 'core-self' || e.__def)
-      ? `self(${nameOf(e.__def)})`
-      : pathStr(e)
-
-  const nodes = (core.__nodes ?? []).map((n: AnyRec) => ({
-    path: pathStr(n.path),
-    className: nameOf(n.def),
-    data: n.data ?? {},
-    ...(n.parent != null ? { parent: pathStr(n.parent) } : {}),
-  }))
-
-  const edges = (core.__edges ?? []).map((e: AnyRec) => ({
-    from: endpoint(e.from),
-    to: endpoint(e.to),
-    edgeName: nameOf(e.edge),
-    ...(e.data != null ? { data: e.data } : {}),
-  }))
-
-  process.stdout.write(JSON.stringify({ ok: true, core: { domain: core.domain, nodes, edges } }))
-}
-
-main().catch((err: any) => {
+main().catch((cause: unknown) => {
+  const error = cause instanceof Error ? cause : new Error(String(cause))
   process.stdout.write(
-    JSON.stringify({
-      ok: false,
-      error: { message: String(err?.message ?? err), stack: String(err?.stack ?? '') },
-    }),
+    JSON.stringify({ ok: false, error: { message: error.message, stack: error.stack ?? '' } }),
   )
   process.exit(0)
 })

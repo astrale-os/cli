@@ -37,6 +37,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: astrale-os/kernel
+          ref: a80568d6083fd3af6f3646a8abb95338e6ae3434
+          path: .kernel-cohort
+          token: ${{ secrets.NPM_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: astrale-os/sdk
+          ref: 7cf8b9e052da4c5c91c091b56e416ca3e189a8f0
+          path: .sdk-cohort
+          token: ${{ secrets.NPM_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: astrale-os/shell
+          ref: 8d69cbd3b08f08a94c7b227391cf3a95d2746a7d
+          path: .shell-cohort
+          token: ${{ secrets.NPM_TOKEN }}
+          persist-credentials: false
       # The CLI builds with Bun (scripts/build.ts) and the studio client build
       # shells out to Bun too — the shared action only sets up Node/pnpm.
       - uses: oven-sh/setup-bun@v2

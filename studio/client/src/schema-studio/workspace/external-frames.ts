@@ -11,7 +11,7 @@ import {
 export interface WorkspaceExternalReference {
   origin: string
   name: string
-  definition: 'class' | 'interface'
+  definition: 'class'
 }
 
 export interface WorkspaceExternalCluster {

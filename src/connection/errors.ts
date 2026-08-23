@@ -269,7 +269,10 @@ function transportPhase(error: Error): string | undefined {
 }
 
 function transportDelivery(error: Error): string | undefined {
-  const delivery = (error as Error & { readonly delivery?: unknown }).delivery
+  const context = (error as Error & { readonly context?: unknown }).context
+  if (context === null || typeof context !== 'object') return undefined
+  if ((context as { readonly kind?: unknown }).kind !== 'invocation') return undefined
+  const delivery = (context as { readonly delivery?: unknown }).delivery
   return delivery === 'not-sent' || delivery === 'unknown' ? delivery : undefined
 }
 

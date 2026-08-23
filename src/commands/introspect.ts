@@ -7,7 +7,7 @@ import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
 import { failClosed } from '../lib/log'
 import { output } from '../lib/output'
-import { describeCallableFromSchema, missingCallableDescription } from './call-describe'
+import { describeCallableFromBundle, missingCallableDescription } from './call-describe'
 
 type IntrospectOpts = KernelCommandOpts & { bundle?: boolean }
 
@@ -44,7 +44,7 @@ export async function introspectCommand(target: string, opts: IntrospectOpts): P
         )
       }
       if (wantsCallable) {
-        const described = describeCallableFromSchema(path, bundleRoot(result.bundle))
+        const described = describeCallableFromBundle(path, result.bundle)
         if (described === undefined) throw missingCallableDescription(path.raw)
         return described
       }
@@ -83,13 +83,6 @@ function isCallablePath(path: Path): boolean {
   if (last === undefined) return false
   if (last.kind === 'method') return true
   return last.kind === 'projection' && last.projection.kind === 'function'
-}
-
-function bundleRoot(bundle: unknown): unknown {
-  if (bundle !== null && typeof bundle === 'object' && 'root' in bundle) {
-    return (bundle as { root: unknown }).root
-  }
-  return bundle
 }
 
 export default {

@@ -45,12 +45,10 @@ const SKIP_DIRS = new Set(['node_modules', '.dist', 'dist', '.domain-studio', '.
 export const ANATOMY_GLOBS = {
   dirs: [
     'actions',
-    'capabilities',
     'core',
+    'providers',
     'runtime',
     'views',
-    'functions',
-    'handlers',
     'integrations',
     'migrations',
     'mutations',
@@ -64,8 +62,8 @@ export const ANATOMY_GLOBS = {
     'client/src',
   ],
   files: [
-    'implementation.ts',
-    'domain.ts',
+    'application.ts',
+    'runtime.ts',
     'index.ts',
     'core.ts',
     'deps.ts',

@@ -44,7 +44,6 @@ import { type ClassNodeData, projectDomainCanvas } from '../projection'
 import { VISIBILITY_DEFAULT, domainVisible, visibilityEqual } from '../visibility'
 import { CanvasCommentPin, schemaNodeTypes } from './nodes'
 import {
-  EMPTY_MATERIALIZED,
   buildCrossEdges,
   buildExternalLayout,
   commentNodes,
@@ -80,7 +79,6 @@ export function SchemaGraph({
   const toggleModule = useUI((s) => s.toggleModule)
   const hidden = useUI((s) => s.hidden)
   const showInheritedEdges = useUI((s) => s.showInheritedEdges)
-  const materializedInterfaces = useUI((s) => s.materializedInterfaces)
   const toggleInheritedEdges = useUI((s) => s.toggleInheritedEdges)
   const setVisibility = useUI((s) => s.setVisibility)
   const { data: catalog } = useCatalog()
@@ -92,42 +90,13 @@ export function SchemaGraph({
   const [edges, setEdges] = useState<Edge[]>([])
   const [hoverId, setHoverId] = useState<string | null>(null)
 
-  // Defer materialized-interface NODES until after the first fit (flipped in `firstFit`). Feeding
-  // an interface node into ReactFlow DURING the initial mount/fitView — which is what happens when
-  // you switch INTO a domain that already has one (its visibility slice hydrates synchronously
-  // from cache) — drives a ReactFlow controlled-nodes `setNodes`-during-commit loop (React #185 →
-  // blank canvas). Applying it one frame later, exactly as a fresh page load naturally does (its
-  // slice arrives async), sidesteps that. Live toggles run with `materializeReady` already true,
-  // so they apply immediately.
-  const [materializeReady, setMaterializeReady] = useState(false)
-  const effectiveMaterialized = materializeReady ? materializedInterfaces : EMPTY_MATERIALIZED
-
   const structure = useMemo(
-    () =>
-      projectDomainCanvas(
-        bundle,
-        new Set(collapsedModules),
-        hidden,
-        showInheritedEdges,
-        effectiveMaterialized,
-      ),
-    [
-      bundle.renderFingerprint,
-      bundle,
-      collapsedModules,
-      hidden,
-      showInheritedEdges,
-      effectiveMaterialized,
-    ],
+    () => projectDomainCanvas(bundle, new Set(collapsedModules), hidden, showInheritedEdges),
+    [bundle.renderFingerprint, bundle, collapsedModules, hidden, showInheritedEdges],
   )
   const allExternal = useMemo(() => externalDomains(bundle), [bundle])
   const crossE = useMemo(() => crossDomainEdges(bundle), [bundle])
-  // re-run the reconcile (pack/ELK) when the hide-set, inherited toggle, or materialize-set
-  // change — materializing an interface adds an `iface.X` node that must be packed.
-  const hiddenKey =
-    Object.keys(hidden).sort().join(',') +
-    `|${showInheritedEdges}|` +
-    Object.keys(effectiveMaterialized).sort().join(',')
+  const hiddenKey = Object.keys(hidden).sort().join(',') + `|${showInheritedEdges}`
 
   // auto-expand a collapsed module when one of its classes is selected (e.g. from ⌘K)
   useEffect(() => {
@@ -169,7 +138,6 @@ export function SchemaGraph({
     const next: VisibilityState = {
       hidden: incoming.hidden,
       showInheritedEdges: incoming.showInheritedEdges,
-      materializedInterfaces: incoming.materializedInterfaces,
     }
     if (!visibilityEqual(next, live)) setVisibility(next)
     visibilityHydrated.current = true
@@ -183,13 +151,12 @@ export function SchemaGraph({
     const next: VisibilityState = {
       hidden: live.hidden,
       showInheritedEdges: live.showInheritedEdges,
-      materializedInterfaces: live.materializedInterfaces,
     }
     const cached = qc.getQueryData<VisibilityState>(qk.visibility(domainId)) ?? VISIBILITY_DEFAULT
     if (visibilityEqual(next, cached)) return
     qc.setQueryData<VisibilityState>(qk.visibility(domainId), next)
     api.setVisibility(domainId, next).catch(() => {})
-  }, [hidden, showInheritedEdges, materializedInterfaces, domainId, qc])
+  }, [hidden, showInheritedEdges, domainId, qc])
 
   // paint a set of positions onto the structure and append the external area.
   const compose = useCallback(
@@ -211,30 +178,17 @@ export function SchemaGraph({
             new Set(collapsedModules),
             hidden,
             showInheritedEdges,
-            effectiveMaterialized,
           ),
         ]),
       )
     },
-    [
-      structure,
-      allExternal,
-      hidden,
-      catalog,
-      crossE,
-      bundle,
-      collapsedModules,
-      showInheritedEdges,
-      effectiveMaterialized,
-    ],
+    [structure, allExternal, hidden, catalog, crossE, bundle, collapsedModules, showInheritedEdges],
   )
   const firstFit = useCallback(() => {
     if (fitted.current) return
     fitted.current = true
     requestAnimationFrame(() => {
       fitView({ padding: 0.18, duration: 400 })
-      // canvas has mounted + fit — now it's safe to add any materialized interface nodes
-      setMaterializeReady(true)
     })
   }, [fitView])
 
@@ -373,10 +327,7 @@ export function SchemaGraph({
 
   const displayNodes = useMemo(() => {
     const mapped = nodes.map((n) => {
-      // class + materialized-interface boxes both participate in focus/hover dimming (the
-      // interface hub is the point of materializing — it must isolate like any class).
-      if (n.type !== 'classNode' && n.type !== 'interfaceNode')
-        return n.className ? { ...n, className: undefined } : n
+      if (n.type !== 'classNode') return n.className ? { ...n, className: undefined } : n
       const cls = sets && !sets.nodeIds.has(n.id) ? 'is-dimmed' : undefined
       return n.className === cls ? n : { ...n, className: cls }
     })
@@ -419,17 +370,9 @@ export function SchemaGraph({
       onNodeDragStop={onNodeDragStop}
       onNodeClick={(_, n) => {
         if (n.id.startsWith('class.')) focusClass(n.id)
-        else if (n.id.startsWith('iface.')) {
-          // open the interface detail (keyed interface.X) AND pin focus to the hub (keyed by the
-          // node id iface.X) so clicking the materialized interface isolates its implements/extends
-          // edges, exactly like clicking a class — toggling focus off if it's already the active hub.
-          selectClass(`interface.${n.id.slice('iface.'.length)}`)
-          setFocus(focusId === n.id ? null : n.id)
-        } else if (n.id.startsWith('grp-')) selectClass(`module.${n.id.slice('grp-'.length)}`)
+        else if (n.id.startsWith('grp-')) selectClass(`module.${n.id.slice('grp-'.length)}`)
       }}
-      onNodeMouseEnter={(_, n) =>
-        (n.id.startsWith('class.') || n.id.startsWith('iface.')) && setHoverId(n.id)
-      }
+      onNodeMouseEnter={(_, n) => n.id.startsWith('class.') && setHoverId(n.id)}
       onNodeMouseLeave={() => setHoverId(null)}
       onEdgeClick={(_, edge) => {
         if (!edge.id.startsWith('edge-')) return // ignore cross-domain (implements) edges
@@ -462,9 +405,7 @@ export function SchemaGraph({
         nodeColor={(n) =>
           n.type === 'classNode'
             ? `oklch(0.6 0.13 ${(n.data as ClassNodeData).hue})`
-            : n.type === 'interfaceNode'
-              ? 'oklch(0.6 0.18 330)'
-              : 'transparent'
+            : 'transparent'
         }
         nodeStrokeWidth={0}
         maskColor="oklch(0.17 0.01 270 / 0.7)"
@@ -514,7 +455,7 @@ export function SchemaGraph({
           size="xs"
           variant={showInheritedEdges ? 'default' : 'outline'}
           onClick={toggleInheritedEdges}
-          title="Toggle inherited (interface-induced) edges"
+          title="Toggle Class inheritance edges"
         >
           <Spline className="h-3.5 w-3.5" /> Inherited
         </Button>

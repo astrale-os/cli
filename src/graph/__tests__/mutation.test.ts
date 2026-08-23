@@ -14,7 +14,7 @@ describe('prepareMutation', () => {
               {
                 op: 'node.create',
                 as: 'note',
-                class: '/:notes.example.dev:class.Note',
+                class: 'notes.example.dev:class.Note',
                 props: {},
               },
             ],
@@ -29,7 +29,7 @@ describe('prepareMutation', () => {
         {
           op: 'node.create',
           as: 'note',
-          class: '/:notes.example.dev:class.Note',
+          class: 'notes.example.dev:class.Note',
           props: {},
         },
       ],

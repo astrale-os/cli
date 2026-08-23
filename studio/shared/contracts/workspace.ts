@@ -113,18 +113,12 @@ export interface MergeResult {
 
 export type SchemaChangeKind =
   | 'schema-metadata-changed'
-  | 'type-added'
-  | 'type-removed'
-  | 'type-changed'
   | 'import-added'
   | 'import-removed'
   | 'import-changed'
   | 'class-added'
   | 'class-removed'
   | 'class-contract-changed'
-  | 'interface-added'
-  | 'interface-removed'
-  | 'interface-contract-changed'
   | 'edge-added'
   | 'edge-removed'
   | 'edge-contract-changed'
@@ -264,11 +258,8 @@ export interface LayoutState {
 
 /** Persisted per-domain canvas visibility. This is the sole authority for its JSON shape. */
 export interface VisibilityState {
-  /** refs hidden on the canvas: `class.X` | `edge.X` | `domain.<origin>` (interfaces use
-   *  `materializedInterfaces`, not this set — see below) */
+  /** Refs hidden on the canvas: `class.X` | `edge.X` | `domain.<origin>`. */
   hidden: Record<string, true>
+  /** Whether local Class inheritance edges are rendered. */
   showInheritedEdges: boolean
-  /** Local interfaces MATERIALIZED as canvas NODES (default = badge). Keyed by BARE interface
-   *  name (e.g. `Fulfillable`) — a set distinct from `hidden`, so no ref namespace collision. */
-  materializedInterfaces: Record<string, true>
 }

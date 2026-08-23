@@ -10,7 +10,7 @@ import type { Comment, ContextItem, DocMeta, SchemaRevision, ThreadEntry } from 
 interface CopyParts {
   origin: string
   root: string
-  /** Studio render fingerprint retained by the legacy annotate machine-state. */
+  /** Studio render fingerprint retained by the handoff machine-state. */
   renderFingerprint: string
   schemaRevision?: SchemaRevision
   openComments: Comment[]

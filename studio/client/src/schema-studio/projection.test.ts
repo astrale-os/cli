@@ -1,159 +1,66 @@
-import type { IrDefinitionKey, IrInterface, StudioSchemaBundle } from '@shared/types'
+import { describe, expect, test } from 'bun:test'
 
-import { expect, test } from 'bun:test'
-
+import { bundle, classRef, edgeClass, nodeClass } from './__tests__/fixture'
 import { projectDomainCanvas } from './projection'
 
-const iface = (
-  origin: string,
-  name: string,
-  extendsRefs: IrInterface['extendsRefs'] = [],
-): IrInterface => ({
-  type: 'interface',
-  name,
-  origin,
-  ref: { origin, kind: 'interface', name },
-  extends: extendsRefs.map((ref) => ref.name),
-  extendsRefs,
-  properties: {},
-  methods: {},
-})
+describe('Domain canvas projection', () => {
+  test('renders Node Classes, relation edges, and Class inheritance', () => {
+    const fixture = bundle({
+      Base: nodeClass('Base'),
+      Document: nodeClass('Document', {
+        extendsRefs: [classRef('local.example.dev', 'Base')],
+      }),
+      linked: edgeClass('linked', [
+        { name: 'source', types: ['Base'] },
+        { name: 'target', types: ['Document'] },
+      ]),
+    })
+    fixture.overlay.sourceSpans = {
+      'class.Base': { file: 'schema/content/base.ts', startLine: 1, endLine: 2 },
+      'class.Document': { file: 'schema/content/document.ts', startLine: 1, endLine: 2 },
+      'edge.linked': { file: 'schema/content/linked.ts', startLine: 1, endLine: 2 },
+    }
 
-function bundle(): StudioSchemaBundle {
-  const roleA = iface('a.example', 'Role', [
-    { origin: 'kernel.astrale.ai', kind: 'interface', name: 'Container' },
-  ])
-  const roleB = iface('b.example', 'Role', [
-    { origin: 'kernel.astrale.ai', kind: 'interface', name: 'Function' },
-  ])
-  return {
-    domainId: 'app',
-    renderFingerprint: 'test',
-    schemaMode: 'legacy',
-    extractedBy: 'runtime-bun',
-    depsInstalled: true,
-    ir: {
-      format: 'astrale.dsl',
-      version: 'v1',
-      domain: 'app.example',
-      types: {},
-      interfaces: { Shared: iface('app.example', 'Shared') },
-      classes: {
-        Shared: { type: 'node', name: 'Shared', properties: {}, methods: {} },
-        ExternalConsumer: {
-          type: 'node',
-          name: 'ExternalConsumer',
-          implements: ['Shared', 'Shared'],
-          implementsRefs: [
-            { origin: 'contracts.example', kind: 'interface', name: 'Shared' },
-            { origin: 'other.example', kind: 'interface', name: 'Shared' },
-          ],
-          properties: {},
-          methods: {},
-        },
-        LocalConsumer: {
-          type: 'node',
-          name: 'LocalConsumer',
-          implements: ['Shared'],
-          implementsRefs: [{ origin: 'app.example', kind: 'interface', name: 'Shared' }],
-          properties: {},
-          methods: {},
-        },
-        Worker: {
-          type: 'node',
-          name: 'Worker',
-          implements: ['Role'],
-          implementsRefs: [{ origin: 'a.example', kind: 'interface', name: 'Role' }],
-          properties: {},
-          methods: {},
-        },
-      },
-      imports: {},
-      importsByKey: {
-        'a.example:interface.Role': {
-          origin: 'a.example',
-          definition: 'interface',
-          ref: { origin: 'a.example', kind: 'interface', name: 'Role' },
-          key: 'a.example:interface.Role',
-        },
-        'b.example:interface.Role': {
-          origin: 'b.example',
-          definition: 'interface',
-          ref: { origin: 'b.example', kind: 'interface', name: 'Role' },
-          key: 'b.example:interface.Role',
-        },
-        'contracts.example:interface.Shared': {
-          origin: 'contracts.example',
-          definition: 'interface',
-          ref: { origin: 'contracts.example', kind: 'interface', name: 'Shared' },
-          key: 'contracts.example:interface.Shared',
-        },
-        'contracts.example:class.Shared': {
-          origin: 'contracts.example',
-          definition: 'class',
-          ref: { origin: 'contracts.example', kind: 'class', name: 'Shared' },
-          key: 'contracts.example:class.Shared',
-        },
-        'other.example:interface.Shared': {
-          origin: 'other.example',
-          definition: 'interface',
-          ref: { origin: 'other.example', kind: 'interface', name: 'Shared' },
-          key: 'other.example:interface.Shared',
-        },
-      },
-      importedInterfacesByKey: {
-        'a.example:interface.Role': roleA,
-        'b.example:interface.Role': roleB,
-      } as Record<IrDefinitionKey, IrInterface>,
-      functions: {},
-    },
-    overlay: {
-      origin: 'app.example',
-      requires: [],
-      crossDomainImports: [],
-      mixins: [],
-      handlerLinks: [],
-      sourceSpans: {},
-      annotations: [],
-    },
-    importedInterfaces: { Role: roleB },
-    extractedAt: '2026-08-20T00:00:00.000Z',
-  }
-}
+    const result = projectDomainCanvas(fixture, new Set(), {}, true)
+    expect(result.nodes.filter((node) => node.type === 'classNode').map((node) => node.id)).toEqual(
+      ['class.Base', 'class.Document'],
+    )
+    expect(result.edges.map((edge) => edge.id).sort()).toEqual([
+      'edge-linked__class.Base__class.Document',
+      'extends-Document__Base',
+    ])
+  })
 
-test('keeps exact interface origins and kinds distinct in the focused projection', () => {
-  const result = projectDomainCanvas(bundle(), new Set(), {}, true, { Shared: true })
+  test('routes collapsed module edges through the owning module node', () => {
+    const fixture = bundle({
+      User: nodeClass('User'),
+      Space: nodeClass('Space'),
+      owns: edgeClass('owns', [
+        { name: 'owner', types: ['User'] },
+        { name: 'space', types: ['Space'] },
+      ]),
+    })
+    fixture.overlay.sourceSpans = {
+      'class.User': { file: 'schema/identity/user.ts', startLine: 1, endLine: 2 },
+      'class.Space': { file: 'schema/space/space.ts', startLine: 1, endLine: 2 },
+      'edge.owns': { file: 'schema/space/owns.ts', startLine: 1, endLine: 2 },
+    }
+    const result = projectDomainCanvas(fixture, new Set(['identity']), {}, false)
+    expect(result.edges[0]).toMatchObject({ source: 'grp-identity', target: 'class.Space' })
+  })
 
-  expect(result.edges.some((edge) => edge.id === 'implements-LocalConsumer__Shared')).toBe(true)
-  expect(result.edges.some((edge) => edge.id === 'implements-ExternalConsumer__Shared')).toBe(false)
-  expect(
-    result.nodes.find((node) => node.id === 'class.ExternalConsumer')?.data.interfaces,
-  ).toEqual([
-    {
-      name: 'Shared',
-      identity: 'contracts.example:interface.Shared',
-      ref: { origin: 'contracts.example', kind: 'interface', name: 'Shared' },
-      selectionId: 'interface.contracts.example:interface.Shared',
-    },
-    {
-      name: 'Shared',
-      identity: 'other.example:interface.Shared',
-      ref: { origin: 'other.example', kind: 'interface', name: 'Shared' },
-      selectionId: 'interface.other.example:interface.Shared',
-    },
-  ])
-  expect(result.nodes.find((node) => node.id === 'class.LocalConsumer')?.data.interfaces).toEqual(
-    [],
-  )
-  expect(result.nodes.find((node) => node.id === 'class.Worker')?.data.coreRole).toBe('container')
-
-  const badged = projectDomainCanvas(bundle(), new Set(), {}, true, {})
-  expect(badged.nodes.find((node) => node.id.startsWith('grp-'))?.data.interfaces).toEqual([
-    {
-      name: 'Shared',
-      identity: 'app.example:interface.Shared',
-      ref: { origin: 'app.example', kind: 'interface', name: 'Shared' },
-      selectionId: 'interface.Shared',
-    },
-  ])
+  test('honors hidden Classes and the inheritance toggle independently', () => {
+    const fixture = bundle({
+      Base: nodeClass('Base'),
+      Document: nodeClass('Document', {
+        extendsRefs: [classRef('local.example.dev', 'Base')],
+      }),
+    })
+    expect(projectDomainCanvas(fixture, new Set(), {}, false).edges).toHaveLength(0)
+    expect(
+      projectDomainCanvas(fixture, new Set(), { 'class.Base': true }, true)
+        .nodes.filter((node) => node.type === 'classNode')
+        .map((node) => node.id),
+    ).toEqual(['class.Document'])
+  })
 })

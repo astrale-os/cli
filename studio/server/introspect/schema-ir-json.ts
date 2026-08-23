@@ -1,8 +1,9 @@
 /** Structural admission for persisted Studio render IR. SDK admission is separate. */
 
 import type {
+  IrClass,
+  IrClassRef,
   IrFunction,
-  IrInterface,
   IrMethod,
   IrSchemaRef,
   JsonSchema,
@@ -10,10 +11,6 @@ import type {
 } from '../../shared/types'
 
 import { asJsonRecord, asStringArray } from '../json'
-
-function optional<T>(value: unknown, guard: (candidate: unknown) => candidate is T): boolean {
-  return value === undefined || guard(value)
-}
 
 function recordOf(value: unknown, guard: (candidate: unknown) => boolean): boolean {
   const record = asJsonRecord(value)
@@ -29,14 +26,12 @@ function isSchemaRef(value: unknown): value is IrSchemaRef {
   return (
     typeof record?.origin === 'string' &&
     typeof record.name === 'string' &&
-    ['type', 'interface', 'class', 'function', 'policy', 'view', 'core'].includes(
-      String(record.kind),
-    )
+    ['class', 'function', 'policy', 'view', 'core'].includes(String(record.kind))
   )
 }
 
-function isSchemaRefArray(value: unknown): value is IrSchemaRef[] {
-  return Array.isArray(value) && value.every(isSchemaRef)
+function isClassRef(value: unknown): value is IrClassRef {
+  return isSchemaRef(value) && value.kind === 'class'
 }
 
 function isOutput(value: unknown): boolean {
@@ -52,20 +47,22 @@ function isMethod(value: unknown): value is IrMethod {
   const record = asJsonRecord(value)
   return (
     typeof record?.name === 'string' &&
-    recordOf(record.params, isJsonSchema) &&
-    isJsonSchema(record.returns) &&
+    isJsonSchema(record.input) &&
+    isOutput(record.output) &&
     typeof record.static === 'boolean' &&
-    ['default', 'abstract', 'sealed'].includes(String(record.inheritance)) &&
-    optional(record.input, isJsonSchema) &&
-    (record.requiredParams === undefined || asStringArray(record.requiredParams) !== undefined) &&
-    (record.output === undefined || isOutput(record.output))
+    ['default', 'abstract', 'sealed'].includes(String(record.inheritance))
   )
 }
 
 function isEndpoint(value: unknown): boolean {
   const record = asJsonRecord(value)
   if (!record || typeof record.name !== 'string' || !asStringArray(record.types)) return false
-  if (record.refs !== undefined && !isSchemaRefArray(record.refs)) return false
+  if (
+    record.refs !== undefined &&
+    (!Array.isArray(record.refs) || !record.refs.every(isSchemaRef))
+  ) {
+    return false
+  }
   if (record.cardinality !== undefined) {
     const cardinality = asJsonRecord(record.cardinality)
     if (
@@ -81,31 +78,19 @@ function isEndpoint(value: unknown): boolean {
   return true
 }
 
-function isInterface(value: unknown): value is IrInterface {
-  const record = asJsonRecord(value)
-  return (
-    record?.type === 'interface' &&
-    typeof record.name === 'string' &&
-    recordOf(record.properties, isJsonSchema) &&
-    recordOf(record.methods, isMethod) &&
-    (record.required === undefined || asStringArray(record.required) !== undefined) &&
-    (record.extends === undefined || asStringArray(record.extends) !== undefined) &&
-    (record.extendsRefs === undefined || isSchemaRefArray(record.extendsRefs)) &&
-    (record.endpoints === undefined ||
-      (Array.isArray(record.endpoints) && record.endpoints.every(isEndpoint)))
-  )
-}
-
-function isClass(value: unknown): boolean {
+function isClass(value: unknown): value is IrClass {
   const record = asJsonRecord(value)
   return (
     (record?.type === 'node' || record?.type === 'edge') &&
     typeof record.name === 'string' &&
+    typeof record.origin === 'string' &&
+    isClassRef(record.ref) &&
     recordOf(record.properties, isJsonSchema) &&
     recordOf(record.methods, isMethod) &&
     (record.required === undefined || asStringArray(record.required) !== undefined) &&
-    (record.implements === undefined || asStringArray(record.implements) !== undefined) &&
-    (record.implementsRefs === undefined || isSchemaRefArray(record.implementsRefs)) &&
+    (record.extends === undefined || asStringArray(record.extends) !== undefined) &&
+    (record.extendsRefs === undefined ||
+      (Array.isArray(record.extendsRefs) && record.extendsRefs.every(isClassRef))) &&
     (record.endpoints === undefined ||
       (Array.isArray(record.endpoints) && record.endpoints.every(isEndpoint)))
   )
@@ -113,24 +98,16 @@ function isClass(value: unknown): boolean {
 
 function isFunction(value: unknown): value is IrFunction {
   const record = asJsonRecord(value)
-  return (
-    typeof record?.name === 'string' &&
-    isJsonSchema(record.input) &&
-    recordOf(record.params, isJsonSchema) &&
-    (record.requiredParams === undefined || asStringArray(record.requiredParams) !== undefined) &&
-    isOutput(record.output) &&
-    isJsonSchema(record.returns) &&
-    record.static === true &&
-    record.inheritance === 'default'
-  )
+  return typeof record?.name === 'string' && isJsonSchema(record.input) && isOutput(record.output)
 }
 
 function isImport(value: unknown): boolean {
   const record = asJsonRecord(value)
   return (
     typeof record?.origin === 'string' &&
-    (record.definition === 'class' || record.definition === 'interface') &&
-    optional(record.ref, isSchemaRef)
+    isClassRef(record.ref) &&
+    typeof record.key === 'string' &&
+    record.key === `${record.ref.origin}:class.${record.ref.name}`
   )
 }
 
@@ -142,7 +119,9 @@ function isView(value: unknown): boolean {
     ['required', 'optional', 'public'].includes(String(record.auth)) &&
     !!target &&
     (target.kind === 'domain' ||
-      (target.kind === 'definition' && isSchemaRefArray(target.definitions)))
+      (target.kind === 'definition' &&
+        Array.isArray(target.definitions) &&
+        target.definitions.every(isSchemaRef)))
   )
 }
 
@@ -150,32 +129,23 @@ export function decodeSchemaIR(value: unknown): SchemaIR | undefined {
   const record = asJsonRecord(value)
   if (
     !record ||
+    record.format !== 'astrale.dsl' ||
     typeof record.version !== 'string' ||
     typeof record.domain !== 'string' ||
-    !recordOf(record.types, isJsonSchema) ||
-    !recordOf(record.interfaces, isInterface) ||
     !recordOf(record.classes, isClass) ||
-    !recordOf(record.imports, isImport) ||
     !recordOf(record.functions, isFunction) ||
-    (record.importsByKey !== undefined && !recordOf(record.importsByKey, isImport)) ||
-    (record.importedInterfacesByKey !== undefined &&
-      !recordOf(record.importedInterfacesByKey, isInterface)) ||
-    (record.views !== undefined && !recordOf(record.views, isView)) ||
-    (record.policies !== undefined && !asJsonRecord(record.policies)) ||
-    (record.dependencies !== undefined &&
-      (!Array.isArray(record.dependencies) ||
-        !record.dependencies.every((dependency) => {
-          const item = asJsonRecord(dependency)
-          return typeof item?.origin === 'string' && typeof item.revision === 'string'
-        })))
+    !recordOf(record.importsByKey, isImport) ||
+    !recordOf(record.importedClassesByKey, isClass) ||
+    !recordOf(record.views, isView) ||
+    !asJsonRecord(record.policies) ||
+    !Array.isArray(record.dependencies) ||
+    !record.dependencies.every((dependency) => {
+      const item = asJsonRecord(dependency)
+      return typeof item?.origin === 'string' && typeof item.revision === 'string'
+    }) ||
+    !('core' in record)
   ) {
     return undefined
   }
   return record as unknown as SchemaIR
-}
-
-export function decodeIrInterfaceRecord(value: unknown): Record<string, IrInterface> | undefined {
-  const record = asJsonRecord(value)
-  if (!record || !Object.values(record).every(isInterface)) return undefined
-  return record as unknown as Record<string, IrInterface>
 }

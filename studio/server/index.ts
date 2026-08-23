@@ -42,7 +42,7 @@ const domains = resolveTarget(target, schemaDir)
 if (!domains.length) {
   console.error(`\n  ✗ No Astrale domains found at ${target}`)
   console.error(
-    `    (looking for: astrale.config.ts + implementation.ts (or legacy domain.ts) + ${schemaDir}/index.ts)\n`,
+    `    (looking for: astrale.config.ts + application.ts + schema.ts or ${schemaDir}/index.ts)\n`,
   )
   process.exit(1)
 }

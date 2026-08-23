@@ -32,7 +32,6 @@ export async function handleCanvasRoute(context: DomainRouteContext): Promise<Re
         saveVisibility(root, {
           hidden: body.hidden ?? {},
           showInheritedEdges: body.showInheritedEdges ?? true,
-          materializedInterfaces: body.materializedInterfaces ?? {},
         }),
       )
     }

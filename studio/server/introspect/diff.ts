@@ -2,14 +2,12 @@
  * diff.ts — indicative structural diff of two Studio render IRs. Pure.
  *
  * Canonical V1 keeps optionality in the owning `required` arrays and nullability
- * in each value schema. Legacy nullable projections remain supported. This
- * inventory deliberately makes no installation or data-migration claim;
+ * in each value schema. This inventory makes no installation or data-migration claim;
  * only the Kernel Runtime can assess those transitions against installed data.
  */
 import type {
   IrClass,
   IrFunction,
-  IrInterface,
   IrMethod,
   JsonSchema,
   SchemaChange,
@@ -32,28 +30,11 @@ export function baseType(s: JsonSchema | undefined): string {
   return s.enum ? `enum(${s.enum.join(',')})` : 'unknown'
 }
 
-function requiredParams(m: IrMethod | IrFunction): string[] {
-  return (
-    m.requiredParams ??
-    Object.entries(m.params ?? {}).flatMap(([name, schema]) => (isOptional(schema) ? [] : [name]))
-  )
-}
-
 function callableContract(m: IrMethod | IrFunction): unknown {
-  const required = requiredParams(m)
   return {
-    input:
-      m.input ??
-      ({
-        type: 'object',
-        properties: m.params ?? {},
-        required,
-        additionalProperties: false,
-      } satisfies JsonSchema),
-    required,
-    output: m.output ?? { mode: 'value', schema: m.returns },
-    static: m.static,
-    inheritance: m.inheritance,
+    input: m.input,
+    output: m.output,
+    ...('static' in m ? { static: m.static, inheritance: m.inheritance } : {}),
     auth: m.auth,
     policy: m.policy,
   }
@@ -76,15 +57,8 @@ export function diffSchemas(prev: SchemaIR | null, next: SchemaIR | null): Schem
     changes.push({ kind: 'schema-metadata-changed', target: next.domain })
   }
 
-  diffValueRecord(prev.types ?? {}, next.types ?? {}, 'type', changes)
-  diffValueRecord(
-    prev.importsByKey ?? prev.imports ?? {},
-    next.importsByKey ?? next.imports ?? {},
-    'import',
-    changes,
-  )
-  diffMembers(prev.interfaces ?? {}, next.interfaces ?? {}, 'interface', changes)
-  diffMembers(prev.classes ?? {}, next.classes ?? {}, 'class', changes)
+  diffValueRecord(prev.importsByKey, next.importsByKey, 'import', changes)
+  diffMembers(prev.classes, next.classes, changes)
   diffFunctions(prev.functions ?? {}, next.functions ?? {}, changes)
   diffViews(prev.views ?? {}, next.views ?? {}, changes)
   diffValueRecord(prev.policies ?? {}, next.policies ?? {}, 'policy', changes)
@@ -98,7 +72,7 @@ export function diffSchemas(prev: SchemaIR | null, next: SchemaIR | null): Schem
 function diffValueRecord(
   prev: Record<string, unknown>,
   next: Record<string, unknown>,
-  scope: 'type' | 'import' | 'policy',
+  scope: 'import' | 'policy',
   out: SchemaChange[],
 ): void {
   for (const name of sortedKeys(next)) {
@@ -196,15 +170,13 @@ function diffDependencies(
   }
 }
 
-function memberKind(m: IrClass | IrInterface): 'class' | 'edge' | 'interface' {
-  if ((m as IrInterface).type === 'interface') return 'interface'
-  return (m as IrClass).type === 'edge' ? 'edge' : 'class'
+function memberKind(member: IrClass): 'class' | 'edge' {
+  return member.type === 'edge' ? 'edge' : 'class'
 }
 
 function diffMembers(
-  prev: Record<string, IrClass | IrInterface>,
-  next: Record<string, IrClass | IrInterface>,
-  _scope: 'class' | 'interface',
+  prev: Record<string, IrClass>,
+  next: Record<string, IrClass>,
   out: SchemaChange[],
 ): void {
   for (const name of sortedKeys(next)) {
@@ -223,12 +195,7 @@ function diffMembers(
   }
 }
 
-function diffMemberBody(
-  name: string,
-  a: IrClass | IrInterface,
-  b: IrClass | IrInterface,
-  out: SchemaChange[],
-): void {
+function diffMemberBody(name: string, a: IrClass, b: IrClass, out: SchemaChange[]): void {
   const pa = a.properties ?? {}
   const pb = b.properties ?? {}
   for (const p of sortedKeys(pb)) {
@@ -302,31 +269,27 @@ function diffMemberBody(
   }
 }
 
-function propertyRequired(member: IrClass | IrInterface, name: string): boolean {
+function propertyRequired(member: IrClass, name: string): boolean {
   return member.required ? member.required.includes(name) : !isOptional(member.properties?.[name])
 }
 
-function memberContract(member: IrClass | IrInterface): unknown {
-  const cls = member as IrClass
-  const iface = member as IrInterface
+function memberContract(member: IrClass): unknown {
   return {
     type: member.type,
     origin: member.origin,
     ref: member.ref,
-    family: iface.family,
-    extends: iface.extendsRefs ?? iface.extends,
-    implements: cls.implementsRefs ?? cls.implements,
+    extends: member.extendsRefs ?? member.extends,
     endpoints: member.endpoints,
     orientation: member.orientation,
     constraints: member.constraints,
     propertyMetadata: member.propertyMetadata,
     data: member.data,
-    policies: cls.policies,
+    policies: member.policies,
   }
 }
 
-function memberMetadata(member: IrClass | IrInterface): unknown {
-  return { description: member.description, icon: (member as IrClass).icon }
+function memberMetadata(member: IrClass): unknown {
+  return { description: member.description, icon: member.icon }
 }
 
 function sortedKeys(value: Record<string, unknown>): string[] {

@@ -1,9 +1,9 @@
 import { issuer, jwk, provision } from '@astrale-os/sdk/auth'
-import { ClassPath } from '@astrale-os/sdk/graph/class'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { expect, mock, test } from 'bun:test'
 import { exportJWK, generateKeyPair, jwtVerify } from 'jose'
 
+import { classKey } from '../../../graph'
 import { formatIdentityRegistration, prepareIdentityProvision } from '../register'
 
 /** @evidence TEST-CLI-IDENTITY-REGISTER-JSON-EXACT */
@@ -46,7 +46,7 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     kid: 'alice-key',
   })
   const kernelIssuer = issuer.accept('https://kernel.example')
-  const classPath = ClassPath.parse('/:accounts.example:class.User')
+  const classPath = classKey('/:accounts.example:class.User', '--class')
   const properties = normalizeProperties({
     'accounts.example:class.User.property.name': 'Alice',
   })
@@ -70,7 +70,7 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
       {
         op: 'node.create',
         as: 'identity',
-        class: '/:accounts.example:class.User',
+        class: 'accounts.example:class.User',
         props: { 'accounts.example:class.User.property.name': 'Alice' },
       },
     ],

@@ -18,7 +18,6 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
   let schemaRoot: unknown | undefined
   let schemaMode: StudioSchemaBundle['schemaMode'] = 'unavailable'
   let schemaRevision: StudioSchemaBundle['schemaRevision']
-  let importedInterfaces: StudioSchemaBundle['importedInterfaces']
   let error: StudioSchemaBundle['error'] = null
   let extractedBy: StudioSchemaBundle['extractedBy'] = 'runtime-bun'
 
@@ -33,7 +32,6 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
       if (r.root !== null) schemaRoot = r.root
       schemaMode = r.schemaMode
       if (r.revision !== null) schemaRevision = r.revision
-      importedInterfaces = r.importedInterfaces
     } else {
       error = { message: r.error?.message ?? 'schema failed to compile' }
       extractedBy = 'static-tsmorph-fallback'
@@ -65,7 +63,6 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
     ir,
     ...(schemaRoot === undefined ? {} : { schemaRoot }),
     overlay,
-    importedInterfaces,
     error,
     extractedAt: new Date().toISOString(),
   }

@@ -19,10 +19,10 @@ describe('formatKernelError', () => {
       writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
       return true
     }) as typeof process.stderr.write
-    const error = new TransportError('Publication discovery request failed.', {
+    const error = TransportError.acquisition('Publication discovery request failed.', {
       cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
       phase: 'connect',
-      delivery: 'unknown',
+      resource: 'publication',
     }) as TransportError & { url?: string }
     error.url = 'https://localhost:8443/kernel/host'
     try {
@@ -36,7 +36,6 @@ describe('formatKernelError', () => {
       message: 'Publication discovery request failed.',
       url: 'https://localhost:8443/kernel/host',
       phase: 'connect',
-      delivery: 'unknown',
     })
     expect(writes[0]).not.toContain('ECONNREFUSED')
   })
@@ -50,7 +49,7 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new TransportError('Request timed out.', {
+        TransportError.invocation('Request timed out.', {
           cause: new Error('timeout'),
           phase: 'timeout',
           delivery: 'unknown',

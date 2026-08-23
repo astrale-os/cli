@@ -15,8 +15,7 @@ import {
   localEndpointTargets,
 } from '../external'
 import { moduleOfClass } from '../modules'
-import { localInterfaceRendered } from '../projection'
-import { type Hidden, type Materialized, edgeVisible } from '../visibility'
+import { type Hidden, edgeVisible } from '../visibility'
 
 export interface CanvasCommentNodeData extends Record<string, unknown> {
   comments: Comment[]
@@ -61,14 +60,14 @@ export function buildExternalLayout(
   const rw = maxX - minX + 2 * PAD
   const byOrigin = new Map((catalog ?? []).map((e) => [e.origin, e]))
   const HEADER = 36
-  const IFACE_H = 44
-  const IFACE_GAP = 8
+  const MEMBER_H = 44
+  const MEMBER_GAP = 8
   const extX = rx + rw + 96
   const extNodes: Node[] = []
   let y = ry + 24
   for (const d of domains) {
     const entry = byOrigin.get(d.origin)
-    const boxH = HEADER + d.members.length * (IFACE_H + IFACE_GAP) + 8
+    const boxH = HEADER + d.members.length * (MEMBER_H + MEMBER_GAP) + 8
     const gid = `extdom.${d.origin}`
     extNodes.push({
       id: gid,
@@ -86,14 +85,14 @@ export function buildExternalLayout(
     })
     d.members.forEach((member, j) => {
       extNodes.push({
-        id: externalMemberNodeId(d.origin, member.name, member.definition),
+        id: externalMemberNodeId(d.origin, member.name),
         type: 'extMember',
         parentId: gid,
         extent: 'parent',
         draggable: false,
-        position: { x: 12, y: HEADER + j * (IFACE_H + IFACE_GAP) },
-        data: { name: member.name, kind: d.kind, definition: member.definition },
-        style: { width: 192, height: IFACE_H },
+        position: { x: 12, y: HEADER + j * (MEMBER_H + MEMBER_GAP) },
+        data: { name: member.name, kind: d.kind },
+        style: { width: 192, height: MEMBER_H },
       })
     })
     y += boxH + 40
@@ -130,8 +129,6 @@ export function deriveRegion(nodes: Node[], label: string): Node | null {
   }
 }
 
-export const EMPTY_MATERIALIZED: Record<string, true> = {}
-
 export function buildCrossEdges(
   cross: CrossDomainEdge[],
   visible: Set<string>,
@@ -140,58 +137,45 @@ export function buildCrossEdges(
   collapsed: Set<string>,
   hidden: Hidden,
   showInheritedEdges: boolean,
-  materialized: Materialized,
 ): Edge[] {
   const ir = bundle.ir
   if (!ir) return []
   const out: Edge[] = []
-  const ifaceRendered = (name: string) =>
-    localInterfaceRendered(bundle, collapsed, materialized, name)
   for (const e of cross) {
     if (!visible.has(e.origin)) continue
-    const target = externalMemberNodeId(
-      e.origin,
-      e.to,
-      e.toRef?.kind ?? ir.imports[e.to]?.definition ?? 'class',
-    )
+    const target = externalMemberNodeId(e.origin, e.to)
     if (!ids.has(target)) continue
     const localEndpoint = e.fromRef ? { types: [e.from], refs: [e.fromRef] } : { types: [e.from] }
-    for (const local of localEndpointTargets(ir, localEndpoint, ifaceRendered)) {
-      const viaInterfaces = local.viaInterface ? [local.viaInterface] : []
+    for (const local of localEndpointTargets(ir, localEndpoint)) {
       if (
         !edgeVisible(
           {
             edgeName: e.edge,
-            aClass: local.cls ?? '',
+            aClass: local.className,
             bClass: '',
-            viaInterfaces,
           },
           hidden,
           showInheritedEdges,
         )
       )
         continue
-      const source =
-        local.ifaceNode ??
-        (collapsed.has(moduleOfClass(bundle, local.cls!))
-          ? `grp-${moduleOfClass(bundle, local.cls!)}`
-          : `class.${local.cls}`)
+      const source = collapsed.has(moduleOfClass(bundle, local.className))
+        ? `grp-${moduleOfClass(bundle, local.className)}`
+        : `class.${local.className}`
       if (!ids.has(source)) continue
       const color = 'oklch(0.72 0.16 35)'
       const card = cardinalityMarkers(e.fromCard, e.toCard)
-      const polymorphic = viaInterfaces.length > 0
       out.push({
         id: `edge-${e.edge}__${source}__${target}`,
         source,
         target,
         type: 'floating',
-        data: { label: e.edge, edgeClass: e.edge, polymorphic },
+        data: { label: e.edge, edgeClass: e.edge },
         markerStart: card.markerStart,
         markerEnd: card.markerEnd,
         style: {
           stroke: color,
           strokeWidth: 2,
-          ...(polymorphic ? { strokeDasharray: '7 4' } : {}),
         },
       })
     }

@@ -1,10 +1,19 @@
 import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
+import type { ResolvedClass } from '@astrale-os/sdk/schema'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
-import { bindAdmin, type AdminBinding } from '../binding'
+import {
+  bindAdmin,
+  invokeAdminMethod,
+  requireAdminBinding,
+  requireAdminClass,
+  requireAdminCore,
+  requireAdminProperty,
+  type AdminBinding,
+} from '../binding'
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import {
   AdminHostNotFoundError,
@@ -54,24 +63,23 @@ export async function connectAdminInstances(
   context: AdminInstanceContext,
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
-  const binding = await (dependencies.bind ?? bindAdmin)(context.session)
-  if (binding.$.publication?.origin !== ADMIN_ORIGIN || binding.$.origin !== ADMIN_ORIGIN) {
-    throw new TypeError('Configured Admin target does not serve the Admin Domain.')
-  }
+  const binding = requireAdminBinding(await (dependencies.bind ?? bindAdmin)(context.session))
 
-  const Instance = binding.$.class('Instance')
-  const Host = binding.$.class('Host')
-  const Fleet = binding.$.class('Fleet')
-  const fleet = binding.$.core.nodes.fleet?.path
-  if (fleet === undefined) throw new TypeError('Admin Domain has no singleton Fleet receiver.')
+  const Instance = requireAdminClass(binding, 'Instance', 'node')
+  const Host = requireAdminClass(binding, 'Host', 'node')
+  const Fleet = requireAdminClass(binding, 'Fleet', 'node')
+  const fleet = requireAdminCore(binding, 'fleet')
 
   const operationId = dependencies.operationId ?? defaultOperationId
 
   const list = async (): Promise<OwnedInstanceInfo[]> => {
-    const result: unknown = await binding.$.invoke(
-      Fleet.$.method('listInstances') as never,
+    const result: unknown = await invokeAdminMethod(
+      context.session,
+      binding,
+      Fleet,
+      'listInstances',
       fleet,
-      {} as never,
+      {},
     )
     if (!Array.isArray(result)) throw new TypeError('Admin Instance inventory is invalid.')
     return result.map((value) => instanceFromSummary(value) as OwnedInstanceInfo)
@@ -88,10 +96,13 @@ export async function connectAdminInstances(
     identifier: string,
   ): Promise<InstanceInfo> => {
     const instance = await requireInstance(identifier)
-    const output = await binding.$.invoke(
-      Instance.$.method(method) as never,
+    const output = await invokeAdminMethod(
+      context.session,
+      binding,
+      Instance,
+      method,
       Path.parse(instance.id),
-      { operationId: operationId(method) } as never,
+      { operationId: operationId(method) },
     )
     return instanceFromSummary(output)
   }
@@ -110,10 +121,13 @@ export async function connectAdminInstances(
         )
         if (host === undefined) throw new AdminHostNotFoundError(hostId)
         return instanceFromSummary(
-          await binding.$.invoke(
-            Host.$.method('createInstance') as never,
+          await invokeAdminMethod(
+            context.session,
+            binding,
+            Host,
+            'createInstance',
             Path.parse(host.path),
-            input as never,
+            input,
           ),
         )
       }
@@ -122,20 +136,23 @@ export async function connectAdminInstances(
       // it requires broader graph authority than this Fleet operation and can
       // deny an otherwise authorized caller before the server selects a Host.
       return instanceFromSummary(
-        await binding.$.invoke(Fleet.$.method('createInstance') as never, fleet, input as never),
+        await invokeAdminMethod(context.session, binding, Fleet, 'createInstance', fleet, input),
       )
     },
     status: (identifier: string) => invokeInstance('status', identifier),
     delete: (identifier: string) => invokeInstance('delete', identifier),
     async installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt> {
       const instance = await requireInstance(identifier)
-      const output = await binding.$.invoke(
-        Instance.$.method('installDomain') as never,
+      const output = await invokeAdminMethod(
+        context.session,
+        binding,
+        Instance,
+        'installDomain',
         Path.parse(instance.id),
         {
           operationId: operationId('install-domain'),
           domain: Path.parse(domain).raw,
-        } as never,
+        },
       )
       return domainInstallReceipt(output)
     },
@@ -152,13 +169,13 @@ interface HostInventoryItem {
 async function hostInventory(
   graph: AdminGraphApi,
   binding: AdminBinding,
-  Host: ReturnType<AdminBinding['$']['class']>,
+  Host: ResolvedClass<'node'>,
   fleet: Path,
 ): Promise<{ readonly hosts: readonly HostInventoryItem[]; readonly reserved?: string }> {
   const [nodes, reservedPage] = await Promise.all([
     readAllNodes(
       graph,
-      Query.from({ kind: 'node', definitions: [HostRef] }).select({
+      Query.from({ kind: 'node', classes: [HostRef] }).select({
         kind: 'nodes',
         projection: { kind: 'value' },
       }),
@@ -189,7 +206,7 @@ async function hostInventory(
   })
 }
 
-type DynamicDefinition = ReturnType<AdminBinding['$']['class']>
+type DynamicDefinition = ResolvedClass<'node'>
 
 function instanceFromSummary(input: unknown): InstanceInfo {
   const value = record(input, 'Admin Instance summary')
@@ -240,8 +257,8 @@ function domainInstallReceipt(input: unknown): DomainInstallReceipt {
 
 function requiredStringProperty(definition: DynamicDefinition, node: Node, name: string): string {
   return requiredString(
-    node.props[definition.$.property(name).key],
-    `Admin ${definition.name}.${name}`,
+    node.props[requireAdminProperty(definition, name).key],
+    `Admin ${definition.ref.name}.${name}`,
   )
 }
 

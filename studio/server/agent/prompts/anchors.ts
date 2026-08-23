@@ -5,9 +5,9 @@
  */
 import type {
   Comment,
-  IrDefinitionKey,
+  IrClass,
+  IrClassKey,
   IrFunction,
-  IrInterface,
   IrMethod,
   JsonSchema,
   SchemaIR,
@@ -33,32 +33,30 @@ function propType(s: JsonSchema | undefined, optionalOverride?: boolean): string
 }
 
 function methodSig(name: string, m: IrMethod | IrFunction): string {
-  const params = Object.entries(m.params ?? {})
-    .map(
-      ([p, s]) =>
-        `${p}:${propType(s, m.requiredParams ? !m.requiredParams.includes(p) : undefined)}`,
-    )
+  const required = new Set(m.input.required ?? [])
+  const params = Object.entries(m.input.properties ?? {})
+    .map(([p, s]) => `${p}:${propType(s, !required.has(p))}`)
     .join(', ')
   const output =
-    m.output?.mode === 'stream'
+    m.output.mode === 'stream'
       ? `stream<${propType(m.output.item)}>`
-      : m.output?.mode === 'binary'
+      : m.output.mode === 'binary'
         ? 'binary'
-        : propType(m.output?.mode === 'value' ? m.output.schema : m.returns)
+        : propType(m.output.schema)
   const tags = [
-    m.static ? 'static' : '',
-    m.inheritance === 'abstract' ? 'abstract' : '',
+    'static' in m && m.static ? 'static' : '',
+    'inheritance' in m && m.inheritance === 'abstract' ? 'abstract' : '',
     m.auth ?? '',
   ].filter(Boolean)
   return `${name}(${params})→${output}${tags.length ? ` [${tags.join(',')}]` : ''}`
 }
 
-function interfaceByToken(ir: SchemaIR, token: string): IrInterface | undefined {
-  const exact = /^(.+):interface\.([A-Za-z_$][\w$]*)$/.exec(token)
-  if (!exact) return ir.interfaces?.[token]
+function classByToken(ir: SchemaIR, token: string): IrClass | undefined {
+  const exact = /^(.+):class\.([A-Za-z_$][\w$]*)$/.exec(token)
+  if (!exact) return ir.classes[token]
   const [, origin, name] = exact
-  if (origin === ir.domain) return ir.interfaces?.[name]
-  return ir.importedInterfacesByKey?.[`${origin}:interface.${name}` as IrDefinitionKey]
+  if (origin === ir.domain) return ir.classes[name]
+  return ir.importedClassesByKey[`${origin}:class.${name}` as IrClassKey]
 }
 
 /**
@@ -77,20 +75,20 @@ export function describeAnchor(
   const doc = span?.doc ? ` — ${span.doc.replace(/\s+/g, ' ').trim().slice(0, 160)}` : ''
 
   // class.X.property.y / class.X.method.m
-  const member = ref.match(/^class\.([^.]+)\.(property|method)\.(.+)$/)
+  const member = ref.match(/^class\.(.+)\.(property|method)\.([^.]+)$/)
   if (member && ir) {
     const [, cls, kind, name] = member
-    const c = ir.classes?.[cls]
+    const c = classByToken(ir, cls)
     if (c && kind === 'property' && c.properties?.[name])
-      return `**${cls}.${name}** : ${propType(c.properties[name], c.required ? !c.required.includes(name) : undefined)}${loc ? `  (${loc})` : ''}${doc}`
+      return `**${c.name}.${name}** : ${propType(c.properties[name], c.required ? !c.required.includes(name) : undefined)}${loc ? `  (${loc})` : ''}${doc}`
     if (c && kind === 'method' && c.methods?.[name])
-      return `**${cls}.${name}** — ${methodSig(name, c.methods[name])}${loc ? `  (${loc})` : ''}${doc}`
+      return `**${c.name}.${name}** — ${methodSig(name, c.methods[name])}${loc ? `  (${loc})` : ''}${doc}`
   }
 
   // class.X / edge.X (edges live in ir.classes too)
   const cm = ref.match(/^(?:class|edge)\.(.+)$/)
   if (cm && ir) {
-    const c = ir.classes?.[cm[1]]
+    const c = classByToken(ir, cm[1])
     if (c) {
       const L = [`**${c.name}** (${c.type})${loc ? `  (${loc})` : ''}${doc}`]
       const props = Object.entries(c.properties ?? {})
@@ -118,33 +116,6 @@ export function describeAnchor(
             .join(' → ')}`,
         )
       return L.join('\n')
-    }
-  }
-
-  // interface.X.property.y / interface.<origin>:interface.X.method.m
-  const interfaceMember = ref.match(/^interface\.(.+)\.(property|method)\.([^.]+)$/)
-  if (interfaceMember && ir) {
-    const [, token, kind, name] = interfaceMember
-    const iface = interfaceByToken(ir, token)
-    if (iface && kind === 'property' && iface.properties?.[name]) {
-      return `**${iface.name}.${name}** : ${propType(iface.properties[name], iface.required ? !iface.required.includes(name) : undefined)}${loc ? `  (${loc})` : ''}${doc}`
-    }
-    if (iface && kind === 'method' && iface.methods?.[name]) {
-      return `**${iface.name}.${name}** — ${methodSig(name, iface.methods[name])}${loc ? `  (${loc})` : ''}${doc}`
-    }
-  }
-
-  // interface.X or exact interface.<origin>:interface.X
-  const im = ref.match(/^interface\.(.+)$/)
-  if (im && ir) {
-    const i = interfaceByToken(ir, im[1])
-    if (i) {
-      const props = Object.entries(i.properties ?? {}).map(
-        ([name, schema]) =>
-          `${name}:${propType(schema, i.required ? !i.required.includes(name) : undefined)}`,
-      )
-      const ms = Object.entries(i.methods ?? {}).map(([n, m]) => methodSig(n, m))
-      return `**${i.name}** (interface)${i.origin && i.origin !== ir.domain ? ` from ${i.origin}` : ''}${loc ? `  (${loc})` : ''}${doc}${props.length ? `\n  props: ${props.join(' · ')}` : ''}${ms.length ? `\n  methods: ${ms.join(' · ')}` : ''}`
     }
   }
 

@@ -23,11 +23,7 @@ const MODULES_MIN = 220
 const MODULES_MAX = 620
 const MODULES_DEFAULT = 300
 
-function domainPreparationKey(
-  input: WorkspaceDomainInput,
-  collapsedModules: string[],
-  badgeInterfaces: string[],
-): string {
+function domainPreparationKey(input: WorkspaceDomainInput, collapsedModules: string[]): string {
   return [
     input.summary.id,
     input.summary.origin,
@@ -42,7 +38,6 @@ function domainPreparationKey(
       )
       .join(','),
     collapsedModules.slice().sort().join(','),
-    badgeInterfaces.slice().sort().join(','),
   ].join('|')
 }
 
@@ -58,7 +53,6 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const setCanvasMode = useUI((state) => state.setCanvasMode)
   const collapsedModules = useSchemaWorkspace((state) => state.collapsedModules)
-  const badgeInterfaces = useSchemaWorkspace((state) => state.badgeInterfaces)
   const [prepared, setPrepared] = useState<WorkspaceDomainProjection[]>([])
   const preparedCache = useRef(
     new Map<string, { key: string; projection: WorkspaceDomainProjection }>(),
@@ -81,15 +75,9 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const preparationKey = useMemo(
     () =>
       inputs
-        .map((input) =>
-          domainPreparationKey(
-            input,
-            collapsedModules[input.summary.id] ?? [],
-            badgeInterfaces[input.summary.id] ?? [],
-          ),
-        )
+        .map((input) => domainPreparationKey(input, collapsedModules[input.summary.id] ?? []))
         .join('::'),
-    [badgeInterfaces, collapsedModules, inputs],
+    [collapsedModules, inputs],
   )
 
   useEffect(() => {
@@ -102,11 +90,10 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
       inputs.map(async (input) => {
         const domainId = input.summary.id
         const collapsed = collapsedModules[domainId] ?? []
-        const badges = badgeInterfaces[domainId] ?? []
-        const key = domainPreparationKey(input, collapsed, badges)
+        const key = domainPreparationKey(input, collapsed)
         const cached = preparedCache.current.get(domainId)
         if (cached?.key === key) return { ...cached.projection, input }
-        const projection = await prepareWorkspaceDomain(input, collapsed, badges)
+        const projection = await prepareWorkspaceDomain(input, collapsed)
         if (!cancelled) preparedCache.current.set(domainId, { key, projection })
         return projection
       }),

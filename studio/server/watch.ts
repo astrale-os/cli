@@ -19,10 +19,9 @@ export const ANATOMY_PATHS = [...ANATOMY_GLOBS.files, ...ANATOMY_GLOBS.dirs]
 // part of the schema bundle cache even though they are outside schema/ itself.
 const BUNDLE_SOURCE_DIRS = new Set([
   'actions',
-  'capabilities',
-  'functions',
-  'handlers',
+  'integrations',
   'mutations',
+  'providers',
   'queries',
   'rules',
   'runtime',
@@ -42,7 +41,12 @@ function ignored(p: string): boolean {
 export function affectsBundle(handle: DomainHandle, path: string): boolean {
   const rel = relative(handle.root, path).split('\\').join('/')
   const topLevel = rel.split('/')[0]
-  return rel === 'implementation.ts' || rel === 'domain.ts' || BUNDLE_SOURCE_DIRS.has(topLevel)
+  return (
+    path === handle.applicationFile ||
+    rel === 'runtime.ts' ||
+    rel.endsWith('/runtime.ts') ||
+    BUNDLE_SOURCE_DIRS.has(topLevel)
+  )
 }
 
 export function watchDomain(handle: DomainHandle): () => void {

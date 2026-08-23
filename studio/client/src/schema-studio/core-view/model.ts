@@ -9,8 +9,7 @@ import { moduleHue } from '../modules'
 export const nodeAnchor = (path: string) => `core.node.${path}`
 export const lastSeg = (path: string) => path.split('/').filter(Boolean).pop() ?? path
 
-const propertyKeyPattern =
-  /^.+:(?:class|interface)\.[A-Za-z][A-Za-z0-9_]*\.property\.([A-Za-z][A-Za-z0-9_]*)$/
+const propertyKeyPattern = /^.+:class\.[A-Za-z][A-Za-z0-9_]*\.property\.([A-Za-z][A-Za-z0-9_]*)$/
 
 export interface CoreDataEntry {
   /** Exact key retained by the canonical Core declaration. */

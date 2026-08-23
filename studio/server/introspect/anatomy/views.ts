@@ -1,6 +1,5 @@
 import type { SchemaIR, ViewInfo } from '../../../shared/types'
 
-import { buildLegacyViews } from './views/legacy'
 import { buildFrontendViews, buildSchemaViewSources } from './views/routes'
 
 function mergeRoute(target: ViewInfo, incoming: ViewInfo): void {
@@ -30,7 +29,7 @@ function canonicalViewInfo(slug: string, view: NonNullable<SchemaIR['views']>[st
  * Join canonical View definitions with route/source metadata. Passing a
  * canonical map (including an empty map) makes it authoritative: static routes
  * cannot invent Views or override identity, target, auth, or description.
- * Without it, the legacy defineView registry remains the compatibility source.
+ * Without admitted canonical Views, Studio does not invent authoring semantics.
  */
 export function buildViews(
   root: string,
@@ -38,21 +37,17 @@ export function buildViews(
   canonicalViews?: NonNullable<SchemaIR['views']>,
 ): ViewInfo[] {
   const merged = new Map<string, ViewInfo>()
-  if (canonicalViews !== undefined) {
-    for (const [slug, view] of Object.entries(canonicalViews)) {
-      merged.set(slug, canonicalViewInfo(slug, view))
-    }
-    for (const [slug, file] of buildSchemaViewSources(root, _schemaDirName)) {
-      const current = merged.get(slug)
-      if (current) current.file = file
-    }
-  } else {
-    for (const view of buildLegacyViews(root)) merged.set(view.slug, view)
+  const admittedViews = canonicalViews ?? {}
+  for (const [slug, view] of Object.entries(admittedViews)) {
+    merged.set(slug, canonicalViewInfo(slug, view))
   }
-  for (const view of buildFrontendViews(root)) {
+  for (const [slug, file] of buildSchemaViewSources(root, _schemaDirName)) {
+    const current = merged.get(slug)
+    if (current) current.file = file
+  }
+  for (const view of buildFrontendViews(root, Object.keys(admittedViews))) {
     const current = merged.get(view.slug)
     if (current) mergeRoute(current, view)
-    else if (canonicalViews === undefined) merged.set(view.slug, view)
   }
   return [...merged.values()]
 }

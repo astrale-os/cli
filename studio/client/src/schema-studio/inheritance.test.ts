@@ -1,140 +1,92 @@
-import type { IrDefinitionRef, StudioSchemaBundle } from '@shared/types'
+import { describe, expect, test } from 'bun:test'
 
-import { expect, test } from 'bun:test'
+import { bundle, classRef, nodeClass } from './__tests__/fixture'
+import { classTier, inheritedCount, inheritedGroupsOfClass, resolveClass } from './inheritance'
 
-import { inheritedGroupsOfClass, resolveInterface } from './inheritance'
+describe('Class inheritance', () => {
+  test('resolves exact local, dependency, and Kernel base Classes', () => {
+    const external = classRef('shared.example.dev', 'Named')
+    const kernel = classRef('kernel.astrale.ai', 'Identity')
+    const fixture = bundle({
+      Document: nodeClass('Document', { extendsRefs: [external, kernel] }),
+    })
+    fixture.ir!.importsByKey = {
+      'shared.example.dev:class.Named': {
+        origin: external.origin,
+        ref: external,
+        key: 'shared.example.dev:class.Named',
+      },
+      'kernel.astrale.ai:class.Identity': {
+        origin: kernel.origin,
+        ref: kernel,
+        key: 'kernel.astrale.ai:class.Identity',
+      },
+    }
+    fixture.ir!.importedClassesByKey = {
+      'shared.example.dev:class.Named': nodeClass('Named', {
+        origin: external.origin,
+        ref: external,
+        properties: { title: { type: 'string' } },
+        required: ['title'],
+      }),
+      'kernel.astrale.ai:class.Identity': nodeClass('Identity', {
+        origin: kernel.origin,
+        ref: kernel,
+        methods: {
+          whois: {
+            name: 'whois',
+            input: { type: 'object', properties: {} },
+            output: { mode: 'value', schema: { type: 'string' } },
+            static: true,
+            inheritance: 'default',
+          },
+        },
+      }),
+    }
 
-test('carries canonical required membership into inherited property rows', () => {
-  const bundle = {
-    ir: {
-      imports: {},
-      interfaces: {
-        Named: {
-          type: 'interface',
-          name: 'Named',
-          properties: { name: { type: 'string' }, alias: { type: 'string' } },
-          required: ['name'],
-          methods: {},
-        },
-      },
-      classes: {
-        Person: {
-          type: 'node',
-          name: 'Person',
-          implements: ['Named'],
-          properties: {},
-          required: [],
-          methods: {},
-        },
-      },
-    },
-  } as unknown as StudioSchemaBundle
+    expect(resolveClass(fixture, external)?.properties.title).toEqual({ type: 'string' })
+    expect(classTier(fixture, external)).toBe('external')
+    expect(classTier(fixture, kernel)).toBe('kernel')
+    const groups = inheritedGroupsOfClass(fixture, 'Document')
+    expect(groups.map((group) => [group.owner, group.tier])).toEqual([
+      ['Named', 'external'],
+      ['Identity', 'kernel'],
+    ])
+    expect(inheritedCount(groups)).toBe(2)
+  })
 
-  expect(inheritedGroupsOfClass(bundle, 'Person')[0]?.props).toEqual([
-    ['name', { type: 'string' }, false],
-    ['alias', { type: 'string' }, true],
-  ])
-})
-
-test('keeps homonymous imported interfaces exact across origins and kind collisions', () => {
-  const directoryNamed = {
-    origin: 'directory.example.dev',
-    kind: 'interface',
-    name: 'Named',
-  } satisfies IrDefinitionRef
-  const peopleNamed = {
-    origin: 'people.example.dev',
-    kind: 'interface',
-    name: 'Named',
-  } satisfies IrDefinitionRef
-  const catalogNamed = {
-    origin: 'catalog.example.dev',
-    kind: 'class',
-    name: 'Named',
-  } satisfies IrDefinitionRef
-  const bundle = {
-    ir: {
-      domain: 'app.example.dev',
-      imports: {},
-      importsByKey: {
-        'directory.example.dev:interface.Named': {
-          origin: directoryNamed.origin,
-          definition: 'interface',
-          ref: directoryNamed,
+  test('deduplicates transitive members and marks local overrides', () => {
+    const base = classRef('local.example.dev', 'Base')
+    const fixture = bundle({
+      Base: nodeClass('Base', {
+        properties: { title: { type: 'string' } },
+        methods: {
+          rename: {
+            name: 'rename',
+            input: { type: 'object', properties: {} },
+            output: { mode: 'value', schema: {} },
+            static: false,
+            inheritance: 'default',
+          },
         },
-        'people.example.dev:interface.Named': {
-          origin: peopleNamed.origin,
-          definition: 'interface',
-          ref: peopleNamed,
+      }),
+      Document: nodeClass('Document', {
+        extendsRefs: [base],
+        methods: {
+          rename: {
+            name: 'rename',
+            input: { type: 'object', properties: {} },
+            output: { mode: 'value', schema: {} },
+            static: false,
+            inheritance: 'default',
+          },
         },
-        'catalog.example.dev:class.Named': {
-          origin: catalogNamed.origin,
-          definition: 'class',
-          ref: catalogNamed,
-        },
-      },
-      importedInterfacesByKey: {
-        'directory.example.dev:interface.Named': {
-          type: 'interface',
-          name: 'Named',
-          origin: directoryNamed.origin,
-          ref: directoryNamed,
-          properties: { label: { type: 'string' }, directoryId: { type: 'string' } },
-          methods: {},
-        },
-        'people.example.dev:interface.Named': {
-          type: 'interface',
-          name: 'Named',
-          origin: peopleNamed.origin,
-          ref: peopleNamed,
-          properties: { label: { type: 'string' }, personId: { type: 'string' } },
-          methods: {},
-        },
-      },
-      interfaces: {
-        Named: {
-          type: 'interface',
-          name: 'Named',
-          properties: { localTrap: { type: 'boolean' } },
-          methods: {},
-        },
-      },
-      classes: {
-        Person: {
-          type: 'node',
-          name: 'Person',
-          implements: ['Named', 'Named'],
-          implementsRefs: [directoryNamed, peopleNamed],
-          properties: { label: { type: 'string' } },
-          methods: {},
-        },
-      },
-    },
-    importedInterfaces: {
-      Named: {
-        type: 'interface',
-        name: 'Named',
-        properties: { legacyTrap: { type: 'null' } },
-        methods: {},
-      },
-    },
-  } as unknown as StudioSchemaBundle
-
-  const groups = inheritedGroupsOfClass(bundle, 'Person')
-  expect(
-    groups.map((group) => ({
-      ref: group.ref,
-      origin: group.origin,
-      props: group.props.map(([name]) => name),
-    })),
-  ).toEqual([
-    {
-      ref: directoryNamed,
-      origin: directoryNamed.origin,
-      props: ['directoryId'],
-    },
-    { ref: peopleNamed, origin: peopleNamed.origin, props: ['personId'] },
-  ])
-  expect(resolveInterface(bundle, directoryNamed)?.properties).toHaveProperty('directoryId')
-  expect(resolveInterface(bundle, catalogNamed)).toBeUndefined()
+      }),
+    })
+    expect(inheritedGroupsOfClass(fixture, 'Document')[0]).toMatchObject({
+      owner: 'Base',
+      props: [['title', { type: 'string' }, true]],
+      methods: [{ name: 'rename', overridden: true }],
+    })
+  })
 })

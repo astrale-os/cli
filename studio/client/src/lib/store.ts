@@ -6,7 +6,7 @@ import { create } from 'zustand'
  *  `mode` decides which composer opens — a persistent comment or an ephemeral ask. */
 export interface CommentDraft {
   mode: 'comment' | 'ask'
-  /** Owning domain of the target. Falls back to the active domain for legacy surfaces. */
+  /** Owning domain of the target; omitted for domain-level surfaces. */
   domainId?: string
   anchor: AnchorRef
   excerpt: string
@@ -43,14 +43,10 @@ interface UIState {
   /** comment-mode draft: the floating composer target + screen position */
   commentDraft: CommentDraft | null
   /** Per-element canvas hide-set keyed by ref: `class.X` | `edge.X` | `domain.<origin>`.
-   *  Interfaces do NOT use this set — their sole control is `materializedInterfaces` below.
    *  Everything is shown by default, so membership ⇒ hidden (no tri-state). Persisted per domain. */
   hidden: Record<string, true>
-  /** Category control for the dashed interface-induced (poly) edge fan-out. Persisted per domain. */
+  /** Category control for Class inheritance edges. Persisted per domain. */
   showInheritedEdges: boolean
-  /** Local interfaces shown as canvas NODES instead of badges, keyed by bare interface name.
-   *  The interface's sole per-element control (it never joins `hidden`). Persisted per domain. */
-  materializedInterfaces: Record<string, true>
   /** which anchor's comment thread-popover is currently open (one at a time) */
   openAnchorRef: string | null
   /** which pin INSTANCE opened it (a `useId()`), so when the same ref is pinned in
@@ -80,14 +76,8 @@ interface UIState {
   setFocus: (id: string | null) => void
   toggleModule: (path: string) => void
   toggleHidden: (ref: string) => void
-  /** Toggle a local interface between badge (default) and materialized canvas node. */
-  toggleInterfaceMaterialized: (name: string) => void
   /** Replace the whole visibility slice (used to hydrate from the persisted per-domain state). */
-  setVisibility: (v: {
-    hidden: Record<string, true>
-    showInheritedEdges: boolean
-    materializedInterfaces: Record<string, true>
-  }) => void
+  setVisibility: (v: { hidden: Record<string, true>; showInheritedEdges: boolean }) => void
   toggleInheritedEdges: () => void
   setOpenAnchor: (ref: string | null, id?: string | null) => void
   toggleCommentMode: (on?: boolean) => void
@@ -109,7 +99,6 @@ export const useUI = create<UIState>((set) => ({
   commentDraft: null,
   hidden: {},
   showInheritedEdges: true,
-  materializedInterfaces: {},
   openAnchorRef: null,
   openAnchorId: null,
   commentMode: false,
@@ -130,13 +119,10 @@ export const useUI = create<UIState>((set) => ({
       focusId: null,
       openAnchorRef: null,
       selectionHistory: [],
-      // Visibility is PER-DOMAIN — clear it on switch so the previous domain's hide/
-      // materialize set never bleeds into the new one. The graph then hydrates this
-      // domain's persisted slice. (Without this reset a surviving materialized
-      // interface drove an infinite reconcile loop → React #185 blank screen.)
+      // Visibility is PER-DOMAIN — clear it on switch so the previous domain's hide
+      // set never bleeds into the new one. The graph then hydrates this domain's slice.
       hidden: {},
       showInheritedEdges: true,
-      materializedInterfaces: {},
     })
   },
   setSection: (section) => {
@@ -202,15 +188,7 @@ export const useUI = create<UIState>((set) => ({
       else next[ref] = true
       return { hidden: next }
     }),
-  toggleInterfaceMaterialized: (name) =>
-    set((s) => {
-      const next = { ...s.materializedInterfaces }
-      if (next[name]) delete next[name]
-      else next[name] = true
-      return { materializedInterfaces: next }
-    }),
-  setVisibility: ({ hidden, showInheritedEdges, materializedInterfaces }) =>
-    set({ hidden, showInheritedEdges, materializedInterfaces }),
+  setVisibility: ({ hidden, showInheritedEdges }) => set({ hidden, showInheritedEdges }),
   toggleInheritedEdges: () => set((s) => ({ showInheritedEdges: !s.showInheritedEdges })),
   setOpenAnchor: (openAnchorRef, openAnchorId = null) => set({ openAnchorRef, openAnchorId }),
   toggleCommentMode: (on) =>

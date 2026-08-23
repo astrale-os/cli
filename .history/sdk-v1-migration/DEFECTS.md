@@ -1,0 +1,15 @@
+# Cross-repository defect ledger
+
+| ID | Owner | Exact SHA | Evidence | Status |
+| --- | --- | --- | --- | --- |
+| CLI-INV-001 | Kernel DSL | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` | Generic `ResolvedDomainOf` lost `Domain`; compile-time Shell reproduction fixed by `46f306bc3` in kernel PR #387. | upstream PR open |
+| CLI-INV-002 | Kernel Client | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` | `reference(domain, callable)` projected a dynamically loaded callable input to `never`; compile-time `ClientSession.invoke` reproduction fixed by `a80568d60` in kernel PR #387. Client typecheck and 25 files/141 tests pass. | upstream PR open |
+| CLI-INV-003 | SDK Application | `a210e3c12c8a4b11d19c0651b870e77b2ff19fef` | Generic Schema plus exact `Runtime<Schema>` failed `defineApplication` because a redundant equality conditional did not reduce; fixed through the Runtime Schema witness by `e1ac657` in SDK PR #146. SDK typecheck and 76 files/444 tests plus policy gates pass. | upstream PR open |
+| CLI-INV-004 | SDK / Kernel DSL | `a210e3c12c8a4b11d19c0651b870e77b2ff19fef` / `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` | Exact `ResolvedMethod` owner remains a generic Class receiver, so Shell React cannot reject a wrong receiver Class at compile time without shadow typing. | open upstream |
+| CLI-INV-005 | CLI Studio | `53ce495f23b458e245cd82e41919ecdce5f8dc57` | Frontend anatomy recognized removed `frontendArtifact`/`reactFrontend` forms but not SDK V1 `defineFrontend`; exact Vite/external/default-route tests reproduced the missing View metadata. Replaced with the V1 parser in this migration. | fixed locally |
+| CLI-INV-006 | CLI Studio | `53ce495f23b458e245cd82e41919ecdce5f8dc57` | Studio duplicated canonical callable `input`/`output` into legacy `params`/`returns` and reconstructed obsolete handler authorization hooks. A stale projection could therefore satisfy the cache boundary without the canonical callable contract. Removed the shadow fields and added decoder rejection tests. | fixed locally |
+| CLI-INV-007 | CLI Studio tests | `53ce495f23b458e245cd82e41919ecdce5f8dc57` | The Claude cancellation test waited for `pids.json` existence and could parse a partial write, reproduced in the full suite as `Unexpected EOF`. It now waits for a complete integer PID pair before asserting process-group termination. | fixed locally |
+| CLI-INV-008 | CLI delivery workflows | `53ce495f23b458e245cd82e41919ecdce5f8dc57` | The migration lockfile and workspace intentionally link exact unpublished sibling sources, but clean CI/release runners never checked those repositories out. Local symlinks therefore hid a deterministic install failure. CI, binary release, and package publish now check out exact Kernel `a80568d60`, SDK `7cf8b9e`, and Shell `8d69cbd` commits using the repository-scoped token. | fixed locally; remote proof pending |
+
+New entries require source SHA, reproduction, expected/actual behavior, impact, owner decision,
+focused proof, and full qualification.

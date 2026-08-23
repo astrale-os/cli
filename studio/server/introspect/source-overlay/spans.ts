@@ -58,18 +58,14 @@ function cleanComment(raw: string): string {
   return lines.join(' ').replace(/\s+/g, ' ').trim()
 }
 
-const DECL_HELPERS: Record<string, 'node' | 'interface' | 'edge' | 'function'> = {
+const DECL_HELPERS: Record<string, 'node' | 'edge' | 'function'> = {
   nodeClass: 'node',
-  nodeInterface: 'interface',
   edgeClass: 'edge',
   fn: 'function',
 }
 
-/** Recognize both legacy `edgeClass(...)` and current
- * `edgeClass.directed/undirected({...})` authoring forms. */
-function declarationHelper(
-  call: CallExpression,
-): 'node' | 'interface' | 'edge' | 'function' | undefined {
+/** Recognize current Class and Function declaration helpers. */
+function declarationHelper(call: CallExpression): 'node' | 'edge' | 'function' | undefined {
   const direct = calleeName(call)
   if (direct && direct in DECL_HELPERS) return DECL_HELPERS[direct]
   const expression = call.getExpression()
@@ -85,22 +81,17 @@ function declarationHelper(
 
 /**
  * A schema member's true NAME + section, resolved from the `defineSchema` map.
- * The declaration helpers (nodeClass/nodeInterface/edgeClass) carry no name — a
- * member is named by the KEY it is registered under, not by its variable — and a
- * domain may register a class and an interface under the SAME name (the
- * intentional same-name pattern: the `iUser` interface alongside the `User`
- * class). So the map is the sole authority for both the anchor name and the
- * interface-vs-class distinction; the variable identifier alone tells us neither.
+ * Declaration helpers carry no name: the `defineSchema` key is authoritative.
  */
 interface MemberName {
   schemaName: string
-  section: 'interface' | 'class' | 'function' // the `classes` map also holds edge classes
+  section: 'class' | 'function'
 }
 
 interface MemberNameMap {
   /** Exact declaration initializer, robust to imported/local aliases. */
   byValue: Map<string, MemberName>
-  /** Legacy fallback when a symbol cannot be resolved. */
+  /** Fallback when a symbol cannot be resolved. */
   byIdentifier: Map<string, MemberName>
 }
 
@@ -132,7 +123,6 @@ function buildMemberNameMap(files: SourceFile[]): MemberNameMap {
       const input = call.getArguments()[1]
       const cfg = input ? resolveObjectLiteral(input) : undefined
       if (!cfg) continue
-      collectSchemaSection(map, cfg, 'interfaces', 'interface')
       collectSchemaSection(map, cfg, 'classes', 'class')
       collectSchemaSection(map, cfg, 'functions', 'function')
     }
@@ -145,8 +135,8 @@ function buildMemberNameMap(files: SourceFile[]): MemberNameMap {
 function collectSchemaSection(
   map: MemberNameMap,
   cfg: Node,
-  prop: 'interfaces' | 'classes' | 'functions',
-  section: 'interface' | 'class' | 'function',
+  prop: 'classes' | 'functions',
+  section: 'class' | 'function',
 ): void {
   const obj = getObjectProp(cfg, prop)
   if (!obj) return
@@ -163,24 +153,18 @@ function collectSchemaSection(
 }
 
 /**
- * The anchor namespace ('class' | 'interface' | 'edge') for a declared member.
- * The `defineSchema` SECTION is authoritative for interface-vs-class — a
- * `nodeClass` whose name collides with a same-named interface must still anchor
- * as a class. Within the class section, an `edgeClass` (or an IR edge type)
- * anchors as 'edge'. Falls back to the declaration helper when the member isn't
- * in a parseable `defineSchema` map (e.g. an imported kernel member).
+ * The anchor namespace for a declared member. The Class section plus helper/IR
+ * kind distinguishes Node and Edge Classes.
  */
 function resolveMemberKind(
   ir: SchemaIR | null,
   name: string,
-  section: 'interface' | 'class' | 'function' | undefined,
-  helperKind: 'node' | 'interface' | 'edge' | 'function',
-): 'class' | 'interface' | 'edge' | 'function' {
+  section: 'class' | 'function' | undefined,
+  helperKind: 'node' | 'edge' | 'function',
+): 'class' | 'edge' | 'function' {
   if (section === 'function' || helperKind === 'function') return 'function'
-  if (section === 'interface') return 'interface'
   const isEdge = helperKind === 'edge' || ir?.classes?.[name]?.type === 'edge'
   if (section === 'class') return isEdge ? 'edge' : 'class'
-  if (helperKind === 'interface') return 'interface'
   return isEdge ? 'edge' : 'class'
 }
 
@@ -206,9 +190,7 @@ export function buildSourceSpans(args: {
   const spans: Record<string, SourceSpan> = {}
 
   const sourceFiles = files.map((f) => project.getSourceFile(f)).filter((f): f is SourceFile => !!f)
-  // The domain's `defineSchema` map is authoritative for each member's name +
-  // interface-vs-class kind, so an aliased interface (`iUser`→`User`) and a class
-  // sharing its name (`User`) each anchor correctly instead of colliding.
+  // The Domain's `defineSchema` map is authoritative for each member's name.
   const memberNames = buildMemberNameMap(sourceFiles)
 
   for (const sf of sourceFiles) {
@@ -287,7 +269,7 @@ function collectPropsAndMethods(
   }
 }
 
-/** Record edge endpoint spans `edge.<Name>.endpoint.<role>` from the two args. */
+/** Record edge endpoint and property spans from current directed/undirected forms. */
 function collectEdge(
   spans: Record<string, SourceSpan>,
   name: string,
@@ -330,18 +312,6 @@ function collectEdge(
     const role = stringLiteralOfProp(ep, 'as')
     if (!role) continue
     spans[`edge.${name}.endpoint.${role}`] = makeSpan(domainRoot, fileRel, ep, ep)
-  }
-  // Legacy edge props live in the third (config) arg.
-  const cfgArg = argsList[2]
-  if (cfgArg && Node.isObjectLiteralExpression(cfgArg)) {
-    const propsObj = getObjectProp(cfgArg, 'properties') ?? getObjectProp(cfgArg, 'props')
-    if (propsObj) {
-      for (const p of propsObj.getProperties()) {
-        const pName = propertyKey(p)
-        if (!pName) continue
-        spans[`edge.${name}.property.${pName}`] = makeSpan(domainRoot, fileRel, p, p)
-      }
-    }
   }
 }
 

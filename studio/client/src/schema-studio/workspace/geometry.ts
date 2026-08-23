@@ -47,7 +47,7 @@ const SHELF_WIDTH = 1900
 
 function nodeSize(node: Node): WorkspaceSize {
   const fallback =
-    node.type === 'classNode' || node.type === 'interfaceNode'
+    node.type === 'classNode'
       ? { width: 160, height: 44 }
       : node.type === 'moduleNode'
         ? { width: 200, height: 44 }

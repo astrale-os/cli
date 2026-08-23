@@ -6,13 +6,13 @@
  */
 import type {
   DomainAnatomy,
-  IrDefinitionRef,
+  IrClassRef,
   SchemaIR,
   StudioSchemaBundle,
   ViewInfo,
 } from '@shared/types'
 
-import { definitionRefKey, isIrDefinitionRef } from '@shared/schema/identity'
+import { classRefKey, isIrClassRef } from '@shared/schema/identity'
 
 export type ViewDrift =
   | 'ok'
@@ -41,17 +41,8 @@ export interface ViewsModel {
   hasDrift: boolean
 }
 
-function exactDefinitionExists(ir: SchemaIR, ref: IrDefinitionRef): boolean {
-  if (ref.origin === ir.domain) {
-    return ref.kind === 'class' ? !!ir.classes[ref.name] : !!ir.interfaces[ref.name]
-  }
-  if (ir.importsByKey !== undefined) return !!ir.importsByKey[definitionRefKey(ref)]
-  const imported = ir.imports?.[ref.name]
-  return (
-    imported?.origin === ref.origin &&
-    imported.definition === ref.kind &&
-    (!imported.ref || definitionRefKey(imported.ref) === definitionRefKey(ref))
-  )
+function exactClassExists(ir: SchemaIR, ref: IrClassRef): boolean {
+  return ref.origin === ir.domain ? !!ir.classes[ref.name] : !!ir.importsByKey[classRefKey(ref)]
 }
 
 export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBundle): ViewsModel {
@@ -66,7 +57,7 @@ export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBu
     const canonicalTarget = bundle?.ir?.views?.[v.slug]?.target
     const canonicalDefinitions = canonicalTarget
       ? canonicalTarget.kind === 'definition'
-        ? canonicalTarget.definitions.filter(isIrDefinitionRef)
+        ? canonicalTarget.definitions.filter(isIrClassRef)
         : []
       : undefined
     const declared = canonicalDefinitions
@@ -77,9 +68,9 @@ export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBu
           ? [v.viewFor]
           : []
     const exactResolved = canonicalDefinitions?.filter((definition) =>
-      bundle?.ir ? exactDefinitionExists(bundle.ir, definition) : false,
+      bundle?.ir ? exactClassExists(bundle.ir, definition) : false,
     )
-    const legacyResolved = canonicalDefinitions
+    const sourceResolved = canonicalDefinitions
       ? undefined
       : declared.filter((name) => classNames.has(name))
     // Existing panels and detail routes use member labels. Keep those stable
@@ -88,15 +79,12 @@ export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBu
       ...new Set(
         exactResolved
           ? exactResolved
-              .filter(
-                (definition) =>
-                  definition.origin === bundle?.ir?.domain && definition.kind === 'class',
-              )
+              .filter((definition) => definition.origin === bundle?.ir?.domain)
               .map((definition) => definition.name)
-          : (legacyResolved ?? []),
+          : (sourceResolved ?? []),
       ),
     ]
-    const resolvedCount = exactResolved?.length ?? legacyResolved?.length ?? 0
+    const resolvedCount = exactResolved?.length ?? sourceResolved?.length ?? 0
     const boundClass = boundClasses[0] ?? null
     let drift: ViewDrift = 'ok'
     if (declared.length && resolvedCount < declared.length) {
@@ -109,7 +97,7 @@ export function buildViewsModel(anatomy?: DomainAnatomy, bundle?: StudioSchemaBu
       !bundle?.ir?.views?.[v.slug]
     ) {
       // Current frontends declare their route as a verified SDK artifact rather
-      // than a legacy client ROUTES registry. The canonical View declaration
+      // than a client-local route registry. The canonical View declaration
       // plus the statically discovered artifact route is already the contract.
       drift = 'missing-impl'
     }

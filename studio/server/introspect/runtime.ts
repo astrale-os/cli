@@ -5,13 +5,7 @@
  * render IR plus the raw canonical root (when present), or an error render-state
  * — never throws.
  */
-import type {
-  IrInterface,
-  SchemaIR,
-  SchemaRevision,
-  StudioCore,
-  StudioSchemaBundle,
-} from '../../shared/types'
+import type { SchemaIR, SchemaRevision, StudioCore, StudioSchemaBundle } from '../../shared/types'
 
 import { isSchemaRevision } from '../../shared/types'
 
@@ -21,13 +15,11 @@ const CORE_EXTRACTOR = new URL('./core-extractor.ts', import.meta.url).pathname
 export interface RuntimeExtractResult {
   ok: boolean
   ir: SchemaIR | null
-  /** Portable canonical V1 document. Null for legacy domains and failures. */
+  /** Portable canonical V1 document. Null only for failures. */
   root: unknown | null
   schemaMode: StudioSchemaBundle['schemaMode']
   /** Present only when the Domain cohort SDK admitted `root`. */
   revision: SchemaRevision | null
-  /** member bodies of imported (kernel + cross-domain) interfaces, by name */
-  importedInterfaces?: Record<string, IrInterface>
   error?: { message: string }
 }
 
@@ -70,16 +62,10 @@ export async function runtimeExtract(
       }
     const schemaMode = parsed.schemaMode
     const revision = parsed.revision
-    const validMode =
-      schemaMode === 'canonical-admitted' ||
-      schemaMode === 'canonical-preview' ||
-      schemaMode === 'legacy'
+    const validMode = schemaMode === 'canonical-admitted' || schemaMode === 'canonical-preview'
     const validRevision =
       schemaMode === 'canonical-admitted' ? isSchemaRevision(revision) : revision == null
-    const validRoot =
-      schemaMode === 'legacy'
-        ? parsed.root == null
-        : parsed.root !== null && parsed.root !== undefined
+    const validRoot = parsed.root !== null && parsed.root !== undefined
     if (!validMode || !validRevision || !validRoot) {
       return {
         ok: false,
@@ -96,7 +82,6 @@ export async function runtimeExtract(
       root: parsed.root ?? null,
       schemaMode,
       revision: revision ?? null,
-      importedInterfaces: (parsed.importedInterfaces ?? {}) as Record<string, IrInterface>,
     }
   } catch (e: any) {
     return {
@@ -118,18 +103,16 @@ export interface CoreExtractResult {
 }
 
 /**
- * Spawn the core-extractor island over the pure schema entry first, retaining the
- * composition entry only as the legacy `defineCore` fallback. Returns the
- * resolved core graph or an error — never throws.
+ * Spawn the Core extractor over the pure Schema entry. Returns the projected
+ * graph or an error and never imports Application or Runtime modules.
  */
 export async function coreExtract(
   schemaIndexPath: string,
-  domainFile: string,
   domainDir: string,
   timeoutMs = 20000,
 ): Promise<CoreExtractResult> {
   try {
-    const proc = Bun.spawn(['bun', 'run', CORE_EXTRACTOR, schemaIndexPath, domainFile, domainDir], {
+    const proc = Bun.spawn(['bun', 'run', CORE_EXTRACTOR, schemaIndexPath, domainDir], {
       cwd: domainDir,
       stdout: 'pipe',
       stderr: 'pipe',

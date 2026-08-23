@@ -21,13 +21,13 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('hashes current implementation and semantic layer files alongside legacy anatomy', () => {
+test('hashes current Application and vertical authoring files', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-current-baseline-'))
   roots.push(root)
   for (const dir of [
     'schema',
     'actions/risk',
-    'handlers/risk',
+    'providers/mail',
     'queries/risk',
     'ui/risk',
     'views/risk',
@@ -36,9 +36,10 @@ test('hashes current implementation and semantic layer files alongside legacy an
   }
   for (const file of [
     'schema/index.ts',
-    'implementation.ts',
+    'application.ts',
+    'runtime.ts',
     'actions/risk/index.ts',
-    'handlers/risk/index.ts',
+    'providers/mail/index.ts',
     'queries/risk/index.ts',
     'ui/risk/screen.tsx',
     'views/risk/index.ts',
@@ -50,10 +51,11 @@ test('hashes current implementation and semantic layer files alongside legacy an
 
   expect(Object.keys(hashAnatomyFiles(root, 'schema')).sort()).toEqual([
     'actions/risk/index.ts',
-    'handlers/risk/index.ts',
-    'implementation.ts',
+    'application.ts',
     'package.json',
+    'providers/mail/index.ts',
     'queries/risk/index.ts',
+    'runtime.ts',
     'schema/index.ts',
     'ui/risk/screen.tsx',
     'views/risk/index.ts',
@@ -64,11 +66,14 @@ const schema = (domain: string): SchemaIR => ({
   format: 'astrale.dsl',
   version: 'v1',
   domain,
-  types: {},
-  interfaces: {},
   classes: {},
-  imports: {},
+  importsByKey: {},
+  importedClassesByKey: {},
   functions: {},
+  views: {},
+  policies: {},
+  dependencies: [],
+  core: {},
 })
 
 const canonicalRoot = {

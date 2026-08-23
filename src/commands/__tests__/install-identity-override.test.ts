@@ -1,9 +1,7 @@
-import { defineDomain } from '@astrale-os/sdk'
-import { issuer } from '@astrale-os/sdk/auth'
-import { createDeployment } from '@astrale-os/sdk/deployment'
-import { defineSchema } from '@astrale-os/sdk/schema/v1'
+import { defineSchema } from '@astrale-os/sdk/schema'
 import { afterAll, describe, expect, test } from 'bun:test'
 
+import { releaseFor } from '../../__tests__/fixtures/publication'
 import { domainRefFromTarget, isIdentityOverride, probeDeclaredOrigin } from '../domain/install'
 
 describe('admin-path target classification', () => {
@@ -47,16 +45,7 @@ describe('declared-origin Publication probe', () => {
 
   test('reads origin from a well-formed canonical Publication', async () => {
     const schema = defineSchema('crm.acme.dev', {})
-    const definition = defineDomain({
-      schema,
-      handlers: { functions: {}, classes: {}, interfaces: {} },
-    })
-    const deployed = createDeployment({
-      definition,
-      issuer: issuer.accept('https://crm.acme.dev'),
-      bundleHref: 'https://crm.acme.dev/domain.bundle.json',
-      bindings: { callables: [] },
-    }).publication
+    const deployed = releaseFor(schema, 'https://crm.acme.dev').publication
     const url = servePublication((req) =>
       new URL(req.url).pathname === '/.well-known/astrale/domain.json'
         ? Response.json(deployed)

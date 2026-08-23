@@ -10,27 +10,27 @@ const handle: DomainHandle = {
   id: 'current',
   root: '/workspace/current',
   configFile: '/workspace/current/astrale.config.ts',
-  domainFile: '/workspace/current/implementation.ts',
+  applicationFile: '/workspace/current/application.ts',
   schemaDirName: 'schema',
   schemaDir: '/workspace/current/schema',
   schemaIndex: '/workspace/current/schema/index.ts',
 }
 
-test('watches current layout roots and reconciles either composition entry', () => {
-  expect(ANATOMY_PATHS).toContain('implementation.ts')
+test('watches current Application, Runtime, and vertical authoring roots', () => {
+  expect(ANATOMY_PATHS).toContain('application.ts')
+  expect(ANATOMY_PATHS).toContain('runtime.ts')
   expect(ANATOMY_PATHS).toContain('ui')
-  expect(ANATOMY_PATHS).toContain('handlers')
+  expect(ANATOMY_PATHS).toContain('providers')
   expect(ANATOMY_PATHS).toContain('queries')
   expect(ANATOMY_PATHS).toContain('workflows')
-  expect(DOMAIN_SET_TRIGGER_FILES.has('implementation.ts')).toBe(true)
-  expect(DOMAIN_SET_TRIGGER_FILES.has('domain.ts')).toBe(true)
+  expect(DOMAIN_SET_TRIGGER_FILES.has('application.ts')).toBe(true)
+  expect(DOMAIN_SET_TRIGGER_FILES.has('schema.ts')).toBe(true)
 })
 
-test('composition and handler source changes invalidate the schema bundle', () => {
-  expect(affectsBundle(handle, join(handle.root, 'implementation.ts'))).toBe(true)
-  expect(affectsBundle(handle, join(handle.root, 'domain.ts'))).toBe(true)
+test('Application, Runtime, Action, and Workflow changes invalidate the schema bundle', () => {
+  expect(affectsBundle(handle, join(handle.root, 'application.ts'))).toBe(true)
+  expect(affectsBundle(handle, join(handle.root, 'runtime.ts'))).toBe(true)
   expect(affectsBundle(handle, join(handle.root, 'actions', 'risk', 'create.ts'))).toBe(true)
-  expect(affectsBundle(handle, join(handle.root, 'functions', 'user', 'ensure.ts'))).toBe(true)
-  expect(affectsBundle(handle, join(handle.root, 'handlers', 'create.ts'))).toBe(true)
+  expect(affectsBundle(handle, join(handle.root, 'workflows', 'user', 'ensure.ts'))).toBe(true)
   expect(affectsBundle(handle, join(handle.root, 'views', 'routes.ts'))).toBe(false)
 })

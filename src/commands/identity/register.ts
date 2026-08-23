@@ -1,9 +1,9 @@
 import type { IssuerId, JsonWebKey, ProvisionRequest } from '@astrale-os/sdk/auth'
+import type { ClassKey as ClassKeyValue } from '@astrale-os/sdk/graph/class'
 import type { JWK } from 'jose'
 
 import { provision, jwk } from '@astrale-os/sdk/auth'
-import { ClassPath } from '@astrale-os/sdk/graph/class'
-import { LocalBinding } from '@astrale-os/sdk/graph/model'
+import { LocalBinding } from '@astrale-os/sdk/graph'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { MutationAST } from '@astrale-os/sdk/mutation'
 import { importJWK, SignJWT } from 'jose'
@@ -14,6 +14,7 @@ import type { IdentityRegistrationResult } from '../../identity/index'
 import type { CommandDefinition } from '../../program/index'
 
 import { registrationKeyForTarget, runKernelCommand } from '../../connection'
+import { classKey } from '../../graph'
 import { getIdentity, setRegistration, submitIdentityProvision } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
 import { fatal, log } from '../../lib/log'
@@ -83,7 +84,7 @@ Example:
 
       const privateKey = await readJwk(privatePath)
       const publicKey = jwk.acceptPublic(await readJwk(publicPath))
-      const classPath = ClassPath.parse(opts.class)
+      const classPath = classKey(opts.class, '--class')
       const properties = normalizeProperties(opts.props ? JSON.parse(opts.props) : {})
 
       await runKernelCommand<IdentityRegistrationResult>({
@@ -142,7 +143,7 @@ export function formatIdentityRegistration(
 /** Build and self-prove one exact canonical provision request for the target Kernel. */
 export async function prepareIdentityProvision(input: {
   readonly name: string
-  readonly classPath: ReturnType<typeof ClassPath.parse>
+  readonly classPath: ClassKeyValue
   readonly properties: ReturnType<typeof normalizeProperties>
   readonly privateKey: JWK
   readonly publicKey: JsonWebKey

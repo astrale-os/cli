@@ -1,5 +1,5 @@
 import { Command } from 'cmdk'
-import { ArrowRight, Box, Folder, Settings, Shapes, Spline, Tag } from 'lucide-react'
+import { ArrowRight, Box, Folder, Settings, Spline, Tag } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 
 import { useBundle } from '@/lib/hooks'
@@ -67,7 +67,6 @@ export function CommandPalette() {
   const setSection = useUI((s) => s.setSection)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
-  const setFocus = useUI((s) => s.setFocus)
   const setSettingsOpen = useUI((s) => s.setSettingsOpen)
 
   const { data: bundle } = useBundle(domainId)
@@ -90,7 +89,7 @@ export function CommandPalette() {
   const index = useMemo(() => {
     const ir = bundle?.ir
     if (!ir || !bundle) {
-      return { classes: [], interfaces: [], edges: [], properties: [], modules: [] }
+      return { classes: [], edges: [], properties: [], modules: [] }
     }
 
     const classes = Object.values(ir.classes)
@@ -104,18 +103,6 @@ export function CommandPalette() {
           name: c.name,
           value: `class ${c.name} ${mod} ${counts}`,
           meta: mod === 'root' ? counts : `${mod} · ${counts}`,
-        }
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-
-    const interfaces = Object.values(ir.interfaces)
-      .map((i) => {
-        const propCount = Object.keys(i.properties).length
-        const methodCount = Object.keys(i.methods).length
-        return {
-          name: i.name,
-          value: `interface ${i.name} ${(i.extends ?? []).join(' ')}`,
-          meta: `${propCount}p · ${methodCount}m`,
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -137,7 +124,6 @@ export function CommandPalette() {
     type Prop = {
       id: string
       owner: string
-      ownerKind: 'class' | 'interface'
       prop: string
       value: string
       meta: string
@@ -150,22 +136,8 @@ export function CommandPalette() {
         properties.push({
           id: `class.${c.name}.property.${prop}`,
           owner: c.name,
-          ownerKind: 'class',
           prop,
           value: `${c.name}.${prop} property ${propTypeLabel(schema, optional)}`,
-          meta: propTypeLabel(schema, optional),
-        })
-      }
-    }
-    for (const i of Object.values(ir.interfaces)) {
-      for (const [prop, schema] of Object.entries(i.properties)) {
-        const optional = i.required ? !i.required.includes(prop) : undefined
-        properties.push({
-          id: `interface.${i.name}.property.${prop}`,
-          owner: i.name,
-          ownerKind: 'interface',
-          prop,
-          value: `${i.name}.${prop} property ${propTypeLabel(schema, optional)}`,
           meta: propTypeLabel(schema, optional),
         })
       }
@@ -173,16 +145,16 @@ export function CommandPalette() {
     properties.sort((a, b) => a.value.localeCompare(b.value))
 
     const modules = folderModules(bundle).map((m) => {
-      const n = m.classes.length + m.interfaces.length + m.edges.length
+      const n = m.classes.length + m.edges.length
       return {
         path: m.path,
         firstClass: m.classes[0],
-        value: `module ${m.path} ${m.classes.join(' ')} ${m.interfaces.join(' ')}`,
+        value: `module ${m.path} ${m.classes.join(' ')} ${m.edges.join(' ')}`,
         meta: `${n} member${n === 1 ? '' : 's'}`,
       }
     })
 
-    return { classes, interfaces, edges, properties, modules }
+    return { classes, edges, properties, modules }
   }, [bundle])
 
   return (
@@ -247,26 +219,6 @@ export function CommandPalette() {
           </Command.Group>
         )}
 
-        {index.interfaces.length > 0 && (
-          <Command.Group heading="Interfaces">
-            {index.interfaces.map((i) => (
-              <Command.Item
-                key={`interface.${i.name}`}
-                value={i.value}
-                className={ITEM_CLS}
-                onSelect={() => {
-                  setSection('schema')
-                  selectClass(`interface.${i.name}`)
-                  setFocus(null)
-                  close()
-                }}
-              >
-                <Row icon={Shapes} label={i.name} meta={i.meta} />
-              </Command.Item>
-            ))}
-          </Command.Group>
-        )}
-
         {index.edges.length > 0 && (
           <Command.Group heading="Relationships">
             {index.edges.map((e) => (
@@ -302,12 +254,7 @@ export function CommandPalette() {
                 className={ITEM_CLS}
                 onSelect={() => {
                   setSection('schema')
-                  if (p.ownerKind === 'interface') {
-                    selectClass(`interface.${p.owner}`)
-                    setFocus(null)
-                  } else {
-                    focusClass(`class.${p.owner}`)
-                  }
+                  focusClass(`class.${p.owner}`)
                   close()
                 }}
               >

@@ -61,6 +61,9 @@
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
     "format:check": "pnpm exec oxfmt --check .",
+    "migration:audit": "node scripts/sdk-v1-migration/audit.mjs",
+    "migration:inventory": "node scripts/sdk-v1-migration/audit.mjs --write",
+    "migration:check": "node scripts/sdk-v1-migration/audit.mjs --target",
     "test": "bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
     "test:studio": "pnpm --dir studio test",
     "test:watch": "bun test --watch src"

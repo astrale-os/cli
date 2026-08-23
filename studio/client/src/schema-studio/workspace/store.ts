@@ -11,7 +11,6 @@ interface PersistedWorkspaceState {
   domainSizes: Record<string, WorkspaceSize>
   domainContentOffsets: Record<string, WorkspacePoint>
   collapsedModules: Record<string, string[]>
-  badgeInterfaces: Record<string, string[]>
 }
 
 interface WorkspaceCanvasState extends PersistedWorkspaceState {
@@ -24,7 +23,6 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   ensureDomainContentOffsets: (offsets: Record<string, WorkspacePoint>) => void
   resetWorkspaceFrames: () => void
   toggleModule: (domainId: string, path: string) => void
-  toggleInterface: (domainId: string, name: string) => void
 }
 
 const STORAGE_KEY = 'studio.schemaWorkspace.v1'
@@ -36,7 +34,6 @@ const EMPTY: PersistedWorkspaceState = {
   domainSizes: {},
   domainContentOffsets: {},
   collapsedModules: {},
-  badgeInterfaces: {},
 }
 
 export function uniqueDomainIds(ids: string[]): string[] {
@@ -70,7 +67,6 @@ function load(): PersistedWorkspaceState {
       domainSizes: value.domainSizes ?? {},
       domainContentOffsets: value.domainContentOffsets ?? {},
       collapsedModules: value.collapsedModules ?? {},
-      badgeInterfaces: value.badgeInterfaces ?? {},
     }
   } catch {
     return EMPTY
@@ -91,7 +87,6 @@ function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
     domainSizes: state.domainSizes,
     domainContentOffsets: state.domainContentOffsets,
     collapsedModules: state.collapsedModules,
-    badgeInterfaces: state.badgeInterfaces,
   }
 }
 
@@ -185,14 +180,5 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       const collapsedModules = { ...state.collapsedModules, [domainId]: [...current] }
       persist({ ...persisted(state), collapsedModules })
       return { collapsedModules }
-    }),
-  toggleInterface: (domainId, name) =>
-    set((state) => {
-      const current = new Set(state.badgeInterfaces[domainId] ?? [])
-      if (current.has(name)) current.delete(name)
-      else current.add(name)
-      const badgeInterfaces = { ...state.badgeInterfaces, [domainId]: [...current] }
-      persist({ ...persisted(state), badgeInterfaces })
-      return { badgeInterfaces }
     }),
 }))

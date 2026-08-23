@@ -65,7 +65,7 @@ export function methodGlyph(method: IrMethod): { icon: LucideIcon; tone: string 
 
 /** Short, human label for the params of a method ("no input" / "url, name" / …). */
 export function paramSummary(method: IrMethod): string {
-  const keys = Object.keys(method.params ?? {})
+  const keys = Object.keys(method.input.properties ?? {})
   if (keys.length === 0) return 'No input'
   return keys.join(', ')
 }

@@ -122,7 +122,7 @@ Examples:
     { flags: '-f, --file <path>', description: 'Read a canonical Query V6 document from a file' },
     {
       flags: '--definition <path>',
-      description: 'Select Nodes implementing one exact Class or Interface',
+      description: 'Select Nodes satisfying one exact Class',
     },
     { flags: '--edge <class>', description: 'Expand one exact Edge Class' },
     {

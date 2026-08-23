@@ -7,22 +7,22 @@ import { diffSchemas, structuralStatusOf } from './diff'
 const callable = (returnsType = 'string'): IrFunction => ({
   name: 'inspect',
   input: { type: 'object', properties: {}, additionalProperties: false },
-  params: {},
   output: { mode: 'value', schema: { type: returnsType } },
-  returns: { type: returnsType },
-  static: true,
-  inheritance: 'default',
   auth: 'authenticated',
 })
 
 const schema = (functions: SchemaIR['functions']): SchemaIR => ({
   version: 'v1',
+  format: 'astrale.dsl',
   domain: 'example.test',
-  types: {},
-  interfaces: {},
   classes: {},
-  imports: {},
+  importsByKey: {},
+  importedClassesByKey: {},
   functions,
+  views: {},
+  policies: {},
+  dependencies: [],
+  core: {},
 })
 
 const withClass = (member: IrClass): SchemaIR => ({
@@ -63,6 +63,8 @@ describe('canonical standalone Function diffs', () => {
     const member = (required: string[], minLength: number): IrClass => ({
       type: 'node',
       name: 'Person',
+      origin: 'example.test',
+      ref: { origin: 'example.test', kind: 'class', name: 'Person' },
       properties: { name: { type: 'string', minLength } },
       required,
       methods: {},
@@ -87,6 +89,8 @@ describe('canonical standalone Function diffs', () => {
       ...withClass({
         type: 'edge',
         name: 'owns',
+        origin: 'example.test',
+        ref: { origin: 'example.test', kind: 'class', name: 'owns' },
         properties: {},
         required: [],
         methods: {},

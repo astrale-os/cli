@@ -38,7 +38,7 @@ describe('prepareQuery', () => {
   })
 
   /** @evidence TEST-CLI-GRAPH-AUTHORS-DEFINITION-QUERY */
-  test('authors an exact Definition source without backend query text', () => {
+  test('authors an exact Class source without backend query text', () => {
     const prepared = prepareQuery({
       sources: [],
       definition: '/:issues.astrale.ai:class.Issue',
@@ -52,8 +52,8 @@ describe('prepareQuery', () => {
         kind: 'node',
         terms: [
           {
-            kind: 'definition',
-            definition: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
+            kind: 'class',
+            class: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
           },
         ],
         binding: 'n0',
@@ -73,8 +73,8 @@ describe('prepareQuery', () => {
         kind: 'node',
         terms: [
           {
-            kind: 'definition',
-            definition: { origin: 'notes.example.dev', kind: 'class', name: 'Note' },
+            kind: 'class',
+            class: { origin: 'notes.example.dev', kind: 'class', name: 'Note' },
           },
         ],
         binding: 'n0',
@@ -149,6 +149,6 @@ describe('prepareQuery', () => {
     ).toThrow('--limit must be a positive integer')
     expect(() =>
       prepareQuery({ sources: [], definition: '/:notes.example.dev:view.note' }),
-    ).toThrow('--definition must be one canonical Class or Interface Path')
+    ).toThrow('--definition must be one canonical Class Path')
   })
 })

@@ -1,39 +1,28 @@
 import type { Node } from '@astrale-os/sdk/graph/node'
 import type { QueryAST } from '@astrale-os/sdk/query'
 
-import { ClassPath } from '@astrale-os/sdk/graph/class'
 import { NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, mock, test } from 'bun:test'
 
-import type { AdminBinding } from '../../binding'
 import type { AdminGraphApi } from '../../graph'
 
+import { AdminTestDomain, adminBinding, adminSession } from '../../__tests__/fixture'
 import { connectAdminInstances } from '../client'
 
-const methods: Array<{ owner: string; name: string }> = []
-
-function definition(name: string) {
+function hostNode(id: string, props: { readonly id: string; readonly state: string }): Node {
   return {
-    name,
-    $: {
-      method(method: string) {
-        const value = { owner: name, name: method }
-        methods.push(value)
-        return value
-      },
-      property(property: string) {
-        return { key: property }
-      },
-    },
+    id: NodeId(id),
+    class: AdminTestDomain.classes.Host.key,
+    props: AdminTestDomain.classes.Host.properties.from(props),
   }
 }
 
-function node(id: string, props: Record<string, unknown>): Node {
+function instanceNode(id: string): Node {
   return {
     id: NodeId(id),
-    class: ClassPath.from('admin.astrale.ai', 'Instance'),
-    props: props as never,
+    class: AdminTestDomain.classes.Instance.key,
+    props: AdminTestDomain.classes.Instance.properties.from({}),
   }
 }
 
@@ -49,7 +38,7 @@ function graphResult(nodes: readonly Node[], cursor?: string) {
 
 function sourceName(ast: QueryAST): string | undefined {
   const term = ast.source.terms[0]
-  return term?.kind === 'definition' ? term.definition.name : undefined
+  return term?.kind === 'class' ? term.class.name : undefined
 }
 
 function fixture(input: {
@@ -58,27 +47,16 @@ function fixture(input: {
   reserved?: Node | null
   invoke?: (method: { owner: string; name: string }, receiver: unknown, input: unknown) => unknown
 }) {
-  methods.length = 0
-  const Instance = definition('Instance')
-  const Host = definition('Host')
-  const Fleet = definition('Fleet')
-  const invoke = mock(async (method: unknown, receiver: unknown, value: unknown) =>
-    input.invoke?.(method as { owner: string; name: string }, receiver, value),
-  )
-  const binding = {
-    $: {
-      publication: { origin: 'admin.astrale.ai' },
-      origin: 'admin.astrale.ai',
-      class(name: string) {
-        if (name === 'Instance') return Instance
-        if (name === 'Host') return Host
-        if (name === 'Fleet') return Fleet
-        throw new Error(`Unexpected class ${name}`)
-      },
-      core: { nodes: { fleet: { path: Path.id(NodeId('fleet')) } } },
-      invoke,
-    },
-  } as unknown as AdminBinding
+  const calls: Array<{
+    method: { owner: string; name: string }
+    receiver: string
+    value: unknown
+  }> = []
+  const remote = adminSession((method, receiver, value) => {
+    calls.push({ method, receiver: String(receiver), value })
+    return input.invoke?.(method, receiver, value)
+  })
+  const binding = adminBinding()
   const query = mock(async (ast: QueryAST) => {
     const name = sourceName(ast)
     if (name === 'Instance') return graphResult(input.instances ?? [])
@@ -86,7 +64,7 @@ function fixture(input: {
     throw new Error(`Unexpected graph query ${String(name)}`)
   })
   const neighbors = mock(async (source: unknown, edge: { name?: string }) => {
-    if (String(source) === '@fleet') return page(input.reserved ?? null)
+    if (String(source) === '/:admin.astrale.ai:core.fleet') return page(input.reserved ?? null)
     if (edge.name === 'instance_runs_on_host') return page(input.hosts?.[0] ?? null)
     throw new Error(`Unexpected neighbor query ${String(source)} ${String(edge)}`)
   })
@@ -94,10 +72,11 @@ function fixture(input: {
   return {
     binding,
     graph,
-    invoke,
+    invoke: remote.invoke,
+    calls,
     connect: () =>
       connectAdminInstances(
-        { session: {} as never, graph },
+        { session: remote.session, graph },
         {
           bind: async () => binding,
           operationId: (kind) => `cli.instance.${kind}:test`,
@@ -146,11 +125,13 @@ describe('V2 Admin Instance adapter', () => {
         region: 'fr-par',
       },
     ])
-    expect(contract.invoke).toHaveBeenCalledWith(
-      expect.objectContaining({ owner: 'Fleet', name: 'listInstances' }),
-      Path.id(NodeId('fleet')),
-      {},
-    )
+    expect(contract.calls).toEqual([
+      {
+        method: { owner: 'Fleet', name: 'listInstances' },
+        receiver: '/:admin.astrale.ai:core.fleet::listInstances',
+        value: {},
+      },
+    ])
   })
 
   test('delegates default placement to Fleet without reading Host inventory', async () => {
@@ -163,7 +144,7 @@ describe('V2 Admin Instance adapter', () => {
       updatedAt: '2026-08-12T00:00:00.000Z',
     }
     const contract = fixture({
-      hosts: [node('host-node', { id: 'host-paris', state: 'ready' })],
+      hosts: [hostNode('host-node', { id: 'host-paris', state: 'ready' })],
       invoke: () => created,
     })
 
@@ -174,18 +155,20 @@ describe('V2 Admin Instance adapter', () => {
       state: created.state,
       createdAt: created.createdAt,
     })
-    expect(contract.invoke).toHaveBeenCalledWith(
-      expect.objectContaining({ owner: 'Fleet', name: 'createInstance' }),
-      Path.id(NodeId('fleet')),
-      { operationId: 'cli.instance.create:test', slug: 'demo' },
-    )
+    expect(contract.calls).toEqual([
+      {
+        method: { owner: 'Fleet', name: 'createInstance' },
+        receiver: '/:admin.astrale.ai:core.fleet::createInstance',
+        value: { operationId: 'cli.instance.create:test', slug: 'demo' },
+      },
+    ])
     expect(contract.graph.query).not.toHaveBeenCalled()
     expect(contract.graph.neighbors).not.toHaveBeenCalled()
   })
 
   test('resolves --host-id to an exact Host receiver and rejects the reserved Admin Host', async () => {
-    const reserved = node('admin-host', { id: 'admin', state: 'ready' })
-    const consumer = node('consumer-host', { id: 'consumer-paris', state: 'ready' })
+    const reserved = hostNode('admin-host', { id: 'admin', state: 'ready' })
+    const consumer = hostNode('consumer-host', { id: 'consumer-paris', state: 'ready' })
     const contract = fixture({
       hosts: [reserved, consumer],
       reserved,
@@ -200,19 +183,15 @@ describe('V2 Admin Instance adapter', () => {
 
     await expect(api.create('demo', 'admin')).rejects.toMatchObject({ name: 'NotFoundError' })
     await expect(api.create('demo', 'consumer-paris')).resolves.toMatchObject({ slug: 'demo' })
-    expect(contract.invoke).toHaveBeenCalledWith(
-      expect.objectContaining({ owner: 'Host', name: 'createInstance' }),
-      Path.id(NodeId('consumer-host')),
-      { operationId: 'cli.instance.create:test', slug: 'demo' },
-    )
+    expect(contract.calls.at(-1)).toEqual({
+      method: { owner: 'Host', name: 'createInstance' },
+      receiver: '@consumer-host::createInstance',
+      value: { operationId: 'cli.instance.create:test', slug: 'demo' },
+    })
   })
 
   test('refreshes and deletes through the resolved Instance receiver', async () => {
-    const instance = node('instance-node', {
-      slug: 'demo',
-      url: 'https://demo.eu.astrale.ai',
-      state: 'ready',
-    })
+    const instance = instanceNode('instance-node')
     const contract = fixture({
       instances: [instance],
       invoke: (method) =>
@@ -238,20 +217,16 @@ describe('V2 Admin Instance adapter', () => {
 
     await expect(api.status('demo')).resolves.toMatchObject({ state: 'ready' })
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
-    expect(contract.invoke.mock.calls.map(([method]) => method)).toEqual([
-      expect.objectContaining({ owner: 'Fleet', name: 'listInstances' }),
-      expect.objectContaining({ owner: 'Instance', name: 'status' }),
-      expect.objectContaining({ owner: 'Fleet', name: 'listInstances' }),
-      expect.objectContaining({ owner: 'Instance', name: 'delete' }),
+    expect(contract.calls.map(({ method }) => method)).toEqual([
+      { owner: 'Fleet', name: 'listInstances' },
+      { owner: 'Instance', name: 'status' },
+      { owner: 'Fleet', name: 'listInstances' },
+      { owner: 'Instance', name: 'delete' },
     ])
   })
 
   test('installs a resolved catalog Domain through Instance.installDomain', async () => {
-    const instance = node('instance-node', {
-      slug: 'demo',
-      url: 'https://demo.eu.astrale.ai',
-      state: 'ready',
-    })
+    const instance = instanceNode('instance-node')
     const contract = fixture({
       instances: [instance],
       invoke: (method) =>
@@ -282,10 +257,10 @@ describe('V2 Admin Instance adapter', () => {
       origin: 'crm.acme.dev',
       ok: true,
     })
-    expect(contract.invoke).toHaveBeenCalledWith(
-      expect.objectContaining({ owner: 'Instance', name: 'installDomain' }),
-      Path.id(NodeId('instance-node')),
-      { operationId: 'cli.instance.install-domain:test', domain: '@crm-domain' },
-    )
+    expect(contract.calls.at(-1)).toEqual({
+      method: { owner: 'Instance', name: 'installDomain' },
+      receiver: '@instance-node::installDomain',
+      value: { operationId: 'cli.instance.install-domain:test', domain: '@crm-domain' },
+    })
   })
 })
