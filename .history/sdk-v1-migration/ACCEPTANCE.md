@@ -40,9 +40,10 @@
 ## Evidence retained so far
 
 - Kernel Client: typecheck; 25 files / 141 tests; repository pre-push typecheck and layout gates.
-- SDK: typecheck; 76 files / 444 tests; knowledge, policy, issue, and release workflow checks.
+- SDK: typecheck; 83 files / 466 tests; knowledge, policy, issue, and release workflow checks.
 - CLI/Viewer/Studio: exact-cohort full typecheck; lint; format; build; public export and dependency
-  checks; 184 Bun files with 777 pass / one skip / zero fail; and 14/14 release workflow Node tests.
+  checks; 184 Bun files with 777 pass / one skip / zero fail; and 32/32 exact-source and release
+  workflow Node tests.
 - The 15-pass reduction from baseline is the consolidation of repetitive Interface/legacy
   projection cases into Class-only exact-identity and canonical admission journeys. No test file was
   deleted: 48 owner test files were migrated and one canonical admission file was added; no retained

@@ -13,8 +13,9 @@ Rules:
    removed Domain interpreter locally.
 4. Record every genuine SDK or Kernel defect with an exact reproduction and owner.
 
-Use `pnpm migration:inventory` to refresh the census and `pnpm migration:check` for the structural
-target gate.
+`pnpm test` owns the structural source-boundary gate. Its census can be refreshed only when needed
+with `node scripts/qualification/source-boundary.mjs --write`; the existing `pnpm package:check`
+owns distributable-package qualification.
 
 Until the exact cohort is published, GitHub workflows require `COHORT_REPOSITORY_TOKEN` with read
 access to the private Kernel, SDK, and Shell repositories. Registry and job tokens are not accepted

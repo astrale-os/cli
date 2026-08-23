@@ -23,7 +23,7 @@ const sdkImports = new Map()
 const kernelImports = new Map()
 const legacy = []
 const interfaceEra = []
-const auditPath = 'scripts/sdk-v1-migration/audit.mjs'
+const auditPath = 'scripts/qualification/source-boundary.mjs'
 
 const legacySpecifiers = new Set([
   '@astrale-os/sdk/domain',

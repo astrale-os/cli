@@ -9,9 +9,9 @@
 | Owner | Reference | SHA |
 | --- | --- | --- |
 | CLI | `origin/main` | `53ce495f23b458e245cd82e41919ecdce5f8dc57` |
-| Shell migration | `refactor/sdk-v1-migration` | `14aa0eae7dcfb81141bed7f70e761a1e4c386efe` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
-| SDK | `origin/main` plus PR #146 | `a210e3c12c8a4b11d19c0651b870e77b2ff19fef` / `3c9962af28baa94b4d7da94667eec8f119319ac5` |
-| Kernel DSL redesign | merged PR #385 plus PR #387 | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` / `7dba075887e4796e5464d5a41ddb03212eed887f` |
+| Shell migration | PR #52 `refactor/sdk-v1-migration` | `aaca476594cfc40bfefefcb115ff732492741e73` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
+| SDK | `origin/main` after PR #146 plus PR #149 | `af5884810048758d05e9606235fcb83846a9871e` / `740799bb9b13b2947f0b28133b21517dfff33f68` |
+| Kernel DSL redesign | merged PR #385 plus PR #394 | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` / `7dfe060d819321ddf8004a74c203c86cc9d35c53` |
 
 The primary CLI and Shell worktrees remain untouched.
 
@@ -48,8 +48,8 @@ The primary CLI and Shell worktrees remain untouched.
 - Studio render IR now carries one canonical callable input/output contract; obsolete
   `params`/`returns`, source-overlay auth reconstruction, post-install seed, and Interface fallbacks
   were removed. The Process view identifies implementations as Actions or Workflows.
-- `pnpm migration:audit -- --target` reports zero removed surfaces and zero Interface-era production
-  fields on the current migration tree.
+- The source-boundary gate inside `pnpm test` reports zero removed surfaces and zero Interface-era
+  production fields on the current migration tree.
 
 ## Current qualification evidence
 
@@ -80,7 +80,7 @@ The primary CLI and Shell worktrees remain untouched.
   installed successfully but produced 34 expected SDK V1 type errors, proving that falling back to
   released beta packages would be false qualification. The workflow must receive a real
   cross-repository Actions credential; no source vendoring or released-cohort weakening is accepted.
-- Inventory: 425 production files / 51,039 lines; 195 test files / 20,305 lines; 51 specification
+- Inventory: 430 production files / 51,060 lines; 199 test files / 20,305 lines; 51 specification
   files / 1,718 lines. Both removed-surface inventories are empty.
 
 ## Final cleanup and source-cohort process — 2026-08-23
