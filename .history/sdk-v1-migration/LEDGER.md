@@ -64,6 +64,11 @@ The primary CLI and Shell worktrees remain untouched.
 - CI, binary release, and package publication check out the exact unpublished Kernel, SDK, and Shell
   cohort plus SDK's nested Kernel link with repository-scoped credentials. The lock records all nine
   physical importers; clean runners do not depend on developer symlinks.
+- Remote exact-cohort jobs require a cross-repository Actions credential selected for the CLI
+  repository. The current job token cannot read private sibling repositories, and the configured
+  package token is absent. A clean published-cohort control installed successfully but produced 34
+  expected SDK V1 type errors, proving that falling back to released beta packages would be false
+  qualification.
 - Inventory: 421 production files / 50,789 lines; 193 test files / 20,095 lines; 51 specification
   files / 1,718 lines. Both removed-surface inventories are empty.
 
