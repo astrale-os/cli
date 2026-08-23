@@ -35,28 +35,28 @@ jobs:
           repository: astrale-os/kernel
           ref: a80568d6083fd3af6f3646a8abb95338e6ae3434
           path: .kernel-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: astrale-os/sdk
           ref: 7cf8b9e052da4c5c91c091b56e416ca3e189a8f0
           path: .sdk-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: astrale-os/kernel
           ref: a80568d6083fd3af6f3646a8abb95338e6ae3434
           path: .sdk-cohort/.kernel-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: astrale-os/shell
           ref: 8a7ff6147191ac8756a8d18497a400ef03234a41
           path: .shell-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
@@ -95,28 +95,28 @@ jobs:
           repository: astrale-os/kernel
           ref: a80568d6083fd3af6f3646a8abb95338e6ae3434
           path: .kernel-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: astrale-os/sdk
           ref: 7cf8b9e052da4c5c91c091b56e416ca3e189a8f0
           path: .sdk-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: astrale-os/kernel
           ref: a80568d6083fd3af6f3646a8abb95338e6ae3434
           path: .sdk-cohort/.kernel-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: astrale-os/shell
           ref: 8a7ff6147191ac8756a8d18497a400ef03234a41
           path: .shell-cohort
-          token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.NPM_TOKEN || secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
