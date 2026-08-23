@@ -37,6 +37,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare exact sources
+        uses: ./.github/actions/exact-sources
+        with:
+          repository-token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
       # The CLI builds with Bun (scripts/build.ts) and the studio client build
       # shells out to Bun too — the shared action only sets up Node/pnpm.
       - uses: oven-sh/setup-bun@v2
@@ -52,7 +56,7 @@ jobs:
           # materializes both toolchains. Do not mix Bun's package manager into
           # that tree: it replaces pnpm links and can make the following prepack
           # nondeterministic.
-          build-command: 'pnpm install --frozen-lockfile --ignore-scripts'
+          build-command: 'pnpm install --frozen-lockfile --ignore-scripts && pnpm check:cohort'
           # Derive prerelease dist-tags from the version (alpha/beta/rc).
           # Stable versions automatically publish to latest.
           prerelease-tag: auto

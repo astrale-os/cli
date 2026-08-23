@@ -1,26 +1,15 @@
 import { publication } from '@astrale-os/kernel-protocol'
-import { defineDomain } from '@astrale-os/sdk'
-import { issuer } from '@astrale-os/sdk/auth'
-import { createDeployment } from '@astrale-os/sdk/deployment'
-import { defineSchema } from '@astrale-os/sdk/schema/v1'
+import { defineSchema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
+import { releaseFor } from '../../__tests__/fixtures/publication'
 import { fetchDomainPublication } from '../domain-publication'
 
 const ROOT = 'https://publication-reader.example.dev'
 const PUBLICATION_URL = `${ROOT}/.well-known/astrale/domain.json`
 const MAXIMUM_PUBLICATION_BYTES = 1024 * 1024
 const schema = defineSchema('publication-reader.example.dev', {})
-const definition = defineDomain({
-  schema,
-  handlers: { functions: {}, classes: {}, interfaces: {} },
-})
-const deployed = createDeployment({
-  definition,
-  issuer: issuer.accept(ROOT),
-  bundleHref: `${ROOT}/domain.bundle.json`,
-  bindings: { callables: [] },
-}).publication
+const deployed = releaseFor(schema, ROOT).publication
 
 describe('Domain Publication reader', () => {
   test('fetches only the canonical path with redirects disabled', async () => {

@@ -48,7 +48,6 @@ test('resets domain and external frame geometry as one workspace layout', () => 
       domainSizes: before.domainSizes,
       domainContentOffsets: before.domainContentOffsets,
       collapsedModules: before.collapsedModules,
-      badgeInterfaces: before.badgeInterfaces,
     })
   }
 })

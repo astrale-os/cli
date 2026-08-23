@@ -4,30 +4,35 @@ import type { SchemaIR } from '../../../shared/types'
 
 import { describeAnchor } from './anchors'
 
-const importedKey = 'directory.example.dev:interface.Named' as const
-
+const importedKey = 'directory.example.dev:class.Named' as const
 const ir: SchemaIR = {
   format: 'astrale.dsl',
   version: 'v1',
   domain: 'example.dev',
-  types: {},
-  interfaces: {},
-  classes: {},
-  imports: {},
+  classes: {
+    Item: {
+      type: 'node',
+      name: 'Item',
+      origin: 'example.dev',
+      ref: { origin: 'example.dev', kind: 'class', name: 'Item' },
+      properties: { count: { type: 'integer' } },
+      required: ['count'],
+      methods: {},
+    },
+  },
   importsByKey: {
     [importedKey]: {
       origin: 'directory.example.dev',
-      definition: 'interface',
       key: importedKey,
-      ref: { origin: 'directory.example.dev', kind: 'interface', name: 'Named' },
+      ref: { origin: 'directory.example.dev', kind: 'class', name: 'Named' },
     },
   },
-  importedInterfacesByKey: {
+  importedClassesByKey: {
     [importedKey]: {
-      type: 'interface',
+      type: 'node',
       name: 'Named',
       origin: 'directory.example.dev',
-      ref: { origin: 'directory.example.dev', kind: 'interface', name: 'Named' },
+      ref: { origin: 'directory.example.dev', kind: 'class', name: 'Named' },
       properties: { label: { type: 'string' } },
       required: [],
       methods: {},
@@ -36,39 +41,30 @@ const ir: SchemaIR = {
   functions: {
     inspect: {
       name: 'inspect',
-      input: {
-        type: 'object',
-        properties: { cursor: { type: 'string' } },
-        required: [],
-      },
-      params: { cursor: { type: 'string' } },
-      requiredParams: [],
+      input: { type: 'object', properties: { cursor: { type: 'string' } }, required: [] },
       output: { mode: 'stream', item: { type: 'integer' } },
-      returns: { type: 'integer' },
-      static: true,
-      inheritance: 'default',
       auth: 'authenticated',
     },
   },
+  views: {},
+  policies: {},
+  dependencies: [],
+  core: {},
 }
 
-describe('canonical anchor descriptions', () => {
-  test('describes standalone Functions with exact input, output mode, and auth', () => {
-    expect(describeAnchor('function.inspect', ir, undefined)).toContain(
-      'inspect(cursor:string?)→stream<int> [static,authenticated]',
+describe('anchor descriptions', () => {
+  test('describes local and exact imported Class properties', () => {
+    expect(describeAnchor('class.Item.property.count', ir, undefined)).toContain(
+      '**Item.count** : int',
+    )
+    expect(describeAnchor(`class.${importedKey}.property.label`, ir, undefined)).toContain(
+      '**Named.label** : string?',
     )
   })
 
-  test('resolves an imported interface member by its qualified identity', () => {
-    expect(
-      describeAnchor(
-        'interface.directory.example.dev:interface.Named.property.label',
-        ir,
-        undefined,
-      ),
-    ).toBe('**Named.label** : string?')
-    expect(
-      describeAnchor('interface.directory.example.dev:interface.Named', ir, undefined),
-    ).toContain('from directory.example.dev')
+  test('describes standalone Functions with output mode and authentication', () => {
+    expect(describeAnchor('function.inspect', ir, undefined)).toContain(
+      'stream<int> [authenticated]',
+    )
   })
 })

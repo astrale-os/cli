@@ -12,6 +12,7 @@ import { join, relative } from 'node:path'
 
 import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/types'
 
+import { resolveApplicationEntry } from '../domain'
 import { asJsonRecord, asString, parseJson } from '../json'
 import { readSettings } from '../state/settings'
 import { buildClientTree, buildEnvFields, buildViews, findSchemaDefinition } from './anatomy-extras'
@@ -59,15 +60,11 @@ function buildOverview(
 
   const config = readConfigPreview(root)
 
-  const compositionFile = existsSync(join(root, 'implementation.ts'))
-    ? 'implementation.ts'
-    : existsSync(join(root, 'domain.ts'))
-      ? 'domain.ts'
-      : undefined
-  const domainSrc = compositionFile ? readTextSafe(join(root, compositionFile)) : ''
+  const application = resolveApplicationEntry(root)
+  const applicationSrc = application === null ? '' : readTextSafe(application)
   const origin =
     schemaOrigin ??
-    domainSrc.match(/defineSchema\(\s*['"]([^'"]+)['"]/)?.[1] ??
+    applicationSrc.match(/defineSchema\(\s*['"]([^'"]+)['"]/)?.[1] ??
     readTextSafe(join(root, schemaDirName, 'index.ts')).match(
       /defineSchema\(\s*['"]([^'"]+)['"]/,
     )?.[1] ??
@@ -75,11 +72,11 @@ function buildOverview(
 
   return {
     origin,
-    compositionFile,
+    applicationFile:
+      application === null ? undefined : relative(root, application).replaceAll('\\', '/'),
     adapter: config.adapter,
     prodTarget: config.prodTarget,
     devSecrets: config.devSecrets,
-    postInstall: undefined,
     requires: [],
     packageName: pkg?.name,
     packageVersion: pkg?.version,

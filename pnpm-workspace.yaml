@@ -1,6 +1,13 @@
 packages:
   - '.'
   - 'studio'
+  - '.cohort/kernel/client'
+  - '.cohort/kernel/core'
+  - '.cohort/kernel/dsl'
+  - '.cohort/kernel/protocol'
+  - '.cohort/kernel/server'
+  - '.cohort/sdk'
+  - '.cohort/shell/packages/shell'
 
 # Keep pnpm 11's one-day default non-strict and never install implicitly before
 # `pnpm run` or `pnpm exec`.
@@ -17,6 +24,15 @@ minimumReleaseAgeExclude:
   - '@astrale-os/sdk@0.5.0-beta.14'
   - '@astrale-os/shell@0.3.8-beta.3'
 verifyDepsBeforeRun: false
+
+overrides:
+  '@astrale-os/kernel-client': link:.cohort/kernel/client
+  '@astrale-os/kernel-core': link:.cohort/kernel/core
+  '@astrale-os/kernel-dsl': link:.cohort/kernel/dsl
+  '@astrale-os/kernel-protocol': link:.cohort/kernel/protocol
+  '@astrale-os/kernel-server': link:.cohort/kernel/server
+  '@astrale-os/sdk': link:.cohort/sdk
+  '@astrale-os/shell': link:.cohort/shell/packages/shell
 
 # Native build scripts required by the standalone CLI dependency graph. Astrale
 # package preinstalls are guarded monorepo checks and are intentional no-ops here.

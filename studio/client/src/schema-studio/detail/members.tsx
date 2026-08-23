@@ -1,6 +1,7 @@
 import type { HandlerLink, IrMethod, JsonSchema, StudioSchemaBundle } from '@shared/types'
 
-import { ArrowUpRight, Box, Globe, HelpCircle, Hexagon, Layers, Shapes } from 'lucide-react'
+import { classRefKey } from '@shared/types'
+import { ArrowUpRight, Box, Globe, HelpCircle, Hexagon, Layers } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
 import { MethodAuthBadge } from '@/components/method-auth'
@@ -20,8 +21,7 @@ import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { type InheritedGroup, type InterfaceTier, inheritedCount } from '../inheritance'
-import { interfaceSelectionId } from '../modules'
+import { type ClassTier, type InheritedGroup, inheritedCount } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { originLabel } from './model'
 
@@ -58,7 +58,7 @@ export function PropertyRow({
   refBase: string
   pname: string
   schema: JsonSchema
-  /** Canonical required membership; undefined lets legacy nullable schemas decide. */
+  /** Canonical required membership; omitted only when the caller has no membership context. */
   optional?: boolean
 }) {
   const pref = `${refBase}.property.${pname}`
@@ -164,7 +164,7 @@ export function MethodCard({
             <span className={cn(overridden && 'line-through text-muted-foreground/70')}>
               {mname}
             </span>
-            <MethodAuthBadge method={method} link={link} />
+            <MethodAuthBadge method={method} />
             {doc && <DocHint doc={doc} />}
             {method.inheritance === 'sealed' && <Chip tone="warning">sealed</Chip>}
             {method.inheritance === 'abstract' && <Chip tone="fuchsia">contract</Chip>}
@@ -199,7 +199,8 @@ function MethodDetails({
   link?: HandlerLink
   owner: string
 }) {
-  const params = Object.entries(method.params ?? {})
+  const params = Object.entries(method.input.properties ?? {})
+  const required = new Set(method.input.required ?? [])
   return (
     <div className="space-y-3 pb-1">
       {/* params: name + type */}
@@ -210,9 +211,7 @@ function MethodDetails({
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
             {params.map(([pn, ps]) => {
-              const optional = method.requiredParams
-                ? !method.requiredParams.includes(pn)
-                : undefined
+              const optional = !required.has(pn)
               const ft = friendlyType(ps as JsonSchema, optional)
               return (
                 <span key={pn} className="inline-flex items-baseline gap-1.5">
@@ -245,7 +244,16 @@ function MethodDetails({
       {/* return type */}
       <div className="pt-0.5">
         <span className="text-[11px] text-muted-foreground/60">returns </span>
-        <TypeChip schema={method.returns} />
+        {method.output.mode === 'binary' ? (
+          <Chip tone="outline">Binary</Chip>
+        ) : method.output.mode === 'stream' ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Chip tone="outline">Stream</Chip>
+            <TypeChip schema={method.output.item} />
+          </span>
+        ) : (
+          <TypeChip schema={method.output.schema} />
+        )}
       </div>
     </div>
   )
@@ -285,8 +293,7 @@ function ReceiverBadge({ owner, isStatic }: { owner: string; isStatic: boolean }
   )
 }
 
-// ── Inherited section: members a class/interface gets from the interfaces it
-// implements/extends. Rendered at the SAME weight as the member's own fields —
+// ── Inherited section: members a Class gets from base Classes. Rendered at the same weight —
 // real PropertyRow / MethodCard (icons, friendly types, the method details
 // disclosure) — grouped under each source interface and marked inherited by a
 // tier-coloured left rail + a clickable interface header. They're load-bearing,
@@ -312,12 +319,11 @@ export function InheritedSection({
                 ? 'border-l-sky-500/40'
                 : 'border-l-border'
           const tileTone = g.tier === 'local' ? 'fuchsia' : g.tier === 'external' ? 'sky' : 'muted'
-          const refBase = g.ref
-            ? interfaceSelectionId(g.ref, bundle.ir?.domain)
-            : `interface.${g.iface}`
+          const refBase =
+            g.ref.origin === bundle.ir?.domain ? `class.${g.owner}` : `class.${classRefKey(g.ref)}`
           return (
             <div key={refBase} className={cn('border-l-2 pl-3.5', rail)}>
-              {/* interface header — substantial + clickable → its detail */}
+              {/* Base Class header — substantial and navigable. */}
               <button
                 type="button"
                 onClick={() => selectClass(refBase)}
@@ -325,13 +331,13 @@ export function InheritedSection({
                 className="group/ih mb-2.5 flex w-full items-center gap-2.5 text-left"
               >
                 <IconTile tone={tileTone} size="sm">
-                  <InterfaceGlyphInner tier={g.tier} iconSvg={originIcon(g.origin)} />
+                  <ClassGlyph tier={g.tier} iconSvg={originIcon(g.origin)} />
                 </IconTile>
                 <span className="text-sm font-semibold tracking-tight group-hover/ih:text-foreground transition-colors">
-                  {g.iface}
+                  {g.owner}
                 </span>
                 <Chip tone={g.tier === 'local' ? 'fuchsia' : 'outline'}>
-                  {g.tier === 'local' ? 'interface' : originLabel(g.origin)}
+                  {g.tier === 'local' ? 'base class' : originLabel(g.origin)}
                 </Chip>
                 <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground/50 group-hover/ih:text-muted-foreground transition-colors">
                   inherited <ArrowUpRight className="h-3.5 w-3.5" />
@@ -357,8 +363,8 @@ export function InheritedSection({
                   <MethodCard
                     key={`m-${m.name}`}
                     bundle={bundle}
-                    owner={g.iface}
-                    ownerKind="interface"
+                    owner={g.owner}
+                    ownerKind="class"
                     handlerOwnerLocal={g.tier === 'local'}
                     refBase={refBase}
                     mname={m.name}
@@ -375,10 +381,8 @@ export function InheritedSection({
   )
 }
 
-// The interface's icon for an IconTile: own-domain → fuchsia Shapes glyph; kernel /
-// cross-domain → the source domain's catalog icon (falling back to a tier glyph).
-function InterfaceGlyphInner({ tier, iconSvg }: { tier: InterfaceTier; iconSvg?: string }) {
-  if (tier === 'local') return <Shapes />
+function ClassGlyph({ tier, iconSvg }: { tier: ClassTier; iconSvg?: string }) {
+  if (tier === 'local') return <Box />
   if (iconSvg) return <SchemaIcon svg={iconSvg} className="h-4 w-4" />
   return tier === 'kernel' ? <Hexagon /> : <Globe />
 }

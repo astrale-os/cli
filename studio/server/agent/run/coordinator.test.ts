@@ -58,7 +58,7 @@ function fixture(): DomainHandle {
   roots.push(root)
   mkdirSync(join(root, 'schema'))
   writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
-  writeFileSync(join(root, 'domain.ts'), 'export default {}\n')
+  writeFileSync(join(root, 'application.ts'), 'export default {}\n')
   writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
   const handle = registerDomain(root)!
   domainIds.push(handle.id)

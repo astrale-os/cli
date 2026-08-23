@@ -1,5 +1,5 @@
 import { Path } from '@astrale-os/sdk/graph/path'
-import { syscalls } from '@astrale-os/sdk/schema/kernel'
+import { K } from '@astrale-os/sdk/schema'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
@@ -77,7 +77,7 @@ Examples:
       label: `Uninstalling domain ${origin}`,
       fn: async ({ session }) =>
         (await session.call(
-          createPathCall(Path.project(syscalls.uninstall.ref).raw, uninstallCallInput(origin)),
+          createPathCall(Path.project(K.functions.uninstall.ref).raw, uninstallCallInput(origin)),
         )) as UninstallResult,
       format: (result, formatOpts, machine) => {
         if (machine) {

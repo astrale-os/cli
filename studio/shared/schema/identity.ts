@@ -5,15 +5,7 @@
  * admission remains the authority for whether a reference is semantically valid.
  */
 
-export const IR_SCHEMA_REF_KINDS = [
-  'type',
-  'interface',
-  'class',
-  'function',
-  'policy',
-  'view',
-  'core',
-] as const
+export const IR_SCHEMA_REF_KINDS = ['class', 'function', 'policy', 'view', 'core'] as const
 
 export type IrSchemaRefKind = (typeof IR_SCHEMA_REF_KINDS)[number]
 
@@ -27,14 +19,12 @@ export interface IrSchemaRef {
 /** Canonical DSL key for a schema member: `origin:kind.name`. */
 export type IrSchemaKey = `${string}:${IrSchemaRefKind}.${string}`
 
-export type IrDefinitionRef = Omit<IrSchemaRef, 'kind'> & {
-  kind: 'class' | 'interface'
-}
+export type IrClassRef = Omit<IrSchemaRef, 'kind'> & { kind: 'class' }
 
-export type IrDefinitionKey = `${string}:${IrDefinitionRef['kind']}.${string}`
+export type IrClassKey = `${string}:class.${string}`
 
 const schemaKinds = new Set<string>(IR_SCHEMA_REF_KINDS)
-const schemaKeyPattern = /^(.+):(type|interface|class|function|policy|view|core)\.(.+)$/
+const schemaKeyPattern = /^(.+):(class|function|policy|view|core)\.(.+)$/
 
 /** Structural guard only; it deliberately does not perform SDK admission. */
 export function isIrSchemaRef(value: unknown): value is IrSchemaRef {
@@ -48,19 +38,15 @@ export function isIrSchemaRef(value: unknown): value is IrSchemaRef {
   )
 }
 
-export function isIrDefinitionRef(value: unknown): value is IrDefinitionRef {
-  return isIrSchemaRef(value) && (value.kind === 'class' || value.kind === 'interface')
-}
-
-export function isIrInterfaceRef(value: unknown): value is IrDefinitionRef & { kind: 'interface' } {
-  return isIrSchemaRef(value) && value.kind === 'interface'
+export function isIrClassRef(value: unknown): value is IrClassRef {
+  return isIrSchemaRef(value) && value.kind === 'class'
 }
 
 export function schemaRefKey(ref: IrSchemaRef): IrSchemaKey {
   return `${ref.origin}:${ref.kind}.${ref.name}`
 }
 
-export function definitionRefKey(ref: IrDefinitionRef): IrDefinitionKey {
+export function classRefKey(ref: IrClassRef): IrClassKey {
   return `${ref.origin}:${ref.kind}.${ref.name}`
 }
 
@@ -76,7 +62,7 @@ export function parseSchemaRefKey(value: unknown): IrSchemaRef | undefined {
   }
 }
 
-export function parseDefinitionRefKey(value: unknown): IrDefinitionRef | undefined {
+export function parseClassRefKey(value: unknown): IrClassRef | undefined {
   const ref = parseSchemaRefKey(value)
-  return ref && isIrDefinitionRef(ref) ? ref : undefined
+  return ref && isIrClassRef(ref) ? ref : undefined
 }

@@ -1,72 +1,44 @@
 import { expect, test } from 'bun:test'
 
-import type { SchemaIR } from '../../shared/types'
+import type { IrClassKey, SchemaIR } from '../../shared/types'
 
 import { buildOverlay } from './overlay'
 
-test('preserves homonymous and cross-kind imports from the exact index', () => {
+function descriptor(origin: string, name: string) {
+  const key = `${origin}:class.${name}` as IrClassKey
+  return { origin, ref: { origin, kind: 'class' as const, name }, key }
+}
+
+test('preserves homonymous Classes through exact import identity', () => {
+  const first = descriptor('a.example', 'Shared')
+  const second = descriptor('b.example', 'Shared')
+  const kernel = descriptor('kernel.astrale.ai', 'Identity')
   const ir = {
     version: 'v1',
+    format: 'astrale.dsl',
     domain: 'app.example',
-    types: {},
-    interfaces: {},
     classes: {},
     functions: {},
-    imports: {},
     importsByKey: {
-      'a.example:interface.Shared': {
-        origin: 'a.example',
-        definition: 'interface',
-        ref: { origin: 'a.example', kind: 'interface', name: 'Shared' },
-        key: 'a.example:interface.Shared',
-      },
-      'b.example:interface.Shared': {
-        origin: 'b.example',
-        definition: 'interface',
-        ref: { origin: 'b.example', kind: 'interface', name: 'Shared' },
-        key: 'b.example:interface.Shared',
-      },
-      'a.example:class.Shared': {
-        origin: 'a.example',
-        definition: 'class',
-        ref: { origin: 'a.example', kind: 'class', name: 'Shared' },
-        key: 'a.example:class.Shared',
-      },
-      'kernel.astrale.ai:interface.Identity': {
-        origin: 'kernel.astrale.ai',
-        definition: 'interface',
-        ref: { origin: 'kernel.astrale.ai', kind: 'interface', name: 'Identity' },
-        key: 'kernel.astrale.ai:interface.Identity',
-      },
+      [first.key]: first,
+      [second.key]: second,
+      [kernel.key]: kernel,
     },
+    importedClassesByKey: {},
+    views: {},
+    policies: {},
+    dependencies: [
+      { origin: first.origin, revision: `sha256:${'a'.repeat(64)}` },
+      { origin: second.origin, revision: `sha256:${'b'.repeat(64)}` },
+    ],
+    core: {},
   } satisfies SchemaIR
 
   const overlay = buildOverlay({ ir, domainRoot: '', schemaDir: '' })
-
   expect(overlay.crossDomainImports).toEqual([
-    { name: 'Shared', origin: 'a.example', definition: 'interface' },
-    { name: 'Shared', origin: 'b.example', definition: 'interface' },
-    { name: 'Shared', origin: 'a.example', definition: 'class' },
+    { name: 'Shared', origin: first.origin, ref: first.ref },
+    { name: 'Shared', origin: second.origin, ref: second.ref },
   ])
-  expect(overlay.mixins).toEqual([
-    { name: 'Identity', origin: 'kernel.astrale.ai', definition: 'interface' },
-  ])
-})
-
-test('retains the legacy short-name import fallback', () => {
-  const ir = {
-    version: 'legacy',
-    domain: 'app.example',
-    types: {},
-    interfaces: {},
-    classes: {},
-    functions: {},
-    imports: {
-      Identity: { origin: 'kernel.astrale.ai', definition: 'interface' },
-    },
-  } satisfies SchemaIR
-
-  expect(buildOverlay({ ir, domainRoot: '', schemaDir: '' }).mixins).toEqual([
-    { name: 'Identity', origin: 'kernel.astrale.ai', definition: 'interface' },
-  ])
+  expect(overlay.mixins).toEqual([{ name: 'Identity', origin: kernel.origin, ref: kernel.ref }])
+  expect(overlay.requires).toEqual(['a.example', 'b.example'])
 })

@@ -1,74 +1,95 @@
-/**
- * domain.ts — DomainHandle resolution + the in-process registry. A "domain" is
- * confirmed by astrale.config.ts + a composition entry + <schemaDir>/index.ts.
- * Current SDK projects use implementation.ts; domain.ts remains the legacy
- * fallback. The schema dir is configurable (default 'schema') and threaded
- * everywhere.
- */
-import { existsSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+/** SDK V1 project discovery and the in-process Studio registry. */
+import { existsSync, readFileSync } from 'node:fs'
+import { basename, dirname, extname, join, relative, resolve } from 'node:path'
 
 export interface DomainHandle {
-  id: string
-  root: string
-  configFile: string
-  /** Active composition entry (implementation.ts when present, otherwise legacy domain.ts). */
-  domainFile: string
-  schemaDirName: string
-  schemaDir: string
-  schemaIndex: string
+  readonly id: string
+  readonly root: string
+  readonly configFile: string
+  readonly applicationFile: string
+  readonly schemaDirName: string
+  readonly schemaDir: string
+  readonly schemaIndex: string
   origin?: string
 }
 
 const registry = new Map<string, DomainHandle>()
 
-export const DOMAIN_ENTRY_FILES = ['implementation.ts', 'domain.ts'] as const
-
 export function makeId(root: string): string {
   return basename(resolve(root)).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain'
 }
 
-/** Resolve the current composition entry, preferring the SDK layout. */
-export function resolveDomainEntry(root: string): string | null {
-  const r = resolve(root)
-  for (const file of DOMAIN_ENTRY_FILES) {
-    const candidate = join(r, file)
-    if (existsSync(candidate)) return candidate
+/** Resolve the Application imported by config, with root application.ts as convention. */
+export function resolveApplicationEntry(root: string): string | null {
+  const project = resolve(root)
+  const conventional = join(project, 'application.ts')
+  if (existsSync(conventional)) return conventional
+  const config = join(project, 'astrale.config.ts')
+  if (!existsSync(config)) return null
+  let source: string
+  try {
+    source = readFileSync(config, 'utf8')
+  } catch {
+    return null
+  }
+  for (const match of source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/gu)) {
+    const specifier = match[1]
+    if (
+      !specifier?.startsWith('.') ||
+      basename(specifier).replace(/\.[^.]+$/u, '') !== 'application'
+    ) {
+      continue
+    }
+    const selected = resolveSourceFile(project, specifier)
+    if (selected !== null) return selected
   }
   return null
 }
 
-/** The single definition of "is this dir an Astrale domain": the triple must all exist. */
-export function isDomainDir(root: string, schemaDirName = 'schema'): boolean {
-  const r = resolve(root)
-  return (
-    existsSync(join(r, 'astrale.config.ts')) &&
-    resolveDomainEntry(r) !== null &&
-    existsSync(join(r, schemaDirName, 'index.ts'))
-  )
+/** Resolve schema.ts or schema/index.ts beside the Application, then at project root. */
+export function resolveSchemaEntry(
+  root: string,
+  applicationFile: string,
+  schemaDirName = 'schema',
+): string | null {
+  const project = resolve(root)
+  const applicationDir = dirname(applicationFile)
+  const candidates = [
+    join(applicationDir, 'schema.ts'),
+    join(applicationDir, schemaDirName, 'index.ts'),
+    join(project, 'schema.ts'),
+    join(project, schemaDirName, 'index.ts'),
+  ]
+  return [...new Set(candidates)].find(existsSync) ?? null
 }
 
-/** Confirm + register a domain rooted at `root`. Returns null if the triple is incomplete. */
+export function isDomainDir(root: string, schemaDirName = 'schema'): boolean {
+  const project = resolve(root)
+  if (!existsSync(join(project, 'astrale.config.ts'))) return false
+  const application = resolveApplicationEntry(project)
+  return application !== null && resolveSchemaEntry(project, application, schemaDirName) !== null
+}
+
 export function registerDomain(root: string, schemaDirName = 'schema'): DomainHandle | null {
-  const r = resolve(root)
-  if (!isDomainDir(r, schemaDirName)) return null
-  const domainFile = resolveDomainEntry(r)
-  if (!domainFile) return null
-  const schemaDir = join(r, schemaDirName)
+  const project = resolve(root)
+  const applicationFile = resolveApplicationEntry(project)
+  if (applicationFile === null || !existsSync(join(project, 'astrale.config.ts'))) return null
+  const schemaIndex = resolveSchemaEntry(project, applicationFile, schemaDirName)
+  if (schemaIndex === null) return null
+  const schemaDir = dirname(schemaIndex)
   const handle: DomainHandle = {
-    id: makeId(r),
-    root: r,
-    configFile: join(r, 'astrale.config.ts'),
-    domainFile,
-    schemaDirName,
+    id: makeId(project),
+    root: project,
+    configFile: join(project, 'astrale.config.ts'),
+    applicationFile,
+    schemaDirName: relative(project, schemaDir).replaceAll('\\', '/') || '.',
     schemaDir,
-    schemaIndex: join(schemaDir, 'index.ts'),
+    schemaIndex,
   }
   registry.set(handle.id, handle)
   return handle
 }
 
-/** Drop a domain from the registry (its dir/triple is gone). */
 export function unregisterDomain(id: string): void {
   registry.delete(id)
 }
@@ -81,25 +102,23 @@ export function allDomains(): DomainHandle[] {
   return [...registry.values()]
 }
 
-/** Does the domain have the dependency cohort required by its project layout installed? */
+/** Studio's current project model always requires the semantic SDK Schema facade. */
 export function depsInstalled(root: string): boolean {
-  const installed = (packageDir: string, specifier: string): boolean => {
-    if (existsSync(join(root, 'node_modules', '@astrale-os', packageDir))) return true
-    try {
-      Bun.resolveSync(specifier, root)
-      return true
-    } catch {
-      return false
-    }
+  if (existsSync(join(root, 'node_modules', '@astrale-os', 'sdk'))) return true
+  try {
+    Bun.resolveSync('@astrale-os/sdk/schema', root)
+    return true
+  } catch {
+    return false
   }
+}
 
-  // A workspace may hoist the package above the Domain root. Check both the
-  // conventional local link and Bun's real resolver from the Domain boundary.
-  const sdk = installed('sdk', '@astrale-os/sdk/schema')
-  const entry = resolveDomainEntry(root)
-
-  // implementation.ts is an SDK boundary by contract. Legacy domain.ts
-  // projects may predate the SDK facade and depend on kernel-core directly.
-  if (entry?.endsWith('implementation.ts')) return sdk
-  return sdk || installed('kernel-core', '@astrale-os/kernel-core')
+function resolveSourceFile(root: string, specifier: string): string | null {
+  const absolute = resolve(root, specifier)
+  const extension = extname(absolute)
+  const candidates =
+    extension === ''
+      ? [`${absolute}.ts`, join(absolute, 'index.ts')]
+      : [absolute, `${absolute.slice(0, -extension.length)}.ts`]
+  return candidates.find(existsSync) ?? null
 }

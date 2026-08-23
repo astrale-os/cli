@@ -18,7 +18,7 @@ function domain(root: string, id: string): DomainHandle {
     id,
     root,
     configFile: join(root, 'astrale.config.ts'),
-    domainFile: join(root, 'domain.ts'),
+    applicationFile: join(root, 'application.ts'),
     schemaDirName: 'schema',
     schemaDir: join(root, 'schema'),
     schemaIndex: join(root, 'schema/index.ts'),

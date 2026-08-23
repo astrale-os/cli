@@ -22,10 +22,7 @@ const KERNEL_TOKENS: KernelToken[] = [
   { token: 'auth.check' },
   { token: 'graph.tree' },
   { token: 'graph.node' },
-  { token: 'revokePerm', label: 'revokePerm (legacy)' },
-  { token: 'checkPerm', label: 'checkPerm (legacy)' },
   { token: 'graph.get' },
-  { token: 'grantPerm', label: 'grantPerm (legacy)' },
 ]
 
 /** Scan handler file text for kernel-op tokens. */

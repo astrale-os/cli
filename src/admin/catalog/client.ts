@@ -1,10 +1,19 @@
 import type { ClientSession } from '@astrale-os/kernel-client/session'
 import type { Node } from '@astrale-os/sdk/graph/node'
+import type { ResolvedClass } from '@astrale-os/sdk/schema'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
-import { bindAdmin, type AdminBinding } from '../binding'
+import {
+  bindAdmin,
+  invokeAdminMethod,
+  requireAdminBinding,
+  requireAdminClass,
+  requireAdminCore,
+  requireAdminProperty,
+  type AdminBinding,
+} from '../binding'
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import {
   AdminDomainNotFoundError,
@@ -13,16 +22,9 @@ import {
   type PublishDomainResult,
 } from './model'
 
-const ADMIN_ORIGIN = 'admin.astrale.ai'
 const PAGE_SIZE = 256
 const MAXIMUM_DOMAINS = 10_000
 const MAXIMUM_PAGES = Math.ceil(MAXIMUM_DOMAINS / PAGE_SIZE) + 1
-const DomainRef = Object.freeze({ origin: ADMIN_ORIGIN, kind: 'class' as const, name: 'Domain' })
-const fleetInstallsByDefault = Object.freeze({
-  origin: ADMIN_ORIGIN,
-  kind: 'class' as const,
-  name: 'fleet_installs_domain_by_default',
-})
 
 export interface AdminCatalogContext {
   readonly session: ClientSession
@@ -45,21 +47,22 @@ export async function connectAdminCatalog(
   context: AdminCatalogContext,
   dependencies: AdminCatalogDependencies = {},
 ): Promise<AdminCatalogApi> {
-  const binding = await (dependencies.bind ?? bindAdmin)(context.session)
-  if (binding.$.publication?.origin !== ADMIN_ORIGIN || binding.$.origin !== ADMIN_ORIGIN) {
-    throw new TypeError('Configured Admin target does not serve the Admin Domain.')
-  }
-  const Domain = binding.$.class('Domain')
-  const Fleet = binding.$.class('Fleet')
-  const fleet = binding.$.core.nodes.fleet?.path
-  if (fleet === undefined) throw new TypeError('Admin Domain has no singleton Fleet receiver.')
+  const binding = requireAdminBinding(await (dependencies.bind ?? bindAdmin)(context.session))
+  const Domain = requireAdminClass(binding, 'Domain', 'node')
+  const Fleet = requireAdminClass(binding, 'Fleet', 'node')
+  const fleetInstallsByDefault = requireAdminClass(
+    binding,
+    'fleet_installs_domain_by_default',
+    'edge',
+  )
+  const fleet = requireAdminCore(binding, 'fleet')
   const operationId = dependencies.operationId ?? defaultOperationId
 
   const list = async (): Promise<DomainInfo[]> => {
     const [nodes, defaultsPage] = await Promise.all([
       readAllNodes(
         context.graph,
-        Query.from({ nodes: [DomainRef] }).select({
+        Query.from({ kind: 'node', classes: [Domain] }).select({
           kind: 'nodes',
           projection: { kind: 'value' },
         }),
@@ -107,13 +110,13 @@ export async function connectAdminCatalog(
       let entry = existing
       if (registryChanged) {
         entry = domainFromSummary(
-          await binding.$.invoke(Fleet.$.method('publishDomain') as never, fleet, {
+          await invokeAdminMethod(context.session, binding, Fleet, 'publishDomain', fleet, {
             operationId: operationId('publish'),
             origin: input.origin,
             name: input.name,
             discoveryUrl: input.url,
             ...(description === undefined ? {} : { description }),
-          } as never),
+          }),
           existing?.installByDefault === true,
         )
       }
@@ -124,13 +127,16 @@ export async function connectAdminCatalog(
         (entry.installByDefault ?? false) !== input.installByDefault
       if (defaultChanged) {
         entry = domainFromSummary(
-          await binding.$.invoke(
-            Domain.$.method('configureDefault') as never,
+          await invokeAdminMethod(
+            context.session,
+            binding,
+            Domain,
+            'configureDefault',
             Path.parse(entry.id),
             {
               operationId: operationId('configure-default'),
               enabled: input.installByDefault,
-            } as never,
+            },
           ),
           input.installByDefault === true,
         )
@@ -144,7 +150,7 @@ export async function connectAdminCatalog(
   })
 }
 
-type DynamicDefinition = ReturnType<AdminBinding['$']['class']>
+type DynamicDefinition = ResolvedClass<'node'>
 
 function domainFromNode(
   definition: DynamicDefinition,
@@ -180,7 +186,10 @@ function domainFromSummary(input: unknown, installByDefault: boolean): DomainInf
 }
 
 function requiredProperty(definition: DynamicDefinition, node: Node, name: string): string {
-  return requiredString(node.props[definition.$.property(name).key], `Admin Domain.${name}`)
+  return requiredString(
+    node.props[requireAdminProperty(definition, name).key],
+    `Admin Domain.${name}`,
+  )
 }
 
 function optionalProperty(
@@ -188,7 +197,7 @@ function optionalProperty(
   node: Node,
   name: string,
 ): Readonly<Record<string, string>> {
-  const value = node.props[definition.$.property(name).key]
+  const value = node.props[requireAdminProperty(definition, name).key]
   return value === undefined ? {} : { [name]: requiredString(value, `Admin Domain.${name}`) }
 }
 

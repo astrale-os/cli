@@ -23,7 +23,6 @@ const EMPTY_LAYOUT: LayoutState = { positions: {} }
 const EMPTY_VISIBILITY: VisibilityState = {
   hidden: {},
   showInheritedEdges: true,
-  materializedInterfaces: {},
 }
 
 export function useWorkspaceDomainInputs(

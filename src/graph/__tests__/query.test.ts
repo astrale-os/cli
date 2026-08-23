@@ -38,7 +38,7 @@ describe('prepareQuery', () => {
   })
 
   /** @evidence TEST-CLI-GRAPH-AUTHORS-DEFINITION-QUERY */
-  test('authors an exact Definition source without backend query text', () => {
+  test('authors an exact Class source without backend query text', () => {
     const prepared = prepareQuery({
       sources: [],
       definition: '/:issues.astrale.ai:class.Issue',
@@ -52,8 +52,8 @@ describe('prepareQuery', () => {
         kind: 'node',
         terms: [
           {
-            kind: 'definition',
-            definition: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
+            kind: 'class',
+            class: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
           },
         ],
         binding: 'n0',
@@ -66,17 +66,17 @@ describe('prepareQuery', () => {
 
   test('unions positional Paths and one Class source in authored order', () => {
     const prepared = prepareQuery({
-      sources: ['/@note'],
+      sources: ['@note'],
       definition: '/:issues.astrale.ai:class.Issue',
     })
 
     expect(JSON.parse(JSON.stringify(prepared.ast.source))).toEqual({
       kind: 'node',
       terms: [
-        { kind: 'path', path: '/@note' },
+        { kind: 'path', path: '@note' },
         {
-          kind: 'definition',
-          definition: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
+          kind: 'class',
+          class: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
         },
       ],
       binding: 'n0',
@@ -92,8 +92,8 @@ describe('prepareQuery', () => {
         kind: 'node',
         terms: [
           {
-            kind: 'definition',
-            definition: { origin: 'notes.example.dev', kind: 'class', name: 'Note' },
+            kind: 'class',
+            class: { origin: 'notes.example.dev', kind: 'class', name: 'Note' },
           },
         ],
         binding: 'n0',

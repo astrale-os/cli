@@ -8,8 +8,8 @@ import type { AnchorKind } from '@shared/types'
  *   section.<id>                          a whole tab (the schema canvas, env…)
  *   view.<slug>                           a declared domain view (Views panel rows)
  *   module.<path>                         a file/folder grouping of members
- *   class|interface|edge.<Name>           a member
- *   class|interface|edge.<Name>.property|method|endpoint.<x>   a member's field
+ *   class|edge.<Name>                     a member
+ *   class|edge.<Name>.property|method|endpoint.<x>             a member's field
  *
  * Resolution rule (see comment-mode.tsx): the NEAREST declared scope wins. Every
  * surface stamps the most specific ref it represents via `anchorData()`; the
@@ -17,11 +17,11 @@ import type { AnchorKind } from '@shared/types'
  * resolve to their enclosing scope instead of collapsing to the section.
  */
 
-export type SchemaMemberKind = 'class' | 'interface' | 'edge'
+export type SchemaMemberKind = 'class' | 'edge'
 
 /** The AnchorKind implied by a ref's namespace (used when stamping a free click). */
 export function anchorKindForRef(ref: string): AnchorKind {
-  if (/^(class|interface|edge)\./.test(ref)) return 'schema'
+  if (/^(class|edge)\./.test(ref)) return 'schema'
   if (/^(module|section|view)\./.test(ref)) return 'section'
   if (ref.startsWith('file.')) return 'file'
   return 'free'

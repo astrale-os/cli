@@ -1,12 +1,13 @@
 import type {
+  NodeQueryBuilder,
   QueryAST as QueryASTValue,
   QueryDirection,
-  QueryNodeClassInput,
-  QueryNodeInput,
 } from '@astrale-os/sdk/query'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query, QueryAST } from '@astrale-os/sdk/query'
+
+import { classReference } from './class'
 
 export interface QueryCommandInput {
   readonly sources: readonly string[]
@@ -52,37 +53,33 @@ export function prepareQuery(input: QueryCommandInput): PreparedQuery {
   }
 
   const paths = input.sources.map((source) => Path.parse(source))
-  const definition = input.definition === undefined ? undefined : definitionRef(input.definition)
-  const nodes = definition === undefined ? paths : [...paths, definition]
-  const query = Query.from({ nodes: nodes as [QueryNodeInput, ...QueryNodeInput[]] })
+  const definition =
+    input.definition === undefined ? undefined : classReference(input.definition, '--definition')
+  const query: NodeQueryBuilder<unknown> =
+    paths.length > 0
+      ? Query.from({
+          kind: 'node',
+          paths: paths as [Path, ...Path[]],
+          ...(definition === undefined ? {} : { classes: [definition] }),
+        })
+      : Query.from({ kind: 'node', classes: [definition!] })
   const ast =
     input.edge === undefined
-      ? query.select({ kind: 'graph' })
-      : query
-          .expand({
-            via: [definitionRef(input.edge)],
-            direction: input.direction ?? 'outgoing',
-          })
-          .select({ kind: 'graph' })
+      ? query.select({ kind: 'graph', binding: query.node })
+      : expanded(query, input.edge, input.direction)
   return withPage(ast, limit, input.cursor)
 }
 
-function definitionRef(input: string): QueryNodeClassInput {
-  const path = Path.parse(input)
-  const step = path.ast.steps[0]
-  if (
-    path.ast.anchor.kind !== 'domain' ||
-    path.ast.steps.length !== 1 ||
-    step?.kind !== 'projection' ||
-    step.projection.kind !== 'class'
-  ) {
-    throw new TypeError('--definition must be one canonical Class Path')
-  }
-  return Object.freeze({
-    origin: path.ast.anchor.origin,
-    kind: step.projection.kind,
-    name: step.projection.name,
+function expanded(
+  query: NodeQueryBuilder<unknown>,
+  edge: string,
+  direction: QueryDirection | undefined,
+): QueryASTValue {
+  const result = query.expand({
+    via: [classReference(edge, '--edge')],
+    direction: direction ?? 'outgoing',
   })
+  return result.select({ kind: 'graph', binding: result.node })
 }
 
 function positiveInteger(raw: string | undefined, name: string, fallback: number): number {

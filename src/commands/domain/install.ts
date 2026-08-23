@@ -1,5 +1,5 @@
 import { Path } from '@astrale-os/sdk/graph/path'
-import { syscalls } from '@astrale-os/sdk/schema/kernel'
+import { K } from '@astrale-os/sdk/schema'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
@@ -414,7 +414,7 @@ export async function installDirect(
     fn: async ({ session }) =>
       (await session.call(
         createPathCall(
-          Path.project(syscalls.install.ref).raw,
+          Path.project(K.functions.install.ref).raw,
           directInstallCallInput(url, operation, opts.token),
         ),
       )) as DirectInstallResult,

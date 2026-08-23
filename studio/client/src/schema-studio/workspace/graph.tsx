@@ -282,11 +282,9 @@ export function WorkspaceSchemaGraph({
           nodeColor={(node) =>
             node.type === 'classNode'
               ? `oklch(0.6 0.13 ${(node.data as ClassNodeData).hue})`
-              : node.type === 'interfaceNode'
-                ? 'oklch(0.6 0.18 330)'
-                : node.type === 'workspaceDomain'
-                  ? 'oklch(0.52 0.08 225 / 0.45)'
-                  : 'transparent'
+              : node.type === 'workspaceDomain'
+                ? 'oklch(0.52 0.08 225 / 0.45)'
+                : 'transparent'
           }
           nodeStrokeWidth={0}
           maskColor="oklch(0.17 0.01 270 / 0.72)"

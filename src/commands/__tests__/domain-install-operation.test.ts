@@ -1,9 +1,7 @@
-import { defineDomain } from '@astrale-os/sdk'
-import { issuer } from '@astrale-os/sdk/auth'
-import { createDeployment } from '@astrale-os/sdk/deployment'
-import { defineSchema } from '@astrale-os/sdk/schema/v1'
+import { defineSchema } from '@astrale-os/sdk/schema'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
+import { releaseFor } from '../../__tests__/fixtures/publication'
 import { installDirect } from '../domain/install'
 
 const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
@@ -12,16 +10,7 @@ const RETRY = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
 const originalFetch = globalThis.fetch
 
 const schema = defineSchema('crm.test', {})
-const definition = defineDomain({
-  schema,
-  handlers: { functions: {}, classes: {}, interfaces: {} },
-})
-const deployed = createDeployment({
-  definition,
-  issuer: issuer.accept('https://crm.test'),
-  bundleHref: 'https://crm.test/domain.bundle.json',
-  bindings: { callables: [] },
-}).publication
+const deployed = releaseFor(schema, 'https://crm.test').publication
 
 function publicationResponse(): Response {
   return Response.json(deployed)

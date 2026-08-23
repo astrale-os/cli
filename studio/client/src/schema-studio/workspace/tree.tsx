@@ -21,9 +21,7 @@ export function WorkspaceModuleTree({
   const selected = useUI((state) => state.selectedClass)
   const setDomain = useUI((state) => state.setDomain)
   const collapsedByDomain = useSchemaWorkspace((state) => state.collapsedModules)
-  const badgeByDomain = useSchemaWorkspace((state) => state.badgeInterfaces)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
-  const toggleInterface = useSchemaWorkspace((state) => state.toggleInterface)
   const [closedDomains, setClosedDomains] = useState<Record<string, true>>({})
 
   const activate = (domainId: string, ref?: string) => {
@@ -40,19 +38,12 @@ export function WorkspaceModuleTree({
         const domainId = domain.input.summary.id
         const active = activeDomainId === domainId
         const closed = !!closedDomains[domainId]
-        const materializedInterfaces = Object.fromEntries(
-          Object.keys(domain.input.bundle.ir?.interfaces ?? {})
-            .filter((name) => !(badgeByDomain[domainId] ?? []).includes(name))
-            .map((name) => [name, true]),
-        ) as Record<string, true>
         const controls: ModuleTreeControls = {
           domainId,
           collapsedModules: collapsedByDomain[domainId] ?? [],
           hidden: domain.input.visibility.hidden,
-          materializedInterfaces,
           toggleModule: (path) => toggleModule(domainId, path),
           toggleHidden: (ref) => onToggleHidden(domainId, ref),
-          toggleInterfaceMaterialized: (name) => toggleInterface(domainId, name),
         }
         const tree = buildModuleTree(domain.input.bundle)
 

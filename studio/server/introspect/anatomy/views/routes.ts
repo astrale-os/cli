@@ -1,9 +1,9 @@
-import { existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { Node, type SourceFile, SyntaxKind } from 'ts-morph'
 
 import type { ViewInfo } from '../../../../shared/types'
 
+import { resolveApplicationEntry } from '../../../domain'
 import { defineSchemaCalls, schemaProject } from '../schema-definition'
 import {
   addSource,
@@ -44,27 +44,29 @@ export function buildSchemaViewSources(root: string, schemaDirName: string): Map
   return sources
 }
 
-function frontendKind(
-  frontendName: string,
-  input: Node,
-  source: SourceFile,
-): { kind: ViewInfo['kind']; external: boolean } {
-  if (frontendName === 'reactFrontend') return { kind: 'spa', external: false }
-  const sourceName = callName(objectProperty(input, 'source', source))
-  if (sourceName === 'generatedFrontend') return { kind: 'inline-html', external: false }
-  if (sourceName === 'viteFrontend' || sourceName === 'prebuiltFrontend') {
-    return { kind: 'spa', external: false }
-  }
-  if (sourceName === 'externalFrontend') return { kind: 'spa', external: true }
-  return { kind: 'unknown', external: false }
+function defaultRoute(name: string): string {
+  return `/${name
+    .replace(/([a-z0-9])([A-Z])/gu, '$1-$2')
+    .replace(/[_\s]+/gu, '-')
+    .toLowerCase()}`
 }
 
-export function buildFrontendViews(root: string): ViewInfo[] {
+function frontendSource(input: Node, source: SourceFile): { externalOrigin?: string } {
+  const value = objectProperty(input, 'source', source)
+  if (!value || !Node.isCallExpression(value)) return {}
+  if (callName(value) !== 'external') return {}
+  const origin = literalString(value.getArguments()[0], source)
+  return origin === undefined ? {} : { externalOrigin: origin }
+}
+
+export function buildFrontendViews(
+  root: string,
+  canonicalViewNames: readonly string[],
+): ViewInfo[] {
   const project = makeProject()
-  const compositionFiles = ['implementation.ts', 'domain.ts']
-    .map((file) => join(root, file))
-    .filter((file) => existsSync(file))
-  const sources = [...new Set([...listSourceFiles(join(root, 'views')), ...compositionFiles])]
+  const application = resolveApplicationEntry(root)
+  const applicationFiles = application === null ? [] : [application]
+  const sources = [...new Set([...listSourceFiles(join(root, 'views')), ...applicationFiles])]
     .map((file) => addSource(project, file))
     .filter((source): source is SourceFile => source !== null)
   const views: ViewInfo[] = []
@@ -72,30 +74,37 @@ export function buildFrontendViews(root: string): ViewInfo[] {
   for (const source of sources) {
     for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const frontendName = callName(call)
-      if (frontendName !== 'frontendArtifact' && frontendName !== 'reactFrontend') continue
+      if (frontendName !== 'defineFrontend') continue
       const input = objectValue(call.getArguments()[0], source)
       if (!input) continue
       const routes = objectValue(objectProperty(input, 'routes', source) ?? undefined, source)
-      if (!routes || !Node.isObjectLiteralExpression(routes)) continue
-      const artifact = frontendKind(frontendName, input, source)
+      const declared = new Map<string, string>()
+      if (routes && Node.isObjectLiteralExpression(routes)) {
+        for (const property of routes.getProperties()) {
+          const slug = propertySlug(property)
+          const routeValue = propertyValue(property, source)
+          if (!slug || !routeValue) continue
+          const direct = literalString(routeValue, source)
+          const routeInput = objectValue(routeValue, source)
+          const path =
+            direct ??
+            (routeInput
+              ? literalString(objectProperty(routeInput, 'path', source) ?? undefined, source)
+              : undefined)
+          if (path) declared.set(slug, path)
+        }
+      }
+      const frontend = frontendSource(input, source)
 
-      for (const property of routes.getProperties()) {
-        const slug = propertySlug(property)
-        const routeValue = propertyValue(property, source)
-        if (!slug || !routeValue) continue
-        const routeName = callName(routeValue)
-        const routeInput = Node.isCallExpression(routeValue)
-          ? objectValue(routeValue.getArguments()[0], source)
-          : objectValue(routeValue, source)
-        if (!routeInput) continue
-
-        const path = literalString(objectProperty(routeInput, 'path', source) ?? undefined, source)
-        const href = literalString(objectProperty(routeInput, 'href', source) ?? undefined, source)
+      for (const slug of canonicalViewNames) {
+        const path = declared.get(slug) ?? defaultRoute(slug)
+        const url = frontend.externalOrigin
+          ? new URL(path, `${frontend.externalOrigin}/`).toString()
+          : undefined
         views.push({
           slug,
-          kind: routeName === 'reactRoute' ? 'spa' : artifact.kind,
-          ...(href ? { url: href } : { url: undefined }),
-          ...(!href && (path || !artifact.external) ? { mount: path ?? `/ui/${slug}` } : {}),
+          kind: 'spa',
+          ...(url ? { url } : { mount: path }),
           file: relative(root, source.getFilePath()).replaceAll('\\', '/'),
         })
       }

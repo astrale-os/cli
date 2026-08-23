@@ -6,9 +6,7 @@ import {
   EyeOff,
   FolderClosed,
   FolderOpen,
-  Shapes,
   Spline,
-  SquareDashed,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -18,16 +16,14 @@ import { cn } from '@/lib/utils'
 
 import { type MemberRef, type TreeNode } from './modules'
 import { SchemaIcon } from './schema-icon'
-import { isHidden, isMaterialized } from './visibility'
+import { isHidden } from './visibility'
 
 export interface ModuleTreeControls {
   domainId: string
   collapsedModules: string[]
   hidden: Record<string, true>
-  materializedInterfaces: Record<string, true>
   toggleModule: (path: string) => void
   toggleHidden: (ref: string) => void
-  toggleInterfaceMaterialized: (name: string) => void
 }
 
 /** Does any member anywhere under `node` match the current selection? */
@@ -191,28 +187,15 @@ function Member({
   controls?: ModuleTreeControls
 }) {
   const active = selected === m.selectId
-  const isInterface = m.kind === 'interface'
   // `m.ref` (class.X / edge.X) is the hide-set key — NOT `m.selectId`, whose edges share the
-  // class.X namespace and would collide with a same-named node class. Interfaces don't hide;
-  // their per-element control is materialize (badge ⇄ canvas node), keyed by bare name.
+  // class.X namespace and would collide with a same-named node class.
   const storeHidden = useUI((s) => isHidden(m.ref, s.hidden))
   const storeToggleHidden = useUI((s) => s.toggleHidden)
-  const storeMaterialized = useUI((s) => isMaterialized(m.name, s.materializedInterfaces))
-  const storeToggleInterface = useUI((s) => s.toggleInterfaceMaterialized)
   const hidden = controls ? isHidden(m.ref, controls.hidden) : storeHidden
   const toggleHidden = controls?.toggleHidden ?? storeToggleHidden
-  const materialized = controls
-    ? isMaterialized(m.name, controls.materializedInterfaces)
-    : storeMaterialized
-  const toggleInterfaceMaterialized = controls?.toggleInterfaceMaterialized ?? storeToggleInterface
-  const dimmed = !isInterface && hidden // materialized = MORE visible, never dims the row
-  const Icon = m.kind === 'interface' ? Shapes : m.kind === 'edge' ? Spline : Box
-  const color =
-    m.kind === 'interface'
-      ? 'text-fuchsia-300'
-      : m.kind === 'edge'
-        ? 'text-amber-400'
-        : 'text-sky-300'
+  const dimmed = hidden
+  const Icon = m.kind === 'edge' ? Spline : Box
+  const color = m.kind === 'edge' ? 'text-amber-400' : 'text-sky-300'
   const ref = useRef<HTMLDivElement>(null)
   // Auto-scroll: when this row becomes the selected one, nudge it into view.
   // 'nearest' only scrolls if it's off-screen, so visible selections don't jump.
@@ -244,48 +227,20 @@ function Member({
         )}
         <span className="truncate">{m.name}</span>
       </button>
-      {isInterface ? (
-        // interface control: materialize (badge ⇄ canvas node). A distinct affordance from the
-        // class/edge hide-eye — a box-promote icon, tinted fuchsia when materialized — so the two
-        // don't read identically. Active state stays visible so you can collapse back to a badge.
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            toggleInterfaceMaterialized(m.name)
-          }}
-          title={materialized ? 'Collapse to badge' : 'Show as node'}
-          className={cn(
-            'ml-1 shrink-0 rounded p-0.5 transition hover:bg-white/5',
-            materialized
-              ? 'text-fuchsia-300 opacity-100'
-              : 'text-muted-foreground/60 opacity-0 hover:text-foreground group-hover:opacity-100',
-          )}
-        >
-          {/* active = Box (promoted to a canvas node), NOT Shapes — Shapes is already the leading
-              interface glyph, and two identical icons on one row would blur the toggle's affordance. */}
-          {materialized ? (
-            <Box className="h-3.5 w-3.5" />
-          ) : (
-            <SquareDashed className="h-3.5 w-3.5" />
-          )}
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            toggleHidden(m.ref)
-          }}
-          title={hidden ? 'Show in canvas' : 'Hide in canvas'}
-          className={cn(
-            'ml-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition hover:bg-white/5 hover:text-foreground',
-            hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100', // stays visible while hidden so you can un-hide
-          )}
-        >
-          {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          toggleHidden(m.ref)
+        }}
+        title={hidden ? 'Show in canvas' : 'Hide in canvas'}
+        className={cn(
+          'ml-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition hover:bg-white/5 hover:text-foreground',
+          hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+        )}
+      >
+        {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      </button>
       <AnchorButton
         domainId={controls?.domainId}
         anchorRef={{ ref: m.selectId, kind: 'schema' }}

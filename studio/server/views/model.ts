@@ -4,9 +4,9 @@ import type {
   ViewTargetResult,
 } from '../../shared/types'
 
-const NAMED_NAME = 'kernel.astrale.ai:interface.Named.property.name'
-const DESCRIPTABLE_DESCRIPTION = 'kernel.astrale.ai:interface.Descriptable.property.description'
-const STATUSED_STATUS = 'kernel.astrale.ai:interface.Statused.property.status'
+const NAMED_NAME = 'kernel.astrale.ai:class.Named.property.name'
+const DESCRIPTABLE_DESCRIPTION = 'kernel.astrale.ai:class.Descriptable.property.description'
+const STATUSED_STATUS = 'kernel.astrale.ai:class.Statused.property.status'
 
 export interface RawTargetRow {
   id?: unknown

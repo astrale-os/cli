@@ -1,4 +1,4 @@
-import { isDnsLabel } from '@astrale-os/sdk/domain'
+import { isDnsLabel } from '@astrale-os/kernel-core/dns-label'
 import { z } from 'zod'
 
 import { ReservedSlugError } from '../errors'
@@ -21,7 +21,7 @@ export function validateName(name: string, entity: string): void {
 }
 
 export function validateSlug(slug: string): void {
-  // Canonical DNS-label rule (`@astrale-os/sdk/domain`): a slug becomes a
+  // Canonical Core DNS-label rule: a slug becomes a
   // hostname label, so reject anything not DNS-safe (§4.7).
   if (!slug || !isDnsLabel(slug)) {
     throw new Error(

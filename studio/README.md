@@ -42,8 +42,8 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > Bun-only ESM that Node can't resolve). The target domain's deps must be installed
 > (`pnpm install` at the workspace root) for full-fidelity schema rendering;
 > otherwise the studio falls back to a static parse.
-> Current projects are detected through `astrale.config.ts`, `implementation.ts`,
-> and `schema/index.ts`; legacy `domain.ts` projects remain supported.
+> Current projects are detected through `astrale.config.ts`, an Application entry,
+> and `schema.ts` or `schema/index.ts`.
 
 ### Local agent harness
 

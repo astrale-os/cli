@@ -1,34 +1,47 @@
 import { Path } from '@astrale-os/sdk/graph/path'
+import { bundle, defineSchema, func, method, nodeClass } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
-import { describeCallableFromSchema } from '../call-describe'
+import { describeCallableFromBundle } from '../call-describe'
 
-const schema = {
+const createInstance = method({
+  auth: 'authenticated',
+  description: 'Create one child Instance.',
+  input: {
+    type: 'object',
+    properties: { operationId: { type: 'string' }, slug: { type: 'string' } },
+    required: ['operationId', 'slug'],
+    additionalProperties: false,
+  },
+  output: { type: 'object', additionalProperties: true },
+  static: true,
+})
+const inspectInstance = method({
+  auth: 'authenticated',
+  description: 'Inspect one child Instance.',
+  input: { type: 'object', properties: {}, additionalProperties: false },
+  output: { type: 'object', additionalProperties: true },
+})
+const journal = func({
+  auth: 'authenticated',
+  description: 'Read the authorized Kernel journal.',
+  input: { type: 'object', properties: {}, additionalProperties: false },
+  output: { type: 'object', additionalProperties: true },
+})
+const source = defineSchema('host.astrale.ai', {
   classes: {
-    Manager: {
-      methods: {
-        createInstance: {
-          auth: 'authorized',
-          description: 'Create one child Instance.',
-          input: { type: 'object', required: ['operationId', 'slug'] },
-          output: { mode: 'value' },
-        },
-      },
-    },
+    Manager: nodeClass({ methods: { createInstance } }),
+    Instance: nodeClass({ methods: { inspectInstance } }),
   },
-  functions: {
-    journal: {
-      description: 'Read the authorized Kernel journal.',
-      input: { type: 'object' },
-    },
-  },
-}
+  functions: { journal },
+})
+const installed = bundle.create(source)
 
-describe('describeCallableFromSchema', () => {
-  test('reads a static Class method from the Domain schema', () => {
-    const described = describeCallableFromSchema(
+describe('describeCallableFromBundle', () => {
+  test('reads a static Class method from the resolved Domain', () => {
+    const described = describeCallableFromBundle(
       Path.parse('/:host.astrale.ai:class.Manager:createInstance'),
-      schema,
+      installed,
     )
     expect(described).toMatchObject({
       origin: 'host.astrale.ai',
@@ -36,30 +49,30 @@ describe('describeCallableFromSchema', () => {
       method: 'createInstance',
       dispatch: 'static',
       description: 'Create one child Instance.',
-      auth: 'authorized',
+      auth: 'authenticated',
     })
     expect(described?.input).toMatchObject({ required: ['operationId', 'slug'] })
   })
 
-  test('finds an instance method when the receiver Path is not a Class projection', () => {
+  test('finds one instance method when the receiver Path is not a Class projection', () => {
     expect(
-      describeCallableFromSchema(
-        Path.parse('/:host.astrale.ai:core.manager::createInstance'),
-        schema,
+      describeCallableFromBundle(
+        Path.parse('/:host.astrale.ai:core.manager::inspectInstance'),
+        installed,
       ),
     ).toMatchObject({
       origin: 'host.astrale.ai',
-      class: 'Manager',
-      method: 'createInstance',
+      class: 'Instance',
+      method: 'inspectInstance',
       dispatch: 'instance',
     })
   })
 
-  test('reads a standalone Function from the Domain schema', () => {
+  test('reads a standalone Function from the resolved Domain', () => {
     expect(
-      describeCallableFromSchema(Path.parse('/:kernel.astrale.ai:function.journal'), schema),
+      describeCallableFromBundle(Path.parse('/:host.astrale.ai:function.journal'), installed),
     ).toMatchObject({
-      origin: 'kernel.astrale.ai',
+      origin: 'host.astrale.ai',
       function: 'journal',
       description: 'Read the authorized Kernel journal.',
     })

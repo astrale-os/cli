@@ -6,10 +6,9 @@ import ts from 'typescript'
 const SHARED_ROOT = resolve(import.meta.dir, '..')
 const STUDIO_ROOT = resolve(SHARED_ROOT, '..')
 
-// Frozen from HEAD's former monolithic shared/types.ts before it was split.
-// Keeping this manifest in the test makes the compatibility proof independent
-// of Git and catches any historical symbol silently dropped by a future move.
-const HISTORICAL_BARREL_EXPORTS = [
+// Closed Studio V1 shared surface. Keeping this manifest independent of Git
+// catches accidental aliases and shadow contracts.
+const TARGET_BARREL_EXPORTS = [
   'AGENT_ACCESS_LEVELS',
   'AGENT_EFFORT_LEVELS',
   'AgentAccess',
@@ -61,15 +60,15 @@ const HISTORICAL_BARREL_EXPORTS = [
   'InstancesState',
   'Integration',
   'IntegrationsState',
+  'IrCallable',
   'IrCallableAuth',
   'IrCallableOutput',
   'IrClass',
-  'IrDefinitionKey',
-  'IrDefinitionRef',
+  'IrClassKey',
+  'IrClassRef',
   'IrEndpoint',
   'IrFunction',
   'IrImportDescriptor',
-  'IrInterface',
   'IrMethod',
   'IrSchemaKey',
   'IrSchemaRef',
@@ -108,18 +107,16 @@ const HISTORICAL_BARREL_EXPORTS = [
   'VisibilityState',
 ] as const
 
-// Deliberate canonical identity/revision helpers added alongside the split.
-const INTENTIONAL_BARREL_ADDITIONS = [
+const TARGET_BARREL_HELPERS = [
   'IR_SCHEMA_REF_KINDS',
   'IrSchemaRefKind',
   'STUDIO_SCHEMA_PROJECTION_VERSION',
   'SchemaRevision',
-  'definitionRefKey',
-  'isIrDefinitionRef',
-  'isIrInterfaceRef',
+  'classRefKey',
+  'isIrClassRef',
   'isIrSchemaRef',
   'isSchemaRevision',
-  'parseDefinitionRefKey',
+  'parseClassRefKey',
   'parseSchemaRefKey',
   'schemaRefKey',
 ] as const
@@ -278,10 +275,10 @@ test('types.ts remains a re-export-only compatibility facade', () => {
   expect(source.statements.every(ts.isExportDeclaration)).toBe(true)
 })
 
-test('types.ts exhaustively preserves its historical named export surface', () => {
+test('types.ts exposes exactly the Studio V1 shared surface', () => {
   const exports = namedExports(join(SHARED_ROOT, 'types.ts'))
   const duplicates = exports.filter((name, index) => exports.indexOf(name) !== index)
-  const expected = [...HISTORICAL_BARREL_EXPORTS, ...INTENTIONAL_BARREL_ADDITIONS].sort()
+  const expected = [...TARGET_BARREL_EXPORTS, ...TARGET_BARREL_HELPERS].sort()
 
   expect(duplicates).toEqual([])
   expect(exports.sort()).toEqual(expected)

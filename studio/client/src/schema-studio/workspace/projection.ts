@@ -1,23 +1,16 @@
-import type {
-  DomainCatalogEntry,
-  IrDefinitionRef,
-  IrEndpoint,
-  IrSchemaRef,
-  SchemaIR,
-} from '@shared/types'
+import type { DomainCatalogEntry, IrClassRef, IrEndpoint } from '@shared/types'
 
-import { isIrDefinitionRef } from '@shared/schema/identity'
+import { isIrClassRef } from '@shared/schema/identity'
 import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
 import { cardinalityMarkers } from '../cardinality-markers'
 import { elkLayout } from '../elk-layout'
-import { localEndpointTargets } from '../external'
 import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
 import { moduleOfClass } from '../modules'
-import { localInterfaceRendered, projectDomainCanvas } from '../projection'
-import { classRef, edgeRef, isHidden, type Materialized } from '../visibility'
+import { projectDomainCanvas } from '../projection'
+import { classRef, edgeRef, isHidden } from '../visibility'
 import {
   projectExternalFrames,
   workspaceExternalMemberNodeId,
@@ -34,7 +27,6 @@ import {
 export interface WorkspaceDomainProjection {
   input: WorkspaceDomainInput
   collapsed: Set<string>
-  materialized: Materialized
   nodes: Node[]
   edges: Edge[]
 }
@@ -68,54 +60,37 @@ interface ResolvedTarget {
   nodeId: string
   domainId: string | null
   className: string | null
-  viaInterface: string | null
   unresolved?: WorkspaceExternalReference
 }
 
 const CROSS_COLOR = 'oklch(0.76 0.16 35)'
-const CONTRACT_COLOR = 'oklch(0.72 0.18 330)'
+const INHERITANCE_COLOR = 'oklch(0.72 0.18 330)'
 
 export const workspaceDomainNodeId = (domainId: string) => `workspace-domain:${domainId}`
 export const qualifiedNodeId = (domainId: string, localId: string) =>
   `workspace:${encodeURIComponent(domainId)}:${localId}`
 
-function materializedInterfaces(
-  input: WorkspaceDomainInput,
-  badgeInterfaces: string[],
-): Materialized {
-  const badges = new Set(badgeInterfaces)
-  return Object.fromEntries(
-    Object.keys(input.bundle.ir?.interfaces ?? {})
-      .filter((name) => !badges.has(name))
-      .map((name) => [name, true]),
-  )
-}
-
-/** Layout one domain independently, reusing its persisted geometry and only packing new nodes. */
+/** Layout one Domain independently, reusing persisted geometry and packing only new nodes. */
 export async function prepareWorkspaceDomain(
   input: WorkspaceDomainInput,
   collapsedModules: string[],
-  badgeInterfaces: string[],
 ): Promise<WorkspaceDomainProjection> {
   const collapsed = new Set(collapsedModules)
-  const materialized = materializedInterfaces(input, badgeInterfaces)
   const structure = projectDomainCanvas(
     input.bundle,
     collapsed,
     input.visibility.hidden,
     input.visibility.showInheritedEdges,
-    materialized,
   )
   const saved = input.layout.positions
   const placed = structure.nodes.filter((node) => saved[node.id])
   const pending = structure.nodes.filter((node) => !saved[node.id])
   let geometry: Geometry
 
-  if (pending.length === 0) {
-    geometry = saved
-  } else if (placed.length === 0) {
+  if (pending.length === 0) geometry = saved
+  else if (placed.length === 0)
     geometry = geometryOf(await elkLayout(structure.nodes, structure.edges))
-  } else {
+  else {
     geometry = {
       ...saved,
       ...packPendingNodes(
@@ -128,128 +103,72 @@ export async function prepareWorkspaceDomain(
   return {
     input,
     collapsed,
-    materialized,
     nodes: structure.nodes.map((node) => applyGeometry(node, geometry)),
     edges: structure.edges,
   }
 }
 
-type DefinitionInput = IrDefinitionRef | string
-
-function endpointDefinitions(endpoint: IrEndpoint): DefinitionInput[] {
-  return endpoint.refs !== undefined ? endpoint.refs.filter(isIrDefinitionRef) : endpoint.types
+function endpointClasses(endpoint: IrEndpoint): Array<string | IrClassRef> {
+  return endpoint.refs !== undefined ? endpoint.refs.filter(isIrClassRef) : endpoint.types
 }
 
-function localTargets(
-  domain: WorkspaceDomainProjection,
-  definition: DefinitionInput,
-): ResolvedTarget[] {
+function localTarget(domain: WorkspaceDomainProjection, name: string): ResolvedTarget | undefined {
   const ir = domain.input.bundle.ir
-  if (!ir) return []
-  const name = typeof definition === 'string' ? definition : definition.name
-  const rendered = (name: string) =>
-    localInterfaceRendered(domain.input.bundle, domain.collapsed, domain.materialized, name)
-  const endpoint: IrEndpoint = {
-    name: 'workspace-target',
-    types: [name],
-    ...(typeof definition === 'string' ? {} : { refs: [definition] }),
+  if (!ir || ir.classes[name]?.type !== 'node') return undefined
+  if (isHidden(classRef(name), domain.input.visibility.hidden)) return undefined
+  const modulePath = moduleOfClass(domain.input.bundle, name)
+  const localId = domain.collapsed.has(modulePath) ? `grp-${modulePath}` : `class.${name}`
+  return {
+    nodeId: qualifiedNodeId(domain.input.summary.id, localId),
+    domainId: domain.input.summary.id,
+    className: name,
   }
-  return localEndpointTargets(ir, endpoint, rendered)
-    .filter(
-      (target) => !target.cls || !isHidden(classRef(target.cls), domain.input.visibility.hidden),
-    )
-    .map((target) => {
-      const localId = target.ifaceNode
-        ? target.ifaceNode
-        : domain.collapsed.has(moduleOfClass(domain.input.bundle, target.cls!))
-          ? `grp-${moduleOfClass(domain.input.bundle, target.cls!)}`
-          : `class.${target.cls}`
-      return {
-        nodeId: qualifiedNodeId(domain.input.summary.id, localId),
-        domainId: domain.input.summary.id,
-        className: target.cls,
-        viaInterface: target.viaInterface,
-      }
-    })
 }
 
-function resolveType(
+function importedClassRef(owner: WorkspaceDomainProjection, name: string): IrClassRef | undefined {
+  const ir = owner.input.bundle.ir
+  if (!ir) return undefined
+  return Object.values(ir.importsByKey).find((descriptor) => descriptor.ref.name === name)?.ref
+}
+
+function resolveClass(
   owner: WorkspaceDomainProjection,
-  definition: DefinitionInput,
+  input: string | IrClassRef,
   origins: Map<string, WorkspaceDomainProjection[]>,
   diagnostics: Set<string>,
 ): ResolvedTarget[] {
   const ir = owner.input.bundle.ir
   if (!ir) return []
-  const name = typeof definition === 'string' ? definition : definition.name
-  let ref: IrDefinitionRef
-  if (typeof definition !== 'string') {
-    ref = definition
-    if (ref.origin === ir.domain) {
-      const exists =
-        ref.kind === 'interface' ? !!ir.interfaces[ref.name] : ir.classes[ref.name]?.type === 'node'
-      return exists ? localTargets(owner, ref) : []
-    }
-  } else {
-    if (ir.classes[name]?.type === 'node' || ir.interfaces[name]) {
-      return localTargets(owner, name)
-    }
-    const imported = ir.imports[name]
-    if (!imported) return []
-    ref =
-      imported.ref ??
-      ({ origin: imported.origin, kind: imported.definition, name } satisfies IrDefinitionRef)
+  const ref: IrClassRef =
+    typeof input === 'string'
+      ? (importedClassRef(owner, input) ?? { origin: ir.domain, kind: 'class', name: input })
+      : input
+
+  if (ref.origin === ir.domain) {
+    const target = localTarget(owner, ref.name)
+    return target ? [target] : []
   }
 
   const candidates = origins.get(ref.origin) ?? []
   if (candidates.length > 1) {
-    diagnostics.add(`Multiple selected folders declare ${ref.origin}; ${name} stays external.`)
+    diagnostics.add(`Multiple selected folders declare ${ref.origin}; ${ref.name} stays external.`)
   }
   if (candidates.length === 1) {
-    const target = candidates[0]
-    const targetIr = target.input.bundle.ir
-    const exists =
-      ref.kind === 'interface'
-        ? !!targetIr?.interfaces[name]
-        : targetIr?.classes[name]?.type === 'node'
-    if (exists) return localTargets(target, ref)
+    const target = localTarget(candidates[0], ref.name)
+    if (target) return [target]
     diagnostics.add(
-      `${owner.input.summary.origin} imports ${ref.origin}:${ref.kind}.${name}, but the selected schema does not expose it.`,
+      `${owner.input.summary.origin} imports ${ref.origin}:class.${ref.name}, but the selected schema does not expose it.`,
     )
   }
 
   return [
     {
-      nodeId: workspaceExternalMemberNodeId(ref.origin, name, ref.kind),
+      nodeId: workspaceExternalMemberNodeId(ref.origin, ref.name, 'class'),
       domainId: null,
       className: null,
-      viaInterface: null,
-      unresolved: { origin: ref.origin, name, definition: ref.kind },
+      unresolved: { origin: ref.origin, name: ref.name, definition: 'class' },
     },
   ]
-}
-
-function exactOrLegacyInterfaces(
-  ir: SchemaIR,
-  exact: IrSchemaRef[] | undefined,
-  legacy: string[] | undefined,
-): DefinitionInput[] {
-  if (exact !== undefined) {
-    return exact.filter(isIrDefinitionRef).filter((ref) => ref.kind === 'interface')
-  }
-  return legacy ?? []
-}
-
-function externalInterfaceRef(ir: SchemaIR, input: DefinitionInput): IrDefinitionRef | undefined {
-  if (typeof input !== 'string') {
-    return input.kind === 'interface' && input.origin !== ir.domain ? input : undefined
-  }
-  const imported = ir.imports[input]
-  if (!imported || imported.definition !== 'interface') return undefined
-  return (
-    imported.ref ??
-    ({ origin: imported.origin, kind: 'interface', name: input } satisfies IrDefinitionRef)
-  )
 }
 
 function edgeId(ownerId: string, name: string, source: string, target: string): string {
@@ -274,10 +193,7 @@ function crossDomainEdges(
       members: new Map(),
       ownerDomainIds: new Set(),
     }
-    cluster.members.set(
-      `${target.unresolved.definition}:${target.unresolved.name}`,
-      target.unresolved,
-    )
+    cluster.members.set(target.unresolved.name, target.unresolved)
     cluster.ownerDomainIds.add(ownerDomainId)
     unresolved.set(target.unresolved.origin, cluster)
   }
@@ -288,38 +204,26 @@ function crossDomainEdges(
     for (const edgeClass of Object.values(ir.classes)) {
       if (edgeClass.type !== 'edge' || edgeClass.endpoints?.length !== 2) continue
       if (isHidden(edgeRef(edgeClass.name), owner.input.visibility.hidden)) continue
-      const aTargets = endpointDefinitions(edgeClass.endpoints[0]).flatMap((definition) =>
-        resolveType(owner, definition, origins, diagnostics),
+      const sources = endpointClasses(edgeClass.endpoints[0]).flatMap((input) =>
+        resolveClass(owner, input, origins, diagnostics),
       )
-      const bTargets = endpointDefinitions(edgeClass.endpoints[1]).flatMap((definition) =>
-        resolveType(owner, definition, origins, diagnostics),
+      const targets = endpointClasses(edgeClass.endpoints[1]).flatMap((input) =>
+        resolveClass(owner, input, origins, diagnostics),
       )
       const cardinality = cardinalityMarkers(
         edgeClass.endpoints[0].cardinality,
         edgeClass.endpoints[1].cardinality,
       )
-
-      for (const source of aTargets) {
-        for (const target of bTargets) {
+      for (const source of sources) {
+        for (const target of targets) {
           const crossesDomain =
             source.domainId !== owner.input.summary.id || target.domainId !== owner.input.summary.id
           if (!crossesDomain || source.nodeId === target.nodeId) continue
-          if (
-            (source.viaInterface &&
-              !domains.find((domain) => domain.input.summary.id === source.domainId)?.input
-                .visibility.showInheritedEdges) ||
-            (target.viaInterface &&
-              !domains.find((domain) => domain.input.summary.id === target.domainId)?.input
-                .visibility.showInheritedEdges)
-          ) {
-            continue
-          }
           remember(source, owner.input.summary.id)
           remember(target, owner.input.summary.id)
           const id = edgeId(owner.input.summary.id, edgeClass.name, source.nodeId, target.nodeId)
           if (seen.has(id)) continue
           seen.add(id)
-          const polymorphic = !!source.viaInterface || !!target.viaInterface
           edges.push({
             id,
             source: source.nodeId,
@@ -329,15 +233,10 @@ function crossDomainEdges(
               label: edgeClass.name,
               edgeClass: edgeClass.name,
               ownerDomainId: owner.input.summary.id,
-              polymorphic,
             },
             markerStart: cardinality.markerStart,
             markerEnd: cardinality.markerEnd,
-            style: {
-              stroke: CROSS_COLOR,
-              strokeWidth: 2.5,
-              ...(polymorphic ? { strokeDasharray: '7 4' } : {}),
-            },
+            style: { stroke: CROSS_COLOR, strokeWidth: 2.5 },
           })
         }
       }
@@ -348,85 +247,33 @@ function crossDomainEdges(
     edges,
     unresolved: [...unresolved.entries()].map(([origin, cluster]) => ({
       origin,
-      members: [...cluster.members.values()].sort(
-        (a, b) => a.name.localeCompare(b.name) || a.definition.localeCompare(b.definition),
-      ),
+      members: [...cluster.members.values()].sort((a, b) => a.name.localeCompare(b.name)),
       ownerDomainIds: [...cluster.ownerDomainIds],
     })),
   }
 }
 
-function contractEdges(
+function inheritanceEdges(
   domains: WorkspaceDomainProjection[],
   origins: Map<string, WorkspaceDomainProjection[]>,
   diagnostics: Set<string>,
 ): Edge[] {
   const edges: Edge[] = []
   const seen = new Set<string>()
-  const push = (edge: Edge) => {
-    if (seen.has(edge.id)) return
-    seen.add(edge.id)
-    edges.push(edge)
-  }
-
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
-    if (!ir) continue
+    if (!ir || !owner.input.visibility.showInheritedEdges) continue
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node') continue
-      const source = localTargets(owner, {
-        origin: ir.domain,
-        kind: 'class',
-        name: className,
-      })[0]
+      const source = localTarget(owner, className)
       if (!source) continue
-      for (const input of exactOrLegacyInterfaces(
-        ir,
-        definition.implementsRefs,
-        definition.implements,
-      )) {
-        const imported = externalInterfaceRef(ir, input)
-        if (!imported || imported.origin === 'kernel.astrale.ai') continue
-        for (const target of resolveType(owner, imported, origins, diagnostics)) {
-          if (target.unresolved) continue
-          const id = `workspace-implements:${source.nodeId}:${target.nodeId}`
-          push({
-            id,
-            source: source.nodeId,
-            target: target.nodeId,
-            type: 'floating',
-            data: { kind: 'implements', ownerDomainId: owner.input.summary.id },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: CONTRACT_COLOR,
-              width: 16,
-              height: 16,
-            },
-            style: { stroke: CONTRACT_COLOR, strokeWidth: 1.7, strokeDasharray: '7 4' },
-          })
-        }
-      }
-    }
-
-    for (const interfaceName of Object.keys(ir.interfaces)) {
-      const source = localTargets(owner, {
-        origin: ir.domain,
-        kind: 'interface',
-        name: interfaceName,
-      })[0]
-      if (!source) continue
-      const definition = ir.interfaces[interfaceName]
-      for (const input of exactOrLegacyInterfaces(
-        ir,
-        definition?.extendsRefs,
-        definition?.extends,
-      )) {
-        const imported = externalInterfaceRef(ir, input)
-        if (!imported || imported.origin === 'kernel.astrale.ai') continue
-        for (const target of resolveType(owner, imported, origins, diagnostics)) {
-          if (target.unresolved) continue
+      for (const parent of definition.extendsRefs ?? []) {
+        for (const target of resolveClass(owner, parent, origins, diagnostics)) {
+          if (target.unresolved || target.nodeId === source.nodeId) continue
           const id = `workspace-extends:${source.nodeId}:${target.nodeId}`
-          push({
+          if (seen.has(id)) continue
+          seen.add(id)
+          edges.push({
             id,
             source: source.nodeId,
             target: target.nodeId,
@@ -434,17 +281,20 @@ function contractEdges(
             data: { label: 'extends', kind: 'extends', ownerDomainId: owner.input.summary.id },
             markerEnd: {
               type: MarkerType.ArrowClosed,
-              color: CONTRACT_COLOR,
+              color: INHERITANCE_COLOR,
               width: 16,
               height: 16,
             },
-            style: { stroke: CONTRACT_COLOR, strokeWidth: 1.7, strokeDasharray: '2 4' },
+            style: {
+              stroke: INHERITANCE_COLOR,
+              strokeWidth: 1.7,
+              strokeDasharray: '2 4',
+            },
           })
         }
       }
     }
   }
-
   return edges
 }
 
@@ -463,9 +313,7 @@ export function composeWorkspaceCanvas(
   const origins = new Map<string, WorkspaceDomainProjection[]>()
   for (const domain of domains) {
     const origin = domain.input.bundle.ir?.domain ?? domain.input.summary.origin
-    const list = origins.get(origin) ?? []
-    list.push(domain)
-    origins.set(origin, list)
+    origins.set(origin, [...(origins.get(origin) ?? []), domain])
   }
 
   const frames = layoutWorkspaceFrames(
@@ -493,9 +341,7 @@ export function composeWorkspaceCanvas(
       data: {
         domainId,
         origin: domain.input.summary.origin,
-        memberCount:
-          Object.keys(domain.input.bundle.ir?.classes ?? {}).length +
-          Object.keys(domain.input.bundle.ir?.interfaces ?? {}).length,
+        memberCount: Object.keys(domain.input.bundle.ir?.classes ?? {}).length,
         active,
       } satisfies WorkspaceDomainNodeData,
       style: { width: frame.size.width, height: frame.size.height },
@@ -523,10 +369,7 @@ export function composeWorkspaceCanvas(
         draggable: active,
         selectable: active,
         focusable: active,
-        style: {
-          ...node.style,
-          ...(active ? {} : { pointerEvents: 'none' }),
-        },
+        style: { ...node.style, ...(active ? {} : { pointerEvents: 'none' }) },
       })
     }
     for (const edge of domain.edges) {
@@ -540,10 +383,10 @@ export function composeWorkspaceCanvas(
   }
 
   const cross = crossDomainEdges(domains, origins, diagnostics)
-  const contracts = contractEdges(domains, origins, diagnostics)
+  const inheritance = inheritanceEdges(domains, origins, diagnostics)
   const externals = projectExternalFrames(cross.unresolved, frames, externalPositions, catalog)
   nodes.push(...externals.nodes)
-  edges.push(...cross.edges, ...contracts)
+  edges.push(...cross.edges, ...inheritance)
 
   return {
     nodes,

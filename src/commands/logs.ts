@@ -1,5 +1,5 @@
 import { Path } from '@astrale-os/sdk/graph/path'
-import { syscalls } from '@astrale-os/sdk/schema/kernel'
+import { K } from '@astrale-os/sdk/schema'
 import chalk from 'chalk'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'
@@ -10,7 +10,7 @@ import { createPathCall, expandSelfInPath, runKernelCommand } from '../connectio
 import { failInput } from '../lib/log'
 import { isMachine, output, presentList } from '../lib/output'
 
-const JOURNAL_PATH = Path.project(syscalls.journal.ref).raw
+const JOURNAL_PATH = Path.project(K.functions.journal.ref).raw
 const DEFAULT_LIMIT = 200
 const FOLLOW_INTERVAL_MS = 2_000
 

@@ -43,3 +43,4 @@ pnpm-debug.log*
 
 # Local files
 *.local
+.cohort

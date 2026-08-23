@@ -1,41 +1,25 @@
 import type { Node } from '@astrale-os/sdk/graph/node'
 import type { QueryAST } from '@astrale-os/sdk/query'
 
-import { ClassPath } from '@astrale-os/sdk/graph/class'
 import { NodeId } from '@astrale-os/sdk/graph/node'
-import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, mock, test } from 'bun:test'
 
-import type { AdminBinding } from '../../binding'
 import type { AdminGraphApi } from '../../graph'
 
+import { AdminTestDomain, adminBinding, adminSession } from '../../__tests__/fixture'
 import { connectAdminCatalog } from '../client'
-
-function definition(name: string) {
-  return {
-    name,
-    $: {
-      method(method: string) {
-        return { owner: name, name: method }
-      },
-      property(property: string) {
-        return { key: property }
-      },
-    },
-  }
-}
 
 function domainNode(id: string, origin: string): Node {
   return {
     id: NodeId(id),
-    class: ClassPath.from('admin.astrale.ai', 'Domain'),
-    props: {
+    class: AdminTestDomain.classes.Domain.key,
+    props: AdminTestDomain.classes.Domain.properties.from({
       origin,
       name: origin.split('.')[0]!,
       discoveryUrl: `https://${origin}`,
       createdAt: '2026-08-12T00:00:00.000Z',
       updatedAt: '2026-08-12T00:00:00.000Z',
-    } as never,
+    }),
   }
 }
 
@@ -44,24 +28,16 @@ function fixture(input: {
   defaults?: readonly Node[]
   invoke?: (method: { owner: string; name: string }, receiver: unknown, value: unknown) => unknown
 }) {
-  const Domain = definition('Domain')
-  const Fleet = definition('Fleet')
-  const invoke = mock(async (method: unknown, receiver: unknown, value: unknown) =>
-    input.invoke?.(method as { owner: string; name: string }, receiver, value),
-  )
-  const binding = {
-    $: {
-      publication: { origin: 'admin.astrale.ai' },
-      origin: 'admin.astrale.ai',
-      class(name: string) {
-        if (name === 'Domain') return Domain
-        if (name === 'Fleet') return Fleet
-        throw new Error(`Unexpected class ${name}`)
-      },
-      core: { nodes: { fleet: { path: Path.id(NodeId('fleet')) } } },
-      invoke,
-    },
-  } as unknown as AdminBinding
+  const calls: Array<{
+    method: { owner: string; name: string }
+    receiver: string
+    value: unknown
+  }> = []
+  const remote = adminSession((method, receiver, value) => {
+    calls.push({ method, receiver: String(receiver), value })
+    return input.invoke?.(method, receiver, value)
+  })
+  const binding = adminBinding()
   const query = mock(async (_ast: QueryAST) => ({
     result: {
       kind: 'nodes' as const,
@@ -79,10 +55,11 @@ function fixture(input: {
   }))
   const graph = { query, neighbors } as unknown as AdminGraphApi
   return {
-    invoke,
+    invoke: remote.invoke,
+    calls,
     connect: () =>
       connectAdminCatalog(
-        { session: {} as never, graph },
+        { session: remote.session, graph },
         {
           bind: async () => binding,
           operationId: (kind) => `cli.domain.${kind}:test`,
@@ -130,16 +107,10 @@ describe('V2 Admin Domain catalog adapter', () => {
         installByDefault: true,
       }),
     ).resolves.toMatchObject({ changed: true, isNew: true, entry: { installByDefault: true } })
-    expect(
-      contract.invoke.mock.calls.map(([method, receiver, value]) => ({
-        method,
-        receiver: String(receiver),
-        value,
-      })),
-    ).toEqual([
+    expect(contract.calls).toEqual([
       {
         method: { owner: 'Fleet', name: 'publishDomain' },
-        receiver: '@fleet',
+        receiver: '/:admin.astrale.ai:core.fleet::publishDomain',
         value: {
           operationId: 'cli.domain.publish:test',
           origin: 'crm.acme.dev',
@@ -149,7 +120,7 @@ describe('V2 Admin Domain catalog adapter', () => {
       },
       {
         method: { owner: 'Domain', name: 'configureDefault' },
-        receiver: '@crm-domain',
+        receiver: '@crm-domain::configureDefault',
         value: {
           operationId: 'cli.domain.configure-default:test',
           enabled: true,

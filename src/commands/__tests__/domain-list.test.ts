@@ -1,11 +1,9 @@
-import { defineDomain } from '@astrale-os/sdk'
-import { issuer } from '@astrale-os/sdk/auth'
-import { createDeployment } from '@astrale-os/sdk/deployment'
-import { defineSchema } from '@astrale-os/sdk/schema/v1'
+import { defineSchema, schema as schemaApi } from '@astrale-os/sdk/schema'
 import { afterAll, describe, expect, test } from 'bun:test'
 
 import type { DomainInfo } from '../../lib/admin-domain'
 
+import { releaseFor } from '../../__tests__/fixtures/publication'
 import { byDefaultThenName, domainProjection, probe, type DomainRow } from '../domain/list'
 
 const strip = (s: string): string => s.replace(/\[[0-9;]*m/g, '')
@@ -85,16 +83,7 @@ describe('domain list — canonical Publication check', () => {
 
   test('reports the admitted schema revision in machine data', async () => {
     const schema = defineSchema('catalog-check.example.dev', {})
-    const definition = defineDomain({
-      schema,
-      handlers: { functions: {}, classes: {}, interfaces: {} },
-    })
-    const deployed = createDeployment({
-      definition,
-      issuer: issuer.accept('https://catalog-check.example.dev'),
-      bundleHref: 'https://catalog-check.example.dev/domain.bundle.json',
-      bindings: { callables: [] },
-    }).publication
+    const deployed = releaseFor(schema, 'https://catalog-check.example.dev').publication
     const server = Bun.serve({
       port: 0,
       fetch(request) {
@@ -114,23 +103,14 @@ describe('domain list — canonical Publication check', () => {
       ),
     ).resolves.toMatchObject({
       reachable: true,
-      schemaRevision: definition.domain.$.revision,
+      schemaRevision: schemaApi.revision(schema),
       checkError: null,
     })
   })
 
   test('rejects a Publication whose origin differs from the catalog entry', async () => {
     const schema = defineSchema('deployed.example.dev', {})
-    const definition = defineDomain({
-      schema,
-      handlers: { functions: {}, classes: {}, interfaces: {} },
-    })
-    const deployed = createDeployment({
-      definition,
-      issuer: issuer.accept('https://deployed.example.dev'),
-      bundleHref: 'https://deployed.example.dev/domain.bundle.json',
-      bindings: { callables: [] },
-    }).publication
+    const deployed = releaseFor(schema, 'https://deployed.example.dev').publication
     const server = Bun.serve({
       port: 0,
       fetch: () => Response.json(deployed),

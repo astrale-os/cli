@@ -1,21 +1,11 @@
-import { defineSchema, node, nodeClass, property, view } from '@astrale-os/sdk/schema'
+import { defineSchema, nodeClass, view } from '@astrale-os/sdk/schema'
 
 const Monitor = nodeClass({
   description: 'A monitored resource rendered by the browser smoke test.',
-  properties: {
-    name: property({ type: 'string' }, { required: true }),
-    label: property({ type: 'string' }, { required: true }),
-    healthy: property({ type: 'boolean' }, { required: false }),
-  },
+  properties: {},
 })
 
-const primary = node(Monitor, {
-  name: 'Primary monitor',
-  label: 'Browser fixture',
-  healthy: true,
-})
-
-export const schema = defineSchema('studio-e2e.astrale.ai', {
+export const StudioE2ESchema = defineSchema('studio-e2e.astrale.ai', {
   classes: { Monitor },
   views: {
     overview: view({
@@ -23,5 +13,6 @@ export const schema = defineSchema('studio-e2e.astrale.ai', {
       target: 'domain',
     }),
   },
-  core: { nodes: { primary } },
 })
+
+export type StudioE2ESchema = typeof StudioE2ESchema

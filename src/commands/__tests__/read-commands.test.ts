@@ -168,7 +168,7 @@ describe('query command', () => {
     ])
   })
 
-  test('authors a Definition source through the same canonical Query V6 call', async () => {
+  test('authors a Class source through the same canonical Query V6 call', async () => {
     const { queryCommand } = await import('../query')
 
     await queryCommand([], {
@@ -186,8 +186,8 @@ describe('query command', () => {
             kind: 'node',
             terms: [
               {
-                kind: 'definition',
-                definition: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
+                kind: 'class',
+                class: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
               },
             ],
             binding: 'n0',
@@ -233,7 +233,7 @@ describe('get command', () => {
     const { getCommand } = await import('../get')
     getResult = {
       id: 'note-1',
-      class: '/:notes.example.dev:class.Note',
+      class: 'notes.example.dev:class.Note',
       props: { 'notes.example.dev:class.Note.property.title': 'Hello' },
     }
 
@@ -267,7 +267,7 @@ describe('mutate command', () => {
           {
             op: 'node.create',
             as: 'note',
-            class: '/:notes.example.dev:class.Note',
+            class: 'notes.example.dev:class.Note',
             props: {},
           },
         ],
@@ -283,7 +283,7 @@ describe('mutate command', () => {
           {
             op: 'node.create',
             as: 'note',
-            class: '/:notes.example.dev:class.Note',
+            class: 'notes.example.dev:class.Note',
             props: {},
           },
         ],

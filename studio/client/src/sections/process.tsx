@@ -1,6 +1,15 @@
-import type { IrMethod, StudioSchemaBundle, ViewInfo } from '@shared/types'
+import type { IrFunction, IrMethod, StudioSchemaBundle, ViewInfo } from '@shared/types'
 
-import { ArrowUpRight, Box, Braces, LayoutTemplate, Radio, Sprout, Workflow } from 'lucide-react'
+import {
+  ArrowUpRight,
+  Box,
+  Braces,
+  LayoutTemplate,
+  Radio,
+  Sprout,
+  Workflow,
+  Zap,
+} from 'lucide-react'
 import { useMemo } from 'react'
 
 import { MethodAuthBadge } from '@/components/method-auth'
@@ -19,25 +28,13 @@ import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-/** A callable = a standalone Function or class Method, enriched with its handler. */
+/** One callable contract enriched with its Action or Workflow implementation. */
 interface Fn {
   owner: string
   ownerKind: 'class' | 'function'
   name: string
-  method: IrMethod
+  method: IrMethod | IrFunction
   link?: StudioSchemaBundle['overlay']['handlerLinks'][number]
-  isSeed: boolean
-}
-
-/** postInstall ref looks like `/:origin:class.Workspace:seed` — pull out owner+method. */
-function parseSeed(postInstall?: string): { owner: string; method: string } | null {
-  if (!postInstall) return null
-  const segs = postInstall.split(':')
-  const i = segs.findIndex((s) => s.startsWith('class.'))
-  if (i === -1 || i + 1 >= segs.length) return null
-  const owner = segs[i].slice('class.'.length)
-  const method = segs[i + 1]
-  return owner && method ? { owner, method } : null
 }
 
 /** Count the portable genesis elements in a canonical DomainSchema V1 Core. */
@@ -77,8 +74,6 @@ export function ProcessSection({ domainId }: { domainId: string }) {
   const anatomy = anatomyQ.data
   const ir = bundle?.ir ?? null
 
-  const seed = useMemo(() => parseSeed(bundle?.overlay.postInstall), [bundle?.overlay.postInstall])
-  const canonicalV1 = ir?.format === 'astrale.dsl'
   const coreCount = useMemo(() => canonicalCoreCount(ir?.core), [ir?.core])
 
   // every class method, grouped by its owning class (the "process actor")
@@ -87,11 +82,11 @@ export function ProcessSection({ domainId }: { domainId: string }) {
       return [] as { owner: string; label: string; className: string | null; fns: Fn[] }[]
     const out: { owner: string; label: string; className: string | null; fns: Fn[] }[] = []
 
-    const domainFunctions = Object.entries(ir.functions ?? {})
+    const domainFunctions = Object.entries(ir.functions)
     if (domainFunctions.length > 0) {
       out.push({
         owner: ir.domain,
-        label: 'Domain functions',
+        label: 'Domain callables',
         className: null,
         fns: domainFunctions.map(([name, method]) => ({
           owner: ir.domain,
@@ -99,7 +94,6 @@ export function ProcessSection({ domainId }: { domainId: string }) {
           name,
           method,
           link: handlerLinkFor(bundle.overlay.handlerLinks, ir.domain, name, 'function'),
-          isSeed: false,
         })),
       })
     }
@@ -113,19 +107,15 @@ export function ProcessSection({ domainId }: { domainId: string }) {
         name,
         method,
         link: handlerLinkFor(bundle.overlay.handlerLinks, c.name, name, 'class'),
-        isSeed: !!seed && seed.owner === c.name && seed.method === name,
       }))
       out.push({ owner: c.name, label: c.name, className: c.name, fns })
     }
-    // float the seed's class to the top — it's the install entrypoint
     return out.sort((a, b) => {
-      if (a.owner === seed?.owner) return -1
-      if (b.owner === seed?.owner) return 1
       if (a.className === null && b.className !== null) return -1
       if (a.className !== null && b.className === null) return 1
       return 0
     })
-  }, [ir, bundle, seed])
+  }, [ir, bundle])
 
   const fnCount = groups.reduce((n, g) => n + g.fns.length, 0)
   const views = anatomy?.views ?? []
@@ -151,60 +141,30 @@ export function ProcessSection({ domainId }: { domainId: string }) {
   return (
     <SectionShell
       title="Process"
-      subtitle="Entrypoints and the functions they run"
+      subtitle="Actions and workflows implementing callable contracts"
       icon={<Workflow className="h-5 w-5" />}
     >
       {!ir ? (
         <Surface className="px-4 py-3 text-sm text-muted-foreground">
-          Schema unavailable — install dependencies to see this domain’s functions.
+          Schema unavailable — install dependencies to see this domain’s callable contracts.
         </Surface>
       ) : (
         <>
           {/* ── Entrypoints: how a process starts ── */}
           <Group label="Entrypoints">
             <div className="space-y-2">
-              {/* Canonical V1 installs portable Core data; legacy projects may expose a seed Method. */}
-              {canonicalV1 ? (
-                coreCount > 0 ? (
-                  <Surface className="flex items-center gap-3 border-emerald-500/30 bg-emerald-500/[0.04] px-4 py-3">
-                    <IconTile tone="emerald">
-                      <Sprout />
-                    </IconTile>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold">Core genesis</div>
-                      <div className="mt-0.5 text-[13px] text-muted-foreground">
-                        {coreCount} portable element{coreCount === 1 ? '' : 's'} installed with the
-                        schema
-                      </div>
-                    </div>
-                  </Surface>
-                ) : (
-                  <Surface className="flex items-center gap-3 px-4 py-3 text-muted-foreground">
-                    <IconTile tone="muted">
-                      <Sprout />
-                    </IconTile>
-                    <div className="min-w-0 flex-1 text-[13px]">
-                      No Core genesis data declared in this schema.
-                    </div>
-                  </Surface>
-                )
-              ) : seed ? (
-                <Surface
-                  onClick={() => gotoClass(seed.owner)}
-                  className="flex cursor-pointer items-center gap-3 border-emerald-500/30 bg-emerald-500/[0.04] px-4 py-3 transition-colors hover:bg-emerald-500/[0.08]"
-                >
+              {coreCount > 0 ? (
+                <Surface className="flex items-center gap-3 border-emerald-500/30 bg-emerald-500/[0.04] px-4 py-3">
                   <IconTile tone="emerald">
                     <Sprout />
                   </IconTile>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">
-                      {seed.owner}.{seed.method}
-                    </div>
+                    <div className="truncate text-sm font-semibold">Core genesis</div>
                     <div className="mt-0.5 text-[13px] text-muted-foreground">
-                      Seed — runs once on install
+                      {coreCount} portable element{coreCount === 1 ? '' : 's'} installed with the
+                      schema
                     </div>
                   </div>
-                  <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </Surface>
               ) : (
                 <Surface className="flex items-center gap-3 px-4 py-3 text-muted-foreground">
@@ -212,7 +172,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
                     <Sprout />
                   </IconTile>
                   <div className="min-w-0 flex-1 text-[13px]">
-                    This legacy domain has no post-install seed Method.
+                    No Core genesis data declared in this schema.
                   </div>
                 </Surface>
               )}
@@ -267,11 +227,11 @@ export function ProcessSection({ domainId }: { domainId: string }) {
           {fnCount === 0 ? (
             <EmptyState
               icon={<Workflow />}
-              title="No functions yet"
+              title="No callable contracts yet"
               hint="Add a standalone Function or class Method to the schema to see it here."
             />
           ) : (
-            <Group label="Functions" hint={`${fnCount}`}>
+            <Group label="Runtime" hint={`${fnCount}`}>
               <div className="space-y-3">
                 {groups.map((g) => (
                   <Surface key={g.owner} className="overflow-hidden">
@@ -288,7 +248,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
                       </IconTile>
                       <span className="flex-1 truncate text-[13px] font-semibold">{g.label}</span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {g.fns.length} fn
+                        {g.fns.length} callable
                       </span>
                     </button>
                     <div className="border-t">
@@ -312,7 +272,14 @@ export function ProcessSection({ domainId }: { domainId: string }) {
 }
 
 function FnRow({ fn, onClick }: { fn: Fn; onClick?: () => void }) {
-  const glyph = methodGlyph(fn.method)
+  const glyph =
+    fn.link?.kind === 'workflow'
+      ? { icon: Workflow, tone: 'fuchsia' }
+      : fn.link?.kind === 'action'
+        ? { icon: Zap, tone: 'violet' }
+        : 'inheritance' in fn.method
+          ? methodGlyph(fn.method)
+          : { icon: Zap, tone: 'violet' }
   const Glyph = glyph.icon
   const calls = fn.link?.kernelCalls ?? []
   const contractOnly = fn.link && !fn.link.implemented
@@ -328,11 +295,12 @@ function FnRow({ fn, onClick }: { fn: Fn; onClick?: () => void }) {
       title={
         <span className="flex items-center gap-1.5">
           <span className="font-semibold">{fn.name}</span>
-          <MethodAuthBadge method={fn.method} link={fn.link} interactive={!onClick} />
-          {fn.ownerKind === 'function' && <Chip tone="primary">function</Chip>}
-          {fn.isSeed && <Chip tone="success">seed</Chip>}
-          {fn.method.static && <Chip tone="default">static</Chip>}
-          {fn.method.inheritance === 'abstract' && <Chip tone="fuchsia">contract</Chip>}
+          <MethodAuthBadge method={fn.method} interactive={!onClick} />
+          {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}
+          {'static' in fn.method && fn.method.static && <Chip tone="default">static</Chip>}
+          {'inheritance' in fn.method && fn.method.inheritance === 'abstract' && (
+            <Chip tone="fuchsia">contract</Chip>
+          )}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {fn.link?.unlinked && <Chip tone="default">unlinked</Chip>}
         </span>

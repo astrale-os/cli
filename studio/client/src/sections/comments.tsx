@@ -18,7 +18,6 @@ function anchorLabel(ref: string): string {
   if (ref.startsWith('view.')) return `View · ${ref.slice('view.'.length)}`
   if (ref.startsWith('module.')) return `Module · ${ref.slice('module.'.length)}`
   if (ref.startsWith('class.')) return `Class · ${ref.slice('class.'.length)}`
-  if (ref.startsWith('interface.')) return `Interface · ${ref.slice('interface.'.length)}`
   if (ref.startsWith('edge.')) return `Edge · ${ref.slice('edge.'.length)}`
   if (ref.startsWith('section.')) return ref.slice('section.'.length).replace(/\./g, ' · ')
   return ref

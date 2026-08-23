@@ -61,7 +61,7 @@ export async function listViewTargets(
 
   const queried = await Promise.all(
     bindings.map(async (binding) => {
-      const definition = targetDefinition(binding.className, binding.classOrigin, binding.kind)
+      const definition = targetDefinition(binding.className, binding.classOrigin)
       const result = await runAstraleJson<RawQueryResult>(
         [
           'query',
@@ -116,21 +116,17 @@ export async function listViewTargets(
   }
 }
 
-export function targetDefinition(
-  className: string,
-  classOrigin: string,
-  kind: 'class' | 'interface' = 'class',
-): string {
-  return `/:${assertOrigin(classOrigin)}:${kind}.${assertSchemaName(className)}`
+export function targetDefinition(className: string, classOrigin: string): string {
+  return `/:${assertOrigin(classOrigin)}:class.${assertSchemaName(className)}`
 }
 
 export interface ViewDefinitionBinding {
   className: string
   classOrigin: string
-  kind: 'class' | 'interface'
+  kind: 'class'
 }
 
-/** Preserve exact canonical View target coordinates; short-name anatomy is legacy-only. */
+/** Preserve exact canonical View target coordinates. */
 export function viewDefinitionBindings(
   origin: string,
   view: ViewInfo,
@@ -140,16 +136,17 @@ export function viewDefinitionBindings(
   if (target) {
     if (target.kind === 'domain') return []
     return uniqueViewBindings(
-      target.definitions
-        .filter(
-          (definition): definition is typeof definition & { kind: 'class' | 'interface' } =>
-            definition.kind === 'class' || definition.kind === 'interface',
-        )
-        .map((definition) => ({
-          className: definition.name,
-          classOrigin: definition.origin,
-          kind: definition.kind,
-        })),
+      target.definitions.flatMap((definition) =>
+        definition.kind === 'class'
+          ? [
+              {
+                className: definition.name,
+                classOrigin: definition.origin,
+                kind: 'class' as const,
+              },
+            ]
+          : [],
+      ),
     )
   }
 
@@ -165,7 +162,6 @@ export function viewDefinitionBindings(
     names.flatMap((className) => {
       const local: ViewDefinitionBinding[] = []
       const localClass = ir.classes[className]
-      const localInterface = ir.interfaces[className]
       if (localClass) {
         local.push({
           className,
@@ -173,33 +169,11 @@ export function viewDefinitionBindings(
           kind: 'class',
         })
       }
-      if (localInterface) {
-        local.push({
-          className,
-          classOrigin: localInterface.ref?.origin ?? localInterface.origin ?? ir.domain ?? origin,
-          kind: 'interface',
-        })
-      }
-
-      if (ir.importsByKey !== undefined) {
-        const imported = Object.keys(ir.importsByKey).flatMap((key) => {
-          const binding = viewBindingFromDefinitionKey(key)
-          return binding?.className === className ? [binding] : []
-        })
-        return [...local, ...imported]
-      }
-
-      const legacy = ir.imports[className]
-      if (legacy) {
-        return [
-          ...local,
-          {
-            className,
-            classOrigin: legacy.origin,
-            kind: legacy.definition,
-          } satisfies ViewDefinitionBinding,
-        ]
-      }
+      const imported = Object.keys(ir.importsByKey).flatMap((key) => {
+        const binding = viewBindingFromDefinitionKey(key)
+        return binding?.className === className ? [binding] : []
+      })
+      if (imported.length > 0) return [...local, ...imported]
 
       return local.length > 0 ? local : [{ className, classOrigin: origin, kind: 'class' }]
     }),
@@ -211,12 +185,12 @@ function viewBindingFromDefinitionKey(key: string): ViewDefinitionBinding | null
   if (separator <= 0) return null
   const classOrigin = key.slice(0, separator)
   const ref = key.slice(separator + 1)
-  const match = /^(class|interface)\.([A-Za-z_$][\w$]*)$/.exec(ref)
+  const match = /^class\.([A-Za-z_$][\w$]*)$/.exec(ref)
   if (!match) return null
   return {
-    className: match[2]!,
+    className: match[1]!,
     classOrigin,
-    kind: match[1] as ViewDefinitionBinding['kind'],
+    kind: 'class',
   }
 }
 

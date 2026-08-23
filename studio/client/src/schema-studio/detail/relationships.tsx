@@ -1,7 +1,7 @@
-import type { IrDefinitionRef, IrEndpoint, StudioSchemaBundle } from '@shared/types'
+import type { IrClassRef, IrEndpoint, StudioSchemaBundle } from '@shared/types'
 
-import { definitionRefKey, isIrDefinitionRef, isIrInterfaceRef } from '@shared/types'
-import { ArrowRight, Box, Shapes } from 'lucide-react'
+import { classRefKey, isIrClassRef } from '@shared/types'
+import { ArrowRight, Box } from 'lucide-react'
 
 import { Chip, IconTile, Surface } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
@@ -9,8 +9,7 @@ import { useUI } from '@/lib/store'
 import { anchorData } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
-import { resolveInterface } from '../inheritance'
-import { interfaceSelectionId } from '../modules'
+import { resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { cardLabel, isMany, isOptional } from './model'
 
@@ -41,7 +40,7 @@ export function EdgeRelationship({
   )
 }
 
-// One endpoint: the connected class/interface as entity tile(s) with role + cardinality.
+// One endpoint: the connected Class as entity tile(s) with role + cardinality.
 // Single type → one prominent clickable tile; a union → an icon+name chip per type.
 function EndpointCard({
   bundle,
@@ -56,9 +55,9 @@ function EndpointCard({
   if (!endpoint) return null
   const ir = bundle.ir
   if (!ir) return null
-  const targets: { name: string; ref?: IrDefinitionRef }[] =
+  const targets: { name: string; ref?: IrClassRef }[] =
     endpoint.refs !== undefined
-      ? endpoint.refs.filter(isIrDefinitionRef).map((ref) => ({ name: ref.name, ref }))
+      ? endpoint.refs.filter(isIrClassRef).map((ref) => ({ name: ref.name, ref }))
       : endpoint.types.map((name) => ({ name }))
   if (targets.length === 0) targets.push({ name: '—' })
   const card = endpoint.cardinality
@@ -69,39 +68,25 @@ function EndpointCard({
   const meta = ({ name: t, ref }: (typeof targets)[number]) => {
     if (ref) {
       const local = ref.origin === ir.domain
-      const cls = local && ref.kind === 'class' ? ir.classes[t] : undefined
-      const iface =
-        ref.kind === 'interface'
-          ? local
-            ? ir.interfaces[t]
-            : resolveInterface(bundle, ref)
-          : undefined
-      const resolvable = !!cls || !!iface
+      const cls = local ? ir.classes[t] : resolveClass(bundle, ref)
+      const resolvable = !!cls
       return {
         t,
-        key: definitionRefKey(ref),
+        key: classRefKey(ref),
         origin: local ? undefined : ref.origin,
-        isInterface: ref.kind === 'interface',
         resolvable,
-        selectionId: isIrInterfaceRef(ref)
-          ? interfaceSelectionId(ref, ir.domain)
-          : local
-            ? `class.${ref.name}`
-            : undefined,
+        selectionId: local ? `class.${ref.name}` : `class.${classRefKey(ref)}`,
         icon: cls?.icon as string | undefined,
       }
     }
     const cls = ir.classes[t]
-    const iface = ir.interfaces[t]
-    // A name-only legacy endpoint cannot choose safely between a same-named Class and Interface.
-    const resolvable = (!!cls || !!iface) && !(cls && iface)
+    const resolvable = !!cls
     return {
       t,
-      key: `legacy:${t}`,
+      key: `class:${t}`,
       origin: undefined,
-      isInterface: !cls && !!iface,
       resolvable,
-      selectionId: resolvable ? (!cls && iface ? `interface.${t}` : `class.${t}`) : undefined,
+      selectionId: resolvable ? `class.${t}` : undefined,
       icon: cls?.icon as string | undefined,
     }
   }
@@ -138,17 +123,11 @@ function EndpointCard({
         )}
       >
         <IconTile
-          tone={m.isInterface ? 'fuchsia' : 'violet'}
+          tone={m.origin ? 'sky' : 'violet'}
           size="lg"
           className="transition-transform group-hover/ep:-translate-y-0.5"
         >
-          {m.icon ? (
-            <SchemaIcon svg={m.icon} className="h-5 w-5" />
-          ) : m.isInterface ? (
-            <Shapes />
-          ) : (
-            <Box />
-          )}
+          {m.icon ? <SchemaIcon svg={m.icon} className="h-5 w-5" /> : <Box />}
         </IconTile>
         <div className="min-w-0 w-full space-y-1.5">
           <div className="text-sm font-bold break-words leading-tight">{m.t}</div>
@@ -182,14 +161,8 @@ function EndpointCard({
                 m.resolvable ? 'hover:bg-accent/60 cursor-pointer' : 'cursor-default',
               )}
             >
-              <IconTile tone={m.isInterface ? 'fuchsia' : 'violet'} size="sm">
-                {m.icon ? (
-                  <SchemaIcon svg={m.icon} className="h-3.5 w-3.5" />
-                ) : m.isInterface ? (
-                  <Shapes />
-                ) : (
-                  <Box />
-                )}
+              <IconTile tone={m.origin ? 'sky' : 'violet'} size="sm">
+                {m.icon ? <SchemaIcon svg={m.icon} className="h-3.5 w-3.5" /> : <Box />}
               </IconTile>
               <span className="text-[13px] font-semibold">{m.t}</span>
             </button>

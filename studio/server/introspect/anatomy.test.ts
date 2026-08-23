@@ -6,28 +6,36 @@ import { join } from 'node:path'
 import { buildAnatomy } from './anatomy'
 
 const roots: string[] = []
-
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function project(entry: 'implementation.ts' | 'domain.ts') {
-  const root = mkdtempSync(join(tmpdir(), 'studio-anatomy-entry-'))
+function project(nested: boolean) {
+  const root = mkdtempSync(join(tmpdir(), 'studio-anatomy-application-'))
   roots.push(root)
-  mkdirSync(join(root, 'schema'), { recursive: true })
+  const owner = nested ? join(root, 'domain') : root
+  mkdirSync(join(owner, 'schema'), { recursive: true })
   writeFileSync(join(root, 'package.json'), '{}\n')
-  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
-  writeFileSync(join(root, entry), 'export const domain = {}\n')
-  writeFileSync(join(root, 'schema/index.ts'), "defineSchema('example.astrale.ai', {})\n")
-  return root
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    nested
+      ? "import application from './domain/application.js'\nexport default { application }\n"
+      : 'export default {}\n',
+  )
+  writeFileSync(join(owner, 'application.ts'), 'export const application = {}\n')
+  writeFileSync(
+    join(owner, 'schema/index.ts'),
+    "defineSchema('example.astrale.ai', { classes: {} })\n",
+  )
+  return { root, schemaDirName: nested ? 'domain/schema' : 'schema' }
 }
 
-test('overview anchors current projects to implementation.ts', () => {
-  const anatomy = buildAnatomy({ root: project('implementation.ts'), schemaDirName: 'schema' })
-  expect(anatomy.overview.compositionFile).toBe('implementation.ts')
+test('overview anchors a root Application', () => {
+  const input = project(false)
+  expect(buildAnatomy(input).overview.applicationFile).toBe('application.ts')
 })
 
-test('overview preserves domain.ts as the legacy composition entry', () => {
-  const anatomy = buildAnatomy({ root: project('domain.ts'), schemaDirName: 'schema' })
-  expect(anatomy.overview.compositionFile).toBe('domain.ts')
+test('overview preserves the config-imported nested Application path', () => {
+  const input = project(true)
+  expect(buildAnatomy(input).overview.applicationFile).toBe('domain/application.ts')
 })
