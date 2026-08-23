@@ -47,8 +47,15 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
+          repository: astrale-os/kernel
+          ref: a80568d6083fd3af6f3646a8abb95338e6ae3434
+          path: .sdk-cohort/.kernel-cohort
+          token: ${{ secrets.NPM_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
           repository: astrale-os/shell
-          ref: 8d69cbd3b08f08a94c7b227391cf3a95d2746a7d
+          ref: 261c4ac8ecbcd562c259719930166b16c80f5596
           path: .shell-cohort
           token: ${{ secrets.NPM_TOKEN }}
           persist-credentials: false
@@ -109,8 +116,15 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
+          repository: astrale-os/kernel
+          ref: a80568d6083fd3af6f3646a8abb95338e6ae3434
+          path: .sdk-cohort/.kernel-cohort
+          token: ${{ secrets.NPM_TOKEN }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
           repository: astrale-os/shell
-          ref: 8d69cbd3b08f08a94c7b227391cf3a95d2746a7d
+          ref: 261c4ac8ecbcd562c259719930166b16c80f5596
           path: .shell-cohort
           token: ${{ secrets.NPM_TOKEN }}
           persist-credentials: false
