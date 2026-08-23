@@ -9,7 +9,7 @@
 | Owner | Reference | SHA |
 | --- | --- | --- |
 | CLI | `origin/main` | `53ce495f23b458e245cd82e41919ecdce5f8dc57` |
-| Shell migration | `refactor/sdk-v1-migration` | `261c4ac8ecbcd562c259719930166b16c80f5596` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
+| Shell migration | `refactor/sdk-v1-migration` | `8a7ff6147191ac8756a8d18497a400ef03234a41` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
 | SDK | `origin/main` plus PR #146 | `a210e3c12c8a4b11d19c0651b870e77b2ff19fef` / `7cf8b9e052da4c5c91c091b56e416ca3e189a8f0` |
 | Kernel DSL redesign | `origin/refactor/dsl-v1-redesign` plus PR #387 | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` / `a80568d6083fd3af6f3646a8abb95338e6ae3434` |
 

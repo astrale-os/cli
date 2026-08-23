@@ -61,7 +61,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: astrale-os/shell
-          ref: 261c4ac8ecbcd562c259719930166b16c80f5596
+          ref: 8a7ff6147191ac8756a8d18497a400ef03234a41
           path: .shell-cohort
           token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           persist-credentials: false
