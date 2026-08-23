@@ -28,19 +28,19 @@ export interface DomainInstallReceipt {
   readonly error?: string
 }
 
-export class AdminInstanceNotFoundError extends Error {
-  readonly name = 'NotFoundError'
-
+export class AdminInstanceNotFoundError extends AstraleError {
   constructor(readonly identifier: string) {
-    super(`No owned Admin Instance matches ${JSON.stringify(identifier)}.`)
+    super(
+      'INSTANCE_NOT_FOUND',
+      `No owned Admin Instance matches ${JSON.stringify(identifier)}.`,
+      'Run `astrale instance list` to see your instances.',
+    )
   }
 }
 
-export class AdminHostNotFoundError extends Error {
-  readonly name = 'NotFoundError'
-
+export class AdminHostNotFoundError extends AstraleError {
   constructor(readonly identifier: string) {
-    super(`No caller-usable Admin Host matches ${JSON.stringify(identifier)}.`)
+    super('HOST_NOT_FOUND', `No caller-usable Admin Host matches ${JSON.stringify(identifier)}.`)
   }
 }
 
@@ -63,3 +63,4 @@ export function formatInstanceLocation(info: InstanceInfo): string {
     .filter(Boolean)
     .join(' · ')
 }
+import { AstraleError } from '../../errors'

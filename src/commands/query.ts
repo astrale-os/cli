@@ -6,8 +6,9 @@ import type { KernelCommandOpts, SelfExpansionMeta } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
+import { AstraleError } from '../errors'
 import { prepareQuery, type QueryCommandInput } from '../graph/index'
-import { failClosed } from '../lib/log'
+import { failInput } from '../lib/log'
 import { isMachine, output } from '../lib/output'
 
 type QueryOpts = KernelCommandOpts & {
@@ -22,46 +23,42 @@ type QueryOpts = KernelCommandOpts & {
 
 export async function queryCommand(sources: string[], opts: QueryOpts): Promise<void> {
   let input: QueryCommandInput
-  let meta: SelfExpansionMeta | undefined
   try {
     const ast = await readAst(opts)
-    if (ast === undefined) {
-      const expanded = await Promise.all(sources.map((source) => expandSelfInPath(source, opts)))
-      input = {
-        sources: expanded.map(({ path }) => path),
-        definition: opts.definition,
-        edge: opts.edge,
-        direction: opts.direction,
-        limit: opts.limit,
-        cursor: opts.cursor,
-      }
-      meta = expanded.find((entry) => entry.meta !== undefined)?.meta
-    } else {
-      input = {
-        sources,
-        ast,
-        definition: opts.definition,
-        edge: opts.edge,
-        direction: opts.direction,
-        limit: opts.limit,
-        cursor: opts.cursor,
-      }
+    input = {
+      sources,
+      ...(ast === undefined ? {} : { ast }),
+      definition: opts.definition,
+      edge: opts.edge,
+      direction: opts.direction,
+      limit: opts.limit,
+      cursor: opts.cursor,
     }
   } catch (error) {
-    failClosed(error, opts)
+    failInput(error, opts)
   }
 
   let prepared
   try {
     prepared = prepareQuery(input)
   } catch (error) {
-    failClosed(error, opts)
+    failInput(error, opts)
   }
 
   await runKernelCommand({
     opts,
     label: 'Query',
-    fn: ({ graph }) => withSelfHint(() => graph.query(prepared.ast, { page: prepared.page }), meta),
+    fn: async (context) => {
+      const expanded = await Promise.all(sources.map((source) => expandSelfInPath(source, context)))
+      const meta: SelfExpansionMeta | undefined = expanded.find(
+        (entry) => entry.meta !== undefined,
+      )?.meta
+      const resolved =
+        meta === undefined
+          ? prepared
+          : prepareQuery({ ...input, sources: expanded.map(({ path }) => path) })
+      return withSelfHint(() => context.graph.query(resolved.ast, { page: resolved.page }), meta)
+    },
     format: (response, format) => {
       output(response.result, format)
       if (response.page.next && !isMachine(format)) {
@@ -81,9 +78,9 @@ async function readAst(opts: QueryOpts): Promise<unknown | undefined> {
   try {
     raw = await readFile(opts.file, 'utf8')
   } catch (error) {
-    throw new Error(
-      `Cannot read --file ${opts.file}: ${error instanceof Error ? error.message : error}`,
-    )
+    throw new AstraleError('FILE_READ_FAILED', `Cannot read --file ${opts.file}.`, undefined, {
+      cause: error,
+    })
   }
   return parseJson(raw, opts.file)
 }

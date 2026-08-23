@@ -89,9 +89,10 @@ export async function resolveSession(
   }
   const targetInput =
     parsed.kind === 'target' ? parsed.path : (opts.target ?? viewOwnerTarget(parsed.path))
-  const { path: target } = await expandSelfInPath(targetInput, opts)
-
-  const candidates = await withClientSession(opts, (ctx) => resolveViewCandidates(ctx, target))
+  const { target, candidates } = await withClientSession(opts, async (context) => {
+    const { path: target } = await expandSelfInPath(targetInput, context)
+    return { target, candidates: await resolveViewCandidates(context, target) }
+  })
 
   if (opts.list) {
     return { candidates }

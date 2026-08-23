@@ -4,40 +4,39 @@ import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, runKernelCommand, withSelfHint } from '../connection'
-import { formatKernelError } from '../connection/errors'
 import { AstraleError } from '../errors'
-import { denoise, isMachine, output } from '../lib/output'
+import { failInput, fatal } from '../lib/log'
+import { denoise, output } from '../lib/output'
 
 type GetOpts = KernelCommandOpts & { schema?: boolean }
 
 /** Read one exact canonical Node. The caller's Path is not fabricated into the Node value. */
 export async function getCommand(target: string, opts: GetOpts): Promise<void> {
-  let path: string
-  let meta
   let parsed
   try {
-    ;({ path, meta } = await expandSelfInPath(target, opts))
-    parsed = Path.parse(path)
+    parsed = Path.parse(target)
   } catch (error) {
-    await formatKernelError(error, isMachine(opts), undefined, opts.debug)
-    process.exit(1)
+    failInput(error, opts)
   }
 
   const last = parsed.ast.steps.at(-1)
   if (last?.kind === 'method') {
     const error = new AstraleError(
       'NOT_A_NODE',
-      `${path} is a callable Path, not a Node.`,
-      `Use \`astrale call ${path}\` or \`astrale introspect ${path}\`.`,
+      `${target} is a callable Path, not a Node.`,
+      `Use \`astrale call ${target}\` or \`astrale introspect ${target}\`.`,
     )
-    await formatKernelError(error, isMachine(opts), undefined, opts.debug)
-    process.exit(1)
+    fatal(error, opts)
   }
 
   await runKernelCommand({
     opts,
-    label: `Node ${path}`,
-    fn: ({ graph }) => withSelfHint(() => graph.getOrThrow(parsed), meta),
+    label: `Node ${target}`,
+    fn: async (context) => {
+      const { path, meta } = await expandSelfInPath(target, context)
+      const resolved = meta === undefined ? parsed : Path.parse(path)
+      return withSelfHint(() => context.graph.getOrThrow(resolved), meta)
+    },
     format: (node, format) => output(opts.schema === true ? node : denoise(node), format),
   })
 }

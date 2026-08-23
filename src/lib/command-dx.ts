@@ -41,12 +41,9 @@ export function renderCommanderError(
 
   if (error.code === 'commander.missingArgument') {
     const usage = usageFor(matched.path, matched.command)
-    const argName = error.message.match(/'([^']+)'/)?.[1]
     return maybeMachine(
       [
-        `Missing required argument${argName ? ` ${chalk.bold(`<${argName}>`)}` : ''} for ${chalk.bold(
-          `astrale ${matched.path.join(' ')}`,
-        )}`,
+        `Missing required argument for ${chalk.bold(`astrale ${matched.path.join(' ')}`)}`,
         '',
         'Usage:',
         `  astrale ${usage}`,

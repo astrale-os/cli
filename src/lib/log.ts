@@ -22,24 +22,29 @@ export function fatal(e: unknown, opts?: MachineOpts): never {
   // Ctrl-C at an interactive (@inquirer/prompts) prompt — exit quietly with the
   // SIGINT convention, not a red error line.
   if (e instanceof Error && e.name === 'ExitPromptError') process.exit(130)
-  const msg = e instanceof Error ? e.message : String(e)
-  const code = e instanceof AstraleError ? e.code : e instanceof Error ? e.name : 'Error'
+  const msg =
+    e instanceof AstraleError ? e.message : 'The CLI encountered an unexpected internal failure.'
+  const code = e instanceof AstraleError ? e.code : 'UNEXPECTED_ERROR'
   if (isMachine(opts)) {
     const payload: Record<string, unknown> = { error: code, message: msg }
     if (e instanceof AstraleError && e.hint) payload.hint = e.hint
     process.stderr.write(JSON.stringify(payload) + '\n')
     process.exit(1)
   }
-  log.error(e instanceof AstraleError ? `${code}: ${msg}` : msg)
+  log.error(`${code}: ${msg}`)
   if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
   process.exit(1)
 }
 
-/** Admit expected invalid input and exit through {@link fatal}. */
-export function failClosed(error: unknown, opts?: MachineOpts): never {
+/** Project only a caller-authored admission failure into the CLI input family. */
+export function failInput(error: unknown, opts?: MachineOpts): never {
   if (error instanceof AstraleError) fatal(error, opts)
+  if (!(error instanceof TypeError)) fatal(error, opts)
   fatal(
-    new AstraleError('INVALID_INPUT', error instanceof Error ? error.message : String(error)),
+    new AstraleError(
+      'INVALID_INPUT',
+      error.message.trim() ? error.message : 'CLI input is invalid.',
+    ),
     opts,
   )
 }

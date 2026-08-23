@@ -3,7 +3,6 @@ import chalk from 'chalk'
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { AstraleError } from '../../errors'
 import { statusOwnedInstance } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fatal, log, withSpinner } from '../../lib/log'
@@ -19,14 +18,7 @@ export default {
   action: async (id: string, opts: StatusOpts) => {
     try {
       const result = await withSpinner(`Fetching instance ${id}`, !isMachine(opts), () =>
-        statusOwnedInstance(opts, id).catch((error) => {
-          if (!(error instanceof Error) || error.name !== 'NotFoundError') throw error
-          throw new AstraleError(
-            'INSTANCE_NOT_FOUND',
-            `No owned instance matches "${id}".`,
-            'Run `astrale instance list` to see your instances.',
-          )
-        }),
+        statusOwnedInstance(opts, id),
       )
       if (isMachine(opts)) {
         output(result, opts)

@@ -78,17 +78,17 @@ export function withAdminClientSession<Value>(
 /** Expand @self through the effective principal returned by authenticated Identity.whoami. */
 export function expandSelfInPath(
   path: string,
-  options: KernelCommandOpts,
+  context: ConnectionContext,
 ): Promise<{ readonly path: string; readonly meta?: SelfExpansionMeta }>
 
 /** Expand @self once across one Call path and its CLI-authored string parameters. */
 export function expandSelfInCall(
   path: string,
-  parameters: readonly string[],
-  options: KernelCommandOpts,
+  parameters: Readonly<Record<string, unknown>>,
+  context: ConnectionContext,
 ): Promise<{
   readonly path: string
-  readonly parameters: readonly string[]
+  readonly parameters: Readonly<Record<string, unknown>>
   readonly meta?: SelfExpansionMeta
 }>
 

@@ -64,6 +64,25 @@ describe('prepareQuery', () => {
     expect(prepared.page).toEqual({ size: 201 })
   })
 
+  test('unions positional Paths and one Class source in authored order', () => {
+    const prepared = prepareQuery({
+      sources: ['@note'],
+      definition: '/:issues.astrale.ai:class.Issue',
+    })
+
+    expect(JSON.parse(JSON.stringify(prepared.ast.source))).toEqual({
+      kind: 'node',
+      terms: [
+        { kind: 'path', path: '@note' },
+        {
+          kind: 'class',
+          class: { origin: 'issues.astrale.ai', kind: 'class', name: 'Issue' },
+        },
+      ],
+      binding: 'n0',
+    })
+  })
+
   /** @evidence TEST-CLI-GRAPH-ADMITS-QUERY-V6-ORDERING */
   test('admits one exact Property-ordered Query V6 document', () => {
     const ast = {

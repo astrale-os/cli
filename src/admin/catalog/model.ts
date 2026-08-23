@@ -33,10 +33,9 @@ export interface InstallDomainResult {
   readonly error?: string | null
 }
 
-export class AdminDomainNotFoundError extends Error {
-  readonly name = 'NotFoundError'
-
+export class AdminDomainNotFoundError extends AstraleError {
   constructor(readonly identifier: string) {
-    super(`No visible Admin Domain matches ${JSON.stringify(identifier)}.`)
+    super('DOMAIN_NOT_FOUND', `No visible Admin Domain matches ${JSON.stringify(identifier)}.`)
   }
 }
+import { AstraleError } from '../../errors'
