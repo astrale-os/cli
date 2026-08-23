@@ -7,8 +7,9 @@ import type { KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../connection'
+import { AstraleError } from '../errors'
 import { prepareMutation } from '../graph/index'
-import { failClosed } from '../lib/log'
+import { failInput } from '../lib/log'
 import { output } from '../lib/output'
 import { renderTable } from '../lib/table'
 
@@ -23,7 +24,7 @@ export async function mutateCommand(opts: MutateOpts): Promise<void> {
   try {
     mutation = prepareMutation(await readDocument(opts))
   } catch (error) {
-    failClosed(error, opts)
+    failInput(error, opts)
   }
 
   if (opts.dry) {
@@ -51,9 +52,9 @@ async function readDocument(opts: MutateOpts): Promise<unknown> {
     try {
       raw = await readFile(opts.file, 'utf8')
     } catch (error) {
-      throw new Error(
-        `Cannot read --file ${opts.file}: ${error instanceof Error ? error.message : error}`,
-      )
+      throw new AstraleError('FILE_READ_FAILED', `Cannot read --file ${opts.file}.`, undefined, {
+        cause: error,
+      })
     }
     return parseJson(raw, opts.file)
   }

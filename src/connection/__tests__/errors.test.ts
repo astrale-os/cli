@@ -1,7 +1,9 @@
-import { ResponseError, TransportError } from '@astrale-os/kernel-client'
+import { ResponseError } from '@astrale-os/kernel-client'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 
 import { formatKernelError, functionInputIssues, schemaUpgradeHint } from '../errors'
+import { transportFailure } from './failure-fixtures'
 
 const CONFLICT = 4001
 const VALIDATION = 1003
@@ -19,24 +21,28 @@ describe('formatKernelError', () => {
       writes.push(typeof chunk === 'string' ? chunk : new TextDecoder().decode(chunk))
       return true
     }) as typeof process.stderr.write
-    const error = new TransportError('Publication discovery request failed.', {
-      cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
-      phase: 'connect',
-      delivery: 'unknown',
-    }) as TransportError & { url?: string }
-    error.url = 'https://localhost:8443/kernel/host'
+    const error = Object.assign(
+      transportFailure('Publication discovery request failed.', 'unknown', {
+        kind: 'acquisition',
+        resource: 'publication',
+      }),
+      {
+        url: 'https://localhost:8443/kernel/host',
+        cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      },
+    )
     try {
-      await formatKernelError(error, true)
+      await formatKernelError(error, true, 'https://localhost:8443/kernel/host')
     } finally {
       process.stderr.write = original
     }
 
     expect(JSON.parse(writes[0]!)).toMatchObject({
-      error: 'CONNECTION_ERROR',
+      error: 'TRANSPORT_ERROR',
       message: 'Publication discovery request failed.',
       url: 'https://localhost:8443/kernel/host',
-      phase: 'connect',
-      delivery: 'unknown',
+      phase: 'unknown',
+      transport: { kind: 'acquisition', resource: 'publication' },
     })
     expect(writes[0]).not.toContain('ECONNREFUSED')
   })
@@ -50,9 +56,8 @@ describe('formatKernelError', () => {
     }) as typeof process.stderr.write
     try {
       await formatKernelError(
-        new TransportError('Request timed out.', {
-          cause: new Error('timeout'),
-          phase: 'timeout',
+        transportFailure('Request timed out.', 'timeout', {
+          kind: 'invocation',
           delivery: 'unknown',
         }),
         true,
@@ -74,7 +79,7 @@ describe('formatKernelError', () => {
     expect(JSON.parse(writes[0]!)).toMatchObject({
       error: 'TIMEOUT',
       phase: 'timeout',
-      delivery: 'unknown',
+      transport: { kind: 'invocation', delivery: 'unknown' },
       operation: '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
       retry:
         'astrale domain install https://crm.test --direct --operation 4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8',
@@ -229,7 +234,7 @@ describe('formatKernelError', () => {
     )
   })
 
-  test('maps SDK class names to stable CLI error codes', async () => {
+  test('maps SDK error identities to stable CLI error codes', async () => {
     const writes: string[] = []
     const original = process.stderr.write
     process.stderr.write = ((chunk: string | Uint8Array) => {
@@ -237,15 +242,17 @@ describe('formatKernelError', () => {
       return true
     }) as typeof process.stderr.write
     try {
-      const pathError = new Error('Path must have an Id or Domain anchor.')
-      pathError.name = 'PathError'
-      await formatKernelError(pathError, true)
+      try {
+        Path.parse('not-a-path')
+      } catch (error) {
+        await formatKernelError(error, true)
+      }
     } finally {
       process.stderr.write = original
     }
     expect(JSON.parse(writes[0]!)).toEqual({
       error: 'PATH_INVALID',
-      message: 'Path must have an Id or Domain anchor.',
+      message: expect.any(String),
     })
   })
 

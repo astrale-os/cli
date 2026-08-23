@@ -5,7 +5,7 @@ import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
-import { failClosed } from '../lib/log'
+import { failInput } from '../lib/log'
 import { output } from '../lib/output'
 import { describeCallableFromSchema, missingCallableDescription } from './call-describe'
 
@@ -17,7 +17,7 @@ export async function introspectCommand(target: string, opts: IntrospectOpts): P
   try {
     ;({ origin, path } = parseIntrospectTarget(target))
   } catch (error) {
-    failClosed(error, opts)
+    failInput(error, opts)
   }
   const wantsCallable = isCallablePath(path)
 

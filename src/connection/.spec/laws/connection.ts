@@ -111,7 +111,7 @@ export const CLI_AUTH_REGISTRATION_TARGET = defineLaw({
 export const CLI_SELF_AUTHENTICATED_PRINCIPAL = defineLaw({
   id: 'CLI-SELF-AUTHENTICATED-PRINCIPAL',
   statement:
-    '@self resolves only from authenticated Identity.whoami on the selected target, so delegated carriers use their effective principal and never an unverified JWT subject or stale local registration.',
+    '@self resolves inside the command-owned Client Session from authenticated Identity.whoami on the selected target, so resolution and dispatch share one lifecycle and delegated carriers never use an unverified JWT subject or stale local registration.',
   tests: [
     {
       file: '__tests__/self.test.ts',
@@ -183,7 +183,7 @@ export const CLI_CONNECTION_PUBLIC_SEMANTIC_REASON = defineLaw({
 export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
   id: 'CLI-CONNECTION-TYPED-ERROR-PRESENTATION',
   statement:
-    'The command boundary maps typed Client transport phase and delivery evidence without parsing a private cause, preserves the admitted Kernel reason in machine output, and renders only bounded public Function issues or one exact Query repair variant for humans.',
+    'The command boundary maps typed Client failure identity, transport context, phase, and invocation-only delivery evidence without parsing a private cause; acquisition never receives retry advice, unknown native failures have one non-blank unexpected diagnostic, and raw causes appear only under explicit debug output.',
   tests: [
     {
       file: '__tests__/errors.test.ts',
@@ -196,6 +196,10 @@ export const CLI_CONNECTION_TYPED_ERROR_PRESENTATION = defineLaw({
     {
       file: '__tests__/reasons.test.ts',
       id: 'TEST-CLI-CONNECTION-ADMITS-BOUNDED-REASONS',
+    },
+    {
+      file: '__tests__/failure-safety.test.ts',
+      id: 'TEST-CLI-CONNECTION-FAILURE-SAFETY',
     },
   ],
 })

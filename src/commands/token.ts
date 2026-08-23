@@ -6,7 +6,7 @@ import type { CommandDefinition } from '../program/index'
 import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
 import { decodeJwtExpiration } from '../lib/local-status'
-import { failClosed, log } from '../lib/log'
+import { failInput, log } from '../lib/log'
 import { output } from '../lib/output'
 
 /**
@@ -23,7 +23,12 @@ export type TokenOpts = KernelCommandOpts & {
 
 export async function tokenCommand(opts: TokenOpts): Promise<void> {
   const commandOpts: TokenOpts = opts.for && !opts.as ? { ...opts, as: opts.for } : opts
-  const ttl = parseTtl(commandOpts.ttl)
+  let ttl: number
+  try {
+    ttl = parseTtl(commandOpts.ttl)
+  } catch (error) {
+    failInput(error, opts)
+  }
   await runKernelCommand<string>({
     opts: commandOpts,
     label: 'Minting delegation token',
@@ -97,10 +102,6 @@ Examples:
     { flags: '--for <identity>', description: 'Mint the token for this identity (alias of --as)' },
   ],
   action: async (opts) => {
-    try {
-      await tokenCommand(opts as Parameters<typeof tokenCommand>[0])
-    } catch (error) {
-      failClosed(error, opts as TokenOpts)
-    }
+    await tokenCommand(opts as Parameters<typeof tokenCommand>[0])
   },
 } satisfies CommandDefinition

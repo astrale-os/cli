@@ -111,15 +111,20 @@ async function exchange(
     exchangeProtocol.paths(domainIssuer).configuration,
     domainIssuer,
   ).toString()
-  const configurationResponse = await fetch(configurationUrl, {
-    method: 'GET',
-    redirect: 'error',
-    credentials: 'omit',
-    cache: 'no-store',
-    referrerPolicy: 'no-referrer',
-    headers: { accept: 'application/json' },
-    signal,
-  })
+  const configurationResponse = await fetchExchange(
+    fetch,
+    configurationUrl,
+    {
+      method: 'GET',
+      redirect: 'error',
+      credentials: 'omit',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: { accept: 'application/json' },
+      signal,
+    },
+    'Domain issuer discovery could not be reached.',
+  )
   if (!configurationResponse.ok) {
     throw new AstraleError(
       'TOKEN_EXCHANGE_DISCOVERY_FAILED',
@@ -139,18 +144,23 @@ async function exchange(
     )
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    redirect: 'error',
-    credentials: 'omit',
-    cache: 'no-store',
-    referrerPolicy: 'no-referrer',
-    headers: {
-      authorization: `Bearer ${envelope}`,
-      accept: exchangeProtocol.MEDIA_TYPE,
+  const response = await fetchExchange(
+    fetch,
+    endpoint,
+    {
+      method: 'POST',
+      redirect: 'error',
+      credentials: 'omit',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      headers: {
+        authorization: `Bearer ${envelope}`,
+        accept: exchangeProtocol.MEDIA_TYPE,
+      },
+      signal,
     },
-    signal,
-  })
+    'Domain token exchange could not be reached.',
+  )
   const body = await boundedJson(response, signal)
   if (!response.ok) {
     let admitted: exchangeProtocol.ErrorResponse
@@ -191,6 +201,20 @@ async function exchange(
     )
   }
   return Object.freeze({ credential: exchanged.token, expiresAt: exchanged.expiresAt })
+}
+
+async function fetchExchange(
+  fetch: Fetch,
+  input: string,
+  init: RequestInit,
+  message: string,
+): Promise<Response> {
+  try {
+    return await fetch(input, init)
+  } catch (cause) {
+    if (init.signal?.aborted) throw cause
+    throw new AstraleError('TOKEN_EXCHANGE_UNAVAILABLE', message, undefined, { cause })
+  }
 }
 
 function requireExchangeTransport(

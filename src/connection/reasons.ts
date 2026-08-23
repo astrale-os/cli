@@ -150,6 +150,22 @@ export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   )
 }
 
+export function schemaDataRemovalHint(reason: unknown): string | undefined {
+  if (!reasonWithCode(reason, 'DATA_MIGRATION_REQUIRED')) return undefined
+  const requirements = reason.details.requirements
+  if (
+    !Array.isArray(requirements) ||
+    requirements.length === 0 ||
+    !requirements.every(
+      (item) =>
+        record(item) && item.operation === 'remove-facts' && item.reason === 'destructive-change',
+    )
+  ) {
+    return undefined
+  }
+  return 'Delete this data explicitly, then retry. No data was deleted.'
+}
+
 function reasonWithCode(
   input: unknown,
   code: string,
