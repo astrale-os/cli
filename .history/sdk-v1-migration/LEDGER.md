@@ -123,6 +123,23 @@ The primary CLI and Shell worktrees remain untouched.
   identity-store default. Seeing no global default does not change connection selection; ordinary
   Kernel commands use the bookmark identity unless `--as`, `--creds`, or `--anonymous` overrides it.
 
+## Ordinary package compatibility — 2026-08-24
+
+- The temporary exact-source action, `.cohort` workspace, source overrides, checkout credential,
+  topology verifier/tests, and vendored SDK/Shell archives were removed.
+- Root and Studio manifests now name ordinary package ranges. CI, binary release, and publication
+  install only the frozen public dependency graph.
+- The semantic source boundary and private Kernel Ports/Runtime exclusion remain. The public
+  dependency check now rejects source protocols and stale source topology directly in manifests,
+  workspace configuration, and the lockfile.
+- The lockfile was regenerated from the two ordinary workspace manifests. It resolves released SDK
+  beta.15, Shell beta.3, and current Kernel client/core/DSL/protocol/server beta.9/beta.8/beta.6
+  packages with no source links, hidden importers, or vendored Astrale archives.
+- Public dependency and semantic source-boundary checks pass. Typecheck now fails honestly because
+  released SDK beta.15 predates the merged facade exports consumed by CLI (`/client/session`, `K`,
+  `ClassKey`, `LocalBinding`, and current Query source input). This remains a package publication gap,
+  not permission to restore source checkout machinery.
+
 ## No-regression rule
 
 Each migrated slice must retain the governing CLI law/test evidence or record a deliberate product

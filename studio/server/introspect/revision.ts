@@ -5,7 +5,7 @@ import { isSchemaRevision } from '../../shared/types'
 type AnyRecord = Record<string, unknown>
 
 /**
- * Cross the installed-bundle JSON boundary through one exact SDK cohort, then
+ * Cross the installed-bundle JSON boundary through the Domain's installed SDK, then
  * ask the DSL owner for the root revision. Invalid/unavailable bundles return
  * null so Studio reports unknown drift instead of inventing an identity.
  */

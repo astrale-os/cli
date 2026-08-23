@@ -21,7 +21,7 @@ describe('installed Domain introspection', () => {
     ])
   })
 
-  test('retains the complete installed Bundle for cohort SDK admission', () => {
+  test('retains the complete installed Bundle for installed SDK admission', () => {
     const root = {
       version: 'v1',
       domain: 'issues.astrale.ai',

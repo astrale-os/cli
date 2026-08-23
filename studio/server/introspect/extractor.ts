@@ -1,4 +1,4 @@
-/** Bun subprocess that imports only the authored Schema entry and its SDK cohort. */
+/** Bun subprocess that imports only the authored Schema entry and its installed SDK. */
 import {
   admitCanonicalSchemaFromSdk,
   findCanonicalDomainSchemaExport,

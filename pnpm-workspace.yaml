@@ -1,13 +1,6 @@
 packages:
   - '.'
   - 'studio'
-  - '.cohort/kernel/client'
-  - '.cohort/kernel/core'
-  - '.cohort/kernel/dsl'
-  - '.cohort/kernel/protocol'
-  - '.cohort/kernel/server'
-  - '.cohort/sdk'
-  - '.cohort/shell/packages/shell'
 
 # Keep pnpm 11's one-day default non-strict and never install implicitly before
 # `pnpm run` or `pnpm exec`.
@@ -15,24 +8,8 @@ minimumReleaseAgeStrict: false
 minimumReleaseAgeExclude:
   # Exact exception for the Bun 1.4 toolchain migration; future releases remain gated.
   - 'bun-types@1.4.0'
-  - '@astrale-os/kernel-client@0.6.0-beta.8'
-  - '@astrale-os/kernel-core@0.9.0-beta.7'
-  - '@astrale-os/kernel-dsl@0.2.0-beta.5'
-  - '@astrale-os/kernel-protocol@0.5.0-beta.7'
-  - '@astrale-os/kernel-server@0.5.0-beta.8'
   - '@astrale-os/ox@0.1.3'
-  - '@astrale-os/sdk@0.5.0-beta.14'
-  - '@astrale-os/shell@0.3.8-beta.3'
 verifyDepsBeforeRun: false
-
-overrides:
-  '@astrale-os/kernel-client': link:.cohort/kernel/client
-  '@astrale-os/kernel-core': link:.cohort/kernel/core
-  '@astrale-os/kernel-dsl': link:.cohort/kernel/dsl
-  '@astrale-os/kernel-protocol': link:.cohort/kernel/protocol
-  '@astrale-os/kernel-server': link:.cohort/kernel/server
-  '@astrale-os/sdk': link:.cohort/sdk
-  '@astrale-os/shell': link:.cohort/shell/packages/shell
 
 # Native build scripts required by the standalone CLI dependency graph. Astrale
 # package preinstalls are guarded monorepo checks and are intentional no-ops here.

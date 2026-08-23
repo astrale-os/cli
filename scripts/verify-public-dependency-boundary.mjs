@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readdir, readFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 
 const privatePackages = ['@astrale-os/kernel-ports', '@astrale-os/kernel-runtime']
 const checkedFiles = [
@@ -20,13 +20,27 @@ for (const path of checkedFiles) {
   }
 }
 
-const vendored = await readdir('vendor', { recursive: true })
-for (const privatePackage of privatePackages) {
-  const packageName = privatePackage.slice('@astrale-os/'.length)
+for (const path of ['package.json', 'studio/package.json']) {
+  const manifest = JSON.parse(await readFile(path, 'utf8'))
+  for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
+    for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
+      if (!name.startsWith('@astrale-os/')) continue
+      assert.doesNotMatch(
+        specifier,
+        /^(?:file|link|workspace):/,
+        `${path} ${field}.${name} must resolve through an ordinary package version`,
+      )
+    }
+  }
+}
+
+for (const path of ['pnpm-workspace.yaml', 'pnpm-lock.yaml']) {
+  const contents = await readFile(path, 'utf8')
+  assert.equal(contents.includes('.cohort'), false, `${path} contains exact-source topology`)
   assert.equal(
-    vendored.some((name) => name.includes(packageName)),
+    /vendor\/astrale-os-(?:sdk|shell)-[^\s]+\.tgz/.test(contents),
     false,
-    `vendor contains the private package ${privatePackage}`,
+    `${path} resolves a vendored Astrale package archive`,
   )
 }
 

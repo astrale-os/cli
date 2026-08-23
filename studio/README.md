@@ -124,7 +124,7 @@ client/src/
 
 Schema parsing uses the Astrale DSL's own output: a Bun subprocess imports the
 domain's `schema/index.ts`, admits its canonical DomainSchema V1 through that
-domain's own SDK cohort, and projects it into Studio's render model. Legacy
+domain's installed SDK, and projects it into Studio's render model. Legacy
 compiled `D.$.ir` domains remain a fallback. A ts-morph overlay adds source-only
 details (handler-file links, source spans, JSDoc).
 
