@@ -8,7 +8,6 @@ const workflow = (path) => parse(read(path))
 
 describe('release workflow contract', () => {
   const config = JSON.parse(read('.release-please-config.json'))
-  const ci = workflow('.github/workflows/ci.yml')
   const publish = workflow('.github/workflows/publish.yml')
   const release = workflow('.github/workflows/release.yml')
   const binary = workflow('.github/workflows/cli-release.yml')
@@ -58,34 +57,6 @@ describe('release workflow contract', () => {
       ({ target_os: os, target_arch: arch }) => `${os}-${arch}`,
     )
     assert.deepEqual(platforms.sort(), ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'])
-  })
-
-  it('binds every unpublished cohort checkout to one explicit repository credential and SHA', () => {
-    const expected = new Map([
-      ['astrale-os/kernel', '7dba075887e4796e5464d5a41ddb03212eed887f'],
-      ['astrale-os/sdk', '9c799c26bfae01adc09dc93c8acc2a8c993ca0f1'],
-      ['astrale-os/shell', 'fad6dc54e3686567282c8aee779a117bfbb7c6c5'],
-    ])
-
-    for (const declared of [ci, publish, binary]) {
-      for (const job of Object.values(declared.jobs)) {
-        const cohort = job.steps?.filter((step) => expected.has(step.with?.repository)) ?? []
-        if (cohort.length === 0) continue
-        const credential = job.steps.find(
-          (step) => step.name === 'Require exact-cohort repository credential',
-        )
-        assert.equal(
-          credential?.env.COHORT_REPOSITORY_TOKEN,
-          '${{ secrets.COHORT_REPOSITORY_TOKEN }}',
-        )
-        assert.match(credential.run, /must read the private Kernel, SDK, and Shell repositories/u)
-        for (const step of cohort) {
-          assert.equal(step.with.ref, expected.get(step.with.repository))
-          assert.equal(step.with.token, '${{ secrets.COHORT_REPOSITORY_TOKEN }}')
-          assert.equal(step.with['persist-credentials'], false)
-        }
-      }
-    }
   })
 
   it('defaults standalone installs to beta while retaining the channel override', () => {

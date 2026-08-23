@@ -38,4 +38,5 @@ jobs:
     uses: ./.github/workflows/cli-release.yml
     with:
       version: ${{ needs.release.outputs.version }}
-    secrets: inherit
+    secrets:
+      COHORT_REPOSITORY_TOKEN: ${{ secrets.COHORT_REPOSITORY_TOKEN }}

@@ -2,6 +2,10 @@ name: CLI Release
 
 on:
   workflow_call:
+    secrets:
+      COHORT_REPOSITORY_TOKEN:
+        description: Read token for the exact unpublished Kernel, SDK, and Shell sources
+        required: true
     inputs:
       version:
         description: Immutable package version created by Release Please
@@ -31,42 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Require exact-cohort repository credential
-        env:
-          COHORT_REPOSITORY_TOKEN: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-        run: |
-          if [ -z "$COHORT_REPOSITORY_TOKEN" ]; then
-            echo "::error::COHORT_REPOSITORY_TOKEN must read the private Kernel, SDK, and Shell repositories."
-            exit 1
-          fi
-      - uses: actions/checkout@v4
+      - name: Prepare exact sources
+        uses: ./.github/actions/exact-sources
         with:
-          repository: astrale-os/kernel
-          ref: 7dba075887e4796e5464d5a41ddb03212eed887f
-          path: .kernel-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: astrale-os/sdk
-          ref: 9c799c26bfae01adc09dc93c8acc2a8c993ca0f1
-          path: .sdk-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: astrale-os/kernel
-          ref: 7dba075887e4796e5464d5a41ddb03212eed887f
-          path: .sdk-cohort/.kernel-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: astrale-os/shell
-          ref: fad6dc54e3686567282c8aee779a117bfbb7c6c5
-          path: .shell-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
+          repository-token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -108,42 +80,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Require exact-cohort repository credential
-        env:
-          COHORT_REPOSITORY_TOKEN: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-        run: |
-          if [ -z "$COHORT_REPOSITORY_TOKEN" ]; then
-            echo "::error::COHORT_REPOSITORY_TOKEN must read the private Kernel, SDK, and Shell repositories."
-            exit 1
-          fi
-      - uses: actions/checkout@v4
+      - name: Prepare exact sources
+        uses: ./.github/actions/exact-sources
         with:
-          repository: astrale-os/kernel
-          ref: 7dba075887e4796e5464d5a41ddb03212eed887f
-          path: .kernel-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: astrale-os/sdk
-          ref: 9c799c26bfae01adc09dc93c8acc2a8c993ca0f1
-          path: .sdk-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: astrale-os/kernel
-          ref: 7dba075887e4796e5464d5a41ddb03212eed887f
-          path: .sdk-cohort/.kernel-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
-      - uses: actions/checkout@v4
-        with:
-          repository: astrale-os/shell
-          ref: fad6dc54e3686567282c8aee779a117bfbb7c6c5
-          path: .shell-cohort
-          token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
-          persist-credentials: false
+          repository-token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}

@@ -1,0 +1,49 @@
+name: Prepare exact sources
+description: Materialize the exact unpublished Kernel, SDK, and Shell sources used by this CLI revision.
+
+inputs:
+  repository-token:
+    description: GitHub token with read access to the Kernel, SDK, and Shell repositories.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Require repository access
+      shell: bash
+      env:
+        REPOSITORY_TOKEN: ${{ inputs.repository-token }}
+      run: |
+        if [ -z "$REPOSITORY_TOKEN" ]; then
+          echo "::error::Exact source checkout requires Kernel, SDK, and Shell repository read access."
+          exit 1
+        fi
+    - name: Check out Kernel
+      uses: actions/checkout@v4
+      with:
+        repository: astrale-os/kernel
+        ref: 7dba075887e4796e5464d5a41ddb03212eed887f
+        path: .cohort/kernel
+        token: ${{ inputs.repository-token }}
+        persist-credentials: false
+    - name: Check out SDK
+      uses: actions/checkout@v4
+      with:
+        repository: astrale-os/sdk
+        ref: a0c2dd575dc14115127bd8f4fc50eaa4b4ce2c16
+        path: .cohort/sdk
+        token: ${{ inputs.repository-token }}
+        persist-credentials: false
+    - name: Check out Shell
+      uses: actions/checkout@v4
+      with:
+        repository: astrale-os/shell
+        ref: 38016a53ff747d6d78287acb4f817efdee6a6e14
+        path: .cohort/shell
+        token: ${{ inputs.repository-token }}
+        persist-credentials: false
+    - name: Bind SDK-owned Kernel source links
+      shell: bash
+      run: |
+        mkdir -p .cohort/sdk/.cohort
+        ln -s ../../kernel .cohort/sdk/.cohort/kernel

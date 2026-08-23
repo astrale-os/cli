@@ -22,16 +22,9 @@ import {
   type PublishDomainResult,
 } from './model'
 
-const ADMIN_ORIGIN = 'admin.astrale.ai'
 const PAGE_SIZE = 256
 const MAXIMUM_DOMAINS = 10_000
 const MAXIMUM_PAGES = Math.ceil(MAXIMUM_DOMAINS / PAGE_SIZE) + 1
-const DomainRef = Object.freeze({ origin: ADMIN_ORIGIN, kind: 'class' as const, name: 'Domain' })
-const fleetInstallsByDefault = Object.freeze({
-  origin: ADMIN_ORIGIN,
-  kind: 'class' as const,
-  name: 'fleet_installs_domain_by_default',
-})
 
 export interface AdminCatalogContext {
   readonly session: ClientSession
@@ -57,6 +50,11 @@ export async function connectAdminCatalog(
   const binding = requireAdminBinding(await (dependencies.bind ?? bindAdmin)(context.session))
   const Domain = requireAdminClass(binding, 'Domain', 'node')
   const Fleet = requireAdminClass(binding, 'Fleet', 'node')
+  const fleetInstallsByDefault = requireAdminClass(
+    binding,
+    'fleet_installs_domain_by_default',
+    'edge',
+  )
   const fleet = requireAdminCore(binding, 'fleet')
   const operationId = dependencies.operationId ?? defaultOperationId
 
@@ -64,7 +62,7 @@ export async function connectAdminCatalog(
     const [nodes, defaultsPage] = await Promise.all([
       readAllNodes(
         context.graph,
-        Query.from({ kind: 'node', classes: [DomainRef] }).select({
+        Query.from({ kind: 'node', classes: [Domain] }).select({
           kind: 'nodes',
           projection: { kind: 'value' },
         }),

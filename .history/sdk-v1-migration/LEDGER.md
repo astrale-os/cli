@@ -9,8 +9,8 @@
 | Owner | Reference | SHA |
 | --- | --- | --- |
 | CLI | `origin/main` | `53ce495f23b458e245cd82e41919ecdce5f8dc57` |
-| Shell migration | `refactor/sdk-v1-migration` | `fad6dc54e3686567282c8aee779a117bfbb7c6c5` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
-| SDK | `origin/main` plus PR #146 | `a210e3c12c8a4b11d19c0651b870e77b2ff19fef` / `9c799c26bfae01adc09dc93c8acc2a8c993ca0f1` |
+| Shell migration | `refactor/sdk-v1-migration` | `38016a53ff747d6d78287acb4f817efdee6a6e14` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
+| SDK | `origin/main` plus PR #146 | `a210e3c12c8a4b11d19c0651b870e77b2ff19fef` / `a0c2dd575dc14115127bd8f4fc50eaa4b4ce2c16` |
 | Kernel DSL redesign | merged PR #385 plus PR #387 | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` / `7dba075887e4796e5464d5a41ddb03212eed887f` |
 
 The primary CLI and Shell worktrees remain untouched.
@@ -35,6 +35,9 @@ The primary CLI and Shell worktrees remain untouched.
 
 - CLI Graph owns ClassRef/ClassKey command admission and authors Query V6 / Mutation V3 only.
 - Admin uses resolved Domain Classes, Core values, Client callable references, and `session.invoke`.
+  Catalog and Instance graph reads now also use the exact resolved `Domain`, `Host`,
+  `fleet_installs_domain_by_default`, and `fleet_reserves_admin_host` Classes. CLI no longer copies
+  Admin origin/reference coordinates after binding the installed revision.
 - Callable description resolves the admitted Bundle through the SDK Schema facade instead of
   interpreting raw Schema bags.
 - Studio admits and projects canonical V1 Classes, Functions, Views, Policies, Core, and exact
@@ -52,7 +55,7 @@ The primary CLI and Shell worktrees remain untouched.
 
 - Full typecheck passes for CLI production/tests, Viewer, and Studio.
 - Full Bun suite: 184 files, 777 pass, one canonical-skill mirror skip, zero failures, 1,992
-  expectations. The release workflow adds 14/14 passing Node tests.
+  expectations. Release and exact-source contracts add 32/32 passing Node tests.
 - The net 15-test reduction from the 792-pass baseline comes from consolidating repetitive
   Interface/legacy-projection cases into exact Class-only projection, homonym, import, frontend, and
   render-IR admission journeys. No test file was deleted; 48 owner test files were migrated and one
@@ -61,9 +64,14 @@ The primary CLI and Shell worktrees remain untouched.
 - Lint, format check, build, Node-loadable public subpaths, and the public dependency boundary pass.
 - The production build includes the CLI executable, public subpaths, Viewer, and the Vite-built
   Studio client. The existing source-bearing npm archive dry-run succeeds with 590 files.
-- CI, binary release, and package publication check out the exact unpublished Kernel, SDK, and Shell
-  cohort plus SDK's nested Kernel link with repository-scoped credentials. The lock records all nine
-  physical importers; clean runners do not depend on developer symlinks.
+- CI, binary release, and package publication delegate exact unpublished Kernel, SDK, and Shell
+  materialization to one repository-local action with one repository-scoped credential. One
+  SDK-internal link binds the same physical Kernel root; no second Kernel checkout exists. The lock
+  records all nine importers, and the actual verifier rejects a package or internal link from a
+  same-revision alternate clone. Source declarations, action admission, workflow delegation,
+  reusable release secrets, publication, workspace topology, and installed roots each have one
+  small owner plus focused tests; there is no mixed cohort configuration module or workflow-local
+  checkout inventory.
 - Remote exact-cohort jobs require a cross-repository Actions credential selected for the CLI
   repository. The current job token cannot read private sibling repositories. The existing
   `NPM_TOKEN` resolves but is a registry credential, not a GitHub repository credential; selecting it
@@ -72,8 +80,26 @@ The primary CLI and Shell worktrees remain untouched.
   installed successfully but produced 34 expected SDK V1 type errors, proving that falling back to
   released beta packages would be false qualification. The workflow must receive a real
   cross-repository Actions credential; no source vendoring or released-cohort weakening is accepted.
-- Inventory: 421 production files / 50,789 lines; 193 test files / 20,095 lines; 51 specification
+- Inventory: 425 production files / 51,039 lines; 195 test files / 20,305 lines; 51 specification
   files / 1,718 lines. Both removed-surface inventories are empty.
+
+## Final cleanup and source-cohort process — 2026-08-23
+
+- `.github/actions/exact-sources` is the sole production owner of all three unpublished revisions,
+  checkout paths, non-persistent repository credentials, and the SDK-internal Kernel link. Two CI
+  jobs, two binary-release jobs, and package publication each call it once; the artifact-only
+  release job performs no source checkout.
+- One ignored `.cohort` root and one frozen source descriptor list derive seven workspace members,
+  seven overrides, installed-package checks, and three expected physical roots. `pnpm test` starts
+  with the real verifier, then runs 14 actual-file configuration/root tests. Revisions, paths,
+  repositories, action/workflow credentials, credential persistence, workspace aliases, physical
+  roots, publication ordering, and reusable secret scope all fail closed.
+- `release.yml` passes exactly `COHORT_REPOSITORY_TOKEN` to the reusable binary workflow; broad
+  `secrets: inherit` is gone. Registry/package credentials remain separate. The package-publication
+  install verifies the exact roots before prepack.
+- The source adapter is explicitly temporary. Once Kernel, SDK, and Shell are published as one
+  compatible cohort, the action, `.cohort` workspace members/overrides, and repository-read secret
+  are removed together rather than becoming permanent release infrastructure.
 
 ## Deliberate public changes
 

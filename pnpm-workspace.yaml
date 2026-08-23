@@ -1,13 +1,13 @@
 packages:
   - '.'
   - 'studio'
-  - '.kernel-cohort/client'
-  - '.kernel-cohort/core'
-  - '.kernel-cohort/dsl'
-  - '.kernel-cohort/protocol'
-  - '.kernel-cohort/server'
-  - '.sdk-cohort'
-  - '.shell-cohort/packages/shell'
+  - '.cohort/kernel/client'
+  - '.cohort/kernel/core'
+  - '.cohort/kernel/dsl'
+  - '.cohort/kernel/protocol'
+  - '.cohort/kernel/server'
+  - '.cohort/sdk'
+  - '.cohort/shell/packages/shell'
 
 # Keep pnpm 11's one-day default non-strict and never install implicitly before
 # `pnpm run` or `pnpm exec`.
@@ -26,13 +26,13 @@ minimumReleaseAgeExclude:
 verifyDepsBeforeRun: false
 
 overrides:
-  '@astrale-os/kernel-client': link:.kernel-cohort/client
-  '@astrale-os/kernel-core': link:.kernel-cohort/core
-  '@astrale-os/kernel-dsl': link:.kernel-cohort/dsl
-  '@astrale-os/kernel-protocol': link:.kernel-cohort/protocol
-  '@astrale-os/kernel-server': link:.kernel-cohort/server
-  '@astrale-os/sdk': link:.sdk-cohort
-  '@astrale-os/shell': link:.shell-cohort/packages/shell
+  '@astrale-os/kernel-client': link:.cohort/kernel/client
+  '@astrale-os/kernel-core': link:.cohort/kernel/core
+  '@astrale-os/kernel-dsl': link:.cohort/kernel/dsl
+  '@astrale-os/kernel-protocol': link:.cohort/kernel/protocol
+  '@astrale-os/kernel-server': link:.cohort/kernel/server
+  '@astrale-os/sdk': link:.cohort/sdk
+  '@astrale-os/shell': link:.cohort/shell/packages/shell
 
 # Native build scripts required by the standalone CLI dependency graph. Astrale
 # package preinstalls are guarded monorepo checks and are intentional no-ops here.

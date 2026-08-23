@@ -43,6 +43,4 @@ pnpm-debug.log*
 
 # Local files
 *.local
-.kernel-cohort
-.sdk-cohort
-.shell-cohort
+.cohort

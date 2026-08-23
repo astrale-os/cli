@@ -25,17 +25,9 @@ import {
   type OwnedInstanceInfo,
 } from './model'
 
-const ADMIN_ORIGIN = 'admin.astrale.ai'
 const PAGE_SIZE = 256
 const MAXIMUM_INSTANCES = 10_000
 const MAXIMUM_PAGES = Math.ceil(MAXIMUM_INSTANCES / PAGE_SIZE) + 1
-
-const HostRef = Object.freeze({ origin: ADMIN_ORIGIN, kind: 'class' as const, name: 'Host' })
-const fleetReservesAdminHost = Object.freeze({
-  origin: ADMIN_ORIGIN,
-  kind: 'class' as const,
-  name: 'fleet_reserves_admin_host',
-})
 
 export interface AdminInstanceContext {
   readonly session: ClientSession
@@ -68,6 +60,7 @@ export async function connectAdminInstances(
   const Instance = requireAdminClass(binding, 'Instance', 'node')
   const Host = requireAdminClass(binding, 'Host', 'node')
   const Fleet = requireAdminClass(binding, 'Fleet', 'node')
+  const fleetReservesAdminHost = requireAdminClass(binding, 'fleet_reserves_admin_host', 'edge')
   const fleet = requireAdminCore(binding, 'fleet')
 
   const operationId = dependencies.operationId ?? defaultOperationId
@@ -115,7 +108,7 @@ export async function connectAdminInstances(
         slug,
       })
       if (hostId !== undefined) {
-        const selected = await hostInventory(context.graph, binding, Host, fleet)
+        const selected = await hostInventory(context.graph, Host, fleetReservesAdminHost, fleet)
         const host = selected.hosts.find(
           (item) => item.id === hostId && item.state === 'ready' && item.path !== selected.reserved,
         )
@@ -168,14 +161,14 @@ interface HostInventoryItem {
 
 async function hostInventory(
   graph: AdminGraphApi,
-  binding: AdminBinding,
   Host: ResolvedClass<'node'>,
+  fleetReservesAdminHost: ResolvedClass<'edge'>,
   fleet: Path,
 ): Promise<{ readonly hosts: readonly HostInventoryItem[]; readonly reserved?: string }> {
   const [nodes, reservedPage] = await Promise.all([
     readAllNodes(
       graph,
-      Query.from({ kind: 'node', classes: [HostRef] }).select({
+      Query.from({ kind: 'node', classes: [Host] }).select({
         kind: 'nodes',
         projection: { kind: 'value' },
       }),
