@@ -30,7 +30,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: astrale-os/sdk
-        ref: c5fb868dffafde56883677c79c8c46a2643d4e72
+        ref: b42b6de263b5bd5d9193941941c2888f0932dd54
         path: .cohort/sdk
         token: ${{ inputs.repository-token }}
         persist-credentials: false
@@ -38,7 +38,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: astrale-os/shell
-        ref: 5027489a5c91e20a6e3494dcbdbc597d94ed3ab5
+        ref: f81eda6f4194ce3c4ddfbcc80229ae52788c45a5
         path: .cohort/shell
         token: ${{ inputs.repository-token }}
         persist-credentials: false
