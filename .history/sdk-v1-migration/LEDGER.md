@@ -9,7 +9,7 @@
 | Owner | Reference | SHA |
 | --- | --- | --- |
 | CLI | `origin/main` | `53ce495f23b458e245cd82e41919ecdce5f8dc57` |
-| Shell migration | PR #52 `refactor/sdk-v1-migration` | `f81eda6f4194ce3c4ddfbcc80229ae52788c45a5` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
+| Shell migration | PR #52 `refactor/sdk-v1-migration` | `1c7f88074d31d26064a7cd3d5317a091c26bc32c` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
 | SDK | `origin/main` after PR #146 plus PR #149 | `af5884810048758d05e9606235fcb83846a9871e` / `b42b6de263b5bd5d9193941941c2888f0932dd54` |
 | Kernel DSL redesign | merged PR #385 plus PR #394 | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` / `7dfe060d819321ddf8004a74c203c86cc9d35c53` |
 

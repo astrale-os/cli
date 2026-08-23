@@ -38,7 +38,7 @@ runs:
       uses: actions/checkout@v4
       with:
         repository: astrale-os/shell
-        ref: f81eda6f4194ce3c4ddfbcc80229ae52788c45a5
+        ref: 1c7f88074d31d26064a7cd3d5317a091c26bc32c
         path: .cohort/shell
         token: ${{ inputs.repository-token }}
         persist-credentials: false
