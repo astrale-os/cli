@@ -59,7 +59,7 @@ export async function connectAdminCatalog(
     const [nodes, defaultsPage] = await Promise.all([
       readAllNodes(
         context.graph,
-        Query.from({ kind: 'node', definitions: [DomainRef] }).select({
+        Query.from({ nodes: [DomainRef] }).select({
           kind: 'nodes',
           projection: { kind: 'value' },
         }),
