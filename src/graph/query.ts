@@ -1,7 +1,8 @@
 import type {
   QueryAST as QueryASTValue,
-  QueryDefinitionRef,
   QueryDirection,
+  QueryNodeClassInput,
+  QueryNodeInput,
 } from '@astrale-os/sdk/query'
 
 import { Path } from '@astrale-os/sdk/graph/path'
@@ -52,14 +53,8 @@ export function prepareQuery(input: QueryCommandInput): PreparedQuery {
 
   const paths = input.sources.map((source) => Path.parse(source))
   const definition = input.definition === undefined ? undefined : definitionRef(input.definition)
-  const query =
-    paths.length > 0
-      ? Query.from({
-          kind: 'node',
-          paths: paths as [Path, ...Path[]],
-          ...(definition === undefined ? {} : { definitions: [definition] }),
-        })
-      : Query.from({ kind: 'node', definitions: [definition!] })
+  const nodes = definition === undefined ? paths : [...paths, definition]
+  const query = Query.from({ nodes: nodes as [QueryNodeInput, ...QueryNodeInput[]] })
   const ast =
     input.edge === undefined
       ? query.select({ kind: 'graph' })
@@ -72,16 +67,16 @@ export function prepareQuery(input: QueryCommandInput): PreparedQuery {
   return withPage(ast, limit, input.cursor)
 }
 
-function definitionRef(input: string): QueryDefinitionRef {
+function definitionRef(input: string): QueryNodeClassInput {
   const path = Path.parse(input)
   const step = path.ast.steps[0]
   if (
     path.ast.anchor.kind !== 'domain' ||
     path.ast.steps.length !== 1 ||
     step?.kind !== 'projection' ||
-    (step.projection.kind !== 'class' && step.projection.kind !== 'interface')
+    step.projection.kind !== 'class'
   ) {
-    throw new TypeError('--definition must be one canonical Class or Interface Path')
+    throw new TypeError('--definition must be one canonical Class Path')
   }
   return Object.freeze({
     origin: path.ast.anchor.origin,

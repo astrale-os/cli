@@ -158,7 +158,7 @@ async function hostInventory(
   const [nodes, reservedPage] = await Promise.all([
     readAllNodes(
       graph,
-      Query.from({ kind: 'node', definitions: [HostRef] }).select({
+      Query.from({ nodes: [HostRef] }).select({
         kind: 'nodes',
         projection: { kind: 'value' },
       }),
