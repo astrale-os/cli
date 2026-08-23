@@ -9,8 +9,8 @@
 | Owner | Reference | SHA |
 | --- | --- | --- |
 | CLI | `origin/main` | `53ce495f23b458e245cd82e41919ecdce5f8dc57` |
-| Shell migration | PR #52 `refactor/sdk-v1-migration` | `6aab2a6e5e5a738c80f8177b960fd42926bdd0fa` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
-| SDK | `origin/main` after PR #146 plus PR #149 | `af5884810048758d05e9606235fcb83846a9871e` / `769e975ad9ecaba55ab181b6d27fee783ba73c2e` |
+| Shell migration | PR #52 `refactor/sdk-v1-migration` | `5027489a5c91e20a6e3494dcbdbc597d94ed3ab5` (based on `46a51fe7ccfa1c448b1067491db5685f142f1d29`) |
+| SDK | `origin/main` after PR #146 plus PR #149 | `af5884810048758d05e9606235fcb83846a9871e` / `c5fb868dffafde56883677c79c8c46a2643d4e72` |
 | Kernel DSL redesign | merged PR #385 plus PR #394 | `29610d232eb5df0ffd5c9d70dc70323577f9ec0d` / `7dfe060d819321ddf8004a74c203c86cc9d35c53` |
 
 The primary CLI and Shell worktrees remain untouched.
