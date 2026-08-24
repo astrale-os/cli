@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.7](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.6...cli/v1.0.0-beta.7) (2026-08-24)
+
+
+### Bug Fixes
+
+* **ci:** publish cli through npm ([55c5fd2](https://github.com/astrale-os/cli/commit/55c5fd28eb0606f13ec799108d85668fb8b5a251))
+* **ci:** publish CLI through npm ([81c5747](https://github.com/astrale-os/cli/commit/81c57476fbb30343eb096b4b4cba2f23bc5ffe86))
+
 ## [1.0.0-beta.6](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.5...cli/v1.0.0-beta.6) (2026-08-24)
 
 
