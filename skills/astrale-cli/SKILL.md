@@ -84,6 +84,7 @@ astrale call @self::deactivate
 ```bash
 astrale instance create my-app
 astrale instance status my-app
+astrale instance status staging --bookmarked
 astrale instance use my-app
 astrale instance bookmark staging --url https://kernel.example.com
 astrale instance forget staging
@@ -91,6 +92,8 @@ astrale instance forget staging
 
 Use explicit `-i <instance>` in scripts. `instance delete` affects an
 admin-managed instance; `instance forget` removes only the local bookmark.
+`instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
+to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
 instances (key-backed identities have no Admin token). Use
 `astrale instance list --bookmarked`.
