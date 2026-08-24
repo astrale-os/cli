@@ -5,10 +5,9 @@
  * user); the Linux/macOS standalone binary is produced separately by
  * `bun build --compile` in CI.
  *
- * Why bundle: the runtime dependency `@astrale-os/sdk` lives
- * on a PRIVATE registry (GitHub Packages). Inlining them makes the published
- * package self-contained, so `npm i -g @astrale-os/cli` needs no access to
- * any private registry.
+ * Why bundle: the CLI is distributed as one self-contained executable. Its
+ * SDK and Shell implementation dependencies remain build-time inputs, so a
+ * global install does not expose their package graph at runtime.
  */
 import { existsSync } from 'node:fs'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'

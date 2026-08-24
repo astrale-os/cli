@@ -13,8 +13,8 @@ standalone-binary publisher consume that same version; neither invents a second 
 4. Review the proposed version, changelog, `package.json`, and `.release-please-manifest.json`.
 5. Merge the Release Please pull request.
 6. The merge starts two publications of the same version:
-   - `Publish` builds and publishes `@astrale-os/cli` to npm and GitHub Packages. The shared
-     publisher derives the npm `beta` dist-tag from a `-beta.N` version.
+   - `Publish` builds and publishes `@astrale-os/cli` to npm through OIDC Trusted Publishing. The
+     shared publisher derives the npm `beta` dist-tag from a `-beta.N` version.
    - `Release` creates the immutable `cli/v<version>` GitHub prerelease, then calls `CLI Release`
      to test and build four standalone binaries. `CLI Release` uploads the assets and advances the
      movable `beta` tag and channel release.
