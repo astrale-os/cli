@@ -2,13 +2,12 @@
 
 ## Current phase
 
-`QUALIFICATION — local and live Shell journey green; remote credential pending`
+`QUALIFICATION — published SDK boundary and complete CLI package gate green`
 
-Published CLI beta.7 is npm-only and source-independent. Lab run
-`run_4284844d743449f5a01613ce995224f3` proved the merged login-shell PATH fix and then exposed a
-diagnostic gap: explicit `--debug` was ignored by the shared local `fatal()` path. The repair keeps
-ordinary machine output safe and makes the existing bounded cause/Aggregate renderer the one owner
-for both Kernel-command and local-command debug evidence.
+The ordinary CLI dependency graph now resolves the published SDK beta.25 and Shell 0.4.1 without a
+source checkout, workspace override, vendored archive, or cohort adapter. The exact SDK release owns
+one Kernel Client/Core/DSL/Protocol/Server set; the CLI remains an SDK-only consumer and its package
+gate passes against the registry graph.
 
 ## Exact cohort
 
@@ -151,6 +150,21 @@ The primary CLI and Shell worktrees remain untouched.
 Each migrated slice must retain the governing CLI law/test evidence or record a deliberate product
 change. Passing through widened casts, copied Kernel types, string-parsed private errors, weakened
 authority, or deleted tests does not count.
+
+## Published SDK beta.25 closure — 2026-08-24
+
+- SDK publish run `32764984425` completed successfully from main SHA
+  `5ad2b5682c678d59e78f31c601c9991b3a0174fd` and qualified the exact npm publications.
+- The CLI lock resolves SDK `0.5.0-beta.25`, Shell `0.4.1`, Kernel Client `0.6.0-beta.11`, Core
+  `0.9.0-beta.10`, DSL `0.2.0-beta.8`, Protocol `0.5.0-beta.10`, and Server `0.5.0-beta.11`.
+  The supported SDK and Shell manifest ranges remain unchanged; exact release selection belongs to
+  the lockfile.
+- `pnpm package:check` passes from the ordinary registry graph: four strict typecheck lanes, 785 Bun
+  tests with one intentional skip, 15 Node release/skill tests, CLI/public/Viewer/Studio builds,
+  Node-loadable exports, and the private Kernel dependency-closure gate.
+- The source boundary reports 426 production files, 196 test files, and 51 governing specification
+  files with zero direct Kernel imports, removed SDK surfaces, or Interface-era fields. Formatting
+  and `git diff --check` pass.
 
 ## Published SDK beta.16 qualification — 2026-08-24
 
