@@ -36,6 +36,17 @@ describe('terminal error safety', () => {
     })
   })
 
+  test('retains unknown failure evidence only under explicit debug output', () => {
+    const failure = new AggregateError([new Error('provider rejected organization scope')], '')
+
+    expect(() => fatal(failure, { json: true, debug: true })).toThrow(ExitError)
+
+    expect(stderr).toContain(
+      '{"error":"UNEXPECTED_ERROR","message":"The CLI encountered an unexpected internal failure."}',
+    )
+    expect(stderr).toContain('aggregate: Error: provider rejected organization scope')
+  })
+
   test('rejects blank admitted CLI diagnostics', () => {
     expect(() => new AstraleError('INVALID_INPUT', '  ')).toThrow(TypeError)
   })

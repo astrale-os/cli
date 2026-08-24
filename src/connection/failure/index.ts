@@ -1,7 +1,7 @@
 import type { OperationRecovery } from '../command'
 
+import { printFailureDebug } from '../../lib/failure-debug'
 import { classifyFailure } from './classify'
-import { printFailureDebug } from './debug'
 import { renderFailure } from './render'
 
 export { functionInputIssues, schemaUpgradeHint } from '../reasons'

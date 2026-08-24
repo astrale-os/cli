@@ -2,6 +2,7 @@ import chalk from 'chalk'
 import ora, { type Ora } from 'ora'
 
 import { AstraleError, NotImplementedError } from '../errors'
+import { printFailureDebug } from './failure-debug'
 import { formatElapsed } from './format'
 import { isMachine, type MachineOpts } from './output'
 
@@ -18,7 +19,7 @@ export const log = {
 
 /** Report an error with hint (when present) and exit. `--json` / `--ci` / a
  *  non-TTY stdout always get one structured JSON line on stderr. */
-export function fatal(e: unknown, opts?: MachineOpts): never {
+export function fatal(e: unknown, opts?: MachineOpts & { readonly debug?: boolean }): never {
   // Ctrl-C at an interactive (@inquirer/prompts) prompt — exit quietly with the
   // SIGINT convention, not a red error line.
   if (e instanceof Error && e.name === 'ExitPromptError') process.exit(130)
@@ -29,10 +30,11 @@ export function fatal(e: unknown, opts?: MachineOpts): never {
     const payload: Record<string, unknown> = { error: code, message: msg }
     if (e instanceof AstraleError && e.hint) payload.hint = e.hint
     process.stderr.write(JSON.stringify(payload) + '\n')
-    process.exit(1)
+  } else {
+    log.error(`${code}: ${msg}`)
+    if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
   }
-  log.error(`${code}: ${msg}`)
-  if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
+  if (opts?.debug) printFailureDebug(e, '')
   process.exit(1)
 }
 

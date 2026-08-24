@@ -4,6 +4,12 @@
 
 `QUALIFICATION — local and live Shell journey green; remote credential pending`
 
+Published CLI beta.7 is npm-only and source-independent. Lab run
+`run_4284844d743449f5a01613ce995224f3` proved the merged login-shell PATH fix and then exposed a
+diagnostic gap: explicit `--debug` was ignored by the shared local `fatal()` path. The repair keeps
+ordinary machine output safe and makes the existing bounded cause/Aggregate renderer the one owner
+for both Kernel-command and local-command debug evidence.
+
 ## Exact cohort
 
 | Owner | Reference | SHA |
