@@ -258,3 +258,18 @@ authority, or deleted tests does not count.
 - The focused workflow contract passes 7/7. The complete non-TTY package gate again passes 786 Bun
   tests with one intentional skip, 15 Node tests, all strict type lanes, every production build,
   public export checks, and the private Kernel dependency-closure check.
+
+## Exact Instance caller and SDK cohort — 2026-08-24
+
+- Instance creation, managed selection, and setup adoption now persist the exact local identity label
+  used for the successful Admin call. Selection is resolved once at the connection boundary from
+  explicit `--as`, the Admin bookmark default, or the CLI default. Raw `--creds` persists no label;
+  no token, subject, assertion, or private material enters the Instance bookmark.
+- The published SDK beta.24 graph reproduced two Core and DSL versions and failed strict CLI types.
+  The exact packed SDK candidate owns one Kernel cohort; a fresh copied CLI consumer resolves one
+  Core beta.10 and one DSL beta.8 and passes all four strict type lanes.
+- Focused candidate evidence passes 22 Admin, setup, Instance-use, and connection tests. In a fresh
+  copied Git repository consuming the exact packed SDK candidate, all strict type lanes, the source
+  boundary, 785 Bun tests with one intentional skip, 15 Node tests, CLI/public/Viewer/Studio builds,
+  public exports, and the private Kernel dependency exclusion pass. No source link, cohort override,
+  downstream Kernel dependency, or cross-brand cast was introduced.

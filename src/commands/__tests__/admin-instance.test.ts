@@ -4,7 +4,10 @@ import type { IdentityStore } from '../../identity/index'
 
 import { AuthError } from '../../errors'
 import { findOwnedInstance, type OwnedInstanceInfo } from '../../lib/admin-instance'
-import { assertInstanceCreateIdentity } from '../instance/create'
+import {
+  assertInstanceCreateIdentity,
+  selectInstanceCreateIdentity,
+} from '../../lib/provision-instance'
 
 describe('admin-backed instance commands', () => {
   test('findOwnedInstance matches owner inventory by slug or stable node id', () => {
@@ -57,6 +60,7 @@ describe('admin-backed instance commands', () => {
     }
 
     expect(() => assertInstanceCreateIdentity(store)).not.toThrow()
+    expect(selectInstanceCreateIdentity(store)).toBe('bryan')
   })
 
   test('--as selection must also be IdP-backed', () => {
@@ -82,5 +86,6 @@ describe('admin-backed instance commands', () => {
 
     expect(() => assertInstanceCreateIdentity(store, { as: 'local' })).toThrow(AuthError)
     expect(() => assertInstanceCreateIdentity(store, { as: 'workos' })).not.toThrow()
+    expect(selectInstanceCreateIdentity(store, { as: 'workos' })).toBe('workos')
   })
 })

@@ -46,11 +46,8 @@ export async function provisionInstance(
   opts: ProvisionOpts,
 ): Promise<ProvisionResult> {
   validateSlug(slug)
-  await assertInstanceCreateAuth(opts)
-  // The created instance must belong to the LOGGED-IN identity — never to an
-  // identity pinned on the admin bookmark (that mismatch silently made a fresh
-  // user's instance unusable). `--as` still wins.
-  if (!opts.as) opts = { ...opts, as: (await readIdentities()).default }
+  const authentication = await instanceCreateAuthentication(opts)
+  opts = authentication.opts
 
   const machine = isMachine(opts)
   let repointedFrom: string | undefined
@@ -70,12 +67,15 @@ export async function provisionInstance(
         try {
           // Org id from the create response — authoritative for token scoping
           // (the router's /auth/org is eventually consistent).
-          const bookmarked = await upsertManagedBookmark(
+          const bookmarked = await upsertManagedBookmark({
+            key: slug,
             slug,
-            slug,
-            created.url,
-            created.organizationId,
-          )
+            url: created.url,
+            ...(created.organizationId ? { organizationId: created.organizationId } : {}),
+            ...(authentication.defaultIdentity
+              ? { defaultIdentity: authentication.defaultIdentity }
+              : {}),
+          })
           repointedFrom = bookmarked.repointedFrom
           await setActive(slug)
         } catch (e) {
@@ -104,9 +104,25 @@ export async function provisionInstance(
   return { created, slug, repointedFrom, ...(selectionError ? { selectionError } : {}) }
 }
 
-async function assertInstanceCreateAuth(opts: Pick<ProvisionOpts, 'as' | 'creds'>): Promise<void> {
-  if (opts.creds) return
-  assertInstanceCreateIdentity(await readIdentities(), opts)
+async function instanceCreateAuthentication(opts: ProvisionOpts): Promise<{
+  readonly opts: ProvisionOpts
+  readonly defaultIdentity?: string
+}> {
+  if (opts.creds) return { opts }
+  const store = await readIdentities()
+  const defaultIdentity = selectInstanceCreateIdentity(store, opts)
+  return {
+    opts: opts.as ? opts : { ...opts, as: defaultIdentity },
+    defaultIdentity,
+  }
+}
+
+export function selectInstanceCreateIdentity(
+  store: IdentityStore,
+  opts: Pick<ProvisionOpts, 'as'> = {},
+): string {
+  assertInstanceCreateIdentity(store, opts)
+  return opts.as ?? store.default
 }
 
 export function assertInstanceCreateIdentity(

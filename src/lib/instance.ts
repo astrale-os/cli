@@ -297,22 +297,26 @@ export async function upsertInstance(
  * bookmark was repointed to a different kernel so callers can warn.
  */
 export async function upsertManagedBookmark(
-  key: string,
-  slug: string,
-  rawUrl: string,
-  organizationId?: string,
+  input: Readonly<{
+    key: string
+    slug: string
+    url: string
+    organizationId?: string
+    defaultIdentity?: string
+  }>,
 ): Promise<{ entry: InstanceEntry; repointedFrom?: string }> {
   const store = await readInstances()
-  const previousUrl = store.instances[key]?.url
-  const url = normalizeInstanceKernelUrl(rawUrl)
-  const { entry } = await upsertInstance(key, {
+  const previousUrl = store.instances[input.key]?.url
+  const url = normalizeInstanceKernelUrl(input.url)
+  const { entry } = await upsertInstance(input.key, {
     url,
     issuer: url,
-    slug,
-    name: slug,
+    slug: input.slug,
+    name: input.slug,
     kind: 'bookmark',
     mode: 'remote',
-    ...(organizationId ? { organizationId } : {}),
+    ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+    ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
   })
   return {
     entry,

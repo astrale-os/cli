@@ -16,7 +16,7 @@ function dx(
   error: CommanderError,
   argv: string[],
 ) {
-  const rendered = JSON.parse(stripAnsi(renderCommanderError(program, error, argv))) as {
+  const rendered = JSON.parse(stripAnsi(renderCommanderError(program, error, argv, true))) as {
     error: string
     message: string
     detail: string

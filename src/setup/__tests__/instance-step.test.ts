@@ -27,11 +27,15 @@ function instance(slug: string, state: OwnedInstanceInfo['state'] = 'ready'): Ow
   }
 }
 
+function inventory(instances: OwnedInstanceInfo[], identity?: string) {
+  return { instances, ...(identity ? { identity } : {}) }
+}
+
 function dependencies(
   overrides: Partial<InstanceSetupDependencies> = {},
 ): InstanceSetupDependencies {
   return {
-    fetchOwned: mock(async () => []),
+    fetchOwned: mock(async () => inventory([])),
     adopt: mock(async () => {}),
     selectReady: mock(async (instances) => instances[0] ?? null),
     confirmCreate: mock(async () => true),
@@ -48,12 +52,14 @@ describe('setup owned-instance reconciliation', () => {
   test('silently adopts the sole owned ready instance', async () => {
     const ready = instance('only')
     const failed = instance('old-attempt', 'failed')
-    const deps = dependencies({ fetchOwned: mock(async () => [failed, ready]) })
+    const deps = dependencies({
+      fetchOwned: mock(async () => inventory([failed, ready], 'manager')),
+    })
 
     await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('fixed')
 
     expect(deps.adopt).toHaveBeenCalledTimes(1)
-    expect(deps.adopt).toHaveBeenCalledWith(ready)
+    expect(deps.adopt).toHaveBeenCalledWith(ready, 'manager')
     expect(deps.selectReady).not.toHaveBeenCalled()
     expect(deps.confirmCreate).not.toHaveBeenCalled()
     expect(deps.provision).not.toHaveBeenCalled()
@@ -64,14 +70,14 @@ describe('setup owned-instance reconciliation', () => {
     const second = instance('second')
     const pending = instance('pending', 'provisioning')
     const deps = dependencies({
-      fetchOwned: mock(async () => [first, pending, second]),
+      fetchOwned: mock(async () => inventory([first, pending, second], 'manager')),
       selectReady: mock(async (instances) => instances[1] ?? null),
     })
 
     await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('fixed')
 
     expect(deps.selectReady).toHaveBeenCalledWith([first, second])
-    expect(deps.adopt).toHaveBeenCalledWith(second)
+    expect(deps.adopt).toHaveBeenCalledWith(second, 'manager')
     expect(deps.confirmCreate).not.toHaveBeenCalled()
     expect(deps.provision).not.toHaveBeenCalled()
   })
@@ -80,7 +86,7 @@ describe('setup owned-instance reconciliation', () => {
     const first = instance('first')
     const second = instance('second')
     const deps = dependencies({
-      fetchOwned: mock(async () => [first, second]),
+      fetchOwned: mock(async () => inventory([first, second])),
       selectReady: mock(async () => null),
     })
 
@@ -165,7 +171,9 @@ describe('setup owned-instance reconciliation', () => {
       phase: 'installing:default-domains',
     }
     const failed = { ...instance('broken', 'failed'), error: 'postInstall failed' }
-    const deps = dependencies({ fetchOwned: mock(async () => [provisioning, failed]) })
+    const deps = dependencies({
+      fetchOwned: mock(async () => inventory([provisioning, failed])),
+    })
     const logged: string[] = []
     const original = console.log
     console.log = mock((...args: unknown[]) => {
@@ -218,10 +226,10 @@ describe('owned-instance adoption', () => {
     console.log = mock(() => {})
 
     try {
-      await adoptOwnedInstance(owned, {
+      await adoptOwnedInstance(owned, 'manager', {
         upsert: mock(async (...args) => {
           calls.push(['upsert', ...args])
-          return {}
+          return { entry: {} }
         }),
         activate: mock(async (...args) => {
           calls.push(['activate', ...args])
@@ -232,7 +240,16 @@ describe('owned-instance adoption', () => {
     }
 
     expect(calls).toEqual([
-      ['upsert', 'existing', 'existing', 'https://existing.eu.astrale.ai', 'org_existing'],
+      [
+        'upsert',
+        {
+          key: 'existing',
+          slug: 'existing',
+          url: 'https://existing.eu.astrale.ai',
+          organizationId: 'org_existing',
+          defaultIdentity: 'manager',
+        },
+      ],
       ['activate', 'existing'],
     ])
   })

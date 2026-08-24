@@ -104,6 +104,8 @@ Application -> Build -> Release -> adapter deployment -> Kernel installation
 
 - `pnpm build` proves provider-neutral compilation and adapter preparation.
 - `pnpm prod` performs the configured provider deployment and returns observed deployment evidence.
+- `astrale domain publish --origin <origin> --name <name> --public-url <url>` registers that
+  observed deployment in the Admin catalog when product distribution requires it.
 - `astrale domain install <url> --direct -i <instance>` installs the deployed Release on one Kernel.
 
 Never infer installation from deployment. Fetch or inspect Publication/Bundle evidence and observe the

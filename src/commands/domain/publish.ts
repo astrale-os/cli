@@ -50,9 +50,9 @@ Behavior:
 
   Publishing only makes the domain INSTALLABLE. Mount it on an instance with
   \`astrale domain install <url>\` (or rely on the admin's install-by-default
-  policy). This is usually invoked for you by \`astrale-domain publish\` (which
-  registers the already-deployed URL — it does NOT deploy) or by
-  \`astrale-domain deploy --publish\` (deploy AND register in one step).
+  policy). Deployment and catalog publication are separate owners: run the
+  project's \`astrale-domain deploy <environment>\`, then publish its observed
+  public URL with this command.
 
   Run in a terminal with flags omitted and it PROMPTS for origin / name /
   public-url (origin defaults to the URL host, name to the origin's first
@@ -77,10 +77,9 @@ Examples:
   action: async (opts: PublishOpts) => {
     try {
       // Interactive fill (TTY only): a human running this by hand is prompted for
-      // any missing field. The primary caller — `astrale-domain publish` — always
-      // passes every flag, so it never prompts. No TTY / --ci / --no-prompt / CI
-      // env → no prompt: fall straight through to the required-flag error below,
-      // so a piped / agent / LLM run fails fast instead of hanging on a read.
+      // any missing field. Automation passes every flag. No TTY / --ci /
+      // --no-prompt / CI env means no prompt: fall straight through to the
+      // required-flag error below so a piped or agent run fails fast.
       const interactive = !!process.stdin.isTTY && !(opts.ci || opts.noPrompt || process.env.CI)
       let { origin, name, publicUrl } = opts
       if (interactive) {

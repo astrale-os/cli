@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { AstraleConfig } from '../../lib/config'
 
+import { bindCredentialIdentity } from '../auth'
 import { createCliCredential, createConnectionCredential } from '../credential'
 
 const SOURCE = issuer.accept('https://kernel.example')
@@ -20,6 +21,24 @@ const config: AstraleConfig = {
 }
 
 describe('connection credential', () => {
+  test('pins the bookmark identity while leaving explicit credentials unnamed', async () => {
+    const target = {
+      url: `${SOURCE}/invoke`,
+      kernelIssuer: SOURCE,
+      defaultIdentity: 'bookmark-owner',
+    }
+
+    await expect(bindCredentialIdentity({}, target)).resolves.toMatchObject({
+      as: 'bookmark-owner',
+    })
+    await expect(bindCredentialIdentity({ as: 'explicit-owner' }, target)).resolves.toEqual({
+      as: 'explicit-owner',
+    })
+    await expect(bindCredentialIdentity({ creds: 'opaque' }, target)).resolves.toEqual({
+      creds: 'opaque',
+    })
+  })
+
   /** @evidence TEST-CLI-CONNECTION-RESOLVES-SOURCE-AUTH-BEFORE-ROUTING */
   test('resolves source authority without destination knowledge', async () => {
     const audiences: IssuerId[] = []
