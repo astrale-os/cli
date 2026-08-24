@@ -1,9 +1,6 @@
 import type { ClientSession } from '@astrale-os/sdk/client/session'
-import type { Node } from '@astrale-os/sdk/graph/node'
-import type { ResolvedClass } from '@astrale-os/sdk/schema'
 
 import { Path } from '@astrale-os/sdk/graph/path'
-import { Query } from '@astrale-os/sdk/query'
 
 import {
   bindAdmin,
@@ -11,12 +8,9 @@ import {
   requireAdminBinding,
   requireAdminClass,
   requireAdminCore,
-  requireAdminProperty,
   type AdminBinding,
 } from '../binding'
-import { readAllNodes, type AdminGraphApi } from '../graph'
 import {
-  AdminHostNotFoundError,
   AdminInstanceNotFoundError,
   findOwnedInstance,
   type DomainInstallReceipt,
@@ -25,18 +19,13 @@ import {
   type OwnedInstanceInfo,
 } from './model'
 
-const PAGE_SIZE = 256
-const MAXIMUM_INSTANCES = 10_000
-const MAXIMUM_PAGES = Math.ceil(MAXIMUM_INSTANCES / PAGE_SIZE) + 1
-
 export interface AdminInstanceContext {
   readonly session: ClientSession
-  readonly graph: AdminGraphApi
 }
 
 export interface AdminInstanceApi {
   list(): Promise<OwnedInstanceInfo[]>
-  create(slug: string, hostId?: string): Promise<InstanceInfo>
+  create(slug: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
@@ -58,9 +47,7 @@ export async function connectAdminInstances(
   const binding = requireAdminBinding(await (dependencies.bind ?? bindAdmin)(context.session))
 
   const Instance = requireAdminClass(binding, 'Instance', 'node')
-  const Host = requireAdminClass(binding, 'Host', 'node')
   const Fleet = requireAdminClass(binding, 'Fleet', 'node')
-  const fleetReservesAdminHost = requireAdminClass(binding, 'fleet_reserves_admin_host', 'edge')
   const fleet = requireAdminCore(binding, 'fleet')
 
   const operationId = dependencies.operationId ?? defaultOperationId
@@ -102,32 +89,11 @@ export async function connectAdminInstances(
 
   return Object.freeze({
     list,
-    async create(slug: string, hostId?: string) {
+    async create(slug: string) {
       const input = Object.freeze({
         operationId: operationId('create'),
         slug,
       })
-      if (hostId !== undefined) {
-        const selected = await hostInventory(context.graph, Host, fleetReservesAdminHost, fleet)
-        const host = selected.hosts.find(
-          (item) => item.id === hostId && item.state === 'ready' && item.path !== selected.reserved,
-        )
-        if (host === undefined) throw new AdminHostNotFoundError(hostId)
-        return instanceFromSummary(
-          await invokeAdminMethod(
-            context.session,
-            binding,
-            Host,
-            'createInstance',
-            Path.parse(host.path),
-            input,
-          ),
-        )
-      }
-
-      // Default placement belongs to Admin. Avoid a redundant Host graph read:
-      // it requires broader graph authority than this Fleet operation and can
-      // deny an otherwise authorized caller before the server selects a Host.
       return instanceFromSummary(
         await invokeAdminMethod(context.session, binding, Fleet, 'createInstance', fleet, input),
       )
@@ -152,55 +118,6 @@ export async function connectAdminInstances(
   })
 }
 
-interface HostInventoryItem {
-  readonly id: string
-  readonly nodeId: string
-  readonly path: string
-  readonly state: string
-}
-
-async function hostInventory(
-  graph: AdminGraphApi,
-  Host: ResolvedClass<'node'>,
-  fleetReservesAdminHost: ResolvedClass<'edge'>,
-  fleet: Path,
-): Promise<{ readonly hosts: readonly HostInventoryItem[]; readonly reserved?: string }> {
-  const [nodes, reservedPage] = await Promise.all([
-    readAllNodes(
-      graph,
-      Query.from({ nodes: [Host] }).select({
-        kind: 'nodes',
-        projection: { kind: 'value' },
-      }),
-      {
-        label: 'Admin Host inventory',
-        maximum: MAXIMUM_INSTANCES,
-        maximumPages: MAXIMUM_PAGES,
-      },
-    ),
-    graph.neighbors(fleet, fleetReservesAdminHost, {
-      direction: 'outgoing',
-      page: { size: 1 },
-    }),
-  ])
-  const reserved = reservedPage.first === null ? undefined : Path.id(reservedPage.first.id).raw
-  return Object.freeze({
-    hosts: Object.freeze(
-      nodes.map((node) =>
-        Object.freeze({
-          id: requiredStringProperty(Host, node, 'id'),
-          nodeId: String(node.id),
-          path: Path.id(node.id).raw,
-          state: requiredStringProperty(Host, node, 'state'),
-        }),
-      ),
-    ),
-    ...(reserved === undefined ? {} : { reserved }),
-  })
-}
-
-type DynamicDefinition = ResolvedClass<'node'>
-
 function instanceFromSummary(input: unknown): InstanceInfo {
   const value = record(input, 'Admin Instance summary')
   const failure = value.failure === undefined ? undefined : record(value.failure, 'Admin failure')
@@ -209,10 +126,6 @@ function instanceFromSummary(input: unknown): InstanceInfo {
     slug: requiredString(value.slug, 'Admin Instance slug'),
     url: optionalStringValue(value.url) ?? '',
     state: instanceState(value.state),
-    ...(value.hostId === undefined
-      ? {}
-      : { hostId: requiredString(value.hostId, 'Admin Host id') }),
-    ...(value.region === undefined ? {} : { region: requiredString(value.region, 'Admin region') }),
     ...(value.phase === undefined
       ? {}
       : { phase: requiredString(value.phase, 'Admin Instance phase') }),
@@ -246,13 +159,6 @@ function domainInstallReceipt(input: unknown): DomainInstallReceipt {
       ? {}
       : { error: requiredString(failure.message, 'Admin Domain install failure') }),
   })
-}
-
-function requiredStringProperty(definition: DynamicDefinition, node: Node, name: string): string {
-  return requiredString(
-    node.props[requireAdminProperty(definition, name).key],
-    `Admin ${definition.ref.name}.${name}`,
-  )
 }
 
 function instanceState(input: unknown): InstanceState {

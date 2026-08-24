@@ -230,6 +230,23 @@ authority, or deleted tests does not count.
   four machine-envelope tests exercise their human-output branch; the required non-TTY rerun passed
   without changing production or tests.
 
+## Instance-only Admin journey — 2026-08-24
+
+- Removed `--host-id`, Host inventory reads, Host receiver invocation, picker/message parsing,
+  `HOST_NOT_FOUND`, `hostId`/`region` Instance projections, and every Host field from Instance status
+  and list output. The CLI now requests `Fleet.createInstance` with only `operationId` and `slug`;
+  Admin owns placement.
+- Instance create/status/delete and Domain publish now retain typed remote failures through the
+  existing connection failure renderer instead of masking `ResponseError` as `UNEXPECTED_ERROR`.
+- `domain publish --public-url` now accepts the documented deployment origin or the exact canonical
+  Publication URL and stores one normalized discovery URL.
+- Strict production/test/Viewer/Studio typecheck passes. The focused Instance, Publication, and help
+  suites pass 38 tests with one intentional canonical-skill skip.
+- An immutable source tarball installed into Alice's isolated npm prefix exposed no Host/Fleet flag
+  or help text. `astrale instance create cli-beta35-fresh --json` completed against the live Admin,
+  automatically selected infrastructure, and returned only `id`, `slug`, `url`, lifecycle fields,
+  creation time, and organization id; no Host identity or region leaked.
+
 ## Public npm publication boundary — 2026-08-24
 
 - `@astrale-os/cli@1.0.0-beta.6` was installed in a fresh temporary root from npm and its Node

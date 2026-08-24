@@ -4,7 +4,7 @@ import type { IdentityStore } from '../../identity/index'
 
 import { AuthError } from '../../errors'
 import { findOwnedInstance, type OwnedInstanceInfo } from '../../lib/admin-instance'
-import { assertAlphaCreateIdentity } from '../instance/create'
+import { assertInstanceCreateIdentity } from '../instance/create'
 
 describe('admin-backed instance commands', () => {
   test('findOwnedInstance matches owner inventory by slug or stable node id', () => {
@@ -14,8 +14,6 @@ describe('admin-backed instance commands', () => {
       url: 'https://demo.eu.astrale.ai',
       state: 'failed',
       organizationId: 'org_123',
-      hostId: 'host-1',
-      region: 'eu',
       phase: 'installing:default-domains',
       error: 'postInstall failed',
       createdAt: '2026-07-16T00:00:00.000Z',
@@ -39,8 +37,8 @@ describe('admin-backed instance commands', () => {
       },
     }
 
-    expect(() => assertAlphaCreateIdentity(store)).toThrow(AuthError)
-    expect(() => assertAlphaCreateIdentity(store)).toThrow('WorkOS login required')
+    expect(() => assertInstanceCreateIdentity(store)).toThrow(AuthError)
+    expect(() => assertInstanceCreateIdentity(store)).toThrow('WorkOS login required')
   })
 
   test('instance create preflight accepts IdP-backed identities', () => {
@@ -58,7 +56,7 @@ describe('admin-backed instance commands', () => {
       },
     }
 
-    expect(() => assertAlphaCreateIdentity(store)).not.toThrow()
+    expect(() => assertInstanceCreateIdentity(store)).not.toThrow()
   })
 
   test('--as selection must also be IdP-backed', () => {
@@ -82,7 +80,7 @@ describe('admin-backed instance commands', () => {
       },
     }
 
-    expect(() => assertAlphaCreateIdentity(store, { as: 'local' })).toThrow(AuthError)
-    expect(() => assertAlphaCreateIdentity(store, { as: 'workos' })).not.toThrow()
+    expect(() => assertInstanceCreateIdentity(store, { as: 'local' })).toThrow(AuthError)
+    expect(() => assertInstanceCreateIdentity(store, { as: 'workos' })).not.toThrow()
   })
 })

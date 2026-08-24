@@ -68,6 +68,7 @@ describe('connection target', () => {
           id: 'managed-id',
           slug,
           url: 'https://managed.example',
+          state: 'ready',
         }),
       }),
     ).toEqual({

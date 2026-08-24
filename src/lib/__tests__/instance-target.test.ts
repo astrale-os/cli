@@ -113,6 +113,7 @@ describe('resolveInstanceTarget', () => {
             id: 'node-1',
             slug,
             url: `https://${slug}.eu.astrale.ai`,
+            state: 'ready',
           }),
         },
       ),

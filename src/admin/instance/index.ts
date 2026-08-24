@@ -5,10 +5,9 @@ export {
   type AdminInstanceDependencies,
 } from './client'
 export {
-  AdminHostNotFoundError,
   AdminInstanceNotFoundError,
   findOwnedInstance,
-  formatInstanceLocation,
+  formatInstanceState,
   type DomainInstallReceipt,
   type InstanceInfo,
   type InstanceState,

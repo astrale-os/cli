@@ -7,7 +7,7 @@ import type { CommandDefinition } from '../../program/index'
 import { AstraleError } from '../../errors'
 import { listOwnedInstances } from '../../lib/admin-instance'
 import {
-  formatInstanceLocation,
+  formatInstanceState,
   type InstanceInfo,
   type OwnedInstanceInfo,
 } from '../../lib/admin-instance'
@@ -136,7 +136,7 @@ export function buildInstanceRows(
         name: twin?.active ? `${item.slug} ${chalk.green('*')}` : item.slug,
         kind: 'managed',
         url: item.url ?? '',
-        extra: [formatInstanceLocation(item), twin ? formatBookmarkConnection(twin) : '']
+        extra: [formatInstanceState(item), twin ? formatBookmarkConnection(twin) : '']
           .filter(Boolean)
           .join(' · '),
       })

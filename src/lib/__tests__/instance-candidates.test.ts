@@ -18,7 +18,6 @@ const managedDemo: OwnedInstanceInfo = {
   slug: 'demo',
   url: 'https://demo.eu.astrale.ai',
   state: 'ready',
-  region: 'eu',
 }
 
 describe('collectInstanceCandidates', () => {
@@ -138,11 +137,10 @@ describe('describeInstanceCandidate', () => {
         slug: 'twin',
         url: 'https://twin.eu.astrale.ai',
         state: 'ready',
-        region: 'eu',
       },
     ])
     expect(describeInstanceCandidate(managed!)).toBe(
-      'twin (managed) https://twin.eu.astrale.ai/api — eu',
+      'twin (managed) https://twin.eu.astrale.ai/api',
     )
   })
 })

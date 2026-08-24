@@ -73,7 +73,7 @@ Behavior:
   or with --json/--raw (agent-friendly — full DomainInfo objects). -q prints
   one install URL per line (pipeable into \`domain install\`); --count prints
   only the number. --default-only keeps the install-by-default entries (what
-  every new instance gets via alphaCreate). --check probes each published URL's
+  every new instance receives during Admin-managed provisioning). --check probes each published URL's
   canonical Publication and adds a live/unreachable STATUS column
   (+ reachable/schemaRevision in machine output).
 
