@@ -214,5 +214,12 @@ authority, or deleted tests does not count.
   and Studio manifest names/specifiers exactly match their frozen-lock importers.
 - SDK PR #153 is remotely green against the published Kernel beta.10/beta.9/beta.7 set. CLI and
   Studio now declare beta.17 as the honest SDK lower bound for the Publication and value facades
-  consumed here. Their frozen lock remains on beta.16 until beta.17 is published; then one ordinary
-  lock refresh reruns the existing full package, browser, and build gates without source topology.
+  consumed here.
+- The ordinary lock now resolves published SDK beta.17 and Shell 0.4.1, with Kernel packages only
+  through their owning public dependency closures. No source link, workspace override, direct
+  Kernel manifest dependency, repository credential, or cohort topology remains.
+- The complete non-TTY package gate passes: strict CLI/tests/Viewer/Studio types, 786 Bun tests with
+  one intentional skip, 15 Node workflow/skill tests, CLI/public subpath/Viewer/Studio builds,
+  formatting, public exports, and private Kernel dependency exclusion. A PTY-only local rerun made
+  four machine-envelope tests exercise their human-output branch; the required non-TTY rerun passed
+  without changing production or tests.
