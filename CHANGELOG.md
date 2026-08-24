@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.8](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.7...cli/v1.0.0-beta.8) (2026-08-24)
+
+
+### Bug Fixes
+
+* **cli:** retain explicit debug evidence ([#135](https://github.com/astrale-os/cli/issues/135)) ([c17ea15](https://github.com/astrale-os/cli/commit/c17ea153898000cd1050aa368c4a738544880af4))
+
 ## [1.0.0-beta.7](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.6...cli/v1.0.0-beta.7) (2026-08-24)
 
 
