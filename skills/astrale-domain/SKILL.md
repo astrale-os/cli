@@ -25,9 +25,9 @@ Use this router for focused work on an existing domain. It is not sufficient by 
 complete new domain; use the phased workflow below for that.
 
 - Scaffold, deploy, install, or test a domain: read `references/development.md`.
-- Author schema, vocabulary, properties, class/interface/edge choices, or review a schema: read `references/modeling.md` first. Always read it for schema work.
+- Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/modeling.md` first. Always read it for schema work.
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/implementing.md`.
-- Wrap an external API, build deps/ports, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
+- Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
 - Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
 - Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication mode, or Policy: read `references/security.md`.
 - Build or review browser views, mounted UI, view auth, view resolution, or frontend design: read `references/views.md`.
