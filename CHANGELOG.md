@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.0.0-beta.6](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.5...cli/v1.0.0-beta.6) (2026-08-24)
+
+
+### Bug Fixes
+
+* align CLI error dependency cohort ([2de97ba](https://github.com/astrale-os/cli/commit/2de97baf9c7074a28db1cf8f8a383d51160d94da))
+* **deps:** qualify published sdk and shell ([0003da2](https://github.com/astrale-os/cli/commit/0003da26211cf1a0eee81c08ce2dfb7eca44e98e))
+* **deps:** require compatible shell release ([7282c20](https://github.com/astrale-os/cli/commit/7282c20bcc92b213147f3abab31ddb2afb05a21c))
+* **deps:** require sdk facade release ([4c777f7](https://github.com/astrale-os/cli/commit/4c777f7d6fd44baf1ac1969cbb688bff274a8216))
+* normalize CLI failure presentation ([96b16be](https://github.com/astrale-os/cli/commit/96b16be142c946dfdaff9d8f54bbbf9180f0d2c2))
+* normalize CLI failure presentation ([d81fad9](https://github.com/astrale-os/cli/commit/d81fad95095bfd0391d5ebc0de49102fa043b265))
+* **studio:** consume kernel through sdk ([b1a907a](https://github.com/astrale-os/cli/commit/b1a907ab1bae952ee353d61d0af37c41f5d9c453))
+* **studio:** restore SDK V1 browser fixture ([cd172b0](https://github.com/astrale-os/cli/commit/cd172b09162b7b00e1e4b93670f1cd9637f766fa))
+
+
+### Documentation
+
+* record cli cohort credential blocker ([73efde7](https://github.com/astrale-os/cli/commit/73efde7340ea115e9f3a91d4a9a1df357e4c9277))
+* record fresh CLI kernel proof ([cf24cd2](https://github.com/astrale-os/cli/commit/cf24cd22fafefb60f93304aedd40245e445e1354))
+* replace stale Domain skill with SDK V1 ([30facea](https://github.com/astrale-os/cli/commit/30facea4b31b7caf18b663e9384bcb6978bf0030))
+* replace stale Domain skill with SDK V1 ([465f8e9](https://github.com/astrale-os/cli/commit/465f8e98f8fe7010906c9aa9c819df387ae2464e))
+
 ## [1.0.0-beta.5](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.4...cli/v1.0.0-beta.5) (2026-08-21)
 
 
