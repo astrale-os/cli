@@ -5,7 +5,7 @@ import type { InstanceInfo } from '../../lib/admin-instance'
 import { buildInstanceRows, type Bookmark } from '../instance/list'
 
 const managed: InstanceInfo[] = [
-  { id: 'demo', slug: 'demo', url: 'https://demo.eu.astrale.ai', region: 'eu' },
+  { id: 'demo', slug: 'demo', url: 'https://demo.eu.astrale.ai', state: 'ready' },
 ]
 
 function bookmark(overrides: Partial<Bookmark> = {}): Bookmark {

@@ -187,7 +187,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '42b4812abbbca3d54289a16d0b066dfb3b1caaf1df6597a425c675744466a728',
+      '575d9cc589cf7fcf44c82e882bede7111366549dc5663348f4a263a90d1898c7',
     )
   })
 
@@ -251,14 +251,17 @@ describe('help contract — admin target surface is registered', () => {
     expect(adminUse?.helpInformation()).not.toContain('--issuer <url>')
   })
 
-  test('instance create is the alphaCreate flow, not legacy Instance.init DX', async () => {
+  test('instance create delegates infrastructure placement to Admin', async () => {
     const program = await buildProgram()
     const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
     const help = instanceCreate?.helpInformation() ?? ''
 
-    expect(help).toContain('Instance.alphaCreate')
+    expect(help).toContain('Provision an instance through the Admin control plane')
+    expect(help).not.toContain('Host')
+    expect(help).not.toContain('Fleet')
+    expect(help).not.toContain('--host-id')
     expect(help).not.toContain('--no-use')
-    expect(help).not.toContain('Instance.init requires --host-id')
+    expect(help).not.toContain('Instance.init')
   })
 })
 

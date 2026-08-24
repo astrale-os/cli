@@ -9,8 +9,7 @@ export async function fetchDomainPublication(
   signal?: AbortSignal,
   fetchImpl: FetchLike = globalThis.fetch,
 ): Promise<publication.Publication> {
-  const root = deploymentRoot(input)
-  const url = new URL(publication.PATH, root)
+  const url = domainPublicationUrl(input)
   const response = await fetchImpl(url, {
     redirect: 'error',
     ...(signal === undefined ? {} : { signal }),
@@ -81,7 +80,8 @@ async function cancel(body: ReadableStream<Uint8Array> | null): Promise<void> {
   if (body !== null) await body.cancel().catch(() => undefined)
 }
 
-function deploymentRoot(input: string): URL {
+/** Canonical discovery document for a Domain origin or exact Publication URL. */
+export function domainPublicationUrl(input: string): URL {
   let url: URL
   try {
     url = new URL(input)
@@ -94,9 +94,11 @@ function deploymentRoot(input: string): URL {
     url.password !== '' ||
     url.search !== '' ||
     url.hash !== '' ||
-    !['', '/'].includes(url.pathname)
+    !['', '/', publication.PATH].includes(url.pathname)
   ) {
-    throw new TypeError(`Domain deployment URL must be an HTTP(S) origin: ${input}`)
+    throw new TypeError(
+      `Domain deployment URL must be an HTTP(S) origin or canonical Publication URL: ${input}`,
+    )
   }
-  return new URL(url.origin)
+  return new URL(publication.PATH, url.origin)
 }

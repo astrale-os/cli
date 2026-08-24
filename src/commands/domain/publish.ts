@@ -3,9 +3,11 @@ import chalk from 'chalk'
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
+import { formatKernelError } from '../../connection/errors'
 import { publishAdminDomain } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { fatal, withSpinner } from '../../lib/log'
+import { domainPublicationUrl } from '../../lib/domain-publication'
+import { withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { promptText } from '../../lib/prompt'
 import { isHttpUrl, validateName, validateUrl } from '../../lib/validation'
@@ -68,7 +70,7 @@ Examples:
     { flags: '--description <text>', description: 'Optional human description for the catalog' },
     {
       flags: '--install-by-default',
-      description: 'Mark the domain for install on every new instance (alphaCreate)',
+      description: 'Mark the domain for install on every new instance',
     },
   ],
   // No positional arguments → Commander passes (opts, command); `opts` is first.
@@ -102,6 +104,7 @@ Examples:
       validateName(origin, 'origin')
       validateName(name, 'domain')
       validateUrl(publicUrl)
+      const discoveryUrl = domainPublicationUrl(publicUrl).href
 
       const result = await withSpinner(
         `Publishing ${name} → ${publicUrl}`,
@@ -110,7 +113,7 @@ Examples:
           publishAdminDomain(opts, {
             origin,
             name,
-            url: publicUrl,
+            url: discoveryUrl,
             ...(opts.description ? { description: opts.description } : {}),
             ...(opts.installByDefault ? { installByDefault: true } : {}),
           }),
@@ -127,7 +130,8 @@ Examples:
         return
       }
     } catch (e) {
-      fatal(e)
+      await formatKernelError(e, isMachine(opts), undefined, opts.debug)
+      process.exit(1)
     }
   },
 } satisfies CommandDefinition

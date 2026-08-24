@@ -5,9 +5,7 @@ export interface InstanceInfo {
   readonly id: string
   readonly slug: string
   readonly url: string
-  readonly hostId?: string
-  readonly region?: string
-  readonly state?: InstanceState
+  readonly state: InstanceState
   readonly phase?: string
   readonly error?: string | null
   readonly createdAt?: string
@@ -38,12 +36,6 @@ export class AdminInstanceNotFoundError extends AstraleError {
   }
 }
 
-export class AdminHostNotFoundError extends AstraleError {
-  constructor(readonly identifier: string) {
-    super('HOST_NOT_FOUND', `No caller-usable Admin Host matches ${JSON.stringify(identifier)}.`)
-  }
-}
-
 /** Match an owner-scoped Instance by slug, canonical Node Path, or bare Node id. */
 export function findOwnedInstance(
   instances: readonly OwnedInstanceInfo[],
@@ -57,10 +49,8 @@ export function findOwnedInstance(
   )
 }
 
-/** Human-readable location of an Instance (state, region, and Host Path). */
-export function formatInstanceLocation(info: InstanceInfo): string {
-  return [info.state && info.state !== 'ready' ? info.state : undefined, info.region, info.hostId]
-    .filter(Boolean)
-    .join(' · ')
+/** Human-readable non-ready lifecycle state for one Instance. */
+export function formatInstanceState(info: InstanceInfo): string {
+  return info.state === 'ready' ? '' : `${info.state}${info.phase ? ` (${info.phase})` : ''}`
 }
 import { AstraleError } from '../../errors'

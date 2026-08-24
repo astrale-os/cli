@@ -2,10 +2,11 @@ import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
 import { AdminInstanceNotFoundError } from '../../admin/instance'
+import { formatKernelError } from '../../connection/errors'
 import { deleteOwnedInstance } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { clearActive, readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
-import { fatal, log, withSpinner } from '../../lib/log'
+import { log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 
 type DeleteOpts = KernelCommandOpts &
@@ -19,10 +20,9 @@ export default {
   afterHelpText: `
 Behavior:
   Calls Instance.delete on the configured admin kernel: best-effort decommission
-  of the instance's routing-registry entry + WorkOS org (frees the slug), then
-  removes the Instance record. The host kernel itself is NOT deregistered (the
-  deprovisioning saga is a follow-up). A same-name local bookmark is removed
-  after the delete succeeds unless --keep-bookmark is passed.
+  of the instance's route and tenant reservation, then removes the Instance
+  projection. A same-name local bookmark is removed after the delete succeeds
+  unless --keep-bookmark is passed.
 `,
   arguments: [{ name: 'id', description: 'Instance slug', required: true }],
   options: [
@@ -62,7 +62,8 @@ Behavior:
         log.dim(`  hint: it's a local bookmark — drop it with: astrale instance forget ${id}`)
         process.exit(1)
       }
-      fatal(e, opts)
+      await formatKernelError(e, isMachine(opts), undefined, opts.debug)
+      process.exit(1)
     }
   },
 } satisfies CommandDefinition

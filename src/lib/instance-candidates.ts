@@ -1,6 +1,6 @@
 import type { InstanceEntry, InstanceStore } from './instance'
 
-import { formatInstanceLocation, type OwnedInstanceInfo } from './admin-instance'
+import { formatInstanceState, type OwnedInstanceInfo } from './admin-instance'
 import { normalizeInstanceKernelUrl, resolveInstanceKey } from './instance'
 
 export type InstanceCandidate =
@@ -44,6 +44,6 @@ export function describeInstanceCandidate(candidate: InstanceCandidate): string 
   if (candidate.source === 'bookmark') {
     return `${candidate.key} (bookmark) ${candidate.url}`
   }
-  const extra = formatInstanceLocation(candidate.info)
+  const extra = formatInstanceState(candidate.info)
   return `${candidate.key} (managed) ${candidate.url}${extra ? ` — ${extra}` : ''}`
 }

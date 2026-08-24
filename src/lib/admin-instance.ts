@@ -6,7 +6,7 @@ import { withAdminClientSession } from '../connection'
 export {
   AdminInstanceNotFoundError,
   findOwnedInstance,
-  formatInstanceLocation,
+  formatInstanceState,
   type InstanceInfo,
   type InstanceState,
   type OwnedInstanceInfo,
@@ -24,14 +24,10 @@ export async function listOwnedInstancesInContext(context: ConnectionContext) {
   return (await connectAdminInstances(context)).list()
 }
 
-/** Provision through Fleet placement or one explicitly resolved Host receiver. */
-export function createOwnedInstance(
-  options: AdminConnectionOptions,
-  slug: string,
-  hostId?: string,
-) {
+/** Request one managed Instance; Admin owns infrastructure placement. */
+export function createOwnedInstance(options: AdminConnectionOptions, slug: string) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).create(slug, hostId),
+    (await connectAdminInstances(context)).create(slug),
   )
 }
 

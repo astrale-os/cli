@@ -3,7 +3,7 @@ import { defineSchema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
 import { releaseFor } from '../../__tests__/fixtures/publication'
-import { fetchDomainPublication } from '../domain-publication'
+import { domainPublicationUrl, fetchDomainPublication } from '../domain-publication'
 
 const ROOT = 'https://publication-reader.example.dev'
 const PUBLICATION_URL = `${ROOT}/.well-known/astrale/domain.json`
@@ -21,6 +21,11 @@ describe('Domain Publication reader', () => {
 
     await expect(fetchDomainPublication(`${ROOT}/`, undefined, fetch)).resolves.toEqual(deployed)
     expect(requests).toEqual([{ url: PUBLICATION_URL, redirect: 'error' }])
+  })
+
+  test('normalizes an origin and admits the exact canonical Publication URL', () => {
+    expect(domainPublicationUrl(ROOT).href).toBe(PUBLICATION_URL)
+    expect(domainPublicationUrl(PUBLICATION_URL).href).toBe(PUBLICATION_URL)
   })
 
   test('propagates redirect rejection instead of accepting another target', async () => {
