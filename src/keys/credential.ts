@@ -47,6 +47,7 @@ async function signIdentityCredential(options: {
     .setIssuer(options.issuer)
     .setSubject(options.subject)
     .setAudience(options.audience)
+    .setExpirationTime('5m')
     .sign(privateKey)
 }
 

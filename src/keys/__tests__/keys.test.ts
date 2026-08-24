@@ -62,6 +62,10 @@ describe('DESIGN — per-identity keys', () => {
     await persistKeypair('alice', { keysDir: tmp })
     const jwt = await signAs('alice', tmp)
     expect(jwt.split('.').length).toBe(3)
+    const claims = decodeJwt(jwt)
+    expect(claims.iat).toBeUndefined()
+    expect(claims.exp).toBeNumber()
+    expect((claims.exp as number) * 1_000).toBeGreaterThan(Date.now() + 299_000)
   })
 
   /** @evidence TEST-CLI-KEYS-DISTINGUISHES-KERNEL-ROOT-GRANT */
