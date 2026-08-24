@@ -212,3 +212,7 @@ authority, or deleted tests does not count.
 - The dependency check reads only Git-tracked Studio sources and disables dependency traversal, so
   an installed or linked package graph cannot escape the intended source census. It also proves root
   and Studio manifest names/specifiers exactly match their frozen-lock importers.
+- SDK PR #153 is remotely green against the published Kernel beta.10/beta.9/beta.7 set. CLI and
+  Studio now declare beta.17 as the honest SDK lower bound for the Publication and value facades
+  consumed here. Their frozen lock remains on beta.16 until beta.17 is published; then one ordinary
+  lock refresh reruns the existing full package, browser, and build gates without source topology.
