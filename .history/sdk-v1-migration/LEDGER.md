@@ -175,3 +175,20 @@ authority, or deleted tests does not count.
 - The only ordinary-package difference from green CI is the unpublished Shell artifact. Once Shell
   PR #54 is merged and released, refresh the ordinary lock and rerun the same package check; no code
   fallback or cohort topology is required.
+
+## Fresh local Kernel CLI proof — 2026-08-24
+
+- Built the branch executable with the immutable Shell PR #54 package substituted only in the
+  installed package tree. No source checkout, workspace member, manifest override, or cohort
+  mechanism was introduced.
+- Started a clean Kernel from `/private/tmp/kernel-flagship-live` with an isolated data root and
+  local TLS on `https://localhost:18443/kernel/host`.
+- Imported the generated bootstrap identity into an isolated `ASTRALE_HOME`, bookmarked the Kernel
+  with its exact CA and bookmark-scoped identity, and observed the selected instance through
+  `astrale status`.
+- `astrale get @self` authenticated and returned the canonical Kernel root Identity node.
+- `astrale introspect /:kernel.astrale.ai:class.Identity:whois` returned the exact authorized static
+  Method contract.
+- `astrale call /:kernel.astrale.ai:class.Identity:whois` returned the expected issuer, subject,
+  node id, claim requirements, and frozen state. This is a real signed CLI to local-Kernel call, not
+  a transport mock or raw HTTP replacement.
