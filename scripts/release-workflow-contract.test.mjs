@@ -22,8 +22,14 @@ describe('release workflow contract', () => {
 
   it('derives npm beta and stable tags from the package version', () => {
     const sharedPublish = publish.jobs.publish.steps.at(-1)
-    assert.equal(sharedPublish.uses, 'astrale-os/config/.github/actions/publish/packages@main')
+    assert.equal(
+      sharedPublish.uses,
+      'astrale-os/config/.github/actions/publish/packages@2e1bc75459014f38323b57213949b9f9dd530054',
+    )
     assert.equal(sharedPublish.with['prerelease-tag'], 'auto')
+    assert.equal(sharedPublish.with['mirror-public-packages'], 'false')
+    assert.equal(sharedPublish.with['github-token'], undefined)
+    assert.equal(publish.permissions.packages, undefined)
   })
 
   it('runs the binary publisher only after Release Please creates a release', () => {

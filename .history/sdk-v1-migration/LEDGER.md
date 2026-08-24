@@ -223,3 +223,15 @@ authority, or deleted tests does not count.
   formatting, public exports, and private Kernel dependency exclusion. A PTY-only local rerun made
   four machine-envelope tests exercise their human-output branch; the required non-TTY rerun passed
   without changing production or tests.
+
+## Public npm publication boundary — 2026-08-24
+
+- `@astrale-os/cli@1.0.0-beta.6` was installed in a fresh temporary root from npm and its Node
+  executable returned the exact version and complete command help without a workspace or source link.
+- Publication now uses the pinned Config action at `2e1bc75459014f38323b57213949b9f9dd530054`
+  and npm OIDC only. The optional GitHub Packages mirror, repository package permission, and package
+  token input were removed; ordinary public package metadata and lockfiles remain the compatibility
+  authority.
+- The focused workflow contract passes 7/7. The complete non-TTY package gate again passes 786 Bun
+  tests with one intentional skip, 15 Node tests, all strict type lanes, every production build,
+  public export checks, and the private Kernel dependency-closure check.

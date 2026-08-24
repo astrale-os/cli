@@ -1,10 +1,7 @@
 name: Publish
 
-# Publishes @astrale-os/cli to GitHub Packages + public npm after a version
-# lands on main, the SAME way the other Astrale repos do: the shared
-# astrale-os/config publish/packages action, npm via OIDC Trusted Publishing
-# (no NPM_TOKEN), GitHub Packages via the repo token. Idempotent — an
-# already-published version is skipped. See docs/release.md.
+# Publishes @astrale-os/cli to public npm after a version lands on main through
+# OIDC Trusted Publishing. Idempotent publication requires no stored token.
 #
 # The published package is the Node-runnable bundle (dist/astrale.js, all
 # @astrale-os deps inlined) PLUS the prebuilt Domain Studio (studio/server +
@@ -12,7 +9,7 @@ name: Publish
 # and `astrale studio` (which additionally needs Bun on PATH).
 #
 # Release Please owns the version. The binary release consumes the same version
-# through release.yml; this workflow publishes its npm/GitHub Packages form.
+# through release.yml; this workflow publishes its npm form.
 
 on:
   push:
@@ -29,7 +26,6 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write # publish to GitHub Packages
   id-token: write # OIDC for npm Trusted Publishing
 
 jobs:
@@ -42,12 +38,10 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - uses: astrale-os/config/.github/actions/publish/packages@main
+      - uses: astrale-os/config/.github/actions/publish/packages@2e1bc75459014f38323b57213949b9f9dd530054
         with:
           dirs: '.'
-          # The action uses this token for the GitHub Packages publication target.
-          # Dependency installation resolves the public Astrale package set from npm.
-          github-token: ${{ secrets.ASTRALE_PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          mirror-public-packages: 'false'
           # Studio is part of the pnpm workspace, so one frozen workspace install
           # materializes both toolchains. Do not mix Bun's package manager into
           # that tree: it replaces pnpm links and can make the following prepack
