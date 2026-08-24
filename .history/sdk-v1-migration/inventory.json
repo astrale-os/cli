@@ -1,26 +1,26 @@
 {
   "version": 1,
-  "head": "95abefeca8ac87a8968ce7a4c81e79c265cea81f",
+  "head": "923045c69a78ce24170234003110494c9e5ed76c",
   "counts": {
-    "productionFiles": 430,
-    "productionLines": 51060,
-    "testFiles": 199,
-    "testLines": 20305,
+    "productionFiles": 426,
+    "productionLines": 50774,
+    "testFiles": 196,
+    "testLines": 20333,
     "specificationFiles": 51,
-    "specificationLines": 1718
+    "specificationLines": 1723
   },
   "sdkImports": {
     "@astrale-os/sdk": 1,
     "@astrale-os/sdk/action": 1,
     "@astrale-os/sdk/application": 3,
-    "@astrale-os/sdk/auth": 20,
+    "@astrale-os/sdk/auth": 21,
     "@astrale-os/sdk/client/session": 2,
     "@astrale-os/sdk/deployment/build": 1,
     "@astrale-os/sdk/deployment/release": 1,
     "@astrale-os/sdk/graph": 4,
     "@astrale-os/sdk/graph/class": 4,
     "@astrale-os/sdk/graph/node": 9,
-    "@astrale-os/sdk/graph/path": 20,
+    "@astrale-os/sdk/graph/path": 22,
     "@astrale-os/sdk/graph/properties": 2,
     "@astrale-os/sdk/mutation": 6,
     "@astrale-os/sdk/query": 10,
@@ -29,9 +29,9 @@
     "@astrale-os/sdk/workflow": 1
   },
   "kernelImports": {
-    "@astrale-os/kernel-client": 13,
+    "@astrale-os/kernel-client": 15,
     "@astrale-os/kernel-client/auth": 5,
-    "@astrale-os/kernel-client/graph": 6,
+    "@astrale-os/kernel-client/graph": 8,
     "@astrale-os/kernel-client/session": 15,
     "@astrale-os/kernel-core/dns-label": 1,
     "@astrale-os/kernel-protocol": 2,

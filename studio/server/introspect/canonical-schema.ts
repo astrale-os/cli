@@ -1,7 +1,7 @@
 /**
  * Pure projection from an SDK-admitted portable DomainSchema into Studio's
  * intentionally lossy render model. The extractor calls the authored Domain's
- * own SDK cohort for admission before this module interprets the document.
+ * own installed SDK for admission before this module interprets the document.
  */
 import type {
   IrCallableAuth,
@@ -74,7 +74,7 @@ export function findCanonicalDomainSchemaExport(
   )
 }
 
-/** Read the exact retained dependency closure through the authored SDK cohort. */
+/** Read the exact retained dependency closure through the authored SDK. */
 export function closureFromSdk(
   sdkModule: Record<string, unknown>,
   root: CanonicalDomainSchemaV1,

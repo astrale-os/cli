@@ -123,8 +123,72 @@ The primary CLI and Shell worktrees remain untouched.
   identity-store default. Seeing no global default does not change connection selection; ordinary
   Kernel commands use the bookmark identity unless `--as`, `--creds`, or `--anonymous` overrides it.
 
+## Ordinary package compatibility — 2026-08-24
+
+- The temporary exact-source action, `.cohort` workspace, source overrides, checkout credential,
+  topology verifier/tests, and vendored SDK/Shell archives were removed.
+- Root and Studio manifests now name ordinary package ranges. CI, binary release, and publication
+  install only the frozen public dependency graph.
+- The semantic source boundary and private Kernel Ports/Runtime exclusion remain. The public
+  dependency check now rejects source protocols and stale source topology directly in manifests,
+  workspace configuration, and the lockfile.
+- The lockfile was regenerated from the two ordinary workspace manifests. It resolves released SDK
+  beta.15, Shell beta.3, and current Kernel client/core/DSL/protocol/server beta.9/beta.8/beta.6
+  packages with no source links, hidden importers, or vendored Astrale archives.
+- Public dependency and semantic source-boundary checks pass. Typecheck now fails honestly because
+  released SDK beta.15 predates the merged facade exports consumed by CLI (`/client/session`, `K`,
+  `ClassKey`, `LocalBinding`, and current Query source input). This remains a package publication gap,
+  not permission to restore source checkout machinery.
+
 ## No-regression rule
 
 Each migrated slice must retain the governing CLI law/test evidence or record a deliberate product
 change. Passing through widened casts, copied Kernel types, string-parsed private errors, weakened
 authority, or deleted tests does not count.
+
+## Published SDK beta.16 qualification — 2026-08-24
+
+- Root and Studio now require SDK `>=0.5.0-beta.16 <1.0.0`; the ordinary lock resolves beta.16 and
+  the released Kernel beta.9/beta.8/beta.6 package set with no source link or cohort topology.
+- One first-party `@astrale-os/*` release-age exclusion replaces version-specific Astrale
+  exceptions. Third-party packages retain the existing age gate.
+- Strict CLI, tests, Viewer, and Studio typecheck passes. The previously merged direct-node Query
+  authoring was restored after the later SDK migration merge reintroduced the removed source form;
+  its six focused tests pass on Bun 1.4.0.
+- Full test and build qualification now reaches the remaining registry boundary: published Shell
+  beta.3 imports removed SDK subpaths (`/domain`, `/schema/kernel`, and `/graph/model`). No source
+  checkout or compatibility alias was restored. CLI completion requires publication of the merged
+  Shell package, followed by one ordinary lock refresh and full package check.
+
+## Exact packed Shell qualification — 2026-08-24
+
+- Replaced only the installed published Shell beta.3 package with the immutable package built by
+  Shell PR #54; CLI source, manifests, and lockfile remained unchanged and no source checkout or
+  override was introduced.
+- CLI production/tests, Viewer, and Studio strict typecheck pass. The complete Bun suite passes 786
+  tests with one canonical-skill mirror skip; release workflow tests pass 14/14.
+- The CLI executable, public subpaths, Viewer, and Studio build; lint, formatting, public exports,
+  and the private dependency-closure gate pass.
+- Real Chromium exposed a stale SDK V1 fixture whose property and Core declarations had been removed
+  while their assertions remained. Restoring those declarations through current SDK APIs preserves
+  the intended browser evidence, and the exact smoke now passes.
+- The only ordinary-package difference from green CI is the unpublished Shell artifact. Once Shell
+  PR #54 is merged and released, refresh the ordinary lock and rerun the same package check; no code
+  fallback or cohort topology is required.
+
+## Fresh local Kernel CLI proof — 2026-08-24
+
+- Built the branch executable with the immutable Shell PR #54 package substituted only in the
+  installed package tree. No source checkout, workspace member, manifest override, or cohort
+  mechanism was introduced.
+- Started a clean Kernel from `/private/tmp/kernel-flagship-live` with an isolated data root and
+  local TLS on `https://localhost:18443/kernel/host`.
+- Imported the generated bootstrap identity into an isolated `ASTRALE_HOME`, bookmarked the Kernel
+  with its exact CA and bookmark-scoped identity, and observed the selected instance through
+  `astrale status`.
+- `astrale get @self` authenticated and returned the canonical Kernel root Identity node.
+- `astrale introspect /:kernel.astrale.ai:class.Identity:whois` returned the exact authorized static
+  Method contract.
+- `astrale call /:kernel.astrale.ai:class.Identity:whois` returned the expected issuer, subject,
+  node id, claim requirements, and frozen state. This is a real signed CLI to local-Kernel call, not
+  a transport mock or raw HTTP replacement.

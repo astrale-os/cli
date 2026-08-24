@@ -17,6 +17,7 @@ Rules:
 with `node scripts/qualification/source-boundary.mjs --write`; the existing `pnpm package:check`
 owns distributable-package qualification.
 
-Until the exact cohort is published, GitHub workflows require `COHORT_REPOSITORY_TOKEN` with read
-access to the private Kernel, SDK, and Shell repositories. Registry and job tokens are not accepted
-as substitutes for cross-repository authority.
+Compatibility now comes from ordinary package manifests, the frozen lockfile, and distributable
+package qualification. GitHub workflows do not check out sibling repositories or require a
+cross-repository source credential. Package absence or incompatibility must remain visible rather
+than being repaired with source links or vendored Astrale archives.
