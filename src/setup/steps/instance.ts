@@ -4,7 +4,7 @@ import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 import type { SetupContext, SetupStep } from '../types'
 
 import { AstraleError } from '../../errors'
-import { listOwnedInstances } from '../../lib/admin-instance'
+import { listOwnedInstancesWithIdentity } from '../../lib/admin-instance'
 import { normalizeInstanceKernelUrl, setActive, upsertManagedBookmark } from '../../lib/instance'
 import { readLocalStatus } from '../../lib/local-status'
 import { log, withSpinner } from '../../lib/log'
@@ -14,8 +14,11 @@ import { provisionInstance, type ProvisionResult } from '../../lib/provision-ins
 import { guiOrigin, slugError } from '../util'
 
 export type InstanceSetupDependencies = {
-  fetchOwned: (ctx: SetupContext) => Promise<OwnedInstanceInfo[]>
-  adopt: (info: OwnedInstanceInfo) => Promise<void>
+  fetchOwned: (ctx: SetupContext) => Promise<{
+    readonly instances: OwnedInstanceInfo[]
+    readonly identity?: string
+  }>
+  adopt: (info: OwnedInstanceInfo, identity?: string) => Promise<void>
   selectReady: (instances: OwnedInstanceInfo[]) => Promise<OwnedInstanceInfo | null>
   confirmCreate: () => Promise<boolean>
   promptSlug: () => Promise<string | undefined>
@@ -23,12 +26,7 @@ export type InstanceSetupDependencies = {
 }
 
 export type OwnedInstanceAdoptionDependencies = {
-  upsert: (
-    key: string,
-    slug: string,
-    url: string,
-    organizationId?: string,
-  ) => Promise<{ repointedFrom?: string }>
+  upsert: typeof upsertManagedBookmark
   activate: (slug: string) => Promise<unknown>
 }
 
@@ -41,12 +39,19 @@ function hero(slug: string, kernelUrl: string): void {
 
 export async function adoptOwnedInstance(
   info: OwnedInstanceInfo,
+  defaultIdentity?: string,
   deps: OwnedInstanceAdoptionDependencies = {
     upsert: upsertManagedBookmark,
     activate: setActive,
   },
 ): Promise<void> {
-  const { repointedFrom } = await deps.upsert(info.slug, info.slug, info.url, info.organizationId)
+  const { repointedFrom } = await deps.upsert({
+    key: info.slug,
+    slug: info.slug,
+    url: info.url,
+    ...(info.organizationId ? { organizationId: info.organizationId } : {}),
+    ...(defaultIdentity ? { defaultIdentity } : {}),
+  })
   await deps.activate(info.slug)
   if (repointedFrom) {
     log.warn(
@@ -61,7 +66,7 @@ function defaultDependencies(ctx: SetupContext): InstanceSetupDependencies {
   return {
     fetchOwned: (setupCtx) =>
       withSpinner('Checking for existing instances', !setupCtx.machine, () =>
-        listOwnedInstances(setupCtx.opts),
+        listOwnedInstancesWithIdentity(setupCtx.opts),
       ),
     adopt: adoptOwnedInstance,
     selectReady: (instances) =>
@@ -90,9 +95,9 @@ export async function ensureOwnedInstance(
   ctx: SetupContext,
   deps: InstanceSetupDependencies = defaultDependencies(ctx),
 ): Promise<'fixed' | 'skipped'> {
-  let owned: OwnedInstanceInfo[]
+  let inventory: Awaited<ReturnType<InstanceSetupDependencies['fetchOwned']>>
   try {
-    owned = await deps.fetchOwned(ctx)
+    inventory = await deps.fetchOwned(ctx)
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
     throw new AstraleError(
@@ -102,9 +107,11 @@ export async function ensureOwnedInstance(
     )
   }
 
+  const owned = inventory.instances
+
   const ready = owned.filter((info) => info.state === 'ready')
   if (ready.length === 1) {
-    await deps.adopt(ready[0]!)
+    await deps.adopt(ready[0]!, inventory.identity)
     return 'fixed'
   }
 
@@ -114,7 +121,7 @@ export async function ensureOwnedInstance(
       log.dim('  Skipped — no active instance set.')
       return 'skipped'
     }
-    await deps.adopt(choice)
+    await deps.adopt(choice, inventory.identity)
     return 'fixed'
   }
 

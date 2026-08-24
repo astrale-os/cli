@@ -127,7 +127,7 @@ Main command groups:
 
 ```
 /domain                        Domain node
-/domain/class.Name             Class node, or /domain/interface.Name
+/domain/class.Name             Class node
 /:domain:class.Name:method     Static method (semantic domain path)
 <nodePath>::method             Instance method dispatch
 @nodeId                        Reference a node by UID

@@ -42,7 +42,7 @@ import {
 import { snapshotText, waitForSettledSnapshot } from '../lib/view/snapshot'
 
 /**
- * `astrale view` — open ONE view in an emulated host shell, authenticated as
+ * `astrale view` — open ONE view in a local browser shell, authenticated as
  * the CLI identity, driveable by agent-browser (default) or a real browser.
  * Design + protocol details: VIEW_CLI_SPEC.md at the workspace root.
  */
@@ -485,7 +485,7 @@ async function sessionsCommand(opts: ViewOpts): Promise<void> {
 
 export default {
   name: 'view',
-  description: 'Open one view in an emulated host shell your agent can drive',
+  description: 'Open one view in a local browser shell your agent can drive',
   arguments: [
     {
       name: 'spec',
@@ -525,7 +525,7 @@ export default {
   afterHelpText: `
 What it does:
   Renders ONE view — no GUI, no cookies, no WorkOS. It resolves the view on the
-  kernel, starts a loopback session server that emulates the shell host (real
+  kernel, starts a loopback session server that supplies the shell handshake (real
   handshake via @astrale-os/shell, token minted from YOUR CLI identity, kernel
   calls proxied), and opens the page headless in agent-browser. Driving stays
   agent-browser's job; auth follows --as/--creds/-i like any kernel command.

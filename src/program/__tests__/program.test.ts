@@ -187,7 +187,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '575d9cc589cf7fcf44c82e882bede7111366549dc5663348f4a263a90d1898c7',
+      'abd4d584cbefa707ecc2c939d990b0bfdff8f4d1b28bce9fe4b206fdd1a3e3e9',
     )
   })
 
@@ -212,6 +212,19 @@ describe('help contract — no internal SPEC anchors leak to users', () => {
       .map((c) => c.name() || '<root>')
 
     expect(offenders).toEqual([])
+  })
+
+  test('Kernel and Instance vocabulary does not expose retired Host or Interface concepts', async () => {
+    const program = await buildProgram()
+    const help = allCommands(program)
+      .map((command) => command.helpInformation())
+      .join('\n')
+
+    expect(help).not.toContain('host.astrale.ai')
+    expect(help).not.toContain(':interface.')
+    expect(help).not.toContain('Class or Interface')
+    expect(help).not.toContain('emulated host')
+    expect(help).not.toContain('Host shell')
   })
 })
 

@@ -21,6 +21,7 @@ import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
 import { log } from '../lib/log'
 import { isMachine } from '../lib/output'
+import { bindCredentialIdentity } from './auth'
 import { createCliCredential, validateCredentialSelection } from './credential'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
@@ -38,6 +39,8 @@ export interface ConnectionContext {
   readonly graph: GraphApi
   readonly auth: AuthApi
   readonly target: ConnectionTarget
+  /** Local identity label selected for this session; absent for raw credentials or anonymous use. */
+  readonly identity?: string
 }
 
 interface OwnedConnection {
@@ -63,6 +66,7 @@ export async function withClientSession<Value>(
   const target = await resolveConnectionTarget(options, config, {
     managed: (slug) => lookupManagedInstance(slug, options),
   })
+  options = await bindCredentialIdentity(options, target)
   warnMissingExplicitTarget(options, target)
   return runResolvedClientSession(target, timeoutMs, options, config, action, openConnection)
 }
@@ -76,6 +80,7 @@ export async function withAdminClientSession<Value>(
   const timeoutMs = resolveTimeoutMs(options.timeout)
   const config = await readConfig()
   const target = await resolveAdminConnectionTarget(options, config)
+  options = await bindCredentialIdentity(options, target)
   return runResolvedClientSession(target, timeoutMs, options, config, action, openConnection)
 }
 
@@ -141,7 +146,13 @@ function openConnection(
   const graph = createGraph((call, request) => session.call(call, request))
   const authApi = createAuth((path, input, request) => session.call(call(path, input), request))
   return {
-    context: Object.freeze({ session, graph, auth: authApi, target }),
+    context: Object.freeze({
+      session,
+      graph,
+      auth: authApi,
+      target,
+      ...(options.as === undefined ? {} : { identity: options.as }),
+    }),
     close() {
       session.close()
     },

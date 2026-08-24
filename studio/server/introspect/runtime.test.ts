@@ -43,7 +43,7 @@ function currentFixture(): DomainHandle {
       const Document = nodeClass({ extends: [Named], properties: {} })
       const welcome = core.node(Document, {})
       export const schema = defineSchema('documents.runtime.test', {
-        dependencies: [DirectorySchema],
+        dependencies: { directory: DirectorySchema },
         classes: { Document },
         views: { editor: view({ target: Document }) },
         core: { nodes: { welcome } },
@@ -115,7 +115,7 @@ describe('SDK V1 schema extractor', () => {
       schemaIndex,
       `export const schema = {
         format: 'astrale.dsl', version: 'v1', origin: 'not an origin',
-        dependencies: [], classes: {}, functions: {}, policies: {}, views: {},
+        dependencies: {}, classes: {}, functions: {}, policies: {}, views: {},
         core: { nodes: {}, edges: [] },
       }\n`,
     )

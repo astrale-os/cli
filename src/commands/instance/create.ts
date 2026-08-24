@@ -7,9 +7,6 @@ import { promptText } from '../../lib/prompt'
 import { provisionInstance, type ProvisionOpts } from '../../lib/provision-instance'
 import { validateSlug } from '../../lib/validation'
 
-// Re-exported for tests + `astrale setup`, which share the provisioning saga.
-export { assertInstanceCreateIdentity } from '../../lib/provision-instance'
-
 /** inquirer `validate` for a slug: true when valid, else the human message. */
 function slugError(value: string): true | string {
   try {

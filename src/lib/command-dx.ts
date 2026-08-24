@@ -2,8 +2,6 @@ import type { Command, CommanderError } from 'commander'
 
 import chalk from 'chalk'
 
-import { isMachine } from './output'
-
 export type CommandCatalogEntry = {
   path: string[]
   usage: string
@@ -30,13 +28,15 @@ export function renderCommanderError(
   program: Command,
   error: CommanderError,
   argv = process.argv.slice(2),
+  machine = argv.some((token) => token === '--ci' || token === '--json' || token === '--raw') ||
+    !(process.stdout.isTTY ?? false),
 ): string {
   const tokens = stripOptions(argv)
   const catalog = collectCommandCatalog(program)
   const matched = matchRegisteredPrefix(program, tokens)
 
   if (matched.path.length === 0 && tokens.length > 0) {
-    return maybeMachine(renderUnknownCommand(tokens, catalog))
+    return maybeMachine(renderUnknownCommand(tokens, catalog), machine)
   }
 
   if (error.code === 'commander.missingArgument') {
@@ -48,6 +48,7 @@ export function renderCommanderError(
         'Usage:',
         `  astrale ${usage}`,
       ].join('\n'),
+      machine,
     )
   }
 
@@ -63,6 +64,7 @@ export function renderCommanderError(
         'Usage:',
         `  astrale ${usage}`,
       ].join('\n'),
+      machine,
     )
   }
 
@@ -74,6 +76,7 @@ export function renderCommanderError(
         ? ['', 'Did you mean:', ...suggestions.map((s) => `  astrale ${s}`)]
         : []),
     ].join('\n'),
+    machine,
   )
 }
 
@@ -140,8 +143,8 @@ function usageFor(path: string[], command: Command): string {
 
 const ANSI_RE = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g')
 
-function maybeMachine(text: string): string {
-  if (!isMachine()) return text
+function maybeMachine(text: string, machine: boolean): string {
+  if (!machine) return text
   const plain = text.replace(ANSI_RE, '')
   const first = plain.split('\n').find((line) => line.trim().length > 0) ?? plain
   return JSON.stringify({ error: 'USAGE_ERROR', message: first, detail: plain })

@@ -295,8 +295,8 @@ function ReceiverBadge({ owner, isStatic }: { owner: string; isStatic: boolean }
 
 // ── Inherited section: members a Class gets from base Classes. Rendered at the same weight —
 // real PropertyRow / MethodCard (icons, friendly types, the method details
-// disclosure) — grouped under each source interface and marked inherited by a
-// tier-coloured left rail + a clickable interface header. They're load-bearing,
+// disclosure) — grouped under each source Class and marked inherited by a
+// tier-coloured left rail + a clickable Class header. They're load-bearing,
 // so they read that way; the rail just says where they come from.
 export function InheritedSection({
   bundle,

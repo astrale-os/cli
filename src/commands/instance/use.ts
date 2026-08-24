@@ -3,7 +3,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
 import { getDefault, setDefault } from '../../identity/index'
-import { listOwnedInstances } from '../../lib/admin-instance'
+import { listOwnedInstancesWithIdentity } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { fetchWithCaFile } from '../../lib/ca-fetch'
 import {
@@ -143,7 +143,7 @@ const defaultBookmarkProbeDependencies: BookmarkProbeDependencies = Object.freez
 
 async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedInstance> {
   const [store, managed] = await Promise.all([readInstances(), fetchManagedInstances(name, opts)])
-  const candidates = collectInstanceCandidates(name, store, managed)
+  const candidates = collectInstanceCandidates(name, store, managed.instances)
 
   if (candidates.length === 0) {
     throw new AstraleError(
@@ -168,12 +168,13 @@ async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedIn
   }
 
   assertManagedReady(chosen.info)
-  const { repointedFrom } = await upsertManagedBookmark(
-    chosen.key,
-    chosen.info.slug,
-    chosen.url,
-    chosen.info.organizationId,
-  )
+  const { repointedFrom } = await upsertManagedBookmark({
+    key: chosen.key,
+    slug: chosen.info.slug,
+    url: chosen.url,
+    ...(chosen.info.organizationId ? { organizationId: chosen.info.organizationId } : {}),
+    ...(managed.identity ? { defaultIdentity: managed.identity } : {}),
+  })
   if (repointedFrom) {
     log.warn(`Bookmark "${chosen.key}" repointed: ${repointedFrom} → ${chosen.url}`)
   }
@@ -185,16 +186,19 @@ async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedIn
  * Best-effort: an unreachable or unauthenticated admin kernel degrades to
  * bookmark-only resolution.
  */
-async function fetchManagedInstances(name: string, opts: UseOpts): Promise<OwnedInstanceInfo[]> {
+async function fetchManagedInstances(
+  name: string,
+  opts: UseOpts,
+): Promise<{ readonly instances: OwnedInstanceInfo[]; readonly identity?: string }> {
   try {
     validateSlug(name)
   } catch {
-    return []
+    return { instances: [] }
   }
   try {
-    return await listOwnedInstances(opts)
+    return await listOwnedInstancesWithIdentity(opts)
   } catch {
-    return []
+    return { instances: [] }
   }
 }
 

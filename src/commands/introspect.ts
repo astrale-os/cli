@@ -59,7 +59,7 @@ export function parseIntrospectTarget(target: string): { origin: string; path: P
     throw new AstraleError(
       'NOT_A_DOMAIN',
       'introspect requires a Domain origin or Path, not an @id.',
-      'Example: astrale introspect host.astrale.ai  or  /:host.astrale.ai:class.Manager:createInstance',
+      'Example: astrale introspect kernel.astrale.ai  or  /:kernel.astrale.ai:class.Identity:whois',
     )
   }
   const raw = target.startsWith('/') ? target : `/:${target}`
@@ -91,15 +91,15 @@ export default {
   afterHelpText: `
 Behavior:
   Calls the public Kernel introspect syscall for one installed Domain.
-  A bare origin (host.astrale.ai or /:host.astrale.ai) prints installation
+  A bare origin (kernel.astrale.ai or /:kernel.astrale.ai) prints installation
   state, target, source, readiness, and capabilities. --bundle includes the
   schema bundle. A method or Function Path projects that callable's
   input/output from the installed bundle.
 
 Examples:
-  $ astrale introspect host.astrale.ai
-  $ astrale introspect /:host.astrale.ai --bundle
-  $ astrale introspect /:host.astrale.ai:class.Manager:createInstance
+  $ astrale introspect kernel.astrale.ai
+  $ astrale introspect /:kernel.astrale.ai --bundle
+  $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale introspect /:kernel.astrale.ai:function.journal
 `,
   arguments: [{ name: 'target', description: 'Domain origin or canonical Path' }],

@@ -19,6 +19,16 @@ export function listOwnedInstances(options: AdminConnectionOptions) {
   )
 }
 
+/** Read caller-visible inventory together with the exact local identity used for the Admin call. */
+export function listOwnedInstancesWithIdentity(options: AdminConnectionOptions) {
+  return withAdminClientSession(options, async (context) =>
+    Object.freeze({
+      instances: await (await connectAdminInstances(context)).list(),
+      ...(context.identity === undefined ? {} : { identity: context.identity }),
+    }),
+  )
+}
+
 /** Reuse an already-open Admin session for a caller-visible Instance inventory. */
 export async function listOwnedInstancesInContext(context: ConnectionContext) {
   return (await connectAdminInstances(context)).list()

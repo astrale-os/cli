@@ -62,7 +62,8 @@ test('the shipped Domain skill teaches only the SDK V1 authoring boundary', () =
     readFileSync(join(root, 'references', 'development.md'), 'utf8'),
     /There is no generic Runtime `deps` or services container/,
   )
-  assert.match(modeling, /There is no authored\s+Interface hierarchy/)
+  assert.match(modeling, /Object definitions\s+belong to one Class hierarchy/)
+  assert.match(modeling, /rather than parallel object-definition kinds/)
   assert.match(views, /defineFrontend/)
   assert.match(views, /Do not depend directly on Shell or\s+Shell-React packages/)
 })

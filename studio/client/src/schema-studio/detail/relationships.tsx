@@ -14,8 +14,8 @@ import { SchemaIcon } from '../schema-icon'
 import { cardLabel, isMany, isOptional } from './model'
 
 // ── Edge relationship: directed source → target, with each end's real icon ──
-// Endpoints carry a role (`as`), a set of allowed `types` (a union lists several;
-// an interface stands for any class that implements it), and an optional declared
+// Endpoints carry a role (`as`), a set of allowed `types` (a union lists several
+// exact Classes), and an optional declared
 // `cardinality` ({min,max}; max:null = unbounded). We render each end as entity
 // tile(s) with a cardinality chip, and a connector whose markers (crow's-foot = many,
 // solid dot = one, hollow dot = optional) reflect the real declared multiplicity.

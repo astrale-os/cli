@@ -1,4 +1,5 @@
 import type { AstraleConfig } from '../lib/config'
+import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AuthError } from '../errors'
 import { getDefault, getIdentity, type Identity } from '../identity/registry'
@@ -19,6 +20,18 @@ export type KeyIdentityAuthOptions = {
   issuer: string
   subject?: string
   audience: string
+}
+
+/** Pin the local identity label before a session performs any authenticated effect. */
+export async function bindCredentialIdentity<Options extends ConnectionOptions>(
+  options: Options,
+  target: ConnectionTarget,
+): Promise<Options> {
+  if (options.anonymous === true || options.creds !== undefined || options.as !== undefined) {
+    return options
+  }
+  const identity = target.defaultIdentity ?? (await getDefault()).name
+  return Object.freeze({ ...options, as: identity })
 }
 
 /**

@@ -83,7 +83,7 @@ export function missingCallableDescription(path: string): AstraleError {
   return new AstraleError(
     'CALL_DESCRIBE_UNAVAILABLE',
     `No callable schema is installed for ${path}.`,
-    'Use a Domain-rooted Path such as /:host.astrale.ai:class.Manager:createInstance. Method Paths are not Function nodes.',
+    'Use a Domain-rooted Path such as /:kernel.astrale.ai:class.Identity:whois. Method Paths are not Function nodes.',
   )
 }
 

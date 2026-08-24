@@ -242,8 +242,6 @@ export function WorkspaceSchemaGraph({
           const target = localNodeRef(node.id)
           if (!target) return
           if (target.localId.startsWith('class.')) activate(target.domainId, target.localId)
-          else if (target.localId.startsWith('iface.'))
-            activate(target.domainId, `interface.${target.localId.slice('iface.'.length)}`)
           else if (target.localId.startsWith('grp-'))
             activate(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
         }}
