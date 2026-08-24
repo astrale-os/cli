@@ -59,7 +59,7 @@ Examples:
   $ astrale get /:notes.example.dev:class.Note
   $ astrale get @abc123 --json
   $ astrale get @self
-  $ astrale get /:host.astrale.ai --schema
+  $ astrale get /:kernel.astrale.ai --schema
 `,
   arguments: [{ name: 'target', description: 'Canonical Node Path or @id' }],
   options: [{ flags: '--schema', description: 'Include schema-valued properties' }],

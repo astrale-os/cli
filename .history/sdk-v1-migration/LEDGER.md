@@ -165,6 +165,9 @@ authority, or deleted tests does not count.
 - The source boundary reports 426 production files, 196 test files, and 51 governing specification
   files with zero direct Kernel imports, removed SDK surfaces, or Interface-era fields. Formatting
   and `git diff --check` pass.
+- The complete CLI help tree and shipped skills now use Kernel, Instance, Client-session, Class, and
+  local browser-shell vocabulary. Retired `host.astrale.ai`, Interface paths, and product Host-shell
+  examples are absent; network URL host/hostname terminology remains where it is technically exact.
 
 ## Published SDK beta.16 qualification — 2026-08-24
 

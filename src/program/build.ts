@@ -159,7 +159,7 @@ Command groups:
 
 Path syntax:
   /:origin                       Domain root
-  /:origin:class.Name            Class node     (or /:origin:interface.Name)
+  /:origin:class.Name            Class node
   /:origin:class.Name:method     Static callable
   <nodePath>::method             Instance method dispatch — double colon ::
   @nodeId                        Reference a node by its UID
@@ -174,7 +174,7 @@ Examples:
   $ astrale instance status staging
   $ astrale token --audience shell.astrale.ai --ttl 3600
   $ astrale query /:notes.example.dev:class.Note --limit 50
-  $ astrale introspect /:host.astrale.ai:class.Manager:createInstance
+  $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale query --file query.v6.json --cursor "$CURSOR"
 `,
   )

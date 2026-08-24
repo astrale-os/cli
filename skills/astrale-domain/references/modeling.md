@@ -6,7 +6,7 @@ Edge, Policy, callable, View, and Core value has one semantic owner.
 ## Current language boundary
 
 Kernel DSL V1 Domains expose Classes, Functions, Policies, Views, and Core data. There is no authored
-Interface hierarchy. Domain code imports language builders only from `@astrale-os/sdk/schema`; do not
+Class hierarchy. Domain code imports language builders only from `@astrale-os/sdk/schema`; do not
 import Kernel DSL/Core directly or recreate resolved Definition shapes.
 
 ## Classes

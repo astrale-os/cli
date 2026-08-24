@@ -47,7 +47,7 @@ astrale admin ...
 
 Kernel-touching commands share `--format`, `--json`, `--raw`, `--url`,
 `-i/--instance`, `--timeout`, `--as`, `--creds`, `--anonymous`, and `--debug` where
-applicable. The CLI creates one public Kernel `Call`, and its Host session owns
+applicable. The CLI creates one public Kernel `Call`, and its Client session owns
 remote routing, fresh credentials, and one safe stale-route retry.
 
 Use `--anonymous` to omit a caller credential even when a local or bookmark-default identity exists.
@@ -60,7 +60,7 @@ Use canonical Kernel V2 Paths:
 | Form | Example |
 |---|---|
 | Domain root | `/:notes.example.dev` |
-| Class or Interface | `/:notes.example.dev:class.Note` |
+| Class | `/:notes.example.dev:class.Note` |
 | Static callable | `/:notes.example.dev:class.Note:list` |
 | Instance callable | `@node-id::archive` |
 | Node ID | `@node-id` |
@@ -183,7 +183,7 @@ It does not infer operations or children.
 ```bash
 astrale get @note --json
 astrale get /:notes.example:class.Note
-astrale get /:host.astrale.ai --schema
+astrale get /:kernel.astrale.ai --schema
 ```
 
 `astrale describe` is not a command. Use `get` for one Node. Method Paths
@@ -195,9 +195,9 @@ omitted unless `--schema` is passed.
 `introspect` reads the Kernel Schema syscall for one installed Domain.
 
 ```bash
-astrale introspect host.astrale.ai
-astrale introspect /:host.astrale.ai --bundle
-astrale introspect /:host.astrale.ai:class.Manager:createInstance
+astrale introspect kernel.astrale.ai
+astrale introspect /:kernel.astrale.ai --bundle
+astrale introspect /:kernel.astrale.ai:class.Identity:whois
 ```
 
 A method or Function Path projects that callable's input/output from the
@@ -209,8 +209,7 @@ installed bundle. `astrale call --describe` is not a flag.
 `{ kind: "graph", graph: { nodes, edges } }` plus an optional page cursor.
 
 - Positional Paths create Path source terms.
-- `--definition <path>` selects Nodes implementing one exact Class or
-  Interface.
+- `--definition <path>` selects Nodes implementing one exact Class.
 - `--edge <class>` adds one exact expansion; direction is `outgoing`,
   `incoming`, or `incident`.
 - `--limit` is finite and defaults to 100.
@@ -277,12 +276,12 @@ astrale logs --topic-prefix op:function. --follow
 ```
 
 Use `--principal`, `--since`, `--until`, or an opaque `--cursor` as needed.
-`--follow` retains one Host session and advances only with returned cursors.
+`--follow` retains one Client session and advances only with returned cursors.
 Application-service console buffers are not part of this command.
 
 ## Views And Browser Sessions
 
-`astrale view` opens one resolved View through an emulated Host shell:
+`astrale view` opens one resolved View through a local browser shell:
 
 ```bash
 astrale view @customer --list

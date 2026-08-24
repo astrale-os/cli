@@ -181,7 +181,7 @@ Self-reference:
   Callable input/output lives on astrale introspect <path>.
 
 Examples:
-  $ astrale introspect /:host.astrale.ai:class.Manager:createInstance
+  $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale call /:blog.acme.com:class.Author:list limit=10
   $ astrale call '@self::deactivate'
   $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
@@ -190,7 +190,7 @@ Examples:
     {
       name: 'path',
       description:
-        'Operation path (e.g., /:host.astrale.ai:class.Manager:createInstance or /node::method)',
+        'Operation path (e.g., /:kernel.astrale.ai:class.Identity:whois or /node::method)',
     },
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
