@@ -10,17 +10,18 @@ Use an Action for one semantic asynchronous operation. Its context deliberately 
 API.
 
 ```ts
-import { defineAction, type ActionServices } from '@astrale-os/sdk/action'
+import { defineAction } from '@astrale-os/sdk/action'
+import type { integrations } from '#integrations'
 import type { schema } from '#schema'
 
-interface Services extends ActionServices<Dependencies, IntegrationClients> {}
-
-export const renameVisit = defineAction<typeof schema, Services>()(
+export const renameVisit = defineAction<typeof schema, typeof integrations>()(
   'FieldVisit.rename',
-  async ({ self, input, query, mutate }) => {
+  async ({ domain, self, input, query, mutate }) => {
+    const Visit = domain.classes.FieldVisit
     const visit = await query(readVisit, { self })
     return mutate(renameVisitMutation, {
       self,
+      class: Visit,
       title: input.title,
       expectedVersion: visit.version,
     })
@@ -35,6 +36,8 @@ export const renameVisit = defineAction<typeof schema, Services>()(
 - `query` and `mutate` execute authored definitions through that same admitted Client; they are absent
   when an anonymous invocation has no bound Client.
 - `execution` owns cancellation, deadline, background work, and request-body access.
+- `domain` is the exact resolved Domain loaded from the deployed Build; it is not the authored
+  Schema and must not be reconstructed at module scope.
 
 Do not check roles or permissions in the Action. Kernel admission has already evaluated callable
 authority and the Schema Policy.
@@ -45,9 +48,10 @@ Use a Workflow when the operation has several explicit effects or observations:
 
 ```ts
 import { defineWorkflow } from '@astrale-os/sdk/workflow'
+import type { integrations } from '#integrations'
 import type { schema } from '#schema'
 
-export const refreshForecast = defineWorkflow<typeof schema, Services>()(
+export const refreshForecast = defineWorkflow<typeof schema, typeof integrations>()(
   'FieldVisit.refreshForecast',
   async ({ self, query, mutate, integrations, step }) => {
     const visit = await step.run('read-visit', () => query(readVisit, { self }))
@@ -88,6 +92,8 @@ projection in the Query owner and live preconditions in the same Mutation that c
 Inside an Action or Workflow, use the context's `query(definition, input)` and
 `mutate(definition, input)` executors. `executeQuery(client, ...)` and `executeMutation(client, ...)`
 remain the lower-level APIs for tests, scripts, and consumers that already own a Client.
+Direct `client` access in a handler is reserved for genuine admitted Kernel capabilities that are
+not graph Query or Mutation operations; do not use it as alternate graph plumbing.
 
 A read followed by a write is not automatically atomic. If safety depends on current graph state,
 encode the predicate as a Mutation precondition. Several commits or any external call make the

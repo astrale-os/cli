@@ -1,11 +1,11 @@
-import type { AuthApi } from '@astrale-os/kernel-client/auth'
-import type { GraphApi } from '@astrale-os/kernel-client/graph'
-import type { ClientSessionOptions, SessionAuth } from '@astrale-os/kernel-client/session'
+import type { AuthApi } from '@astrale-os/sdk/auth'
+import type { GraphApi } from '@astrale-os/sdk/client'
+import type { ClientSessionOptions, SessionAuth } from '@astrale-os/sdk/client/session'
 
-import { call } from '@astrale-os/kernel-client'
-import { createAuth } from '@astrale-os/kernel-client/auth'
-import { createGraph } from '@astrale-os/kernel-client/graph'
-import { ClientSession } from '@astrale-os/kernel-client/session'
+import { createAuth } from '@astrale-os/sdk/auth'
+import { call } from '@astrale-os/sdk/client'
+import { createGraph } from '@astrale-os/sdk/client'
+import { ClientSession } from '@astrale-os/sdk/client/session'
 
 import type { AstraleConfig } from '../lib/config'
 import type { AdminConnectionOptions, ConnectionOptions, ConnectionTarget } from './target'

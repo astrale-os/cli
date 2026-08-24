@@ -25,6 +25,7 @@ test('the shipped Domain skill teaches only the SDK V1 authoring boundary', () =
     'createInlineStep',
     'defineCore',
     'definePolicy',
+    'ActionServices',
   ]) {
     assert.doesNotMatch(source, new RegExp(`\\b${removed}\\b`), removed)
   }
@@ -35,6 +36,9 @@ test('the shipped Domain skill teaches only the SDK V1 authoring boundary', () =
     /kernel\.(?:get|getOrThrow|children|neighbors|query|mutate|reconcile)\b/,
   )
   assert.doesNotMatch(source, /wrap every (?:kernel call|effect).*step\.run/i)
+  assert.doesNotMatch(source, /return\s*\{\s*deps\s*:/)
+  assert.doesNotMatch(source, /context\.work\b/)
+  assert.doesNotMatch(source, /context\.activation\b/)
 
   const entrypoint = readFileSync(join(root, 'SKILL.md'), 'utf8')
   const implementing = readFileSync(join(root, 'references', 'implementing.md'), 'utf8')
@@ -47,12 +51,17 @@ test('the shipped Domain skill teaches only the SDK V1 authoring boundary', () =
   assert.match(implementing, /defineWorkflow/)
   assert.match(implementing, /Action context has no `step`/)
   assert.match(implementing, /`query` and `mutate` execute authored definitions/)
+  assert.match(implementing, /`domain` is the exact resolved Domain/)
   assert.match(
     implementing,
     /`executeQuery\(client, \.\.\.\)` and `executeMutation\(client, \.\.\.\)`/,
   )
   assert.match(integrations, /defineIntegration/)
   assert.match(integrations, /Runtime `initialize\(environment\)`/)
+  assert.match(
+    readFileSync(join(root, 'references', 'development.md'), 'utf8'),
+    /There is no generic Runtime `deps` or services container/,
+  )
   assert.match(modeling, /There is no authored\s+Interface hierarchy/)
   assert.match(views, /defineFrontend/)
   assert.match(views, /Do not depend directly on Shell or\s+Shell-React packages/)

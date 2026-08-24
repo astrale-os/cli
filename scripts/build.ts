@@ -5,7 +5,7 @@
  * user); the Linux/macOS standalone binary is produced separately by
  * `bun build --compile` in CI.
  *
- * Why bundle: the runtime deps `@astrale-os/kernel-client` / `@astrale-os/sdk` live
+ * Why bundle: the runtime dependency `@astrale-os/sdk` lives
  * on a PRIVATE registry (GitHub Packages). Inlining them makes the published
  * package self-contained, so `npm i -g @astrale-os/cli` needs no access to
  * any private registry.

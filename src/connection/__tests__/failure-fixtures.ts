@@ -1,4 +1,4 @@
-import { ClientError, TransportError } from '@astrale-os/kernel-client'
+import { ClientError, TransportError } from '@astrale-os/sdk/client'
 
 import type { TransportDiagnosticContext } from '../failure/model'
 

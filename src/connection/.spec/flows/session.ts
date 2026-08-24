@@ -1,5 +1,5 @@
-import type { SessionAuth } from '@astrale-os/kernel-client/session'
-import type { Call } from '@astrale-os/kernel-protocol/invocation'
+import type { Call } from '@astrale-os/sdk/client'
+import type { SessionAuth } from '@astrale-os/sdk/client/session'
 
 import type { ConnectionContext, ConnectionOptions, ConnectionTarget } from '../api.js'
 

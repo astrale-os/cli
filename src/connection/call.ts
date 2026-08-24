@@ -1,4 +1,4 @@
-import { call, type Call } from '@astrale-os/kernel-client'
+import { call, type Call } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 
 /** Convert the CLI's untrusted text/JSON boundary into the one public Call representation. */

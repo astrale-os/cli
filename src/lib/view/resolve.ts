@@ -1,4 +1,4 @@
-import type { ResolvedView as SessionResolvedView } from '@astrale-os/kernel-client/session'
+import type { ResolvedView as SessionResolvedView } from '@astrale-os/sdk/client/session'
 import type { ResolvedView } from '@astrale-os/shell'
 
 import { Path } from '@astrale-os/sdk/graph/path'

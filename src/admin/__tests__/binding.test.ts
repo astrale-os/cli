@@ -1,4 +1,4 @@
-import type { ClientSession } from '@astrale-os/kernel-client/session'
+import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import { bundle, defineSchema, schema as schemaApi } from '@astrale-os/sdk/schema'
 import { expect, mock, test } from 'bun:test'

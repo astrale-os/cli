@@ -1,9 +1,9 @@
-import type { Fetch } from '@astrale-os/kernel-client'
 import type { IssuerId } from '@astrale-os/sdk/auth'
+import type { Fetch } from '@astrale-os/sdk/client'
 
-import { call, Client } from '@astrale-os/kernel-client'
-import { createAuth } from '@astrale-os/kernel-client/auth'
+import { createAuth } from '@astrale-os/sdk/auth'
 import { credential, exchange as exchangeProtocol } from '@astrale-os/sdk/auth'
+import { call, Client } from '@astrale-os/sdk/client'
 
 import type { SourceCredentialResolver } from './credential'
 import type { ConnectionTarget } from './target'

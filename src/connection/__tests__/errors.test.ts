@@ -1,4 +1,4 @@
-import { ResponseError } from '@astrale-os/kernel-client'
+import { ResponseError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 

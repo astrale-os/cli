@@ -1,4 +1,4 @@
-import { ResponseError } from '@astrale-os/kernel-client'
+import { ResponseError } from '@astrale-os/sdk/client'
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 
 import type { OwnedInstanceInfo } from '../../lib/admin-instance'

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { Project, SyntaxKind } from 'ts-morph'
 import { parse } from 'yaml'
@@ -42,6 +43,16 @@ for (const path of ['package.json', 'studio/package.json']) {
   }
 }
 
+const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
+const cliKernelPackages = dependencyFields.flatMap((field) =>
+  Object.keys(cliManifest[field] ?? {}).filter((name) => name.startsWith('@astrale-os/kernel-')),
+)
+assert.deepEqual(
+  cliKernelPackages,
+  [],
+  'CLI manifest must consume Kernel semantics through the SDK facade',
+)
+
 const studioManifest = JSON.parse(await readFile('studio/package.json', 'utf8'))
 const studioPackages = dependencyFields.flatMap((field) =>
   Object.entries(studioManifest[field] ?? {}),
@@ -63,13 +74,16 @@ for (const facade of ['@astrale-os/sdk', '@astrale-os/shell']) {
   )
 }
 
-const studioProject = new Project({ skipAddingFilesFromTsConfig: true })
-studioProject.addSourceFilesAtPaths([
-  'studio/**/*.ts',
-  'studio/**/*.tsx',
-  '!studio/client/dist/**',
-  '!studio/node_modules/**',
-])
+const studioProject = new Project({
+  skipAddingFilesFromTsConfig: true,
+  skipFileDependencyResolution: true,
+})
+const studioFiles = execFileSync('git', ['ls-files', 'studio'], { encoding: 'utf8' })
+  .split('\n')
+  .filter((path) => /\.(?:ts|tsx)$/u.test(path) && !path.startsWith('studio/client/dist/'))
+for (const path of studioFiles) {
+  studioProject.createSourceFile(path, await readFile(path, 'utf8'), { overwrite: true })
+}
 const studioKernelReferences = studioProject.getSourceFiles().flatMap((sourceFile) =>
   [
     ...sourceFile.getDescendantsOfKind(SyntaxKind.StringLiteral),
@@ -83,6 +97,8 @@ assert.deepEqual(studioKernelReferences, [], 'Studio source references Kernel pa
 
 const lock = parse(await readFile('pnpm-lock.yaml', 'utf8'))
 assert.equal(lock.settings?.autoInstallPeers, true, 'pnpm must auto-install SDK peer dependencies')
+verifyImporter('.', cliManifest)
+verifyImporter('studio', studioManifest)
 const studioImporter = lock.importers?.studio?.dependencies
 const sdkResolution = studioImporter?.['@astrale-os/sdk']?.version
 const shellResolution = studioImporter?.['@astrale-os/shell']?.version
@@ -134,4 +150,25 @@ function requiredPeers(packageSnapshot) {
       name.startsWith('@astrale-os/kernel-') &&
       packageSnapshot.peerDependenciesMeta?.[name]?.optional !== true,
   )
+}
+
+function verifyImporter(name, manifest) {
+  const importer = lock.importers?.[name]
+  assert.ok(importer, `pnpm lock must contain importer ${name}`)
+  for (const field of ['dependencies', 'devDependencies', 'optionalDependencies']) {
+    const expected = manifest[field] ?? {}
+    const actual = importer[field] ?? {}
+    assert.deepEqual(
+      Object.keys(actual).sort(),
+      Object.keys(expected).sort(),
+      `pnpm lock importer ${name} ${field} names must match its manifest`,
+    )
+    for (const [dependency, specifier] of Object.entries(expected)) {
+      assert.equal(
+        actual[dependency]?.specifier,
+        specifier,
+        `pnpm lock importer ${name} must retain ${field}.${dependency}`,
+      )
+    }
+  }
 }

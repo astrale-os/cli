@@ -1,11 +1,6 @@
-import {
-  ClientError,
-  ProtocolError,
-  ResponseError,
-  TransportError,
-} from '@astrale-os/kernel-client'
-import { NodeUnavailableError } from '@astrale-os/kernel-client/graph'
 import { AuthValueError } from '@astrale-os/sdk/auth'
+import { ClientError, ProtocolError, ResponseError, TransportError } from '@astrale-os/sdk/client'
+import { NodeUnavailableError } from '@astrale-os/sdk/client'
 import { PathError } from '@astrale-os/sdk/graph/path'
 
 import type { FailureDiagnostic, TransportDiagnosticContext } from './model'

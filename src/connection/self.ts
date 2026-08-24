@@ -1,4 +1,4 @@
-import { NodeUnavailableError } from '@astrale-os/kernel-client/graph'
+import { NodeUnavailableError } from '@astrale-os/sdk/client'
 
 import type { ConnectionContext } from './session'
 

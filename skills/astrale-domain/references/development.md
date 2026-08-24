@@ -51,7 +51,11 @@ import type { schema } from '#schema'
 export default defineRuntime<typeof schema>()({
   integrations,
   initialize(environment: Environment) {
-    return { deps: createDependencies(environment), providers: createProviders(environment) }
+    return {
+      providers: {
+        openMeteo: createOpenMeteoProvider(environment),
+      },
+    }
   },
   actions,
   workflows,
@@ -70,6 +74,10 @@ export const application = defineApplication({ schema, runtime, frontend })
 
 Do not put Provider I/O, handler behavior, deployment effects, or authorization decisions in either
 composition root.
+
+There is no generic Runtime `deps` or services container. Pure helpers and Rules are ordinary
+imports; graph access uses bound Query/Mutation executors; environment-backed behavior belongs to
+Integrations and Providers.
 
 ## Qualify before deployment
 

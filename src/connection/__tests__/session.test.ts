@@ -1,6 +1,6 @@
-import type { AuthApi } from '@astrale-os/kernel-client/auth'
-import type { GraphApi } from '@astrale-os/kernel-client/graph'
-import type { ClientSession } from '@astrale-os/kernel-client/session'
+import type { AuthApi } from '@astrale-os/sdk/auth'
+import type { GraphApi } from '@astrale-os/sdk/client'
+import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import { issuer } from '@astrale-os/sdk/auth'
 import { describe, expect, test } from 'bun:test'

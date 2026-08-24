@@ -1,4 +1,4 @@
-import type { GraphApi } from '@astrale-os/kernel-client/graph'
+import type { GraphApi } from '@astrale-os/sdk/client'
 import type { Node } from '@astrale-os/sdk/graph/node'
 import type { QueryAST } from '@astrale-os/sdk/query'
 

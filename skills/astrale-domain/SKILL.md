@@ -1,6 +1,6 @@
 ---
 name: astrale-domain
-description: "Author Astrale domains end to end. Use when creating, editing, reviewing, productionizing, migrating, optimizing, securing, simulating, or debugging a domain; modeling schema; implementing handlers/functions; integrating external APIs; choosing native Astrale domains; designing views; or reasoning about Policy, authentication, kernel, migrations, core data, sample data, and live/runtime drift. For full creation, builds, prototypes, or POCs, follow the phased workflow across references; for focused existing-domain work, route to the relevant reference."
+description: "Author Astrale domains end to end. Use when creating, editing, reviewing, productionizing, migrating, optimizing, securing, simulating, or debugging a domain; modeling schema; implementing Actions and Workflows; integrating external APIs; choosing native Astrale domains; designing views; or reasoning about Policy, authentication, kernel, migrations, core data, sample data, and live/runtime drift. For full creation, builds, prototypes, or POCs, follow the phased workflow across references; for focused existing-domain work, route to the relevant reference."
 ---
 
 # Astrale Domain
