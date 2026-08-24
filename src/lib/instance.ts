@@ -366,8 +366,9 @@ export async function getActive(config?: AstraleConfig): Promise<InstanceEntry &
 export async function resolveInstance(
   identifier: string,
   config?: AstraleConfig,
+  opts: { persist?: boolean } = {},
 ): Promise<ResolvedInstance> {
-  const store = await readInstances(config)
+  const store = await readInstances(config, opts)
   const key = resolveInstanceKey(store, identifier)
   const entry = key ? store.instances[key] : undefined
   if (!key || !entry?.url) {

@@ -290,3 +290,13 @@ authority, or deleted tests does not count.
   boundary, 785 Bun tests with one intentional skip, 15 Node tests, CLI/public/Viewer/Studio builds,
   public exports, and the private Kernel dependency exclusion pass. No source link, cohort override,
   downstream Kernel dependency, or cross-brand cast was introduced.
+
+## Explicit Instance status source — 2026-08-25
+
+- `instance status <id>` remains the Admin lifecycle operation even when the same slug is bookmarked;
+  explicit Admin selectors therefore cannot be shadowed and non-ready phases/errors remain visible.
+- `instance status <id> --bookmarked` is the narrow connection probe, reusing the vocabulary already
+  established by `instance list --bookmarked`. It observes the exact stored issuer/JWKS/TLS trust
+  without persisting registry normalization, and rejects combinations with Admin target flags.
+- Focused evidence covers managed/bookmark collision, explicit source admission, issuer probing, and
+  byte-for-byte registry preservation. Strict types and the complete help-surface lock are retained.
