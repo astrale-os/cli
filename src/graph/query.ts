@@ -2,6 +2,7 @@ import type {
   NodeQueryBuilder,
   QueryAST as QueryASTValue,
   QueryDirection,
+  QueryNodeInput,
 } from '@astrale-os/sdk/query'
 
 import { Path } from '@astrale-os/sdk/graph/path'
@@ -55,14 +56,10 @@ export function prepareQuery(input: QueryCommandInput): PreparedQuery {
   const paths = input.sources.map((source) => Path.parse(source))
   const definition =
     input.definition === undefined ? undefined : classReference(input.definition, '--definition')
-  const query: NodeQueryBuilder<unknown> =
-    paths.length > 0
-      ? Query.from({
-          kind: 'node',
-          paths: paths as [Path, ...Path[]],
-          ...(definition === undefined ? {} : { classes: [definition] }),
-        })
-      : Query.from({ kind: 'node', classes: [definition!] })
+  const nodes = definition === undefined ? paths : [...paths, definition]
+  const query: NodeQueryBuilder<unknown> = Query.from({
+    nodes: nodes as [QueryNodeInput, ...QueryNodeInput[]],
+  })
   const ast =
     input.edge === undefined
       ? query.select({ kind: 'graph', binding: query.node })

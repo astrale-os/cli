@@ -145,3 +145,17 @@ The primary CLI and Shell worktrees remain untouched.
 Each migrated slice must retain the governing CLI law/test evidence or record a deliberate product
 change. Passing through widened casts, copied Kernel types, string-parsed private errors, weakened
 authority, or deleted tests does not count.
+
+## Published SDK beta.16 qualification — 2026-08-24
+
+- Root and Studio now require SDK `>=0.5.0-beta.16 <1.0.0`; the ordinary lock resolves beta.16 and
+  the released Kernel beta.9/beta.8/beta.6 package set with no source link or cohort topology.
+- One first-party `@astrale-os/*` release-age exclusion replaces version-specific Astrale
+  exceptions. Third-party packages retain the existing age gate.
+- Strict CLI, tests, Viewer, and Studio typecheck passes. The previously merged direct-node Query
+  authoring was restored after the later SDK migration merge reintroduced the removed source form;
+  its six focused tests pass on Bun 1.4.0.
+- Full test and build qualification now reaches the remaining registry boundary: published Shell
+  beta.3 imports removed SDK subpaths (`/domain`, `/schema/kernel`, and `/graph/model`). No source
+  checkout or compatibility alias was restored. CLI completion requires publication of the merged
+  Shell package, followed by one ordinary lock refresh and full package check.

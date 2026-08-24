@@ -6,9 +6,10 @@ packages:
 # `pnpm run` or `pnpm exec`.
 minimumReleaseAgeStrict: false
 minimumReleaseAgeExclude:
+  # First-party Astrale packages are qualified directly; third-party releases remain gated.
+  - '@astrale-os/*'
   # Exact exception for the Bun 1.4 toolchain migration; future releases remain gated.
   - 'bun-types@1.4.0'
-  - '@astrale-os/ox@0.1.3'
 verifyDepsBeforeRun: false
 
 # Native build scripts required by the standalone CLI dependency graph. Astrale
