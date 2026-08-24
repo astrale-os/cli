@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.9](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.8...cli/v1.0.0-beta.9) (2026-08-24)
+
+
+### Bug Fixes
+
+* persist exact Instance caller identity ([631f2ea](https://github.com/astrale-os/cli/commit/631f2ea1d9ac244623a74632d86b50f264216d90))
+* persist exact Instance caller identity ([98a8eec](https://github.com/astrale-os/cli/commit/98a8eec5affaf94a5c03a0fb9cde22b985d5a8f7))
+
+
+### Documentation
+
+* preserve Class hierarchy semantics ([09bc29d](https://github.com/astrale-os/cli/commit/09bc29dbbbb4b5ff555c870ee479c17225ad1a58))
+* remove retired Host vocabulary ([e703b27](https://github.com/astrale-os/cli/commit/e703b27a1d8f58ae0e23ad546b3afb12fc414f6b))
+
 ## [1.0.0-beta.8](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.7...cli/v1.0.0-beta.8) (2026-08-24)
 
 
