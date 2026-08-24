@@ -190,14 +190,14 @@ export interface StudioSchemaBundle {
   /** UI/cache identity only. This is not the DSL schema revision. */
   renderFingerprint: string
   schemaMode: 'canonical-admitted' | 'canonical-preview' | 'unavailable'
-  /** DSL-owned revision, present only after cohort SDK admission. */
+  /** DSL-owned revision, present only after installed SDK admission. */
   schemaRevision?: SchemaRevision
   extractedBy: 'runtime-bun' | 'static-tsmorph-fallback'
   depsInstalled: boolean
   ir: SchemaIR | null
   /**
    * Portable canonical V1 document emitted by the domain. `schemaMode` records
-   * whether the cohort SDK admitted it or Studio is rendering it as a structural
+   * whether the installed SDK admitted it or Studio is rendering it as a structural
    * preview. Kept separate from the lossy render IR.
    */
   schemaRoot?: unknown

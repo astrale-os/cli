@@ -5,7 +5,7 @@ import { admittedBundleRevisionFromSdk } from './revision'
 const REVISION = `sha256:${'a'.repeat(64)}` as const
 
 describe('installed Bundle revision', () => {
-  test('uses bundle admission before asking the cohort schema owner for its revision', () => {
+  test('uses bundle admission before asking the installed schema owner for its revision', () => {
     const calls: string[] = []
     const root = { format: 'astrale.dsl', version: 'v1', origin: 'notes.example.dev' }
     const input = { wire: true }

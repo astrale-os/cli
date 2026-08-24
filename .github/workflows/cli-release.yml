@@ -2,10 +2,6 @@ name: CLI Release
 
 on:
   workflow_call:
-    secrets:
-      COHORT_REPOSITORY_TOKEN:
-        description: Read token for the exact unpublished Kernel, SDK, and Shell sources
-        required: true
     inputs:
       version:
         description: Immutable package version created by Release Please
@@ -35,10 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare exact sources
-        uses: ./.github/actions/exact-sources
-        with:
-          repository-token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -80,10 +72,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare exact sources
-        uses: ./.github/actions/exact-sources
-        with:
-          repository-token: ${{ secrets.COHORT_REPOSITORY_TOKEN }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}

@@ -18,7 +18,7 @@ export interface RuntimeExtractResult {
   /** Portable canonical V1 document. Null only for failures. */
   root: unknown | null
   schemaMode: StudioSchemaBundle['schemaMode']
-  /** Present only when the Domain cohort SDK admitted `root`. */
+  /** Present only when the Domain's installed SDK admitted `root`. */
   revision: SchemaRevision | null
   error?: { message: string }
 }
