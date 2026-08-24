@@ -159,3 +159,19 @@ authority, or deleted tests does not count.
   beta.3 imports removed SDK subpaths (`/domain`, `/schema/kernel`, and `/graph/model`). No source
   checkout or compatibility alias was restored. CLI completion requires publication of the merged
   Shell package, followed by one ordinary lock refresh and full package check.
+
+## Exact packed Shell qualification — 2026-08-24
+
+- Replaced only the installed published Shell beta.3 package with the immutable package built by
+  Shell PR #54; CLI source, manifests, and lockfile remained unchanged and no source checkout or
+  override was introduced.
+- CLI production/tests, Viewer, and Studio strict typecheck pass. The complete Bun suite passes 786
+  tests with one canonical-skill mirror skip; release workflow tests pass 14/14.
+- The CLI executable, public subpaths, Viewer, and Studio build; lint, formatting, public exports,
+  and the private dependency-closure gate pass.
+- Real Chromium exposed a stale SDK V1 fixture whose property and Core declarations had been removed
+  while their assertions remained. Restoring those declarations through current SDK APIs preserves
+  the intended browser evidence, and the exact smoke now passes.
+- The only ordinary-package difference from green CI is the unpublished Shell artifact. Once Shell
+  PR #54 is merged and released, refresh the ordinary lock and rerun the same package check; no code
+  fallback or cohort topology is required.
