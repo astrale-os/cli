@@ -1,4 +1,4 @@
-import { isDnsLabel } from '@astrale-os/kernel-core/dns-label'
+import { isDnsLabel } from '@astrale-os/sdk/value'
 import { z } from 'zod'
 
 import { ReservedSlugError } from '../errors'

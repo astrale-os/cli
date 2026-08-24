@@ -1,5 +1,5 @@
-import type { Fetch } from '@astrale-os/kernel-client'
-import type { SessionAuth } from '@astrale-os/kernel-client/session'
+import type { Fetch } from '@astrale-os/sdk/client'
+import type { SessionAuth } from '@astrale-os/sdk/client/session'
 
 import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 

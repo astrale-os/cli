@@ -12,7 +12,7 @@ export function releaseFor<const Schema extends schema.DomainSchema>(
 ) {
   const runtime = defineRuntime<Schema>()({
     integrations: {},
-    initialize: () => ({ deps: {}, providers: {} }),
+    initialize: () => ({ providers: {} }),
     actions: [],
     workflows: [],
   })

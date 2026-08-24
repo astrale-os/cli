@@ -1,4 +1,4 @@
-import type { SessionAuth } from '@astrale-os/kernel-client/session'
+import type { SessionAuth } from '@astrale-os/sdk/client/session'
 
 import { issuer, type IssuerId } from '@astrale-os/sdk/auth'
 import { Path } from '@astrale-os/sdk/graph/path'

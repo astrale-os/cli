@@ -192,3 +192,34 @@ authority, or deleted tests does not count.
 - `astrale call /:kernel.astrale.ai:class.Identity:whois` returned the expected issuer, subject,
   node id, claim requirements, and frozen state. This is a real signed CLI to local-Kernel call, not
   a transport mock or raw HTTP replacement.
+
+## Final SDK facade and Runtime-context pass — 2026-08-24
+
+- The shipped Domain skill now teaches Providers-only Runtime initialization, `domain` as the exact
+  loaded Domain, Integration-definition generics, and invocation-bound `query`/`mutate`. It rejects
+  `ActionServices`, Runtime `deps`, `context.work`, and public Workflow activation examples.
+- CLI production, tests, and governing `.spec` contracts now import Astrale platform semantics only
+  through the SDK facade. The root manifest removed all five direct Kernel packages; Kernel packages
+  remain ordinary transitive SDK implementation dependencies in the lock.
+- `@astrale-os/sdk/value` gained the missing identity re-export of Core DNS-label admission. The CLI
+  did not copy the rule or add a shadow validator.
+- The source-boundary gate reports 426 production files, 197 test files, 51 specification files,
+  zero direct Kernel imports, zero legacy surfaces, and zero Interface-era fields.
+- Strict CLI/test/Viewer/Studio typecheck passes against one aligned stacked SDK identity. The full
+  suite passes 786 tests across 186 Bun files with one intentional skip, plus 15 Node release/skill
+  tests. CLI/public subpaths, Viewer, and Studio build successfully; public export and dependency
+  checks pass.
+- The dependency check reads only Git-tracked Studio sources and disables dependency traversal, so
+  an installed or linked package graph cannot escape the intended source census. It also proves root
+  and Studio manifest names/specifiers exactly match their frozen-lock importers.
+- SDK PR #153 is remotely green against the published Kernel beta.10/beta.9/beta.7 set. CLI and
+  Studio now declare beta.17 as the honest SDK lower bound for the Publication and value facades
+  consumed here.
+- The ordinary lock now resolves published SDK beta.17 and Shell 0.4.1, with Kernel packages only
+  through their owning public dependency closures. No source link, workspace override, direct
+  Kernel manifest dependency, repository credential, or cohort topology remains.
+- The complete non-TTY package gate passes: strict CLI/tests/Viewer/Studio types, 786 Bun tests with
+  one intentional skip, 15 Node workflow/skill tests, CLI/public subpath/Viewer/Studio builds,
+  formatting, public exports, and private Kernel dependency exclusion. A PTY-only local rerun made
+  four machine-envelope tests exercise their human-output branch; the required non-TTY rerun passed
+  without changing production or tests.

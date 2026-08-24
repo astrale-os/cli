@@ -1,5 +1,5 @@
-import type { Input } from '@astrale-os/kernel-client'
-import type { ClientSession } from '@astrale-os/kernel-client/session'
+import type { Input } from '@astrale-os/sdk/client'
+import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type {
   ResolvedClass,
   ResolvedCoreDefinition,

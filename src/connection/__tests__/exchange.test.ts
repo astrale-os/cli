@@ -1,4 +1,4 @@
-import type { Fetch } from '@astrale-os/kernel-client'
+import type { Fetch } from '@astrale-os/sdk/client'
 
 import { issuer } from '@astrale-os/sdk/auth'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'

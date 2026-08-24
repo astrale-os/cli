@@ -1,4 +1,4 @@
-import type { ClientSession } from '@astrale-os/kernel-client/session'
+import type { ClientSession } from '@astrale-os/sdk/client/session'
 import type { CallableReference } from '@astrale-os/sdk/client/session'
 
 import {

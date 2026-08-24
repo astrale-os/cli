@@ -97,6 +97,10 @@ if (target && legacy.length > 0) {
   process.stderr.write('CLI SDK V1 target rejected: legacy SDK/Domain surfaces remain.\n')
   process.exitCode = 1
 }
+if (target && kernelImports.size > 0) {
+  process.stderr.write('CLI SDK V1 target rejected: direct Kernel package imports remain.\n')
+  process.exitCode = 1
+}
 
 function git(...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()

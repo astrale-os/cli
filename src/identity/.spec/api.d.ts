@@ -1,5 +1,5 @@
-import type { Call } from '@astrale-os/kernel-client'
 import type { ProvisionRequest } from '@astrale-os/sdk/auth'
+import type { Call } from '@astrale-os/sdk/client'
 import type { LocalBinding } from '@astrale-os/sdk/graph'
 import type { JWK } from 'jose'
 
