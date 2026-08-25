@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.11](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.10...cli/v1.0.0-beta.11) (2026-08-25)
+
+
+### Bug Fixes
+
+* **package:** ship current Shell credential boundary ([#147](https://github.com/astrale-os/cli/issues/147)) ([790957e](https://github.com/astrale-os/cli/commit/790957e5fcaf96c11144fa01a438b441ab6d6c4b))
+
 ## [1.0.0-beta.10](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.9...cli/v1.0.0-beta.10) (2026-08-25)
 
 
