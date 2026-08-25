@@ -183,21 +183,19 @@ describe('program composition', () => {
       'token',
       'ui',
       'ui add',
-      'ui diff',
       'ui doctor',
       'ui init',
       'ui list',
       'ui preset',
       'ui preset apply',
       'ui preset list',
-      'ui view',
       'update',
       'use',
       'view',
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '09a72f3396332e8ca81a957732e867976cdbe5c0cdfab376e4d69c98c4d5ad87',
+      'dddefb818d79558efba03918bdd986231976ec700b3d69184bbcf7b8835d30ef',
     )
   })
 
@@ -322,9 +320,7 @@ describe('help contract — UI is project tooling', () => {
     expect(ui?.commands.map((command) => command.name())).toEqual([
       'init',
       'list',
-      'view',
       'add',
-      'diff',
       'doctor',
       'preset',
     ])

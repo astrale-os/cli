@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
 import addCommand from '../add'
-import viewCommand from '../view'
+import listCommand from '../list'
 
 class ExitError extends Error {}
 
@@ -61,28 +61,18 @@ afterEach(() => {
 })
 
 describe('UI command machine contracts', () => {
-  test('view emits exactly one parseable JSON value', async () => {
-    const action = viewCommand.action as (
-      items: string[],
-      options: { json?: boolean },
+  test('list emits exactly one parseable JSON value', async () => {
+    const action = listCommand.action as (
+      query: string | undefined,
+      options: { json?: boolean; limit?: string },
     ) => Promise<void>
-    await action(['pattern/chart/line/basic'], { json: true })
+    await action('line-basic', { json: true, limit: '100' })
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual([item])
   })
 
-  test('view and add reject missing items without prompting in machine mode', async () => {
-    process.argv = ['node', 'astrale', '--ci', 'ui', 'view']
-    const view = viewCommand.action as (
-      items: string[],
-      options: { json?: boolean },
-    ) => Promise<void>
-    await expect(view([], { json: true })).rejects.toBeInstanceOf(ExitError)
-    expect(JSON.parse(stderr)).toMatchObject({ error: 'UI_ITEM_NOT_FOUND' })
-    expect(stdout).toBe('')
-
-    stderr = ''
+  test('add rejects missing items without prompting in machine mode', async () => {
     process.argv = ['node', 'astrale', '--no-prompt', 'ui', 'add']
     const add = addCommand.action as (items: string[], options: { json?: boolean }) => Promise<void>
     await expect(add([], { json: true })).rejects.toBeInstanceOf(ExitError)
@@ -94,11 +84,11 @@ describe('UI command machine contracts', () => {
     globalThis.fetch = (async () => {
       throw new Error('Authorization: Bearer npm_super_secret_value_that_must_not_escape')
     }) as unknown as typeof fetch
-    const action = viewCommand.action as (
-      items: string[],
-      options: { json?: boolean },
+    const action = listCommand.action as (
+      query: string | undefined,
+      options: { json?: boolean; limit?: string },
     ) => Promise<void>
-    await expect(action(['pattern/chart/line/basic'], { json: true })).rejects.toBeInstanceOf(
+    await expect(action('line-basic', { json: true, limit: '100' })).rejects.toBeInstanceOf(
       ExitError,
     )
     expect(JSON.parse(stderr)).toEqual({

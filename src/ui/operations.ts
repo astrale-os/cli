@@ -241,15 +241,6 @@ export async function listLockedUi(
   return release.registry.items
 }
 
-export async function viewUi(
-  addresses: string[],
-  options: { version?: string },
-  dependencies: Dependencies = {},
-): Promise<UiRegistryItem[]> {
-  const release = await resolveUiRelease(options.version, dependencies.fetcher)
-  return addresses.map((address) => findItem(release, address))
-}
-
 async function lockedRelease(
   project: UiProject,
   fetcher?: typeof fetch,
@@ -284,7 +275,7 @@ export async function addUi(
     throw new UiError(
       'UI_LOCAL_CHANGES',
       'Replacing installed UI source requires explicit confirmation.',
-      'Repeat with both --overwrite and --yes after reviewing astrale ui diff.',
+      'Review the locally edited files, then repeat with both --overwrite and --yes.',
     )
   }
   await rejectLocalChanges(project, lock, items, options.overwrite === true)
@@ -386,77 +377,6 @@ export async function addUi(
         lock.items[item.meta.canonicalAddress]?.files,
       ]),
     ),
-  }
-}
-
-export async function diffUi(
-  addresses: string[],
-  options: { project?: string; path?: string },
-  dependencies: Dependencies = {},
-): Promise<Record<string, unknown>> {
-  const project = await discoverUiProject(options.project)
-  const { lock, release } = await lockedRelease(project, dependencies.fetcher)
-  const requested = addresses.length > 0 ? addresses : Object.keys(lock.items)
-  if (requested.length === 0) {
-    throw new UiError(
-      'UI_ITEM_NOT_FOUND',
-      'No installed UI items are recorded in the project lock.',
-    )
-  }
-  const items = requested.map((address) => findItem(release, address))
-  const installed = items.map((item) => {
-    const record = lock.items[item.meta.canonicalAddress]
-    if (!record) {
-      throw new UiError(
-        'UI_ITEM_NOT_FOUND',
-        'UI item is not installed: ' + item.meta.canonicalAddress,
-      )
-    }
-    return record
-  })
-  let selectedPath: string | undefined
-  if (options.path) {
-    if (path.isAbsolute(options.path) || options.path.split(/[\\/]/u).includes('..')) {
-      throw new UiError('UI_LOCK_INVALID', 'Unsafe diff path: ' + options.path)
-    }
-    selectedPath = options.path.replaceAll('\\', '/')
-    if (!installed.some((record) => Object.hasOwn(record.files, selectedPath!))) {
-      throw new UiError(
-        'UI_ITEM_NOT_FOUND',
-        'Diff path is not recorded in the UI lock: ' + selectedPath,
-      )
-    }
-  }
-  const documents = await Promise.all(
-    items.map((item) => readUiRegistryItem(release, item, dependencies.fetcher)),
-  )
-  const comparisons = await Promise.all(
-    installed.map(async (record, index) => ({
-      address: record.address,
-      upstream:
-        record.sourceDigest === digest(JSON.stringify(documents[index])) ? 'unchanged' : 'changed',
-      files: await Promise.all(
-        Object.entries(record.files)
-          .filter(([file]) => !selectedPath || file === selectedPath)
-          .map(async ([file, expected]) => {
-            const actual = await readFile(path.join(project.root, file))
-              .then(digest)
-              .catch(() => undefined)
-            return {
-              path: file,
-              state:
-                actual === undefined ? 'deleted' : actual === expected ? 'unchanged' : 'modified',
-              expected,
-              actual,
-            }
-          }),
-      ),
-    })),
-  )
-  return {
-    status: 'compared',
-    release: { version: release.version, commit: release.commit },
-    items: comparisons,
   }
 }
 
@@ -570,7 +490,7 @@ async function rejectLocalChanges(
         throw new UiError(
           'UI_LOCAL_CHANGES',
           'Installed UI file has local changes: ' + file,
-          'Run astrale ui diff or repeat add with explicit --overwrite --yes.',
+          'Review the file, then repeat add with explicit --overwrite --yes.',
         )
       }
     }

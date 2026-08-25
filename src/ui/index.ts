@@ -1,12 +1,10 @@
 export {
   addUi,
   applyPreset,
-  diffUi,
   doctorUi,
   initUi,
   listLockedUi,
   listUi,
-  viewUi,
   type InitUiOptions,
 } from './operations'
 export { UI_PRESETS, UiError, type UiLock, type UiPreset } from './model'

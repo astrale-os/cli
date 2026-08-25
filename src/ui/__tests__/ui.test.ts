@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { digest, parseUiLock } from '../lock'
 import { UiError, type UiLock, type UiRegistry } from '../model'
-import { addUi, applyPreset, diffUi, doctorUi, initUi } from '../operations'
+import { addUi, applyPreset, doctorUi, initUi } from '../operations'
 import { resolveUiRelease } from '../release'
 import { shadcnInvocation } from '../runner'
 
@@ -520,75 +520,6 @@ describe('UI source operations', () => {
       ),
     ).rejects.toMatchObject({ code: 'UI_REGISTRY_UNAVAILABLE' })
     expect(invoked).toBe(false)
-  })
-
-  /** @evidence TEST-CLI-UI-SEMANTIC-DIFF */
-  test('diff classifies unchanged, modified, deleted, and upstream-changed state', async () => {
-    const root = await fixture()
-    const file = 'components/astrale/pattern/chart/line-basic.tsx'
-    const target = path.join(root, file)
-    const content = 'export const Chart = true\n'
-    const document = builtItem(registry.items[0]!)
-    const installedLock = lock()
-    installedLock.items['pattern/chart/line/basic'] = {
-      address: 'pattern/chart/line/basic',
-      sourceDigest: digest(JSON.stringify(document)),
-      files: { [file]: digest(content) },
-    }
-    await mkdir(path.dirname(target), { recursive: true })
-    await writeFile(target, content)
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(installedLock))
-
-    const unchanged = await diffUi([], { project: root }, { fetcher: mockFetch() })
-    expect(unchanged).toMatchObject({
-      status: 'compared',
-      items: [
-        {
-          address: 'pattern/chart/line/basic',
-          upstream: 'unchanged',
-          files: [{ state: 'unchanged' }],
-        },
-      ],
-    })
-
-    await writeFile(target, 'consumer edit\n')
-    const modified = await diffUi(
-      ['pattern/chart/line/basic'],
-      { project: root, path: file },
-      { fetcher: mockFetch() },
-    )
-    expect(modified).toMatchObject({ items: [{ files: [{ path: file, state: 'modified' }] }] })
-
-    await rm(target)
-    const deleted = await diffUi([], { project: root }, { fetcher: mockFetch() })
-    expect(deleted).toMatchObject({ items: [{ files: [{ state: 'deleted' }] }] })
-
-    const changedRegistry: UiRegistry = {
-      ...registry,
-      items: [{ ...registry.items[0]!, description: 'Changed upstream source identity.' }],
-    }
-    const upstream = await diffUi(
-      [],
-      { project: root },
-      { fetcher: mockFetch([], changedRegistry) },
-    )
-    expect(upstream).toMatchObject({ items: [{ upstream: 'changed' }] })
-  })
-
-  test('diff rejects unsafe and unrecorded path restrictions', async () => {
-    const root = await fixture()
-    const installedLock = lock()
-    installedLock.items['pattern/chart/line/basic'] = {
-      address: 'pattern/chart/line/basic',
-      sourceDigest: digest(JSON.stringify(builtItem(registry.items[0]!))),
-      files: { 'components/astrale/pattern/chart/line-basic.tsx': 'b'.repeat(64) },
-    }
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(installedLock))
-    for (const selected of ['../../outside.ts', '/tmp/outside.ts', 'src/unrecorded.ts']) {
-      await expect(
-        diffUi([], { project: root, path: selected }, { fetcher: mockFetch() }),
-      ).rejects.toBeInstanceOf(UiError)
-    }
   })
 
   test('preset dry-run is read-only and apply changes CSS plus lock without source rewrites', async () => {

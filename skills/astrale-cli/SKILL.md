@@ -66,9 +66,7 @@ published UI release:
 ```bash
 astrale ui init --preset astrale
 astrale ui list chart
-astrale ui view pattern/chart/line-basic
 astrale ui add pattern/chart/line-basic
-astrale ui diff
 astrale ui doctor
 astrale ui preset apply compact
 ```
@@ -81,9 +79,10 @@ always read from that single commit snapshot.
 
 Run `astrale ui add` without item arguments for an interactive picker. In CI,
 provide canonical addresses explicitly. Ordinary add refuses locally edited
-installed files; inspect with `astrale ui diff`, then use `--overwrite --yes`
-only when replacement is intentional. `--dry-run` leaves project files and the
-lock unchanged.
+installed files; review those files, then use `--overwrite --yes` only when
+replacement is intentional. `--dry-run` leaves project files and the lock
+unchanged. Use `astrale ui list --json` when registry metadata is needed by a
+script or agent.
 
 Patterns and blocks are application-owned source after installation. Their root
 `className`, inline `style`, controlled values/actions, and stable `data-slot`
