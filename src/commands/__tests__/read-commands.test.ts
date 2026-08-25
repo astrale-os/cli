@@ -200,6 +200,33 @@ describe('query command', () => {
     ])
   })
 
+  test('retains the opaque continuation in machine output without wrapping the graph result', async () => {
+    const { queryCommand } = await import('../query')
+    const result = {
+      kind: 'graph' as const,
+      graph: {
+        nodes: [{ id: 'issue-1', class: 'issues.astrale.ai:class.Issue', props: {} }],
+        edges: [],
+      },
+      selection: { kind: 'node' as const, ids: ['issue-1'] },
+    }
+    queryResult = {
+      result,
+      page: { next: 'opaque-next-page' },
+    }
+
+    await queryCommand([], {
+      json: true,
+      definition: '/:issues.astrale.ai:class.Issue',
+      limit: '1',
+    })
+
+    expect(JSON.parse(stdout)).toEqual({
+      ...result,
+      page: { next: 'opaque-next-page' },
+    })
+  })
+
   test('resolves @self inside the command session and never relabels transport failure as input', async () => {
     const { queryCommand } = await import('../query')
     await queryCommand(['@self'], { json: true, limit: '2' })

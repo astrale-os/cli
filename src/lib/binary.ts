@@ -7,14 +7,31 @@ import { output } from './output'
 
 /** A binary kernel result: bytes (or a stream of them) plus its content-type. */
 export type BinaryLike = {
-  readonly body: Uint8Array
+  readonly body: Uint8Array | AsyncIterable<Uint8Array>
   readonly mediaType: string
+  readonly status?: number
   readonly headers?: Readonly<Record<string, string>>
 }
 
 /** Collapse a (possibly streamed) binary body into a single byte array. */
-export async function readBinaryBody(body: Uint8Array): Promise<Uint8Array> {
-  return body
+export async function readBinaryBody(
+  body: Uint8Array | AsyncIterable<Uint8Array>,
+): Promise<Uint8Array> {
+  if (body instanceof Uint8Array) return new Uint8Array(body)
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for await (const chunk of body) {
+    const detached = new Uint8Array(chunk)
+    chunks.push(detached)
+    size += detached.byteLength
+  }
+  const bytes = new Uint8Array(size)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return bytes
 }
 
 function isTextLike(contentType: string): boolean {
@@ -43,13 +60,13 @@ function humanSize(bytes: number): string {
 function jsonEnvelope(resp: BinaryLike, bytes: Uint8Array): Record<string, unknown> {
   if (isTextLike(resp.mediaType)) {
     return {
-      status: 200,
+      status: resp.status ?? 200,
       contentType: resp.mediaType,
       body: new TextDecoder().decode(bytes),
     }
   }
   return {
-    status: 200,
+    status: resp.status ?? 200,
     contentType: resp.mediaType,
     bodyBase64: Buffer.from(bytes).toString('base64'),
   }
