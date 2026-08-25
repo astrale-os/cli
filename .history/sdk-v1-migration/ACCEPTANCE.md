@@ -29,7 +29,7 @@
 ## Qualification
 
 - Typecheck, lint, format, all tests, build, package checks, public export checks, and dependency
-  boundary checks pass on the exact cohort.
+  boundary checks pass on the exact published SDK and Shell closure.
 - Representative command E2E proves status, automatic bookmark identity selection, graph reads,
   callable invocation, Domain installation, and exact receiver Methods against an
   authority-enabled tunneled Kernel and remotely deployed Cloudflare Shell.
@@ -41,15 +41,15 @@
 
 - Kernel Client: typecheck; 25 files / 141 tests; repository pre-push typecheck and layout gates.
 - SDK: typecheck; 83 files / 466 tests; knowledge, policy, issue, and release workflow checks.
-- CLI/Viewer/Studio: exact-cohort full typecheck; lint; format; build; public export and dependency
-  checks; 184 Bun files with 777 pass / one skip / zero fail; and 32/32 exact-source and release
-  workflow Node tests.
+- CLI/Viewer/Studio: published-package full typecheck; lint; format; build; public export and
+  dependency checks; 184 Bun files with 777 pass / one skip / zero fail; and 32/32 exact-source and
+  release workflow Node tests.
 - The 15-pass reduction from baseline is the consolidation of repetitive Interface/legacy
   projection cases into Class-only exact-identity and canonical admission journeys. No test file was
   deleted: 48 owner test files were migrated and one canonical admission file was added; no retained
   command or Studio journey was removed.
 - Package dry-run succeeds with 590 files. Its source-bearing shape is pre-existing and remains
   unchanged in intent because Studio executes server/shared source from the installed CLI package.
-- Live representative Kernel commands and authority-dependent fresh Shell setup are green. The only
-  remote gate is repository administration: CLI Actions needs a credential that can check out the
-  exact private Kernel, SDK, and Shell cohort.
+- Live representative Kernel commands and authority-dependent fresh Shell setup are green. CI and
+  release qualification use ordinary public SDK and Shell packages; no private source checkout,
+  cross-repository credential, or cohort topology remains.
