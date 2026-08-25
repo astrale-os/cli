@@ -5,6 +5,7 @@ import { Project, SyntaxKind } from 'ts-morph'
 import { parse } from 'yaml'
 
 const privatePackages = ['@astrale-os/kernel-ports', '@astrale-os/kernel-runtime']
+const typescriptApiPattern = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]typescript['"]/u
 const dependencyFields = [
   'dependencies',
   'devDependencies',
@@ -77,6 +78,51 @@ assert.equal(
 )
 
 const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
+assert.equal(
+  cliManifest.devDependencies?.typescript,
+  '7.0.2',
+  'CLI source without TypeScript compiler API imports must pin TypeScript 7.0.2',
+)
+assert.equal(
+  cliManifest.devDependencies?.['@typescript/native-preview'],
+  undefined,
+  'CLI root must not install the native-preview compiler',
+)
+assert.match(cliManifest.scripts?.typecheck ?? '', /\btsc\b/u, 'CLI root must typecheck with tsc')
+assert.doesNotMatch(
+  cliManifest.scripts?.typecheck ?? '',
+  /\btsgo\b/u,
+  'CLI root must not typecheck with tsgo',
+)
+assert.match(
+  cliManifest.scripts?.typecheck ?? '',
+  /pnpm --dir studio run typecheck/u,
+  'CLI root must delegate Studio typechecking to the Studio package',
+)
+const buildScript = await readFile('scripts/build.ts', 'utf8')
+assert.match(buildScript, /node_modules\/\.bin\/tsc/u, 'CLI declarations must be emitted with tsc')
+assert.doesNotMatch(
+  buildScript,
+  /node_modules\/\.bin\/tsgo/u,
+  'CLI root declaration build must not use tsgo',
+)
+const cliTypeScriptFiles = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
+  .split('\n')
+  .filter(
+    (path) =>
+      /\.(?:[cm]?[jt]sx?|mjs|cjs)$/u.test(path) &&
+      !path.startsWith('studio/') &&
+      !path.startsWith('dist/'),
+  )
+const cliCompilerApiImports = []
+for (const path of cliTypeScriptFiles) {
+  if (typescriptApiPattern.test(await readFile(path, 'utf8'))) cliCompilerApiImports.push(path)
+}
+assert.deepEqual(
+  cliCompilerApiImports,
+  [],
+  'CLI root TypeScript 7 profile must not import the TypeScript compiler API',
+)
 for (const lifecycle of ['preinstall', 'install', 'postinstall']) {
   assert.equal(
     cliManifest.scripts?.[lifecycle],
@@ -94,6 +140,26 @@ assert.deepEqual(
 )
 
 const studioManifest = JSON.parse(await readFile('studio/package.json', 'utf8'))
+assert.equal(
+  studioManifest.devDependencies?.typescript,
+  '~6.0.3',
+  'Studio compiler API tests must use the approved TypeScript 6 range',
+)
+assert.equal(
+  studioManifest.devDependencies?.['@typescript/native-preview'],
+  '7.0.0-dev.20260707.2',
+  'Studio must pin the approved native-preview compiler',
+)
+assert.match(
+  studioManifest.scripts?.typecheck ?? '',
+  /\btsgo\b/u,
+  'Studio must typecheck with tsgo',
+)
+assert.doesNotMatch(
+  studioManifest.scripts?.typecheck ?? '',
+  /\btsc\b/u,
+  'Studio must not typecheck with tsc',
+)
 const studioPackages = dependencyFields.flatMap((field) =>
   Object.entries(studioManifest[field] ?? {}),
 )
@@ -126,9 +192,16 @@ const studioProject = new Project({
 const studioFiles = execFileSync('git', ['ls-files', 'studio'], { encoding: 'utf8' })
   .split('\n')
   .filter((path) => /\.(?:ts|tsx)$/u.test(path) && !path.startsWith('studio/client/dist/'))
+const studioCompilerApiImports = []
 for (const path of studioFiles) {
-  studioProject.createSourceFile(path, await readFile(path, 'utf8'), { overwrite: true })
+  const contents = await readFile(path, 'utf8')
+  if (typescriptApiPattern.test(contents)) studioCompilerApiImports.push(path)
+  studioProject.createSourceFile(path, contents, { overwrite: true })
 }
+assert.ok(
+  studioCompilerApiImports.length > 0,
+  'Studio TypeScript 6 profile must remain justified by a compiler API import',
+)
 const studioKernelReferences = studioProject.getSourceFiles().flatMap((sourceFile) =>
   [
     ...sourceFile.getDescendantsOfKind(SyntaxKind.StringLiteral),

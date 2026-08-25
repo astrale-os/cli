@@ -54,7 +54,7 @@
     "build": "bun scripts/build.ts",
     "prepack": "pnpm run package:check",
     "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs && node scripts/verify-public-dependency-boundary.mjs",
-    "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.tests.json && tsgo --noEmit -p viewer && tsgo --noEmit -p studio",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p viewer && pnpm --dir studio run typecheck",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
@@ -83,13 +83,12 @@
     "@commitlint/config-conventional": "21.2.2",
     "@types/bun": "^1.1.16",
     "@types/node": "^22.0.0",
-    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "husky": "~9.1.7",
     "lint-staged": "17.3.0",
     "msgpackr": "^2.0.5",
     "oxfmt": "0.63.0",
     "oxlint": "1.78.0",
-    "typescript": "~6.0.3"
+    "typescript": "7.0.2"
   },
   "lint-staged": {
     "*.{js,cjs,mjs,ts,tsx}": [

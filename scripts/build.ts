@@ -70,12 +70,12 @@ console.log(`built ${OUT}`)
     process.exit(1)
   }
 
-  const tsgo = ['node_modules/.bin/tsgo', '../../node_modules/.bin/tsgo'].find(existsSync)
-  if (!tsgo) {
-    console.error('tsgo is required to emit public subpath declarations')
+  const tsc = ['node_modules/.bin/tsc', '../../node_modules/.bin/tsc'].find(existsSync)
+  if (!tsc) {
+    console.error('tsc is required to emit public subpath declarations')
     process.exit(1)
   }
-  const declarations = Bun.spawnSync([tsgo, '-p', 'tsconfig.public.json'], {
+  const declarations = Bun.spawnSync([tsc, '-p', 'tsconfig.public.json'], {
     stdout: 'inherit',
     stderr: 'inherit',
   })
