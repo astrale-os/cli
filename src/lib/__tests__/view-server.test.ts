@@ -1,10 +1,12 @@
-import { describe, expect, test } from 'bun:test'
+import type { AuthApi } from '@astrale-os/sdk/auth'
+
+import { describe, expect, mock, test } from 'bun:test'
 import { once } from 'node:events'
 
 import type { ViewServeConfig } from '../view/session'
 
 import { findFreePort } from '../port'
-import { startViewServer } from '../view/server'
+import { mintViewCredential, startViewServer } from '../view/server'
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const
 const target = (value: string) => value as ViewServeConfig['session']['view']['target']
@@ -13,6 +15,19 @@ const revision = (character: string) =>
   digest(character) as ViewServeConfig['session']['view']['route']['revision']
 
 describe('view session server credentials', () => {
+  test('mints a proof-bounded credential for the Kernel audience', async () => {
+    const mint = mock(async () => 'minted-credential')
+    const auth = { mint } as unknown as Pick<AuthApi, 'mint'>
+
+    await expect(mintViewCredential(auth, issuer('https://kernel.test'))).resolves.toBe(
+      'minted-credential',
+    )
+    expect(mint).toHaveBeenCalledWith({
+      audience: 'https://kernel.test',
+      ttlSeconds: 240,
+    })
+  })
+
   /** @evidence TEST-CLI-PLAIN-VIEW-RECEIVES-NO-CREDENTIAL */
   test('refuses to mint a token for a handshake-none View', async () => {
     const nonce = 'plain-view'

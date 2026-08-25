@@ -2,13 +2,21 @@ packages:
   - '.'
   - 'studio'
 
-# Keep pnpm 11's one-day default non-strict and never install implicitly before
-# `pnpm run` or `pnpm exec`.
-minimumReleaseAgeStrict: false
+# The published CLI and its private Studio fixture must consume declared
+# package versions rather than being linked together implicitly.
+linkWorkspacePackages: false
+
+# Quarantine every external release for seven days. Only Astrale publications
+# and the pinned Bun 1.4 toolchain type package bypass the quarantine.
+minimumReleaseAge: 10080
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+trustLockfile: false
 minimumReleaseAgeExclude:
-  # First-party Astrale packages are qualified directly; third-party releases remain gated.
   - '@astrale-os/*'
-  # Exact exception for the Bun 1.4 toolchain migration; future releases remain gated.
+  - '@astrale-domains/*'
+  - '@astrale/*'
+  - 'create-astrale-domain'
   - 'bun-types@1.4.0'
 verifyDepsBeforeRun: false
 
