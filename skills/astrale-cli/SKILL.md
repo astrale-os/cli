@@ -208,8 +208,9 @@ installed bundle. `astrale call --describe` is not a flag.
 
 ### `query`
 
-`query` executes canonical `astrale.graph.query/v6`. Its result is
-`{ kind: "graph", graph: { nodes, edges } }` plus an optional page cursor.
+`query` executes canonical `astrale.graph.query/v6`. Its machine result is
+`{ kind: "graph", graph: { nodes, edges }, page?: { next } }`; pass the opaque
+`page.next` value to `--cursor` until it is absent.
 
 - Positional Paths create Path source terms.
 - `--definition <path>` selects Nodes implementing one exact Class.
@@ -255,7 +256,11 @@ The result is `{ createdNodes }`. Historical PatchData arms and
 `astrale call` creates one Path-targeted Call. Input priority is `--data`,
 piped stdin, `key=value`, then `{}`. `--dry-run` admits the Path and prints
 the call input. Value, binary, and stream results are handled explicitly, and
-`--output` writes binary data. Callable input/output is `astrale introspect <path>`.
+`--output` writes binary data. A streaming binary is drained with backpressure
+while the command-scoped Client session is live, then presented through the same
+raw/file/JSON paths as buffered binary. JSON preserves application status and
+encodes the body as text or base64. Callable input/output is
+`astrale introspect <path>`.
 
 ```bash
 astrale call /:blog.example:class.Author:list limit=10

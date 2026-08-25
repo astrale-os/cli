@@ -39,11 +39,26 @@ describe('presentBinary', () => {
 
   test('--json inlines text for text-like content types', async () => {
     await presentBinary(
-      { mediaType: 'text/plain', body: new TextEncoder().encode('hi') },
+      { mediaType: 'text/plain', status: 202, body: new TextEncoder().encode('hi') },
       { json: true },
     )
     const obj = JSON.parse(Buffer.concat(chunks).toString())
     expect(obj.body).toBe('hi')
+    expect(obj.status).toBe(202)
+  })
+
+  test('--raw drains streaming binary chunks in exact order', async () => {
+    await presentBinary(
+      {
+        mediaType: 'application/octet-stream',
+        body: (async function* () {
+          yield new Uint8Array([1, 2])
+          yield new Uint8Array([3, 4])
+        })(),
+      },
+      { raw: true },
+    )
+    expect(Array.from(Buffer.concat(chunks))).toEqual([1, 2, 3, 4])
   })
 
   test('-o writes raw bytes to a file', async () => {

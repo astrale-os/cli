@@ -60,7 +60,12 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
       return withSelfHint(() => context.graph.query(resolved.ast, { page: resolved.page }), meta)
     },
     format: (response, format) => {
-      output(response.result, format)
+      output(
+        response.page.next === undefined
+          ? response.result
+          : { ...response.result, page: { next: response.page.next } },
+        format,
+      )
       if (response.page.next && !isMachine(format)) {
         process.stderr.write(`  cursor: ${response.page.next}\n`)
       }
@@ -102,7 +107,8 @@ Behavior:
   one exact Edge-Class expansion; --direction defaults to outgoing. --ast and
   --file accept a complete canonical astrale.graph.query/v6 document, including
   Property ordering and Node or Edge reference/value projections. --cursor resumes
-  one caller-bound query scope.
+  one caller-bound query scope. Machine output adds page.next only when another
+  page exists; pass that opaque value back through --cursor.
 
   Legacy depth/children selector JSON and raw Cypher are not portable Kernel
   V2 query contracts and are not accepted.
