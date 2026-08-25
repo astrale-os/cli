@@ -17,7 +17,12 @@ import {
   projectRelative,
   type UiProject,
 } from './project'
-import { readUiReleaseSnapshot, registryItemUrl, resolveUiRelease } from './release'
+import {
+  readUiRegistryItem,
+  readUiReleaseSnapshot,
+  registryItemUrl,
+  resolveUiRelease,
+} from './release'
 import { defaultUiRunner, shadcnInvocation, type UiRunner } from './runner'
 
 type Dependencies = { fetcher?: typeof fetch; runner?: UiRunner }
@@ -272,6 +277,9 @@ export async function addUi(
   const project = await discoverUiProject(options.project)
   const { lock, release } = await lockedRelease(project, dependencies.fetcher)
   const items = addresses.map((address) => findItem(release, address))
+  const itemDocuments = await Promise.all(
+    items.map((item) => readUiRegistryItem(release, item, dependencies.fetcher)),
+  )
   if (options.overwrite && !options.yes) {
     throw new UiError(
       'UI_LOCAL_CHANGES',
@@ -336,13 +344,19 @@ export async function addUi(
     return {
       status: 'planned',
       items: items.map((item) => item.meta.canonicalAddress),
+      sources: itemDocuments.map((item) => ({
+        address: item.meta.canonicalAddress,
+        dependencies: item.dependencies ?? [],
+        files: item.files.map((file) => file.target).filter(Boolean),
+      })),
       command: [invocation.file, ...invocation.args],
       output: result.stdout,
     }
   }
 
   try {
-    for (const item of items) {
+    for (const [index, item] of items.entries()) {
+      const itemDocument = itemDocuments[index]!
       const files: Record<string, string> = {}
       for (const file of item.files) {
         if (!file.target) continue
@@ -351,7 +365,7 @@ export async function addUi(
       }
       lock.items[item.meta.canonicalAddress] = {
         address: item.meta.canonicalAddress,
-        sourceDigest: digest(JSON.stringify(item)),
+        sourceDigest: digest(JSON.stringify(itemDocument)),
         files,
       }
     }
@@ -390,26 +404,59 @@ export async function diffUi(
     )
   }
   const items = requested.map((address) => findItem(release, address))
-  const invocation = shadcnInvocation(project.manager, release.compatibility.shadcn, [
-    'add',
-    ...items.map((item) => registryItemUrl(release, item.name)),
-    '--cwd',
-    project.root,
-    '--diff',
-    ...(options.path ? [options.path] : []),
-  ])
-  const result = await (dependencies.runner ?? defaultUiRunner)(
-    invocation.file,
-    invocation.args,
-    project.root,
-  )
-  if (result.code !== 0) {
-    throw new UiError('UI_TOOL_FAILED', 'The pinned shadcn diff failed.', result.stderr.trim())
+  const installed = items.map((item) => {
+    const record = lock.items[item.meta.canonicalAddress]
+    if (!record) {
+      throw new UiError(
+        'UI_ITEM_NOT_FOUND',
+        'UI item is not installed: ' + item.meta.canonicalAddress,
+      )
+    }
+    return record
+  })
+  let selectedPath: string | undefined
+  if (options.path) {
+    if (path.isAbsolute(options.path) || options.path.split(/[\\/]/u).includes('..')) {
+      throw new UiError('UI_LOCK_INVALID', 'Unsafe diff path: ' + options.path)
+    }
+    selectedPath = options.path.replaceAll('\\', '/')
+    if (!installed.some((record) => Object.hasOwn(record.files, selectedPath!))) {
+      throw new UiError(
+        'UI_ITEM_NOT_FOUND',
+        'Diff path is not recorded in the UI lock: ' + selectedPath,
+      )
+    }
   }
+  const documents = await Promise.all(
+    items.map((item) => readUiRegistryItem(release, item, dependencies.fetcher)),
+  )
+  const comparisons = await Promise.all(
+    installed.map(async (record, index) => ({
+      address: record.address,
+      upstream:
+        record.sourceDigest === digest(JSON.stringify(documents[index])) ? 'unchanged' : 'changed',
+      files: await Promise.all(
+        Object.entries(record.files)
+          .filter(([file]) => !selectedPath || file === selectedPath)
+          .map(async ([file, expected]) => {
+            const actual = await readFile(path.join(project.root, file))
+              .then(digest)
+              .catch(() => undefined)
+            return {
+              path: file,
+              state:
+                actual === undefined ? 'deleted' : actual === expected ? 'unchanged' : 'modified',
+              expected,
+              actual,
+            }
+          }),
+      ),
+    })),
+  )
   return {
     status: 'compared',
-    items: items.map((item) => item.meta.canonicalAddress),
-    output: result.stdout,
+    release: { version: release.version, commit: release.commit },
+    items: comparisons,
   }
 }
 

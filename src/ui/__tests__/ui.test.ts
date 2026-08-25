@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { digest, parseUiLock } from '../lock'
 import { UiError, type UiLock, type UiRegistry } from '../model'
-import { addUi, applyPreset, doctorUi, initUi } from '../operations'
+import { addUi, applyPreset, diffUi, doctorUi, initUi } from '../operations'
 import { resolveUiRelease } from '../release'
 import { shadcnInvocation } from '../runner'
 
@@ -66,8 +66,22 @@ function mockFetch(seen: string[] = [], suppliedRegistry: UiRegistry = registry)
     }
     if (url.endsWith('/registry/patterns/chart/registry.json'))
       return Response.json(suppliedRegistry)
+    const item = suppliedRegistry.items.find((candidate) =>
+      url.endsWith('/registry/public/r/' + candidate.name + '.json'),
+    )
+    if (item) return Response.json(builtItem(item))
     return new Response('not found', { status: 404 })
   }) as typeof fetch
+}
+
+function builtItem(item: UiRegistry['items'][number]) {
+  return {
+    ...item,
+    files: item.files.map((file, index) => ({
+      ...file,
+      content: index === 0 ? 'export const Chart = true\n' : 'export const Summary = true\n',
+    })),
+  }
 }
 
 async function fixture(): Promise<string> {
@@ -326,6 +340,13 @@ describe('UI source operations', () => {
       },
     )
     expect(result.status).toBe('planned')
+    expect(result.sources).toEqual([
+      {
+        address: 'pattern/chart/line/basic',
+        dependencies: [],
+        files: ['components/astrale/pattern/chart/line-basic.tsx'],
+      },
+    ])
     expect(calls[0]).toMatchObject({ file: 'pnpm' })
     expect(calls[0]?.args).toEqual(expect.arrayContaining(['dlx', 'shadcn@4.18.0', '--dry-run']))
     expect(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8')).toBe(before)
@@ -371,6 +392,9 @@ describe('UI source operations', () => {
     expect(written.items['pattern/chart/line/basic'].files).toEqual({
       'components/astrale/pattern/chart/line-basic.tsx': digest('export const Chart = true\n'),
     })
+    expect(written.items['pattern/chart/line/basic'].sourceDigest).toBe(
+      digest(JSON.stringify(builtItem(registry.items[0]!))),
+    )
     expect((await doctorUi(root)).healthy).toBe(true)
     await writeFile(installed, 'consumer edit\n')
     expect((await doctorUi(root)).healthy).toBe(false)
@@ -467,6 +491,104 @@ describe('UI source operations', () => {
       ),
     ).rejects.toMatchObject({ code: 'UI_LOCAL_CHANGES' })
     expect(invoked).toBe(false)
+  })
+
+  /** @evidence TEST-CLI-UI-EXACT-ITEM-SOURCE */
+  test('rejects a built item that differs from the admitted release index before invoking shadcn', async () => {
+    const root = await fixture()
+    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
+    const fallback = mockFetch()
+    let invoked = false
+    const malformed = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/registry/public/r/pattern-chart-line-basic.json')) {
+        return Response.json(registry.items[0])
+      }
+      return fallback(input, init)
+    }) as typeof fetch
+    await expect(
+      addUi(
+        ['pattern/chart/line/basic'],
+        { project: root },
+        {
+          fetcher: malformed,
+          runner: async () => {
+            invoked = true
+            return { code: 0, stdout: '', stderr: '' }
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'UI_REGISTRY_UNAVAILABLE' })
+    expect(invoked).toBe(false)
+  })
+
+  /** @evidence TEST-CLI-UI-SEMANTIC-DIFF */
+  test('diff classifies unchanged, modified, deleted, and upstream-changed state', async () => {
+    const root = await fixture()
+    const file = 'components/astrale/pattern/chart/line-basic.tsx'
+    const target = path.join(root, file)
+    const content = 'export const Chart = true\n'
+    const document = builtItem(registry.items[0]!)
+    const installedLock = lock()
+    installedLock.items['pattern/chart/line/basic'] = {
+      address: 'pattern/chart/line/basic',
+      sourceDigest: digest(JSON.stringify(document)),
+      files: { [file]: digest(content) },
+    }
+    await mkdir(path.dirname(target), { recursive: true })
+    await writeFile(target, content)
+    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(installedLock))
+
+    const unchanged = await diffUi([], { project: root }, { fetcher: mockFetch() })
+    expect(unchanged).toMatchObject({
+      status: 'compared',
+      items: [
+        {
+          address: 'pattern/chart/line/basic',
+          upstream: 'unchanged',
+          files: [{ state: 'unchanged' }],
+        },
+      ],
+    })
+
+    await writeFile(target, 'consumer edit\n')
+    const modified = await diffUi(
+      ['pattern/chart/line/basic'],
+      { project: root, path: file },
+      { fetcher: mockFetch() },
+    )
+    expect(modified).toMatchObject({ items: [{ files: [{ path: file, state: 'modified' }] }] })
+
+    await rm(target)
+    const deleted = await diffUi([], { project: root }, { fetcher: mockFetch() })
+    expect(deleted).toMatchObject({ items: [{ files: [{ state: 'deleted' }] }] })
+
+    const changedRegistry: UiRegistry = {
+      ...registry,
+      items: [{ ...registry.items[0]!, description: 'Changed upstream source identity.' }],
+    }
+    const upstream = await diffUi(
+      [],
+      { project: root },
+      { fetcher: mockFetch([], changedRegistry) },
+    )
+    expect(upstream).toMatchObject({ items: [{ upstream: 'changed' }] })
+  })
+
+  test('diff rejects unsafe and unrecorded path restrictions', async () => {
+    const root = await fixture()
+    const installedLock = lock()
+    installedLock.items['pattern/chart/line/basic'] = {
+      address: 'pattern/chart/line/basic',
+      sourceDigest: digest(JSON.stringify(builtItem(registry.items[0]!))),
+      files: { 'components/astrale/pattern/chart/line-basic.tsx': 'b'.repeat(64) },
+    }
+    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(installedLock))
+    for (const selected of ['../../outside.ts', '/tmp/outside.ts', 'src/unrecorded.ts']) {
+      await expect(
+        diffUi([], { project: root, path: selected }, { fetcher: mockFetch() }),
+      ).rejects.toBeInstanceOf(UiError)
+    }
   })
 
   test('preset dry-run is read-only and apply changes CSS plus lock without source rewrites', async () => {

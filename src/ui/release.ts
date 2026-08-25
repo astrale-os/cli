@@ -193,6 +193,13 @@ function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
     typeof candidate.name === 'string' &&
     /^(?:pattern|block)-[a-z0-9-]+$/u.test(candidate.name) &&
     candidate.type === 'registry:block' &&
+    (candidate.dependencies === undefined ||
+      (Array.isArray(candidate.dependencies) &&
+        candidate.dependencies.every(
+          (dependency) =>
+            typeof dependency === 'string' &&
+            /^(?:@[a-z0-9-]+\/)?[a-z0-9-]+@[~^<>=0-9A-Za-z.* -]+$/u.test(dependency),
+        ))) &&
     Array.isArray(candidate.files) &&
     candidate.files.length > 0 &&
     candidate.files.every(
@@ -208,6 +215,41 @@ function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
     typeof candidate.meta?.canonicalAddress === 'string' &&
     /^(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+$/u.test(candidate.meta.canonicalAddress)
   )
+}
+
+export async function readUiRegistryItem(
+  release: UiRelease,
+  expected: UiRegistry['items'][number],
+  fetcher: Fetch = fetch,
+): Promise<UiRegistry['items'][number]> {
+  const item = await json<unknown>(
+    fetcher,
+    registryItemUrl(release, expected.name),
+    'UI registry item ' + expected.name,
+  )
+  if (
+    !isInstallableItem(item) ||
+    item.name !== expected.name ||
+    item.meta.canonicalAddress !== expected.meta.canonicalAddress ||
+    item.files.length !== expected.files.length ||
+    item.files.some((file, index) => {
+      const declared = expected.files[index]
+      return (
+        typeof file.content !== 'string' ||
+        file.content.length === 0 ||
+        !declared ||
+        file.path !== declared.path ||
+        file.type !== declared.type ||
+        file.target !== declared.target
+      )
+    })
+  ) {
+    throw new UiError(
+      'UI_REGISTRY_UNAVAILABLE',
+      'UI registry item ' + expected.name + ' does not match the admitted release index.',
+    )
+  }
+  return item
 }
 
 function isSafeRelative(value: string): boolean {

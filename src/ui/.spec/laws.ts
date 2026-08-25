@@ -20,3 +20,17 @@ export const CLI_UI_BOUNDED_REMOTE_DOCUMENTS = defineLaw({
     'Release metadata and registry documents are size-bounded, include-bounded, and normalized to stable UI registry errors before any project mutation.',
   tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-BOUNDED-REMOTE-DOCUMENTS' }],
 })
+
+export const CLI_UI_EXACT_ITEM_SOURCE = defineLaw({
+  id: 'CLI-UI-EXACT-ITEM-SOURCE',
+  statement:
+    'An add operation admits the exact built item document against the release index and records a content-bearing source digest before invoking project tooling.',
+  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-EXACT-ITEM-SOURCE' }],
+})
+
+export const CLI_UI_SEMANTIC_DIFF = defineLaw({
+  id: 'CLI-UI-SEMANTIC-DIFF',
+  statement:
+    'Diff is read-only, path-contained, and classifies locked source and files as upstream changed, unchanged, modified, or deleted without delegating truth to tool output.',
+  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-SEMANTIC-DIFF' }],
+})

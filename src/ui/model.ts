@@ -23,6 +23,7 @@ export type UiRegistryFile = {
   path: string
   type: string
   target?: string
+  content?: string
 }
 
 export type UiRegistryItem = {
