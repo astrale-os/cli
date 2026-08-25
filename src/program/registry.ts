@@ -18,7 +18,8 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
 
   if (def.arguments) {
     for (const arg of def.arguments) {
-      const bracket = arg.required !== false ? `<${arg.name}>` : `[${arg.name}]`
+      const name = arg.variadic ? `${arg.name}...` : arg.name
+      const bracket = arg.required !== false ? `<${name}>` : `[${name}]`
       cmd.argument(bracket, arg.description)
     }
   }

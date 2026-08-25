@@ -2,6 +2,7 @@ export interface CommandArgument {
   readonly name: string
   readonly description: string
   readonly required?: boolean
+  readonly variadic?: boolean
 }
 
 export interface CommandOption {

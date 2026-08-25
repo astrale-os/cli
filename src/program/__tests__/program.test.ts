@@ -181,13 +181,23 @@ describe('program composition', () => {
       'status',
       'studio',
       'token',
+      'ui',
+      'ui add',
+      'ui diff',
+      'ui doctor',
+      'ui init',
+      'ui list',
+      'ui preset',
+      'ui preset apply',
+      'ui preset list',
+      'ui view',
       'update',
       'use',
       'view',
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '84ed1718399bf2314f58f86e992bfb06407e39e8652dcdb9ed98ed3f8fb3089f',
+      '09a72f3396332e8ca81a957732e867976cdbe5c0cdfab376e4d69c98c4d5ad87',
     )
   })
 
@@ -281,7 +291,7 @@ describe('help contract — admin target surface is registered', () => {
 describe('help contract — connect-only command surface', () => {
   test('runtime management commands are not registered', async () => {
     const program = await buildProgram()
-    const names = allCommands(program).map((command) => command.name())
+    const names = program.commands.map((command) => command.name())
 
     // `logs` and `domain` have managed/admin meanings, so only retired verbs are absent.
     for (const removed of [
@@ -299,6 +309,30 @@ describe('help contract — connect-only command surface', () => {
       'describe',
     ]) {
       expect(names).not.toContain(removed)
+    }
+  })
+})
+
+describe('help contract — UI is project tooling', () => {
+  test('UI commands are local-only and add accepts zero or more canonical addresses', async () => {
+    const program = await buildProgram()
+    const ui = program.commands.find((command) => command.name() === 'ui')
+    const add = ui?.commands.find((command) => command.name() === 'add')
+
+    expect(ui?.commands.map((command) => command.name())).toEqual([
+      'init',
+      'list',
+      'view',
+      'add',
+      'diff',
+      'doctor',
+      'preset',
+    ])
+    expect(add?.helpInformation()).toContain('[items...]')
+    for (const command of ui?.commands ?? []) {
+      const help = command.helpInformation()
+      expect(help).not.toContain('--url <url>')
+      expect(help).not.toContain('--anonymous')
     }
   })
 })
