@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.13](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.12...cli/v1.0.0-beta.13) (2026-08-25)
+
+
+### Documentation
+
+* **history:** record final SDK release closure ([#151](https://github.com/astrale-os/cli/issues/151)) ([8c3361f](https://github.com/astrale-os/cli/commit/8c3361fdc4a0b161b9c6492051f8c31aaa19c533))
+
 ## [1.0.0-beta.12](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.11...cli/v1.0.0-beta.12) (2026-08-25)
 
 
