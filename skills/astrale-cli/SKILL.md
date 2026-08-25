@@ -159,9 +159,12 @@ astrale identity register operator \
   -i staging
 ```
 
-`astrale token` delegates the selected authenticated identity. TTL defaults to
-3600 seconds; audience defaults to the target Kernel issuer. Use `--audience`
-for a different receiving service and `--raw` for shell assignment.
+`astrale token` issues an audience-bound credential for the selected authenticated identity. When
+the audience is the target Kernel issuer (the default), it mints a top-level Grant credential that
+can be reused with `--creds`. A different `--audience` creates a delegated service envelope for that
+receiver instead. TTL defaults to 240 seconds so it remains below the five-minute local key proof;
+an explicit TTL still cannot outlive the selected source credential. Use `--raw` for shell
+assignment.
 
 ```bash
 TOKEN=$(astrale token --raw -i staging)
