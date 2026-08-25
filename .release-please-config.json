@@ -13,7 +13,7 @@
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug Fixes" },
     { "type": "perf", "section": "Performance Improvements" },
-    { "type": "docs", "section": "Documentation" },
+    { "type": "docs", "hidden": true },
     { "type": "chore", "hidden": true },
     { "type": "build", "hidden": true },
     { "type": "ci", "hidden": true },

@@ -18,6 +18,10 @@ describe('release workflow contract', () => {
     assert.equal(config['prerelease-type'], 'beta')
     assert.equal(config['tag-separator'], '/')
     assert.equal(config['always-update'], true)
+    assert.deepEqual(
+      config['changelog-sections'].find(({ type }) => type === 'docs'),
+      { type: 'docs', hidden: true },
+    )
   })
 
   it('derives npm beta and stable tags from the package version', () => {
