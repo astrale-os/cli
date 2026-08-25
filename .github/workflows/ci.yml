@@ -29,16 +29,39 @@ jobs:
       # deliberately exercises the published runtime contract against source.
       PNPM_CONFIG_RUNTIME_ON_FAIL: ${{ matrix.node-version == '22' && 'ignore' || 'error' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
+      - name: Prove tokenless npmjs qualification
+        env:
+          GH_TOKEN: ''
+          GITHUB_TOKEN: ''
+          NODE_AUTH_TOKEN: ''
+          NPM_TOKEN: ''
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          test -z "${GH_TOKEN:-}"
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "${NODE_AUTH_TOKEN:-}"
+          test -z "${NPM_TOKEN:-}"
+          ! npm config list --json | grep -Eq '"//[^" ]+:_authToken"'
       - name: Install dependencies
+        env:
+          GH_TOKEN: ''
+          GITHUB_TOKEN: ''
+          NODE_AUTH_TOKEN: ''
+          NPM_TOKEN: ''
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_USERCONFIG: /dev/null
         run: STANDALONE=true pnpm install --frozen-lockfile
       - name: Check public dependency closure
         run: node scripts/verify-public-dependency-boundary.mjs
@@ -61,16 +84,25 @@ jobs:
     name: Studio browser smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '24'
           cache: pnpm
       - name: Install dependencies
+        env:
+          GH_TOKEN: ''
+          GITHUB_TOKEN: ''
+          NODE_AUTH_TOKEN: ''
+          NPM_TOKEN: ''
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_USERCONFIG: /dev/null
         run: STANDALONE=true pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --dir studio exec playwright install --with-deps chromium

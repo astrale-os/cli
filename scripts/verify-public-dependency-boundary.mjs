@@ -4,7 +4,12 @@ import { readFile } from 'node:fs/promises'
 import { Project, SyntaxKind } from 'ts-morph'
 import { parse } from 'yaml'
 
-const privatePackages = ['@astrale-os/kernel-ports', '@astrale-os/kernel-runtime']
+const privatePackages = [
+  '@astrale-os/kernel-ports',
+  '@astrale-os/kernel-runtime',
+  '@astrale-os/kernel-backend',
+  '@astrale-os/kernel-host',
+]
 const typescriptApiPattern = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*)['"]typescript['"]/u
 const dependencyFields = [
   'dependencies',
@@ -15,6 +20,9 @@ const dependencyFields = [
 const checkedFiles = [
   'package.json',
   'studio/package.json',
+  'studio/e2e/fixture/package.json',
+  '.npmrc',
+  'studio/.npmrc',
   'pnpm-workspace.yaml',
   'pnpm-lock.yaml',
 ]
@@ -30,7 +38,17 @@ for (const path of checkedFiles) {
   }
 }
 
-for (const path of ['package.json', 'studio/package.json']) {
+for (const path of ['.npmrc', 'studio/.npmrc']) {
+  const contents = await readFile(path, 'utf8')
+  assert.doesNotMatch(contents, /_authToken|NODE_AUTH_TOKEN|NPM_TOKEN/u, `${path} stores auth`)
+  assert.match(
+    contents,
+    /@astrale-os:registry=https:\/\/registry\.npmjs\.org\//u,
+    `${path} must route public Astrale packages to npmjs`,
+  )
+}
+
+for (const path of ['package.json', 'studio/package.json', 'studio/e2e/fixture/package.json']) {
   const manifest = JSON.parse(await readFile(path, 'utf8'))
   for (const field of dependencyFields) {
     for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
@@ -53,6 +71,36 @@ assert.equal(
   workspaceConfig.linkWorkspacePackages,
   false,
   'standalone CLI qualification must not link workspace packages',
+)
+assert.equal(
+  workspaceConfig.preferWorkspacePackages,
+  false,
+  'standalone CLI qualification must not prefer workspace packages',
+)
+assert.equal(
+  workspaceConfig.hoistWorkspacePackages,
+  false,
+  'standalone CLI qualification must not hoist workspace packages',
+)
+assert.equal(
+  workspaceConfig.sharedWorkspaceLockfile,
+  true,
+  'CLI, Studio, and the browser fixture must share one exact qualification lock',
+)
+assert.equal(
+  workspaceConfig.strictPeerDependencies,
+  true,
+  'CLI qualification must reject incompatible peer closures',
+)
+assert.equal(
+  workspaceConfig.blockExoticSubdeps,
+  true,
+  'CLI qualification must reject exotic transitive dependency sources',
+)
+assert.equal(
+  workspaceConfig.lockfileIncludeTarballUrl,
+  true,
+  'CLI qualification lock must expose exact registry tarball origins',
 )
 assert.equal(workspaceConfig.minimumReleaseAge, 10080, 'CLI must quarantine releases for 7 days')
 assert.equal(
@@ -78,6 +126,12 @@ assert.equal(
 )
 
 const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
+assert.equal(cliManifest.packageManager, 'pnpm@11.13.1', 'CLI must pin the qualification pnpm')
+assert.equal(
+  cliManifest.publishConfig?.registry,
+  'https://registry.npmjs.org',
+  'published CLI must target npmjs explicitly',
+)
 assert.equal(
   cliManifest.devDependencies?.typescript,
   '7.0.2',
@@ -213,10 +267,26 @@ const studioKernelReferences = studioProject.getSourceFiles().flatMap((sourceFil
 )
 assert.deepEqual(studioKernelReferences, [], 'Studio source references Kernel packages directly')
 
+const fixtureManifest = JSON.parse(await readFile('studio/e2e/fixture/package.json', 'utf8'))
+assert.equal(
+  fixtureManifest.dependencies?.['@astrale-os/sdk'],
+  cliManifest.devDependencies?.['@astrale-os/sdk'],
+  'Studio browser fixture must qualify the current exact SDK publication',
+)
+
 const lock = parse(await readFile('pnpm-lock.yaml', 'utf8'))
 assert.equal(lock.settings?.autoInstallPeers, true, 'pnpm must auto-install SDK peer dependencies')
+for (const [locator, snapshot] of Object.entries(lock.packages ?? {})) {
+  if (!locator.startsWith('@astrale-os/') && !locator.startsWith('@astrale-domains/')) continue
+  assert.match(
+    snapshot.resolution?.tarball ?? '',
+    /^https:\/\/registry\.npmjs\.org\//u,
+    `${locator} must resolve from the public npm registry`,
+  )
+}
 verifyImporter('.', cliManifest)
 verifyImporter('studio', studioManifest)
+verifyImporter('studio/e2e/fixture', fixtureManifest)
 const studioImporter = lock.importers?.studio?.dependencies
 const sdkResolution = studioImporter?.['@astrale-os/sdk']?.version
 const shellResolution = studioImporter?.['@astrale-os/shell']?.version

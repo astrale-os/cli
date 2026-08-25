@@ -32,13 +32,15 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # The CLI builds with Bun (scripts/build.ts) and the studio client build
       # shells out to Bun too — the shared action only sets up Node/pnpm.
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.0
-      - uses: astrale-os/config/.github/actions/publish/packages@c02d9486144144dff268910469870345b683e8b3
+      - uses: astrale-os/config/.github/actions/publish/packages@e0a84a92c9da33aa9046847ca2d32e785a06ec75
         with:
           dirs: '.'
           mirror-public-packages: 'false'
