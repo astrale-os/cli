@@ -316,3 +316,20 @@ authority, or deleted tests does not count.
   cannot satisfy the migrated CLI and Viewer source.
 - Kernel Protocol beta.13's public `msgpackr ^2.0.5` peer replaces the stale CLI build-time 1.x
   owner. The frozen graph now has one SDK peer context and `pnpm peers check` reports no issue.
+
+## Current public facade qualification — 2026-08-25
+
+- Root CLI and private Studio now select published SDK `0.5.0-beta.38` and Shell
+  `0.4.2-beta.3` from npm. Shell beta.3 is load-bearing: it retains child delegations strictly
+  inside the admitted credential lifetime instead of asking the Client to mint a fixed one-hour
+  proof from a shorter-lived parent credential.
+- The frozen lock contains the same exact SDK and Shell identities for both importers. Kernel
+  packages remain transitive SDK implementation dependencies; no CLI manifest, source link,
+  workspace override, archive, credential, or cohort topology was added.
+- The focused source census at CLI main `b73d179366b4b165fd04f69f6627091c1313145c`
+  reports 426 production files, 197 test files, 51 specification files, zero direct Kernel imports,
+  zero legacy SDK surfaces, and zero Interface-era fields. The public dependency verifier accepts
+  the updated manifest and lock with one SDK peer context.
+- Complete Node 22/24/26 package, Studio browser, packed dependency, and published-runtime evidence
+  is owned by the delivery PR and its immutable CI runs; focused local checks are not substituted
+  for that final qualification.
