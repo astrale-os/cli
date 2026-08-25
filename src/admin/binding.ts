@@ -1,5 +1,5 @@
 import type { Input } from '@astrale-os/sdk/client'
-import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { ClientSession, SessionRequestOptions } from '@astrale-os/sdk/client/session'
 import type {
   ResolvedClass,
   ResolvedCoreDefinition,
@@ -78,12 +78,13 @@ export async function invokeAdminMethod(
   name: string,
   receiver: Path,
   input: Input,
+  options?: SessionRequestOptions,
 ): Promise<unknown> {
   const method = [...owner.methods].find((candidate) => candidate.name === name)
   if (method === undefined || !isExecutableInstanceMethod(method)) {
     throw new TypeError(`Admin ${owner.ref.name}.${name} is not an executable instance Method.`)
   }
-  return session.invoke(reference(binding.domain, method)(receiver), input)
+  return session.invoke(reference(binding.domain, method)(receiver), input, options)
 }
 
 type ExecutableInstanceMethod = ResolvedMethod<

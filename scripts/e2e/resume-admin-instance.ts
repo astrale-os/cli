@@ -1,19 +1,30 @@
-import { bindDomain } from '@astrale-os/shell'
+import { invocation } from '@astrale-os/sdk/invocation'
 
-import { withAdminClientSession } from '../../src/connection/session.ts'
+import {
+  bindAdmin,
+  invokeAdminMethod,
+  requireAdminClass,
+  requireAdminCore,
+} from '../../src/admin/binding.js'
+import { withAdminClientSession } from '../../src/connection/session.js'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
 const slug = required('ASTRALE_E2E_INSTANCE_SLUG')
 const result = await withAdminClientSession({}, async ({ session }) => {
-  const installed = await session.installation('admin.astrale.ai')
-  const admin = await bindDomain(session, installed.bundle.root)
-  const fleet = admin.$.core.nodes.fleet?.path
-  if (fleet === undefined) throw new Error('Installed Admin Domain has no Fleet core receiver.')
-  return admin.$.invoke(
-    admin.$.class('Fleet').$.method('createInstance') as never,
+  const admin = await bindAdmin(session)
+  const Fleet = requireAdminClass(admin, 'Fleet', 'node')
+  const fleet = requireAdminCore(admin, 'fleet')
+  return invokeAdminMethod(
+    session,
+    admin,
+    Fleet,
+    'createInstance',
     fleet,
-    { operationId, slug } as never,
-    { idempotencyKey: operationId.replaceAll(':', '-'), timeoutMs: 15 * 60_000 },
+    { operationId, slug },
+    {
+      idempotencyKey: invocation.acceptIdempotencyKey(operationId.replaceAll(':', '-')),
+      timeoutMs: 15 * 60_000,
+    },
   )
 })
 

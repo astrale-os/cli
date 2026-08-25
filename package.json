@@ -54,7 +54,7 @@
     "build": "bun scripts/build.ts",
     "prepack": "pnpm run package:check",
     "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs && node scripts/verify-public-dependency-boundary.mjs",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p viewer && pnpm --dir studio run typecheck",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p viewer && pnpm --dir studio run typecheck",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
