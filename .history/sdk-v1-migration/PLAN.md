@@ -1,7 +1,8 @@
 # Implementation plan
 
-1. Lock exact CLI, Shell, SDK, and Kernel SHAs in an isolated worktree.
-2. Capture the current released-cohort typecheck, lint, format, build, and test baseline.
+1. Record the exact CLI source, published SDK/Shell versions, and Kernel revision in an isolated
+   worktree.
+2. Capture the current published-package typecheck, lint, format, build, and test baseline.
 3. Capture the exact V1 diagnostic and consumer census across CLI, Studio, Viewer, and `.spec`.
 4. Migrate semantic owner modules in dependency order: graph and connection foundations; Admin;
    Identity; commands; Studio/Viewer canonical Schema projection.
@@ -10,6 +11,6 @@
    mocks previously hid a contract mismatch.
 7. Run cleanup for duplicate/shadow types, retired exports, stale compatibility surfaces, and
    unnecessary guards; then a separate simplification pass for needless strictness or machinery.
-8. Qualify typecheck, lint, format, tests, build, package, public exports, Shell view journey, and
-   representative live Kernel commands. Defer authority-dependent live proof until the required
-   Kernel-main authority implementation exists.
+8. Qualify typecheck, lint, format, tests, build, package, public exports, Shell view journey,
+   representative live Kernel commands, and authority-sensitive fresh setup through ordinary
+   public packages.
