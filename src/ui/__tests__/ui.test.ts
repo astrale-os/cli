@@ -121,7 +121,7 @@ describe('UI release and runner contracts', () => {
     expect(release.commit).toBe(commit)
     expect(release.compatibility.base).toBe('base')
     expect(release.registry.items).toHaveLength(1)
-    expect(seen.filter((url) => url.includes('raw.githubusercontent.com'))).toEqual(
+    expect(seen.filter((url) => new URL(url).hostname === 'raw.githubusercontent.com')).toEqual(
       expect.arrayContaining([
         expect.stringContaining('/' + commit + '/tooling/compatibility.json'),
         expect.stringContaining('/' + commit + '/registry'),
