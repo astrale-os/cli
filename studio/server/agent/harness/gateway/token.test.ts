@@ -79,7 +79,7 @@ test('mints with the exact audience and instance, caches, and coalesces concurre
   expect(await broker.acquireGatewayToken(config, audience)).toBe(token)
   expect(calls).toEqual([
     {
-      args: ['token', '--audience', audience, '--ttl', '3600', '--raw', '-i', 'prod'],
+      args: ['token', '--audience', audience, '--ttl', '240', '--raw', '-i', 'prod'],
       timeoutMs: 12_000,
     },
   ])

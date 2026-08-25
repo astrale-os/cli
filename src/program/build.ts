@@ -172,7 +172,7 @@ Examples:
   $ astrale instance bookmark staging --url https://kernel.example.com
   $ astrale instance create my-app
   $ astrale instance status staging
-  $ astrale token --audience shell.astrale.ai --ttl 3600
+  $ astrale token --audience shell.astrale.ai
   $ astrale query /:notes.example.dev:class.Note --limit 50
   $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale query --file query.v6.json --cursor "$CURSOR"
