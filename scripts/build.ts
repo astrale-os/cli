@@ -10,7 +10,7 @@
  * global install does not expose their package graph at runtime.
  */
 import { existsSync } from 'node:fs'
-import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, readFile, rm, writeFile } from 'node:fs/promises'
 
 const preferJsoncParserEsm: Bun.BunPlugin = {
   name: 'prefer-jsonc-parser-esm',
@@ -103,7 +103,11 @@ console.log(`built ${OUT}`)
     console.error('viewer build FAILED')
     process.exit(1)
   }
-  await Bun.write(`${viewerDir}/dist/index.html`, Bun.file(`${viewerDir}/index.html`))
+  // Copy even when the bytes are unchanged so the output timestamp proves the
+  // complete bundle is at least as current as both source inputs. A no-op
+  // content write can retain the old timestamp and make the Node session
+  // server reject a freshly built viewer as stale.
+  await copyFile(`${viewerDir}/index.html`, `${viewerDir}/dist/index.html`)
   console.log('built viewer/dist')
 }
 
