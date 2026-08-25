@@ -1,3 +1,5 @@
+import type { AuthApi } from '@astrale-os/sdk/auth'
+import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
 import { readFile } from 'node:fs/promises'
@@ -23,8 +25,9 @@ export { ensureViewerAssets, viewerDistDir } from './assets'
  * heartbeat keeps a live session alive.
  */
 
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60_000
-const FALLBACK_TOKEN_TTL_MS = 3600_000
+const VIEW_TOKEN_TTL_SECONDS = 4 * 60
+const TOKEN_REFRESH_MARGIN_MS = 60_000
+const FALLBACK_TOKEN_TTL_MS = VIEW_TOKEN_TTL_SECONDS * 1_000
 const IDLE_SWEEP_MS = 60_000
 
 export type PageStatus = { state: string; error?: string; at: string }
@@ -44,7 +47,7 @@ export function startViewServer(config: ViewServeConfig): Server {
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
     grant = await withClientSession(config.kernel, async ({ auth, target }) => {
-      const token = await auth.mint({ audience: target.kernelIssuer, ttlSeconds: 3_600 })
+      const token = await mintViewCredential(auth, target.kernelIssuer)
       return {
         token,
         expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
@@ -180,6 +183,17 @@ export function startViewServer(config: ViewServeConfig): Server {
 
   server.listen(session.port, '127.0.0.1')
   return server
+}
+
+/** Mint a short-lived credential from the selected CLI identity proof. */
+export async function mintViewCredential(
+  auth: Pick<AuthApi, 'mint'>,
+  audience: IssuerId,
+): Promise<string> {
+  return auth.mint({
+    audience,
+    ttlSeconds: VIEW_TOKEN_TTL_SECONDS,
+  })
 }
 
 function jwtExpiry(token: string): number | null {
