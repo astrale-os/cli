@@ -1,3 +1,4 @@
+import { acceptOperationId } from '@astrale-os/sdk/client/schema'
 import { defineSchema } from '@astrale-os/sdk/schema'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
@@ -6,6 +7,8 @@ import { installDirect } from '../domain/install'
 
 const GENERATED = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
 const RETRY = '139137b5-af47-47ce-92b2-b64a2b0c63d7'
+const GENERATED_OPERATION = acceptOperationId(GENERATED)
+const RETRY_OPERATION = acceptOperationId(RETRY)
 
 const originalFetch = globalThis.fetch
 
@@ -25,7 +28,7 @@ afterEach(() => {
 describe('direct domain install operation identity', () => {
   test('generates one operation before transport and exposes it for recovery', async () => {
     globalThis.fetch = mock(async () => publicationResponse()) as unknown as typeof fetch
-    const create = mock(() => GENERATED)
+    const create = mock(() => GENERATED_OPERATION)
     const requests: unknown[] = []
     let recovery: unknown
 
@@ -39,7 +42,9 @@ describe('direct domain install operation identity', () => {
           requests.push(
             await input.fn({
               session: {
-                call: async (call: { input: unknown }) => call.input,
+                schema: {
+                  install: async (request: unknown) => request,
+                },
               },
             } as never),
           )
@@ -51,7 +56,7 @@ describe('direct domain install operation identity', () => {
     expect(requests).toEqual([
       {
         operation: GENERATED,
-        domain: { publication: { url: 'https://crm.test' } },
+        domains: [{ publication: { url: 'https://crm.test' } }],
       },
     ])
     expect(recovery).toEqual({
@@ -62,7 +67,7 @@ describe('direct domain install operation identity', () => {
 
   test('accepts an explicit operation only as the exact retry identity', async () => {
     globalThis.fetch = mock(async () => publicationResponse()) as unknown as typeof fetch
-    const create = mock(() => GENERATED)
+    const create = mock(() => GENERATED_OPERATION)
     const accepted: string[] = []
     const requests: unknown[] = []
 
@@ -73,13 +78,15 @@ describe('direct domain install operation identity', () => {
         createOperationId: create,
         acceptOperationId: (input) => {
           accepted.push(String(input))
-          return RETRY
+          return RETRY_OPERATION
         },
         runKernelCommand: async (input) => {
           requests.push(
             await input.fn({
               session: {
-                call: async (call: { input: unknown }) => call.input,
+                schema: {
+                  install: async (request: unknown) => request,
+                },
               },
             } as never),
           )
@@ -92,7 +99,7 @@ describe('direct domain install operation identity', () => {
     expect(requests).toEqual([
       {
         operation: RETRY,
-        domain: { publication: { url: 'https://crm.test' } },
+        domains: [{ publication: { url: 'https://crm.test' } }],
       },
     ])
   })

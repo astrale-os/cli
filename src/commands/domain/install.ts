@@ -1,11 +1,15 @@
-import { Path } from '@astrale-os/sdk/graph/path'
-import { K } from '@astrale-os/sdk/schema'
+import type { InstallRequest, InstallResult, OperationId } from '@astrale-os/sdk/client/schema'
+
+import {
+  acceptOperationId as acceptKernelOperationId,
+  createOperationId as createKernelOperationId,
+} from '@astrale-os/sdk/client/schema'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
-import { createPathCall, runKernelCommand, withAdminClientSession } from '../../connection'
+import { runKernelCommand, withAdminClientSession } from '../../connection'
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
 import {
@@ -22,41 +26,25 @@ import { isMachine, output } from '../../lib/output'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
 
-/** Public Kernel ensure syscall input for one remote Publication URL. */
-export function directInstallCallInput(url: string, operation: string, token?: string) {
+/** Public Kernel install syscall input for one remote Publication URL. */
+export function directInstallCallInput(url: string, operation: OperationId, token?: string) {
   return Object.freeze({
     operation,
-    domain: Object.freeze({
-      publication: Object.freeze({
-        url,
-        ...(token === undefined ? {} : { token }),
+    domains: [
+      Object.freeze({
+        publication: Object.freeze({
+          url,
+          ...(token === undefined ? {} : { token }),
+        }),
       }),
-    }),
-  })
+    ] as const,
+  }) satisfies InstallRequest
 }
-
-type DirectInstallResult =
-  | {
-      readonly changed: true
-      readonly receipt: {
-        readonly operation: string
-        readonly transitions: readonly {
-          readonly intent: {
-            readonly origin: string
-            readonly generation?: { readonly revision?: string } | null
-          }
-        }[]
-      }
-    }
-  | {
-      readonly changed: false
-      readonly domain: { readonly origin: string; readonly revision: string }
-    }
 
 const OPERATION_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
 
-function acceptOperationId(input: unknown): string {
+function acceptOperationId(input: unknown): OperationId {
   if (typeof input !== 'string' || !OPERATION_ID_PATTERN.test(input)) {
     throw new AstraleError(
       'INVALID_FLAG',
@@ -64,11 +52,11 @@ function acceptOperationId(input: unknown): string {
       'Omit --operation for a fresh install; use it only with the exact UUID printed for recovery.',
     )
   }
-  return input
+  return acceptKernelOperationId(input)
 }
 
-function createOperationId(): string {
-  return acceptOperationId(globalThis.crypto.randomUUID())
+function createOperationId(): OperationId {
+  return createKernelOperationId()
 }
 
 type InstallOpts = KernelCommandOpts &
@@ -368,8 +356,8 @@ async function activeSlug(): Promise<string | undefined> {
  * consent gate. Works on any instance the caller can authenticate to.
  */
 interface DirectInstallDependencies {
-  readonly acceptOperationId: (input: unknown) => string
-  readonly createOperationId: () => string
+  readonly acceptOperationId: (input: unknown) => OperationId
+  readonly createOperationId: () => OperationId
   readonly runKernelCommand: typeof runKernelCommand
 }
 
@@ -387,7 +375,7 @@ export async function installDirect(
   const direct = { ...defaultDirectInstallDependencies, ...dependencies }
   let host = ''
   let consentedOrigin: string | undefined
-  let operation: string
+  let operation: OperationId
   try {
     if (!target) {
       throw new AstraleError(
@@ -412,17 +400,12 @@ export async function installDirect(
   const url = target as string
   const retry = directInstallRetry(url, operation, opts)
 
-  await direct.runKernelCommand<DirectInstallResult>({
+  await direct.runKernelCommand<InstallResult>({
     opts,
     label: `Installing domain from ${url} (operation ${operation})`,
     recovery: { operation, retry },
     fn: async ({ session }) =>
-      (await session.call(
-        createPathCall(
-          Path.project(K.functions.ensure.ref).raw,
-          directInstallCallInput(url, operation, opts.token),
-        ),
-      )) as DirectInstallResult,
+      await session.schema.install(directInstallCallInput(url, operation, opts.token)),
     format: (result, fmtOpts, isRaw) => {
       if (isRaw) {
         output(result, fmtOpts)
@@ -430,12 +413,16 @@ export async function installDirect(
       }
       const transition = result.changed ? result.receipt.transitions[0]?.intent : undefined
       if (result.changed && transition === undefined) {
-        throw new Error('Kernel ensure returned no committed Domain transition.')
+        throw new Error('Kernel install returned no committed Domain transition.')
       }
-      const origin = result.changed ? transition!.origin : result.domain.origin
+      const unchanged = result.changed ? undefined : result.domains[0]
+      if (!result.changed && unchanged === undefined) {
+        throw new Error('Kernel install returned no unchanged Domain evidence.')
+      }
+      const origin = result.changed ? transition!.origin : unchanged!.origin
       const revision = result.changed
         ? (transition!.generation?.revision ?? result.receipt.operation)
-        : result.domain.revision
+        : unchanged!.revision
       log.success(`Domain ${result.changed ? 'installed' : 'already ready'}: ${origin}@${revision}`)
       log.dim(`  operation:   ${result.changed ? result.receipt.operation : operation}`)
       // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
