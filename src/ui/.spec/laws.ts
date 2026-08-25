@@ -13,3 +13,10 @@ export const CLI_UI_LOCK_AFTER_SUCCESS = defineLaw({
     'Dry runs and failed package or source operations do not advance astrale-ui.lock.json.',
   tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-LOCK-AFTER-SUCCESS' }],
 })
+
+export const CLI_UI_BOUNDED_REMOTE_DOCUMENTS = defineLaw({
+  id: 'CLI-UI-BOUNDED-REMOTE-DOCUMENTS',
+  statement:
+    'Release metadata and registry documents are size-bounded, include-bounded, and normalized to stable UI registry errors before any project mutation.',
+  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-BOUNDED-REMOTE-DOCUMENTS' }],
+})

@@ -147,6 +147,53 @@ describe('UI release and runner contracts', () => {
     await expect(resolveUiRelease('0.3.0-beta.0', unsafe)).rejects.toThrow()
     expect(seen.some((url) => url.endsWith('/registry/registry.json'))).toBe(false)
   })
+
+  /** @evidence TEST-CLI-UI-BOUNDED-REMOTE-DOCUMENTS */
+  test('bounds and normalizes malformed registry responses', async () => {
+    const fallback = mockFetch()
+    const oversized = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/tooling/compatibility.json')) {
+        return new Response('x'.repeat(1_048_577), {
+          headers: { 'content-type': 'application/json' },
+        })
+      }
+      return fallback(input, init)
+    }) as typeof fetch
+    await expect(resolveUiRelease('0.3.0-beta.0', oversized)).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+    })
+
+    const malformed = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/' + commit + '/registry.json')) {
+        return new Response('{', { headers: { 'content-type': 'application/json' } })
+      }
+      return fallback(input, init)
+    }) as typeof fetch
+    await expect(resolveUiRelease('0.3.0-beta.0', malformed)).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+    })
+  })
+
+  test('rejects include fan-out before fetching an unbounded registry graph', async () => {
+    const fallback = mockFetch()
+    const fanOut = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/' + commit + '/registry.json')) {
+        return Response.json({
+          include: Array.from(
+            { length: 100 },
+            (_, index) => 'registry/patterns/family-' + index + '/registry.json',
+          ),
+        })
+      }
+      return fallback(input, init)
+    }) as typeof fetch
+    await expect(resolveUiRelease('0.3.0-beta.0', fanOut)).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+    })
+  })
 })
 
 describe('UI initialization transaction', () => {
@@ -236,6 +283,10 @@ describe('UI initialization transaction', () => {
 })
 
 describe('UI source operations', () => {
+  test('add rejects an empty programmatic request before project discovery or tool execution', async () => {
+    await expect(addUi([], {})).rejects.toMatchObject({ code: 'UI_ITEM_NOT_FOUND' })
+  })
+
   test('rejects hostile lock file records before an operation can escape the project', () => {
     for (const items of [
       [],

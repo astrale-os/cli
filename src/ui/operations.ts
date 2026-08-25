@@ -266,6 +266,9 @@ export async function addUi(
   options: { project?: string; dryRun?: boolean; overwrite?: boolean; yes?: boolean },
   dependencies: Dependencies = {},
 ): Promise<Record<string, unknown>> {
+  if (addresses.length === 0) {
+    throw new UiError('UI_ITEM_NOT_FOUND', 'No UI item was provided.')
+  }
   const project = await discoverUiProject(options.project)
   const { lock, release } = await lockedRelease(project, dependencies.fetcher)
   const items = addresses.map((address) => findItem(release, address))

@@ -3,6 +3,8 @@ import { UiError, type UiCompatibility, type UiRegistry, type UiRelease } from '
 const NPM_PACKAGE = 'https://registry.npmjs.org/@astrale-os/ui'
 const GITHUB_API = 'https://api.github.com/repos/astrale-os/ui'
 const RAW = 'https://raw.githubusercontent.com/astrale-os/ui'
+const MAX_DOCUMENT_BYTES = 1_048_576
+const MAX_REGISTRY_DOCUMENTS = 100
 
 type Fetch = typeof fetch
 type RegistrySource = {
@@ -24,7 +26,39 @@ async function json<T>(fetcher: Fetch, url: string, label: string): Promise<T> {
   if (!response.ok) {
     throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned HTTP ' + response.status + '.')
   }
-  return (await response.json()) as T
+  const declaredLength = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_DOCUMENT_BYTES) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' exceeds the supported response size.')
+  }
+  if (!response.body) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned an empty response.')
+  }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let bytes = 0
+  while (true) {
+    const result = await reader.read()
+    if (result.done) break
+    bytes += result.value.byteLength
+    if (bytes > MAX_DOCUMENT_BYTES) {
+      await reader.cancel()
+      throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' exceeds the supported response size.')
+    }
+    chunks.push(result.value)
+  }
+  const body = new Uint8Array(bytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(body)) as T
+  } catch (cause) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned malformed JSON.', undefined, {
+      cause,
+    })
+  }
 }
 
 export async function resolveUiRelease(
@@ -90,15 +124,20 @@ async function readRegistry(commit: string, fetcher: Fetch): Promise<UiRegistry>
       !(item && typeof item === 'object' && (item as { type?: unknown }).type === 'registry:base'),
   )
   if (!publicItems.every(isInstallableItem)) {
-    throw new Error('UI registry contains an invalid installable item.')
+    throw new UiError(
+      'UI_REGISTRY_UNAVAILABLE',
+      'UI registry contains an invalid installable item.',
+    )
   }
   const installable = publicItems
-  if (installable.length === 0) throw new Error('UI registry has no installable items.')
+  if (installable.length === 0) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry has no installable items.')
+  }
   if (
     new Set(installable.map((item) => item.name)).size !== installable.length ||
     new Set(installable.map((item) => item.meta.canonicalAddress)).size !== installable.length
   ) {
-    throw new Error('UI registry contains duplicate item identities.')
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry contains duplicate item identities.')
   }
   return { name: root.name ?? 'astrale-ui', homepage: root.homepage, items: installable }
 }
@@ -112,7 +151,15 @@ async function resolveRegistryItems(
 ): Promise<unknown[]> {
   const direct = Array.isArray(source.items) ? source.items : []
   const includes = source.include ?? []
-  if (!Array.isArray(includes)) throw new Error('UI registry include must be an array.')
+  if (!Array.isArray(includes)) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry include must be an array.')
+  }
+  if (visited.size + includes.length > MAX_REGISTRY_DOCUMENTS) {
+    throw new UiError(
+      'UI_REGISTRY_UNAVAILABLE',
+      'UI registry contains too many included documents.',
+    )
+  }
   const nested = await Promise.all(
     includes.map(async (include) => {
       if (
@@ -121,12 +168,15 @@ async function resolveRegistryItems(
         !include.endsWith('registry.json') ||
         include.split('/').includes('..')
       ) {
-        throw new Error('UI registry contains an unsafe include.')
+        throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry contains an unsafe include.')
       }
       const url = new URL(include, sourceUrl).toString()
       const releaseRoot = RAW + '/' + commit + '/'
       if (!url.startsWith(releaseRoot) || visited.has(url)) {
-        throw new Error('UI registry include escaped or repeated the release snapshot.')
+        throw new UiError(
+          'UI_REGISTRY_UNAVAILABLE',
+          'UI registry include escaped or repeated the release snapshot.',
+        )
       }
       visited.add(url)
       const child = await json<RegistrySource>(fetcher, url, 'UI registry include')
