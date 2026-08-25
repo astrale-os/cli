@@ -44,6 +44,13 @@ for (const path of ['package.json', 'studio/package.json']) {
 }
 
 const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
+for (const lifecycle of ['preinstall', 'install', 'postinstall']) {
+  assert.equal(
+    cliManifest.scripts?.[lifecycle],
+    undefined,
+    `published CLI must not expose the repository-only ${lifecycle} lifecycle`,
+  )
+}
 const cliKernelPackages = dependencyFields.flatMap((field) =>
   Object.keys(cliManifest[field] ?? {}).filter((name) => name.startsWith('@astrale-os/kernel-')),
 )

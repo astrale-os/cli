@@ -300,3 +300,19 @@ authority, or deleted tests does not count.
   without persisting registry normalization, and rejects combinations with Admin target flags.
 - Focused evidence covers managed/bookmark collision, explicit source admission, issuer probing, and
   byte-for-byte registry preservation. Strict types and the complete help-surface lock are retained.
+
+## Consumer install lifecycle cleanup — 2026-08-25
+
+- The public CLI no longer publishes or runs the monorepo-only workspace guard as `preinstall`.
+  Repository commands, frozen installation, CI, and package qualification own source-checkout
+  discipline without executing Astrale package code in downstream installs.
+- The workspace allowlist now names only native packages whose install scripts are intentionally
+  admitted. Stale `false` entries for SDK, Shell, and transitive Kernel packages are removed.
+- The existing public dependency verifier rejects any future `preinstall`, `install`, or
+  `postinstall` lifecycle on the published CLI manifest; no new command or compatibility layer is
+  introduced.
+- Root and private Studio now select the exact qualified public producers: SDK beta.32 and Shell
+  beta.1. This prevents a fresh resolver from selecting an earlier facade/Domain generation that
+  cannot satisfy the migrated CLI and Viewer source.
+- Kernel Protocol beta.13's public `msgpackr ^2.0.5` peer replaces the stale CLI build-time 1.x
+  owner. The frozen graph now has one SDK peer context and `pnpm peers check` reports no issue.
