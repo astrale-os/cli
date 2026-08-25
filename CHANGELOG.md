@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.12](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.11...cli/v1.0.0-beta.12) (2026-08-25)
+
+
+### Bug Fixes
+
+* **view:** preserve credential and viewer build evidence ([#149](https://github.com/astrale-os/cli/issues/149)) ([c519a44](https://github.com/astrale-os/cli/commit/c519a44382fce37a753f8e070ca75c8e3b712174))
+
 ## [1.0.0-beta.11](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.10...cli/v1.0.0-beta.11) (2026-08-25)
 
 
