@@ -26,24 +26,11 @@ export async function introspectCommand(target: string, opts: IntrospectOpts): P
     label: `Introspect ${origin}`,
     fn: async ({ session }) => {
       const includeBundle = wantsCallable || opts.bundle === true
-      const result = await session.schema.introspect({
-        from: { kind: 'installation', origin },
-        select: {
-          state: true,
-          target: true,
-          source: true,
-          readiness: true,
-          capabilities: true,
-          ...(includeBundle ? { bundle: true as const } : {}),
-        },
-      })
-      if (result === null) {
-        throw new AstraleError(
-          'DOMAIN_NOT_INSTALLED',
-          `Domain ${origin} is not installed on this Kernel.`,
-        )
-      }
+      const result = includeBundle
+        ? await session.schema.bundle(origin as never)
+        : await session.schema.inspect(origin as never)
       if (wantsCallable) {
+        if (!('bundle' in result)) throw new TypeError('Callable introspection requires a Bundle.')
         const described = describeCallableFromBundle(path, result.bundle)
         if (described === undefined) throw missingCallableDescription(path.raw)
         return described
@@ -90,9 +77,9 @@ export default {
   description: 'Read installed Domain schema from the Kernel Schema syscall',
   afterHelpText: `
 Behavior:
-  Calls the public Kernel introspect syscall for one installed Domain.
-  A bare origin (kernel.astrale.ai or /:kernel.astrale.ai) prints installation
-  state, target, source, readiness, and capabilities. --bundle includes the
+  Calls the public Kernel Schema API for one ready Domain.
+  A bare origin (kernel.astrale.ai or /:kernel.astrale.ai) prints origin,
+  revision, generation, Publication, readiness, capabilities, and bindings. --bundle includes the
   schema bundle. A method or Function Path projects that callable's
   input/output from the installed bundle.
 

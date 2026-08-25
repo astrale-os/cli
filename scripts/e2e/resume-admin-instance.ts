@@ -1,12 +1,10 @@
-import { bindDomain } from '@astrale-os/shell'
-
+import { bindAdmin } from '../../src/admin/binding.ts'
 import { withAdminClientSession } from '../../src/connection/session.ts'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
 const slug = required('ASTRALE_E2E_INSTANCE_SLUG')
 const result = await withAdminClientSession({}, async ({ session }) => {
-  const installed = await session.installation('admin.astrale.ai')
-  const admin = await bindDomain(session, installed.bundle.root)
+  const admin = await bindAdmin(session)
   const fleet = admin.$.core.nodes.fleet?.path
   if (fleet === undefined) throw new Error('Installed Admin Domain has no Fleet core receiver.')
   return admin.$.invoke(

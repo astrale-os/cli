@@ -22,31 +22,36 @@ import { isMachine, output } from '../../lib/output'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
 
-/** Public Kernel install syscall input for one remote URL. */
+/** Public Kernel ensure syscall input for one remote Publication URL. */
 export function directInstallCallInput(url: string, operation: string, token?: string) {
   return Object.freeze({
     operation,
-    domains: [
-      Object.freeze({
-        source: Object.freeze({
-          kind: 'remote' as const,
-          url,
-          ...(token === undefined ? {} : { token }),
-        }),
+    domain: Object.freeze({
+      publication: Object.freeze({
+        url,
+        ...(token === undefined ? {} : { token }),
       }),
-    ],
+    }),
   })
 }
 
-type DirectInstallResult = {
-  readonly operation: string
-  readonly transitions: readonly {
-    readonly intent: {
-      readonly origin: string
-      readonly target?: { readonly schemaRevision?: string } | null
+type DirectInstallResult =
+  | {
+      readonly changed: true
+      readonly receipt: {
+        readonly operation: string
+        readonly transitions: readonly {
+          readonly intent: {
+            readonly origin: string
+            readonly generation?: { readonly revision?: string } | null
+          }
+        }[]
+      }
     }
-  }[]
-}
+  | {
+      readonly changed: false
+      readonly domain: { readonly origin: string; readonly revision: string }
+    }
 
 const OPERATION_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
@@ -414,7 +419,7 @@ export async function installDirect(
     fn: async ({ session }) =>
       (await session.call(
         createPathCall(
-          Path.project(K.functions.install.ref).raw,
+          Path.project(K.functions.ensure.ref).raw,
           directInstallCallInput(url, operation, opts.token),
         ),
       )) as DirectInstallResult,
@@ -423,19 +428,24 @@ export async function installDirect(
         output(result, fmtOpts)
         return
       }
-      const installed = result.transitions[0]?.intent
-      if (!installed) throw new Error('Kernel install returned no committed Domain transition.')
-      const revision = installed.target?.schemaRevision ?? result.operation
-      log.success(`Domain installed: ${installed.origin}@${revision}`)
-      log.dim(`  operation:   ${result.operation}`)
+      const transition = result.changed ? result.receipt.transitions[0]?.intent : undefined
+      if (result.changed && transition === undefined) {
+        throw new Error('Kernel ensure returned no committed Domain transition.')
+      }
+      const origin = result.changed ? transition!.origin : result.domain.origin
+      const revision = result.changed
+        ? (transition!.generation?.revision ?? result.receipt.operation)
+        : result.domain.revision
+      log.success(`Domain ${result.changed ? 'installed' : 'already ready'}: ${origin}@${revision}`)
+      log.dim(`  operation:   ${result.changed ? result.receipt.operation : operation}`)
       // Belt-and-braces: the kernel-confirmed origin is authoritative. If it
       // aliases the host and the pre-install gate never consented to THAT
       // origin (lying or unavailable Publication), say so loudly after the fact.
-      if (isIdentityOverride(installed.origin, host) && installed.origin !== consentedOrigin) {
+      if (isIdentityOverride(origin, host) && origin !== consentedOrigin) {
         log.warn(
-          `Installed origin "${installed.origin}" differs from the serving host "${host}" ` +
+          `Installed origin "${origin}" differs from the serving host "${host}" ` +
             `and was not confirmed before install (the worker Publication was unavailable). ` +
-            `Every ${installed.origin}/* call on this instance now routes to ${host}.`,
+            `Every ${origin}/* call on this instance now routes to ${host}.`,
         )
       }
     },

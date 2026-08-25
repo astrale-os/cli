@@ -10,7 +10,7 @@ import type { DomainBinding } from '@astrale-os/shell'
 
 import { reference } from '@astrale-os/sdk/client/session'
 import { Path } from '@astrale-os/sdk/graph/path'
-import { bindDomain } from '@astrale-os/shell'
+import { schema } from '@astrale-os/sdk/schema'
 
 const ADMIN_ORIGIN = 'admin.astrale.ai'
 
@@ -18,8 +18,8 @@ export type AdminBinding = DomainBinding
 
 /** Bind the exact Admin revision installed on this source Kernel. */
 export async function bindAdmin(session: ClientSession): Promise<AdminBinding> {
-  const installed = await session.installation(ADMIN_ORIGIN)
-  return requireAdminBinding(await bindDomain(session, installed.bundle.root))
+  const complete = await session.schema.bundle(ADMIN_ORIGIN as never)
+  return requireAdminBinding(session.bind(schema.resolve(complete.bundle.root)))
 }
 
 /** Admit an injected dynamic binding as the Admin Domain. */

@@ -10,22 +10,26 @@ const schema = defineSchema('admin.astrale.ai', {})
 const release = releaseFor(schema, 'https://admin.beta.astrale.ai')
 
 test('binds the installed Admin Domain instead of the source Kernel publication', async () => {
-  const installation = mock(async () => ({
-    state: 'ready' as const,
-    target: 'sha256:admin-target' as const,
-    source: { kind: 'remote' as const, publication: release.publication },
+  const loadBundle = mock(async () => ({
+    domain: {
+      origin: schema.origin,
+      revision: schemaApi.revision(schema),
+      generation: 'sha256:admin-generation',
+      publication: release.publication,
+      readiness: 'sha256:admin-readiness',
+      capabilities: { requested: {}, materialized: {} },
+      bindings: { callables: [], views: [] },
+    },
     bundle: bundle.create(schema),
-    readiness: 'sha256:admin-readiness' as const,
-    capabilities: { requested: [], materialized: [] },
   }))
   const session = {
-    installation,
+    schema: { bundle: loadBundle },
     bind: (domain: unknown) => ({ domain, graph: {} }),
   } as unknown as ClientSession
 
   const binding = await bindAdmin(session)
 
-  expect(installation).toHaveBeenCalledWith('admin.astrale.ai')
+  expect(loadBundle).toHaveBeenCalledWith('admin.astrale.ai')
   expect(binding.domain.origin).toBe('admin.astrale.ai')
   expect(binding.domain.revision).toBe(schemaApi.revision(schema))
 })

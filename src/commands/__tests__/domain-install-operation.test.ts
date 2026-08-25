@@ -51,7 +51,7 @@ describe('direct domain install operation identity', () => {
     expect(requests).toEqual([
       {
         operation: GENERATED,
-        domains: [{ source: { kind: 'remote', url: 'https://crm.test' } }],
+        domain: { publication: { url: 'https://crm.test' } },
       },
     ])
     expect(recovery).toEqual({
@@ -92,7 +92,7 @@ describe('direct domain install operation identity', () => {
     expect(requests).toEqual([
       {
         operation: RETRY,
-        domains: [{ source: { kind: 'remote', url: 'https://crm.test' } }],
+        domain: { publication: { url: 'https://crm.test' } },
       },
     ])
   })
