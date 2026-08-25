@@ -333,3 +333,16 @@ authority, or deleted tests does not count.
 - Complete Node 22/24/26 package, Studio browser, packed dependency, and published-runtime evidence
   is owned by the delivery PR and its immutable CI runs; focused local checks are not substituted
   for that final qualification.
+
+## Published CLI closure — 2026-08-25
+
+- CLI main `c57143cfd834011d47002159302ccbc2f4f8caa4` and npm
+  `@astrale-os/cli@1.0.0-beta.12` contain the SDK beta.38 and Shell beta.3 boundary plus the
+  Viewer output-freshness correction from PR #149. A clean npm execution reports the exact beta.12
+  version and exposes Instance-only infrastructure commands with no Host command.
+- Main CI run `32850919090`, npm OIDC publish run `32850919079`, CodeQL run
+  `32850919830`, and binary release run `32850919477` pass. The release contains verified
+  darwin/linux arm64/x64 archives, a manifest, and checksums at tag `cli/v1.0.0-beta.12`.
+- Current production source, root and Studio manifests, and public package metadata contain no direct
+  Kernel import or dependency. No active cohort path, source checkout, link/workspace override,
+  vendored archive, cross-repository credential, or Host command surface remains.
