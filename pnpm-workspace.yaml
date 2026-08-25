@@ -12,16 +12,8 @@ minimumReleaseAgeExclude:
   - 'bun-types@1.4.0'
 verifyDepsBeforeRun: false
 
-# Native build scripts required by the standalone CLI dependency graph. Astrale
-# package preinstalls are guarded monorepo checks and are intentional no-ops here.
+# Native build scripts required by the standalone CLI dependency graph.
 allowBuilds:
-  '@astrale-os/kernel-client': false
-  '@astrale-os/kernel-core': false
-  '@astrale-os/kernel-dsl': false
-  '@astrale-os/kernel-protocol': false
-  '@astrale-os/kernel-server': false
-  '@astrale-os/sdk': false
-  '@astrale-os/shell': false
   esbuild: true
   lightningcss: true
   msgpackr-extract: true
