@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-beta.10](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.9...cli/v1.0.0-beta.10) (2026-08-25)
+
+
+### Bug Fixes
+
+* **auth:** expire domain callback credentials ([#141](https://github.com/astrale-os/cli/issues/141)) ([4d1019f](https://github.com/astrale-os/cli/commit/4d1019fe3d22830fc259169cbd3947bd3d69f2c8))
+* **commands:** separate managed and bookmark status ([#140](https://github.com/astrale-os/cli/issues/140)) ([3d487ed](https://github.com/astrale-os/cli/commit/3d487edfe562791a23bef45060112492e60c68cb))
+* **package:** consume the qualified public SDK closure ([#143](https://github.com/astrale-os/cli/issues/143)) ([020db41](https://github.com/astrale-os/cli/commit/020db41da0910b5a24470f74997375ea4bb0eef2))
+
 ## [1.0.0-beta.9](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.8...cli/v1.0.0-beta.9) (2026-08-24)
 
 
