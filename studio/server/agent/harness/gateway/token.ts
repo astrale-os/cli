@@ -12,8 +12,8 @@ import type { HarnessGatewayConfig } from '../../../../shared/types'
 
 import { captureCommand, type CapturedCommand, type CaptureOptions } from '../process'
 
-const MINT_TTL_SECONDS = 3600
-const REFRESH_SKEW_MS = 5 * 60_000
+const MINT_TTL_SECONDS = 4 * 60
+const REFRESH_SKEW_MS = 60_000
 
 interface CachedToken {
   token: string
@@ -141,7 +141,7 @@ export class HarnessTokenBroker {
       (claims.expiresAtMs !== undefined && claims.expiresAtMs <= this.now())
     )
       throw new HarnessTokenError(
-        'could not mint a delegation token — is the instance reachable and are you signed in? (try `astrale login` / `astrale use <instance>`)',
+        'could not mint a delegation token — is the instance reachable and are you signed in? (try `astrale auth login` / `astrale instance use <instance>`)',
         'mint-failed',
       )
     this.mintCache.set(key, {

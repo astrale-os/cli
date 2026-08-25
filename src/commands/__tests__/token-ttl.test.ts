@@ -1,11 +1,13 @@
-import { describe, expect, test } from 'bun:test'
+import type { AuthApi, Identity, IssuerId, MintedCredential } from '@astrale-os/sdk/auth'
+
+import { describe, expect, mock, test } from 'bun:test'
 
 import { AstraleError } from '../../errors'
-import { parseTtl } from '../token'
+import { issueToken, parseTtl } from '../token'
 
 describe('parseTtl', () => {
-  test('defaults to 3600 seconds', () => {
-    expect(parseTtl(undefined)).toBe(3600)
+  test('defaults below the five-minute local source-credential lifetime', () => {
+    expect(parseTtl(undefined)).toBe(240)
   })
 
   test('rejects non-positive and non-integer values', () => {
@@ -17,5 +19,48 @@ describe('parseTtl', () => {
 
   test('admits a positive integer', () => {
     expect(parseTtl('90')).toBe(90)
+  })
+})
+
+describe('issueToken', () => {
+  const kernel = 'https://kernel.test' as IssuerId
+  const identity = {
+    id: 'caller' as Identity['id'],
+    issuer: 'https://issuer.test' as Identity['issuer'],
+    subject: 'caller' as Identity['subject'],
+    frozen: false,
+    requiredClaims: [],
+  } satisfies Identity
+
+  test('mints a reusable top-level credential for the Kernel audience', async () => {
+    const mint = mock(async () => 'kernel-token' as MintedCredential)
+    const delegate = mock(async () => 'delegated-token' as MintedCredential)
+    const whoami = mock(async () => identity)
+    const auth = { mint, delegate, whoami } satisfies Pick<AuthApi, 'delegate' | 'mint' | 'whoami'>
+
+    await expect(issueToken(auth, kernel, kernel, 90)).resolves.toBe(
+      'kernel-token' as MintedCredential,
+    )
+    expect(mint).toHaveBeenCalledWith({ ttlSeconds: 90 })
+    expect(whoami).not.toHaveBeenCalled()
+    expect(delegate).not.toHaveBeenCalled()
+  })
+
+  test('delegates the selected identity only for an external audience', async () => {
+    const mint = mock(async () => 'kernel-token' as MintedCredential)
+    const delegate = mock(async () => 'delegated-token' as MintedCredential)
+    const whoami = mock(async () => identity)
+    const auth = { mint, delegate, whoami } satisfies Pick<AuthApi, 'delegate' | 'mint' | 'whoami'>
+
+    await expect(issueToken(auth, kernel, 'https://service.test' as IssuerId, 120)).resolves.toBe(
+      'delegated-token' as MintedCredential,
+    )
+    expect(mint).not.toHaveBeenCalled()
+    expect(whoami).toHaveBeenCalledTimes(1)
+    expect(delegate).toHaveBeenCalledWith(identity.id, {
+      audience: 'https://service.test',
+      ttlSeconds: 120,
+      attenuation: { kind: 'identity', self: true },
+    })
   })
 })

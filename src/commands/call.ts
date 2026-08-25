@@ -4,7 +4,7 @@ import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from '../connection'
-import { presentBinary } from '../lib/binary'
+import { presentBinary, readBinaryBody } from '../lib/binary'
 import { failInput, log } from '../lib/log'
 import { output, present } from '../lib/output'
 
@@ -15,8 +15,20 @@ type CallOpts = KernelCommandOpts & {
 }
 
 type CallResult = Awaited<ReturnType<ConnectionContext['session']['dispatch']>>
+type BinaryCallResult = Extract<CallResult, { readonly kind: 'binary' }>
+type BinaryCallInput = Omit<BinaryCallResult, 'value'> & {
+  readonly value: Omit<BinaryCallResult['value'], 'body' | 'status'> & {
+    readonly body: Uint8Array | AsyncIterable<Uint8Array>
+    readonly status?: number
+  }
+}
+type CallResultInput = Exclude<CallResult, { readonly kind: 'binary' }> | BinaryCallInput
+type MaterializedBinaryCallResult = Omit<BinaryCallResult, 'value'> & {
+  readonly value: Omit<BinaryCallInput['value'], 'body'> & { readonly body: Uint8Array }
+}
 type MaterializedCallResult =
-  | Exclude<CallResult, { readonly kind: 'stream' }>
+  | Exclude<CallResult, { readonly kind: 'binary' | 'stream' }>
+  | MaterializedBinaryCallResult
   | { readonly kind: 'stream'; readonly values: readonly unknown[] }
 
 export async function callCommand(
@@ -68,7 +80,16 @@ export async function callCommand(
 }
 
 /** Drain a session-backed stream before the command-scoped Client Session closes. */
-export async function materializeCallResult(result: CallResult): Promise<MaterializedCallResult> {
+export async function materializeCallResult(
+  result: CallResultInput,
+): Promise<MaterializedCallResult> {
+  if (result.kind === 'binary') {
+    const body = await readBinaryBody(result.value.body)
+    return Object.freeze({
+      ...result,
+      value: Object.freeze({ ...result.value, body }),
+    })
+  }
   if (result.kind !== 'stream') return result
   const values: unknown[] = []
   for await (const value of result.stream) values.push(value)
@@ -170,6 +191,10 @@ Behavior:
   (ignored on a TTY). --dry-run admits the Path and prints the call
   input without executing. Remote-bound functions auto-mint a
   worker-scoped credential; --creds overrides it.
+
+  Streaming binary bodies are consumed while the Client session remains live,
+  then presented through the same --output, --raw, and --json paths as buffered
+  binary. JSON retains the application HTTP status and text/base64 body.
 
 Self-reference:
   @self expands to your nodeId on the active instance (path head or
