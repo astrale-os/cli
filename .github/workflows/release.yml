@@ -28,7 +28,7 @@ jobs:
           version="$(node -p 'require("./package.json").version')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - id: release
-        uses: astrale-os/config/.github/actions/release@main
+        uses: astrale-os/config/.github/actions/release@c02d9486144144dff268910469870345b683e8b3
         with:
           token: ${{ github.token }}
 

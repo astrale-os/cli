@@ -33,15 +33,48 @@ for (const path of ['package.json', 'studio/package.json']) {
   const manifest = JSON.parse(await readFile(path, 'utf8'))
   for (const field of dependencyFields) {
     for (const [name, specifier] of Object.entries(manifest[field] ?? {})) {
-      if (!name.startsWith('@astrale-os/')) continue
       assert.doesNotMatch(
         specifier,
         /^(?:file|link|workspace):/,
-        `${path} ${field}.${name} must resolve through an ordinary package version`,
+        `${path} ${field}.${name} must resolve through a registry package version`,
+      )
+      assert.doesNotMatch(
+        specifier,
+        /\.tgz(?:$|[?#])/u,
+        `${path} ${field}.${name} must not resolve through a vendored package archive`,
       )
     }
   }
 }
+
+const workspaceConfig = parse(await readFile('pnpm-workspace.yaml', 'utf8'))
+assert.equal(
+  workspaceConfig.linkWorkspacePackages,
+  false,
+  'standalone CLI qualification must not link workspace packages',
+)
+assert.equal(workspaceConfig.minimumReleaseAge, 10080, 'CLI must quarantine releases for 7 days')
+assert.equal(
+  workspaceConfig.minimumReleaseAgeStrict,
+  true,
+  'CLI release-age quarantine must fail closed',
+)
+assert.equal(
+  workspaceConfig.minimumReleaseAgeIgnoreMissingTime,
+  false,
+  'CLI release-age quarantine must reject missing publication times',
+)
+assert.equal(workspaceConfig.trustLockfile, false, 'CLI must verify lock entries against policy')
+assert.deepEqual(
+  workspaceConfig.minimumReleaseAgeExclude,
+  ['@astrale-os/*', '@astrale-domains/*', '@astrale/*', 'create-astrale-domain', 'bun-types@1.4.0'],
+  'CLI must use only the approved release-age exceptions',
+)
+assert.equal(
+  workspaceConfig.overrides,
+  undefined,
+  'published CLI qualification must not use dependency version overrides',
+)
 
 const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
 for (const lifecycle of ['preinstall', 'install', 'postinstall']) {
@@ -78,6 +111,11 @@ for (const facade of ['@astrale-os/sdk', '@astrale-os/shell']) {
     Object.hasOwn(studioManifest.dependencies ?? {}, facade),
     true,
     `studio/package.json dependencies must declare ${facade}`,
+  )
+  assert.equal(
+    studioManifest.dependencies[facade],
+    cliManifest.devDependencies?.[facade],
+    `CLI and Studio must qualify the same exact ${facade} publication`,
   )
 }
 
