@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-beta.29](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.28...cli/v1.0.0-beta.29) (2026-08-26)
+
+
+### Features
+
+* **commands:** bound browser profile cache and evict dormant profiles ([#204](https://github.com/astrale-os/cli/issues/204)) ([ad3f2ca](https://github.com/astrale-os/cli/commit/ad3f2cabf43f1aa2c2ea74140056cc42508a8594))
+* **lib:** persist admitted session routes ([#207](https://github.com/astrale-os/cli/issues/207)) ([7196137](https://github.com/astrale-os/cli/commit/7196137cfe6728e1244e0f1d716450d4faae6648))
+* **telemetry:** reduce an analyzed session to its durable artifacts ([#206](https://github.com/astrale-os/cli/issues/206)) ([db75a9e](https://github.com/astrale-os/cli/commit/db75a9e4277b652a106a241ee624256ceaf60c8a))
+
 ## [1.0.0-beta.28](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.27...cli/v1.0.0-beta.28) (2026-08-26)
 
 
