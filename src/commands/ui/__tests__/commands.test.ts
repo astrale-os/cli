@@ -135,7 +135,14 @@ function mockFetch(seen: string[] = []): typeof fetch {
       })
     }
     if (url.endsWith('/registry/patterns/chart/registry.json')) {
-      return Response.json({ items: [item] })
+      return Response.json({
+        items: [
+          {
+            ...item,
+            files: item.files.map((file) => ({ ...file, path: 'line-basic.tsx' })),
+          },
+        ],
+      })
     }
     if (url.endsWith('/registry.json')) {
       return Response.json({ include: ['registry/patterns/chart/registry.json'] })

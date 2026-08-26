@@ -152,7 +152,12 @@ async function resolveRegistryItems(
   fetcher: Fetch,
   visited: Set<string>,
 ): Promise<unknown[]> {
-  const direct = Array.isArray(source.items) ? source.items : []
+  const releaseRoot = RAW + '/' + commit + '/'
+  const sourceRelative = sourceUrl.slice(releaseRoot.length)
+  const sourceDirectory = sourceRelative.slice(0, Math.max(0, sourceRelative.lastIndexOf('/')))
+  const direct = Array.isArray(source.items)
+    ? source.items.map((item) => qualifyRegistryItemPaths(item, sourceDirectory))
+    : []
   const includes = source.include ?? []
   if (!Array.isArray(includes)) {
     throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry include must be an array.')
@@ -167,15 +172,21 @@ async function resolveRegistryItems(
     includes.map(async (include) => {
       if (
         typeof include !== 'string' ||
-        include.startsWith('/') ||
+        !isSafeRelative(include) ||
+        !/^[A-Za-z0-9._/-]+$/u.test(include) ||
         !include.endsWith('registry.json') ||
-        include.split('/').includes('..')
+        include === 'registry.json'
       ) {
         throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI registry contains an unsafe include.')
       }
+      const sourceDirectoryUrl = sourceUrl.slice(0, sourceUrl.lastIndexOf('/') + 1)
       const url = new URL(include, sourceUrl).toString()
-      const releaseRoot = RAW + '/' + commit + '/'
-      if (!url.startsWith(releaseRoot) || visited.has(url)) {
+      if (
+        url !== sourceDirectoryUrl + include ||
+        !url.startsWith(releaseRoot) ||
+        !url.startsWith(sourceDirectoryUrl) ||
+        visited.has(url)
+      ) {
         throw new UiError(
           'UI_REGISTRY_UNAVAILABLE',
           'UI registry include escaped or repeated the release snapshot.',
@@ -187,6 +198,40 @@ async function resolveRegistryItems(
     }),
   )
   return direct.concat(nested.flat())
+}
+
+function qualifyRegistryItemPaths(item: unknown, sourceDirectory: string): unknown {
+  if (!item || typeof item !== 'object') return item
+  const candidate = item as { files?: unknown }
+  if (!Array.isArray(candidate.files)) return item
+  return {
+    ...candidate,
+    files: candidate.files.map((file) => {
+      if (!file || typeof file !== 'object') return file
+      const candidateFile = file as { path?: unknown }
+      if (typeof candidateFile.path !== 'string') return file
+      if (
+        !isSafeRelative(candidateFile.path) ||
+        (sourceDirectory !== '' &&
+          (candidateFile.path === sourceDirectory ||
+            candidateFile.path.startsWith(sourceDirectory + '/')))
+      ) {
+        throw new UiError(
+          'UI_REGISTRY_UNAVAILABLE',
+          'UI registry contains an invalid installable item path.',
+        )
+      }
+      if (sourceDirectory === '') return file
+      const qualified = sourceDirectory + '/' + candidateFile.path
+      if (!isSafeRelative(qualified)) {
+        throw new UiError(
+          'UI_REGISTRY_UNAVAILABLE',
+          'UI registry contains an invalid installable item path.',
+        )
+      }
+      return { ...candidateFile, path: qualified }
+    }),
+  }
 }
 
 function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
@@ -256,12 +301,18 @@ export async function readUiRegistryItem(
 }
 
 function isSafeRelative(value: string): boolean {
+  const segments = value.split('/')
   return (
     value.length > 0 &&
     !value.startsWith('/') &&
     !/^[A-Za-z]:[\\/]/u.test(value) &&
     !value.includes('\\') &&
-    !value.split('/').includes('..')
+    !/[?#%]/u.test(value) &&
+    ![...value].some((character) => {
+      const code = character.codePointAt(0) ?? 0
+      return code <= 31 || code === 127
+    }) &&
+    segments.every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
   )
 }
 
