@@ -64,6 +64,27 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, (await import('../commands/studio')).default)
 
   registerGroup(program, {
+    name: 'ui',
+    description: 'Initialize and install Astrale UI in local applications',
+    commands: [
+      (await import('../commands/ui/init')).default,
+      (await import('../commands/ui/list')).default,
+      (await import('../commands/ui/add')).default,
+      (await import('../commands/ui/doctor')).default,
+    ],
+    subgroups: [
+      {
+        name: 'preset',
+        description: 'List and apply qualified Astrale UI presets',
+        commands: [
+          (await import('../commands/ui/preset-list')).default,
+          (await import('../commands/ui/preset-apply')).default,
+        ],
+      },
+    ],
+  })
+
+  registerGroup(program, {
     name: 'instance',
     description: 'Manage admin-provisioned instances and local bookmarks',
     commands: [
@@ -154,6 +175,7 @@ Command groups:
   Getting started  setup     (sign in, pick an instance, equip your workspace)
   Kernel        get, mutate, call, query, introspect, logs, view, token
   Management    admin, instance, domain, identity, auth, idp, update
+  Application   ui        (initialize, inspect, and install Astrale UI source)
   Agent         browser   (drive the GUI via agent-browser)
   Studio        studio    (launch the local Domain Studio GUI for a workspace)
 
