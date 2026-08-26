@@ -134,8 +134,45 @@ function activateTheme(current: string, statement: string): string {
     .replace(/^\n/u, '')
 }
 
-function manifestDependencies(manifest: Record<string, unknown>): Record<string, string> {
-  return { ...(manifest.dependencies as Record<string, string> | undefined) }
+type ManifestDependencySection = 'dependencies' | 'devDependencies'
+
+function manifestDependencies(
+  manifest: Record<string, unknown>,
+  section: ManifestDependencySection = 'dependencies',
+): Record<string, string> {
+  return { ...(manifest[section] as Record<string, string> | undefined) }
+}
+
+function uiDependencySection(
+  manifest: Record<string, unknown>,
+  fallback: ManifestDependencySection = 'dependencies',
+): ManifestDependencySection {
+  const runtime = Object.hasOwn(manifestDependencies(manifest), UI_PACKAGE)
+  const development = Object.hasOwn(manifestDependencies(manifest, 'devDependencies'), UI_PACKAGE)
+  if (runtime && development) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      UI_PACKAGE + ' must be declared in exactly one dependency section.',
+      'Remove it from either dependencies or devDependencies, then retry.',
+    )
+  }
+  if (development) return 'devDependencies'
+  if (runtime) return 'dependencies'
+  return fallback
+}
+
+function setUiDependency(
+  manifest: Record<string, unknown>,
+  section: ManifestDependencySection,
+  version: string,
+): void {
+  const other = section === 'dependencies' ? 'devDependencies' : 'dependencies'
+  manifest[section] = { ...manifestDependencies(manifest, section), [UI_PACKAGE]: version }
+  const otherDependencies = manifestDependencies(manifest, other)
+  if (Object.hasOwn(otherDependencies, UI_PACKAGE)) {
+    delete otherDependencies[UI_PACKAGE]
+    manifest[other] = otherDependencies
+  }
 }
 
 function domainRegistryPackagePath(project: UiProject): string {
@@ -294,6 +331,10 @@ export async function initUi(
   }
   if ((await exists(project.uiLockPath)) && !options.force) {
     const lock = await readUiLock(project.uiLockPath)
+    const dependencySection = uiDependencySection(project.packageJson)
+    const dependencyVersion = manifestDependencies(project.packageJson, dependencySection)[
+      UI_PACKAGE
+    ]
     const css = (await readOptional(project.cssPath)) ?? ''
     const components = await readOptional(project.componentsPath)
       .then((value) => (value ? (JSON.parse(value) as Record<string, unknown>) : undefined))
@@ -301,6 +342,7 @@ export async function initUi(
     const requestedVersion = options.version?.replace(/^v/u, '')
     const desired =
       (!requestedVersion || requestedVersion === lock.package.version) &&
+      dependencyVersion === lock.package.version &&
       (!options.preset || options.preset === lock.preset) &&
       css.includes(UI_PACKAGE + '/theme.css') &&
       css.includes(UI_PACKAGE + '/presets/' + lock.preset + '.css') &&
@@ -362,10 +404,7 @@ export async function initUi(
 
   try {
     const manifest = { ...project.packageJson }
-    manifest.dependencies = {
-      ...manifestDependencies(manifest),
-      [UI_PACKAGE]: release.version,
-    }
+    setUiDependency(manifest, uiDependencySection(manifest), release.version)
     await writeDomainRegistryWorkspace(project, manifest)
     await writeJson(project.packageJsonPath, manifest)
 
@@ -461,14 +500,17 @@ export async function initUi(
 async function pinUiDependency(
   project: UiProject,
   version: string,
+  section: ManifestDependencySection,
   runner: UiRunner,
 ): Promise<void> {
   const manifest = JSON.parse(await readFile(project.packageJsonPath, 'utf8')) as Record<
     string,
     unknown
   >
-  if (manifestDependencies(manifest)[UI_PACKAGE] === version) return
-  manifest.dependencies = { ...manifestDependencies(manifest), [UI_PACKAGE]: version }
+  const current = manifestDependencies(manifest, section)[UI_PACKAGE]
+  const other = section === 'dependencies' ? 'devDependencies' : 'dependencies'
+  if (current === version && manifestDependencies(manifest, other)[UI_PACKAGE] === undefined) return
+  setUiDependency(manifest, section, version)
   await writeJson(project.packageJsonPath, manifest)
   const result = await runner(project.manager, ['install'], project.root)
   if (result.code !== 0) {
@@ -663,6 +705,7 @@ export async function addUi(
     return addLocalTheme(localThemes[0]!, project, options)
   }
   const { lock, release } = await lockedRelease(project, dependencies.fetcher)
+  const dependencySection = uiDependencySection(project.packageJson)
   const items = addresses.map((address) => findItem(release, address))
   const themes = items.filter((item) => item.type === 'registry:theme')
   if (themes.length > 1) {
@@ -731,7 +774,12 @@ export async function addUi(
           throw new UiError('UI_TOOL_FAILED', 'The pinned shadcn operation omitted an item file.')
         }
       }
-      await pinUiDependency(project, lock.package.version, dependencies.runner ?? defaultUiRunner)
+      await pinUiDependency(
+        project,
+        lock.package.version,
+        dependencySection,
+        dependencies.runner ?? defaultUiRunner,
+      )
       const theme = themes[0]
       const themeTarget = theme?.files[0]?.target
       if (themeTarget) {
@@ -821,11 +869,24 @@ export async function doctorUi(
       detail: error instanceof Error ? error.message : String(error),
     })
   }
-  const dependencies = manifestDependencies(project.packageJson)
+  const runtimeVersion = manifestDependencies(project.packageJson)[UI_PACKAGE]
+  const developmentVersion = manifestDependencies(project.packageJson, 'devDependencies')[
+    UI_PACKAGE
+  ]
+  const declarations = [runtimeVersion, developmentVersion].filter(
+    (version): version is string => typeof version === 'string',
+  )
+  const packageVersion = declarations.length === 1 ? declarations[0] : undefined
   checks.push({
     check: 'package',
-    ok: typeof dependencies[UI_PACKAGE] === 'string',
-    detail: dependencies[UI_PACKAGE],
+    ok: declarations.length === 1 && (!lock || packageVersion === lock.package.version),
+    detail:
+      declarations.length > 1
+        ? 'declared in dependencies and devDependencies'
+        : packageVersion === undefined
+          ? 'missing'
+          : (runtimeVersion === packageVersion ? 'dependencies:' : 'devDependencies:') +
+            packageVersion,
   })
   const css = (await readOptional(project.cssPath)) ?? ''
   checks.push({ check: 'theme', ok: css.includes(UI_PACKAGE + '/theme.css') })
