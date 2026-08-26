@@ -35,6 +35,7 @@ const TARGET_BARREL_EXPORTS = [
   'CopyPayload',
   'DeployRecord',
   'DeployResult',
+  'DOCUMENTS_DIR',
   'DocMeta',
   'DomainAnatomy',
   'DomainCatalogEntry',

@@ -6,12 +6,13 @@ import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible'
 
 /**
- * Studio kit — the shared elegant building blocks for every section.
- * Principles: airy spacing, minimal text, icons over labels, friendly by
- * default with power-user detail one click away (DetailsDisclosure / HoverCard).
+ * Studio kit — the shared building blocks every section is composed from.
+ * One frame per section, one list idiom, one chip idiom. Tones name what a
+ * thing IS in the schema grammar (node / edge / view / core / function), never
+ * a raw colour, so a token change repaints the whole studio.
  */
 
-// ── SectionShell: one consistent, breathable frame per section ──
+// ── SectionShell: one consistent frame per section ──
 export function SectionShell({
   title,
   subtitle,
@@ -31,16 +32,14 @@ export function SectionShell({
 }) {
   return (
     <div className="h-full overflow-y-auto">
-      <div className={cn('mx-auto px-8 pt-8 pb-28', wide ? 'max-w-6xl' : 'max-w-3xl', className)}>
-        <header className="flex items-start gap-3 mb-7">
-          {icon && <div className="text-muted-foreground mt-0.5">{icon}</div>}
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-            {subtitle && (
-              <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{subtitle}</p>
-            )}
+      <div className={cn('mx-auto px-8 pt-7 pb-16', wide ? 'max-w-6xl' : 'max-w-3xl', className)}>
+        <header className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-2">
+          {icon && <div className="text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">{icon}</div>}
+          <div className="min-w-0 flex-1 basis-56">
+            <h1 className="text-[15px] font-semibold tracking-tight">{title}</h1>
+            {subtitle && <p className="mt-0.5 text-[13px] text-muted-foreground">{subtitle}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+          {actions && <div className="flex shrink-0 items-center gap-1.5">{actions}</div>}
         </header>
         {children}
       </div>
@@ -61,13 +60,13 @@ export function Group({
   className?: string
 }) {
   return (
-    <section className={cn('mb-8', className)}>
+    <section className={cn('mb-7', className)}>
       {label && (
-        <div className="flex items-baseline justify-between mb-2.5 px-1">
+        <div className="mb-2 flex items-baseline justify-between px-0.5">
           <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             {label}
           </h2>
-          {hint != null && <span className="text-xs text-muted-foreground/70">{hint}</span>}
+          {hint != null && <span className="text-xs text-muted-foreground">{hint}</span>}
         </div>
       )}
       {children}
@@ -75,19 +74,19 @@ export function Group({
   )
 }
 
-// ── Card surface (soft) ──
+// ── Surface: the one card ──
 export function Surface({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('rounded-xl border bg-card', className)} {...props} />
+  return <div className={cn('rounded-lg border bg-card', className)} {...props} />
 }
 
-// ── IconTile: a rounded square holding an icon, tinted ──
+// ── IconTile: a rounded square holding an icon, tinted by schema role ──
 const TONES: Record<string, string> = {
-  violet: 'bg-primary/12 text-primary',
-  sky: 'bg-sky-500/12 text-sky-400',
-  emerald: 'bg-emerald-500/12 text-emerald-400',
-  amber: 'bg-amber-500/12 text-amber-400',
-  rose: 'bg-rose-500/12 text-rose-400',
-  fuchsia: 'bg-fuchsia-500/12 text-fuchsia-400',
+  primary: 'bg-primary/10 text-primary',
+  node: 'bg-schema-node/10 text-schema-node',
+  edge: 'bg-schema-edge/12 text-schema-edge',
+  view: 'bg-schema-view/10 text-schema-view',
+  core: 'bg-schema-core/10 text-schema-core',
+  fn: 'bg-schema-function/10 text-schema-function',
   muted: 'bg-muted text-muted-foreground',
 }
 export function IconTile({
@@ -105,14 +104,14 @@ export function IconTile({
 }) {
   const sz =
     size === 'lg'
-      ? 'h-10 w-10 [&_svg]:h-5 [&_svg]:w-5'
+      ? 'h-9 w-9 [&_svg]:h-[18px] [&_svg]:w-[18px]'
       : size === 'sm'
-        ? 'h-7 w-7 [&_svg]:h-3.5 [&_svg]:w-3.5'
-        : 'h-9 w-9 [&_svg]:h-[18px] [&_svg]:w-[18px]'
+        ? 'h-6 w-6 [&_svg]:h-3.5 [&_svg]:w-3.5'
+        : 'h-8 w-8 [&_svg]:h-4 [&_svg]:w-4'
   return (
     <div
       className={cn(
-        'inline-flex items-center justify-center rounded-lg shrink-0',
+        'inline-flex shrink-0 items-center justify-center rounded-md',
         TONES[tone] ?? tone,
         sz,
         className,
@@ -124,7 +123,7 @@ export function IconTile({
   )
 }
 
-// ── Row: an airy list item with leading icon + title/subtitle + trailing ──
+// ── Row: the one list item — leading icon + title/subtitle + trailing ──
 export function Row({
   leading,
   title,
@@ -157,37 +156,37 @@ export function Row({
       data-anchor-excerpt={anchorExcerpt}
       data-commentable={anchorRef ? '' : undefined}
       className={cn(
-        'group/row w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors',
-        onClick && 'hover:bg-accent/60 cursor-pointer',
+        'group/row flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
+        onClick && 'cursor-pointer hover:bg-accent',
         active && 'bg-accent',
         className,
       )}
     >
       {leading}
       {(title || subtitle) && (
-        <div className="flex-1 min-w-0">
-          {title && <div className="text-sm font-extrabold truncate">{title}</div>}
+        <div className="min-w-0 flex-1">
+          {title && <div className="truncate text-[13px] font-medium">{title}</div>}
           {subtitle && (
-            <div className="text-[13px] text-muted-foreground truncate leading-snug">
-              {subtitle}
-            </div>
+            <div className="truncate text-xs leading-snug text-muted-foreground">{subtitle}</div>
           )}
         </div>
       )}
       {children}
-      {trailing && <div className="shrink-0 flex items-center gap-1.5">{trailing}</div>}
+      {trailing && <div className="flex shrink-0 items-center gap-1.5">{trailing}</div>}
     </Comp>
   )
 }
 
-// ── Chip: a soft, refined pill ──
+// ── Chip: one pill ──
 const CHIP: Record<string, string> = {
   default: 'bg-muted text-muted-foreground',
-  primary: 'bg-primary/12 text-primary',
+  primary: 'bg-primary/10 text-primary',
   success: 'bg-success/12 text-success',
-  warning: 'bg-warning/15 text-warning',
-  danger: 'bg-destructive/12 text-destructive',
-  fuchsia: 'bg-fuchsia-500/12 text-fuchsia-300',
+  warning: 'bg-warning/14 text-warning',
+  danger: 'bg-destructive/10 text-destructive',
+  node: 'bg-schema-node/10 text-schema-node',
+  edge: 'bg-schema-edge/12 text-schema-edge',
+  fn: 'bg-schema-function/10 text-schema-function',
   outline: 'border border-border text-muted-foreground',
 }
 export function Chip({
@@ -199,7 +198,7 @@ export function Chip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap',
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium',
         CHIP[tone],
         className,
       )}
@@ -210,7 +209,7 @@ export function Chip({
   )
 }
 
-// ── DetailsDisclosure: subtle power-user expander ──
+// ── DetailsDisclosure: power-user detail, one click away ──
 export function DetailsDisclosure({
   label = 'Details',
   children,
@@ -222,7 +221,7 @@ export function DetailsDisclosure({
 }) {
   return (
     <Collapsible className={className}>
-      <CollapsibleTrigger className="group/disc inline-flex items-center gap-1 text-xs text-muted-foreground/80 hover:text-foreground transition-colors">
+      <CollapsibleTrigger className="group/disc inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground">
         <ChevronRight className="h-3 w-3 transition-transform group-data-[state=open]/disc:rotate-90" />
         {label}
       </CollapsibleTrigger>
@@ -233,7 +232,7 @@ export function DetailsDisclosure({
   )
 }
 
-// ── MetaGrid: key/value pairs for technical detail (inside disclosure / hovercard) ──
+// ── MetaGrid: key/value technical detail ──
 export function MetaGrid({
   items,
   className,
@@ -245,15 +244,15 @@ export function MetaGrid({
     <dl className={cn('grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs', className)}>
       {items.map((it, i) => (
         <React.Fragment key={i}>
-          <dt className="text-muted-foreground/70 whitespace-nowrap">{it.label}</dt>
-          <dd className="font-mono text-muted-foreground break-all">{it.value}</dd>
+          <dt className="whitespace-nowrap text-muted-foreground">{it.label}</dt>
+          <dd className="break-all font-mono text-foreground/80">{it.value}</dd>
         </React.Fragment>
       ))}
     </dl>
   )
 }
 
-// ── CodeBlock: a small monospace source snippet (hovercards / detail) ──
+// ── CodeBlock ──
 export function CodeBlock({
   children,
   className,
@@ -264,7 +263,7 @@ export function CodeBlock({
   return (
     <pre
       className={cn(
-        'max-h-56 overflow-auto rounded-md bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words',
+        'max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-2 font-mono text-[11px] leading-relaxed text-muted-foreground',
         className,
       )}
     >
@@ -284,10 +283,10 @@ export function EmptyState({
   hint?: string
 }) {
   return (
-    <div className="flex flex-col items-center justify-center text-center py-12 px-6">
-      {icon && <div className="text-muted-foreground/40 mb-3 [&_svg]:h-8 [&_svg]:w-8">{icon}</div>}
-      <p className="text-sm font-medium text-muted-foreground">{title}</p>
-      {hint && <p className="text-xs text-muted-foreground/60 mt-1 max-w-xs">{hint}</p>}
+    <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
+      {icon && <div className="mb-2.5 text-muted-foreground [&_svg]:h-6 [&_svg]:w-6">{icon}</div>}
+      <p className="text-[13px] font-medium text-muted-foreground">{title}</p>
+      {hint && <p className="mt-1 max-w-xs text-xs text-muted-foreground">{hint}</p>}
     </div>
   )
 }

@@ -16,17 +16,23 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
+  useStore,
 } from '@xyflow/react'
 import { Box, Boxes, FolderClosed, FolderTree, Network, Spline } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { hasAnyUnsentDraft } from '@/components/thread'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
+import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
+import { dismissMenusOnCanvasPress } from '../dismiss'
+import { EdgeMarkerDefs } from '../edge-markers'
 import { elkLayout } from '../elk-layout'
+import { viewportForNodes } from '../fit'
 import { edgeTypes, separateParallelEdges } from '../floating-edge'
 import { NodeCommentPin } from '../node-comment-pin'
+import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
 import { type CoreNodeData, buildCoreGraph, hueMapOf, nodeAnchor } from './model'
 
@@ -40,21 +46,14 @@ export function CoreModeToggle({ count }: { count?: number }) {
   const setMode = useUI((s) => s.setCanvasMode)
   const core = mode === 'core'
   return (
-    <Button
-      size="xs"
-      variant={core ? 'default' : 'outline'}
-      onClick={() => setMode(core ? 'schema' : 'core')}
-      aria-pressed={core}
+    <CanvasToggle
+      icon={core ? <Network /> : <Boxes />}
+      label={core ? 'Schema' : 'Core'}
+      count={core ? undefined : count}
+      pressed={core}
       title={core ? 'Back to the schema graph' : 'Show core (genesis) data'}
-    >
-      {core ? <Network className="h-3.5 w-3.5" /> : <Boxes className="h-3.5 w-3.5" />}
-      {core ? 'Schema' : 'Core'}
-      {!core && count !== undefined && (
-        <span className="rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
-          {count}
-        </span>
-      )}
-    </Button>
+      onClick={() => setMode(core ? 'schema' : 'core')}
+    />
   )
 }
 
@@ -66,11 +65,16 @@ function CoreNodeCard({ data }: NodeProps) {
   return (
     <div
       className={cn(
-        'relative rounded-lg border bg-card shadow-sm w-[184px] transition-shadow',
-        d.selected ? 'ring-2 ring-primary' : 'hover:shadow-md',
+        'relative w-[200px] overflow-hidden rounded-md border bg-card transition-[border-color,box-shadow]',
+        d.selected
+          ? 'border-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-primary)_16%,transparent)]'
+          : 'hover:border-muted-foreground/40',
       )}
-      style={{ borderLeft: `3px solid oklch(0.72 0.15 ${d.hue})` }}
     >
+      <span
+        className="absolute inset-y-0 left-0 w-[3px]"
+        style={{ background: moduleTint(d.hue).mark }}
+      />
       {!d.virtual && (
         <NodeCommentPin
           anchorRef={nodeAnchor(d.path)}
@@ -81,7 +85,7 @@ function CoreNodeCard({ data }: NodeProps) {
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div className="px-2.5 py-1.5">
         <div className="flex items-center gap-2">
-          <span style={{ color: `oklch(0.82 0.14 ${d.hue})` }} className="shrink-0">
+          <span style={{ color: moduleTint(d.hue).mark }} className="shrink-0">
             {d.icon ? (
               <SchemaIcon svg={d.icon} className="h-5 w-5" />
             ) : isFolder ? (
@@ -91,8 +95,8 @@ function CoreNodeCard({ data }: NodeProps) {
             )}
           </span>
           <div className="min-w-0">
-            <div className="text-[13px] font-extrabold truncate leading-tight">{d.title}</div>
-            <div className="text-[10px] font-mono text-muted-foreground/70 truncate leading-tight">
+            <div className="truncate text-[13px] font-medium leading-tight">{d.title}</div>
+            <div className="truncate font-mono text-[10px] leading-tight text-muted-foreground">
               {d.className}
             </div>
           </div>
@@ -101,7 +105,7 @@ function CoreNodeCard({ data }: NodeProps) {
           <div className="mt-1.5 flex flex-col gap-0.5">
             {d.fields.map(([k, v]) => (
               <div key={k} className="flex items-baseline gap-1 text-[10px] leading-tight">
-                <span className="font-mono text-muted-foreground/60 shrink-0">{k}</span>
+                <span className="shrink-0 font-mono text-muted-foreground">{k}</span>
                 <span className="truncate text-foreground/80">{v}</span>
               </div>
             ))}
@@ -128,7 +132,10 @@ export function CoreView({
   selectedPath: string | null
   onSelect: (path: string | null) => void
 }) {
-  const { fitView } = useReactFlow()
+  const { setViewport } = useReactFlow()
+  const paneWidth = useStore((state) => state.width)
+  const paneHeight = useStore((state) => state.height)
+  const panZoomReady = useStore((state) => state.panZoom !== null)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
   const hues = useMemo(() => hueMapOf(core), [core])
   const structure = useMemo(() => buildCoreGraph(core, bundle, hues), [core, bundle, hues])
@@ -136,18 +143,30 @@ export function CoreView({
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
 
+  const [laidOut, setLaidOut] = useState(0)
   useEffect(() => {
     let cancelled = false
     elkLayout(structure.nodes, structure.edges).then((laid) => {
       if (cancelled) return
       setNodes(laid)
       setEdges(separateParallelEdges(structure.edges))
-      requestAnimationFrame(() => fitView({ padding: 0.2, duration: 400 }))
+      setLaidOut((n) => n + 1)
     })
     return () => {
       cancelled = true
     }
-  }, [structure, fitView])
+  }, [structure])
+
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+  const fitDone = useRef(0)
+  useEffect(() => {
+    if (laidOut === 0 || laidOut === fitDone.current || !panZoomReady) return
+    const viewport = viewportForNodes(nodesRef.current, paneWidth, paneHeight)
+    if (!viewport) return
+    fitDone.current = laidOut
+    setViewport(viewport)
+  }, [laidOut, paneWidth, paneHeight, panZoomReady, setViewport])
 
   const onNodesChange = useCallback(
     (c: NodeChange[]) => setNodes((nds) => applyNodeChanges(c, nds)),
@@ -197,6 +216,7 @@ export function CoreView({
 
   return (
     <ReactFlow
+      onPointerDownCapture={dismissMenusOnCanvasPress}
       nodes={displayNodes}
       edges={displayEdges}
       nodeTypes={nodeTypes}
@@ -209,45 +229,42 @@ export function CoreView({
       }}
       onPaneClick={() => {
         onSelect(null)
-        setOpenAnchor(null)
+        if (!hasAnyUnsentDraft()) setOpenAnchor(null)
       }}
       minZoom={0.15}
       nodesConnectable={false}
       proOptions={{ hideAttribution: true }}
     >
-      <Background gap={18} size={1} color="oklch(0.3 0.01 270)" />
-      <Controls
-        className="!bg-card !border !border-border [&_button]:!bg-card [&_button]:!border-border [&_button]:!fill-foreground"
-        showInteractive={false}
-      />
+      <Background gap={20} size={1} color="var(--color-input)" />
+      <EdgeMarkerDefs />
+      <Controls showInteractive={false} position="bottom-left" />
       <MiniMap
         pannable
         zoomable
-        className="!bg-card !border !border-border"
-        nodeColor={(n) => `oklch(0.6 0.13 ${(n.data as CoreNodeData).hue})`}
+        style={{ width: 168, height: 112 }}
+        nodeColor={(n) => moduleTint((n.data as CoreNodeData).hue).mark}
         nodeStrokeWidth={0}
-        maskColor="oklch(0.17 0.01 270 / 0.7)"
+        maskColor="oklch(0.55 0.01 255 / 0.12)"
       />
-      <Panel position="top-right" className="flex gap-1.5">
-        <Button
-          size="xs"
-          variant={showStructure ? 'default' : 'outline'}
-          onClick={() => setShowStructure((v) => !v)}
-          aria-pressed={showStructure}
-          title="Folders & the parent→child tree — toggle to focus on the semantic graph alone"
-        >
-          <FolderTree className="h-3.5 w-3.5" /> Structure
-        </Button>
-        <Button
-          size="xs"
-          variant={showSemantics ? 'default' : 'outline'}
-          onClick={() => setShowSemantics((v) => !v)}
-          aria-pressed={showSemantics}
-          title="Typed (semantic) edges — toggle to focus on the tree/organization alone"
-        >
-          <Spline className="h-3.5 w-3.5" /> Semantics
-        </Button>
-        <CoreModeToggle />
+      <Panel position="top-right">
+        <CanvasToolbar>
+          <CanvasToggle
+            icon={<FolderTree />}
+            label="Structure"
+            pressed={showStructure}
+            title="Folders and the parent→child tree"
+            onClick={() => setShowStructure((v) => !v)}
+          />
+          <CanvasToggle
+            icon={<Spline />}
+            label="Semantics"
+            pressed={showSemantics}
+            title="Typed edges between core nodes"
+            onClick={() => setShowSemantics((v) => !v)}
+          />
+          <span className="mx-0.5 h-4 w-px bg-border" />
+          <CoreModeToggle />
+        </CanvasToolbar>
       </Panel>
     </ReactFlow>
   )

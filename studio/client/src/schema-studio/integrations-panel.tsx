@@ -33,12 +33,12 @@ function DetectedRow({ name }: { name: string }) {
       excerpt={`${name} integration`}
     >
       <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
-        <IconTile tone="emerald" size="sm">
+        <IconTile tone="core" size="sm">
           <Plug />
         </IconTile>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium leading-tight">{name}</div>
-          <div className="text-[11px] text-muted-foreground/70 leading-tight">in integrations/</div>
+          <div className="text-[11px] text-muted-foreground leading-tight">in integrations/</div>
         </div>
       </div>
     </Commentable>
@@ -52,12 +52,12 @@ function RequestedRow({ slug, label }: { slug: string; label: string }) {
       excerpt={`Add ${label} integration`}
     >
       <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
-        <IconTile tone="amber" size="sm">
+        <IconTile tone="edge" size="sm">
           <Plug />
         </IconTile>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium leading-tight">{label}</div>
-          <div className="text-[11px] text-muted-foreground/70 leading-tight">requested</div>
+          <div className="text-[11px] text-muted-foreground leading-tight">requested</div>
         </div>
       </div>
     </Commentable>
@@ -110,7 +110,7 @@ function RequestButton({ domainId, taken }: { domainId: string; taken: Set<strin
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-64 p-2.5">
-        <div className="pb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <div className="pb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Request an integration
         </div>
         <input
@@ -122,14 +122,14 @@ function RequestButton({ domainId, taken }: { domainId: string; taken: Set<strin
             if (e.key === 'Enter') submit()
           }}
           placeholder="Name (e.g. Stripe)"
-          className="mb-1.5 w-full rounded-md border bg-background px-2 py-1.5 text-[13px] outline-none focus:border-primary"
+          className="mb-1.5 w-full rounded-md border bg-card px-2 py-1.5 text-[13px] outline-none focus:border-primary"
         />
         <textarea
           value={why}
           onChange={(e) => setWhy(e.target.value)}
           placeholder="Why / what for (optional)"
           rows={2}
-          className="mb-2 w-full resize-none rounded-md border bg-background px-2 py-1.5 text-[13px] outline-none focus:border-primary"
+          className="mb-2 w-full resize-none rounded-md border bg-card px-2 py-1.5 text-[13px] outline-none focus:border-primary"
         />
         <button
           type="button"
@@ -140,7 +140,7 @@ function RequestButton({ domainId, taken }: { domainId: string; taken: Set<strin
           Request
         </button>
         {taken.size > 0 && (
-          <p className="pt-2 text-[10px] leading-snug text-muted-foreground/50">
+          <p className="pt-2 text-[11px] leading-snug text-muted-foreground">
             Already present: {[...taken].join(', ')}
           </p>
         )}
@@ -182,7 +182,7 @@ export function IntegrationsPanel({ domainId }: { domainId: string }) {
 
         {detected.length > 0 && (
           <>
-            <div className="px-1.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <div className="px-1.5 pb-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Detected
             </div>
             <div className="flex flex-col gap-0.5">
@@ -196,7 +196,7 @@ export function IntegrationsPanel({ domainId }: { domainId: string }) {
         {requested.length > 0 && (
           <>
             {detected.length > 0 && <Separator className="my-2 opacity-60" />}
-            <div className="px-1.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <div className="px-1.5 pb-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Requested
             </div>
             <div className="flex flex-col gap-0.5">
@@ -208,7 +208,7 @@ export function IntegrationsPanel({ domainId }: { domainId: string }) {
         )}
 
         {detected.length === 0 && requested.length === 0 && (
-          <p className="px-2 pb-1 pt-0.5 text-[11px] text-muted-foreground/60">
+          <p className="px-2 pb-1 pt-0.5 text-[11px] text-muted-foreground">
             No integrations detected.
           </p>
         )}

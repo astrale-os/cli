@@ -30,7 +30,7 @@ test('keeps initialized sibling positions stable when another domain is resized'
   expect(resized[1].position).toEqual(initial[1].position)
 })
 
-test('keeps an explicit domain size when its content reaches the frame edge', () => {
+test('grows an explicit domain size until its content clears the frame edge', () => {
   const touching = moduleNode('catalog')
   touching.style = { width: 805, height: 180 }
   const [frame] = layoutWorkspaceFrames(
@@ -40,7 +40,9 @@ test('keeps an explicit domain size when its content reaches the frame edge', ()
     { alpha: { x: 52, y: 100 } },
   )
 
-  expect(frame.size).toEqual({ width: 857, height: 300 })
+  // 52 (content offset) + 805 (content) + 52 (padding): a saved size that would leave
+  // the modules flush against the frame is widened instead of honoured as-is.
+  expect(frame.size).toEqual({ width: 909, height: 332 })
 })
 
 test('converts a workspace node back to owner-local persisted geometry', () => {

@@ -31,7 +31,7 @@ export function WorkspaceModuleTree({
 
   return (
     <div className="py-2" data-testid="workspace-module-tree">
-      <div className="flex items-center gap-1.5 px-3 pb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1.5 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         <Layers3 className="h-3 w-3" /> Workspace modules
       </div>
       {domains.map((domain) => {
@@ -48,12 +48,12 @@ export function WorkspaceModuleTree({
         const tree = buildModuleTree(domain.input.bundle)
 
         return (
-          <section key={domainId} className="border-b border-border/40 last:border-b-0">
+          <section key={domainId} className="border-b border-border last:border-b-0">
             <div
               data-domain-id={domainId}
               className={cn(
                 'flex items-center gap-1 px-2 py-2 transition-colors',
-                active ? 'bg-sky-400/[0.075]' : 'hover:bg-accent/30',
+                active ? 'bg-accent' : 'hover:bg-accent/60',
               )}
             >
               <button
@@ -66,7 +66,7 @@ export function WorkspaceModuleTree({
                     return next
                   })
                 }
-                className="rounded p-0.5 text-muted-foreground hover:bg-white/5"
+                className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
                 title={closed ? 'Expand domain' : 'Collapse domain'}
               >
                 {closed ? (
@@ -78,15 +78,17 @@ export function WorkspaceModuleTree({
               <button
                 type="button"
                 onClick={() => activate(domainId)}
-                className="min-w-0 flex-1 truncate text-left text-[12px] font-extrabold"
+                className="min-w-0 flex-1 truncate text-left text-[12px] font-medium"
                 title={`Make ${domain.input.summary.origin} active`}
               >
                 {domain.input.summary.origin}
               </button>
-              {active && <span className="h-1.5 w-1.5 rounded-full bg-sky-300" title="Active" />}
+              {active && (
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" title="Active domain" />
+              )}
             </div>
             {!closed && (
-              <div className="border-t border-border/25 bg-background/15">
+              <div className="border-t border-border bg-muted/40">
                 <ModuleTree
                   root={tree}
                   selected={active ? selected : undefined}

@@ -15,6 +15,7 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { type MemberRef, type TreeNode } from './modules'
+import { moduleTint } from './palette'
 import { SchemaIcon } from './schema-icon'
 import { isHidden } from './visibility'
 
@@ -45,8 +46,8 @@ export function ModuleTree({
   controls?: ModuleTreeControls
 }) {
   return (
-    <div className="text-sm py-2" data-domain-id={controls?.domainId}>
-      <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+    <div className="py-2 text-[13px]" data-domain-id={controls?.domainId}>
+      <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         Modules
       </div>
       {root.children.map((c) => (
@@ -111,15 +112,15 @@ function Branch({
         data-anchor-ref={moduleId}
         data-anchor-excerpt={node.path}
         className={cn(
-          'flex items-center gap-0.5 pr-2 hover:bg-accent/50 rounded-md',
-          active && 'bg-accent text-accent-foreground',
+          'flex items-center gap-0.5 rounded-md pr-2 hover:bg-accent',
+          active && 'bg-accent',
         )}
         style={pad}
       >
         <button
           type="button"
           onClick={toggle}
-          className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-white/5"
+          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
           title={open ? 'Collapse' : 'Expand'}
         >
           {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -128,13 +129,13 @@ function Branch({
           type="button"
           onClick={() => onSelect(moduleId)}
           className={cn(
-            'flex items-center gap-1.5 flex-1 min-w-0 py-1 text-left font-bold',
-            active && 'font-extrabold',
+            'flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left font-medium',
+            active && 'font-semibold',
           )}
         >
           <FolderIcon
             className="h-3.5 w-3.5 shrink-0"
-            style={{ color: `oklch(0.78 0.12 ${node.hue})` }}
+            style={{ color: moduleTint(node.hue).mark }}
           />
           <span className="truncate">{node.name}</span>
         </button>
@@ -195,7 +196,7 @@ function Member({
   const toggleHidden = controls?.toggleHidden ?? storeToggleHidden
   const dimmed = hidden
   const Icon = m.kind === 'edge' ? Spline : Box
-  const color = m.kind === 'edge' ? 'text-amber-400' : 'text-sky-300'
+  const color = m.kind === 'edge' ? 'text-schema-edge' : 'text-schema-node'
   const ref = useRef<HTMLDivElement>(null)
   // Auto-scroll: when this row becomes the selected one, nudge it into view.
   // 'nearest' only scrolls if it's off-screen, so visible selections don't jump.
@@ -208,9 +209,9 @@ function Member({
       data-anchor-ref={m.selectId}
       data-anchor-excerpt={`${m.kind} ${m.name}`}
       className={cn(
-        'group w-full flex items-center pr-2 hover:bg-accent/50',
-        active && 'bg-accent text-accent-foreground font-black',
-        dimmed && 'opacity-50',
+        'group flex w-full items-center rounded-md pr-2 hover:bg-accent',
+        active && 'bg-accent',
+        dimmed && 'opacity-45',
       )}
       style={{ paddingLeft: 8 + (depth + 1) * 12 + 12 }}
       title={`${m.kind} ${m.name}`}
@@ -218,7 +219,10 @@ function Member({
       <button
         type="button"
         onClick={() => onSelect(m.selectId)}
-        className="flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left font-extrabold"
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-1.5 py-1 text-left',
+          active && 'font-semibold',
+        )}
       >
         {m.icon ? (
           <SchemaIcon svg={m.icon} className={cn('h-4 w-4 shrink-0', color)} />
@@ -235,7 +239,7 @@ function Member({
         }}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
         className={cn(
-          'ml-1 shrink-0 rounded p-0.5 text-muted-foreground/60 transition hover:bg-white/5 hover:text-foreground',
+          'ml-1 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground',
           hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
         )}
       >

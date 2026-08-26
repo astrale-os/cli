@@ -35,7 +35,7 @@ function DocHint({ doc }: { doc: string }) {
         <button
           type="button"
           aria-label="Description"
-          className="text-muted-foreground/40 hover:text-foreground transition-colors"
+          className="text-muted-foreground transition-colors hover:text-foreground"
         >
           <HelpCircle className="h-3.5 w-3.5" />
         </button>
@@ -72,7 +72,7 @@ export function PropertyRow({
       anchorRef={pref}
       anchorExcerpt={pname}
       leading={
-        <IconTile tone="sky" size="sm">
+        <IconTile tone="node" size="sm">
           <Icon />
         </IconTile>
       }
@@ -155,13 +155,11 @@ export function MethodCard({
         }
         title={
           <span className="flex items-center gap-1.5">
-            <span className={cn(overridden && 'line-through text-muted-foreground/70')}>
-              {mname}
-            </span>
+            <span className={cn(overridden && 'text-muted-foreground line-through')}>{mname}</span>
             <MethodAuthBadge method={method} />
             {doc && <DocHint doc={doc} />}
             {method.inheritance === 'sealed' && <Chip tone="warning">sealed</Chip>}
-            {method.inheritance === 'abstract' && <Chip tone="fuchsia">contract</Chip>}
+            {method.inheritance === 'abstract' && <Chip tone="fn">contract</Chip>}
             {overridden && <Chip tone="default">overridden</Chip>}
             {contractOnly && <Chip tone="warning">needs handler</Chip>}
             {unlinked && <Chip tone="default">unlinked</Chip>}
@@ -175,7 +173,7 @@ export function MethodCard({
         }
       />
 
-      <div className="pl-[2.625rem] pt-1.5">
+      <div className="pl-10 pt-1.5">
         <DetailsDisclosure label="Details">
           <MethodDetails method={method} link={link} owner={owner} />
         </DetailsDisclosure>
@@ -200,7 +198,7 @@ function MethodDetails({
       {/* params: name + type */}
       {params.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Input
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[13px]">
@@ -237,7 +235,7 @@ function MethodDetails({
 
       {/* return type */}
       <div className="pt-0.5">
-        <span className="text-[11px] text-muted-foreground/60">returns </span>
+        <span className="text-[11px] text-muted-foreground">returns </span>
         {method.output.mode === 'binary' ? (
           <Chip tone="outline">Binary</Chip>
         ) : method.output.mode === 'stream' ? (
@@ -272,13 +270,13 @@ function ReceiverBadge({ owner, isStatic }: { owner: string; isStatic: boolean }
         <p className="text-[12px] leading-relaxed text-muted-foreground">
           {isStatic ? (
             <>
-              Acts on the <span className="font-medium text-foreground/90">{owner} type</span>.{' '}
-              <span className="text-muted-foreground/60">(static)</span>
+              Acts on the <span className="font-medium text-foreground/80">{owner} type</span>.{' '}
+              <span className="text-muted-foreground">(static)</span>
             </>
           ) : (
             <>
-              Acts on a single <span className="font-medium text-foreground/90">{owner}</span>.{' '}
-              <span className="text-muted-foreground/60">(instance)</span>
+              Acts on a single <span className="font-medium text-foreground/80">{owner}</span>.{' '}
+              <span className="text-muted-foreground">(instance)</span>
             </>
           )}
         </p>
@@ -306,17 +304,11 @@ export function InheritedSection({
     <Group label="Inherited" hint={`${inheritedCount(groups)}`}>
       <div className="space-y-5">
         {groups.map((g) => {
-          const rail =
-            g.tier === 'local'
-              ? 'border-l-fuchsia-500/40'
-              : g.tier === 'external'
-                ? 'border-l-sky-500/40'
-                : 'border-l-border'
-          const tileTone = g.tier === 'local' ? 'fuchsia' : g.tier === 'external' ? 'sky' : 'muted'
+          const tileTone = g.tier === 'local' ? 'fn' : g.tier === 'external' ? 'node' : 'muted'
           const refBase =
             g.ref.origin === bundle.ir?.domain ? `class.${g.owner}` : `class.${classRefKey(g.ref)}`
           return (
-            <div key={refBase} className={cn('border-l-2 pl-3.5', rail)}>
+            <div key={refBase} className="border-l pl-3.5">
               {/* Base Class header — substantial and navigable. */}
               <button
                 type="button"
@@ -327,20 +319,16 @@ export function InheritedSection({
                 <IconTile tone={tileTone} size="sm">
                   <ClassGlyph tier={g.tier} iconSvg={originIcon(g.origin)} />
                 </IconTile>
-                <span className="text-sm font-semibold tracking-tight group-hover/ih:text-foreground transition-colors">
-                  {g.owner}
-                </span>
-                <Chip tone={g.tier === 'local' ? 'fuchsia' : 'outline'}>
+                <span className="text-[13px] font-semibold tracking-tight">{g.owner}</span>
+                <Chip tone={g.tier === 'local' ? 'fn' : 'outline'}>
                   {g.tier === 'local' ? 'base class' : originLabel(g.origin)}
                 </Chip>
-                <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground/50 group-hover/ih:text-muted-foreground transition-colors">
-                  inherited <ArrowUpRight className="h-3.5 w-3.5" />
-                </span>
+                <ArrowUpRight className="ml-auto h-3.5 w-3.5 text-muted-foreground" />
               </button>
               {/* full-weight members — identical treatment to the member's own */}
               <div className="space-y-2.5">
                 {g.props.length > 0 && (
-                  <Surface className="divide-y divide-border/70">
+                  <Surface className="divide-y">
                     {g.props.map(([pname, schema, optional]) => (
                       <PropertyRow
                         key={`p-${pname}`}

@@ -5,10 +5,10 @@ import { type AuthCallable, methodAuth } from '@/lib/method-auth'
 import { cn } from '@/lib/utils'
 
 const TRIGGER_TONE: Record<string, string> = {
-  emerald: 'text-emerald-400 hover:text-emerald-300',
-  sky: 'text-sky-400 hover:text-sky-300',
-  amber: 'text-amber-400 hover:text-amber-300',
-  rose: 'text-rose-400 hover:text-rose-300',
+  emerald: 'text-success',
+  sky: 'text-schema-node',
+  amber: 'text-warning',
+  rose: 'text-destructive',
 }
 
 interface MethodAuthProps {

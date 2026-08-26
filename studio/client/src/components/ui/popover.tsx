@@ -24,7 +24,7 @@ export const PopoverContent = React.forwardRef<
       // non-modal: don't trap focus / yank it from the page so the user keeps context
       onOpenAutoFocus={(e) => e.preventDefault()}
       className={cn(
-        'z-50 w-80 max-h-[var(--radix-popover-content-available-height)] overflow-hidden rounded-xl border bg-card p-3 shadow-lg outline-none',
+        'z-50 w-80 max-h-[var(--radix-popover-content-available-height)] overflow-hidden rounded-lg border bg-popover p-3 text-popover-foreground shadow-[0_8px_28px_-12px_rgb(0_0_0/0.18)] outline-none',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         className,
       )}

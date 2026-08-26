@@ -1,11 +1,11 @@
 import type { DomainCatalogEntry, IrClassRef, IrEndpoint } from '@shared/types'
+import type { Edge, Node } from '@xyflow/react'
 
 import { isIrClassRef } from '@shared/schema/identity'
-import { MarkerType, type Edge, type Node } from '@xyflow/react'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
-import { cardinalityMarkers } from '../cardinality-markers'
+import { EDGE_ARROW, edgeMarkers, formatCardinality } from '../edge-markers'
 import { elkLayout } from '../elk-layout'
 import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
 import { moduleOfClass } from '../modules'
@@ -34,7 +34,6 @@ export interface WorkspaceDomainProjection {
 export interface WorkspaceDomainNodeData extends Record<string, unknown> {
   domainId: string
   origin: string
-  memberCount: number
   active: boolean
 }
 
@@ -63,8 +62,8 @@ interface ResolvedTarget {
   unresolved?: WorkspaceExternalReference
 }
 
-const CROSS_COLOR = 'oklch(0.76 0.16 35)'
-const INHERITANCE_COLOR = 'oklch(0.72 0.18 330)'
+const CROSS_COLOR = 'oklch(0.6 0.12 35)'
+const INHERITANCE_COLOR = 'oklch(0.55 0.14 300)'
 
 export const workspaceDomainNodeId = (domainId: string) => `workspace-domain:${domainId}`
 export const qualifiedNodeId = (domainId: string, localId: string) =>
@@ -210,10 +209,7 @@ function crossDomainEdges(
       const targets = endpointClasses(edgeClass.endpoints[1]).flatMap((input) =>
         resolveClass(owner, input, origins, diagnostics),
       )
-      const cardinality = cardinalityMarkers(
-        edgeClass.endpoints[0].cardinality,
-        edgeClass.endpoints[1].cardinality,
-      )
+      const markers = edgeMarkers(edgeClass.orientation)
       for (const source of sources) {
         for (const target of targets) {
           const crossesDomain =
@@ -233,9 +229,17 @@ function crossDomainEdges(
               label: edgeClass.name,
               edgeClass: edgeClass.name,
               ownerDomainId: owner.input.summary.id,
+              sourceEnd: {
+                ...(edgeClass.endpoints?.[0]?.name ? { role: edgeClass.endpoints[0].name } : {}),
+                cardinality: formatCardinality(edgeClass.endpoints?.[0]?.cardinality),
+              },
+              targetEnd: {
+                ...(edgeClass.endpoints?.[1]?.name ? { role: edgeClass.endpoints[1].name } : {}),
+                cardinality: formatCardinality(edgeClass.endpoints?.[1]?.cardinality),
+              },
             },
-            markerStart: cardinality.markerStart,
-            markerEnd: cardinality.markerEnd,
+            markerStart: markers.markerStart,
+            markerEnd: markers.markerEnd,
             style: { stroke: CROSS_COLOR, strokeWidth: 2.5 },
           })
         }
@@ -279,12 +283,7 @@ function inheritanceEdges(
             target: target.nodeId,
             type: 'floating',
             data: { label: 'extends', kind: 'extends', ownerDomainId: owner.input.summary.id },
-            markerEnd: {
-              type: MarkerType.ArrowClosed,
-              color: INHERITANCE_COLOR,
-              width: 16,
-              height: 16,
-            },
+            markerEnd: EDGE_ARROW,
             style: {
               stroke: INHERITANCE_COLOR,
               strokeWidth: 1.7,
@@ -341,7 +340,6 @@ export function composeWorkspaceCanvas(
       data: {
         domainId,
         origin: domain.input.summary.origin,
-        memberCount: Object.keys(domain.input.bundle.ir?.classes ?? {}).length,
         active,
       } satisfies WorkspaceDomainNodeData,
       style: { width: frame.size.width, height: frame.size.height },
@@ -366,10 +364,13 @@ export function composeWorkspaceCanvas(
         },
         extent: 'parent',
         expandParent: false,
+        // Only the active domain's nodes are draggable (a drag edits ITS layout),
+        // but every node stays clickable: one click focuses the domain and selects
+        // what was clicked, instead of making the first click a no-op.
         draggable: active,
-        selectable: active,
-        focusable: active,
-        style: { ...node.style, ...(active ? {} : { pointerEvents: 'none' }) },
+        selectable: true,
+        focusable: true,
+        style: node.style,
       })
     }
     for (const edge of domain.edges) {

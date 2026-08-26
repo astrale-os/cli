@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react'
 import { Commentable } from '@/components/commentable'
 import { cn } from '@/lib/utils'
 
+import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
 import { classIcon, displayName, hueMapOf, nodeAnchor } from './model'
 
@@ -62,8 +63,8 @@ function CoreRow({
     <div>
       <div
         className={cn(
-          'group/row flex items-center gap-0.5 pr-2 rounded-md hover:bg-accent/50',
-          active && 'bg-accent text-accent-foreground',
+          'group/row flex items-center gap-0.5 rounded-md pr-2 hover:bg-accent',
+          active && 'bg-accent',
         )}
         style={{ paddingLeft: 6 + depth * 12 }}
       >
@@ -71,7 +72,7 @@ function CoreRow({
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-white/5"
+            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
             title={open ? 'Collapse' : 'Expand'}
           >
             {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
@@ -89,7 +90,7 @@ function CoreRow({
             onClick={() => onSelect(n.path)}
             className="flex w-full items-center gap-1.5 py-1 text-left min-w-0"
           >
-            <span style={{ color: `oklch(0.8 0.13 ${hue})` }} className="shrink-0">
+            <span style={{ color: moduleTint(hue).mark }} className="shrink-0">
               {icon ? (
                 <SchemaIcon svg={icon} className="h-4 w-4" />
               ) : isFolder ? (
@@ -98,8 +99,8 @@ function CoreRow({
                 <Box className="h-3.5 w-3.5" />
               )}
             </span>
-            <span className="truncate font-bold">{displayName(n)}</span>
-            <span className="ml-auto text-[10px] font-mono text-muted-foreground/50 shrink-0">
+            <span className="truncate text-[13px] font-medium">{displayName(n)}</span>
+            <span className="ml-auto shrink-0 pl-2 text-[11px] text-muted-foreground">
               {n.className}
             </span>
           </button>
@@ -140,12 +141,12 @@ export function CoreTree({
 
   return (
     <div className="text-sm py-2">
-      <div className="flex items-center gap-1.5 px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1.5 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         <Boxes className="h-3.5 w-3.5" /> Core
-        <span className="ml-auto tabular-nums text-muted-foreground/50">{core.nodes.length}</span>
+        <span className="ml-auto tabular-nums text-muted-foreground">{core.nodes.length}</span>
       </div>
       {tree.length === 0 ? (
-        <p className="px-3 pt-2 text-[12px] text-muted-foreground/60">
+        <p className="px-3 pt-2 text-[12px] text-muted-foreground">
           {core.error ? core.error.message : 'This domain defines no core (genesis) data.'}
         </p>
       ) : (

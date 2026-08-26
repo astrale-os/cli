@@ -2,6 +2,7 @@ import type { EnvName } from '@shared/types'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useMemo } from 'react'
+import { toast } from 'sonner'
 
 import { api, qk } from './api'
 import { type ViewsModel, buildViewsModel } from './views'
@@ -208,31 +209,40 @@ export function useInvalidateDomain() {
 export function useCommentMutations(id: string) {
   const qc = useQueryClient()
   const inval = () => qc.invalidateQueries({ queryKey: qk.comments(id) })
+  // A dropped write must never look like it worked: every comment mutation
+  // surfaces its failure, so the UI never silently discards what was typed.
+  const onError = (error: unknown) => toast.error(String((error as Error)?.message ?? error))
   return {
     create: useMutation({
+      onError,
       mutationFn: (b: Parameters<typeof api.createComment>[1]) => api.createComment(id, b),
       onSuccess: inval,
     }),
     reply: useMutation({
+      onError,
       mutationFn: (v: { commentId: string; entry: Parameters<typeof api.replyComment>[2] }) =>
         api.replyComment(id, v.commentId, v.entry),
       onSuccess: inval,
     }),
     edit: useMutation({
+      onError,
       mutationFn: (v: { commentId: string; entryId: string; text: string }) =>
         api.editComment(id, v.commentId, v.entryId, v.text),
       onSuccess: inval,
     }),
     setStatus: useMutation({
+      onError,
       mutationFn: (v: { commentId: string; status: 'open' | 'closed'; closeNote?: string }) =>
         api.setCommentStatus(id, v.commentId, v.status, v.closeNote),
       onSuccess: inval,
     }),
     remove: useMutation({
+      onError,
       mutationFn: (commentId: string) => api.deleteComment(id, commentId),
       onSuccess: inval,
     }),
     merge: useMutation({
+      onError,
       mutationFn: (text: string) => api.mergeReply(id, text),
       onSuccess: inval,
     }),

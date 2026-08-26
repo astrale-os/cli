@@ -102,7 +102,7 @@ export function InstanceSwitcher() {
                     </span>
                   </span>
                   {i.kind === 'managed' && (
-                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground/50">
+                    <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground">
                       managed
                     </span>
                   )}
@@ -113,7 +113,7 @@ export function InstanceSwitcher() {
                     target="_blank"
                     rel="noreferrer"
                     title={`Open ${i.name} in a new tab`}
-                    className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/60 hover:text-foreground"
+                    className="mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>

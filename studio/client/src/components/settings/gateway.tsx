@@ -90,7 +90,7 @@ export function HarnessGatewaySettings({
     return (
       <div>
         <GatewayHeading status="not applicable" />
-        <div className="rounded-lg border bg-card/40 px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+        <div className="rounded-lg border bg-card px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
           {harness.id === 'codex'
             ? 'Codex uses its own local login. The Astrale gateway currently exposes Chat Completions and Anthropic Messages, while Codex custom providers require the Responses API.'
             : `${harness.label} does not expose a Studio model-gateway adapter.`}
@@ -109,7 +109,7 @@ export function HarnessGatewaySettings({
   return (
     <div>
       <GatewayHeading status={sourceLabel} help />
-      <div className="space-y-2.5 rounded-lg border bg-card/40 px-3 py-2.5">
+      <div className="space-y-2.5 rounded-lg border bg-card px-3 py-2.5">
         <label className="flex cursor-pointer items-center gap-2 text-[13px]">
           <input
             type="checkbox"

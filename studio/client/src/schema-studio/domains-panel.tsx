@@ -55,7 +55,7 @@ function DomainRow({ domain }: { domain: ExternalDomain }) {
       </IconTile>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium leading-tight">{entry.name}</div>
-        <div className="text-[11px] text-muted-foreground/70 leading-tight">
+        <div className="text-[11px] text-muted-foreground leading-tight">
           {count} linked {count === 1 ? 'type' : 'types'}
         </div>
       </div>
@@ -63,7 +63,7 @@ function DomainRow({ domain }: { domain: ExternalDomain }) {
         type="button"
         onClick={() => toggleHidden(domainRef(domain.origin))}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent/60 hover:text-foreground"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
       >
         {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </button>
@@ -81,12 +81,12 @@ function RequestedRow({ origin }: { origin: string }) {
       excerpt={`Import ${entry.name}`}
     >
       <div className="flex items-center gap-2 rounded-lg px-1.5 py-1">
-        <IconTile tone="amber" size="sm">
+        <IconTile tone="edge" size="sm">
           {entry.icon ? <SchemaIcon svg={entry.icon} className="h-3.5 w-3.5" /> : <Globe />}
         </IconTile>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] font-medium leading-tight">{entry.name}</div>
-          <div className="text-[11px] text-muted-foreground/70 leading-tight">import requested</div>
+          <div className="text-[11px] text-muted-foreground leading-tight">import requested</div>
         </div>
       </div>
     </Commentable>
@@ -136,11 +136,11 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-64 p-1.5">
-        <div className="px-1.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <div className="px-1.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Catalog
         </div>
         {available.length === 0 ? (
-          <div className="px-1.5 py-3 text-center text-xs text-muted-foreground/60">
+          <div className="px-1.5 py-3 text-center text-xs text-muted-foreground">
             Everything imported
           </div>
         ) : (
@@ -158,7 +158,7 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
                 </IconTile>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-medium leading-tight">{e.name}</div>
-                  <div className="truncate text-[11px] text-muted-foreground/70 leading-tight">
+                  <div className="truncate text-[11px] text-muted-foreground leading-tight">
                     {e.description}
                   </div>
                 </div>
@@ -217,7 +217,7 @@ export function DomainsPanel({ domainId }: { domainId: string }) {
 
         {domains.length > 0 && (
           <>
-            <div className="px-1.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <div className="px-1.5 pb-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Imported domains
             </div>
             <div className="flex flex-col gap-0.5">
@@ -231,7 +231,7 @@ export function DomainsPanel({ domainId }: { domainId: string }) {
         {requested.length > 0 && (
           <>
             {domains.length > 0 && <Separator className="my-2 opacity-60" />}
-            <div className="px-1.5 pb-1.5 pt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            <div className="px-1.5 pb-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Requested
             </div>
             <div className="flex flex-col gap-0.5">
@@ -243,7 +243,7 @@ export function DomainsPanel({ domainId }: { domainId: string }) {
         )}
 
         {domains.length === 0 && requested.length === 0 && (
-          <p className="px-2 pb-1 pt-0.5 text-[11px] text-muted-foreground/60">
+          <p className="px-2 pb-1 pt-0.5 text-[11px] text-muted-foreground">
             No imported domains yet.
           </p>
         )}

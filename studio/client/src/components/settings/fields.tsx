@@ -95,10 +95,10 @@ export function SettingsFields({
 }) {
   return SECTIONS.map((section) => (
     <div key={section.title}>
-      <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {section.title}
       </div>
-      <div className="divide-y divide-border/50 rounded-lg border bg-card/40">
+      <div className="divide-y divide-border rounded-lg border bg-card">
         {section.fields.map((field) => (
           <div key={field.key} className="flex items-center gap-3 px-3 py-2">
             <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]">
@@ -121,7 +121,7 @@ export function SettingsFields({
               value={values[field.key] ?? ''}
               onChange={(event) => onChange(field.key, event.target.value)}
               placeholder={field.placeholder}
-              className="w-32 shrink-0 rounded-md border bg-background px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-primary"
+              className="w-32 shrink-0 rounded-md border bg-card px-2 py-1 text-right font-mono text-[13px] outline-none focus:border-primary"
             />
           </div>
         ))}

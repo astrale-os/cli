@@ -4,6 +4,7 @@ import { MessageSquare } from 'lucide-react'
 import { useId } from 'react'
 
 import { useAnchorThreads } from '@/components/anchor'
+import { hasUnsentDraft } from '@/components/thread'
 import { ThreadPopover } from '@/components/thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { useUI } from '@/lib/store'
@@ -50,12 +51,12 @@ export function NodeCommentPin({
             setOpenAnchor(open ? null : openKey, myId)
           }}
           className={cn(
-            'nodrag nopan absolute right-1 top-1 z-30 flex h-[18px] min-w-[18px] items-center justify-center gap-0.5 rounded-full px-1 text-[10px] font-bold shadow-md ring-2 ring-card hover:brightness-110',
+            'nodrag nopan absolute -right-1.5 -top-1.5 z-30 flex h-[18px] min-w-[18px] items-center justify-center gap-0.5 rounded-full px-1 text-[10px] font-semibold ring-2 ring-card',
             orphaned
-              ? 'bg-destructive text-white'
+              ? 'bg-destructive text-white hover:bg-destructive/90'
               : status === 'open'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground',
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-muted text-muted-foreground hover:bg-accent',
             className,
           )}
         >
@@ -63,7 +64,14 @@ export function NodeCommentPin({
           {threads.length}
         </button>
       </PopoverAnchor>
-      <PopoverContent side="top" align="end" className="w-80">
+      <PopoverContent
+        side="top"
+        align="end"
+        className="w-80"
+        onInteractOutside={(event) => {
+          if (hasUnsentDraft(anchorRef, threads)) event.preventDefault()
+        }}
+      >
         <ThreadPopover
           domainId={domainId}
           anchor={{ ref: anchorRef, kind }}

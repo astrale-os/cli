@@ -183,12 +183,12 @@ function eventVisual(e: AgentEvent): { icon: React.ReactNode; tone: string } {
       if (t === 'Edit' || t === 'Write' || t === 'MultiEdit')
         return { icon: <FileEdit className="h-3.5 w-3.5" />, tone: 'text-warning' }
       if (t === 'Bash')
-        return { icon: <Terminal className="h-3.5 w-3.5" />, tone: 'text-foreground/70' }
-      return { icon: <Wrench className="h-3.5 w-3.5" />, tone: 'text-foreground/60' }
+        return { icon: <Terminal className="h-3.5 w-3.5" />, tone: 'text-foreground/80' }
+      return { icon: <Wrench className="h-3.5 w-3.5" />, tone: 'text-muted-foreground' }
     }
     default:
       return {
-        icon: <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/50" />,
+        icon: <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />,
         tone: 'text-muted-foreground',
       }
   }
@@ -215,7 +215,7 @@ const EventRow = memo(function EventRow({ e }: { e: AgentEvent }) {
       <div className="min-w-0 flex-1">
         {e.kind === 'tool' ? (
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[13px]">
-            <span className="font-medium text-foreground/90">{e.tool}</span>
+            <span className="font-medium text-foreground/80">{e.tool}</span>
             {e.target && (
               <span className="truncate font-mono text-xs text-muted-foreground">{e.target}</span>
             )}
@@ -226,7 +226,7 @@ const EventRow = memo(function EventRow({ e }: { e: AgentEvent }) {
           <p
             className={cn(
               'whitespace-pre-wrap break-words text-[13px] leading-relaxed',
-              isThinking ? 'italic text-muted-foreground' : 'text-foreground/90',
+              isThinking ? 'italic text-muted-foreground' : 'text-foreground/80',
             )}
           >
             {e.text}
@@ -249,7 +249,7 @@ const STATUS_TONE: Record<AgentRun['status'], string> = {
 function PromptBlock({ title, text }: { title: string; text: string }) {
   return (
     <div className="space-y-1.5">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
         {title}
       </div>
       <pre className="max-h-[36vh] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/35 p-3 font-mono text-[11px] leading-relaxed">
@@ -297,7 +297,7 @@ export function AgentActivityDrawer() {
   const open = useAgentLive((s) => s.drawerOpen)
   const setDrawer = useAgentLive((s) => s.setDrawer)
   const domainId = useUI((s) => s.domainId)
-  const setSection = useUI((s) => s.setSection)
+  const setPanelTab = useUI((s) => s.setPanelTab)
   const run = useDisplayRun(domainId)
   const snap = useAgentSnapshot(domainId)
   const setRun = useAgentLive((s) => s.setRun)
@@ -410,12 +410,12 @@ export function AgentActivityDrawer() {
               {run.status}
             </Badge>
           )}
-          {run && <RunElapsed run={run} className="text-[11px] text-muted-foreground/70" />}
+          {run && <RunElapsed run={run} className="text-[11px] text-muted-foreground" />}
           {run?.prompt && (
             <button
               type="button"
               onClick={() => setPromptOpen(true)}
-              className="ml-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+              className="ml-1 rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               title="Show the exact prompt sent to the local agent"
             >
               Sent prompt
@@ -424,7 +424,7 @@ export function AgentActivityDrawer() {
           <button
             type="button"
             onClick={() => setDrawer(false)}
-            className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 hover:bg-accent hover:text-foreground"
+            className="ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
@@ -468,7 +468,7 @@ export function AgentActivityDrawer() {
                 Starting the agent…
               </div>
             ) : (
-              <div className="divide-y divide-border/40">
+              <div className="divide-y divide-border">
                 {events.map((e) => (
                   <EventRow key={e.id} e={e} />
                 ))}
@@ -547,7 +547,7 @@ export function AgentActivityDrawer() {
                   variant="outline"
                   onClick={() => {
                     setDrawer(false)
-                    setSection('comments')
+                    setPanelTab('comments')
                   }}
                 >
                   <MessageSquare className="h-3.5 w-3.5" /> View replies

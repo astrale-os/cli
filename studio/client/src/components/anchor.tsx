@@ -7,6 +7,7 @@ import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { CommentPin } from './comment-pin'
+import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
@@ -78,7 +79,11 @@ export function AnchorButton({
       </PopoverAnchor>
 
       <PopoverContent
-        onInteractOutside={(e) => e.preventDefault()}
+        // an outside click closes the popover — unless a reply is half-written, in
+        // which case the header's × is the deliberate way out
+        onInteractOutside={(event) => {
+          if (hasUnsentDraft(anchorRef.ref, threads)) event.preventDefault()
+        }}
         className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
       >
         <ThreadPopover

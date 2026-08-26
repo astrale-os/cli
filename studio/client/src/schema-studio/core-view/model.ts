@@ -161,7 +161,7 @@ export function buildCoreGraph(
       target,
       type: 'tree',
       data: { structural: true },
-      style: { stroke: 'oklch(0.5 0.02 264)', strokeWidth: 1.4, strokeDasharray: '4 4' },
+      style: { stroke: 'oklch(0.78 0.01 255)', strokeWidth: 1.4, strokeDasharray: '4 4' },
     })
   }
   // typed core edges (solid, coloured, labelled) — the genesis wiring
@@ -169,7 +169,7 @@ export function buildCoreGraph(
     const source = nodeAnchor(e.from)
     const target = nodeAnchor(e.to)
     if (!ids.has(source) || !ids.has(target)) continue
-    const color = 'oklch(0.72 0.16 35)'
+    const color = 'oklch(0.6 0.12 35)'
     edges.push({
       id: `core.edge.${e.from}__${e.edgeName}__${e.to}`,
       source,

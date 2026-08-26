@@ -1,6 +1,7 @@
 import { useUI } from '@/lib/store'
 
 import { useAnchorThreads } from './anchor'
+import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
@@ -33,13 +34,16 @@ export function CommentDraftPopover() {
           style={{ left: draft.x, top: draft.y, width: 1, height: 1 }}
         />
       </PopoverAnchor>
-      {/* don't lose an unsaved draft on a stray outside click — close on Esc or submit only */}
       <PopoverContent
         side="bottom"
         align="start"
         sideOffset={6}
         className="w-80"
-        onInteractOutside={(e) => e.preventDefault()}
+        // nothing typed yet → an outside click just dismisses it; once there IS a
+        // draft, only the × (or submitting) closes it, so nothing is lost by accident
+        onInteractOutside={(event) => {
+          if (hasUnsentDraft(draft.anchor.ref, threads)) event.preventDefault()
+        }}
       >
         <ThreadPopover
           domainId={draft.domainId}

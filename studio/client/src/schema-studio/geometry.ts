@@ -1,10 +1,11 @@
 import type { NodePosition } from '@shared/types'
 import type { Node } from '@xyflow/react'
 
+import { CLASS_H, CLASS_W, MODULE_HEADER, MODULE_PAD } from './palette'
+
 export type Geometry = Record<string, NodePosition>
 
-const NEW_NODE_HEIGHT = 88
-const NEW_NODE_GAP = 24
+const NEW_NODE_GAP = 20
 
 /** Persisted size is meaningful only for expanded module containers. */
 export function sizeOfNode(node: Node): { w?: number; h?: number } {
@@ -52,10 +53,10 @@ export function packPendingNodes(
   const childY = new Map<string, number>()
   for (const { node, position } of placed) {
     if (node.parentId) {
-      const below = position.y + ((node.style?.height as number) ?? NEW_NODE_HEIGHT) + NEW_NODE_GAP
-      childY.set(node.parentId, Math.max(childY.get(node.parentId) ?? 34, below))
+      const below = position.y + ((node.style?.height as number) ?? CLASS_H) + NEW_NODE_GAP
+      childY.set(node.parentId, Math.max(childY.get(node.parentId) ?? MODULE_HEADER, below))
     } else {
-      maxX = Math.max(maxX, position.x + ((node.style?.width as number) ?? 200))
+      maxX = Math.max(maxX, position.x + ((node.style?.width as number) ?? CLASS_W))
       minY = Math.min(minY, position.y)
     }
   }
@@ -66,12 +67,13 @@ export function packPendingNodes(
   const geometry: Geometry = {}
   for (const node of pending) {
     if (node.parentId) {
-      const y = childY.get(node.parentId) ?? 34
-      geometry[node.id] = { x: 14, y }
-      childY.set(node.parentId, y + NEW_NODE_HEIGHT + NEW_NODE_GAP)
+      const y = childY.get(node.parentId) ?? MODULE_HEADER
+      geometry[node.id] = { x: MODULE_PAD, y }
+      childY.set(node.parentId, y + CLASS_H + NEW_NODE_GAP)
     } else {
       geometry[node.id] = { x: trayX, y: trayY, ...sizeOfNode(node) }
-      trayY += ((node.style?.height as number) ?? 120) + NEW_NODE_GAP
+      trayY +=
+        ((node.style?.height as number) ?? MODULE_HEADER + CLASS_H + MODULE_PAD) + NEW_NODE_GAP
     }
   }
   return geometry

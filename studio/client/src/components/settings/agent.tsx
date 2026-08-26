@@ -1,6 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
 
-import { effectiveAgentEffort } from '@shared/agent-effort'
 import { updateAgentModel } from '@shared/agent-models'
 import {
   AGENT_ACCESS_LEVELS,
@@ -20,8 +19,8 @@ import { cn } from '@/lib/utils'
 import { AgentModel } from './agent-model'
 import { AgentAccessPicker, AgentEffortPicker } from './agent-pickers'
 import { AgentSession } from './agent-session'
-import { SettingsHint } from './hint'
 import { AgentLoadout } from './loadout'
+import { SettingRow, SettingSelect } from './row'
 
 export interface AgentSettingsProps {
   domainId?: string
@@ -48,11 +47,6 @@ export function AgentSettings({
   const queryClient = useQueryClient()
   const effortLevels = harness?.capabilities.effortLevels ?? [...AGENT_EFFORT_LEVELS]
   const accessLevels = harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
-  const shownEffort = effectiveAgentEffort(
-    effortLevels,
-    values.agentEffort ?? settings?.agentEffort,
-  )
-
   const selectHarness = useMutation({
     mutationFn: (input: { domainId: string; harness: string }) =>
       api.selectHarness(input.domainId, input.harness),
@@ -83,57 +77,47 @@ export function AgentSettings({
 
   return (
     <div>
-      <div className="mb-1.5 px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         Agent
       </div>
-      <div className="divide-y divide-border/50 rounded-lg border bg-card/40">
+      <div className="divide-y divide-border rounded-lg border bg-card">
         <div className="space-y-2 px-3 py-2.5">
           <div className="flex items-center gap-3">
-            <span className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]">
-              <span className="truncate">Harness</span>
-              <SettingsHint text="Which installed local coding agent handles Studio turns. Conversations are preserved independently per harness." />
-            </span>
-            <div className="flex items-center gap-1.5">
-              {harness?.locked && <Lock className="h-3 w-3 shrink-0 text-muted-foreground/40" />}
-              <select
+            <span className="min-w-0 flex-1 truncate text-[13px]">Harness</span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {harness?.locked && <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />}
+              <SettingSelect
                 disabled={!domainId || !harness || harness.locked || selectHarness.isPending}
                 value={harness?.id ?? 'claude'}
                 onChange={(event) =>
                   selectHarness.mutate({ domainId: domainId!, harness: event.target.value })
                 }
-                className="w-40 shrink-0 rounded-md border bg-background px-2 py-1 text-[13px] outline-none disabled:cursor-not-allowed disabled:text-muted-foreground"
               >
                 {harnessOptions.map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </SettingSelect>
             </div>
           </div>
           <div className="flex items-center gap-1.5 text-[11px]">
             <span
               className={cn(
                 'h-2 w-2 shrink-0 rounded-full',
-                !harness
-                  ? 'bg-muted-foreground/30'
-                  : harness.ok
-                    ? 'bg-emerald-500'
-                    : 'bg-destructive',
+                !harness ? 'bg-muted-foreground/40' : harness.ok ? 'bg-success' : 'bg-destructive',
               )}
             />
             <span
               className={cn(
                 'truncate',
-                harness && !harness.ok
-                  ? 'font-medium text-destructive'
-                  : 'text-muted-foreground/70',
+                harness && !harness.ok ? 'font-medium text-destructive' : 'text-muted-foreground',
               )}
             >
               {harness ? harness.message : 'Checking…'}
             </span>
             {harness?.locked && (
-              <span className="ml-auto shrink-0 text-muted-foreground/50">locked by --harness</span>
+              <span className="ml-auto shrink-0 text-muted-foreground">locked by --harness</span>
             )}
           </div>
         </div>
@@ -145,35 +129,24 @@ export function AgentSettings({
           onChange={setSelectedModel}
         />
 
-        <div className="space-y-1.5 px-3 py-2.5">
-          <div className="flex items-center gap-1.5 text-[13px]">
-            <span>Effort</span>
-            <SettingsHint text="Passed using the selected harness's native reasoning-effort setting. Only values supported by that harness are shown." />
-            <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
-              {shownEffort ?? 'high'}
-            </span>
-          </div>
+        <SettingRow label="Reasoning effort">
           <AgentEffortPicker
             value={values.agentEffort ?? settings?.agentEffort}
             levels={effortLevels}
             onChange={(effort) => setValues((current) => ({ ...current, agentEffort: effort }))}
           />
-        </div>
+        </SettingRow>
 
-        <div className="space-y-1.5 px-3 py-2.5">
-          <div className="flex items-center gap-1.5 text-[13px]">
-            <span>Access</span>
-            <SettingsHint text="Workspace keeps the agent sandboxed to local edits. Full automation preserves Studio's deploy/install capability and grants unrestricted local command access." />
-            <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
-              {values.agentAccess ?? settings?.agentAccess ?? 'full'}
-            </span>
-          </div>
+        <SettingRow
+          label="Access"
+          description="Workspace sandboxes the agent to local edits; full automation also lets it run commands and deploy."
+        >
           <AgentAccessPicker
             value={values.agentAccess ?? settings?.agentAccess}
             levels={accessLevels}
             onChange={(access) => setValues((current) => ({ ...current, agentAccess: access }))}
           />
-        </div>
+        </SettingRow>
 
         <AgentSession domainId={domainId} harness={harness} />
 

@@ -51,7 +51,7 @@ function SystemPrompt({ domainId }: { domainId?: string }) {
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="ml-auto rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+          className="ml-auto rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           {open ? 'Hide' : 'Show'}
         </button>
@@ -59,7 +59,7 @@ function SystemPrompt({ domainId }: { domainId?: string }) {
       {open && (
         <div>
           {isLoading ? (
-            <p className="text-[11px] text-muted-foreground/70">Loading…</p>
+            <p className="text-[11px] text-muted-foreground">Loading…</p>
           ) : error ? (
             <p className="text-[11px] text-destructive">
               {String((error as Error)?.message ?? error)}
@@ -69,7 +69,7 @@ function SystemPrompt({ domainId }: { domainId?: string }) {
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 font-mono text-[11px] leading-relaxed">
                 {data?.systemPrompt ?? ''}
               </pre>
-              <p className="mt-1 text-[10px] text-muted-foreground/50">
+              <p className="mt-1 text-[10px] text-muted-foreground">
                 bridge tools: {data?.bridge ? 'enabled' : 'disabled'}
               </p>
             </>
@@ -112,7 +112,7 @@ export function AgentLoadout({
             type="button"
             disabled={loading}
             onClick={onRefresh}
-            className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground/60 transition-colors hover:text-foreground disabled:opacity-50"
+            className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             title="Re-probe"
           >
             <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} /> re-probe
@@ -125,9 +125,9 @@ export function AgentLoadout({
               : errorMessage}
           </p>
         ) : loading && !loadout ? (
-          <p className="text-[11px] text-muted-foreground/70">Probing the harness…</p>
+          <p className="text-[11px] text-muted-foreground">Probing the harness…</p>
         ) : !loadout?.ok ? (
-          <p className="text-[11px] text-muted-foreground/70">
+          <p className="text-[11px] text-muted-foreground">
             {loadout?.detail ?? 'Loadout unavailable.'}
           </p>
         ) : (
@@ -152,7 +152,7 @@ export function AgentLoadout({
         <span className="flex items-center gap-1.5 text-[13px]">
           <span>Usage</span>
           <SettingsHint text="This Studio's agent turns on this domain (succeeded or not). Machine-wide harness totals are out of scope." />
-          <span className="ml-auto text-[11px] text-muted-foreground/60">this domain</span>
+          <span className="ml-auto text-[11px] text-muted-foreground">this domain</span>
         </span>
         <MetaRow label="Turns" value={usage?.runs ?? 0} />
         <MetaRow label="Tokens" value={formatTokens(usage?.tokens ?? 0)} />

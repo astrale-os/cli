@@ -15,11 +15,12 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
+  useStore,
 } from '@xyflow/react'
-import { AppWindow, Globe, LayoutGrid, Plug, Spline } from 'lucide-react'
+import { AppWindow, Globe, LayoutGrid, Plug, Sigma, Spline } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
+import { hasAnyUnsentDraft } from '@/components/thread'
 import { api, qk } from '@/lib/api'
 import {
   useAnatomy,
@@ -32,14 +33,18 @@ import {
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { ErdMarkerDefs } from '../cardinality-markers'
+import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
 import { CoreModeToggle } from '../core-view'
+import { dismissMenusOnCanvasPress } from '../dismiss'
+import { EdgeMarkerDefs } from '../edge-markers'
 import { elkLayout } from '../elk-layout'
 import { crossDomainEdges, externalDomains } from '../external'
+import { viewportForNodes } from '../fit'
 import { edgeTypes, separateParallelEdges } from '../floating-edge'
 import { type Geometry, applyGeometry, geometryOf, packPendingNodes, sizeOfNode } from '../geometry'
 import { useLayoutCommitter } from '../layout-commit'
 import { moduleOfClass } from '../modules'
+import { CLASS_H, CLASS_W, MODULE_PAD, moduleTint } from '../palette'
 import { type ClassNodeData, projectDomainCanvas } from '../projection'
 import { VISIBILITY_DEFAULT, domainVisible, visibilityEqual } from '../visibility'
 import { CanvasCommentPin, schemaNodeTypes } from './nodes'
@@ -62,7 +67,11 @@ export function SchemaGraph({
   domainId: string
   saved?: Record<string, NodePosition>
 }) {
-  const { fitView, getNodes } = useReactFlow()
+  const { getInternalNode, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
+  const paneWidth = useStore((state) => state.width)
+  const paneHeight = useStore((state) => state.height)
+  // setViewport silently no-ops until React Flow has wired its pan/zoom handler
+  const panZoomReady = useStore((state) => state.panZoom !== null)
   const focusId = useUI((s) => s.focusId)
   const focusClass = useUI((s) => s.focusClass)
   const panelOverlay = useUI((s) => s.panelOverlay)
@@ -80,6 +89,8 @@ export function SchemaGraph({
   const hidden = useUI((s) => s.hidden)
   const showInheritedEdges = useUI((s) => s.showInheritedEdges)
   const toggleInheritedEdges = useUI((s) => s.toggleInheritedEdges)
+  const showCardinality = useUI((s) => s.showCardinality)
+  const toggleCardinality = useUI((s) => s.toggleCardinality)
   const setVisibility = useUI((s) => s.setVisibility)
   const { data: catalog } = useCatalog()
   const { data: commentStore } = useComments(domainId)
@@ -111,6 +122,7 @@ export function SchemaGraph({
   // never lost across remounts, and data refetches (file edits) never relayout.
   const qc = useQueryClient()
   const fitted = useRef(false)
+  const [fitRequest, setFitRequest] = useState(0)
   const { commitLayout } = useLayoutCommitter()
   const commit = useCallback(
     (updates: Geometry) => {
@@ -184,13 +196,15 @@ export function SchemaGraph({
     },
     [structure, allExternal, hidden, catalog, crossE, bundle, collapsedModules, showInheritedEdges],
   )
+  // The first paint must land on a framed graph. Arm the intent here; the fit
+  // effect below runs it once the pane is measured — a cold load used to open
+  // cropped because React Flow's own fitView is queued behind its measurement
+  // lifecycle and could settle before it ever resolved.
   const firstFit = useCallback(() => {
     if (fitted.current) return
     fitted.current = true
-    requestAnimationFrame(() => {
-      fitView({ padding: 0.18, duration: 400 })
-    })
-  }, [fitView])
+    setFitRequest((n) => n + 1)
+  }, [])
 
   // Read the cache NON-reactively in the reconciler. A drag's own `commit` updates the
   // cache; if the reconciler depended on that, every drag would rebuild all nodes and
@@ -279,8 +293,8 @@ export function SchemaGraph({
             (typeof parent.style?.height === 'number' ? parent.style.height : 120)
           for (const k of all) {
             if (k.parentId !== node.parentId) continue
-            w = Math.max(w, k.position.x + (k.measured?.width ?? 160))
-            h = Math.max(h, k.position.y + (k.measured?.height ?? 88))
+            w = Math.max(w, k.position.x + (k.measured?.width ?? CLASS_W) + MODULE_PAD)
+            h = Math.max(h, k.position.y + (k.measured?.height ?? CLASS_H) + MODULE_PAD)
           }
           updates[parent.id] = {
             x: Math.round(parent.position.x),
@@ -303,8 +317,46 @@ export function SchemaGraph({
     compose(g)
     qc.setQueryData<LayoutState>(qk.layout(domainId), { positions: g })
     api.setLayout(domainId, g).catch(() => {})
-    requestAnimationFrame(() => fitView({ padding: 0.18, duration: 400 }))
-  }, [domainId, structure, fitView, compose, qc])
+    setFitRequest((n) => n + 1)
+  }, [domainId, structure, compose, qc])
+
+  // Frame the canvas whenever a fit is requested (cold load, auto-arrange) or the
+  // pane resizes under a pending request. Reads the live nodes through a ref so a
+  // drag never re-frames the view.
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+  const fitDone = useRef(0)
+  useEffect(() => {
+    // pane size is a dependency only so a pending fit can wait for it — once a
+    // request is served, resizing (e.g. opening a panel) must not re-frame the
+    // canvas and throw away the user's pan/zoom.
+    if (fitRequest === 0 || fitRequest === fitDone.current || !panZoomReady) return
+    const viewport = viewportForNodes(nodesRef.current, paneWidth, paneHeight)
+    if (!viewport) return
+    fitDone.current = fitRequest
+    setViewport(viewport)
+  }, [fitRequest, paneWidth, paneHeight, panZoomReady, setViewport])
+
+  // Selecting a class opens the right panel, which narrows the pane — pan the
+  // selection back into view when it would sit under the panel (or off-screen
+  // after a ⌘K jump). Zoom is preserved: only the framing moves.
+  useEffect(() => {
+    if (!selectedClass?.startsWith('class.') || !paneWidth || !paneHeight) return
+    const node = getInternalNode(selectedClass)
+    if (!node) return
+    const { x, y, zoom } = getViewport()
+    const cx = node.internals.positionAbsolute.x + (node.measured.width ?? CLASS_W) / 2
+    const cy = node.internals.positionAbsolute.y + (node.measured.height ?? CLASS_H) / 2
+    const screenX = cx * zoom + x
+    const screenY = cy * zoom + y
+    const margin = 24
+    const onScreen =
+      screenX > margin &&
+      screenX < paneWidth - margin &&
+      screenY > margin &&
+      screenY < paneHeight - margin
+    if (!onScreen) setCenter(cx, cy, { zoom })
+  }, [selectedClass, paneWidth, paneHeight, getInternalNode, getViewport, setCenter])
 
   // focus + context: dim non-neighbors of the active (pinned or hovered) node
   const active = focusId ?? hoverId
@@ -361,6 +413,7 @@ export function SchemaGraph({
 
   return (
     <ReactFlow
+      onPointerDownCapture={dismissMenusOnCanvasPress}
       nodes={displayNodes}
       edges={displayEdges}
       nodeTypes={schemaNodeTypes}
@@ -381,36 +434,32 @@ export function SchemaGraph({
       }}
       onPaneClick={() => {
         setFocus(null)
-        setOpenAnchor(null)
+        // keep a half-written comment open — its own × closes it
+        if (!hasAnyUnsentDraft()) setOpenAnchor(null)
       }}
       minZoom={0.15}
       nodesConnectable={false}
       edgesFocusable={true}
       proOptions={{ hideAttribution: true }}
     >
-      <Background gap={18} size={1} color="oklch(0.3 0.01 270)" />
-      <ErdMarkerDefs />
-      <Controls
-        className="!bg-card !border !border-border [&_button]:!bg-card [&_button]:!border-border [&_button]:!fill-foreground"
-        showInteractive={false}
-      >
-        <ControlButton onClick={autoArrange} title="Auto-arrange (ELK) — clears manual layout">
-          <LayoutGrid className="h-4 w-4 text-foreground" />
+      <Background gap={20} size={1} color="var(--color-input)" />
+      <EdgeMarkerDefs />
+      <Controls showInteractive={false} position="bottom-left">
+        <ControlButton onClick={autoArrange} title="Auto-arrange — discards manual positions">
+          <LayoutGrid className="h-3.5 w-3.5" />
         </ControlButton>
       </Controls>
       <MiniMap
         pannable
         zoomable
-        className="!bg-card !border !border-border"
+        style={{ width: 168, height: 112 }}
         nodeColor={(n) =>
-          n.type === 'classNode'
-            ? `oklch(0.6 0.13 ${(n.data as ClassNodeData).hue})`
-            : 'transparent'
+          n.type === 'classNode' ? moduleTint((n.data as ClassNodeData).hue).mark : 'transparent'
         }
         nodeStrokeWidth={0}
-        maskColor="oklch(0.17 0.01 270 / 0.7)"
+        maskColor="oklch(0.55 0.01 255 / 0.12)"
       />
-      <Panel position="top-right" className="flex gap-1.5">
+      <Panel position="top-right" className="flex items-center gap-1.5">
         {canvasFallbackComments.length > 0 && (
           <CanvasCommentPin
             threads={canvasFallbackComments}
@@ -418,48 +467,46 @@ export function SchemaGraph({
             excerpt="Schema canvas"
           />
         )}
-        <Button
-          size="xs"
-          variant={panelOverlay === 'domains' ? 'default' : 'outline'}
-          onClick={() => setPanelOverlay(panelOverlay === 'domains' ? null : 'domains')}
-          title="Imported domains — shown in the right panel"
-        >
-          <Globe className="h-3.5 w-3.5" /> Domains
-          <span className="rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
-            {allExternal.length}
-          </span>
-        </Button>
-        <Button
-          size="xs"
-          variant={panelOverlay === 'views' ? 'default' : 'outline'}
-          onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
-          title="Views — shown in the right panel"
-        >
-          <AppWindow className="h-3.5 w-3.5" /> Views
-          <span className="rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
-            {viewsCount}
-          </span>
-        </Button>
-        <Button
-          size="xs"
-          variant={panelOverlay === 'integrations' ? 'default' : 'outline'}
-          onClick={() => setPanelOverlay(panelOverlay === 'integrations' ? null : 'integrations')}
-          title="Integrations — shown in the right panel"
-        >
-          <Plug className="h-3.5 w-3.5" /> Integrations
-          <span className="rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
-            {integrationsCount}
-          </span>
-        </Button>
-        <Button
-          size="xs"
-          variant={showInheritedEdges ? 'default' : 'outline'}
-          onClick={toggleInheritedEdges}
-          title="Toggle Class inheritance edges"
-        >
-          <Spline className="h-3.5 w-3.5" /> Inherited
-        </Button>
-        <CoreModeToggle count={coreCount} />
+        <CanvasToolbar>
+          <CanvasToggle
+            icon={<Globe />}
+            label="Domains"
+            count={allExternal.length}
+            pressed={panelOverlay === 'domains'}
+            title="Imported domains"
+            onClick={() => setPanelOverlay(panelOverlay === 'domains' ? null : 'domains')}
+          />
+          <CanvasToggle
+            icon={<AppWindow />}
+            label="Views"
+            count={viewsCount}
+            pressed={panelOverlay === 'views'}
+            onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
+          />
+          <CanvasToggle
+            icon={<Plug />}
+            label="Integrations"
+            count={integrationsCount}
+            pressed={panelOverlay === 'integrations'}
+            onClick={() => setPanelOverlay(panelOverlay === 'integrations' ? null : 'integrations')}
+          />
+          <span className="mx-0.5 h-4 w-px bg-border" />
+          <CanvasToggle
+            icon={<Spline />}
+            label="Inherited"
+            pressed={showInheritedEdges}
+            title="Show inheritance edges"
+            onClick={toggleInheritedEdges}
+          />
+          <CanvasToggle
+            icon={<Sigma />}
+            label="Cardinality"
+            pressed={showCardinality}
+            title="Spell out how many of each side a relationship allows"
+            onClick={toggleCardinality}
+          />
+          <CoreModeToggle count={coreCount} />
+        </CanvasToolbar>
       </Panel>
     </ReactFlow>
   )

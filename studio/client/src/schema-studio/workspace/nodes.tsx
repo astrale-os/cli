@@ -60,17 +60,15 @@ function ResizeCorner({
           height: Math.round(size.height),
         })
       }
-      style={
-        placement === 'domain'
-          ? { left: 'calc(100% - 6px)', top: 'calc(100% + 20px)' }
-          : { left: 'calc(100% + 20px)', top: 'calc(100% + 20px)' }
-      }
-      className="nodrag nopan !flex !h-6 !w-6 !cursor-se-resize !items-start !justify-start !border-0 !bg-transparent !p-0"
+      // sits ON the frame's bottom-right corner (it used to float in empty space,
+      // reading as a stray artifact) and only appears while the frame is hovered
+      style={{ left: 'calc(100% - 16px)', top: 'calc(100% - 16px)' }}
+      className="nodrag nopan !flex !h-4 !w-4 !cursor-se-resize !items-end !justify-end !border-0 !bg-transparent !p-0 opacity-0 transition-opacity group-hover/frame:opacity-100"
     >
       <span
         data-testid={`workspace-resize-${nodeId}`}
         title={label}
-        className="block h-3 w-3 rounded-br-[3px] border-b-2 border-r-2 border-sky-300/60 opacity-45 transition-[opacity,border-color] hover:border-sky-200 hover:opacity-100 active:border-sky-100 active:opacity-100"
+        className="block h-2.5 w-2.5 rounded-br-[3px] border-b-2 border-r-2 border-muted-foreground transition-colors hover:border-primary"
       />
     </NodeResizeControl>
   )
@@ -84,30 +82,25 @@ function WorkspaceDomainNode({ id, data }: NodeProps) {
       data-domain-id={domain.domainId}
       title={domain.active ? undefined : `Click to activate ${domain.origin}`}
       className={cn(
-        'relative h-full w-full rounded-[22px] border-2 bg-card/[0.035] shadow-[0_24px_80px_-48px_rgba(0,0,0,0.9)] transition-colors',
+        'group/frame relative h-full w-full rounded-xl border bg-card transition-colors',
         domain.active
-          ? 'border-sky-400/55 bg-sky-400/[0.045]'
-          : 'cursor-pointer border-border/55 hover:border-border',
+          ? 'border-primary/45 bg-primary/[0.03]'
+          : 'cursor-pointer border-border hover:border-muted-foreground/40',
       )}
     >
       <div
         data-testid={`workspace-domain-header-${domain.domainId}`}
         title={`Drag ${domain.origin}`}
         onPointerDownCapture={() => actions.activateDomain(domain.domainId)}
-        className="workspace-domain-drag-handle absolute inset-x-0 top-0 flex h-12 cursor-grab select-none items-center gap-2 border-b border-border/35 px-4 active:cursor-grabbing"
+        className="workspace-domain-drag-handle absolute inset-x-0 top-0 flex h-12 cursor-grab select-none items-center gap-2 px-4 active:cursor-grabbing"
       >
         <span
           className={cn(
             'h-2 w-2 rounded-full',
-            domain.active
-              ? 'bg-sky-300 shadow-[0_0_12px_rgba(125,211,252,0.8)]'
-              : 'bg-muted-foreground/35',
+            domain.active ? 'bg-primary' : 'bg-muted-foreground/40',
           )}
         />
-        <span className="truncate text-[13px] font-extrabold tracking-tight">{domain.origin}</span>
-        <span className="ml-auto rounded-full bg-muted/70 px-1.5 py-0.5 text-[9px] font-semibold tabular-nums text-muted-foreground">
-          {domain.memberCount}
-        </span>
+        <span className="truncate text-[13px] font-semibold tracking-tight">{domain.origin}</span>
       </div>
       {domain.active && (
         <ResizeCorner
@@ -126,7 +119,7 @@ function WorkspaceGroupNode(props: NodeProps) {
   const metadata = workspaceGeometry(props)
   const data = props.data as GroupNodeData
   return (
-    <div className="relative h-full w-full">
+    <div className="group/frame relative h-full w-full">
       <GroupNode
         {...props}
         data={{

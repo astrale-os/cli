@@ -58,9 +58,9 @@ export function friendlyType(
  * overridden), abstract → a contract to fulfil, otherwise a plain operation.
  */
 export function methodGlyph(method: IrMethod): { icon: LucideIcon; tone: string } {
-  if (method.inheritance === 'sealed') return { icon: Lock, tone: 'amber' }
-  if (method.inheritance === 'abstract') return { icon: Puzzle, tone: 'fuchsia' }
-  return { icon: Zap, tone: 'violet' }
+  if (method.inheritance === 'sealed') return { icon: Lock, tone: 'warning' }
+  if (method.inheritance === 'abstract') return { icon: Puzzle, tone: 'fn' }
+  return { icon: Zap, tone: 'primary' }
 }
 
 /** Short, human label for the params of a method ("no input" / "url, name" / …). */

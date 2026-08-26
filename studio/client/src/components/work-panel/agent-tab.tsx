@@ -1,10 +1,11 @@
 import type { AgentRun, DocMeta } from '@shared/types'
 import type { DragEvent, ReactNode } from 'react'
 
+import { DOCUMENTS_DIR } from '@shared/types'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+  ArrowUp,
   Copy,
-  CornerDownLeft,
   File as FileIcon,
   FileCode2,
   FileImage,
@@ -13,8 +14,6 @@ import {
   FileType,
   Hash,
   Loader2,
-  Maximize2,
-  Minimize2,
   Pencil,
   Send,
   Upload,
@@ -38,33 +37,21 @@ function fmtSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** Map a document to a typed icon + colour tile + short label (PDF, XLS, MD, …). */
-function kindOf(doc: DocMeta): { Icon: typeof FileText; tint: string; label: string } {
+/** Map a document to its icon + short kind label (PDF, XLS, MD, …). */
+function kindOf(doc: DocMeta): { Icon: typeof FileText; label: string } {
   const n = doc.name.toLowerCase()
   const t = doc.type
-  if (/\.pdf$/.test(n) || t === 'application/pdf')
-    return { Icon: FileText, tint: 'bg-red-400/10 text-red-400', label: 'PDF' }
+  if (/\.pdf$/.test(n) || t === 'application/pdf') return { Icon: FileText, label: 'PDF' }
   if (/\.(xlsx?|csv|tsv)$/.test(n) || t.includes('sheet') || t === 'text/csv')
-    return {
-      Icon: FileSpreadsheet,
-      tint: 'bg-emerald-400/10 text-emerald-400',
-      label: /\.csv$/.test(n) ? 'CSV' : 'XLS',
-    }
-  if (/\.(md|mdx|markdown)$/.test(n) || t === 'text/markdown')
-    return { Icon: Hash, tint: 'bg-sky-400/10 text-sky-400', label: 'MD' }
-  if (/\.(docx?|rtf)$/.test(n) || t.includes('word'))
-    return { Icon: FileType, tint: 'bg-blue-400/10 text-blue-400', label: 'DOC' }
+    return { Icon: FileSpreadsheet, label: /\.csv$/.test(n) ? 'CSV' : 'XLS' }
+  if (/\.(md|mdx|markdown)$/.test(n) || t === 'text/markdown') return { Icon: Hash, label: 'MD' }
+  if (/\.(docx?|rtf)$/.test(n) || t.includes('word')) return { Icon: FileType, label: 'DOC' }
   if (t.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg|avif)$/.test(n))
-    return { Icon: FileImage, tint: 'bg-fuchsia-400/10 text-fuchsia-400', label: 'IMG' }
+    return { Icon: FileImage, label: 'IMG' }
   if (/\.(json|ya?ml|toml|ts|tsx|js|jsx|py|go|rs|sh|html|css)$/.test(n) || t.includes('json'))
-    return { Icon: FileCode2, tint: 'bg-amber-400/10 text-amber-400', label: 'CODE' }
-  if (t.startsWith('text/') || /\.(txt|log|env)$/.test(n))
-    return { Icon: FileText, tint: 'bg-slate-400/10 text-slate-400', label: 'TXT' }
-  return {
-    Icon: FileIcon,
-    tint: 'bg-muted text-muted-foreground',
-    label: (n.split('.').pop() ?? 'file').slice(0, 4).toUpperCase(),
-  }
+    return { Icon: FileCode2, label: 'CODE' }
+  if (t.startsWith('text/') || /\.(txt|log|env)$/.test(n)) return { Icon: FileText, label: 'TXT' }
+  return { Icon: FileIcon, label: (n.split('.').pop() ?? 'file').slice(0, 4).toUpperCase() }
 }
 const isMarkdown = (d: DocMeta) =>
   d.type === 'text/markdown' || /\.(md|mdx|markdown)$/i.test(d.name)
@@ -96,7 +83,12 @@ const nameFromText = (text: string) =>
   )
 
 // ── page ──────────────────────────────────────────────────────────────────────
-export function ContextSection({ domainId }: { domainId: string }) {
+/**
+ * The agent half of the work panel: say what you want, drop the documents the
+ * agent should read. It lives beside whatever view you are in, so instructing the
+ * agent never costs you the schema you were looking at.
+ */
+export function AgentTab({ domainId }: { domainId: string }) {
   const { data: docs } = useDocuments(domainId)
   const qc = useQueryClient()
   const invalidate = () => qc.invalidateQueries({ queryKey: qk.documents(domainId) })
@@ -111,9 +103,24 @@ export function ContextSection({ domainId }: { domainId: string }) {
     },
     onError: (e) => toast.error(String(e)),
   })
+  // Removing a document is predictable, so drop it from the list immediately and
+  // put it back (with a toast) if the server disagrees.
   const del = useMutation({
     mutationFn: (docId: string) => api.deleteDocument(domainId, docId),
-    onSuccess: invalidate,
+    onMutate: async (docId: string) => {
+      await qc.cancelQueries({ queryKey: qk.documents(domainId) })
+      const previous = qc.getQueryData<DocMeta[]>(qk.documents(domainId))
+      qc.setQueryData<DocMeta[]>(
+        qk.documents(domainId),
+        (current) => current?.filter((doc) => doc.id !== docId) ?? current,
+      )
+      return { previous }
+    },
+    onError: (error, _docId, context) => {
+      if (context?.previous) qc.setQueryData(qk.documents(domainId), context.previous)
+      toast.error(`Could not remove the document — ${String((error as Error)?.message ?? error)}`)
+    },
+    onSettled: invalidate,
   })
 
   const addFiles = (files: FileList | File[] | null) => {
@@ -165,19 +172,25 @@ export function ContextSection({ domainId }: { domainId: string }) {
       onDrop={onDrop}
     >
       <div className="h-full overflow-y-auto">
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-6 pb-28 pt-10">
+        <div className="w-full space-y-5 px-3 py-3">
           <AgentComposer domainId={domainId} />
-          {count === 0 ? (
-            <div className="space-y-4">
-              <Composer busy={upload.isPending} onText={addText} onFiles={addFiles} />
-              <DropZone busy={upload.isPending} onFiles={addFiles} />
+          <section className="space-y-2">
+            <div className="flex items-baseline justify-between gap-2 px-0.5">
+              <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Documents
+              </h2>
+              <span
+                title={`Saved in ${DOCUMENTS_DIR}/ — the agent reads them from there`}
+                className="truncate font-mono text-[10px] text-muted-foreground"
+              >
+                {DOCUMENTS_DIR}
+              </span>
             </div>
-          ) : (
-            <div className="space-y-6">
-              <Composer busy={upload.isPending} onText={addText} onFiles={addFiles} />
-              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            <Composer busy={upload.isPending} onText={addText} onFiles={addFiles} />
+            {count > 0 && (
+              <div className="divide-y overflow-hidden rounded-lg border bg-card">
                 {docs.map((doc) => (
-                  <DocCard
+                  <DocRow
                     key={doc.id}
                     domainId={domainId}
                     doc={doc}
@@ -186,16 +199,15 @@ export function ContextSection({ domainId }: { domainId: string }) {
                   />
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </section>
         </div>
       </div>
 
       {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/60 px-16 py-12 text-primary">
-            <Upload className="h-8 w-8" />
-            <p className="text-sm font-medium">Drop to add</p>
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/75">
+          <div className="flex items-center gap-2 rounded-lg border border-dashed border-primary/50 bg-card px-5 py-3 text-sm font-medium text-primary">
+            <Upload className="h-4 w-4" /> Drop to add
           </div>
         </div>
       )}
@@ -212,18 +224,73 @@ export function ContextSection({ domainId }: { domainId: string }) {
   )
 }
 
-function ExpandButton({ expanded, onClick }: { expanded: boolean; onClick: () => void }) {
-  const Icon = expanded ? Minimize2 : Maximize2
-  const label = expanded ? 'Collapse editor' : 'Expand editor'
+/** A prompt field that grows with its content — no scrollbar, no resize grip. */
+function GrowingField({
+  value,
+  onChange,
+  onSubmit,
+  placeholder,
+  autoFocus,
+  minRows = 3,
+}: {
+  value: string
+  onChange: (next: string) => void
+  onSubmit: () => void
+  placeholder: string
+  autoFocus?: boolean
+  minRows?: number
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.5)}px`
+  }, [value])
+  return (
+    <textarea
+      ref={ref}
+      // biome-ignore lint/a11y/noAutofocus: the composer is the primary action of this page
+      autoFocus={autoFocus}
+      rows={minRows}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault()
+          onSubmit()
+        }
+      }}
+      placeholder={placeholder}
+      className="w-full resize-none bg-transparent px-3.5 pt-3 text-[15px] leading-relaxed outline-none placeholder:text-muted-foreground"
+    />
+  )
+}
+
+/** The one send affordance: a round button that turns into a spinner while working. */
+function SendButton({
+  onClick,
+  disabled,
+  busy,
+  title,
+  children,
+}: {
+  onClick: () => void
+  disabled?: boolean
+  busy?: boolean
+  title: string
+  children: ReactNode
+}) {
   return (
     <button
       type="button"
-      title={label}
-      aria-label={label}
       onClick={onClick}
-      className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      className="grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground"
     >
-      <Icon className="h-3.5 w-3.5" />
+      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : children}
     </button>
   )
 }
@@ -262,39 +329,27 @@ function AgentComposer({ domainId }: { domainId: string }) {
   }
 
   return (
-    <div className="rounded-2xl border bg-card/50 shadow-sm transition-colors focus-within:border-primary/50">
-      <div className="relative">
-        <Textarea
-          // biome-ignore lint/a11y/noAutofocus: the agent prompt is the primary action of this page
-          autoFocus
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-              e.preventDefault()
-              submit()
-            }
-          }}
-          placeholder="Tell me what you want to do?"
-          className={cn(
-            'max-h-[65vh] min-h-[120px] resize-y border-0 bg-transparent pr-10 text-[15px] leading-relaxed shadow-none focus-visible:ring-0',
-            expanded && 'min-h-[45vh]',
-          )}
-        />
-        <ExpandButton expanded={expanded} onClick={() => setExpanded((v) => !v)} />
-      </div>
-      <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-        <span className="text-[11px] text-muted-foreground/50">
-          {active ? 'Agent working…' : available ? '⌘↵ to send' : 'agent unavailable'}
-        </span>
-        <Button size="sm" onClick={submit} disabled={!canSend}>
-          {busy || active ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Send className="h-3.5 w-3.5" />
-          )}{' '}
-          Send to agent
-        </Button>
+    <div className="rounded-xl border bg-card transition-colors focus-within:border-ring">
+      <GrowingField
+        autoFocus
+        value={text}
+        onChange={setText}
+        onSubmit={submit}
+        placeholder="Ask the agent to change this domain…"
+      />
+      <div className="flex items-center justify-end gap-2 px-2.5 pb-2.5 pt-1">
+        {active && <span className="mr-auto text-xs text-muted-foreground">Agent working…</span>}
+        {!available && (
+          <span className="mr-auto text-xs text-muted-foreground">Agent unavailable</span>
+        )}
+        <SendButton
+          onClick={submit}
+          disabled={!canSend}
+          busy={busy || active}
+          title="Send to the agent (⌘↵)"
+        >
+          <ArrowUp className="h-4 w-4" />
+        </SendButton>
       </div>
     </div>
   )
@@ -313,7 +368,6 @@ function Composer({
   onFiles: (f: FileList | File[] | null) => void
 }) {
   const [text, setText] = useState('')
-  const [expanded, setExpanded] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const submit = () => {
     const t = text.trim()
@@ -322,39 +376,17 @@ function Composer({
     setText('')
   }
   return (
-    <div className="rounded-2xl border bg-card/50 shadow-sm transition-colors focus-within:border-primary/50">
-      <div className="relative">
-        <Textarea
-          // biome-ignore lint/a11y/noAutofocus: the composer is the primary action of this page
-          autoFocus={hero}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-              e.preventDefault()
-              submit()
-            }
-          }}
-          placeholder={
-            hero ? 'Paste anything — notes, specs, decisions…' : 'Paste text to save as markdown…'
-          }
-          className={cn(
-            'max-h-[65vh] resize-y border-0 bg-transparent pr-10 leading-relaxed shadow-none focus-visible:ring-0',
-            expanded
-              ? hero
-                ? 'min-h-[45vh] text-[15px]'
-                : 'min-h-[32vh]'
-              : hero
-                ? 'min-h-[180px] text-[15px]'
-                : 'min-h-[80px]',
-          )}
-        />
-        <ExpandButton expanded={expanded} onClick={() => setExpanded((v) => !v)} />
-      </div>
-      <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-        {hero ? (
-          <span className="text-[11px] text-muted-foreground/50">⌘↵ to save</span>
-        ) : (
+    <div className="rounded-xl border bg-card transition-colors focus-within:border-ring">
+      <GrowingField
+        autoFocus={hero}
+        minRows={2}
+        value={text}
+        onChange={setText}
+        onSubmit={submit}
+        placeholder={hero ? 'Paste anything — notes, specs, decisions…' : 'Paste a note…'}
+      />
+      <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-1">
+        {!hero && (
           <>
             <button
               type="button"
@@ -375,49 +407,23 @@ function Composer({
             />
           </>
         )}
-        {text.trim() && (
-          <Button size="sm" onClick={submit} disabled={busy}>
-            <CornerDownLeft className="h-3.5 w-3.5" /> Save
-          </Button>
-        )}
+        <div className="ml-auto">
+          <SendButton
+            onClick={submit}
+            disabled={!text.trim() || busy}
+            busy={busy && !!text.trim()}
+            title="Save as a document (⌘↵)"
+          >
+            <ArrowUp className="h-4 w-4" />
+          </SendButton>
+        </div>
       </div>
     </div>
   )
 }
 
-// ── empty-state drop zone ───────────────────────────────────────────────────────
-function DropZone({
-  busy,
-  onFiles,
-}: {
-  busy: boolean
-  onFiles: (f: FileList | File[] | null) => void
-}) {
-  const ref = useRef<HTMLInputElement>(null)
-  return (
-    <button
-      type="button"
-      onClick={() => ref.current?.click()}
-      className="flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed py-10 text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:bg-accent/20"
-    >
-      <Upload className="h-6 w-6" />
-      <p className="text-[13px]">{busy ? 'Uploading…' : 'Drop files or browse'}</p>
-      <input
-        ref={ref}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          onFiles(e.target.files)
-          e.target.value = ''
-        }}
-      />
-    </button>
-  )
-}
-
-// ── document card ───────────────────────────────────────────────────────────────
-function DocCard({
+// ── document row ────────────────────────────────────────────────────────────────
+function DocRow({
   domainId,
   doc,
   onEdit,
@@ -438,35 +444,38 @@ function DocCard({
     }
   }
   return (
-    <div className="group flex flex-col gap-2.5 rounded-xl border bg-card/50 p-3 transition-colors hover:border-muted-foreground/30 hover:bg-accent/30">
-      <div className="flex items-start justify-between">
-        <div className={cn('flex h-9 w-9 items-center justify-center rounded-lg', k.tint)}>
-          <k.Icon className="h-[18px] w-[18px]" />
-        </div>
-        <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-          {isText(doc) && (
-            <IconBtn title="Copy" onClick={copy}>
-              <Copy className="h-3.5 w-3.5" />
-            </IconBtn>
-          )}
-          {isMarkdown(doc) && (
-            <IconBtn title="Edit" onClick={onEdit}>
-              <Pencil className="h-3.5 w-3.5" />
-            </IconBtn>
-          )}
-          <IconBtn title="Remove" danger onClick={onDelete}>
-            <X className="h-3.5 w-3.5" />
-          </IconBtn>
-        </div>
+    <div className="group flex items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/60">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+        <k.Icon className="h-4 w-4" />
       </div>
-      <a href={api.docUrl(domainId, doc.id)} target="_blank" rel="noreferrer" className="min-w-0">
-        <div className="truncate text-[13px] font-medium leading-snug" title={doc.name}>
+      <a
+        href={api.docUrl(domainId, doc.id)}
+        target="_blank"
+        rel="noreferrer"
+        className="min-w-0 flex-1"
+      >
+        <div className="truncate text-[13px] font-medium" title={doc.name}>
           {doc.name}
         </div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">
+        <div className="text-xs text-muted-foreground">
           {k.label} · {fmtSize(doc.size)}
         </div>
       </a>
+      <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        {isText(doc) && (
+          <IconBtn title="Copy" onClick={copy}>
+            <Copy className="h-3.5 w-3.5" />
+          </IconBtn>
+        )}
+        {isMarkdown(doc) && (
+          <IconBtn title="Edit" onClick={onEdit}>
+            <Pencil className="h-3.5 w-3.5" />
+          </IconBtn>
+        )}
+        <IconBtn title="Remove" danger onClick={onDelete}>
+          <X className="h-3.5 w-3.5" />
+        </IconBtn>
+      </div>
     </div>
   )
 }
@@ -488,7 +497,7 @@ function IconBtn({
       title={title}
       onClick={onClick}
       className={cn(
-        'flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 transition-colors',
+        'flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors',
         danger
           ? 'hover:bg-destructive/10 hover:text-destructive'
           : 'hover:bg-accent hover:text-foreground',
@@ -565,7 +574,6 @@ function EditDialog({
           className="min-h-[50vh] resize-none font-mono text-[12px] leading-relaxed"
         />
         <div className="flex items-center justify-end gap-2">
-          <span className="mr-auto text-[11px] text-muted-foreground/60">⌘↵ to save</span>
           <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
           </Button>

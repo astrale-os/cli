@@ -1,66 +1,47 @@
 @import 'tailwindcss';
 @import '@xyflow/react/dist/style.css';
 
-@custom-variant dark (&:is(.dark *));
-
-/* Refined dark studio theme — soft, airy, Linear/Raycast-grade.
-   `html.dark` (0,1,1) outranks `:root` (0,1,0) so it wins when the class is set. */
-html.dark {
-  --radius: 0.75rem;
-  --background: oklch(0.205 0.006 285);
-  --foreground: oklch(0.96 0.003 285);
-  --canvas: oklch(0.182 0.006 285);
-  --card: oklch(0.238 0.006 285);
-  --card-foreground: oklch(0.96 0.003 285);
-  --popover: oklch(0.246 0.007 285);
-  --popover-foreground: oklch(0.97 0.003 285);
-  --primary: oklch(0.68 0.16 280);
-  --primary-foreground: oklch(0.16 0.02 280);
-  --secondary: oklch(0.285 0.007 285);
-  --secondary-foreground: oklch(0.96 0.003 285);
-  --muted: oklch(0.265 0.006 285);
-  --muted-foreground: oklch(0.665 0.013 285);
-  --accent: oklch(0.305 0.008 285);
-  --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.67 0.19 22);
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 11%);
-  --ring: oklch(0.68 0.16 280);
-  --success: oklch(0.74 0.15 155);
-  --warning: oklch(0.82 0.14 80);
-}
-
-/* Light fallback (toggle) — kept simple. */
+/* Domain Studio — one light theme. Neutral surfaces, a single calm accent,
+   and a small set of semantic hues for the schema grammar (node / edge /
+   view / core / function). Everything else derives from these tokens. */
 :root {
-  --radius: 0.75rem;
-  --background: oklch(0.995 0 0);
-  --foreground: oklch(0.21 0.01 285);
-  --canvas: oklch(0.975 0.003 285);
+  --radius: 0.5rem;
+
+  --background: oklch(0.985 0.002 255);
+  --foreground: oklch(0.24 0.012 255);
+  --canvas: oklch(0.972 0.003 255);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.21 0.01 285);
+  --card-foreground: var(--foreground);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 285);
-  --primary: oklch(0.55 0.17 280);
-  --primary-foreground: oklch(0.98 0 0);
-  --secondary: oklch(0.97 0.004 285);
-  --secondary-foreground: oklch(0.25 0.01 285);
-  --muted: oklch(0.968 0.004 285);
-  --muted-foreground: oklch(0.52 0.012 285);
-  --accent: oklch(0.96 0.005 285);
-  --accent-foreground: oklch(0.25 0.01 285);
-  --destructive: oklch(0.58 0.21 25);
-  --border: oklch(0.92 0.004 285);
-  --input: oklch(0.9 0.004 285);
-  --ring: oklch(0.55 0.17 280);
-  --success: oklch(0.6 0.15 155);
-  --warning: oklch(0.7 0.15 70);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.52 0.13 256);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.965 0.004 255);
+  --secondary-foreground: oklch(0.3 0.012 255);
+  --muted: oklch(0.966 0.004 255);
+  --muted-foreground: oklch(0.53 0.013 255);
+  --accent: oklch(0.955 0.006 255);
+  --accent-foreground: oklch(0.24 0.012 255);
+  --destructive: oklch(0.55 0.19 25);
+  --border: oklch(0.915 0.005 255);
+  --input: oklch(0.88 0.006 255);
+  --ring: oklch(0.62 0.11 256);
+  --success: oklch(0.53 0.13 155);
+  --warning: oklch(0.58 0.12 65);
+
+  /* schema grammar — one hue per kind, legible on light surfaces */
+  --schema-node: oklch(0.5 0.12 250);
+  --schema-edge: oklch(0.52 0.11 65);
+  --schema-view: oklch(0.5 0.09 205);
+  --schema-core: oklch(0.48 0.11 155);
+  --schema-function: oklch(0.5 0.14 300);
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 3px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 6px);
+  --radius-xl: calc(var(--radius) + 4px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-canvas: var(--canvas);
@@ -82,14 +63,23 @@ html.dark {
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-schema-node: var(--schema-node);
+  --color-schema-edge: var(--schema-edge);
+  --color-schema-view: var(--schema-view);
+  --color-schema-core: var(--schema-core);
+  --color-schema-function: var(--schema-function);
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   --font-sans:
     ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui,
     sans-serif;
 }
 
-* {
-  border-color: var(--color-border);
+/* Default border colour — in @layer base so any `border-*` utility still wins
+   (unlayered rules would beat Tailwind's layered utilities). */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
 }
 
 html,
@@ -103,23 +93,29 @@ body {
   background: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.006em;
 }
 
 ::selection {
-  background: oklch(0.68 0.16 280 / 0.3);
+  background: color-mix(in oklch, var(--color-primary) 18%, transparent);
 }
 
-/* subtle, refined scrollbars */
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+/* Radix ScrollArea draws its own overlay scrollbar and hides the native one.
+   Our global scrollbar rule would bring it back INSIDE the viewport, so the
+   content width jumped by 10px the moment a list became scrollable. */
+[data-radix-scroll-area-viewport] {
+  scrollbar-width: none;
+}
+[data-radix-scroll-area-viewport]::-webkit-scrollbar {
+  display: none;
+}
 *::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: var(--color-input);
   border-radius: 9999px;
   border: 3px solid transparent;
   background-clip: content-box;
@@ -129,55 +125,84 @@ body {
   background-clip: content-box;
 }
 
-/* react-flow surface uses the dedicated canvas tone */
+/* Comment / ask targeting: outline whatever the next click would pin to. An edge
+   gets its own line thickened instead — a box around it would cover its neighbours
+   and you could not tell which relationship the pin would land on. */
+[data-comment-target]:not(.react-flow__edge) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+.react-flow__edge[data-comment-target] .react-flow__edge-path {
+  outline: none;
+  stroke-width: 4px;
+  stroke: var(--color-primary);
+}
+
+/* Edge labels belong above the module boxes they cross (z-index 0) but below the
+   class cards (z-index 1) — same value, and the nodes layer comes later in the DOM. */
+.react-flow__edgelabel-renderer {
+  z-index: 1;
+}
+
+/* ── React Flow surface ── */
 .react-flow__attribution {
   display: none;
 }
+/* Our GroupNode paints the module box itself; React Flow's default node chrome
+   (a near-black 1px border + grey fill + padding) framed every box a second time. */
+.react-flow__node-group {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: inherit;
+}
+
 .react-flow {
   background: var(--color-canvas);
+  /* our nodes own their selected/hover treatment — drop React Flow's black hairline */
+  --xy-node-boxshadow-selected: none;
+  --xy-node-boxshadow-hover: none;
 }
-
-/* Domain Studio core-role shape grammar for schema cards. */
-.react-flow__node-classNode [data-core-role] {
-  transition:
-    border-radius 0.16s ease,
-    outline-color 0.16s ease;
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-card);
 }
-
-.react-flow__node-classNode .schema-core-container {
-  border-radius: 6px;
-  background-image: none;
+.react-flow__controls-button {
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  width: 28px;
+  height: 28px;
 }
-
-.react-flow__node-classNode .schema-core-identity,
-.react-flow__node-classNode .schema-core-function {
-  background-image: none;
+.react-flow__controls-button:hover {
+  background: var(--color-accent);
+  color: var(--color-foreground);
 }
-
-.react-flow__node-classNode .schema-core-identity::after,
-.react-flow__node-classNode .schema-core-function::after {
-  content: none;
+.react-flow__controls-button svg {
+  fill: currentColor;
+  max-width: 12px;
+  max-height: 12px;
 }
-
-.react-flow__node-classNode .schema-core-identity-icon {
-  position: absolute;
-  right: 0.25rem;
-  top: 0.25rem;
-  z-index: 20;
-  display: inline-flex;
-  height: 18px;
-  width: 18px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid oklch(0.84 0.09 86 / 0.28);
-  background: oklch(0.84 0.08 86 / 0.11);
-  color: oklch(0.82 0.1 86 / 0.88);
-  pointer-events: none;
+.react-flow__minimap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-card);
 }
-
-.react-flow__node-classNode .schema-core-function-icon {
-  color: oklch(0.72 0.13 292 / 0.9);
-  filter: none;
-  opacity: 0.92;
+.react-flow__edge-text {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  fill: var(--color-muted-foreground);
+}
+.react-flow__edge-textbg {
+  fill: var(--color-canvas);
+}
+.react-flow__node {
+  font-family: var(--font-sans);
 }

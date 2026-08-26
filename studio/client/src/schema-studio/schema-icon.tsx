@@ -1,3 +1,5 @@
+import type * as React from 'react'
+
 import { useMemo } from 'react'
 
 import { cn } from '@/lib/utils'
@@ -29,11 +31,20 @@ function sanitizeSvg(raw: string): string | null {
   return s
 }
 
-export function SchemaIcon({ svg, className }: { svg?: string; className?: string }) {
+export function SchemaIcon({
+  svg,
+  className,
+  style,
+}: {
+  svg?: string
+  className?: string
+  style?: React.CSSProperties
+}) {
   const clean = useMemo(() => (svg ? sanitizeSvg(svg) : null), [svg])
   if (!clean) return null
   return (
     <span
+      style={style}
       className={cn(
         'inline-flex shrink-0 items-center justify-center [&>svg]:h-full [&>svg]:w-full',
         className,

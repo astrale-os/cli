@@ -1,17 +1,8 @@
 import type { StudioEvent } from '@shared/types'
 
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  Library,
-  type LucideIcon,
-  MessageSquare,
-  MessagesSquare,
-  Network,
-  Search,
-  Settings,
-  Workflow,
-} from 'lucide-react'
-import { lazy, Suspense, useCallback, useEffect } from 'react'
+import { type LucideIcon, MessagesSquare, Network, Search, Settings, Workflow } from 'lucide-react'
+import { lazy, type ReactNode, Suspense, useCallback, useEffect } from 'react'
 
 import { AgentActivityDrawer, AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
@@ -23,17 +14,15 @@ import { EnvBadge } from '@/components/env-editor'
 import { InstanceBadge } from '@/components/instance-badge'
 import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings-dialog'
-import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
 import { UpdatesBadge } from '@/components/updates-badge'
+import { WorkPanel } from '@/components/work-panel'
 import { useAgentLive, useAgentSnapshot } from '@/lib/agent'
 import { qk } from '@/lib/api'
 import { useComments, useInvalidateDomain, useWorkspace } from '@/lib/hooks'
 import { useEventStream } from '@/lib/sse'
 import { type SectionKey, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
-import { CommentsSection } from '@/sections/comments'
-import { ContextSection } from '@/sections/context'
 import { ProcessSection } from '@/sections/process'
 
 const LazySchemaSection = lazy(() =>
@@ -41,10 +30,8 @@ const LazySchemaSection = lazy(() =>
 )
 
 const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
-  { key: 'context', label: 'Context', icon: Library },
   { key: 'schema', label: 'Schema', icon: Network },
   { key: 'process', label: 'Process', icon: Workflow },
-  { key: 'comments', label: 'Comments', icon: MessageSquare },
 ]
 
 function SectionRouter({ section, domainId }: { section: SectionKey; domainId: string }) {
@@ -61,13 +48,49 @@ function SectionRouter({ section, domainId }: { section: SectionKey; domainId: s
           <LazySchemaSection domainId={domainId} />
         </Suspense>
       )
-    case 'context':
-      return <ContextSection domainId={domainId} />
     case 'process':
       return <ProcessSection domainId={domainId} />
-    case 'comments':
-      return <CommentsSection domainId={domainId} />
   }
+}
+
+/** A header action: icon only, its name and shortcut in the tooltip. */
+function IconAction({
+  label,
+  shortcut,
+  active,
+  onClick,
+  children,
+}: {
+  label: string
+  shortcut?: string
+  active?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          aria-pressed={active}
+          onClick={onClick}
+          className={cn(
+            'inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+            active
+              ? 'bg-primary/10 text-primary'
+              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {label}
+        {shortcut && <span className="ml-1.5 text-muted-foreground">{shortcut}</span>}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function App() {
@@ -79,6 +102,8 @@ export function App() {
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
   const setSettingsOpen = useUI((s) => s.setSettingsOpen)
   const commentMode = useUI((s) => s.commentMode)
+  const panelOpen = useUI((s) => s.panelOpen)
+  const panelSide = useUI((s) => s.panelSide)
   const toggleCommentMode = useUI((s) => s.toggleCommentMode)
   const toggleAskMode = useUI((s) => s.toggleAskMode)
   const invalidate = useInvalidateDomain()
@@ -179,118 +204,91 @@ export function App() {
   }
 
   return (
-    <TooltipProvider delayDuration={200}>
-      <div className="h-full flex flex-col">
-        {/* header */}
-        <header className="flex items-center gap-3 px-5 h-14 border-b shrink-0">
-          {/* left: the GLOBAL active instance + the domain you're viewing + its deploy status */}
-          <div className="flex items-center gap-1.5">
+    <TooltipProvider delayDuration={250}>
+      <div className="flex h-full flex-col">
+        <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
+          {/* what you are looking at: instance → domain → its deploy state */}
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             <InstanceSwitcher />
+            <span className="mx-1 h-4 w-px bg-border" />
             <DomainSelector />
             {domainId && <InstanceBadge domainId={domainId} />}
-            {domainId && (
-              <button
-                type="button"
-                aria-label="Settings"
-                title="Settings"
-                onClick={() => setSettingsOpen(true)}
-                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 transition-colors hover:bg-accent/60 hover:text-foreground"
-              >
-                <Settings className="h-4 w-4" />
-              </button>
-            )}
             {domainId && <UpdatesBadge domainId={domainId} />}
             {domainId && <EnvBadge domainId={domainId} />}
           </div>
 
-          {/* right: tools */}
-          <div className="ml-auto flex items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPaletteOpen(true)}
-              title="Search (⌘K)"
-            >
+          {/* where you are */}
+          <nav className="flex items-center gap-0.5 rounded-lg bg-muted p-0.5">
+            {NAV.map((n) => {
+              const Icon = n.icon
+              const active = section === n.key
+              return (
+                <button
+                  key={n.key}
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => setSection(n.key)}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors',
+                    active
+                      ? 'bg-card text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.06)]'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span className="hidden md:inline">{n.label}</span>
+                </button>
+              )
+            })}
+          </nav>
+
+          {/* what you can do */}
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            <IconAction label="Search" shortcut="⌘K" onClick={() => setPaletteOpen(true)}>
               <Search className="h-4 w-4" />
-              <kbd className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                ⌘K
-              </kbd>
-            </Button>
-            <Button
-              variant={commentMode ? 'default' : 'ghost'}
-              size="sm"
-              aria-label="Comment mode"
+            </IconAction>
+            <IconAction
+              label="Comment mode"
+              shortcut="C"
+              active={commentMode}
               onClick={() => toggleCommentMode()}
-              title="Comment mode — click any element to comment (C)"
             >
               <MessagesSquare className="h-4 w-4" />
-              <kbd
-                className={cn(
-                  'rounded px-1.5 py-0.5 text-[10px]',
-                  commentMode
-                    ? 'bg-primary-foreground/20 text-primary-foreground'
-                    : 'bg-muted text-muted-foreground',
-                )}
-              >
-                C
-              </kbd>
-            </Button>
-            <div className="h-5 w-px bg-border mx-0.5" />
-            <AgentSubmitButton />
+            </IconAction>
+            {domainId && (
+              <IconAction label="Settings" onClick={() => setSettingsOpen(true)}>
+                <Settings className="h-4 w-4" />
+              </IconAction>
+            )}
+            {/* the panel's own composer is the way to reach the agent while it is open */}
+            {!panelOpen && (
+              <>
+                <span className="mx-1 h-4 w-px bg-border" />
+                <AgentSubmitButton />
+              </>
+            )}
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 relative overflow-hidden">
-          {domainId ? (
-            <SectionRouter section={section} domainId={domainId} />
-          ) : (
-            <div className="h-full flex items-center justify-center text-muted-foreground">
-              No domain selected
-            </div>
+        <div
+          className={cn(
+            // the panel is rendered AFTER <main>, so a left dock reverses the row
+            'flex min-h-0 flex-1',
+            panelSide === 'bottom' ? 'flex-col' : 'flex-row',
+            panelSide === 'left' && 'flex-row-reverse',
           )}
-
-          {/* macOS-style dock */}
-          <nav className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40">
-            <div className="flex items-center gap-1 rounded-2xl border bg-card/70 px-2 py-2 shadow-2xl shadow-black/40 backdrop-blur-xl">
-              {NAV.map((n) => {
-                const Icon = n.icon
-                const active = section === n.key
-                const badge = n.key === 'comments' ? myReplyCount : 0
-                return (
-                  <Tooltip key={n.key}>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label={n.label}
-                        aria-current={active ? 'page' : undefined}
-                        onClick={() => setSection(n.key)}
-                        className={cn(
-                          'relative h-11 w-11 rounded-xl flex items-center justify-center transition-all duration-150',
-                          active
-                            ? 'bg-primary/15 text-primary'
-                            : 'text-muted-foreground hover:-translate-y-1 hover:bg-accent hover:text-foreground',
-                        )}
-                      >
-                        <Icon className="h-[19px] w-[19px]" />
-                        {badge > 0 && (
-                          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground">
-                            {badge > 99 ? '99+' : badge}
-                          </span>
-                        )}
-                        {active && (
-                          <span className="absolute -bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-primary" />
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" sideOffset={10}>
-                      {n.label}
-                    </TooltipContent>
-                  </Tooltip>
-                )
-              })}
-            </div>
-          </nav>
-        </main>
+        >
+          <main className="relative min-h-0 flex-1 overflow-hidden">
+            {domainId ? (
+              <SectionRouter section={section} domainId={domainId} />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                No domain selected
+              </div>
+            )}
+          </main>
+          {domainId && <WorkPanel domainId={domainId} />}
+        </div>
       </div>
 
       <CommandPalette />

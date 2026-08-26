@@ -59,8 +59,8 @@ export function GatewayAuthFields({
             className={cn(
               'rounded px-1.5 py-1 text-center text-[11px] font-medium transition-colors',
               mode === candidate
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
+                ? 'bg-card text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {LABELS[candidate]}
@@ -76,9 +76,9 @@ export function GatewayAuthFields({
             placeholder="instance to mint on (blank = active instance)"
             spellCheck={false}
             autoComplete="off"
-            className="w-full rounded-md border bg-background px-2 py-1 font-mono text-[12px] outline-none placeholder:text-muted-foreground/40 focus:border-primary"
+            className="w-full rounded-md border bg-card px-2 py-1 font-mono text-[12px] outline-none placeholder:text-muted-foreground focus:border-primary"
           />
-          <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
             A fresh delegation token is minted per run (no secret stored). You must be signed in to
             the instance and have USE on the model node.
           </p>
@@ -95,25 +95,25 @@ export function GatewayAuthFields({
               placeholder="bearer token (e.g. astrale token --audience <gateway-origin>)"
               spellCheck={false}
               autoComplete="off"
-              className="w-full min-w-0 rounded-md border bg-background px-2 py-1 font-mono text-[12px] outline-none placeholder:text-muted-foreground/40 focus:border-primary"
+              className="w-full min-w-0 rounded-md border bg-card px-2 py-1 font-mono text-[12px] outline-none placeholder:text-muted-foreground focus:border-primary"
             />
             <button
               type="button"
               onClick={() => setReveal(!reveal)}
               title={reveal ? 'Hide' : 'Reveal'}
-              className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
+              className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
             >
               {reveal ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
             </button>
           </div>
-          <p className="text-[10px] leading-relaxed text-muted-foreground/60">
+          <p className="text-[10px] leading-relaxed text-muted-foreground">
             Stored locally in .domain-studio. It will stop working when the token expires.
           </p>
         </div>
       )}
 
       {mode === 'host' && (
-        <p className="pt-0.5 text-[10px] leading-relaxed text-muted-foreground/60">
+        <p className="pt-0.5 text-[10px] leading-relaxed text-muted-foreground">
           {embeddedStudio
             ? 'The embedding Astrale app supplies (and refreshes) the token via the shell.'
             : 'For when the studio runs embedded in the Astrale GUI — the host then supplies the token via the shell. No effect standalone.'}

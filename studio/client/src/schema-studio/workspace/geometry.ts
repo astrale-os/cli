@@ -2,6 +2,7 @@ import type { NodePosition } from '@shared/types'
 import type { Node } from '@xyflow/react'
 
 import { type Geometry, sizeOfNode } from '../geometry'
+import { CLASS_H, CLASS_W } from '../palette'
 
 export interface WorkspacePoint {
   x: number
@@ -48,7 +49,7 @@ const SHELF_WIDTH = 1900
 function nodeSize(node: Node): WorkspaceSize {
   const fallback =
     node.type === 'classNode'
-      ? { width: 160, height: 44 }
+      ? { width: CLASS_W, height: CLASS_H }
       : node.type === 'moduleNode'
         ? { width: 200, height: 44 }
         : MODULE_MIN_SIZE
@@ -134,15 +135,20 @@ export function layoutWorkspaceFrames(
 ): WorkspaceDomainFrame[] {
   const unpositioned = sources.map((source) => {
     const bounds = domainBounds(source.nodes)
-    const contentOffset = savedContentOffsets[source.domainId] ?? {
-      x: DOMAIN_PADDING - bounds.minX,
-      y: DOMAIN_PADDING + DOMAIN_HEADER - bounds.minY,
+    // A saved offset may predate the current module metrics, which is how one domain
+    // ended up with its modules flush against its frame while its neighbour had air.
+    // Never let the content sit closer than the padding; a wider offset is the user's.
+    const saved = savedContentOffsets[source.domainId]
+    const contentOffset = {
+      x: Math.max(saved?.x ?? Number.NEGATIVE_INFINITY, DOMAIN_PADDING - bounds.minX),
+      y: Math.max(
+        saved?.y ?? Number.NEGATIVE_INFINITY,
+        DOMAIN_PADDING + DOMAIN_HEADER - bounds.minY,
+      ),
     }
-    const requiredSize = {
-      width: Math.max(DOMAIN_MIN_SIZE.width, bounds.maxX + contentOffset.x),
-      height: Math.max(DOMAIN_MIN_SIZE.height, bounds.maxY + contentOffset.y),
-    }
-    const naturalSize = {
+    // the same padding on the far side — a resized frame can shrink to the content
+    // but never past it
+    const minimumSize = {
       width: Math.max(DOMAIN_MIN_SIZE.width, bounds.maxX + contentOffset.x + DOMAIN_PADDING),
       height: Math.max(DOMAIN_MIN_SIZE.height, bounds.maxY + contentOffset.y + DOMAIN_PADDING),
     }
@@ -151,8 +157,8 @@ export function layoutWorkspaceFrames(
       domainId: source.domainId,
       contentOffset,
       size: {
-        width: savedSize ? Math.max(requiredSize.width, savedSize.width) : naturalSize.width,
-        height: savedSize ? Math.max(requiredSize.height, savedSize.height) : naturalSize.height,
+        width: savedSize ? Math.max(minimumSize.width, savedSize.width) : minimumSize.width,
+        height: savedSize ? Math.max(minimumSize.height, savedSize.height) : minimumSize.height,
       },
     }
   })
