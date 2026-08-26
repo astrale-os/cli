@@ -38,9 +38,7 @@ describe('direct domain install operation identity', () => {
           recovery = input.recovery
           requests.push(
             await input.fn({
-              session: {
-                call: async (call: { input: unknown }) => call.input,
-              },
+              session: { schema: { install: async (input: unknown) => input } },
             } as never),
           )
         },
@@ -51,7 +49,7 @@ describe('direct domain install operation identity', () => {
     expect(requests).toEqual([
       {
         operation: GENERATED,
-        domains: [{ source: { kind: 'remote', url: 'https://crm.test' } }],
+        domains: [{ publication: { url: 'https://crm.test' } }],
       },
     ])
     expect(recovery).toEqual({
@@ -78,9 +76,7 @@ describe('direct domain install operation identity', () => {
         runKernelCommand: async (input) => {
           requests.push(
             await input.fn({
-              session: {
-                call: async (call: { input: unknown }) => call.input,
-              },
+              session: { schema: { install: async (input: unknown) => input } },
             } as never),
           )
         },
@@ -92,7 +88,7 @@ describe('direct domain install operation identity', () => {
     expect(requests).toEqual([
       {
         operation: RETRY,
-        domains: [{ source: { kind: 'remote', url: 'https://crm.test' } }],
+        domains: [{ publication: { url: 'https://crm.test' } }],
       },
     ])
   })
