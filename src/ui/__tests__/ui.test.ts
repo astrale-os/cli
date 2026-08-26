@@ -19,7 +19,7 @@ const registry: UiRegistry = {
       description: 'A controlled chart.',
       files: [
         {
-          path: 'registry/patterns/chart/line-basic.tsx',
+          path: 'line-basic.tsx',
           type: 'registry:component',
           target: 'components/astrale/pattern/chart/line-basic.tsx',
         },
@@ -79,6 +79,7 @@ function builtItem(item: UiRegistry['items'][number]) {
     ...item,
     files: item.files.map((file, index) => ({
       ...file,
+      path: `registry/patterns/chart/${file.path}`,
       content: index === 0 ? 'export const Chart = true\n' : 'export const Summary = true\n',
     })),
   }
@@ -152,6 +153,7 @@ describe('UI release and runner contracts', () => {
     expect(release.commit).toBe(commit)
     expect(release.compatibility.base).toBe('base')
     expect(release.registry.items).toHaveLength(1)
+    expect(release.registry.items[0]?.files[0]?.path).toBe('registry/patterns/chart/line-basic.tsx')
     expect(seen.filter((url) => new URL(url).hostname === 'raw.githubusercontent.com')).toEqual(
       expect.arrayContaining([
         expect.stringContaining('/' + commit + '/tooling/compatibility.json'),
@@ -191,6 +193,114 @@ describe('UI release and runner contracts', () => {
     }) as typeof fetch
     await expect(resolveUiRelease('0.3.0-beta.0', unsafe)).rejects.toThrow()
     expect(seen.some((url) => url.endsWith('/registry/registry.json'))).toBe(false)
+  })
+
+  test('rejects noncanonical and encoded registry includes before fetching them', async () => {
+    const unsafeIncludes = [
+      '%2e%2e/other/registry.json',
+      'registry/%2Fother/registry.json',
+      'registry/other/registry.json?raw=1',
+      'registry/other/registry.json#item',
+      'https://example.invalid/registry.json',
+      './registry/other/registry.json',
+    ]
+
+    for (const include of unsafeIncludes) {
+      const seen: string[] = []
+      const fallback = mockFetch(seen)
+      const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input)
+        if (url.endsWith('/' + commit + '/registry.json')) {
+          return Response.json({ include: [include] })
+        }
+        return fallback(input, init)
+      }) as typeof fetch
+
+      await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
+        code: 'UI_REGISTRY_UNAVAILABLE',
+      })
+      expect(seen.some((url) => url.includes('example.invalid') || url.includes('/other/'))).toBe(
+        false,
+      )
+    }
+  })
+
+  test('rejects malformed and already-qualified family-local item paths', async () => {
+    const unsafePaths = [
+      '',
+      '/absolute.tsx',
+      'C:/windows.tsx',
+      './line-basic.tsx',
+      '../line-basic.tsx',
+      '%2e%2e/line-basic.tsx',
+      'registry/patterns/chart/line-basic.tsx',
+    ]
+
+    for (const unsafePath of unsafePaths) {
+      const supplied = structuredClone(registry)
+      supplied.items[0]!.files[0]!.path = unsafePath
+      await expect(resolveUiRelease('0.3.0-beta.0', mockFetch([], supplied))).rejects.toMatchObject(
+        {
+          code: 'UI_REGISTRY_UNAVAILABLE',
+        },
+      )
+    }
+  })
+
+  test('qualifies every item file relative to its declaring nested registry', async () => {
+    const rootItem = {
+      ...structuredClone(registry.items[0]!),
+      name: 'pattern-chart-root',
+      files: [
+        {
+          ...structuredClone(registry.items[0]!.files[0]!),
+          path: 'registry/root.tsx',
+          target: 'components/astrale/pattern/chart/root.tsx',
+        },
+      ],
+      meta: { canonicalAddress: 'pattern/chart/root' },
+    }
+    const chartItem = {
+      ...structuredClone(registry.items[0]!),
+      files: [
+        structuredClone(registry.items[0]!.files[0]!),
+        {
+          ...structuredClone(registry.items[0]!.files[0]!),
+          path: 'parts/legend.tsx',
+          target: 'components/astrale/pattern/chart/parts/legend.tsx',
+        },
+      ],
+    }
+    const nestedItem = {
+      ...structuredClone(registry.items[0]!),
+      name: 'pattern-chart-nested-line',
+      files: [structuredClone(registry.items[0]!.files[0]!)],
+      meta: { canonicalAddress: 'pattern/chart/nested-line' },
+    }
+    const fallback = mockFetch()
+    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/' + commit + '/registry.json')) {
+        return Response.json({
+          items: [rootItem],
+          include: ['registry/patterns/chart/registry.json'],
+        })
+      }
+      if (url.endsWith('/registry/patterns/chart/registry.json')) {
+        return Response.json({ items: [chartItem], include: ['nested/registry.json'] })
+      }
+      if (url.endsWith('/registry/patterns/chart/nested/registry.json')) {
+        return Response.json({ items: [nestedItem] })
+      }
+      return fallback(input, init)
+    }) as typeof fetch
+
+    const release = await resolveUiRelease('0.3.0-beta.0', fetcher)
+    expect(release.registry.items.map((item) => item.files.map((file) => file.path))).toEqual([
+      ['registry/root.tsx'],
+      ['registry/patterns/chart/line-basic.tsx', 'registry/patterns/chart/parts/legend.tsx'],
+      ['registry/patterns/chart/nested/line-basic.tsx'],
+    ])
   })
 
   /** @evidence TEST-CLI-UI-BOUNDED-REMOTE-DOCUMENTS */
@@ -537,7 +647,7 @@ describe('UI source operations', () => {
           files: [
             registry.items[0]!.files[0]!,
             {
-              path: 'registry/patterns/chart/summary.tsx',
+              path: 'summary.tsx',
               type: 'registry:component',
               target: 'components/astrale/pattern/chart/summary.tsx',
             },
