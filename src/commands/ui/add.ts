@@ -25,7 +25,7 @@ export default {
     UI_JSON_OPTION,
   ],
   afterHelpText:
-    '\nInstalled source belongs to the application. Ordinary add never overwrites local edits.\nUse diff first, then --overwrite --yes when replacement is intentional.\n',
+    '\nInstalled source belongs to the application. Ordinary add never overwrites local edits.\nRun astrale ui doctor before intentionally replacing local source with --overwrite --yes.\n',
   action: async (items: string[], options: Options) =>
     runUiCommand(options, async () => {
       let selected = items

@@ -312,6 +312,24 @@ describe('help contract — connect-only command surface', () => {
 })
 
 describe('help contract — UI is project tooling', () => {
+  test('add recovery guidance uses only registered UI commands', async () => {
+    const program = await buildProgram()
+    const uiAdd = program.commands
+      .find((command) => command.name() === 'ui')
+      ?.commands.find((command) => command.name() === 'add')
+    let help = ''
+    uiAdd?.configureOutput({
+      writeOut: (chunk) => {
+        help += chunk ?? ''
+      },
+    })
+    uiAdd?.outputHelp()
+
+    expect(help).toContain('astrale ui doctor')
+    expect(help).toContain('--overwrite --yes')
+    expect(help).not.toMatch(/\b(?:astrale ui )?diff\b/u)
+  })
+
   test('keeps the documented root version alias operational', async () => {
     const program = await buildProgram()
     let stdout = ''
