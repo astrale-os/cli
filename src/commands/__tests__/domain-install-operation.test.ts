@@ -93,6 +93,29 @@ describe('direct domain install operation identity', () => {
     ])
   })
 
+  test('keeps identity-override consent warnings out of machine output', async () => {
+    globalThis.fetch = mock(async () => publicationResponse()) as unknown as typeof fetch
+    const originalError = console.error
+    const warnings: unknown[][] = []
+    console.error = (...args: unknown[]) => {
+      warnings.push(args)
+    }
+    try {
+      await installDirect(
+        'https://alias.test',
+        { direct: true, json: true, allowIdentityOverride: true },
+        {
+          createOperationId: () => GENERATED,
+          runKernelCommand: async () => undefined,
+        },
+      )
+    } finally {
+      console.error = originalError
+    }
+
+    expect(warnings).toEqual([])
+  })
+
   test('rejects a non-UUID operation before metadata or Kernel transport', async () => {
     const originalExit = process.exit
     const originalWrite = process.stderr.write

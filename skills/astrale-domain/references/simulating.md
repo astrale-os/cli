@@ -84,10 +84,13 @@ Observe installation and invocation through public Client APIs. Keep authenticat
 Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct.
 
 Cleanup must converge from partial lifecycle states: neither Domain installed, only dependencies
-installed, or the complete closure installed. Establish exact Domain presence before querying its
-Classes. `QUERY_DEFINITION_UNRESOLVED` is an empty cleanup observation only when the owning Domain is
-proven absent; never suppress authentication, authorization, protocol, or unrelated query failures.
-Delete only independently observed business facts, then uninstall dependents before dependencies.
+installed, or the complete closure installed. Establish exact Domain presence with a public
+Domain-root point observation before querying its Classes; accept only the exact not-found result as
+absence. Do not use a Schema-introspection failure as an absence shortcut.
+`QUERY_DEFINITION_UNRESOLVED` is an empty cleanup observation only when the owning Domain is already
+proven absent; never suppress authentication, authorization, protocol, unknown-outcome, or unrelated
+query failures. Delete only independently observed business facts, then uninstall dependents before
+dependencies.
 
 ### Design focused scenarios
 
