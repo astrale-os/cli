@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.19](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.18...cli/v1.0.0-beta.19) (2026-08-26)
+
+
+### Bug Fixes
+
+* **commands:** preserve journal correlation evidence ([#172](https://github.com/astrale-os/cli/issues/172)) ([962ffb9](https://github.com/astrale-os/cli/commit/962ffb914f73fcc0a75419d457f61265a8e1f035))
+
 ## [1.0.0-beta.18](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.17...cli/v1.0.0-beta.18) (2026-08-26)
 
 
