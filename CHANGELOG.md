@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.15](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.14...cli/v1.0.0-beta.15) (2026-08-26)
+
+
+### Bug Fixes
+
+* **ui:** preserve family registry file provenance ([#164](https://github.com/astrale-os/cli/issues/164)) ([3796f0a](https://github.com/astrale-os/cli/commit/3796f0a041b0d2b71e483ee236e3a55a85d1712b))
+
 ## [1.0.0-beta.14](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.13...cli/v1.0.0-beta.14) (2026-08-26)
 
 
