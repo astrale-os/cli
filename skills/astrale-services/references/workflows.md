@@ -29,7 +29,7 @@ astrale call /:services.astrale.ai:class.CloudflareWorker:deploy \
 
 The service parent must already exist. A redeploy to the same service path is the idempotent update path.
 
-To host Functions, author them with `serviceWorkerEntry({ functions })`. The same `CloudflareWorker.deploy` call discovers and reconciles them; do not pass a manifest in the deploy payload.
+To host Functions, author them with `serviceWorkerEntry({ functions })`. The same `CloudflareWorker.deploy` call discovers and reconciles them from the signed worker manifest.
 
 ## Secrets
 

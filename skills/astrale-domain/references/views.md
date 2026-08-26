@@ -31,6 +31,9 @@ Shell-React packages when the SDK facade owns the needed client/view contract.
 
 ## UI ownership
 
+Apply `astrale-frontend-design` for information architecture, visual hierarchy, interaction states,
+and interface copy. This reference owns the View's SDK integration and runtime boundaries.
+
 Separate:
 
 ```text

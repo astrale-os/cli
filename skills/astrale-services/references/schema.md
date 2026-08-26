@@ -25,7 +25,7 @@ Live graph properties include `url`, `state`, `digest`, and optional `error`.
 
 Deploy accepts an exact `path`, optional `name`, entry module name, modules, compatibility settings, service bindings, plaintext vars, static assets, and limits. Modules use `{ name, contentBase64, kind? }`; assets use `{ path, contentBase64, contentType? }`.
 
-The artifact never carries a second Function manifest. SDK-authored workers use one registry:
+SDK-authored workers derive the signed Function manifest from one registry:
 
 ```ts
 export default serviceWorkerEntry({
@@ -39,7 +39,7 @@ The result is `{ path, url, digest, state, error?, functions[] }`.
 
 ## Placement
 
-Services live at caller-selected paths such as `/services/api` or `/orgs/acme/workers/importer`. The domain does not maintain a global services folder or list method. Discover visible services through graph queries scoped to the part of the graph you own.
+Services live at caller-selected paths such as `/services/api` or `/orgs/acme/workers/importer`. Discover visible services through graph queries scoped to the part of the graph you own.
 
 ## View
 

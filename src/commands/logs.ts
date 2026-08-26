@@ -341,11 +341,8 @@ Behavior:
   Calls the public Kernel journal syscall and emits its { records, cursor }
   page. Topic selection is exact or prefix-based; cursors and timestamps are
   opaque strings owned by the journal backend. --follow reuses one Client Session
-  and advances only with the returned cursor. Machine follow output is NDJSON:
-  one complete admitted record per line; YAML follow is unsupported.
-
-  Historical event-glob lowering and the application-specific services-domain
-  log buffer are not part of the Kernel V2 journal contract.
+  and advances only with the returned cursor. With --json, follow output is
+  NDJSON with one complete admitted record per line; YAML follow is unsupported.
 
 Examples:
   $ astrale logs -i staging --limit 50

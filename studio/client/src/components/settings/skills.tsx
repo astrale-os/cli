@@ -7,11 +7,12 @@ import { toast } from 'sonner'
 import { useSkillContent } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-const FEATURED = ['astrale-cli', 'astrale-domain', 'agent-browser']
+const FEATURED = ['astrale-cli', 'astrale-domain', 'astrale-frontend-design', 'agent-browser']
 
 const SKILL_INSTALL: Record<string, string[]> = {
   'astrale-cli': ['npx skills add astrale-os/cli -g'],
   'astrale-domain': ['npx skills add astrale-os/cli -g'],
+  'astrale-frontend-design': ['npx skills add astrale-os/cli -g'],
   'agent-browser': [
     'npm install -g agent-browser && agent-browser install',
     'npx skills add vercel-labs/agent-browser -g',

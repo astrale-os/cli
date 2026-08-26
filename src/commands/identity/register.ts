@@ -45,10 +45,9 @@ Behavior:
   its result and stores the same target-bound registration. The callable owns
   authorization; the CLI never receives installed Domain authority.
 
-  Kernel V2 Nodes have opaque identity and no caller-assigned storage path, so
-  the historical --path option no longer exists. The CLI binds the key proof
-  to the exact provision fingerprint and target Kernel audience, then caches
-  the returned (issuer, subject) for subsequent calls.
+  The Kernel assigns each Node ID; callers do not choose a storage path. The
+  CLI binds the key proof to the exact provision fingerprint and target Kernel
+  audience, then caches the returned (issuer, subject) for subsequent calls.
 
 Example:
   $ astrale identity register alice --class /:accounts.example:class.User \
