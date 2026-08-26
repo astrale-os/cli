@@ -6,8 +6,9 @@ graph.
 
 One registry operation resolves one immutable UI commit. During the V1 prerelease, operations
 without an explicit version resolve the npm `beta` dist-tag; the legacy `latest` channel is not a V1
-source. Package compatibility and registry reads use that commit, and the detected package manager
-invokes the release-qualified shadcn CLI on demand. A local playground-exported theme is instead
-admitted and copied without network or shadcn. Both paths install consumer-owned source, activate
-themes through one project-relative CSS import, and complete application writes before the lock
-advances. Dry-run, list, and doctor do not claim a file mutation.
+source. Package compatibility and registry reads use that commit. Patterns and blocks invoke the
+release-qualified shadcn CLI on demand through the detected package manager. Released themes copy
+the exact admitted embedded CSS directly, while a local playground export is admitted and copied
+without registry or shadcn. Both theme paths install consumer-owned source and activate it through
+one project-relative CSS import, and complete application writes before the lock advances. Dry-run,
+list, and doctor do not claim a file mutation.

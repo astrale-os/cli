@@ -183,19 +183,23 @@ function themeFetch(seen: string[] = []): typeof fetch {
     }
     if (url.endsWith('/registry/themes/registry.json')) return Response.json(themeRegistry)
     if (url.endsWith('/registry/public/r/theme-observatory.json')) {
-      return Response.json({
-        ...themeRegistry.items[0],
-        files: [
-          {
-            ...themeRegistry.items[0]!.files[0],
-            path: 'registry/themes/observatory.css',
-            content: themeCss,
-          },
-        ],
-      })
+      return Response.json(builtThemeItem())
     }
     return new Response('not found', { status: 404 })
   }) as typeof fetch
+}
+
+function builtThemeItem() {
+  return {
+    ...themeRegistry.items[0],
+    files: [
+      {
+        ...themeRegistry.items[0]!.files[0],
+        path: 'registry/themes/observatory.css',
+        content: themeCss,
+      },
+    ],
+  }
 }
 
 function builtItem(item: UiRegistry['items'][number]) {
@@ -889,26 +893,29 @@ describe('UI source operations', () => {
       "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
     )
     const target = path.join(root, 'components/astrale/theme/observatory.css')
+    let invoked = false
     const result = await addUi(
       ['theme/observatory'],
       { project: root, yes: true },
       {
         fetcher: themeFetch(),
         runner: async () => {
-          await mkdir(path.dirname(target), { recursive: true })
-          await writeFile(target, themeCss)
+          invoked = true
           return { code: 0, stdout: '', stderr: '' }
         },
       },
     )
 
+    expect(invoked).toBe(false)
     expect(result).toMatchObject({ status: 'installed', items: ['theme/observatory'] })
+    expect(await readFile(target, 'utf8')).toBe(themeCss)
     expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
       "@import '../components/astrale/theme/observatory.css';",
     )
     const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
     expect(written.items['theme/observatory']).toMatchObject({
       address: 'theme/observatory',
+      sourceDigest: digest(JSON.stringify(builtThemeItem())),
       files: { 'components/astrale/theme/observatory.css': digest(themeCss) },
     })
     expect((await doctorUi(root)).healthy).toBe(true)
