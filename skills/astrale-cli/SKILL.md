@@ -258,7 +258,7 @@ installed bundle.
 `page.next` value to `--cursor` until it is absent.
 
 - Positional Paths create Path source terms.
-- `--definition <path>` selects Nodes implementing one exact Class.
+- `--class <path>` selects Nodes implementing one exact Class.
 - `--edge <class>` adds one exact expansion; direction is `outgoing`,
   `incoming`, or `incident`.
 - `--limit` is finite and defaults to 100.
@@ -267,7 +267,7 @@ installed bundle.
 
 ```bash
 astrale query /:notes.example:class.Note --limit 50 --json
-astrale query --definition /:notes.example:class.Note --limit 50 --json
+astrale query --class /:notes.example:class.Note --limit 50 --json
 astrale query @note \
   --edge /:notes.example:class.references \
   --direction outgoing --limit 25 --json

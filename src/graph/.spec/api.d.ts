@@ -11,7 +11,7 @@ export function classKey(input: string, label: string): ClassKey
 /** Untrusted CLI fields used to author or admit one exact Query V6 request. */
 export interface QueryCommandInput {
   readonly sources: readonly string[]
-  readonly definition?: string
+  readonly class?: string
   readonly ast?: unknown
   readonly edge?: string
   readonly direction?: QueryDirection

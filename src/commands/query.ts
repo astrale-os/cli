@@ -14,7 +14,7 @@ import { isMachine, output } from '../lib/output'
 type QueryOpts = KernelCommandOpts & {
   ast?: string
   file?: string
-  definition?: string
+  class?: string
   edge?: string
   direction?: QueryDirection
   limit?: string
@@ -28,7 +28,7 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
     input = {
       sources,
       ...(ast === undefined ? {} : { ast }),
-      definition: opts.definition,
+      class: opts.class,
       edge: opts.edge,
       direction: opts.direction,
       limit: opts.limit,
@@ -103,7 +103,7 @@ export default {
   description: 'Run one canonical Query V6 graph read',
   afterHelpText: `
 Behavior:
-  Positional Paths and --definition author a finite Query V6 read. --edge adds
+  Positional Paths and --class author a finite Query V6 read. --edge adds
   one exact Edge-Class expansion; --direction defaults to outgoing. --ast and
   --file accept a complete canonical astrale.graph.query/v6 document, including
   Property ordering and Node or Edge reference/value projections. --cursor resumes
@@ -115,7 +115,7 @@ Behavior:
 
 Examples:
   $ astrale query /:notes.example.dev:class.Note --limit 50
-  $ astrale query --definition /:notes.example.dev:class.Note --limit 50
+  $ astrale query --class /:notes.example.dev:class.Note --limit 50
   $ astrale query @note --edge /:notes.example.dev:class.references --direction outgoing --limit 25
   $ astrale query --file query.v6.json --cursor "$CURSOR"
 `,
@@ -124,7 +124,7 @@ Examples:
     { flags: '--ast <json>', description: 'Canonical Query V6 JSON document' },
     { flags: '-f, --file <path>', description: 'Read a canonical Query V6 document from a file' },
     {
-      flags: '--definition <path>',
+      flags: '--class <path>',
       description: 'Select Nodes satisfying one exact Class',
     },
     { flags: '--edge <class>', description: 'Expand one exact Edge Class' },
