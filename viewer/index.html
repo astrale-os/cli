@@ -32,6 +32,8 @@
         display: flex;
         gap: 12px;
         align-items: center;
+        min-width: 0;
+        overflow: hidden;
         padding: 6px 10px;
         border-bottom: 1px solid #26262e;
         flex: none;
@@ -56,6 +58,23 @@
         font-weight: 600;
         color: #e8e8f0;
       }
+      #view-label,
+      #target-label,
+      #identity-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #view-label {
+        flex-shrink: 1;
+      }
+      #target-label {
+        flex-shrink: 2;
+      }
+      #identity-label {
+        flex-shrink: 3;
+      }
       .dim {
         color: #7a7a86;
       }
@@ -68,6 +87,8 @@
       }
       #frame {
         flex: 1;
+        min-width: 0;
+        min-height: 0;
         position: relative;
       }
       #frame iframe {
