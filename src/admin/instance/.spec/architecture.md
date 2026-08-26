@@ -1,10 +1,10 @@
 # CLI Admin Instance adapter
 
-The adapter discovers and binds the configured Admin Domain, proves its origin, and resolves the
-singleton Fleet receiver. Policy-visible `Instance` and `Host` Nodes come from bounded Graph queries;
-Host location is joined through `instance_runs_on_host`.
+The adapter calls the stable singleton Fleet receiver directly. Listing and automatic creation are
+one Admin Method call each; connection performs no schema discovery, introspection, or graph read.
+Every returned summary is decoded locally before it reaches a command.
 
-Automatic creation invokes `Fleet.createInstance`; explicit `--host-id` resolves one visible,
-non-reserved Host and invokes `Host.createInstance`. Status, deletion, and Domain installation
-invoke the exact Instance receiver. The adapter creates internal operation IDs but preserves the
-existing CLI projection and selection-required experience.
+Automatic creation invokes `Fleet.createInstance`. Status, deletion, and Domain installation first
+resolve a caller-visible Instance through Fleet and then invoke that exact Instance receiver. The
+adapter creates internal operation IDs but preserves the existing CLI projection and
+selection-required experience.
