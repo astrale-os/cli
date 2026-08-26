@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.27](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.26...cli/v1.0.0-beta.27) (2026-08-26)
+
+
+### Bug Fixes
+
+* **commands:** make skill updates self-healing ([#193](https://github.com/astrale-os/cli/issues/193)) ([4c47d36](https://github.com/astrale-os/cli/commit/4c47d3666682fae8139583ce61afaf9c385c6ce4))
+
 ## [1.0.0-beta.26](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.25...cli/v1.0.0-beta.26) (2026-08-26)
 
 
