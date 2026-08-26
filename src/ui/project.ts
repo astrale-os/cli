@@ -12,6 +12,7 @@ export type UiProject = {
   cssPath: string
   componentsPath: string
   uiLockPath: string
+  isAstraleDomain: boolean
 }
 
 const MANAGERS: readonly [string, PackageManager][] = [
@@ -173,6 +174,10 @@ export async function discoverUiProject(input = process.cwd()): Promise<UiProjec
     cssPath: path.join(root, cssRelative),
     componentsPath,
     uiLockPath: path.join(root, 'astrale-ui.lock.json'),
+    isAstraleDomain:
+      (await exists(path.join(root, 'astrale.config.ts'))) &&
+      (await exists(path.join(root, 'ui/index.ts'))) &&
+      (await exists(path.join(root, 'frontend/package.json'))),
   }
 }
 

@@ -1,5 +1,6 @@
 import { access, lstat, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import { isSeq, parseDocument } from 'yaml'
 
 import { digest, parseUiLock, readUiLock } from './lock'
 import {
@@ -42,6 +43,140 @@ function manifestDependencies(manifest: Record<string, unknown>): Record<string,
   return { ...(manifest.dependencies as Record<string, string> | undefined) }
 }
 
+function domainRegistryPackagePath(project: UiProject): string {
+  return path.join(project.root, 'components/package.json')
+}
+
+function pnpmWorkspacePath(project: UiProject): string {
+  return path.join(project.root, 'pnpm-workspace.yaml')
+}
+
+function domainRegistryPackageName(manifest: Record<string, unknown>): string {
+  const name = typeof manifest.name === 'string' ? manifest.name : 'astrale-domain'
+  return name + '-ui-registry'
+}
+
+function appendWorkspace(manifest: Record<string, unknown>, workspace: string): void {
+  const configured = manifest.workspaces
+  if (configured === undefined) {
+    manifest.workspaces = [workspace]
+    return
+  }
+  if (Array.isArray(configured) && configured.every((value) => typeof value === 'string')) {
+    if (!configured.includes(workspace)) manifest.workspaces = [...configured, workspace]
+    return
+  }
+  if (configured && typeof configured === 'object') {
+    const candidate = configured as { packages?: unknown }
+    if (
+      Array.isArray(candidate.packages) &&
+      candidate.packages.every((value) => typeof value === 'string')
+    ) {
+      if (!candidate.packages.includes(workspace)) {
+        manifest.workspaces = { ...candidate, packages: [...candidate.packages, workspace] }
+      }
+      return
+    }
+  }
+  throw new UiError('UI_PROJECT_UNSUPPORTED', 'package.json has an invalid workspaces field.')
+}
+
+async function appendPnpmWorkspace(project: UiProject, workspace: string): Promise<void> {
+  const target = pnpmWorkspacePath(project)
+  const source = await readOptional(target)
+  if (source === undefined) {
+    await writeFile(target, "packages:\n  - '" + workspace + "'\n", 'utf8')
+    return
+  }
+  const document = parseDocument(source)
+  if (document.errors.length > 0) {
+    throw new UiError('UI_PROJECT_UNSUPPORTED', 'pnpm-workspace.yaml is not valid YAML.')
+  }
+  const packages = document.get('packages', true)
+  if (!isSeq(packages)) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      'pnpm-workspace.yaml must declare a packages sequence.',
+    )
+  }
+  const values = packages.toJSON()
+  if (!Array.isArray(values) || !values.every((value) => typeof value === 'string')) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      'pnpm-workspace.yaml must declare a packages sequence.',
+    )
+  }
+  if (!values.includes(workspace)) packages.add(workspace)
+  await writeFile(target, String(document), 'utf8')
+}
+
+async function hasDomainRegistryWorkspace(project: UiProject): Promise<boolean> {
+  if (!project.isAstraleDomain || !(await exists(domainRegistryPackagePath(project)))) return false
+  const registryManifest = JSON.parse(
+    await readFile(domainRegistryPackagePath(project), 'utf8'),
+  ) as Record<string, unknown>
+  if (
+    registryManifest.private !== true ||
+    typeof registryManifest.name !== 'string' ||
+    registryManifest.name === UI_PACKAGE ||
+    registryManifest.name === project.packageJson.name
+  ) {
+    return false
+  }
+  if (project.manager === 'pnpm') {
+    const source = await readOptional(pnpmWorkspacePath(project))
+    if (source === undefined) return false
+    const document = parseDocument(source)
+    if (document.errors.length > 0) return false
+    const packages = document.get('packages', true)
+    const values = isSeq(packages) ? packages.toJSON() : undefined
+    return Array.isArray(values) && values.includes('components')
+  }
+  const configured = project.packageJson.workspaces
+  const workspaces = Array.isArray(configured)
+    ? configured
+    : configured && typeof configured === 'object'
+      ? (configured as { packages?: unknown }).packages
+      : undefined
+  return Array.isArray(workspaces) && workspaces.includes('components')
+}
+
+async function writeDomainRegistryWorkspace(
+  project: UiProject,
+  manifest: Record<string, unknown>,
+): Promise<void> {
+  if (!project.isAstraleDomain) return
+  if (project.manager === 'pnpm') await appendPnpmWorkspace(project, 'components')
+  else appendWorkspace(manifest, 'components')
+  const target = domainRegistryPackagePath(project)
+  const existing = await readOptional(target)
+  const registryManifest = existing
+    ? (JSON.parse(existing) as Record<string, unknown>)
+    : { name: domainRegistryPackageName(manifest) }
+  if (registryManifest.private === false) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      'The Astrale registry source workspace must remain private.',
+    )
+  }
+  if (
+    registryManifest.name === UI_PACKAGE ||
+    registryManifest.name === manifest.name ||
+    (registryManifest.name !== undefined && typeof registryManifest.name !== 'string')
+  ) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      'The Astrale registry source workspace must have a distinct package name.',
+    )
+  }
+  await writeJson(target, {
+    ...registryManifest,
+    name: registryManifest.name ?? domainRegistryPackageName(manifest),
+    private: true,
+    type: registryManifest.type ?? 'module',
+  })
+}
+
 export type InitUiOptions = {
   path?: string
   preset?: UiPreset
@@ -73,7 +208,8 @@ export async function initUi(
       (!options.preset || options.preset === lock.preset) &&
       css.includes(UI_PACKAGE + '/theme.css') &&
       css.includes(UI_PACKAGE + '/presets/' + lock.preset + '.css') &&
-      components?.style === 'base-nova'
+      components?.style === 'base-nova' &&
+      (!project.isAstraleDomain || (await hasDomainRegistryWorkspace(project)))
     if (!desired) {
       throw new UiError(
         'UI_ITEM_CONFLICT',
@@ -96,6 +232,8 @@ export async function initUi(
       cssRelative,
       'components.json',
       'astrale-ui.lock.json',
+      ...(project.isAstraleDomain ? ['components/package.json'] : []),
+      ...(project.isAstraleDomain && project.manager === 'pnpm' ? ['pnpm-workspace.yaml'] : []),
       ...(project.lockPath ? [projectRelative(project, project.lockPath)] : []),
     ],
     tooling: {
@@ -107,11 +245,20 @@ export async function initUi(
   }
   if (options.dryRun) return plan
 
+  if (project.isAstraleDomain) {
+    await assertSafePlannedTarget(project, 'components/package.json')
+    if (project.manager === 'pnpm') {
+      await assertSafePlannedTarget(project, 'pnpm-workspace.yaml')
+    }
+  }
+
   const mutationPaths = [
     project.packageJsonPath,
     project.cssPath,
     project.componentsPath,
     project.uiLockPath,
+    ...(project.isAstraleDomain ? [domainRegistryPackagePath(project)] : []),
+    ...(project.isAstraleDomain && project.manager === 'pnpm' ? [pnpmWorkspacePath(project)] : []),
     ...(project.lockPath ? [project.lockPath] : []),
   ]
   const snapshots = new Map<string, string | undefined>()
@@ -123,6 +270,7 @@ export async function initUi(
       ...manifestDependencies(manifest),
       [UI_PACKAGE]: release.version,
     }
+    await writeDomainRegistryWorkspace(project, manifest)
     await writeJson(project.packageJsonPath, manifest)
 
     const currentCss = (await readOptional(project.cssPath)) ?? ''
@@ -211,6 +359,28 @@ export async function initUi(
       else await rm(target, { force: true })
     }
     throw error
+  }
+}
+
+async function pinUiDependency(
+  project: UiProject,
+  version: string,
+  runner: UiRunner,
+): Promise<void> {
+  const manifest = JSON.parse(await readFile(project.packageJsonPath, 'utf8')) as Record<
+    string,
+    unknown
+  >
+  if (manifestDependencies(manifest)[UI_PACKAGE] === version) return
+  manifest.dependencies = { ...manifestDependencies(manifest), [UI_PACKAGE]: version }
+  await writeJson(project.packageJsonPath, manifest)
+  const result = await runner(project.manager, ['install'], project.root)
+  if (result.code !== 0) {
+    throw new UiError(
+      'UI_DEPENDENCY_INSTALL_FAILED',
+      project.manager + ' install failed while restoring the locked UI release.',
+      result.stderr.trim() || undefined,
+    )
   }
 }
 
@@ -323,6 +493,7 @@ export async function addUi(
           throw new UiError('UI_TOOL_FAILED', 'The pinned shadcn operation omitted an item file.')
         }
       }
+      await pinUiDependency(project, lock.package.version, dependencies.runner ?? defaultUiRunner)
     }
   } catch (error) {
     for (const [target, previous] of snapshots) {
