@@ -101,8 +101,11 @@ astrale update --check
 astrale update
 ```
 
-`astrale update` upgrades official script installs and follows the beta channel by default.
-Use `--check`, `--channel <channel>`, or `--version <version>` to control the target release.
+`astrale update` upgrades official script installs, ensures every Astrale agent skill published
+from `astrale-os/cli` is installed and healthy, and follows the beta channel by default. It reports
+whether the skill pass was unchanged, installed, updated, or repaired. Use `--check`,
+`--channel <channel>`, or `--version <version>` to control the CLI release target; skills always
+track the repository's current `main` source. `--no-skills` is the explicit opt-out.
 
 ## Commands
 

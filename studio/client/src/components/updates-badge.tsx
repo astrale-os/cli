@@ -11,12 +11,11 @@ import { Button } from './ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 
 /**
- * The header "Update" chip — rendered ONLY when the CLI or an @astrale-os/* SDK
+ * The header "Update" chip — rendered ONLY when the CLI, Astrale skills, or an @astrale-os/* SDK
  * dep is behind (invisible when everything is current). The check is the CLI's own
  * `astrale update --check --json` (via /api/domain/:id/updates); the popover lists
  * what's behind and an "Update now" button that runs `astrale update --yes` in the
- * domain root — which refreshes the CLI, SDK deps, AND the agent skills, so skills
- * need no separate signal. On success we re-check, so the badge clears itself.
+ * domain root. On success we re-check, so the badge clears itself.
  */
 export function UpdatesBadge({ domainId }: { domainId: string }) {
   const { data } = useUpdates(domainId)
@@ -29,7 +28,11 @@ export function UpdatesBadge({ domainId }: { domainId: string }) {
   // the user sees the outcome.
   if (!data?.stale && phase === 'idle') return null
 
-  const { cli, sdk } = data ?? { cli: { stale: false }, sdk: { stale: false, outdated: [] } }
+  const { cli, skills, sdk } = data ?? {
+    cli: { stale: false },
+    skills: { status: 'current' as const },
+    sdk: { stale: false, outdated: [] },
+  }
 
   const run = async () => {
     setPhase('running')
@@ -83,6 +86,15 @@ export function UpdatesBadge({ domainId }: { domainId: string }) {
               {cli.channel ? (
                 <span className="text-muted-foreground/60"> ({cli.channel})</span>
               ) : null}
+            </span>
+          </div>
+        )}
+
+        {(skills.status === 'update-available' || skills.status === 'repair-needed') && (
+          <div className="flex items-center justify-between gap-2 text-[11px]">
+            <span className="font-medium text-foreground">Astrale skills</span>
+            <span className="text-muted-foreground">
+              {skills.status === 'repair-needed' ? 'Repair needed' : 'Update available'}
             </span>
           </div>
         )}

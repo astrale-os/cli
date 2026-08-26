@@ -60,6 +60,7 @@
     "format": "pnpm exec oxfmt --write .",
     "format:check": "pnpm exec oxfmt --check .",
     "test": "node scripts/qualification/source-boundary.mjs --target && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
+    "test:skills-e2e": "node scripts/qualification/skills-update-e2e.mjs",
     "test:studio": "pnpm --dir studio test",
     "test:watch": "bun test --watch src"
   },

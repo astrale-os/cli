@@ -3,61 +3,10 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { findAgentBrowser } from './browser'
-import { run } from './proc'
 
-/**
- * Agent skills and the agent-browser tool are owned by the coding-agent harness
- * (Claude Code et al.) and by npm — not by this CLI. `astrale setup` and
- * `astrale update` only *detect* them and delegate installation to their real
- * installers (`npx skills add`, `npm i -g agent-browser`). This module is that
- * detection + delegation layer.
- */
+export * from './skills/sync'
 
-/** The skill name the agent harness looks up under `<dir>/<name>/SKILL.md`. */
-export const ASTRALE_CLI_SKILL = 'astrale-cli'
-export const ASTRALE_DOMAIN_SKILL = 'astrale-domain'
 export const AGENT_BROWSER_SKILL = 'agent-browser'
-
-/**
- * Published skill source consumed by `npx skills add`. The public `astrale-os/cli`
- * repo hosts BOTH the astrale-cli and astrale-domain skills (under `skills/`), so
- * one `npx skills add astrale-os/cli` installs both; address one with
- * `astrale-os/cli@astrale-cli` or `astrale-os/cli@astrale-domain`.
- */
-export const ASTRALE_CLI_SKILL_SOURCE = 'astrale-os/cli'
-
-/** Human-facing command that installs (or refreshes) both astrale skills, globally. */
-export const SKILL_INSTALL_HINT = `npx skills add ${ASTRALE_CLI_SKILL_SOURCE} -g`
-
-/**
- * Install or refresh the astrale agent skills by delegating to the skill package
- * manager (`npx skills add`). We install GLOBALLY (`-g`, user-level): one run
- * equips every project on the machine — the harness resolves the skills from the
- * user Claude dir (see {@link detectSkill}) regardless of cwd, and installs land
- * in `~/.agents/skills` rather than clobbering any project's own `.agents/skills`
- * (notably this repo's symlinked source). We don't reimplement skill installation
- * — re-running the real installer is also how an existing install updates to the
- * latest published SKILL.md, so this doubles as the update path.
- *
- * We CAPTURE the installer's output rather than stream it, and surface it only on
- * failure. A global install reports a benign per-agent note for any agent format
- * that can't go user-level (e.g. PromptScript: "does not support global skill
- * installation") as a "Failed to install N" banner — even though `npx skills`
- * still exits 0 and the skills land for every other agent. Streaming that made a
- * successful refresh look broken; suppressing it on success lets the caller print
- * a clean line. Resolves true on exit 0. Requires Node/`npx` on PATH + network.
- */
-export async function installSkills(): Promise<boolean> {
-  const { code, stdout, stderr } = await run('npx', [
-    'skills',
-    'add',
-    ASTRALE_CLI_SKILL_SOURCE,
-    '-g',
-    '-y',
-  ])
-  if (code !== 0) process.stderr.write(stdout + stderr)
-  return code === 0
-}
 
 /**
  * The directories the agent harness ACTUALLY loads skills from, in resolution
