@@ -74,9 +74,11 @@ function runCheck(env) {
   return JSON.parse(result.stdout)
 }
 
+const skillNames = ['astrale-cli', 'astrale-domain', 'astrale-frontend-design', 'astrale-services']
+
 function canonicalSnapshot(home) {
   const lock = readFileSync(join(home, '..', 'state', 'skills', '.skill-lock.json'), 'utf8')
-  const files = ['astrale-cli', 'astrale-domain', 'astrale-services'].map((name) =>
+  const files = skillNames.map((name) =>
     readFileSync(join(home, '.agents', 'skills', name, 'SKILL.md'), 'utf8'),
   )
   return JSON.stringify({ lock, files })
@@ -105,7 +107,7 @@ try {
   )
 
   const updated = runUpdate(updateCase.env)
-  assert.match(updated.stdout, /Astrale skills updated/u)
+  assert.match(updated.stdout, /Astrale skills (?:repaired and )?updated/u)
   const afterUpdate = canonicalSnapshot(updateCase.home)
   const listed = execute('npx', ['--yes', installer, 'list', '-g', '--json'], updateCase.env)
   const installedSkills = JSON.parse(listed.stdout)
@@ -145,7 +147,7 @@ try {
   const installCase = environment('install')
   const installed = runUpdate(installCase.env)
   assert.match(installed.stdout, /Astrale skills installed/u)
-  for (const name of ['astrale-cli', 'astrale-domain', 'astrale-services']) {
+  for (const name of skillNames) {
     assert.equal(existsSync(join(installCase.home, '.agents', 'skills', name, 'SKILL.md')), true)
   }
 

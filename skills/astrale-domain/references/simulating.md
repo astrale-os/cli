@@ -83,6 +83,12 @@ workspace, a clean Kernel data root, real credentials, and the deployment adapte
 Observe installation and invocation through public Client APIs. Keep authentication, authority,
 Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct.
 
+Cleanup must converge from partial lifecycle states: neither Domain installed, only dependencies
+installed, or the complete closure installed. Establish exact Domain presence before querying its
+Classes. `QUERY_DEFINITION_UNRESOLVED` is an empty cleanup observation only when the owning Domain is
+proven absent; never suppress authentication, authorization, protocol, or unrelated query failures.
+Delete only independently observed business facts, then uninstall dependents before dependencies.
+
 ### Design focused scenarios
 
 Make each scenario prove one semantic claim with the smallest sufficient criteria. Distinct evidence

@@ -41,8 +41,11 @@ Cross-owner imports go through the generated `#` facades.
 
 ## Runtime and Application
 
-Runtime code imports the authored Schema only as a type. It realizes external Providers once and
-registers exact Action and Workflow definitions:
+Every Runtime-side module imports authored Schema handles only as types. A value import from a
+Runtime, Action, Workflow, Integration, Provider, Query, or Mutation can retain the build-only Schema
+DSL in the Worker closure; the SDK build boundary rejects that leak. Application/publication
+composition remains the value owner. Runtime realizes external Providers once and registers exact
+Action and Workflow definitions:
 
 ```ts
 import { defineRuntime } from '@astrale-os/sdk/runtime'
@@ -111,6 +114,13 @@ Treat emitted declarations and the packed consumer as public package evidence. A
 only SDK facades yet still emit a Kernel specifier; minimize that as a facade defect rather than
 hiding it with a cast or shadow type. Distinguish runtime/peer dependencies from author-only
 devDependencies when qualifying the packed artifact.
+
+When replacing a generated single-Schema root with several public Schema subpaths, keep only package
+`imports` whose source and published targets are actually emitted. Do not retain broad scaffold
+aliases by habit or invent another packaging API: the ordinary package exports plus
+`astrale-domain package` are the compatibility surface. Exercise the tarball from a consumer outside
+the source workspace. With pnpm, pass `--ignore-workspace` so parent workspace discovery cannot turn
+that consumer into a source-topology test.
 
 ## Build, deploy, install
 
