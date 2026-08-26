@@ -795,8 +795,60 @@ describe('UI initialization transaction', () => {
     )
   })
 
+  test('preserves an existing development-only UI dependency during initialization', async () => {
+    const root = await fixture()
+    const manifestPath = path.join(root, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.devDependencies = { '@astrale-os/ui': '0.3.0-beta.0' }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+
+    await initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() })
+
+    const written = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(written.dependencies['@astrale-os/ui']).toBeUndefined()
+    expect(written.devDependencies['@astrale-os/ui']).toBe('0.3.0-beta.0')
+  })
+
+  test('doctor accepts one exact development dependency and rejects drift or duplication', async () => {
+    const root = await lockedFixture()
+    const manifestPath = path.join(root, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    delete manifest.dependencies['@astrale-os/ui']
+    manifest.devDependencies = { '@astrale-os/ui': '0.3.0-beta.0' }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
+    )
+    await writeFile(
+      path.join(root, 'src/index.css'),
+      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
+    )
+
+    expect((await doctorUi(root)).healthy).toBe(true)
+
+    manifest.devDependencies['@astrale-os/ui'] = '0.3.0-beta.1'
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    expect((await doctorUi(root)).checks.find(({ check }) => check === 'package')).toMatchObject({
+      ok: false,
+      detail: 'devDependencies:0.3.0-beta.1',
+    })
+
+    manifest.devDependencies['@astrale-os/ui'] = '0.3.0-beta.0'
+    manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.0'
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    expect((await doctorUi(root)).checks.find(({ check }) => check === 'package')).toMatchObject({
+      ok: false,
+      detail: 'declared in dependencies and devDependencies',
+    })
+  })
+
   test('repeated exact init performs no release fetch while requested drift rejects', async () => {
     const root = await fixture()
+    const manifestPath = path.join(root, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.0'
+    await writeFile(manifestPath, JSON.stringify(manifest))
     await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
     await writeFile(
       path.join(root, 'components.json'),
@@ -819,6 +871,11 @@ describe('UI initialization transaction', () => {
     expect(result.status).toBe('unchanged')
     expect(fetched).toBe(false)
     await expect(initUi({ path: root, preset: 'compact' })).rejects.toMatchObject({
+      code: 'UI_ITEM_CONFLICT',
+    })
+    manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.1'
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    await expect(initUi({ path: root, preset: 'astrale' })).rejects.toMatchObject({
       code: 'UI_ITEM_CONFLICT',
     })
   })
@@ -1130,6 +1187,38 @@ describe('UI source operations', () => {
         '@astrale-os/ui'
       ],
     ).toBe('0.3.0-beta.0')
+  })
+
+  test('restores a development-only UI dependency without retaining shadcn duplication', async () => {
+    const root = await lockedFixture()
+    const manifestPath = path.join(root, 'package.json')
+    const initial = JSON.parse(await readFile(manifestPath, 'utf8'))
+    delete initial.dependencies['@astrale-os/ui']
+    initial.devDependencies = { '@astrale-os/ui': '0.3.0-beta.0' }
+    await writeFile(manifestPath, JSON.stringify(initial))
+    const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
+
+    await addUi(
+      ['pattern/chart/line/basic'],
+      { project: root, yes: true },
+      {
+        fetcher: mockFetch(),
+        runner: async (_file, args) => {
+          if (args[0] === 'dlx') {
+            await mkdir(path.dirname(installed), { recursive: true })
+            await writeFile(installed, 'export const Chart = true\n')
+            const changed = JSON.parse(await readFile(manifestPath, 'utf8'))
+            changed.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
+            await writeFile(manifestPath, JSON.stringify(changed))
+          }
+          return { code: 0, stdout: '', stderr: '' }
+        },
+      },
+    )
+
+    const written = JSON.parse(await readFile(manifestPath, 'utf8'))
+    expect(written.dependencies['@astrale-os/ui']).toBeUndefined()
+    expect(written.devDependencies['@astrale-os/ui']).toBe('0.3.0-beta.0')
   })
 
   test('rolls back item and package state when restoring the locked dependency fails', async () => {
