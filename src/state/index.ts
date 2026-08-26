@@ -1,4 +1,4 @@
-export { atomicWrite, withFileLock } from './files'
+export { atomicWrite, atomicWriteSync, withFileLock } from './files'
 export type { FileLockOptions } from './files'
 export { ExchangeCredentialCache } from './exchange-credentials'
 export type { exchange } from './exchange-credentials'
@@ -23,7 +23,9 @@ export {
   INSTALL_PATH,
   INSTANCES_PATH,
   KEYS_DIR,
+  SESSION_ROUTES_PATH,
   createPaths,
   paths,
 } from './paths'
 export type { PathEnvironment, Paths } from './paths'
+export { FileSessionRouteStore, SESSION_ROUTE_STORE } from './session-routes'

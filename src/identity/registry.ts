@@ -10,6 +10,7 @@ import {
   type IdentityStore,
   type Registration,
   ExchangeCredentialCache,
+  SESSION_ROUTE_STORE,
 } from '../state/index'
 
 export type { Identity, IdentityStore, Registration } from '../state/index'
@@ -68,6 +69,7 @@ export async function deleteIdentity(name: string): Promise<void> {
     return { next: { ...store, identities }, value: undefined }
   })
   await new ExchangeCredentialCache().clear()
+  SESSION_ROUTE_STORE.clear()
 }
 
 function hasAnotherKeyIdentity(store: IdentityStore, name: string, subject: string): boolean {

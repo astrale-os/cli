@@ -20,6 +20,7 @@ describe('state paths', () => {
     expect(explicit.home).toBe('/explicit/home')
     expect(explicit.keys).toBe('/environment/keys')
     expect(explicit.config).toBe(join('/explicit/home', 'config.json'))
+    expect(explicit.sessionRoutes).toBe(join('/explicit/home', 'session', 'routes.json'))
     expect(inherited.home).toBe('/environment/home')
     expect(inherited.keys).toBe('/environment/keys')
     expect(Object.isFrozen(explicit)).toBe(true)

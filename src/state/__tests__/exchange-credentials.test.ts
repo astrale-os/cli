@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -19,11 +19,22 @@ afterEach(async () => {
 
 describe('exchange credential cache', () => {
   /** @evidence TEST-CLI-EXCHANGE-CACHE-EXACT-KEY-AND-PRIVATE-MODE */
-  test('partitions by Kernel, Domain, and User under private filesystem modes', async () => {
+  test('partitions by Kernel, Domain, and source identity under private filesystem modes', async () => {
     const cache = new ExchangeCredentialCache(path)
     const now = () => 100
     const first = key('https://kernel-a.example', 'https://domain.example', 'user-a')
-    const second = key('https://kernel-a.example', 'https://domain.example', 'user-b')
+    const partitions = [
+      first,
+      key('https://kernel-b.example', first.domainIssuer, first.sourceSubject),
+      key(first.kernelIssuer, 'https://other-domain.example', first.sourceSubject),
+      key(
+        first.kernelIssuer,
+        first.domainIssuer,
+        first.sourceSubject,
+        'https://other-source.example',
+      ),
+      key(first.kernelIssuer, first.domainIssuer, 'user-b'),
+    ]
     let refreshes = 0
 
     const resolve = (candidate: typeof first) =>
@@ -31,18 +42,16 @@ describe('exchange credential cache', () => {
         candidate,
         async () => {
           refreshes += 1
-          return {
-            credential: token(candidate, 200),
-            expiresAt: 200,
-          }
+          return entry(candidate, 200)
         },
         now,
       )
 
-    await expect(resolve(first)).resolves.toBe(token(first, 200))
-    await expect(resolve(first)).resolves.toBe(token(first, 200))
-    await expect(resolve(second)).resolves.toBe(token(second, 200))
-    expect(refreshes).toBe(2)
+    for (const candidate of partitions) {
+      await expect(resolve(candidate)).resolves.toBe(token(candidate, 200))
+      await expect(resolve(candidate)).resolves.toBe(token(candidate, 200))
+    }
+    expect(refreshes).toBe(partitions.length)
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect((await stat(join(directory, 'private'))).mode & 0o777).toBe(0o700)
   })
@@ -56,10 +65,7 @@ describe('exchange credential cache', () => {
     const refresh = async () => {
       refreshes += 1
       await new Promise((resolve) => setTimeout(resolve, 10))
-      return {
-        credential: token(candidate, 200),
-        expiresAt: 200,
-      }
+      return entry(candidate, 200)
     }
 
     const values = await Promise.all([
@@ -77,10 +83,7 @@ describe('exchange credential cache', () => {
     const candidate = key('https://kernel.example', 'https://domain.example', 'user')
     await cache.getOrRefresh(
       candidate,
-      async () => ({
-        credential: token(candidate, 120),
-        expiresAt: 120,
-      }),
+      async () => entry(candidate, 120),
       () => 50,
     )
     let refreshes = 0
@@ -88,10 +91,7 @@ describe('exchange credential cache', () => {
       candidate,
       async () => {
         refreshes += 1
-        return {
-          credential: token(candidate, 220),
-          expiresAt: 220,
-        }
+        return entry(candidate, 220)
       },
       () => 100,
     )
@@ -99,19 +99,16 @@ describe('exchange credential cache', () => {
 
     await expect(
       cache.getOrRefresh(
-        key('https://other-kernel.example', candidate.domainIssuer, candidate.user),
-        async () => ({
-          credential: token(candidate, 220),
-          expiresAt: 220,
-        }),
+        key('https://other-kernel.example', candidate.domainIssuer, candidate.sourceSubject),
+        async () => entry(candidate, 220),
         () => 100,
       ),
     ).rejects.toThrow(/inconsistent with its cache key/i)
 
     await expect(
       cache.getOrRefresh(
-        key(candidate.kernelIssuer, candidate.domainIssuer, 'other-user'),
-        async () => ({ credential: token(candidate, 220), expiresAt: 220 }),
+        key(candidate.kernelIssuer, candidate.domainIssuer, 'other-source'),
+        async () => entry(candidate, 220),
         () => 100,
       ),
     ).rejects.toThrow(/inconsistent with its cache key/i)
@@ -125,10 +122,7 @@ describe('exchange credential cache', () => {
       await expect(
         cache.getOrRefresh(
           malformedCandidate,
-          async () => ({
-            credential: token(malformedCandidate, 220, malformed),
-            expiresAt: 220,
-          }),
+          async () => entry(malformedCandidate, 220, malformed),
           () => 100,
         ),
       ).rejects.toThrow(/inconsistent with its cache key/i)
@@ -143,10 +137,7 @@ describe('exchange credential cache', () => {
     for (const candidate of [a, b]) {
       await cache.getOrRefresh(
         candidate,
-        async () => ({
-          credential: token(candidate, 200),
-          expiresAt: 200,
-        }),
+        async () => entry(candidate, 200),
         () => 100,
       )
     }
@@ -156,10 +147,60 @@ describe('exchange credential cache', () => {
     await cache.clear()
     expect(JSON.parse(await readFile(path, 'utf8')).entries).toEqual({})
   })
+
+  test('discards the V1 cache and writes only V2 after a fresh exact exchange', async () => {
+    await mkdir(join(directory, 'private'))
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        entries: { legacy: { credential: 'legacy', expiresAt: 999 } },
+      }),
+    )
+    const cache = new ExchangeCredentialCache(path)
+    const candidate = key('https://kernel.example', 'https://domain.example', 'source-user')
+    let refreshes = 0
+    await cache.getOrRefresh(
+      candidate,
+      async () => {
+        refreshes += 1
+        return entry(candidate, 200)
+      },
+      () => 100,
+    )
+    expect(refreshes).toBe(1)
+    const stored = JSON.parse(await readFile(path, 'utf8'))
+    expect(stored.version).toBe(2)
+    expect(JSON.stringify(stored)).not.toContain('legacy')
+  })
 })
 
-function key(kernelIssuer: string, domainIssuer: string, user: string) {
-  return { kernelIssuer, domainIssuer, user }
+function key(
+  kernelIssuer: string,
+  domainIssuer: string,
+  sourceSubject: string,
+  sourceIssuer = 'https://source.example',
+) {
+  return {
+    kernelIssuer,
+    domainIssuer,
+    sourceIssuer,
+    sourceSubject,
+  }
+}
+
+function entry(
+  candidate: ReturnType<typeof key>,
+  expiresAt: number,
+  malformed?: 'outer-delegation' | 'proof-without-delegation',
+) {
+  return {
+    credential: token(candidate, expiresAt, malformed),
+    expiresAt,
+    user: candidate.sourceSubject,
+    sourceIssuer: candidate.sourceIssuer,
+    sourceSubject: candidate.sourceSubject,
+  }
 }
 
 function token(
@@ -170,12 +211,17 @@ function token(
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
     iss: candidate.kernelIssuer,
-    sub: candidate.user,
+    sub: candidate.sourceSubject,
     aud: candidate.kernelIssuer,
     exp,
     ...(malformed === 'proof-without-delegation'
       ? {}
-      : { delegation: { v: 1, expr: { kind: 'identity', id: candidate.user } } }),
+      : {
+          delegation: {
+            v: 1,
+            expr: { kind: 'identity', id: candidate.sourceSubject },
+          },
+        }),
   })}.signature`
   return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
     iss: candidate.domainIssuer,

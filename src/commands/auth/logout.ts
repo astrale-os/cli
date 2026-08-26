@@ -4,7 +4,7 @@ import { getDefault, readIdentities } from '../../identity/index'
 import { deleteIdpSession, listIdpSessions } from '../../lib/idp'
 import { log } from '../../lib/log'
 import { output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
-import { ExchangeCredentialCache } from '../../state/index'
+import { ExchangeCredentialCache, SESSION_ROUTE_STORE } from '../../state/index'
 
 export default {
   name: 'logout',
@@ -30,6 +30,7 @@ export default {
 
     for (const name of names) await deleteIdpSession(name)
     await new ExchangeCredentialCache().clear()
+    SESSION_ROUTE_STORE.clear()
 
     if (opts.raw || opts.json) {
       output({ cleared: names }, opts)

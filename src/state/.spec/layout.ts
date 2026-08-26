@@ -8,6 +8,7 @@ export default defineLayout({
     'identities.ts',
     'index.ts',
     'paths.ts',
+    'session-routes.ts',
     'tsconfig.json',
   ],
   exact: true,

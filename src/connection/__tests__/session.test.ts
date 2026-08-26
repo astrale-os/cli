@@ -1,6 +1,7 @@
 import type { AuthApi } from '@astrale-os/sdk/auth'
 import type { GraphApi } from '@astrale-os/sdk/client'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { SessionRouteStore } from '@astrale-os/sdk/client/session'
 
 import { issuer } from '@astrale-os/sdk/auth'
 import { describe, expect, test } from 'bun:test'
@@ -37,11 +38,13 @@ describe('connection session', () => {
   /** @evidence TEST-CLI-CONNECTION-PINS-SOURCE-ISSUER */
   test('pins the selected canonical Kernel issuer without a transport escape hatch', async () => {
     const auth = { ttlSeconds: 3_600, resolve: async () => ({ credential: 'credential' }) }
-    const options = createClientSessionOptions(target, globalThis.fetch, auth, 2_500)
+    const routeStore: SessionRouteStore = { read: () => undefined, write: () => undefined }
+    const options = createClientSessionOptions(target, globalThis.fetch, auth, 2_500, routeStore)
 
     expect(options.kernel).toBe(target.kernelIssuer)
     expect(options).not.toHaveProperty('url')
     expect(options).not.toHaveProperty('sourceIssuer')
+    expect(options.routeStore).toBe(routeStore)
   })
 
   /** @evidence TEST-CLI-CONNECTION-OMITS-EXPLICIT-ANONYMOUS-CREDENTIAL */

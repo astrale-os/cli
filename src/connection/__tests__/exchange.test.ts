@@ -14,13 +14,8 @@ const DOMAIN = issuer.accept('https://admin.example')
 const TARGET = { url: `${KERNEL}/api`, kernelIssuer: KERNEL, domainIssuer: DOMAIN }
 const INVOCATION = `${KERNEL}/invoke`
 const EXPIRES_AT = Math.floor(Date.now() / 1_000) + 500
-const SOURCE_EXPIRES_AT = Math.floor(Date.now() / 1_000) + 120
-const SOURCE_TOKEN = token(
-  issuer.accept('https://workos.example'),
-  KERNEL,
-  'user-1',
-  SOURCE_EXPIRES_AT,
-)
+const SOURCE_EXPIRES_AT = Math.floor(Date.now() / 1_000) + 600
+const SOURCE_TOKEN = sourceToken('user-1')
 let directory: string
 
 beforeEach(async () => {
@@ -33,7 +28,7 @@ afterEach(async () => {
 
 describe('Domain token exchange', () => {
   /** @evidence TEST-CLI-EXCHANGE-WHOAMI-DELEGATE-EXCHANGE-CACHE */
-  test('runs the exact User to Kernel to Domain journey and reuses the bound token', async () => {
+  test('runs the exact User to Kernel to Domain journey once and reuses it before whoami', async () => {
     const observed: Array<{
       url: string
       init: RequestInit | undefined
@@ -91,7 +86,7 @@ describe('Domain token exchange', () => {
     await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
 
     const kernelRequests = observed.filter((entry) => entry.url === INVOCATION)
-    expect(kernelRequests).toHaveLength(3)
+    expect(kernelRequests).toHaveLength(2)
     expect(kernelRequests[0]!.body).toMatchObject({
       credential: SOURCE_TOKEN,
       call: { input: {} },
@@ -107,11 +102,30 @@ describe('Domain token exchange', () => {
     })
     const delegatedTtl = kernelRequests[1]!.body!.call.input.ttlSeconds
     expect(delegatedTtl).toBeGreaterThan(0)
-    expect(delegatedTtl).toBeLessThan(120)
+    expect(delegatedTtl).toBeGreaterThanOrEqual(295)
+    expect(delegatedTtl).toBeLessThanOrEqual(300)
     expect(sourceAudiences).toEqual([KERNEL, KERNEL])
     expect(
       observed.filter((entry) => entry.url.endsWith('/.well-known/astrale/token')),
     ).toHaveLength(1)
+  })
+
+  test('rejects a source credential without a stable cache identity before network I/O', async () => {
+    let fetches = 0
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => sourceToken(undefined) },
+      async () => {
+        fetches += 1
+        throw new Error('network must remain untouched')
+      },
+      5_000,
+      new ExchangeCredentialCache(join(directory, 'credentials.json')),
+    )
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_SOURCE_INVALID',
+    })
+    expect(fetches).toBe(0)
   })
 
   /** @evidence TEST-CLI-EXCHANGE-NO-LEGACY-FALLBACK */
@@ -291,5 +305,15 @@ function token(iss: string, aud: string, user: string, exp: number): string {
     aud,
     exp,
     grant: { v: 1, expr: { kind: 'identity', credential: proof } },
+  })}.signature`
+}
+
+function sourceToken(subject: string | undefined): string {
+  const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
+  return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
+    iss: 'https://workos.example',
+    ...(subject === undefined ? {} : { sub: subject }),
+    aud: KERNEL,
+    exp: SOURCE_EXPIRES_AT,
   })}.signature`
 }

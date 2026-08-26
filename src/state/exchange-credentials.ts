@@ -5,24 +5,28 @@ import { dirname } from 'node:path'
 import { atomicWrite, withFileLock } from './files'
 import { EXCHANGE_CREDENTIALS_PATH } from './paths'
 
-const VERSION = 1
+const VERSION = 2
 const MINIMUM_REMAINING_SECONDS = 30
 
 export namespace exchange {
   export interface Artifact {
-    readonly version: 1
+    readonly version: 2
     readonly entries: Record<string, Entry>
   }
 
   export interface Key {
     readonly kernelIssuer: string
     readonly domainIssuer: string
-    readonly user: string
+    readonly sourceIssuer: string
+    readonly sourceSubject: string
   }
 
   export interface Entry {
     readonly credential: string
     readonly expiresAt: number
+    readonly user: string
+    readonly sourceIssuer: string
+    readonly sourceSubject: string
   }
 }
 
@@ -140,11 +144,15 @@ function validEntry(
   if (
     entry === null ||
     typeof entry !== 'object' ||
-    Reflect.ownKeys(entry).length !== 2 ||
+    Reflect.ownKeys(entry).length !== 5 ||
     typeof entry.credential !== 'string' ||
     entry.credential.length === 0 ||
     !Number.isSafeInteger(entry.expiresAt) ||
-    entry.expiresAt - now < minimumRemaining
+    entry.expiresAt - now < minimumRemaining ||
+    typeof entry.user !== 'string' ||
+    entry.user.length === 0 ||
+    entry.sourceIssuer !== key.sourceIssuer ||
+    entry.sourceSubject !== key.sourceSubject
   ) {
     return false
   }
@@ -178,7 +186,7 @@ function validEntry(
       inspected.claims.exp === entry.expiresAt &&
       !Object.hasOwn(inspected.claims, 'delegation') &&
       proof.iss === key.kernelIssuer &&
-      proof.sub === key.user &&
+      proof.sub === entry.user &&
       proof.aud === key.kernelIssuer
     )
   } catch {
@@ -187,7 +195,7 @@ function validEntry(
 }
 
 function encodeKey(key: exchange.Key): string {
-  return JSON.stringify([key.kernelIssuer, key.domainIssuer, key.user])
+  return JSON.stringify([key.kernelIssuer, key.domainIssuer, key.sourceIssuer, key.sourceSubject])
 }
 
 function decodeKey(input: string): exchange.Key | undefined {
@@ -195,12 +203,17 @@ function decodeKey(input: string): exchange.Key | undefined {
     const value = JSON.parse(input) as unknown
     if (
       !Array.isArray(value) ||
-      value.length !== 3 ||
+      value.length !== 4 ||
       value.some((part) => typeof part !== 'string' || part.length === 0)
     ) {
       return undefined
     }
-    return { kernelIssuer: value[0]!, domainIssuer: value[1]!, user: value[2]! }
+    return {
+      kernelIssuer: value[0]!,
+      domainIssuer: value[1]!,
+      sourceIssuer: value[2]!,
+      sourceSubject: value[3]!,
+    }
   } catch {
     return undefined
   }
