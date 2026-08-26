@@ -6,10 +6,21 @@ import { CONFIG_PATH } from '../state/index'
 import { AdminTargetConfigSchema, DEFAULT_ADMIN_TARGET_CONFIG } from './admin-target'
 import { log } from './log'
 
+/** A retention bound, or undefined when absent or nonsensical. A bad value must
+ *  fall back to the default rather than take the whole config down with it —
+ *  and must never read as "no limit". */
+const bound = z.number().positive().finite().optional().catch(undefined)
+
 export const AstraleConfigSchema = z.object({
   issuer: z.string().url().default('https://unregistered.invalid'),
   admin: AdminTargetConfigSchema.default(DEFAULT_ADMIN_TARGET_CONFIG),
-  telemetry: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  // The retention bounds live in the schema, not just in the readers that
+  // consume them: zod strips unknown keys, so a config the CLI rewrites (see
+  // setup/steps/admin.ts) would silently drop anything declared elsewhere.
+  telemetry: z
+    .object({ enabled: z.boolean().default(true), maxAgeDays: bound, maxBytes: bound })
+    .default({ enabled: true }),
+  browser: z.object({ maxCacheBytes: bound, maxProfileAgeDays: bound }).default({}),
 })
 
 export type AstraleConfig = z.infer<typeof AstraleConfigSchema>

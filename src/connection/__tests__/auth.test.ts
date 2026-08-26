@@ -15,6 +15,7 @@ const config: AstraleConfig = {
     kernelIssuer: 'https://admin.eu.astrale.ai/api',
   },
   telemetry: { enabled: true },
+  browser: {},
 }
 
 describe('resolveKeyIdentityAuthOptions', () => {

@@ -172,6 +172,32 @@ then the store is trimmed to `maxBytes`, oldest first. Both are optional:
 config for one invocation. Values that are not positive numbers are ignored in
 favour of the default, so a typo cannot leave the store unbounded.
 
+### Browser-profile retention
+
+`astrale browser` keeps one persistent Chromium profile per host under
+`~/.astrale/browser/`, so the sign-in cookie survives between runs. That cookie
+is a few kilobytes; the cache Chromium piles up around it is not, and Chromium
+does not bound it (`--disk-cache-size` is ignored for a profile's HTTP cache).
+
+Every `astrale browser` therefore sweeps the profiles first: one untouched for
+longer than `maxProfileAgeDays` is removed outright — its cookie has expired
+anyway — and one whose cache exceeds `maxCacheBytes` has its cache directories
+emptied. Cookies, Local Storage, Preferences and Local State are never touched,
+so you stay signed in. A profile held by a running browser is skipped.
+
+```jsonc
+// ~/.astrale/config.json
+{
+  "browser": {
+    "maxCacheBytes": 52428800,  // default: 50 MB, per profile, cache only
+    "maxProfileAgeDays": 30     // default
+  }
+}
+```
+
+Overridable per invocation with `ASTRALE_BROWSER_MAX_CACHE_BYTES` and
+`ASTRALE_BROWSER_MAX_PROFILE_AGE_DAYS`.
+
 ## Development
 
 Contributors use Node.js 26.7.0 by default; Node.js 24 is also supported. pnpm is
