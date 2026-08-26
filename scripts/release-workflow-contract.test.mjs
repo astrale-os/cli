@@ -11,6 +11,7 @@ describe('release workflow contract', () => {
   const publish = workflow('.github/workflows/publish.yml')
   const release = workflow('.github/workflows/release.yml')
   const binary = workflow('.github/workflows/cli-release.yml')
+  const ci = workflow('.github/workflows/ci.yml')
 
   it('uses Release Please beta versioning and the canonical CLI tag shape', () => {
     assert.equal(config.versioning, 'prerelease')
@@ -28,7 +29,7 @@ describe('release workflow contract', () => {
     const sharedPublish = publish.jobs.publish.steps.at(-1)
     assert.equal(
       sharedPublish.uses,
-      'astrale-os/config/.github/actions/publish/packages@c02d9486144144dff268910469870345b683e8b3',
+      'astrale-os/config/.github/actions/publish/packages@e89c7e84ed0b5bad2dcbf80f7a4547e30672155e',
     )
     assert.equal(sharedPublish.with['prerelease-tag'], 'auto')
     assert.equal(sharedPublish.with['mirror-public-packages'], 'false')
@@ -40,7 +41,7 @@ describe('release workflow contract', () => {
     const sharedRelease = release.jobs.release.steps.find((step) => step.id === 'release')
     assert.equal(
       sharedRelease.uses,
-      'astrale-os/config/.github/actions/release@c02d9486144144dff268910469870345b683e8b3',
+      'astrale-os/config/.github/actions/release@e89c7e84ed0b5bad2dcbf80f7a4547e30672155e',
     )
     assert.equal(
       release.jobs.release.outputs.created,
@@ -85,6 +86,24 @@ describe('release workflow contract', () => {
     const installer = read('install.sh')
     assert.match(installer, /install -m 0644 .*viewer\/dist\/main\.js/)
     assert.match(installer, /install -m 0644 .*viewer\/dist\/index\.html/)
+  })
+
+  it('pins every external action to one immutable revision', () => {
+    for (const [name, document] of Object.entries({ publish, release, binary, ci })) {
+      for (const job of Object.values(document.jobs)) {
+        for (const step of job.steps ?? []) {
+          if (typeof step.uses !== 'string' || step.uses.startsWith('./')) continue
+          assert.match(step.uses, /@[0-9a-f]{40}$/u, `${name} leaves ${step.uses} mutable`)
+          if (step.uses.startsWith('actions/checkout@')) {
+            assert.equal(
+              step.with?.['persist-credentials'],
+              false,
+              `${name} checkout must not persist credentials`,
+            )
+          }
+        }
+      }
+    }
   })
 
   it('defaults standalone installs to beta while retaining the channel override', () => {

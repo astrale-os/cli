@@ -6,6 +6,12 @@ type GraphContext = {
     getOrThrow: typeof getOrThrowMock
     mutate: typeof mutateMock
   }
+  session: {
+    schema: {
+      inspect: typeof inspectMock
+      bundle: typeof bundleMock
+    }
+  }
 }
 
 type RunOpts = {
@@ -36,6 +42,8 @@ let mutations: unknown[] = []
 let queryResult: unknown
 let getResult: unknown
 let mutationResult: unknown
+let inspectResult: unknown
+let bundleResult: unknown
 let selfFailure: unknown
 let selfContexts: unknown[] = []
 
@@ -51,6 +59,8 @@ const mutateMock = mock(async (mutation: unknown) => {
   mutations.push(mutation)
   return mutationResult
 })
+const inspectMock = mock(async (_origin: string) => inspectResult)
+const bundleMock = mock(async (_origin: string) => bundleResult)
 const expandSelfInPathMock = mock(async (path: string, context: unknown) => {
   selfContexts.push(context)
   if (selfFailure !== undefined) throw selfFailure
@@ -65,6 +75,7 @@ const expandSelfInPathMock = mock(async (path: string, context: unknown) => {
 const withSelfHintMock = mock(async (action: () => Promise<unknown>) => action())
 const commandContext = {
   graph: { query: queryMock, getOrThrow: getOrThrowMock, mutate: mutateMock },
+  session: { schema: { inspect: inspectMock, bundle: bundleMock } },
 }
 const runKernelCommandMock = mock(async (run: RunOpts) => {
   const result = await run.fn(commandContext)
@@ -93,11 +104,22 @@ beforeEach(() => {
   }
   getResult = undefined
   mutationResult = { createdNodes: {} }
+  inspectResult = {
+    origin: 'notes.example.dev',
+    revision: 'notes-v1',
+    generation: 'sha256:generation',
+  }
+  bundleResult = {
+    domain: inspectResult,
+    bundle: { origin: 'notes.example.dev', revision: 'notes-v1' },
+  }
   selfFailure = undefined
   selfContexts = []
   queryMock.mockClear()
   getOrThrowMock.mockClear()
   mutateMock.mockClear()
+  inspectMock.mockClear()
+  bundleMock.mockClear()
   expandSelfInPathMock.mockClear()
   withSelfHintMock.mockClear()
   runKernelCommandMock.mockClear()
@@ -277,6 +299,40 @@ describe('get command', () => {
     await getCommand('@self', { json: true })
     expect(selfContexts).toEqual([commandContext])
     expect(getTargets).toEqual(['@expanded-self'])
+  })
+})
+
+describe('introspect command', () => {
+  test('uses the split SDK Schema API without recreating the retired introspection request', async () => {
+    const { introspectCommand } = await import('../introspect')
+
+    await introspectCommand(
+      'notes.example.dev',
+      { json: true },
+      {
+        runKernelCommand: runKernelCommandMock as never,
+      },
+    )
+
+    expect(inspectMock).toHaveBeenCalledWith('notes.example.dev')
+    expect(bundleMock).not.toHaveBeenCalled()
+    expect(JSON.parse(stdout)).toEqual(inspectResult)
+  })
+
+  test('requests the immutable bundle only when explicitly selected', async () => {
+    const { introspectCommand } = await import('../introspect')
+
+    await introspectCommand(
+      'notes.example.dev',
+      { json: true, bundle: true },
+      {
+        runKernelCommand: runKernelCommandMock as never,
+      },
+    )
+
+    expect(bundleMock).toHaveBeenCalledWith('notes.example.dev')
+    expect(inspectMock).not.toHaveBeenCalled()
+    expect(JSON.parse(stdout)).toEqual(bundleResult)
   })
 })
 

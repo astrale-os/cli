@@ -1,5 +1,5 @@
 import type { Input } from '@astrale-os/sdk/client'
-import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { ClientSession, SessionRequestOptions } from '@astrale-os/sdk/client/session'
 import type { ClassRef } from '@astrale-os/sdk/schema'
 
 import { call } from '@astrale-os/sdk/client'
@@ -41,6 +41,7 @@ export function callAdminMethod(
   receiver: Path,
   method: string,
   input: Input,
+  options?: SessionRequestOptions,
 ): Promise<unknown> {
-  return session.call(call(Path.instanceMethod(receiver, method), input))
+  return session.call(call(Path.instanceMethod(receiver, method), input), options)
 }

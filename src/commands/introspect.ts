@@ -38,14 +38,13 @@ export async function introspectCommand(
     opts,
     label: `Introspect ${origin}`,
     fn: async ({ session }) => {
-      const includeBundle = wantsCallable || opts.bundle === true
-      const result = await readInstalledDomain(session.schema, origin, includeBundle)
       if (wantsCallable) {
-        const described = describeCallableFromBundle(path, (result as DomainBundle).bundle)
+        const result = await readInstalledDomain(session.schema, origin, true)
+        const described = describeCallableFromBundle(path, result.bundle)
         if (described === undefined) throw missingCallableDescription(path.raw)
         return described
       }
-      return result
+      return readInstalledDomain(session.schema, origin, opts.bundle === true)
     },
     format: (value, format) => output(value, format),
   })
@@ -110,11 +109,11 @@ export default {
   description: 'Read installed Domain schema from the Kernel Schema syscall',
   afterHelpText: `
 Behavior:
-  Calls the public Kernel introspect syscall for one installed Domain.
-  A bare origin (kernel.astrale.ai or /:kernel.astrale.ai) prints installation
-  state, target, source, readiness, and capabilities. --bundle includes the
-  schema bundle. A method or Function Path projects that callable's
-  input/output from the installed bundle.
+  Calls the public SDK Schema API for one installed Domain. A bare origin
+  (kernel.astrale.ai or /:kernel.astrale.ai) prints its exact revision,
+  generation, publication, readiness, capabilities, and bindings. --bundle
+  includes the schema bundle. A method or Function Path projects that
+  callable's input/output from the installed bundle.
 
 Examples:
   $ astrale introspect kernel.astrale.ai

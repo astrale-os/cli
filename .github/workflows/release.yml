@@ -20,7 +20,9 @@ jobs:
       created: ${{ steps.release.outputs.releases_created }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: version
         name: Resolve package version
         shell: bash
@@ -28,7 +30,7 @@ jobs:
           version="$(node -p 'require("./package.json").version')"
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - id: release
-        uses: astrale-os/config/.github/actions/release@c02d9486144144dff268910469870345b683e8b3
+        uses: astrale-os/config/.github/actions/release@e89c7e84ed0b5bad2dcbf80f7a4547e30672155e
         with:
           token: ${{ github.token }}
 

@@ -257,15 +257,17 @@ function lock(): UiLock {
 }
 
 describe('UI release and runner contracts', () => {
+  /** @evidence TEST-CLI-UI-BETA-DEFAULT */
   test('resolves the default release from the public beta channel', async () => {
     const seen: string[] = []
+    const fallback = mockFetch()
     const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input)
+      seen.push(url)
       if (url.endsWith('/@astrale-os/ui/beta')) {
-        seen.push(url)
         return Response.json({ version: '0.3.0-beta.1' })
       }
-      return mockFetch(seen)(input, init)
+      return fallback(input, init)
     }) as typeof fetch
 
     const release = await resolveUiRelease(undefined, fetcher)
