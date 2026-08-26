@@ -15,13 +15,52 @@
  * Neither bound replaces the other: age bounds what is worth keeping, size
  * bounds what can go wrong. Both are configurable — see settings.ts.
  */
-import { rmSync } from 'node:fs'
+import { type Dirent, readdirSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 
 import type { RetentionBudget } from './settings'
 import type { SessionScan } from './store'
 
 import { retentionBudget } from './settings'
-import { scanSessions, sessionBytes, sessionDir } from './store'
+import { readMarker, scanSessions, sessionBytes, sessionDir } from './store'
+
+/** What an analyzed session is allowed to keep. Everything else is scratch: the
+ *  analyzer runs with Write inside the session directory, so without this a
+ *  session's size is whatever the agent felt like writing — one here was left
+ *  holding a 462 KB calls.txt, a quarter of the entire store. */
+const KEEP = new Set(['meta.json', 'events.jsonl', 'report.md', '.analyzed', 'analyzer.log'])
+
+/** Reproducible from events.jsonl in the normal case, and dropped there — but
+ *  it is the only record of what the analyzer was actually asked when it
+ *  failed, which is exactly when someone will want to look. */
+const ANALYZER_PROMPT = 'analyzer-prompt.md'
+
+/**
+ * Reduce one session to its durable artifacts, called once the analyzer has
+ * written its marker. This is what makes a session's footprint a property of
+ * the CLI rather than of whatever the agent decided to leave behind.
+ */
+export function tidySession(id: string, options: { keepPrompt?: boolean } = {}): string[] {
+  const dir = sessionDir(id)
+  let entries: Dirent[]
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+  const removed: string[] = []
+  for (const entry of entries) {
+    if (KEEP.has(entry.name)) continue
+    if (entry.name === ANALYZER_PROMPT && options.keepPrompt === true) continue
+    try {
+      rmSync(join(dir, entry.name), { recursive: true, force: true })
+      removed.push(entry.name)
+    } catch {
+      /* best effort — tidying must never fail the analysis it follows */
+    }
+  }
+  return removed
+}
 
 /** Cap for the age sweep on the CLI's critical path, so a large backlog drains
  *  over several runs instead of stalling one command on hundreds of rmSync. */
@@ -121,9 +160,17 @@ export function sweepStore(options: SweepOptions = {}): SweepResult {
   const sessions = scanSessions()
   const byAge = sweepByAge(sessions, { ...options, budget })
   const gone = new Set(byAge.removed)
-  const bySize = sweepToBudget(
-    sessions.filter((session) => !gone.has(session.id)),
-    { ...options, budget },
-  )
+  const survivors = sessions.filter((session) => !gone.has(session.id))
+
+  // Tidy before measuring. Doing it after would let a session be evicted for
+  // holding scratch that was about to be deleted anyway — and it is what makes
+  // the artifact bound retroactive rather than only applying to new analyses.
+  for (const session of survivors) {
+    if (session.analyzed) {
+      tidySession(session.id, { keepPrompt: readMarker(session.id)?.outcome === 'error' })
+    }
+  }
+
+  const bySize = sweepToBudget(survivors, { ...options, budget })
   return { removed: [...byAge.removed, ...bySize.removed] }
 }

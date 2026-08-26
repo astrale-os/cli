@@ -133,6 +133,11 @@ export function readMeta(id: string): SessionMeta | null {
   return readJsonSafe<SessionMeta>(metaPath(id))
 }
 
+/** One session's analyzer marker, or null when absent or unparseable. */
+export function readMarker(id: string): AnalyzedMarker | null {
+  return readJsonSafe<AnalyzedMarker>(markerPath(id))
+}
+
 function readJsonSafe<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, 'utf-8')) as T

@@ -13,6 +13,7 @@ process.env.ASTRALE_HOME = mkdtempSync(join(tmpdir(), 'astrale-tele-retention-')
 let sweepByAge: (sessions: readonly SessionScan[], options?: SweepOptions) => SweepResult
 let sweepToBudget: (sessions: readonly SessionScan[], options?: SweepOptions) => SweepResult
 let sweepStore: (options?: SweepOptions) => SweepResult
+let tidySession: (id: string, options?: { keepPrompt?: boolean }) => string[]
 let scanSessions: () => SessionScan[]
 let sessionDir: (id: string) => string
 let sessionBytes: (id: string) => number
@@ -22,7 +23,7 @@ const DAY = 24 * 60 * 60 * 1000
 const BUDGET: RetentionBudget = { maxAgeMs: 30 * DAY, maxBytes: 10_000 }
 
 beforeAll(async () => {
-  ;({ sweepByAge, sweepToBudget, sweepStore } = await import('../retention'))
+  ;({ sweepByAge, sweepToBudget, sweepStore, tidySession } = await import('../retention'))
   ;({ scanSessions, sessionDir, sessionBytes, sessionsRoot } = await import('../store'))
 })
 
@@ -176,5 +177,91 @@ describe('sweepStore', () => {
     process.env.ASTRALE_TELEMETRY_MAX_AGE_DAYS = '1'
     seed('two-days-old', { ageMs: 2 * DAY, analyzed: true })
     expect(sweepStore().removed).toEqual(['two-days-old'])
+  })
+})
+
+describe('sweepStore tidying', () => {
+  test('tidies analyzed survivors, so the bound applies to sessions already on disk', () => {
+    seed('store-tidy', { ageMs: DAY, analyzed: true, bytes: 100 })
+    writeFileSync(join(sessionDir('store-tidy'), 'calls.txt'), 'x'.repeat(50_000))
+
+    sweepStore({ budget: BUDGET })
+
+    expect(existsSync(join(sessionDir('store-tidy'), 'calls.txt'))).toBe(false)
+    expect(existsSync(join(sessionDir('store-tidy'), 'report.md'))).toBe(true)
+  })
+
+  test('an unanalyzed session is left alone — its analyzer may still be running', () => {
+    seed('store-pending', { ageMs: DAY, bytes: 100 })
+    writeFileSync(join(sessionDir('store-pending'), 'analyzer-prompt.md'), '# in flight')
+
+    sweepStore({ budget: BUDGET })
+
+    expect(existsSync(join(sessionDir('store-pending'), 'analyzer-prompt.md'))).toBe(true)
+  })
+
+  test('scratch is tidied before the size bound is measured, not after', () => {
+    // 60 KB of scratch against a 10 KB budget: tidying first brings the store
+    // back under on its own, so nothing should be evicted.
+    seed('store-bloated', { ageMs: DAY, analyzed: true, bytes: 100 })
+    writeFileSync(join(sessionDir('store-bloated'), 'calls.txt'), 'x'.repeat(60_000))
+
+    expect(sweepStore({ budget: BUDGET }).removed).toEqual([])
+    expect(existsSync(sessionDir('store-bloated'))).toBe(true)
+  })
+
+  test('a failed analysis keeps its prompt through the sweep', () => {
+    const dir = sessionDir('store-failed')
+    seed('store-failed', { ageMs: DAY, analyzed: true })
+    writeFileSync(
+      join(dir, '.analyzed'),
+      JSON.stringify({ analyzedAt: new Date().toISOString(), outcome: 'error', note: 'boom' }),
+    )
+    writeFileSync(join(dir, 'analyzer-prompt.md'), '# what we asked')
+
+    sweepStore({ budget: BUDGET })
+
+    expect(existsSync(join(dir, 'analyzer-prompt.md'))).toBe(true)
+  })
+})
+
+describe('tidySession', () => {
+  test('removes what the analyzer left behind, keeps the durable artifacts', () => {
+    const dir = sessionDir('tidy-scratch')
+    seed('tidy-scratch', { ageMs: DAY, analyzed: true, bytes: 100 })
+    writeFileSync(join(dir, 'analyzer.log'), 'exit 0')
+    writeFileSync(join(dir, 'analyzer-prompt.md'), '# prompt')
+    // Scratch: the analyzer runs with Write in here and answers to nobody.
+    writeFileSync(join(dir, 'calls.txt'), 'x'.repeat(50_000))
+    mkdirSync(join(dir, 'notes'), { recursive: true })
+    writeFileSync(join(dir, 'notes', 'draft.md'), 'scratch')
+
+    const removed = tidySession('tidy-scratch')
+
+    expect(removed.sort()).toEqual(['analyzer-prompt.md', 'calls.txt', 'notes'])
+    for (const keep of ['meta.json', 'events.jsonl', 'report.md', '.analyzed', 'analyzer.log']) {
+      expect(existsSync(join(dir, keep))).toBe(true)
+    }
+    expect(existsSync(join(dir, 'notes'))).toBe(false)
+  })
+
+  test('keepPrompt spares the prompt — the failing case is when it matters', () => {
+    const dir = sessionDir('tidy-failed')
+    seed('tidy-failed', { ageMs: DAY, analyzed: true })
+    writeFileSync(join(dir, 'analyzer-prompt.md'), '# prompt')
+    writeFileSync(join(dir, 'scratch.json'), '{}')
+
+    expect(tidySession('tidy-failed', { keepPrompt: true })).toEqual(['scratch.json'])
+    expect(existsSync(join(dir, 'analyzer-prompt.md'))).toBe(true)
+  })
+
+  test('a session with nothing to tidy is left exactly as it was', () => {
+    seed('tidy-clean', { ageMs: DAY, analyzed: true, bytes: 10 })
+    expect(tidySession('tidy-clean')).toEqual([])
+    expect(existsSync(sessionDir('tidy-clean'))).toBe(true)
+  })
+
+  test('a missing session directory is a no-op, not an error', () => {
+    expect(tidySession('tidy-absent')).toEqual([])
   })
 })

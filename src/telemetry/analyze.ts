@@ -5,18 +5,20 @@
  * through the native `issues.astrale.ai` domain.
  */
 import { spawn } from 'node:child_process'
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { AnalyzedMarker, SessionSignals } from './types'
 
 import { defaultAdapters, discoverAll } from './adapters'
 import { extractSignals, hasSignals, readEvents } from './gate'
+import { tidySession } from './retention'
 import { eventsPath, inspectSession, markerPath, sessionDir } from './store'
 
 const ANALYZER_TIMEOUT_MS = 15 * 60 * 1000
 const WINDOW_PAD_MS = 10 * 60 * 1000
 const MAX_TRANSCRIPTS = 6
+const MAX_ANALYZER_LOG_BYTES = 32 * 1024
 // Transcripts embed content the developer's agent pulled from anywhere — treat
 // them as injection vectors: no --dangerously-skip-permissions; unlisted tools
 // are simply denied in -p mode. git/astrale cover inspection + reproduction +
@@ -27,6 +29,16 @@ export type AnalyzeOutcome = AnalyzedMarker & { reportPath?: string }
 
 function writeMarker(id: string, marker: AnalyzedMarker): void {
   writeFileSync(markerPath(id), JSON.stringify(marker, null, 2) + '\n')
+}
+
+/** Head and tail, never the middle: the JSON envelope opens at the top, a stack
+ *  or an error message closes at the bottom, and what sits between them is the
+ *  part nobody reads. A log is a diagnostic aid, not a place to put a megabyte. */
+export function clampLog(text: string, max = MAX_ANALYZER_LOG_BYTES): string {
+  if (text.length <= max) return text
+  const half = Math.floor((max - 64) / 2)
+  const elided = text.length - 2 * half
+  return `${text.slice(0, half)}\n… ${elided} bytes elided …\n${text.slice(-half)}`
 }
 
 /** Compact per-command digest so the agent starts from facts, not raw logs. */
@@ -146,6 +158,7 @@ export async function analyzeSession(
       note: `${signals.eventCount} events, all green, no transcripts`,
     }
     writeMarker(id, marker)
+    tidySession(id)
     return marker
   }
 
@@ -161,6 +174,9 @@ export async function analyzeSession(
     note: outcome.note,
   }
   writeMarker(id, marker)
+  // Keep the prompt only when the run failed — that is the one case where what
+  // the analyzer was asked still matters.
+  tidySession(id, { keepPrompt: marker.outcome === 'error' })
   return { ...marker, reportPath: join(dir, 'report.md') }
 }
 
@@ -200,7 +216,13 @@ function runClaude(
     child.on('close', (code) => {
       clearTimeout(timer)
       try {
-        appendFileSync(join(cwd, 'analyzer.log'), out + (err ? `\n--- stderr ---\n${err}` : ''))
+        // Write rather than append: the output is one JSON envelope per run, so
+        // stacking several produced a file that parsed as none of them. A
+        // re-analysis replaces its predecessor's log instead of growing it.
+        writeFileSync(
+          join(cwd, 'analyzer.log'),
+          clampLog(out + (err ? `\n--- stderr ---\n${err}` : '')),
+        )
       } catch {
         /* best effort */
       }
