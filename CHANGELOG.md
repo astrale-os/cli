@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0-beta.13](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.12...cli/v1.0.0-beta.13) (2026-08-26)
+
+
+### Features
+
+* **ui:** add Astrale UI project tooling ([#160](https://github.com/astrale-os/cli/issues/160)) ([097b854](https://github.com/astrale-os/cli/commit/097b854cf5f9f1611d3f428ba95af173a51a88be))
+
+
+### Bug Fixes
+
+* **cli:** retain query and binary delivery evidence ([#157](https://github.com/astrale-os/cli/issues/157)) ([7cf55a5](https://github.com/astrale-os/cli/commit/7cf55a5d45d31a8a205b4d46f7517156349725a6))
+* **commands:** mint reusable Kernel credentials ([#158](https://github.com/astrale-os/cli/issues/158)) ([634843c](https://github.com/astrale-os/cli/commit/634843c74d548bbace8cde493049fefdd3ddd0cf))
+
+
+### Performance Improvements
+
+* **admin:** remove routine schema reflection ([#161](https://github.com/astrale-os/cli/issues/161)) ([26c1e56](https://github.com/astrale-os/cli/commit/26c1e56b9bb39934ab8c550e913d4a9a96195842))
+
 ## [1.0.0-beta.12](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.11...cli/v1.0.0-beta.12) (2026-08-25)
 
 
