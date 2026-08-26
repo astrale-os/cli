@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.22](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.21...cli/v1.0.0-beta.22) (2026-08-26)
+
+
+### Bug Fixes
+
+* **ui:** install released themes without alias remapping ([#180](https://github.com/astrale-os/cli/issues/180)) ([3d987c1](https://github.com/astrale-os/cli/commit/3d987c1825d46f0bd33dcc7b6858c2f1823cfda0))
+
 ## [1.0.0-beta.21](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.20...cli/v1.0.0-beta.21) (2026-08-26)
 
 
