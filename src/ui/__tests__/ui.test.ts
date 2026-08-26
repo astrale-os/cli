@@ -242,6 +242,67 @@ describe('UI release and runner contracts', () => {
 })
 
 describe('UI initialization transaction', () => {
+  test('initializes the generated Domain frontend stylesheet instead of an unused fallback', async () => {
+    const root = await fixture()
+    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
+    await writeFile(
+      path.join(root, 'frontend/package.json'),
+      JSON.stringify({ name: 'astrale-frontend', private: true, type: 'module' }),
+    )
+    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
+    const rootCssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
+
+    await initUi(
+      { path: path.join(root, 'frontend'), version: '0.3.0-beta.0', install: false },
+      { fetcher: mockFetch() },
+    )
+
+    const css = await readFile(path.join(root, 'frontend/src/styles.css'), 'utf8')
+    const components = JSON.parse(await readFile(path.join(root, 'components.json'), 'utf8'))
+    expect(css).toContain("@import '@astrale-os/ui/theme.css';")
+    expect(css).toContain('/* Domain frontend */')
+    expect(components.tailwind.css).toBe('frontend/src/styles.css')
+    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(rootCssBefore)
+    expect(
+      JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).dependencies,
+    ).toHaveProperty('@astrale-os/ui')
+    expect(await Bun.file(path.join(root, 'src/astrale-ui.css')).exists()).toBe(false)
+
+    await writeFile(path.join(root, 'src/app.css'), '/* later root stylesheet */\n')
+    const repeated = await initUi(
+      { path: root, version: '0.3.0-beta.0', install: false },
+      { fetcher: mockFetch() },
+    )
+    expect(repeated.status).toBe('unchanged')
+  })
+
+  test('rejects configured and discovered stylesheets whose physical parent escapes', async () => {
+    const root = await fixture()
+    const outside = await fixture()
+    await symlink(outside, path.join(root, 'escaped'), 'dir')
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({ tailwind: { css: 'escaped/styles.css' } }),
+    )
+
+    await expect(
+      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
+    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
+    expect(await Bun.file(path.join(outside, 'styles.css')).exists()).toBe(false)
+
+    const automaticRoot = await fixture()
+    await rm(path.join(automaticRoot, 'src/index.css'))
+    const outsideCss = await readFile(path.join(outside, 'src/index.css'), 'utf8')
+    await symlink(outside, path.join(automaticRoot, 'frontend'), 'dir')
+    await expect(
+      initUi(
+        { path: automaticRoot, version: '0.3.0-beta.0', install: false },
+        { fetcher: mockFetch() },
+      ),
+    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
+    expect(await readFile(path.join(outside, 'src/index.css'), 'utf8')).toBe(outsideCss)
+  })
+
   test('dry-run reports every mutation and writes nothing', async () => {
     const root = await fixture()
     const before = await readFile(path.join(root, 'package.json'), 'utf8')
