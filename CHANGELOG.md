@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.25](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.24...cli/v1.0.0-beta.25) (2026-08-26)
+
+
+### Bug Fixes
+
+* **ui:** tolerate GitHub API rate limits ([#189](https://github.com/astrale-os/cli/issues/189)) ([24cd8f2](https://github.com/astrale-os/cli/commit/24cd8f2697c89f0797b0510d143d29f02fb046b7))
+
 ## [1.0.0-beta.24](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.23...cli/v1.0.0-beta.24) (2026-08-26)
 
 
