@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.21](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.20...cli/v1.0.0-beta.21) (2026-08-26)
+
+
+### Features
+
+* **ui:** install consumer-owned themes ([#179](https://github.com/astrale-os/cli/issues/179)) ([d8c7f6d](https://github.com/astrale-os/cli/commit/d8c7f6d0f63b08cf4363690709b6e2f2f5211c31))
+
+
+### Bug Fixes
+
+* **view:** preserve narrow mounted viewport ([#177](https://github.com/astrale-os/cli/issues/177)) ([6754a26](https://github.com/astrale-os/cli/commit/6754a26d79ca3a2e7b74c02dc59a45e6e1f6cee1))
+
 ## [1.0.0-beta.20](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.19...cli/v1.0.0-beta.20) (2026-08-26)
 
 
