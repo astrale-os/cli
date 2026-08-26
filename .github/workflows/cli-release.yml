@@ -194,8 +194,13 @@ jobs:
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           set -eu
-          git tag -f "$CHANNEL" "$GITHUB_SHA"
-          git push origin "refs/tags/$CHANNEL" --force
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$CHANNEL" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$CHANNEL" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$CHANNEL" -f sha="$GITHUB_SHA" >/dev/null
+          fi
           flags=""
           if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
           if ! gh release view "$CHANNEL" >/dev/null 2>&1; then
