@@ -7,7 +7,7 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["@types/bun", "@types/node"]
+    "types": ["bun-types", "@types/node"]
   },
   "include": ["bin", "src"],
   "exclude": ["templates", "**/__tests__/**", "src/lib/view/open-intent.ts"]

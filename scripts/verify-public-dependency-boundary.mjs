@@ -126,6 +126,11 @@ assert.equal(
 )
 
 const cliManifest = JSON.parse(await readFile('package.json', 'utf8'))
+assert.equal(
+  (await readFile('.bun-version', 'utf8')).trim(),
+  '1.4.0',
+  'CLI must pin the local Bun 1.4 runtime',
+)
 assert.equal(cliManifest.packageManager, 'pnpm@11.13.1', 'CLI must pin the qualification pnpm')
 assert.equal(
   cliManifest.publishConfig?.registry,
@@ -136,6 +141,16 @@ assert.equal(
   cliManifest.devDependencies?.typescript,
   '7.0.2',
   'CLI source without TypeScript compiler API imports must pin TypeScript 7.0.2',
+)
+assert.equal(
+  cliManifest.devDependencies?.['bun-types'],
+  '1.4.0',
+  'CLI root must pin the Bun 1.4 type package',
+)
+assert.equal(
+  cliManifest.devDependencies?.['@types/bun'],
+  undefined,
+  'CLI root must not install the legacy Bun type alias',
 )
 assert.equal(
   cliManifest.devDependencies?.['@typescript/native-preview'],
