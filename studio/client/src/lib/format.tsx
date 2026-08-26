@@ -1,5 +1,7 @@
 import type { JsonSchema, TypeDescriptor } from '@shared/types'
 
+import { isNodePathSchema } from '@shared/types'
+
 import { cn } from './utils'
 
 /** JSON Schema → render-friendly descriptor (never reads zod). */
@@ -11,8 +13,7 @@ export function describe(s?: JsonSchema): TypeDescriptor {
     ? (t.find((x) => x !== 'null') as string | undefined)
     : (t as string | undefined)
   if (s.enum) return { kind: 'enum', values: s.enum, optional }
-  if (s.$nodeRef) return { kind: 'ref', target: 'node', refKind: 'node', optional }
-  if (s.$dataRef) return { kind: 'ref', target: 'data', refKind: 'data', optional }
+  if (isNodePathSchema(s)) return { kind: 'ref', target: 'node', optional }
   if (base === 'array') return { kind: 'array', items: describe(s.items), optional }
   if (base === 'object') {
     const fields: Record<string, TypeDescriptor> = {}

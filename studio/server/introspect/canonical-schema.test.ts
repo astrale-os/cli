@@ -1,108 +1,103 @@
+import * as sdk from '@astrale-os/sdk/schema'
+import {
+  core,
+  defineSchema,
+  edgeClass,
+  func,
+  method,
+  nodeClass,
+  output,
+  property,
+  valueSchema,
+  view,
+} from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
 import {
-  admitCanonicalSchemaFromSdk,
-  closureFromSdk,
+  extractCanonicalSchemaFromSdk,
   findCanonicalDomainSchemaExport,
   isCanonicalDomainSchemaV1,
   projectCanonicalCore,
-  projectCanonicalSchema,
   type CanonicalDomainSchemaV1,
 } from './canonical-schema'
 
-const localRef = { origin: 'docs.example.dev', kind: 'class', name: 'Document' } as const
-const baseRef = { origin: 'shared.example.dev', kind: 'class', name: 'Named' } as const
-const edgeRef = { origin: 'docs.example.dev', kind: 'class', name: 'links' } as const
+const string = valueSchema<string>()({ type: 'string' })
+const boolean = valueSchema<boolean>()({ type: 'boolean' })
+const rename = method({
+  input: valueSchema<{ title: string }>()({
+    type: 'object',
+    properties: { title: { type: 'string' } },
+    required: ['title'],
+    additionalProperties: false,
+  }),
+  output: boolean,
+  auth: 'authorized',
+})
 
-const dependency = {
-  format: 'astrale.dsl',
-  version: 'v1',
-  origin: 'shared.example.dev',
-  classes: {
-    Named: {
-      kind: 'node',
-      properties: { title: { schema: { type: 'string' }, required: true } },
-      methods: {},
-    },
-  },
-} satisfies CanonicalDomainSchemaV1
-
-const root = {
-  format: 'astrale.dsl',
-  version: 'v1',
-  origin: 'docs.example.dev',
-  dependencies: [{ origin: dependency.origin, revision: `sha256:${'1'.repeat(64)}` }],
-  classes: {
-    Document: {
-      kind: 'node',
-      extends: [baseRef],
-      properties: {
-        slug: { schema: { type: 'string', minLength: 1 }, required: true },
-      },
-      methods: {
-        rename: {
-          input: {
-            type: 'object',
-            properties: { title: { type: 'string' } },
-            required: ['title'],
-          },
-          output: { mode: 'value', schema: { type: 'boolean' } },
-          auth: 'authorized',
-          static: false,
-          inheritance: 'default',
-        },
-      },
-    },
-    links: {
-      kind: 'edge',
-      orientation: 'directed',
-      endpoints: {
-        source: { role: 'source', accepts: [localRef], outgoing: '1' },
-        target: { role: 'target', accepts: [baseRef], incoming: '0..*' },
-      },
-      properties: {},
-      methods: {},
-    },
-  },
+const Named = nodeClass({ properties: { title: string } })
+const dependency = defineSchema('shared.example.dev', { classes: { Named } })
+const Document = nodeClass({
+  description: 'A document.',
+  icon: '<svg />',
+  extends: [Named],
+  properties: { slug: property(string, { description: 'Stable slug.' }) },
+  methods: { rename },
+})
+const links = edgeClass.directed({
+  source: { as: 'source', accepts: [Document], outgoing: '1' },
+  target: { as: 'target', accepts: [Named], incoming: '0..*' },
+})
+const primary = core.node(Document, { slug: 'primary', title: 'Primary' })
+const primaryLink = core.edge(primary, links, primary, {})
+const schema = defineSchema('docs.example.dev', {
+  dependencies: { shared: dependency },
+  classes: { Document, links },
   functions: {
-    search: {
-      input: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
-      output: { mode: 'stream', item: { type: 'string' } },
-      auth: 'authenticated',
-    },
+    search: func({ input: string, output: output.stream(string), auth: 'authenticated' }),
   },
-  views: {
-    documents: {
-      target: { kind: 'definition', definitions: [localRef] },
-    },
-  },
-  core: {
-    nodes: {
-      primary: { class: localRef, properties: { slug: 'primary' } },
-    },
-    edges: [
-      {
-        class: edgeRef,
-        source: { origin: 'docs.example.dev', kind: 'core', name: 'primary' },
-        target: { kind: 'domain', origin: 'docs.example.dev' },
-      },
-    ],
-  },
-} satisfies CanonicalDomainSchemaV1
+  views: { documents: view({ target: Document }) },
+  core: { nodes: { primary }, edges: [primaryLink] },
+})
+const namedRef = { origin: dependency.origin, kind: 'class', name: 'Named' } as const
+const documentRef = { origin: schema.origin, kind: 'class', name: 'Document' } as const
+
+const sdkModule = sdk
 
 describe('canonical Schema projection', () => {
-  test('recognizes and selects only portable V1 schema roots', () => {
-    expect(isCanonicalDomainSchemaV1(root)).toBe(true)
-    expect(isCanonicalDomainSchemaV1({ ...root, version: 'v0' })).toBe(false)
-    expect(findCanonicalDomainSchemaExport({ other: dependency, schema: root })).toBe(root)
+  test('recognizes exported V1 roots and preserves an invalid root as a preview', () => {
+    expect(isCanonicalDomainSchemaV1(schema)).toBe(true)
+    expect(findCanonicalDomainSchemaExport({ other: dependency, schema })).toBe(schema)
+
+    const invalid = {
+      format: 'astrale.dsl',
+      version: 'v1',
+      origin: 'not an origin',
+      dependencies: {},
+      classes: {},
+      functions: {},
+      policies: {},
+      views: {},
+      core: { nodes: {}, edges: [] },
+    } as CanonicalDomainSchemaV1
+    expect(extractCanonicalSchemaFromSdk(sdkModule, invalid)).toMatchObject({
+      status: 'preview',
+      revision: null,
+      ir: { domain: 'not an origin' },
+    })
   })
 
-  test('projects Classes, exact inheritance/imports, callables, Views, and edges', () => {
-    const { ir } = projectCanonicalSchema(root, [dependency])
-    expect(ir.classes.Document).toMatchObject({
-      extendsRefs: [baseRef],
-      properties: { slug: { type: 'string', minLength: 1 } },
+  test('uses the resolved Domain for Classes, dependency footprint, callables, and Views', () => {
+    const extraction = extractCanonicalSchemaFromSdk(sdkModule, schema)
+    expect(extraction.status).toBe('admitted')
+    expect(extraction.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(extraction.ir.classes.Document).toMatchObject({
+      icon: '<svg />',
+      extendsRefs: [namedRef],
+      properties: { slug: { type: 'string' } },
       required: ['slug'],
+      propertyMetadata: {
+        slug: { required: true, visibility: 'public', description: 'Stable slug.' },
+      },
       methods: {
         rename: {
           input: { required: ['title'] },
@@ -111,69 +106,100 @@ describe('canonical Schema projection', () => {
         },
       },
     })
-    expect(ir.importsByKey['shared.example.dev:class.Named']).toEqual({
-      origin: baseRef.origin,
-      ref: baseRef,
+    expect(extraction.ir.importsByKey['shared.example.dev:class.Named']).toEqual({
+      origin: namedRef.origin,
+      ref: namedRef,
       key: 'shared.example.dev:class.Named',
     })
-    expect(ir.importedClassesByKey['shared.example.dev:class.Named']?.properties.title).toEqual({
-      type: 'string',
-    })
-    expect(ir.classes.links.endpoints).toEqual([
-      { name: 'source', types: ['Document'], refs: [localRef], cardinality: { min: 1, max: 1 } },
-      { name: 'target', types: ['Named'], refs: [baseRef], cardinality: { min: 0, max: null } },
+    expect(
+      extraction.ir.importedClassesByKey['shared.example.dev:class.Named']?.properties.title,
+    ).toEqual({ type: 'string' })
+    expect(extraction.ir.classes.links.endpoints).toEqual([
+      {
+        name: 'source',
+        types: ['Document'],
+        refs: [documentRef],
+        cardinality: { min: 1, max: 1 },
+      },
+      {
+        name: 'target',
+        types: ['Named'],
+        refs: [namedRef],
+        cardinality: { min: 0, max: null },
+      },
     ])
-    expect(ir.functions.search).toMatchObject({ auth: 'authenticated', output: { mode: 'stream' } })
-    expect(ir.views?.documents.target).toEqual({ kind: 'definition', definitions: [localRef] })
-    expect(ir.views?.documents).not.toHaveProperty('auth')
+    expect(extraction.ir.functions.search).toMatchObject({
+      auth: 'authenticated',
+      output: { mode: 'stream' },
+    })
+    expect(extraction.ir.views.documents.target).toEqual({
+      kind: 'definition',
+      definitions: [documentRef],
+    })
+    expect(extraction.ir.dependencies).toEqual([
+      { origin: dependency.origin, revision: sdk.schema.revision(dependency) },
+    ])
   })
 
-  test('projects canonical Core coordinates without importing Application or Runtime', () => {
-    expect(projectCanonicalCore(root)).toEqual({
-      domain: root.origin,
+  test('projects Core from the same admitted root without a second Schema import', () => {
+    const extraction = extractCanonicalSchemaFromSdk(sdkModule, schema)
+    expect(projectCanonicalCore(extraction.root)).toEqual({
+      domain: schema.origin,
       nodes: [
         {
           path: '/:docs.example.dev:core.primary',
           className: 'Document',
-          data: { slug: 'primary' },
+          data: {
+            'docs.example.dev:class.Document.property.slug': 'primary',
+            'shared.example.dev:class.Named.property.title': 'Primary',
+          },
         },
       ],
       edges: [
         {
           from: '/:docs.example.dev:core.primary',
-          to: '/:docs.example.dev',
+          to: '/:docs.example.dev:core.primary',
           edgeName: 'links',
+          data: {},
         },
       ],
     })
   })
 
-  test('uses the authored SDK for closure, admission, revision, and resolved-source proof', () => {
-    const accepted = { ...root }
-    const revision = `sha256:${'a'.repeat(64)}` as const
-    const sdk = {
-      bundle: { create: () => ({ root: accepted, closure: [dependency] }) },
-      schema: {
-        accept: (candidate: unknown) => candidate,
-        revision: () => revision,
-        resolve: (candidate: unknown) => ({ source: candidate, origin: root.origin }),
+  test('delegates admission, resolution, and dependency reachability to the DSL', () => {
+    const calls: string[] = []
+    const wrapped = {
+      ...sdk,
+      bundle: {
+        ...sdk.bundle,
+        create(value: typeof schema) {
+          calls.push('bundle.create')
+          return sdk.bundle.create(value)
+        },
+        accept(value: unknown) {
+          calls.push('bundle.accept')
+          return sdk.bundle.accept(value)
+        },
       },
-    }
-    expect(closureFromSdk(sdk, accepted)).toEqual([dependency])
-    expect(admitCanonicalSchemaFromSdk(sdk, accepted)).toEqual({
-      status: 'admitted',
-      root: accepted,
-      closure: [dependency],
-      revision,
-    })
-  })
+      schema: {
+        ...sdk.schema,
+        resolve(value: typeof schema) {
+          calls.push('schema.resolve')
+          return sdk.schema.resolve(value)
+        },
+        compareDependencyMeaning(source: typeof schema, target: typeof dependency) {
+          calls.push('schema.compareDependencyMeaning')
+          return sdk.schema.compareDependencyMeaning(source, target)
+        },
+      },
+    } as unknown as typeof sdk
 
-  test('fails to preview when the SDK cannot prove admission', () => {
-    expect(admitCanonicalSchemaFromSdk({}, root)).toEqual({
-      status: 'preview',
-      root,
-      closure: [],
-      revision: null,
-    })
+    expect(extractCanonicalSchemaFromSdk(wrapped, schema).status).toBe('admitted')
+    expect(calls).toEqual([
+      'bundle.create',
+      'bundle.accept',
+      'schema.resolve',
+      'schema.compareDependencyMeaning',
+    ])
   })
 })

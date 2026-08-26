@@ -12,3 +12,16 @@ test('keeps canonical optionality separate from nullable value schemas', () => {
     optional: false,
   })
 })
+
+test('recognizes the DSL Node path value schema as a reference', () => {
+  expect(
+    friendlyType({
+      $ref: 'https://schemas.astrale.ai/graph/1/node-path',
+      'x-astrale-path': {
+        target: 'node',
+        cardinality: 'one',
+        accepts: [{ origin: 'example.test', kind: 'class', name: 'Issue' }],
+      },
+    }),
+  ).toMatchObject({ label: 'Reference' })
+})

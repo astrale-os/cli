@@ -14,6 +14,8 @@ import type {
   SchemaOverlay,
 } from '../../../shared/types'
 
+import { isNodePathSchema } from '../../../shared/types'
+
 /** Terse JSON-Schema type label (mirrors the client's format.tsx describe/typeLabel). */
 function propType(s: JsonSchema | undefined, optionalOverride?: boolean): string {
   if (!s) return 'any'
@@ -22,8 +24,7 @@ function propType(s: JsonSchema | undefined, optionalOverride?: boolean): string
   const base = Array.isArray(t) ? t.find((x) => x !== 'null') : t
   let label: string
   if (s.enum) label = `enum(${s.enum.map(String).join('|')})`
-  else if (s.$nodeRef) label = '→node'
-  else if (s.$dataRef) label = '→data'
+  else if (isNodePathSchema(s)) label = '→node'
   else if (base === 'array') label = `${propType(s.items)}[]`
   else if (base === 'object') label = `{${Object.keys(s.properties ?? {}).join(',')}}`
   else if (base === 'integer') label = 'int'

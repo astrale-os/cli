@@ -4,6 +4,5 @@
  * Keep this path stable for the overlay composer and focused tests. The
  * implementation lives under source-overlay, split by responsibility.
  */
-export { buildSchemaAnnotations } from './source-overlay/annotations'
 export { buildHandlerLinks } from './source-overlay/handlers'
 export { buildSourceSpans } from './source-overlay/spans'

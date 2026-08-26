@@ -40,8 +40,8 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > **Requires [Bun](https://bun.sh)** — the studio server uses Bun APIs, and the
 > schema introspector imports the domain's `schema/index.ts` (Astrale packages use
 > Bun-only ESM that Node can't resolve). The target domain's deps must be installed
-> (`pnpm install` at the workspace root) for full-fidelity schema rendering;
-> otherwise the studio falls back to a static parse.
+> (`pnpm install` at the workspace root) for semantic schema rendering; source-only
+> anatomy remains available when they are missing.
 > Current projects are detected through `astrale.config.ts`, an Application entry,
 > and `schema.ts` or `schema/index.ts`.
 
@@ -122,11 +122,12 @@ client/src/
   lib/                   API client, queries, event stream and UI state
 ```
 
-Schema parsing uses the Astrale DSL's own output: a Bun subprocess imports the
-domain's `schema/index.ts`, admits its canonical DomainSchema V1 through that
-domain's installed SDK, and projects it into Studio's render model. Legacy
-compiled `D.$.ir` domains remain a fallback. A ts-morph overlay adds source-only
-details (handler-file links, source spans, JSDoc).
+Schema parsing delegates admission, semantic resolution, revisioning and exact
+dependency reachability to the Astrale DSL installed by the domain. A Bun
+subprocess imports `schema/index.ts` once; Studio then keeps only a deliberately
+lossy render projection and derives Core from that same admitted root. A ts-morph
+overlay is limited to information absent from the DSL (handler-file links, source
+spans and JSDoc).
 
 Schema inspection does not rewrite an existing schema. Studio does perform
 explicit writes requested by the user: comments, context, documents, settings,

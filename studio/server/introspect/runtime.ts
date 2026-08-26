@@ -5,12 +5,11 @@
  * render IR plus the raw canonical root (when present), or an error render-state
  * — never throws.
  */
-import type { SchemaIR, SchemaRevision, StudioCore, StudioSchemaBundle } from '../../shared/types'
+import type { SchemaIR, SchemaRevision, StudioSchemaBundle } from '../../shared/types'
 
 import { isSchemaRevision } from '../../shared/types'
 
 const EXTRACTOR = new URL('./extractor.ts', import.meta.url).pathname
-const CORE_EXTRACTOR = new URL('./core-extractor.ts', import.meta.url).pathname
 
 export interface RuntimeExtractResult {
   ok: boolean
@@ -92,49 +91,5 @@ export async function runtimeExtract(
       revision: null,
       error: { message: String(e?.message ?? e) },
     }
-  }
-}
-
-export interface CoreExtractResult {
-  ok: boolean
-  /** the resolved core graph, or null when the domain defines no core */
-  core: Pick<StudioCore, 'domain' | 'nodes' | 'edges'> | null
-  error?: { message: string }
-}
-
-/**
- * Spawn the Core extractor over the pure Schema entry. Returns the projected
- * graph or an error and never imports Application or Runtime modules.
- */
-export async function coreExtract(
-  schemaIndexPath: string,
-  domainDir: string,
-  timeoutMs = 20000,
-): Promise<CoreExtractResult> {
-  try {
-    const proc = Bun.spawn(['bun', 'run', CORE_EXTRACTOR, schemaIndexPath, domainDir], {
-      cwd: domainDir,
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    const timer = setTimeout(() => proc.kill(9), timeoutMs)
-    const out = await new Response(proc.stdout).text()
-    await proc.exited
-    clearTimeout(timer)
-
-    if (!out.trim()) {
-      const err = await new Response(proc.stderr).text()
-      return {
-        ok: false,
-        core: null,
-        error: { message: err.trim() || 'core extractor produced no output' },
-      }
-    }
-    const parsed = JSON.parse(out)
-    if (!parsed.ok)
-      return { ok: false, core: null, error: parsed.error ?? { message: 'core extraction failed' } }
-    return { ok: true, core: (parsed.core ?? null) as CoreExtractResult['core'] }
-  } catch (e: any) {
-    return { ok: false, core: null, error: { message: String(e?.message ?? e) } }
   }
 }

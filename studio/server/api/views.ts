@@ -24,7 +24,7 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
     const view = anatomy?.views.find((candidate) => candidate.slug === slug)
     if (!view) return notFound()
     const bundle = await getBundle(id)
-    const origin = bundle?.overlay.origin || anatomy?.overview.origin
+    const origin = bundle?.ir?.domain || anatomy?.overview.origin
     if (!origin) return badRequest('domain origin is unavailable')
     return json(
       await getViewRuntime(root, origin, view, bundle, readSettings(root).viewProbeTimeoutMs),
@@ -39,7 +39,7 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
     const view = anatomy?.views.find((candidate) => candidate.slug === slug)
     if (!view) return notFound()
     const bundle = await getBundle(id)
-    const origin = bundle?.overlay.origin || anatomy?.overview.origin
+    const origin = bundle?.ir?.domain || anatomy?.overview.origin
     if (!origin) return badRequest('domain origin is unavailable')
     return json(
       await launchViewSession(

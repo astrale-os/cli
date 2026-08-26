@@ -18,7 +18,6 @@ function domainBundle(
   const value = bundle(classes)
   value.domainId = id
   value.ir!.domain = origin
-  value.overlay.origin = origin
   return value
 }
 

@@ -51,13 +51,8 @@ function bundle(
       core: {},
     },
     overlay: {
-      origin: 'example.test',
-      requires: [],
-      crossDomainImports: [],
-      mixins: [],
       handlerLinks: [],
       sourceSpans: {},
-      annotations: [],
     },
     extractedAt: '2026-08-23T00:00:00.000Z',
   } satisfies StudioSchemaBundle

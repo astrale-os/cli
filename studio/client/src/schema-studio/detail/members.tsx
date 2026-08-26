@@ -65,7 +65,6 @@ export function PropertyRow({
   const pdoc = bundle.overlay.sourceSpans[pref]?.doc
   const ft = friendlyType(schema, optional)
   const Icon = ft.icon
-  const warns = bundle.overlay.annotations.filter((a) => a.target === pref)
   const d = describe(schema)
 
   return (
@@ -82,11 +81,6 @@ export function PropertyRow({
           {pname}
           {pdoc && <DocHint doc={pdoc} />}
           {ft.optional && <Chip tone="default">optional</Chip>}
-          {warns.map((w) => (
-            <Chip key={w.code} tone="warning" title={w.message}>
-              {w.code}
-            </Chip>
-          ))}
         </span>
       }
       subtitle={

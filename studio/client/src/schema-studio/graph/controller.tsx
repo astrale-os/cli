@@ -312,8 +312,8 @@ export function SchemaGraph({
 
   // the internal rectangle, re-derived from the live module positions → auto-resizes on drag
   const regionNode = useMemo(
-    () => deriveRegion(nodes, bundle.overlay.origin),
-    [nodes, bundle.overlay.origin],
+    () => deriveRegion(nodes, bundle.ir?.domain ?? ''),
+    [nodes, bundle.ir?.domain],
   )
   const canvasCommentGroups = useMemo(
     () => schemaCanvasCommentGroups(commentStore?.comments),

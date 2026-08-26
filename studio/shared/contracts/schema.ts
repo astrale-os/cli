@@ -18,9 +18,15 @@ export interface JsonSchema {
   maximum?: number
   format?: string
   description?: string
-  $nodeRef?: unknown
-  $dataRef?: unknown
+  $ref?: string
   [k: string]: unknown
+}
+
+const NODE_PATH_SCHEMA_ID = 'https://schemas.astrale.ai/graph/1/node-path'
+
+/** Structural form emitted by the V1 DSL for a graph Node path. */
+export function isNodePathSchema(schema: JsonSchema): boolean {
+  return schema.$ref === NODE_PATH_SCHEMA_ID && Object.hasOwn(schema, 'x-astrale-path')
 }
 
 export type MethodInheritance = 'default' | 'abstract' | 'sealed'
@@ -37,7 +43,7 @@ export function isSchemaRevision(value: unknown): value is SchemaRevision {
  * Version of Studio's lossy canonical-schema -> render-IR projection. Persisted
  * baselines must match this value before their IR can be compared.
  */
-export const STUDIO_SCHEMA_PROJECTION_VERSION = 2
+export const STUDIO_SCHEMA_PROJECTION_VERSION = 3
 
 export type IrCallableAuth = 'anonymous' | 'authenticated' | 'authorized'
 
@@ -151,32 +157,10 @@ export interface SourceSpan {
   doc?: string
 }
 
-export interface SchemaAnnotation {
-  /** anchor ref key, e.g. 'class.Monitor.property.status' */
-  target: string
-  severity: 'warn' | 'info'
-  code: 'COMPILE_ERROR' | 'EDGE_PROP_TYPE_MISSING'
-  message: string
-}
-
-export interface CrossDomainImport {
-  name: string
-  origin: string
-  ref: IrClassRef
-}
-
 export interface SchemaOverlay {
-  origin: string
-  /** Exact declared Domain dependencies. */
-  requires: string[]
-  /** Non-Kernel imported Classes. */
-  crossDomainImports: CrossDomainImport[]
-  /** Kernel base Classes rendered as inherited platform facts. */
-  mixins: CrossDomainImport[]
   handlerLinks: HandlerLink[]
   /** Keyed by Class, Property, Method, Function, Policy, View, or Core anchor. */
   sourceSpans: Record<string, SourceSpan>
-  annotations: SchemaAnnotation[]
 }
 
 export interface BundleError {
@@ -388,4 +372,4 @@ export type TypeDescriptor =
       required: string[]
       optional: boolean
     }
-  | { kind: 'ref'; target: string; refKind: 'node' | 'data'; optional: boolean }
+  | { kind: 'ref'; target: 'node'; optional: boolean }
