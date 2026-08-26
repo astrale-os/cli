@@ -105,6 +105,11 @@ describe('release workflow contract', () => {
     assert.match(publishedQualification.run, /gh release download "\$CHANNEL"/)
     assert.match(publishedQualification.run, /astrale-linux-x64\.tar\.gz/)
     assert.match(publishedQualification.run, /scripts\/qualification\/skills-update-e2e\.mjs/)
+
+    const publishNode = binary.jobs.publish.steps.find((step) =>
+      step.uses?.startsWith('actions/setup-node@'),
+    )
+    assert.equal(publishNode.with['node-version-file'], '.nvmrc')
   })
 
   it('installs the standalone viewer assets beside the executable', () => {
