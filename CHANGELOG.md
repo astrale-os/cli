@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.14](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.13...cli/v1.0.0-beta.14) (2026-08-26)
+
+
+### Bug Fixes
+
+* **ui:** resolve the published beta channel ([#162](https://github.com/astrale-os/cli/issues/162)) ([4cbae8c](https://github.com/astrale-os/cli/commit/4cbae8cf45ab553312ef55b5ba7dceb05c94c6ef))
+
 ## [1.0.0-beta.13](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.12...cli/v1.0.0-beta.13) (2026-08-26)
 
 
