@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.17](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.16...cli/v1.0.0-beta.17) (2026-08-26)
+
+
+### Bug Fixes
+
+* **commands:** remove stale UI diff guidance ([#168](https://github.com/astrale-os/cli/issues/168)) ([b50fb0c](https://github.com/astrale-os/cli/commit/b50fb0c29defc9b3cccd4c85ea820b02653bfae3))
+
 ## [1.0.0-beta.16](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.15...cli/v1.0.0-beta.16) (2026-08-26)
 
 
