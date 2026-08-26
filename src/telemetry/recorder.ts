@@ -17,7 +17,15 @@ import { eventsPath } from './store'
 export type Finalizer = (exitCode: number, errorName?: string) => void
 
 const NOOP: Finalizer = () => {}
-const HELP_VERSION = new Set(['-h', '--help', '-V', '--version', 'help', 'version'])
+const HELP_VERSION = new Set([
+  '-h',
+  '--help',
+  '-V',
+  '--version',
+  '--cli-version',
+  'help',
+  'version',
+])
 
 /** Bare invocation (every() is true for []) or only help/version tokens — skip. */
 function isHelpOrVersion(args: string[]): boolean {

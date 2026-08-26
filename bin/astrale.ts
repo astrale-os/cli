@@ -3,7 +3,7 @@ import { type Command, CommanderError } from 'commander'
 
 import { renderCommanderError } from '../src/lib/command-dx'
 import { configureInvocation } from '../src/lib/invocation'
-import { buildProgram } from '../src/program/index'
+import { buildProgram, normalizeRootVersionArgv } from '../src/program/index'
 import { beginInvocation } from '../src/telemetry/recorder'
 import { maybeTriggerAnalysis } from '../src/telemetry/trigger'
 
@@ -25,14 +25,15 @@ let errorName: string | undefined
 if (finalize) process.on('exit', (code) => finalize(code ?? 0, errorName))
 maybeTriggerAnalysis(process.argv)
 
-configureInvocation(process.argv)
+const argv = normalizeRootVersionArgv(process.argv)
+configureInvocation(argv)
 
 const program = await buildProgram()
 overrideExits(program)
 program.configureOutput({ writeErr: () => undefined })
 
 try {
-  await program.parseAsync()
+  await program.parseAsync(argv)
 } catch (error) {
   if (error instanceof CommanderError) {
     if (error.exitCode === 0) process.exit(0)

@@ -114,6 +114,37 @@ function lock(): UiLock {
 }
 
 describe('UI release and runner contracts', () => {
+  test('resolves the default release from the public beta channel', async () => {
+    const seen: string[] = []
+    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/@astrale-os/ui/beta')) {
+        seen.push(url)
+        return Response.json({ version: '0.3.0-beta.1' })
+      }
+      return mockFetch(seen)(input, init)
+    }) as typeof fetch
+
+    const release = await resolveUiRelease(undefined, fetcher)
+
+    expect(release.version).toBe('0.3.0-beta.1')
+    expect(seen[0]).toBe('https://registry.npmjs.org/@astrale-os/ui/beta')
+    expect(seen).not.toContain('https://registry.npmjs.org/@astrale-os/ui/latest')
+  })
+
+  test('rejects a public beta channel that does not resolve to a beta release', async () => {
+    const fetcher = (async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith('/@astrale-os/ui/beta')) return Response.json({ version: '0.3.0' })
+      throw new Error('release snapshot must not be fetched')
+    }) as typeof fetch
+
+    await expect(resolveUiRelease(undefined, fetcher)).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+      message: 'Invalid UI beta release version: 0.3.0',
+    })
+  })
+
   /** @evidence TEST-CLI-UI-ONE-SNAPSHOT */
   test('resolves one commit and reads the full release snapshot from it', async () => {
     const seen: string[] = []

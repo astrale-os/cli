@@ -91,6 +91,7 @@ describe('beginInvocation', () => {
   test('writes nothing for help/version-only invocations', () => {
     beginInvocation(['node', 'astrale', '--help'])(0)
     beginInvocation(['node', 'astrale', '--version'])(0)
+    beginInvocation(['node', 'astrale', '--cli-version'])(0)
     beginInvocation(['node', 'astrale'])(0)
     expect(listSessions()).toHaveLength(0)
   })
