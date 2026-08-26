@@ -11,7 +11,7 @@ import { join } from 'node:path'
 
 import { MAX_REMOVALS_ON_START, sweepByAge } from './retention'
 import { telemetryEnabled } from './settings'
-import { listSessions, sessionsRoot } from './store'
+import { scanSessions, sessionsRoot, type SessionScan } from './store'
 
 const LOCK_STALE_MS = 30 * 60 * 1000
 
@@ -58,11 +58,11 @@ export function releaseLock(): void {
  * the most recently closed unanalyzed session, if any. Never throws, never
  * blocks — worst case a few ms of directory stats.
  */
-export function maybeTriggerAnalysis(argv: string[]): void {
+export function maybeTriggerAnalysis(argv: string[], scan?: readonly SessionScan[]): void {
   try {
     if (process.env.ASTRALE_TELEMETRY_NO_TRIGGER === '1') return
 
-    const sessions = listSessions()
+    const sessions = scan ?? scanSessions()
     // Retention runs ahead of the kill-switch check and on `session` commands
     // too — turning telemetry off must still drain what is already on disk.
     const swept = new Set(sweepByAge(sessions, { limit: MAX_REMOVALS_ON_START }).removed)
@@ -72,7 +72,7 @@ export function maybeTriggerAnalysis(argv: string[]): void {
     if (argv[2] === 'session') return
 
     const target = sessions.find(
-      (s) => s.closed && s.analyzed === null && s.lastEventAt !== null && !swept.has(s.id),
+      (s) => s.closed && !s.analyzed && s.lastEventAt !== null && !swept.has(s.id),
     )
     if (!target) return
     if (!claimLock()) return

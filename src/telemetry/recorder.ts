@@ -6,6 +6,7 @@
  */
 import { appendFileSync } from 'node:fs'
 
+import type { SessionScan } from './store'
 import type { TelemetryEvent } from './types'
 
 import { redactArgv } from './redact'
@@ -32,15 +33,17 @@ function isHelpOrVersion(args: string[]): boolean {
   return args.every((a) => HELP_VERSION.has(a))
 }
 
-/** Begin recording an invocation; returns a finalizer to call at process end. */
-export function beginInvocation(argv: string[]): Finalizer {
+/** Begin recording an invocation; returns a finalizer to call at process end.
+ *  `sessions` is an already-paid-for store scan the caller shares with
+ *  retention — see bin/astrale.ts. */
+export function beginInvocation(argv: string[], sessions?: readonly SessionScan[]): Finalizer {
   try {
     const args = argv.slice(2)
     if (!telemetryEnabled() || isHelpOrVersion(args)) return NOOP
     const startMs = Date.now()
     const ts = new Date(startMs).toISOString()
     const cwd = process.cwd()
-    const { id, root } = ensureSession(cwd)
+    const { id, root } = ensureSession(cwd, sessions)
     return (exitCode: number, errorName?: string) => {
       try {
         const event: TelemetryEvent = {
