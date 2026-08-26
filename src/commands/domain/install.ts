@@ -426,6 +426,7 @@ export async function installDirect(
       target,
       host,
       opts.allowIdentityOverride ?? false,
+      isMachine(opts),
     )
   } catch (e) {
     fatal(e, opts)
@@ -451,11 +452,13 @@ export async function installDirect(
       // aliases the host and the pre-install gate never consented to THAT
       // origin (lying or unavailable Publication), say so loudly after the fact.
       if (isIdentityOverride(installed.origin, host) && installed.origin !== consentedOrigin) {
-        log.warn(
-          `Installed origin "${installed.origin}" differs from the serving host "${host}" ` +
-            `and was not confirmed before install (the worker Publication was unavailable). ` +
-            `Every ${installed.origin}/* call on this instance now routes to ${host}.`,
-        )
+        if (!isMachine(fmtOpts)) {
+          log.warn(
+            `Installed origin "${installed.origin}" differs from the serving host "${host}" ` +
+              `and was not confirmed before install (the worker Publication was unavailable). ` +
+              `Every ${installed.origin}/* call on this instance now routes to ${host}.`,
+          )
+        }
       }
     },
   })
@@ -512,20 +515,25 @@ async function ensureIdentityOverrideConsent(
   url: string,
   host: string,
   allow: boolean,
+  machine: boolean,
 ): Promise<string | undefined> {
   const origin = await probeDeclaredOrigin(url)
   if (origin === undefined) {
-    log.warn(
-      `Could not read a declared origin from ` +
-        `${new URL('/.well-known/astrale/domain.json', url).href} — ` +
-        `skipping the pre-install identity check (the installed origin is verified after install).`,
-    )
+    if (!machine) {
+      log.warn(
+        `Could not read a declared origin from ` +
+          `${new URL('/.well-known/astrale/domain.json', url).href} — ` +
+          `skipping the pre-install identity check (the installed origin is verified after install).`,
+      )
+    }
     return undefined
   }
   if (!isIdentityOverride(origin, host)) return undefined
 
   if (allow) {
-    log.warn(`Identity override consented via --allow-identity-override: ${origin} ← ${host}`)
+    if (!machine) {
+      log.warn(`Identity override consented via --allow-identity-override: ${origin} ← ${host}`)
+    }
     return origin
   }
 

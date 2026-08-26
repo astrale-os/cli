@@ -16,6 +16,11 @@ The Schema owns all callable admission intent:
 Authentication is not callable authority, and callable authority is not Policy satisfaction. Do not
 recreate any of these gates inside an Action or Workflow.
 
+Humans authenticate as distinct identities and gain application access through Schema Policy over
+business graph facts. When Shell owns the human-facing User, observe that exact User and write only
+the application Domain's membership or business facts. Do not provision a shadow User or grant a
+human dynamic `can_*` authority to make acceptance pass.
+
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'
 import { z } from 'zod'
@@ -71,3 +76,8 @@ For protected behavior, test anonymous rejection, authenticated-but-unauthorized
 rejection, and success as separate cases. Denials must prove the Action, Workflow steps, Providers,
 and graph effects did not run. Use a real Kernel admission path for this evidence; a handler-local
 conditional or permissive fake cannot prove authorization.
+
+Keep each denial criterion proportional to its claim. A mutating denial needs an independent no-effect
+observation; a read-only denial does not need invented graph assertions. When testing revocation,
+remove the business fact, repeat the same protected operation while the Domain remains installed, and
+observe the denial independently.

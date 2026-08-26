@@ -41,8 +41,11 @@ Cross-owner imports go through the generated `#` facades.
 
 ## Runtime and Application
 
-Runtime code imports the authored Schema only as a type. It realizes external Providers once and
-registers exact Action and Workflow definitions:
+Every Runtime-side module imports authored Schema handles only as types. A value import from a
+Runtime, Action, Workflow, Integration, Provider, Query, or Mutation can retain the build-only Schema
+DSL in the Worker closure; the SDK build boundary rejects that leak. Application/publication
+composition remains the value owner. Runtime realizes external Providers once and registers exact
+Action and Workflow definitions:
 
 ```ts
 import { defineRuntime } from '@astrale-os/sdk/runtime'
@@ -90,8 +93,34 @@ pnpm lint
 pnpm build
 ```
 
+Retain the package manifest and lockfile, resolved SDK/adapter/scaffolder versions, environment-owned
+CLI version, Node and package-manager versions, and the exact owner command behind each conclusion.
+A version range or remembered release is not evidence of what executed.
+
+Keep an acceptance prompt about the business outcome. Put reusable product guidance in one versioned
+knowledge input and retain its digest; do not rely on an ambient installed skill whose source and
+version the runner cannot identify. Keep scenario-specific facts in the scenario and stable product
+facts in the owning skill or documentation.
+
 The SDK Domain linter is the architecture and semantic policy gate. Strict typecheck should keep
 `skipLibCheck` disabled.
+
+Qualification must inspect the production tree that build and deployment consume. Do not copy or
+hide source into a different topology before lint, typecheck, test, build, or pack. If a legitimate
+package shape is unsupported, retain the exact diagnostic and classify an SDK capability gap instead
+of manufacturing a pass.
+
+Treat emitted declarations and the packed consumer as public package evidence. A source tree can use
+only SDK facades yet still emit a Kernel specifier; minimize that as a facade defect rather than
+hiding it with a cast or shadow type. Distinguish runtime/peer dependencies from author-only
+devDependencies when qualifying the packed artifact.
+
+When replacing a generated single-Schema root with several public Schema subpaths, keep only package
+`imports` whose source and published targets are actually emitted. Do not retain broad scaffold
+aliases by habit or invent another packaging API: the ordinary package exports plus
+`astrale-domain package` are the compatibility surface. Exercise the tarball from a consumer outside
+the source workspace. With pnpm, pass `--ignore-workspace` so parent workspace discovery cannot turn
+that consumer into a source-topology test.
 
 ## Build, deploy, install
 
@@ -109,6 +138,10 @@ Application -> Build -> Release -> adapter deployment -> Kernel installation
 
 Never infer installation from deployment. Fetch or inspect Publication/Bundle evidence and observe the
 installed revision through public Client or CLI behavior.
+
+Author-side tests and handoff files can report compilation, tests, and packing. They cannot certify
+isolated installation, live execution, external effects, graph state, or cleanup; the acceptance owner
+must observe those boundaries independently.
 
 ## Live evidence
 

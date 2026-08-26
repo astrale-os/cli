@@ -37,6 +37,8 @@ complete new domain; use the phased workflow below for that.
 - Optimize graph access, reduce round trips, choose indexes/queries, or review call patterns for latency: read `references/performance.md`.
 - Create fake/sample/demo data, testing, fixtures, demo flows, or smoke-test scenarios: read `references/simulating.md`.
 - Diagnose a failing live domain or runtime drift: read `references/debugging.md`.
+- Classify repeated author friction, propose an SDK linter rule, or record API/SDK DX improvements:
+  read `references/dx-feedback.md`.
 
 ## New Domain Creation Workflow
 
@@ -50,8 +52,8 @@ Load references when their phase begins rather than loading them all at once.
    `references/security.md`. If an external system is involved, also read `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition.
-5. **Completion:** Read `references/simulating.md` and apply its validation workflow before considering
-   the domain complete.
+5. **Completion:** Read `references/simulating.md` and `references/dx-feedback.md`; apply the focused
+   validation workflow and classify reusable author friction before considering the domain complete.
 
 Read `references/migration.md`, `references/performance.md`, and `references/debugging.md` only when the
 domain's lifecycle or current problem calls for them.
