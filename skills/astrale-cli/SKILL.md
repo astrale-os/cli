@@ -325,6 +325,9 @@ astrale logs --topic-prefix op:function. --follow
 Use `--principal`, `--since`, `--until`, or an opaque `--cursor` as needed.
 `--follow` retains one Client session and advances only with returned cursors.
 Application-service console buffers are not part of this command.
+Machine output retains the admitted structured `correlation` object, including invocation root and
+parent identifiers, and also keeps the compatibility `correlationId` projection of `invocationId`.
+Machine `--follow` output is NDJSON with one complete admitted record per line; YAML follow is rejected.
 
 ## Views And Browser Sessions
 
@@ -345,9 +348,9 @@ Use `astrale browser --check` to verify it, then drive the printed profile with
 ## Output And Automation
 
 - TTY defaults are human-readable.
-- `--json` is always valid JSON.
+- `--json` emits one JSON document for finite commands; `logs --follow` emits an NDJSON stream.
 - `--raw` unwraps scalars and writes raw binary bytes.
-- `--format yaml|json` selects structured rendering.
+- `--format yaml|json` selects finite structured rendering; `logs --follow` supports JSON/NDJSON only.
 - Use `--ci --no-prompt` for automation.
 - Use explicit `-i`, `--as`, and `--timeout` rather than ambient state.
 - Pipe large JSON through stdin; command-line argument size is limited by the

@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 
-import { acceptJournalPage, buildJournalInput } from '../logs'
+import logsCommand, {
+  acceptJournalPage,
+  buildJournalInput,
+  followLogs,
+  formatFollowRecord,
+} from '../logs'
 
 describe('buildJournalInput', () => {
   /** @evidence TEST-CLI-LOGS-MAPS-EXACT-JOURNAL-INPUT */
@@ -81,7 +86,15 @@ describe('acceptJournalPage', () => {
           occurredAt: '2026-08-19T16:51:10.049Z',
           committedAt: '2026-08-19T16:51:10.070Z',
           payload: { outcome: 'rejected' },
-          correlation: { invocationId: 'cf862a64-3aa1-4343-ba86-f9b516c4ff95' },
+          correlation: {
+            operationId: 'operation-child',
+            parentOperationId: 'operation-parent',
+            invocationId: 'cf862a64-3aa1-4343-ba86-f9b516c4ff95',
+            rootInvocationId: 'invocation-root',
+            parentInvocationId: 'invocation-parent',
+            traceId: 'trace-1',
+            spanId: 'span-1',
+          },
         },
       ],
     })
@@ -91,7 +104,242 @@ describe('acceptJournalPage', () => {
       timestamp: '2026-08-19T16:51:10.049Z',
       occurredAt: '2026-08-19T16:51:10.049Z',
       committedAt: '2026-08-19T16:51:10.070Z',
+      correlation: {
+        operationId: 'operation-child',
+        parentOperationId: 'operation-parent',
+        invocationId: 'cf862a64-3aa1-4343-ba86-f9b516c4ff95',
+        rootInvocationId: 'invocation-root',
+        parentInvocationId: 'invocation-parent',
+        traceId: 'trace-1',
+        spanId: 'span-1',
+      },
       correlationId: 'cf862a64-3aa1-4343-ba86-f9b516c4ff95',
     })
   })
+
+  test('rejects malformed or invented structured correlation fields', () => {
+    const record = {
+      sequence: 1,
+      topic: 'function.invoke',
+      occurredAt: '2026-08-19T16:51:10.049Z',
+      payload: {},
+    }
+    expect(() => acceptJournalPage({ records: [{ ...record, correlation: 'opaque' }] })).toThrow(
+      'correlation must be an object',
+    )
+    expect(() =>
+      acceptJournalPage({ records: [{ ...record, correlation: { authority: 'forged' } }] }),
+    ).toThrow('correlation.authority is unsupported')
+    for (const field of [
+      'operationId',
+      'parentOperationId',
+      'invocationId',
+      'rootInvocationId',
+      'parentInvocationId',
+      'traceId',
+      'spanId',
+    ]) {
+      expect(() =>
+        acceptJournalPage({ records: [{ ...record, correlation: { [field]: 7 } }] }),
+      ).toThrow(`correlation.${field}`)
+    }
+    expect(() =>
+      acceptJournalPage({ records: [{ ...record, correlation: { invocationId: '   ' } }] }),
+    ).toThrow('must be non-empty')
+    expect(() =>
+      acceptJournalPage({
+        records: [{ ...record, correlation: { invocationId: 'x'.repeat(257) } }],
+      }),
+    ).toThrow('at most 256 UTF-8 bytes')
+    expect(
+      acceptJournalPage({
+        records: [{ ...record, correlation: { invocationId: 'x'.repeat(256) } }],
+      }).records[0].correlation?.invocationId,
+    ).toHaveLength(256)
+    expect(
+      acceptJournalPage({
+        records: [{ ...record, correlation: { invocationId: 'é'.repeat(128) } }],
+      }).records[0].correlation?.invocationId,
+    ).toHaveLength(128)
+    expect(() =>
+      acceptJournalPage({
+        records: [{ ...record, correlation: { invocationId: `${'é'.repeat(127)}€` } }],
+      }),
+    ).toThrow('at most 256 UTF-8 bytes')
+  })
+
+  test('keeps legacy identity compatibility coherent with structured correlation', () => {
+    const record = {
+      sequence: 1,
+      topic: 'function.invoke',
+      occurredAt: '2026-08-19T16:51:10.049Z',
+      payload: {},
+    }
+    expect(
+      acceptJournalPage({
+        records: [{ ...record, correlationId: 'legacy-only', causationId: 'legacy-cause' }],
+      }).records[0],
+    ).toMatchObject({ correlationId: 'legacy-only', causationId: 'legacy-cause' })
+    expect(
+      acceptJournalPage({
+        records: [
+          {
+            ...record,
+            correlationId: 'same',
+            correlation: { invocationId: 'same' },
+          },
+        ],
+      }).records[0],
+    ).toMatchObject({ correlationId: 'same', correlation: { invocationId: 'same' } })
+    expect(() =>
+      acceptJournalPage({
+        records: [
+          {
+            ...record,
+            correlationId: 'legacy',
+            correlation: { invocationId: 'structured' },
+          },
+        ],
+      }),
+    ).toThrow('conflicting correlation identifiers')
+  })
+
+  test('serializes one complete structured record per machine-follow line', () => {
+    const record = acceptJournalPage({
+      records: [
+        {
+          sequence: 2,
+          topic: 'function.invoke',
+          occurredAt: '2026-08-19T16:51:10.049Z',
+          payload: { outcome: 'completed' },
+          correlation: {
+            operationId: 'operation-child',
+            parentOperationId: 'operation-parent',
+            invocationId: 'invocation-child',
+            rootInvocationId: 'invocation-root',
+            parentInvocationId: 'invocation-parent',
+            traceId: 'trace-1',
+            spanId: 'span-1',
+          },
+        },
+      ],
+    }).records[0]
+    expect(formatFollowRecord(record).endsWith('\n')).toBe(true)
+    expect(JSON.parse(formatFollowRecord(record))).toEqual(record)
+  })
+})
+
+describe('follow output routing', () => {
+  const inputRecord = {
+    sequence: 2,
+    topic: 'function.invoke',
+    occurredAt: '2026-08-19T16:51:10.049Z',
+    payload: { outcome: 'completed' },
+    principal: 'principal-1',
+    correlation: {
+      invocationId: 'invocation-child',
+      rootInvocationId: 'invocation-root',
+      parentInvocationId: 'invocation-parent',
+    },
+  }
+  const admittedRecord = acceptJournalPage({ records: [inputRecord] }).records[0]
+
+  test('routes every effective machine mode through complete NDJSON records', async () => {
+    for (const { opts, tty } of [
+      { opts: { json: true }, tty: true },
+      { opts: { raw: true }, tty: true },
+      { opts: { format: 'json' as const }, tty: true },
+      { opts: { ci: true }, tty: true },
+      { opts: {}, tty: false },
+      { opts: { format: 'yaml' as const, json: true }, tty: true },
+      { opts: { format: 'yaml' as const, raw: true }, tty: true },
+    ]) {
+      const stdout = await captureFollowOutput({ ...opts, follow: true }, tty)
+      expect(stdout.endsWith('\n')).toBe(true)
+      expect(JSON.parse(stdout)).toEqual(admittedRecord)
+    }
+  })
+
+  test('keeps an unflagged TTY human-readable', async () => {
+    const stdout = await captureFollowOutput({ follow: true }, true)
+    expect(stdout).toContain('function.invoke')
+    expect(stdout).toContain('principal-1')
+    expect(stdout).not.toContain('invocation-child')
+    expect(() => JSON.parse(stdout)).toThrow()
+  })
+
+  test('rejects effective YAML before opening a Kernel session with INVALID_INPUT', async () => {
+    let runCalls = 0
+    await expect(
+      followLogs(
+        { follow: true, format: 'yaml' },
+        {
+          run: async () => {
+            runCalls += 1
+          },
+          pause: async () => {},
+        },
+      ),
+    ).rejects.toThrow('--follow does not support YAML')
+    expect(runCalls).toBe(0)
+
+    const originalExit = process.exit
+    const originalStderrWrite = process.stderr.write
+    let stderr = ''
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+      return true
+    }) as typeof process.stderr.write
+    process.exit = ((code?: string | number | null) => {
+      throw new Error(`exit:${String(code)}`)
+    }) as typeof process.exit
+    try {
+      await expect(logsCommand.action({ follow: true, format: 'yaml' })).rejects.toThrow('exit:1')
+      expect(JSON.parse(stderr)).toEqual({
+        error: 'INVALID_INPUT',
+        message: '--follow does not support YAML; use --json for an NDJSON stream',
+      })
+    } finally {
+      process.exit = originalExit
+      process.stderr.write = originalStderrWrite
+    }
+  })
+
+  async function captureFollowOutput(
+    opts: Parameters<typeof followLogs>[0],
+    tty: boolean,
+  ): Promise<string> {
+    const originalWrite = process.stdout.write
+    const originalTty = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    let stdout = ''
+    let pages = 0
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      stdout += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
+      return true
+    }) as typeof process.stdout.write
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: tty })
+    try {
+      await expect(
+        followLogs(opts, {
+          run: async (input) => {
+            await input.fn({
+              session: {
+                call: async () => {
+                  pages += 1
+                  if (pages === 1) return { records: [inputRecord] }
+                  throw new Error('end of controlled stream')
+                },
+              },
+            } as never)
+          },
+          pause: async () => {},
+        }),
+      ).rejects.toThrow('end of controlled stream')
+      return stdout
+    } finally {
+      process.stdout.write = originalWrite
+      if (originalTty === undefined) delete (process.stdout as { isTTY?: boolean }).isTTY
+      else Object.defineProperty(process.stdout, 'isTTY', originalTty)
+    }
+  }
 })

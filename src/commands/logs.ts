@@ -33,8 +33,19 @@ export interface JournalRecord {
   readonly occurredAt?: string
   readonly committedAt?: string
   readonly principal?: string
+  readonly correlation?: JournalCorrelation
   readonly correlationId?: string
   readonly causationId?: string
+}
+
+export interface JournalCorrelation {
+  readonly operationId?: string
+  readonly parentOperationId?: string
+  readonly invocationId?: string
+  readonly rootInvocationId?: string
+  readonly parentInvocationId?: string
+  readonly traceId?: string
+  readonly spanId?: string
 }
 
 export interface JournalPage {
@@ -133,8 +144,21 @@ async function runOnce(opts: LogsOpts): Promise<void> {
   })
 }
 
-async function follow(opts: LogsOpts): Promise<void> {
-  await runKernelCommand({
+type FollowDependencies = {
+  readonly run: typeof runKernelCommand
+  readonly pause: (milliseconds: number) => Promise<void>
+}
+
+/** Follow one admitted journal stream. Dependencies are explicit so routing is proven at the command boundary. */
+export async function followLogs(
+  opts: LogsOpts,
+  dependencies: FollowDependencies = {
+    run: runKernelCommand,
+    pause: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  },
+): Promise<void> {
+  validateLogsOpts(opts)
+  await dependencies.run({
     opts,
     label: 'Kernel journal',
     fn: async (context): Promise<never> => {
@@ -142,9 +166,9 @@ async function follow(opts: LogsOpts): Promise<void> {
       let cursor = resolved.cursor
       for (;;) {
         const page = await fetchPage(context, { ...resolved, cursor })
-        for (const record of page.records) printRecord(record)
+        for (const record of page.records) printRecord(record, opts)
         cursor = page.cursor ?? cursor
-        await new Promise((resolve) => setTimeout(resolve, FOLLOW_INTERVAL_MS))
+        await dependencies.pause(FOLLOW_INTERVAL_MS)
       }
     },
   })
@@ -169,10 +193,26 @@ function journalProjection(records: JournalRecord[]): ListProjection {
   }
 }
 
-function printRecord(record: JournalRecord): void {
+function printRecord(record: JournalRecord, opts: LogsOpts): void {
+  if (isMachine(opts) || opts.format === 'json') {
+    process.stdout.write(formatFollowRecord(record))
+    return
+  }
   process.stdout.write(
     `${chalk.dim(String(record.sequence).padStart(6))} ${chalk.dim(record.timestamp)} ${chalk.cyan(record.topic)} ${chalk.dim(record.principal ?? '')}\n`,
   )
+}
+
+/** Machine follow is an NDJSON stream: one complete admitted record per line. */
+export function formatFollowRecord(record: JournalRecord): string {
+  return `${JSON.stringify(record)}\n`
+}
+
+export function validateLogsOpts(opts: LogsOpts): void {
+  buildJournalInput(opts)
+  if (opts.follow && opts.format === 'yaml' && !opts.json && !opts.raw) {
+    throw new TypeError('--follow does not support YAML; use --json for an NDJSON stream')
+  }
 }
 
 function acceptRecord(input: unknown, index: number): JournalRecord {
@@ -188,10 +228,17 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
   if (timestamp === undefined) {
     throw new TypeError(`Kernel journal record ${index} is missing occurredAt/timestamp`)
   }
-  const correlation = isRecord(input.correlation) ? input.correlation : undefined
-  const correlationId =
-    optionalText(input.correlationId, index, 'correlationId') ??
-    optionalText(correlation?.invocationId, index, 'correlation.invocationId')
+  const correlation = acceptCorrelation(input.correlation, index)
+  const legacyCorrelationId = optionalIdentifier(input.correlationId, index, 'correlationId')
+  const structuredCorrelationId = correlation?.invocationId
+  if (
+    legacyCorrelationId !== undefined &&
+    structuredCorrelationId !== undefined &&
+    legacyCorrelationId !== structuredCorrelationId
+  ) {
+    throw new TypeError(`Kernel journal record ${index} has conflicting correlation identifiers`)
+  }
+  const correlationId = structuredCorrelationId ?? legacyCorrelationId
   const principal = optionalText(input.principal, index, 'principal')
   return Object.freeze({
     sequence: input.sequence as number,
@@ -203,11 +250,54 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
       ? {}
       : { committedAt: input.committedAt as string }),
     ...(principal === undefined ? {} : { principal }),
+    ...(correlation === undefined ? {} : { correlation }),
     ...(correlationId === undefined ? {} : { correlationId }),
-    ...(optionalText(input.causationId, index, 'causationId') === undefined
+    ...(optionalIdentifier(input.causationId, index, 'causationId') === undefined
       ? {}
       : { causationId: input.causationId as string }),
   })
+}
+
+const correlationFields = [
+  'operationId',
+  'parentOperationId',
+  'invocationId',
+  'rootInvocationId',
+  'parentInvocationId',
+  'traceId',
+  'spanId',
+] as const
+
+function acceptCorrelation(input: unknown, index: number): JournalCorrelation | undefined {
+  if (input === undefined) return undefined
+  if (!isRecord(input)) {
+    throw new TypeError(`Kernel journal record ${index}.correlation must be an object`)
+  }
+  const unknown = Object.keys(input).find(
+    (field) => !correlationFields.includes(field as (typeof correlationFields)[number]),
+  )
+  if (unknown !== undefined) {
+    throw new TypeError(`Kernel journal record ${index}.correlation.${unknown} is unsupported`)
+  }
+  return Object.freeze(
+    Object.fromEntries(
+      correlationFields.flatMap((field) => {
+        const value = optionalIdentifier(input[field], index, `correlation.${field}`)
+        return value === undefined ? [] : [[field, value]]
+      }),
+    ),
+  )
+}
+
+function optionalIdentifier(input: unknown, index: number, field: string): string | undefined {
+  const value = optionalText(input, index, field)
+  if (value === undefined) return undefined
+  if (value.trim() === '' || new TextEncoder().encode(value).byteLength > 256) {
+    throw new TypeError(
+      `Kernel journal record ${index}.${field} must be non-empty and at most 256 UTF-8 bytes`,
+    )
+  }
+  return value
 }
 
 function optionalText(input: unknown, index: number, field: string): string | undefined {
@@ -251,7 +341,8 @@ Behavior:
   Calls the public Kernel journal syscall and emits its { records, cursor }
   page. Topic selection is exact or prefix-based; cursors and timestamps are
   opaque strings owned by the journal backend. --follow reuses one Client Session
-  and advances only with the returned cursor.
+  and advances only with the returned cursor. Machine follow output is NDJSON:
+  one complete admitted record per line; YAML follow is unsupported.
 
   Historical event-glob lowering and the application-specific services-domain
   log buffer are not part of the Kernel V2 journal contract.
@@ -273,11 +364,11 @@ Examples:
   ],
   action: async (opts: LogsOpts) => {
     try {
-      buildJournalInput(opts)
+      validateLogsOpts(opts)
     } catch (error) {
       failInput(error, opts)
     }
-    if (opts.follow) await follow(opts)
+    if (opts.follow) await followLogs(opts)
     else await runOnce(opts)
   },
 } satisfies CommandDefinition
