@@ -29,7 +29,7 @@ describe('release workflow contract', () => {
     const sharedPublish = publish.jobs.publish.steps.at(-1)
     assert.equal(
       sharedPublish.uses,
-      'astrale-os/config/.github/actions/publish/packages@394998fcabb3cd4f0e2eccc5f969579837ea0c41',
+      'astrale-os/config/.github/actions/publish/packages@e89c7e84ed0b5bad2dcbf80f7a4547e30672155e',
     )
     assert.equal(sharedPublish.with['prerelease-tag'], 'auto')
     assert.equal(sharedPublish.with['mirror-public-packages'], 'false')
@@ -41,7 +41,7 @@ describe('release workflow contract', () => {
     const sharedRelease = release.jobs.release.steps.find((step) => step.id === 'release')
     assert.equal(
       sharedRelease.uses,
-      'astrale-os/config/.github/actions/release@394998fcabb3cd4f0e2eccc5f969579837ea0c41',
+      'astrale-os/config/.github/actions/release@e89c7e84ed0b5bad2dcbf80f7a4547e30672155e',
     )
     assert.equal(
       release.jobs.release.outputs.created,
