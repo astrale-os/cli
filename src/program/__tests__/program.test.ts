@@ -317,7 +317,7 @@ describe('help contract — UI is project tooling', () => {
     let stdout = ''
     program.exitOverride().configureOutput({
       writeOut: (chunk) => {
-        stdout += chunk
+        stdout += chunk ?? ''
       },
     })
 
