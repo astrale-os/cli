@@ -1,5 +1,6 @@
 import { access, lstat, readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
+import { loadConfig } from 'tsconfig-paths'
 
 import { UiError, type PackageManager } from './model'
 
@@ -38,6 +39,119 @@ async function readManifest(target: string): Promise<Record<string, unknown>> {
       cause,
     })
   }
+}
+
+function pathPatternMatch(pattern: string, candidate: string): string | undefined {
+  const wildcard = pattern.indexOf('*')
+  if (wildcard === -1) return pattern === candidate ? '' : undefined
+  const prefix = pattern.slice(0, wildcard)
+  const suffix = pattern.slice(wildcard + 1)
+  if (!candidate.startsWith(prefix) || !candidate.endsWith(suffix)) return undefined
+  return candidate.slice(prefix.length, candidate.length - suffix.length)
+}
+
+function resolvePackageImport(project: UiProject, candidate: string): string | undefined {
+  const imports = project.packageJson.imports
+  if (!imports || typeof imports !== 'object' || Array.isArray(imports)) return undefined
+  const matches = Object.entries(imports as Record<string, unknown>)
+    .flatMap(([pattern, target]) => {
+      const wildcard = pathPatternMatch(pattern, candidate)
+      if (wildcard === undefined || typeof target !== 'string' || !target.startsWith('./'))
+        return []
+      const wildcardIndex = pattern.indexOf('*')
+      return [
+        {
+          exact: wildcardIndex === -1,
+          prefixLength: wildcardIndex === -1 ? pattern.length : wildcardIndex,
+          suffixLength: wildcardIndex === -1 ? 0 : pattern.length - wildcardIndex - 1,
+          target: target.replaceAll('*', wildcard),
+        },
+      ]
+    })
+    .sort(
+      (left, right) =>
+        Number(right.exact) - Number(left.exact) ||
+        right.prefixLength - left.prefixLength ||
+        right.suffixLength - left.suffixLength,
+    )
+  return matches[0] ? path.resolve(project.root, matches[0].target) : undefined
+}
+
+async function resolveAlias(project: UiProject, candidate: string): Promise<string | undefined> {
+  const config = loadConfig(project.root)
+  if (config.resultType === 'failed') return undefined
+  const matches: Array<{
+    exact: boolean
+    prefixLength: number
+    suffixLength: number
+    resolved: string
+  }> = []
+  for (const [pattern, replacements] of Object.entries(config.paths)) {
+    const wildcard = pathPatternMatch(pattern, candidate)
+    if (wildcard === undefined) continue
+    const replacement = replacements?.[0]
+    if (!replacement) continue
+    const wildcardIndex = pattern.indexOf('*')
+    matches.push({
+      exact: wildcardIndex === -1,
+      prefixLength: wildcardIndex === -1 ? pattern.length : wildcardIndex,
+      suffixLength: wildcardIndex === -1 ? 0 : pattern.length - wildcardIndex - 1,
+      resolved: path.resolve(config.absoluteBaseUrl, replacement.replaceAll('*', wildcard)),
+    })
+  }
+  matches.sort(
+    (left, right) =>
+      Number(right.exact) - Number(left.exact) ||
+      right.prefixLength - left.prefixLength ||
+      right.suffixLength - left.suffixLength,
+  )
+  const best = matches[0]
+  if (!best) return undefined
+  const ambiguous = matches.some(
+    (match) =>
+      match.exact === best.exact &&
+      match.prefixLength === best.prefixLength &&
+      match.suffixLength === best.suffixLength &&
+      match.resolved !== best.resolved,
+  )
+  if (ambiguous) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      'The components alias resolves to conflicting project paths.',
+      'Keep one authoritative compilerOptions.paths mapping for the components alias.',
+    )
+  }
+  return best.resolved
+}
+
+export async function resolveUiRegistryTarget(
+  project: UiProject,
+  declaredTarget: string,
+): Promise<string> {
+  if (!declaredTarget.startsWith('components/')) return declaredTarget
+  const components = await readFile(project.componentsPath, 'utf8')
+    .then((value) => JSON.parse(value) as { aliases?: { components?: unknown } })
+    .catch(() => undefined)
+  const componentsAlias = components?.aliases?.components
+  if (typeof componentsAlias !== 'string' || componentsAlias.length === 0) return declaredTarget
+  const suffix = declaredTarget.slice('components/'.length)
+  const directAlias = /^(?:\.?\.?\/|src\/|app\/|frontend\/|components\/)/u.test(componentsAlias)
+  const resolved =
+    resolvePackageImport(project, componentsAlias) ??
+    (await resolveAlias(project, componentsAlias)) ??
+    (directAlias ? path.resolve(project.root, componentsAlias) : undefined)
+  if (!resolved) {
+    throw new UiError(
+      'UI_PROJECT_UNSUPPORTED',
+      'components.json alias cannot be resolved through tsconfig.json or jsconfig.json.',
+      'Define a matching compilerOptions.paths entry for ' + componentsAlias + '.',
+    )
+  }
+  const relative = path.relative(project.root, path.join(resolved, suffix))
+  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+    throw new UiError('UI_PROJECT_UNSUPPORTED', 'components.json alias escapes the project.')
+  }
+  return relative.split(path.sep).join('/')
 }
 
 function hasReactTailwind(manifest: Record<string, unknown>): boolean {

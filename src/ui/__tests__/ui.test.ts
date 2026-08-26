@@ -1209,6 +1209,201 @@ describe('UI source operations', () => {
     ).rejects.toBeInstanceOf(UiError)
   })
 
+  test('records multi-file component targets resolved through the consumer components alias', async () => {
+    const root = await lockedFixture()
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({
+        style: 'base-nova',
+        tailwind: { css: 'src/index.css' },
+        aliases: { components: '@/components' },
+      }),
+    )
+    await writeFile(
+      path.join(root, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: {
+          paths: { '@/*': ['./src/*'], '@/components/*': ['./app/ui/*'] },
+        },
+      }),
+    )
+    await writeFile(
+      path.join(root, 'src/index.css'),
+      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
+    )
+    const sidebar = path.join(root, 'src/components/astrale/component/sidebar/sidebar.tsx')
+    const hook = path.join(root, 'src/components/astrale/component/sidebar/use-mobile.ts')
+
+    const planned = await addUi(
+      ['component/sidebar'],
+      { project: root, dryRun: true, yes: true },
+      {
+        fetcher: mockFetch([], componentRegistry),
+        runner: async () => ({ code: 0, stdout: 'planned', stderr: '' }),
+      },
+    )
+    expect(planned.sources).toEqual([
+      expect.objectContaining({
+        files: [
+          'src/components/astrale/component/sidebar/sidebar.tsx',
+          'src/components/astrale/component/sidebar/use-mobile.ts',
+        ],
+      }),
+    ])
+
+    await addUi(
+      ['component/sidebar'],
+      { project: root, yes: true },
+      {
+        fetcher: mockFetch([], componentRegistry),
+        runner: async () => {
+          await mkdir(path.dirname(sidebar), { recursive: true })
+          await writeFile(sidebar, 'export const Sidebar = true\n')
+          await writeFile(hook, 'export const useMobile = true\n')
+          return { code: 0, stdout: '', stderr: '' }
+        },
+      },
+    )
+
+    const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
+    expect(written.items['component/sidebar'].files).toEqual({
+      'src/components/astrale/component/sidebar/sidebar.tsx': digest(
+        'export const Sidebar = true\n',
+      ),
+      'src/components/astrale/component/sidebar/use-mobile.ts': digest(
+        'export const useMobile = true\n',
+      ),
+    })
+    expect((await doctorUi(root)).healthy).toBe(true)
+  })
+
+  test('resolves a components alias through package imports before tsconfig paths', async () => {
+    const root = await lockedFixture()
+    const manifestPath = path.join(root, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.imports = { '#app/*': './src/app/*' }
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({
+        style: 'base-nova',
+        tailwind: { css: 'src/index.css' },
+        aliases: { components: '#app/components' },
+      }),
+    )
+
+    const planned = await addUi(
+      ['pattern/chart/line/basic'],
+      { project: root, dryRun: true, yes: true },
+      {
+        fetcher: mockFetch(),
+        runner: async () => ({ code: 0, stdout: 'planned', stderr: '' }),
+      },
+    )
+
+    expect(planned.sources).toEqual([
+      expect.objectContaining({
+        files: ['src/app/components/astrale/pattern/chart/line-basic.tsx'],
+      }),
+    ])
+  })
+
+  test('rejects an unresolved package-import alias before invoking shadcn', async () => {
+    const root = await lockedFixture()
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({
+        style: 'base-nova',
+        tailwind: { css: 'src/index.css' },
+        aliases: { components: '#missing/components' },
+      }),
+    )
+    let invoked = false
+
+    await expect(
+      addUi(
+        ['pattern/chart/line/basic'],
+        { project: root, yes: true },
+        {
+          fetcher: mockFetch(),
+          runner: async () => {
+            invoked = true
+            return { code: 0, stdout: '', stderr: '' }
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
+    expect(invoked).toBe(false)
+  })
+
+  test('resolves an extended JSONC baseUrl with the pinned shadcn config loader', async () => {
+    const root = await lockedFixture()
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({
+        style: 'base-nova',
+        tailwind: { css: 'src/index.css' },
+        aliases: { components: '@/components' },
+      }),
+    )
+    await mkdir(path.join(root, 'config'), { recursive: true })
+    await writeFile(
+      path.join(root, 'tsconfig.json'),
+      '{\n  // shadcn loads this root config.\n  "extends": "./config/base.json",\n}\n',
+    )
+    await writeFile(
+      path.join(root, 'config/base.json'),
+      '{\n  "compilerOptions": {\n    "baseUrl": "..",\n    "paths": { "@/*": ["frontend/src/*"], },\n  },\n}\n',
+    )
+
+    const planned = await addUi(
+      ['pattern/chart/line/basic'],
+      { project: root, dryRun: true, yes: true },
+      {
+        fetcher: mockFetch(),
+        runner: async () => ({ code: 0, stdout: 'planned', stderr: '' }),
+      },
+    )
+
+    expect(planned.sources).toEqual([
+      expect.objectContaining({
+        files: ['frontend/src/components/astrale/pattern/chart/line-basic.tsx'],
+      }),
+    ])
+  })
+
+  test('rejects an alias mapping outside the project before invoking shadcn', async () => {
+    const root = await lockedFixture()
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({
+        style: 'base-nova',
+        tailwind: { css: 'src/index.css' },
+        aliases: { components: '@/components' },
+      }),
+    )
+    await writeFile(
+      path.join(root, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { paths: { '@/*': ['../outside/*'] } } }),
+    )
+    let invoked = false
+
+    await expect(
+      addUi(
+        ['pattern/chart/line/basic'],
+        { project: root, yes: true },
+        {
+          fetcher: mockFetch(),
+          runner: async () => {
+            invoked = true
+            return { code: 0, stdout: '', stderr: '' }
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
+    expect(invoked).toBe(false)
+  })
+
   test('restores the exact locked UI dependency after shadcn applies its compatible range', async () => {
     const root = await lockedFixture()
     const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
@@ -1335,10 +1530,22 @@ describe('UI source operations', () => {
     expect(invoked).toBe(false)
   })
 
-  test('restores declared files and package state after a partial shadcn failure', async () => {
+  test('restores alias-resolved files and package state after a partial shadcn failure', async () => {
     const root = await lockedFixture()
-    const first = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
-    const second = path.join(root, 'components/astrale/pattern/chart/summary.tsx')
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({
+        style: 'base-nova',
+        tailwind: { css: 'src/index.css' },
+        aliases: { components: '@/components' },
+      }),
+    )
+    await writeFile(
+      path.join(root, 'tsconfig.json'),
+      JSON.stringify({ compilerOptions: { paths: { '@/*': ['./src/*'] } } }),
+    )
+    const first = path.join(root, 'src/components/astrale/pattern/chart/line-basic.tsx')
+    const second = path.join(root, 'src/components/astrale/pattern/chart/summary.tsx')
     await mkdir(path.dirname(first), { recursive: true })
     await writeFile(first, 'consumer original\n')
     const twoFileRegistry: UiRegistry = {

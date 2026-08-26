@@ -32,7 +32,7 @@ export function parseUiLock(value: unknown): UiLock {
   }
   for (const [address, item] of Object.entries(lock.items)) {
     if (
-      !/^(?:(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+|theme\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/u.test(
+      !/^(?:component\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*|(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+|theme\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/u.test(
         address,
       ) ||
       !isRecord(item) ||
