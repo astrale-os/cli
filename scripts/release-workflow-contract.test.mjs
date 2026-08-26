@@ -68,6 +68,16 @@ describe('release workflow contract', () => {
     assert.match(summary.run, /ASTRALE_CHANNEL=\$\{\{ steps\.meta\.outputs\.channel \}\} sh/)
   })
 
+  it('updates the mutable channel ref through authenticated GitHub API calls', () => {
+    const channel = binary.jobs.publish.steps.find(
+      (step) => step.name === 'Publish channel release',
+    )
+    assert.match(channel.run, /gh api --method PATCH/)
+    assert.match(channel.run, /gh api --method POST/)
+    assert.match(channel.run, /git\/refs\/tags\/\$CHANNEL/)
+    assert.doesNotMatch(channel.run, /git push/)
+  })
+
   it('builds every supported standalone platform exactly once per release run', () => {
     const platforms = binary.jobs.build.strategy.matrix.include.map(
       ({ target_os: os, target_arch: arch }) => `${os}-${arch}`,
