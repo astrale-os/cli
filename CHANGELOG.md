@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0-beta.28](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.27...cli/v1.0.0-beta.28) (2026-08-26)
+
+
+### Features
+
+* polish Studio workspace interface ([#203](https://github.com/astrale-os/cli/issues/203)) ([205a335](https://github.com/astrale-os/cli/commit/205a335c0908a970ee1a821ff08865cb348b8904))
+* **skills:** add Astrale frontend design guidance ([#198](https://github.com/astrale-os/cli/issues/198)) ([88892d3](https://github.com/astrale-os/cli/commit/88892d34b910f4981558bdc1ed05dd425635f740))
+* **telemetry:** bound the session store by age and size ([#200](https://github.com/astrale-os/cli/issues/200)) ([f33a4d8](https://github.com/astrale-os/cli/commit/f33a4d8df50b734f18cba99c23f09c9da5f7c862))
+
+
+### Bug Fixes
+
+* **commands:** accept `astrale session analyze` with no id ([#201](https://github.com/astrale-os/cli/issues/201)) ([d3b2160](https://github.com/astrale-os/cli/commit/d3b21601c50b530418bae392bb5613042e3698a3))
+
+
+### Performance Improvements
+
+* **telemetry:** scan the session store once, and cheaply ([#202](https://github.com/astrale-os/cli/issues/202)) ([4d713d3](https://github.com/astrale-os/cli/commit/4d713d32754aca95f3dc9b1085945234102a597d))
+
 ## [1.0.0-beta.27](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.26...cli/v1.0.0-beta.27) (2026-08-26)
 
 
