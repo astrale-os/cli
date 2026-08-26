@@ -19,6 +19,7 @@ import { fatal, log } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
+import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
   candidateSlug,
@@ -62,6 +63,7 @@ type ViewOpts = KernelCommandOpts &
     sessions?: boolean
     close?: string | boolean
     all?: boolean
+    allowExternalOrigin?: string[]
   }
 
 const VIEW_PORT_BASE = 4419
@@ -308,6 +310,7 @@ async function startSessionLocked(
       caFile: kernelTarget.caFile,
       direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
     },
+    externalOrigins: admitExternalOpenOrigins(opts.allowExternalOrigin),
     idleMs: IDLE_MS,
   }
 
@@ -549,6 +552,10 @@ export default {
       description: 'Close a view session (bare: the only open one; with --all: every session)',
     },
     { flags: '--all', description: 'With --close: close every session' },
+    {
+      flags: '--allow-external-origin <origin...>',
+      description: 'Grant this View exact HTTPS origins it may open in a new browser context',
+    },
   ],
   afterHelpText: `
 What it does:
@@ -567,6 +574,7 @@ Examples:
   $ astrale view /:crm.example.dev:view.dashboard
   $ astrale view /:agents.astrale.ai:view.agent --target @f00d1234 --as alice
   $ astrale view @customer --snapshot
+  $ astrale view /:integrations.astrale.ai:view.application --allow-external-origin https://connect.nango.dev https://connect.composio.dev
   $ astrale view --list
   $ astrale view --sessions ; astrale view --close --all
 `,

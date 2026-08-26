@@ -1,0 +1,19 @@
+diff --git a/dist/kernel/domain.js b/dist/kernel/domain.js
+index 2c5eaed..aee2032 100644
+--- a/dist/kernel/domain.js
++++ b/dist/kernel/domain.js
+@@ -5,10 +5,10 @@ export async function bindDomain(session, domainSchema) {
+         const resolved = schemaValue.resolve(snapshot.bundle.root);
+         return session.bind(resolved);
+     }
+-    const installation = await session.installation(domainSchema.origin);
+-    if (installation.bundle.root.origin !== domainSchema.origin ||
+-        schemaValue.revision(installation.bundle.root) !== schemaValue.revision(domainSchema)) {
+-        throw new TypeError('Expected Domain Schema does not match the ready installation.');
++    const domain = await session.schema.inspect(domainSchema.origin);
++    if (domain.origin !== domainSchema.origin ||
++        domain.revision !== schemaValue.revision(domainSchema)) {
++        throw new TypeError('Expected Domain Schema does not match the ready Domain generation.');
+     }
+     return session.bind(schemaValue.resolve(domainSchema));
+ }

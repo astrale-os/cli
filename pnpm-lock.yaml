@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@astrale-os/shell@0.4.2-beta.5': 1f75a020e8ed021770d7648ed06de6d798cd9a199c8be0f6404fdb3743ce0e7b
+
 importers:
 
   .:
@@ -40,11 +43,11 @@ importers:
         specifier: '>=0.1.3 <1.0.0'
         version: 0.1.3(oxfmt@0.63.0)(oxlint@1.78.0)
       '@astrale-os/sdk':
-        specifier: 0.5.0-beta.49
-        version: 0.5.0-beta.49(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0)
+        specifier: 0.5.0-beta.50
+        version: 0.5.0-beta.50(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0)
       '@astrale-os/shell':
-        specifier: 0.4.2-beta.3
-        version: 0.4.2-beta.3(@astrale-os/sdk@0.5.0-beta.49(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0))
+        specifier: 0.4.2-beta.5
+        version: 0.4.2-beta.5(patch_hash=1f75a020e8ed021770d7648ed06de6d798cd9a199c8be0f6404fdb3743ce0e7b)(@astrale-os/sdk@0.5.0-beta.50(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0))
       '@astrale/commitlint-config':
         specifier: jsr:~2.0.1
         version: '@jsr/astrale__commitlint-config@2.0.3'
@@ -244,8 +247,29 @@ packages:
       oxlint:
         optional: true
 
+  '@astrale-os/sdk@0.5.0-beta.50':
+    resolution: {integrity: sha512-ppkWmHPAd1T8UI3veK/OzpYT1Dbf7ar4fkYzcDFybBD7cSp7pg+XlBHXRmJvqGMKvZHYsZz6kfqaGA9VrZHh8g==}
+    engines: {node: '>=22'}
+    hasBin: true
+    peerDependencies:
+      '@astrale-os/ox': '>=0.1.3 <1.0.0'
+      '@hono/node-server': ^1.19.0 || ^2.1.1
+      oxlint: '>=1.78.0 <2.0.0'
+    peerDependenciesMeta:
+      '@astrale-os/ox':
+        optional: true
+      '@hono/node-server':
+        optional: true
+      oxlint:
+        optional: true
+
   '@astrale-os/shell@0.4.2-beta.3':
     resolution: {integrity: sha512-1Ya8xg3A4pXLnBBa+P73RhiQrIOpi/RwkY93D3IdvrtP0LizyEM7t8A7OgZGgnOtIJDH633AQbl66mSyrxh5Ow==}
+    peerDependencies:
+      '@astrale-os/sdk': '>=0.5.0-beta.32 <1.0.0'
+
+  '@astrale-os/shell@0.4.2-beta.5':
+    resolution: {integrity: sha512-QbzcZGQ3/XvYjHzmqQ2v2C5cjiAp6BTMPINHlqPpWLX26k6zyQJ6VMxvdxsJTlL76oyOk4fFFRIYq5SoJqJ/yQ==}
     peerDependencies:
       '@astrale-os/sdk': '>=0.5.0-beta.32 <1.0.0'
 
@@ -2918,9 +2942,33 @@ snapshots:
     transitivePeerDependencies:
       - msgpackr
 
+  '@astrale-os/sdk@0.5.0-beta.50(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0)':
+    dependencies:
+      '@astrale-os/kernel-client': 0.6.0-beta.19
+      '@astrale-os/kernel-core': 0.9.0-beta.15
+      '@astrale-os/kernel-dsl': 0.2.0-beta.12
+      '@astrale-os/kernel-protocol': 0.5.0-beta.15(msgpackr@2.0.5)
+      '@astrale-os/kernel-server': 0.5.0-beta.16
+      '@typescript/native-preview': 7.0.0-dev.20260707.2
+      hono: 4.13.2
+      jose: 6.2.9
+      typescript: 6.0.3
+      zod: 4.4.3
+    optionalDependencies:
+      '@astrale-os/ox': 0.1.3(oxfmt@0.63.0)(oxlint@1.78.0)
+      oxlint: 1.78.0
+    transitivePeerDependencies:
+      - msgpackr
+
   '@astrale-os/shell@0.4.2-beta.3(@astrale-os/sdk@0.5.0-beta.49(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0))':
     dependencies:
       '@astrale-os/sdk': 0.5.0-beta.49(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0)
+      jose: 6.2.9
+      zod: 4.4.3
+
+  '@astrale-os/shell@0.4.2-beta.5(patch_hash=1f75a020e8ed021770d7648ed06de6d798cd9a199c8be0f6404fdb3743ce0e7b)(@astrale-os/sdk@0.5.0-beta.50(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0))':
+    dependencies:
+      '@astrale-os/sdk': 0.5.0-beta.50(@astrale-os/ox@0.1.3(oxfmt@0.63.0)(oxlint@1.78.0))(msgpackr@2.0.5)(oxlint@1.78.0)
       jose: 6.2.9
       zod: 4.4.3
 

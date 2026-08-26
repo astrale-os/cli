@@ -101,6 +101,7 @@ export function startViewServer(config: ViewServeConfig): Server {
         identity: session.identity ?? null,
         instance: session.instance ?? null,
         sessionId: session.id,
+        externalOrigins: config.externalOrigins,
       })
       return
     }

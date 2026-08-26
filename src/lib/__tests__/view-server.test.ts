@@ -60,6 +60,7 @@ describe('view session server credentials', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
+      externalOrigins: [],
       idleMs: 60_000,
     } satisfies ViewServeConfig
     const server = startViewServer(config)

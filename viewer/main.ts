@@ -8,6 +8,10 @@ import {
   replyToIntent,
 } from '@astrale-os/shell'
 
+import {
+  installExternalOpenIntentHandler,
+  openExternalBrowserWindow,
+} from '../src/lib/view/external-open-intent'
 import { installOpenIntentHandler } from '../src/lib/view/open-intent'
 
 /**
@@ -24,6 +28,7 @@ type Config = {
   identity: string | null
   instance: string | null
   sessionId: string
+  externalOrigins: readonly string[]
 }
 
 type Token = { token: string; expiresAt: number; kind: string }
@@ -39,14 +44,6 @@ const VIEW_SANDBOX: SandboxProfile = Object.freeze({
   allowSameOrigin: true,
   allowModals: false,
 })
-const VIEW_HOST_CAPABILITIES = admitHostCapabilities({
-  version: 1,
-  navigation: { openView: {} },
-  actions: {},
-  browser: {},
-  access: {},
-})
-
 const base = location.pathname.replace(/\/+$/, '')
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
@@ -102,6 +99,16 @@ function errorMessage(error: unknown): string {
 
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
+  const hostCapabilities = admitHostCapabilities({
+    version: 1,
+    navigation: {
+      openView: {},
+      ...(cfg.externalOrigins.length === 0 ? {} : { external: { origins: cfg.externalOrigins } }),
+    },
+    actions: {},
+    browser: {},
+    access: {},
+  })
   const route = cfg.view.route
   el('view-label').textContent = `/:${route.key}`
   el('target-label').textContent = cfg.view.target
@@ -151,7 +158,7 @@ async function main(): Promise<void> {
     return shell.openView({
       host: container,
       view,
-      capabilities: VIEW_HOST_CAPABILITIES,
+      capabilities: hostCapabilities,
       sandbox: VIEW_SANDBOX,
       handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
       ...(credential === undefined ? {} : { credential }),
@@ -176,6 +183,9 @@ async function main(): Promise<void> {
     reject: (message, error) => {
       rejectIntent(shell.children, message.envelope.sender.windowId, message, error)
     },
+  })
+  installExternalOpenIntentHandler(shell, {
+    open: (request) => openExternalBrowserWindow(window, request),
   })
 
   // One placement means one mount attempt. Shell-handshake failures remain
