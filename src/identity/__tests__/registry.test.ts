@@ -47,6 +47,8 @@ describe('identity registry journey', () => {
       selectedDeletion: string
       aliceKey: boolean
       bobKey: boolean
+      routeCache: boolean
+      exchangeCache: unknown
     }
     expect(result.store.default).toBe('alice')
     expect(Object.keys(result.store.identities).sort()).toEqual(['alice', 'workos'])
@@ -60,6 +62,8 @@ describe('identity registry journey', () => {
     expect(result.selectedDeletion).toContain('Cannot delete the default identity')
     expect(result.aliceKey).toBe(true)
     expect(result.bobKey).toBe(false)
+    expect(result.routeCache).toBe(false)
+    expect(result.exchangeCache).toEqual({ version: 2, entries: {} })
 
     const persisted = JSON.parse(await readFile(join(root, 'identities.json'), 'utf-8')) as {
       version?: unknown

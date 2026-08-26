@@ -1,3 +1,5 @@
+import type { SessionRouteArtifact, SessionRouteStore } from '@astrale-os/sdk/client/session'
+
 /** Environment values that affect CLI-owned state placement. */
 export interface PathEnvironment {
   readonly ASTRALE_HOME?: string
@@ -17,6 +19,7 @@ export interface Paths {
   readonly idps: string
   readonly idpSessionsDir: string
   readonly exchangeCredentials: string
+  readonly sessionRoutes: string
   idpDir(name: string): string
   idpSession(identityName: string): string
 }
@@ -35,22 +38,27 @@ export const INSTANCES_PATH: string
 export const IDPS_PATH: string
 export const IDP_SESSIONS_DIR: string
 export const EXCHANGE_CREDENTIALS_PATH: string
+export const SESSION_ROUTES_PATH: string
 
 export namespace exchange {
   interface Artifact {
-    readonly version: 1
+    readonly version: 2
     readonly entries: Record<string, Entry>
   }
 
   interface Key {
     readonly kernelIssuer: string
     readonly domainIssuer: string
-    readonly user: string
+    readonly sourceIssuer: string
+    readonly sourceSubject: string
   }
 
   interface Entry {
     readonly credential: string
     readonly expiresAt: number
+    readonly user: string
+    readonly sourceIssuer: string
+    readonly sourceSubject: string
   }
 }
 
@@ -118,6 +126,17 @@ export function updateIdentityStore<Value>(
 
 /** Atomically replace one private CLI state file through a same-directory temporary file. */
 export function atomicWrite(path: string, data: string): Promise<void>
+export function atomicWriteSync(path: string, data: string): void
+
+/** CLI filesystem representation for Kernel Client's admitted confidential route artifact. */
+export class FileSessionRouteStore implements SessionRouteStore {
+  constructor(path?: string)
+  read(): unknown
+  write(artifact: SessionRouteArtifact): void
+  clear(): void
+}
+
+export const SESSION_ROUTE_STORE: Readonly<FileSessionRouteStore>
 
 export interface FileLockOptions {
   readonly pollIntervalMs?: number

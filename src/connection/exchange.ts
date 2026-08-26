@@ -11,7 +11,7 @@ import type { ConnectionTarget } from './target'
 import { AstraleError } from '../errors'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
 
-const EXCHANGE_TTL_SECONDS = 120
+const EXCHANGE_TTL_SECONDS = 5 * 60
 const MAXIMUM_RESPONSE_BYTES = 256 * 1024
 
 /** Exchange exact authenticated User authority for a Domain bearer bound to this Kernel. */
@@ -27,51 +27,76 @@ export function createExchangeCredentialResolver(
     async resolve(kernelIssuer: IssuerId, signal: AbortSignal): Promise<string> {
       requireLive(signal)
       const sourceToken = await source.resolve(kernelIssuer, signal)
-      const delegationTtlSeconds = delegationLifetime(sourceToken)
+      const sourceIdentity = sourceCacheIdentity(sourceToken)
       requireLive(signal)
 
-      const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
-      try {
-        const authenticated = client.as(sourceToken)
-        const auth = createAuth(async (path, input, options) => {
-          const result = await authenticated.call(call(path, input), {
-            ...options,
-            delegate: { ttlSeconds: delegationTtlSeconds },
-          })
-          return result.value
-        })
-        const user = await auth.whoami({ signal })
-        const key = Object.freeze({
+      return await cache.getOrRefresh(
+        Object.freeze({
           kernelIssuer,
           domainIssuer: target.domainIssuer,
-          user: user.id,
-        })
-        return await cache.getOrRefresh(key, async () => {
-          let envelope: string | undefined
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            try {
-              envelope = await auth.delegate(
-                user.id,
-                {
-                  audience: target.domainIssuer,
-                  ttlSeconds: delegationTtlSeconds,
-                  attenuation: { kind: 'identity', self: true },
-                },
-                { signal },
-              )
-              break
-            } catch (cause) {
-              if (attempt === 2 || !unknownFunctionOutcome(cause)) throw cause
+          sourceIssuer: sourceIdentity.issuer,
+          sourceSubject: sourceIdentity.subject,
+        }),
+        async () => {
+          const delegationTtlSeconds = delegationLifetime(sourceToken)
+          const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
+          try {
+            const authenticated = client.as(sourceToken)
+            const auth = createAuth(async (path, input, options) => {
+              const result = await authenticated.call(call(path, input), {
+                ...options,
+                delegate: { ttlSeconds: delegationTtlSeconds },
+              })
+              return result.value
+            })
+            const user = await auth.whoami({ signal })
+            let envelope: string | undefined
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              try {
+                envelope = await auth.delegate(
+                  user.id,
+                  {
+                    audience: target.domainIssuer,
+                    ttlSeconds: delegationTtlSeconds,
+                    attenuation: { kind: 'identity', self: true },
+                  },
+                  { signal },
+                )
+                break
+              } catch (cause) {
+                if (attempt === 2 || !unknownFunctionOutcome(cause)) throw cause
+              }
             }
+            if (envelope === undefined) throw new Error('Token delegation returned no credential.')
+            return {
+              ...(await exchange(target.domainIssuer, kernelIssuer, envelope, fetch, signal)),
+              user: user.id,
+              sourceIssuer: sourceIdentity.issuer,
+              sourceSubject: sourceIdentity.subject,
+            }
+          } finally {
+            client.close()
           }
-          if (envelope === undefined) throw new Error('Token delegation returned no credential.')
-          return exchange(target.domainIssuer, kernelIssuer, envelope, fetch, signal)
-        })
-      } finally {
-        client.close()
-      }
+        },
+      )
     },
   })
+}
+
+function sourceCacheIdentity(sourceToken: string): { issuer: string; subject: string } {
+  const inspected = credential.inspect(sourceToken)
+  if (
+    typeof inspected.iss !== 'string' ||
+    inspected.iss.length === 0 ||
+    typeof inspected.sub !== 'string' ||
+    inspected.sub.length === 0
+  ) {
+    throw new AstraleError(
+      'TOKEN_EXCHANGE_SOURCE_INVALID',
+      'The source identity credential has no stable issuer and subject.',
+    )
+  }
+  return Object.freeze({ issuer: inspected.iss, subject: inspected.sub })
 }
 
 function unknownFunctionOutcome(cause: unknown): boolean {

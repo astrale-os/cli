@@ -28,7 +28,15 @@ selection, and the single safe stale-route recovery. The CLI does not reproduce 
 discover destination identity. `SessionAuth.resolve(call, signal)` returns source-Kernel authority and
 ClientSession supplies an audience-free Delegate with omitted attenuation, preserving the exact
 current Grant for routing. Connection itself persists no credential or route; the separate state
-owner persists only exchanged source credentials.
+owner persists exchanged source credentials and the separate Kernel Client route artifact. A valid exchanged credential is selected by the
+authenticated source issuer and subject before any live `whoami`; cache misses alone resolve the
+registered Kernel User and perform delegation plus Domain exchange.
+Exchange authority is bounded to five minutes and never outlives the current source credential,
+matching the CLI route-age ceiling without forcing an unrelated two-minute refresh cycle.
+
+Every ClientSession receives the CLI-owned `state/session-routes` representation capability. Kernel
+Client still owns route keying, admission, expiry, and one safe stale/miss recovery; Connection does
+not reproduce routing or add an Admin-only bypass.
 
 `--anonymous` deliberately suppresses ambient and bookmark-default identities by omitting the
 `SessionAuth` capability. It cannot be combined with `--as` or `--creds`; contradictory selections fail

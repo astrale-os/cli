@@ -13,7 +13,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { atomicWrite, withFileLock } from '../files'
+import { atomicWrite, atomicWriteSync, withFileLock } from '../files'
 
 let temporaryDirectory: string
 
@@ -47,6 +47,29 @@ describe('atomicWrite', () => {
 
     expect(await readFile(join(path, 'retained'), 'utf-8')).toBe('stable')
     expect((await readdir(temporaryDirectory)).sort()).toEqual(['target'])
+  })
+})
+
+describe('atomicWriteSync', () => {
+  test('publishes a synced mode-0600 file without temporary residue', async () => {
+    const path = join(temporaryDirectory, 'sync', 'state.json')
+
+    atomicWriteSync(path, '{"value":1}')
+
+    expect(await readFile(path, 'utf-8')).toBe('{"value":1}')
+    expect((await stat(path)).mode & 0o777).toBe(0o600)
+    expect(await readdir(join(temporaryDirectory, 'sync'))).toEqual(['state.json'])
+  })
+
+  test('does not disturb the target or retain a temporary file after failure', async () => {
+    const path = join(temporaryDirectory, 'sync-target')
+    await mkdir(path)
+    await writeFile(join(path, 'retained'), 'stable')
+
+    expect(() => atomicWriteSync(path, 'replacement')).toThrow()
+
+    expect(await readFile(join(path, 'retained'), 'utf-8')).toBe('stable')
+    expect((await readdir(temporaryDirectory)).sort()).toEqual(['sync-target'])
   })
 })
 

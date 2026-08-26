@@ -1,6 +1,10 @@
 import type { AuthApi } from '@astrale-os/sdk/auth'
 import type { GraphApi } from '@astrale-os/sdk/client'
-import type { ClientSessionOptions, SessionAuth } from '@astrale-os/sdk/client/session'
+import type {
+  ClientSessionOptions,
+  SessionAuth,
+  SessionRouteStore,
+} from '@astrale-os/sdk/client/session'
 
 import { createAuth } from '@astrale-os/sdk/auth'
 import { call } from '@astrale-os/sdk/client'
@@ -21,6 +25,7 @@ import { fetchWithCaFile } from '../lib/ca-fetch'
 import { readConfig } from '../lib/config'
 import { log } from '../lib/log'
 import { isMachine } from '../lib/output'
+import { SESSION_ROUTE_STORE } from '../state/session-routes'
 import { bindCredentialIdentity } from './auth'
 import { createCliCredential, validateCredentialSelection } from './credential'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
@@ -165,11 +170,13 @@ export function createClientSessionOptions(
   fetch: NonNullable<ClientSessionOptions['fetch']>,
   auth: SessionAuth | undefined,
   timeoutMs: number,
+  routeStore: SessionRouteStore = SESSION_ROUTE_STORE,
 ): ClientSessionOptions {
   return {
     kernel: target.kernelIssuer,
     fetch,
     ...(auth === undefined ? {} : { auth }),
+    routeStore,
     policy: {
       maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
       ...(new URL(target.url).protocol === 'http:' ? { allowInsecureHttp: true } : {}),

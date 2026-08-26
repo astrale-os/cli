@@ -1,4 +1,13 @@
 import { randomUUID } from 'node:crypto'
+import {
+  closeSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
@@ -26,6 +35,38 @@ export async function atomicWrite(path: string, data: string): Promise<void> {
   } catch (error) {
     await handle?.close().catch(() => undefined)
     await unlink(temporary).catch(() => undefined)
+    throw error
+  }
+}
+
+/** Atomically publish one complete private state file for synchronous consumer capabilities. */
+export function atomicWriteSync(path: string, data: string): void {
+  const directory = dirname(path)
+  const temporary = `${path}.${randomUUID()}.tmp`
+  mkdirSync(directory, { recursive: true })
+
+  let descriptor: number | undefined
+  try {
+    descriptor = openSync(temporary, 'wx', 0o600)
+    writeFileSync(descriptor, data)
+    fsyncSync(descriptor)
+    closeSync(descriptor)
+    descriptor = undefined
+    renameSync(temporary, path)
+
+    const directoryDescriptor = openSync(directory, 'r')
+    try {
+      fsyncSync(directoryDescriptor)
+    } finally {
+      closeSync(directoryDescriptor)
+    }
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor)
+    try {
+      unlinkSync(temporary)
+    } catch {
+      // The temporary file was either never created or was already renamed.
+    }
     throw error
   }
 }
