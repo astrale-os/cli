@@ -237,10 +237,21 @@ function qualifyRegistryItemPaths(item: unknown, sourceDirectory: string): unkno
 function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
   if (!item || typeof item !== 'object') return false
   const candidate = item as Partial<UiRegistry['items'][number]>
-  return (
+  const address = candidate.meta?.canonicalAddress
+  const isTheme =
+    candidate.type === 'registry:theme' &&
+    typeof candidate.name === 'string' &&
+    /^theme-[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(candidate.name) &&
+    typeof address === 'string' &&
+    /^theme\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(address)
+  const isComposition =
+    candidate.type === 'registry:block' &&
     typeof candidate.name === 'string' &&
     /^(?:pattern|block)-[a-z0-9-]+$/u.test(candidate.name) &&
-    candidate.type === 'registry:block' &&
+    typeof address === 'string' &&
+    /^(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+$/u.test(address)
+  return (
+    (isTheme || isComposition) &&
     (candidate.dependencies === undefined ||
       (Array.isArray(candidate.dependencies) &&
         candidate.dependencies.every(
@@ -258,10 +269,14 @@ function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
         typeof file.type === 'string' &&
         typeof file.target === 'string' &&
         file.target.startsWith('components/astrale/') &&
-        isSafeRelative(file.target),
+        isSafeRelative(file.target) &&
+        (!isTheme ||
+          (candidate.files?.length === 1 &&
+            file.type === 'registry:file' &&
+            file.target ===
+              'components/astrale/theme/' + address!.slice('theme/'.length) + '.css')),
     ) &&
-    typeof candidate.meta?.canonicalAddress === 'string' &&
-    /^(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+$/u.test(candidate.meta.canonicalAddress)
+    typeof address === 'string'
   )
 }
 
