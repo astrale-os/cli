@@ -148,6 +148,29 @@ CLI state lives under `~/.astrale/`:
 - `identities.json`
 - keypairs
 - cached IdP sessions
+- `sessions/` — locally recorded work sessions (see below)
+
+### Session retention
+
+Each invocation appends one line to a local session record under
+`~/.astrale/sessions/`; `astrale session list` shows them. The store is swept
+automatically against two bounds — sessions idle past `maxAgeDays` are dropped,
+then the store is trimmed to `maxBytes`, oldest first. Both are optional:
+
+```jsonc
+// ~/.astrale/config.json
+{
+  "telemetry": {
+    "enabled": true,      // false disables recording (the sweep still runs)
+    "maxAgeDays": 30,     // default
+    "maxBytes": 52428800  // default: 50 MB
+  }
+}
+```
+
+`ASTRALE_TELEMETRY_MAX_AGE_DAYS` and `ASTRALE_TELEMETRY_MAX_BYTES` override the
+config for one invocation. Values that are not positive numbers are ignored in
+favour of the default, so a typo cannot leave the store unbounded.
 
 ## Development
 

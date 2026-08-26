@@ -6,7 +6,7 @@
  *   report.md      analyzer output
  * A session is CLOSED when events.jsonl's mtime is older than IDLE_WINDOW_MS.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { AnalyzedMarker, SessionMeta } from './types'
@@ -40,6 +40,37 @@ export function markerPath(id: string): string {
 
 export function reportPath(id: string): string {
   return join(sessionDir(id), 'report.md')
+}
+
+/** Bytes on disk under `dir`. Unreadable entries count as zero — a directory
+ *  racing away mid-walk is normal, not an error worth propagating. */
+function directoryBytes(dir: string): number {
+  let entries: Dirent[]
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  let total = 0
+  for (const entry of entries) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      total += directoryBytes(path)
+    } else if (entry.isFile()) {
+      try {
+        total += statSync(path).size
+      } catch {
+        /* raced away mid-walk */
+      }
+    }
+  }
+  return total
+}
+
+/** Bytes one session occupies. The analyzer runs with Write inside the session
+ *  directory and may nest, so this walks rather than listing one level. */
+export function sessionBytes(id: string): number {
+  return directoryBytes(sessionDir(id))
 }
 
 export type SessionInfo = {
