@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.20](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.19...cli/v1.0.0-beta.20) (2026-08-26)
+
+
+### Features
+
+* **view:** grant exact external navigation origins ([#174](https://github.com/astrale-os/cli/issues/174)) ([4cdb3c1](https://github.com/astrale-os/cli/commit/4cdb3c162a8121211b96bdfc43bc17220e9f1c16))
+
+
+### Bug Fixes
+
+* **commands:** ship standalone View runtime ([#175](https://github.com/astrale-os/cli/issues/175)) ([83c429f](https://github.com/astrale-os/cli/commit/83c429fa4ebb78d1cddc78b7e4387f664042acff))
+
 ## [1.0.0-beta.19](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.18...cli/v1.0.0-beta.19) (2026-08-26)
 
 
