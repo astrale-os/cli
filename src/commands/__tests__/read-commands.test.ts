@@ -195,7 +195,7 @@ describe('query command', () => {
 
     await queryCommand([], {
       json: true,
-      definition: '/:issues.astrale.ai:class.Issue',
+      class: '/:issues.astrale.ai:class.Issue',
       limit: '20',
     })
 
@@ -239,7 +239,7 @@ describe('query command', () => {
 
     await queryCommand([], {
       json: true,
-      definition: '/:issues.astrale.ai:class.Issue',
+      class: '/:issues.astrale.ai:class.Issue',
       limit: '1',
     })
 

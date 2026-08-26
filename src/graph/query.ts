@@ -12,7 +12,7 @@ import { classReference } from './class'
 
 export interface QueryCommandInput {
   readonly sources: readonly string[]
-  readonly definition?: string
+  readonly class?: string
   readonly ast?: unknown
   readonly edge?: string
   readonly direction?: QueryDirection
@@ -27,36 +27,34 @@ export interface PreparedQuery {
 
 const DEFAULT_LIMIT = 100
 
-/** Admit canonical Query V6 or author the intentionally small Path/Definition/one-edge subset. */
+/** Admit canonical Query V6 or author the intentionally small Path/Class/one-edge subset. */
 export function prepareQuery(input: QueryCommandInput): PreparedQuery {
   const limit = positiveInteger(input.limit, '--limit', DEFAULT_LIMIT)
   if (input.ast !== undefined) {
     if (
       input.sources.length > 0 ||
-      input.definition !== undefined ||
+      input.class !== undefined ||
       input.edge !== undefined ||
       input.direction !== undefined
     ) {
       throw new TypeError(
-        '--ast/--file cannot be combined with sources, --definition, --edge, or --direction',
+        '--ast/--file cannot be combined with sources, --class, --edge, or --direction',
       )
     }
     return withPage(QueryAST.decode(input.ast), limit, input.cursor)
   }
 
-  if (input.sources.length === 0 && input.definition === undefined) {
-    throw new TypeError(
-      'query requires a Path source, --definition, or a canonical Query V6 document',
-    )
+  if (input.sources.length === 0 && input.class === undefined) {
+    throw new TypeError('query requires a Path source, --class, or a canonical Query V6 document')
   }
   if (input.direction !== undefined && input.edge === undefined) {
     throw new TypeError('--direction requires --edge')
   }
 
   const paths = input.sources.map((source) => Path.parse(source))
-  const definition =
-    input.definition === undefined ? undefined : classReference(input.definition, '--definition')
-  const nodes = definition === undefined ? paths : [...paths, definition]
+  const selectedClass =
+    input.class === undefined ? undefined : classReference(input.class, '--class')
+  const nodes = selectedClass === undefined ? paths : [...paths, selectedClass]
   const query: NodeQueryBuilder<unknown> = Query.from({
     nodes: nodes as [QueryNodeInput, ...QueryNodeInput[]],
   })

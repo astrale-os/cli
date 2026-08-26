@@ -37,11 +37,11 @@ describe('prepareQuery', () => {
     })
   })
 
-  /** @evidence TEST-CLI-GRAPH-AUTHORS-DEFINITION-QUERY */
+  /** @evidence TEST-CLI-GRAPH-AUTHORS-CLASS-QUERY */
   test('authors an exact Class source without backend query text', () => {
     const prepared = prepareQuery({
       sources: [],
-      definition: '/:issues.astrale.ai:class.Issue',
+      class: '/:issues.astrale.ai:class.Issue',
       limit: '201',
     })
 
@@ -67,7 +67,7 @@ describe('prepareQuery', () => {
   test('unions positional Paths and one Class source in authored order', () => {
     const prepared = prepareQuery({
       sources: ['@note'],
-      definition: '/:issues.astrale.ai:class.Issue',
+      class: '/:issues.astrale.ai:class.Issue',
     })
 
     expect(JSON.parse(JSON.stringify(prepared.ast.source))).toEqual({
@@ -167,7 +167,14 @@ describe('prepareQuery', () => {
       prepareQuery({ sources: ['/:notes.example.dev:class.Note'], limit: 'all' }),
     ).toThrow('--limit must be a positive integer')
     expect(() =>
-      prepareQuery({ sources: [], definition: '/:notes.example.dev:view.note' }),
-    ).toThrow('--definition must be one canonical Class Path')
+      prepareQuery({
+        sources: [],
+        ast: {},
+        class: '/:notes.example.dev:class.Note',
+      }),
+    ).toThrow('--ast/--file cannot be combined with sources, --class, --edge, or --direction')
+    expect(() => prepareQuery({ sources: [], class: '/:notes.example.dev:view.note' })).toThrow(
+      '--class must be one canonical Class Path',
+    )
   })
 })

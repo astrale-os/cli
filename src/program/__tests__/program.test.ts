@@ -195,7 +195,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '092b8f4f737740105c8baed9d01a81604711b5b2719dfcb834eeeac414732c61',
+      '91c35b18985ad8606b5f2429fd8860b020a93edccb30dfbaa74d501929a8513b',
     )
   })
 
@@ -464,12 +464,49 @@ describe('help contract — read command split', () => {
     expect(queryHelp).not.toContain('--children <json>')
     expect(queryHelp).not.toContain('--edges <json>')
     expect(queryHelp).toContain('--ast <json>')
-    expect(queryHelp).toContain('--definition <path>')
+    expect(queryHelp).toContain('--class <path>')
+    expect(queryHelp).not.toContain('--definition')
     expect(queryHelp).toContain('--edge <class>')
     expect(queryHelp).toContain('--direction <direction>')
     expect(queryHelp).toContain('--limit <n>')
     expect(queryHelp).toContain('--cursor <token>')
     expect(queryHelp).not.toContain('--cypher <query>')
+  })
+
+  test('keeps the removed query --definition flag outside the parsed command surface', async () => {
+    const program = await buildProgram()
+    const query = allCommands(program).find((command) => command.name() === 'query')
+    const parsed = query?.parseOptions(['--definition', '/:notes.example.dev:class.Note'])
+
+    expect(parsed?.unknown).toContain('--definition')
+    expect(query?.options.some((option) => option.attributeName() === 'definition')).toBe(false)
+  })
+
+  test('routes query --class through Commander as the exact Class option', async () => {
+    const program = await buildProgram()
+    const query = allCommands(program).find((command) => command.name() === 'query')
+    let observed: unknown
+    query?.action((sources, options) => {
+      observed = { sources, class: options.class, limit: options.limit, json: options.json }
+    })
+
+    await program.parseAsync([
+      'node',
+      'astrale',
+      'query',
+      '--class',
+      '/:notes.example.dev:class.Note',
+      '--limit',
+      '1',
+      '--json',
+    ])
+
+    expect(observed).toEqual({
+      sources: [],
+      class: '/:notes.example.dev:class.Note',
+      limit: '1',
+      json: true,
+    })
   })
 })
 

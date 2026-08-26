@@ -341,7 +341,7 @@ const bundle = {
 
 const queryArgs = [
   'query',
-  '--definition',
+  '--class',
   '/:issues.example.dev:class.Issue',
   '--limit',
   '201',

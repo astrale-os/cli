@@ -65,7 +65,7 @@ export async function listViewTargets(
       const result = await runAstraleJson<RawQueryResult>(
         [
           'query',
-          '--definition',
+          '--class',
           definition,
           '--limit',
           String(TARGET_LIMIT + 1),

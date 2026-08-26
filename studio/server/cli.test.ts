@@ -45,7 +45,7 @@ test('machine runner uses the exact descriptor, appends json mode, and versions 
   })
 
   const result = await runStudioCliJson(
-    ['query', '--definition', '/:example.dev:class.Issue'],
+    ['query', '--class', '/:example.dev:class.Issue'],
     decodeJsonObject,
   )
 
@@ -55,7 +55,7 @@ test('machine runner uses the exact descriptor, appends json mode, and versions 
     exitCode: 0,
     timedOut: false,
     data: {
-      command: ['query', '--definition', '/:example.dev:class.Issue', '--json'],
+      command: ['query', '--class', '/:example.dev:class.Issue', '--json'],
     },
   })
 })
