@@ -67,7 +67,7 @@ export async function resolveUiRelease(
 ): Promise<UiRelease> {
   const versionDocument = requested
     ? { version: requested.replace(/^v/u, '') }
-    : await json<{ version: string }>(fetcher, NPM_PACKAGE + '/latest', 'npm UI release')
+    : await json<{ version: string }>(fetcher, NPM_PACKAGE + '/beta', 'npm UI release')
   const version = versionDocument.version
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
     throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Invalid UI release version: ' + version)

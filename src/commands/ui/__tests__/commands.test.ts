@@ -102,7 +102,7 @@ describe('UI command machine contracts', () => {
 function mockFetch(): typeof fetch {
   return (async (input: string | URL | Request) => {
     const url = String(input)
-    if (url.endsWith('/@astrale-os/ui/latest')) return Response.json({ version: '0.3.0-beta.0' })
+    if (url.endsWith('/@astrale-os/ui/beta')) return Response.json({ version: '0.3.0-beta.0' })
     if (url.includes('/git/ref/tags/')) {
       return Response.json({ object: { type: 'commit', sha: commit, url: '' } })
     }

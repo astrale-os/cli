@@ -114,6 +114,26 @@ function lock(): UiLock {
 }
 
 describe('UI release and runner contracts', () => {
+  /** @evidence TEST-CLI-UI-BETA-DEFAULT */
+  test('resolves the prerelease beta channel by default', async () => {
+    const seen: string[] = []
+    const fallback = mockFetch()
+    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      seen.push(url)
+      if (url.endsWith('/@astrale-os/ui/beta')) {
+        return Response.json({ version: '0.3.0-beta.0' })
+      }
+      return fallback(input, init)
+    }) as typeof fetch
+
+    const release = await resolveUiRelease(undefined, fetcher)
+
+    expect(release.version).toBe('0.3.0-beta.0')
+    expect(seen[0]).toBe('https://registry.npmjs.org/@astrale-os/ui/beta')
+    expect(seen.some((url) => url.endsWith('/@astrale-os/ui/latest'))).toBe(false)
+  })
+
   /** @evidence TEST-CLI-UI-ONE-SNAPSHOT */
   test('resolves one commit and reads the full release snapshot from it', async () => {
     const seen: string[] = []

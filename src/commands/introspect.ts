@@ -26,29 +26,14 @@ export async function introspectCommand(target: string, opts: IntrospectOpts): P
     label: `Introspect ${origin}`,
     fn: async ({ session }) => {
       const includeBundle = wantsCallable || opts.bundle === true
-      const result = await session.schema.introspect({
-        from: { kind: 'installation', origin },
-        select: {
-          state: true,
-          target: true,
-          source: true,
-          readiness: true,
-          capabilities: true,
-          ...(includeBundle ? { bundle: true as const } : {}),
-        },
-      })
-      if (result === null) {
-        throw new AstraleError(
-          'DOMAIN_NOT_INSTALLED',
-          `Domain ${origin} is not installed on this Kernel.`,
-        )
-      }
-      if (wantsCallable) {
+      if (includeBundle) {
+        const result = await session.schema.bundle(origin)
+        if (!wantsCallable) return result
         const described = describeCallableFromBundle(path, result.bundle)
         if (described === undefined) throw missingCallableDescription(path.raw)
         return described
       }
-      return result
+      return session.schema.inspect(origin)
     },
     format: (value, format) => output(value, format),
   })
@@ -90,11 +75,11 @@ export default {
   description: 'Read installed Domain schema from the Kernel Schema syscall',
   afterHelpText: `
 Behavior:
-  Calls the public Kernel introspect syscall for one installed Domain.
-  A bare origin (kernel.astrale.ai or /:kernel.astrale.ai) prints installation
-  state, target, source, readiness, and capabilities. --bundle includes the
-  schema bundle. A method or Function Path projects that callable's
-  input/output from the installed bundle.
+  Calls the public SDK Schema API for one installed Domain. A bare origin
+  (kernel.astrale.ai or /:kernel.astrale.ai) prints its exact revision,
+  generation, publication, readiness, capabilities, and bindings. --bundle
+  includes the schema bundle. A method or Function Path projects that
+  callable's input/output from the installed bundle.
 
 Examples:
   $ astrale introspect kernel.astrale.ai

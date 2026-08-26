@@ -1,5 +1,12 @@
 import { defineLaw } from '@astrale-os/spec/authoring'
 
+export const CLI_UI_BETA_DEFAULT = defineLaw({
+  id: 'CLI-UI-BETA-DEFAULT',
+  statement:
+    'Until the UI V1 channel is promoted, an operation without an explicit version resolves the npm beta dist-tag and never the legacy latest dist-tag.',
+  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-BETA-DEFAULT' }],
+})
+
 export const CLI_UI_ONE_SNAPSHOT = defineLaw({
   id: 'CLI-UI-ONE-SNAPSHOT',
   statement:
