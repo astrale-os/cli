@@ -8,7 +8,11 @@ import { fileURLToPath } from 'node:url'
  * (`<pkg>/viewer/dist`). The module URL is authoritative because npm global
  * installs expose the CLI through a bin symlink outside the package root.
  */
-export function viewerDistDir(moduleUrl = import.meta.url, entry = process.argv[1] ?? '.'): string {
+export function viewerDistDir(
+  moduleUrl = import.meta.url,
+  entry = process.argv[1] ?? '.',
+  executable = process.execPath,
+): string {
   const override = process.env.ASTRALE_VIEWER_DIR
   if (override) return override
 
@@ -16,7 +20,12 @@ export function viewerDistDir(moduleUrl = import.meta.url, entry = process.argv[
   const published = join(moduleDirectory, '..', 'viewer', 'dist')
   const source = join(moduleDirectory, '..', '..', '..', 'viewer', 'dist')
   const legacy = join(dirname(entry), '..', 'viewer', 'dist')
-  const complete = [published, source, legacy].find(hasViewerBundle)
+  const standalone = entry.startsWith('/$bunfs/')
+    ? join(dirname(executable), 'viewer', 'dist')
+    : undefined
+  const complete = [standalone, published, source, legacy].find(
+    (candidate): candidate is string => candidate !== undefined && hasViewerBundle(candidate),
+  )
   if (complete) return complete
 
   // A source checkout may intentionally omit generated dist assets. Keep the

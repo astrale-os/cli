@@ -143,4 +143,18 @@ describe('viewer asset resolution', () => {
     expect(stderr).toBe('')
     expect(stdout.trim()).toBe(await realpath(viewer))
   })
+
+  test('resolves assets shipped beside a Bun-compiled standalone executable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'astrale-view-standalone-'))
+    temporaryDirectories.push(root)
+    const executable = join(root, 'bin', 'astrale')
+    const viewer = join(root, 'bin', 'viewer', 'dist')
+    await mkdir(viewer, { recursive: true })
+    await writeFile(join(viewer, 'main.js'), '')
+    await writeFile(join(viewer, 'index.html'), '')
+
+    expect(viewerDistDir('file:///$bunfs/root/assets.ts', '/$bunfs/root/astrale', executable)).toBe(
+      viewer,
+    )
+  })
 })

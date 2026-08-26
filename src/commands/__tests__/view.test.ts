@@ -147,3 +147,24 @@ describe('view capture timing', () => {
     expect(commands.length).toBeGreaterThan(2)
   })
 })
+
+describe('view session runtime', () => {
+  test('spawns the detached server from a compiled executable without its virtual Bun entry', async () => {
+    const { resolveServeRuntime, viewServeInvocation } = await import('../view')
+
+    const runtime = await resolveServeRuntime({
+      executable: '/opt/astrale/bin/astrale',
+      entry: '/$bunfs/root/astrale',
+      exists: () => true,
+      find: async () => '/usr/bin/node',
+    })
+    expect(runtime).toEqual({
+      file: '/opt/astrale/bin/astrale',
+      args: [],
+    })
+    expect(viewServeInvocation(runtime, '/tmp/view.config.json')).toEqual({
+      file: '/opt/astrale/bin/astrale',
+      args: ['__view-serve', '--config', '/tmp/view.config.json'],
+    })
+  })
+})
