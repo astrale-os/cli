@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["@types/bun", "@types/node"]
+    "types": ["bun-types", "@types/node"]
   },
   "include": ["src/**/__tests__/**/*.ts", "src/lib/view/open-intent.ts"],
   "exclude": []
