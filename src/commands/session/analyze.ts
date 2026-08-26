@@ -11,7 +11,16 @@ import { restampLock, releaseLock } from '../../telemetry/trigger'
 export default {
   name: 'analyze',
   description: 'Analyze a recorded session for DX frictions (dry-run: writes report.md)',
-  arguments: [{ name: 'id', description: 'Session id (default: most recent closed, unanalyzed)' }],
+  arguments: [
+    // Optional: the action resolves the most recent closed, unanalyzed session
+    // when no id is given, which is how a human is meant to invoke this. The
+    // opportunistic trigger always passes an explicit id.
+    {
+      name: 'id',
+      description: 'Session id (default: most recent closed, unanalyzed)',
+      required: false,
+    },
+  ],
   options: [
     { flags: '--file', description: 'File cleared findings as issues on the admin tracker' },
     { flags: '--model <model>', description: 'Model for the analyzer pass' },
