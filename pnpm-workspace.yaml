@@ -6,6 +6,9 @@ packages:
 # package versions rather than being linked together implicitly.
 linkWorkspacePackages: false
 
+patchedDependencies:
+  '@astrale-os/shell@0.4.2-beta.5': 'patches/astrale-os-shell-0.4.2-beta.5-schema-inspect.patch'
+
 # Quarantine every external release for seven days. Only Astrale publications
 # and the pinned Bun 1.4 toolchain type package bypass the quarantine.
 minimumReleaseAge: 10080

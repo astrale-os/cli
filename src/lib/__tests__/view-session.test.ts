@@ -69,6 +69,7 @@ describe('view session private state', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
+      externalOrigins: [],
       idleMs: 60_000,
     } satisfies ViewServeConfig
 

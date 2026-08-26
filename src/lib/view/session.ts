@@ -41,6 +41,8 @@ export type ViewServeConfig = {
    * handles CORS and self-signed local CAs.
    */
   proxy: { kernelUrl: string; issuer: string; caFile?: string; direct: boolean }
+  /** Exact HTTPS origins the operator consented to open from this View session. */
+  externalOrigins: readonly string[]
   idleMs: number
 }
 

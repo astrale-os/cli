@@ -60,12 +60,20 @@ describe('view session server credentials', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
+      externalOrigins: ['https://connect.nango.dev'],
       idleMs: 60_000,
     } satisfies ViewServeConfig
     const server = startViewServer(config)
     await once(server, 'listening')
 
     try {
+      const configResponse = await fetch(`http://127.0.0.1:${port}/s/${nonce}/config.json`)
+      expect(configResponse.status).toBe(200)
+      expect(await configResponse.json()).toMatchObject({
+        sessionId: 'v-plain',
+        externalOrigins: ['https://connect.nango.dev'],
+      })
+
       const response = await fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, {
         method: 'POST',
       })
