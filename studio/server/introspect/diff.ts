@@ -124,15 +124,7 @@ function diffViews(
       out.push({ kind: 'view-removed', target: name })
       continue
     }
-    if (
-      !same(
-        { target: prev[name].target, auth: prev[name].auth },
-        {
-          target: next[name].target,
-          auth: next[name].auth,
-        },
-      )
-    ) {
+    if (!same(prev[name].target, next[name].target)) {
       out.push({ kind: 'view-changed', target: name })
     }
     if (prev[name].description !== next[name].description) {

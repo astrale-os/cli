@@ -77,7 +77,7 @@ describe('SDK V1 schema extractor', () => {
       },
       ir: {
         domain: 'documents.runtime.test',
-        views: { editor: { auth: 'required', target: { kind: 'definition' } } },
+        views: { editor: { target: { kind: 'definition' } } },
         importsByKey: {
           'directory.runtime.test:class.Named': {
             ref: { origin: 'directory.runtime.test', kind: 'class', name: 'Named' },

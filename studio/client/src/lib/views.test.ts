@@ -12,7 +12,7 @@ const anatomy = {
     astraleDeps: {},
     schemaDir: 'schema',
   },
-  views: [{ slug: 'dashboard', kind: 'spa', mount: '/ui/dashboard', auth: 'required' }],
+  views: [{ slug: 'dashboard', kind: 'spa', mount: '/ui/dashboard' }],
   client: { routes: {}, shell: [], features: [], present: true },
   env: [],
   detectedIntegrations: [],
@@ -68,7 +68,7 @@ test('accepts an SDK frontend route without a client-local route registry', () =
     buildViewsModel(
       anatomy,
       bundle({
-        dashboard: { name: 'dashboard', target: { kind: 'domain' }, auth: 'required' },
+        dashboard: { name: 'dashboard', target: { kind: 'domain' } },
       }),
     ).all[0]?.drift,
   ).toBe('ok')
@@ -84,7 +84,7 @@ test('treats the canonical Domain target as authoritative over source metadata',
     buildViewsModel(
       stale,
       bundle({
-        dashboard: { name: 'dashboard', target: { kind: 'domain' }, auth: 'required' },
+        dashboard: { name: 'dashboard', target: { kind: 'domain' } },
       }),
     ).all[0],
   ).toMatchObject({ boundClasses: [], unbound: true, drift: 'ok' })
@@ -105,7 +105,6 @@ test('resolves a local Class target through its exact canonical ref', () => {
       {
         dashboard: {
           name: 'dashboard',
-          auth: 'required',
           target: {
             kind: 'definition',
             definitions: [{ origin: 'example.test', kind: 'class', name: 'Issue' }],
@@ -123,7 +122,6 @@ test('resolves an imported Class exactly without aliasing it into the local name
   const input = bundle({
     dashboard: {
       name: 'dashboard',
-      auth: 'required',
       target: { kind: 'definition', definitions: [imported] },
     },
   })

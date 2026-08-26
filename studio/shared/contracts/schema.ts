@@ -37,7 +37,7 @@ export function isSchemaRevision(value: unknown): value is SchemaRevision {
  * Version of Studio's lossy canonical-schema -> render-IR projection. Persisted
  * baselines must match this value before their IR can be compared.
  */
-export const STUDIO_SCHEMA_PROJECTION_VERSION = 1
+export const STUDIO_SCHEMA_PROJECTION_VERSION = 2
 
 export type IrCallableAuth = 'anonymous' | 'authenticated' | 'authorized'
 
@@ -107,7 +107,6 @@ export type IrViewTarget = { kind: 'domain' } | { kind: 'definition'; definition
 export interface IrView {
   name: string
   target: IrViewTarget
-  auth: 'required' | 'optional' | 'public'
   description?: string
 }
 
@@ -225,7 +224,6 @@ export interface DomainOverview {
 export interface ViewInfo {
   slug: string
   kind: 'inline-html' | 'spa' | 'unknown'
-  auth?: string
   mount?: string
   url?: string
   /** the class(es) this view binds to via `viewFor: selfOf(Class)` (DSL allows an array);

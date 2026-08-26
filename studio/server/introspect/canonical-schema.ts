@@ -328,10 +328,6 @@ function projectView(name: string, value: unknown): IrView {
       target?.kind === 'definition'
         ? { kind: 'definition', definitions: refsOf(target.definitions) }
         : { kind: 'domain' },
-    auth:
-      declaration.auth === 'optional' || declaration.auth === 'public'
-        ? declaration.auth
-        : 'required',
     ...(typeof declaration.description === 'string'
       ? { description: declaration.description }
       : {}),

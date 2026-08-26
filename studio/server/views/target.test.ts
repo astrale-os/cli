@@ -16,7 +16,6 @@ describe('View target definitions', () => {
         views: {
           named: {
             name: 'named',
-            auth: 'required',
             target: {
               kind: 'definition',
               definitions: [
@@ -37,7 +36,7 @@ describe('View target definitions', () => {
   test('treats a canonical Domain target as authoritative', () => {
     const view = { slug: 'home', kind: 'unknown', viewFor: 'User' } satisfies ViewInfo
     const bundle = {
-      ir: { views: { home: { name: 'home', auth: 'required', target: { kind: 'domain' } } } },
+      ir: { views: { home: { name: 'home', target: { kind: 'domain' } } } },
     } as unknown as StudioSchemaBundle
     expect(viewDefinitionBindings('shell.astrale.ai', view, bundle)).toEqual([])
   })

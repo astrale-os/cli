@@ -116,7 +116,7 @@ function isView(value: unknown): boolean {
   const target = asJsonRecord(record?.target)
   return (
     typeof record?.name === 'string' &&
-    ['required', 'optional', 'public'].includes(String(record.auth)) &&
+    record.auth === undefined &&
     !!target &&
     (target.kind === 'domain' ||
       (target.kind === 'definition' &&

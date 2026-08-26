@@ -29,7 +29,7 @@ export function ViewRow({
 }) {
   const [open, setOpen] = useState(false)
   const drift = driftLabel(view.drift)
-  const meta = [view.kind, view.mount, view.auth, view.unbound ? 'standalone' : 'targeted']
+  const meta = [view.kind, view.mount, view.unbound ? 'standalone' : 'targeted']
     .filter(Boolean)
     .join(' · ')
   // Make the row a comment/ask target (ref `view.<slug>`) so commenting on a view
