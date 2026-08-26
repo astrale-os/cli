@@ -5,6 +5,12 @@
  *   .analyzed      AnalyzedMarker, written by the analyzer (any outcome)
  *   report.md      analyzer output
  * A session is CLOSED when events.jsonl's mtime is older than IDLE_WINDOW_MS.
+ *
+ * Two ways to read it, deliberately kept apart. scanSessions() answers the
+ * questions the CLI's start path asks — how old, open or closed, analyzed yet —
+ * from two stats per session and no file reads. listSessions() adds the parsed
+ * meta.json and marker, which only `session list` and the analyzer need. The
+ * start path runs before EVERY command, so the difference is not academic.
  */
 import { type Dirent, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -40,6 +46,47 @@ export function markerPath(id: string): string {
 
 export function reportPath(id: string): string {
   return join(sessionDir(id), 'report.md')
+}
+
+/**
+ * The cheap facts about one session: enough to bucket an invocation, sweep the
+ * store, and pick an analysis target. `analyzed` records that a marker EXISTS,
+ * not what it says — a stat, not a read.
+ */
+export type SessionScan = {
+  id: string
+  lastEventAt: Date | null
+  closed: boolean
+  analyzed: boolean
+}
+
+/** Session directory names, newest-first ordering applied by the callers. */
+function sessionIds(): string[] {
+  try {
+    return readdirSync(sessionsRoot()).filter((name) => !name.startsWith('.'))
+  } catch {
+    return []
+  }
+}
+
+/** Newest activity first. Two stats per session, no file reads, no parsing. */
+export function scanSessions(now = Date.now()): SessionScan[] {
+  return sessionIds()
+    .map((id) => {
+      let lastEventAt: Date | null = null
+      try {
+        lastEventAt = statSync(eventsPath(id)).mtime
+      } catch {
+        /* no events yet */
+      }
+      return {
+        id,
+        lastEventAt,
+        closed: lastEventAt !== null && now - lastEventAt.getTime() > IDLE_WINDOW_MS,
+        analyzed: existsSync(markerPath(id)),
+      }
+    })
+    .sort((a, b) => (b.lastEventAt?.getTime() ?? 0) - (a.lastEventAt?.getTime() ?? 0))
 }
 
 /** Bytes on disk under `dir`. Unreadable entries count as zero — a directory
@@ -81,6 +128,11 @@ export type SessionInfo = {
   analyzed: AnalyzedMarker | null
 }
 
+/** One session's meta.json, or null when absent or unparseable. */
+export function readMeta(id: string): SessionMeta | null {
+  return readJsonSafe<SessionMeta>(metaPath(id))
+}
+
 function readJsonSafe<T>(path: string): T | null {
   try {
     return JSON.parse(readFileSync(path, 'utf-8')) as T
@@ -107,15 +159,10 @@ export function inspectSession(id: string, now = Date.now()): SessionInfo | null
   }
 }
 
-/** All sessions, newest activity first. Missing store dir → empty list. */
+/** All sessions, newest activity first, fully parsed. Missing store dir → empty
+ *  list. Prefer scanSessions() anywhere latency matters — see the file header. */
 export function listSessions(now = Date.now()): SessionInfo[] {
-  let ids: string[]
-  try {
-    ids = readdirSync(sessionsRoot()).filter((n) => !n.startsWith('.'))
-  } catch {
-    return []
-  }
-  return ids
+  return sessionIds()
     .map((id) => inspectSession(id, now))
     .filter((s): s is SessionInfo => s !== null)
     .sort((a, b) => (b.lastEventAt?.getTime() ?? 0) - (a.lastEventAt?.getTime() ?? 0))

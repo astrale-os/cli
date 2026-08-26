@@ -3,7 +3,7 @@
  *
  * Age is a RELEVANCE bound — a session idle for a month has nothing left to
  * say, and the harness transcripts its report would cite are long gone. It is
- * free to enforce (listSessions already stats every events.jsonl), so it runs
+ * free to enforce (scanSessions already stats every events.jsonl), so it runs
  * on every CLI start, telemetry on or off: switching telemetry off must mean
  * "and clean up what is already there", not "freeze the store forever".
  *
@@ -18,10 +18,10 @@
 import { rmSync } from 'node:fs'
 
 import type { RetentionBudget } from './settings'
-import type { SessionInfo } from './store'
+import type { SessionScan } from './store'
 
 import { retentionBudget } from './settings'
-import { listSessions, sessionBytes, sessionDir } from './store'
+import { scanSessions, sessionBytes, sessionDir } from './store'
 
 /** Cap for the age sweep on the CLI's critical path, so a large backlog drains
  *  over several runs instead of stalling one command on hundreds of rmSync. */
@@ -56,7 +56,7 @@ function remove(id: string, into: string[]): void {
  * running right now, created by ensureSession and not written until exit.
  */
 export function sweepByAge(
-  sessions: readonly SessionInfo[],
+  sessions: readonly SessionScan[],
   options: SweepOptions = {},
 ): SweepResult {
   const { maxAgeMs } = options.budget ?? retentionBudget()
@@ -81,7 +81,7 @@ export function sweepByAge(
  * being recorded right now.
  */
 export function sweepToBudget(
-  sessions: readonly SessionInfo[],
+  sessions: readonly SessionScan[],
   options: SweepOptions = {},
 ): SweepResult {
   const { maxBytes } = options.budget ?? retentionBudget()
@@ -103,7 +103,7 @@ export function sweepToBudget(
   for (const analyzedFirst of [true, false]) {
     for (const entry of evictable) {
       if (total <= maxBytes) return { removed }
-      if ((entry.session.analyzed !== null) !== analyzedFirst) continue
+      if (entry.session.analyzed !== analyzedFirst) continue
       const before = removed.length
       remove(entry.session.id, removed)
       if (removed.length > before) total -= entry.bytes
@@ -118,7 +118,7 @@ export function sweepToBudget(
  */
 export function sweepStore(options: SweepOptions = {}): SweepResult {
   const budget = options.budget ?? retentionBudget()
-  const sessions = listSessions()
+  const sessions = scanSessions()
   const byAge = sweepByAge(sessions, { ...options, budget })
   const gone = new Set(byAge.removed)
   const bySize = sweepToBudget(

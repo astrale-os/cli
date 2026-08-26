@@ -5,6 +5,7 @@ import { renderCommanderError } from '../src/lib/command-dx'
 import { configureInvocation } from '../src/lib/invocation'
 import { buildProgram, normalizeRootVersionArgv } from '../src/program/index'
 import { beginInvocation } from '../src/telemetry/recorder'
+import { scanSessions } from '../src/telemetry/store'
 import { maybeTriggerAnalysis } from '../src/telemetry/trigger'
 
 // exitOverride must be applied to every subcommand: Commander copies the exit
@@ -20,10 +21,18 @@ function overrideExits(command: Command): void {
 // Telemetry: one event per invocation, written in the exit handler so every
 // path (success, thrown error, process.exit) is captured. `session` commands
 // are never recorded — analyzing a closed session must not reopen it.
-const finalize = process.argv[2] === 'session' ? undefined : beginInvocation(process.argv)
+//
+// ONE store scan feeds both consumers. Recording needs it to bucket this
+// invocation into a session; retention needs it to sweep. Scanning twice
+// doubled the cost of every command for nothing, and this runs before the
+// program is even built. The scan predates ensureSession's directory creation,
+// which is correct: a session with no events yet is exempt from sweeping and
+// can never be an analysis target.
+const sessions = scanSessions()
+const finalize = process.argv[2] === 'session' ? undefined : beginInvocation(process.argv, sessions)
 let errorName: string | undefined
 if (finalize) process.on('exit', (code) => finalize(code ?? 0, errorName))
-maybeTriggerAnalysis(process.argv)
+maybeTriggerAnalysis(process.argv, sessions)
 
 const argv = normalizeRootVersionArgv(process.argv)
 configureInvocation(argv)

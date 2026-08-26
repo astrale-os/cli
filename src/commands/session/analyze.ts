@@ -5,7 +5,7 @@ import type { CommandDefinition } from '../../program/index'
 import { log } from '../../lib/log'
 import { analyzeSession } from '../../telemetry/analyze'
 import { sweepStore } from '../../telemetry/retention'
-import { listSessions } from '../../telemetry/store'
+import { scanSessions } from '../../telemetry/store'
 import { restampLock, releaseLock } from '../../telemetry/trigger'
 
 export default {
@@ -35,7 +35,7 @@ export default {
     let target = id
     try {
       if (!target) {
-        const candidate = listSessions().find((s) => s.closed && (opts.force || !s.analyzed))
+        const candidate = scanSessions().find((s) => s.closed && (opts.force || !s.analyzed))
         if (!candidate) {
           if (!opts.auto) log.dim('Nothing to analyze — no closed, unanalyzed session.')
           return

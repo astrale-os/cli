@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path'
 
 import type { SessionMeta } from './types'
 
-import { listSessions, metaPath, sessionDir } from './store'
+import { metaPath, readMeta, scanSessions, sessionDir, type SessionScan } from './store'
 
 export type ResolvedSession = { id: string; root: string; explicit: boolean }
 
@@ -40,12 +40,14 @@ function stamp(d = new Date()): string {
 
 /** id of an open, ambient session already bucketed to `root`, else null.
  *  Analyzed sessions are never reused — a straggler event may "reopen" one
- *  after its report, and new work funneled there would never be analyzed. */
-function findOpenAmbient(root: string): string | null {
-  for (const s of listSessions()) {
-    if (s.meta?.root === root && s.meta.explicit === false && !s.closed && s.analyzed === null) {
-      return s.id
-    }
+ *  after its report, and new work funneled there would never be analyzed.
+ *  Only the open, unanalyzed candidates get their meta.json read: on a store of
+ *  hundreds at most a couple qualify, and this runs before every command. */
+function findOpenAmbient(root: string, sessions: readonly SessionScan[]): string | null {
+  for (const s of sessions) {
+    if (s.closed || s.analyzed) continue
+    const meta = readMeta(s.id)
+    if (meta?.root === root && meta.explicit === false) return s.id
   }
   return null
 }
@@ -55,20 +57,24 @@ function mintAmbientId(root: string): string {
   return `amb-${hash8}-${stamp()}`
 }
 
-/** Resolve the session identity for `cwd` without creating anything on disk. */
-export function resolveSession(cwd: string): ResolvedSession {
+/** Resolve the session identity for `cwd` without creating anything on disk.
+ *  `sessions` lets the caller hand over a scan it already paid for — the CLI
+ *  start path shares one between recording and retention. */
+export function resolveSession(cwd: string, sessions?: readonly SessionScan[]): ResolvedSession {
   const root = findGitRoot(cwd) ?? cwd
   const pinned = process.env.ASTRALE_SESSION
   if (pinned) {
     const id = sanitizeId(pinned)
     if (id.length > 0) return { id, root, explicit: true }
   }
-  return { id: findOpenAmbient(root) ?? mintAmbientId(root), root, explicit: false }
+  // Only scan when a pinned id did not already settle it.
+  const scan = sessions ?? scanSessions()
+  return { id: findOpenAmbient(root, scan) ?? mintAmbientId(root), root, explicit: false }
 }
 
 /** Resolve, then create the session dir + meta.json on first sight. */
-export function ensureSession(cwd: string): ResolvedSession {
-  const resolved = resolveSession(cwd)
+export function ensureSession(cwd: string, sessions?: readonly SessionScan[]): ResolvedSession {
+  const resolved = resolveSession(cwd, sessions)
   const dir = sessionDir(resolved.id)
   if (!existsSync(dir)) {
     try {
