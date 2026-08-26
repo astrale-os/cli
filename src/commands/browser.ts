@@ -13,6 +13,7 @@ import {
   profileDirFor,
   saveSession,
 } from '../lib/browser'
+import { sweepBrowserProfiles } from '../lib/browser-retention'
 import { readLocalStatus } from '../lib/local-status'
 import { fatal, log } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
@@ -23,6 +24,29 @@ type BrowserOpts = RawOutputOpts & {
   profile?: string
   login?: boolean
   check?: boolean
+}
+
+/**
+ * Opportunistic profile retention, the same `git gc --auto` shape the session
+ * store uses: no daemon, no cron, it just rides on the command that created the
+ * mess. Silent when there is nothing to do, and never fatal — losing a sweep is
+ * strictly better than losing the browser command.
+ */
+async function reportSweep(machine: boolean): Promise<void> {
+  try {
+    const swept = await sweepBrowserProfiles()
+    if (machine || swept.bytesFreed === 0) return
+    const freed = `${(swept.bytesFreed / 1024 / 1024).toFixed(0)} MB`
+    const what = [
+      swept.removed.length > 0 ? `${swept.removed.length} dormant profile(s) removed` : null,
+      swept.purged.length > 0 ? `${swept.purged.length} cache(s) trimmed` : null,
+    ]
+      .filter(Boolean)
+      .join(', ')
+    log.dim(`retention: ${what} — ${freed} freed`)
+  } catch {
+    /* retention must never break the browser command */
+  }
 }
 
 const LOGIN_TIMEOUT_MS = 180_000
@@ -124,6 +148,11 @@ Examples:
     const gui = await resolveGuiOrigin(opts.url)
     const host = new URL(gui).host
     await requireAgentBrowser(machine, opts)
+
+    // Retention runs BEFORE anything launches, so no profile we touch can be in
+    // use by a browser this command started. Profiles held by someone else's
+    // live browser are skipped by the sweep itself.
+    await reportSweep(machine)
 
     const usingCdp = !!opts.cdp
     const profile = usingCdp ? null : (opts.profile ?? profileDirFor(host))

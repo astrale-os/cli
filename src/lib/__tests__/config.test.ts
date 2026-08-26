@@ -23,6 +23,33 @@ describe('AstraleConfigSchema', () => {
     })
   })
 
+  test('retention bounds survive a parse — a read/write cycle must not drop them', () => {
+    // zod strips unknown keys, so a bound declared only in its reader would be
+    // silently erased by any command that rewrites the config.
+    const result = AstraleConfigSchema.parse({
+      telemetry: { enabled: true, maxAgeDays: 7, maxBytes: 1_048_576 },
+      browser: { maxCacheBytes: 52_428_800, maxProfileAgeDays: 14 },
+    })
+    expect(result.telemetry).toEqual({ enabled: true, maxAgeDays: 7, maxBytes: 1_048_576 })
+    expect(result.browser).toEqual({ maxCacheBytes: 52_428_800, maxProfileAgeDays: 14 })
+  })
+
+  test.each([
+    ['zero', 0],
+    ['negative', -5],
+    ['not a number', 'lots'],
+    ['infinite', Number.POSITIVE_INFINITY],
+  ])('a %s bound is dropped, and does not take the rest of the config with it', (_l, value) => {
+    const result = AstraleConfigSchema.parse({
+      issuer: 'https://test.astrale.ai',
+      telemetry: { enabled: true, maxAgeDays: value },
+      browser: { maxCacheBytes: value },
+    })
+    expect(result.telemetry.maxAgeDays).toBeUndefined()
+    expect(result.browser.maxCacheBytes).toBeUndefined()
+    expect(result.issuer).toBe('https://test.astrale.ai')
+  })
+
   test('rejects non-url issuer', () => {
     expect(() => AstraleConfigSchema.parse({ issuer: 'not-a-url' })).toThrow()
   })

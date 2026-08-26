@@ -15,6 +15,7 @@ const config: AstraleConfig = {
     domainIssuer: 'https://admin-domain.example',
   },
   telemetry: { enabled: false },
+  browser: {},
 }
 
 const instances: InstanceStore = {

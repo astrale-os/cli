@@ -18,6 +18,7 @@ const config: AstraleConfig = {
   issuer: 'https://cli.example',
   admin: { name: 'admin', url: SOURCE, kernelIssuer: SOURCE },
   telemetry: { enabled: false },
+  browser: {},
 }
 
 describe('connection credential', () => {

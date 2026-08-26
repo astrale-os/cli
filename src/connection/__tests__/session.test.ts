@@ -23,6 +23,7 @@ const config: AstraleConfig = {
     kernelIssuer: 'https://admin.example',
   },
   telemetry: { enabled: false },
+  browser: {},
 }
 
 const context: ConnectionContext = Object.freeze({
