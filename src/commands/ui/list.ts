@@ -7,7 +7,7 @@ type Options = UiCommandOptions & { type?: string; limit?: string; version?: str
 
 export default {
   name: 'list',
-  description: 'List or search Astrale components, patterns, blocks, and presets',
+  description: 'List or search Astrale patterns and blocks',
   arguments: [{ name: 'query', description: 'Optional search text', required: false }],
   options: [
     {
