@@ -52,7 +52,6 @@ const resolved = [
         kind: 'definition' as const,
         definitions: [{ origin: 'ai-gateway.astrale.ai', kind: 'class' as const, name: 'Model' }],
       },
-      auth: 'required' as const,
     },
   }),
   route({
@@ -62,7 +61,7 @@ const resolved = [
     issuer: 'https://ai-gateway.astrale.ai',
     etag: `sha256:${'c'.repeat(64)}`,
     revision: `sha256:${'d'.repeat(64)}`,
-    declaration: { target: { kind: 'domain' as const }, auth: 'public' as const },
+    declaration: { target: { kind: 'domain' as const } },
   }),
 ]
 

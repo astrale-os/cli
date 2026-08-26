@@ -97,7 +97,7 @@ describe('canonical standalone Function diffs', () => {
         orientation: 'directed',
         endpoints: [],
       }),
-      views: { home: { name: 'home', target: { kind: 'domain' }, auth: 'public' } },
+      views: { home: { name: 'home', target: { kind: 'domain' } } },
       policies: { canRead: { anyOf: [] } },
       dependencies: [{ origin: 'kernel.astrale.ai', revision: 'sha256:one' }],
       core: { nodes: {}, edges: [] },
@@ -107,7 +107,15 @@ describe('canonical standalone Function diffs', () => {
       classes: {
         owns: { ...before.classes.owns, orientation: 'undirected' },
       },
-      views: { home: { ...before.views!.home, auth: 'required' } },
+      views: {
+        home: {
+          ...before.views.home,
+          target: {
+            kind: 'definition',
+            definitions: [{ origin: 'example.test', kind: 'class', name: 'owns' }],
+          },
+        },
+      },
       policies: { canRead: { anyOf: [{ name: 'owner' }] } },
       dependencies: [{ origin: 'kernel.astrale.ai', revision: 'sha256:two' }],
       core: { nodes: { root: {} }, edges: [] },

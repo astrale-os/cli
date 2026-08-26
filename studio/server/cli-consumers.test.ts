@@ -301,7 +301,6 @@ const bundle = {
     views: {
       'issue-detail': {
         name: 'issue-detail',
-        auth: 'required',
         target: {
           kind: 'definition',
           definitions: [{ origin: 'issues.example.dev', kind: 'class', name: 'Issue' }],

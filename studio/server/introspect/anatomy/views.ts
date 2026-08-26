@@ -15,7 +15,6 @@ function canonicalViewInfo(slug: string, view: NonNullable<SchemaIR['views']>[st
   return {
     slug,
     kind: 'unknown',
-    auth: view.auth,
     ...(view.description ? { description: view.description } : {}),
     ...(targets.length === 1
       ? { viewFor: targets[0] }
@@ -28,7 +27,7 @@ function canonicalViewInfo(slug: string, view: NonNullable<SchemaIR['views']>[st
 /**
  * Join canonical View definitions with route/source metadata. Passing a
  * canonical map (including an empty map) makes it authoritative: static routes
- * cannot invent Views or override identity, target, auth, or description.
+ * cannot invent Views or override identity, target, or description.
  * Without admitted canonical Views, Studio does not invent authoring semantics.
  */
 export function buildViews(

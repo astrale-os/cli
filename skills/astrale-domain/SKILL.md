@@ -30,7 +30,7 @@ complete new domain; use the phased workflow below for that.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
 - Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
 - Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication mode, or Policy: read `references/security.md`.
-- Build or review browser views, mounted UI, view auth, view resolution, or frontend design: read `references/views.md`.
+- Build or review browser views, mounted UI, View access, View resolution, or frontend design: read `references/views.md`.
 - Evolve an installed Schema, write a Migration, decide Migration versus Core, or handle
   reinstall/backfill behavior: read `references/migration.md`.
 - Optimize graph access, reduce round trips, choose indexes/queries, or review call patterns for latency: read `references/performance.md`.

@@ -55,12 +55,10 @@ test('does not treat a removed view registry as Schema authority', () => {
     join(viewsDir, 'index.ts'),
     `import { defineView } from '@astrale-os/sdk'
 const services = defineView({
-  auth: 'required',
   mount: '/ui/services',
   description: 'Browse services.',
 })
 const service = defineView({
-  auth: 'required',
   mount: '/ui/service',
   viewFor: [selfOf(CloudflareWorker)],
 })
@@ -89,7 +87,6 @@ const schemaInput = {
   views: {
     issue: view({
       target: [Issue, Group],
-      auth: 'optional',
       description: 'Inspect an issue.',
     }),
   },
@@ -114,7 +111,6 @@ export const frontend = defineFrontend({
     buildViews(root, 'schema', {
       issue: {
         name: 'issue',
-        auth: 'optional',
         description: 'Inspect an issue.',
         target: {
           kind: 'definition',
@@ -129,7 +125,6 @@ export const frontend = defineFrontend({
     {
       slug: 'issue',
       kind: 'spa',
-      auth: 'optional',
       mount: '/ui/issues/:id',
       url: undefined,
       viewFor: ['Issue', 'Group'],
@@ -166,7 +161,6 @@ export const frontend = defineFrontend({
     buildViews(root, 'schema', {
       summary: {
         name: 'summary',
-        auth: 'required',
         target: { kind: 'domain' },
       },
     }),
@@ -174,7 +168,6 @@ export const frontend = defineFrontend({
     {
       slug: 'summary',
       kind: 'spa',
-      auth: 'required',
       mount: '/summary',
       url: undefined,
       file: 'views/summary/index.ts',
@@ -190,9 +183,9 @@ test('canonical Bundle views reject static schema and route-only identities', ()
     join(root, 'schema', 'index.ts'),
     `export const schema = defineSchema('static.invalid', {
   views: {
-    account: view({ target: WrongTarget, auth: 'public', description: 'Static guess.' }),
-    sourceOnly: view({ target: WrongTarget, auth: 'public', description: 'Static guess.' }),
-    invented: view({ target: 'domain', auth: 'public' }),
+    account: view({ target: WrongTarget, description: 'Static guess.' }),
+    sourceOnly: view({ target: WrongTarget, description: 'Static guess.' }),
+    invented: view({ target: 'domain' }),
   },
 })`,
   )
@@ -212,7 +205,6 @@ test('canonical Bundle views reject static schema and route-only identities', ()
     buildViews(root, 'schema', {
       account: {
         name: 'account',
-        auth: 'required',
         description: 'Admitted account view.',
         target: {
           kind: 'definition',
@@ -221,7 +213,6 @@ test('canonical Bundle views reject static schema and route-only identities', ()
       },
       sourceOnly: {
         name: 'sourceOnly',
-        auth: 'optional',
         description: 'Admitted source-only view.',
         target: { kind: 'domain' },
       },
@@ -230,7 +221,6 @@ test('canonical Bundle views reject static schema and route-only identities', ()
     {
       slug: 'account',
       kind: 'spa',
-      auth: 'required',
       description: 'Admitted account view.',
       viewFor: 'Account',
       url: 'https://shell.example.dev/account',
@@ -239,7 +229,6 @@ test('canonical Bundle views reject static schema and route-only identities', ()
     {
       slug: 'sourceOnly',
       kind: 'spa',
-      auth: 'optional',
       description: 'Admitted source-only view.',
       url: 'https://shell.example.dev/source-only',
       file: 'application.ts',

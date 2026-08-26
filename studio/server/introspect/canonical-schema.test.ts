@@ -74,7 +74,6 @@ const root = {
   views: {
     documents: {
       target: { kind: 'definition', definitions: [localRef] },
-      auth: 'optional',
     },
   },
   core: {
@@ -126,6 +125,7 @@ describe('canonical Schema projection', () => {
     ])
     expect(ir.functions.search).toMatchObject({ auth: 'authenticated', output: { mode: 'stream' } })
     expect(ir.views?.documents.target).toEqual({ kind: 'definition', definitions: [localRef] })
+    expect(ir.views?.documents).not.toHaveProperty('auth')
   })
 
   test('projects canonical Core coordinates without importing Application or Runtime', () => {

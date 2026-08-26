@@ -36,7 +36,12 @@ function canonicalIr() {
         auth: 'authenticated',
       },
     },
-    views: {},
+    views: {
+      documents: {
+        name: 'documents',
+        target: { kind: 'domain' },
+      },
+    },
     policies: {},
     dependencies: [],
     core: {},
@@ -56,6 +61,12 @@ test('rejects stale projections that lost canonical callable contracts', () => {
   delete rename.input
   delete rename.output
   Object.assign(rename, { params: {}, returns: { type: 'boolean' } })
+  expect(decodeSchemaIR(input)).toBeUndefined()
+})
+
+test('rejects projections that retain retired View auth metadata', () => {
+  const input = canonicalIr()
+  Object.assign(input.views.documents, { auth: 'required' })
   expect(decodeSchemaIR(input)).toBeUndefined()
 })
 
