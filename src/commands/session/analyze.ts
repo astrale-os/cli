@@ -4,6 +4,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { log } from '../../lib/log'
 import { analyzeSession } from '../../telemetry/analyze'
+import { sweepStore } from '../../telemetry/retention'
 import { listSessions } from '../../telemetry/store'
 import { restampLock, releaseLock } from '../../telemetry/trigger'
 
@@ -22,8 +23,8 @@ export default {
     opts: { file?: boolean; model?: string; force?: boolean; auto?: boolean },
   ) => {
     if (opts.auto) restampLock()
+    let target = id
     try {
-      let target = id
       if (!target) {
         const candidate = listSessions().find((s) => s.closed && (opts.force || !s.analyzed))
         if (!candidate) {
@@ -45,6 +46,18 @@ export default {
       }
     } finally {
       if (opts.auto) releaseLock()
+      // The size bound is enforced here, not on the CLI's critical path:
+      // measuring every file of every session is only affordable in this
+      // process, and this is precisely where the store just grew. The session
+      // just analyzed is protected — it is the freshest evidence on disk.
+      try {
+        const swept = sweepStore({ protect: new Set(target === undefined ? [] : [target]) })
+        if (!opts.auto && swept.removed.length > 0) {
+          log.dim(`retention: removed ${swept.removed.length} session(s)`)
+        }
+      } catch {
+        /* retention must never fail the command that triggered it */
+      }
     }
   },
 } satisfies CommandDefinition

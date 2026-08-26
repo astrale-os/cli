@@ -2,36 +2,18 @@
  * Opportunistic analysis trigger — the `git gc --auto` model. Each CLI start
  * cheaply scans for a closed, unanalyzed session and spawns ONE detached
  * analyzer for it. No daemon, no cron; a lockfile keeps it single-flight.
+ * The same scan pays for the age sweep (see retention.ts), which is why the
+ * store stays bounded without anything resembling a background job.
  */
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { MAX_REMOVALS_ON_START, sweepByAge } from './retention'
 import { telemetryEnabled } from './settings'
-import { listSessions, sessionDir, sessionsRoot, type SessionInfo } from './store'
+import { listSessions, sessionsRoot } from './store'
 
 const LOCK_STALE_MS = 30 * 60 * 1000
-const GC_AGE_MS = 30 * 24 * 60 * 60 * 1000
-const GC_MAX_PER_RUN = 20
-
-/** Opportunistic GC: analyzed sessions idle past the retention age are removed
- *  (capped per invocation) so the store — and the per-invocation scan — stays
- *  bounded. Evidence worth keeping has left via reports or filed issues. */
-function gcOldSessions(sessions: SessionInfo[]): void {
-  try {
-    const cutoff = Date.now() - GC_AGE_MS
-    let removed = 0
-    for (const s of sessions) {
-      if (removed >= GC_MAX_PER_RUN) break
-      if (s.analyzed !== null && s.lastEventAt !== null && s.lastEventAt.getTime() < cutoff) {
-        rmSync(sessionDir(s.id), { recursive: true, force: true })
-        removed++
-      }
-    }
-  } catch {
-    /* best effort */
-  }
-}
 
 function lockPath(): string {
   return join(sessionsRoot(), '.analyzer.lock')
@@ -78,14 +60,20 @@ export function releaseLock(): void {
  */
 export function maybeTriggerAnalysis(argv: string[]): void {
   try {
-    if (!telemetryEnabled()) return
     if (process.env.ASTRALE_TELEMETRY_NO_TRIGGER === '1') return
+
+    const sessions = listSessions()
+    // Retention runs ahead of the kill-switch check and on `session` commands
+    // too — turning telemetry off must still drain what is already on disk.
+    const swept = new Set(sweepByAge(sessions, { limit: MAX_REMOVALS_ON_START }).removed)
+
+    if (!telemetryEnabled()) return
     // Never cascade off the session commands themselves.
     if (argv[2] === 'session') return
 
-    const sessions = listSessions()
-    gcOldSessions(sessions)
-    const target = sessions.find((s) => s.closed && s.analyzed === null && s.lastEventAt !== null)
+    const target = sessions.find(
+      (s) => s.closed && s.analyzed === null && s.lastEventAt !== null && !swept.has(s.id),
+    )
     if (!target) return
     if (!claimLock()) return
 

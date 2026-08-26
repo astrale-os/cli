@@ -70,6 +70,7 @@ export default defineCode({
     '../src/lib/validation.ts',
     '../src/setup/engine.ts',
     '../src/telemetry/recorder.ts',
+    '../src/telemetry/retention.ts',
     '../src/telemetry/trigger.ts',
   ],
 })

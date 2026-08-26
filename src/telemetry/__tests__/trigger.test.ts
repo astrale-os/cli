@@ -35,15 +35,44 @@ function seed(id: string, ageMs: number, analyzed: boolean): void {
   utimesSync(join(dir, 'events.jsonl'), when, when)
 }
 
+const DAY = 24 * 60 * 60 * 1000
+
+// NOTE: none of these seed a closed-unanalyzed session, so the trigger finds no
+// analysis target and no test here ever spawns a child process.
 describe('opportunistic GC', () => {
-  test('removes analyzed sessions past retention, keeps recent and unanalyzed ones', () => {
-    const DAY = 24 * 60 * 60 * 1000
+  test('removes sessions past retention, keeps recent ones', () => {
     seed('gc-old-analyzed', 40 * DAY, true)
     seed('gc-recent-analyzed', 2 * DAY, true)
-    // NOTE: no closed-unanalyzed sessions seeded — the trigger must find no
-    // analysis target, so this test never spawns a child process.
     maybeTriggerAnalysis(['bun', 'astrale', 'status'])
     expect(existsSync(sessionDir('gc-old-analyzed'))).toBe(false)
     expect(existsSync(sessionDir('gc-recent-analyzed'))).toBe(true)
+  })
+
+  test('runs with telemetry disabled — switching it off must drain the store', () => {
+    seed('gc-off-old', 40 * DAY, true)
+    process.env.ASTRALE_TELEMETRY = '0'
+    try {
+      maybeTriggerAnalysis(['bun', 'astrale', 'status'])
+    } finally {
+      delete process.env.ASTRALE_TELEMETRY
+    }
+    expect(existsSync(sessionDir('gc-off-old'))).toBe(false)
+  })
+
+  test('runs on `session` commands, which are exempt from analysis only', () => {
+    seed('gc-session-cmd-old', 40 * DAY, true)
+    maybeTriggerAnalysis(['bun', 'astrale', 'session', 'list'])
+    expect(existsSync(sessionDir('gc-session-cmd-old'))).toBe(false)
+  })
+
+  test('honours a configured age bound', () => {
+    seed('gc-two-days', 2 * DAY, true)
+    process.env.ASTRALE_TELEMETRY_MAX_AGE_DAYS = '1'
+    try {
+      maybeTriggerAnalysis(['bun', 'astrale', 'status'])
+    } finally {
+      delete process.env.ASTRALE_TELEMETRY_MAX_AGE_DAYS
+    }
+    expect(existsSync(sessionDir('gc-two-days'))).toBe(false)
   })
 })
