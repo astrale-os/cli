@@ -172,6 +172,13 @@ then the store is trimmed to `maxBytes`, oldest first. Both are optional:
 config for one invocation. Values that are not positive numbers are ignored in
 favour of the default, so a typo cannot leave the store unbounded.
 
+Once a session has been analyzed it is reduced to its durable artifacts —
+`meta.json`, `events.jsonl`, `report.md`, the marker and a clamped
+`analyzer.log`. The analyzer runs an agent with write access to the session
+directory, so anything else it leaves there is scratch and is removed. The
+prompt is kept only when the analysis failed, which is the one case where what
+the analyzer was asked still matters.
+
 ### Browser-profile retention
 
 `astrale browser` keeps one persistent Chromium profile per host under
