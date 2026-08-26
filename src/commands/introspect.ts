@@ -1,3 +1,5 @@
+import type { DomainBundle, DomainInfo, SchemaApi } from '@astrale-os/sdk/client/schema'
+
 import { Path } from '@astrale-os/sdk/graph/path'
 
 import type { KernelCommandOpts } from '../connection'
@@ -11,7 +13,18 @@ import { describeCallableFromBundle, missingCallableDescription } from './call-d
 
 type IntrospectOpts = KernelCommandOpts & { bundle?: boolean }
 
-export async function introspectCommand(target: string, opts: IntrospectOpts): Promise<void> {
+interface IntrospectDependencies {
+  readonly runKernelCommand: typeof runKernelCommand
+}
+
+const defaultIntrospectDependencies = Object.freeze({ runKernelCommand })
+
+export async function introspectCommand(
+  target: string,
+  opts: IntrospectOpts,
+  dependencies: Partial<IntrospectDependencies> = {},
+): Promise<void> {
+  const introspect = { ...defaultIntrospectDependencies, ...dependencies }
   let origin: string
   let path: Path
   try {
@@ -21,22 +34,43 @@ export async function introspectCommand(target: string, opts: IntrospectOpts): P
   }
   const wantsCallable = isCallablePath(path)
 
-  await runKernelCommand({
+  await introspect.runKernelCommand({
     opts,
     label: `Introspect ${origin}`,
     fn: async ({ session }) => {
-      const includeBundle = wantsCallable || opts.bundle === true
-      if (includeBundle) {
-        const result = await session.schema.bundle(origin)
-        if (!wantsCallable) return result
+      if (wantsCallable) {
+        const result = await readInstalledDomain(session.schema, origin, true)
         const described = describeCallableFromBundle(path, result.bundle)
         if (described === undefined) throw missingCallableDescription(path.raw)
         return described
       }
-      return session.schema.inspect(origin)
+      return readInstalledDomain(session.schema, origin, opts.bundle === true)
     },
     format: (value, format) => output(value, format),
   })
+}
+
+export function readInstalledDomain(
+  schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
+  origin: string,
+  includeBundle: true,
+): Promise<DomainBundle>
+export function readInstalledDomain(
+  schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
+  origin: string,
+  includeBundle: false,
+): Promise<DomainInfo>
+export function readInstalledDomain(
+  schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
+  origin: string,
+  includeBundle: boolean,
+): Promise<DomainInfo | DomainBundle>
+export function readInstalledDomain(
+  schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
+  origin: string,
+  includeBundle: boolean,
+): Promise<DomainInfo | DomainBundle> {
+  return includeBundle ? schema.bundle(origin) : schema.inspect(origin)
 }
 
 export function parseIntrospectTarget(target: string): { origin: string; path: Path } {

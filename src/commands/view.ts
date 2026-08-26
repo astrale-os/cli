@@ -19,6 +19,7 @@ import { fatal, log } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
+import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
   candidateSlug,
@@ -62,6 +63,7 @@ type ViewOpts = KernelCommandOpts &
     sessions?: boolean
     close?: string | boolean
     all?: boolean
+    allowExternalOrigin?: string[]
   }
 
 const VIEW_PORT_BASE = 4419
@@ -151,16 +153,47 @@ async function chooseCandidate(
  * die once the CLI exits. The published CLI entry is node-runnable; a dev
  * checkout builds `dist/astrale.js` on demand (Bun is present there).
  */
-async function resolveServeRuntime(): Promise<{ file: string; args: string[] }> {
-  const entry = process.argv[1]
-  const node = await findOnPath('node')
-  if (node && entry?.endsWith('.js') && existsSync(entry)) return { file: node, args: [entry] }
+interface ServeRuntimeEnvironment {
+  readonly entry: string | undefined
+  readonly executable: string
+  readonly exists: typeof existsSync
+  readonly find: typeof findOnPath
+}
+
+export async function resolveServeRuntime(
+  environment: Partial<ServeRuntimeEnvironment> = {},
+): Promise<{ file: string; args: string[] }> {
+  const entry = environment.entry ?? process.argv[1]
+  const executable = environment.executable ?? process.execPath
+  const exists = environment.exists ?? existsSync
+  const find = environment.find ?? findOnPath
+  const node = await find('node')
+  if (node && entry?.endsWith('.js') && exists(entry)) return { file: node, args: [entry] }
   if (node && entry?.endsWith('.ts')) {
     const dist = join(dirname(entry), '..', 'dist', 'astrale.js')
     await ensureDevDist(entry, dist)
-    if (existsSync(dist)) return { file: node, args: [dist] }
+    if (exists(dist)) return { file: node, args: [dist] }
   }
-  return { file: process.execPath, args: entry && existsSync(entry) ? [entry] : [] }
+  return directServeRuntime(executable, entry, entry !== undefined && exists(entry))
+}
+
+/** Reinvoke a compiled executable without its virtual Bun filesystem entry. */
+export function directServeRuntime(
+  executable: string,
+  entry: string | undefined,
+  entryExists = entry !== undefined && existsSync(entry),
+): { file: string; args: string[] } {
+  return {
+    file: executable,
+    args: entry && !entry.startsWith('/$bunfs/') && entryExists ? [entry] : [],
+  }
+}
+
+export function viewServeInvocation(
+  runtime: { file: string; args: string[] },
+  config: string,
+): { file: string; args: string[] } {
+  return { file: runtime.file, args: [...runtime.args, '__view-serve', '--config', config] }
 }
 
 async function findOnPath(name: string): Promise<string | null> {
@@ -229,6 +262,31 @@ async function startSession(view: ResolvedView, opts: ViewOpts): Promise<ViewSes
   )
 }
 
+export function createViewServeConfig(
+  record: ViewSessionRecord,
+  opts: Pick<ViewOpts, 'allowExternalOrigin' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'>,
+  kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
+): ViewServeConfig {
+  return {
+    session: record,
+    kernel: {
+      url: opts.url,
+      instance: opts.instance,
+      as: opts.as,
+      creds: opts.creds,
+      timeout: opts.timeout,
+    },
+    proxy: {
+      kernelUrl: kernelTarget.url,
+      issuer: kernelTarget.kernelIssuer,
+      caFile: kernelTarget.caFile,
+      direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
+    },
+    externalOrigins: admitExternalOpenOrigins(opts.allowExternalOrigin),
+    idleMs: IDLE_MS,
+  }
+}
+
 /**
  * Called under the cross-process port-allocation lock. Keep the lock until the
  * detached child answers its readiness probe: only then is the selected port
@@ -262,34 +320,15 @@ async function startSessionLocked(
     identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? defaultIdentity),
     createdAt: new Date().toISOString(),
   }
-  const serveConfig: ViewServeConfig = {
-    session: record,
-    kernel: {
-      url: opts.url,
-      instance: opts.instance,
-      as: opts.as,
-      creds: opts.creds,
-      timeout: opts.timeout,
-    },
-    proxy: {
-      kernelUrl: kernelTarget.url,
-      issuer: kernelTarget.kernelIssuer,
-      caFile: kernelTarget.caFile,
-      direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
-    },
-    idleMs: IDLE_MS,
-  }
+  const serveConfig = createViewServeConfig(record, opts, kernelTarget)
 
   await saveServeConfig(serveConfig)
   const logFd = await openSessionLog(id)
-  const child = spawnHandle(
-    runtime.file,
-    [...runtime.args, '__view-serve', '--config', configPath(id)],
-    {
-      detached: true,
-      stdio: ['ignore', logFd, logFd],
-    },
-  )
+  const invocation = viewServeInvocation(runtime, configPath(id))
+  const child = spawnHandle(invocation.file, invocation.args, {
+    detached: true,
+    stdio: ['ignore', logFd, logFd],
+  })
   child.unref()
   closeSync(logFd)
   if (!child.pid) throw new Error('Failed to spawn the view session server')
@@ -521,6 +560,10 @@ export default {
       description: 'Close a view session (bare: the only open one; with --all: every session)',
     },
     { flags: '--all', description: 'With --close: close every session' },
+    {
+      flags: '--allow-external-origin <origin...>',
+      description: 'Grant this View exact HTTPS origins it may open in a new browser context',
+    },
   ],
   afterHelpText: `
 What it does:
@@ -539,6 +582,7 @@ Examples:
   $ astrale view /:crm.example.dev:view.dashboard
   $ astrale view /:agents.astrale.ai:view.agent --target @f00d1234 --as alice
   $ astrale view @customer --snapshot
+  $ astrale view /:integrations.astrale.ai:view.application --allow-external-origin https://connect.nango.dev https://connect.composio.dev
   $ astrale view --list
   $ astrale view --sessions ; astrale view --close --all
 `,

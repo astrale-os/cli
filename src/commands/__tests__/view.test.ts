@@ -147,3 +147,52 @@ describe('view capture timing', () => {
     expect(commands.length).toBeGreaterThan(2)
   })
 })
+
+describe('view session runtime', () => {
+  test('builds one serve config with the admitted operator origin grant', async () => {
+    const { createViewServeConfig } = await import('../view')
+    const record = {
+      id: 'v-proof',
+      pid: 0,
+      port: 4419,
+      nonce: 'proof',
+      pageUrl: 'http://127.0.0.1:4419/s/proof/',
+      view: { target: Path.parse('/:ai-gateway.astrale.ai').raw, route: resolved[0] },
+      createdAt: '2026-08-26T00:00:00.000Z',
+    }
+
+    const config = createViewServeConfig(
+      record,
+      { allowExternalOrigin: ['https://connect.nango.dev/'] },
+      { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' },
+    )
+
+    expect(config.session).toBe(record)
+    expect(config.externalOrigins).toEqual(['https://connect.nango.dev'])
+    expect(config.proxy).toEqual({
+      kernelUrl: 'https://kernel.test',
+      issuer: 'https://kernel.test',
+      caFile: undefined,
+      direct: true,
+    })
+  })
+
+  test('spawns the detached server from a compiled executable without its virtual Bun entry', async () => {
+    const { resolveServeRuntime, viewServeInvocation } = await import('../view')
+
+    const runtime = await resolveServeRuntime({
+      executable: '/opt/astrale/bin/astrale',
+      entry: '/$bunfs/root/astrale',
+      exists: () => true,
+      find: async () => '/usr/bin/node',
+    })
+    expect(runtime).toEqual({
+      file: '/opt/astrale/bin/astrale',
+      args: [],
+    })
+    expect(viewServeInvocation(runtime, '/tmp/view.config.json')).toEqual({
+      file: '/opt/astrale/bin/astrale',
+      args: ['__view-serve', '--config', '/tmp/view.config.json'],
+    })
+  })
+})

@@ -17,7 +17,7 @@ export type RawOutputOpts = Pick<OutputOpts, 'raw' | 'json'>
 export type MachineOpts = RawOutputOpts & { readonly ci?: boolean }
 
 export const RAW_OUTPUT_OPTIONS = [
-  { flags: '--json', description: 'Always-valid JSON (for jq)' },
+  { flags: '--json', description: 'JSON; streaming commands emit one JSON value per line' },
   { flags: '--raw', description: 'Unwrapped: bare scalar / raw bytes / JSON for objects' },
 ] as const
 

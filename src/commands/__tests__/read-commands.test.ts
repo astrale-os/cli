@@ -306,7 +306,13 @@ describe('introspect command', () => {
   test('uses the split SDK Schema API without recreating the retired introspection request', async () => {
     const { introspectCommand } = await import('../introspect')
 
-    await introspectCommand('notes.example.dev', { json: true })
+    await introspectCommand(
+      'notes.example.dev',
+      { json: true },
+      {
+        runKernelCommand: runKernelCommandMock as never,
+      },
+    )
 
     expect(inspectMock).toHaveBeenCalledWith('notes.example.dev')
     expect(bundleMock).not.toHaveBeenCalled()
@@ -316,7 +322,13 @@ describe('introspect command', () => {
   test('requests the immutable bundle only when explicitly selected', async () => {
     const { introspectCommand } = await import('../introspect')
 
-    await introspectCommand('notes.example.dev', { json: true, bundle: true })
+    await introspectCommand(
+      'notes.example.dev',
+      { json: true, bundle: true },
+      {
+        runKernelCommand: runKernelCommandMock as never,
+      },
+    )
 
     expect(bundleMock).toHaveBeenCalledWith('notes.example.dev')
     expect(inspectMock).not.toHaveBeenCalled()
