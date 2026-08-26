@@ -94,7 +94,7 @@ export async function prepareRun(
     bareResume && !firstTurn
       ? buildResumePrompt()
       : buildTurnPrompt({
-          origin: bundle?.overlay.origin ?? domainId,
+          origin: bundle?.ir?.domain ?? handle.origin ?? domainId,
           root,
           renderFingerprint,
           schemaRevision: bundle?.schemaRevision,

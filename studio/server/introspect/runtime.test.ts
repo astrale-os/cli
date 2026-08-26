@@ -6,9 +6,10 @@ import { join } from 'node:path'
 import type { DomainHandle } from '../domain'
 
 import { buildBundle } from './bundle'
+import { buildCore } from './core'
 import { renderFingerprintOf } from './hash'
 import { admittedBundleRevision } from './revision'
-import { coreExtract, runtimeExtract } from './runtime'
+import { runtimeExtract } from './runtime'
 
 const roots: string[] = []
 afterEach(() => {
@@ -128,19 +129,18 @@ describe('SDK V1 schema extractor', () => {
 
   test('extracts Core through the pure Schema entry without importing Application', async () => {
     const handle = currentFixture()
-    expect(await coreExtract(handle.schemaIndex, handle.root)).toEqual({
-      ok: true,
-      core: {
-        domain: 'documents.runtime.test',
-        nodes: [
-          {
-            path: '/:documents.runtime.test:core.welcome',
-            className: 'Document',
-            data: {},
-          },
-        ],
-        edges: [],
-      },
+    const bundle = await buildBundle(handle)
+    expect(buildCore(handle, bundle)).toMatchObject({
+      domain: 'documents.runtime.test',
+      nodes: [
+        {
+          path: '/:documents.runtime.test:core.welcome',
+          className: 'Document',
+          data: {},
+        },
+      ],
+      edges: [],
+      error: null,
     })
   })
 })

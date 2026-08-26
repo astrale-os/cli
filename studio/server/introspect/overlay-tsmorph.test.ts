@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import type { SchemaIR } from '../../shared/types'
 
-import { buildHandlerLinks, buildSchemaAnnotations, buildSourceSpans } from './overlay-tsmorph'
+import { buildHandlerLinks, buildSourceSpans } from './overlay-tsmorph'
 
 const roots: string[] = []
 afterEach(() => {
@@ -138,9 +138,5 @@ describe('source overlay', () => {
     expect(spans['edge.assigned_to.endpoint.owner']?.file).toBe('schema/members.ts')
     expect(spans['edge.assigned_to.property.note']?.file).toBe('schema/members.ts')
     expect(spans['function.createIssue']?.file).toBe('schema/members.ts')
-  })
-
-  test('does not invent warnings for admitted enum values', () => {
-    expect(buildSchemaAnnotations({ ir })).toEqual([])
   })
 })

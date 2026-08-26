@@ -53,13 +53,8 @@ export function bundle(
       core: {},
     },
     overlay: {
-      origin: domain,
-      requires: [],
-      crossDomainImports: [],
-      mixins: [],
       handlerLinks: [],
       sourceSpans: {},
-      annotations: [],
     },
     extractedAt: '2026-08-23T00:00:00.000Z',
     ...input,

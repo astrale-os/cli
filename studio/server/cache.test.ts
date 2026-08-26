@@ -4,9 +4,9 @@ import { decodeBundleCacheEntry } from './cache'
 
 function entry(): Record<string, unknown> {
   return {
-    version: 5,
+    version: 6,
     key: 'cache-key',
-    futureEntryField: { version: 5 },
+    futureEntryField: { version: 6 },
     bundle: {
       domainId: 'notes',
       renderFingerprint: 'render-hash',
@@ -27,13 +27,8 @@ function entry(): Record<string, unknown> {
         core: {},
       },
       overlay: {
-        origin: 'notes.example.dev',
-        requires: [],
-        crossDomainImports: [],
-        mixins: [],
         handlerLinks: [],
         sourceSpans: {},
-        annotations: [],
       },
       schemaRoot: {
         format: 'astrale.dsl',
@@ -51,7 +46,7 @@ test('bundle cache admits known structure while ignoring future fields', () => {
   const decoded = decodeBundleCacheEntry(entry())
 
   expect(decoded).toMatchObject({
-    version: 5,
+    version: 6,
     key: 'cache-key',
     bundle: { domainId: 'notes', schemaMode: 'canonical-preview' },
   })

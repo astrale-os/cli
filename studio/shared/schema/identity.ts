@@ -4,7 +4,6 @@
  * These helpers validate and encode only the structural wire coordinate. SDK
  * admission remains the authority for whether a reference is semantically valid.
  */
-
 export const IR_SCHEMA_REF_KINDS = ['class', 'function', 'policy', 'view', 'core'] as const
 
 export type IrSchemaRefKind = (typeof IR_SCHEMA_REF_KINDS)[number]

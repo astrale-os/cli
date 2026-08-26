@@ -24,7 +24,7 @@ export async function handleDeploymentRoute(context: DomainRouteContext): Promis
       await instanceStatus(
         handle,
         target,
-        bundle?.overlay.origin ?? null,
+        bundle?.ir?.domain ?? handle.origin ?? null,
         bundle?.schemaRevision ?? null,
       ),
     )

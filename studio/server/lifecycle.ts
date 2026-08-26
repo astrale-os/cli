@@ -35,7 +35,7 @@ export async function bootDomain(handle: DomainHandle): Promise<BootedDomain> {
     )
   const stop = watchDomain(handle)
   return {
-    origin: bundle?.overlay.origin ?? handle.id,
+    origin: bundle?.ir?.domain ?? handle.origin ?? handle.id,
     depsInstalled: !!bundle?.depsInstalled,
     stop,
   }

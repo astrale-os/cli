@@ -41,7 +41,20 @@ const ir: SchemaIR = {
   functions: {
     inspect: {
       name: 'inspect',
-      input: { type: 'object', properties: { cursor: { type: 'string' } }, required: [] },
+      input: {
+        type: 'object',
+        properties: {
+          cursor: {
+            $ref: 'https://schemas.astrale.ai/graph/1/node-path',
+            'x-astrale-path': {
+              target: 'node',
+              cardinality: 'one',
+              accepts: [{ origin: 'example.dev', kind: 'class', name: 'Item' }],
+            },
+          },
+        },
+        required: [],
+      },
       output: { mode: 'stream', item: { type: 'integer' } },
       auth: 'authenticated',
     },
@@ -63,8 +76,8 @@ describe('anchor descriptions', () => {
   })
 
   test('describes standalone Functions with output mode and authentication', () => {
-    expect(describeAnchor('function.inspect', ir, undefined)).toContain(
-      'stream<int> [authenticated]',
-    )
+    const description = describeAnchor('function.inspect', ir, undefined)
+    expect(description).toContain('inspect(cursor:→node?)')
+    expect(description).toContain('stream<int> [authenticated]')
   })
 })

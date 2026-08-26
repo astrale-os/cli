@@ -180,11 +180,13 @@ export function DomainsPanel({ domainId }: { domainId: string }) {
   const domains = useMemo(() => (bundle ? externalDomains(bundle) : []), [bundle])
   const referenced = useMemo(() => new Set(domains.map((d) => d.origin)), [domains])
 
-  // taken = what we already import (kernel + ground-truth imports + declared requires) → hidden from the catalog
+  // Canonical dependencies and resolved references are the import ground truth.
   const taken = useMemo(() => {
     const t = new Set<string>(['kernel.astrale.ai', ...referenced])
-    for (const r of bundle?.overlay.requires ?? []) t.add(r)
-    for (const c of bundle?.overlay.crossDomainImports ?? []) t.add(c.origin)
+    for (const dependency of bundle?.ir?.dependencies ?? []) t.add(dependency.origin)
+    for (const descriptor of Object.values(bundle?.ir?.importsByKey ?? {})) {
+      t.add(descriptor.origin)
+    }
     return t
   }, [referenced, bundle])
 

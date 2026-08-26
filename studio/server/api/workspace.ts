@@ -18,7 +18,7 @@ export async function handleWorkspaceRoute(
         const bundle = await getBundle(handle.id)
         return {
           id: handle.id,
-          origin: bundle?.overlay.origin || handle.origin || handle.id,
+          origin: bundle?.ir?.domain || handle.origin || handle.id,
           path: handle.root,
           schemaDir: handle.schemaDirName,
           depsInstalled: depsInstalled(handle.root),

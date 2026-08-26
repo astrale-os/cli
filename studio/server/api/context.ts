@@ -43,7 +43,7 @@ export async function handleContextRoute(context: DomainRouteContext): Promise<R
     const storedContext = readContext(root)
     const openComments = readComments(root).comments.filter((comment) => comment.status === 'open')
     const markdown = buildCopyMarkdown({
-      origin: bundle?.overlay.origin ?? id,
+      origin: bundle?.ir?.domain ?? handle.origin ?? id,
       root,
       renderFingerprint: bundle?.renderFingerprint ?? '',
       schemaRevision: bundle?.schemaRevision,

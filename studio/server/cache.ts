@@ -17,16 +17,15 @@ import { buildBundle } from './introspect/bundle'
 import { isCanonicalDomainSchemaV1 } from './introspect/canonical-schema'
 import { buildCore } from './introspect/core'
 import { decodeSchemaIR } from './introspect/schema-ir-json'
-import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from './json'
+import { asBoolean, asFiniteNumber, asJsonRecord, asString } from './json'
 import { hashAnatomyFiles } from './state/baseline'
 import { readJson, writeJson } from './state/store'
 
 const bundles = new Map<string, StudioSchemaBundle>()
 const anatomies = new Map<string, Promise<DomainAnatomy>>()
-const cores = new Map<string, StudioCore>()
 
 const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
-const BUNDLE_CACHE_VERSION = 5
+const BUNDLE_CACHE_VERSION = 6
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',
@@ -37,7 +36,6 @@ const TOOL_INPUTS = [
   'introspect/canonical-schema.ts',
   'introspect/overlay.ts',
   'introspect/overlay-tsmorph.ts',
-  'introspect/source-overlay/annotations.ts',
   'introspect/source-overlay/handlers.ts',
   'introspect/source-overlay/kernel-calls.ts',
   'introspect/source-overlay/project.ts',
@@ -51,18 +49,6 @@ interface BundleCacheEntry {
   version: number
   key: string
   bundle: StudioSchemaBundle
-}
-
-function isCrossDomainImport(value: unknown): boolean {
-  const record = asJsonRecord(value)
-  const ref = asJsonRecord(record?.ref)
-  return (
-    typeof record?.name === 'string' &&
-    typeof record.origin === 'string' &&
-    ref?.kind === 'class' &&
-    typeof ref.origin === 'string' &&
-    typeof ref.name === 'string'
-  )
 }
 
 function isHandlerLink(value: unknown): boolean {
@@ -87,37 +73,15 @@ function isSourceSpan(value: unknown): boolean {
   )
 }
 
-function isAnnotation(value: unknown): boolean {
-  const record = asJsonRecord(value)
-  return (
-    typeof record?.target === 'string' &&
-    (record.severity === 'warn' || record.severity === 'info') &&
-    (record.code === 'COMPILE_ERROR' || record.code === 'EDGE_PROP_TYPE_MISSING') &&
-    typeof record.message === 'string'
-  )
-}
-
 function decodeOverlay(value: unknown): SchemaOverlay | undefined {
   const record = asJsonRecord(value)
-  const requires = asStringArray(record?.requires)
-  const crossDomainImports = record?.crossDomainImports
-  const mixins = record?.mixins
   const handlerLinks = record?.handlerLinks
   const sourceSpans = asJsonRecord(record?.sourceSpans)
-  const annotations = record?.annotations
   if (
-    typeof record?.origin !== 'string' ||
-    !requires ||
-    !Array.isArray(crossDomainImports) ||
-    !crossDomainImports.every(isCrossDomainImport) ||
-    !Array.isArray(mixins) ||
-    !mixins.every(isCrossDomainImport) ||
     !Array.isArray(handlerLinks) ||
     !handlerLinks.every(isHandlerLink) ||
     !sourceSpans ||
-    !Object.values(sourceSpans).every(isSourceSpan) ||
-    !Array.isArray(annotations) ||
-    !annotations.every(isAnnotation)
+    !Object.values(sourceSpans).every(isSourceSpan)
   ) {
     return undefined
   }
@@ -285,10 +249,7 @@ export async function getAnatomy(id: string, rebuild = false): Promise<DomainAna
 export async function getCore(id: string, rebuild = false): Promise<StudioCore | null> {
   const h = getDomain(id)
   if (!h) return null
-  if (!rebuild && cores.has(id)) return cores.get(id)!
-  const c = await buildCore(h)
-  cores.set(id, c)
-  return c
+  return buildCore(h, await getBundle(id, rebuild))
 }
 
 export function invalidate(id: string, what: 'schema' | 'anatomy' | 'all'): void {
@@ -298,6 +259,4 @@ export function invalidate(id: string, what: 'schema' | 'anatomy' | 'all'): void
     const domain = getDomain(id)
     if (domain) invalidateClientPackage(domain.root)
   }
-  // Core is derived from the canonical Schema and belongs to the anatomy set.
-  if (what !== 'schema') cores.delete(id)
 }

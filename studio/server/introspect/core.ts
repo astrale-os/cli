@@ -1,16 +1,13 @@
 /**
- * core.ts — assembles a domain's StudioCore: the genesis node/edge graph
- * extracted from canonical `schema.core`, gated
- * on installed deps. Never throws; a failed import or a domain with no core both
- * become a well-formed (empty) render state.
+ * core.ts — derives a domain's genesis graph from the canonical Schema already
+ * extracted for its Studio bundle. Schema code is imported exactly once.
  */
-import type { StudioCore } from '../../shared/types'
+import type { StudioCore, StudioSchemaBundle } from '../../shared/types'
+import type { DomainHandle } from '../domain'
 
-import { type DomainHandle, depsInstalled } from '../domain'
-import { readSettings } from '../state/settings'
-import { coreExtract } from './runtime'
+import { isCanonicalDomainSchemaV1, projectCanonicalCore } from './canonical-schema'
 
-export async function buildCore(handle: DomainHandle): Promise<StudioCore> {
+export function buildCore(handle: DomainHandle, bundle: StudioSchemaBundle | null): StudioCore {
   const at = new Date().toISOString()
   const empty = (error: StudioCore['error']): StudioCore => ({
     domain: handle.origin ?? handle.id,
@@ -20,25 +17,21 @@ export async function buildCore(handle: DomainHandle): Promise<StudioCore> {
     extractedAt: at,
   })
 
-  if (!depsInstalled(handle.root)) {
+  if (!bundle?.depsInstalled) {
     return empty({
       message: 'dependencies not installed — run `pnpm install` in the domain for core extraction',
     })
   }
+  if (!isCanonicalDomainSchemaV1(bundle.schemaRoot)) {
+    return empty(bundle.error ?? { message: 'canonical schema unavailable for core extraction' })
+  }
 
-  const r = await coreExtract(
-    handle.schemaIndex,
-    handle.root,
-    readSettings(handle.root).introspectTimeoutMs,
-  )
-  // r.ok && r.core===null  → the domain simply defines no core (not an error).
-  if (!r.ok) return empty(r.error ?? { message: 'core extraction failed' })
-  if (!r.core) return empty(null)
+  const core = projectCanonicalCore(bundle.schemaRoot)
 
   return {
-    domain: r.core.domain,
-    nodes: r.core.nodes,
-    edges: r.core.edges,
+    domain: core.domain,
+    nodes: core.nodes,
+    edges: core.edges,
     error: null,
     extractedAt: at,
   }
