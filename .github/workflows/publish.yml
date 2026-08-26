@@ -40,7 +40,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.0
-      - uses: astrale-os/config/.github/actions/publish/packages@fa8b83b54565ee459f18e8711e006569a33995c2
+      - uses: astrale-os/config/.github/actions/publish/packages@394998fcabb3cd4f0e2eccc5f969579837ea0c41
         with:
           dirs: '.'
           mirror-public-packages: 'false'
