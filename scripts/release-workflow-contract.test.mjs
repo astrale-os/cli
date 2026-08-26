@@ -72,6 +72,19 @@ describe('release workflow contract', () => {
       ({ target_os: os, target_arch: arch }) => `${os}-${arch}`,
     )
     assert.deepEqual(platforms.sort(), ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'])
+    const build = binary.jobs.build.steps.find((step) => step.name === 'Build binary').run
+    const pack = binary.jobs.build.steps.find((step) => step.name === 'Package asset').run
+    assert.match(build, /bun scripts\/build-viewer\.ts/)
+    assert.match(build, /dist\/viewer\/dist\/main\.js/)
+    assert.match(pack, /tar .* astrale viewer/)
+    assert.match(pack, /viewer\/dist\/index\.html/)
+    assert.match(pack, /viewer\/dist\/main\.js/)
+  })
+
+  it('installs the standalone viewer assets beside the executable', () => {
+    const installer = read('install.sh')
+    assert.match(installer, /install -m 0644 .*viewer\/dist\/main\.js/)
+    assert.match(installer, /install -m 0644 .*viewer\/dist\/index\.html/)
   })
 
   it('defaults standalone installs to beta while retaining the channel override', () => {

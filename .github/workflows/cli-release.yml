@@ -87,14 +87,21 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
+          bun scripts/build-viewer.ts
+          mkdir -p dist/viewer
+          cp -R viewer/dist dist/viewer/dist
           bun build --compile --target=${{ matrix.bun_target }} bin/astrale.ts --outfile dist/astrale
           ./dist/astrale --version
           ./dist/astrale --help >/dev/null
+          test -s dist/viewer/dist/main.js
+          test -s dist/viewer/dist/index.html
       - name: Package asset
         run: |
           set -eu
           asset="astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}"
-          tar -C dist -czf "$asset.tar.gz" astrale
+          tar -C dist -czf "$asset.tar.gz" astrale viewer
+          tar -tzf "$asset.tar.gz" | grep -qx 'viewer/dist/main.js'
+          tar -tzf "$asset.tar.gz" | grep -qx 'viewer/dist/index.html'
       - uses: actions/upload-artifact@v4
         with:
           name: astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}

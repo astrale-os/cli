@@ -231,9 +231,40 @@ async function realpathIfExists(path: string): Promise<string | undefined> {
 export async function writeInstallMetadata(
   meta: InstallMetadata,
   path = INSTALL_PATH,
+  filesystem: Pick<CohortFilesystem, 'mkdir' | 'rename' | 'rm'> &
+    Pick<typeof import('node:fs/promises'), 'writeFile'> = { mkdir, rename, rm, writeFile },
 ): Promise<void> {
-  await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, JSON.stringify(meta, null, 2) + '\n')
+  const staged = `${path}.next`
+  const previous = `${path}.previous`
+  await filesystem.mkdir(dirname(path), { recursive: true })
+  await filesystem.rm(staged, { force: true })
+  await filesystem.rm(previous, { force: true })
+  await filesystem.writeFile(staged, JSON.stringify(meta, null, 2) + '\n')
+
+  let backedUp = false
+  try {
+    try {
+      await filesystem.rename(path, previous)
+      backedUp = true
+    } catch (error) {
+      if (!isMissingFile(error)) throw error
+    }
+    await filesystem.rename(staged, path)
+    await filesystem.rm(previous, { force: true })
+  } catch (error) {
+    const rollback: unknown[] = []
+    if (backedUp) {
+      await filesystem.rename(previous, path).catch((failure) => rollback.push(failure))
+    }
+    await filesystem.rm(staged, { force: true }).catch((failure) => rollback.push(failure))
+    if (rollback.length > 0) {
+      throw new AggregateError(
+        [error, ...rollback],
+        'Install metadata update and rollback both failed.',
+      )
+    }
+    throw error
+  }
 }
 
 export function releaseBase(
@@ -258,7 +289,127 @@ export function shouldUpdate(currentVersion: string, manifestVersion: string): b
   return currentVersion !== manifestVersion
 }
 
-export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
+interface CohortFilesystem {
+  readonly chmod: typeof chmod
+  readonly copyFile: typeof copyFile
+  readonly mkdir: typeof mkdir
+  readonly rename: typeof rename
+  readonly rm: typeof rm
+}
+
+const defaultCohortFilesystem: CohortFilesystem = { chmod, copyFile, mkdir, rename, rm }
+
+export interface StandaloneCohortReplacement {
+  readonly finalize: () => Promise<void>
+  readonly rollback: () => Promise<void>
+}
+
+/** Replace the standalone executable and its Viewer as one rollback-safe cohort. */
+export async function replaceStandaloneCohort(
+  installedBinary: string,
+  nextBinary: string,
+  nextViewerDist: string,
+  filesystem: Partial<CohortFilesystem> = {},
+): Promise<StandaloneCohortReplacement> {
+  const fs = { ...defaultCohortFilesystem, ...filesystem }
+  const binDirectory = dirname(installedBinary)
+  const previousBinary = `${installedBinary}.previous`
+  const stagedBinary = `${installedBinary}.next`
+  const viewer = join(binDirectory, 'viewer')
+  const previousViewer = join(binDirectory, 'viewer.previous')
+  const stagedViewer = join(binDirectory, 'viewer.next')
+  const stagedViewerDist = join(stagedViewer, 'dist')
+
+  try {
+    await fs.rm(stagedViewer, { recursive: true, force: true })
+    await fs.mkdir(stagedViewerDist, { recursive: true })
+    await fs.copyFile(join(nextViewerDist, 'main.js'), join(stagedViewerDist, 'main.js'))
+    await fs.copyFile(join(nextViewerDist, 'index.html'), join(stagedViewerDist, 'index.html'))
+    await fs.copyFile(installedBinary, previousBinary)
+    await fs.copyFile(nextBinary, stagedBinary)
+    await fs.chmod(stagedBinary, 0o755)
+  } catch (error) {
+    await fs.rm(stagedViewer, { recursive: true, force: true }).catch(() => undefined)
+    await fs.rm(stagedBinary, { force: true }).catch(() => undefined)
+    throw error
+  }
+
+  await fs.rm(previousViewer, { recursive: true, force: true })
+  let viewerBackedUp = false
+  let viewerCommitted = false
+  let binaryCommitted = false
+  try {
+    try {
+      await fs.rename(viewer, previousViewer)
+      viewerBackedUp = true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    await fs.rename(stagedViewer, viewer)
+    viewerCommitted = true
+    await fs.rename(stagedBinary, installedBinary)
+    binaryCommitted = true
+  } catch (error) {
+    const rollback: unknown[] = []
+    if (binaryCommitted) {
+      await fs.copyFile(previousBinary, installedBinary).catch((failure) => rollback.push(failure))
+      await fs.chmod(installedBinary, 0o755).catch((failure) => rollback.push(failure))
+    }
+    if (viewerCommitted) {
+      await fs
+        .rm(viewer, { recursive: true, force: true })
+        .catch((failure) => rollback.push(failure))
+    }
+    if (viewerBackedUp) {
+      await fs.rename(previousViewer, viewer).catch((failure) => rollback.push(failure))
+    }
+    if (rollback.length > 0) {
+      throw new AggregateError([error, ...rollback], 'Standalone update and rollback both failed.')
+    }
+    throw error
+  } finally {
+    await fs.rm(stagedViewer, { recursive: true, force: true }).catch(() => undefined)
+    await fs.rm(stagedBinary, { force: true }).catch(() => undefined)
+  }
+
+  let settled = false
+  return Object.freeze({
+    finalize: async () => {
+      if (settled) return
+      settled = true
+      await fs.rm(previousViewer, { recursive: true, force: true }).catch(() => undefined)
+    },
+    rollback: async () => {
+      if (settled) return
+      settled = true
+      const rollback: unknown[] = []
+      await fs.copyFile(previousBinary, installedBinary).catch((failure) => rollback.push(failure))
+      await fs.chmod(installedBinary, 0o755).catch((failure) => rollback.push(failure))
+      await fs
+        .rm(viewer, { recursive: true, force: true })
+        .catch((failure) => rollback.push(failure))
+      if (viewerBackedUp) {
+        await fs.rename(previousViewer, viewer).catch((failure) => rollback.push(failure))
+      }
+      if (rollback.length > 0) {
+        throw new AggregateError(rollback, 'Standalone update rollback failed.')
+      }
+    },
+  })
+}
+
+interface UpdateDependencies {
+  readonly replaceStandaloneCohort: typeof replaceStandaloneCohort
+  readonly writeInstallMetadata: typeof writeInstallMetadata
+}
+
+const defaultUpdateDependencies = Object.freeze({ replaceStandaloneCohort, writeInstallMetadata })
+
+export async function updateAstrale(
+  req: UpdateRequest,
+  dependencies: Partial<UpdateDependencies> = {},
+): Promise<UpdateResult> {
+  const update = { ...defaultUpdateDependencies, ...dependencies }
   const execution = req.execution ?? detectUpdateExecution()
   if (execution.kind === 'package-managed') {
     return {
@@ -320,25 +471,33 @@ export async function updateAstrale(req: UpdateRequest): Promise<UpdateResult> {
 
     await extractTarGz(archive, tmp)
     const nextBin = join(tmp, 'astrale')
+    const nextViewer = join(tmp, 'viewer', 'dist')
     await chmod(nextBin, 0o755)
     await smokeVersion(nextBin, manifest.binaryVersion ?? manifest.version)
 
-    const previous = `${meta.bin}.previous`
-    const staged = `${meta.bin}.next`
-    await copyFile(meta.bin, previous).catch(() => undefined)
-    await copyFile(nextBin, staged)
-    await chmod(staged, 0o755)
-    await rename(staged, meta.bin)
-
-    await writeInstallMetadata(
-      {
-        ...meta,
-        channel: manifest.channel,
-        version: manifest.version,
-        installedAt: new Date().toISOString(),
-      },
-      req.installPath,
-    )
+    const replacement = await update.replaceStandaloneCohort(meta.bin, nextBin, nextViewer)
+    try {
+      await update.writeInstallMetadata(
+        {
+          ...meta,
+          channel: manifest.channel,
+          version: manifest.version,
+          installedAt: new Date().toISOString(),
+        },
+        req.installPath,
+      )
+    } catch (error) {
+      try {
+        await replacement.rollback()
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          'Standalone update metadata commit and cohort rollback both failed.',
+        )
+      }
+      throw error
+    }
+    await replacement.finalize()
 
     return {
       status: 'updated',

@@ -133,6 +133,9 @@ main() {
   mkdir -p "$install_dir"
   tar -xzf "$tmp/$asset" -C "$tmp"
   install -m 0755 "$tmp/astrale" "$install_dir/astrale"
+  mkdir -p "$install_dir/viewer/dist"
+  install -m 0644 "$tmp/viewer/dist/main.js" "$install_dir/viewer/dist/main.js"
+  install -m 0644 "$tmp/viewer/dist/index.html" "$install_dir/viewer/dist/index.html"
 
   installed_version="$("$install_dir/astrale" --version)"
   channel="${ASTRALE_CHANNEL:-beta}"
