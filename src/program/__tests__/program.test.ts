@@ -324,7 +324,7 @@ describe('help contract — UI is project tooling', () => {
     await expect(
       program.parseAsync(normalizeRootVersionArgv(['node', 'astrale', '--version'])),
     ).rejects.toMatchObject({ code: 'commander.version' })
-    expect(stdout.trim()).toBe(program.version())
+    expect(stdout.trim()).toBe(program.version() ?? '')
     expect(program.helpInformation()).toMatch(/root alias:\s+--version/u)
   })
 
