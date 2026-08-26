@@ -112,7 +112,8 @@ async function refreshSdkDeps(check: boolean, assumeYes = false): Promise<boolea
  * unified and NON-THROWING: an explicit package-managed result uses npm release
  * identity, while script-install failures remain script failures in `error`
  * instead of being recategorized. The SDK axis is already best-effort. Skills
- * report meaningful health/freshness states without exposing installer metadata.
+ * report meaningful health/freshness states. A current cohort also exposes its exact
+ * source revision, skill trees, and entrypoints without leaking installer-local paths.
  */
 export type StaleReport = {
   stale: boolean
@@ -237,7 +238,7 @@ Behavior:
   script installs only — if Astrale was installed by another package manager this
   command refuses so that manager stays in charge; downloads are checksum-verified
   before the binary is replaced. (2) The Astrale agent skills: installs every
-  top-level skill published from astrale-os/cli main, updates healthy older
+  top-level skill published from one resolved astrale-os/cli main commit, updates healthy older
   installs, repairs inconsistent installs, and verifies the result before
   reporting success. (3) SDK deps: inside a pnpm domain
   project, proposes any @astrale-os/* dependency with a newer release and, on

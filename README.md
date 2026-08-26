@@ -105,7 +105,11 @@ astrale update
 from `astrale-os/cli` is installed and healthy, and follows the beta channel by default. It reports
 whether the skill pass was unchanged, installed, updated, or repaired. Use `--check`,
 `--channel <channel>`, or `--version <version>` to control the CLI release target; skills always
-track the repository's current `main` source. `--no-skills` is the explicit opt-out.
+resolve the repository's current `main` once, verify the installed trees against that commit, and
+stamp the exact revision/tree binding into the Astrale-owned receipt. A current
+`astrale update --check --json` result includes the resolved source revision plus every shipped
+skill's Git tree and entrypoint, so runners can retain the actual loadout rather than only
+`status: current`. `--no-skills` is the explicit opt-out.
 
 ## Commands
 

@@ -143,6 +143,30 @@ Author-side tests and handoff files can report compilation, tests, and packing. 
 isolated installation, live execution, external effects, graph state, or cleanup; the acceptance owner
 must observe those boundaries independently.
 
+### Multi-owner local services
+
+SDK tooling treats the directory where the Domain command runs as the project root: it discovers
+`astrale.config.ts` there and resolves a relative preset `secrets` path from that same directory. If
+one package launches owner-local Domains with `pnpm --dir messaging ...` and
+`pnpm --dir logistics ...`, then `secrets: '.env.dev'` means `messaging/.env.dev` and
+`logistics/.env.dev`, not the package-root `.env.dev`. Keep each gitignored file beside its owning
+config, or declare an explicit relative path to the actual owner-approved file. Never copy or print
+secret values to make paths agree.
+
+`build` returns before declared secrets are loaded, and `--help` returns before project discovery.
+They therefore do not prove that a service can start. Before an expensive integrated run, let the
+acceptance owner start each owner-local service through its exact public script and observe readiness;
+keep that bounded smoke separate from Domain installation and invocation.
+
+### Package-script argument forwarding
+
+Test operator entrypoints through the exact documented package script. With pnpm 11,
+`pnpm run cleanup:graph -- --instance ...` can expose one literal leading `--` in
+`process.argv.slice(2)`. An authored argument parser should normalize at most that one package-manager
+separator before parsing named flags, while still rejecting duplicate separators, missing values,
+unknown flags, and unrelated errors. A direct `node cleanup.mjs --instance ...` test or module-load
+check does not prove the public command contract Lab will execute.
+
 ## Live evidence
 
 Use a fresh identity/session for protected calls. Prove authentication denial, callable-authority
