@@ -52,6 +52,11 @@ export type SkillApplyStatus =
 export type SkillCheckResult = {
   status: SkillCheckStatus
   error?: string
+  source?: {
+    repository: typeof ASTRALE_CLI_SKILL_SOURCE
+    revision: string
+    skills: Array<{ name: string; tree: string; entrypoint: string }>
+  }
 }
 
 export type SkillApplyResult = {
@@ -70,6 +75,8 @@ type SkillLockEntry = {
   skillFolderHash?: string
   installedAt?: string
   updatedAt?: string
+  astraleSourceRevision?: string
+  astraleSourceTree?: string
 }
 
 type SkillLock = {
@@ -83,6 +90,7 @@ type SkillState = 'absent' | 'current' | 'outdated' | 'unhealthy'
 
 type SkillInspection = {
   state: SkillState
+  sourceCurrent: boolean
   managedNames: string[]
   managedFolders: string[]
 }
@@ -297,7 +305,7 @@ async function inspectAstraleSkills(
     }),
   )
   if (managed.length === 0 && expectedPresence.every((present) => !present)) {
-    return { state: 'absent', managedNames: [], managedFolders: [] }
+    return { state: 'absent', sourceCurrent: false, managedNames: [], managedFolders: [] }
   }
 
   const folders = managed.flatMap(([name, entry]) => {
@@ -348,7 +356,7 @@ async function inspectAstraleSkills(
     }
   }
 
-  const exactCurrent =
+  const sourceCurrent =
     coherent &&
     managed.length === snapshot.skills.length &&
     folders.every(({ key, folder, entry }) => {
@@ -360,9 +368,20 @@ async function inspectAstraleSkills(
         actualHashes.get(folder) === skill.tree
       )
     })
+  const exactCurrent =
+    sourceCurrent &&
+    folders.every(({ folder, entry }) => {
+      const skill = expected.get(folder)
+      return (
+        skill !== undefined &&
+        entry.astraleSourceRevision === snapshot.revision &&
+        entry.astraleSourceTree === skill.tree
+      )
+    })
 
   return {
     state: exactCurrent ? 'current' : coherent ? 'outdated' : 'unhealthy',
+    sourceCurrent,
     managedNames: managed.map(([name]) => name),
     managedFolders: [...uniqueFolders],
   }
@@ -403,6 +422,28 @@ async function installSnapshot(
       ...(selectedAgents.length > 0 ? ['--agent', ...selectedAgents] : []),
     ),
   )
+}
+
+async function stampAstraleSource(
+  snapshot: AstraleSkillSourceSnapshot,
+  lockPath: string,
+): Promise<void> {
+  const { lock } = await readSkillLock(lockPath)
+  if (!lock) throw new Error('skill installer receipt is unavailable after installation')
+  for (const skill of snapshot.skills) {
+    const entry = lock.skills[skill.name]
+    if (
+      !entry ||
+      !sourceOwned(entry) ||
+      entry.ref !== snapshot.ref ||
+      entry.skillPath !== skill.path
+    ) {
+      throw new Error(`skill installer receipt is incomplete for ${skill.name}`)
+    }
+    entry.astraleSourceRevision = snapshot.revision
+    entry.astraleSourceTree = skill.tree
+  }
+  await writeSkillLock(lockPath, lock)
 }
 
 async function selectedAgents(home: string, lockPath: string): Promise<string[]> {
@@ -693,13 +734,27 @@ export async function checkAstraleSkills(
       dependencies.home,
       dependencies.lockPath,
     )
+    const status =
+      inspection.state === 'current'
+        ? 'current'
+        : inspection.state === 'unhealthy'
+          ? 'repair-needed'
+          : 'update-available'
     return {
-      status:
-        inspection.state === 'current'
-          ? 'current'
-          : inspection.state === 'unhealthy'
-            ? 'repair-needed'
-            : 'update-available',
+      status,
+      ...(status === 'current'
+        ? {
+            source: {
+              repository: ASTRALE_CLI_SKILL_SOURCE,
+              revision: snapshot.revision,
+              skills: snapshot.skills.map(({ name, tree, path }) => ({
+                name,
+                tree,
+                entrypoint: path,
+              })),
+            },
+          }
+        : {}),
     }
   } catch (error) {
     return { status: 'unavailable', error: error instanceof Error ? error.message : String(error) }
@@ -768,6 +823,15 @@ export async function syncAstraleSkills(
               dependencies.run,
               knownRetired,
             )
+            const installedInspection = await inspectAstraleSkills(
+              snapshot,
+              dependencies.home,
+              dependencies.lockPath,
+            )
+            if (!installedInspection.sourceCurrent) {
+              throw new Error('installed Astrale skills do not match the resolved source')
+            }
+            await stampAstraleSource(snapshot, dependencies.lockPath)
             const verified = await inspectAstraleSkills(
               snapshot,
               dependencies.home,

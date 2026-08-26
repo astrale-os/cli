@@ -145,6 +145,12 @@ async function installFixture(
 ) {
   const calls: string[][] = []
   await installer(sourceRoot, snapshot, home, lockPath, calls)('npx', [])
+  const lock = await readLock(lockPath)
+  for (const skill of snapshot.skills) {
+    lock.skills[skill.name].astraleSourceRevision = snapshot.revision
+    lock.skills[skill.name].astraleSourceTree = skill.tree
+  }
+  await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`)
 }
 
 describe('Astrale skill reconciliation', () => {
@@ -164,9 +170,17 @@ describe('Astrale skill reconciliation', () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]).toContain(`astrale-os/cli#${source.snapshot.ref}`)
     expect(requestedSkills(calls[0])).toEqual(source.snapshot.skills.map((skill) => skill.name))
-    expect(Object.keys((await readLock(target.lockPath)).skills).sort()).toEqual(
+    const installedLock = await readLock(target.lockPath)
+    expect(Object.keys(installedLock.skills).sort()).toEqual(
       source.snapshot.skills.map((skill) => skill.name).sort(),
     )
+    for (const skill of source.snapshot.skills) {
+      expect(installedLock.skills[skill.name]).toMatchObject({
+        ref: 'main',
+        astraleSourceRevision: source.snapshot.revision,
+        astraleSourceTree: skill.tree,
+      })
+    }
   })
 
   test('a coherent older cohort updates every current source skill', async () => {
@@ -398,7 +412,18 @@ describe('Astrale skill reconciliation', () => {
         lockPath: target.lockPath,
         resolveSource: async () => source.snapshot,
       }),
-    ).toEqual({ status: 'current' })
+    ).toEqual({
+      status: 'current',
+      source: {
+        repository: 'astrale-os/cli',
+        revision: source.snapshot.revision,
+        skills: source.snapshot.skills.map(({ name, tree, path }) => ({
+          name,
+          tree,
+          entrypoint: path,
+        })),
+      },
+    })
     expect(await filesystemSnapshot(target.root)).toBe(beforeCurrentCheck)
 
     await rm(join(target.home, '.agents/skills/astrale-cli'), { recursive: true, force: true })

@@ -118,7 +118,19 @@ try {
   const unchanged = runUpdate(updateCase.env)
   assert.match(unchanged.stdout, /Astrale skills already up to date/u)
   assert.equal(canonicalSnapshot(updateCase.home), afterUpdate)
-  assert.equal(runCheck(updateCase.env).skills.status, 'current')
+  const checked = runCheck(updateCase.env).skills
+  assert.equal(checked.status, 'current')
+  assert.equal(checked.source.repository, 'astrale-os/cli')
+  assert.match(checked.source.revision, /^[0-9a-f]{40}$/u)
+  assert.deepEqual(checked.source.skills.map(({ name }) => name).sort(), [...skillNames].sort())
+  const receipt = JSON.parse(
+    readFileSync(join(updateCase.home, '..', 'state', 'skills', '.skill-lock.json'), 'utf8'),
+  )
+  for (const skill of checked.source.skills) {
+    assert.match(skill.tree, /^[0-9a-f]{40}$/u)
+    assert.equal(receipt.skills[skill.name].astraleSourceRevision, checked.source.revision)
+    assert.equal(receipt.skills[skill.name].astraleSourceTree, skill.tree)
+  }
 
   const expectedDomainSkill = readFileSync(
     join(updateCase.home, '.agents', 'skills', 'astrale-domain', 'SKILL.md'),

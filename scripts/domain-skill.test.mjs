@@ -45,6 +45,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   const integrations = readFileSync(join(root, 'references', 'integrations.md'), 'utf8')
   const modeling = readFileSync(join(root, 'references', 'modeling.md'), 'utf8')
   const views = readFileSync(join(root, 'references', 'views.md'), 'utf8')
+  const development = readFileSync(join(root, 'references', 'development.md'), 'utf8')
 
   assert.match(entrypoint, /Keep authorization in Schema-owned Policy and callable `auth` mode/)
   assert.match(implementing, /defineAction/)
@@ -58,10 +59,11 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   )
   assert.match(integrations, /defineIntegration/)
   assert.match(integrations, /Runtime `initialize\(environment\)`/)
-  assert.match(
-    readFileSync(join(root, 'references', 'development.md'), 'utf8'),
-    /Use ordinary imports for pure helpers and Rules/,
-  )
+  assert.match(development, /Use ordinary imports for pure helpers and Rules/)
+  assert.match(development, /resolves a relative preset `secrets` path from that same directory/)
+  assert.match(development, /`pnpm run cleanup:graph -- --instance \.\.\.`/)
+  assert.match(development, /normalize at most that one package-manager\s+separator/)
+  assert.match(development, /`build` returns before declared secrets are loaded/)
   assert.match(modeling, /Object definitions\s+belong to one Class hierarchy/)
   assert.match(modeling, /rather than parallel object-definition kinds/)
   assert.match(views, /defineFrontend/)
