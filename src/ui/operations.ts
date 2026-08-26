@@ -6,6 +6,7 @@ import { digest, parseUiLock, readUiLock } from './lock'
 import {
   UI_PACKAGE,
   UI_PRESETS,
+  UI_LOCK_FILE,
   UiError,
   type UiLock,
   type UiPreset,
@@ -28,6 +29,46 @@ import { defaultUiRunner, shadcnInvocation, type UiRunner } from './runner'
 
 type Dependencies = { fetcher?: typeof fetch; runner?: UiRunner }
 
+const LOCAL_THEME_MAX_BYTES = 131_072
+const THEME_SLUG = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u
+const REQUIRED_THEME_TOKENS = [
+  'background',
+  'foreground',
+  'card',
+  'card-foreground',
+  'popover',
+  'popover-foreground',
+  'primary',
+  'primary-foreground',
+  'secondary',
+  'secondary-foreground',
+  'muted',
+  'muted-foreground',
+  'accent',
+  'accent-foreground',
+  'destructive',
+  'destructive-foreground',
+  'border',
+  'input',
+  'ring',
+  'chart-1',
+  'chart-2',
+  'chart-3',
+  'chart-4',
+  'chart-5',
+  'font-body',
+  'font-heading',
+  'radius',
+  'radius-panel',
+  'control-height',
+  'control-height-sm',
+  'control-height-lg',
+  'shadow-control',
+  'shadow-panel',
+  'motion-fast',
+  'motion-standard',
+] as const
+
 async function exists(target: string): Promise<boolean> {
   return access(target).then(
     () => true,
@@ -37,6 +78,60 @@ async function exists(target: string): Promise<boolean> {
 
 async function readOptional(target: string): Promise<string | undefined> {
   return readFile(target, 'utf8').catch(() => undefined)
+}
+
+function isLocalThemeAddress(address: string): boolean {
+  return (address.startsWith('./') || address.startsWith('../')) && address.endsWith('.css')
+}
+
+function admitLocalThemeCss(source: string, slug: string): void {
+  if (new TextEncoder().encode(source).byteLength > LOCAL_THEME_MAX_BYTES) {
+    throw new UiError('UI_ITEM_CONFLICT', 'Local theme CSS exceeds 128 KiB.')
+  }
+  if (
+    !source.includes('Consumer-owned after installation.') ||
+    !source.includes("[data-ui-theme='" + slug + "']") ||
+    !source.includes("[data-ui-theme='" + slug + "'].dark") ||
+    /@import\b|url\s*\(/iu.test(source) ||
+    REQUIRED_THEME_TOKENS.some(
+      (token) => source.match(new RegExp(`--ui-${token}:`, 'gu'))?.length !== 2,
+    )
+  ) {
+    throw new UiError(
+      'UI_ITEM_CONFLICT',
+      'Local theme CSS is not an admitted Astrale playground export.',
+      'Export the CSS from the Astrale UI playground, keep its filename aligned with the theme name, and try again.',
+    )
+  }
+}
+
+function themeImport(project: UiProject, target: string): string {
+  let relative = path.relative(path.dirname(project.cssPath), target).split(path.sep).join('/')
+  if (!relative.startsWith('.')) relative = './' + relative
+  return "@import '" + relative + "';"
+}
+
+function activateTheme(current: string, statement: string): string {
+  const lines = current
+    .split(/\r?\n/u)
+    .filter(
+      (line) =>
+        !/^@import\s+['"][^'"]*components\/astrale\/theme\/[a-z][a-z0-9-]*\.css['"];?\s*$/u.test(
+          line,
+        ),
+    )
+  const packageImport = lines.reduce(
+    (last, line, index) =>
+      /^@import\s+['"]@astrale-os\/ui\/(?:theme\.css|presets\/[a-z-]+\.css)['"];?\s*$/u.test(line)
+        ? index
+        : last,
+    -1,
+  )
+  lines.splice(packageImport + 1, 0, statement)
+  return lines
+    .join('\n')
+    .replace(/\n{3,}/gu, '\n\n')
+    .replace(/^\n/u, '')
 }
 
 function manifestDependencies(manifest: Record<string, unknown>): Record<string, string> {
@@ -191,6 +286,7 @@ export async function initUi(
   dependencies: Dependencies = {},
 ): Promise<Record<string, unknown>> {
   const project = await discoverUiProject(options.path)
+  await assertSafePlannedTarget(project, UI_LOCK_FILE)
   assertSupportedUiProject(project)
   const preset = options.preset ?? 'astrale'
   if (!UI_PRESETS.includes(preset)) {
@@ -427,6 +523,85 @@ async function lockedRelease(
   return { lock, release }
 }
 
+async function addLocalTheme(
+  address: string,
+  project: UiProject,
+  options: { dryRun?: boolean; overwrite?: boolean },
+): Promise<Record<string, unknown>> {
+  const sourcePath = path.resolve(project.root, address)
+  const sourceInfo = await lstat(sourcePath).catch(() => undefined)
+  if (!sourceInfo?.isFile() || sourceInfo.isSymbolicLink()) {
+    throw new UiError('UI_ITEM_NOT_FOUND', 'Local theme is not a regular file: ' + address)
+  }
+  const slug = path.basename(sourcePath, '.css')
+  if (!THEME_SLUG.test(slug)) {
+    throw new UiError(
+      'UI_ITEM_CONFLICT',
+      'Local theme filename must be a kebab-case theme name.',
+      'Rename it to a name such as observatory.css.',
+    )
+  }
+  const source = await readFile(sourcePath, 'utf8')
+  admitLocalThemeCss(source, slug)
+
+  const lock = await readUiLock(project.uiLockPath)
+  const canonicalAddress = 'theme/' + slug
+  const relativeTarget = 'components/astrale/theme/' + slug + '.css'
+  const target = await assertSafePlannedTarget(project, relativeTarget)
+  const existing = await readOptional(target)
+  const installed = lock.items[canonicalAddress]
+  if (existing !== undefined && !installed && !options.overwrite) {
+    throw new UiError(
+      'UI_LOCAL_CHANGES',
+      'Theme target already exists outside the Astrale UI lock: ' + relativeTarget,
+      'Review the file, then repeat with explicit --overwrite --yes.',
+    )
+  }
+  if (installed && !options.overwrite) {
+    const expected = installed.files[relativeTarget]
+    if (!expected || digest(existing ?? '') !== expected) {
+      throw new UiError(
+        'UI_LOCAL_CHANGES',
+        'Installed UI file has local changes: ' + relativeTarget,
+        'Review the file, then repeat add with explicit --overwrite --yes.',
+      )
+    }
+  }
+  const statement = themeImport(project, target)
+  const result = {
+    status: options.dryRun ? 'planned' : 'installed',
+    items: [canonicalAddress],
+    files: { [canonicalAddress]: { [relativeTarget]: digest(source) } },
+    activation: { file: projectRelative(project, project.cssPath), import: statement },
+    source: address,
+  }
+  if (options.dryRun) return result
+
+  const snapshots = new Map<string, string | undefined>()
+  for (const mutation of [target, project.cssPath, project.uiLockPath]) {
+    snapshots.set(mutation, await readOptional(mutation))
+  }
+  try {
+    await mkdir(path.dirname(target), { recursive: true })
+    await writeFile(target, source, 'utf8')
+    const css = (await readOptional(project.cssPath)) ?? ''
+    await writeFile(project.cssPath, activateTheme(css, statement), 'utf8')
+    lock.items[canonicalAddress] = {
+      address: canonicalAddress,
+      sourceDigest: digest(source),
+      files: { [relativeTarget]: digest(source) },
+    }
+    await writeJson(project.uiLockPath, lock)
+    return result
+  } catch (error) {
+    for (const [mutation, previous] of snapshots) {
+      if (previous === undefined) await rm(mutation, { force: true })
+      else await writeFile(mutation, previous, 'utf8')
+    }
+    throw error
+  }
+}
+
 export async function addUi(
   addresses: string[],
   options: { project?: string; dryRun?: boolean; overwrite?: boolean; yes?: boolean },
@@ -436,11 +611,7 @@ export async function addUi(
     throw new UiError('UI_ITEM_NOT_FOUND', 'No UI item was provided.')
   }
   const project = await discoverUiProject(options.project)
-  const { lock, release } = await lockedRelease(project, dependencies.fetcher)
-  const items = addresses.map((address) => findItem(release, address))
-  const itemDocuments = await Promise.all(
-    items.map((item) => readUiRegistryItem(release, item, dependencies.fetcher)),
-  )
+  await assertSafePlannedTarget(project, UI_LOCK_FILE)
   if (options.overwrite && !options.yes) {
     throw new UiError(
       'UI_LOCAL_CHANGES',
@@ -448,6 +619,25 @@ export async function addUi(
       'Review the locally edited files, then repeat with both --overwrite and --yes.',
     )
   }
+  const localThemes = addresses.filter(isLocalThemeAddress)
+  if (localThemes.length > 0) {
+    if (addresses.length !== 1) {
+      throw new UiError(
+        'UI_ITEM_CONFLICT',
+        'Install one local theme at a time and do not mix local files with registry addresses.',
+      )
+    }
+    return addLocalTheme(localThemes[0]!, project, options)
+  }
+  const { lock, release } = await lockedRelease(project, dependencies.fetcher)
+  const items = addresses.map((address) => findItem(release, address))
+  const themes = items.filter((item) => item.type === 'registry:theme')
+  if (themes.length > 1) {
+    throw new UiError('UI_ITEM_CONFLICT', 'Only one theme can be activated per add operation.')
+  }
+  const itemDocuments = await Promise.all(
+    items.map((item) => readUiRegistryItem(release, item, dependencies.fetcher)),
+  )
   await rejectLocalChanges(project, lock, items, options.overwrite === true)
   const targets = (
     await Promise.all(
@@ -469,7 +659,13 @@ export async function addUi(
   ])
   const snapshots = new Map<string, string | undefined>()
   if (!options.dryRun) {
-    for (const target of [project.packageJsonPath, project.lockPath!, ...targets]) {
+    for (const target of [
+      project.packageJsonPath,
+      project.lockPath!,
+      project.cssPath,
+      project.uiLockPath,
+      ...targets,
+    ]) {
       snapshots.set(target, await readOptional(target))
     }
   }
@@ -494,6 +690,13 @@ export async function addUi(
         }
       }
       await pinUiDependency(project, lock.package.version, dependencies.runner ?? defaultUiRunner)
+      const theme = themes[0]
+      const themeTarget = theme?.files[0]?.target
+      if (themeTarget) {
+        const target = await safeTarget(project, themeTarget)
+        const css = (await readOptional(project.cssPath)) ?? ''
+        await writeFile(project.cssPath, activateTheme(css, themeImport(project, target)), 'utf8')
+      }
     }
   } catch (error) {
     for (const [target, previous] of snapshots) {
@@ -513,6 +716,15 @@ export async function addUi(
       })),
       command: [invocation.file, ...invocation.args],
       output: result.stdout,
+      activation: themes[0]
+        ? {
+            file: projectRelative(project, project.cssPath),
+            import: themeImport(
+              project,
+              targets.find((target) => target.endsWith('.css'))!,
+            ),
+          }
+        : undefined,
     }
   }
 
@@ -589,6 +801,15 @@ export async function doctorUi(
         checks.push({ check: 'item:' + item.address + ':' + file, ok: actual === expected })
       }
     }
+    const themeFiles = Object.values(lock.items)
+      .filter((item) => item.address.startsWith('theme/'))
+      .flatMap((item) => Object.keys(item.files).filter((file) => file.endsWith('.css')))
+    if (themeFiles.length > 0) {
+      const active = themeFiles.some((file) =>
+        css.includes(themeImport(project, path.join(project.root, file))),
+      )
+      checks.push({ check: 'theme-active', ok: active })
+    }
   }
   return { healthy: checks.every((check) => check.ok), checks }
 }
@@ -601,6 +822,7 @@ export async function applyPreset(
     throw new UiError('UI_ITEM_NOT_FOUND', 'Unknown preset: ' + preset)
   }
   const project = await discoverUiProject(options.project)
+  await assertSafePlannedTarget(project, UI_LOCK_FILE)
   const lock = await readUiLock(project.uiLockPath)
   const css = (await readOptional(project.cssPath)) ?? ''
   const next = css.replace(
