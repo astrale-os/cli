@@ -1,30 +1,25 @@
 import { describe, expect, test } from 'bun:test'
 
-import { adminBinding, adminSession } from '../../__tests__/fixture'
+import { adminSession } from '../../__tests__/fixture'
 import { connectAdminInstances } from '../client'
 
-function fixture(input: {
-  invoke?: (method: { owner: string; name: string }, receiver: unknown, input: unknown) => unknown
-}) {
+function fixture(input: { invoke?: (target: string, input: unknown) => unknown }) {
   const calls: Array<{
-    method: { owner: string; name: string }
-    receiver: string
+    target: string
     value: unknown
   }> = []
-  const remote = adminSession((method, receiver, value) => {
-    calls.push({ method, receiver: String(receiver), value })
-    return input.invoke?.(method, receiver, value)
+  const remote = adminSession((target, value) => {
+    calls.push({ target, value })
+    return input.invoke?.(target, value)
   })
-  const binding = adminBinding()
   return {
-    binding,
-    invoke: remote.invoke,
+    call: remote.call,
+    reflection: remote.reflection,
     calls,
     connect: () =>
       connectAdminInstances(
         { session: remote.session },
         {
-          bind: async () => binding,
           operationId: (kind) => `cli.instance.${kind}:test`,
         },
       ),
@@ -34,13 +29,15 @@ function fixture(input: {
 describe('V2 Admin Instance adapter', () => {
   test('lists caller-visible Instances through the Admin-owned Fleet operation', async () => {
     const contract = fixture({
-      invoke: (method) =>
-        method.name === 'listInstances'
+      invoke: (target) =>
+        target.endsWith('::listInstances')
           ? [
               {
                 id: '@instance-node',
                 slug: 'demo',
                 url: 'https://demo.eu.astrale.ai',
+                hostId: '@host-node',
+                region: 'fr-par',
                 state: 'ready',
                 createdAt: '2026-08-12T00:00:00.000Z',
                 updatedAt: '2026-08-12T00:00:00.000Z',
@@ -54,17 +51,20 @@ describe('V2 Admin Instance adapter', () => {
         id: '@instance-node',
         slug: 'demo',
         url: 'https://demo.eu.astrale.ai',
+        hostId: '@host-node',
+        region: 'fr-par',
         state: 'ready',
         createdAt: '2026-08-12T00:00:00.000Z',
+        updatedAt: '2026-08-12T00:00:00.000Z',
       },
     ])
     expect(contract.calls).toEqual([
       {
-        method: { owner: 'Fleet', name: 'listInstances' },
-        receiver: '/:admin.astrale.ai:core.fleet::listInstances',
+        target: '/:admin.astrale.ai:core.fleet::listInstances',
         value: {},
       },
     ])
+    expect(contract.reflection).not.toHaveBeenCalled()
   })
 
   test('delegates default placement to Fleet without reading Host inventory', async () => {
@@ -87,8 +87,7 @@ describe('V2 Admin Instance adapter', () => {
     })
     expect(contract.calls).toEqual([
       {
-        method: { owner: 'Fleet', name: 'createInstance' },
-        receiver: '/:admin.astrale.ai:core.fleet::createInstance',
+        target: '/:admin.astrale.ai:core.fleet::createInstance',
         value: { operationId: 'cli.instance.create:test', slug: 'demo' },
       },
     ])
@@ -96,8 +95,8 @@ describe('V2 Admin Instance adapter', () => {
 
   test('refreshes and deletes through the resolved Instance receiver', async () => {
     const contract = fixture({
-      invoke: (method) =>
-        method.name === 'listInstances'
+      invoke: (target) =>
+        target.endsWith('::listInstances')
           ? [
               {
                 id: '@instance-node',
@@ -112,25 +111,34 @@ describe('V2 Admin Instance adapter', () => {
               id: '@instance-node',
               slug: 'demo',
               url: 'https://demo.eu.astrale.ai',
-              state: method.name === 'delete' ? 'deleted' : 'ready',
+              state: target.endsWith('::delete') ? 'deleted' : 'ready',
+              createdAt: '2026-08-12T00:00:00.000Z',
+              updatedAt: '2026-08-12T00:00:00.000Z',
             },
     })
     const api = await contract.connect()
 
     await expect(api.status('demo')).resolves.toMatchObject({ state: 'ready' })
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
-    expect(contract.calls.map(({ method }) => method)).toEqual([
-      { owner: 'Fleet', name: 'listInstances' },
-      { owner: 'Instance', name: 'status' },
-      { owner: 'Fleet', name: 'listInstances' },
-      { owner: 'Instance', name: 'delete' },
+    expect(contract.calls).toEqual([
+      { target: '/:admin.astrale.ai:core.fleet::listInstances', value: {} },
+      {
+        target: '@instance-node::status',
+        value: { operationId: 'cli.instance.status:test' },
+      },
+      { target: '/:admin.astrale.ai:core.fleet::listInstances', value: {} },
+      {
+        target: '@instance-node::delete',
+        value: { operationId: 'cli.instance.delete:test' },
+      },
     ])
+    expect(contract.reflection).not.toHaveBeenCalled()
   })
 
   test('installs a resolved catalog Domain through Instance.installDomain', async () => {
     const contract = fixture({
-      invoke: (method) =>
-        method.name === 'listInstances'
+      invoke: (target) =>
+        target.endsWith('::listInstances')
           ? [
               {
                 id: '@instance-node',
@@ -158,9 +166,108 @@ describe('V2 Admin Instance adapter', () => {
       ok: true,
     })
     expect(contract.calls.at(-1)).toEqual({
-      method: { owner: 'Instance', name: 'installDomain' },
-      receiver: '@instance-node::installDomain',
+      target: '@instance-node::installDomain',
       value: { operationId: 'cli.instance.install-domain:test', domain: '@crm-domain' },
     })
+    expect(contract.reflection).not.toHaveBeenCalled()
+  })
+
+  test('connects without network I/O and list performs exactly one call', async () => {
+    const contract = fixture({ invoke: () => [] })
+
+    const api = await contract.connect()
+    expect(contract.call).not.toHaveBeenCalled()
+    expect(contract.reflection).not.toHaveBeenCalled()
+
+    await expect(api.list()).resolves.toEqual([])
+    expect(contract.call).toHaveBeenCalledTimes(1)
+    expect(contract.reflection).not.toHaveBeenCalled()
+  })
+
+  test('rejects malformed inventory, lifecycle, Method, and install outputs', async () => {
+    await expect((await fixture({ invoke: () => ({}) }).connect()).list()).rejects.toThrow(
+      'Admin Instance inventory is invalid.',
+    )
+    await expect(
+      (
+        await fixture({
+          invoke: () => [{ id: '@instance-node', slug: 'demo', state: 'mystery' }],
+        }).connect()
+      ).list(),
+    ).rejects.toThrow('Admin Instance state is invalid.')
+    await expect(
+      (
+        await fixture({
+          invoke: () => [{ id: 'not-a-path', slug: 'demo', state: 'ready' }],
+        }).connect()
+      ).list(),
+    ).rejects.toThrow('Admin Instance id is invalid.')
+    await expect(
+      (
+        await fixture({
+          invoke: () => [
+            { id: '@instance-node', slug: 'demo', hostId: 'not-a-path', state: 'ready' },
+          ],
+        }).connect()
+      ).list(),
+    ).rejects.toThrow('Admin Host id is invalid.')
+
+    const malformedStatus = fixture({
+      invoke: (target) =>
+        target.endsWith('::listInstances')
+          ? [
+              {
+                id: '@instance-node',
+                slug: 'demo',
+                state: 'ready',
+                createdAt: '2026-08-12T00:00:00.000Z',
+                updatedAt: '2026-08-12T00:00:00.000Z',
+              },
+            ]
+          : {
+              id: '@instance-node',
+              slug: 'demo',
+              state: 'ready',
+              failure: {},
+              createdAt: '2026-08-12T00:00:00.000Z',
+              updatedAt: '2026-08-12T00:00:00.000Z',
+            },
+    })
+    await expect((await malformedStatus.connect()).status('demo')).rejects.toThrow(
+      'Admin failure message is invalid.',
+    )
+
+    const malformedInstall = fixture({
+      invoke: (target) =>
+        target.endsWith('::listInstances')
+          ? [
+              {
+                id: '@instance-node',
+                slug: 'demo',
+                state: 'ready',
+                createdAt: '2026-08-12T00:00:00.000Z',
+                updatedAt: '2026-08-12T00:00:00.000Z',
+              },
+            ]
+          : {
+              domain: '@crm-domain',
+              instance: '@instance-node',
+              origin: 'crm.acme.dev',
+              ok: 'yes',
+            },
+    })
+    await expect(
+      (await malformedInstall.connect()).installDomain('demo', '@crm-domain'),
+    ).rejects.toThrow('Admin Domain install outcome is invalid.')
+
+    const malformedInstallPath = fixture({
+      invoke: (target) =>
+        target.endsWith('::listInstances')
+          ? [{ id: '@instance-node', slug: 'demo', state: 'ready' }]
+          : { domain: 'not-a-path', instance: '@instance-node', origin: 'crm.acme.dev', ok: true },
+    })
+    await expect(
+      (await malformedInstallPath.connect()).installDomain('demo', '@crm-domain'),
+    ).rejects.toThrow('Admin Domain reference is invalid.')
   })
 })

@@ -5,10 +5,13 @@ export interface InstanceInfo {
   readonly id: string
   readonly slug: string
   readonly url: string
+  readonly hostId?: string
+  readonly region?: string
   readonly state: InstanceState
   readonly phase?: string
   readonly error?: string | null
   readonly createdAt?: string
+  readonly updatedAt?: string
   readonly organizationId?: string
 }
 
