@@ -544,6 +544,17 @@ async function addLocalTheme(
   const source = await readFile(sourcePath, 'utf8')
   admitLocalThemeCss(source, slug)
 
+  return installThemeCss(slug, source, digest(source), address, project, options)
+}
+
+async function installThemeCss(
+  slug: string,
+  source: string,
+  sourceDigest: string,
+  sourceLabel: string,
+  project: UiProject,
+  options: { dryRun?: boolean; overwrite?: boolean },
+): Promise<Record<string, unknown>> {
   const lock = await readUiLock(project.uiLockPath)
   const canonicalAddress = 'theme/' + slug
   const relativeTarget = 'components/astrale/theme/' + slug + '.css'
@@ -573,7 +584,7 @@ async function addLocalTheme(
     items: [canonicalAddress],
     files: { [canonicalAddress]: { [relativeTarget]: digest(source) } },
     activation: { file: projectRelative(project, project.cssPath), import: statement },
-    source: address,
+    source: sourceLabel,
   }
   if (options.dryRun) return result
 
@@ -588,7 +599,7 @@ async function addLocalTheme(
     await writeFile(project.cssPath, activateTheme(css, statement), 'utf8')
     lock.items[canonicalAddress] = {
       address: canonicalAddress,
-      sourceDigest: digest(source),
+      sourceDigest,
       files: { [relativeTarget]: digest(source) },
     }
     await writeJson(project.uiLockPath, lock)
@@ -600,6 +611,28 @@ async function addLocalTheme(
     }
     throw error
   }
+}
+
+async function addReleasedTheme(
+  item: UiRegistryItem,
+  document: UiRegistryItem,
+  project: UiProject,
+  options: { dryRun?: boolean; overwrite?: boolean },
+): Promise<Record<string, unknown>> {
+  const slug = item.meta.canonicalAddress.slice('theme/'.length)
+  const source = document.files[0]?.content
+  if (typeof source !== 'string') {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'The released theme has no admitted CSS source.')
+  }
+  admitLocalThemeCss(source, slug)
+  return installThemeCss(
+    slug,
+    source,
+    digest(JSON.stringify(document)),
+    item.meta.canonicalAddress,
+    project,
+    options,
+  )
 }
 
 export async function addUi(
@@ -638,6 +671,15 @@ export async function addUi(
   const itemDocuments = await Promise.all(
     items.map((item) => readUiRegistryItem(release, item, dependencies.fetcher)),
   )
+  if (themes.length === 1) {
+    if (items.length !== 1) {
+      throw new UiError(
+        'UI_ITEM_CONFLICT',
+        'Install a released theme separately from patterns and blocks.',
+      )
+    }
+    return addReleasedTheme(themes[0]!, itemDocuments[0]!, project, options)
+  }
   await rejectLocalChanges(project, lock, items, options.overwrite === true)
   const targets = (
     await Promise.all(
