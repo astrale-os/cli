@@ -26,6 +26,17 @@ afterEach(async () => {
 })
 
 describe('viewer asset resolution', () => {
+  test('keeps long placement labels from widening the mounted View viewport', async () => {
+    const source = await readFile(
+      join(import.meta.dirname, '..', '..', '..', 'viewer', 'index.html'),
+      'utf8',
+    )
+
+    expect(source).toContain('#view-label,')
+    expect(source).toContain('text-overflow: ellipsis;')
+    expect(source).toContain('#frame {\n        flex: 1;\n        min-width: 0;')
+  })
+
   test('skips partial candidates and prefers complete package-owned assets', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-view-candidates-'))
     temporaryDirectories.push(root)
