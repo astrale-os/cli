@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.24](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.23...cli/v1.0.0-beta.24) (2026-08-26)
+
+
+### Bug Fixes
+
+* **ui:** resolve consumer registry targets ([#187](https://github.com/astrale-os/cli/issues/187)) ([cd16bd6](https://github.com/astrale-os/cli/commit/cd16bd6970670bc651fbfdb06782f43345810fe8))
+
 ## [1.0.0-beta.23](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.22...cli/v1.0.0-beta.23) (2026-08-26)
 
 
