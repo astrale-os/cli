@@ -113,6 +113,14 @@ jobs:
           ./dist/astrale --help >/dev/null
           test -s dist/viewer/dist/main.js
           test -s dist/viewer/dist/index.html
+      - name: Qualify skill update with the built binary
+        env:
+          ASTRALE_E2E_CLI: ./dist/astrale
+          GH_TOKEN: ''
+          GITHUB_TOKEN: ''
+          NODE_AUTH_TOKEN: ''
+          NPM_TOKEN: ''
+        run: pnpm test:skills-e2e
       - name: Package asset
         run: |
           set -eu
@@ -209,6 +217,23 @@ jobs:
             gh release edit "$CHANNEL" --title "Astrale CLI $CHANNEL" --notes "Current $CHANNEL build: $VERSION" $flags
           fi
           gh release upload "$CHANNEL" release-assets/* --clobber
+      - name: Qualify the published channel binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          NODE_AUTH_TOKEN: ''
+          NPM_TOKEN: ''
+        run: |
+          set -eu
+          qualification_dir="$(mktemp -d)"
+          trap 'rm -rf "$qualification_dir"' EXIT
+          gh release download "$CHANNEL" \
+            --pattern astrale-linux-x64.tar.gz \
+            --dir "$qualification_dir"
+          tar -C "$qualification_dir" -xzf "$qualification_dir/astrale-linux-x64.tar.gz"
+          GH_TOKEN='' GITHUB_TOKEN='' \
+            ASTRALE_E2E_CLI="$qualification_dir/astrale" \
+            node scripts/qualification/skills-update-e2e.mjs
       - name: Release summary
         run: |
           cat <<EOF >> "$GITHUB_STEP_SUMMARY"

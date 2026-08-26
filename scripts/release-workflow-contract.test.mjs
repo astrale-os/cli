@@ -92,6 +92,21 @@ describe('release workflow contract', () => {
     assert.match(pack, /viewer\/dist\/main\.js/)
   })
 
+  it('qualifies skill reconciliation before and after publishing', () => {
+    const buildQualification = binary.jobs.build.steps.find(
+      (step) => step.name === 'Qualify skill update with the built binary',
+    )
+    assert.equal(buildQualification.env.ASTRALE_E2E_CLI, './dist/astrale')
+    assert.match(buildQualification.run, /pnpm test:skills-e2e/)
+
+    const publishedQualification = binary.jobs.publish.steps.find(
+      (step) => step.name === 'Qualify the published channel binary',
+    )
+    assert.match(publishedQualification.run, /gh release download "\$CHANNEL"/)
+    assert.match(publishedQualification.run, /astrale-linux-x64\.tar\.gz/)
+    assert.match(publishedQualification.run, /scripts\/qualification\/skills-update-e2e\.mjs/)
+  })
+
   it('installs the standalone viewer assets beside the executable', () => {
     const installer = read('install.sh')
     assert.match(installer, /install -m 0644 .*viewer\/dist\/main\.js/)

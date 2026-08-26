@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { StudioSchemaBundle, ViewInfo } from '../shared/types'
+import type { StaleReport, StudioSchemaBundle, ViewInfo } from '../shared/types'
 
 import { STUDIO_CLI_DESCRIPTOR_ENV } from './cli'
 import { activeInstanceName, listInstances, setActiveInstance } from './instances/active'
@@ -209,6 +209,7 @@ describe('workspace update CLI orchestration', () => {
                 latest: '0.8.0',
                 channel: 'latest',
               },
+              skills: { status: 'update-available' },
               sdk: {
                 stale: true,
                 inProject: true,
@@ -235,6 +236,7 @@ describe('workspace update CLI orchestration', () => {
         latest: '0.8.0',
         channel: 'latest',
       },
+      skills: { status: 'update-available' },
       sdk: {
         stale: true,
         inProject: true,
@@ -251,6 +253,31 @@ describe('workspace update CLI orchestration', () => {
     ])
   })
 
+  test('accepts an older CLI report without a skills axis during binary replacement', async () => {
+    const checkArgs = ['update', '--check', '--json']
+    const fake = installFakeCli([
+      {
+        args: checkArgs,
+        responses: [
+          {
+            stdout: {
+              stale: false,
+              cli: { stale: false, managed: true },
+              sdk: { stale: false, inProject: false, outdated: [] },
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(await getUpdates(fake.root)).toEqual({
+      stale: false,
+      cli: { stale: false, managed: true },
+      skills: { status: 'current' },
+      sdk: { stale: false, inProject: false, outdated: [] },
+    })
+  })
+
   test('hides the badge when check output is malformed or fails', async () => {
     const checkArgs = ['update', '--check', '--json']
     const fake = installFakeCli([
@@ -262,6 +289,7 @@ describe('workspace update CLI orchestration', () => {
             stdout: {
               stale: true,
               cli: { stale: true, managed: true },
+              skills: { status: 'current' },
               sdk: {
                 stale: true,
                 inProject: true,
@@ -274,9 +302,10 @@ describe('workspace update CLI orchestration', () => {
         ],
       },
     ])
-    const expected = {
+    const expected: StaleReport = {
       stale: false,
       cli: { stale: false, managed: true },
+      skills: { status: 'current' },
       sdk: { stale: false, inProject: false, outdated: [] },
     }
 

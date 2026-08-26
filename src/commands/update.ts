@@ -11,7 +11,12 @@ import {
   inDomainProject,
   type SdkOutdated,
 } from '../lib/sdk-deps'
-import { ASTRALE_CLI_SKILL, detectSkill, installSkills, SKILL_INSTALL_HINT } from '../lib/skills'
+import {
+  checkAstraleSkills,
+  type SkillApplyResult,
+  type SkillCheckResult,
+  syncAstraleSkills,
+} from '../lib/skills'
 import { DEFAULT_UPDATE_CHANNEL, packageManagedUpdateError, updateAstrale } from '../lib/update'
 
 type UpdateOpts = RawOutputOpts & {
@@ -23,26 +28,26 @@ type UpdateOpts = RawOutputOpts & {
   yes?: boolean
 }
 
-/**
- * Refresh the astrale agent skills alongside the binary. Delegates to the same
- * `npx skills add` installer `astrale setup` uses; re-running it updates an
- * existing install to the latest published SKILL.md.
- *
- * Only refreshes skills the user already has — `astrale update` keeps an existing
- * install current, it does not foist skills on a non-agent user; fresh installs
- * go through `astrale setup`. Best-effort: a failure here never fails the update
- * (the binary is already swapped), so we warn and move on.
- */
-async function refreshSkills(): Promise<void> {
-  if (!detectSkill(ASTRALE_CLI_SKILL).installed) {
-    log.dim(`  Agent skills not installed — get them with: ${SKILL_INSTALL_HINT}`)
-    return
-  }
-  log.step(`Refreshing the astrale agent skills — ${SKILL_INSTALL_HINT}`)
-  if (await installSkills()) {
-    log.success('astrale agent skills up to date')
-  } else {
-    log.warn(`Skill refresh did not complete — run it later: ${SKILL_INSTALL_HINT}`)
+async function refreshSkills(): Promise<SkillApplyResult> {
+  log.step('Ensuring Astrale agent skills are current and healthy')
+  const result = await syncAstraleSkills()
+  if (result.status === 'unchanged') log.success('Astrale skills already up to date')
+  else if (result.status === 'installed') log.success('Astrale skills installed')
+  else if (result.status === 'updated') log.success('Astrale skills updated')
+  else if (result.status === 'repaired') log.success('Astrale skills repaired and updated')
+  return result
+}
+
+function skillCheckStale(skills: SkillCheckResult): boolean {
+  return skills.status === 'update-available' || skills.status === 'repair-needed'
+}
+
+function printSkillCheck(skills: SkillCheckResult): void {
+  if (skills.status === 'current') log.success('Astrale skills are up to date')
+  else if (skills.status === 'update-available') log.info('Astrale skills update available')
+  else if (skills.status === 'repair-needed') log.warn('Astrale skills need repair')
+  else if (skills.status === 'unavailable') {
+    log.warn(`Could not verify Astrale skills${skills.error ? `: ${skills.error}` : ''}`)
   }
 }
 
@@ -106,9 +111,8 @@ async function refreshSdkDeps(check: boolean, assumeYes = false): Promise<boolea
  * domain-studio polls this on load to drive its "update available" badge. It is
  * unified and NON-THROWING: an explicit package-managed result uses npm release
  * identity, while script-install failures remain script failures in `error`
- * instead of being recategorized. The SDK axis is already best-effort. Skills are
- * intentionally absent — they ride along with `astrale update`, so a stale CLI or
- * SDK is the only signal worth surfacing.
+ * instead of being recategorized. The SDK axis is already best-effort. Skills
+ * report meaningful health/freshness states without exposing installer metadata.
  */
 export type StaleReport = {
   stale: boolean
@@ -120,6 +124,7 @@ export type StaleReport = {
     channel?: string
     error?: string
   }
+  skills: SkillCheckResult
   sdk: { stale: boolean; inProject: boolean; outdated: SdkOutdated[] }
 }
 
@@ -218,7 +223,7 @@ export default {
       default: DEFAULT_UPDATE_CHANNEL,
     },
     { flags: '--version <version>', description: 'Update to an exact version tag' },
-    { flags: '--no-skills', description: 'Skip refreshing the astrale agent skills' },
+    { flags: '--no-skills', description: 'Skip ensuring the Astrale agent skills' },
     { flags: '--no-deps', description: 'Skip checking @astrale-os SDK dependency versions' },
     {
       flags: '--yes',
@@ -231,23 +236,22 @@ Behavior:
   Keeps three things current, in order. (1) The CLI binary: updates official
   script installs only — if Astrale was installed by another package manager this
   command refuses so that manager stays in charge; downloads are checksum-verified
-  before the binary is replaced. (2) The agent skills: if the astrale skills (cli +
-  domain) are already installed, refreshes them to the latest by delegating to
-  "npx skills add astrale-os/cli -g" — the same installer "astrale setup" uses;
-  fresh installs go through "astrale setup". (3) SDK deps: inside a pnpm domain
+  before the binary is replaced. (2) The Astrale agent skills: installs every
+  top-level skill published from astrale-os/cli main, updates healthy older
+  installs, repairs inconsistent installs, and verifies the result before
+  reporting success. (3) SDK deps: inside a pnpm domain
   project, proposes any @astrale-os/* dependency with a newer release and, on
   confirm, runs "pnpm update --latest --lockfile-only" (updates package.json AND
   the lockfile, honoring your registry + supply-chain age policy; run "pnpm
   install" to materialize).
 
   The default release channel is beta; --channel overrides it for one run.
-  --check is a dry run (binary + SDK deps; exit 10 if anything is available) and
+  --check is a dry run (binary + skills + SDK deps; exit 10 if anything is available) and
   never writes. With --json it emits a unified staleness report
-  ({ stale, cli, sdk }) for tooling — non-throwing, skills omitted (they ride
-  along with an update). --yes applies all three non-interactively (no prompts) and
+  ({ stale, cli, skills, sdk }) for tooling. --yes applies all three non-interactively and
   is resilient — a binary that can't self-update (package-managed) warns but never
-  blocks the skills/deps steps; this is what domain-studio's "Update now" runs.
-  --no-skills / --no-deps skip those steps in a real run.
+  blocks the skills/deps steps; a skill failure fails the command rather than
+  claiming a partial success. --no-skills / --no-deps explicitly skip those axes.
 
 Examples:
   $ astrale update
@@ -262,11 +266,18 @@ Examples:
     try {
       // Tooling path: a machine-readable `--check` (e.g. domain-studio's update
       // badge polling `astrale update --check --json`) gets a unified,
-      // non-throwing staleness report — CLI + SDK only — and exits.
+      // non-throwing staleness report and exits.
       if (opts.check && isMachine(opts)) {
         const cli = await cliStale(opts)
+        const skills: SkillCheckResult =
+          opts.skills === false ? { status: 'skipped' } : await checkAstraleSkills()
         const sdk = await sdkStale()
-        const report: StaleReport = { stale: cli.stale || sdk.stale, cli, sdk }
+        const report: StaleReport = {
+          stale: cli.stale || skillCheckStale(skills) || sdk.stale,
+          cli,
+          skills,
+          sdk,
+        }
         output(report, opts)
         if (report.stale) process.exitCode = 10
         return
@@ -316,9 +327,19 @@ Examples:
         log.warn(`CLI self-update skipped: ${error.message}`)
       }
 
-      // Axis B — agent skills. Keep an existing install current with the CLI.
-      // Skip on --check (a dry run) and when the user opted out with --no-skills.
-      if (!opts.check && opts.skills !== false) await refreshSkills()
+      // Axis B — agent skills. A successful real update guarantees a verified
+      // latest cohort; --check remains read-only and reports its status.
+      if (opts.skills !== false) {
+        if (opts.check) {
+          const skills = await checkAstraleSkills()
+          printSkillCheck(skills)
+          if (skillCheckStale(skills)) anyAvailable = true
+        } else {
+          await refreshSkills()
+        }
+      } else if (!opts.check) {
+        log.dim('  Astrale skills skipped (--no-skills)')
+      }
 
       // Axis C — first-party @astrale-os/* deps in the current domain project.
       // Runs on --check too (reports availability); --yes applies without a prompt.
@@ -328,7 +349,7 @@ Examples:
 
       if (opts.check && anyAvailable) process.exitCode = 10
     } catch (e) {
-      fatal(e)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition

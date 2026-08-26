@@ -42,6 +42,10 @@ export interface StudioSettings {
 export interface StaleReport {
   stale: boolean
   cli: { stale: boolean; managed: boolean; current?: string; latest?: string; channel?: string }
+  skills: {
+    status: 'current' | 'update-available' | 'repair-needed' | 'unavailable' | 'skipped'
+    error?: string
+  }
   sdk: {
     stale: boolean
     inProject: boolean

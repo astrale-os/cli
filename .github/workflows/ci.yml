@@ -73,6 +73,14 @@ jobs:
         run: pnpm typecheck
       - name: Test
         run: pnpm test
+      - name: Live Astrale skill update E2E
+        if: matrix.node-version == '24'
+        env:
+          GH_TOKEN: ''
+          GITHUB_TOKEN: ''
+          NODE_AUTH_TOKEN: ''
+          NPM_TOKEN: ''
+        run: pnpm test:skills-e2e
       - name: Build the Node package
         run: pnpm build
       - name: Smoke-test the Node runtime
