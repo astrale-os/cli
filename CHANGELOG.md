@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.16](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.15...cli/v1.0.0-beta.16) (2026-08-26)
+
+
+### Bug Fixes
+
+* **ui:** own Domain registry workspaces ([#166](https://github.com/astrale-os/cli/issues/166)) ([0c79838](https://github.com/astrale-os/cli/commit/0c7983856b7e51500fc17744960cea410ba70e6b))
+
 ## [1.0.0-beta.15](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.14...cli/v1.0.0-beta.15) (2026-08-26)
 
 
