@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.23](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.22...cli/v1.0.0-beta.23) (2026-08-26)
+
+
+### Features
+
+* **ui:** admit component registry items ([#186](https://github.com/astrale-os/cli/issues/186)) ([c956ccb](https://github.com/astrale-os/cli/commit/c956ccb1581ab3442243577c0b5ac22caf060b7a))
+
+
+### Bug Fixes
+
+* **cli:** align the published SDK and Shell cohort ([#184](https://github.com/astrale-os/cli/issues/184)) ([2f59091](https://github.com/astrale-os/cli/commit/2f59091d760cf3fe94d0b3e06b7f929aa85682af))
+* remove retired View auth metadata ([#185](https://github.com/astrale-os/cli/issues/185)) ([0d1273d](https://github.com/astrale-os/cli/commit/0d1273d08eac1c929e578c7ed11f286e64d3c75f))
+* **ui:** preserve development dependency ownership ([#182](https://github.com/astrale-os/cli/issues/182)) ([1ba4752](https://github.com/astrale-os/cli/commit/1ba4752519b6ad8bcecba2bab649d2798edf2cf4))
+
 ## [1.0.0-beta.22](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.21...cli/v1.0.0-beta.22) (2026-08-26)
 
 
