@@ -46,7 +46,7 @@ export default {
   description: 'Get one canonical node by Path or ID',
   afterHelpText: `
 Behavior:
-  Resolves one exact Kernel V2 Path and prints the canonical Node
+  Resolves one exact Kernel Path and prints the canonical Node
   { id, class, props }. Missing and authorization-masked nodes remain
   intentionally indistinguishable. @self is expanded before dispatch.
 

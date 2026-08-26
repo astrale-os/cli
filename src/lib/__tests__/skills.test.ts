@@ -31,7 +31,7 @@ afterEach(async () => {
 })
 
 async function makeSource(
-  names = ['astrale-cli', 'astrale-domain', 'astrale-services'],
+  names = ['astrale-cli', 'astrale-domain', 'astrale-frontend-design', 'astrale-services'],
   revision = 'new',
 ): Promise<{ root: string; snapshot: AstraleSkillSourceSnapshot }> {
   const root = await mkdtemp(join(tmpdir(), 'astrale-skills-source-'))
@@ -566,7 +566,13 @@ describe('Astrale skill reconciliation', () => {
 
   test('a retired source skill is removed without touching unrelated skills', async () => {
     const oldSource = await makeSource(
-      ['astrale-cli', 'astrale-domain', 'astrale-services', 'astrale-retired'],
+      [
+        'astrale-cli',
+        'astrale-domain',
+        'astrale-frontend-design',
+        'astrale-services',
+        'astrale-retired',
+      ],
       'old',
     )
     const latest = await makeSource(undefined, 'latest')

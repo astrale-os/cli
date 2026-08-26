@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Astrale Frontend Design'
+  short_description: 'Design focused interfaces for Astrale Domains'
+  default_prompt: 'Use $astrale-frontend-design to build or refine this Astrale Domain interface as a focused, restrained product UI.'

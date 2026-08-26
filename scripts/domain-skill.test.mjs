@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'astrale-domain')
 
-test('the shipped Domain skill teaches only the SDK V1 authoring boundary', () => {
+test('the shipped Domain skill teaches the current SDK authoring boundary', () => {
   const files = [
     join(root, 'SKILL.md'),
     ...readdirSync(join(root, 'references')).map((name) => join(root, 'references', name)),
@@ -46,7 +46,7 @@ test('the shipped Domain skill teaches only the SDK V1 authoring boundary', () =
   const modeling = readFileSync(join(root, 'references', 'modeling.md'), 'utf8')
   const views = readFileSync(join(root, 'references', 'views.md'), 'utf8')
 
-  assert.match(entrypoint, /Authorization is Schema-owned Policy/)
+  assert.match(entrypoint, /Keep authorization in Schema-owned Policy and callable `auth` mode/)
   assert.match(implementing, /defineAction/)
   assert.match(implementing, /defineWorkflow/)
   assert.match(implementing, /Action context has no `step`/)
@@ -60,10 +60,11 @@ test('the shipped Domain skill teaches only the SDK V1 authoring boundary', () =
   assert.match(integrations, /Runtime `initialize\(environment\)`/)
   assert.match(
     readFileSync(join(root, 'references', 'development.md'), 'utf8'),
-    /There is no generic Runtime `deps` or services container/,
+    /Use ordinary imports for pure helpers and Rules/,
   )
   assert.match(modeling, /Object definitions\s+belong to one Class hierarchy/)
   assert.match(modeling, /rather than parallel object-definition kinds/)
   assert.match(views, /defineFrontend/)
+  assert.match(views, /astrale-frontend-design/)
   assert.match(views, /Do not depend directly on Shell or\s+Shell-React packages/)
 })

@@ -7,17 +7,16 @@ description: "Author Astrale domains end to end. Use when creating, editing, rev
 
 Load detailed domain knowledge from the references that matches the goal.
 
-## Kernel-v2 boundary
+## Kernel boundary
 
-- Domain repositories and product-Domain packages do not contain `.spec/` directories. Do not add or
-  regenerate them; use Schema, executable evidence, and the SDK's Domain linter as guardrails.
+- Use Schema, executable evidence, and the SDK's Domain linter as guardrails.
 - Domain source imports Core and DSL authoring values only through the matching semantic
   `@astrale-os/sdk/*` subpath. Do not import `@astrale-os/kernel-core` or
   `@astrale-os/kernel-dsl` directly, and do not replace them with a flat SDK root barrel.
-- Authorization is Schema-owned Policy plus callable `auth` mode. Do not restore the legacy
-  `READ`/`EDIT`/`USE`/`SHARE`, permission-mask, grant/revoke, `assertPerm`, or handler-local
-  `authorize` model.
-- Inspect the current kernel-v2 SDK and Domain source before trusting older examples or API syntax.
+- Keep authorization in Schema-owned Policy and callable `auth` mode; handlers execute only admitted
+  calls and do not define a second authorization model.
+- Treat the installed SDK's public exports and the current Domain source as authoritative
+  for API syntax.
 
 ## Intent Router
 
@@ -30,9 +29,11 @@ complete new domain; use the phased workflow below for that.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
 - Decide whether to reuse/import a native Astrale domain instead of modeling a capability yourself: read `references/domains.md`.
 - Secure a Domain, Function, View, client call, public endpoint, identity, delegation, authentication mode, or Policy: read `references/security.md`.
-- Build or review browser views, mounted UI, View access, View resolution, or frontend design: read `references/views.md`.
-- Evolve an installed Schema, write a Migration, decide Migration versus Core, or handle
-  reinstall/backfill behavior: read `references/migration.md`.
+- Build or review browser views, mounted UI, View access, View resolution, or frontend design: read
+  `references/views.md` and apply `astrale-frontend-design` for product-interface layout,
+  interaction, and copy.
+- Plan or qualify an installed Schema revision, data transition, or backfill: read
+  `references/migration.md`.
 - Optimize graph access, reduce round trips, choose indexes/queries, or review call patterns for latency: read `references/performance.md`.
 - Create fake/sample/demo data, testing, fixtures, demo flows, or smoke-test scenarios: read `references/simulating.md`.
 - Diagnose a failing live domain or runtime drift: read `references/debugging.md`.

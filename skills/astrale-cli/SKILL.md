@@ -97,7 +97,7 @@ neither the CLI nor the SDK embeds the UI package or Base UI.
 
 ## Paths
 
-Use canonical Kernel V2 Paths:
+Use canonical Kernel Paths:
 
 | Form | Example |
 |---|---|
@@ -168,15 +168,14 @@ JWKS with that exact CA. If two bookmarks point to the same normalized URL with
 different CA settings, the CLI warns and `instance list --bookmarked --json`
 shows each bookmark's `caFile`, issuer, and default identity.
 
-A deployment-only Publication change does not inherently require reinstalling
-the Domain. Reinstall or run a schema plan only when installation/schema intent
-actually changes.
+A deployment-only Publication change does not require reinstalling the Domain.
+Reinstall only when installation or Schema intent changes.
 
 ## Identity And Delegation
 
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`
 creates a local key identity. Registering a key identity on a Kernel is an
-atomic V2 provision operation and requires the exact Node Class:
+atomic provision operation and requires the exact Node Class:
 
 ```bash
 astrale identity create alice
@@ -186,8 +185,10 @@ astrale identity register alice \
   -i staging
 ```
 
-There is no caller-chosen storage `--path`: Kernel V2 Node IDs are opaque. The
-proof is bound to the exact provision fingerprint and target Kernel audience.
+The Kernel assigns Node IDs. They are returned by reads and creation results
+and can be reused through the `@node-id` Path form; do not derive application
+meaning from their contents. The proof is bound to the exact provision
+fingerprint and target Kernel audience.
 For an application-owned Identity Class, direct Kernel submission is correctly
 denied unless the caller owns that Class. Name the Domain's authorizing
 registration callable explicitly; the CLI sends the same self-proven request
@@ -222,11 +223,10 @@ astrale call /:notes.example:class.Note:list --creds "$TOKEN" -i staging
 `get` reads one exact canonical Node:
 
 ```json
-{ "id": "opaque-id", "class": "/:notes.example:class.Note", "props": {} }
+{ "id": "node-id", "class": "/:notes.example:class.Note", "props": {} }
 ```
 
-Nodes do not carry synthetic `path`, `__labels`, or backend `classId` fields.
-It does not infer operations or children.
+The structured Node result is exactly `{ id, class, props }`.
 
 ```bash
 astrale get @note --json
@@ -234,9 +234,9 @@ astrale get /:notes.example:class.Note
 astrale get /:kernel.astrale.ai --schema
 ```
 
-`astrale describe` is not a command. Use `get` for one Node. Method Paths
-are not Nodes — use `call` or `introspect`. Schema-valued properties are
-omitted unless `--schema` is passed.
+Method Paths identify callables rather than Nodes; use `call` to invoke them or
+`introspect` to inspect their Schema. Schema-valued properties are omitted
+unless `--schema` is passed.
 
 ### `introspect`
 
@@ -249,11 +249,11 @@ astrale introspect /:kernel.astrale.ai:class.Identity:whois
 ```
 
 A method or Function Path projects that callable's input/output from the
-installed bundle. `astrale call --describe` is not a flag.
+installed bundle.
 
 ### `query`
 
-`query` executes canonical `astrale.graph.query/v6`. Its machine result is
+`query` executes canonical `astrale.graph.query/v6`. Its structured result is
 `{ kind: "graph", graph: { nodes, edges }, page?: { next } }`; pass the opaque
 `page.next` value to `--cursor` until it is absent.
 
@@ -274,27 +274,19 @@ astrale query @note \
 astrale query --file query.v6.json --cursor "$CURSOR"
 ```
 
-Raw Cypher, recursive depth, and historical children/edges selector JSON are
-not portable Kernel V2 contracts and are not accepted.
-
-`astrale ls` is not a command. Use `query` with `--edge` for an exact
-neighborhood.
+Use `query` with `--edge` for an exact neighborhood.
 
 ## Mutations
 
 `astrale mutate` accepts canonical `astrale.graph.mutation/v3` or its exact
 `{ preconditions, operations }` authoring input from `--data`, `--file`, or
 stdin. The transition is atomic. `--dry` admits and prints the canonical
-document without opening a Kernel connection. Legacy PatchData `{ nodes, edges }`
-is rejected.
+document without opening a Kernel connection. The result is `{ createdNodes }`.
 
 ```bash
+astrale mutate --file mutation.v3.json --dry
 astrale mutate --file mutation.v3.json
-astrale mutate --data '{"preconditions":[],"operations":[]}' --dry
 ```
-
-The result is `{ createdNodes }`. Historical PatchData arms and
-`createdEdges` are not emulated.
 
 ## Calls
 
@@ -320,7 +312,8 @@ objects. Use `--data` for nested or digits-only string values.
 ## Journal
 
 `astrale logs` reads the public Kernel journal syscall and returns
-`{ records, cursor? }`. Filters are exact, not legacy glob lowering:
+`{ records, cursor? }`. Filters match exact values; use `--topic-prefix` for
+prefix matching:
 
 ```bash
 astrale logs -i staging --limit 50
@@ -330,10 +323,10 @@ astrale logs --topic-prefix op:function. --follow
 
 Use `--principal`, `--since`, `--until`, or an opaque `--cursor` as needed.
 `--follow` retains one Client session and advances only with returned cursors.
-Application-service console buffers are not part of this command.
-Machine output retains the admitted structured `correlation` object, including invocation root and
-parent identifiers, and also keeps the compatibility `correlationId` projection of `invocationId`.
-Machine `--follow` output is NDJSON with one complete admitted record per line; YAML follow is rejected.
+Structured output retains the admitted `correlation` object, including invocation root and
+parent identifiers, and includes `correlationId` as a projection of `invocationId`.
+With `--json`, `--follow` emits NDJSON with one complete admitted record per line; combining
+`--yaml` with `--follow` is rejected.
 
 ## Views And Browser Sessions
 

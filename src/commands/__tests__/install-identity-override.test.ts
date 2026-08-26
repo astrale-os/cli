@@ -54,11 +54,11 @@ describe('declared-origin Publication probe', () => {
     expect(await probeDeclaredOrigin(url)).toBe('crm.acme.dev')
   })
 
-  test('does not accept the removed pre-Kernel-V2 domainName shape', async () => {
-    const legacy = servePublication(() =>
+  test('does not accept a Publication without the canonical origin field', async () => {
+    const invalid = servePublication(() =>
       Response.json({ iss: 'https://x', domainName: 'crm.acme.dev' }),
     )
-    expect(await probeDeclaredOrigin(legacy)).toBeUndefined()
+    expect(await probeDeclaredOrigin(invalid)).toBeUndefined()
   })
 
   test('degrades to undefined on invalid Publication, non-200, bad JSON, or dead host', async () => {

@@ -84,7 +84,7 @@ export function buildCopyMarkdown(parts: CopyParts): string {
   lines.push(`- **Render fingerprint:** \`${renderFingerprint}\``)
   lines.push('')
   lines.push(
-    'Load the **astrale-domain** skill, use the context/threads below, ' +
+    'Load the **astrale-domain** skill and, for UI work, **astrale-frontend-design**. Use the context/threads below, ' +
       'read any listed context documents if relevant, edit code on disk, and reply by appending one `{role:"author"}` entry per open thread ' +
       '(merge by `id`). Resolve a thread by adding a closing note plus `"status":"closed"`; ' +
       'a thread whose last entry is not yours will be resent.',

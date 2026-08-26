@@ -1,7 +1,7 @@
 # Development
 
 Use the generated project as the executable starting point. Inspect its installed SDK version and
-public exports before writing API syntax; prerelease source and older examples drift quickly.
+public exports before writing API syntax; treat them as authoritative.
 
 ## Create
 
@@ -75,9 +75,8 @@ export const application = defineApplication({ schema, runtime, frontend })
 Do not put Provider I/O, handler behavior, deployment effects, or authorization decisions in either
 composition root.
 
-There is no generic Runtime `deps` or services container. Pure helpers and Rules are ordinary
-imports; graph access uses bound Query/Mutation executors; environment-backed behavior belongs to
-Integrations and Providers.
+Use ordinary imports for pure helpers and Rules, bound Query/Mutation executors for graph access, and
+Integrations and Providers for environment-backed behavior.
 
 ## Qualify before deployment
 
@@ -91,8 +90,8 @@ pnpm lint
 pnpm build
 ```
 
-The SDK Domain linter is the architecture and semantic policy gate. Product Domains do not add a
-`.spec` tree. Strict typecheck should keep `skipLibCheck` disabled.
+The SDK Domain linter is the architecture and semantic policy gate. Strict typecheck should keep
+`skipLibCheck` disabled.
 
 ## Build, deploy, install
 

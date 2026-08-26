@@ -1,4 +1,4 @@
-# Migration
+# Schema evolution and data migration
 
 Schema evolution and data migration are distinct decisions.
 
@@ -17,9 +17,10 @@ Runtime initialization, a Provider, or an undocumented repair Action.
 
 ## Migration owner
 
-Use the SDK migration surface only when the installed SDK exposes a governing migration contract for
-the required transition. Inspect its exact declarations and Kernel support before authoring. If no
-such lifecycle exists, record the product gap rather than inventing hooks or claiming convergence.
+Treat first-class Migration authoring as unavailable unless the installed SDK exposes a public
+contract governing the required transition. Inspect its exact declarations and Kernel support; do not
+infer an authoring API from linter vocabulary. If no such lifecycle exists, record the product gap
+rather than inventing hooks or claiming convergence.
 
 An ordinary Domain-owned Query/Mutation may repair user data only when invoked through a deliberate
 authorized product operation. It is not an implicit post-install lifecycle.
@@ -30,15 +31,15 @@ A migration involving a remote system is a multi-step Workflow with explicit fai
 semantics; it cannot be one atomic graph Mutation. Preserve immutable evidence and do not claim
 exactly-once execution without a durable runner.
 
-## Qualification
+## Qualify a Schema revision
 
-For V1 to V2:
+For a change from the current revision to a candidate revision:
 
-1. retain V1 origin/revision and representative data evidence;
-2. build and deploy V2 independently;
-3. verify V2 Publication/Bundle and a new revision;
+1. retain the current origin/revision and representative data evidence;
+2. build and deploy the candidate independently;
+3. verify its Publication/Bundle and new revision;
 4. update installation through public Client/CLI APIs;
 5. repeat the same intent and prove convergence;
-6. read old data and invoke retained behavior;
-7. exercise the additive V2 behavior;
+6. read existing data and invoke retained behavior;
+7. exercise the added behavior;
 8. retain exact failures and avoid destructive cleanup until evidence is complete.

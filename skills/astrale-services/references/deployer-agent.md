@@ -25,7 +25,7 @@ Create the smallest maintainable service that fully implements the requested beh
 
 ## Service and Function contract
 
-Use the current SDK service entrypoint and declare callable Functions in its `serviceWorkerEntry({ functions })` registry with `defineRemoteFunction`. The deployed Worker's signed manifest is the source of truth; do not construct or pass a second Function manifest.
+Use the current SDK service entrypoint and declare callable Functions in its `serviceWorkerEntry({ functions })` registry with `defineRemoteFunction`. The deployed Worker's signed manifest is derived from that registry and is the source of truth.
 
 One Service may host multiple Functions. Give each Function a stable business name and a contract that is useful independently of its transport. Do not expose internal helpers as public Functions.
 
