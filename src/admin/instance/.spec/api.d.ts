@@ -1,7 +1,4 @@
 import type { ClientSession } from '@astrale-os/sdk/client/session'
-import type { DomainBinding } from '@astrale-os/shell'
-
-import type { AdminGraphApi } from '../../graph/.spec/api.js'
 
 export type InstanceState = 'provisioning' | 'ready' | 'deleting' | 'failed' | 'deleted'
 
@@ -11,10 +8,11 @@ export interface InstanceInfo {
   readonly url: string
   readonly hostId?: string
   readonly region?: string
-  readonly state?: InstanceState
+  readonly state: InstanceState
   readonly phase?: string
   readonly error?: string | null
   readonly createdAt?: string
+  readonly updatedAt?: string
   readonly organizationId?: string
 }
 
@@ -33,12 +31,11 @@ export interface DomainInstallReceipt {
 
 export interface AdminInstanceContext {
   readonly session: ClientSession
-  readonly graph: AdminGraphApi
 }
 
 export interface AdminInstanceApi {
   list(): Promise<OwnedInstanceInfo[]>
-  create(slug: string, hostId?: string): Promise<InstanceInfo>
+  create(slug: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
@@ -51,7 +48,6 @@ export class AdminInstanceNotFoundError extends Error {
 }
 
 export interface AdminInstanceDependencies {
-  readonly bind?: (session: ClientSession) => Promise<DomainBinding>
   readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
 }
 
@@ -63,4 +59,4 @@ export function findOwnedInstance(
   instances: readonly OwnedInstanceInfo[],
   identifier: string,
 ): OwnedInstanceInfo | undefined
-export function formatInstanceLocation(info: InstanceInfo): string
+export function formatInstanceState(info: InstanceInfo): string

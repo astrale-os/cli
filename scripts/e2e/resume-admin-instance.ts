@@ -1,25 +1,15 @@
 import { invocation } from '@astrale-os/sdk/invocation'
 
-import {
-  bindAdmin,
-  invokeAdminMethod,
-  requireAdminClass,
-  requireAdminCore,
-} from '../../src/admin/binding.js'
+import { AdminContract, callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
 const slug = required('ASTRALE_E2E_INSTANCE_SLUG')
 const result = await withAdminClientSession({}, async ({ session }) => {
-  const admin = await bindAdmin(session)
-  const Fleet = requireAdminClass(admin, 'Fleet', 'node')
-  const fleet = requireAdminCore(admin, 'fleet')
-  return invokeAdminMethod(
+  return callAdminMethod(
     session,
-    admin,
-    Fleet,
+    AdminContract.fleet,
     'createInstance',
-    fleet,
     { operationId, slug },
     {
       idempotencyKey: invocation.acceptIdempotencyKey(operationId.replaceAll(':', '-')),

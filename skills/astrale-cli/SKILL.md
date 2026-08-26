@@ -37,6 +37,7 @@ astrale call <path> [key=value...]
 astrale token
 astrale logs
 astrale view [target-or-view]
+astrale ui ...
 astrale instance ...
 astrale domain ...
 astrale identity ...
@@ -50,8 +51,43 @@ Kernel-touching commands share `--format`, `--json`, `--raw`, `--url`,
 applicable. The CLI creates one public Kernel `Call`, and its Client session owns
 remote routing, fresh credentials, and one safe stale-route retry.
 
+`astrale ui` is local project tooling and never takes Kernel, instance, identity,
+or credential options.
+
 Use `--anonymous` to omit a caller credential even when a local or bookmark-default identity exists.
 It cannot be combined with `--as` or `--creds`; required callables reject anonymous requests.
+
+## UI Projects
+
+Astrale UI is one tree-shakeable runtime package plus consumer-owned pattern and
+block source. Initialize a React and Tailwind CSS v4 project with the exact
+published UI release:
+
+```bash
+astrale ui init --preset astrale
+astrale ui list chart
+astrale ui add pattern/chart/line-basic
+astrale ui doctor
+astrale ui preset apply compact
+```
+
+Initialization writes Base UI + Nova shadcn configuration, theme and preset CSS
+imports, and `astrale-ui.lock.json`. The lock records the exact package version,
+Git tag, resolved commit SHA, shadcn version, Base UI version, preset, and hashes
+of installed source. Registry metadata, included manifests, and item files are
+always read from that single commit snapshot.
+
+Run `astrale ui add` without item arguments for an interactive picker. In CI,
+provide canonical addresses explicitly. Ordinary add refuses locally edited
+installed files; review those files, then use `--overwrite --yes` only when
+replacement is intentional. `--dry-run` leaves project files and the lock
+unchanged. Use `astrale ui list --json` when registry metadata is needed by a
+script or agent.
+
+Patterns and blocks are application-owned source after installation. Their root
+`className`, inline `style`, controlled values/actions, and stable `data-slot`
+anatomy remain open to the host. The package owns reusable runtime behavior;
+neither the CLI nor the SDK embeds the UI package or Base UI.
 
 ## Paths
 

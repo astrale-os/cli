@@ -2,14 +2,7 @@ import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 
-import {
-  bindAdmin,
-  invokeAdminMethod,
-  requireAdminBinding,
-  requireAdminClass,
-  requireAdminCore,
-  type AdminBinding,
-} from '../binding'
+import { AdminContract, callAdminMethod } from '../contract'
 import {
   AdminInstanceNotFoundError,
   findOwnedInstance,
@@ -32,33 +25,24 @@ export interface AdminInstanceApi {
 }
 
 export interface AdminInstanceDependencies {
-  readonly bind?: (session: ClientSession) => Promise<AdminBinding>
   readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
 }
 
 /**
- * Bind one discovered Admin root revision and expose only the public Instance
- * product journey. No Host lifecycle method is present on this capability.
+ * Connect the public Instance journey through stable Admin call paths. Routine
+ * operations perform no schema discovery. No Host lifecycle method is present.
  */
 export async function connectAdminInstances(
   context: AdminInstanceContext,
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
-  const binding = requireAdminBinding(await (dependencies.bind ?? bindAdmin)(context.session))
-
-  const Instance = requireAdminClass(binding, 'Instance', 'node')
-  const Fleet = requireAdminClass(binding, 'Fleet', 'node')
-  const fleet = requireAdminCore(binding, 'fleet')
-
   const operationId = dependencies.operationId ?? defaultOperationId
 
   const list = async (): Promise<OwnedInstanceInfo[]> => {
-    const result: unknown = await invokeAdminMethod(
+    const result: unknown = await callAdminMethod(
       context.session,
-      binding,
-      Fleet,
+      AdminContract.fleet,
       'listInstances',
-      fleet,
       {},
     )
     if (!Array.isArray(result)) throw new TypeError('Admin Instance inventory is invalid.')
@@ -76,14 +60,9 @@ export async function connectAdminInstances(
     identifier: string,
   ): Promise<InstanceInfo> => {
     const instance = await requireInstance(identifier)
-    const output = await invokeAdminMethod(
-      context.session,
-      binding,
-      Instance,
-      method,
-      Path.parse(instance.id),
-      { operationId: operationId(method) },
-    )
+    const output = await callAdminMethod(context.session, Path.parse(instance.id), method, {
+      operationId: operationId(method),
+    })
     return instanceFromSummary(output)
   }
 
@@ -95,19 +74,17 @@ export async function connectAdminInstances(
         slug,
       })
       return instanceFromSummary(
-        await invokeAdminMethod(context.session, binding, Fleet, 'createInstance', fleet, input),
+        await callAdminMethod(context.session, AdminContract.fleet, 'createInstance', input),
       )
     },
     status: (identifier: string) => invokeInstance('status', identifier),
     delete: (identifier: string) => invokeInstance('delete', identifier),
     async installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt> {
       const instance = await requireInstance(identifier)
-      const output = await invokeAdminMethod(
+      const output = await callAdminMethod(
         context.session,
-        binding,
-        Instance,
-        'installDomain',
         Path.parse(instance.id),
+        'installDomain',
         {
           operationId: operationId('install-domain'),
           domain: Path.parse(domain).raw,
@@ -122,9 +99,15 @@ function instanceFromSummary(input: unknown): InstanceInfo {
   const value = record(input, 'Admin Instance summary')
   const failure = value.failure === undefined ? undefined : record(value.failure, 'Admin failure')
   return Object.freeze({
-    id: requiredString(value.id, 'Admin Instance id'),
+    id: requiredNodePath(value.id, 'Admin Instance id'),
     slug: requiredString(value.slug, 'Admin Instance slug'),
     url: optionalStringValue(value.url) ?? '',
+    ...(value.hostId === undefined
+      ? {}
+      : { hostId: requiredNodePath(value.hostId, 'Admin Host id') }),
+    ...(value.region === undefined
+      ? {}
+      : { region: requiredString(value.region, 'Admin Host region') }),
     state: instanceState(value.state),
     ...(value.phase === undefined
       ? {}
@@ -135,6 +118,9 @@ function instanceFromSummary(input: unknown): InstanceInfo {
     ...(value.createdAt === undefined
       ? {}
       : { createdAt: requiredString(value.createdAt, 'Admin Instance creation time') }),
+    ...(value.updatedAt === undefined
+      ? {}
+      : { updatedAt: requiredString(value.updatedAt, 'Admin Instance update time') }),
     ...(value.organizationId === undefined
       ? {}
       : { organizationId: requiredString(value.organizationId, 'Admin organization id') }),
@@ -146,8 +132,8 @@ function domainInstallReceipt(input: unknown): DomainInstallReceipt {
   const failure = value.failure === undefined ? undefined : record(value.failure, 'Admin failure')
   if (typeof value.ok !== 'boolean') throw new TypeError('Admin Domain install outcome is invalid.')
   return Object.freeze({
-    domain: requiredString(value.domain, 'Admin Domain reference'),
-    instance: requiredString(value.instance, 'Admin Instance reference'),
+    domain: requiredNodePath(value.domain, 'Admin Domain reference'),
+    instance: requiredNodePath(value.instance, 'Admin Instance reference'),
     origin: requiredString(value.origin, 'Installed Domain origin'),
     ok: value.ok,
     ...(value.installedRevision === undefined
@@ -177,6 +163,15 @@ function instanceState(input: unknown): InstanceState {
 function requiredString(input: unknown, label: string): string {
   if (typeof input !== 'string' || input.length === 0) throw new TypeError(`${label} is invalid.`)
   return input
+}
+
+function requiredNodePath(input: unknown, label: string): string {
+  const value = requiredString(input, label)
+  try {
+    return Path.parse(value).raw
+  } catch {
+    throw new TypeError(`${label} is invalid.`)
+  }
 }
 
 function optionalStringValue(input: unknown): string | undefined {

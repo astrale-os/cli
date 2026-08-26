@@ -22,7 +22,11 @@ export function run(
   opts: { cwd?: string } = {},
 ): Promise<RunResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(file, args, { cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(file, args, {
+      cwd: opts.cwd,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
     let stdout = ''
     let stderr = ''
     child.stdout?.setEncoding('utf8')
@@ -50,7 +54,7 @@ export function runInherit(
   opts: { cwd?: string } = {},
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(file, args, { cwd: opts.cwd, stdio: 'inherit' })
+    const child = spawn(file, args, { cwd: opts.cwd, shell: false, stdio: 'inherit' })
     child.on('error', reject)
     child.on('close', (code) => resolve(code ?? -1))
   })
@@ -73,6 +77,7 @@ export function spawnHandle(
   return spawn(file, args, {
     cwd: opts.cwd,
     env: opts.env,
+    shell: false,
     // `detached` makes the child its own process-group leader so the caller can
     // tear down the whole tree (the child AND its grandchildren) with a single
     // group signal — `process.kill(-child.pid, …)`.

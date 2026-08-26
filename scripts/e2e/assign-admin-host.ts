@@ -1,21 +1,17 @@
 import { Path } from '@astrale-os/sdk/graph/path'
 import { invocation } from '@astrale-os/sdk/invocation'
 
-import { bindAdmin, invokeAdminMethod, requireAdminClass } from '../../src/admin/binding.js'
+import { callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
 const host = Path.parse(required('ASTRALE_E2E_HOST'))
 const principal = Path.parse(required('ASTRALE_E2E_PRINCIPAL')).raw
 const result = await withAdminClientSession({}, async ({ session }) => {
-  const admin = await bindAdmin(session)
-  const Host = requireAdminClass(admin, 'Host', 'node')
-  return invokeAdminMethod(
+  return callAdminMethod(
     session,
-    admin,
-    Host,
-    'assignPrincipal',
     host,
+    'assignPrincipal',
     { operationId, principal },
     {
       idempotencyKey: invocation.acceptIdempotencyKey(operationId.replaceAll(':', '-')),
