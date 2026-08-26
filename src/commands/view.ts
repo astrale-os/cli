@@ -262,6 +262,31 @@ async function startSession(view: ResolvedView, opts: ViewOpts): Promise<ViewSes
   )
 }
 
+export function createViewServeConfig(
+  record: ViewSessionRecord,
+  opts: Pick<ViewOpts, 'allowExternalOrigin' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'>,
+  kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
+): ViewServeConfig {
+  return {
+    session: record,
+    kernel: {
+      url: opts.url,
+      instance: opts.instance,
+      as: opts.as,
+      creds: opts.creds,
+      timeout: opts.timeout,
+    },
+    proxy: {
+      kernelUrl: kernelTarget.url,
+      issuer: kernelTarget.kernelIssuer,
+      caFile: kernelTarget.caFile,
+      direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
+    },
+    externalOrigins: admitExternalOpenOrigins(opts.allowExternalOrigin),
+    idleMs: IDLE_MS,
+  }
+}
+
 /**
  * Called under the cross-process port-allocation lock. Keep the lock until the
  * detached child answers its readiness probe: only then is the selected port
@@ -295,24 +320,7 @@ async function startSessionLocked(
     identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? defaultIdentity),
     createdAt: new Date().toISOString(),
   }
-  const serveConfig: ViewServeConfig = {
-    session: record,
-    kernel: {
-      url: opts.url,
-      instance: opts.instance,
-      as: opts.as,
-      creds: opts.creds,
-      timeout: opts.timeout,
-    },
-    proxy: {
-      kernelUrl: kernelTarget.url,
-      issuer: kernelTarget.kernelIssuer,
-      caFile: kernelTarget.caFile,
-      direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
-    },
-    externalOrigins: admitExternalOpenOrigins(opts.allowExternalOrigin),
-    idleMs: IDLE_MS,
-  }
+  const serveConfig = createViewServeConfig(record, opts, kernelTarget)
 
   await saveServeConfig(serveConfig)
   const logFd = await openSessionLog(id)

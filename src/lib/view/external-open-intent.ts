@@ -25,16 +25,15 @@ export function openExternalBrowserWindow(
   request: ExternalOpenRequest,
 ): boolean {
   const popup = request.mode === 'popup'
-  const opened = browser.open(
-    request.url,
-    popup ? 'astrale-external-provider' : '_blank',
-    popup ? 'popup,width=720,height=760' : undefined,
-  )
+  const opened = browser.open('', '_blank', popup ? 'popup,width=720,height=760' : undefined)
   if (opened === null) return false
   try {
     opened.opener = null
+    if (opened.opener !== null) throw new Error('Browser retained the opener capability.')
+    opened.location.replace(request.url)
   } catch {
-    // The navigation has already been admitted and opened; opener removal is best effort.
+    opened.close()
+    return false
   }
   return true
 }

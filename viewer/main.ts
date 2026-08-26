@@ -1,7 +1,6 @@
 import type { MountedWindow, ResolvedView, SandboxProfile } from '@astrale-os/shell'
 
 import {
-  admitHostCapabilities,
   createIframeShellAdapter,
   createShell,
   rejectIntent,
@@ -12,6 +11,7 @@ import {
   installExternalOpenIntentHandler,
   openExternalBrowserWindow,
 } from '../src/lib/view/external-open-intent'
+import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
 import { installOpenIntentHandler } from '../src/lib/view/open-intent'
 
 /**
@@ -99,16 +99,7 @@ function errorMessage(error: unknown): string {
 
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
-  const hostCapabilities = admitHostCapabilities({
-    version: 1,
-    navigation: {
-      openView: {},
-      ...(cfg.externalOrigins.length === 0 ? {} : { external: { origins: cfg.externalOrigins } }),
-    },
-    actions: {},
-    browser: {},
-    access: {},
-  })
+  const hostCapabilities = viewHostCapabilities(cfg.externalOrigins)
   const route = cfg.view.route
   el('view-label').textContent = `/:${route.key}`
   el('target-label').textContent = cfg.view.target
