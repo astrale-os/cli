@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.30](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.29...cli/v1.0.0-beta.30) (2026-08-26)
+
+
+### Bug Fixes
+
+* **release:** use supported Node for publication checks ([#208](https://github.com/astrale-os/cli/issues/208)) ([db7c555](https://github.com/astrale-os/cli/commit/db7c5550f732d22f3caa304059285ad18aa568c3))
+
 ## [1.0.0-beta.29](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.28...cli/v1.0.0-beta.29) (2026-08-26)
 
 
