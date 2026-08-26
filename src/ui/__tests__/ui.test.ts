@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 import { digest, parseUiLock } from '../lock'
 import { UiError, type UiLock, type UiRegistry } from '../model'
-import { addUi, applyPreset, doctorUi, initUi } from '../operations'
+import { addUi, applyPreset, doctorUi, initUi, listUi } from '../operations'
 import { resolveUiRelease } from '../release'
 import { shadcnInvocation } from '../runner'
 
@@ -25,6 +25,102 @@ const registry: UiRegistry = {
         },
       ],
       meta: { canonicalAddress: 'pattern/chart/line/basic' },
+    },
+  ],
+}
+const themeCss = `/* Generated from observatory.astrale-theme.json. Consumer-owned after installation. */
+:root,
+[data-ui-theme='observatory'] {
+  --ui-background: #ffffff;
+  --ui-foreground: #111111;
+  --ui-card: #ffffff;
+  --ui-card-foreground: #111111;
+  --ui-popover: #ffffff;
+  --ui-popover-foreground: #111111;
+  --ui-primary: #2244aa;
+  --ui-primary-foreground: #ffffff;
+  --ui-secondary: #eeeeee;
+  --ui-secondary-foreground: #111111;
+  --ui-muted: #eeeeee;
+  --ui-muted-foreground: #555555;
+  --ui-accent: #ddeeff;
+  --ui-accent-foreground: #111111;
+  --ui-destructive: #aa2222;
+  --ui-destructive-foreground: #ffffff;
+  --ui-border: #dddddd;
+  --ui-input: #dddddd;
+  --ui-ring: #2244aa;
+  --ui-chart-1: #2244aa;
+  --ui-chart-2: #228844;
+  --ui-chart-3: #aa7722;
+  --ui-chart-4: #aa2222;
+  --ui-chart-5: #7722aa;
+  --ui-font-body: ui-sans-serif;
+  --ui-font-heading: ui-serif;
+  --ui-radius: 0.5rem;
+  --ui-radius-panel: 0.75rem;
+  --ui-control-height: 2.25rem;
+  --ui-control-height-sm: 2rem;
+  --ui-control-height-lg: 2.5rem;
+  --ui-shadow-control: none;
+  --ui-shadow-panel: none;
+  --ui-motion-fast: 120ms;
+  --ui-motion-standard: 180ms;
+}
+[data-ui-theme='observatory'].dark {
+  --ui-background: #111111;
+  --ui-foreground: #ffffff;
+  --ui-card: #191919;
+  --ui-card-foreground: #ffffff;
+  --ui-popover: #191919;
+  --ui-popover-foreground: #ffffff;
+  --ui-primary: #88aaff;
+  --ui-primary-foreground: #111111;
+  --ui-secondary: #292929;
+  --ui-secondary-foreground: #ffffff;
+  --ui-muted: #292929;
+  --ui-muted-foreground: #bbbbbb;
+  --ui-accent: #334455;
+  --ui-accent-foreground: #ffffff;
+  --ui-destructive: #ff7777;
+  --ui-destructive-foreground: #111111;
+  --ui-border: #333333;
+  --ui-input: #333333;
+  --ui-ring: #88aaff;
+  --ui-chart-1: #88aaff;
+  --ui-chart-2: #77dd99;
+  --ui-chart-3: #ffcc77;
+  --ui-chart-4: #ff7777;
+  --ui-chart-5: #cc88ff;
+  --ui-font-body: ui-sans-serif;
+  --ui-font-heading: ui-serif;
+  --ui-radius: 0.5rem;
+  --ui-radius-panel: 0.75rem;
+  --ui-control-height: 2.25rem;
+  --ui-control-height-sm: 2rem;
+  --ui-control-height-lg: 2.5rem;
+  --ui-shadow-control: none;
+  --ui-shadow-panel: none;
+  --ui-motion-fast: 120ms;
+  --ui-motion-standard: 180ms;
+}
+`
+const themeRegistry: UiRegistry = {
+  name: 'astrale-ui',
+  items: [
+    {
+      name: 'theme-observatory',
+      type: 'registry:theme',
+      description: 'An owned theme.',
+      dependencies: ['@astrale-os/ui@^0.3.0-beta.0'],
+      files: [
+        {
+          path: 'observatory.css',
+          type: 'registry:file',
+          target: 'components/astrale/theme/observatory.css',
+        },
+      ],
+      meta: { canonicalAddress: 'theme/observatory', ownership: 'consumer-source' },
     },
   ],
 }
@@ -70,6 +166,34 @@ function mockFetch(seen: string[] = [], suppliedRegistry: UiRegistry = registry)
       url.endsWith('/registry/public/r/' + candidate.name + '.json'),
     )
     if (item) return Response.json(builtItem(item))
+    return new Response('not found', { status: 404 })
+  }) as typeof fetch
+}
+
+function themeFetch(seen: string[] = []): typeof fetch {
+  return (async (input: string | URL | Request) => {
+    const url = String(input)
+    seen.push(url)
+    if (url.includes('/git/ref/tags/')) {
+      return Response.json({ object: { type: 'commit', sha: commit, url: '' } })
+    }
+    if (url.endsWith('/tooling/compatibility.json')) return Response.json(compatibility)
+    if (url.endsWith('/' + commit + '/registry.json')) {
+      return Response.json({ name: 'astrale-ui', include: ['registry/themes/registry.json'] })
+    }
+    if (url.endsWith('/registry/themes/registry.json')) return Response.json(themeRegistry)
+    if (url.endsWith('/registry/public/r/theme-observatory.json')) {
+      return Response.json({
+        ...themeRegistry.items[0],
+        files: [
+          {
+            ...themeRegistry.items[0]!.files[0],
+            path: 'registry/themes/observatory.css',
+            content: themeCss,
+          },
+        ],
+      })
+    }
     return new Response('not found', { status: 404 })
   }) as typeof fetch
 }
@@ -174,6 +298,33 @@ describe('UI release and runner contracts', () => {
         expect.stringContaining('/' + commit + '/registry'),
       ]),
     )
+  })
+
+  test('admits a release theme as one canonical consumer-owned CSS target', async () => {
+    const release = await resolveUiRelease('0.3.0-beta.0', themeFetch())
+    expect(release.registry.items).toEqual([
+      expect.objectContaining({
+        name: 'theme-observatory',
+        type: 'registry:theme',
+        meta: expect.objectContaining({ canonicalAddress: 'theme/observatory' }),
+        files: [
+          expect.objectContaining({
+            type: 'registry:file',
+            path: 'registry/themes/observatory.css',
+            target: 'components/astrale/theme/observatory.css',
+          }),
+        ],
+      }),
+    ])
+  })
+
+  test('lists release themes through the public type filter', async () => {
+    const themes = await listUi(
+      undefined,
+      { type: 'theme', version: '0.3.0-beta.0' },
+      { fetcher: themeFetch() },
+    )
+    expect(themes.map((item) => item.meta.canonicalAddress)).toEqual(['theme/observatory'])
   })
 
   test('constructs exact on-demand commands for every supported package manager', () => {
@@ -722,6 +873,166 @@ describe('UI source operations', () => {
     expect(calls[0]).toMatchObject({ file: 'pnpm' })
     expect(calls[0]?.args).toEqual(expect.arrayContaining(['dlx', 'shadcn@4.18.0', '--dry-run']))
     expect(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8')).toBe(before)
+  })
+
+  /** @evidence TEST-CLI-UI-THEME-OWNERSHIP */
+  test('installs and activates a released theme while recording owned source', async () => {
+    const root = await lockedFixture()
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
+    )
+    await writeFile(
+      path.join(root, 'src/index.css'),
+      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
+    )
+    const target = path.join(root, 'components/astrale/theme/observatory.css')
+    const result = await addUi(
+      ['theme/observatory'],
+      { project: root, yes: true },
+      {
+        fetcher: themeFetch(),
+        runner: async () => {
+          await mkdir(path.dirname(target), { recursive: true })
+          await writeFile(target, themeCss)
+          return { code: 0, stdout: '', stderr: '' }
+        },
+      },
+    )
+
+    expect(result).toMatchObject({ status: 'installed', items: ['theme/observatory'] })
+    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
+      "@import '../components/astrale/theme/observatory.css';",
+    )
+    const written = JSON.parse(await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8'))
+    expect(written.items['theme/observatory']).toMatchObject({
+      address: 'theme/observatory',
+      files: { 'components/astrale/theme/observatory.css': digest(themeCss) },
+    })
+    expect((await doctorUi(root)).healthy).toBe(true)
+  })
+
+  /** @evidence TEST-CLI-UI-THEME-OWNERSHIP */
+  test('installs a playground-exported theme without registry or shadcn and preserves edits', async () => {
+    const root = await lockedFixture()
+    const source = path.join(root, 'observatory.css')
+    const target = path.join(root, 'components/astrale/theme/observatory.css')
+    await writeFile(source, themeCss)
+    let invoked = false
+
+    const planned = await addUi(
+      ['./observatory.css'],
+      { project: root, dryRun: true },
+      {
+        fetcher: (async () => {
+          invoked = true
+          throw new Error('must not fetch')
+        }) as unknown as typeof fetch,
+        runner: async () => {
+          invoked = true
+          return { code: 1, stdout: '', stderr: '' }
+        },
+      },
+    )
+    expect(planned).toMatchObject({
+      status: 'planned',
+      items: ['theme/observatory'],
+      activation: {
+        file: 'src/index.css',
+        import: "@import '../components/astrale/theme/observatory.css';",
+      },
+    })
+    expect(await Bun.file(target).exists()).toBe(false)
+
+    await addUi(
+      ['./observatory.css'],
+      { project: root },
+      {
+        fetcher: (async () => {
+          invoked = true
+          throw new Error('must not fetch')
+        }) as unknown as typeof fetch,
+        runner: async () => {
+          invoked = true
+          return { code: 1, stdout: '', stderr: '' }
+        },
+      },
+    )
+    expect(invoked).toBe(false)
+    expect(await readFile(target, 'utf8')).toBe(themeCss)
+    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
+      "@import '../components/astrale/theme/observatory.css';",
+    )
+
+    await writeFile(target, 'consumer edit\n')
+    await expect(addUi(['./observatory.css'], { project: root })).rejects.toMatchObject({
+      code: 'UI_LOCAL_CHANGES',
+    })
+    await addUi(['./observatory.css'], { project: root, overwrite: true, yes: true })
+    expect(await readFile(target, 'utf8')).toBe(themeCss)
+  })
+
+  test('rejects malformed and symlinked local themes before project mutation', async () => {
+    const root = await lockedFixture()
+    const cssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
+    await writeFile(path.join(root, 'unsafe.css'), "@import 'https://example.invalid/theme.css';\n")
+    await expect(addUi(['./unsafe.css'], { project: root })).rejects.toMatchObject({
+      code: 'UI_ITEM_CONFLICT',
+    })
+
+    const outside = await mkdtemp(path.join(tmpdir(), 'astrale-ui-theme-'))
+    temporary.push(outside)
+    await writeFile(path.join(outside, 'observatory.css'), themeCss)
+    await symlink(path.join(outside, 'observatory.css'), path.join(root, 'linked.css'))
+    await expect(addUi(['./linked.css'], { project: root })).rejects.toMatchObject({
+      code: 'UI_ITEM_NOT_FOUND',
+    })
+    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(cssBefore)
+  })
+
+  test('rejects a symlinked UI lock before a theme can mutate outside the project', async () => {
+    const root = await lockedFixture()
+    const source = path.join(root, 'observatory.css')
+    await writeFile(source, themeCss)
+    const lockPath = path.join(root, 'astrale-ui.lock.json')
+    const outside = await mkdtemp(path.join(tmpdir(), 'astrale-ui-lock-'))
+    temporary.push(outside)
+    const outsideLock = path.join(outside, 'astrale-ui.lock.json')
+    const lockSource = await readFile(lockPath, 'utf8')
+    await writeFile(outsideLock, lockSource)
+    await rm(lockPath)
+    await symlink(outsideLock, lockPath)
+    const cssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
+
+    await expect(addUi(['./observatory.css'], { project: root })).rejects.toMatchObject({
+      code: 'UI_LOCK_INVALID',
+    })
+    expect(await readFile(outsideLock, 'utf8')).toBe(lockSource)
+    expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(cssBefore)
+    expect(
+      await Bun.file(path.join(root, 'components/astrale/theme/observatory.css')).exists(),
+    ).toBe(false)
+  })
+
+  test('rolls back a newly copied local theme and activation when the lock commit fails', async () => {
+    const root = await lockedFixture()
+    await writeFile(path.join(root, 'observatory.css'), themeCss)
+    const lockPath = path.join(root, 'astrale-ui.lock.json')
+    const cssPath = path.join(root, 'src/index.css')
+    const target = path.join(root, 'components/astrale/theme/observatory.css')
+    const lockBefore = await readFile(lockPath, 'utf8')
+    const cssBefore = await readFile(cssPath, 'utf8')
+    await chmod(lockPath, 0o444)
+
+    try {
+      await expect(addUi(['./observatory.css'], { project: root })).rejects.toBeInstanceOf(Error)
+    } finally {
+      await chmod(lockPath, 0o644)
+    }
+
+    expect(await Bun.file(target).exists()).toBe(false)
+    expect(await readFile(cssPath, 'utf8')).toBe(cssBefore)
+    expect(await readFile(lockPath, 'utf8')).toBe(lockBefore)
   })
 
   test('successful add records installed file digests and doctor detects later edits', async () => {

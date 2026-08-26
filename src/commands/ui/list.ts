@@ -7,13 +7,13 @@ type Options = UiCommandOptions & { type?: string; limit?: string; version?: str
 
 export default {
   name: 'list',
-  description: 'List or search Astrale patterns and blocks',
+  description: 'List or search Astrale patterns, blocks, and themes',
   arguments: [{ name: 'query', description: 'Optional search text', required: false }],
   options: [
     {
       flags: '--type <type>',
-      description: 'Restrict to pattern or block',
-      choices: ['pattern', 'block'],
+      description: 'Restrict to pattern, block, or theme',
+      choices: ['pattern', 'block', 'theme'],
     },
     { flags: '--limit <n>', description: 'Maximum results', default: '100' },
     { flags: '--version <version>', description: 'Exact release to inspect' },

@@ -59,15 +59,18 @@ It cannot be combined with `--as` or `--creds`; required callables reject anonym
 
 ## UI Projects
 
-Astrale UI is one tree-shakeable runtime package plus consumer-owned pattern and
-block source. Initialize a React and Tailwind CSS v4 project with the exact
+Astrale UI is one tree-shakeable runtime package plus consumer-owned pattern,
+block, and theme source. Initialize a React and Tailwind CSS v4 project with the exact
 published UI release:
 
 ```bash
 astrale ui init --preset astrale
 astrale ui list chart
 astrale ui add pattern/chart/line-basic
+astrale ui add theme/observatory
+astrale ui add ./my-playground-export.css
 astrale ui doctor
+astrale ui doctor --project ./apps/web
 astrale ui preset apply compact
 ```
 
@@ -84,7 +87,10 @@ replacement is intentional. `--dry-run` leaves project files and the lock
 unchanged. Use `astrale ui list --json` when registry metadata is needed by a
 script or agent.
 
-Patterns and blocks are application-owned source after installation. Their root
+Patterns, blocks, and themes are application-owned source after installation. A
+theme is copied to `components/astrale/theme/` and activated through one relative
+import in the configured host stylesheet; local playground exports require no
+registry fetch or shadcn invocation. Composition root
 `className`, inline `style`, controlled values/actions, and stable `data-slot`
 anatomy remain open to the host. The package owns reusable runtime behavior;
 neither the CLI nor the SDK embeds the UI package or Base UI.

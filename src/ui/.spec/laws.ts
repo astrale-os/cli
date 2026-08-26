@@ -28,6 +28,13 @@ export const CLI_UI_EXACT_ITEM_SOURCE = defineLaw({
   tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-EXACT-ITEM-SOURCE' }],
 })
 
+export const CLI_UI_THEME_OWNERSHIP = defineLaw({
+  id: 'CLI-UI-THEME-OWNERSHIP',
+  statement:
+    'A released or locally exported theme becomes one project-contained consumer-owned CSS file, is activated by one relative host stylesheet import, and rolls back file, import, and lock together on failure.',
+  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-THEME-OWNERSHIP' }],
+})
+
 export const CLI_UI_SEMANTIC_DIFF = defineLaw({
   id: 'CLI-UI-SEMANTIC-DIFF',
   statement:

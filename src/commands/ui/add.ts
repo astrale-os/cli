@@ -8,11 +8,11 @@ type Options = UiCommandOptions & { dryRun?: boolean; overwrite?: boolean; yes?:
 
 export default {
   name: 'add',
-  description: 'Install consumer-owned Astrale pattern or block source',
+  description: 'Install consumer-owned Astrale pattern, block, or theme source',
   arguments: [
     {
       name: 'items',
-      description: 'Canonical pattern or block addresses',
+      description: 'Canonical registry addresses or a local exported theme CSS file',
       required: false,
       variadic: true,
     },
@@ -25,7 +25,7 @@ export default {
     UI_JSON_OPTION,
   ],
   afterHelpText:
-    '\nInstalled source belongs to the application. Ordinary add never overwrites local edits.\nRun astrale ui doctor before intentionally replacing local source with --overwrite --yes.\n',
+    '\nInstalled source belongs to the application. Use theme/<name> for a released theme or ./theme.css for a playground export.\nOrdinary add never overwrites local edits. Run astrale ui doctor before intentionally replacing local source with --overwrite --yes.\n',
   action: async (items: string[], options: Options) =>
     runUiCommand(options, async () => {
       let selected = items
