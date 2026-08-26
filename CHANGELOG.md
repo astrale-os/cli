@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.18](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.17...cli/v1.0.0-beta.18) (2026-08-26)
+
+
+### Bug Fixes
+
+* **commands:** use current Schema client contracts ([#170](https://github.com/astrale-os/cli/issues/170)) ([9ca78e9](https://github.com/astrale-os/cli/commit/9ca78e991ed3ad97570604855fe72ba2e48ecdb3))
+
 ## [1.0.0-beta.17](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.16...cli/v1.0.0-beta.17) (2026-08-26)
 
 
