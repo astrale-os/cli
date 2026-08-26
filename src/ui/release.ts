@@ -2,11 +2,17 @@ import { UiError, type UiCompatibility, type UiRegistry, type UiRelease } from '
 
 const NPM_PACKAGE = 'https://registry.npmjs.org/@astrale-os/ui'
 const GITHUB_API = 'https://api.github.com/repos/astrale-os/ui'
+const GITHUB_WEB = 'https://github.com/astrale-os/ui'
 const RAW = 'https://raw.githubusercontent.com/astrale-os/ui'
 const MAX_DOCUMENT_BYTES = 1_048_576
 const MAX_REGISTRY_DOCUMENTS = 100
 
 type Fetch = typeof fetch
+class HttpStatusError extends Error {
+  constructor(readonly status: number) {
+    super('HTTP ' + status)
+  }
+}
 type RegistrySource = {
   name?: string
   homepage?: string
@@ -23,8 +29,24 @@ async function json<T>(fetcher: Fetch, url: string, label: string): Promise<T> {
       cause,
     })
   }
+  const body = await responseText(response, label)
+  try {
+    return JSON.parse(body) as T
+  } catch (cause) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned malformed JSON.', undefined, {
+      cause,
+    })
+  }
+}
+
+async function responseText(response: Response, label: string): Promise<string> {
   if (!response.ok) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned HTTP ' + response.status + '.')
+    throw new UiError(
+      'UI_REGISTRY_UNAVAILABLE',
+      label + ' returned HTTP ' + response.status + '.',
+      undefined,
+      { cause: new HttpStatusError(response.status) },
+    )
   }
   const declaredLength = Number(response.headers.get('content-length'))
   if (Number.isFinite(declaredLength) && declaredLength > MAX_DOCUMENT_BYTES) {
@@ -52,13 +74,7 @@ async function json<T>(fetcher: Fetch, url: string, label: string): Promise<T> {
     body.set(chunk, offset)
     offset += chunk.byteLength
   }
-  try {
-    return JSON.parse(new TextDecoder().decode(body)) as T
-  } catch (cause) {
-    throw new UiError('UI_REGISTRY_UNAVAILABLE', label + ' returned malformed JSON.', undefined, {
-      cause,
-    })
-  }
+  return new TextDecoder().decode(body)
 }
 
 export async function resolveUiRelease(
@@ -76,11 +92,19 @@ export async function resolveUiRelease(
     throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Invalid UI beta release version: ' + version)
   }
   const ref = 'v' + version
-  const reference = await json<{
-    object: { type: 'commit' | 'tag'; sha: string; url: string }
-  }>(fetcher, GITHUB_API + '/git/ref/tags/' + encodeURIComponent(ref), 'UI ref ' + ref)
-  const commit =
-    reference.object.type === 'commit'
+  const commit = await resolveReleaseCommit(ref, fetcher)
+  if (!/^[0-9a-f]{40}$/u.test(commit)) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI ref ' + ref + ' did not resolve to a commit.')
+  }
+  return readUiReleaseSnapshot({ version, ref, commit }, fetcher)
+}
+
+async function resolveReleaseCommit(ref: string, fetcher: Fetch): Promise<string> {
+  try {
+    const reference = await json<{
+      object: { type: 'commit' | 'tag'; sha: string; url: string }
+    }>(fetcher, GITHUB_API + '/git/ref/tags/' + encodeURIComponent(ref), 'UI ref ' + ref)
+    return reference.object.type === 'commit'
       ? reference.object.sha
       : (
           await json<{ object: { sha: string } }>(
@@ -89,10 +113,41 @@ export async function resolveUiRelease(
             'annotated UI tag ' + ref,
           )
         ).object.sha
-  if (!/^[0-9a-f]{40}$/u.test(commit)) {
+  } catch (cause) {
+    const status =
+      cause instanceof UiError && cause.cause instanceof HttpStatusError
+        ? cause.cause.status
+        : undefined
+    if (status !== 403 && status !== 429 && !(status !== undefined && status >= 500)) throw cause
+  }
+
+  const label = 'UI release ' + ref
+  let response: Response
+  try {
+    response = await fetcher(GITHUB_WEB + '/releases/tag/' + encodeURIComponent(ref), {
+      headers: { accept: 'text/html' },
+    })
+  } catch (cause) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Unable to reach ' + label + '.', undefined, {
+      cause,
+    })
+  }
+  const html = await responseText(response, label)
+  const marker = 'href="/astrale-os/ui/tree/' + ref + '"'
+  const markerOffset = html.lastIndexOf(marker)
+  const releaseHeader = markerOffset < 0 ? '' : html.slice(markerOffset, markerOffset + 8_192)
+  const commits = new Set(
+    [
+      ...releaseHeader.matchAll(
+        /data-hovercard-type=["']commit["'][^>]+href=["']\/astrale-os\/ui\/commit\/([0-9a-f]{40})["']/gu,
+      ),
+    ].map((match) => match[1]),
+  )
+  const commit = commits.size === 1 ? commits.values().next().value : undefined
+  if (!commit) {
     throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI ref ' + ref + ' did not resolve to a commit.')
   }
-  return readUiReleaseSnapshot({ version, ref, commit }, fetcher)
+  return commit
 }
 
 export async function readUiReleaseSnapshot(

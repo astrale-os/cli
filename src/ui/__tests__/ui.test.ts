@@ -330,6 +330,97 @@ describe('UI release and runner contracts', () => {
     )
   })
 
+  test('resolves the immutable release commit when the anonymous GitHub API is rate limited', async () => {
+    const seen: string[] = []
+    const fallback = mockFetch(seen)
+    const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/git/ref/tags/')) {
+        seen.push(url)
+        return Response.json({ message: 'API rate limit exceeded' }, { status: 403 })
+      }
+      if (url.includes('/releases/tag/')) {
+        seen.push(url)
+        return new Response(
+          `<a data-hovercard-type="commit" href="/astrale-os/ui/commit/${'b'.repeat(40)}">decoy</a>
+           <a href="/astrale-os/ui/tree/v0.3.0-beta.0">repository navigation</a>
+           ${'x'.repeat(35_000)}
+           <a href="/astrale-os/ui/tree/v0.3.0-beta.0">tag</a>
+           <a data-hovercard-type="commit" href="/astrale-os/ui/commit/${commit}">commit</a>`,
+          { headers: { 'content-type': 'text/html' } },
+        )
+      }
+      return fallback(input, init)
+    }) as typeof fetch
+
+    const release = await resolveUiRelease('0.3.0-beta.0', fetcher)
+
+    expect(release.commit).toBe(commit)
+    expect(seen).toContain('https://github.com/astrale-os/ui/releases/tag/v0.3.0-beta.0')
+    expect(seen).toContain(
+      'https://raw.githubusercontent.com/astrale-os/ui/' + commit + '/tooling/compatibility.json',
+    )
+  })
+
+  test('rejects a release page without an exact Astrale UI commit target', async () => {
+    const fetcher = (async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('/git/ref/tags/')) return new Response('limited', { status: 403 })
+      if (url.includes('/releases/tag/')) return new Response('<main>release unavailable</main>')
+      throw new Error('release snapshot must not be fetched')
+    }) as typeof fetch
+
+    await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+      message: 'UI ref v0.3.0-beta.0 did not resolve to a commit.',
+    })
+  })
+
+  test('does not replace an authoritative missing tag with release-page HTML', async () => {
+    const seen: string[] = []
+    const fetcher = (async (input: string | URL | Request) => {
+      const url = String(input)
+      seen.push(url)
+      if (url.includes('/git/ref/tags/')) return new Response('missing', { status: 404 })
+      throw new Error('release page must not be fetched')
+    }) as typeof fetch
+
+    await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+      message: 'UI ref v0.3.0-beta.0 returned HTTP 404.',
+    })
+    expect(seen).toEqual(['https://api.github.com/repos/astrale-os/ui/git/ref/tags/v0.3.0-beta.0'])
+  })
+
+  test('bounds declared and streamed release-page HTML before reading a snapshot', async () => {
+    for (const oversized of [
+      new Response('large', { headers: { 'content-length': '1048577' } }),
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new Uint8Array(1_048_577))
+            controller.close()
+          },
+        }),
+      ),
+    ]) {
+      const seen: string[] = []
+      const fetcher = (async (input: string | URL | Request) => {
+        const url = String(input)
+        seen.push(url)
+        if (url.includes('/git/ref/tags/')) return new Response('limited', { status: 403 })
+        if (url.includes('/releases/tag/')) return oversized
+        throw new Error('release snapshot must not be fetched')
+      }) as typeof fetch
+
+      await expect(resolveUiRelease('0.3.0-beta.0', fetcher)).rejects.toMatchObject({
+        code: 'UI_REGISTRY_UNAVAILABLE',
+        message: 'UI release v0.3.0-beta.0 exceeds the supported response size.',
+      })
+      expect(seen).toHaveLength(2)
+    }
+  })
+
   test('admits a release theme as one canonical consumer-owned CSS target', async () => {
     const release = await resolveUiRelease('0.3.0-beta.0', themeFetch())
     expect(release.registry.items).toEqual([
