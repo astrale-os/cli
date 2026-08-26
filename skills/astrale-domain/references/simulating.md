@@ -82,3 +82,31 @@ At least one acceptance journey should use packed or published packages outside 
 workspace, a clean Kernel data root, real credentials, and the deployment adapter the product ships.
 Observe installation and invocation through public Client APIs. Keep authentication, authority,
 Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct.
+
+### Design focused scenarios
+
+Make each scenario prove one semantic claim with the smallest sufficient criteria. Distinct evidence
+classes do not all need to appear in every scenario. Prefer focused proofs such as:
+
+- cross-Domain package boundary, install ordering, and caller-bound dispatch;
+- multi-user Policy denial and revocation;
+- local service, tunnel, and real external API delivery; and
+- a thin integrated smoke that composes already-proven pieces without duplicating every adversarial
+  check.
+
+Do not make acceptance stricter than the public product contract. Criteria should observe outcomes
+and security boundaries, not prescribe private filenames, arbitrary test counts, one source layout,
+or incidental output fields. Add a criterion only when its absence would make the scenario's stated
+claim unsupported or dishonest.
+
+### Bound convergence
+
+Before stabilization, freeze scenario semantics, exact package cohort, and acceptance boundaries. A
+new issue is first retained and classified; it does not automatically expand the current scenario or
+trigger new Lab machinery. Interrupt a frozen run only when a defect blocks an existing criterion or
+makes its evidence dishonest.
+
+Track the phase reached, recurring defect classes, new blocker classes, and owner regression proof.
+If several new Lab-owned blockers repeat at the same phase, stop tactical patching and review that
+boundary. Establish correctness before optimizing latency, tokens, or cost, and compare only runs with
+the same scenario and package cohort.

@@ -56,8 +56,23 @@ Keep secrets in deployment/runtime environment, never Schema, Core data, graph p
 handoffs, snapshots, or tests. For signed webhooks, retain exact received bytes and headers required by
 the signature scheme before decoding business content.
 
+Observe an external effect through an independently owned receiver or queryable API. A handler-local
+counter, authored success boolean, or handoff cannot prove delivery. The producer may return a stable
+correlation value or digest of the exact body it sent; receiver observation and receiver cleanup
+belong to the acceptance owner.
+
+Receiver evidence proves the expected request occurred, not that no alternate egress occurred. Add a
+narrow source admission or runtime network control only when the scenario actually claims a closed
+egress boundary; do not turn one directory layout into a universal security rule.
+
 ## Remote Domains
 
-Use the same Integration/Provider boundary for cross-Domain calls. The Provider uses the public SDK
-Client/session facade and the remote Domain's public contract. Do not call a foreign implementation,
-copy its types, or claim atomicity across the service boundary.
+Use the same Integration/Provider boundary for cross-Domain calls. Bind the invocation's caller-scoped
+capability and invoke the exact callable from the exact loaded dependency. Do not store a Client,
+reconstruct a foreign path, widen to a registry, call a foreign implementation, copy its types, or
+claim atomicity across the service boundary.
+
+Cross-Domain callable authority is installed Domain-to-Domain authority derived from the declared
+dependency. It is not a human `can_*` grant or a Provider-held credential. Test install ordering,
+direct-human denial, caller-bound dispatch, and observable effects separately only when each fact is
+part of the scenario's claim.
