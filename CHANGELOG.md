@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.0-beta.31](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.30...cli/v1.0.0-beta.31) (2026-08-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** replace query --definition with --class ([#210](https://github.com/astrale-os/cli/issues/210))
+
+### Features
+
+* **commands:** replace query --definition with --class ([#210](https://github.com/astrale-os/cli/issues/210)) ([396ea14](https://github.com/astrale-os/cli/commit/396ea149b83f5de5ad669b75237f0d2ddf3be7c9))
+
+
+### Bug Fixes
+
+* pin and expose Astrale skill provenance ([#212](https://github.com/astrale-os/cli/issues/212)) ([205c957](https://github.com/astrale-os/cli/commit/205c957bc00df2fb01b7f2e7b16b6c480fa59956))
+
 ## [1.0.0-beta.30](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.29...cli/v1.0.0-beta.30) (2026-08-26)
 
 
