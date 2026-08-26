@@ -1,10 +1,10 @@
 import type { IrClassRef, IrEndpoint, StudioSchemaBundle } from '@shared/types'
+import type { Edge, Node } from '@xyflow/react'
 
-import { MarkerType, type Edge, type Node } from '@xyflow/react'
-
-import { cardinalityMarkers } from './cardinality-markers'
+import { EDGE_ARROW, edgeMarkers, formatCardinality } from './edge-markers'
 import { localEndpointTargets } from './external'
 import { folderModules, moduleOfClass } from './modules'
+import { CLASS_H, CLASS_W, MODULE_COLLAPSED_H, MODULE_HEADER, MODULE_PAD } from './palette'
 import { type Hidden, classNodeVisible, classRef, edgeVisible, isHidden } from './visibility'
 
 export type SchemaCoreRole = 'container' | 'identity'
@@ -15,7 +15,6 @@ export interface ClassNodeData extends Record<string, unknown> {
   name: string
   props: number
   methods: number
-  bases: string[]
   coreRole?: SchemaCoreRole | null
   hue: number
   icon?: string
@@ -30,6 +29,14 @@ export interface GroupNodeData extends Record<string, unknown> {
   collapsed: boolean
   classCount: number
   onToggleModule?: (domainId: string, path: string) => void
+}
+
+/** What the cardinality mode shows at one end of a relationship. */
+function endpointOf(endpoint?: IrEndpoint): { role?: string; cardinality: string } {
+  return {
+    ...(endpoint?.name ? { role: endpoint.name } : {}),
+    cardinality: formatCardinality(endpoint?.cardinality),
+  }
 }
 
 export interface DomainProjection {
@@ -73,7 +80,12 @@ export function projectDomainCanvas(
         collapsed: isCollapsed,
         classCount: module.classes.length,
       } satisfies GroupNodeData,
-      style: isCollapsed ? { width: 200, height: 44 } : { width: 200, height: 120 },
+      style: isCollapsed
+        ? { width: CLASS_W + MODULE_PAD * 2, height: MODULE_COLLAPSED_H }
+        : {
+            width: CLASS_W + MODULE_PAD * 2,
+            height: MODULE_HEADER + CLASS_H + MODULE_PAD,
+          },
     })
     if (isCollapsed) continue
 
@@ -93,7 +105,6 @@ export function projectDomainCanvas(
           name: className,
           props: Object.keys(definition?.properties ?? {}).length,
           methods: Object.keys(definition?.methods ?? {}).length,
-          bases: (definition?.extendsRefs ?? []).map((ref) => ref.name),
           coreRole: coreRole(definition?.extendsRefs ?? []),
           hue: module.hue,
           icon: definition?.icon,
@@ -113,10 +124,11 @@ export function projectDomainCanvas(
     if (edgeClass.type !== 'edge') continue
     const left = targets(edgeClass.endpoints?.[0])
     const right = targets(edgeClass.endpoints?.[1])
-    const markers = cardinalityMarkers(
-      edgeClass.endpoints?.[0]?.cardinality,
-      edgeClass.endpoints?.[1]?.cardinality,
-    )
+    const markers = edgeMarkers(edgeClass.orientation)
+    const ends = {
+      sourceEnd: endpointOf(edgeClass.endpoints?.[0]),
+      targetEnd: endpointOf(edgeClass.endpoints?.[1]),
+    }
     for (const sourceTarget of left) {
       for (const targetTarget of right) {
         const source = representative(sourceTarget.className)
@@ -147,12 +159,13 @@ export function projectDomainCanvas(
             label: edgeClass.name,
             edgeClass: edgeClass.name,
             ownerDomainId: bundle.domainId,
+            ...ends,
           },
           markerStart: markers.markerStart,
           markerEnd: markers.markerEnd,
           style: {
-            stroke: crossModule ? 'oklch(0.72 0.16 35)' : 'oklch(0.62 0.07 264)',
-            strokeWidth: crossModule ? 2.4 : 1.8,
+            stroke: crossModule ? 'oklch(0.68 0.1 45)' : 'oklch(0.74 0.02 255)',
+            strokeWidth: crossModule ? 1.6 : 1.3,
           },
         })
       }
@@ -173,15 +186,10 @@ export function projectDomainCanvas(
           target,
           type: 'floating',
           data: { label: 'extends', kind: 'extends', ownerDomainId: bundle.domainId },
-          markerEnd: {
-            type: MarkerType.ArrowClosed,
-            color: 'oklch(0.72 0.18 330)',
-            width: 16,
-            height: 16,
-          },
+          markerEnd: EDGE_ARROW,
           style: {
-            stroke: 'oklch(0.72 0.18 330)',
-            strokeWidth: 1.6,
+            stroke: 'oklch(0.55 0.14 300)',
+            strokeWidth: 1.3,
             strokeDasharray: '2 4',
           },
         })

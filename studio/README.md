@@ -87,16 +87,24 @@ URL or override the View handshake.
 
 ## What it does
 
-The header selects the active instance and domain and exposes settings,
-environment values, search, comment mode, and the agent loop. A bottom dock
-switches between the four current sections:
+The header selects the active instance and domain, switches between the three
+sections, and exposes settings, environment values, search, comment mode, and
+the agent loop:
 
 | Section | What it shows |
 |---|---|
-| **Context** | Saved notes, auto-computed context and local reference documents used in agent handoffs. |
-| **Schema** ★ | A module tree, relationship canvas and definition details. The canvas also exposes canonical Core data plus Domains, Views and detected Integrations panels, and can compose multiple workspace domains. |
+| **Schema** ★ | A module tree, relationship canvas and definition details. The canvas reads as DIRECTION by default and has a Cardinality mode; it also exposes canonical Core data plus Domains, Views and detected Integrations panels, and can compose multiple workspace domains. |
 | **Process** | Canonical Core genesis, standalone Functions, class Methods, their auth/handler links and View entrypoints. |
-| **Comments** | Anchored open/resolved threads, the streamed local agent loop, and **Copy for agent** / **Merge reply** manual handoff. |
+| **Views** | Every UI entrypoint the domain publishes, opened live through `astrale view`. |
+
+Talking to the agent and reading comment threads are not sections: they live in the
+**work panel**, dockable left (default), right or bottom, so they follow you across
+every section.
+
+| Panel tab | What it does |
+|---|---|
+| **Agent** | The instruction composer plus the reference documents handed to the agent on every turn. |
+| **Comments** | Open/resolved threads; opening one takes the main view to what it points at. **Copy for agent** / **Merge reply** live here too. |
 
 ## How it's built
 

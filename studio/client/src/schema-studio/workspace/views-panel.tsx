@@ -42,9 +42,9 @@ export function WorkspaceViewsPanel({ inputs }: { inputs: WorkspaceDomainInput[]
             .filter((group) => group.model.all.length > 0)
             .map(({ input, model }) => (
               <section key={input.summary.id} data-domain-id={input.summary.id}>
-                <div className="mb-2 flex items-center gap-2 border-b border-border/45 pb-2">
-                  <span className="h-2 w-2 rounded-full bg-sky-300/80" />
-                  <h2 className="min-w-0 flex-1 truncate text-[13px] font-extrabold">
+                <div className="mb-2 flex items-center gap-2 border-b border-border pb-2">
+                  <span className="h-2 w-2 rounded-full bg-primary/70" />
+                  <h2 className="min-w-0 flex-1 truncate text-[13px] font-semibold">
                     {input.summary.origin}
                   </h2>
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] tabular-nums text-muted-foreground">

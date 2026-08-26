@@ -7,7 +7,7 @@ import type {
 } from '@shared/types'
 import type { Edge, Node } from '@xyflow/react'
 
-import { cardinalityMarkers } from '../cardinality-markers'
+import { edgeMarkers, formatCardinality } from '../edge-markers'
 import {
   type CrossDomainEdge,
   type ExternalDomain,
@@ -117,6 +117,8 @@ export function deriveRegion(nodes: Node[], label: string): Node | null {
   }
   if (!Number.isFinite(minX)) return null
   const PAD = 56
+  const width = maxX - minX + 2 * PAD
+  const height = maxY - minY + 2 * PAD
   return {
     id: 'region',
     type: 'internalRegion',
@@ -125,7 +127,11 @@ export function deriveRegion(nodes: Node[], label: string): Node | null {
     selectable: false,
     zIndex: -1,
     data: { label },
-    style: { width: maxX - minX + 2 * PAD, height: maxY - minY + 2 * PAD },
+    style: { width, height },
+    // This node is DERIVED (never in `nodes` state), so its measurement can never
+    // round-trip through onNodesChange. Declaring it keeps React Flow's
+    // `nodesInitialized` true — the flag every queued fitView waits on.
+    measured: { width, height },
   }
 }
 
@@ -163,16 +169,21 @@ export function buildCrossEdges(
         ? `grp-${moduleOfClass(bundle, local.className)}`
         : `class.${local.className}`
       if (!ids.has(source)) continue
-      const color = 'oklch(0.72 0.16 35)'
-      const card = cardinalityMarkers(e.fromCard, e.toCard)
+      const color = 'oklch(0.68 0.1 45)'
+      const markers = edgeMarkers()
       out.push({
         id: `edge-${e.edge}__${source}__${target}`,
         source,
         target,
         type: 'floating',
-        data: { label: e.edge, edgeClass: e.edge },
-        markerStart: card.markerStart,
-        markerEnd: card.markerEnd,
+        data: {
+          label: e.edge,
+          edgeClass: e.edge,
+          sourceEnd: { cardinality: formatCardinality(e.fromCard) },
+          targetEnd: { cardinality: formatCardinality(e.toCard) },
+        },
+        markerStart: markers.markerStart,
+        markerEnd: markers.markerEnd,
         style: {
           stroke: color,
           strokeWidth: 2,
@@ -229,6 +240,8 @@ export function commentNodes(
         excerpt: 'Schema canvas',
       } satisfies CanvasCommentNodeData,
       style: { width: 24, height: 24 },
+      // derived like `region` — declare the size so it never blocks nodesInitialized
+      measured: { width: 24, height: 24 },
       zIndex: 40,
     }
   })

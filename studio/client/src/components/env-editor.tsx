@@ -42,13 +42,12 @@ export function EnvBadge({ domainId }: { domainId: string }) {
 }
 
 function rowStatus(r: EnvVarRow, value: string): { dot: string; label: string; tone: string } {
-  if (!r.declared)
-    return { dot: 'bg-amber-500', label: 'orphan', tone: 'text-amber-600 dark:text-amber-500' }
+  if (!r.declared) return { dot: 'bg-warning', label: 'orphan', tone: 'text-warning' }
   if (!r.optional && value === '')
     return { dot: 'bg-destructive', label: 'required', tone: 'text-destructive' }
   if (value === '')
-    return { dot: 'bg-muted-foreground/40', label: 'optional', tone: 'text-muted-foreground/60' }
-  return { dot: 'bg-emerald-500', label: 'set', tone: 'text-muted-foreground/60' }
+    return { dot: 'bg-muted-foreground/40', label: 'optional', tone: 'text-muted-foreground' }
+  return { dot: 'bg-success', label: 'set', tone: 'text-muted-foreground' }
 }
 
 const ENVS: EnvName[] = ['dev', 'prod']
@@ -89,11 +88,11 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
   return (
     <div>
       <div className="mb-1.5 flex items-center justify-between px-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Environment
         </span>
         {/* dev / prod selector */}
-        <div className="flex items-center gap-0.5 rounded-md border bg-card/40 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
           {ENVS.map((e) => (
             <button
               key={e}
@@ -102,7 +101,7 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
               className={cn(
                 'rounded px-2 py-0.5 text-[11px] font-medium transition-colors',
                 env === e
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -114,14 +113,10 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
 
       {/* status line: which file, whether it's wired, how it ships, missing count */}
       {data && (
-        <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[10px] text-muted-foreground/60">
+        <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 px-1 text-[11px] text-muted-foreground">
           <span className="font-mono">{data.file}</span>
           {!data.exists && <span>· new on save</span>}
-          {!data.configured && (
-            <span className="text-amber-600 dark:text-amber-500">
-              · not wired in astrale.config
-            </span>
-          )}
+          {!data.configured && <span className="text-warning">· not wired in astrale.config</span>}
           {env === 'prod' && data.adapter === 'astrale' && (
             <span>· managed prod → platform store on `pnpm prod`</span>
           )}
@@ -133,11 +128,11 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
         </div>
       )}
 
-      <div className="divide-y divide-border/50 rounded-lg border bg-card/40">
+      <div className="divide-y rounded-lg border bg-card">
         {isLoading && !data ? (
-          <div className="px-3 py-2.5 text-[12px] text-muted-foreground/70">Loading {env} env…</div>
+          <div className="px-3 py-2.5 text-[12px] text-muted-foreground">Loading {env} env…</div>
         ) : rows.length === 0 ? (
-          <div className="px-3 py-2.5 text-[12px] text-muted-foreground/70">
+          <div className="px-3 py-2.5 text-[12px] text-muted-foreground">
             No variables declared in env.ts and none set in {data?.file}.
           </div>
         ) : (
@@ -162,13 +157,13 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
                       placeholder={!r.optional && r.declared ? 'required — set a value' : 'unset'}
                       spellCheck={false}
                       autoComplete="off"
-                      className="w-full min-w-0 rounded-md border bg-background px-2 py-1 font-mono text-[12px] outline-none placeholder:text-muted-foreground/40 focus:border-primary"
+                      className="w-full min-w-0 rounded-md border bg-card px-2 py-1 font-mono text-[12px] outline-none placeholder:text-muted-foreground focus:border-primary"
                     />
                     <button
                       type="button"
                       onClick={() => toggleReveal(r.name)}
                       title={shown ? 'Hide' : 'Reveal'}
-                      className="shrink-0 rounded p-1 text-muted-foreground/50 hover:text-foreground"
+                      className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
                     >
                       {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                     </button>
@@ -177,7 +172,7 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
                         type="button"
                         onClick={() => setEdits((s) => ({ ...s, [r.name]: null }))}
                         title="Remove this variable from the file"
-                        className="shrink-0 rounded p-1 text-muted-foreground/50 hover:text-destructive"
+                        className="shrink-0 rounded p-1 text-muted-foreground hover:text-destructive"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -185,9 +180,7 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
                   </div>
                 </div>
                 {r.doc && (
-                  <p className="pl-3.5 text-[11px] leading-snug text-muted-foreground/70">
-                    {r.doc}
-                  </p>
+                  <p className="pl-3.5 text-[11px] leading-snug text-muted-foreground">{r.doc}</p>
                 )}
               </div>
             )
@@ -196,7 +189,7 @@ export function EnvEditor({ domainId }: { domainId?: string }) {
       </div>
 
       <div className="mt-1.5 flex items-center gap-2 px-1">
-        <p className="flex items-center gap-1 text-[10px] text-muted-foreground/50">
+        <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
           <AlertTriangle className="h-3 w-3" /> Plaintext in {data?.file ?? `.env.${env}`}{' '}
           (gitignored) · edits the file, not a deploy
         </p>

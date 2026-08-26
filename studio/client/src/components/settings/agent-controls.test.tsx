@@ -23,7 +23,7 @@ const claudeHarness: HarnessStatus = {
   capabilities: CLAUDE_CAPABILITIES,
 }
 
-test('Claude settings expose model suggestions and native effort modes', () => {
+test('Claude settings expose the harness model list and native effort modes', () => {
   const html = renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
       <AgentSettings
@@ -36,13 +36,15 @@ test('Claude settings expose model suggestions and native effort modes', () => {
     </QueryClientProvider>,
   )
 
-  expect(html).toMatch(/<input[^>]*aria-label="Agent model"[^>]*value="opus"/)
+  expect(html).toMatch(/<select[^>]*aria-label="Agent model"/)
   for (const [id, label] of [
     ['fable', 'Fable'],
     ['sonnet', 'Sonnet'],
-    ['opus', 'Opus'],
   ])
-    expect(html).toMatch(new RegExp(`<option value="${id}" label="${label}"`))
-  expect(html).toMatch(/<button(?=[^>]*value="max")(?=[^>]*aria-checked="true")[^>]*>Max<\/button>/)
-  expect(html).toMatch(/<button[^>]*value="ultracode"[^>]*>Ultracode<\/button>/)
+    expect(html).toMatch(new RegExp(`<option value="${id}">${label}`))
+  // the saved override is the selected option, not free text
+  expect(html).toMatch(/<option value="opus" selected="">Opus/)
+  expect(html).toMatch(/<select[^>]*aria-label="Agent effort"/)
+  expect(html).toMatch(/<option value="max" selected="">Max<\/option>/)
+  expect(html).toMatch(/<option value="ultracode">Ultracode<\/option>/)
 })

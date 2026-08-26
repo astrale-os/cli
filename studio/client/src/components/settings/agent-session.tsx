@@ -47,7 +47,7 @@ export function AgentSession({
         <span>Session ID</span>
         <SettingsHint text="The agent's resumable conversation id. Paste another to resume that conversation; clear it to start fresh on the next turn. Cannot be changed while a turn is running." />
         {session && (
-          <span className="ml-auto text-[11px] text-muted-foreground/60">
+          <span className="ml-auto text-[11px] text-muted-foreground">
             {session.sessionId
               ? `${session.turns} turn${session.turns === 1 ? '' : 's'}${session.harness ? ` · ${session.harness}` : ''}`
               : 'no active conversation'}
@@ -57,9 +57,9 @@ export function AgentSession({
       <input
         value={sessionId}
         onChange={(event) => setSessionId(event.target.value)}
-        placeholder="(none — a fresh conversation starts next turn)"
+        placeholder="none — a fresh conversation starts next turn"
         spellCheck={false}
-        className="w-full rounded-md border bg-background px-2 py-1 font-mono text-[12px] outline-none focus:border-primary"
+        className="w-full rounded-md border bg-card px-2 py-1 font-mono text-[12px] outline-none focus:border-primary"
       />
       <div className="flex justify-end">
         <button

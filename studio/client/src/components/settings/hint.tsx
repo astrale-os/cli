@@ -10,7 +10,7 @@ export function SettingsHint({ text }: { text: string }) {
         <button
           type="button"
           aria-label="What's this?"
-          className="text-muted-foreground/40 transition-colors hover:text-foreground"
+          className="text-muted-foreground transition-colors hover:text-foreground"
         >
           <HelpCircle className="h-3.5 w-3.5" />
         </button>

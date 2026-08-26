@@ -12,6 +12,7 @@ import { viewsForClass } from '@/lib/views'
 
 import { inheritedGroupsOfClass, resolveClass } from '../inheritance'
 import { type MemberRef, moduleMembers } from '../modules'
+import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
 import { InheritedSection, MethodCard, PropertyRow } from './members'
@@ -28,9 +29,9 @@ function BackBar() {
         type="button"
         onClick={() => back()}
         title="Back to previous selection"
-        className="group inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-muted-foreground/55 transition-colors hover:bg-accent/50 hover:text-muted-foreground"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" />
+        <ArrowLeft className="h-3.5 w-3.5" />
         Back
       </button>
     </div>
@@ -92,10 +93,10 @@ export function SchemaDetail({
   return (
     <div className="h-full overflow-y-auto" {...anchorData(refBase, name)}>
       <BackBar />
-      <div className="px-5 py-6 space-y-7">
-        <header className="group space-y-3">
-          <div className="flex items-start gap-3.5">
-            <IconTile tone="violet" size="lg">
+      <div className="space-y-6 px-5 py-5">
+        <header className="space-y-3">
+          <div className="flex items-start gap-3">
+            <IconTile tone={isEdge ? 'edge' : 'node'} size="lg">
               {member.icon ? (
                 <SchemaIcon svg={member.icon} className="h-5 w-5" />
               ) : isEdge ? (
@@ -106,7 +107,7 @@ export function SchemaDetail({
             </IconTile>
             <div className="flex-1 min-w-0 pt-0.5">
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-extrabold tracking-tight truncate">{name}</h2>
+                <h2 className="truncate text-[15px] font-semibold tracking-tight">{name}</h2>
                 {isEdge && <Chip tone="outline">edge</Chip>}
                 {!local && <Chip tone="outline">{originLabel(ref.origin)}</Chip>}
                 <AnchorButton
@@ -116,7 +117,7 @@ export function SchemaDetail({
                 />
               </div>
               {(span?.doc ?? member.description) && (
-                <p className="text-[13px] text-muted-foreground mt-1 leading-relaxed">
+                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
                   {span?.doc ?? member.description}
                 </p>
               )}
@@ -124,7 +125,7 @@ export function SchemaDetail({
           </div>
 
           {(member.extendsRefs ?? []).length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pl-[3.25rem]">
+            <div className="flex flex-wrap items-center gap-1.5 pl-11">
               {(member.extendsRefs ?? []).map((parent) => {
                 const navigable = resolveClass(bundle, parent) !== undefined
                 const target =
@@ -157,7 +158,7 @@ export function SchemaDetail({
 
         {properties.length > 0 && (
           <Group label="Properties" hint={`${properties.length}`}>
-            <Surface className="divide-y divide-border/70">
+            <Surface className="divide-y">
               {properties.map(([propertyName, value]) => (
                 <PropertyRow
                   key={propertyName}
@@ -228,7 +229,7 @@ function ModuleDetail({ bundle, path }: { bundle: StudioSchemaBundle; path: stri
       anchorRef={member.ref}
       anchorExcerpt={member.name}
       leading={
-        <IconTile tone={member.kind === 'edge' ? 'amber' : 'sky'} size="sm">
+        <IconTile tone={member.kind === 'edge' ? 'edge' : 'node'} size="sm">
           {member.icon ? (
             <SchemaIcon svg={member.icon} className="h-4 w-4" />
           ) : member.kind === 'edge' ? (
@@ -245,14 +246,14 @@ function ModuleDetail({ bundle, path }: { bundle: StudioSchemaBundle; path: stri
   return (
     <div className="h-full overflow-y-auto" {...anchorData(`module.${path}`, info.label)}>
       <BackBar />
-      <div className="px-5 py-6 space-y-7">
-        <header className="flex items-start gap-3.5">
-          <IconTile tone="muted" size="lg" style={{ color: `oklch(0.82 0.12 ${info.hue})` }}>
+      <div className="space-y-6 px-5 py-5">
+        <header className="flex items-start gap-3">
+          <IconTile tone="muted" size="lg" style={{ color: moduleTint(info.hue).mark }}>
             <FolderClosed />
           </IconTile>
           <div className="flex-1 min-w-0 pt-0.5">
-            <h2 className="text-lg font-extrabold tracking-tight truncate">{info.label}</h2>
-            <p className="text-[13px] text-muted-foreground mt-1">
+            <h2 className="truncate text-[15px] font-semibold tracking-tight">{info.label}</h2>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">
               {info.classes.length} {info.classes.length === 1 ? 'class' : 'classes'}
               {info.edges.length > 0 &&
                 ` · ${info.edges.length} relationship${info.edges.length === 1 ? '' : 's'}`}
@@ -261,12 +262,12 @@ function ModuleDetail({ bundle, path }: { bundle: StudioSchemaBundle; path: stri
         </header>
         {info.classes.length > 0 && (
           <Group label="Classes">
-            <Surface className="divide-y divide-border/70">{info.classes.map(memberRow)}</Surface>
+            <Surface className="divide-y">{info.classes.map(memberRow)}</Surface>
           </Group>
         )}
         {info.edges.length > 0 && (
           <Group label="Relationships">
-            <Surface className="divide-y divide-border/70">{info.edges.map(memberRow)}</Surface>
+            <Surface className="divide-y">{info.edges.map(memberRow)}</Surface>
           </Group>
         )}
       </div>

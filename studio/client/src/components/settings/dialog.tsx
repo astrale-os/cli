@@ -89,9 +89,7 @@ export function SettingsDialog() {
       <DialogContent className="w-[calc(100%-2rem)] max-w-xl">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>
-            Power-user overrides for this domain — stored in .domain-studio/settings.json.
-          </DialogDescription>
+          <DialogDescription>Stored in .domain-studio/settings.json</DialogDescription>
         </DialogHeader>
         <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
           <AgentSettings

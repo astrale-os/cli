@@ -4,7 +4,6 @@ import { useEffect } from 'react'
 import { useAsks } from '@/lib/asks'
 import { type CommentDraft, useUI } from '@/lib/store'
 import { anchorKindForRef, flowEdgeAnchorRef } from '@/lib/targets'
-import { cn } from '@/lib/utils'
 
 function flowPoint(target: HTMLElement, x: number, y: number): { x: number; y: number } | null {
   const flow = target.closest<HTMLElement>('.react-flow')
@@ -116,6 +115,21 @@ function resolveDraft(
   return null
 }
 
+/** The element a click would pin to — highlighted under the pointer while targeting.
+ *  Mirrors `resolveDraft`: only real targets light up, never the decorative frames. */
+function resolveTargetElement(target: HTMLElement | null): HTMLElement | null {
+  if (!target) return null
+  const tagged = target.closest<HTMLElement>('[data-anchor-ref]')
+  if (tagged) return tagged
+  const node = target.closest<HTMLElement>('.react-flow__node')
+  if (node) {
+    const rawId = node.getAttribute('data-id') ?? ''
+    const id = rawId.startsWith('workspace:') ? rawId.split(':').slice(2).join(':') : rawId
+    return id.startsWith('class.') || id.startsWith('grp-') ? node : null
+  }
+  return target.closest<HTMLElement>('.react-flow__edge')
+}
+
 /**
  * "Target anything" mode, shared by Comment (hotkey C) and Ask (hotkey A). While
  * active, a capture-phase click resolves the most specific target under the pointer
@@ -134,8 +148,19 @@ export function CommentModeOverlay() {
   useEffect(() => {
     if (!active) return
     const prevCursor = document.body.style.cursor
-    document.body.style.cursor = 'crosshair'
+    document.body.style.cursor = 'pointer'
     const exit = () => (useUI.getState().askMode ? toggleAskMode(false) : toggleCommentMode(false))
+
+    // outline what the click would target, so the pin never lands somewhere unexpected
+    let highlighted: HTMLElement | null = null
+    const highlight = (next: HTMLElement | null) => {
+      if (next === highlighted) return
+      highlighted?.removeAttribute('data-comment-target')
+      highlighted = next
+      highlighted?.setAttribute('data-comment-target', '')
+    }
+    const onMove = (e: MouseEvent) =>
+      highlight(resolveTargetElement(e.target as HTMLElement | null))
 
     const onClick = (e: MouseEvent) => {
       e.preventDefault()
@@ -173,10 +198,13 @@ export function CommentModeOverlay() {
 
     document.addEventListener('click', onClick, true)
     document.addEventListener('keydown', onKeyDown, true)
+    document.addEventListener('mousemove', onMove, true)
     return () => {
       document.body.style.cursor = prevCursor
+      highlight(null)
       document.removeEventListener('click', onClick, true)
       document.removeEventListener('keydown', onKeyDown, true)
+      document.removeEventListener('mousemove', onMove, true)
     }
   }, [active, toggleCommentMode, toggleAskMode, setCommentDraft])
 
@@ -185,14 +213,9 @@ export function CommentModeOverlay() {
   const ask = mode === 'ask'
   return (
     <div className="pointer-events-none fixed inset-x-0 top-3 z-50 flex justify-center">
-      <div
-        className={cn(
-          'flex items-center gap-2 rounded-full border bg-card/95 px-4 py-1.5 text-xs font-medium text-foreground shadow-lg backdrop-blur',
-          ask ? 'border-violet-400/50' : 'border-primary/40',
-        )}
-      >
+      <div className="flex items-center gap-2 rounded-full border border-primary/40 bg-card px-4 py-1.5 text-xs font-medium shadow-[0_8px_24px_-12px_rgb(0_0_0/0.25)]">
         {ask ? (
-          <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
         ) : (
           <MousePointerClick className="h-3.5 w-3.5 text-primary" />
         )}

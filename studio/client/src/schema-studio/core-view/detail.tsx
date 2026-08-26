@@ -5,6 +5,7 @@ import { useMemo } from 'react'
 
 import { Commentable } from '@/components/commentable'
 
+import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
 import {
   classIcon,
@@ -35,7 +36,7 @@ export function CoreDetail({
 
   if (!node) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground/70">
+      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
         Select a core node to see what's set on it.
       </div>
     )
@@ -55,7 +56,7 @@ export function CoreDetail({
         className="block"
       >
         <div className="flex items-center gap-2.5 border-b px-4 py-3">
-          <span style={{ color: `oklch(0.82 0.14 ${hue})` }} className="shrink-0">
+          <span style={{ color: moduleTint(hue).mark }} className="shrink-0">
             {icon ? (
               <SchemaIcon svg={icon} className="h-7 w-7" />
             ) : isFolder ? (
@@ -65,39 +66,39 @@ export function CoreDetail({
             )}
           </span>
           <div className="min-w-0">
-            <div className="text-base font-extrabold truncate">{displayName(node)}</div>
-            <div className="text-[11px] font-mono text-muted-foreground/70">{node.className}</div>
+            <div className="truncate text-[15px] font-semibold">{displayName(node)}</div>
+            <div className="text-[11px] font-mono text-muted-foreground">{node.className}</div>
           </div>
         </div>
       </Commentable>
 
       <div className="px-4 py-3">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Path
         </div>
         <div className="mt-1 break-all font-mono text-[11px] text-foreground/80">{node.path}</div>
       </div>
 
       <div className="px-4 pb-3">
-        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Data
         </div>
         {entries.length === 0 ? (
-          <p className="mt-1 text-[12px] text-muted-foreground/60">No fields set.</p>
+          <p className="mt-1 text-[12px] text-muted-foreground">No fields set.</p>
         ) : (
           <div className="mt-1.5 flex flex-col gap-1.5">
             {entries.map(({ key, label, value }) => (
               <div
                 key={key}
-                className="flex flex-col gap-0.5 rounded-md border bg-card/40 px-2.5 py-1.5"
+                className="flex flex-col gap-0.5 rounded-md border bg-card px-2.5 py-1.5"
               >
                 <span
-                  className="font-mono text-[11px] text-muted-foreground/70"
+                  className="font-mono text-[11px] text-muted-foreground"
                   title={label === key ? undefined : key}
                 >
                   {label}
                 </span>
-                <span className="break-words text-[13px] text-foreground/90">{fmtVal(value)}</span>
+                <span className="break-words text-[13px] text-foreground/80">{fmtVal(value)}</span>
               </div>
             ))}
           </div>
@@ -106,7 +107,7 @@ export function CoreDetail({
 
       {relatedEdges.length > 0 && (
         <div className="px-4 pb-4">
-          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Edges
           </div>
           <div className="mt-1.5 flex flex-col gap-1">
@@ -115,9 +116,9 @@ export function CoreDetail({
               const other = outgoing ? e.to : e.from
               return (
                 <div key={`${e.edgeName}-${i}`} className="flex items-center gap-1.5 text-[12px]">
-                  <Spline className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                  <span className="font-mono text-amber-300">{e.edgeName}</span>
-                  <span className="text-muted-foreground/60">{outgoing ? '→' : '←'}</span>
+                  <Spline className="h-3.5 w-3.5 shrink-0 text-schema-edge" />
+                  <span className="font-mono text-schema-edge">{e.edgeName}</span>
+                  <span className="text-muted-foreground">{outgoing ? '→' : '←'}</span>
                   <span className="truncate text-foreground/80" title={other}>
                     {lastSeg(other)}
                   </span>

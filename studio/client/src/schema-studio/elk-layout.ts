@@ -3,6 +3,8 @@ import type { ELK, ElkNode } from 'elkjs/lib/elk-api.js'
 
 import elkWorkerUrl from 'elkjs/lib/elk-worker.min.js?url'
 
+import { CLASS_H, CLASS_W, MODULE_HEADER, MODULE_PAD } from './palette'
+
 // Compound/nested auto-layout for the module graph. ELK is the only mainstream
 // engine with first-class nested-group support, which we need because our
 // folder → file → class modules are literal React Flow parent containers. ELK
@@ -18,19 +20,21 @@ function layoutEngine(): Promise<ELK> {
   return enginePromise
 }
 
+// Spacing is tuned against the RENDERED node size (see palette.ts): rows sit one
+// node-height apart, columns leave room for a label on the connecting edge.
 const OPTS: Record<string, string> = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
   'elk.hierarchyHandling': 'INCLUDE_CHILDREN', // let edges cross module boundaries
-  'elk.layered.spacing.nodeNodeBetweenLayers': '70',
-  'elk.spacing.nodeNode': '44',
-  'elk.spacing.componentComponent': '70',
+  'elk.layered.spacing.nodeNodeBetweenLayers': '96',
+  'elk.spacing.nodeNode': '28',
+  'elk.spacing.componentComponent': '64',
+  'elk.spacing.edgeNode': '24',
+  'elk.spacing.edgeEdge': '16',
   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-  'elk.padding': '[top=34,left=14,bottom=14,right=14]',
+  'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+  'elk.padding': `[top=${MODULE_HEADER},left=${MODULE_PAD},bottom=${MODULE_PAD},right=${MODULE_PAD}]`,
 }
-
-const CLASS_W = 160
-const CLASS_H = 88
 
 export async function elkLayout(nodes: Node[], edges: Edge[]): Promise<Node[]> {
   if (nodes.length === 0) return nodes

@@ -1,7 +1,7 @@
 import { effectiveAgentEffort } from '@shared/agent-effort'
 import { AGENT_ACCESS_LEVELS, type AgentAccess, type AgentEffort } from '@shared/types'
 
-import { cn } from '@/lib/utils'
+import { SettingSelect } from './row'
 
 const EFFORT_LABELS: Record<AgentEffort, string> = {
   minimal: 'Minimal',
@@ -29,35 +29,17 @@ export function AgentEffortPicker({
 }) {
   const current = effectiveAgentEffort(levels, value)
   return (
-    <div
-      className="grid grid-cols-3 gap-1 rounded-md bg-muted/45 p-1 sm:grid-cols-6"
-      role="radiogroup"
+    <SettingSelect
       aria-label="Agent effort"
+      value={current ?? ''}
+      onChange={(event) => onChange(event.target.value as AgentEffort)}
     >
       {levels.map((effort) => (
-        <button
-          key={effort}
-          type="button"
-          value={effort}
-          title={
-            effort === 'ultracode'
-              ? 'Claude: X-high effort plus dynamic workflow orchestration'
-              : undefined
-          }
-          role="radio"
-          aria-checked={current === effort}
-          onClick={() => onChange(effort)}
-          className={cn(
-            'min-w-0 rounded px-1.5 py-1 text-center text-[11px] font-medium transition-colors',
-            current === effort
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
-          )}
-        >
+        <option key={effort} value={effort}>
           {EFFORT_LABELS[effort]}
-        </button>
+        </option>
       ))}
-    </div>
+    </SettingSelect>
   )
 }
 
@@ -77,24 +59,16 @@ export function AgentAccessPicker({
         ? 'full'
         : levels[0]
   return (
-    <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/45 p-1" role="radiogroup">
+    <SettingSelect
+      aria-label="Agent access"
+      value={current}
+      onChange={(event) => onChange(event.target.value as AgentAccess)}
+    >
       {levels.map((access) => (
-        <button
-          key={access}
-          type="button"
-          role="radio"
-          aria-checked={current === access}
-          onClick={() => onChange(access)}
-          className={cn(
-            'rounded px-2 py-1 text-center text-[11px] font-medium transition-colors',
-            current === access
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:bg-background/60 hover:text-foreground',
-          )}
-        >
+        <option key={access} value={access}>
           {ACCESS_LABELS[access]}
-        </button>
+        </option>
       ))}
-    </div>
+    </SettingSelect>
   )
 }

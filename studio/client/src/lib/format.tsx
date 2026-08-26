@@ -50,22 +50,8 @@ export function typeLabel(d: TypeDescriptor): string {
 /** Inline monospace type chip. */
 export function TypeChip({ schema, className }: { schema?: JsonSchema; className?: string }) {
   const d = describe(schema)
-  const colorByKind: Record<string, string> = {
-    string: 'text-emerald-400',
-    integer: 'text-sky-400',
-    number: 'text-sky-400',
-    boolean: 'text-amber-400',
-    enum: 'text-fuchsia-400',
-    object: 'text-violet-400',
-    array: 'text-violet-400',
-    ref: 'text-rose-400',
-    unknown: 'text-muted-foreground',
-    null: 'text-muted-foreground',
-  }
   return (
-    <span
-      className={cn('font-mono text-xs', colorByKind[d.kind] ?? 'text-muted-foreground', className)}
-    >
+    <span className={cn('font-mono text-xs text-foreground/80', className)}>
       {typeLabel(d)}
       {d.optional && <span className="text-muted-foreground">?</span>}
     </span>

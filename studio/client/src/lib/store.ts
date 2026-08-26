@@ -14,20 +14,48 @@ export interface CommentDraft {
   y: number
 }
 
-export type SectionKey = 'context' | 'schema' | 'process' | 'comments'
+/** The main views of a domain. Talking to the agent and reading comments are NOT
+ *  sections — they follow you across every view, from the work panel. */
+export type SectionKey = 'schema' | 'process'
 
-/** Restore the last dock section across refreshes; first-ever visit lands on Context. */
-function loadSection(): SectionKey {
+const SECTION_KEYS: readonly SectionKey[] = ['schema', 'process']
+
+/** Which half of the work panel is showing. */
+export type PanelTab = 'agent' | 'comments'
+/** Where the work panel is docked. */
+export type PanelSide = 'left' | 'right' | 'bottom'
+
+function loadStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
-    const v = localStorage.getItem('studio.lastSection')
-    if (v === 'context' || v === 'schema' || v === 'process' || v === 'comments') return v
+    const value = localStorage.getItem(key) as T | null
+    if (value && allowed.includes(value)) return value
   } catch {}
-  return 'context'
+  return fallback
+}
+
+function loadNumber(key: string, fallback: number, min: number, max: number): number {
+  try {
+    const value = Number(localStorage.getItem(key))
+    if (Number.isFinite(value) && value >= min && value <= max) return value
+  } catch {}
+  return fallback
+}
+
+function store(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {}
 }
 
 interface UIState {
   domainId?: string
   section: SectionKey
+  /** work panel: the agent conversation and the comment threads, docked beside the view */
+  panelOpen: boolean
+  panelTab: PanelTab
+  panelSide: PanelSide
+  /** panel thickness in px — width when docked left/right, height when docked bottom */
+  panelSize: number
   selectedClass?: string
   /** navigation history of prior `selectedClass` values (powers the detail-pane Back button) */
   selectionHistory: string[]
@@ -47,6 +75,8 @@ interface UIState {
   hidden: Record<string, true>
   /** Category control for Class inheritance edges. Persisted per domain. */
   showInheritedEdges: boolean
+  /** Canvas reading mode: direction only (default) or the declared multiplicities. */
+  showCardinality: boolean
   /** which anchor's comment thread-popover is currently open (one at a time) */
   openAnchorRef: string | null
   /** which pin INSTANCE opened it (a `useId()`), so when the same ref is pinned in
@@ -65,6 +95,12 @@ interface UIState {
   mergeOpen: boolean
   setDomain: (id?: string) => void
   setSection: (s: SectionKey) => void
+  setPanelOpen: (open: boolean) => void
+  setPanelTab: (tab: PanelTab) => void
+  setPanelSide: (side: PanelSide) => void
+  setPanelSize: (size: number) => void
+  /** Jump to whatever an anchor points at: the right section, class selected and focused. */
+  revealAnchor: (ref: string) => void
   /** switch the schema canvas between the schema graph and the core (genesis) view */
   setCanvasMode: (m: 'schema' | 'core') => void
   setPanelOverlay: (v: 'views' | 'domains' | 'integrations' | null) => void
@@ -79,6 +115,7 @@ interface UIState {
   /** Replace the whole visibility slice (used to hydrate from the persisted per-domain state). */
   setVisibility: (v: { hidden: Record<string, true>; showInheritedEdges: boolean }) => void
   toggleInheritedEdges: () => void
+  toggleCardinality: () => void
   setOpenAnchor: (ref: string | null, id?: string | null) => void
   toggleCommentMode: (on?: boolean) => void
   toggleAskMode: (on?: boolean) => void
@@ -89,8 +126,22 @@ interface UIState {
   setMergeOpen: (b: boolean) => void
 }
 
+/** `edge.X` selects like a class (both live in the `class.` selection namespace). */
+function revealSelection(ref: string): string {
+  if (ref.startsWith('edge.')) return `class.${ref.slice('edge.'.length)}`
+  return ref
+}
+function revealFocus(ref: string): string | null {
+  const selection = revealSelection(ref)
+  return selection.startsWith('class.') ? selection : null
+}
+
 export const useUI = create<UIState>((set) => ({
-  section: loadSection(),
+  section: loadStored('studio.lastSection', SECTION_KEYS, 'schema'),
+  panelOpen: loadStored('studio.panelOpen', ['yes', 'no'] as const, 'yes') === 'yes',
+  panelTab: loadStored('studio.panelTab', ['agent', 'comments'] as const, 'agent'),
+  panelSide: loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'left'),
+  panelSize: loadNumber('studio.panelSize', 360, 260, 900),
   focusId: null,
   canvasMode: 'schema',
   panelOverlay: null,
@@ -99,6 +150,7 @@ export const useUI = create<UIState>((set) => ({
   commentDraft: null,
   hidden: {},
   showInheritedEdges: true,
+  showCardinality: false,
   openAnchorRef: null,
   openAnchorId: null,
   commentMode: false,
@@ -126,10 +178,42 @@ export const useUI = create<UIState>((set) => ({
     })
   },
   setSection: (section) => {
-    try {
-      localStorage.setItem('studio.lastSection', section)
-    } catch {}
+    store('studio.lastSection', section)
     set({ section, canvasMode: 'schema', panelOverlay: null, openAnchorRef: null })
+  },
+  setPanelOpen: (panelOpen) => {
+    store('studio.panelOpen', panelOpen ? 'yes' : 'no')
+    set({ panelOpen })
+  },
+  setPanelTab: (panelTab) => {
+    store('studio.panelTab', panelTab)
+    set({ panelTab, panelOpen: true })
+  },
+  setPanelSide: (panelSide) => {
+    store('studio.panelSide', panelSide)
+    set({ panelSide })
+  },
+  setPanelSize: (panelSize) => {
+    store('studio.panelSize', String(Math.round(panelSize)))
+    set({ panelSize })
+  },
+  revealAnchor: (ref) => {
+    const section: SectionKey = ref.startsWith('section.')
+      ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')
+      : 'schema'
+    const target = SECTION_KEYS.includes(section) ? section : 'schema'
+    store('studio.lastSection', target)
+    set((state) => ({
+      section: target,
+      canvasMode: 'schema',
+      panelOverlay: null,
+      ...(ref.startsWith('class.') || ref.startsWith('edge.') || ref.startsWith('module.')
+        ? { selectedClass: revealSelection(ref), focusId: revealFocus(ref) }
+        : {}),
+      selectionHistory: state.selectedClass
+        ? [...state.selectionHistory, state.selectedClass].slice(-50)
+        : state.selectionHistory,
+    }))
   },
   setCanvasMode: (canvasMode) =>
     set({
@@ -190,6 +274,7 @@ export const useUI = create<UIState>((set) => ({
     }),
   setVisibility: ({ hidden, showInheritedEdges }) => set({ hidden, showInheritedEdges }),
   toggleInheritedEdges: () => set((s) => ({ showInheritedEdges: !s.showInheritedEdges })),
+  toggleCardinality: () => set((s) => ({ showCardinality: !s.showCardinality })),
   setOpenAnchor: (openAnchorRef, openAnchorId = null) => set({ openAnchorRef, openAnchorId }),
   toggleCommentMode: (on) =>
     set((s) => ({ commentMode: on ?? !s.commentMode, askMode: false, openAnchorRef: null })),

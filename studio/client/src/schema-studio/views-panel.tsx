@@ -49,7 +49,7 @@ export function ViewRow({
           title="Open live view"
           className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
         >
-          <IconTile tone="sky" size="sm">
+          <IconTile tone="node" size="sm">
             {icon ? (
               <SchemaIcon svg={icon} className="h-3.5 w-3.5" />
             ) : (
@@ -58,22 +58,20 @@ export function ViewRow({
           </IconTile>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium leading-tight">{view.slug}</div>
-            <div className="truncate text-[11px] leading-tight text-muted-foreground/70">
-              {meta}
-            </div>
+            <div className="truncate text-[11px] leading-tight text-muted-foreground">{meta}</div>
           </div>
           {drift && (
             <span
               className={cn(
                 'inline-flex shrink-0 items-center gap-1 text-[10px] font-medium',
-                drift.tone === 'warn' ? 'text-warning' : 'text-muted-foreground/70',
+                drift.tone === 'warn' ? 'text-warning' : 'text-muted-foreground',
               )}
             >
               {drift.tone === 'warn' && <TriangleAlert className="h-3 w-3" />}
               {drift.text}
             </span>
           )}
-          <Play className="h-3.5 w-3.5 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-primary" />
+          <Play className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
         </button>
         <AnchorButton
           domainId={domainId}
@@ -127,7 +125,7 @@ export function ViewsPanel({ domainId, model }: { domainId: string; model: Views
                 title={`Open ${cls}`}
                 className="group mb-1.5 flex w-full items-center gap-1.5 px-1 text-left"
               >
-                <span className="shrink-0 text-muted-foreground/70">
+                <span className="shrink-0 text-muted-foreground">
                   {icon ? (
                     <SchemaIcon svg={icon} className="h-4 w-4" />
                   ) : (
@@ -137,8 +135,8 @@ export function ViewsPanel({ domainId, model }: { domainId: string; model: Views
                 <span className="text-[13px] font-semibold transition-colors group-hover:text-primary">
                   {cls}
                 </span>
-                <span className="text-[11px] text-muted-foreground/50">{rows.length}</span>
-                <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground/60" />
+                <span className="text-[11px] text-muted-foreground">{rows.length}</span>
+                <ArrowRight className="ml-auto h-3.5 w-3.5 text-muted-foreground transition-colors group-hover:text-muted-foreground" />
               </button>
               <div className="flex flex-col gap-0.5">
                 {rows.map((v) => (

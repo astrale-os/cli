@@ -267,6 +267,9 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
     ...(typeof declaration.description === 'string'
       ? { description: declaration.description }
       : {}),
+    // the SDK lets a Class carry its own glyph; without this the schema declared one
+    // and every surface still drew the generic box
+    ...(typeof declaration.icon === 'string' ? { icon: declaration.icon } : {}),
     ...(Object.keys(propertyMetadata).length === 0 ? {} : { propertyMetadata }),
     ...(dataDeclaration(declaration.data) ? { data: dataDeclaration(declaration.data) } : {}),
     ...(Object.keys(policies).length === 0 ? {} : { policies }),

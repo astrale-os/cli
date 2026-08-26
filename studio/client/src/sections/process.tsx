@@ -1,15 +1,6 @@
 import type { IrFunction, IrMethod, StudioSchemaBundle, ViewInfo } from '@shared/types'
 
-import {
-  ArrowUpRight,
-  Box,
-  Braces,
-  LayoutTemplate,
-  Radio,
-  Sprout,
-  Workflow,
-  Zap,
-} from 'lucide-react'
+import { ArrowUpRight, Box, Braces, LayoutTemplate, Sprout, Workflow, Zap } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { MethodAuthBadge } from '@/components/method-auth'
@@ -152,75 +143,34 @@ export function ProcessSection({ domainId }: { domainId: string }) {
         <>
           {/* ── Entrypoints: how a process starts ── */}
           <Group label="Entrypoints">
-            <div className="space-y-2">
-              {coreCount > 0 ? (
-                <Surface className="flex items-center gap-3 border-emerald-500/30 bg-emerald-500/[0.04] px-4 py-3">
-                  <IconTile tone="emerald">
+            <Surface className="divide-y">
+              <Row
+                leading={
+                  <IconTile tone={coreCount > 0 ? 'core' : 'muted'}>
                     <Sprout />
                   </IconTile>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">Core genesis</div>
-                    <div className="mt-0.5 text-[13px] text-muted-foreground">
-                      {coreCount} portable element{coreCount === 1 ? '' : 's'} installed with the
-                      schema
-                    </div>
-                  </div>
-                </Surface>
-              ) : (
-                <Surface className="flex items-center gap-3 px-4 py-3 text-muted-foreground">
-                  <IconTile tone="muted">
-                    <Sprout />
-                  </IconTile>
-                  <div className="min-w-0 flex-1 text-[13px]">
-                    No Core genesis data declared in this schema.
-                  </div>
-                </Surface>
-              )}
-
-              {/* views — UI entrypoints */}
+                }
+                title="Core genesis"
+                subtitle={
+                  coreCount > 0
+                    ? `${coreCount} element${coreCount === 1 ? '' : 's'} installed with the schema`
+                    : 'None declared'
+                }
+              />
               {views.length > 0 && (
-                <Surface
+                <Row
                   onClick={gotoViews}
-                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
-                >
-                  <IconTile tone="sky">
-                    <LayoutTemplate />
-                  </IconTile>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold">
-                      {views.length} view{views.length === 1 ? '' : 's'}{' '}
-                      <span className="font-normal text-muted-foreground">· UI entrypoints</span>
-                    </div>
-                    {uiTargets.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {uiTargets.slice(0, 8).map((t) => (
-                          <Chip key={t} tone="outline">
-                            {t}
-                          </Chip>
-                        ))}
-                        {uiTargets.length > 8 && (
-                          <Chip tone="default">+{uiTargets.length - 8}</Chip>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                </Surface>
+                  leading={
+                    <IconTile tone="view">
+                      <LayoutTemplate />
+                    </IconTile>
+                  }
+                  title={`${views.length} view${views.length === 1 ? '' : 's'}`}
+                  subtitle={uiTargets.length > 0 ? uiTargets.join(' · ') : 'UI entrypoints'}
+                  trailing={<ArrowUpRight className="h-4 w-4 text-muted-foreground" />}
+                />
               )}
-
-              {/* triggers — not parsed yet (defined in the services domain) */}
-              <Surface className="flex items-center gap-3 border-dashed px-4 py-3 text-muted-foreground">
-                <IconTile tone="muted">
-                  <Radio />
-                </IconTile>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-muted-foreground">Triggers</div>
-                  <div className="mt-0.5 text-[13px] text-muted-foreground/70">
-                    On event · polling · cron — wired via the services domain. Not parsed yet.
-                  </div>
-                </div>
-              </Surface>
-            </div>
+            </Surface>
           </Group>
 
           {/* ── Functions, grouped by the class they run on ── */}
@@ -299,7 +249,7 @@ function FnRow({ fn, onClick }: { fn: Fn; onClick?: () => void }) {
           {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}
           {'static' in fn.method && fn.method.static && <Chip tone="default">static</Chip>}
           {'inheritance' in fn.method && fn.method.inheritance === 'abstract' && (
-            <Chip tone="fuchsia">contract</Chip>
+            <Chip tone="fn">contract</Chip>
           )}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {fn.link?.unlinked && <Chip tone="default">unlinked</Chip>}

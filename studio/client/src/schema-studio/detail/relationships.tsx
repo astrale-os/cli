@@ -94,13 +94,13 @@ function EndpointCard({
     if (m.resolvable && m.selectionId) selectClass(m.selectionId)
   }
   const roleChip = (
-    <div className="inline-flex max-w-full items-center rounded-full bg-muted/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+    <div className="inline-flex max-w-full items-center rounded-full bg-muted/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
       <span className="truncate">{endpoint.name}</span>
     </div>
   )
   const cardChip = (
     <span
-      className="inline-flex items-center rounded-full border border-border/70 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/80"
+      className="inline-flex items-center rounded-full border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
       title="declared cardinality"
     >
       {cardLabel(card)}
@@ -130,7 +130,7 @@ function EndpointCard({
           {m.icon ? <SchemaIcon svg={m.icon} className="h-5 w-5" /> : <Box />}
         </IconTile>
         <div className="min-w-0 w-full space-y-1.5">
-          <div className="text-sm font-bold break-words leading-tight">{m.t}</div>
+          <div className="break-words text-[13px] font-medium leading-tight">{m.t}</div>
           <div className="flex flex-wrap items-center justify-center gap-1">
             {roleChip}
             {cardChip}
@@ -157,7 +157,7 @@ function EndpointCard({
               disabled={!m.resolvable}
               title={m.resolvable ? `Open ${m.t}` : m.origin ? `${m.t} · ${m.origin}` : m.t}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg border border-border/70 pl-1 pr-2 py-1 transition-colors',
+                'inline-flex items-center gap-1.5 rounded-lg border border-border pl-1 pr-2 py-1 transition-colors',
                 m.resolvable ? 'hover:bg-accent/60 cursor-pointer' : 'cursor-default',
               )}
             >
@@ -170,7 +170,7 @@ function EndpointCard({
         })}
       </div>
       <div className="flex flex-wrap items-center justify-center gap-1">
-        <span className="text-[10px] lowercase tracking-wide text-muted-foreground/60">any of</span>
+        <span className="text-[10px] lowercase tracking-wide text-muted-foreground">any of</span>
         {roleChip}
         {cardChip}
       </div>
@@ -194,10 +194,10 @@ function RelConnector({
   const shape = `${isMany(lc) ? 'many' : 'one'}-to-${isMany(rc) ? 'many' : 'one'}`
   return (
     <div className="flex flex-col items-center justify-center gap-2 self-center px-1.5 min-w-[84px]">
-      <div className="flex w-full items-center text-muted-foreground/45">
+      <div className="flex w-full items-center text-muted-foreground">
         <EndMarker many={isMany(lc)} optional={isOptional(lc)} side="left" />
         <span className="h-px flex-1 bg-border" />
-        <ArrowRight className="h-[18px] w-[18px] shrink-0 text-muted-foreground/70" />
+        <ArrowRight className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
         <span className="h-px flex-1 bg-border" />
         <EndMarker many={isMany(rc)} optional={isOptional(rc)} side="right" />
       </div>
@@ -205,16 +205,16 @@ function RelConnector({
         <HoverCardTrigger asChild>
           <button
             type="button"
-            className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground/75 transition-colors hover:text-muted-foreground cursor-default"
+            className="rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:text-muted-foreground cursor-default"
           >
             {shape}
           </button>
         </HoverCardTrigger>
         <HoverCardContent className="w-60">
           <p className="text-[12px] leading-relaxed text-muted-foreground">
-            <span className="font-mono text-foreground/90">{edgeName}</span> links{' '}
-            <span className="font-mono text-foreground/90">{cardLabel(lc)}</span> {from?.name} to{' '}
-            <span className="font-mono text-foreground/90">{cardLabel(rc)}</span> {to?.name}.
+            <span className="font-mono text-foreground/80">{edgeName}</span> links{' '}
+            <span className="font-mono text-foreground/80">{cardLabel(lc)}</span> {from?.name} to{' '}
+            <span className="font-mono text-foreground/80">{cardLabel(rc)}</span> {to?.name}.
           </p>
         </HoverCardContent>
       </HoverCard>
@@ -223,8 +223,9 @@ function RelConnector({
 }
 
 // ── End marker: crow's-foot (many) or a dot (one) — SOLID = a single, HOLLOW = optional ──
-// Mirrors the canvas markers (see cardinality-markers.tsx): a point reads as "one
-// thing", a fan as "many", and hollow vs. solid as "maybe" vs. "definitely".
+// The canvas shows direction by default and spells cardinality out in words in its
+// cardinality mode; this pane is where the notation itself lives: a point reads as
+// "one thing", a fan as "many", hollow vs. solid as "maybe" vs. "definitely".
 function EndMarker({
   many,
   optional,

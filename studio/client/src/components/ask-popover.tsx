@@ -52,10 +52,10 @@ function AskBody({ entry }: { entry: AskEntry }) {
   return (
     <div className="flex flex-col gap-2 text-sm">
       <div className="flex items-center gap-1.5 text-xs font-medium">
-        <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+        <Sparkles className="h-3.5 w-3.5 text-primary" />
         <span className="text-muted-foreground">Ask</span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground/70">{entry.ref}</span>
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">ephemeral</span>
+        <span className="truncate font-mono text-[11px] text-muted-foreground">{entry.ref}</span>
+        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">ephemeral</span>
         {/* once replied: minimize + close together. while composing: close (cancel an
             unsent draft). while STREAMING: neither — nothing to do but wait / click away. */}
         {replied && (
@@ -63,7 +63,7 @@ function AskBody({ entry }: { entry: AskEntry }) {
             type="button"
             title="Minimize"
             onClick={collapse}
-            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/50 hover:bg-accent hover:text-foreground"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <Minus className="h-3.5 w-3.5" />
           </button>
@@ -73,7 +73,7 @@ function AskBody({ entry }: { entry: AskEntry }) {
             type="button"
             title={composing ? 'Cancel' : 'Close'}
             onClick={() => remove(entry.key)}
-            className="-mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/50 hover:bg-accent hover:text-foreground"
+            className="-mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -81,7 +81,7 @@ function AskBody({ entry }: { entry: AskEntry }) {
       </div>
 
       {!composing && (
-        <div className="space-y-1.5 rounded-md border bg-background/40 p-2">
+        <div className="space-y-1.5 rounded-md border bg-muted/40 p-2">
           <div className="text-[13px] leading-snug">
             <span className="mr-1.5 text-[10px] font-medium uppercase text-muted-foreground">
               you
@@ -89,7 +89,7 @@ function AskBody({ entry }: { entry: AskEntry }) {
             {entry.question}
           </div>
           <div className="text-[13px] leading-snug">
-            <span className="mr-1.5 text-[10px] font-medium uppercase text-violet-400">agent</span>
+            <span className="mr-1.5 text-[10px] font-medium uppercase text-primary">agent</span>
             {entry.status === 'streaming' && !entry.answer ? (
               <span className="inline-flex items-center gap-1 text-muted-foreground">
                 <Loader2 className="h-3 w-3 animate-spin" /> thinking…
@@ -124,9 +124,6 @@ function AskBody({ entry }: { entry: AskEntry }) {
             }}
           />
           <div className="flex items-center justify-end gap-2">
-            <span className="mr-auto text-[10px] text-muted-foreground">
-              ⌘↵ to ask · forked aside
-            </span>
             <Button size="sm" onClick={ask} disabled={!text.trim()}>
               <Send className="h-3.5 w-3.5" /> Ask
             </Button>
@@ -194,10 +191,10 @@ function AskDot({ entry, pos }: { entry: AskEntry; pos: { x: number; y: number }
           style={{ position: 'fixed', left: pos.x, top: pos.y, transform: 'translate(-50%, -50%)' }}
           className={cn(
             'z-40 inline-flex h-5 w-5 items-center justify-center rounded-full text-white shadow-md ring-2 ring-card transition-colors',
-            tone === 'streaming' && 'bg-violet-500',
-            tone === 'ready' && 'bg-emerald-500',
+            tone === 'streaming' && 'bg-primary',
+            tone === 'ready' && 'bg-success',
             tone === 'error' && 'bg-destructive',
-            tone === 'idle' && 'bg-violet-500/80 hover:bg-violet-500',
+            tone === 'idle' && 'bg-primary/80 hover:bg-primary',
           )}
         >
           {entry.status === 'streaming' ? (
@@ -206,21 +203,11 @@ function AskDot({ entry, pos }: { entry: AskEntry; pos: { x: number; y: number }
             <Sparkles className="h-3 w-3" />
           )}
           {tone === 'ready' && (
-            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-emerald-300 ring-2 ring-card" />
+            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-card" />
           )}
         </button>
       </PopoverAnchor>
-      <PopoverContent
-        side="bottom"
-        align="start"
-        sideOffset={8}
-        className="w-96"
-        // while composing, ignore stray outside clicks (don't lose what you're typing);
-        // once asked, an outside click collapses to the dot so you can do other things.
-        onInteractOutside={(e) => {
-          if (entry.status === 'composing') e.preventDefault()
-        }}
-      >
+      <PopoverContent side="bottom" align="start" sideOffset={8} className="w-96">
         <AskBody entry={entry} />
       </PopoverContent>
     </Popover>

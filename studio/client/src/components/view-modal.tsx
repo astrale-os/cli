@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Unplug,
+  X,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -22,7 +23,7 @@ import { api } from '@/lib/api'
 import { useViewRuntime } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
-import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
+import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 
 type SessionState =
@@ -140,94 +141,60 @@ export function ViewModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid h-[90vh] w-[95vw] max-w-[1500px] grid-rows-[auto_auto_1fr] gap-0 overflow-hidden rounded-2xl p-0">
-        <header className="flex min-w-0 items-center gap-3 border-b bg-card/95 px-4 py-3 pr-12">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-500/12 text-sky-400">
+      <DialogContent
+        hideClose
+        className="grid h-[90vh] w-[95vw] max-w-[1500px] grid-rows-[auto_1fr] gap-0 overflow-hidden rounded-xl p-0"
+      >
+        <header className="flex min-w-0 items-center gap-3 border-b bg-card px-4 py-2.5">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-schema-view/10 text-schema-view">
             <MonitorPlay className="h-[18px] w-[18px]" />
           </span>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <DialogTitle className="truncate text-sm font-semibold">{view.slug}</DialogTitle>
-              <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                view.{view.slug}
-              </code>
-            </div>
-            <p className="truncate text-[11px] text-muted-foreground">
-              {view.description ?? 'Domain view preview'}
-            </p>
+            <DialogTitle className="truncate text-sm font-semibold">{view.slug}</DialogTitle>
+            {view.description && (
+              <p className="truncate text-xs text-muted-foreground">{view.description}</p>
+            )}
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {runtime?.targetRequired && (
+              <TargetPicker
+                result={runtime.targets}
+                value={targetId}
+                onChange={setTargetId}
+                instance={runtime.instance}
+              />
+            )}
             {session.phase === 'ready' && (
               <a
                 href={session.session.pageUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                title="Open in a new tab"
+                className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
-                <ExternalLink className="h-3.5 w-3.5" /> Open separately
+                <ExternalLink className="h-4 w-4" />
               </a>
             )}
             <button
               type="button"
               onClick={() => void restart()}
               disabled={restarting}
-              title="Retry the CLI-resolved View session"
-              className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
+              title="Reload the view session"
+              className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
             >
-              <RefreshCw className={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
+              <RefreshCw className={cn('h-4 w-4', restarting && 'animate-spin')} />
             </button>
+            <DialogClose
+              title="Close"
+              className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </DialogClose>
           </div>
         </header>
 
-        <div className="flex flex-wrap items-center gap-3 border-b bg-muted/15 px-4 py-3">
-          {runtime?.targetRequired ? (
-            <TargetPicker
-              result={runtime.targets}
-              value={targetId}
-              onChange={setTargetId}
-              instance={runtime.instance}
-            />
-          ) : (
-            <div className="inline-flex h-9 items-center gap-2 rounded-xl border bg-background/60 px-3 text-[11px]">
-              <Check className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="font-medium">Standalone view</span>
-              <span className="text-muted-foreground">No target required</span>
-            </div>
-          )}
-
-          <div className="ml-auto flex items-center gap-2">
-            <div
-              className={cn(
-                'inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-[10px]',
-                runtime?.instance
-                  ? 'border-emerald-500/20 bg-emerald-500/8 text-emerald-200'
-                  : 'bg-background/60 text-muted-foreground',
-              )}
-              title="The Astrale CLI resolves the verified View placement installed on this instance."
-            >
-              {runtime?.instance ? (
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-30" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-                </span>
-              ) : runtime ? (
-                <AlertCircle className="h-3 w-3 text-amber-400" />
-              ) : (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              )}
-              <MonitorPlay className="h-3.5 w-3.5" />
-              <span className="font-medium">CLI-resolved View</span>
-            </div>
-            <div className="h-9 rounded-xl border bg-background/60 px-3 py-1.5 text-right text-[9px] uppercase leading-tight tracking-wider text-muted-foreground">
-              <div>Data instance</div>
-              <div className="max-w-40 truncate text-[10px] font-medium normal-case tracking-normal text-foreground">
-                {runtime?.instance ?? 'not selected'}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <main className="relative min-h-0 overflow-hidden bg-[#0d0d11]">
+        <main className="relative min-h-0 overflow-hidden bg-muted">
           {session.phase === 'ready' ? (
             <iframe
               key={session.session.sessionId}
@@ -288,29 +255,19 @@ function TargetPicker({
         <button
           type="button"
           className={cn(
-            'flex h-9 min-w-64 max-w-[28rem] items-center gap-2 rounded-xl border bg-background/60 px-3 text-left transition-colors hover:bg-accent/40',
-            result.stale && !selected && 'border-amber-500/40',
+            'flex h-8 min-w-52 max-w-[22rem] items-center gap-2 rounded-md border bg-card px-2.5 text-left transition-colors hover:bg-accent',
+            result.stale && !selected && 'border-warning/50',
           )}
         >
           <span
             className={cn(
               'h-2 w-2 shrink-0 rounded-full',
-              selected
-                ? 'bg-emerald-400'
-                : result.stale
-                  ? 'bg-amber-400'
-                  : 'bg-muted-foreground/30',
+              selected ? 'bg-success' : result.stale ? 'bg-warning' : 'bg-muted-foreground/40',
             )}
           />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[9px] uppercase tracking-wider text-muted-foreground">
-              Target
-            </span>
-            <span className="block truncate text-[11px] font-medium">
-              {selected?.label ?? result.stale?.label ?? 'Select a target'}
-            </span>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+            {selected?.label ?? result.stale?.label ?? 'Select a target'}
           </span>
-          <span className="text-[10px] text-muted-foreground">{result.items.length}</span>
           <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
         </button>
       </PopoverTrigger>
@@ -322,7 +279,7 @@ function TargetPicker({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search visible targets…"
-            className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/60"
+            className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
           />
           <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
             {instance ?? 'no instance'}
@@ -330,7 +287,7 @@ function TargetPicker({
         </div>
 
         {result.stale && (
-          <div className="m-2 flex gap-2 rounded-lg border border-amber-500/25 bg-amber-500/8 p-2.5 text-[11px] text-amber-200">
+          <div className="m-2 flex gap-2 rounded-lg border border-warning/25 bg-warning/8 p-2.5 text-[11px] text-warning">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               <strong>{result.stale.label}</strong> was remembered, but it was deleted or is no
@@ -388,7 +345,7 @@ function TargetOption({
         selected && 'bg-accent/70',
       )}
     >
-      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-sky-500/10 text-[10px] font-semibold text-sky-300">
+      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-muted text-[10px] font-semibold text-muted-foreground">
         {item.className.slice(0, 2).toUpperCase()}
       </span>
       <span className="min-w-0 flex-1">
@@ -397,7 +354,7 @@ function TargetOption({
           {[item.className, item.description, item.status].filter(Boolean).join(' · ')}
         </span>
       </span>
-      <code className="text-[9px] text-muted-foreground/50">{item.id.slice(0, 8)}</code>
+      <code className="text-[9px] text-muted-foreground">{item.id.slice(0, 8)}</code>
       {selected && <Check className="h-3.5 w-3.5 text-primary" />}
     </button>
   )
@@ -484,17 +441,19 @@ function StateFrame({
   action?: () => void
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8 text-center text-zinc-200">
-      <div className="mb-3 grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/5 text-zinc-400 [&_svg]:h-5 [&_svg]:w-5">
+    <div className="flex h-full flex-col items-center justify-center px-8 text-center">
+      <div className="mb-3 grid h-11 w-11 place-items-center rounded-xl border bg-card text-muted-foreground [&_svg]:h-5 [&_svg]:w-5">
         {icon}
       </div>
       <h2 className="text-sm font-semibold">{title}</h2>
-      <div className="mt-1.5 max-w-md text-[12px] leading-relaxed text-zinc-500">{children}</div>
+      <div className="mt-1.5 max-w-md text-[12px] leading-relaxed text-muted-foreground">
+        {children}
+      </div>
       {action && (
         <button
           type="button"
           onClick={action}
-          className="mt-4 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] transition-colors hover:bg-white/10"
+          className="mt-4 rounded-md border bg-card px-3 py-1.5 text-[11px] transition-colors hover:bg-accent"
         >
           Restart preview
         </button>

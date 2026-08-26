@@ -83,7 +83,7 @@ export function InstanceBadge({ domainId }: { domainId: string }) {
       <PopoverContent align="end" className="w-64 space-y-2.5 p-3">
         {/* the deploy TARGET (from config) — distinct from the active instance top-left */}
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Deploy target instance
           </div>
           <div className="mt-0.5 flex items-center justify-between gap-2">
@@ -97,7 +97,7 @@ export function InstanceBadge({ domainId }: { domainId: string }) {
             </span>
           </div>
           {data.deployTarget && (
-            <div className="mt-0.5 text-[10px] text-muted-foreground/60">
+            <div className="mt-0.5 text-[10px] text-muted-foreground">
               from <code className="font-mono">astrale.config.ts</code>
             </div>
           )}

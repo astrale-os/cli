@@ -11,14 +11,10 @@
 }
 
 .react-flow__node.classNode.is-dimmed {
-  opacity: 0.2;
+  opacity: 0.25;
 }
-.react-flow__node.classNode.is-dimmed .rf-meta {
-  opacity: 0; /* hide dimmed detail/labels rather than render illegible gray */
-}
-
 .react-flow__edge.is-dimmed {
-  opacity: 0.08;
+  opacity: 0.1;
 }
 .react-flow__edge.is-on .react-flow__edge-path {
   stroke-width: 2.4px;

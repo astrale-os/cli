@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 
 import { useAnchorThreads } from './anchor'
 import { CommentPin } from './comment-pin'
+import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
@@ -79,7 +80,11 @@ export function Commentable({
       </PopoverAnchor>
 
       <PopoverContent
-        onInteractOutside={(e) => e.preventDefault()}
+        // an outside click closes the popover — unless a reply is half-written, in
+        // which case the header's × is the deliberate way out
+        onInteractOutside={(event) => {
+          if (hasUnsentDraft(anchor.ref, threads)) event.preventDefault()
+        }}
         className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
       >
         <ThreadPopover

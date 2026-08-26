@@ -1,10 +1,11 @@
 /**
- * documents.ts — context DOCUMENTS the user drops in for the AI agent. Files are
- * stored under `.domain-studio/context/documents/` (allow-listed) and tracked in
- * an index. They travel with the domain and are part of the agent handoff context.
+ * documents.ts — context DOCUMENTS the user drops in for the AI agent. Files live
+ * under `.domain-studio/context/docs/`, named after the document (not its id), so
+ * the folder is readable by a human and by the agent that is handed its path.
+ * They travel with the domain and are part of the agent handoff context.
  */
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { extname } from 'node:path'
 
 import type { DocMeta } from '../../shared/types'
@@ -13,7 +14,54 @@ import { asFiniteNumber, asJsonRecord, asString } from '../json'
 import { readJson, removeState, statePath, writeJson, writeStateBuffer } from './store'
 
 const INDEX = 'context/documents/index.json'
-const storedPath = (id: string, name: string) => `context/documents/${id}${extname(name)}`
+const DIR = 'context/docs'
+/** Where documents lived before they were named: `context/documents/<uuid>.<ext>`. */
+const LEGACY_DIR = 'context/documents'
+
+/** `Pricing decisions.md` → `pricing-decisions` — a file name you can read. */
+function slugify(name: string): string {
+  const base = name.replace(/\.[^.]+$/, '')
+  const slug = base
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  return slug || 'document'
+}
+
+/** A stored path no other document (and no file on disk) already claims. */
+function uniqueStoredPath(root: string, docs: DocMeta[], name: string): string {
+  const extension = extname(name).toLowerCase()
+  const slug = slugify(name)
+  const taken = new Set(docs.map((doc) => doc.stored))
+  for (let attempt = 0; ; attempt++) {
+    const candidate = `${DIR}/${slug}${attempt === 0 ? '' : `-${attempt + 1}`}${extension}`
+    if (!taken.has(candidate) && !existsSync(statePath(root, candidate))) return candidate
+  }
+}
+
+/**
+ * Move documents written under the old uuid-named layout into `context/docs/`.
+ * Idempotent and only ever renames inside the studio's own state directory.
+ */
+export function migrateDocuments(root: string): void {
+  const docs = listDocuments(root)
+  if (!docs.some((doc) => doc.stored.startsWith(`${LEGACY_DIR}/`))) return
+  let moved = false
+  for (const doc of docs) {
+    if (!doc.stored.startsWith(`${LEGACY_DIR}/`)) continue
+    const from = statePath(root, doc.stored)
+    if (!existsSync(from)) continue
+    const next = uniqueStoredPath(root, docs, doc.name)
+    writeStateBuffer(root, next, readFileSync(from))
+    removeState(root, doc.stored)
+    doc.stored = next
+    moved = true
+  }
+  if (moved) writeJson(root, INDEX, docs)
+}
 
 function decodeDocument(value: unknown): DocMeta | undefined {
   const record = asJsonRecord(value)
@@ -30,7 +78,7 @@ function decodeDocument(value: unknown): DocMeta | undefined {
     size === undefined ||
     size < 0 ||
     !addedAt ||
-    !stored?.startsWith('context/documents/') ||
+    !(stored?.startsWith(`${DIR}/`) || stored?.startsWith(`${LEGACY_DIR}/`)) ||
     stored.split('/').includes('..')
   ) {
     return undefined
@@ -60,18 +108,17 @@ export function listDocuments(root: string): DocMeta[] {
 }
 
 export function addDocument(root: string, name: string, type: string, data: Uint8Array): DocMeta {
-  const id = randomUUID()
-  const stored = storedPath(id, name)
+  const docs = listDocuments(root)
+  const stored = uniqueStoredPath(root, docs, name || 'untitled')
   writeStateBuffer(root, stored, data)
   const meta: DocMeta = {
-    id,
+    id: randomUUID(),
     name: name || 'untitled',
     type: type || 'application/octet-stream',
     size: data.byteLength,
     addedAt: new Date().toISOString(),
     stored,
   }
-  const docs = listDocuments(root)
   docs.unshift(meta)
   writeJson(root, INDEX, docs)
   return meta

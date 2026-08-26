@@ -46,19 +46,19 @@ function SkillRow({
         <span
           className={cn(
             'h-1.5 w-1.5 shrink-0 rounded-full',
-            skill.loaded ? 'bg-emerald-500' : 'bg-amber-500',
+            skill.loaded ? 'bg-success' : 'bg-warning',
           )}
           title={
             skill.loaded ? 'available to the selected harness here' : 'installed but disabled here'
           }
         />
         <span className="truncate font-mono text-[12px]">{skill.command}</span>
-        <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground/80">
+        <span className="ml-auto shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
           {tag}
         </span>
         <ChevronRight
           className={cn(
-            'h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform',
+            'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
             expanded && 'rotate-90',
           )}
         />
@@ -66,21 +66,21 @@ function SkillRow({
       {expanded && (
         <div className="border-t bg-background/60 px-2.5 py-2">
           {isLoading ? (
-            <p className="text-[11px] text-muted-foreground/60">Loading…</p>
+            <p className="text-[11px] text-muted-foreground">Loading…</p>
           ) : content ? (
             <>
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 text-[11px] leading-relaxed">
                 {content.content}
               </pre>
               <p
-                className="mt-1 truncate font-mono text-[10px] text-muted-foreground/50"
+                className="mt-1 truncate font-mono text-[10px] text-muted-foreground"
                 title={content.path}
               >
                 {content.path}
               </p>
             </>
           ) : (
-            <p className="text-[11px] text-muted-foreground/60">
+            <p className="text-[11px] text-muted-foreground">
               Couldn't read this skill's SKILL.md.
             </p>
           )}
@@ -109,9 +109,9 @@ function CopyCommand({ command }: { command: string }) {
     >
       <span className="truncate">{command}</span>
       {copied ? (
-        <Check className="ml-auto h-3 w-3 shrink-0 text-emerald-500" />
+        <Check className="ml-auto h-3 w-3 shrink-0 text-success" />
       ) : (
-        <Copy className="ml-auto h-3 w-3 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
+        <Copy className="ml-auto h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
       )}
     </button>
   )
@@ -129,7 +129,7 @@ function MissingSkillRow({ command }: { command: string }) {
         title="not installed on disk in this workspace — click to see how"
       >
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-destructive" title="not installed" />
-        <span className="truncate font-mono text-[12px] text-muted-foreground/60 line-through">
+        <span className="truncate font-mono text-[12px] text-muted-foreground line-through">
           {command}
         </span>
         <span className="ml-auto shrink-0 rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
@@ -138,7 +138,7 @@ function MissingSkillRow({ command }: { command: string }) {
         {commands && (
           <ChevronRight
             className={cn(
-              'h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform',
+              'h-3 w-3 shrink-0 text-muted-foreground transition-transform',
               open && 'rotate-90',
             )}
           />
@@ -146,11 +146,11 @@ function MissingSkillRow({ command }: { command: string }) {
       </button>
       {open && commands && (
         <div className="space-y-1.5 border-t bg-background/60 px-2.5 py-2">
-          <p className="text-[11px] text-muted-foreground/70">Run, then hit re-probe above:</p>
+          <p className="text-[11px] text-muted-foreground">Run, then hit re-probe above:</p>
           {commands.map((command) => (
             <CopyCommand key={command} command={command} />
           ))}
-          <p className="text-[10px] text-muted-foreground/50">
+          <p className="text-[10px] text-muted-foreground">
             Or run <span className="font-mono">astrale setup</span> to equip everything at once.
           </p>
         </div>
@@ -176,13 +176,13 @@ export function SkillList({ skills, domainId }: { skills: LoadoutSkill[]; domain
     <div className="space-y-1">
       <div className="flex items-center gap-1.5 text-muted-foreground">
         <span>Skills</span>
-        <span className="ml-auto font-mono text-[11px] text-muted-foreground/80">
+        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
           {skills.filter((skill) => skill.loaded).length} loaded / {skills.length}
         </span>
       </div>
       <div
         className={cn(
-          'divide-y divide-border/50 overflow-hidden rounded-md border bg-background/40',
+          'divide-y divide-border overflow-hidden rounded-md border bg-background/40',
           showAll && 'max-h-64 overflow-y-auto',
         )}
       >
@@ -217,7 +217,7 @@ export function SkillList({ skills, domainId }: { skills: LoadoutSkill[]; domain
         <button
           type="button"
           onClick={() => setShowAll((value) => !value)}
-          className="px-1 text-[11px] text-muted-foreground/60 transition-colors hover:text-foreground"
+          className="px-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
         >
           {showAll ? 'Hide others' : `Show all (${rest.length} more)`}
         </button>

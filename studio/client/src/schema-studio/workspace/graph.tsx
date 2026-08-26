@@ -12,20 +12,24 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
+  useStore,
 } from '@xyflow/react'
-import { AppWindow, Layers3, LayoutGrid, Spline, TriangleAlert } from 'lucide-react'
+import { AppWindow, LayoutGrid, Sigma, Spline, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import { useCatalog } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import type { ClassNodeData } from '../projection'
 
-import { ErdMarkerDefs } from '../cardinality-markers'
+import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
+import { dismissMenusOnCanvasPress } from '../dismiss'
+import { EdgeMarkerDefs } from '../edge-markers'
+import { viewportForNodes } from '../fit'
 import { edgeTypes, separateParallelEdges } from '../floating-edge'
 import { useLayoutCommitter } from '../layout-commit'
+import { moduleTint } from '../palette'
 import { workspaceLayoutUpdate, type WorkspaceSize } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
@@ -51,13 +55,19 @@ export function WorkspaceSchemaGraph({
   viewsCount: number
   onToggleInherited: () => void
 }) {
-  const { fitView, getNode } = useReactFlow()
+  const { getNode, setViewport } = useReactFlow()
+  const paneWidth = useStore((state) => state.width)
+  const paneHeight = useStore((state) => state.height)
+  const panZoomReady = useStore((state) => state.panZoom !== null)
+  const [fitRequest, setFitRequest] = useState(0)
   const { data: catalog } = useCatalog()
   const activeDomainId = useUI((state) => state.domainId) ?? domains[0]?.input.summary.id ?? ''
   const selected = useUI((state) => state.selectedClass)
   const setDomain = useUI((state) => state.setDomain)
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const panelOverlay = useUI((state) => state.panelOverlay)
+  const showCardinality = useUI((state) => state.showCardinality)
+  const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
   const domainSizes = useSchemaWorkspace((state) => state.domainSizes)
@@ -87,12 +97,11 @@ export function WorkspaceSchemaGraph({
     [commitLayout, getNode, setDomainSize],
   )
 
+  // One click does both: focus the domain AND act on what was clicked. Requiring a
+  // first click just to "enter" a domain made every selection a double click.
   const activate = useCallback(
     (domainId: string, ref?: string) => {
-      if (useUI.getState().domainId !== domainId) {
-        setDomain(domainId)
-        return
-      }
+      if (useUI.getState().domainId !== domainId) setDomain(domainId)
       if (ref) useUI.getState().selectClass(ref)
     },
     [setDomain],
@@ -100,10 +109,7 @@ export function WorkspaceSchemaGraph({
 
   const toggleWorkspaceModule = useCallback(
     (domainId: string, path: string) => {
-      if (useUI.getState().domainId !== domainId) {
-        setDomain(domainId)
-        return
-      }
+      if (useUI.getState().domainId !== domainId) setDomain(domainId)
       toggleModule(domainId, path)
     },
     [setDomain, toggleModule],
@@ -145,22 +151,33 @@ export function WorkspaceSchemaGraph({
     setEdges(separateParallelEdges(projection.edges))
     if (fitAfterReset.current) {
       fitAfterReset.current = false
-      const frame = requestAnimationFrame(() => fitView({ padding: 0.12, duration: 420 }))
-      return () => cancelAnimationFrame(frame)
+      setFitRequest((n) => n + 1)
+      return
     }
     const domainKey = domains.map((domain) => domain.input.summary.id).join('|')
     if (fittedDomains.current === domainKey) return
     fittedDomains.current = domainKey
-    const frame = requestAnimationFrame(() => fitView({ padding: 0.12, duration: 420 }))
-    return () => cancelAnimationFrame(frame)
+    setFitRequest((n) => n + 1)
   }, [
     domains,
     ensureDomainContentOffsets,
     ensureDomainPositions,
     ensureExternalPositions,
-    fitView,
     projection,
   ])
+
+  // React Flow's queued fitView waits on its measurement lifecycle, so frame the
+  // canvas from the geometry we already hold (see fit.ts).
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+  const fitDone = useRef(0)
+  useEffect(() => {
+    if (fitRequest === 0 || fitRequest === fitDone.current || !panZoomReady) return
+    const viewport = viewportForNodes(nodesRef.current, paneWidth, paneHeight)
+    if (!viewport) return
+    fitDone.current = fitRequest
+    setViewport(viewport)
+  }, [fitRequest, paneWidth, paneHeight, panZoomReady, setViewport])
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) =>
@@ -226,6 +243,7 @@ export function WorkspaceSchemaGraph({
   return (
     <WorkspaceNodeActionsProvider actions={nodeActions}>
       <ReactFlow
+        onPointerDownCapture={dismissMenusOnCanvasPress}
         data-testid="workspace-schema-canvas"
         nodes={nodes}
         edges={displayEdges}
@@ -257,12 +275,9 @@ export function WorkspaceSchemaGraph({
         onlyRenderVisibleElements
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={18} size={1} color="oklch(0.3 0.01 270)" />
-        <ErdMarkerDefs />
-        <Controls
-          className="!border !border-border !bg-card [&_button]:!border-border [&_button]:!bg-card [&_button]:!fill-foreground"
-          showInteractive={false}
-        >
+        <Background gap={20} size={1} color="var(--color-input)" />
+        <EdgeMarkerDefs />
+        <Controls showInteractive={false} position="bottom-left">
           <ControlButton
             onClick={() => {
               fitAfterReset.current = true
@@ -276,53 +291,52 @@ export function WorkspaceSchemaGraph({
         <MiniMap
           pannable
           zoomable
-          className="!border !border-border !bg-card"
+          style={{ width: 168, height: 112 }}
           nodeColor={(node) =>
             node.type === 'classNode'
-              ? `oklch(0.6 0.13 ${(node.data as ClassNodeData).hue})`
+              ? moduleTint((node.data as ClassNodeData).hue).mark
               : node.type === 'workspaceDomain'
-                ? 'oklch(0.52 0.08 225 / 0.45)'
+                ? 'oklch(0.72 0.05 255 / 0.5)'
                 : 'transparent'
           }
           nodeStrokeWidth={0}
-          maskColor="oklch(0.17 0.01 270 / 0.72)"
+          maskColor="oklch(0.55 0.01 255 / 0.12)"
         />
 
         {projection.diagnostics.length > 0 && (
           <Panel position="top-center" className="max-w-xl">
-            <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-card/95 px-3 py-2 text-[11px] text-warning shadow-lg backdrop-blur">
+            <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-card px-3 py-2 text-[11px] text-warning shadow-lg backdrop-blur">
               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{projection.diagnostics.join(' ')}</span>
             </div>
           </Panel>
         )}
 
-        <Panel position="top-right" className="flex gap-1.5">
-          <Button size="xs" variant="outline" disabled title="Selected workspace domains">
-            <Layers3 className="h-3.5 w-3.5" /> Domains
-            <span className="rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
-              {domains.length}
-            </span>
-          </Button>
-          <Button
-            size="xs"
-            variant={panelOverlay === 'views' ? 'default' : 'outline'}
-            onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
-            title="Views across selected domains"
-          >
-            <AppWindow className="h-3.5 w-3.5" /> Views
-            <span className="rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
-              {viewsCount}
-            </span>
-          </Button>
-          <Button
-            size="xs"
-            variant={inheritedOn ? 'default' : 'outline'}
-            onClick={onToggleInherited}
-            title="Toggle inherited edges in every selected domain"
-          >
-            <Spline className="h-3.5 w-3.5" /> Inherited
-          </Button>
+        <Panel position="top-right">
+          <CanvasToolbar>
+            <CanvasToggle
+              icon={<AppWindow />}
+              label="Views"
+              count={viewsCount}
+              pressed={panelOverlay === 'views'}
+              title="Views across selected domains"
+              onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
+            />
+            <CanvasToggle
+              icon={<Spline />}
+              label="Inherited"
+              pressed={inheritedOn}
+              title="Inheritance edges in every selected domain"
+              onClick={onToggleInherited}
+            />
+            <CanvasToggle
+              icon={<Sigma />}
+              label="Cardinality"
+              pressed={showCardinality}
+              title="Spell out how many of each side a relationship allows"
+              onClick={toggleCardinality}
+            />
+          </CanvasToolbar>
         </Panel>
       </ReactFlow>
     </WorkspaceNodeActionsProvider>

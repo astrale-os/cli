@@ -2,22 +2,31 @@ import {
   BaseEdge,
   type Edge,
   type EdgeProps,
-  EdgeLabelRenderer,
+  EdgeText,
   type InternalNode,
   type Node,
   Position,
-  getBezierPath,
   getSmoothStepPath,
   useInternalNode,
 } from '@xyflow/react'
 
+import { useUI } from '@/lib/store'
+
 const PARALLEL_EDGE_GAP = 32
+
+/** One end of a relationship as the schema declares it. */
+export interface FloatingEdgeEnd {
+  role?: string
+  cardinality: string
+}
 
 interface FloatingEdgeData extends Record<string, unknown> {
   label?: string
   selected?: boolean
   parallelCount?: number
   parallelOffset?: number
+  sourceEnd?: FloatingEdgeEnd
+  targetEnd?: FloatingEdgeEnd
 }
 
 /**
@@ -107,6 +116,12 @@ function getEdgeParams(source: InternalNode<Node>, target: InternalNode<Node>) {
   }
 }
 
+/** The gentle bow a lone edge gets, so the graph reads as curves and not as a wire diagram. */
+export function defaultBow(sx: number, sy: number, tx: number, ty: number): number {
+  const length = Math.hypot(tx - sx, ty - sy)
+  return Math.min(26, length * 0.075)
+}
+
 export function parallelEdgePath({
   sx,
   sy,
@@ -134,6 +149,23 @@ export function parallelEdgePath({
   return [`M ${sx},${sy} Q ${controlX},${controlY} ${tx},${ty}`, labelX, labelY]
 }
 
+/** Where an endpoint chip sits: a step in from its own end, lifted clear of the line. */
+function chipAt(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): { x: number; y: number } | null {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy) || 1
+  // too short to hold two chips AND the relationship name without overlapping
+  if (length < 110) return null
+  const travel = 32
+  return {
+    x: from.x + (dx / length) * travel + (-dy / length) * 11,
+    y: from.y + (dy / length) * travel + (dx / length) * 11,
+  }
+}
+
 export function FloatingEdge({
   id,
   source,
@@ -143,24 +175,26 @@ export function FloatingEdge({
   style,
   data,
 }: EdgeProps) {
+  const showCardinality = useUI((state) => state.showCardinality)
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
   if (!sourceNode || !targetNode) return null
 
-  const { sx, sy, tx, ty, sourcePos, targetPos } = getEdgeParams(sourceNode, targetNode)
+  const { sx, sy, tx, ty } = getEdgeParams(sourceNode, targetNode)
   const d = data as FloatingEdgeData | undefined
-  const [path, labelX, labelY] =
-    (d?.parallelCount ?? 1) > 1
-      ? parallelEdgePath({ sx, sy, tx, ty, offset: d?.parallelOffset ?? 0 })
-      : getBezierPath({
-          sourceX: sx,
-          sourceY: sy,
-          sourcePosition: sourcePos,
-          targetX: tx,
-          targetY: ty,
-          targetPosition: targetPos,
-          curvature: 0.25,
-        })
+  // One curve family for every edge: a quadratic bowed off the straight run.
+  // Its terminators stay TANGENT to the drawn curve (a plain bezier left the node
+  // perpendicular to whichever border it touched — that is how an edge heading
+  // right ended up with a vertical arrowhead), and parallel edges simply take a
+  // wider lane so reciprocal relationships stay tellable.
+  const parallel = (d?.parallelCount ?? 1) > 1
+  const [path, labelX, labelY] = parallelEdgePath({
+    sx,
+    sy,
+    tx,
+    ty,
+    offset: parallel ? (d?.parallelOffset ?? 0) : defaultBow(sx, sy, tx, ty),
+  })
 
   const label = d?.label
   const selected = d?.selected === true
@@ -168,6 +202,12 @@ export function FloatingEdge({
     ? 'var(--color-primary)'
     : ((style?.stroke as string) ?? 'var(--color-muted-foreground)')
   const edgeStyle = selected ? { ...style, stroke: strokeColor, strokeWidth: 3 } : style
+  const chipLabelStyle = { fill: 'var(--color-muted-foreground)' }
+  const chipBgStyle = { fill: 'var(--color-card)', stroke: 'var(--color-border)' }
+  const sourceChip = showCardinality ? d?.sourceEnd : undefined
+  const targetChip = showCardinality ? d?.targetEnd : undefined
+  const sourceChipAt = sourceChip ? chipAt({ x: sx, y: sy }, { x: tx, y: ty }) : null
+  const targetChipAt = targetChip ? chipAt({ x: tx, y: ty }, { x: sx, y: sy }) : null
   return (
     <>
       <BaseEdge
@@ -178,22 +218,58 @@ export function FloatingEdge({
         style={edgeStyle}
         interactionWidth={18}
       />
+      {/* the label lives INSIDE this edge's own <svg>, painted after its path — it
+          used to sit in the shared label layer and got struck through by its line */}
       {label && (
-        <EdgeLabelRenderer>
-          <div
-            className="absolute font-mono font-extrabold text-[9px] px-1 rounded pointer-events-none"
-            style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              color: strokeColor,
-              background: 'oklch(0.17 0.01 270)',
-            }}
-          >
-            {label}
-          </div>
-        </EdgeLabelRenderer>
+        <EdgeText
+          x={labelX}
+          y={labelY}
+          label={label}
+          labelStyle={selected ? { fill: strokeColor, fontWeight: 600 } : chipLabelStyle}
+          labelShowBg
+          labelBgStyle={chipBgStyle}
+          labelBgPadding={[6, 2]}
+          labelBgBorderRadius={4}
+        />
+      )}
+      {sourceChip && sourceChipAt && (
+        <g>
+          <title>{endpointTitle(sourceChip, label)}</title>
+          <EdgeText
+            x={sourceChipAt.x}
+            y={sourceChipAt.y}
+            label={sourceChip.cardinality}
+            labelStyle={chipLabelStyle}
+            labelShowBg
+            labelBgStyle={chipBgStyle}
+            labelBgPadding={[5, 1]}
+            labelBgBorderRadius={4}
+          />
+        </g>
+      )}
+      {targetChip && targetChipAt && (
+        <g>
+          <title>{endpointTitle(targetChip, label)}</title>
+          <EdgeText
+            x={targetChipAt.x}
+            y={targetChipAt.y}
+            label={targetChip.cardinality}
+            labelStyle={chipLabelStyle}
+            labelShowBg
+            labelBgStyle={chipBgStyle}
+            labelBgPadding={[5, 1]}
+            labelBgBorderRadius={4}
+          />
+        </g>
       )}
     </>
   )
+}
+
+/** The chip shows the multiplicity alone; the role rides in the native tooltip. */
+function endpointTitle(end: FloatingEdgeEnd, edge?: string): string {
+  const subject = end.role ?? edge ?? 'this end'
+  return `${subject}: ${end.cardinality}`
 }
 
 // Orthogonal "elbow" edge for the structural parent→child tree. The core canvas

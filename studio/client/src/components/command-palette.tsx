@@ -9,10 +9,8 @@ import { folderModules, moduleOfClass } from '@/schema-studio/modules'
 
 /** The nav sections, mirroring app.tsx's NAV order/labels. */
 const SECTIONS: { key: SectionKey; label: string }[] = [
-  { key: 'context', label: 'Context' },
   { key: 'schema', label: 'Schema' },
   { key: 'process', label: 'Process' },
-  { key: 'comments', label: 'Comments' },
 ]
 
 /** Summarise a JSON Schema property type for the muted meta column. */
@@ -98,11 +96,16 @@ export function CommandPalette() {
         const propCount = Object.keys(c.properties).length
         const methodCount = Object.keys(c.methods).length
         const mod = moduleOfClass(bundle, c.name)
-        const counts = `${propCount}p · ${methodCount}m`
+        const counts = [
+          propCount > 0 ? `${propCount} propert${propCount === 1 ? 'y' : 'ies'}` : '',
+          methodCount > 0 ? `${methodCount} method${methodCount === 1 ? '' : 's'}` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ')
         return {
           name: c.name,
           value: `class ${c.name} ${mod} ${counts}`,
-          meta: mod === 'root' ? counts : `${mod} · ${counts}`,
+          meta: [mod === 'root' ? '' : mod, counts].filter(Boolean).join(' · '),
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -164,7 +167,7 @@ export function CommandPalette() {
       label="Command palette"
       shouldFilter
       // The Radix overlay that cmdk renders.
-      overlayClassName="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+      overlayClassName="fixed inset-0 z-50 bg-foreground/20"
       contentClassName={cn(
         'fixed left-1/2 top-[15%] z-50 w-full max-w-[640px] -translate-x-1/2',
         'overflow-hidden rounded-xl border bg-card text-card-foreground shadow-2xl',
@@ -176,7 +179,7 @@ export function CommandPalette() {
       <div className="flex items-center border-b px-3">
         <Command.Input
           autoFocus
-          placeholder="Search classes, interfaces, edges, properties, modules…"
+          placeholder="Search the schema…"
           className="h-12 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
         />
       </div>

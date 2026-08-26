@@ -202,6 +202,9 @@ export interface DocMeta {
   stored: string
 }
 
+/** Where context documents live inside a domain — shown in the UI, read by the agent. */
+export const DOCUMENTS_DIR = '.domain-studio/context/docs'
+
 export interface Integration {
   id: string
   name: string

@@ -9,6 +9,7 @@ import type { DomainHandle } from './domain'
  */
 import { getBundle } from './cache'
 import { captureBaseline, hashAnatomyFiles, loadBaseline } from './state/baseline'
+import { migrateDocuments } from './state/documents'
 import { initDotDir } from './state/store'
 import { watchDomain } from './watch'
 
@@ -22,6 +23,8 @@ export interface BootedDomain {
 /** Initialize + start watching one domain. Returns its origin + a stop handle. */
 export async function bootDomain(handle: DomainHandle): Promise<BootedDomain> {
   initDotDir(handle.root)
+  // one-shot: uuid-named documents become readable file names under context/docs
+  migrateDocuments(handle.root)
   const bundle = await getBundle(handle.id)
   if (!loadBaseline(handle.root))
     captureBaseline(

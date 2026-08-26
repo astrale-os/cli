@@ -68,7 +68,7 @@ const MD: Components = {
 export function Markdown({ text, className }: { text: string; className?: string }) {
   return (
     <div
-      className={cn('min-w-0 text-[13px] text-foreground/90 [overflow-wrap:anywhere]', className)}
+      className={cn('min-w-0 text-[13px] text-foreground/80 [overflow-wrap:anywhere]', className)}
     >
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD}>
         {text}

@@ -62,6 +62,25 @@ export function DomainSelector() {
     setOpen(false)
   }
 
+  /**
+   * Take a domain off the canvas. Unchecking the ACTIVE one used to be a dead
+   * click; it now hands the active role to another domain on the canvas and
+   * removes this one — the only reading of that gesture that means anything.
+   * The last remaining domain shows a disabled checkbox: checked, and visibly
+   * not yours to uncheck.
+   */
+  const removeFromCanvas = (id: string) => {
+    if (!domainId) return
+    if (id !== domainId) {
+      toggleDomain(id, domainId)
+      return
+    }
+    const remaining = [...selected].filter((candidate) => candidate !== id)
+    if (remaining.length === 0) return
+    replaceDomains(remaining)
+    setDomain(remaining[0])
+  }
+
   return (
     <>
       <Popover open={open} onOpenChange={setOpen}>
@@ -69,48 +88,52 @@ export function DomainSelector() {
           <button
             type="button"
             data-testid="domain-selector"
-            title="Domain canvas — choose the active domain and optional companions"
+            title="Active domain"
             className={cn(
-              'inline-flex h-8 items-center gap-2 rounded-lg border pl-1.5 pr-2 text-sm font-medium outline-none transition-colors',
+              'inline-flex h-8 items-center gap-2 rounded-md border pl-1.5 pr-2 text-[13px] font-medium outline-none transition-colors',
               canvasCount > 1
-                ? 'border-sky-400/35 bg-sky-400/10 text-sky-100 hover:bg-sky-400/15'
-                : 'bg-card hover:bg-accent/50',
+                ? 'border-primary/40 bg-primary/[0.06] hover:bg-primary/10'
+                : 'bg-card hover:bg-accent',
             )}
           >
-            <span className="grid h-5 w-5 place-items-center rounded-md bg-primary/10 text-primary">
+            <span className="grid h-5 w-5 place-items-center rounded bg-primary/10 text-primary">
               <Boxes className="h-3.5 w-3.5" />
             </span>
-            <span className="max-w-[15rem] truncate">{active?.origin ?? 'select domain'}</span>
-            <span
-              className={cn(
-                'inline-flex h-5 items-center gap-1 rounded-full px-1.5 text-[10px] tabular-nums',
-                canvasCount > 1 ? 'bg-sky-300/15 text-sky-100' : 'bg-muted text-muted-foreground',
-              )}
-            >
-              <Layers3 className="h-3 w-3" /> {canvasCount}
-            </span>
+            <span className="max-w-[15rem] truncate">{active?.origin ?? 'Select domain'}</span>
+            {canvasCount > 1 && (
+              <span
+                title={`${canvasCount} domains on the canvas`}
+                className="inline-flex h-5 items-center gap-1 rounded-full bg-primary/10 px-1.5 text-[11px] tabular-nums text-primary"
+              >
+                <Layers3 className="h-3 w-3" /> {canvasCount}
+              </span>
+            )}
             <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-80 p-1.5">
-          <div className="flex items-start justify-between gap-3 px-2 pb-2 pt-1">
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Domain canvas
-              </div>
-              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground/70">
-                Open one domain, then check companions to compose their schemas.
-              </p>
-            </div>
-            {!!domains?.length && (
-              <button
-                type="button"
-                onClick={() => replaceDomains(domains.map((domain) => domain.id))}
-                className="shrink-0 rounded-md px-1.5 py-1 text-[10px] font-medium text-sky-300 hover:bg-sky-400/10"
-              >
-                Select all
-              </button>
-            )}
+          <div className="flex items-center justify-between gap-3 px-2 pb-1.5 pt-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Canvas
+            </span>
+            {(domains?.length ?? 0) > 1 &&
+              (canvasCount > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => domainId && replaceDomains([domainId])}
+                  className="rounded px-1 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+                >
+                  Active only
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => replaceDomains((domains ?? []).map((domain) => domain.id))}
+                  className="rounded px-1 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/10"
+                >
+                  Select all
+                </button>
+              ))}
           </div>
           <div className="max-h-[50vh] space-y-0.5 overflow-y-auto">
             {(domains ?? []).map((d) => {
@@ -121,29 +144,46 @@ export function DomainSelector() {
                   key={d.id}
                   className={cn(
                     'flex items-center gap-1 rounded-md transition-colors',
-                    checked ? 'bg-accent/55' : 'hover:bg-accent/35',
+                    checked ? 'bg-accent/60' : 'hover:bg-accent/40',
                   )}
                 >
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-label={
-                      isActive
-                        ? `${d.origin} is the active domain on canvas`
-                        : `${checked ? 'Remove' : 'Add'} ${d.origin} ${checked ? 'from' : 'to'} canvas`
-                    }
-                    aria-checked={checked}
-                    disabled={isActive}
-                    title={isActive ? 'The active domain is always on the canvas' : undefined}
-                    onClick={() => domainId && toggleDomain(d.id, domainId)}
-                    className="group ml-2 grid h-5 w-5 shrink-0 place-items-center rounded border border-border text-transparent transition-colors enabled:hover:border-sky-400/60 disabled:cursor-default"
-                  >
-                    {checked && (
-                      <span className="grid h-full w-full place-items-center rounded bg-sky-400/15 text-sky-200">
-                        <Check className="h-3 w-3" />
-                      </span>
-                    )}
-                  </button>
+                  {isActive && canvasCount === 1 ? (
+                    <span
+                      role="checkbox"
+                      aria-checked
+                      aria-disabled
+                      title="The canvas needs one domain — add another to free this one"
+                      aria-label={`${d.origin} is the only domain on the canvas`}
+                      className="ml-2 grid h-5 w-5 shrink-0 cursor-not-allowed place-items-center rounded border border-input bg-muted text-muted-foreground"
+                    >
+                      <Check className="h-3 w-3" />
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={checked}
+                      aria-label={`${checked ? 'Remove' : 'Add'} ${d.origin} ${checked ? 'from' : 'to'} the canvas`}
+                      title={
+                        !checked
+                          ? 'Add to canvas'
+                          : isActive
+                            ? 'Remove from canvas — another domain becomes active'
+                            : 'Remove from canvas'
+                      }
+                      onClick={() =>
+                        checked ? removeFromCanvas(d.id) : toggleDomain(d.id, domainId!)
+                      }
+                      className={cn(
+                        'ml-2 grid h-5 w-5 shrink-0 place-items-center rounded border transition-colors',
+                        checked
+                          ? 'border-primary bg-primary text-primary-foreground hover:border-primary/70 hover:bg-primary/85'
+                          : 'border-input text-transparent hover:border-primary/60',
+                      )}
+                    >
+                      <Check className="h-3 w-3" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     aria-current={isActive ? 'true' : undefined}
@@ -151,49 +191,36 @@ export function DomainSelector() {
                     className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-2 text-left"
                   >
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-semibold">{d.origin}</span>
-                      <span className="block truncate text-[10px] text-muted-foreground/65">
+                      <span className="block truncate text-[13px] font-medium">{d.origin}</span>
+                      <span className="block truncate text-[11px] text-muted-foreground">
                         {d.path.split('/').pop()}
                         {!d.depsInstalled && ' · deps missing'}
                       </span>
                     </span>
                     {isActive && (
-                      <span className="rounded-full border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
-                        active
-                      </span>
+                      <span className="text-[11px] font-medium text-primary">Active</span>
                     )}
                   </button>
                 </div>
               )
             })}
             {!domains?.length && (
-              <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
+              <div className="px-2 py-3 text-center text-[13px] text-muted-foreground">
                 No domains found
               </div>
             )}
           </div>
-          <div className="my-1 h-px bg-border/60" />
-          {domainId && canvasCount > 1 && (
-            <button
-              type="button"
-              onClick={() => replaceDomains([domainId])}
-              className="flex w-full items-center rounded-md px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
-            >
-              Show only {active?.origin ?? 'active domain'}
-            </button>
-          )}
+          <div className="my-1 h-px bg-border" />
           <button
             type="button"
             onClick={() => {
               setOpen(false)
               setCreateOpen(true)
             }}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] font-medium text-primary transition-colors hover:bg-primary/10"
           >
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-              <FolderPlus className="h-3.5 w-3.5" />
-            </span>
-            Create new domain
+            <FolderPlus className="h-3.5 w-3.5" />
+            New domain
           </button>
         </PopoverContent>
       </Popover>
@@ -204,7 +231,7 @@ export function DomainSelector() {
         onCreated={(id) => {
           replaceDomains([id])
           setDomain(id)
-          setSection('context')
+          setSection('schema')
         }}
       />
     </>
@@ -307,7 +334,7 @@ function CreateDomainDialog({
               <div>
                 origin <span className="font-mono text-foreground">{origin}</span>
                 {!slug.includes('.') && (
-                  <span className="text-muted-foreground/70"> · placeholder, edit later</span>
+                  <span className="text-muted-foreground"> · placeholder, edit later</span>
                 )}
               </div>
               <div>
