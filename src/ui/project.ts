@@ -1,4 +1,4 @@
-import { access, lstat, readFile } from 'node:fs/promises'
+import { access, lstat, readFile, realpath } from 'node:fs/promises'
 import path from 'node:path'
 
 import { UiError, type PackageManager } from './model'
@@ -29,6 +29,40 @@ async function exists(target: string): Promise<boolean> {
   )
 }
 
+async function readManifest(target: string): Promise<Record<string, unknown>> {
+  try {
+    return JSON.parse(await readFile(target, 'utf8')) as Record<string, unknown>
+  } catch (cause) {
+    throw new UiError('UI_PROJECT_UNSUPPORTED', 'package.json is not valid JSON.', undefined, {
+      cause,
+    })
+  }
+}
+
+function hasReactTailwind(manifest: Record<string, unknown>): boolean {
+  const dependencies = {
+    ...(manifest.dependencies as Record<string, string> | undefined),
+    ...(manifest.devDependencies as Record<string, string> | undefined),
+    ...(manifest.peerDependencies as Record<string, string> | undefined),
+  }
+  return Boolean(dependencies.react && dependencies['react-dom'] && dependencies.tailwindcss)
+}
+
+async function assertPhysicalProjectPath(root: string, target: string): Promise<void> {
+  const physicalRoot = await realpath(root)
+  let existing = target
+  while (!(await exists(existing))) {
+    const parent = path.dirname(existing)
+    if (parent === existing) break
+    existing = parent
+  }
+  const physicalTarget = await realpath(existing)
+  const relative = path.relative(physicalRoot, physicalTarget)
+  if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+    throw new UiError('UI_PROJECT_UNSUPPORTED', 'components.json CSS path escapes the project.')
+  }
+}
+
 export async function discoverUiProject(input = process.cwd()): Promise<UiProject> {
   let root = path.resolve(input)
   if (!(await exists(root))) {
@@ -36,7 +70,18 @@ export async function discoverUiProject(input = process.cwd()): Promise<UiProjec
   }
   if (!(await lstat(root)).isDirectory()) root = path.dirname(root)
 
-  while (!(await exists(path.join(root, 'package.json')))) {
+  while (true) {
+    const manifestPath = path.join(root, 'package.json')
+    if (await exists(manifestPath)) {
+      const manifest = await readManifest(manifestPath)
+      const parent = path.dirname(root)
+      if (hasReactTailwind(manifest) || parent === root) break
+      if (await exists(path.join(parent, 'package.json'))) {
+        root = parent
+        continue
+      }
+      break
+    }
     const parent = path.dirname(root)
     if (parent === root) {
       throw new UiError(
@@ -49,14 +94,7 @@ export async function discoverUiProject(input = process.cwd()): Promise<UiProjec
   }
 
   const packageJsonPath = path.join(root, 'package.json')
-  let packageJson: Record<string, unknown>
-  try {
-    packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8')) as Record<string, unknown>
-  } catch (cause) {
-    throw new UiError('UI_PROJECT_UNSUPPORTED', 'package.json is not valid JSON.', undefined, {
-      cause,
-    })
-  }
+  const packageJson = await readManifest(packageJsonPath)
 
   let manager: PackageManager = 'npm'
   let lockPath: string | undefined
@@ -90,11 +128,41 @@ export async function discoverUiProject(input = process.cwd()): Promise<UiProjec
     lockPath = path.join(root, expectedLock)
   }
 
-  const cssCandidates = ['src/index.css', 'src/app.css', 'app/globals.css', 'src/styles.css']
+  const rootCssCandidates = ['src/index.css', 'src/app.css', 'app/globals.css', 'src/styles.css']
+  const frontendCssCandidates = [
+    'frontend/src/index.css',
+    'frontend/src/app.css',
+    'frontend/src/styles.css',
+  ]
+  const componentsPath = path.join(root, 'components.json')
+  const configuredCss = await readFile(componentsPath, 'utf8')
+    .then((value) => {
+      const components = JSON.parse(value) as { tailwind?: { css?: unknown } }
+      const css = components.tailwind?.css
+      if (typeof css !== 'string' || css.length === 0) return undefined
+      const target = path.resolve(root, css)
+      const relative = path.relative(root, target)
+      if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)) {
+        throw new UiError('UI_PROJECT_UNSUPPORTED', 'components.json CSS path escapes the project.')
+      }
+      return { relative: relative.split(path.sep).join('/'), target }
+    })
+    .catch((error: unknown) => {
+      if (error instanceof UiError) throw error
+      return undefined
+    })
+  const configuredCssRelative = configuredCss?.relative
+  const cssCandidates =
+    configuredCssRelative !== undefined
+      ? [configuredCssRelative]
+      : (await exists(path.join(root, 'frontend/package.json')))
+        ? [...frontendCssCandidates, ...rootCssCandidates]
+        : [...rootCssCandidates, ...frontendCssCandidates]
   const resolvedCss = await Promise.all(
     cssCandidates.map(async (file) => ((await exists(path.join(root, file))) ? file : undefined)),
   )
-  const cssRelative = resolvedCss.find(Boolean) ?? 'src/astrale-ui.css'
+  const cssRelative = configuredCssRelative ?? resolvedCss.find(Boolean) ?? 'src/astrale-ui.css'
+  await assertPhysicalProjectPath(root, path.join(root, cssRelative))
 
   return {
     root,
@@ -103,7 +171,7 @@ export async function discoverUiProject(input = process.cwd()): Promise<UiProjec
     manager,
     lockPath,
     cssPath: path.join(root, cssRelative),
-    componentsPath: path.join(root, 'components.json'),
+    componentsPath,
     uiLockPath: path.join(root, 'astrale-ui.lock.json'),
   }
 }

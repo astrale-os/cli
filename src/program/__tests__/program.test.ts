@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { buildProgram } from '../index'
+import { buildProgram, normalizeRootVersionArgv } from '../index'
 
 // Help output is the public CLI contract: version, spec anchors, and skill mirror stay in sync.
 
@@ -195,7 +195,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '873d096c4e99f29ab1db17bec0abc4ad2de613f5e44f9cba97c95b052c8b5a98',
+      'd37c3d80b3067b3553b8527b10bf1c5632922d624b3d6072c3b03e7a507efc4f',
     )
   })
 
@@ -312,6 +312,99 @@ describe('help contract — connect-only command surface', () => {
 })
 
 describe('help contract — UI is project tooling', () => {
+  test('keeps the documented root version alias operational', async () => {
+    const program = await buildProgram()
+    let stdout = ''
+    program.exitOverride().configureOutput({
+      writeOut: (chunk) => {
+        stdout += chunk ?? ''
+      },
+    })
+
+    await expect(
+      program.parseAsync(normalizeRootVersionArgv(['node', 'astrale', '--version'])),
+    ).rejects.toMatchObject({ code: 'commander.version' })
+    expect(stdout.trim()).toBe(program.version() ?? '')
+    expect(program.helpInformation()).toMatch(/root alias:\s+--version/u)
+  })
+
+  test('routes root and subcommand version flags to their exact owners', async () => {
+    const program = await buildProgram()
+    const uiList = program.commands
+      .find((command) => command.name() === 'ui')
+      ?.commands.find((command) => command.name() === 'list')
+    let observedVersion: unknown
+    uiList?.action((_query, options) => {
+      observedVersion = options.version
+    })
+
+    const uiArgv = ['node', 'astrale', 'ui', 'list', 'chart', '--version', '0.3.0-beta.1']
+    expect(normalizeRootVersionArgv(uiArgv)).toEqual(uiArgv)
+    expect(normalizeRootVersionArgv(['node', 'astrale', '--version'])).toEqual([
+      'node',
+      'astrale',
+      '--cli-version',
+    ])
+    expect(normalizeRootVersionArgv(['node', 'astrale', '--ci', '--version'])).toEqual([
+      'node',
+      'astrale',
+      '--ci',
+      '--cli-version',
+    ])
+
+    await program.parseAsync(uiArgv)
+
+    expect(observedVersion).toBe('0.3.0-beta.1')
+  })
+
+  test('routes explicit versions with positional inputs for UI init and update', async () => {
+    const program = await buildProgram()
+    const uiInit = program.commands
+      .find((command) => command.name() === 'ui')
+      ?.commands.find((command) => command.name() === 'init')
+    const update = program.commands.find((command) => command.name() === 'update')
+    let initializedPath: unknown
+    let initializedVersion: unknown
+    let updateVersion: unknown
+    uiInit?.action((projectPath, options) => {
+      initializedPath = projectPath
+      initializedVersion = options.version
+    })
+    update?.action((options) => {
+      updateVersion = options.version
+    })
+
+    await program.parseAsync([
+      'node',
+      'astrale',
+      'ui',
+      'init',
+      './app',
+      '--version',
+      '0.3.0-beta.1',
+    ])
+    expect(initializedPath).toBe('./app')
+    expect(initializedVersion).toBe('0.3.0-beta.1')
+
+    await program.parseAsync(['node', 'astrale', 'update', '--version', '1.0.0-beta.13'])
+    expect(updateVersion).toBe('1.0.0-beta.13')
+  })
+
+  test('continues to admit global machine flags after a subcommand', async () => {
+    const program = await buildProgram()
+    const uiList = program.commands
+      .find((command) => command.name() === 'ui')
+      ?.commands.find((command) => command.name() === 'list')
+    let invoked = false
+    uiList?.action(() => {
+      invoked = true
+    })
+
+    await program.parseAsync(['node', 'astrale', 'ui', 'list', '--ci', '--no-prompt'])
+
+    expect(invoked).toBe(true)
+  })
+
   test('UI commands are local-only and add accepts zero or more canonical addresses', async () => {
     const program = await buildProgram()
     const ui = program.commands.find((command) => command.name() === 'ui')

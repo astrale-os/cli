@@ -19,7 +19,7 @@ export async function buildProgram(): Promise<Command> {
     .description('Astrale CLI — connect to existing Astrale kernels')
     // Single source of truth = package.json (bumped by release-please together
     // with .release-please-manifest.json). Never hand-write a version literal.
-    .version(pkg.version)
+    .version(pkg.version, '-V, --cli-version', 'output the CLI version (root alias: --version)')
     .showSuggestionAfterError(true)
     .addOption(new Option('--ci', 'Machine mode: no prompts, structured errors on stderr'))
     .addOption(new Option('--no-prompt', 'Disable interactive prompts'))

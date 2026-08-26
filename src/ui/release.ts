@@ -72,6 +72,9 @@ export async function resolveUiRelease(
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
     throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Invalid UI release version: ' + version)
   }
+  if (!requested && !/-beta\.\d+$/u.test(version)) {
+    throw new UiError('UI_REGISTRY_UNAVAILABLE', 'Invalid UI beta release version: ' + version)
+  }
   const ref = 'v' + version
   const reference = await json<{
     object: { type: 'commit' | 'tag'; sha: string; url: string }

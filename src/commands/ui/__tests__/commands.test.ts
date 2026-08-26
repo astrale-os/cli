@@ -72,6 +72,21 @@ describe('UI command machine contracts', () => {
     expect(JSON.parse(stdout)).toEqual([item])
   })
 
+  test('list forwards an explicit release without consulting the beta channel', async () => {
+    const seen: string[] = []
+    globalThis.fetch = mockFetch(seen)
+    const action = listCommand.action as (
+      query: string | undefined,
+      options: { json?: boolean; limit?: string; version?: string },
+    ) => Promise<void>
+
+    await action('line-basic', { json: true, limit: '100', version: '0.3.0-beta.1' })
+
+    expect(JSON.parse(stdout)).toEqual([item])
+    expect(seen.some((url) => url.endsWith('/@astrale-os/ui/beta'))).toBe(false)
+    expect(seen.some((url) => url.includes('/git/ref/tags/v0.3.0-beta.1'))).toBe(true)
+  })
+
   test('add rejects missing items without prompting in machine mode', async () => {
     process.argv = ['node', 'astrale', '--no-prompt', 'ui', 'add']
     const add = addCommand.action as (items: string[], options: { json?: boolean }) => Promise<void>
@@ -99,10 +114,11 @@ describe('UI command machine contracts', () => {
   })
 })
 
-function mockFetch(): typeof fetch {
+function mockFetch(seen: string[] = []): typeof fetch {
   return (async (input: string | URL | Request) => {
     const url = String(input)
-    if (url.endsWith('/@astrale-os/ui/beta')) return Response.json({ version: '0.3.0-beta.0' })
+    seen.push(url)
+    if (url.endsWith('/@astrale-os/ui/beta')) return Response.json({ version: '0.3.0-beta.1' })
     if (url.includes('/git/ref/tags/')) {
       return Response.json({ object: { type: 'commit', sha: commit, url: '' } })
     }
