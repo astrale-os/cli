@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.26](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.25...cli/v1.0.0-beta.26) (2026-08-26)
+
+
+### Bug Fixes
+
+* **ci:** authenticate channel release updates ([#191](https://github.com/astrale-os/cli/issues/191)) ([3239fb6](https://github.com/astrale-os/cli/commit/3239fb689d421bb074626babb58b2516bd015fb2))
+
 ## [1.0.0-beta.25](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.24...cli/v1.0.0-beta.25) (2026-08-26)
 
 
