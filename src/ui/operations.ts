@@ -17,6 +17,7 @@ import {
   assertSupportedUiProject,
   discoverUiProject,
   projectRelative,
+  resolveUiRegistryTarget,
   type UiProject,
 } from './project'
 import {
@@ -724,13 +725,19 @@ export async function addUi(
     return addReleasedTheme(themes[0]!, itemDocuments[0]!, project, options)
   }
   await rejectLocalChanges(project, lock, items, options.overwrite === true)
+  const declaredTargets = items.flatMap((item) =>
+    item.files.flatMap((file) => (file.target ? [file.target] : [])),
+  )
+  const resolvedTargets = new Map(
+    await Promise.all(
+      declaredTargets.map(
+        async (target) => [target, await resolveUiRegistryTarget(project, target)] as const,
+      ),
+    ),
+  )
   const targets = (
     await Promise.all(
-      items.flatMap((item) =>
-        item.files
-          .filter((file) => file.target)
-          .map((file) => assertSafePlannedTarget(project, file.target!)),
-      ),
+      [...resolvedTargets.values()].map((target) => assertSafePlannedTarget(project, target)),
     )
   ).filter((target, index, all) => all.indexOf(target) === index)
   const invocation = shadcnInvocation(project.manager, release.compatibility.shadcn, [
@@ -802,7 +809,9 @@ export async function addUi(
       sources: itemDocuments.map((item) => ({
         address: item.meta.canonicalAddress,
         dependencies: item.dependencies ?? [],
-        files: item.files.map((file) => file.target).filter(Boolean),
+        files: item.files
+          .map((file) => (file.target ? resolvedTargets.get(file.target) : undefined))
+          .filter(Boolean),
       })),
       command: [invocation.file, ...invocation.args],
       output: result.stdout,
@@ -824,7 +833,7 @@ export async function addUi(
       const files: Record<string, string> = {}
       for (const file of item.files) {
         if (!file.target) continue
-        const target = await safeTarget(project, file.target)
+        const target = await safeTarget(project, resolvedTargets.get(file.target)!)
         files[projectRelative(project, target)] = digest(await readFile(target))
       }
       lock.items[item.meta.canonicalAddress] = {
