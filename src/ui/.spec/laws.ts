@@ -24,7 +24,7 @@ export const CLI_UI_BOUNDED_REMOTE_DOCUMENTS = defineLaw({
 export const CLI_UI_EXACT_ITEM_SOURCE = defineLaw({
   id: 'CLI-UI-EXACT-ITEM-SOURCE',
   statement:
-    'An add operation admits the exact built item document against the release index and records a content-bearing source digest before invoking project tooling.',
+    'An add operation admits the exact built item document against the release index and records its content-bearing source digest before any consumer mutation; only patterns and blocks invoke project tooling.',
   tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-EXACT-ITEM-SOURCE' }],
 })
 
