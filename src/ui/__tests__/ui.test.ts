@@ -94,11 +94,25 @@ async function fixture(): Promise<string> {
     JSON.stringify({
       name: 'fixture',
       private: true,
-      dependencies: { react: '19.2.8', 'react-dom': '19.2.8', tailwindcss: '4.3.3' },
+      dependencies: {
+        react: '19.2.8',
+        'react-dom': '19.2.8',
+        tailwindcss: '4.3.3',
+      },
       packageManager: 'pnpm@11.13.1',
     }),
   )
   await writeFile(path.join(root, 'src/index.css'), '/* consumer css */\n')
+  return root
+}
+
+async function lockedFixture(): Promise<string> {
+  const root = await fixture()
+  const manifestPath = path.join(root, 'package.json')
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  manifest.dependencies['@astrale-os/ui'] = '0.3.0-beta.0'
+  await writeFile(manifestPath, JSON.stringify(manifest))
+  await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
   return root
 }
 
@@ -362,6 +376,10 @@ describe('UI initialization transaction', () => {
       JSON.stringify({ name: 'astrale-frontend', private: true, type: 'module' }),
     )
     await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
+    await mkdir(path.join(root, 'ui'), { recursive: true })
+    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
+    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
+    await writeFile(path.join(root, 'pnpm-workspace.yaml'), "packages:\n  - 'frontend'\n")
     const rootCssBefore = await readFile(path.join(root, 'src/index.css'), 'utf8')
 
     await initUi(
@@ -377,8 +395,14 @@ describe('UI initialization transaction', () => {
     expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toBe(rootCssBefore)
     expect(
       JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).dependencies,
-    ).toHaveProperty('@astrale-os/ui')
+    ).toHaveProperty('@astrale-os/ui', '0.3.0-beta.0')
     expect(await Bun.file(path.join(root, 'src/astrale-ui.css')).exists()).toBe(false)
+    expect(JSON.parse(await readFile(path.join(root, 'components/package.json'), 'utf8'))).toEqual({
+      name: 'fixture-ui-registry',
+      private: true,
+      type: 'module',
+    })
+    expect(await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')).toContain('components')
 
     await writeFile(path.join(root, 'src/app.css'), '/* later root stylesheet */\n')
     const repeated = await initUi(
@@ -386,6 +410,153 @@ describe('UI initialization transaction', () => {
       { fetcher: mockFetch() },
     )
     expect(repeated.status).toBe('unchanged')
+  })
+
+  test('adds the private registry workspace to an npm-authored Domain manifest', async () => {
+    const root = await fixture()
+    const manifestPath = path.join(root, 'package.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.packageManager = 'npm@11.16.0'
+    manifest.workspaces = ['frontend']
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    await writeFile(path.join(root, 'package-lock.json'), '{}')
+    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
+    await writeFile(
+      path.join(root, 'frontend/package.json'),
+      JSON.stringify({ name: 'astrale-frontend', private: true }),
+    )
+    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
+    await mkdir(path.join(root, 'ui'), { recursive: true })
+    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
+    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
+
+    const result = await initUi(
+      { path: root, version: '0.3.0-beta.0', install: false },
+      { fetcher: mockFetch() },
+    )
+
+    expect(result.files).toEqual(expect.arrayContaining(['components/package.json']))
+    expect(JSON.parse(await readFile(manifestPath, 'utf8')).workspaces).toEqual([
+      'frontend',
+      'components',
+    ])
+    expect(JSON.parse(await readFile(path.join(root, 'components/package.json'), 'utf8'))).toEqual({
+      name: 'fixture-ui-registry',
+      private: true,
+      type: 'module',
+    })
+  })
+
+  test('rejects a Domain registry workspace whose physical parent escapes the project', async () => {
+    const root = await fixture()
+    const outside = await fixture()
+    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
+    await writeFile(
+      path.join(root, 'frontend/package.json'),
+      JSON.stringify({ name: 'astrale-frontend', private: true }),
+    )
+    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
+    await mkdir(path.join(root, 'ui'), { recursive: true })
+    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
+    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
+    await symlink(outside, path.join(root, 'components'), 'dir')
+    const outsideManifest = await readFile(path.join(outside, 'package.json'), 'utf8')
+    const rootManifest = await readFile(path.join(root, 'package.json'), 'utf8')
+
+    await expect(
+      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
+    ).rejects.toMatchObject({ code: 'UI_LOCK_INVALID' })
+    expect(await readFile(path.join(outside, 'package.json'), 'utf8')).toBe(outsideManifest)
+    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(rootManifest)
+    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
+  })
+
+  test('rejects a symlinked pnpm workspace manifest before any Domain mutation', async () => {
+    const root = await fixture()
+    const outside = await fixture()
+    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
+    await writeFile(
+      path.join(root, 'frontend/package.json'),
+      JSON.stringify({ name: 'astrale-frontend', private: true }),
+    )
+    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
+    await mkdir(path.join(root, 'ui'), { recursive: true })
+    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
+    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
+    const outsideWorkspace = path.join(outside, 'workspace.yaml')
+    await writeFile(outsideWorkspace, "packages:\n  - 'outside'\n")
+    await symlink(outsideWorkspace, path.join(root, 'pnpm-workspace.yaml'), 'file')
+    const outsideBefore = await readFile(outsideWorkspace, 'utf8')
+
+    await expect(
+      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
+    ).rejects.toMatchObject({ code: 'UI_LOCK_INVALID' })
+    expect(await readFile(outsideWorkspace, 'utf8')).toBe(outsideBefore)
+    expect(await Bun.file(path.join(root, 'components/package.json')).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
+  })
+
+  test('restores every Domain workspace mutation when dependency installation fails', async () => {
+    const root = await fixture()
+    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
+    await writeFile(
+      path.join(root, 'frontend/package.json'),
+      JSON.stringify({ name: 'astrale-frontend', private: true }),
+    )
+    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
+    await mkdir(path.join(root, 'ui'), { recursive: true })
+    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
+    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
+    await writeFile(path.join(root, 'pnpm-workspace.yaml'), "packages:\n  - 'frontend'\n")
+    const manifestBefore = await readFile(path.join(root, 'package.json'), 'utf8')
+    const cssBefore = await readFile(path.join(root, 'frontend/src/styles.css'), 'utf8')
+    const workspaceBefore = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')
+
+    await expect(
+      initUi(
+        { path: root, version: '0.3.0-beta.0' },
+        {
+          fetcher: mockFetch(),
+          runner: async () => ({ code: 1, stdout: '', stderr: 'install failed' }),
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'UI_DEPENDENCY_INSTALL_FAILED' })
+
+    expect(await readFile(path.join(root, 'package.json'), 'utf8')).toBe(manifestBefore)
+    expect(await readFile(path.join(root, 'frontend/src/styles.css'), 'utf8')).toBe(cssBefore)
+    expect(await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')).toBe(workspaceBefore)
+    expect(await Bun.file(path.join(root, 'components/package.json')).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, 'components.json')).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, 'astrale-ui.lock.json')).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, 'pnpm-lock.yaml')).exists()).toBe(false)
+  })
+
+  test('rejects a registry workspace that could shadow the public UI package', async () => {
+    const root = await fixture()
+    await mkdir(path.join(root, 'frontend/src'), { recursive: true })
+    await writeFile(
+      path.join(root, 'frontend/package.json'),
+      JSON.stringify({ name: 'astrale-frontend', private: true }),
+    )
+    await writeFile(path.join(root, 'frontend/src/styles.css'), '/* Domain frontend */\n')
+    await mkdir(path.join(root, 'ui'), { recursive: true })
+    await writeFile(path.join(root, 'ui/index.ts'), 'export {}\n')
+    await writeFile(path.join(root, 'astrale.config.ts'), 'export default {}\n')
+    await writeFile(path.join(root, 'pnpm-workspace.yaml'), "packages:\n  - 'frontend'\n")
+    await mkdir(path.join(root, 'components'), { recursive: true })
+    await writeFile(
+      path.join(root, 'components/package.json'),
+      JSON.stringify({ name: '@astrale-os/ui', private: true, version: '0.3.0-beta.0' }),
+    )
+    const workspaceBefore = await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')
+
+    await expect(
+      initUi({ path: root, version: '0.3.0-beta.0', install: false }, { fetcher: mockFetch() }),
+    ).rejects.toMatchObject({ code: 'UI_PROJECT_UNSUPPORTED' })
+    expect(await readFile(path.join(root, 'pnpm-workspace.yaml'), 'utf8')).toBe(workspaceBefore)
+    expect(
+      JSON.parse(await readFile(path.join(root, 'components/package.json'), 'utf8')).name,
+    ).toBe('@astrale-os/ui')
   })
 
   test('rejects configured and discovered stylesheets whose physical parent escapes', async () => {
@@ -528,8 +699,7 @@ describe('UI source operations', () => {
   })
 
   test('add dry-run invokes the exact shadcn version and does not advance the lock', async () => {
-    const root = await fixture()
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
+    const root = await lockedFixture()
     const before = await readFile(path.join(root, 'astrale-ui.lock.json'), 'utf8')
     const calls: Array<{ file: string; args: string[] }> = []
     const result = await addUi(
@@ -557,8 +727,7 @@ describe('UI source operations', () => {
   })
 
   test('successful add records installed file digests and doctor detects later edits', async () => {
-    const root = await fixture()
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
+    const root = await lockedFixture()
     await writeFile(
       path.join(root, 'components.json'),
       JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
@@ -611,9 +780,80 @@ describe('UI source operations', () => {
     ).rejects.toBeInstanceOf(UiError)
   })
 
+  test('restores the exact locked UI dependency after shadcn applies its compatible range', async () => {
+    const root = await lockedFixture()
+    const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
+    const calls: Array<{ file: string; args: string[] }> = []
+
+    await addUi(
+      ['pattern/chart/line/basic'],
+      { project: root, yes: true },
+      {
+        fetcher: mockFetch(),
+        runner: async (file, args) => {
+          calls.push({ file, args })
+          if (args[0] === 'dlx') {
+            await mkdir(path.dirname(installed), { recursive: true })
+            await writeFile(installed, 'export const Chart = true\n')
+            const manifestPath = path.join(root, 'package.json')
+            const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+            manifest.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
+            await writeFile(manifestPath, JSON.stringify(manifest))
+          }
+          return { code: 0, stdout: '', stderr: '' }
+        },
+      },
+    )
+
+    expect(calls).toEqual([
+      expect.objectContaining({ file: 'pnpm', args: expect.arrayContaining(['dlx']) }),
+      { file: 'pnpm', args: ['install'] },
+    ])
+    expect(
+      JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).dependencies[
+        '@astrale-os/ui'
+      ],
+    ).toBe('0.3.0-beta.0')
+  })
+
+  test('rolls back item and package state when restoring the locked dependency fails', async () => {
+    const root = await lockedFixture()
+    const manifestPath = path.join(root, 'package.json')
+    const lockPath = path.join(root, 'astrale-ui.lock.json')
+    const installed = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
+    const manifestBefore = await readFile(manifestPath, 'utf8')
+    const lockBefore = await readFile(lockPath, 'utf8')
+
+    await expect(
+      addUi(
+        ['pattern/chart/line/basic'],
+        { project: root, yes: true },
+        {
+          fetcher: mockFetch(),
+          runner: async (_file, args) => {
+            if (args[0] === 'dlx') {
+              await mkdir(path.dirname(installed), { recursive: true })
+              await writeFile(installed, 'export const Chart = true\n')
+              const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+              manifest.dependencies['@astrale-os/ui'] = '^0.3.0-beta.0'
+              await writeFile(manifestPath, JSON.stringify(manifest))
+              return { code: 0, stdout: '', stderr: '' }
+            }
+            await writeFile(path.join(root, 'pnpm-lock.yaml'), 'partial lock\n')
+            return { code: 1, stdout: '', stderr: 'registry timeout' }
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'UI_DEPENDENCY_INSTALL_FAILED' })
+
+    expect(await readFile(manifestPath, 'utf8')).toBe(manifestBefore)
+    expect(await readFile(lockPath, 'utf8')).toBe(lockBefore)
+    expect(await Bun.file(installed).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, 'pnpm-lock.yaml')).exists()).toBe(false)
+  })
+
   test('preflights symlink targets without invoking shadcn', async () => {
-    const root = await fixture()
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
+    const root = await lockedFixture()
     const outside = await mkdtemp(path.join(tmpdir(), 'astrale-ui-outside-'))
     temporary.push(outside)
     await symlink(outside, path.join(root, 'components'))
@@ -635,8 +875,7 @@ describe('UI source operations', () => {
   })
 
   test('restores declared files and package state after a partial shadcn failure', async () => {
-    const root = await fixture()
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
+    const root = await lockedFixture()
     const first = path.join(root, 'components/astrale/pattern/chart/line-basic.tsx')
     const second = path.join(root, 'components/astrale/pattern/chart/summary.tsx')
     await mkdir(path.dirname(first), { recursive: true })
@@ -678,8 +917,7 @@ describe('UI source operations', () => {
   })
 
   test('overwrite requires explicit yes confirmation before invoking shadcn', async () => {
-    const root = await fixture()
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
+    const root = await lockedFixture()
     let invoked = false
     await expect(
       addUi(
@@ -699,8 +937,7 @@ describe('UI source operations', () => {
 
   /** @evidence TEST-CLI-UI-EXACT-ITEM-SOURCE */
   test('rejects a built item that differs from the admitted release index before invoking shadcn', async () => {
-    const root = await fixture()
-    await writeFile(path.join(root, 'astrale-ui.lock.json'), JSON.stringify(lock()))
+    const root = await lockedFixture()
     const fallback = mockFetch()
     let invoked = false
     const malformed = (async (input: string | URL | Request, init?: RequestInit) => {
