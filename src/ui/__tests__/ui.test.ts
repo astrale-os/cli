@@ -28,6 +28,30 @@ const registry: UiRegistry = {
     },
   ],
 }
+const componentRegistry: UiRegistry = {
+  name: 'astrale-ui',
+  items: [
+    {
+      name: 'component-sidebar',
+      type: 'registry:component',
+      title: 'Component · sidebar',
+      dependencies: ['@astrale-os/ui@^0.3.0-beta.0', 'lucide-react@1.32.0'],
+      files: [
+        {
+          path: 'sidebar.tsx',
+          type: 'registry:component',
+          target: 'components/astrale/component/sidebar/sidebar.tsx',
+        },
+        {
+          path: 'use-mobile.ts',
+          type: 'registry:hook',
+          target: 'components/astrale/component/sidebar/use-mobile.ts',
+        },
+      ],
+      meta: { canonicalAddress: 'component/sidebar', ownership: 'consumer-source' },
+    },
+  ],
+}
 const themeCss = `/* Generated from observatory.astrale-theme.json. Consumer-owned after installation. */
 :root,
 [data-ui-theme='observatory'] {
@@ -322,6 +346,36 @@ describe('UI release and runner contracts', () => {
         ],
       }),
     ])
+  })
+
+  test('admits an exact consumer-owned component with item-local dependencies and files', async () => {
+    const release = await resolveUiRelease('0.3.0-beta.0', mockFetch([], componentRegistry))
+    expect(release.registry.items).toEqual([
+      expect.objectContaining({
+        name: 'component-sidebar',
+        type: 'registry:component',
+        dependencies: ['@astrale-os/ui@^0.3.0-beta.0', 'lucide-react@1.32.0'],
+        meta: expect.objectContaining({ canonicalAddress: 'component/sidebar' }),
+        files: [
+          expect.objectContaining({
+            type: 'registry:component',
+            target: 'components/astrale/component/sidebar/sidebar.tsx',
+          }),
+          expect.objectContaining({
+            type: 'registry:hook',
+            target: 'components/astrale/component/sidebar/use-mobile.ts',
+          }),
+        ],
+      }),
+    ])
+  })
+
+  test('rejects a component item that targets another registry ownership category', async () => {
+    const invalid = structuredClone(componentRegistry)
+    invalid.items[0]!.files[0]!.target = 'components/astrale/pattern/sidebar/sidebar.tsx'
+    await expect(resolveUiRelease('0.3.0-beta.0', mockFetch([], invalid))).rejects.toMatchObject({
+      code: 'UI_REGISTRY_UNAVAILABLE',
+    })
   })
 
   test('lists release themes through the public type filter', async () => {

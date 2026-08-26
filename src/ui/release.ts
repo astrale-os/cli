@@ -250,8 +250,14 @@ function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
     /^(?:pattern|block)-[a-z0-9-]+$/u.test(candidate.name) &&
     typeof address === 'string' &&
     /^(?:pattern|block)\/[a-z0-9-]+\/[a-z0-9-/]+$/u.test(address)
+  const isComponent =
+    candidate.type === 'registry:component' &&
+    typeof candidate.name === 'string' &&
+    /^component-[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(candidate.name) &&
+    typeof address === 'string' &&
+    /^component\/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u.test(address)
   return (
-    (isTheme || isComposition) &&
+    (isTheme || isComposition || isComponent) &&
     (candidate.dependencies === undefined ||
       (Array.isArray(candidate.dependencies) &&
         candidate.dependencies.every(
@@ -274,7 +280,8 @@ function isInstallableItem(item: unknown): item is UiRegistry['items'][number] {
           (candidate.files?.length === 1 &&
             file.type === 'registry:file' &&
             file.target ===
-              'components/astrale/theme/' + address!.slice('theme/'.length) + '.css')),
+              'components/astrale/theme/' + address!.slice('theme/'.length) + '.css')) &&
+        (!isComponent || file.target.startsWith('components/astrale/component/')),
     ) &&
     typeof address === 'string'
   )
