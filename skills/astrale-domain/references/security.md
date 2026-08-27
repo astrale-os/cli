@@ -21,6 +21,11 @@ business graph facts. When Shell owns the human-facing User, observe that exact 
 the application Domain's membership or business facts. Do not provision a shadow User or grant a
 human dynamic `can_*` authority to make acceptance pass.
 
+Cross-Domain authority is installation-owned. The calling Domain's Application explicitly declares
+each exact foreign callable in `requirements({ callables: [...] })`; Kernel installation then owns
+materializing authority for the installed Domain principal. Do not grant the invoking human direct
+foreign `can_*` authority as a substitute, and do not confuse a Schema dependency with capability.
+
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'
 import { z } from 'zod'
@@ -76,6 +81,10 @@ For protected behavior, test anonymous rejection, authenticated-but-unauthorized
 rejection, and success as separate cases. Denials must prove the Action, Workflow steps, Providers,
 and graph effects did not run. Use a real Kernel admission path for this evidence; a handler-local
 conditional or permissive fake cannot prove authorization.
+
+For a cross-Domain success, independently inspect installation evidence and require the exact foreign
+callable under both requested and materialized capabilities before attributing the result to the
+installed Domain edge.
 
 Keep each denial criterion proportional to its claim. A mutating denial needs an independent no-effect
 observation; a read-only denial does not need invented graph assertions. When testing revocation,

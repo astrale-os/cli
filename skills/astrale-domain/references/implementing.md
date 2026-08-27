@@ -83,6 +83,35 @@ export const workflows = [refreshForecast] as const
 Missing, duplicate, foreign-Schema, and Action/Workflow-conflicting registrations must fail SDK
 admission or typecheck. Do not reconstruct callable keys or dispatch by parsing graph paths.
 
+## Cross-Domain capability requirements
+
+A Schema dependency pins the foreign Domain closure; it does not grant the installed caller Domain
+authority to invoke that dependency. Every remote-Domain Provider call must have one matching,
+explicit Application requirement so installation can materialize authority from the caller Domain
+principal to the exact foreign callable:
+
+```ts
+import { defineApplication, requirements } from '@astrale-os/sdk/application'
+import { schema as language } from '@astrale-os/sdk/schema'
+
+import { MessagingSchema } from '@acme/messaging'
+import { LogisticsSchema } from '#schema'
+
+export const application = defineApplication({
+  schema: LogisticsSchema,
+  runtime,
+  requirements: requirements({
+    callables: [language.resolve(MessagingSchema).functions.send],
+  }),
+})
+```
+
+Use the resolved callable from the dependency's public Schema facade; do not forge its key. Keep the
+Provider caller-bound with `execution.invoke(reference(domain, domain.functions.send), input)`.
+Inspect the built or installed publication and require requested and materialized capabilities to
+contain the exact callable. A complete dependency closure, a typed reference, or a successful build
+does not prove that installation authority was requested.
+
 ## Query and Mutation owners
 
 Use `@astrale-os/sdk/query` for reusable observations and `@astrale-os/sdk/mutation` for one atomic
