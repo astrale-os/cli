@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.36](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.35...cli/v1.0.0-beta.36) (2026-08-27)
+
+
+### Bug Fixes
+
+* **lib:** distribute commit-bound current skills ([#226](https://github.com/astrale-os/cli/issues/226)) ([84c8fcb](https://github.com/astrale-os/cli/commit/84c8fcb4523e642d6ac63669bd0b0d8d9c2249ad))
+
 ## [1.0.0-beta.35](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.34...cli/v1.0.0-beta.35) (2026-08-27)
 
 
