@@ -93,6 +93,46 @@ describe('direct domain install operation identity', () => {
     ])
   })
 
+  test('retains an explicit absent-generation guard in the request and recovery command', async () => {
+    globalThis.fetch = mock(async () => publicationResponse()) as unknown as typeof fetch
+    const requests: unknown[] = []
+    let recovery: unknown
+
+    await installDirect(
+      'https://crm.test',
+      { direct: true, currentGeneration: 'absent', json: true },
+      {
+        createOperationId: () => GENERATED,
+        runKernelCommand: async (input) => {
+          recovery = input.recovery
+          requests.push(
+            await input.fn({
+              session: { schema: { install: async (request: unknown) => request } },
+            } as never),
+          )
+        },
+      },
+    )
+
+    expect(requests).toEqual([
+      {
+        operation: GENERATED,
+        domains: [
+          {
+            publication: { url: 'https://crm.test' },
+            currentGeneration: null,
+          },
+        ],
+      },
+    ])
+    expect(recovery).toEqual({
+      operation: GENERATED,
+      retry:
+        `astrale domain install https://crm.test --direct --operation ${GENERATED}` +
+        ' --current-generation absent',
+    })
+  })
+
   test('keeps identity-override consent warnings out of machine output', async () => {
     globalThis.fetch = mock(async () => publicationResponse()) as unknown as typeof fetch
     const originalError = console.error

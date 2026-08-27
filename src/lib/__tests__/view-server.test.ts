@@ -60,6 +60,12 @@ describe('view session server credentials', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
+      transport: {
+        href: 'http://127.0.0.1:8787/ui/public',
+        issuer: issuer('https://example.test'),
+        etag: digest('a'),
+        revision: revision('b'),
+      },
       externalOrigins: ['https://connect.nango.dev'],
       idleMs: 60_000,
     } satisfies ViewServeConfig
@@ -72,6 +78,12 @@ describe('view session server credentials', () => {
       expect(await configResponse.json()).toMatchObject({
         sessionId: 'v-plain',
         externalOrigins: ['https://connect.nango.dev'],
+        transport: {
+          href: 'http://127.0.0.1:8787/ui/public',
+          issuer: 'https://example.test',
+          etag: digest('a'),
+          revision: revision('b'),
+        },
       })
 
       const response = await fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, {

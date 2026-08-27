@@ -13,6 +13,7 @@ import { confirmWithInput } from '../../lib/prompt'
 
 type UninstallOpts = KernelCommandOpts & {
   readonly yes?: boolean
+  readonly currentGeneration?: string
   readonly ci?: boolean
   readonly noPrompt?: boolean
 }
@@ -30,8 +31,46 @@ type UninstallResult = {
 export function uninstallCallInput(
   origin: string,
   operation: string = crypto.randomUUID(),
-): Readonly<{ operation: string; origin: string }> {
-  return Object.freeze({ operation, origin })
+  currentGeneration?: string,
+): Readonly<{ operation: string; origin: string; currentGeneration?: string }> {
+  return Object.freeze({
+    operation,
+    origin,
+    ...(currentGeneration === undefined ? {} : { currentGeneration }),
+  })
+}
+
+export interface UninstallDependencies {
+  readonly runKernelCommand: typeof runKernelCommand
+  readonly operation: () => string
+}
+
+export async function uninstallDomain(
+  origin: string,
+  opts: UninstallOpts,
+  dependencies: Partial<UninstallDependencies> = {},
+): Promise<void> {
+  const run = dependencies.runKernelCommand ?? runKernelCommand
+  const operation = dependencies.operation ?? (() => crypto.randomUUID())
+  await run<UninstallResult>({
+    opts,
+    label: `Uninstalling domain ${origin}`,
+    fn: async ({ session }) =>
+      (await session.call(
+        createPathCall(
+          Path.project(K.functions.uninstall.ref).raw,
+          uninstallCallInput(origin, operation(), opts.currentGeneration),
+        ),
+      )) as UninstallResult,
+    format: (result, formatOpts, machine) => {
+      if (machine) {
+        output(result, formatOpts)
+        return
+      }
+      log.success(`Domain uninstalled: ${result.transition.intent.origin}`)
+      log.dim(`  operation: ${result.operation}`)
+    },
+  })
 }
 
 export default {
@@ -64,6 +103,10 @@ Examples:
       flags: '--yes',
       description: 'Confirm Domain uninstall without prompting',
     },
+    {
+      flags: '--current-generation <digest>',
+      description: 'Require the exact current Domain generation',
+    },
   ],
   action: async (origin: string, opts: UninstallOpts) => {
     try {
@@ -72,22 +115,7 @@ Examples:
       fatal(error, opts)
     }
 
-    await runKernelCommand<UninstallResult>({
-      opts,
-      label: `Uninstalling domain ${origin}`,
-      fn: async ({ session }) =>
-        (await session.call(
-          createPathCall(Path.project(K.functions.uninstall.ref).raw, uninstallCallInput(origin)),
-        )) as UninstallResult,
-      format: (result, formatOpts, machine) => {
-        if (machine) {
-          output(result, formatOpts)
-          return
-        }
-        log.success(`Domain uninstalled: ${result.transition.intent.origin}`)
-        log.dim(`  operation: ${result.operation}`)
-      },
-    })
+    await uninstallDomain(origin, opts)
   },
 } satisfies CommandDefinition
 

@@ -88,32 +88,53 @@ function qualifySelfUpdate(sourceBinary) {
   const releaseDir = join(updateRoot, 'release')
   const payloadDir = join(updateRoot, 'payload')
   const stateDir = join(updateRoot, 'state')
+  const licenseDir = join(stateDir, 'licenses')
   const skillRoot = join(updateRoot, 'global')
   mkdirSync(installDir, { recursive: true })
   mkdirSync(releaseDir, { recursive: true })
   mkdirSync(payloadDir, { recursive: true })
+  mkdirSync(licenseDir, { recursive: true })
 
   const installedBinary = join(installDir, 'astrale')
   const payloadBinary = join(payloadDir, 'astrale')
+  const sourceCloudflared = join(dirname(sourceBinary), 'astrale-cloudflared')
+  const installedCloudflared = join(installDir, 'astrale-cloudflared')
+  const payloadCloudflared = join(payloadDir, 'astrale-cloudflared')
+  const payloadLicense = join(payloadDir, 'LICENSE.cloudflared')
+  assert.equal(existsSync(sourceCloudflared), true, 'built release companion is missing')
   copyFileSync(sourceBinary, installedBinary)
   copyFileSync(sourceBinary, payloadBinary)
+  copyFileSync(sourceCloudflared, installedCloudflared)
+  copyFileSync(sourceCloudflared, payloadCloudflared)
+  copyFileSync(join(cliRoot, 'licenses', 'cloudflared.txt'), join(licenseDir, 'cloudflared.txt'))
+  copyFileSync(join(cliRoot, 'licenses', 'cloudflared.txt'), payloadLicense)
   chmodSync(installedBinary, 0o755)
   chmodSync(payloadBinary, 0o755)
+  chmodSync(installedCloudflared, 0o755)
+  chmodSync(payloadCloudflared, 0o755)
 
   const version = spawnSync(sourceBinary, ['--version'], { encoding: 'utf8' }).stdout.trim()
+  const cloudflaredVersion = spawnSync(sourceCloudflared, ['--version'], {
+    encoding: 'utf8',
+  }).stdout.match(/^cloudflared version ([^ ]+)/u)?.[1]
+  assert.equal(typeof cloudflaredVersion, 'string')
   const platform = `${process.platform}-${process.arch}`
   const assetName = `astrale-${platform}.tar.gz`
   const assetPath = join(releaseDir, assetName)
-  const archived = spawnSync('tar', ['-C', payloadDir, '-czf', assetPath, 'astrale'], {
-    encoding: 'utf8',
-  })
+  const archived = spawnSync(
+    'tar',
+    ['-C', payloadDir, '-czf', assetPath, 'astrale', 'astrale-cloudflared', 'LICENSE.cloudflared'],
+    { encoding: 'utf8' },
+  )
   assert.equal(archived.status, 0, archived.stderr)
   const checksum = createHash('sha256').update(readFileSync(assetPath)).digest('hex')
   writeFileSync(
     join(releaseDir, 'manifest.json'),
     JSON.stringify({
+      schemaVersion: 2,
       version: 'next-e2e',
       binaryVersion: version,
+      cloudflaredVersion,
       channel: 'beta',
       assets: { [platform]: { name: assetName, sha256: checksum } },
     }),
@@ -127,6 +148,11 @@ function qualifySelfUpdate(sourceBinary) {
       version: 'previous-e2e',
       repo: 'astrale-os/cli',
       bin: installedBinary,
+      cohort: {
+        schemaVersion: 2,
+        binaryVersion: version,
+        cloudflaredVersion,
+      },
     })}\n`,
   )
 
@@ -146,7 +172,11 @@ function qualifySelfUpdate(sourceBinary) {
   })
   assert.equal(updated.status, 0, `${updated.stdout}\n${updated.stderr}`)
   assert.match(updated.stdout, /Applying skills embedded in the updated CLI/u)
-  assert.equal(JSON.parse(readFileSync(join(stateDir, 'install.json'), 'utf8')).version, 'next-e2e')
+  const installed = JSON.parse(readFileSync(join(stateDir, 'install.json'), 'utf8'))
+  assert.equal(installed.version, 'next-e2e')
+  assert.equal(installed.cohort.cloudflaredVersion, cloudflaredVersion)
+  assert.equal(existsSync(installedCloudflared), true)
+  assert.equal(existsSync(join(licenseDir, 'cloudflared.txt')), true)
   for (const name of skillNames) {
     assert.equal(existsSync(join(skillRoot, '.agents', 'skills', name, 'SKILL.md')), true)
   }

@@ -1,7 +1,8 @@
 # CLI release lifecycle
 
 Release Please owns the CLI version and immutable GitHub release. V1 has one
-distribution: the standalone executable.
+distribution: a standalone toolchain containing the CLI and its private,
+release-pinned cloudflared companion.
 
 ## Normal beta release
 
@@ -13,8 +14,11 @@ distribution: the standalone executable.
 4. Review the proposed version, changelog, `package.json`, and `.release-please-manifest.json`.
 5. Merge the Release Please pull request.
 6. `Release` creates the immutable `cli/v<version>` GitHub prerelease, then calls
-   `CLI Release` to test and build four standalone executables with Bun 1.4.0.
-   Each executable embeds Studio, viewer assets, and the release's skills.
+   `CLI Release` to test and build four standalone toolchains with Bun 1.4.0.
+   Each CLI executable embeds Studio, viewer assets, and the release's skills;
+   each archive also contains the exact cloudflared version pinned by
+   `cloudflared.lock.json` and the distribution copy at
+   `licenses/cloudflared.txt`.
    `CLI Release` uploads the assets and advances the movable `beta` tag and
    channel release.
 
@@ -80,15 +84,19 @@ Install and verify the standalone beta through the default channel:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 astrale --version
+~/.astrale/bin/astrale-cloudflared --version
 astrale update --check --json
 astrale studio --help
 astrale skills status --json
 ```
 
 The immutable and movable releases must contain `manifest.json`,
-`sha256sums.txt`, and all four single-binary archives (`darwin`/`linux` by
-`arm64`/`x64`). `manifest.json.version` and `binaryVersion` must both equal the
-Release Please version. A mismatch fails `CLI Release` before publication.
+`sha256sums.txt`, and all four platform archives (`darwin`/`linux` by
+`arm64`/`x64`). Every archive contains exactly `astrale`,
+`astrale-cloudflared`, and `LICENSE.cloudflared`. Manifest schema v2 records the
+release version, compiled `binaryVersion`, and pinned `cloudflaredVersion`; the
+four asset digests close over those archives. A closure, version, checksum, or
+native smoke mismatch fails `CLI Release` before publication.
 
 ## Recovery and canary
 

@@ -158,7 +158,7 @@ export async function cliStale(
         current: running,
       }
     }
-    if (r.status === 'updated') {
+    if (r.status === 'updated' || r.status === 'repaired') {
       return {
         stale: false,
         managed: false,
@@ -168,10 +168,10 @@ export async function cliStale(
       }
     }
     return {
-      stale: r.status === 'available',
+      stale: r.status === 'available' || r.status === 'repair-available',
       managed: false,
       current: r.currentVersion,
-      latest: r.latestVersion,
+      latest: r.status === 'repair-available' ? r.currentVersion : r.latestVersion,
       channel: r.channel,
     }
   } catch (error) {
@@ -223,9 +223,10 @@ export default {
   ],
   afterHelpText: `
 Behavior:
-  Keeps three things current, in order. (1) The CLI binary: updates official
-  standalone installs; downloads are checksum-verified before the binary is
-  replaced. (2) The Astrale agent skills: installs every skill embedded in that
+  Keeps three things current, in order. (1) The CLI toolchain: updates official
+  standalone installs; the CLI, pinned private provider, license, and metadata
+  are checksum-verified and replaced as one recoverable cohort. (2) The Astrale
+  agent skills: installs every skill embedded in that
   exact CLI release, updates healthy older
   installs, repairs inconsistent installs, and verifies the result before
   reporting success. (3) SDK deps: inside a pnpm domain
@@ -300,6 +301,12 @@ Examples:
         log.success(`Updated astrale ${result.previousVersion} -> ${result.currentVersion}`)
         log.dim(`  channel: ${result.channel}`)
         log.dim(`  binary: ${result.bin}`)
+      } else if (result.status === 'repaired') {
+        log.success(`Repaired Astrale toolchain ${result.currentVersion}`)
+        log.dim(`  binary: ${result.bin}`)
+      } else if (result.status === 'repair-available') {
+        log.info(`Astrale toolchain repair available: ${result.currentVersion}`)
+        anyAvailable = true
       } else if (result.status === 'managed') {
         const error = packageManagedUpdateError(result.executable)
         throw error

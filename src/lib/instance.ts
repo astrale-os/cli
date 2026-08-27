@@ -357,7 +357,10 @@ export async function clearActive(identifier: string): Promise<void> {
 export async function getActive(config?: AstraleConfig): Promise<InstanceEntry & { name: string }> {
   const store = await readInstances(config)
   if (!store.active) {
-    throw new Error('No active instance. Run: astrale instance bookmark <name> --url <url> --use')
+    throw new AstraleError(
+      'INSTANCE_NOT_FOUND',
+      'No active instance. Run: astrale instance bookmark <name> --url <url> --use',
+    )
   }
   const entry = store.instances[store.active]
   return { ...entry, name: store.active }

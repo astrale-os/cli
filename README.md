@@ -10,8 +10,10 @@
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
-The installer places a verified standalone binary at
-`~/.astrale/bin/astrale` by default. The same executable contains the CLI,
+The installer places one verified standalone toolchain at `~/.astrale/bin` by
+default: the public `astrale` executable and its private, release-pinned
+`astrale-cloudflared` companion. The companion's Apache 2.0 license is retained
+at `~/.astrale/licenses/cloudflared.txt`. The CLI executable contains the CLI,
 [Domain Studio](studio/README.md), its Bun 1.4 runtime, the viewer, and the
 Astrale skills. Running the CLI, Studio, viewer, and Astrale skill manager does
 not require Node, npm, npx, or a separate Bun install. During the prerelease
@@ -27,6 +29,12 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 
 There is no npm installation mode in v1. This keeps one update path and prevents
 two global Astrale versions from competing on `PATH`.
+
+Generated Domains using `@astrale-os/adapter-astrale` consume the private
+companion automatically: `pnpm dev` creates temporary public ingress, runs the
+local Worker and optional frontend, reconciles the active development instance,
+and starts a local View host. Developers never invoke `astrale-cloudflared`
+directly and need no Cloudflare account.
 
 ## Quickstart
 
@@ -90,9 +98,11 @@ astrale update --check
 astrale update
 ```
 
-`astrale update` atomically upgrades the standalone executable, then invokes the
-new binary to install, update, or repair the skills embedded in that exact
-release. It follows the beta channel by default. Use `--check`,
+`astrale update` checksum-verifies and upgrades the standalone CLI, pinned
+companion, license, and install metadata as one cohort, then invokes the new CLI
+to install, update, or repair the skills embedded in that exact release. A
+same-version update repairs a missing or mismatched companion. It follows the
+beta channel by default. Use `--check`,
 `--channel <channel>`, or `--version <version>` to control the release target;
 `--no-skills` is the explicit opt-out.
 

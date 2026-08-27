@@ -109,13 +109,61 @@ verify_checksum() {
   [ "$expected" = "$actual" ] || error "Checksum mismatch for $name"
 }
 
+release_install_lock() {
+  [ "${lock_owned:-0}" -eq 1 ] || return 0
+  retained="$(sed -n '1p' "$lock_dir/owner" 2>/dev/null || true)"
+  if [ "$retained" = "$lock_owner" ]; then
+    rm -rf "$lock_dir"
+    lock_owned=0
+  else
+    warn "Astrale install lock ownership changed at $lock_dir; leaving it untouched."
+  fi
+}
+
+acquire_install_lock() {
+  lock_dir="$install_dir/.astrale-install.lock"
+  lock_owner="$$ $$-$(date -u '+%s')"
+  lock_owned=0
+  attempt=0
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    retained="$(sed -n '1p' "$lock_dir/owner" 2>/dev/null || true)"
+    owner_pid="${retained%% *}"
+    owner_token="${retained#* }"
+    case "$owner_pid" in
+      '' | *[!0-9]* | 0) error "Invalid Astrale install lock at $lock_dir; refusing to replace an unknown owner." ;;
+    esac
+    case "$owner_token" in
+      '' | *[!A-Za-z0-9-]*) error "Invalid Astrale install lock at $lock_dir; refusing to replace an unknown owner." ;;
+    esac
+    if kill -0 "$owner_pid" 2>/dev/null || ps -p "$owner_pid" >/dev/null 2>&1; then
+      error "Another Astrale install or update is running (pid $owner_pid)."
+    fi
+    attempt=$((attempt + 1))
+    [ "$attempt" -le 3 ] || error "Astrale install lock changed repeatedly; retry the installer."
+    stale="$lock_dir.stale-$$-$attempt"
+    if mv "$lock_dir" "$stale" 2>/dev/null; then
+      rm -rf "$stale"
+    fi
+  done
+  printf '%s\n' "$lock_owner" > "$lock_dir/owner"
+  lock_owned=1
+}
+
 main() {
   os="$(detect_os)"
   arch="$(detect_arch)"
   install_dir="${ASTRALE_INSTALL_DIR:-$HOME/.astrale/bin}"
+  metadata_dir="${ASTRALE_HOME:-$HOME/.astrale}"
   asset="astrale-${os}-${arch}.tar.gz"
   tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' 0
+  cleanup() {
+    rm -rf "$tmp"
+    release_install_lock
+  }
+  trap cleanup 0
+
+  mkdir -p "$install_dir" "$metadata_dir"
+  acquire_install_lock
 
   need tar
   base="$(resolve_download_base)"
@@ -130,35 +178,109 @@ main() {
   download "$base/manifest.json" "$tmp/manifest.json"
   verify_checksum "$tmp/$asset" "$tmp/sha256sums.txt"
 
-  mkdir -p "$install_dir"
+  expected_archive_files="astrale
+astrale-cloudflared
+LICENSE.cloudflared"
+  archive_files="$(tar -tzf "$tmp/$asset")" || error "Could not inspect $asset."
+  [ "$archive_files" = "$expected_archive_files" ] || error "Release archive has an invalid toolchain closure."
   tar -xzf "$tmp/$asset" -C "$tmp"
-  install -m 0755 "$tmp/astrale" "$install_dir/astrale"
+  binary_version="$(json_string_field "$tmp/manifest.json" binaryVersion)"
+  cloudflared_version="$(json_string_field "$tmp/manifest.json" cloudflaredVersion)"
+  [ -n "$binary_version" ] || error "Release manifest is missing binaryVersion."
+  [ -n "$cloudflared_version" ] || error "Release manifest is missing cloudflaredVersion."
+  [ "$("$tmp/astrale" --version)" = "$binary_version" ] || error "astrale version does not match the release manifest."
+  cloudflared_reported="$("$tmp/astrale-cloudflared" --version)"
+  case "$cloudflared_reported" in
+    "cloudflared version $cloudflared_version"*) ;;
+    *) error "astrale-cloudflared version does not match the release manifest." ;;
+  esac
 
-  installed_version="$("$install_dir/astrale" --version)"
+  bin="$install_dir/astrale"
+  cloudflared="$install_dir/astrale-cloudflared"
+  license_dir="$metadata_dir/licenses"
+  license="$license_dir/cloudflared.txt"
+  mkdir -p "$license_dir"
+
+  rm -f "$bin.next" "$cloudflared.next" "$license.next"
+  if [ -f "$bin" ]; then cp "$bin" "$bin.previous"; had_bin=1; else rm -f "$bin.previous"; had_bin=0; fi
+  if [ -f "$cloudflared" ]; then
+    cp "$cloudflared" "$cloudflared.previous"
+    had_cloudflared=1
+  else
+    rm -f "$cloudflared.previous"
+    had_cloudflared=0
+  fi
+  if [ -f "$license" ]; then
+    cp "$license" "$license.previous"
+    had_license=1
+  else
+    rm -f "$license.previous"
+    had_license=0
+  fi
+  install -m 0755 "$tmp/astrale" "$bin.next"
+  install -m 0755 "$tmp/astrale-cloudflared" "$cloudflared.next"
+  install -m 0644 "$tmp/LICENSE.cloudflared" "$license.next"
+
+  rollback_cohort() {
+    if [ "$had_bin" -eq 1 ]; then cp "$bin.previous" "$bin" && chmod 0755 "$bin"; else rm -f "$bin"; fi
+    if [ "$had_cloudflared" -eq 1 ]; then
+      cp "$cloudflared.previous" "$cloudflared" && chmod 0755 "$cloudflared"
+    else
+      rm -f "$cloudflared"
+    fi
+    if [ "$had_license" -eq 1 ]; then
+      cp "$license.previous" "$license" && chmod 0644 "$license"
+    else
+      rm -f "$license"
+    fi
+  }
+
+  if ! mv "$license.next" "$license" ||
+    ! mv "$cloudflared.next" "$cloudflared" ||
+    ! mv "$bin.next" "$bin"
+  then
+    rollback_cohort
+    error "Could not commit the Astrale toolchain; the previous installation was restored."
+  fi
+
+  installed_version="$("$bin" --version)"
   channel="${ASTRALE_CHANNEL:-beta}"
   repo="${ASTRALE_REPO:-astrale-os/cli}"
   release_version="$(json_string_field "$tmp/manifest.json" version)"
   release_channel="$(json_string_field "$tmp/manifest.json" channel)"
   [ -n "$release_version" ] || release_version="$installed_version"
   [ -n "$release_channel" ] || release_channel="$channel"
-  metadata_dir="${ASTRALE_HOME:-$HOME/.astrale}"
-  mkdir -p "$metadata_dir"
   escaped_channel="$(json_escape "$release_channel")"
   escaped_version="$(json_escape "$release_version")"
   escaped_repo="$(json_escape "$repo")"
-  escaped_bin="$(json_escape "$install_dir/astrale")"
-  cat > "$metadata_dir/install.json" <<EOF
+  escaped_bin="$(json_escape "$bin")"
+  escaped_binary_version="$(json_escape "$binary_version")"
+  escaped_cloudflared_version="$(json_escape "$cloudflared_version")"
+  metadata_next="$metadata_dir/install.json.next"
+  cat > "$metadata_next" <<EOF
 {
   "method": "script",
   "channel": "$escaped_channel",
   "version": "$escaped_version",
   "repo": "$escaped_repo",
   "bin": "$escaped_bin",
+  "cohort": {
+    "schemaVersion": 2,
+    "binaryVersion": "$escaped_binary_version",
+    "cloudflaredVersion": "$escaped_cloudflared_version"
+  },
   "installedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 }
 EOF
 
-  success "installed $release_version to $install_dir/astrale"
+  if ! mv "$metadata_next" "$metadata_dir/install.json"; then
+    rollback_cohort
+    error "Could not commit Astrale install metadata; the previous installation was restored."
+  fi
+  rm -f "$bin.previous" "$cloudflared.previous" "$license.previous"
+  release_install_lock
+
+  success "installed $release_version to $bin"
 
   case ":$PATH:" in
     *":$install_dir:"*) ;;

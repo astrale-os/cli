@@ -19,10 +19,10 @@ function writeOctal(header, offset, length, value) {
   writeText(header, offset, length, encoded)
 }
 
-function tarHeader(size) {
+function tarHeader(name, size, mode) {
   const header = Buffer.alloc(TAR_BLOCK_BYTES)
-  writeText(header, 0, 100, 'astrale')
-  writeOctal(header, 100, 8, 0o755)
+  writeText(header, 0, 100, name)
+  writeOctal(header, 100, 8, mode)
   writeOctal(header, 108, 8, 0)
   writeOctal(header, 116, 8, 0)
   writeOctal(header, 124, 12, size)
@@ -37,15 +37,19 @@ function tarHeader(size) {
   return header
 }
 
-export function packageReleaseAsset(binary) {
-  if (binary.length === 0) throw new TypeError('release binary must be non-empty')
+function tarEntry(name, bytes, mode) {
+  if (bytes.length === 0) throw new TypeError(`${name} release file must be non-empty`)
   const padding = Buffer.alloc(
-    (TAR_BLOCK_BYTES - (binary.length % TAR_BLOCK_BYTES)) % TAR_BLOCK_BYTES,
+    (TAR_BLOCK_BYTES - (bytes.length % TAR_BLOCK_BYTES)) % TAR_BLOCK_BYTES,
   )
+  return Buffer.concat([tarHeader(name, bytes.length, mode), bytes, padding])
+}
+
+export function packageReleaseAsset(astrale, cloudflared, cloudflaredLicense) {
   const tar = Buffer.concat([
-    tarHeader(binary.length),
-    binary,
-    padding,
+    tarEntry('astrale', astrale, 0o755),
+    tarEntry('astrale-cloudflared', cloudflared, 0o755),
+    tarEntry('LICENSE.cloudflared', cloudflaredLicense, 0o644),
     Buffer.alloc(TAR_END_BYTES),
   ])
   const compressed = gzipSync(tar, { level: 9 })
@@ -56,11 +60,20 @@ export function packageReleaseAsset(binary) {
 }
 
 function main() {
-  const [binaryPath, assetPath, ...extra] = process.argv.slice(2)
-  if (!binaryPath || !assetPath || extra.length > 0) {
-    throw new TypeError('Usage: node scripts/package-release-asset.mjs <binary> <asset.tar.gz>')
+  const [astralePath, cloudflaredPath, licensePath, assetPath, ...extra] = process.argv.slice(2)
+  if (!astralePath || !cloudflaredPath || !licensePath || !assetPath || extra.length > 0) {
+    throw new TypeError(
+      'Usage: node scripts/package-release-asset.mjs <astrale> <astrale-cloudflared> <license> <asset.tar.gz>',
+    )
   }
-  writeFileSync(assetPath, packageReleaseAsset(readFileSync(binaryPath)))
+  writeFileSync(
+    assetPath,
+    packageReleaseAsset(
+      readFileSync(astralePath),
+      readFileSync(cloudflaredPath),
+      readFileSync(licensePath),
+    ),
+  )
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) main()
