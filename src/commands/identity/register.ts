@@ -108,6 +108,7 @@ Example:
           const registered = await submitIdentityProvision({
             request: prepared.request,
             binding: prepared.binding,
+            expectedAuthentication: prepared.authentication,
             ...(opts.via === undefined ? {} : { via: opts.via }),
             direct: auth,
             callable: session,
@@ -150,6 +151,7 @@ export async function prepareIdentityProvision(input: {
 }): Promise<{
   readonly binding: ReturnType<typeof LocalBinding>
   readonly request: ProvisionRequest
+  readonly authentication: { readonly iss: IssuerId; readonly sub: 'self' }
 }> {
   const binding = LocalBinding('identity')
   const mutation = MutationAST.build((builder) => {
@@ -160,19 +162,30 @@ export async function prepareIdentityProvision(input: {
   const unsigned = provision.accept({
     idempotencyKey,
     mutation,
-    identities: {
-      [binding]: { credentials: { publicKey: input.publicKey, proof: 'pending-proof' } },
-    },
+    identities: [
+      {
+        identity: { created: binding },
+        authentication: {
+          credentials: { publicKey: input.publicKey, proof: 'pending-proof' },
+        },
+      },
+    ],
   })
   const fingerprint = await provision.fingerprint(unsigned)
   const issuer = await provision.selfIssuer(input.kernelIssuer, input.publicKey)
   const proof = await mintProvisionProof(input.privateKey, issuer, input.kernelIssuer, fingerprint)
   return {
     binding,
+    authentication: Object.freeze({ iss: issuer, sub: 'self' }),
     request: provision.accept({
       idempotencyKey,
       mutation,
-      identities: { [binding]: { credentials: { publicKey: input.publicKey, proof } } },
+      identities: [
+        {
+          identity: { created: binding },
+          authentication: { credentials: { publicKey: input.publicKey, proof } },
+        },
+      ],
     }),
   }
 }
