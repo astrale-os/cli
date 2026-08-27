@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { lstat, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,16 @@ import { computeSkillTreeHash } from '../skills/sync'
 
 const temporaryRoots: string[] = []
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
+
+async function sourceFiles(root: string, relative = ''): Promise<string[]> {
+  const files: string[] = []
+  for (const entry of await readdir(join(root, relative), { withFileTypes: true })) {
+    const path = relative === '' ? entry.name : `${relative}/${entry.name}`
+    if (entry.isDirectory()) files.push(...(await sourceFiles(root, path)))
+    else if (entry.isFile()) files.push(path)
+  }
+  return files
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -32,6 +42,26 @@ describe('embedded standalone assets', () => {
       expect(await computeSkillTreeHash(join(repositoryRoot, 'skills', skill.name))).toBe(
         skill.tree,
       )
+    }
+
+    const archived = new Map(embeddedFiles('skills').map((file) => [file.path, file]))
+    const expectedPaths = (
+      await Promise.all(
+        EMBEDDED_SKILLS.map(async ({ name }) =>
+          (await sourceFiles(join(repositoryRoot, 'skills', name))).map(
+            (path) => `skills/${name}/${path}`,
+          ),
+        ),
+      )
+    )
+      .flat()
+      .sort()
+    expect([...archived.keys()].sort()).toEqual(expectedPaths)
+    for (const path of expectedPaths) {
+      const file = archived.get(path)!
+      const sourcePath = join(repositoryRoot, path)
+      expect(Buffer.from(file.contents, 'base64')).toEqual(await readFile(sourcePath))
+      expect(file.mode).toBe((await lstat(sourcePath)).mode & 0o111 ? 0o755 : 0o644)
     }
   })
 

@@ -175,7 +175,8 @@ Reinstall only when installation or Schema intent changes.
 
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`
 creates a local key identity. Registering a key identity on a Kernel is an
-atomic provision operation and requires the exact Node Class:
+atomic provision operation and requires the exact Node Class. Registration
+never creates or replaces the local identity or its keypair:
 
 ```bash
 astrale identity create alice

@@ -14,6 +14,7 @@ import type { IdentityRegistrationResult } from '../../identity/index'
 import type { CommandDefinition } from '../../program/index'
 
 import { registrationKeyForTarget, runKernelCommand } from '../../connection'
+import { AstraleError, IdentityKeypairIncompleteError } from '../../errors'
 import { classKey } from '../../graph'
 import { getIdentity, setRegistration, submitIdentityProvision } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
@@ -32,12 +33,19 @@ async function readJwk(path: string): Promise<JWK> {
 
 export default {
   name: 'register',
-  description: 'Atomically provision a local key identity and its V2 graph Node',
+  description: 'Register an existing local key identity through one atomic provision',
   afterHelpText: `
+Prerequisite:
+  Create the local key identity first. Register never creates or replaces the
+  local identity or its keypair.
+
+  $ astrale identity create alice
+
 Behavior:
-  Creates one Node through Mutation V3 and designates it as a self-proven
-  Identity in the same atomic Auth.provision request. --class is required;
-  --props must use fully-qualified Property keys owned by that Class.
+  Uses the existing local keypair to create one Node through Mutation V3 and
+  designates it as a self-proven Identity in the same atomic Auth.provision
+  request. --class is required; --props must use fully-qualified Property keys
+  owned by that Class.
 
   By default the authenticated caller submits the request directly to Kernel
   Auth.provision. Use --via for an application-owned identity Class: the CLI
@@ -55,7 +63,7 @@ Example:
   $ astrale identity register responder --class /:ops.example:class.Operator \
       --via /:ops.example:function.provisionOperator -i staging
 `,
-  arguments: [{ name: 'name', description: 'Local identity name', required: true }],
+  arguments: [{ name: 'name', description: 'Existing local identity name', required: true }],
   options: [
     {
       flags: '--class <classPath>',
@@ -74,10 +82,24 @@ Example:
     try {
       if (!opts.class) throw new TypeError('Missing required flag: --class <classPath>')
       const identity = await getIdentity(name)
+      if ((identity.source ?? 'key') !== 'key') {
+        throw new AstraleError(
+          'INVALID_IDENTITY_SOURCE',
+          `Identity "${name}" is IdP-backed and cannot be registered as a local key identity.`,
+          'Run: astrale identity create <local-name>',
+        )
+      }
       const { privatePath, publicPath } = keypairPaths(identity.subject)
-      if (!(await fileExists(privatePath)) || !(await fileExists(publicPath))) {
-        throw new Error(
-          `No keypair on disk for "${name}" (expected ${privatePath}). Recreate it with \`astrale identity create ${name}\`.`,
+      const [hasPrivateKey, hasPublicKey] = await Promise.all([
+        fileExists(privatePath),
+        fileExists(publicPath),
+      ])
+      if (!hasPrivateKey || !hasPublicKey) {
+        throw new IdentityKeypairIncompleteError(
+          identity.subject,
+          [!hasPrivateKey && 'private', !hasPublicKey && 'public'].filter(
+            (component): component is 'private' | 'public' => component !== false,
+          ),
         )
       }
 
