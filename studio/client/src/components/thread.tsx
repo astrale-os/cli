@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { useAgentSnapshot } from '@/lib/agent'
+import { relativeTime } from '@/lib/format'
 import { useCommentMutations } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -49,20 +50,6 @@ function useDraft(key: string): [string, (value: string) => void, () => void] {
     else drafts.delete(key)
   }
   return [value, update, () => update('')]
-}
-
-/** "just now" · "12 min ago" · "3 h ago" · "2 d ago" · "19 Aug". */
-function relativeTime(iso: string): string {
-  const at = Date.parse(iso)
-  if (Number.isNaN(at)) return ''
-  const minutes = Math.round((Date.now() - at) / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes} min ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours} h ago`
-  const days = Math.round(hours / 24)
-  if (days <= 7) return `${days} d ago`
-  return new Date(at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 
 /** Who wrote an entry: you, or the local agent (named after the harness handling it). */

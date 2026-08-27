@@ -1,7 +1,8 @@
 /**
  * detect.ts — workspace domain detection. Walks a directory tree (symlink-safe,
  * ignoring node_modules/.git/.astrale/dist/…), registering every confirmed
- * domain. Also handles being pointed at a single astrale.config.ts.
+ * domain whose Application selects an authored Schema. Also handles being pointed
+ * at a single astrale.config.ts.
  */
 import { existsSync, lstatSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -23,33 +24,29 @@ const IGNORE = new Set([
 ])
 
 /** Resolve a CLI target: a path to astrale.config.ts, a domain dir, or a workspace to scan. */
-export function resolveTarget(target: string, schemaDirName = 'schema'): DomainHandle[] {
+export function resolveTarget(target: string): DomainHandle[] {
   const abs = resolve(target)
   if (abs.endsWith('astrale.config.ts')) {
-    const h = registerDomain(dirname(abs), schemaDirName)
+    const h = registerDomain(dirname(abs))
     return h ? [h] : []
   }
   // a single domain dir?
-  const single = registerDomain(abs, schemaDirName)
+  const single = registerDomain(abs)
   if (single) {
     // still scan beneath for sibling/nested domains (e.g. a workspace whose root is also a domain)
-    const nested = scanWorkspace(abs, schemaDirName).filter((d) => d.id !== single.id)
+    const nested = scanWorkspace(abs).filter((d) => d.id !== single.id)
     return dedupe([single, ...nested])
   }
-  return scanWorkspace(abs, schemaDirName)
+  return scanWorkspace(abs)
 }
 
-export function scanWorkspace(
-  workspace: string,
-  schemaDirName = 'schema',
-  maxDepth = 4,
-): DomainHandle[] {
+export function scanWorkspace(workspace: string, maxDepth = 4): DomainHandle[] {
   const found: DomainHandle[] = []
   const root = resolve(workspace)
   if (!existsSync(root)) return found
 
   const walk = (dir: string, depth: number) => {
-    const h = registerDomain(dir, schemaDirName)
+    const h = registerDomain(dir)
     if (h) found.push(h)
     if (depth >= maxDepth) return
     let entries: string[]

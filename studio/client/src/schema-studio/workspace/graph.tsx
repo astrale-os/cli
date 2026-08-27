@@ -67,6 +67,7 @@ export function WorkspaceSchemaGraph({
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const panelOverlay = useUI((state) => state.panelOverlay)
   const showCardinality = useUI((state) => state.showCardinality)
+  const scheme = useUI((state) => state.resolvedTheme)
   const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
@@ -294,13 +295,12 @@ export function WorkspaceSchemaGraph({
           style={{ width: 168, height: 112 }}
           nodeColor={(node) =>
             node.type === 'classNode'
-              ? moduleTint((node.data as ClassNodeData).hue).mark
+              ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
               : node.type === 'workspaceDomain'
-                ? 'oklch(0.72 0.05 255 / 0.5)'
+                ? moduleTint(255, scheme).border
                 : 'transparent'
           }
           nodeStrokeWidth={0}
-          maskColor="oklch(0.55 0.01 255 / 0.12)"
         />
 
         {projection.diagnostics.length > 0 && (

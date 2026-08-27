@@ -104,7 +104,11 @@ function walkFiles(dir: string, out: string[]): void {
  * Hash (sha256) every file in the anatomy + schema fileset. Keys are paths
  * relative to `root`, forward-slashed. Missing dirs/files are silently skipped.
  */
-export function hashAnatomyFiles(root: string, schemaDirName: string): Record<string, string> {
+export function hashAnatomyFiles(
+  root: string,
+  schemaDirName: string,
+  applicationFile?: string,
+): Record<string, string> {
   const r = resolve(root)
   const absFiles: string[] = []
 
@@ -135,8 +139,18 @@ export function hashAnatomyFiles(root: string, schemaDirName: string): Record<st
     }
   }
 
+  // A config-selected Application may live below the domain root. It is the
+  // composition source of truth and must participate in cache/change identity.
+  if (applicationFile && existsSync(applicationFile)) {
+    try {
+      if (statSync(applicationFile).isFile()) absFiles.push(applicationFile)
+    } catch {
+      /* skip */
+    }
+  }
+
   const hashes: Record<string, string> = {}
-  for (const abs of absFiles) {
+  for (const abs of new Set(absFiles)) {
     let buf: Buffer
     try {
       buf = readFileSync(abs)

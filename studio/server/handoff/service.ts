@@ -16,7 +16,7 @@ import { detectGit, gitDiff } from '../workspace/git'
 /** Current changes vs the review baseline (schema IR diff + anatomy file diff). */
 export async function changeSet(handle: DomainHandle): Promise<ChangeSet> {
   const bundle = await getBundle(handle.id)
-  const files = hashAnatomyFiles(handle.root, handle.schemaDirName)
+  const files = hashAnatomyFiles(handle.root, handle.schemaDirName, handle.applicationFile)
   const { hasGit } = detectGit(handle.root)
   const diffText = hasGit ? gitDiff(handle.root, handle.schemaDirName) : null
   return computeChanges(handle.root, bundle?.ir ?? null, files, {

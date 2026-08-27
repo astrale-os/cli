@@ -23,6 +23,9 @@ export default defineConfig({
     },
   },
   server: {
+    // bind IPv4 explicitly: Node resolves `localhost` verbatim, so Vite could end up
+    // on [::1] only while the studio's dev proxy dials 127.0.0.1 — the page then hangs
+    host: '127.0.0.1',
     port: 5173,
     strictPort: false,
     ...(hmrPort ? { hmr: { clientPort: hmrPort, host: '127.0.0.1' } } : {}),

@@ -2,7 +2,7 @@
 /**
  * index.ts — the Domain Studio server entrypoint.
  *
- *   bun server/index.ts [path | --workspace dir] [--port n] [--schema-dir schema] [--open]
+ *   bun server/index.ts [path | --workspace dir] [--port n] [--open]
  *
  * `path` may be an astrale.config.ts, a domain dir, or a workspace to scan.
  * Boots a Bun HTTP server: serves the built SPA, the JSON API, and the SSE
@@ -23,14 +23,12 @@ import { watchWorkspace } from './workspace-watch'
 const argv = process.argv.slice(2)
 let target = ''
 let port = Number(process.env.PORT) || 4319
-let schemaDir = 'schema'
 // Default OFF — printing the URL is enough; popping a browser is invasive. The CLI
 // owns browser-opening (its own --open), and always passes --no-open here.
 let open = false
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
   if (a === '--port') port = Number(argv[++i])
-  else if (a === '--schema-dir') schemaDir = argv[++i]
   else if (a === '--open') open = true
   else if (a === '--no-open') open = false
   else if (a === '--workspace') target = argv[++i]
@@ -38,11 +36,11 @@ for (let i = 0; i < argv.length; i++) {
 }
 if (!target) target = process.cwd()
 
-const domains = resolveTarget(target, schemaDir)
+const domains = resolveTarget(target)
 if (!domains.length) {
   console.error(`\n  ✗ No Astrale domains found at ${target}`)
   console.error(
-    `    (looking for: astrale.config.ts + application.ts + schema.ts or ${schemaDir}/index.ts)\n`,
+    '    (looking for: astrale.config.ts + an Application whose schema binding resolves to authored source)\n',
   )
   process.exit(1)
 }
@@ -56,9 +54,8 @@ for (const h of domains) {
 
 // keep the registry in sync with the workspace — pick up domains added/removed at runtime
 const watchRoot = target.endsWith('astrale.config.ts') ? dirname(resolve(target)) : resolve(target)
-initWorkspaceState(watchRoot, schemaDir) // where `create new` scaffolds + the create endpoint reads
-if (existsSync(watchRoot) && statSync(watchRoot).isDirectory())
-  watchWorkspace(watchRoot, schemaDir, stoppers)
+initWorkspaceState(watchRoot) // where `create new` scaffolds + the create endpoint reads
+if (existsSync(watchRoot) && statSync(watchRoot).isDirectory()) watchWorkspace(watchRoot, stoppers)
 
 const DIST = process.env.DOMAIN_STUDIO_DIST || join(import.meta.dir, '..', 'client', 'dist')
 const DEV = process.env.DOMAIN_STUDIO_DEV === '1'

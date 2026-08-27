@@ -161,7 +161,7 @@ export function buildCoreGraph(
       target,
       type: 'tree',
       data: { structural: true },
-      style: { stroke: 'oklch(0.78 0.01 255)', strokeWidth: 1.4, strokeDasharray: '4 4' },
+      style: { stroke: 'var(--edge-soft)', strokeWidth: 1.4, strokeDasharray: '4 4' },
     })
   }
   // typed core edges (solid, coloured, labelled) — the genesis wiring

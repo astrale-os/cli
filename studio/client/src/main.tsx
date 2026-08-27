@@ -5,13 +5,19 @@ import { Toaster } from 'sonner'
 
 import { App } from './app'
 import { queryClient } from './lib/query'
+import { useUI } from './lib/store'
 import './styles.css'
+
+function ThemedToaster() {
+  const theme = useUI((state) => state.resolvedTheme)
+  return <Toaster theme={theme} position="bottom-right" richColors closeButton />
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <App />
-      <Toaster theme="light" position="bottom-right" richColors closeButton />
+      <ThemedToaster />
     </QueryClientProvider>
   </StrictMode>,
 )

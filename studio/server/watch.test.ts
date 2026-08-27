@@ -24,7 +24,8 @@ test('watches current Application, Runtime, and vertical authoring roots', () =>
   expect(ANATOMY_PATHS).toContain('queries')
   expect(ANATOMY_PATHS).toContain('workflows')
   expect(DOMAIN_SET_TRIGGER_FILES.has('application.ts')).toBe(true)
-  expect(DOMAIN_SET_TRIGGER_FILES.has('schema.ts')).toBe(true)
+  expect(DOMAIN_SET_TRIGGER_FILES.has('astrale.config.ts')).toBe(true)
+  expect(DOMAIN_SET_TRIGGER_FILES.has('schema.ts')).toBe(false)
 })
 
 test('Application, Runtime, Action, and Workflow changes invalidate the schema bundle', () => {

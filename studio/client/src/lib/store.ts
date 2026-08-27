@@ -20,6 +20,9 @@ export type SectionKey = 'schema' | 'process'
 
 const SECTION_KEYS: readonly SectionKey[] = ['schema', 'process']
 
+/** Appearance: an explicit choice, or whatever the OS asks for. */
+export type Theme = 'system' | 'light' | 'dark'
+
 /** Which half of the work panel is showing. */
 export type PanelTab = 'agent' | 'comments'
 /** Where the work panel is docked. */
@@ -47,9 +50,23 @@ function store(key: string, value: string): void {
   } catch {}
 }
 
+/** Paint the theme on <html> and report what is actually showing. */
+function paintTheme(theme: Theme): 'light' | 'dark' {
+  const dark =
+    theme === 'dark' ||
+    (theme === 'system' && globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches === true)
+  globalThis.document?.documentElement.classList.toggle('dark', dark)
+  return dark ? 'dark' : 'light'
+}
+
 interface UIState {
   domainId?: string
   section: SectionKey
+  /** appearance preference, persisted in this browser */
+  theme: Theme
+  /** the theme actually painted — `system` resolved. Canvas colours that land in
+   *  SVG attributes need a real value, not a CSS function. */
+  resolvedTheme: 'light' | 'dark'
   /** work panel: the agent conversation and the comment threads, docked beside the view */
   panelOpen: boolean
   panelTab: PanelTab
@@ -93,6 +110,7 @@ interface UIState {
   settingsOpen: boolean
   copyOpen: boolean
   mergeOpen: boolean
+  setTheme: (theme: Theme) => void
   setDomain: (id?: string) => void
   setSection: (s: SectionKey) => void
   setPanelOpen: (open: boolean) => void
@@ -136,8 +154,12 @@ function revealFocus(ref: string): string | null {
   return selection.startsWith('class.') ? selection : null
 }
 
+const initialTheme = loadStored('studio.theme', ['system', 'light', 'dark'] as const, 'system')
+
 export const useUI = create<UIState>((set) => ({
   section: loadStored('studio.lastSection', SECTION_KEYS, 'schema'),
+  theme: initialTheme,
+  resolvedTheme: paintTheme(initialTheme),
   panelOpen: loadStored('studio.panelOpen', ['yes', 'no'] as const, 'yes') === 'yes',
   panelTab: loadStored('studio.panelTab', ['agent', 'comments'] as const, 'agent'),
   panelSide: loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'left'),
@@ -159,6 +181,10 @@ export const useUI = create<UIState>((set) => ({
   settingsOpen: false,
   copyOpen: false,
   mergeOpen: false,
+  setTheme: (theme) => {
+    store('studio.theme', theme)
+    set({ theme, resolvedTheme: paintTheme(theme) })
+  },
   setDomain: (domainId) => {
     try {
       if (domainId) localStorage.setItem('studio.lastDomain', domainId)
@@ -286,3 +312,8 @@ export const useUI = create<UIState>((set) => ({
   setCopyOpen: (copyOpen) => set({ copyOpen }),
   setMergeOpen: (mergeOpen) => set({ mergeOpen }),
 }))
+
+// Following the OS means following it live, not only at boot.
+globalThis.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if (useUI.getState().theme === 'system') useUI.setState({ resolvedTheme: paintTheme('system') })
+})

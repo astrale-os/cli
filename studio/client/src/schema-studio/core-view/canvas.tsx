@@ -244,7 +244,6 @@ export function CoreView({
         style={{ width: 168, height: 112 }}
         nodeColor={(n) => moduleTint((n.data as CoreNodeData).hue).mark}
         nodeStrokeWidth={0}
-        maskColor="oklch(0.55 0.01 255 / 0.12)"
       />
       <Panel position="top-right">
         <CanvasToolbar>

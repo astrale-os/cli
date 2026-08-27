@@ -169,7 +169,7 @@ export function buildCrossEdges(
         ? `grp-${moduleOfClass(bundle, local.className)}`
         : `class.${local.className}`
       if (!ids.has(source)) continue
-      const color = 'oklch(0.68 0.1 45)'
+      const color = 'var(--edge-cross)'
       const markers = edgeMarkers()
       out.push({
         id: `edge-${e.edge}__${source}__${target}`,

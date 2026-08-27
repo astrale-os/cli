@@ -34,7 +34,7 @@ export async function bootDomain(handle: DomainHandle): Promise<BootedDomain> {
         root: bundle?.schemaMode === 'canonical-admitted' ? (bundle.schemaRoot ?? null) : null,
         revision: bundle?.schemaRevision ?? null,
       },
-      hashAnatomyFiles(handle.root, handle.schemaDirName),
+      hashAnatomyFiles(handle.root, handle.schemaDirName, handle.applicationFile),
     )
   const stop = watchDomain(handle)
   return {
