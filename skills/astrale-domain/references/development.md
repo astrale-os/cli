@@ -175,7 +175,7 @@ keep that bounded smoke separate from Domain installation and invocation.
 
 ### Package-script argument forwarding
 
-Test operator entrypoints through the exact documented package script. With pnpm 11,
+Test operator entrypoints through the exact documented package script. With pnpm 12,
 `pnpm run cleanup:graph -- --instance ...` can expose one literal leading `--` in
 `process.argv.slice(2)`. An authored argument parser should normalize at most that one package-manager
 separator before parsing named flags, while still rejecting duplicate separators, missing values,
