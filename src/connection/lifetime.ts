@@ -1,4 +1,5 @@
 const MINIMUM_CREDENTIAL_TTL_SECONDS = 60
+const MINIMUM_CACHEABLE_EXCHANGE_TTL_SECONDS = 4 * 60
 const INVOCATION_RECEIPT_MARGIN_SECONDS = 5
 const CACHE_HANDOFF_MARGIN_SECONDS = 5
 const TOKEN_EXCHANGE_SETTLEMENT_MARGIN_SECONDS = 15
@@ -14,9 +15,12 @@ export function invocationCredentialTtlSeconds(timeoutMs: number): number {
   )
 }
 
-/** Leave the final carrier lifetime intact after source delegation and issuer exchange settle. */
+/** Give the persisted cache a useful window below the normal five-minute source ceiling. */
 export function exchangeCredentialTtlSeconds(timeoutMs: number): number {
-  return invocationCredentialTtlSeconds(timeoutMs) + TOKEN_EXCHANGE_SETTLEMENT_MARGIN_SECONDS
+  return Math.max(
+    MINIMUM_CACHEABLE_EXCHANGE_TTL_SECONDS,
+    invocationCredentialTtlSeconds(timeoutMs) + TOKEN_EXCHANGE_SETTLEMENT_MARGIN_SECONDS,
+  )
 }
 
 /** Refresh a cached token before the final Session carrier can cross a second boundary. */

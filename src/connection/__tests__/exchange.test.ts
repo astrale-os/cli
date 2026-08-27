@@ -28,7 +28,7 @@ afterEach(async () => {
 
 describe('Domain token exchange', () => {
   /** @evidence TEST-CLI-EXCHANGE-WHOAMI-DELEGATE-EXCHANGE-CACHE */
-  test('runs the exact User to Kernel to Domain journey once and reuses it before whoami', async () => {
+  test('runs the exact exchange journey once and reuses it across process cache instances', async () => {
     const observed: Array<{
       url: string
       init: RequestInit | undefined
@@ -69,6 +69,7 @@ describe('Domain token exchange', () => {
       throw new Error(`unexpected URL ${url}`)
     }
     const sourceAudiences: string[] = []
+    const path = join(directory, 'credentials.json')
     const resolver = createExchangeCredentialResolver(
       TARGET,
       {
@@ -79,11 +80,26 @@ describe('Domain token exchange', () => {
       },
       fetch,
       5_000,
-      new ExchangeCredentialCache(join(directory, 'credentials.json')),
+      new ExchangeCredentialCache(path),
     )
 
     expect(await resolver.resolve(KERNEL, new AbortController().signal)).toBe(exchanged)
     await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+    const nextProcess = createExchangeCredentialResolver(
+      TARGET,
+      {
+        async resolve(audience) {
+          sourceAudiences.push(audience)
+          return SOURCE_TOKEN
+        },
+      },
+      async () => {
+        throw new Error('a warm process must not repeat exchange network I/O')
+      },
+      5_000,
+      new ExchangeCredentialCache(path),
+    )
+    await expect(nextProcess.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
 
     const kernelRequests = observed.filter((entry) => entry.url === INVOCATION)
     expect(kernelRequests).toHaveLength(2)
@@ -101,8 +117,8 @@ describe('Domain token exchange', () => {
       },
     })
     const delegatedTtl = kernelRequests[1]!.body!.call.input.ttlSeconds
-    expect(delegatedTtl).toBe(75)
-    expect(sourceAudiences).toEqual([KERNEL, KERNEL])
+    expect(delegatedTtl).toBe(240)
+    expect(sourceAudiences).toEqual([KERNEL, KERNEL, KERNEL])
     expect(
       observed.filter((entry) => entry.url.endsWith('/.well-known/astrale/token')),
     ).toHaveLength(1)
@@ -191,7 +207,7 @@ describe('Domain token exchange', () => {
     )
 
     await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
-    expect(observed[1]!.call.input.ttlSeconds).toBe(200)
+    expect(observed[1]!.call.input.ttlSeconds).toBe(240)
   })
 
   /** @evidence TEST-CLI-EXCHANGE-REJECTS-INSUFFICIENT-LIFETIME */
