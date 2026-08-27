@@ -16,6 +16,9 @@ export interface ClassNodeData extends Record<string, unknown> {
   props: number
   methods: number
   coreRole?: SchemaCoreRole | null
+  /** every class this one extends, kernel bases included — shown as chips when the
+   *  inheritance EDGES are off (the two say the same thing, so never both). */
+  parents: string[]
   hue: number
   icon?: string
 }
@@ -106,6 +109,7 @@ export function projectDomainCanvas(
           props: Object.keys(definition?.properties ?? {}).length,
           methods: Object.keys(definition?.methods ?? {}).length,
           coreRole: coreRole(definition?.extendsRefs ?? []),
+          parents: (definition?.extendsRefs ?? []).map((ref) => ref.name),
           hue: module.hue,
           icon: definition?.icon,
         } satisfies ClassNodeData,

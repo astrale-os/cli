@@ -133,6 +133,7 @@ export function App() {
         if (id) {
           invalidate(id)
           qc.invalidateQueries({ queryKey: qk.agent(id) })
+          qc.invalidateQueries({ queryKey: qk.agentHistory(id) })
         }
         return
       }
@@ -149,6 +150,9 @@ export function App() {
       if (e.type === 'agent-run') {
         setRun(e.run)
         qc.invalidateQueries({ queryKey: qk.agent(e.domainId) })
+        // a finished turn joins the stored transcript the chat reads
+        if (e.run.status !== 'running' && e.run.status !== 'queued')
+          qc.invalidateQueries({ queryKey: qk.agentHistory(e.domainId) })
         return
       }
       // the origin lives in the schema, so a schema edit can rename the domain —

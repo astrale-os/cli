@@ -10,7 +10,6 @@ import type { AgentEvent, AgentPromptSnapshot, AgentRun } from '@shared/types'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
-  Bot,
   Check,
   CornerDownLeft,
   FileEdit,
@@ -19,8 +18,9 @@ import {
   MessageSquare,
   Play,
   RotateCcw,
+  Activity,
   Send,
-  Sparkles,
+  Ellipsis,
   Terminal,
   Wrench,
   X,
@@ -161,7 +161,7 @@ export function AgentSubmitButton() {
       </Button>
       {run && (
         <Button size="icon" variant="ghost" onClick={() => setDrawer(true)} title="Agent activity">
-          <Sparkles className="h-4 w-4" />
+          <Activity className="h-4 w-4" />
         </Button>
       )}
     </div>
@@ -173,7 +173,7 @@ function eventVisual(e: AgentEvent): { icon: React.ReactNode; tone: string } {
     case 'message':
       return { icon: <MessageSquare className="h-3.5 w-3.5" />, tone: 'text-primary' }
     case 'thinking':
-      return { icon: <Sparkles className="h-3.5 w-3.5" />, tone: 'text-muted-foreground' }
+      return { icon: <Ellipsis className="h-3.5 w-3.5" />, tone: 'text-muted-foreground' }
     case 'reply':
       return { icon: <CornerDownLeft className="h-3.5 w-3.5" />, tone: 'text-success' }
     case 'error':
@@ -395,7 +395,11 @@ export function AgentActivityDrawer() {
               active ? 'bg-warning/15 text-warning' : 'bg-primary/15 text-primary',
             )}
           >
-            {active ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+            {active ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Activity className="h-4 w-4" />
+            )}
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-sm font-semibold">

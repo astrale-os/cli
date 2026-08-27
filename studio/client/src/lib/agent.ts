@@ -7,6 +7,7 @@
 import type { AgentEvent, AgentRun } from '@shared/types'
 
 import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { create } from 'zustand'
 
 import { api, qk } from './api'
@@ -28,6 +29,8 @@ const TERMINAL: Record<AgentRun['status'], number> = {
   canceled: 2,
   interrupted: 2,
 }
+
+const NO_RUNS: AgentRun[] = []
 
 export const useAgentLive = create<AgentLiveState>((set) => ({
   runs: {},
@@ -61,6 +64,22 @@ export function useAgentSnapshot(id?: string) {
     queryFn: () => api.agentSnapshot(id!),
     enabled: !!id,
   })
+}
+
+/** The conversation: past turns from disk, with the live one appended. */
+export function useAgentTurns(domainId?: string): AgentRun[] {
+  const history = useQuery({
+    queryKey: qk.agentHistory(domainId ?? ''),
+    queryFn: () => api.agentHistory(domainId!),
+    enabled: !!domainId,
+  })
+  const current = useDisplayRun(domainId)
+  const past = history.data ?? NO_RUNS
+  return useMemo(() => {
+    if (!current) return past
+    // the live run replaces its own stored copy — it is always the fresher one
+    return [...past.filter((run) => run.id !== current.id), current]
+  }, [current, past])
 }
 
 /** The run to display: the live (SSE) copy wins over the fetched snapshot. */

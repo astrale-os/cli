@@ -135,6 +135,8 @@ export const api = {
     post<CopyPayload>(`${d(id)}/copy-payload`, { includeAuto }),
 
   agentSnapshot: (id: string) => get<AgentRunSnapshot>(`${d(id)}/agent`),
+  /** every terminal turn this domain kept, oldest first — the chat transcript */
+  agentHistory: (id: string) => get<AgentRun[]>(`${d(id)}/agent/history`),
   agentSubmit: (id: string, message?: string) =>
     post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, message ? { message } : {}),
   // seamless continue after an interruption — resumes the live session with a bare nudge (no re-briefing)
@@ -217,6 +219,7 @@ export const qk = {
   visibility: (id: string) => ['visibility', id] as const,
   documents: (id: string) => ['documents', id] as const,
   agent: (id: string) => ['agent', id] as const,
+  agentHistory: (id: string) => ['agent-history', id] as const,
   agentSession: (id: string) => ['agent-session', id] as const,
   agentSystemPrompt: (id: string) => ['agent-system-prompt', id] as const,
   harness: (id: string) => ['harness', id] as const,

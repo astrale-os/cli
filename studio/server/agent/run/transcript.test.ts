@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -8,7 +8,7 @@ import type { AgentRun } from '../../../shared/types'
 import { asJsonRecord } from '../../json'
 import { readJson, writeJson } from '../../state/store'
 import { currentRun, hydrateRun } from './live-state'
-import { readLastRun } from './transcript'
+import { persistRun, readLastRun, readRunHistory } from './transcript'
 
 const roots: string[] = []
 
@@ -45,6 +45,38 @@ test('reconciles a run orphaned by restart and hydrates its terminal snapshot', 
     status: 'interrupted',
     sessionId: 'thread-1',
   })
+  expect(readRunHistory(domainId, root)).toEqual([
+    expect.objectContaining({ id: running.id, status: 'interrupted' }),
+  ])
+})
+
+test('reads bounded terminal history oldest first and skips unrelated or unreadable entries', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-agent-history-'))
+  roots.push(root)
+  const domainId = `domain-${crypto.randomUUID()}`
+  const run = (id: string, createdAt: string, owner = domainId): AgentRun => ({
+    id,
+    domainId: owner,
+    harness: 'codex',
+    status: 'succeeded',
+    createdAt,
+    summary: id,
+    instruction: `Do ${id}`,
+    targetCommentIds: [],
+    events: [],
+  })
+
+  persistRun(root, run('newer', '2026-08-20T02:00:00.000Z'), true)
+  persistRun(root, run('older', '2026-08-20T01:00:00.000Z'), true)
+  persistRun(root, run('foreign', '2026-08-20T03:00:00.000Z', 'another-domain'), true)
+  mkdirSync(join(root, '.domain-studio/.cache/agent/runs/unreadable.json'))
+
+  expect(readRunHistory(domainId, root)).toEqual([
+    expect.objectContaining({ id: 'older', instruction: 'Do older' }),
+    expect.objectContaining({ id: 'newer', instruction: 'Do newer' }),
+  ])
+  expect(readRunHistory(domainId, root, 1)).toEqual([expect.objectContaining({ id: 'newer' })])
+  expect(readRunHistory(domainId, root, -10)).toEqual([expect.objectContaining({ id: 'newer' })])
 })
 
 test('admits future run fields but rejects malformed persisted run structure', () => {

@@ -86,6 +86,9 @@ export interface AgentRun {
   resumed?: boolean
   /** short human label of what this turn was asked to do */
   summary: string
+  /** the instruction as typed, verbatim — what the chat shows as your message.
+   *  Absent when the turn was started from open threads rather than a message. */
+  instruction?: string
   /** comment ids this turn was started to answer */
   targetCommentIds: string[]
   events: AgentEvent[]

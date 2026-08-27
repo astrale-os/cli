@@ -28,6 +28,7 @@ import {
   setSessionId,
   submitRun,
 } from './run/coordinator'
+import { readRunHistory } from './run/transcript'
 import { readUsage } from './run/usage'
 import { NdjsonChannel } from './stream'
 
@@ -88,6 +89,8 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
     })
     return result.error ? json({ error: result.error }) : json(result.run)
   }
+  if (rest === '/agent/history' && req.method === 'GET')
+    return json(readRunHistory(id, root, Number(url.searchParams.get('limit')) || undefined))
   if (rest === '/agent/cancel' && req.method === 'POST') return json({ ok: cancelRun(id) })
   if (rest === '/agent/reset' && req.method === 'POST') return json({ ok: resetConversation(id) })
   if (rest === '/agent/session') {

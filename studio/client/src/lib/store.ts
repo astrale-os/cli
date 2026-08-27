@@ -108,8 +108,6 @@ interface UIState {
   paletteOpen: boolean
   /** hidden power-user Settings dialog open */
   settingsOpen: boolean
-  copyOpen: boolean
-  mergeOpen: boolean
   setTheme: (theme: Theme) => void
   setDomain: (id?: string) => void
   setSection: (s: SectionKey) => void
@@ -140,8 +138,6 @@ interface UIState {
   setCommentDraft: (d: CommentDraft | null) => void
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
-  setCopyOpen: (b: boolean) => void
-  setMergeOpen: (b: boolean) => void
 }
 
 /** `edge.X` selects like a class (both live in the `class.` selection namespace). */
@@ -179,8 +175,6 @@ export const useUI = create<UIState>((set) => ({
   askMode: false,
   paletteOpen: false,
   settingsOpen: false,
-  copyOpen: false,
-  mergeOpen: false,
   setTheme: (theme) => {
     store('studio.theme', theme)
     set({ theme, resolvedTheme: paintTheme(theme) })
@@ -309,8 +303,6 @@ export const useUI = create<UIState>((set) => ({
   setCommentDraft: (commentDraft) => set({ commentDraft }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-  setCopyOpen: (copyOpen) => set({ copyOpen }),
-  setMergeOpen: (mergeOpen) => set({ mergeOpen }),
 }))
 
 // Following the OS means following it live, not only at boot.

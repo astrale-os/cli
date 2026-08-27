@@ -1,9 +1,8 @@
 import type { Comment } from '@shared/types'
 
-import { CheckCheck, ClipboardCopy, GitMerge, MessageSquare } from 'lucide-react'
+import { CheckCheck, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 
-import { CopyDialog, MergeDialog } from '@/components/copy-merge'
 import { Chip, EmptyState } from '@/components/studio-kit'
 import { ThreadView } from '@/components/thread'
 import { useComments } from '@/lib/hooks'
@@ -29,8 +28,6 @@ export function CommentsTab({ domainId }: { domainId: string }) {
   const { data: store, isLoading } = useComments(domainId)
   const [tab, setTab] = useState<'open' | 'closed'>('open')
   const [openId, setOpenId] = useState<string | null>(null)
-  const setCopyOpen = useUI((state) => state.setCopyOpen)
-  const setMergeOpen = useUI((state) => state.setMergeOpen)
   const revealAnchor = useUI((state) => state.revealAnchor)
 
   if (isLoading) {
@@ -75,22 +72,6 @@ export function CommentsTab({ domainId }: { domainId: string }) {
           )}
         >
           <CheckCheck className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Copy every open thread as markdown"
-          onClick={() => setCopyOpen(true)}
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <ClipboardCopy className="h-3.5 w-3.5" />
-        </button>
-        <button
-          type="button"
-          title="Paste an agent reply"
-          onClick={() => setMergeOpen(true)}
-          className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <GitMerge className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -137,8 +118,6 @@ export function CommentsTab({ domainId }: { domainId: string }) {
           </div>
         )}
       </div>
-      <CopyDialog />
-      <MergeDialog />
     </div>
   )
 }
