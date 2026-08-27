@@ -97,6 +97,12 @@ Retain the package manifest and lockfile, resolved SDK/adapter/scaffolder versio
 CLI version, Node and package-manager versions, and the exact owner command behind each conclusion.
 A version range or remembered release is not evidence of what executed.
 
+When an agent runner receives Astrale skills from the CLI distribution, retain
+`astrale update --check --json` evidence for the resolved source revision, each skill tree, and each
+entrypoint. Record the builder's exact admitted skill projection and opener trace separately. This
+proves distribution and opening; it does not prove the builder followed the guidance or that a later
+latency change was caused by it.
+
 Keep an acceptance prompt about the business outcome. Put reusable product guidance in one versioned
 knowledge input and retain its digest; do not rely on an ambient installed skill whose source and
 version the runner cannot identify. Keep scenario-specific facts in the scenario and stable product
