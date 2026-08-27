@@ -13,6 +13,7 @@ import {
 } from '../src/lib/view/external-open-intent'
 import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
 import { installOpenIntentHandler } from '../src/lib/view/open-intent'
+import { createViewTokenBroker, type ViewToken } from './token'
 
 /**
  * The `astrale view` host page: a thin consumer of Shell's exact V2 mount
@@ -30,8 +31,6 @@ type Config = {
   sessionId: string
   externalOrigins: readonly string[]
 }
-
-type Token = { token: string; expiresAt: number; kind: string }
 
 const HEARTBEAT_MS = 5 * 60_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
@@ -107,9 +106,11 @@ async function main(): Promise<void> {
   document.title = `astrale view — ${route.key}`
 
   report('mounting')
-  let current: Token | null = null
+  let tokens: ReturnType<typeof createViewTokenBroker> | null = null
   if (route.handshake === 'shell') {
-    current = await j<Token>('/token', { method: 'POST' })
+    tokens = createViewTokenBroker(await j<ViewToken>('/token', { method: 'POST' }), () =>
+      j<ViewToken>('/token', { method: 'POST' }),
+    )
   }
   const kernelUrl = new URL(cfg.kernelUrl, location.href).href
 
@@ -119,7 +120,7 @@ async function main(): Promise<void> {
       kernel: cfg.kernelIssuer,
       auth: {
         ttlSeconds: 3_600,
-        resolve: () => (current === null ? {} : { credential: current.token }),
+        resolve: () => (tokens === null ? {} : tokens.resolve()),
       },
       policy: {
         maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
@@ -138,12 +139,9 @@ async function main(): Promise<void> {
     const credential =
       view.route.handshake === 'shell'
         ? {
-            token: current!.token,
-            expiresAt: current!.expiresAt,
-            refresh: async () => {
-              current = await j<Token>('/token', { method: 'POST' })
-              return { token: current.token, expiresAt: current.expiresAt }
-            },
+            token: tokens!.current().token,
+            expiresAt: tokens!.current().expiresAt,
+            refresh: () => tokens!.refresh(),
           }
         : undefined
     return shell.openView({
