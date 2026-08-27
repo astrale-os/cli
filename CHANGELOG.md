@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0-beta.37](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.36...cli/v1.0.0-beta.37) (2026-08-27)
+
+
+### Features
+
+* make Studio agent panel conversational ([#230](https://github.com/astrale-os/cli/issues/230)) ([83e6d24](https://github.com/astrale-os/cli/commit/83e6d2495893ce9ea9372239893b0d06e425bb43))
+
+
+### Bug Fixes
+
+* clarify identity registration prerequisites ([#232](https://github.com/astrale-os/cli/issues/232)) ([b257270](https://github.com/astrale-os/cli/commit/b257270b329aab9fb58fdbdd927a2c58acbd4fa1))
+* make CLI release archives deterministic ([#233](https://github.com/astrale-os/cli/issues/233)) ([bb70472](https://github.com/astrale-os/cli/commit/bb70472d5e110d40d3d16d53ae7792d3894f3880))
+
+
+### Performance Improvements
+
+* **connection:** make exchange cache useful across commands ([#234](https://github.com/astrale-os/cli/issues/234)) ([bdd3ac0](https://github.com/astrale-os/cli/commit/bdd3ac0091fefad2088415eee7554d0ef16beec4))
+
 ## [1.0.0-beta.36](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.35...cli/v1.0.0-beta.36) (2026-08-27)
 
 
