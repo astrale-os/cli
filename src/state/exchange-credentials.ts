@@ -2,6 +2,7 @@ import { credential, grant } from '@astrale-os/sdk/auth'
 import { chmod, mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
+import { credentialLifetimeCovers } from '../lib/credential-lifetime'
 import { atomicWrite, withFileLock } from './files'
 import { EXCHANGE_CREDENTIALS_PATH } from './paths'
 
@@ -37,16 +38,27 @@ export class ExchangeCredentialCache {
 
   getOrRefresh(
     key: exchange.Key,
+    minimumRemainingSeconds: number,
     refresh: () => Promise<exchange.Entry>,
     now = () => Math.floor(Date.now() / 1_000),
   ): Promise<string> {
+    if (!Number.isSafeInteger(minimumRemainingSeconds) || minimumRemainingSeconds < 1) {
+      throw new TypeError('Exchange credential minimum lifetime must be a positive safe integer.')
+    }
     const encoded = encodeKey(key)
-    const current = this.refreshing.get(encoded)
+    const pendingKey = `${encoded}\0${minimumRemainingSeconds}`
+    const current = this.refreshing.get(pendingKey)
     if (current !== undefined) return current
-    const pending = this.getOrRefreshOnce(key, encoded, refresh, now).finally(() => {
-      this.refreshing.delete(encoded)
+    const pending = this.getOrRefreshOnce(
+      key,
+      encoded,
+      minimumRemainingSeconds,
+      refresh,
+      now,
+    ).finally(() => {
+      this.refreshing.delete(pendingKey)
     })
-    this.refreshing.set(encoded, pending)
+    this.refreshing.set(pendingKey, pending)
     return pending
   }
 
@@ -68,6 +80,7 @@ export class ExchangeCredentialCache {
   private async getOrRefreshOnce(
     key: exchange.Key,
     encoded: string,
+    minimumRemainingSeconds: number,
     refresh: () => Promise<exchange.Entry>,
     now: () => number,
   ): Promise<string> {
@@ -76,14 +89,16 @@ export class ExchangeCredentialCache {
       const store = await readStore(this.path)
       const changed = scrub(store, now())
       const cached = store.entries[encoded]
-      if (cached !== undefined && validEntry(key, cached, now())) {
+      if (cached !== undefined && validEntry(key, cached, now(), minimumRemainingSeconds)) {
         if (changed) await writeStore(this.path, store)
         return cached.credential
       }
 
       const next = await refresh()
-      if (!validEntry(key, next, now(), 1)) {
-        throw new Error('Token exchange returned a credential inconsistent with its cache key.')
+      if (!validEntry(key, next, now(), minimumRemainingSeconds)) {
+        throw new Error(
+          'Token exchange returned a credential inconsistent with its cache key or required lifetime.',
+        )
       }
       store.entries[encoded] = Object.freeze({ ...next })
       await writeStore(this.path, store)
@@ -187,7 +202,10 @@ function validEntry(
       !Object.hasOwn(inspected.claims, 'delegation') &&
       proof.iss === key.kernelIssuer &&
       proof.sub === entry.user &&
-      proof.aud === key.kernelIssuer
+      proof.aud === key.kernelIssuer &&
+      typeof proof.claims.exp === 'number' &&
+      Number.isSafeInteger(proof.claims.exp) &&
+      credentialLifetimeCovers(proof.claims.exp, minimumRemaining, now)
     )
   } catch {
     return false

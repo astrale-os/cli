@@ -3,9 +3,13 @@ import type { SessionAuth } from '@astrale-os/sdk/client/session'
 import { issuer, type IssuerId } from '@astrale-os/sdk/auth'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { AstraleConfig } from '../../lib/config'
 
+import { persistKeypair, signAs } from '../../keys/index'
 import { bindCredentialIdentity } from '../auth'
 import { createCliCredential, createConnectionCredential } from '../credential'
 
@@ -75,6 +79,117 @@ describe('connection credential', () => {
     expect(resolved.credential).toBe(token(expiresAt))
     expect(resolved.delegate?.ttlSeconds).toBeGreaterThan(0)
     expect(resolved.delegate?.ttlSeconds).toBeLessThan(120)
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-CARRIER-COVERS-COMMAND-TIMEOUT */
+  test('covers a long command deadline with one destination carrier', async () => {
+    const expiresAt = Math.ceil(Date.now() / 1_000) + 300
+    const auth = createConnectionCredential(SOURCE, { resolve: async () => token(expiresAt) }, 185)
+
+    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toMatchObject({
+      credential: token(expiresAt),
+      delegate: { ttlSeconds: 185 },
+    })
+    expect(auth.ttlSeconds).toBe(185)
+  })
+
+  test('real local-key credentials cover the supported long-operation carrier', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'astrale-carrier-key-'))
+    try {
+      await persistKeypair('alice', { keysDir: directory })
+      const source = await signAs('alice', directory, {
+        issuer: SOURCE,
+        audience: SOURCE,
+      })
+      const auth = createConnectionCredential(SOURCE, { resolve: async () => source }, 185)
+
+      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toMatchObject({
+        credential: source,
+        delegate: { ttlSeconds: 185 },
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test('real five-minute local-key credentials reject a 600-second carrier before dispatch', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'astrale-carrier-ceiling-key-'))
+    try {
+      await persistKeypair('alice', { keysDir: directory })
+      const source = await signAs('alice', directory, {
+        issuer: SOURCE,
+        audience: SOURCE,
+      })
+      const auth = createConnectionCredential(SOURCE, { resolve: async () => source }, 605)
+
+      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
+        code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
+  test('derives every destination carrier lifetime from the selected CLI timeout', () => {
+    for (const target of [
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
+      {
+        url: `${SOURCE}/invoke`,
+        kernelIssuer: SOURCE,
+        domainIssuer: issuer.accept('https://admin.example'),
+      },
+    ]) {
+      const auth = createCliCredential(target, {}, config, globalThis.fetch, 180_000)
+      expect(auth?.ttlSeconds).toBe(185)
+    }
+  })
+
+  test('rejects a long command before dispatch when its source bearer is too short', async () => {
+    const expiresAt = Math.ceil(Date.now() / 1_000) + 120
+    const auth = createConnectionCredential(SOURCE, { resolve: async () => token(expiresAt) }, 185)
+
+    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
+    })
+  })
+
+  test('rejects an inspectable short or expired bearer before a default command dispatch', async () => {
+    for (const expiresAt of [
+      Math.ceil(Date.now() / 1_000) + 30,
+      Math.ceil(Date.now() / 1_000) - 30,
+    ]) {
+      const auth = createConnectionCredential(SOURCE, {
+        resolve: async () => token(expiresAt),
+      })
+      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
+        code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
+      })
+    }
+  })
+
+  test('rejects a too-short explicit Domain bearer before exchange or destination I/O', async () => {
+    let fetches = 0
+    const expiresAt = Math.ceil(Date.now() / 1_000) + 120
+    const auth = createCliCredential(
+      {
+        url: `${SOURCE}/invoke`,
+        kernelIssuer: SOURCE,
+        domainIssuer: issuer.accept('https://admin.example'),
+      },
+      { creds: token(expiresAt) },
+      config,
+      async () => {
+        fetches += 1
+        throw new Error('network must remain untouched')
+      },
+      180_000,
+    )
+    if (auth === undefined) throw new Error('expected authenticated credential')
+
+    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
+    })
+    expect(fetches).toBe(0)
   })
 
   /** @evidence TEST-CLI-CONNECTION-USES-RAW-SOURCE-CREDENTIAL */

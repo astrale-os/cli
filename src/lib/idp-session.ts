@@ -36,6 +36,8 @@ export class IdpSessionNoRefreshTokenError extends Error {
 export type EnsureFreshSessionOptions = {
   audience?: string
   organizationId?: string
+  /** Minimum source-token lifetime required before the caller starts its operation. */
+  minimumRemainingSeconds?: number
   /**
    * Org-hint resolver, consulted only when a refresh actually happens.
    * Defaults to `fetchOrgHint`; injectable for tests.
@@ -63,9 +65,10 @@ export async function ensureFreshSession(
   identityName: string,
   opts: EnsureFreshSessionOptions = {},
 ): Promise<IdpSession> {
+  const minimumRemainingMs = minimumLifetimeMs(opts.minimumRemainingSeconds)
   const session = await readIdpSession(identityName)
   if (!session) throw new IdpSessionMissingError(identityName)
-  if (accessTokenForAudience(session, opts.audience)) return session
+  if (accessTokenForAudience(session, opts.audience, minimumRemainingMs)) return session
   if (!session.refresh_token) throw new IdpSessionNoRefreshTokenError(identityName)
 
   return withFileLock(idpSessionLockPath(identityName), async () => {
@@ -73,7 +76,7 @@ export async function ensureFreshSession(
     // already rotated the session — using its result is the whole point.
     const current = await readIdpSession(identityName)
     if (!current) throw new IdpSessionMissingError(identityName)
-    if (accessTokenForAudience(current, opts.audience)) return current
+    if (accessTokenForAudience(current, opts.audience, minimumRemainingMs)) return current
 
     // Org resolution order: explicit > bookmarked-at-create > router lookup.
     const bookmarkOrg =
@@ -106,7 +109,13 @@ export async function ensureFreshSession(
           })
         }
       }
-      const rescued = await rescueAfterInvalidGrant(identityName, current, opts.audience, e)
+      const rescued = await rescueAfterInvalidGrant(
+        identityName,
+        current,
+        opts.audience,
+        minimumRemainingMs,
+        e,
+      )
       if (rescued) return rescued
       throw e
     }
@@ -124,11 +133,24 @@ async function rescueAfterInvalidGrant(
   identityName: string,
   seen: IdpSession,
   audience: string | undefined,
+  minimumRemainingMs: number,
   error: unknown,
 ): Promise<IdpSession | undefined> {
   if (!(error instanceof OAuthTokenError) || error.code !== 'invalid_grant') return undefined
   const latest = await readIdpSession(identityName).catch(() => null)
   if (!latest || latest.updatedAt === seen.updatedAt) return undefined
-  if (!accessTokenForAudience(latest, audience)) return undefined
+  if (!accessTokenForAudience(latest, audience, minimumRemainingMs)) return undefined
   return latest
+}
+
+function minimumLifetimeMs(input: number | undefined): number {
+  const seconds = input ?? 60
+  if (
+    !Number.isSafeInteger(seconds) ||
+    seconds < 1 ||
+    seconds > Math.floor(Number.MAX_SAFE_INTEGER / 1_000)
+  ) {
+    throw new TypeError('IdP session minimum lifetime must be a positive safe integer.')
+  }
+  return seconds * 1_000
 }

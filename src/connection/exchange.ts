@@ -2,16 +2,17 @@ import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { Fetch } from '@astrale-os/sdk/client'
 
 import { createAuth } from '@astrale-os/sdk/auth'
-import { credential, exchange as exchangeProtocol } from '@astrale-os/sdk/auth'
+import { credential, exchange as exchangeProtocol, grant } from '@astrale-os/sdk/auth'
 import { call, Client } from '@astrale-os/sdk/client'
 
 import type { SourceCredentialResolver } from './credential'
 import type { ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
+import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
+import { cachedCredentialTtlSeconds, exchangeCredentialTtlSeconds } from './lifetime'
 
-const EXCHANGE_TTL_SECONDS = 5 * 60
 const MAXIMUM_RESPONSE_BYTES = 256 * 1024
 
 /** Exchange exact authenticated User authority for a Domain bearer bound to this Kernel. */
@@ -23,6 +24,8 @@ export function createExchangeCredentialResolver(
   cache = new ExchangeCredentialCache(),
 ): SourceCredentialResolver {
   requireExchangeTransport(target)
+  const cacheTtlSeconds = cachedCredentialTtlSeconds(timeoutMs)
+  const exchangeTtlSeconds = exchangeCredentialTtlSeconds(timeoutMs)
   return Object.freeze({
     async resolve(kernelIssuer: IssuerId, signal: AbortSignal): Promise<string> {
       requireLive(signal)
@@ -37,8 +40,9 @@ export function createExchangeCredentialResolver(
           sourceIssuer: sourceIdentity.issuer,
           sourceSubject: sourceIdentity.subject,
         }),
+        cacheTtlSeconds,
         async () => {
-          const delegationTtlSeconds = delegationLifetime(sourceToken)
+          const delegationTtlSeconds = delegationLifetime(sourceToken, exchangeTtlSeconds)
           const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
           try {
             const authenticated = client.as(sourceToken)
@@ -69,7 +73,14 @@ export function createExchangeCredentialResolver(
             }
             if (envelope === undefined) throw new Error('Token delegation returned no credential.')
             return {
-              ...(await exchange(target.domainIssuer, kernelIssuer, envelope, fetch, signal)),
+              ...(await exchange(
+                target.domainIssuer,
+                kernelIssuer,
+                envelope,
+                cacheTtlSeconds,
+                fetch,
+                signal,
+              )),
               user: user.id,
               sourceIssuer: sourceIdentity.issuer,
               sourceSubject: sourceIdentity.subject,
@@ -107,7 +118,7 @@ function unknownFunctionOutcome(cause: unknown): boolean {
   return (error.reason as { readonly code?: unknown }).code === 'FUNCTION_OUTCOME_UNKNOWN'
 }
 
-function delegationLifetime(sourceToken: string): number {
+function delegationLifetime(sourceToken: string, requiredTtlSeconds: number): number {
   const expiresAt = credential.inspect(sourceToken).claims.exp
   if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt)) {
     throw new AstraleError(
@@ -115,20 +126,28 @@ function delegationLifetime(sourceToken: string): number {
       'The source identity credential has no valid expiration.',
     )
   }
-  const remaining = expiresAt - Math.ceil(Date.now() / 1_000) - 1
+  const remaining = remainingCredentialLifetimeSeconds(expiresAt)
   if (!Number.isSafeInteger(remaining) || remaining < 1) {
     throw new AstraleError(
       'TOKEN_EXCHANGE_SOURCE_EXPIRED',
       'The source identity credential has no lifetime available for token exchange.',
     )
   }
-  return Math.min(EXCHANGE_TTL_SECONDS, remaining)
+  if (remaining < requiredTtlSeconds) {
+    throw new AstraleError(
+      'TOKEN_EXCHANGE_SOURCE_LIFETIME_INSUFFICIENT',
+      'The source credential cannot cover the requested command timeout.',
+      `Refresh the identity session or use a shorter --timeout; ${remaining} seconds remain but ${requiredTtlSeconds} are required.`,
+    )
+  }
+  return requiredTtlSeconds
 }
 
 async function exchange(
   domainIssuer: IssuerId,
   kernelIssuer: IssuerId,
   envelope: string,
+  requiredTtlSeconds: number,
   fetch: Fetch,
   signal: AbortSignal,
 ): Promise<{ readonly credential: string; readonly expiresAt: number }> {
@@ -225,7 +244,46 @@ async function exchange(
       'Token exchange returned a credential inconsistent with the requested Domain and Kernel.',
     )
   }
+  const remaining = effectiveExchangeLifetime(inspected, exchanged.expiresAt)
+  if (remaining < requiredTtlSeconds) {
+    throw new AstraleError(
+      'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
+      'The Domain exchange credential cannot cover the requested command timeout.',
+      `The Domain issuer returned ${Math.max(0, remaining)} seconds but ${requiredTtlSeconds} are required. Use a shorter --timeout or update the Domain execution service.`,
+    )
+  }
   return Object.freeze({ credential: exchanged.token, expiresAt: exchanged.expiresAt })
+}
+
+/** The outer Domain bearer and its carried Kernel proof must both survive the operation. */
+function effectiveExchangeLifetime(
+  inspected: ReturnType<typeof credential.inspect>,
+  outerExpiresAt: number,
+): number {
+  let proofExpiresAt: number
+  try {
+    const carried = grant.acceptUnresolved(inspected.claims.grant).expr
+    if (
+      carried.kind !== 'identity' ||
+      !('credential' in carried) ||
+      typeof carried.credential !== 'string'
+    ) {
+      throw new TypeError('Domain credential does not carry an identity proof.')
+    }
+    const value = credential.inspect(carried.credential).claims.exp
+    if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
+      throw new TypeError('Domain credential carries an identity proof without an expiration.')
+    }
+    proofExpiresAt = value
+  } catch (cause) {
+    if (!(cause instanceof TypeError)) throw cause
+    throw new AstraleError(
+      'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+      'Token exchange returned an invalid carried identity proof.',
+      cause.message,
+    )
+  }
+  return remainingCredentialLifetimeSeconds(Math.min(outerExpiresAt, proofExpiresAt))
 }
 
 async function fetchExchange(
