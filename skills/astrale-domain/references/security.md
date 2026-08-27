@@ -21,10 +21,12 @@ business graph facts. When Shell owns the human-facing User, observe that exact 
 the application Domain's membership or business facts. Do not provision a shadow User or grant a
 human dynamic `can_*` authority to make acceptance pass.
 
-Cross-Domain authority is installation-owned. The calling Domain's Application explicitly declares
-each exact foreign callable in `requirements({ callables: [...] })`; Kernel installation then owns
-materializing authority for the installed Domain principal. Do not grant the invoking human direct
-foreign `can_*` authority as a substitute, and do not confuse a Schema dependency with capability.
+Dependency callable authority is installation-owned. The calling Domain's Application explicitly
+declares each exact protected foreign or Kernel callable in `requirements({ callables: [...] })`;
+Kernel installation then owns materializing authority for the installed Domain principal. Do not
+grant the invoking human direct `can_*` authority as a substitute, and do not confuse a Schema
+dependency with capability. An Action that uses `client.auth.provision(...)`, for example, requires
+the exact resolved Kernel `provision` callable.
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'

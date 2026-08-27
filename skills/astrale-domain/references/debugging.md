@@ -29,6 +29,17 @@ URL as Schema identity or assume the newest deployment is installed.
 Confirm denied calls caused no Action, Workflow step, Provider, or graph effect. Never add a handler
 fallback or anonymous/Via bypass to make a test pass.
 
+For a nested Kernel call, inspect the installed Domain's requested and materialized capabilities
+before changing auth mode or Policy. Successful remote `Function.admit` followed by `Access denied`
+before the expected Kernel syscall is evidence of a missing protected-callable requirement, not a
+reason to grant the human dynamic authority. Repeat the same call only after the exact
+installation-owned capability is materialized, then observe effects independently.
+
+Treat authentication and provision journal inputs as secret unless their redaction is independently
+proven. Do not retain or display a complete journal record merely to learn the phase: proof JWTs,
+keys, credentials, or headers may be nested in otherwise useful callable input. Prefer safe outcome,
+topic, callable, and capability metadata, and destroy isolated journal state during terminal cleanup.
+
 ## Runtime failures
 
 - Runtime initialization errors occur before invocation; inspect admitted environment and Provider

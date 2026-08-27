@@ -17,6 +17,10 @@ For release qualification, pin an exact published version or an immutable packed
 Domain package declares `@astrale-os/sdk` plus its public deployment adapter. It does not declare
 Kernel implementation packages, Shell packages, a source checkout, or a workspace link.
 
+When authored source imports Zod for properties or callable contracts, declare `zod` directly in the
+Domain manifest. Strict pnpm consumers do not expose the SDK's transitive Zod installation to Domain
+source. Do not solve the missing import with a workspace link, hoisting flag, or private SDK path.
+
 ## Authoring roots
 
 Keep these composition files narrow:
@@ -38,6 +42,11 @@ astrale.config.ts   deployment adapter and environments
 
 Use one small owner file per meaningful callable, query, mutation, integration, provider, or view.
 Cross-owner imports go through the generated `#` facades.
+
+Application requirements are inert root composition, not another Domain layer. Do not create a
+top-level `requirements/` source tree: the Domain linter correctly rejects undeclared layers. Resolve
+an exact dependency inline in `requirements(...)` or export a resolved dependency witness beside the
+authored Schema, then keep `application.ts` limited to composition.
 
 ## Runtime and Application
 

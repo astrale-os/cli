@@ -46,6 +46,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   const modeling = readFileSync(join(root, 'references', 'modeling.md'), 'utf8')
   const views = readFileSync(join(root, 'references', 'views.md'), 'utf8')
   const development = readFileSync(join(root, 'references', 'development.md'), 'utf8')
+  const debugging = readFileSync(join(root, 'references', 'debugging.md'), 'utf8')
 
   assert.match(entrypoint, /Keep authorization in Schema-owned Policy and callable `auth` mode/)
   assert.match(implementing, /defineAction/)
@@ -57,6 +58,11 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
     implementing,
     /`executeQuery\(client, \.\.\.\)` and `executeMutation\(client, \.\.\.\)`/,
   )
+  assert.match(
+    implementing,
+    /`client\.auth\.provision\(\.\.\.\)` requires the exact Kernel `provision`/,
+  )
+  assert.match(implementing, /Do not create a new\s+`requirements\/` layer/)
   assert.match(integrations, /defineIntegration/)
   assert.match(integrations, /Runtime `initialize\(environment\)`/)
   assert.match(development, /Use ordinary imports for pure helpers and Rules/)
@@ -64,6 +70,9 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(development, /`pnpm run cleanup:graph -- --instance \.\.\.`/)
   assert.match(development, /normalize at most that one package-manager\s+separator/)
   assert.match(development, /`build` returns before declared secrets are loaded/)
+  assert.match(development, /declare `zod` directly in the\s+Domain manifest/)
+  assert.match(development, /Do not create a\s+top-level `requirements\/` source tree/)
+  assert.match(debugging, /Treat authentication and provision journal inputs as secret/)
   assert.match(modeling, /Object definitions\s+belong to one Class hierarchy/)
   assert.match(modeling, /rather than parallel object-definition kinds/)
   assert.match(views, /defineFrontend/)
