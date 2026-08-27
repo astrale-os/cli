@@ -76,7 +76,8 @@ describe('release workflow contract', () => {
     )
     assert.doesNotMatch(channel.run, /git push/)
     assert.match(channel.run, /compare\/\$current_sha\.\.\.\$EXPECTED_COMMIT/)
-    assert.match(channel.run, /ahead\|identical/)
+    assert.match(channel.run, /ahead\)/)
+    assert.match(channel.run, /identical\)/)
   })
 
   it('delegates immutable and channel asset publication to the qualified helper', () => {
@@ -111,6 +112,13 @@ describe('release workflow contract', () => {
     assert.doesNotMatch(immutable.run, /--clobber/)
     assert.doesNotMatch(immutable.run, /release upload .*release-assets\/\*/)
     assert.doesNotMatch(channel.run, /release upload .*release-assets\/\*/)
+    assert.doesNotMatch(channel.run, /ahead\|identical/)
+    assert.equal(channel.run.match(/gh api --method PATCH/gu)?.length, 1)
+    assert.ok(
+      channel.run.indexOf('ahead)') < channel.run.indexOf('gh api --method PATCH') &&
+        channel.run.indexOf('gh api --method PATCH') < channel.run.indexOf('identical)'),
+      'an identical recovered channel ref must not be patched again',
+    )
     assert.deepEqual(binary.jobs.publish.concurrency, {
       group: 'cli-release-channel-publication',
       'cancel-in-progress': false,

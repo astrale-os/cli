@@ -235,11 +235,13 @@ jobs:
             current_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$CHANNEL" --jq .object.sha)"
             relation="$(gh api "repos/$GITHUB_REPOSITORY/compare/$current_sha...$EXPECTED_COMMIT" --jq .status)"
             case "$relation" in
-              ahead|identical) ;;
+              ahead)
+                gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$CHANNEL" \
+                  -f sha="$EXPECTED_COMMIT" -F force=true >/dev/null
+                ;;
+              identical) ;;
               *) echo "refusing to move $CHANNEL from $current_sha to non-successor $EXPECTED_COMMIT ($relation)" >&2; exit 1 ;;
             esac
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$CHANNEL" \
-              -f sha="$EXPECTED_COMMIT" -F force=true >/dev/null
           else
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
               -f ref="refs/tags/$CHANNEL" -f sha="$EXPECTED_COMMIT" >/dev/null
