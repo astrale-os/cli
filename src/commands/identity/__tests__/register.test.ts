@@ -61,6 +61,10 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
   })
 
   expect(String(prepared.binding)).toBe('identity')
+  expect(prepared.expected).toEqual({
+    iss: await provision.selfIssuer(kernelIssuer, publicJwk),
+    sub: 'self',
+  })
   expect(prepared.request.idempotencyKey).toBe('identity-register:alice')
   expect(JSON.parse(JSON.stringify(prepared.request.mutation))).toEqual({
     format: 'astrale.graph.mutation',
@@ -76,7 +80,11 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     ],
   })
 
-  const credentials = prepared.request.identities[prepared.binding]?.credentials
+  const provisioned = prepared.request.identities[0]
+  expect(provisioned.identity).toEqual({ created: prepared.binding })
+  const authentication = provisioned.authentication
+  const credentials =
+    authentication && 'credentials' in authentication ? authentication.credentials : undefined
   expect(credentials?.publicKey).toEqual(publicJwk)
   expect(typeof credentials?.proof).toBe('string')
   if (typeof credentials?.proof !== 'string') throw new TypeError('Expected compact JWT proof')

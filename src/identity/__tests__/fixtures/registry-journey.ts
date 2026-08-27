@@ -9,6 +9,7 @@ import {
   importIdentity,
   deleteIdentity,
   getDefault,
+  getIdentity,
   readIdentities,
   setDefault,
   setIdentityMode,
@@ -52,10 +53,20 @@ await upsertIdpIdentity('workos', {
 
 const store = await readIdentities()
 const selected = await getDefault()
+let missing: unknown
+try {
+  await getIdentity('missing')
+} catch (error) {
+  missing =
+    error instanceof Error
+      ? { ...error, name: error.name, message: error.message }
+      : { message: String(error) }
+}
 console.log(
   JSON.stringify({
     store,
     selected,
+    missing,
     selectedDeletion,
     aliceKey: await fileExists(keypairPaths('alice', KEYS_DIR).privatePath),
     bobKey: await fileExists(keypairPaths('bob', KEYS_DIR).privatePath),

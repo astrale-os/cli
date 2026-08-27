@@ -1,4 +1,4 @@
-import { AstraleError } from '../errors'
+import { AstraleError, IdentityNotFoundError } from '../errors'
 import { persistKeypair, removeKeypair } from '../keys/index'
 import { deleteIdpSession } from '../lib/idp'
 import { validateName } from '../lib/validation'
@@ -104,9 +104,7 @@ export async function getDefault(): Promise<Identity & { readonly name: string }
 export async function getIdentity(name: string): Promise<Identity> {
   const store = await readIdentities()
   const identity = store.identities[name]
-  if (!identity) {
-    throw new Error(`Identity "${name}" not found. Run: astrale identity create ${name}`)
-  }
+  if (!identity) throw new IdentityNotFoundError(name)
   return identity
 }
 

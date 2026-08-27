@@ -44,6 +44,7 @@ describe('identity registry journey', () => {
         >
       }
       selected: { name: string; subject: string }
+      missing: { name: string; code: string; message: string; hint: string }
       selectedDeletion: string
       aliceKey: boolean
       bobKey: boolean
@@ -59,6 +60,12 @@ describe('identity registry journey', () => {
     })
     expect(result.store.identities.workos).toMatchObject({ source: 'idp', mode: 'remote' })
     expect(result.selected).toMatchObject({ name: 'alice', subject: 'alice' })
+    expect(result.missing).toEqual({
+      name: 'AstraleError',
+      code: 'IDENTITY_NOT_FOUND',
+      message: 'Identity "missing" does not exist locally.',
+      hint: 'Run `astrale identity create missing` before registering it.',
+    })
     expect(result.selectedDeletion).toContain('Cannot delete the default identity')
     expect(result.aliceKey).toBe(true)
     expect(result.bobKey).toBe(false)

@@ -14,6 +14,7 @@ import type { IdentityRegistrationResult } from '../../identity/index'
 import type { CommandDefinition } from '../../program/index'
 
 import { registrationKeyForTarget, runKernelCommand } from '../../connection'
+import { IdentityKeyMissingError } from '../../errors'
 import { classKey } from '../../graph'
 import { getIdentity, setRegistration, submitIdentityProvision } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
@@ -32,9 +33,10 @@ async function readJwk(path: string): Promise<JWK> {
 
 export default {
   name: 'register',
-  description: 'Atomically provision a local key identity and its V2 graph Node',
+  description: 'Atomically provision the graph Node for an existing local key identity',
   afterHelpText: `
 Behavior:
+  Requires a local key identity created with \`astrale identity create <name>\`.
   Creates one Node through Mutation V3 and designates it as a self-proven
   Identity in the same atomic Auth.provision request. --class is required;
   --props must use fully-qualified Property keys owned by that Class.
@@ -76,9 +78,7 @@ Example:
       const identity = await getIdentity(name)
       const { privatePath, publicPath } = keypairPaths(identity.subject)
       if (!(await fileExists(privatePath)) || !(await fileExists(publicPath))) {
-        throw new Error(
-          `No keypair on disk for "${name}" (expected ${privatePath}). Recreate it with \`astrale identity create ${name}\`.`,
-        )
+        throw new IdentityKeyMissingError(identity.subject)
       }
 
       const privateKey = await readJwk(privatePath)
@@ -108,6 +108,7 @@ Example:
           const registered = await submitIdentityProvision({
             request: prepared.request,
             binding: prepared.binding,
+            expected: prepared.expected,
             ...(opts.via === undefined ? {} : { via: opts.via }),
             direct: auth,
             callable: session,
@@ -150,6 +151,7 @@ export async function prepareIdentityProvision(input: {
 }): Promise<{
   readonly binding: ReturnType<typeof LocalBinding>
   readonly request: ProvisionRequest
+  readonly expected: Pick<IdentityRegistrationResult, 'iss' | 'sub'>
 }> {
   const binding = LocalBinding('identity')
   const mutation = MutationAST.build((builder) => {
@@ -160,19 +162,30 @@ export async function prepareIdentityProvision(input: {
   const unsigned = provision.accept({
     idempotencyKey,
     mutation,
-    identities: {
-      [binding]: { credentials: { publicKey: input.publicKey, proof: 'pending-proof' } },
-    },
+    identities: [
+      {
+        identity: { created: binding },
+        authentication: {
+          credentials: { publicKey: input.publicKey, proof: 'pending-proof' },
+        },
+      },
+    ],
   })
   const fingerprint = await provision.fingerprint(unsigned)
   const issuer = await provision.selfIssuer(input.kernelIssuer, input.publicKey)
   const proof = await mintProvisionProof(input.privateKey, issuer, input.kernelIssuer, fingerprint)
   return {
     binding,
+    expected: Object.freeze({ iss: issuer, sub: 'self' }),
     request: provision.accept({
       idempotencyKey,
       mutation,
-      identities: { [binding]: { credentials: { publicKey: input.publicKey, proof } } },
+      identities: [
+        {
+          identity: { created: binding },
+          authentication: { credentials: { publicKey: input.publicKey, proof } },
+        },
+      ],
     }),
   }
 }

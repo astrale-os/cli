@@ -1,4 +1,10 @@
-import type { AuthApi, Identity, IssuerId, MintedCredential } from '@astrale-os/sdk/auth'
+import type {
+  Authentication,
+  AuthApi,
+  Identity,
+  IssuerId,
+  MintedCredential,
+} from '@astrale-os/sdk/auth'
 
 import { describe, expect, mock, test } from 'bun:test'
 
@@ -26,11 +32,11 @@ describe('issueToken', () => {
   const kernel = 'https://kernel.test' as IssuerId
   const identity = {
     id: 'caller' as Identity['id'],
-    issuer: 'https://issuer.test' as Identity['issuer'],
-    subject: 'caller' as Identity['subject'],
+    iss: 'https://issuer.test' as IssuerId,
+    sub: 'caller',
     frozen: false,
     requiredClaims: [],
-  } satisfies Identity
+  } satisfies Identity & Authentication
 
   test('mints a reusable top-level credential for the Kernel audience', async () => {
     const mint = mock(async () => 'kernel-token' as MintedCredential)

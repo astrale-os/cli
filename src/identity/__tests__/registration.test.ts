@@ -16,20 +16,24 @@ test('submits the exact self-proven request through an explicit Domain callable'
       preconditions: [],
       operations: [],
     },
-    identities: {
-      identity: {
-        credentials: {
-          publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y', alg: 'ES256' },
-          proof: 'self-proven-request.jwt.signature',
+    identities: [
+      {
+        identity: { created: binding },
+        authentication: {
+          credentials: {
+            publicKey: { kty: 'EC', crv: 'P-256', x: 'x', y: 'y', alg: 'ES256' },
+            proof: 'self-proven-request.jwt.signature',
+          },
         },
       },
-    },
+    ],
   } as unknown as ProvisionRequest
   const calls: unknown[] = []
   let directCalls = 0
   const result = await submitIdentityProvision({
     binding,
     request,
+    expected: { iss: 'https://identity.example', sub: 'self' },
     via: '/:ops.example:function.provisionOperator',
     direct: {
       async provision() {
@@ -42,9 +46,7 @@ test('submits the exact self-proven request through an explicit Domain callable'
         calls.push(call)
         return {
           createdNodes: { identity: 'operator-node' },
-          identities: {
-            identity: { issuer: 'https://identity.example', subject: 'operator-node' },
-          },
+          identities: [{ id: 'operator-node', iss: 'https://identity.example', sub: 'self' }],
         }
       },
     },
@@ -58,7 +60,90 @@ test('submits the exact self-proven request through an explicit Domain callable'
   })
   expect(result).toEqual({
     iss: 'https://identity.example',
-    sub: 'operator-node',
+    sub: 'self',
     nodeId: 'operator-node',
   })
 })
+
+test('rejects a provision response that does not identify the prepared created Node', async () => {
+  const binding = LocalBinding('identity')
+  await expect(
+    submitIdentityProvision({
+      binding,
+      request: {} as ProvisionRequest,
+      expected: { iss: 'https://identity.example', sub: 'self' },
+      direct: {
+        async provision() {
+          return {
+            createdNodes: { identity: 'operator-node' },
+            identities: [
+              { id: 'different-node', iss: 'https://identity.example', sub: 'operator-node' },
+            ],
+          }
+        },
+      },
+      callable: {
+        async call() {
+          throw new Error('callable provision must not run')
+        },
+      },
+    }),
+  ).rejects.toThrow('must contain the one created Identity')
+})
+
+test('rejects duplicate Identity entries for the prepared created Node', async () => {
+  const binding = LocalBinding('identity')
+  await expect(
+    submitIdentityProvision({
+      binding,
+      request: {} as ProvisionRequest,
+      expected: { iss: 'https://identity.example', sub: 'self' },
+      direct: {
+        async provision() {
+          return {
+            createdNodes: { identity: 'operator-node' },
+            identities: [
+              { id: 'operator-node', iss: 'https://identity.example', sub: 'self' },
+              { id: 'operator-node', iss: 'https://attacker.example', sub: 'forged' },
+            ],
+          }
+        },
+      },
+      callable: {
+        async call() {
+          throw new Error('callable provision must not run')
+        },
+      },
+    }),
+  ).rejects.toThrow('must contain the one created Identity')
+})
+
+test.each([
+  ['issuer', { iss: 'https://attacker.example', sub: 'self' }],
+  ['subject', { iss: 'https://identity.example', sub: 'operator-node' }],
+] as const)(
+  'rejects a provision response with a forged %s coordinate',
+  async (_label, identity) => {
+    const binding = LocalBinding('identity')
+    await expect(
+      submitIdentityProvision({
+        binding,
+        request: {} as ProvisionRequest,
+        expected: { iss: 'https://identity.example', sub: 'self' },
+        direct: {
+          async provision() {
+            return {
+              createdNodes: { identity: 'operator-node' },
+              identities: [{ id: 'operator-node', ...identity }],
+            }
+          },
+        },
+        callable: {
+          async call() {
+            throw new Error('callable provision must not run')
+          },
+        },
+      }),
+    ).rejects.toThrow('does not match the self-proven Authentication')
+  },
+)

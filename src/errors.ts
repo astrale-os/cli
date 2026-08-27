@@ -55,6 +55,16 @@ export class IdentityKeyMissingError extends AstraleError {
   }
 }
 
+export class IdentityNotFoundError extends AstraleError {
+  constructor(name: string) {
+    super(
+      'IDENTITY_NOT_FOUND',
+      `Identity "${name}" does not exist locally.`,
+      `Run \`astrale identity create ${name}\` before registering it.`,
+    )
+  }
+}
+
 export class NotImplementedError extends AstraleError {
   constructor(feature: string, hint?: string) {
     super(

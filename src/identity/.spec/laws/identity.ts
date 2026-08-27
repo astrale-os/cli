@@ -54,3 +54,10 @@ export const CLI_IDENTITY_REGISTRATION_AUTHORITY = defineLaw({
     },
   ],
 })
+
+export const CLI_IDENTITY_LOOKUP_EXPECTED_FAILURE = defineLaw({
+  id: 'CLI-IDENTITY-LOOKUP-EXPECTED-FAILURE',
+  statement:
+    'A named local Identity lookup that is absent returns the stable IDENTITY_NOT_FOUND family and an exact identity-create correction instead of an unexpected internal failure.',
+  tests: [{ file: '__tests__/registry.test.ts', id: 'TEST-CLI-IDENTITY-REGISTRY-JOURNEY' }],
+})
