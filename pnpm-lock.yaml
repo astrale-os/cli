@@ -227,6 +227,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.66.0
         version: 5.101.4(react@19.2.8)
+      '@tisoap/react-flow-smart-edge':
+        specifier: ^5.0.0
+        version: 5.0.0(@xyflow/react@12.11.3(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@xyflow/react':
         specifier: ^12.4.4
         version: 12.11.3(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -1520,6 +1523,13 @@ packages:
 
   '@tanstack/store@0.9.3':
     resolution: {integrity: sha512-8reSzl/qGWGGVKhBoxXPMWzATSbZLZFWhwBAFO9NAyp0TxzfBP0mIrGb8CP8KrQTmvzXlR/vFPPUrHTLBGyFyw==, tarball: https://registry.npmjs.org/@tanstack/store/-/store-0.9.3.tgz}
+
+  '@tisoap/react-flow-smart-edge@5.0.0':
+    resolution: {integrity: sha512-/Y9LQ76i+Ba3BAOzaXELIlslhPE7/X/vs/5lwl/yZD2cLIfEkBCIjumPnuUMDUECu7uGPQb+OiGV2YcugJ1Hrw==, tarball: https://registry.npmjs.org/@tisoap/react-flow-smart-edge/-/react-flow-smart-edge-5.0.0.tgz}
+    peerDependencies:
+      '@xyflow/react': '>=12'
+      react: '>=18'
+      react-dom: '>=18'
 
   '@ts-morph/common@0.26.1':
     resolution: {integrity: sha512-Sn28TGl/4cFpcM+jwsH1wLncYq3FtN/BIpem+HOygfBWPT5pAeS5dB4VFVzV8FbnOKHpDLZmvAl4AjPEev5idA==, tarball: https://registry.npmjs.org/@ts-morph/common/-/common-0.26.1.tgz}
@@ -4012,6 +4022,12 @@ snapshots:
       react: 19.2.8
 
   '@tanstack/store@0.9.3': {}
+
+  '@tisoap/react-flow-smart-edge@5.0.0(@xyflow/react@12.11.3(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+    dependencies:
+      '@xyflow/react': 12.11.3(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react: 19.2.8
+      react-dom: 19.2.8(react@19.2.8)
 
   '@ts-morph/common@0.26.1':
     dependencies:

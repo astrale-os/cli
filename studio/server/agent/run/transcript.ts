@@ -203,6 +203,10 @@ export function readLastRun(domainId: string, root: string): AgentRun | null {
  *
  * Only terminal runs are written to `runs/`, so the ACTIVE one is missing here —
  * callers layer it on top (the live run is already streamed to them).
+ *
+ * The frozen `prompt` of each turn is dropped: it is the largest field by far (the
+ * whole handoff markdown) and nothing reads it here — the activity drawer inspects
+ * the CURRENT run, which still carries it.
  */
 export function readRunHistory(domainId: string, root: string, limit = 40): AgentRun[] {
   const boundedLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 40
@@ -217,5 +221,5 @@ export function readRunHistory(domainId: string, root: string, limit = 40): Agen
     }
   }
   runs.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  return runs.slice(-boundedLimit)
+  return runs.slice(-boundedLimit).map(({ prompt: _prompt, ...turn }) => turn)
 }

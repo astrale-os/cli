@@ -1,5 +1,6 @@
 import type { StudioCore, StudioSchemaBundle } from '@shared/types'
 
+import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
 import {
   Background,
   Controls,
@@ -28,9 +29,10 @@ import { cn } from '@/lib/utils'
 import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
+import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
 import { elkLayout } from '../elk-layout'
 import { viewportForNodes } from '../fit'
-import { edgeTypes, separateParallelEdges } from '../floating-edge'
+import { edgeTypes } from '../floating-edge'
 import { NodeCommentPin } from '../node-comment-pin'
 import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
@@ -149,7 +151,7 @@ export function CoreView({
     elkLayout(structure.nodes, structure.edges).then((laid) => {
       if (cancelled) return
       setNodes(laid)
-      setEdges(separateParallelEdges(structure.edges))
+      setEdges(structure.edges)
       setLaidOut((n) => n + 1)
     })
     return () => {
@@ -213,58 +215,64 @@ export function CoreView({
       }),
     [edges, visibleIds, showStructure, showSemantics],
   )
+  const routedEdges = useMemo(
+    () => assignFloatingEdgePorts(displayNodes, displayEdges),
+    [displayNodes, displayEdges],
+  )
 
   return (
-    <ReactFlow
-      onPointerDownCapture={dismissMenusOnCanvasPress}
-      nodes={displayNodes}
-      edges={displayEdges}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeClick={(_, n) => {
-        const data = n.data as CoreNodeData
-        if (!data.virtual) onSelect(data.path)
-      }}
-      onPaneClick={() => {
-        onSelect(null)
-        if (!hasAnyUnsentDraft()) setOpenAnchor(null)
-      }}
-      minZoom={0.15}
-      nodesConnectable={false}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background gap={20} size={1} color="var(--color-input)" />
-      <EdgeMarkerDefs />
-      <Controls showInteractive={false} position="bottom-left" />
-      <MiniMap
-        pannable
-        zoomable
-        style={{ width: 168, height: 112 }}
-        nodeColor={(n) => moduleTint((n.data as CoreNodeData).hue).mark}
-        nodeStrokeWidth={0}
-      />
-      <Panel position="top-right">
-        <CanvasToolbar>
-          <CanvasToggle
-            icon={<FolderTree />}
-            label="Structure"
-            pressed={showStructure}
-            title="Folders and the parent→child tree"
-            onClick={() => setShowStructure((v) => !v)}
-          />
-          <CanvasToggle
-            icon={<Spline />}
-            label="Semantics"
-            pressed={showSemantics}
-            title="Typed edges between core nodes"
-            onClick={() => setShowSemantics((v) => !v)}
-          />
-          <span className="mx-0.5 h-4 w-px bg-border" />
-          <CoreModeToggle />
-        </CanvasToolbar>
-      </Panel>
-    </ReactFlow>
+    <SmartEdgeProvider nodes={displayNodes} options={SMART_EDGE_PROVIDER_OPTIONS}>
+      <ReactFlow
+        onPointerDownCapture={dismissMenusOnCanvasPress}
+        nodes={displayNodes}
+        edges={routedEdges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={(_, n) => {
+          const data = n.data as CoreNodeData
+          if (!data.virtual) onSelect(data.path)
+        }}
+        onPaneClick={() => {
+          onSelect(null)
+          if (!hasAnyUnsentDraft()) setOpenAnchor(null)
+        }}
+        minZoom={0.15}
+        nodesConnectable={false}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background gap={20} size={1} color="var(--color-input)" />
+        <EdgeMarkerDefs />
+        <Controls showInteractive={false} position="bottom-left" />
+        <MiniMap
+          pannable
+          zoomable
+          style={{ width: 168, height: 112 }}
+          nodeColor={(n) => moduleTint((n.data as CoreNodeData).hue).mark}
+          nodeStrokeWidth={0}
+        />
+        <Panel position="top-right">
+          <CanvasToolbar>
+            <CanvasToggle
+              icon={<FolderTree />}
+              label="Structure"
+              pressed={showStructure}
+              title="Folders and the parent→child tree"
+              onClick={() => setShowStructure((v) => !v)}
+            />
+            <CanvasToggle
+              icon={<Spline />}
+              label="Semantics"
+              pressed={showSemantics}
+              title="Typed edges between core nodes"
+              onClick={() => setShowSemantics((v) => !v)}
+            />
+            <span className="mx-0.5 h-4 w-px bg-border" />
+            <CoreModeToggle />
+          </CanvasToolbar>
+        </Panel>
+      </ReactFlow>
+    </SmartEdgeProvider>
   )
 }

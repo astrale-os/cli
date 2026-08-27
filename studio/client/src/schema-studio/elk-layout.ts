@@ -25,6 +25,7 @@ function layoutEngine(): Promise<ELK> {
 const OPTS: Record<string, string> = {
   'elk.algorithm': 'layered',
   'elk.direction': 'RIGHT',
+  'elk.edgeRouting': 'ORTHOGONAL',
   'elk.hierarchyHandling': 'INCLUDE_CHILDREN', // let edges cross module boundaries
   'elk.layered.spacing.nodeNodeBetweenLayers': '96',
   'elk.spacing.nodeNode': '28',
@@ -32,7 +33,9 @@ const OPTS: Record<string, string> = {
   'elk.spacing.edgeNode': '24',
   'elk.spacing.edgeEdge': '16',
   'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
+  'elk.layered.crossingMinimization.greedySwitchHierarchical.type': 'TWO_SIDED',
   'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
+  'elk.layered.nodePlacement.favorStraightEdges': 'true',
   'elk.padding': `[top=${MODULE_HEADER},left=${MODULE_PAD},bottom=${MODULE_PAD},right=${MODULE_PAD}]`,
 }
 

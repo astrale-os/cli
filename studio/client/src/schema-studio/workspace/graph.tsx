@@ -1,3 +1,4 @@
+import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
 import {
   Background,
   ControlButton,
@@ -26,8 +27,9 @@ import type { ClassNodeData } from '../projection'
 import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
+import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
 import { viewportForNodes } from '../fit'
-import { edgeTypes, separateParallelEdges } from '../floating-edge'
+import { edgeTypes } from '../floating-edge'
 import { useLayoutCommitter } from '../layout-commit'
 import { moduleTint } from '../palette'
 import { workspaceLayoutUpdate, type WorkspaceSize } from './geometry'
@@ -142,14 +144,14 @@ export function WorkspaceSchemaGraph({
     ],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
-  const [edges, setEdges] = useState<Edge[]>(() => separateParallelEdges(projection.edges))
+  const [edges, setEdges] = useState<Edge[]>(projection.edges)
 
   useEffect(() => {
     ensureDomainPositions(projection.domainPositions)
     ensureExternalPositions(projection.externalPositions)
     ensureDomainContentOffsets(projection.contentOffsets)
     setNodes(projection.nodes)
-    setEdges(separateParallelEdges(projection.edges))
+    setEdges(projection.edges)
     if (fitAfterReset.current) {
       fitAfterReset.current = false
       setFitRequest((n) => n + 1)
@@ -240,105 +242,111 @@ export function WorkspaceSchemaGraph({
       }),
     [activeDomainId, edges, selected],
   )
+  const routedEdges = useMemo(
+    () => assignFloatingEdgePorts(nodes, displayEdges),
+    [nodes, displayEdges],
+  )
 
   return (
     <WorkspaceNodeActionsProvider actions={nodeActions}>
-      <ReactFlow
-        onPointerDownCapture={dismissMenusOnCanvasPress}
-        data-testid="workspace-schema-canvas"
-        nodes={nodes}
-        edges={displayEdges}
-        nodeTypes={workspaceNodeTypes}
-        edgeTypes={edgeTypes}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onNodeDragStop={onNodeDragStop}
-        onNodeClick={(_, node) => {
-          if (node.id.startsWith('workspace-domain:')) {
-            activate(node.id.slice('workspace-domain:'.length))
-            return
-          }
-          const target = localNodeRef(node.id)
-          if (!target) return
-          if (target.localId.startsWith('class.')) activate(target.domainId, target.localId)
-          else if (target.localId.startsWith('grp-'))
-            activate(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
-        }}
-        onEdgeClick={(_, edge) => {
-          const ownerDomainId = edge.data?.ownerDomainId as string | undefined
-          const edgeClass = edge.data?.edgeClass as string | undefined
-          if (ownerDomainId && edgeClass) activate(ownerDomainId, `class.${edgeClass}`)
-        }}
-        onPaneClick={() => useUI.getState().setFocus(null)}
-        minZoom={0.08}
-        nodesConnectable={false}
-        edgesFocusable
-        onlyRenderVisibleElements
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background gap={20} size={1} color="var(--color-input)" />
-        <EdgeMarkerDefs />
-        <Controls showInteractive={false} position="bottom-left">
-          <ControlButton
-            onClick={() => {
-              fitAfterReset.current = true
-              resetWorkspaceFrames()
-            }}
-            title="Reset and auto-pack workspace regions"
-          >
-            <LayoutGrid className="h-4 w-4 text-foreground" />
-          </ControlButton>
-        </Controls>
-        <MiniMap
-          pannable
-          zoomable
-          style={{ width: 168, height: 112 }}
-          nodeColor={(node) =>
-            node.type === 'classNode'
-              ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
-              : node.type === 'workspaceDomain'
-                ? moduleTint(255, scheme).border
-                : 'transparent'
-          }
-          nodeStrokeWidth={0}
-        />
+      <SmartEdgeProvider nodes={nodes} options={SMART_EDGE_PROVIDER_OPTIONS}>
+        <ReactFlow
+          onPointerDownCapture={dismissMenusOnCanvasPress}
+          data-testid="workspace-schema-canvas"
+          nodes={nodes}
+          edges={routedEdges}
+          nodeTypes={workspaceNodeTypes}
+          edgeTypes={edgeTypes}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeDragStop={onNodeDragStop}
+          onNodeClick={(_, node) => {
+            if (node.id.startsWith('workspace-domain:')) {
+              activate(node.id.slice('workspace-domain:'.length))
+              return
+            }
+            const target = localNodeRef(node.id)
+            if (!target) return
+            if (target.localId.startsWith('class.')) activate(target.domainId, target.localId)
+            else if (target.localId.startsWith('grp-'))
+              activate(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
+          }}
+          onEdgeClick={(_, edge) => {
+            const ownerDomainId = edge.data?.ownerDomainId as string | undefined
+            const edgeClass = edge.data?.edgeClass as string | undefined
+            if (ownerDomainId && edgeClass) activate(ownerDomainId, `class.${edgeClass}`)
+          }}
+          onPaneClick={() => useUI.getState().setFocus(null)}
+          minZoom={0.08}
+          nodesConnectable={false}
+          edgesFocusable
+          onlyRenderVisibleElements
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background gap={20} size={1} color="var(--color-input)" />
+          <EdgeMarkerDefs />
+          <Controls showInteractive={false} position="bottom-left">
+            <ControlButton
+              onClick={() => {
+                fitAfterReset.current = true
+                resetWorkspaceFrames()
+              }}
+              title="Reset and auto-pack workspace regions"
+            >
+              <LayoutGrid className="h-4 w-4 text-foreground" />
+            </ControlButton>
+          </Controls>
+          <MiniMap
+            pannable
+            zoomable
+            style={{ width: 168, height: 112 }}
+            nodeColor={(node) =>
+              node.type === 'classNode'
+                ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
+                : node.type === 'workspaceDomain'
+                  ? moduleTint(255, scheme).border
+                  : 'transparent'
+            }
+            nodeStrokeWidth={0}
+          />
 
-        {projection.diagnostics.length > 0 && (
-          <Panel position="top-center" className="max-w-xl">
-            <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-card px-3 py-2 text-[11px] text-warning shadow-lg backdrop-blur">
-              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              <span>{projection.diagnostics.join(' ')}</span>
-            </div>
+          {projection.diagnostics.length > 0 && (
+            <Panel position="top-center" className="max-w-xl">
+              <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-card px-3 py-2 text-[11px] text-warning shadow-lg backdrop-blur">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{projection.diagnostics.join(' ')}</span>
+              </div>
+            </Panel>
+          )}
+
+          <Panel position="top-right">
+            <CanvasToolbar>
+              <CanvasToggle
+                icon={<AppWindow />}
+                label="Views"
+                count={viewsCount}
+                pressed={panelOverlay === 'views'}
+                title="Views across selected domains"
+                onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
+              />
+              <CanvasToggle
+                icon={<Spline />}
+                label="Inherited"
+                pressed={inheritedOn}
+                title="Inheritance edges in every selected domain"
+                onClick={onToggleInherited}
+              />
+              <CanvasToggle
+                icon={<Sigma />}
+                label="Cardinality"
+                pressed={showCardinality}
+                title="Spell out how many of each side a relationship allows"
+                onClick={toggleCardinality}
+              />
+            </CanvasToolbar>
           </Panel>
-        )}
-
-        <Panel position="top-right">
-          <CanvasToolbar>
-            <CanvasToggle
-              icon={<AppWindow />}
-              label="Views"
-              count={viewsCount}
-              pressed={panelOverlay === 'views'}
-              title="Views across selected domains"
-              onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
-            />
-            <CanvasToggle
-              icon={<Spline />}
-              label="Inherited"
-              pressed={inheritedOn}
-              title="Inheritance edges in every selected domain"
-              onClick={onToggleInherited}
-            />
-            <CanvasToggle
-              icon={<Sigma />}
-              label="Cardinality"
-              pressed={showCardinality}
-              title="Spell out how many of each side a relationship allows"
-              onClick={toggleCardinality}
-            />
-          </CanvasToolbar>
-        </Panel>
-      </ReactFlow>
+        </ReactFlow>
+      </SmartEdgeProvider>
     </WorkspaceNodeActionsProvider>
   )
 }

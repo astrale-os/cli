@@ -7,14 +7,10 @@ import { defineConfig } from 'vite'
 // In dev, `vite` runs HMR and the Bun server proxies non-/api requests to it
 // (see DOMAIN_STUDIO_DEV in server/index.ts).
 //
-// When the studio server fronts Vite on a DIFFERENT port (the `astrale studio
-// --dev` proxy), the page origin is the studio port but Vite listens on its own
-// port — so the HMR WebSocket must target Vite directly. `astrale studio` passes
-// Vite's port as STUDIO_VITE_PORT for exactly that.
-const configuredVitePort = process.env.STUDIO_VITE_PORT
-  ? Number(process.env.STUDIO_VITE_PORT)
-  : undefined
-const vitePort = configuredVitePort ?? 5173
+// The studio server ALWAYS fronts Vite on a different port, whether that port was
+// picked by `astrale studio --dev` (which passes it as STUDIO_VITE_PORT) or left at
+// the default below — so the two rules under `server` apply to both cases.
+const vitePort = process.env.STUDIO_VITE_PORT ? Number(process.env.STUDIO_VITE_PORT) : 5173
 
 export default defineConfig({
   root: 'client',
@@ -30,13 +26,13 @@ export default defineConfig({
     // on [::1] only while the studio's dev proxy dials 127.0.0.1 — the page then hangs
     host: '127.0.0.1',
     port: vitePort,
-    strictPort: configuredVitePort !== undefined,
-    // The page is served by the studio's dev proxy on ANOTHER port and that proxy
-    // speaks HTTP only — a socket aimed at the page origin never connects, and the
-    // Vite client then reloads the page in a loop. Dial Vite itself.
-    ...(configuredVitePort === undefined
-      ? {}
-      : { hmr: { host: '127.0.0.1', clientPort: configuredVitePort } }),
+    // Never drift to a free port: the proxy dials VITE_URL and the HMR socket dials
+    // the port below, so a Vite that moved is a Vite nobody can reach. Fail loudly.
+    strictPort: true,
+    // The page is served by the proxy on ANOTHER port, and that proxy speaks HTTP
+    // only — a socket aimed at the page origin never connects, and the Vite client
+    // then reloads the page in a loop. Dial Vite itself.
+    hmr: { host: '127.0.0.1', clientPort: vitePort },
   },
   // `@astrale-os/shell` resolves to a workspace SOURCE symlink in the monorepo
   // (not the published bundle it was as a standalone package). Pre-bundle it so
