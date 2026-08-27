@@ -116,7 +116,7 @@ assert.equal(
 assert.equal(workspaceConfig.trustLockfile, false, 'CLI must verify lock entries against policy')
 assert.deepEqual(
   workspaceConfig.minimumReleaseAgeExclude,
-  ['@astrale-os/*', '@astrale-domains/*', '@astrale/*', 'create-astrale-domain', 'bun-types@1.4.0'],
+  ['@astrale-os/*', '@astrale-domains/*', '@astrale/*', 'create-astrale-domain'],
   'CLI must use only the approved release-age exceptions',
 )
 assert.equal(
@@ -131,7 +131,7 @@ assert.equal(
   '1.4.0',
   'CLI must pin the local Bun 1.4 runtime',
 )
-assert.equal(cliManifest.packageManager, 'pnpm@11.13.1', 'CLI must pin the qualification pnpm')
+assert.equal(cliManifest.packageManager, 'pnpm@12.0.0', 'CLI must pin the qualification pnpm')
 assert.equal(cliManifest.private, true, 'standalone-only CLI package must remain private')
 assert.equal(cliManifest.publishConfig, undefined, 'standalone-only CLI must not be publishable')
 assert.equal(

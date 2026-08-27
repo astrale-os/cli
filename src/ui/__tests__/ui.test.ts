@@ -251,7 +251,7 @@ async function fixture(): Promise<string> {
         'react-dom': '19.2.8',
         tailwindcss: '4.3.3',
       },
-      packageManager: 'pnpm@11.13.1',
+      packageManager: 'pnpm@12.0.0',
     }),
   )
   await writeFile(path.join(root, 'src/index.css'), '/* consumer css */\n')

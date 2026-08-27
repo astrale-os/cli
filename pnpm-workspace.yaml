@@ -24,7 +24,6 @@ minimumReleaseAgeExclude:
   - '@astrale-domains/*'
   - '@astrale/*'
   - 'create-astrale-domain'
-  - 'bun-types@1.4.0'
 verifyDepsBeforeRun: false
 
 # Native build scripts required by the standalone CLI dependency graph.
