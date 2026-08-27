@@ -11,7 +11,7 @@
 import { existsSync } from 'node:fs'
 import { chmod, readFile, rm, writeFile } from 'node:fs/promises'
 
-import { buildViewer } from './build-viewer'
+import { buildEmbeddedAssets } from './build-embedded-assets'
 
 const preferJsoncParserEsm: Bun.BunPlugin = {
   name: 'prefer-jsonc-parser-esm',
@@ -28,6 +28,10 @@ const OUT = 'dist/astrale.js'
 const NODE_SHEBANG = '#!/usr/bin/env node\n'
 
 await rm('dist', { recursive: true, force: true })
+
+// The executable imports the checked-in archive. Rebuild its inputs first so
+// Studio/viewer changes cannot produce a stale development or release binary.
+await buildEmbeddedAssets()
 
 const result = await Bun.build({
   entrypoints: ['bin/astrale.ts'],
@@ -85,37 +89,4 @@ console.log(`built ${OUT}`)
     process.exit(1)
   }
   console.log('built public subpaths')
-}
-
-// Build the `astrale view` viewer page used by the embedded-asset generator.
-await buildViewer()
-
-// Also build the Domain Studio client for the embedded-asset generator.
-const studioDir = new URL('../studio', import.meta.url).pathname
-if (existsSync(`${studioDir}/vite.config.ts`)) {
-  const viteBin = [
-    `${studioDir}/node_modules/.bin/vite`,
-    `${studioDir}/../../node_modules/.bin/vite`,
-  ].find(existsSync)
-  if (!viteBin) {
-    console.warn(
-      'studio present but Vite not installed — skipping studio client build (run `pnpm install`)',
-    )
-  } else {
-    console.log('building studio client (vite build)…')
-    const r = Bun.spawnSync([viteBin, 'build'], {
-      cwd: studioDir,
-      stdout: 'inherit',
-      stderr: 'inherit',
-    })
-    if (r.exitCode === 0) {
-      console.log('built studio/client/dist')
-    } else {
-      // We HAD the toolchain and tried — a failure here would otherwise ship an
-      // empty/stale studio inside the package. Fail loudly (this also fails the
-      // prepack during `npm/pnpm pack`, so a broken studio never gets published).
-      console.error('studio client build FAILED')
-      process.exit(1)
-    }
-  }
 }

@@ -82,6 +82,8 @@ jobs:
         run: pnpm test:skills-e2e
       - name: Build development artifacts
         run: pnpm build
+      - name: Check embedded assets are current
+        run: git diff --exit-code -- src/generated/embedded-assets.ts
       - name: Smoke-test the development bundle
         run: |
           node dist/astrale.js --version
