@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.32](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.31...cli/v1.0.0-beta.32) (2026-08-27)
+
+
+### Bug Fixes
+
+* **connection:** cover long invocation credential lifetime ([#216](https://github.com/astrale-os/cli/issues/216)) ([c93ae47](https://github.com/astrale-os/cli/commit/c93ae4754a19c3bb6de5305c4b757cf67ba7cb98))
+* **skill:** require cross-domain capabilities ([#214](https://github.com/astrale-os/cli/issues/214)) ([535b8cb](https://github.com/astrale-os/cli/commit/535b8cb24f9554774903c24e09b948ad3deb06d0))
+
 ## [1.0.0-beta.31](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.30...cli/v1.0.0-beta.31) (2026-08-26)
 
 
