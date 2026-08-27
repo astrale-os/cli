@@ -58,7 +58,7 @@ function eventDigest(signals: SessionSignals): string {
   return lines.join('\n')
 }
 
-function buildPrompt(opts: {
+export function buildPrompt(opts: {
   id: string
   root: string
   signals: SessionSignals
@@ -87,9 +87,10 @@ function buildPrompt(opts: {
   const filing = opts.file
     ? `
 FILE the issues that clear the quality bar (after writing report.md). Use the normal door, one call per issue:
-  astrale call /:issues.astrale.ai:class.Issue:create -i admin --ci parent=/issues status=open title="<one line>" body="<evidence: exact command, exact error, expected vs actual, session ${id}>" initialTags='["<bug|friction|feature>","<area>"]'
+  astrale --ci --no-prompt call "@$ASTRALE_ISSUES_PROJECT_ID::createIssue" -i admin --data '{"title":"<one line>","description":"<evidence: exact command, exact error, expected vs actual, session ${id}>","priority":2}' --json
+ASTRALE_ISSUES_PROJECT_ID must name the destination Project. Record each returned Issue Node ID and reference.
 Always pass --ci and keep title/body plain ASCII (no smart quotes/arrows) — long special-character bodies can hang the call.
-Duplicates of existing issues are acceptable — recurrence is signal, triage groups them later. Do NOT dedup-check first. Record each returned issue path in report.md under "## Filed". If filing fails (auth/offline), record the failure in report.md — do not retry more than once.`
+Duplicates of existing issues are acceptable — recurrence is signal, triage groups them later. Do NOT dedup-check first. Record each returned Issue Node ID and reference in report.md under "## Filed". If filing fails (auth/offline), record the failure in report.md — do not retry more than once.`
     : `
 Do NOT file any issues in this run (dry-run). report.md is the only output.`
 
