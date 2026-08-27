@@ -135,9 +135,10 @@ describe('release workflow contract', () => {
     const pack = binary.jobs.build.steps.find((step) => step.name === 'Package asset').run
     assert.equal(binary.env.BUN_VERSION, '1.4.0')
     assert.match(source.run, /git rev-parse HEAD/)
-    assert.match(build, /bun scripts\/build-viewer\.ts/)
-    assert.match(build, /bun run --cwd studio build/)
-    assert.match(build, /bun scripts\/generate-embedded-assets\.ts/)
+    assert.match(build, /bun scripts\/build-embedded-assets\.ts/)
+    assert.doesNotMatch(build, /bun scripts\/build-viewer\.ts/)
+    assert.doesNotMatch(build, /bun run --cwd studio build/)
+    assert.doesNotMatch(build, /bun scripts\/generate-embedded-assets\.ts/)
     assert.match(build, /bun build --compile/)
     assert.match(
       build,
@@ -157,6 +158,27 @@ describe('release workflow contract', () => {
     assert.match(pack, /cmp dist\/astrale dist\/archive-check\/astrale/)
     assert.match(pack, /test -x dist\/archive-check\/astrale/)
     assert.doesNotMatch(pack, /viewer/)
+  })
+
+  it('rejects stale embedded assets in ordinary CI', () => {
+    const buildIndex = ci.jobs.compatibility.steps.findIndex(
+      (step) => step.name === 'Build development artifacts',
+    )
+    const check = ci.jobs.compatibility.steps[buildIndex + 1]
+    assert.equal(check.name, 'Check embedded assets are current')
+    assert.match(check.run, /git diff --exit-code -- src\/generated\/embedded-assets\.ts/)
+  })
+
+  it('rebuilds pinned embedded inputs before compiling a development bundle', () => {
+    const build = read('scripts/build.ts')
+    assert.ok(
+      build.indexOf('await buildEmbeddedAssets()') <
+        build.indexOf('const result = await Bun.build'),
+    )
+
+    const embedded = read('scripts/build-embedded-assets.ts')
+    assert.match(embedded, /readFile\(new URL\('\.\.\/\.bun-version'/)
+    assert.match(embedded, /Bun\.version !== expectedBun/)
   })
 
   it('qualifies skill reconciliation before and after publishing', () => {

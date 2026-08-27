@@ -110,9 +110,7 @@ jobs:
         run: |
           set -eu
           mkdir -p dist
-          bun scripts/build-viewer.ts
-          bun run --cwd studio build
-          bun scripts/generate-embedded-assets.ts
+          bun scripts/build-embedded-assets.ts
           git diff --exit-code -- src/generated/embedded-assets.ts
           bun build --compile --target=${{ matrix.bun_target }} \
             --define '__ASTRALE_SOURCE_REVISION__="${{ steps.source.outputs.sha }}"' \
