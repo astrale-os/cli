@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { Project, SyntaxKind } from 'ts-morph'
-import { parse } from 'yaml'
+import { parse, parseAllDocuments } from 'yaml'
 
 const privatePackages = [
   '@astrale-os/kernel-ports',
@@ -282,7 +282,21 @@ assert.equal(
   'Studio browser fixture must qualify the current exact SDK publication',
 )
 
-const lock = parse(await readFile('pnpm-lock.yaml', 'utf8'))
+const lockDocuments = parseAllDocuments(await readFile('pnpm-lock.yaml', 'utf8'))
+assert.deepEqual(
+  lockDocuments.flatMap((document) => document.errors),
+  [],
+  'pnpm lock must contain only valid YAML documents',
+)
+const qualificationLocks = lockDocuments
+  .map((document) => document.toJS())
+  .filter((document) => document?.settings && document?.importers?.studio)
+assert.equal(
+  qualificationLocks.length,
+  1,
+  'pnpm lock must contain one workspace qualification document',
+)
+const lock = qualificationLocks[0]
 assert.equal(lock.settings?.autoInstallPeers, true, 'pnpm must auto-install SDK peer dependencies')
 for (const [locator, snapshot] of Object.entries(lock.packages ?? {})) {
   if (!locator.startsWith('@astrale-os/') && !locator.startsWith('@astrale-domains/')) continue
