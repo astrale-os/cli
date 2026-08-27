@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.34](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.33...cli/v1.0.0-beta.34) (2026-08-27)
+
+
+### Bug Fixes
+
+* **ci:** normalize embedded asset gzip ([#221](https://github.com/astrale-os/cli/issues/221)) ([16fbf75](https://github.com/astrale-os/cli/commit/16fbf751827b1632ab75c9d992279c85b0f21780))
+
 ## [1.0.0-beta.33](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.32...cli/v1.0.0-beta.33) (2026-08-27)
 
 
