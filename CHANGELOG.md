@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.33](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.32...cli/v1.0.0-beta.33) (2026-08-27)
+
+
+### Features
+
+* refine Studio workspace and Application discovery ([#219](https://github.com/astrale-os/cli/issues/219)) ([33537bd](https://github.com/astrale-os/cli/commit/33537bd866b15238980f45cd6f0fa51aa1e7a292))
+* ship standalone Studio and native skills ([#217](https://github.com/astrale-os/cli/issues/217)) ([18ba28b](https://github.com/astrale-os/cli/commit/18ba28bf30a781eabaed1e948b5d9a2f81c82dd2))
+
+
+### Bug Fixes
+
+* **identity:** adopt flat provision contract ([#220](https://github.com/astrale-os/cli/issues/220)) ([5839235](https://github.com/astrale-os/cli/commit/58392357854a352aba993b6221375e201358b75c))
+* **issues:** target Project receiver API ([#213](https://github.com/astrale-os/cli/issues/213)) ([f82c761](https://github.com/astrale-os/cli/commit/f82c76113bf6d3e8487372d3c6c419ae17e68aec))
+
 ## [1.0.0-beta.32](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.31...cli/v1.0.0-beta.32) (2026-08-27)
 
 
