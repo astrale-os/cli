@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   readlinkSync,
   rmSync,
   writeFileSync,
@@ -13,32 +17,38 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 const cliRoot = new URL('../..', import.meta.url).pathname
-const previousSource = 'cli/v1.0.0-beta.20'
-const installer = 'skills@1.5.23'
 const root = mkdtempSync(join(tmpdir(), 'astrale-skills-e2e-'))
+const skillNames = readdirSync(join(cliRoot, 'skills'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort()
 
 function environment(name) {
   const base = join(root, name)
-  const home = join(base, 'home')
+  const skillRoot = join(base, 'global')
   const state = join(base, 'state')
-  const astrale = join(base, 'astrale')
-  mkdirSync(join(home, '.codex'), { recursive: true })
-  mkdirSync(join(home, '.claude'), { recursive: true })
+  const astraleState = join(base, 'astrale')
+  mkdirSync(join(skillRoot, '.codex'), { recursive: true })
+  mkdirSync(join(skillRoot, '.claude'), { recursive: true })
   return {
-    home,
+    skillRoot,
+    lockPath: join(state, 'skills', '.skill-lock.json'),
     env: {
       ...process.env,
-      HOME: home,
+      ASTRALE_SKILLS_HOME: skillRoot,
       XDG_STATE_HOME: state,
-      ASTRALE_HOME: astrale,
+      ASTRALE_HOME: astraleState,
       NO_SPINNER: '1',
       CI: '1',
     },
   }
 }
 
-function execute(command, args, env) {
-  const result = spawnSync(command, args, {
+function execute(args, env) {
+  const binary = process.env.ASTRALE_E2E_CLI
+  const command = binary ?? 'bun'
+  const commandArgs = binary ? args : ['bin/astrale.ts', ...args]
+  const result = spawnSync(command, commandArgs, {
     cwd: cliRoot,
     env,
     encoding: 'utf8',
@@ -47,123 +57,190 @@ function execute(command, args, env) {
   assert.equal(
     result.status,
     0,
-    `${command} ${args.join(' ')} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    `${command} ${commandArgs.join(' ')} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
   )
   return result
 }
 
-function runUpdate(env) {
-  const binary = process.env.ASTRALE_E2E_CLI
-  return binary
-    ? execute(binary, ['update', '--yes', '--no-deps'], env)
-    : execute('bun', ['bin/astrale.ts', 'update', '--yes', '--no-deps'], env)
+function readLock(lockPath) {
+  return JSON.parse(readFileSync(lockPath, 'utf8'))
 }
 
-function runCheck(env) {
-  const binary = process.env.ASTRALE_E2E_CLI
-  const command = binary ?? 'bun'
-  const args = binary
-    ? ['update', '--check', '--json', '--no-deps']
-    : ['bin/astrale.ts', 'update', '--check', '--json', '--no-deps']
-  const result = spawnSync(command, args, { cwd: cliRoot, env, encoding: 'utf8', timeout: 180_000 })
-  assert.equal(
-    result.status === 0 || result.status === 10,
-    true,
-    `${command} ${args.join(' ')} failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
-  )
-  return JSON.parse(result.stdout)
+function status(env) {
+  return JSON.parse(execute(['skills', 'status', '--json'], env).stdout).skills
 }
 
-const skillNames = ['astrale-cli', 'astrale-domain', 'astrale-frontend-design', 'astrale-services']
+function updateSkills(env) {
+  return JSON.parse(execute(['skills', 'update', '--json'], env).stdout)
+}
 
-function canonicalSnapshot(home) {
-  const lock = readFileSync(join(home, '..', 'state', 'skills', '.skill-lock.json'), 'utf8')
+function canonicalSnapshot(target) {
+  const lock = readFileSync(target.lockPath, 'utf8')
   const files = skillNames.map((name) =>
-    readFileSync(join(home, '.agents', 'skills', name, 'SKILL.md'), 'utf8'),
+    readFileSync(join(target.skillRoot, '.agents', 'skills', name, 'SKILL.md'), 'utf8'),
   )
   return JSON.stringify({ lock, files })
 }
 
+function qualifySelfUpdate(sourceBinary) {
+  const updateRoot = join(root, 'self-update')
+  const installDir = join(updateRoot, 'bin')
+  const releaseDir = join(updateRoot, 'release')
+  const payloadDir = join(updateRoot, 'payload')
+  const stateDir = join(updateRoot, 'state')
+  const skillRoot = join(updateRoot, 'global')
+  mkdirSync(installDir, { recursive: true })
+  mkdirSync(releaseDir, { recursive: true })
+  mkdirSync(payloadDir, { recursive: true })
+
+  const installedBinary = join(installDir, 'astrale')
+  const payloadBinary = join(payloadDir, 'astrale')
+  copyFileSync(sourceBinary, installedBinary)
+  copyFileSync(sourceBinary, payloadBinary)
+  chmodSync(installedBinary, 0o755)
+  chmodSync(payloadBinary, 0o755)
+
+  const version = spawnSync(sourceBinary, ['--version'], { encoding: 'utf8' }).stdout.trim()
+  const platform = `${process.platform}-${process.arch}`
+  const assetName = `astrale-${platform}.tar.gz`
+  const assetPath = join(releaseDir, assetName)
+  const archived = spawnSync('tar', ['-C', payloadDir, '-czf', assetPath, 'astrale'], {
+    encoding: 'utf8',
+  })
+  assert.equal(archived.status, 0, archived.stderr)
+  const checksum = createHash('sha256').update(readFileSync(assetPath)).digest('hex')
+  writeFileSync(
+    join(releaseDir, 'manifest.json'),
+    JSON.stringify({
+      version: 'next-e2e',
+      binaryVersion: version,
+      channel: 'beta',
+      assets: { [platform]: { name: assetName, sha256: checksum } },
+    }),
+  )
+  mkdirSync(stateDir, { recursive: true })
+  writeFileSync(
+    join(stateDir, 'install.json'),
+    `${JSON.stringify({
+      method: 'script',
+      channel: 'beta',
+      version: 'previous-e2e',
+      repo: 'astrale-os/cli',
+      bin: installedBinary,
+    })}\n`,
+  )
+
+  const updated = spawnSync(installedBinary, ['update', '--yes', '--no-deps'], {
+    cwd: cliRoot,
+    env: {
+      ...process.env,
+      ASTRALE_UPDATE_BASE: `file://${releaseDir}`,
+      ASTRALE_HOME: stateDir,
+      ASTRALE_SKILLS_HOME: skillRoot,
+      XDG_STATE_HOME: join(updateRoot, 'xdg-state'),
+      NO_SPINNER: '1',
+      CI: '1',
+    },
+    encoding: 'utf8',
+    timeout: 180_000,
+  })
+  assert.equal(updated.status, 0, `${updated.stdout}\n${updated.stderr}`)
+  assert.match(updated.stdout, /Applying skills embedded in the updated CLI/u)
+  assert.equal(JSON.parse(readFileSync(join(stateDir, 'install.json'), 'utf8')).version, 'next-e2e')
+  for (const name of skillNames) {
+    assert.equal(existsSync(join(skillRoot, '.agents', 'skills', name, 'SKILL.md')), true)
+  }
+}
+
 try {
   const updateCase = environment('update')
-  execute(
-    'npx',
-    [
-      '--yes',
-      installer,
-      'add',
-      `astrale-os/cli#${previousSource}`,
-      '-g',
-      '-y',
-      '--skill',
-      'astrale-cli',
-      'astrale-domain',
-      'astrale-services',
-      '--agent',
-      'codex',
-      'claude-code',
-    ],
-    updateCase.env,
-  )
+  execute(['skills', 'configure', '--agent', 'codex', 'claude-code', '--json'], updateCase.env)
 
-  const updated = runUpdate(updateCase.env)
-  assert.match(updated.stdout, /Astrale skills (?:repaired and )?updated/u)
-  const afterUpdate = canonicalSnapshot(updateCase.home)
-  const listed = execute('npx', ['--yes', installer, 'list', '-g', '--json'], updateCase.env)
-  const installedSkills = JSON.parse(listed.stdout)
-  const domainSkill = installedSkills.find((skill) => skill.name === 'astrale-domain')
-  assert.equal(domainSkill.path, join(updateCase.home, '.agents', 'skills', 'astrale-domain'))
-  assert.equal(domainSkill.agents.includes('Codex'), true)
+  const installedLock = readLock(updateCase.lockPath)
+  assert.equal(installedLock.version, 3)
+  assert.deepEqual(installedLock.lastSelectedAgents, ['codex', 'claude-code'])
+  assert.deepEqual(Object.keys(installedLock.skills).sort(), skillNames)
+  for (const name of skillNames) {
+    assert.deepEqual(
+      {
+        source: installedLock.skills[name].source,
+        sourceType: installedLock.skills[name].sourceType,
+        sourceUrl: installedLock.skills[name].sourceUrl,
+        ref: installedLock.skills[name].ref,
+        skillPath: installedLock.skills[name].skillPath,
+      },
+      {
+        source: 'astrale-os/cli',
+        sourceType: 'github',
+        sourceUrl: 'https://github.com/astrale-os/cli.git',
+        ref: 'main',
+        skillPath: `skills/${name}/SKILL.md`,
+      },
+    )
+    assert.match(installedLock.skills[name].skillFolderHash, /^[0-9a-f]{40}$/u)
+    assert.equal(
+      resolve(
+        dirname(join(updateCase.skillRoot, '.claude', 'skills', name)),
+        readlinkSync(join(updateCase.skillRoot, '.claude', 'skills', name)),
+      ),
+      join(updateCase.skillRoot, '.agents', 'skills', name),
+    )
+  }
 
-  const unchanged = runUpdate(updateCase.env)
-  assert.match(unchanged.stdout, /Astrale skills already up to date/u)
-  assert.equal(canonicalSnapshot(updateCase.home), afterUpdate)
-  const checked = runCheck(updateCase.env).skills
+  const staleLock = structuredClone(installedLock)
+  for (const entry of Object.values(staleLock.skills)) entry.ref = 'stale'
+  writeFileSync(updateCase.lockPath, `${JSON.stringify(staleLock, null, 2)}\n`)
+  assert.equal(status(updateCase.env).status, 'update-available')
+  assert.equal(updateSkills(updateCase.env).status, 'updated')
+
+  const afterUpdate = canonicalSnapshot(updateCase)
+  assert.equal(updateSkills(updateCase.env).status, 'unchanged')
+  assert.equal(canonicalSnapshot(updateCase), afterUpdate)
+  const checked = status(updateCase.env)
   assert.equal(checked.status, 'current')
   assert.equal(checked.source.repository, 'astrale-os/cli')
-  assert.match(checked.source.revision, /^[0-9a-f]{40}$/u)
-  assert.deepEqual(checked.source.skills.map(({ name }) => name).sort(), [...skillNames].sort())
-  const receipt = JSON.parse(
-    readFileSync(join(updateCase.home, '..', 'state', 'skills', '.skill-lock.json'), 'utf8'),
-  )
+  assert.match(checked.source.revision, /^cli:(?:[0-9a-f]{40})(?::[0-9a-f]{40})*$/u)
+  assert.deepEqual(checked.source.skills.map(({ name }) => name).sort(), skillNames)
+  const receipt = readLock(updateCase.lockPath)
   for (const skill of checked.source.skills) {
     assert.match(skill.tree, /^[0-9a-f]{40}$/u)
     assert.equal(receipt.skills[skill.name].astraleSourceRevision, checked.source.revision)
     assert.equal(receipt.skills[skill.name].astraleSourceTree, skill.tree)
   }
 
-  const expectedDomainSkill = readFileSync(
-    join(updateCase.home, '.agents', 'skills', 'astrale-domain', 'SKILL.md'),
+  const repairedName = skillNames[0]
+  const expected = readFileSync(
+    join(updateCase.skillRoot, '.agents', 'skills', repairedName, 'SKILL.md'),
     'utf8',
   )
   writeFileSync(
-    join(updateCase.home, '.agents', 'skills', 'astrale-domain', 'SKILL.md'),
+    join(updateCase.skillRoot, '.agents', 'skills', repairedName, 'SKILL.md'),
     'tampered\n',
   )
-  rmSync(join(updateCase.home, '.claude', 'skills', 'astrale-domain'))
-  assert.equal(runCheck(updateCase.env).skills.status, 'repair-needed')
-  const repaired = runUpdate(updateCase.env)
-  assert.match(repaired.stdout, /Astrale skills repaired and updated/u)
+  rmSync(join(updateCase.skillRoot, '.claude', 'skills', repairedName))
+  assert.equal(status(updateCase.env).status, 'repair-needed')
+  assert.equal(updateSkills(updateCase.env).status, 'repaired')
   assert.equal(
-    readFileSync(join(updateCase.home, '.agents', 'skills', 'astrale-domain', 'SKILL.md'), 'utf8'),
-    expectedDomainSkill,
-  )
-  assert.equal(
-    resolve(
-      dirname(join(updateCase.home, '.claude', 'skills', 'astrale-domain')),
-      readlinkSync(join(updateCase.home, '.claude', 'skills', 'astrale-domain')),
-    ),
-    join(updateCase.home, '.agents', 'skills', 'astrale-domain'),
+    readFileSync(join(updateCase.skillRoot, '.agents', 'skills', repairedName, 'SKILL.md'), 'utf8'),
+    expected,
   )
 
   const installCase = environment('install')
-  const installed = runUpdate(installCase.env)
-  assert.match(installed.stdout, /Astrale skills installed/u)
+  assert.equal(updateSkills(installCase.env).status, 'installed')
   for (const name of skillNames) {
-    assert.equal(existsSync(join(installCase.home, '.agents', 'skills', name, 'SKILL.md')), true)
+    assert.equal(
+      existsSync(join(installCase.skillRoot, '.agents', 'skills', name, 'SKILL.md')),
+      true,
+    )
   }
 
-  console.log('skills update E2E passed: installed, updated, unchanged, repaired')
+  if (process.env.ASTRALE_E2E_CLI) {
+    qualifySelfUpdate(resolve(cliRoot, process.env.ASTRALE_E2E_CLI))
+  }
+
+  console.log(
+    'native skills E2E passed: compatible lock, installed, updated, unchanged, repaired, self-update',
+  )
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

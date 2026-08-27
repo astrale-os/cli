@@ -5,10 +5,13 @@ import { dirname, join, resolve } from 'node:path'
 
 import type { CommandDefinition } from '../program/index'
 
+import { AstraleError } from '../errors'
+import { materializeEmbeddedAssets } from '../lib/embedded-assets'
 import { fatal, log } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 import { findFreePort, portFree } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
+import { selfInvocation } from '../lib/self-invocation'
 
 type StudioOpts = RawOutputOpts & {
   port?: string
@@ -69,7 +72,7 @@ function resolveStudioDir(): string {
   )
 }
 
-/** Dev iff the resolved studio dir is the MONOREPO SOURCE — the published copy ships only client/dist (no client/src, no vite.config). */
+/** Dev iff the resolved studio dir is the monorepo source checkout. */
 function isDevSource(studioDir: string): boolean {
   return (
     existsSync(join(studioDir, 'vite.config.ts')) && existsSync(join(studioDir, 'client', 'src'))
@@ -191,16 +194,15 @@ export default {
 Behavior:
   Launches the Domain Studio — a local web GUI to author and inspect a domain —
   pointed at <path> (the current directory by default), so you can run it from
-  any workspace. The studio is a Bun server (Bun is required on PATH) shipped with
-  the CLI; the command locates it next to the astrale binary (override with
-  ASTRALE_STUDIO_DIR).
+  any workspace. The production Studio and its Bun 1.4 runtime are embedded in
+  the standalone Astrale executable; no separate Bun or Node install is needed.
 
   Port: binds the first free loopback port in 4319-4338, so a studio already
   running in another workspace simply takes the next port (4320, 4321, …). An
   explicit --port is used as-is, or errors if busy (never silently relocated).
 
   By DEFAULT it serves the prebuilt client (fast, always works — this is what a
-  published install runs). --dev is the live-edit loop for hacking on the studio
+  standalone executable runs). --dev is the live-edit loop for hacking on the studio
   ITSELF: a Vite dev server (client HMR) + a watched server (reloads on edits) so
   studio changes reflect instantly; it requires the studio source checkout
   (cli/studio) with Vite installed.
@@ -229,11 +231,6 @@ Examples:
       const workspace = resolve(pathArg ?? process.cwd())
       if (!existsSync(workspace)) throw new Error(`path not found: ${workspace}`)
 
-      const studioDir = resolveStudioDir()
-      if (process.env.ASTRALE_STUDIO_DIR && studioDir === resolve(process.env.ASTRALE_STUDIO_DIR)) {
-        log.dim(`  using ASTRALE_STUDIO_DIR=${studioDir}`)
-      }
-      await ensureBun()
       const cliDescriptor = encodeStudioCliDescriptor()
 
       // Default to PROD — serve the prebuilt client. It always renders, is what a
@@ -241,11 +238,19 @@ Examples:
       // --dev opts into the live-edit loop, which needs the studio SOURCE
       // (cli/studio) with Vite installed.
       const dev = opts.dev === true
+      const studioDir = dev ? resolveStudioDir() : ''
       let viteBin: string | null = null
       if (dev) {
+        await ensureBun()
+        if (
+          process.env.ASTRALE_STUDIO_DIR &&
+          studioDir === resolve(process.env.ASTRALE_STUDIO_DIR)
+        ) {
+          log.dim(`  using ASTRALE_STUDIO_DIR=${studioDir}`)
+        }
         if (!isDevSource(studioDir)) {
           throw new Error(
-            '--dev needs the studio source checkout (cli/studio); a published install runs prod only.',
+            '--dev needs the studio source checkout (cli/studio); the standalone executable runs prod only.',
           )
         }
         viteBin = resolveViteBin(studioDir)
@@ -368,29 +373,27 @@ Examples:
           'server',
         )
       } else {
-        const dist = join(studioDir, 'client', 'dist')
-        if (!existsSync(join(dist, 'index.html'))) {
-          throw new Error(
-            `studio client not built at ${dist} — run: pnpm --filter @astrale-os/studio build`,
-          )
-        }
+        const dist = await materializeEmbeddedAssets('studio')
+        const invocation = selfInvocation([
+          '__studio-server',
+          workspace,
+          '--port',
+          String(studioPort),
+          '--no-open',
+        ])
         serverChild = supervise(
-          spawnHandle(
-            'bun',
-            ['server/index.ts', workspace, '--port', String(studioPort), '--no-open'],
-            {
-              cwd: studioDir,
-              detached: true,
-              env: {
-                ...process.env,
-                DOMAIN_STUDIO_DIST: dist,
-                PORT: String(studioPort),
-                DOMAIN_STUDIO_HOST: '127.0.0.1',
-                [STUDIO_CLI_DESCRIPTOR_ENV]: cliDescriptor,
-                ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
-              },
+          spawnHandle(invocation.file, invocation.args, {
+            cwd: workspace,
+            detached: true,
+            env: {
+              ...process.env,
+              DOMAIN_STUDIO_DIST: dist,
+              PORT: String(studioPort),
+              DOMAIN_STUDIO_HOST: '127.0.0.1',
+              [STUDIO_CLI_DESCRIPTOR_ENV]: cliDescriptor,
+              ...(opts.harness ? { DOMAIN_STUDIO_HARNESS: opts.harness } : {}),
             },
-          ),
+          }),
           'server',
         )
       }
@@ -428,7 +431,12 @@ Examples:
       const code = await serverDone
       process.exitCode = failed && code === 0 ? 1 : code
     } catch (e) {
-      fatal(e)
+      fatal(
+        e instanceof AstraleError
+          ? e
+          : new AstraleError('STUDIO_START_FAILED', e instanceof Error ? e.message : String(e)),
+        opts,
+      )
     }
   },
 } satisfies CommandDefinition

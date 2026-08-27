@@ -133,9 +133,6 @@ main() {
   mkdir -p "$install_dir"
   tar -xzf "$tmp/$asset" -C "$tmp"
   install -m 0755 "$tmp/astrale" "$install_dir/astrale"
-  mkdir -p "$install_dir/viewer/dist"
-  install -m 0644 "$tmp/viewer/dist/main.js" "$install_dir/viewer/dist/main.js"
-  install -m 0644 "$tmp/viewer/dist/index.html" "$install_dir/viewer/dist/index.html"
 
   installed_version="$("$install_dir/astrale" --version)"
   channel="${ASTRALE_CHANNEL:-beta}"
@@ -176,8 +173,17 @@ EOF
   printf '  astrale auth login\n'
   printf '  astrale instance create <slug>\n'
 
-  printf '\nWire your coding agent (recommended):\n'
-  printf '  npx skills add astrale-os/cli            # Claude Code, Cursor, Codex, Gemini, … (needs Node)\n'
+  printf '\nConfigure Astrale skills for your coding agents:\n'
+  if [ -t 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    if ! "$install_dir/astrale" skills configure </dev/tty; then
+      warn "Skill configuration skipped; run: astrale skills configure"
+      if ! "$install_dir/astrale" skills update --json >/dev/null; then
+        warn "Skills could not be installed; run: astrale skills update"
+      fi
+    fi
+  elif ! "$install_dir/astrale" skills update --json >/dev/null; then
+    warn "Skills could not be installed; run: astrale skills update"
+  fi
 
   printf '\nLet your agent drive the GUI (optional):\n'
   printf '  npm install -g agent-browser && agent-browser install\n'

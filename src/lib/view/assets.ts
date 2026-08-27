@@ -3,16 +3,12 @@ import { copyFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { embeddedAssetDir, materializeEmbeddedAssets } from '../embedded-assets'
+
 /**
- * The prebuilt host-page bundle, shipped next to the CLI module
- * (`<pkg>/viewer/dist`). The module URL is authoritative because npm global
- * installs expose the CLI through a bin symlink outside the package root.
+ * Resolve the viewer from source/development layouts or the standalone cache.
  */
-export function viewerDistDir(
-  moduleUrl = import.meta.url,
-  entry = process.argv[1] ?? '.',
-  executable = process.execPath,
-): string {
+export function viewerDistDir(moduleUrl = import.meta.url, entry = process.argv[1] ?? '.'): string {
   const override = process.env.ASTRALE_VIEWER_DIR
   if (override) return override
 
@@ -20,9 +16,7 @@ export function viewerDistDir(
   const published = join(moduleDirectory, '..', 'viewer', 'dist')
   const source = join(moduleDirectory, '..', '..', '..', 'viewer', 'dist')
   const legacy = join(dirname(entry), '..', 'viewer', 'dist')
-  const standalone = entry.startsWith('/$bunfs/')
-    ? join(dirname(executable), 'viewer', 'dist')
-    : undefined
+  const standalone = entry.startsWith('/$bunfs/') ? embeddedAssetDir('viewer') : undefined
   const complete = [standalone, published, source, legacy].find(
     (candidate): candidate is string => candidate !== undefined && hasViewerBundle(candidate),
   )
@@ -32,8 +26,8 @@ export function viewerDistDir(
   // source-derived destination so ensureViewerAssets can build it on demand.
   if (hasViewerSource(join(source, '..'))) return source
 
-  // Published installs cannot rebuild: preserve the package-relative path in
-  // the diagnostic instead of pointing at the npm prefix beside the bin link.
+  // A Node development bundle cannot rebuild without source; preserve the
+  // module-relative path in its diagnostic.
   return published
 }
 
@@ -59,9 +53,7 @@ export async function ensureViewerAssets(
     await copyFile(join(srcDir, 'index.html'), join(dist, 'index.html'))
     return dist
   }
-  throw new Error(
-    `viewer bundle missing at ${dist} — reinstall the CLI (or run \`bun scripts/build.ts\` in a dev checkout)`,
-  )
+  return materializeEmbeddedAssets('viewer')
 }
 
 function hasViewerBundle(directory: string): boolean {

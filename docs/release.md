@@ -1,7 +1,7 @@
 # CLI release lifecycle
 
-Release Please owns the CLI version and immutable GitHub release. The package publisher and
-standalone-binary publisher consume that same version; neither invents a second release identity.
+Release Please owns the CLI version and immutable GitHub release. V1 has one
+distribution: the standalone executable.
 
 ## Normal beta release
 
@@ -12,12 +12,11 @@ standalone-binary publisher consume that same version; neither invents a second 
    by design; this is an approval gate, not a failed CI run.
 4. Review the proposed version, changelog, `package.json`, and `.release-please-manifest.json`.
 5. Merge the Release Please pull request.
-6. The merge starts two publications of the same version:
-   - `Publish` builds and publishes `@astrale-os/cli` to npm through OIDC Trusted Publishing. The
-     shared publisher derives the npm `beta` dist-tag from a `-beta.N` version.
-   - `Release` creates the immutable `cli/v<version>` GitHub prerelease, then calls `CLI Release`
-     to test and build four standalone binaries. `CLI Release` uploads the assets and advances the
-     movable `beta` tag and channel release.
+6. `Release` creates the immutable `cli/v<version>` GitHub prerelease, then calls
+   `CLI Release` to test and build four standalone executables with Bun 1.4.0.
+   Each executable embeds Studio, viewer assets, and the release's skills.
+   `CLI Release` uploads the assets and advances the movable `beta` tag and
+   channel release.
 
 Do not manually edit `package.json` or `.release-please-manifest.json`, and do not manually push a
 version tag during the normal flow.
@@ -63,11 +62,8 @@ Release-As: 1.0.0
 ```
 
 After the promotion pull request lands, Release Please proposes `1.0.0`. Merging that release pull
-request publishes npm `latest`, creates `cli/v1.0.0`, and advances the standalone `stable` channel.
+request creates `cli/v1.0.0` and advances the standalone `stable` channel.
 Subsequent releases use ordinary stable semantic versioning with no workflow changes.
-
-The npm `beta` dist-tag remains as an intentional pointer to the last beta. It does not affect bare
-installs after `latest` points to the stable version.
 
 ## Verification
 
@@ -75,10 +71,8 @@ For a beta `<version>`:
 
 ```bash
 gh run list --repo astrale-os/cli --workflow Release --limit 5
-gh run list --repo astrale-os/cli --workflow Publish --limit 5
 gh release view --repo astrale-os/cli "cli/v<version>"
 gh release view --repo astrale-os/cli beta
-npm view @astrale-os/cli@beta version
 ```
 
 Install and verify the standalone beta through the default channel:
@@ -87,19 +81,14 @@ Install and verify the standalone beta through the default channel:
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 astrale --version
 astrale update --check --json
-```
-
-Install and verify the npm package, including Domain Studio:
-
-```bash
-npm install -g @astrale-os/cli@beta
-astrale --version
 astrale studio --help
+astrale skills status --json
 ```
 
-The immutable and movable releases must contain `manifest.json`, `sha256sums.txt`, and all four
-archives (`darwin`/`linux` by `arm64`/`x64`). `manifest.json.version` and `binaryVersion` must both
-equal the Release Please version. A mismatch fails `CLI Release` before publication.
+The immutable and movable releases must contain `manifest.json`,
+`sha256sums.txt`, and all four single-binary archives (`darwin`/`linux` by
+`arm64`/`x64`). `manifest.json.version` and `binaryVersion` must both equal the
+Release Please version. A mismatch fails `CLI Release` before publication.
 
 ## Recovery and canary
 

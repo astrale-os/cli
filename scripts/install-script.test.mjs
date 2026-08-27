@@ -5,24 +5,26 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-test('standalone installer places one complete binary and viewer cohort', () => {
+test('standalone installer places one self-contained binary', () => {
   const root = mkdtempSync(join(tmpdir(), 'astrale-install-script-'))
   const release = join(root, 'release')
   const payload = join(root, 'payload')
   const install = join(root, 'install')
   const state = join(root, 'state')
-  mkdirSync(join(payload, 'viewer', 'dist'), { recursive: true })
+  const invocations = join(root, 'invocations.log')
+  mkdirSync(payload, { recursive: true })
   mkdirSync(release, { recursive: true })
   const binary = join(payload, 'astrale')
-  writeFileSync(binary, '#!/bin/sh\n[ "$1" = "--version" ] && echo 1.0.0-beta.test\n')
+  writeFileSync(
+    binary,
+    '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.0.0-beta.test; exit 0; fi\nprintf "%s\\n" "$*" >> "$ASTRALE_TEST_INVOCATIONS"\n',
+  )
   chmodSync(binary, 0o755)
-  writeFileSync(join(payload, 'viewer', 'dist', 'main.js'), 'viewer main\n')
-  writeFileSync(join(payload, 'viewer', 'dist', 'index.html'), '<!doctype html>\n')
 
   const platform = process.platform === 'darwin' ? 'darwin' : 'linux'
   const architecture = process.arch === 'arm64' ? 'arm64' : 'x64'
   const asset = `astrale-${platform}-${architecture}.tar.gz`
-  execFileSync('tar', ['-C', payload, '-czf', join(release, asset), 'astrale', 'viewer'])
+  execFileSync('tar', ['-C', payload, '-czf', join(release, asset), 'astrale'])
   const checksum = execFileSync('shasum', ['-a', '256', join(release, asset)], {
     encoding: 'utf8',
   }).split(/\s+/u)[0]
@@ -40,6 +42,7 @@ test('standalone installer places one complete binary and viewer cohort', () => 
       ASTRALE_DOWNLOAD_BASE: `file://${release}`,
       ASTRALE_INSTALL_DIR: install,
       ASTRALE_HOME: state,
+      ASTRALE_TEST_INVOCATIONS: invocations,
     },
   })
   assert.equal(installed.status, 0, installed.stderr)
@@ -47,13 +50,9 @@ test('standalone installer places one complete binary and viewer cohort', () => 
     execFileSync(join(install, 'astrale'), ['--version'], { encoding: 'utf8' }),
     '1.0.0-beta.test\n',
   )
-  assert.equal(readFileSync(join(install, 'viewer', 'dist', 'main.js'), 'utf8'), 'viewer main\n')
-  assert.equal(
-    readFileSync(join(install, 'viewer', 'dist', 'index.html'), 'utf8'),
-    '<!doctype html>\n',
-  )
   assert.match(
     readFileSync(join(state, 'install.json'), 'utf8'),
     /"version": "1\.0\.0-beta\.test"/u,
   )
+  assert.match(readFileSync(invocations, 'utf8'), /^skills update --json$/mu)
 })

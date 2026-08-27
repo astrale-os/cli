@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 
 import {
   admitScriptInstall,
@@ -21,26 +21,32 @@ import {
 async function makeFakeRelease(
   root: string,
   version: string,
-  options: { binaryVersion?: string; legacyManifest?: boolean; omitViewerIndex?: boolean } = {},
+  options: { binaryVersion?: string; legacyManifest?: boolean; omitBinary?: boolean } = {},
 ): Promise<string> {
   const release = join(root, 'release')
   const payload = join(root, 'payload')
   const binaryVersion = options.binaryVersion ?? version
   await mkdir(release, { recursive: true })
   await mkdir(payload, { recursive: true })
-  await writeFile(
-    join(payload, 'astrale'),
-    `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${binaryVersion}"; exit 0; fi\necho astrale\n`,
-  )
-  await chmod(join(payload, 'astrale'), 0o755)
-  await mkdir(join(payload, 'viewer', 'dist'), { recursive: true })
-  await writeFile(join(payload, 'viewer', 'dist', 'main.js'), 'viewer main\n')
-  if (!options.omitViewerIndex) {
-    await writeFile(join(payload, 'viewer', 'dist', 'index.html'), '<!doctype html>\n')
+  if (options.omitBinary) {
+    await writeFile(join(payload, 'README'), 'intentionally incomplete release\n')
+  } else {
+    await writeFile(
+      join(payload, 'astrale'),
+      `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${binaryVersion}"; exit 0; fi\necho astrale\n`,
+    )
+    await chmod(join(payload, 'astrale'), 0o755)
   }
 
   const asset = join(release, 'astrale-darwin-arm64.tar.gz')
-  const tar = Bun.spawn(['tar', '-C', payload, '-czf', asset, 'astrale', 'viewer'])
+  const tar = Bun.spawn([
+    'tar',
+    '-C',
+    payload,
+    '-czf',
+    asset,
+    options.omitBinary ? 'README' : 'astrale',
+  ])
   expect(await tar.exited).toBe(0)
   const shaProc = Bun.spawn(['shasum', '-a', '256', asset], { stdout: 'pipe' })
   const sha = (await new Response(shaProc.stdout).text()).trim().split(/\s+/)[0]
@@ -83,9 +89,6 @@ async function makeInstall(
     `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi\necho old\n`,
   )
   await chmod(bin, 0o755)
-  await mkdir(join(root, 'bin', 'viewer', 'dist'), { recursive: true })
-  await writeFile(join(root, 'bin', 'viewer', 'dist', 'main.js'), 'old viewer main\n')
-  await writeFile(join(root, 'bin', 'viewer', 'dist', 'index.html'), 'old viewer html\n')
   const path = join(root, 'home', 'install.json')
   const meta: InstallMetadata = {
     method: 'script',
@@ -358,21 +361,15 @@ describe('updateAstrale', () => {
       expect(await versionProc.exited).toBe(0)
       const updatedMeta = JSON.parse(await readFile(path, 'utf8')) as InstallMetadata
       expect(updatedMeta.version).toBe('1.1.0')
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'main.js'), 'utf8')).toBe(
-        'viewer main\n',
-      )
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'index.html'), 'utf8')).toBe(
-        '<!doctype html>\n',
-      )
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE
     }
   })
 
-  test('a partial Viewer archive leaves the installed cohort and metadata unchanged', async () => {
+  test('an archive without the binary leaves the installation and metadata unchanged', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0', { omitViewerIndex: true })
+    const release = await makeFakeRelease(root, '1.1.0', { omitBinary: true })
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
     const beforeBinary = await readFile(meta.bin, 'utf8')
     const beforeMetadata = await readFile(path, 'utf8')
@@ -387,19 +384,13 @@ describe('updateAstrale', () => {
       ).rejects.toThrow()
 
       expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'main.js'), 'utf8')).toBe(
-        'old viewer main\n',
-      )
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'index.html'), 'utf8')).toBe(
-        'old viewer html\n',
-      )
       expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE
     }
   })
 
-  test('a Viewer commit failure rolls back binary, Viewer, and metadata', async () => {
+  test('a binary commit failure preserves the installed binary and metadata', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0')
@@ -416,11 +407,14 @@ describe('updateAstrale', () => {
             execution,
           },
           {
-            replaceStandaloneCohort: (installed, next, viewer) =>
-              replaceStandaloneCohort(installed, next, viewer, {
-                rename: async (from, to) => {
-                  if (String(from).endsWith('viewer.next')) {
-                    throw Object.assign(new Error('injected Viewer commit failure'), {
+            replaceStandaloneCohort: (installed, next) =>
+              replaceStandaloneCohort(installed, next, {
+                rename: async (
+                  from: Parameters<typeof rename>[0],
+                  to: Parameters<typeof rename>[1],
+                ) => {
+                  if (String(from).endsWith('astrale.next')) {
+                    throw Object.assign(new Error('injected binary commit failure'), {
                       code: 'EIO',
                     })
                   }
@@ -429,22 +423,16 @@ describe('updateAstrale', () => {
               }),
           },
         ),
-      ).rejects.toThrow('injected Viewer commit failure')
+      ).rejects.toThrow('injected binary commit failure')
 
       expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'main.js'), 'utf8')).toBe(
-        'old viewer main\n',
-      )
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'index.html'), 'utf8')).toBe(
-        'old viewer html\n',
-      )
       expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE
     }
   })
 
-  test('a metadata failure after cohort commit restores binary, Viewer, and metadata', async () => {
+  test('a metadata failure after binary commit restores the binary and metadata', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0')
@@ -469,12 +457,6 @@ describe('updateAstrale', () => {
       ).rejects.toThrow('injected metadata write failure')
 
       expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'main.js'), 'utf8')).toBe(
-        'old viewer main\n',
-      )
-      expect(await readFile(join(dirname(meta.bin), 'viewer', 'dist', 'index.html'), 'utf8')).toBe(
-        'old viewer html\n',
-      )
       expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE

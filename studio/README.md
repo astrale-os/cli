@@ -26,9 +26,9 @@ default (pass `--open` for that). Flags: `--port <n>` ·
 `--schema-dir <name>` (default `schema`) · `--harness claude|codex` · `--open` ·
 `--dev`.
 
-By **default** it serves the **prebuilt client** (fast, always works — and what a
-published/global install runs). `ASTRALE_STUDIO_DIR` points the command at an
-out-of-tree studio checkout.
+By **default** it serves the **prebuilt client embedded in the standalone
+executable**. `ASTRALE_STUDIO_DIR` points `--dev` at an out-of-tree Studio
+checkout.
 
 **`--dev` — live-edit the studio itself.** From the source checkout (`cli/studio`,
 with Vite installed), `astrale studio --dev` runs a Vite dev server (client HMR) +
@@ -37,11 +37,11 @@ reflect instantly. (`@astrale-os/shell` resolves to workspace source here, so Vi
 pre-bundles it — `optimizeDeps` in `vite.config.ts` — and the HMR WebSocket targets
 Vite directly via `STUDIO_VITE_PORT`.)
 
-> **Requires [Bun](https://bun.sh)** — the studio server uses Bun APIs, and the
-> schema introspector imports the domain's `schema/index.ts` (Astrale packages use
-> Bun-only ESM that Node can't resolve). The target domain's deps must be installed
-> (`pnpm install` at the workspace root) for semantic schema rendering; source-only
-> anatomy remains available when they are missing.
+> The standalone CLI embeds Bun 1.4, so end users do not install Bun or Node.
+> Bun and Vite are required only for `astrale studio --dev` from a source
+> checkout. The target domain's deps must be installed (`pnpm install` at the
+> workspace root) for semantic schema rendering; source-only anatomy remains
+> available when they are missing.
 > Current projects are detected through `astrale.config.ts`, an Application entry,
 > and `schema.ts` or `schema/index.ts`.
 

@@ -1,9 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Bundle the CLI into a single self-contained, Node-runnable file at
- * `dist/astrale.js`. This is the artifact published to npm (Windows + any Node
- * user); the Linux/macOS standalone binary is produced separately by
- * `bun build --compile` in CI.
+ * Bundle the CLI into a Node-runnable development artifact at
+ * `dist/astrale.js`. Releases use only the Bun 1.4 standalone executable built
+ * by `bun build --compile` in CI.
  *
  * Why bundle: the CLI is distributed as one self-contained executable. Its
  * SDK and Shell implementation dependencies remain build-time inputs, so a
@@ -72,12 +71,12 @@ console.log(`built ${OUT}`)
     process.exit(1)
   }
 
-  const tsc = ['node_modules/.bin/tsc', '../../node_modules/.bin/tsc'].find(existsSync)
-  if (!tsc) {
-    console.error('tsc is required to emit public subpath declarations')
+  const tsgo = ['node_modules/.bin/tsgo', '../../node_modules/.bin/tsgo'].find(existsSync)
+  if (!tsgo) {
+    console.error('tsgo is required to emit public subpath declarations')
     process.exit(1)
   }
-  const declarations = Bun.spawnSync([tsc, '-p', 'tsconfig.public.json'], {
+  const declarations = Bun.spawnSync([tsgo, '-p', 'tsconfig.public.json'], {
     stdout: 'inherit',
     stderr: 'inherit',
   })
@@ -88,15 +87,10 @@ console.log(`built ${OUT}`)
   console.log('built public subpaths')
 }
 
-// Build the `astrale view` viewer page (package.json `files`: viewer/dist) —
-// the static page the view-session server serves. It bundles @astrale-os/shell
-// (dev dependency), so the published CLI needs no registry access at runtime.
+// Build the `astrale view` viewer page used by the embedded-asset generator.
 await buildViewer()
 
-// Also build the Domain Studio client so the prebuilt SPA ships in the package
-// (package.json `files`: studio/client/dist) — that's what `astrale studio` serves
-// on a published/global install (prod-static). Best-effort: NEVER fail the CLI
-// build if the studio or its Vite toolchain is absent (e.g. a slim CI checkout).
+// Also build the Domain Studio client for the embedded-asset generator.
 const studioDir = new URL('../studio', import.meta.url).pathname
 if (existsSync(`${studioDir}/vite.config.ts`)) {
   const viteBin = [

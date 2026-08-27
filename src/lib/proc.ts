@@ -51,10 +51,15 @@ export function run(
 export function runInherit(
   file: string,
   args: string[] = [],
-  opts: { cwd?: string } = {},
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(file, args, { cwd: opts.cwd, shell: false, stdio: 'inherit' })
+    const child = spawn(file, args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      shell: false,
+      stdio: 'inherit',
+    })
     child.on('error', reject)
     child.on('close', (code) => resolve(code ?? -1))
   })
