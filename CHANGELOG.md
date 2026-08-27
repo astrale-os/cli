@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.40](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.39...cli/v1.0.0-beta.40) (2026-08-27)
+
+
+### Bug Fixes
+
+* **host:** refresh View source credentials before expiry ([#242](https://github.com/astrale-os/cli/issues/242)) ([39da860](https://github.com/astrale-os/cli/commit/39da86099df790bdf5a7a63e8e13e934f2183947))
+
 ## [1.0.0-beta.39](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.38...cli/v1.0.0-beta.39) (2026-08-27)
 
 
