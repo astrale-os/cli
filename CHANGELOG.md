@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.35](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.34...cli/v1.0.0-beta.35) (2026-08-27)
+
+
+### Bug Fixes
+
+* **ci:** verify standalone asset publication ([#223](https://github.com/astrale-os/cli/issues/223)) ([3361bee](https://github.com/astrale-os/cli/commit/3361bee5bf97b82edac86987e443a8719a0ebe99))
+
 ## [1.0.0-beta.34](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.33...cli/v1.0.0-beta.34) (2026-08-27)
 
 
