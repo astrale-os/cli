@@ -1,4 +1,4 @@
-import type { ProvisionRequest, ProvisionResult } from '@astrale-os/sdk/auth'
+import type { Authentication, ProvisionRequest, ProvisionResult } from '@astrale-os/sdk/auth'
 import type { LocalBinding } from '@astrale-os/sdk/mutation'
 
 interface RegistrationAuthority {
@@ -7,7 +7,11 @@ interface RegistrationAuthority {
     readonly classPath: string
     readonly properties: Readonly<Record<string, unknown>>
     readonly kernelIssuer: string
-  }): Promise<{ readonly binding: LocalBinding; readonly request: ProvisionRequest }>
+  }): Promise<{
+    readonly binding: LocalBinding
+    readonly request: ProvisionRequest
+    readonly authentication: Authentication
+  }>
   call(input: {
     readonly target: string
     readonly request: ProvisionRequest
@@ -31,21 +35,33 @@ export async function registerThroughDomain(
     readonly targetKey: string
     readonly callable: string
   },
-): Promise<{ readonly issuer: string; readonly subject: string; readonly nodeId?: string }> {
+): Promise<{ readonly issuer: string; readonly subject: string; readonly nodeId: string }> {
   const prepared = await authority.prepareSelfProven(input)
   const result = await authority.call({ target: input.callable, request: prepared.request })
-  const identity = result.identities[prepared.binding]
-  if (identity === undefined) throw new Error('Provision result omitted the prepared binding.')
+  const nodeId = result.createdNodes[prepared.binding]
+  const matches = result.identities.filter((candidate) => candidate.id === nodeId)
+  if (nodeId === undefined || matches.length !== 1) {
+    throw new Error('Provision result omitted or substituted the prepared binding.')
+  }
+  const identity = matches[0]
+  if (identity.iss === undefined || identity.sub === undefined) {
+    throw new Error('Provision result omitted the prepared Authentication.')
+  }
+  if (
+    identity.iss !== prepared.authentication.iss ||
+    identity.sub !== prepared.authentication.sub
+  ) {
+    throw new Error('Provision result substituted the prepared Authentication.')
+  }
   await authority.persist({
     identity: input.identity,
     targetKey: input.targetKey,
-    issuer: identity.issuer,
-    subject: identity.subject,
+    issuer: identity.iss,
+    subject: identity.sub,
   })
-  const nodeId = result.createdNodes[prepared.binding]
   return {
-    issuer: identity.issuer,
-    subject: identity.subject,
-    ...(nodeId === undefined ? {} : { nodeId }),
+    issuer: identity.iss,
+    subject: identity.sub,
+    nodeId,
   }
 }

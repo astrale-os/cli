@@ -26,8 +26,8 @@ describe('issueToken', () => {
   const kernel = 'https://kernel.test' as IssuerId
   const identity = {
     id: 'caller' as Identity['id'],
-    issuer: 'https://issuer.test' as Identity['issuer'],
-    subject: 'caller' as Identity['subject'],
+    iss: 'https://issuer.test' as IssuerId,
+    sub: 'caller',
     frozen: false,
     requiredClaims: [],
   } satisfies Identity

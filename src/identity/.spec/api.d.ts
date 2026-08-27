@@ -1,4 +1,4 @@
-import type { ProvisionRequest } from '@astrale-os/sdk/auth'
+import type { Authentication, ProvisionRequest } from '@astrale-os/sdk/auth'
 import type { Call } from '@astrale-os/sdk/client'
 import type { LocalBinding } from '@astrale-os/sdk/graph'
 import type { JWK } from 'jose'
@@ -42,9 +42,15 @@ export interface IdentityRegistrationResult {
   readonly nodeId?: string
 }
 
+/** A fresh admitted provision response always identifies its created Node. */
+export interface ProvisionedIdentityRegistration extends IdentityRegistrationResult {
+  readonly nodeId: string
+}
+
 export interface IdentityProvisionSubmission {
   readonly request: ProvisionRequest
   readonly binding: LocalBinding
+  readonly expectedAuthentication: Authentication
   readonly via?: string
   readonly direct: {
     provision(request: ProvisionRequest): Promise<unknown>
@@ -57,13 +63,14 @@ export interface IdentityProvisionSubmission {
 /** Submit one prepared request either directly or through its explicit Domain authority owner. */
 export function submitIdentityProvision(
   input: IdentityProvisionSubmission,
-): Promise<IdentityRegistrationResult>
+): Promise<ProvisionedIdentityRegistration>
 
 /** Admit only the exact binding the CLI prepared; remote callables remain untrusted input. */
 export function acceptProvisionedIdentity(
   value: unknown,
   binding: LocalBinding,
-): IdentityRegistrationResult
+  expectedAuthentication: Authentication,
+): ProvisionedIdentityRegistration
 
 export function readIdentities(): Promise<IdentityStore>
 

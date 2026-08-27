@@ -76,7 +76,13 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     ],
   })
 
-  const credentials = prepared.request.identities[prepared.binding]?.credentials
+  const designation = prepared.request.identities[0]
+  expect(designation.identity).toEqual({ created: prepared.binding })
+  const authentication = designation.authentication
+  const credentials =
+    authentication !== undefined && 'credentials' in authentication
+      ? authentication.credentials
+      : undefined
   expect(credentials?.publicKey).toEqual(publicJwk)
   expect(typeof credentials?.proof).toBe('string')
   if (typeof credentials?.proof !== 'string') throw new TypeError('Expected compact JWT proof')
