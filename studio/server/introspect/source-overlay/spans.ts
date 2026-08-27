@@ -2,7 +2,6 @@
  * Source coordinates and leading documentation for authored schema members.
  */
 import { existsSync } from 'node:fs'
-import { dirname } from 'node:path'
 import { Node, SyntaxKind, type CallExpression, type SourceFile } from 'ts-morph'
 
 import type { SchemaIR, SourceSpan } from '../../../shared/types'
@@ -170,13 +169,11 @@ function resolveMemberKind(
 
 export function buildSourceSpans(args: {
   ir: SchemaIR | null
+  domainRoot: string
   schemaDir: string
 }): Record<string, SourceSpan> {
-  const { ir, schemaDir } = args
+  const { ir, domainRoot, schemaDir } = args
   if (!schemaDir || !existsSync(schemaDir)) return {}
-
-  // The domain root is the parent of the schema dir (spans are relative to it).
-  const domainRoot = dirname(schemaDir.replace(/\/$/, ''))
 
   const project = newProject()
   let files: string[] = []

@@ -23,6 +23,7 @@ import { useHarness, useSettings } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
 import { AgentSettings } from './agent'
+import { AppearanceSettings } from './appearance'
 import { generalSettingsPatch, SettingsFields } from './fields'
 import { HarnessGatewaySettings } from './gateway'
 
@@ -89,9 +90,10 @@ export function SettingsDialog() {
       <DialogContent className="w-[calc(100%-2rem)] max-w-xl">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Stored in .domain-studio/settings.json</DialogDescription>
+          <DialogDescription>Saved to .domain-studio/settings.json</DialogDescription>
         </DialogHeader>
         <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
+          <AppearanceSettings />
           <AgentSettings
             domainId={open ? domainId : undefined}
             settings={settings}

@@ -15,10 +15,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { getBundle } from '../cache'
-import { isDomainDir, registerDomain } from '../domain'
+import { registerDomain } from '../domain'
 import { findSchemaDefinition } from '../introspect/anatomy-extras'
 import { bootDomain } from '../lifecycle'
-import { stoppers, workspaceRoot, workspaceSchemaDirName } from '../workspace-state'
+import { stoppers, workspaceRoot } from '../workspace-state'
 
 /** Mirrors create-astrale-domain's `isValidSlug`: lowercase letters, digits, dots, dashes;
  *  must start/end alphanumeric. Also guards the filesystem target (no `/`, no `..`, no leading dot). */
@@ -88,18 +88,19 @@ export async function createDomain(
     ...(instance ? ['--instance', instance] : []),
   ]
   const scaffold = await run('npx', scaffoldArgs, root)
-  const schemaDirName = workspaceSchemaDirName()
-  if (!isDomainDir(dir, schemaDirName)) {
+  const scaffolded = registerDomain(dir)
+  if (!scaffolded) {
     return {
       ok: false,
-      error: 'Scaffolding did not produce a domain. See the log.',
+      error:
+        'Scaffolding did not produce a domain with an Application schema binding. See the log.',
       output: scaffold.output.slice(-6000),
     }
   }
 
   // 1b. Flag the placeholder origin for the agent (we ask for the name only, so the
   //     origin is `<name>.example.dev` until someone — or the agent — sets the real one).
-  annotateOrigin(dir, schemaDirName)
+  annotateOrigin(dir, scaffolded.schemaDirName)
 
   // 2. Install deps so the domain is fully introspectable + deployable. Best-effort:
   //    a scaffolded-but-uninstalled domain still loads (static fallback), so a failed
@@ -108,11 +109,11 @@ export async function createDomain(
 
   // 3. Register + boot with deps present. The live watcher may have already booted a
   //    deps-less fallback for this dir mid-install — stop it and boot fresh.
-  const handle = registerDomain(dir, schemaDirName)
+  const handle = registerDomain(dir)
   if (!handle) {
     return {
       ok: false,
-      error: 'Scaffold incomplete — config, composition entry, or schema index is missing.',
+      error: 'Scaffold incomplete — config or Application schema binding is missing.',
       output: combine(scaffold, install),
     }
   }

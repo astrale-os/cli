@@ -104,8 +104,8 @@ describe('source overlay', () => {
   test('indexes Class, Property, Method, Edge endpoint, and Function declarations', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-schema-spans-'))
     roots.push(root)
-    const schemaDir = join(root, 'schema')
-    mkdirSync(schemaDir)
+    const schemaDir = join(root, 'domain/model')
+    mkdirSync(schemaDir, { recursive: true })
     writeFileSync(
       join(schemaDir, 'members.ts'),
       `
@@ -131,12 +131,12 @@ describe('source overlay', () => {
         })
       `,
     )
-    const spans = buildSourceSpans({ ir, schemaDir })
-    expect(spans['class.Issue.property.title']?.file).toBe('schema/members.ts')
-    expect(spans['class.Issue.method.rename']?.file).toBe('schema/members.ts')
-    expect(spans['edge.assigned_to.endpoint.issue']?.file).toBe('schema/members.ts')
-    expect(spans['edge.assigned_to.endpoint.owner']?.file).toBe('schema/members.ts')
-    expect(spans['edge.assigned_to.property.note']?.file).toBe('schema/members.ts')
-    expect(spans['function.createIssue']?.file).toBe('schema/members.ts')
+    const spans = buildSourceSpans({ ir, domainRoot: root, schemaDir })
+    expect(spans['class.Issue.property.title']?.file).toBe('domain/model/members.ts')
+    expect(spans['class.Issue.method.rename']?.file).toBe('domain/model/members.ts')
+    expect(spans['edge.assigned_to.endpoint.issue']?.file).toBe('domain/model/members.ts')
+    expect(spans['edge.assigned_to.endpoint.owner']?.file).toBe('domain/model/members.ts')
+    expect(spans['edge.assigned_to.property.note']?.file).toBe('domain/model/members.ts')
+    expect(spans['function.createIssue']?.file).toBe('domain/model/members.ts')
   })
 })

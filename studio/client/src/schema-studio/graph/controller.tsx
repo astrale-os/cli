@@ -41,7 +41,14 @@ import { elkLayout } from '../elk-layout'
 import { crossDomainEdges, externalDomains } from '../external'
 import { viewportForNodes } from '../fit'
 import { edgeTypes, separateParallelEdges } from '../floating-edge'
-import { type Geometry, applyGeometry, geometryOf, packPendingNodes, sizeOfNode } from '../geometry'
+import {
+  type Geometry,
+  applyGeometry,
+  geometryOf,
+  growModuleBoxes,
+  packPendingNodes,
+  sizeOfNode,
+} from '../geometry'
 import { useLayoutCommitter } from '../layout-commit'
 import { moduleOfClass } from '../modules'
 import { CLASS_H, CLASS_W, MODULE_PAD, moduleTint } from '../palette'
@@ -73,6 +80,7 @@ export function SchemaGraph({
   // setViewport silently no-ops until React Flow has wired its pan/zoom handler
   const panZoomReady = useStore((state) => state.panZoom !== null)
   const focusId = useUI((s) => s.focusId)
+  const scheme = useUI((s) => s.resolvedTheme)
   const focusClass = useUI((s) => s.focusClass)
   const panelOverlay = useUI((s) => s.panelOverlay)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
@@ -222,7 +230,11 @@ export function SchemaGraph({
     const placed = structure.nodes.filter((n) => cur[n.id])
     const pending = structure.nodes.filter((n) => !cur[n.id])
     if (pending.length === 0) {
-      compose(cur)
+      // A box saved too small for its classes would clamp them onto each other — heal it
+      // (and persist the repair) instead of repainting the overlap every load.
+      const grown = growModuleBoxes(structure.nodes, cur)
+      compose(Object.keys(grown).length ? { ...cur, ...grown } : cur)
+      if (Object.keys(grown).length) commit(grown)
       firstFit()
       return
     }
@@ -454,10 +466,11 @@ export function SchemaGraph({
         zoomable
         style={{ width: 168, height: 112 }}
         nodeColor={(n) =>
-          n.type === 'classNode' ? moduleTint((n.data as ClassNodeData).hue).mark : 'transparent'
+          n.type === 'classNode'
+            ? moduleTint((n.data as ClassNodeData).hue, scheme).mark
+            : 'transparent'
         }
         nodeStrokeWidth={0}
-        maskColor="oklch(0.55 0.01 255 / 0.12)"
       />
       <Panel position="top-right" className="flex items-center gap-1.5">
         {canvasFallbackComments.length > 0 && (

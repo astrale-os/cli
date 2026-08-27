@@ -18,7 +18,6 @@ type StudioOpts = RawOutputOpts & {
   open?: boolean // `--open` → true. Default (undefined) prints the URL without launching a browser.
   dev?: boolean
   prod?: boolean
-  schemaDir?: string
   harness?: string
 }
 
@@ -182,7 +181,6 @@ export default {
         'Live-edit mode for hacking on the studio itself (Vite HMR + server reload; needs the source checkout)',
     },
     { flags: '--prod', description: 'Serve the prebuilt client (the default)' },
-    { flags: '--schema-dir <dir>', description: 'Schema entry dir to scan for (default: schema)' },
     {
       flags: '--harness <name>',
       description: 'Lock the agent harness for this Studio process',

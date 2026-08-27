@@ -43,6 +43,38 @@ export function geometryOf(nodes: Node[]): Geometry {
   return geometry
 }
 
+/**
+ * Widen/heighten module boxes until they contain their classes.
+ *
+ * Load-bearing: classes are placed with `extent: 'parent'`, so a class that falls
+ * outside its box is CLAMPED back inside — right on top of a sibling. Returns only
+ * the boxes that had to change, so the caller can persist just that.
+ */
+export function growModuleBoxes(nodes: Node[], geometry: Geometry): Geometry {
+  const needed = new Map<string, { w: number; h: number }>()
+  for (const node of nodes) {
+    const position = node.parentId ? geometry[node.id] : undefined
+    if (!position || !node.parentId) continue
+    const current = needed.get(node.parentId)
+    needed.set(node.parentId, {
+      w: Math.max(current?.w ?? 0, position.x + CLASS_W + MODULE_PAD),
+      h: Math.max(current?.h ?? 0, position.y + CLASS_H + MODULE_PAD),
+    })
+  }
+
+  const grown: Geometry = {}
+  for (const node of nodes) {
+    if (node.type !== 'group') continue
+    const box = geometry[node.id]
+    const need = needed.get(node.id)
+    if (!box || !need) continue
+    const w = Math.max(box.w ?? 0, need.w)
+    const h = Math.max(box.h ?? 0, need.h)
+    if (w !== box.w || h !== box.h) grown[node.id] = { ...box, w, h }
+  }
+  return grown
+}
+
 /** Place only newly introduced nodes while preserving every known position. */
 export function packPendingNodes(
   placed: { node: Node; position: Geometry[string] }[],
@@ -76,5 +108,8 @@ export function packPendingNodes(
         ((node.style?.height as number) ?? MODULE_HEADER + CLASS_H + MODULE_PAD) + NEW_NODE_GAP
     }
   }
-  return geometry
+
+  const all = [...placed.map((entry) => entry.node), ...pending]
+  const known = Object.fromEntries(placed.map((entry) => [entry.node.id, entry.position]))
+  return { ...geometry, ...growModuleBoxes(all, { ...known, ...geometry }) }
 }

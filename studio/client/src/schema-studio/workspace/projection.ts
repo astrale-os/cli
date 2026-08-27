@@ -62,8 +62,8 @@ interface ResolvedTarget {
   unresolved?: WorkspaceExternalReference
 }
 
-const CROSS_COLOR = 'oklch(0.6 0.12 35)'
-const INHERITANCE_COLOR = 'oklch(0.55 0.14 300)'
+const CROSS_COLOR = 'var(--edge-cross)'
+const INHERITANCE_COLOR = 'var(--edge-inherit)'
 
 export const workspaceDomainNodeId = (domainId: string) => `workspace-domain:${domainId}`
 export const qualifiedNodeId = (domainId: string, localId: string) =>

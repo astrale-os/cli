@@ -1,6 +1,6 @@
 /**
  * watch.ts — two debounced watch channels per domain:
- *   schema/**         → re-introspect → schema-diff (+ compile-error)
+ *   Application + selected Schema sources → re-introspect → schema-diff (+ compile-error)
  *   anatomy fileset   → anatomy-diff
  * The studio is read-only, so this only ever pushes; the client refetches.
  */
@@ -50,7 +50,10 @@ export function affectsBundle(handle: DomainHandle, path: string): boolean {
 }
 
 export function watchDomain(handle: DomainHandle): () => void {
-  const schemaW = chokidar.watch(handle.schemaDir, { ignoreInitial: true, ignored })
+  const schemaW = chokidar.watch([handle.applicationFile, handle.schemaDir], {
+    ignoreInitial: true,
+    ignored,
+  })
   const anatomyW = chokidar.watch(
     ANATOMY_PATHS.map((p) => join(handle.root, p)),
     { ignoreInitial: true, ignored },

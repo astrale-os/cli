@@ -164,7 +164,7 @@ export function projectDomainCanvas(
           markerStart: markers.markerStart,
           markerEnd: markers.markerEnd,
           style: {
-            stroke: crossModule ? 'oklch(0.68 0.1 45)' : 'oklch(0.74 0.02 255)',
+            stroke: crossModule ? 'var(--edge-cross)' : 'var(--edge-line)',
             strokeWidth: crossModule ? 1.6 : 1.3,
           },
         })
@@ -188,7 +188,7 @@ export function projectDomainCanvas(
           data: { label: 'extends', kind: 'extends', ownerDomainId: bundle.domainId },
           markerEnd: EDGE_ARROW,
           style: {
-            stroke: 'oklch(0.55 0.14 300)',
+            stroke: 'var(--edge-inherit)',
             strokeWidth: 1.3,
             strokeDasharray: '2 4',
           },

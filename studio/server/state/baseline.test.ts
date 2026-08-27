@@ -62,6 +62,20 @@ test('hashes current Application and vertical authoring files', () => {
   ])
 })
 
+test('hashes a config-selected nested Application explicitly', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-nested-application-baseline-'))
+  roots.push(root)
+  mkdirSync(join(root, 'domain/schema'), { recursive: true })
+  const application = join(root, 'domain/application.ts')
+  writeFileSync(application, 'nested Application\n')
+  writeFileSync(join(root, 'domain/schema/index.ts'), 'selected Schema\n')
+
+  expect(hashAnatomyFiles(root, 'domain/schema', application)).toMatchObject({
+    'domain/application.ts': expect.any(String),
+    'domain/schema/index.ts': expect.any(String),
+  })
+})
+
 const schema = (domain: string): SchemaIR => ({
   format: 'astrale.dsl',
   version: 'v1',

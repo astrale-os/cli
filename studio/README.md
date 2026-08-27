@@ -23,8 +23,7 @@ astrale studio --harness codex # lock this process to Codex
 loopback port in **4319–4338** (so a studio already running in another workspace
 just takes the next one), and prints its URL — it does **not** pop a browser by
 default (pass `--open` for that). Flags: `--port <n>` ·
-`--schema-dir <name>` (default `schema`) · `--harness claude|codex` · `--open` ·
-`--dev`.
+`--harness claude|codex` · `--open` · `--dev`.
 
 By **default** it serves the **prebuilt client embedded in the standalone
 executable**. `ASTRALE_STUDIO_DIR` points `--dev` at an out-of-tree Studio
@@ -42,8 +41,8 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > checkout. The target domain's deps must be installed (`pnpm install` at the
 > workspace root) for semantic schema rendering; source-only anatomy remains
 > available when they are missing.
-> Current projects are detected through `astrale.config.ts`, an Application entry,
-> and `schema.ts` or `schema/index.ts`.
+> Current projects are detected through `astrale.config.ts` and an Application whose
+> `schema` binding resolves to authored source.
 
 ### Local agent harness
 
@@ -87,23 +86,26 @@ URL or override the View handshake.
 
 ## What it does
 
-The header selects the active instance and domain, switches between the three
-sections, and exposes settings, environment values, search, comment mode, and
-the agent loop:
+The header selects the active instance and domain, switches between the two
+sections, and exposes settings (including the light/dark theme), environment
+values, search, comment mode, and the agent loop:
 
 | Section | What it shows |
 |---|---|
-| **Schema** ★ | A module tree, relationship canvas and definition details. The canvas reads as DIRECTION by default and has a Cardinality mode; it also exposes canonical Core data plus Domains, Views and detected Integrations panels, and can compose multiple workspace domains. |
+| **Schema** ★ | A module tree, relationship canvas and definition details. The canvas reads as DIRECTION by default and has a Cardinality mode; it also exposes canonical Core data plus the Domains, Views and detected Integrations panels, and can compose multiple workspace domains. |
 | **Process** | Canonical Core genesis, standalone Functions, class Methods, their auth/handler links and View entrypoints. |
-| **Views** | Every UI entrypoint the domain publishes, opened live through `astrale view`. |
 
-Talking to the agent and reading comment threads are not sections: they live in the
-**work panel**, dockable left (default), right or bottom, so they follow you across
-every section.
+Views are not a section of their own: they belong to the landscape, listed from
+the canvas toolbar and opened live through `astrale view`.
+
+Talking to the agent and reading comment threads are not sections either: they
+live in the **work panel**, dockable left (default), right or bottom and
+resizable. Collapsed, it leaves a rail of tab icons, and the header then offers
+to send open threads to the agent.
 
 | Panel tab | What it does |
 |---|---|
-| **Agent** | The instruction composer plus the reference documents handed to the agent on every turn. |
+| **Agent** | The instruction composer plus the reference documents handed to the agent on every turn, stored under `.domain-studio/context/docs`. |
 | **Comments** | Open/resolved threads; opening one takes the main view to what it points at. **Copy for agent** / **Merge reply** live here too. |
 
 ## How it's built
@@ -125,17 +127,17 @@ server/
   index.ts               process composition and lifecycle
 client/src/
   schema-studio/         canvases plus private graph/detail/Core component owners
-  sections/              Context, Process and Comments screens
-  components/            shared UI, settings, comment/agent surfaces and manual handoff
+  sections/              the Process screen
+  components/            shared UI, settings, work panel, comment/agent surfaces and manual handoff
   lib/                   API client, queries, event stream and UI state
 ```
 
 Schema parsing delegates admission, semantic resolution, revisioning and exact
-dependency reachability to the Astrale DSL installed by the domain. A Bun
-subprocess imports `schema/index.ts` once; Studio then keeps only a deliberately
-lossy render projection and derives Core from that same admitted root. A ts-morph
-overlay is limited to information absent from the DSL (handler-file links, source
-spans and JSDoc).
+dependency reachability to the Astrale DSL installed by the domain. Studio resolves
+the Application's `schema` binding statically, then a Bun subprocess imports only
+that module; Studio keeps a deliberately lossy render projection and derives Core
+from the same admitted root. A ts-morph overlay is limited to information absent
+from the DSL (handler-file links, source spans and JSDoc).
 
 Schema inspection does not rewrite an existing schema. Studio does perform
 explicit writes requested by the user: comments, context, documents, settings,

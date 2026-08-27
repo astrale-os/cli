@@ -1,6 +1,14 @@
 /** SDK V1 project discovery and the in-process Studio registry. */
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, extname, join, relative, resolve } from 'node:path'
+import { existsSync, readFileSync, statSync } from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import {
+  Node,
+  Project,
+  SyntaxKind,
+  type CallExpression,
+  type ObjectLiteralExpression,
+  type SourceFile,
+} from 'ts-morph'
 
 export interface DomainHandle {
   readonly id: string
@@ -46,35 +54,43 @@ export function resolveApplicationEntry(root: string): string | null {
   return null
 }
 
-/** Resolve schema.ts or schema/index.ts beside the Application, then at project root. */
-export function resolveSchemaEntry(
-  root: string,
-  applicationFile: string,
-  schemaDirName = 'schema',
-): string | null {
+/**
+ * Resolve the authored Schema module selected by `defineApplication({ schema })`.
+ *
+ * Application is the composition source of truth, but importing it would also load
+ * Runtime, Frontend, integrations, and any authored top-level effects. Studio follows
+ * the Schema binding statically instead, then imports only that module in its isolated
+ * extractor subprocess.
+ */
+export function resolveSchemaEntry(root: string, applicationFile: string): string | null {
   const project = resolve(root)
-  const applicationDir = dirname(applicationFile)
-  const candidates = [
-    join(applicationDir, 'schema.ts'),
-    join(applicationDir, schemaDirName, 'index.ts'),
-    join(project, 'schema.ts'),
-    join(project, schemaDirName, 'index.ts'),
-  ]
-  return [...new Set(candidates)].find(existsSync) ?? null
+  const source = addSourceFile(applicationFile)
+  if (source === null) return null
+
+  for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    if (!isDefineApplicationCall(call, source)) continue
+    const input = resolveLocalValue(call.getArguments()[0], source)
+    if (!input || !Node.isObjectLiteralExpression(input)) continue
+    const schema = objectPropertyValue(input, 'schema')
+    if (!schema) continue
+    const selected = schemaModuleOf(schema, source, project)
+    if (selected !== null) return selected
+  }
+  return null
 }
 
-export function isDomainDir(root: string, schemaDirName = 'schema'): boolean {
+export function isDomainDir(root: string): boolean {
   const project = resolve(root)
   if (!existsSync(join(project, 'astrale.config.ts'))) return false
   const application = resolveApplicationEntry(project)
-  return application !== null && resolveSchemaEntry(project, application, schemaDirName) !== null
+  return application !== null && resolveSchemaEntry(project, application) !== null
 }
 
-export function registerDomain(root: string, schemaDirName = 'schema'): DomainHandle | null {
+export function registerDomain(root: string): DomainHandle | null {
   const project = resolve(root)
   const applicationFile = resolveApplicationEntry(project)
   if (applicationFile === null || !existsSync(join(project, 'astrale.config.ts'))) return null
-  const schemaIndex = resolveSchemaEntry(project, applicationFile, schemaDirName)
+  const schemaIndex = resolveSchemaEntry(project, applicationFile)
   if (schemaIndex === null) return null
   const schemaDir = dirname(schemaIndex)
   const handle: DomainHandle = {
@@ -85,6 +101,15 @@ export function registerDomain(root: string, schemaDirName = 'schema'): DomainHa
     schemaDirName: relative(project, schemaDir).replaceAll('\\', '/') || '.',
     schemaDir,
     schemaIndex,
+  }
+  const current = registry.get(handle.id)
+  if (
+    current?.root === handle.root &&
+    current.configFile === handle.configFile &&
+    current.applicationFile === handle.applicationFile &&
+    current.schemaIndex === handle.schemaIndex
+  ) {
+    return current
   }
   registry.set(handle.id, handle)
   return handle
@@ -114,11 +139,164 @@ export function depsInstalled(root: string): boolean {
 }
 
 function resolveSourceFile(root: string, specifier: string): string | null {
-  const absolute = resolve(root, specifier)
-  const extension = extname(absolute)
-  const candidates =
-    extension === ''
-      ? [`${absolute}.ts`, join(absolute, 'index.ts')]
-      : [absolute, `${absolute.slice(0, -extension.length)}.ts`]
-  return candidates.find(existsSync) ?? null
+  return sourceCandidates(resolve(root, specifier)).find(isFile) ?? null
+}
+
+function addSourceFile(file: string): SourceFile | null {
+  try {
+    const project = new Project({
+      useInMemoryFileSystem: false,
+      skipAddingFilesFromTsConfig: true,
+      skipFileDependencyResolution: true,
+      skipLoadingLibFiles: true,
+      compilerOptions: { allowJs: true, allowImportingTsExtensions: true },
+    })
+    return project.addSourceFileAtPath(file)
+  } catch {
+    return null
+  }
+}
+
+function unwrap(node: Node): Node {
+  let current = node
+  while (
+    Node.isAsExpression(current) ||
+    Node.isSatisfiesExpression(current) ||
+    Node.isParenthesizedExpression(current) ||
+    Node.isTypeAssertion(current) ||
+    Node.isNonNullExpression(current)
+  ) {
+    current = current.getExpression()
+  }
+  return current
+}
+
+function resolveLocalValue(
+  node: Node | undefined,
+  source: SourceFile,
+  seen = new Set<string>(),
+): Node | null {
+  if (!node) return null
+  const value = unwrap(node)
+  if (!Node.isIdentifier(value)) return value
+  const key = `${source.getFilePath()}:${value.getText()}`
+  if (seen.has(key)) return value
+  seen.add(key)
+  const initializer = source.getVariableDeclaration(value.getText())?.getInitializer()
+  return initializer ? resolveLocalValue(initializer, source, seen) : value
+}
+
+function isDefineApplicationCall(call: CallExpression, source: SourceFile): boolean {
+  const expression = call.getExpression()
+  if (Node.isIdentifier(expression)) {
+    const localName = expression.getText()
+    return source
+      .getImportDeclarations()
+      .some(
+        (declaration) =>
+          declaration.getModuleSpecifierValue() === '@astrale-os/sdk/application' &&
+          declaration
+            .getNamedImports()
+            .some(
+              (named) =>
+                named.getName() === 'defineApplication' &&
+                (named.getAliasNode()?.getText() ?? named.getName()) === localName,
+            ),
+      )
+  }
+  if (
+    !Node.isPropertyAccessExpression(expression) ||
+    expression.getName() !== 'defineApplication'
+  ) {
+    return false
+  }
+  const namespace = expression.getExpression()
+  if (!Node.isIdentifier(namespace)) return false
+  return source
+    .getImportDeclarations()
+    .some(
+      (declaration) =>
+        declaration.getModuleSpecifierValue() === '@astrale-os/sdk/application' &&
+        declaration.getNamespaceImport()?.getText() === namespace.getText(),
+    )
+}
+
+function objectPropertyValue(object: ObjectLiteralExpression, name: string) {
+  const property = object.getProperty(name)
+  if (property && Node.isPropertyAssignment(property)) return property.getInitializer()
+  if (property && Node.isShorthandPropertyAssignment(property)) return property.getNameNode()
+  return undefined
+}
+
+function schemaModuleOf(node: Node, source: SourceFile, root: string): string | null {
+  const value = unwrap(node)
+  if (Node.isIdentifier(value)) {
+    const initializer = source.getVariableDeclaration(value.getText())?.getInitializer()
+    if (initializer) return schemaModuleOf(initializer, source, root)
+    for (const declaration of source.getImportDeclarations()) {
+      const imported = declaration
+        .getNamedImports()
+        .some((named) => (named.getAliasNode()?.getText() ?? named.getName()) === value.getText())
+      const defaultImported = declaration.getDefaultImport()?.getText() === value.getText()
+      if (imported || defaultImported) {
+        return resolveAuthoredModule(root, source, declaration.getModuleSpecifierValue())
+      }
+    }
+    return null
+  }
+  if (Node.isPropertyAccessExpression(value) && Node.isIdentifier(value.getExpression())) {
+    const namespace = value.getExpression().getText()
+    for (const declaration of source.getImportDeclarations()) {
+      if (declaration.getNamespaceImport()?.getText() === namespace) {
+        return resolveAuthoredModule(root, source, declaration.getModuleSpecifierValue())
+      }
+    }
+  }
+  return null
+}
+
+function resolveAuthoredModule(root: string, from: SourceFile, specifier: string): string | null {
+  let candidates: string[] = []
+  if (specifier.startsWith('.')) {
+    candidates = sourceCandidates(resolve(dirname(from.getFilePath()), specifier))
+  } else if (specifier.startsWith('#')) {
+    try {
+      candidates = sourceCandidates(Bun.resolveSync(specifier, dirname(from.getFilePath())))
+    } catch {
+      return null
+    }
+  } else {
+    return null
+  }
+  for (const candidate of candidates) {
+    if (!isFile(candidate)) continue
+    const rel = relative(root, candidate)
+    if (rel === '..' || rel.startsWith('../') || rel.startsWith('..\\') || isAbsolute(rel)) {
+      continue
+    }
+    return candidate
+  }
+  return null
+}
+
+function sourceCandidates(file: string): string[] {
+  const extension = extname(file)
+  const sourceBase = /\.[cm]?jsx?$/u.test(extension) ? file.slice(0, -extension.length) : file
+  return [
+    file,
+    `${sourceBase}.ts`,
+    `${sourceBase}.tsx`,
+    `${sourceBase}.mts`,
+    `${sourceBase}.cts`,
+    join(file, 'index.ts'),
+    join(file, 'index.tsx'),
+  ]
+}
+
+function isFile(file: string): boolean {
+  try {
+    return statSync(file).isFile()
+  } catch {
+    return false
+  }
 }

@@ -27,8 +27,14 @@ test('loadout fails closed instead of probing ambient Claude when gateway auth f
   roots.push(root)
   mkdirSync(join(root, 'schema'))
   writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
-  writeFileSync(join(root, 'application.ts'), 'export default {}\n')
   writeFileSync(join(root, 'schema/index.ts'), 'export const Test = {}\n')
+  writeFileSync(
+    join(root, 'application.ts'),
+    `import { defineApplication } from '@astrale-os/sdk/application'
+import { Test } from './schema/index.js'
+export default defineApplication({ schema: Test, runtime: {} as never })
+`,
+  )
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
 

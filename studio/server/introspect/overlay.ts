@@ -14,6 +14,6 @@ export interface OverlayArgs {
 export function buildOverlay({ ir, domainRoot, schemaDir }: OverlayArgs): SchemaOverlay {
   return {
     handlerLinks: buildHandlerLinks({ ir, domainRoot }),
-    sourceSpans: buildSourceSpans({ ir, schemaDir }),
+    sourceSpans: buildSourceSpans({ ir, domainRoot, schemaDir }),
   }
 }
