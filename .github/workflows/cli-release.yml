@@ -111,7 +111,9 @@ jobs:
           bun run --cwd studio build
           bun scripts/generate-embedded-assets.ts
           git diff --exit-code -- src/generated/embedded-assets.ts
-          bun build --compile --target=${{ matrix.bun_target }} bin/astrale.ts --outfile dist/astrale
+          bun build --compile --target=${{ matrix.bun_target }} \
+            --define '__ASTRALE_SOURCE_REVISION__="${{ github.sha }}"' \
+            bin/astrale.ts --outfile dist/astrale
           ./dist/astrale --version
           ./dist/astrale --help >/dev/null
           ./dist/astrale skills status --json >/dev/null

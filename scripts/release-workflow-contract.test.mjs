@@ -129,6 +129,7 @@ describe('release workflow contract', () => {
     assert.match(build, /bun run --cwd studio build/)
     assert.match(build, /bun scripts\/generate-embedded-assets\.ts/)
     assert.match(build, /bun build --compile/)
+    assert.match(build, /--define '__ASTRALE_SOURCE_REVISION__="\$\{\{ github\.sha \}\}"'/)
     assert.match(pack, /tar .* astrale/)
     assert.doesNotMatch(pack, /viewer/)
   })
