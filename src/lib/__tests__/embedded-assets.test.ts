@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { EMBEDDED_ASSET_DIGEST } from '../../generated/embedded-assets'
+import { EMBEDDED_ASSET_DIGEST, EMBEDDED_SKILLS } from '../../generated/embedded-assets'
 import { embeddedFiles, materializeEmbeddedAssets } from '../embedded-assets'
+import { computeSkillTreeHash } from '../skills/sync'
 
 const temporaryRoots: string[] = []
+const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
 afterEach(async () => {
   await Promise.all(
@@ -15,6 +19,22 @@ afterEach(async () => {
 })
 
 describe('embedded standalone assets', () => {
+  test('binds every embedded skill to its current source tree', async () => {
+    const sourceSkillNames: string[] = []
+    for (const entry of await readdir(join(repositoryRoot, 'skills'), { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue
+      if (existsSync(join(repositoryRoot, 'skills', entry.name, 'SKILL.md'))) {
+        sourceSkillNames.push(entry.name)
+      }
+    }
+    expect(EMBEDDED_SKILLS.map(({ name }) => String(name)).sort()).toEqual(sourceSkillNames.sort())
+    for (const skill of EMBEDDED_SKILLS) {
+      expect(await computeSkillTreeHash(join(repositoryRoot, 'skills', skill.name))).toBe(
+        skill.tree,
+      )
+    }
+  })
+
   test('contains every asset family and materializes a cache safely under concurrency', async () => {
     expect(embeddedFiles('skills').some((file) => file.path.endsWith('/SKILL.md'))).toBe(true)
     expect(embeddedFiles('studio').some((file) => file.path === 'studio/index.html')).toBe(true)

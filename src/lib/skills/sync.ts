@@ -21,6 +21,8 @@ import { embeddedFiles } from '../embedded-assets'
 import { skillAgents } from './agents'
 import { withFileLock } from './lock'
 
+declare const __ASTRALE_SOURCE_REVISION__: string | undefined
+
 /**
  * Astrale-owned global skill reconciliation. The standalone binary owns the
  * canonical skill cohort and the selected agent links; it does not shell out to
@@ -172,7 +174,16 @@ async function resolveAstraleSkillSource(): Promise<AstraleSkillSourceSnapshot> 
       })),
   }))
   if (skills.length === 0) throw new Error('this Astrale binary embeds no agent skills')
-  return { ref: 'main', revision: `cli:${skills.map((skill) => skill.tree).join(':')}`, skills }
+  const compiledRevision =
+    typeof __ASTRALE_SOURCE_REVISION__ === 'string' ? __ASTRALE_SOURCE_REVISION__ : undefined
+  if (compiledRevision !== undefined && !/^[0-9a-f]{40}$/u.test(compiledRevision)) {
+    throw new Error('this Astrale binary has an invalid source revision')
+  }
+  return {
+    ref: 'main',
+    revision: compiledRevision ?? `cli:${skills.map((skill) => skill.tree).join(':')}`,
+    skills,
+  }
 }
 
 async function readSkillLock(

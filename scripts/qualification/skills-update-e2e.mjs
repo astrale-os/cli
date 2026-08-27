@@ -199,7 +199,12 @@ try {
   const checked = status(updateCase.env)
   assert.equal(checked.status, 'current')
   assert.equal(checked.source.repository, 'astrale-os/cli')
-  assert.match(checked.source.revision, /^cli:(?:[0-9a-f]{40})(?::[0-9a-f]{40})*$/u)
+  if (process.env.ASTRALE_E2E_CLI) {
+    assert.match(process.env.ASTRALE_E2E_SOURCE_REVISION ?? '', /^[0-9a-f]{40}$/u)
+    assert.equal(checked.source.revision, process.env.ASTRALE_E2E_SOURCE_REVISION)
+  } else {
+    assert.match(checked.source.revision, /^cli:(?:[0-9a-f]{40})(?::[0-9a-f]{40})*$/u)
+  }
   assert.deepEqual(checked.source.skills.map(({ name }) => name).sort(), skillNames)
   const receipt = readLock(updateCase.lockPath)
   for (const skill of checked.source.skills) {
