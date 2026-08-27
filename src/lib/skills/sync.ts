@@ -12,23 +12,26 @@ import {
   symlink,
   writeFile,
 } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 
 import { AstraleError } from '../../errors'
-import { run, type RunResult } from '../proc'
+import { EMBEDDED_SKILLS } from '../../generated/embedded-assets'
+import { embeddedFiles } from '../embedded-assets'
+import { skillAgents } from './agents'
 import { withFileLock } from './lock'
 
 /**
- * Astrale-owned agent skill reconciliation. The ecosystem installer owns agent links;
- * Astrale owns source freshness, local integrity, repair, rollback, and outcomes.
+ * Astrale-owned global skill reconciliation. The standalone binary owns the
+ * canonical skill cohort and the selected agent links; it does not shell out to
+ * Node, npx, Git, or a package manager.
  */
 
 /** Published source whose top-level skill directories Astrale owns as one cohort. */
 export const ASTRALE_CLI_SKILL_SOURCE = 'astrale-os/cli'
-export const ASTRALE_SKILL_REPAIR_COMMAND = 'astrale update --yes --no-deps'
+export const ASTRALE_SKILL_REPAIR_COMMAND = 'astrale skills update'
 
-/** Deliberately pinned: installer behavior is part of the verified update path. */
+/** Lock/agent compatibility target implemented by the native manager. */
 export const SKILLS_INSTALLER_PACKAGE = 'skills@1.5.23'
 
 /** Human-facing recovery stays on the Astrale-owned, verified path. */
@@ -63,8 +66,23 @@ export type SkillApplyResult = {
   status: SkillApplyStatus
 }
 
-type SourceSkill = { name: string; path: string; tree: string }
-export type AstraleSkillSourceSnapshot = { ref: 'main'; revision: string; skills: SourceSkill[] }
+export type AstraleSkillAgentStatus = {
+  name: string
+  displayName: string
+  globalSkillsDir: string
+  detected: boolean
+  configured: boolean
+}
+
+type SourceSkillFile = { path: string; mode: number; contents: string }
+type SourceSkill = { name: string; path: string; tree: string; files?: SourceSkillFile[] }
+export type AstraleSkillSourceSnapshot = {
+  ref: 'main'
+  revision: string
+  skills: SourceSkill[]
+  /** Test/dev source; production snapshots carry embedded file bytes. */
+  sourceRoot?: string
+}
 
 type SkillLockEntry = {
   source?: string
@@ -99,15 +117,20 @@ export type SkillSyncDependencies = {
   home?: string
   lockPath?: string
   resolveSource?: () => Promise<AstraleSkillSourceSnapshot>
-  run?: (file: string, args?: string[]) => Promise<RunResult>
+  /** Test-only adapter for exercising transactional failure paths. */
+  run?: (file: string, args?: string[]) => Promise<{ code: number; stdout: string; stderr: string }>
+  agents?: string[]
+  replaceAgentSelection?: boolean
 }
 
 const SOURCE_REPOSITORY_URL = 'https://github.com/astrale-os/cli.git'
 const SAFE_NAME = /^[a-z0-9][a-z0-9._-]*$/iu
 
 function resolvedDependencies(overrides: SkillSyncDependencies = {}) {
-  const home = overrides.home ?? homedir()
-  const xdgStateHome = process.env.XDG_STATE_HOME
+  const environmentHome = process.env.ASTRALE_SKILLS_HOME?.trim()
+  const isolatedHome = overrides.home ?? (environmentHome || undefined)
+  const home = isolatedHome ?? homedir()
+  const xdgStateHome = overrides.home ? undefined : process.env.XDG_STATE_HOME
   return {
     home,
     lockPath:
@@ -115,8 +138,10 @@ function resolvedDependencies(overrides: SkillSyncDependencies = {}) {
       (xdgStateHome
         ? join(xdgStateHome, 'skills', '.skill-lock.json')
         : join(home, '.agents', '.skill-lock.json')),
-    run: overrides.run ?? run,
+    run: overrides.run,
     resolveSource: overrides.resolveSource,
+    agents: overrides.agents,
+    replaceAgentSelection: overrides.replaceAgentSelection ?? false,
   }
 }
 
@@ -130,61 +155,24 @@ function sourceOwned(entry: SkillLockEntry): boolean {
 
 function folderName(entry: SkillLockEntry): string | null {
   const match = entry.skillPath?.match(/^skills\/([^/]+)\/SKILL\.md$/u)
-  return match?.[1] ?? null
+  const name = match?.[1]
+  return name && SAFE_NAME.test(name) ? name : null
 }
 
-async function resolveAstraleSkillSource(
-  execute: ReturnType<typeof resolvedDependencies>['run'],
-): Promise<AstraleSkillSourceSnapshot> {
-  const checkout = await mkdtemp(join(tmpdir(), 'astrale-skill-source-'))
-  try {
-    const cloned = await execute('git', [
-      'clone',
-      '--quiet',
-      '--depth',
-      '1',
-      '--filter=blob:none',
-      '--no-checkout',
-      '--single-branch',
-      '--branch',
-      'main',
-      SOURCE_REPOSITORY_URL,
-      checkout,
-    ])
-    if (cloned.code !== 0) throw new Error(cloned.stderr || cloned.stdout || 'git clone failed')
-    const revision = await execute('git', ['-C', checkout, 'rev-parse', 'HEAD'])
-    if (revision.code !== 0) {
-      throw new Error(revision.stderr || revision.stdout || 'git rev-parse failed')
-    }
-    const folders = await execute('git', ['-C', checkout, 'ls-tree', 'HEAD:skills'])
-    const files = await execute('git', [
-      '-C',
-      checkout,
-      'ls-tree',
-      '-r',
-      '--name-only',
-      'HEAD:skills',
-    ])
-    if (folders.code !== 0 || files.code !== 0) {
-      throw new Error(folders.stderr || files.stderr || 'git ls-tree failed')
-    }
-    const skillFiles = new Set(
-      files.stdout
-        .split('\n')
-        .filter((path) => /^[^/]+\/SKILL\.md$/u.test(path))
-        .map((path) => path.slice(0, -'/SKILL.md'.length)),
-    )
-    const skills = folders.stdout.split('\n').flatMap((line): SourceSkill[] => {
-      const match = line.match(/^040000 tree ([0-9a-f]{40})\t([^/]+)$/u)
-      if (!match || !SAFE_NAME.test(match[2]) || !skillFiles.has(match[2])) return []
-      return [{ name: match[2], path: `skills/${match[2]}/SKILL.md`, tree: match[1] }]
-    })
-    skills.sort((a, b) => a.name.localeCompare(b.name))
-    if (skills.length === 0) throw new Error('astrale-os/cli publishes no top-level skills')
-    return { ref: 'main', revision: revision.stdout.trim(), skills }
-  } finally {
-    await rm(checkout, { recursive: true, force: true })
-  }
+async function resolveAstraleSkillSource(): Promise<AstraleSkillSourceSnapshot> {
+  const files = embeddedFiles('skills')
+  const skills = EMBEDDED_SKILLS.map((skill) => ({
+    ...skill,
+    files: files
+      .filter((file) => file.path.startsWith(`skills/${skill.name}/`))
+      .map((file) => ({
+        path: file.path.slice(`skills/${skill.name}/`.length),
+        mode: file.mode,
+        contents: file.contents,
+      })),
+  }))
+  if (skills.length === 0) throw new Error('this Astrale binary embeds no agent skills')
+  return { ref: 'main', revision: `cli:${skills.map((skill) => skill.tree).join(':')}`, skills }
 }
 
 async function readSkillLock(
@@ -339,23 +327,27 @@ async function inspectAstraleSkills(
   for (const [index, skill] of snapshot.skills.entries()) {
     if (expectedPresence[index] && !uniqueFolders.has(skill.name)) coherent = false
   }
-  if (await directoryExists(join(home, '.claude'))) {
-    for (const skill of snapshot.skills) {
-      const link = join(home, '.claude', 'skills', skill.name)
-      try {
-        if (!(await lstat(link)).isSymbolicLink()) coherent = false
-        else if (
-          resolve(dirname(link), await readlink(link)) !==
-          join(home, '.agents', 'skills', skill.name)
-        ) {
-          coherent = false
-        }
-      } catch {
-        coherent = false
-      }
-    }
+  const canonical = join(home, '.agents', 'skills')
+  const selected = new Set(lock?.lastSelectedAgents ?? [])
+  const agentDirectories = new Map<string, ReturnType<typeof skillAgents>>()
+  for (const agent of skillAgents(home)) {
+    if (agent.globalSkillsDir === canonical) continue
+    const group = agentDirectories.get(agent.globalSkillsDir) ?? []
+    group.push(agent)
+    agentDirectories.set(agent.globalSkillsDir, group)
   }
-
+  for (const [directory, agents] of agentDirectories) {
+    const links = await Promise.all(
+      snapshot.skills.map((skill) =>
+        isCanonicalLink(join(directory, skill.name), join(canonical, skill.name)),
+      ),
+    )
+    const configured =
+      links.some(Boolean) ||
+      (agents.some((agent) => selected.has(agent.name)) &&
+        (agents.some((agent) => agent.detected) || (await directoryExists(directory))))
+    if (configured && !links.every(Boolean)) coherent = false
+  }
   const sourceCurrent =
     coherent &&
     managed.length === snapshot.skills.length &&
@@ -395,32 +387,146 @@ async function directoryExists(path: string): Promise<boolean> {
   }
 }
 
-async function sourceSnapshot(dependencies: ReturnType<typeof resolvedDependencies>) {
-  return dependencies.resolveSource
-    ? await dependencies.resolveSource()
-    : await resolveAstraleSkillSource(dependencies.run)
+async function assertNoForeignSkillConflicts(
+  snapshot: AstraleSkillSourceSnapshot,
+  home: string,
+  lockPath: string,
+): Promise<void> {
+  const { lock } = await readSkillLock(lockPath)
+  const ownedFolders = new Set(
+    Object.values(lock?.skills ?? {}).flatMap((entry) => {
+      const folder = folderName(entry)
+      return sourceOwned(entry) && folder ? [folder] : []
+    }),
+  )
+  for (const skill of snapshot.skills) {
+    const namedEntry = lock?.skills[skill.name]
+    if (namedEntry && !sourceOwned(namedEntry)) {
+      throw new Error(
+        `the global skill lock already assigns ${skill.name} to another source; remove or rename that skill, then retry`,
+      )
+    }
+    try {
+      await lstat(join(home, '.agents', 'skills', skill.name))
+      if (!ownedFolders.has(skill.name)) {
+        throw new Error(
+          `~/.agents/skills/${skill.name} already exists and is not managed by Astrale; move it aside, then retry`,
+        )
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
 }
 
+async function sourceSnapshot(dependencies: ReturnType<typeof resolvedDependencies>) {
+  const snapshot = dependencies.resolveSource
+    ? await dependencies.resolveSource()
+    : await resolveAstraleSkillSource()
+  if (
+    snapshot.ref !== 'main' ||
+    !snapshot.revision ||
+    snapshot.skills.length === 0 ||
+    new Set(snapshot.skills.map((skill) => skill.name)).size !== snapshot.skills.length
+  ) {
+    throw new Error('invalid Astrale skill source snapshot')
+  }
+  for (const skill of snapshot.skills) {
+    if (
+      !SAFE_NAME.test(skill.name) ||
+      skill.path !== `skills/${skill.name}/SKILL.md` ||
+      !/^[0-9a-f]{40}$/u.test(skill.tree)
+    ) {
+      throw new Error(`invalid Astrale skill source entry: ${skill.name}`)
+    }
+  }
+  return snapshot
+}
+
+/** Compatibility-shaped arguments used only by the injected failure-test adapter. */
 function installerArgs(...args: string[]): string[] {
   return ['--yes', SKILLS_INSTALLER_PACKAGE, ...args]
 }
 
 async function installSnapshot(
   snapshot: AstraleSkillSourceSnapshot,
-  execute: ReturnType<typeof resolvedDependencies>['run'],
+  dependencies: ReturnType<typeof resolvedDependencies>,
   selectedAgents: string[],
-): Promise<RunResult> {
-  return await execute(
-    'npx',
-    installerArgs(
-      'add',
-      `${ASTRALE_CLI_SKILL_SOURCE}#${snapshot.ref}`,
-      '-g',
-      '-y',
-      '--skill',
-      ...snapshot.skills.map((skill) => skill.name),
-      ...(selectedAgents.length > 0 ? ['--agent', ...selectedAgents] : []),
-    ),
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  if (dependencies.run) {
+    return dependencies.run(
+      '__astrale_native_skills__',
+      installerArgs(
+        'add',
+        `${ASTRALE_CLI_SKILL_SOURCE}#${snapshot.ref}`,
+        '-g',
+        '-y',
+        '--skill',
+        ...snapshot.skills.map((skill) => skill.name),
+        ...(selectedAgents.length > 0 ? ['--agent', ...selectedAgents] : []),
+      ),
+    )
+  }
+
+  const canonicalRoot = join(dependencies.home, '.agents', 'skills')
+  await mkdir(canonicalRoot, { recursive: true })
+  for (const skill of snapshot.skills) {
+    const target = join(canonicalRoot, skill.name)
+    await rm(target, { recursive: true, force: true })
+    if (snapshot.sourceRoot) {
+      await cp(join(snapshot.sourceRoot, skill.name), target, {
+        recursive: true,
+        dereference: false,
+      })
+      continue
+    }
+    if (!skill.files?.some((file) => file.path === 'SKILL.md')) {
+      throw new Error(`embedded skill ${skill.name} has no SKILL.md`)
+    }
+    for (const file of skill.files) {
+      if (!safeRelativePath(file.path)) throw new Error(`unsafe skill path: ${file.path}`)
+      const destination = join(target, file.path)
+      await mkdir(dirname(destination), { recursive: true })
+      await writeFile(destination, Buffer.from(file.contents, 'base64'), { mode: file.mode })
+    }
+  }
+
+  const now = new Date().toISOString()
+  const current = await readSkillLock(dependencies.lockPath)
+  const lock: SkillLock = current.lock ?? { version: 3, skills: {} }
+  lock.version = 3
+  for (const [name, entry] of Object.entries(lock.skills)) {
+    if (sourceOwned(entry)) delete lock.skills[name]
+  }
+  for (const skill of snapshot.skills) {
+    const previous = current.lock?.skills[skill.name]
+    lock.skills[skill.name] = {
+      source: ASTRALE_CLI_SKILL_SOURCE,
+      sourceType: 'github',
+      sourceUrl: SOURCE_REPOSITORY_URL,
+      ref: snapshot.ref,
+      skillPath: skill.path,
+      skillFolderHash: skill.tree,
+      installedAt: previous?.installedAt ?? now,
+      updatedAt: now,
+    }
+  }
+  lock.lastSelectedAgents = selectedAgents
+  await writeSkillLock(dependencies.lockPath, lock)
+  await reconcileAgentLinks(
+    dependencies.home,
+    snapshot.skills.map((skill) => skill.name),
+    selectedAgents,
+    dependencies.replaceAgentSelection,
+  )
+  return { code: 0, stdout: '', stderr: '' }
+}
+
+function safeRelativePath(path: string): boolean {
+  return (
+    path.length > 0 &&
+    !path.startsWith('/') &&
+    !path.split('/').some((part) => part === '' || part === '..' || part === '.')
   )
 }
 
@@ -446,16 +552,50 @@ async function stampAstraleSource(
   await writeSkillLock(lockPath, lock)
 }
 
-async function selectedAgents(home: string, lockPath: string): Promise<string[]> {
+async function selectedAgents(
+  home: string,
+  lockPath: string,
+  explicit?: string[],
+  expectedNames: readonly string[] = EMBEDDED_SKILLS.map((skill) => skill.name),
+): Promise<string[]> {
+  const registry = skillAgents(home)
+  const known = new Set(registry.map((agent) => agent.name))
+  if (explicit) {
+    const invalid = explicit.filter((agent) => !known.has(agent))
+    if (invalid.length > 0) throw new Error(`unknown skill agent: ${invalid.join(', ')}`)
+    return [...new Set(explicit)]
+  }
   const { lock } = await readSkillLock(lockPath)
-  const agents = new Set(
-    (lock?.lastSelectedAgents ?? []).filter(
-      (agent): agent is string => typeof agent === 'string' && SAFE_NAME.test(agent),
-    ),
-  )
-  agents.add('codex')
-  if (await directoryExists(join(home, '.claude'))) agents.add('claude-code')
-  return [...agents]
+  const canonical = join(home, '.agents', 'skills')
+  const managedNames = new Set([
+    ...expectedNames,
+    ...Object.values(lock?.skills ?? {}).flatMap((entry) => {
+      const name = folderName(entry)
+      return sourceOwned(entry) && name ? [name] : []
+    }),
+  ])
+  const configured = new Set<string>()
+  for (const agent of registry) {
+    if (agent.globalSkillsDir === canonical) continue
+    for (const name of managedNames) {
+      if (await isCanonicalLink(join(agent.globalSkillsDir, name), join(canonical, name))) {
+        configured.add(agent.name)
+        break
+      }
+    }
+  }
+  for (const name of lock?.lastSelectedAgents ?? []) {
+    const agent = registry.find((candidate) => candidate.name === name)
+    if (!agent) continue
+    if (
+      agent.globalSkillsDir === canonical ||
+      agent.detected ||
+      (await directoryExists(agent.globalSkillsDir))
+    ) {
+      configured.add(name)
+    }
+  }
+  return [...configured]
 }
 
 async function cleanManagedState(names: string[], home: string, lockPath: string): Promise<void> {
@@ -474,30 +614,80 @@ async function cleanManagedState(names: string[], home: string, lockPath: string
 }
 
 async function removeKnownAgentLinks(names: string[], home: string): Promise<void> {
-  const roots = await readdir(home, { withFileTypes: true }).catch(() => [])
-  for (const root of roots) {
-    if (!root.isDirectory() || !root.name.startsWith('.') || root.name === '.agents') continue
+  const canonical = join(home, '.agents', 'skills')
+  for (const agent of skillAgents(home)) {
+    if (agent.globalSkillsDir === canonical) continue
     for (const name of names) {
-      const link = join(home, root.name, 'skills', name)
-      try {
-        const stat = await lstat(link)
-        if (!stat.isSymbolicLink()) continue
-        const target = await readlink(link)
-        if (resolve(dirname(link), target) === join(home, '.agents', 'skills', name)) {
-          await rm(link, { force: true })
-        }
-      } catch {
-        // Missing or foreign links are not part of the Astrale-owned repair.
-      }
+      const link = join(agent.globalSkillsDir, name)
+      if (await isCanonicalLink(link, join(canonical, name))) await rm(link, { force: true })
     }
   }
+}
+
+async function isCanonicalLink(path: string, canonical: string): Promise<boolean> {
+  try {
+    return (
+      (await lstat(path)).isSymbolicLink() &&
+      resolve(dirname(path), await readlink(path)) === canonical
+    )
+  } catch {
+    return false
+  }
+}
+
+async function reconcileAgentLinks(
+  home: string,
+  names: string[],
+  selected: string[],
+  replaceSelection: boolean,
+): Promise<boolean> {
+  const canonicalRoot = join(home, '.agents', 'skills')
+  const selectedSet = new Set(selected)
+  const directories = new Map<string, ReturnType<typeof skillAgents>>()
+  for (const agent of skillAgents(home)) {
+    if (agent.globalSkillsDir === canonicalRoot) continue
+    const group = directories.get(agent.globalSkillsDir) ?? []
+    group.push(agent)
+    directories.set(agent.globalSkillsDir, group)
+  }
+  let changed = false
+  for (const [directory, agents] of directories) {
+    const selectedDirectory = agents.some((agent) => selectedSet.has(agent.name))
+    if (replaceSelection && !selectedDirectory) {
+      for (const name of names) {
+        const target = join(directory, name)
+        if (await isCanonicalLink(target, join(canonicalRoot, name))) {
+          await rm(target, { force: true })
+          changed = true
+        }
+      }
+      continue
+    }
+    if (!selectedDirectory) continue
+    await mkdir(directory, { recursive: true })
+    for (const name of names) {
+      const target = join(directory, name)
+      const canonical = join(canonicalRoot, name)
+      if (await isCanonicalLink(target, canonical)) continue
+      try {
+        await lstat(target)
+        throw new Error(
+          `${target} already exists and is not managed by Astrale; move it aside, then retry`,
+        )
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      await symlink(relative(dirname(target), canonical), target)
+      changed = true
+    }
+  }
+  return changed
 }
 
 async function pruneObsoleteEntries(
   snapshot: AstraleSkillSourceSnapshot,
   home: string,
   lockPath: string,
-  execute: ReturnType<typeof resolvedDependencies>['run'],
   knownRetired: string[],
 ): Promise<void> {
   const expected = new Set(snapshot.skills.map((skill) => skill.name))
@@ -512,10 +702,6 @@ async function pruneObsoleteEntries(
       ...retiredEntries.flatMap(([, entry]) => folderName(entry) ?? []),
     ]),
   ]
-  if (retired.length > 0) {
-    const result = await execute('npx', installerArgs('remove', ...retired, '-g', '-y'))
-    if (result.code !== 0) throw new Error(result.stderr || result.stdout || 'skill removal failed')
-  }
   const refreshed = await readSkillLock(lockPath)
   if (!refreshed.lock) return
   let changed = false
@@ -545,21 +731,23 @@ type SkillBackup = {
   phase: 'prepared' | 'verified'
 }
 
-type AgentLinkBackup = { root: string; name: string; target: string }
+type AgentLinkBackup = { directory: string; name: string; target: string }
 
 const BACKUP_PREFIX = '.astrale-skill-backup-'
 const BACKUP_MANIFEST = '.manifest.json'
 
 async function captureAgentLinks(home: string, names: string[]): Promise<AgentLinkBackup[]> {
   const links: AgentLinkBackup[] = []
-  const roots = await readdir(home, { withFileTypes: true }).catch(() => [])
-  for (const root of roots) {
-    if (!root.isDirectory() || !root.name.startsWith('.') || root.name === '.agents') continue
+  const canonical = join(home, '.agents', 'skills')
+  const seen = new Set<string>()
+  for (const agent of skillAgents(home)) {
+    if (agent.globalSkillsDir === canonical || seen.has(agent.globalSkillsDir)) continue
+    seen.add(agent.globalSkillsDir)
     for (const name of names) {
-      const path = join(home, root.name, 'skills', name)
+      const path = join(agent.globalSkillsDir, name)
       try {
         if ((await lstat(path)).isSymbolicLink()) {
-          links.push({ root: root.name, name, target: await readlink(path) })
+          links.push({ directory: agent.globalSkillsDir, name, target: await readlink(path) })
         }
       } catch {
         // Only existing symlinks need transactional restoration.
@@ -626,7 +814,7 @@ async function restoreAgentLinks(
   onlyForeign = false,
 ): Promise<void> {
   for (const link of backup.links) {
-    const path = join(home, link.root, 'skills', link.name)
+    const path = join(link.directory, link.name)
     const canonical = join(home, '.agents', 'skills', link.name)
     if (onlyForeign && resolve(dirname(path), link.target) === canonical) continue
     await mkdir(dirname(path), { recursive: true })
@@ -683,8 +871,8 @@ async function recoverInterruptedBackup(home: string, lockPath: string): Promise
           (link) =>
             link !== null &&
             typeof link === 'object' &&
-            typeof link.root === 'string' &&
-            /^\.[^/]+$/u.test(link.root) &&
+            typeof link.directory === 'string' &&
+            skillAgents(home).some((agent) => agent.globalSkillsDir === link.directory) &&
             typeof link.name === 'string' &&
             parsed.names.includes(link.name) &&
             typeof link.target === 'string',
@@ -720,6 +908,20 @@ function skillFailure(error: unknown): AstraleError {
     `Retry with \`${ASTRALE_SKILL_REPAIR_COMMAND}\`.`,
     error instanceof Error ? { cause: error } : undefined,
   )
+}
+
+/** Agent picker data. Installed/configured agents are preselected by callers. */
+export async function astraleSkillAgents(
+  overrides: Pick<SkillSyncDependencies, 'home' | 'lockPath'> = {},
+): Promise<AstraleSkillAgentStatus[]> {
+  const dependencies = resolvedDependencies(overrides)
+  const configured = new Set(
+    await selectedAgents(dependencies.home, dependencies.lockPath, undefined),
+  )
+  return skillAgents(dependencies.home).map((agent) => ({
+    ...agent,
+    configured: configured.has(agent.name),
+  }))
 }
 
 /** Read-only source, freshness, and local integrity check. */
@@ -777,7 +979,9 @@ export async function syncAstraleSkills(
     throw skillFailure(error)
   }
   const lockFile = join(
-    process.env.ASTRALE_HOME ?? join(dependencies.home, '.astrale'),
+    overrides.home
+      ? join(dependencies.home, '.astrale')
+      : (process.env.ASTRALE_HOME ?? join(dependencies.home, '.astrale')),
     'locks',
     'skills-update.lock',
   )
@@ -785,13 +989,21 @@ export async function syncAstraleSkills(
   try {
     return await withFileLock(lockFile, async () => {
       await recoverInterruptedBackup(dependencies.home, dependencies.lockPath)
+      await assertNoForeignSkillConflicts(snapshot, dependencies.home, dependencies.lockPath)
       const initial = await inspectAstraleSkills(snapshot, dependencies.home, dependencies.lockPath)
-      if (initial.state === 'current') return { status: 'unchanged' }
-
       let expectedNames = snapshot.skills.map((skill) => skill.name)
       let managedFolders = [...new Set([...expectedNames, ...initial.managedFolders])]
       let knownRetired = initial.managedFolders.filter((name) => !expectedNames.includes(name))
-      const agents = await selectedAgents(dependencies.home, dependencies.lockPath)
+      const agents = await selectedAgents(
+        dependencies.home,
+        dependencies.lockPath,
+        dependencies.agents,
+        snapshot.skills.map((skill) => skill.name),
+      )
+      if (initial.state === 'current' && !dependencies.replaceAgentSelection) {
+        const repaired = await reconcileAgentLinks(dependencies.home, expectedNames, agents, false)
+        return { status: repaired ? 'repaired' : 'unchanged' }
+      }
       const backup = await captureBackup(dependencies.home, dependencies.lockPath, managedFolders)
       let lastError: unknown
       try {
@@ -812,7 +1024,7 @@ export async function syncAstraleSkills(
             if (initial.state === 'unhealthy' || attempt === 1) {
               await cleanManagedState(managedFolders, dependencies.home, dependencies.lockPath)
             }
-            const installed = await installSnapshot(snapshot, dependencies.run, agents)
+            const installed = await installSnapshot(snapshot, dependencies, agents)
             if (installed.code !== 0) {
               throw new Error(installed.stderr || installed.stdout || 'skill installer failed')
             }
@@ -820,7 +1032,6 @@ export async function syncAstraleSkills(
               snapshot,
               dependencies.home,
               dependencies.lockPath,
-              dependencies.run,
               knownRetired,
             )
             const installedInspection = await inspectAstraleSkills(
@@ -848,11 +1059,13 @@ export async function syncAstraleSkills(
             await rm(backup.root, { recursive: true, force: true })
             return {
               status:
-                initial.state === 'absent'
-                  ? 'installed'
-                  : initial.state === 'outdated'
-                    ? 'updated'
-                    : 'repaired',
+                initial.state === 'current'
+                  ? 'unchanged'
+                  : initial.state === 'absent'
+                    ? 'installed'
+                    : initial.state === 'outdated'
+                      ? 'updated'
+                      : 'repaired',
             }
           } catch (error) {
             lastError = error

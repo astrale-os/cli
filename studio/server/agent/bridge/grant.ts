@@ -6,6 +6,7 @@ import type { StudioEvent } from '../../../shared/types'
 import type { DomainHandle } from '../../domain'
 import type { HarnessMcpServer } from '../harness/adapter'
 
+import { studioCliCommand } from '../../cli'
 import { removeState, statePath, writeJson } from '../../state/store'
 import { openBridgeSession } from './routes'
 
@@ -32,7 +33,6 @@ export function setBridgePort(port: number): void {
 }
 
 const MCP_SERVER = join(import.meta.dir, 'stdio.ts')
-const BIN = process.env.DOMAIN_STUDIO_BRIDGE_BUN || process.execPath
 
 /** Mint the run-scoped MCP grant and its secret-bearing configuration file. */
 export function startBridge(handle: DomainHandle, notify: (event: StudioEvent) => void): Bridge {
@@ -45,10 +45,22 @@ export function startBridge(handle: DomainHandle, notify: (event: StudioEvent) =
   const bridgeConfigPath = statePath(handle.root, bridgeRel)
   chmodSync(bridgeConfigPath, 0o600)
 
+  let bridgeCommand: string[]
+  try {
+    bridgeCommand = studioCliCommand(['__studio-bridge', '--config', bridgeConfigPath])
+  } catch {
+    bridgeCommand = [
+      process.env.DOMAIN_STUDIO_BRIDGE_BUN || process.execPath,
+      MCP_SERVER,
+      '--config',
+      bridgeConfigPath,
+    ]
+  }
+
   const server: HarnessMcpServer = {
     name: 'domain-studio',
-    command: BIN,
-    args: [MCP_SERVER, '--config', bridgeConfigPath],
+    command: bridgeCommand[0],
+    args: bridgeCommand.slice(1),
     required: true,
     approvalMode: 'approve',
     enabledTools: Object.keys(TOOL_ROUTES),

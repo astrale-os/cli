@@ -1,12 +1,13 @@
 import type { SetupStep } from '../types'
 
+import { chooseAstraleSkillAgents } from '../../commands/skills/configure'
 import { log } from '../../lib/log'
 import { checkAstraleSkills, SKILL_INSTALL_HINT, syncAstraleSkills } from '../../lib/skills'
 
 const FIX = SKILL_INSTALL_HINT
 
 /**
- * Equip — reconcile every top-level Astrale-owned skill from astrale-os/cli main.
+ * Equip — reconcile every Astrale-owned skill embedded in this CLI release.
  * Setup and update deliberately share one owner, so an existence-only setup check
  * can never bless an incomplete or stale global cohort.
  */
@@ -38,10 +39,14 @@ export const skillsStep: SetupStep = {
     }
   },
 
-  async ensure() {
+  async ensure(ctx) {
     log.step('Ensuring Astrale agent skills are current and healthy')
     try {
-      const result = await syncAstraleSkills()
+      const agents = ctx.interactive ? await chooseAstraleSkillAgents() : undefined
+      if (agents === undefined && ctx.interactive) return 'unchanged'
+      const result = await syncAstraleSkills(
+        agents === undefined ? {} : { agents, replaceAgentSelection: true },
+      )
       if (result.status === 'unchanged') {
         log.success('Astrale skills already up to date')
         return 'unchanged'

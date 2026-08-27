@@ -4,17 +4,12 @@ import { join, relative } from 'node:path'
 import { Project } from 'ts-morph'
 
 /**
- * The Domain Studio SERVER ships as raw source inside the published CLI package
- * (package.json `files`: studio/server, studio/shared) and runs UNBUNDLED under
- * Bun — unlike the CLI itself, which is bundled into dist/astrale.js with all its
- * deps inlined. So at `astrale studio` runtime, the server can only resolve the
- * third-party packages that the CLI declares in its own `dependencies` (the
- * studio's package.json deps are NOT installed for an `npm i -g @astrale-os/cli`
- * consumer — they're client/build-only, inlined into studio/client/dist).
+ * Domain Studio's server is compiled into the same standalone Bun executable as
+ * the CLI. Keeping its runtime packages in the CLI dependency closure guarantees
+ * that every release build can resolve and inline the complete server.
  *
  * This test enforces that invariant. If it fails, either add the package to the
- * CLI's `dependencies` or drop the import — do NOT add it to studio/package.json
- * (that won't ship to npm consumers).
+ * CLI's `dependencies` or drop the import.
  */
 
 const CLI_ROOT = new URL('../../../', import.meta.url).pathname
@@ -80,7 +75,7 @@ describe('studio server runtime deps', () => {
     expect(
       offenders,
       `studio server imports packages NOT in the CLI's package.json dependencies — ` +
-        `they won't be installed for an \`npm i -g @astrale-os/cli\` consumer:\n` +
+        `the standalone compiler cannot guarantee that runtime closure:\n` +
         JSON.stringify(offenders, null, 2),
     ).toEqual({})
   })

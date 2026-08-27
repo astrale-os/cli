@@ -8,6 +8,7 @@
 import type { SchemaIR, SchemaRevision, StudioSchemaBundle } from '../../shared/types'
 
 import { isSchemaRevision } from '../../shared/types'
+import { studioCliCommand } from '../cli'
 
 const EXTRACTOR = new URL('./extractor.ts', import.meta.url).pathname
 
@@ -28,7 +29,14 @@ export async function runtimeExtract(
   timeoutMs = 20000,
 ): Promise<RuntimeExtractResult> {
   try {
-    const proc = Bun.spawn(['bun', 'run', EXTRACTOR, schemaIndexPath, domainDir], {
+    let command: string[]
+    try {
+      command = studioCliCommand(['__studio-extractor', schemaIndexPath, domainDir])
+    } catch {
+      // Direct Studio development remains supported outside `astrale studio`.
+      command = [process.execPath, EXTRACTOR, schemaIndexPath, domainDir]
+    }
+    const proc = Bun.spawn(command, {
       cwd: domainDir,
       stdout: 'pipe',
       stderr: 'pipe',

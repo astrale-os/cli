@@ -147,11 +147,9 @@ async function chooseCandidate(
 }
 
 /**
- * The session server must run under NODE when possible: an orphaned Bun
- * process on macOS cannot open TLS sockets at all (its TLS init needs the
- * user session's trust services), so token mints and the kernel proxy would
- * die once the CLI exits. The published CLI entry is node-runnable; a dev
- * checkout builds `dist/astrale.js` on demand (Bun is present there).
+ * The standalone executable always re-invokes its embedded Bun runtime. Source
+ * development prefers Node when available because an orphaned, non-compiled
+ * Bun process on macOS can lose access to the user session's TLS services.
  */
 interface ServeRuntimeEnvironment {
   readonly entry: string | undefined
@@ -167,6 +165,7 @@ export async function resolveServeRuntime(
   const executable = environment.executable ?? process.execPath
   const exists = environment.exists ?? existsSync
   const find = environment.find ?? findOnPath
+  if (entry?.startsWith('/$bunfs/')) return directServeRuntime(executable, entry, false)
   const node = await find('node')
   if (node && entry?.endsWith('.js') && exists(entry)) return { file: node, args: [entry] }
   if (node && entry?.endsWith('.ts')) {

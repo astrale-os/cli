@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { embeddedAssetDir } from '../embedded-assets'
 import { ensureViewerAssets, viewerDistDir } from '../view/assets'
 
 const temporaryDirectories: string[] = []
@@ -155,17 +156,21 @@ describe('viewer asset resolution', () => {
     expect(stdout.trim()).toBe(await realpath(viewer))
   })
 
-  test('resolves assets shipped beside a Bun-compiled standalone executable', async () => {
+  test('resolves assets materialized from a Bun-compiled standalone executable', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-view-standalone-'))
     temporaryDirectories.push(root)
-    const executable = join(root, 'bin', 'astrale')
-    const viewer = join(root, 'bin', 'viewer', 'dist')
+    const viewer = embeddedAssetDir('viewer', root)
     await mkdir(viewer, { recursive: true })
     await writeFile(join(viewer, 'main.js'), '')
     await writeFile(join(viewer, 'index.html'), '')
 
-    expect(viewerDistDir('file:///$bunfs/root/assets.ts', '/$bunfs/root/astrale', executable)).toBe(
-      viewer,
-    )
+    const previous = process.env.ASTRALE_HOME
+    process.env.ASTRALE_HOME = root
+    try {
+      expect(viewerDistDir('file:///$bunfs/root/assets.ts', '/$bunfs/root/astrale')).toBe(viewer)
+    } finally {
+      if (previous === undefined) delete process.env.ASTRALE_HOME
+      else process.env.ASTRALE_HOME = previous
+    }
   })
 })

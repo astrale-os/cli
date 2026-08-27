@@ -132,11 +132,8 @@ assert.equal(
   'CLI must pin the local Bun 1.4 runtime',
 )
 assert.equal(cliManifest.packageManager, 'pnpm@11.13.1', 'CLI must pin the qualification pnpm')
-assert.equal(
-  cliManifest.publishConfig?.registry,
-  'https://registry.npmjs.org',
-  'published CLI must target npmjs explicitly',
-)
+assert.equal(cliManifest.private, true, 'standalone-only CLI package must remain private')
+assert.equal(cliManifest.publishConfig, undefined, 'standalone-only CLI must not be publishable')
 assert.equal(
   cliManifest.devDependencies?.typescript,
   '7.0.2',
@@ -154,26 +151,22 @@ assert.equal(
 )
 assert.equal(
   cliManifest.devDependencies?.['@typescript/native-preview'],
-  undefined,
-  'CLI root must not install the native-preview compiler',
+  '7.0.0-dev.20260707.2',
+  'CLI root must pin the approved native-preview compiler',
 )
-assert.match(cliManifest.scripts?.typecheck ?? '', /\btsc\b/u, 'CLI root must typecheck with tsc')
-assert.doesNotMatch(
-  cliManifest.scripts?.typecheck ?? '',
-  /\btsgo\b/u,
-  'CLI root must not typecheck with tsgo',
-)
+assert.match(cliManifest.scripts?.typecheck ?? '', /\btsgo\b/u, 'CLI root must typecheck with tsgo')
+assert.doesNotMatch(cliManifest.scripts?.typecheck ?? '', /\btsc\b/u, 'CLI root must not use tsc')
 assert.match(
   cliManifest.scripts?.typecheck ?? '',
   /pnpm --dir studio run typecheck/u,
   'CLI root must delegate Studio typechecking to the Studio package',
 )
 const buildScript = await readFile('scripts/build.ts', 'utf8')
-assert.match(buildScript, /node_modules\/\.bin\/tsc/u, 'CLI declarations must be emitted with tsc')
+assert.match(buildScript, /node_modules\/\.bin\/tsgo/u, 'CLI declarations must use tsgo')
 assert.doesNotMatch(
   buildScript,
-  /node_modules\/\.bin\/tsgo/u,
-  'CLI root declaration build must not use tsgo',
+  /node_modules\/\.bin\/tsc/u,
+  'CLI declaration build must not use tsc',
 )
 const cliTypeScriptFiles = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
   .split('\n')

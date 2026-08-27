@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { parse } from 'yaml'
 
@@ -8,7 +8,6 @@ const workflow = (path) => parse(read(path))
 
 describe('release workflow contract', () => {
   const config = JSON.parse(read('.release-please-config.json'))
-  const publish = workflow('.github/workflows/publish.yml')
   const release = workflow('.github/workflows/release.yml')
   const binary = workflow('.github/workflows/cli-release.yml')
   const ci = workflow('.github/workflows/ci.yml')
@@ -25,16 +24,11 @@ describe('release workflow contract', () => {
     )
   })
 
-  it('derives npm beta and stable tags from the package version', () => {
-    const sharedPublish = publish.jobs.publish.steps.at(-1)
-    assert.equal(
-      sharedPublish.uses,
-      'astrale-os/config/.github/actions/publish/packages@e89c7e84ed0b5bad2dcbf80f7a4547e30672155e',
-    )
-    assert.equal(sharedPublish.with['prerelease-tag'], 'auto')
-    assert.equal(sharedPublish.with['mirror-public-packages'], 'false')
-    assert.equal(sharedPublish.with['github-token'], undefined)
-    assert.equal(publish.permissions.packages, undefined)
+  it('ships v1 only as a private, standalone package', () => {
+    const manifest = JSON.parse(read('package.json'))
+    assert.equal(manifest.private, true)
+    assert.equal(manifest.publishConfig, undefined)
+    assert.equal(existsSync('.github/workflows/publish.yml'), false)
   })
 
   it('runs the binary publisher only after Release Please creates a release', () => {
@@ -85,11 +79,13 @@ describe('release workflow contract', () => {
     assert.deepEqual(platforms.sort(), ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'])
     const build = binary.jobs.build.steps.find((step) => step.name === 'Build binary').run
     const pack = binary.jobs.build.steps.find((step) => step.name === 'Package asset').run
+    assert.equal(binary.env.BUN_VERSION, '1.4.0')
     assert.match(build, /bun scripts\/build-viewer\.ts/)
-    assert.match(build, /dist\/viewer\/dist\/main\.js/)
-    assert.match(pack, /tar .* astrale viewer/)
-    assert.match(pack, /viewer\/dist\/index\.html/)
-    assert.match(pack, /viewer\/dist\/main\.js/)
+    assert.match(build, /bun run --cwd studio build/)
+    assert.match(build, /bun scripts\/generate-embedded-assets\.ts/)
+    assert.match(build, /bun build --compile/)
+    assert.match(pack, /tar .* astrale/)
+    assert.doesNotMatch(pack, /viewer/)
   })
 
   it('qualifies skill reconciliation before and after publishing', () => {
@@ -112,14 +108,18 @@ describe('release workflow contract', () => {
     assert.equal(publishNode.with['node-version-file'], '.nvmrc')
   })
 
-  it('installs the standalone viewer assets beside the executable', () => {
+  it('installs one binary and delegates global skill configuration to it', () => {
     const installer = read('install.sh')
-    assert.match(installer, /install -m 0644 .*viewer\/dist\/main\.js/)
-    assert.match(installer, /install -m 0644 .*viewer\/dist\/index\.html/)
+    const studioSkills = read('studio/client/src/components/settings/skills.tsx')
+    assert.doesNotMatch(installer, /install -m 0644 .*viewer/)
+    assert.match(installer, /astrale" skills configure/)
+    assert.match(installer, /astrale" skills update --json/)
+    assert.match(studioSkills, /astrale skills configure/)
+    assert.doesNotMatch(studioSkills, /npx skills add astrale-os\/cli/)
   })
 
   it('pins every external action to one immutable revision', () => {
-    for (const [name, document] of Object.entries({ publish, release, binary, ci })) {
+    for (const [name, document] of Object.entries({ release, binary, ci })) {
       for (const job of Object.values(document.jobs)) {
         for (const step of job.steps ?? []) {
           if (typeof step.uses !== 'string' || step.uses.startsWith('./')) continue
@@ -149,8 +149,8 @@ describe('release workflow contract', () => {
     assert.match(guide, /chore\(ci\): promote CLI releases to stable/)
     assert.match(guide, /Release-As: 1\.0\.0/)
     assert.match(guide, /Keep `"tag-separator": "\/"`/)
-    assert.match(guide, /npm `latest`/)
     assert.match(guide, /standalone `stable` channel/)
+    assert.match(guide, /Bun 1\.4\.0/)
     assert.match(guide, /Approve workflows to run/)
     assert.match(guide, /action_required/)
   })

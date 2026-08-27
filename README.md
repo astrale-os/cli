@@ -11,8 +11,11 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
 The installer places a verified standalone binary at
-`~/.astrale/bin/astrale` by default. No local runtime is installed. During the
-prerelease period, it follows the beta channel by default.
+`~/.astrale/bin/astrale` by default. The same executable contains the CLI,
+[Domain Studio](studio/README.md), its Bun 1.4 runtime, the viewer, and the
+Astrale skills. Running the CLI, Studio, viewer, and Astrale skill manager does
+not require Node, npm, npx, or a separate Bun install. During the prerelease
+period, it follows the beta channel by default.
 
 Optional installer environment:
 
@@ -22,31 +25,8 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_VERSION=<version> sh
 ```
 
-### npm (CLI + Domain Studio)
-
-Alternatively, install from npm — this runs the CLI under Node and additionally
-ships the [Domain Studio](studio/README.md) (`astrale studio`):
-
-```bash
-npm install -g @astrale-os/cli
-```
-
-During the prerelease period, install the current beta explicitly:
-
-```bash
-npm install -g @astrale-os/cli@beta
-```
-
-The npm build bundles all dependencies, so no private-registry access is needed.
-`astrale studio` launches a local web GUI to author and inspect a domain, with
-local Claude Code and Codex agent harnesses (`--harness claude|codex`); it runs on
-[Bun](https://bun.sh), so install Bun and keep it on `PATH` to use that command
-(the rest of the CLI needs only Node ≥ 22). The curl-installed standalone binary
-above does not include the studio — use the npm install for `astrale studio`.
-
-> Prereleases use their matching npm dist-tag (`alpha`, `beta`, or `rc`); bare
-> `npm install -g @astrale-os/cli` follows the stable `latest` tag. The curl
-> installer has separate binary channels with the same names.
+There is no npm installation mode in v1. This keeps one update path and prevents
+two global Astrale versions from competing on `PATH`.
 
 ## Quickstart
 
@@ -87,12 +67,21 @@ Install the browser driver once:
 
 ```bash
 npm install -g agent-browser && agent-browser install
-npx skills add astrale-os/cli            # installs every Astrale skill published by this repository
 npx skills add vercel-labs/agent-browser
 ```
 
-To install just one, select `astrale-cli`, `astrale-domain`, `astrale-frontend-design`, or
-`astrale-services`, for example: `npx skills add astrale-os/cli@astrale-frontend-design`.
+Astrale manages its own skills without npx. The installer opens an agent picker,
+preselects detected or previously configured agents, installs the canonical copy
+globally under `~/.agents/skills`, and creates only the selected global links.
+
+```bash
+astrale skills configure
+astrale skills status
+astrale skills update
+```
+
+The global `.skill-lock.json` uses the same v3 schema and Git tree hashes as
+`skills@1.5.23`, so it remains interoperable with that ecosystem.
 
 ## Updating
 
@@ -101,15 +90,15 @@ astrale update --check
 astrale update
 ```
 
-`astrale update` upgrades official script installs, ensures every Astrale agent skill published
-from `astrale-os/cli` is installed and healthy, and follows the beta channel by default. It reports
-whether the skill pass was unchanged, installed, updated, or repaired. Use `--check`,
-`--channel <channel>`, or `--version <version>` to control the CLI release target; skills always
-resolve the repository's current `main` once, verify the installed trees against that commit, and
-stamp the exact revision/tree binding into the Astrale-owned receipt. A current
-`astrale update --check --json` result includes the resolved source revision plus every shipped
-skill's Git tree and entrypoint, so runners can retain the actual loadout rather than only
-`status: current`. `--no-skills` is the explicit opt-out.
+`astrale update` atomically upgrades the standalone executable, then invokes the
+new binary to install, update, or repair the skills embedded in that exact
+release. It follows the beta channel by default. Use `--check`,
+`--channel <channel>`, or `--version <version>` to control the release target;
+`--no-skills` is the explicit opt-out.
+
+On ordinary interactive launches, Astrale checks for CLI updates at most once
+per 24 hours and offers **Update now**, **Later**, or **Do not offer this version
+again**. It also detects stale local Astrale skills and offers to repair them.
 
 ## Commands
 
@@ -128,7 +117,7 @@ Main command groups:
 | Kernel | `get`, `call`, `query`, `introspect`, `logs`, `view`, `token` |
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
-| Agent | `browser` |
+| Agent | `browser`, `skills` |
 
 ## Path Syntax
 
@@ -209,11 +198,14 @@ so you stay signed in. A profile held by a running browser is skipped.
 Overridable per invocation with `ASTRALE_BROWSER_MAX_CACHE_BYTES` and
 `ASTRALE_BROWSER_MAX_PROFILE_AGE_DAYS`.
 
+Global skills live under `~/.agents/skills`. Their ecosystem-compatible lock is
+`$XDG_STATE_HOME/skills/.skill-lock.json` when XDG state is configured, otherwise
+`~/.agents/.skill-lock.json`.
+
 ## Development
 
-Contributors use Node.js 26.7.0 by default; Node.js 24 is also supported. pnpm is
-pinned to 11.13.1. The source-worktree runtime contract is enforced separately
-from the published CLI's Node ≥ 22 contract.
+Contributors use Node.js 26.7.0 by default and pnpm 11.13.1. Release executables
+are compiled and qualified with Bun 1.4.0.
 
 ```bash
 # From the workspace root

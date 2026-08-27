@@ -178,6 +178,10 @@ describe('program composition', () => {
       'session analyze',
       'session list',
       'setup',
+      'skills',
+      'skills configure',
+      'skills status',
+      'skills update',
       'status',
       'studio',
       'token',
@@ -195,7 +199,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '91c35b18985ad8606b5f2429fd8860b020a93edccb30dfbaa74d501929a8513b',
+      '148e60fd466cef443dd84983c7278bc9e89ffad717e9fb0beb02e3e97e9d8dbe',
     )
   })
 

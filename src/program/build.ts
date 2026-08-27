@@ -64,6 +64,16 @@ export async function buildProgram(): Promise<Command> {
   registerCommand(program, (await import('../commands/studio')).default)
 
   registerGroup(program, {
+    name: 'skills',
+    description: 'Manage embedded Astrale skills globally',
+    commands: [
+      (await import('../commands/skills/status')).default,
+      (await import('../commands/skills/update')).default,
+      (await import('../commands/skills/configure')).default,
+    ],
+  })
+
+  registerGroup(program, {
     name: 'ui',
     description: 'Initialize and install Astrale UI in local applications',
     commands: [
@@ -176,7 +186,7 @@ Command groups:
   Kernel        get, mutate, call, query, introspect, logs, view, token
   Management    admin, instance, domain, identity, auth, idp, update
   Application   ui        (initialize, inspect, and install Astrale UI source)
-  Agent         browser   (drive the GUI via agent-browser)
+  Agent         browser, skills   (drive the GUI; configure global agent skills)
   Studio        studio    (launch the local Domain Studio GUI for a workspace)
 
 Path syntax:
