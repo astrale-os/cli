@@ -101,9 +101,7 @@ describe('Domain token exchange', () => {
       },
     })
     const delegatedTtl = kernelRequests[1]!.body!.call.input.ttlSeconds
-    expect(delegatedTtl).toBeGreaterThan(0)
-    expect(delegatedTtl).toBeGreaterThanOrEqual(295)
-    expect(delegatedTtl).toBeLessThanOrEqual(300)
+    expect(delegatedTtl).toBe(75)
     expect(sourceAudiences).toEqual([KERNEL, KERNEL])
     expect(
       observed.filter((entry) => entry.url.endsWith('/.well-known/astrale/token')),
@@ -173,6 +171,87 @@ describe('Domain token exchange', () => {
     })
   })
 
+  test('requests and retains a carrier that covers a supported long command deadline', async () => {
+    const expiresAt = Math.floor(Date.now() / 1_000) + 250
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', expiresAt)
+    const observed: Record<string, any>[] = []
+    const base = exchangeFetch(exchanged, { expiresAt })
+    const fetch: Fetch = async (input, init) => {
+      if (String(input) === INVOCATION) {
+        observed.push(JSON.parse(await new Response(init?.body).text()))
+      }
+      return base(input, init)
+    }
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => sourceToken('user-1', expiresAt + 50) },
+      fetch,
+      180_000,
+      new ExchangeCredentialCache(join(directory, 'long-credential.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+    expect(observed[1]!.call.input.ttlSeconds).toBe(200)
+  })
+
+  /** @evidence TEST-CLI-EXCHANGE-REJECTS-INSUFFICIENT-LIFETIME */
+  test('rejects a too-short Domain exchange credential before destination dispatch', async () => {
+    const expiresAt = Math.floor(Date.now() / 1_000) + 150
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', expiresAt)
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => sourceToken('user-1', expiresAt + 150) },
+      exchangeFetch(exchanged, { expiresAt }),
+      180_000,
+      new ExchangeCredentialCache(join(directory, 'short-credential.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
+    })
+  })
+
+  test('rejects a long outer Domain token whose carried Kernel proof is too short', async () => {
+    const outerExpiresAt = Math.floor(Date.now() / 1_000) + 250
+    const proofExpiresAt = Math.floor(Date.now() / 1_000) + 150
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', outerExpiresAt, proofExpiresAt)
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => sourceToken('user-1', outerExpiresAt + 50) },
+      exchangeFetch(exchanged, { expiresAt: outerExpiresAt }),
+      180_000,
+      new ExchangeCredentialCache(join(directory, 'short-proof.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
+    })
+  })
+
+  test('rejects the real 300-second Domain ceiling for a 600-second command before destination dispatch', async () => {
+    const expiresAt = Math.floor(Date.now() / 1_000) + 300
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', expiresAt)
+    const observed: string[] = []
+    const base = exchangeFetch(exchanged, { expiresAt })
+    const fetch: Fetch = async (input, init) => {
+      observed.push(String(input))
+      return base(input, init)
+    }
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => sourceToken('user-1', expiresAt + 700) },
+      fetch,
+      600_000,
+      new ExchangeCredentialCache(join(directory, 'domain-ceiling.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_LIFETIME_INSUFFICIENT',
+    })
+    expect(observed.filter((url) => url === INVOCATION)).toHaveLength(2)
+    expect(observed.filter((url) => url.endsWith('/.well-known/astrale/token'))).toHaveLength(1)
+  })
+
   test('rejects success responses without no-store or with malformed fields', async () => {
     const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
     const cache = () => new ExchangeCredentialCache(join(directory, crypto.randomUUID()))
@@ -237,7 +316,11 @@ describe('Domain token exchange', () => {
 
 function exchangeFetch(
   exchanged: string,
-  options: { readonly body?: unknown; readonly cacheControl?: boolean } = {},
+  options: {
+    readonly body?: unknown
+    readonly cacheControl?: boolean
+    readonly expiresAt?: number
+  } = {},
 ): Fetch {
   return async (input, init) => {
     const url = String(input)
@@ -253,7 +336,9 @@ function exchangeFetch(
     }
     if (url.endsWith('/.well-known/openid-configuration')) return jsonResponse(configuration(true))
     const response = new Response(
-      JSON.stringify(options.body ?? { token: exchanged, expiresAt: EXPIRES_AT }),
+      JSON.stringify(
+        options.body ?? { token: exchanged, expiresAt: options.expiresAt ?? EXPIRES_AT },
+      ),
       {
         status: 200,
         headers: {
@@ -290,13 +375,13 @@ function jsonResponse(value: unknown, status = 200, contentType = 'application/j
   })
 }
 
-function token(iss: string, aud: string, user: string, exp: number): string {
+function token(iss: string, aud: string, user: string, exp: number, proofExp = exp): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
     iss: aud,
     sub: user,
     aud,
-    exp,
+    exp: proofExp,
     delegation: { v: 1, expr: { kind: 'identity', id: user } },
   })}.signature`
   return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
@@ -308,12 +393,12 @@ function token(iss: string, aud: string, user: string, exp: number): string {
   })}.signature`
 }
 
-function sourceToken(subject: string | undefined): string {
+function sourceToken(subject: string | undefined, expiresAt = SOURCE_EXPIRES_AT): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
     iss: 'https://workos.example',
     ...(subject === undefined ? {} : { sub: subject }),
     aud: KERNEL,
-    exp: SOURCE_EXPIRES_AT,
+    exp: expiresAt,
   })}.signature`
 }

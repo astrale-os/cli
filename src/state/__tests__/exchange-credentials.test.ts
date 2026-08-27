@@ -40,6 +40,7 @@ describe('exchange credential cache', () => {
     const resolve = (candidate: typeof first) =>
       cache.getOrRefresh(
         candidate,
+        30,
         async () => {
           refreshes += 1
           return entry(candidate, 200)
@@ -69,9 +70,9 @@ describe('exchange credential cache', () => {
     }
 
     const values = await Promise.all([
-      left.getOrRefresh(candidate, refresh, () => 100),
-      left.getOrRefresh(candidate, refresh, () => 100),
-      right.getOrRefresh(candidate, refresh, () => 100),
+      left.getOrRefresh(candidate, 30, refresh, () => 100),
+      left.getOrRefresh(candidate, 30, refresh, () => 100),
+      right.getOrRefresh(candidate, 30, refresh, () => 100),
     ])
     expect(new Set(values).size).toBe(1)
     expect(refreshes).toBe(1)
@@ -83,12 +84,14 @@ describe('exchange credential cache', () => {
     const candidate = key('https://kernel.example', 'https://domain.example', 'user')
     await cache.getOrRefresh(
       candidate,
+      30,
       async () => entry(candidate, 120),
       () => 50,
     )
     let refreshes = 0
     await cache.getOrRefresh(
       candidate,
+      30,
       async () => {
         refreshes += 1
         return entry(candidate, 220)
@@ -100,6 +103,7 @@ describe('exchange credential cache', () => {
     await expect(
       cache.getOrRefresh(
         key('https://other-kernel.example', candidate.domainIssuer, candidate.sourceSubject),
+        30,
         async () => entry(candidate, 220),
         () => 100,
       ),
@@ -108,6 +112,7 @@ describe('exchange credential cache', () => {
     await expect(
       cache.getOrRefresh(
         key(candidate.kernelIssuer, candidate.domainIssuer, 'other-source'),
+        30,
         async () => entry(candidate, 220),
         () => 100,
       ),
@@ -122,6 +127,7 @@ describe('exchange credential cache', () => {
       await expect(
         cache.getOrRefresh(
           malformedCandidate,
+          30,
           async () => entry(malformedCandidate, 220, malformed),
           () => 100,
         ),
@@ -137,6 +143,7 @@ describe('exchange credential cache', () => {
     for (const candidate of [a, b]) {
       await cache.getOrRefresh(
         candidate,
+        30,
         async () => entry(candidate, 200),
         () => 100,
       )
@@ -162,6 +169,7 @@ describe('exchange credential cache', () => {
     let refreshes = 0
     await cache.getOrRefresh(
       candidate,
+      30,
       async () => {
         refreshes += 1
         return entry(candidate, 200)
@@ -172,6 +180,103 @@ describe('exchange credential cache', () => {
     const stored = JSON.parse(await readFile(path, 'utf8'))
     expect(stored.version).toBe(2)
     expect(JSON.stringify(stored)).not.toContain('legacy')
+  })
+
+  test('refreshes a valid cached credential that cannot cover the requested invocation', async () => {
+    const cache = new ExchangeCredentialCache(path)
+    const candidate = key('https://kernel.example', 'https://domain.example', 'user')
+    await cache.getOrRefresh(
+      candidate,
+      30,
+      async () => entry(candidate, 250),
+      () => 100,
+    )
+    let refreshes = 0
+
+    await expect(
+      cache.getOrRefresh(
+        candidate,
+        185,
+        async () => {
+          refreshes += 1
+          return entry(candidate, 300)
+        },
+        () => 100,
+      ),
+    ).resolves.toBe(token(candidate, 300))
+    expect(refreshes).toBe(1)
+
+    await expect(
+      cache.getOrRefresh(
+        candidate,
+        201,
+        async () => entry(candidate, 190),
+        () => 100,
+      ),
+    ).rejects.toThrow(/required lifetime/i)
+  })
+
+  test('rejects a long outer token whose carried proof cannot cover the requested invocation', async () => {
+    const cache = new ExchangeCredentialCache(path)
+    const candidate = key('https://kernel.example', 'https://domain.example', 'user')
+
+    await expect(
+      cache.getOrRefresh(
+        candidate,
+        185,
+        async () => entry(candidate, 300, undefined, 150),
+        () => 100,
+      ),
+    ).rejects.toThrow(/required lifetime/i)
+  })
+
+  test('serializes concurrent short and long callers without serving a short carrier to the long caller', async () => {
+    for (const firstKind of ['short', 'long'] as const) {
+      const concurrentPath = join(directory, firstKind, 'credentials.json')
+      const firstCache = new ExchangeCredentialCache(concurrentPath)
+      const secondCache = new ExchangeCredentialCache(concurrentPath)
+      const candidate = key('https://kernel.example', 'https://domain.example', firstKind)
+      let releaseFirst!: () => void
+      let markFirstStarted!: () => void
+      const firstStarted = new Promise<void>((resolve) => {
+        markFirstStarted = resolve
+      })
+      const release = new Promise<void>((resolve) => {
+        releaseFirst = resolve
+      })
+      let refreshes = 0
+      const firstMinimum = firstKind === 'short' ? 30 : 185
+      const firstExpiration = firstKind === 'short' ? 200 : 300
+      const first = firstCache.getOrRefresh(
+        candidate,
+        firstMinimum,
+        async () => {
+          refreshes += 1
+          markFirstStarted()
+          await release
+          return entry(candidate, firstExpiration)
+        },
+        () => 100,
+      )
+      await firstStarted
+      const secondMinimum = firstKind === 'short' ? 185 : 30
+      const secondExpiration = firstKind === 'short' ? 300 : 200
+      const second = secondCache.getOrRefresh(
+        candidate,
+        secondMinimum,
+        async () => {
+          refreshes += 1
+          return entry(candidate, secondExpiration)
+        },
+        () => 100,
+      )
+      releaseFirst()
+
+      const [firstValue, secondValue] = await Promise.all([first, second])
+      const longValue = firstKind === 'long' ? firstValue : secondValue
+      expect(longValue).toBe(token(candidate, 300))
+      expect(refreshes).toBe(firstKind === 'short' ? 2 : 1)
+    }
   })
 })
 
@@ -193,9 +298,10 @@ function entry(
   candidate: ReturnType<typeof key>,
   expiresAt: number,
   malformed?: 'outer-delegation' | 'proof-without-delegation',
+  proofExpiresAt = expiresAt,
 ) {
   return {
-    credential: token(candidate, expiresAt, malformed),
+    credential: token(candidate, expiresAt, malformed, proofExpiresAt),
     expiresAt,
     user: candidate.sourceSubject,
     sourceIssuer: candidate.sourceIssuer,
@@ -207,13 +313,14 @@ function token(
   candidate: ReturnType<typeof key>,
   exp: number,
   malformed?: 'outer-delegation' | 'proof-without-delegation',
+  proofExp = exp,
 ): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
     iss: candidate.kernelIssuer,
     sub: candidate.sourceSubject,
     aud: candidate.kernelIssuer,
-    exp,
+    exp: proofExp,
     ...(malformed === 'proof-without-delegation'
       ? {}
       : {

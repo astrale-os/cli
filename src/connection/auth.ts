@@ -47,7 +47,12 @@ export async function bindCredentialIdentity<Options extends ConnectionOptions>(
  *      registration for the target instance, use that target-issued `(iss, sub)`.
  */
 export async function resolveCredential(
-  opts: { as?: string; creds?: string; defaultIdentity?: string },
+  opts: {
+    as?: string
+    creds?: string
+    defaultIdentity?: string
+    minimumRemainingSeconds?: number
+  },
   config: AstraleConfig,
   audience: string = config.issuer,
   registrationKey?: string,
@@ -69,7 +74,12 @@ export async function resolveCredential(
       resolvedIdentity = identity
       resolvedName = identityName
       if ((identity.source ?? 'key') === 'idp')
-        return await resolveIdpAccessToken(identityName, identity, audience)
+        return await resolveIdpAccessToken(
+          identityName,
+          identity,
+          audience,
+          opts.minimumRemainingSeconds,
+        )
       return await signAs(
         identity.subject,
         KEYS_DIR,
@@ -81,7 +91,12 @@ export async function resolveCredential(
     resolvedIdentity = identity
     resolvedName = identity.name
     if ((identity.source ?? 'key') === 'idp') {
-      return await resolveIdpAccessToken(identity.name, identity, audience)
+      return await resolveIdpAccessToken(
+        identity.name,
+        identity,
+        audience,
+        opts.minimumRemainingSeconds,
+      )
     }
 
     return await signAs(
@@ -164,10 +179,11 @@ async function resolveIdpAccessToken(
   identityName: string,
   identity: Identity,
   audience: string,
+  minimumRemainingSeconds?: number,
 ): Promise<string> {
   let resolved
   try {
-    resolved = await ensureFreshSession(identityName, { audience })
+    resolved = await ensureFreshSession(identityName, { audience, minimumRemainingSeconds })
   } catch (e) {
     if (e instanceof IdpSessionMissingError) {
       throw new Error(

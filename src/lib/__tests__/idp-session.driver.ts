@@ -13,6 +13,9 @@ import { ensureFreshSession } from '../idp-session'
 
 const scenario = process.argv[2]
 const audience = process.env.DRIVER_AUDIENCE || undefined
+const minimumRemainingSeconds = process.env.DRIVER_MINIMUM_SECONDS
+  ? Number(process.env.DRIVER_MINIMUM_SECONDS)
+  : undefined
 let orgHintCalls = 0
 const resolveOrganizationId = async (): Promise<string | undefined> => {
   orgHintCalls += 1
@@ -25,12 +28,16 @@ function print(result: Record<string, unknown>): void {
 
 try {
   if (scenario === 'ensure') {
-    const session = await ensureFreshSession('alice', { audience, resolveOrganizationId })
+    const session = await ensureFreshSession('alice', {
+      audience,
+      minimumRemainingSeconds,
+      resolveOrganizationId,
+    })
     print({ ok: true, token: accessTokenForAudience(session, audience), orgHintCalls })
   } else if (scenario === 'ensure-concurrent') {
     const [a, b] = await Promise.all([
-      ensureFreshSession('alice', { audience, resolveOrganizationId }),
-      ensureFreshSession('alice', { audience, resolveOrganizationId }),
+      ensureFreshSession('alice', { audience, minimumRemainingSeconds, resolveOrganizationId }),
+      ensureFreshSession('alice', { audience, minimumRemainingSeconds, resolveOrganizationId }),
     ])
     print({
       ok: true,

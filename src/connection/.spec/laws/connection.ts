@@ -135,11 +135,19 @@ export const CLI_CONNECTION_TERMINAL_CLOSE = defineLaw({
 export const CLI_CONNECTION_TIMEOUT = defineLaw({
   id: 'CLI-CONNECTION-TIMEOUT',
   statement:
-    'The CLI accepts only a positive integer timeout before constructing a Client Session and applies it to both source-Auth and Session operations.',
+    'The CLI accepts only a positive integer timeout before constructing a Client Session, applies it to source-Auth and Session operations, and requires exchanged and destination-carrier authority to cover that timeout plus the bounded receipt margin before destination dispatch.',
   tests: [
     {
       file: '__tests__/session.test.ts',
       id: 'TEST-CLI-CONNECTION-REJECTS-INVALID-TIMEOUT-BEFORE-OPEN',
+    },
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-CARRIER-COVERS-COMMAND-TIMEOUT',
+    },
+    {
+      file: '__tests__/exchange.test.ts',
+      id: 'TEST-CLI-EXCHANGE-REJECTS-INSUFFICIENT-LIFETIME',
     },
   ],
 })

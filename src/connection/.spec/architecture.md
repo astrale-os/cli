@@ -31,8 +31,11 @@ current Grant for routing. Connection itself persists no credential or route; th
 owner persists exchanged source credentials and the separate Kernel Client route artifact. A valid exchanged credential is selected by the
 authenticated source issuer and subject before any live `whoami`; cache misses alone resolve the
 registered Kernel User and perform delegation plus Domain exchange.
-Exchange authority is bounded to five minutes and never outlives the current source credential,
-matching the CLI route-age ceiling without forcing an unrelated two-minute refresh cycle.
+Exchange and destination-carrier authority cover the selected command timeout plus one bounded
+receipt margin, never outlive the current source credential, and retain the existing one-minute
+floor for short commands. A cached or freshly exchanged credential that cannot cover that lifetime
+is refreshed or rejected before destination dispatch, so a long durable mutation does not first
+discover expired callback authority after its provider effect commits.
 
 Every ClientSession receives the CLI-owned `state/session-routes` representation capability. Kernel
 Client still owns route keying, admission, expiry, and one safe stale/miss recovery; Connection does

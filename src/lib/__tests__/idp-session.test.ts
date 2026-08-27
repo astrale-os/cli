@@ -80,6 +80,31 @@ describe('ensureFreshSession', () => {
     }
   })
 
+  test('refreshes at the conservative whole-second lifetime boundary', async () => {
+    const server = rotationServer()
+    try {
+      await writeIdpConfig(server.url)
+      const shortToken = unsignedJwt({ aud: AUD, exp: Math.ceil(Date.now() / 1_000) + 200 })
+      await writeSession({
+        access_token: shortToken,
+        // The loose millisecond timestamp appears sufficient. Delegation uses
+        // the JWT exp and its conservative second-boundary handoff instead.
+        expires_at: new Date(Date.now() + 201_000).toISOString(),
+      })
+
+      const result = await runDriver('ensure', {
+        DRIVER_AUDIENCE: AUD,
+        DRIVER_MINIMUM_SECONDS: '200',
+      })
+
+      expect(result.ok).toBe(true)
+      expect(server.refreshCount()).toBe(1)
+      expect(result.token).not.toBe(shortToken)
+    } finally {
+      await server.stop()
+    }
+  })
+
   test('refreshes with the client that issued the session instead of the IdP default', async () => {
     const server = rotationServer()
     try {

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { z } from 'zod'
 
 import { atomicWrite, IDPS_PATH, IDP_SESSIONS_DIR, paths } from '../state/index'
+import { credentialLifetimeCovers } from './credential-lifetime'
 import { log } from './log'
 import { validateName, validateUrl } from './validation'
 
@@ -620,16 +621,35 @@ export function isSessionExpired(
  * top-level token's own `aud` claim. Without an `audience`, freshness of the
  * top-level token is the only requirement.
  */
-export function accessTokenForAudience(session: IdpSession, audience?: string): string | undefined {
+export function accessTokenForAudience(
+  session: IdpSession,
+  audience?: string,
+  minimumRemainingMs = 60_000,
+): string | undefined {
   if (audience === undefined) {
-    return isSessionExpired(session) ? undefined : session.access_token
+    return tokenHasMinimumLifetime(session, minimumRemainingMs) ? session.access_token : undefined
   }
   const entry = session.tokens?.[audience]
-  if (entry && !isSessionExpired(entry)) return entry.access_token
-  if (!isSessionExpired(session) && tokenAudienceMatches(session.access_token, audience)) {
+  if (entry && tokenHasMinimumLifetime(entry, minimumRemainingMs)) return entry.access_token
+  if (
+    tokenHasMinimumLifetime(session, minimumRemainingMs) &&
+    tokenAudienceMatches(session.access_token, audience)
+  ) {
     return session.access_token
   }
   return undefined
+}
+
+/** Prefer the JWT expiration used by delegation; opaque IdP tokens retain their timestamp path. */
+function tokenHasMinimumLifetime(
+  value: Pick<IdpSession, 'expires_at'> & { access_token: string },
+  minimumRemainingMs: number,
+): boolean {
+  const expiration = decodeTokenClaims(value.access_token)?.exp
+  if (typeof expiration === 'number' && Number.isSafeInteger(expiration)) {
+    return credentialLifetimeCovers(expiration, Math.ceil(minimumRemainingMs / 1_000))
+  }
+  return !isSessionExpired(value, minimumRemainingMs)
 }
 
 /**

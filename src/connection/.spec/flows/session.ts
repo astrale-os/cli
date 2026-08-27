@@ -24,8 +24,9 @@ declare const resolveSourceCredential: (
 ) => Promise<string>
 /** Bind source authority without learning or minting destination credentials. */
 function createConnectionAuth(target: ConnectionTarget, options: ConnectionOptions): SessionAuth {
+  const ttlSeconds = Math.max(60, Math.ceil(resolveTimeoutMs(options.timeout) / 1_000) + 5)
   return {
-    ttlSeconds: 3_600,
+    ttlSeconds,
     async resolve(_call: Call, signal: AbortSignal) {
       return {
         credential: await resolveSourceCredential(target, options, target.issuer, signal),

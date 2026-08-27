@@ -7,8 +7,10 @@ import type { AstraleConfig } from '../lib/config'
 import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
+import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
 import { resolveCredential } from './auth'
 import { createExchangeCredentialResolver } from './exchange'
+import { exchangeCredentialTtlSeconds, invocationCredentialTtlSeconds } from './lifetime'
 import { registrationKeyForTarget } from './target'
 
 const DELEGATION_TTL_SECONDS = 60
@@ -21,32 +23,46 @@ export interface SourceCredentialResolver {
 export function createConnectionCredential(
   expectedSourceIssuer: IssuerId,
   source: SourceCredentialResolver,
+  ttlSeconds = DELEGATION_TTL_SECONDS,
 ): SessionAuth {
+  if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1) {
+    throw new TypeError('Connection credential ttlSeconds must be a positive safe integer.')
+  }
   const resolveSource = source.resolve.bind(source)
   return Object.freeze({
-    ttlSeconds: DELEGATION_TTL_SECONDS,
+    ttlSeconds,
     async resolve(
       _call: Parameters<SessionAuth['resolve']>[0],
       signal: Parameters<SessionAuth['resolve']>[1],
     ) {
       const resolved = await resolveSource(expectedSourceIssuer, signal)
-      const ttlSeconds = sourceBoundDelegationTtl(resolved)
+      const delegatedTtlSeconds = sourceBoundDelegationTtl(resolved, ttlSeconds)
       return Object.freeze({
         credential: resolved,
-        ...(ttlSeconds === undefined ? {} : { delegate: { ttlSeconds } }),
+        ...(delegatedTtlSeconds === undefined
+          ? {}
+          : { delegate: { ttlSeconds: delegatedTtlSeconds } }),
       })
     },
   })
 }
 
 /** Never request a destination carrier that could outlive its current source bearer. */
-function sourceBoundDelegationTtl(input: string): number | undefined {
+function sourceBoundDelegationTtl(input: string, requestedTtlSeconds: number): number | undefined {
   try {
     const expiresAt = credential.inspect(input).claims.exp
     if (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt)) return undefined
-    const remaining = expiresAt - Math.ceil(Date.now() / 1_000) - 1
-    return Math.max(1, Math.min(DELEGATION_TTL_SECONDS, remaining))
-  } catch {
+    const remaining = remainingCredentialLifetimeSeconds(expiresAt)
+    if (remaining < requestedTtlSeconds) {
+      throw new AstraleError(
+        'CREDENTIAL_LIFETIME_INSUFFICIENT',
+        'The selected credential cannot cover the requested command timeout.',
+        `Use a fresh identity session or a shorter --timeout; ${Math.max(0, remaining)} seconds remain but ${requestedTtlSeconds} are required.`,
+      )
+    }
+    return Math.max(1, Math.min(requestedTtlSeconds, remaining))
+  } catch (cause) {
+    if (cause instanceof AstraleError) throw cause
     // Preserve opaque explicit credentials; the Kernel remains their authority.
     return undefined
   }
@@ -66,6 +82,10 @@ export function createCliCredential(
     ...(options.as === undefined ? {} : { as: options.as }),
     ...(options.creds === undefined ? {} : { creds: options.creds }),
     ...(target.defaultIdentity === undefined ? {} : { defaultIdentity: target.defaultIdentity }),
+    minimumRemainingSeconds:
+      target.domainIssuer === undefined
+        ? invocationCredentialTtlSeconds(timeoutMs)
+        : exchangeCredentialTtlSeconds(timeoutMs),
   })
   const source: SourceCredentialResolver = {
     async resolve(audience, signal) {
@@ -89,7 +109,8 @@ export function createCliCredential(
           fetch,
           timeoutMs,
         )
-  return createConnectionCredential(target.kernelIssuer, effective)
+  const ttlSeconds = invocationCredentialTtlSeconds(timeoutMs)
+  return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
 }
 
 /** Reject contradictory explicit credential selections before identity or network access. */
