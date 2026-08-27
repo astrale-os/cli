@@ -35,7 +35,7 @@ describe('release workflow contract', () => {
     const sharedRelease = release.jobs.release.steps.find((step) => step.id === 'release')
     assert.equal(
       sharedRelease.uses,
-      'astrale-os/config/.github/actions/release@e89c7e84ed0b5bad2dcbf80f7a4547e30672155e',
+      'astrale-os/config/.github/actions/release@8e2e2abd0320be0c2f64033916519ab3b66c7dd7',
     )
     assert.equal(
       release.jobs.release.outputs.created,
