@@ -1,4 +1,4 @@
-import { Bot, MessageSquare, PanelBottom, PanelLeft, PanelRight, X } from 'lucide-react'
+import { Asterisk, MessageSquare, PanelBottom, PanelLeft, PanelRight, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -53,7 +53,7 @@ function CollapsedRail({ domainId }: { domainId: string }) {
       )}
     >
       <RailButton label="Agent" onClick={() => setPanelTab('agent')}>
-        <Bot className="h-4 w-4" />
+        <Asterisk className="h-4 w-4" />
       </RailButton>
       <RailButton label="Comments" badge={waiting} onClick={() => setPanelTab('comments')}>
         <MessageSquare className="h-4 w-4" />
@@ -117,7 +117,7 @@ function ExpandedPanel({ domainId }: { domainId: string }) {
           <TabButton
             active={tab === 'agent'}
             onClick={() => setPanelTab('agent')}
-            icon={<Bot />}
+            icon={<Asterisk />}
             label="Agent"
             compact={narrow}
           />

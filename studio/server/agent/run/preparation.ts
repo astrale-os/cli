@@ -136,6 +136,7 @@ export async function prepareRun(
         : awaiting.length === 1
           ? '1 open thread'
           : `${awaiting.length} open threads`,
+    ...(message ? { instruction: message } : {}),
     targetCommentIds: awaiting.map((comment) => comment.id),
     events: [],
     sessionId: resume,

@@ -1,6 +1,6 @@
 import type { AnchorRef, Comment, ThreadEntry } from '@shared/types'
 
-import { Bot, Check, Pencil, Trash2, User } from 'lucide-react'
+import { Check, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -59,16 +59,17 @@ function useSpeaker(domainId: string): (role: ThreadEntry['role']) => string {
   return (role) => (role === 'author' ? agent : 'You')
 }
 
-function Avatar({ role }: { role: ThreadEntry['role'] }) {
+/** An initial, not a glyph — a speaker is a name, and no icon says "agent" well. */
+function Avatar({ role, name }: { role: ThreadEntry['role']; name: string }) {
   const agent = role === 'author'
   return (
     <span
       className={cn(
-        'mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full',
+        'mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-semibold uppercase',
         agent ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
       )}
     >
-      {agent ? <Bot className="h-3 w-3" /> : <User className="h-3 w-3" />}
+      {name.trim().charAt(0) || '?'}
     </span>
   )
 }
@@ -239,7 +240,7 @@ function Entries({ domainId, comment }: { domainId: string; comment: Comment }) 
           index === comment.thread.length - 1
         return (
           <div key={entry.id} className="flex gap-2">
-            <Avatar role={entry.role} />
+            <Avatar role={entry.role} name={speaker(entry.role)} />
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline gap-2">
                 <span className="text-[13px] font-medium">{speaker(entry.role)}</span>
@@ -311,7 +312,7 @@ export function ThreadView({ domainId, comment }: { domainId: string; comment: C
 
       {replying && !closed ? (
         <div className="flex gap-2">
-          <Avatar role="user" />
+          <Avatar role="user" name="You" />
           <div className="min-w-0 flex-1 space-y-1.5">
             <Textarea
               // biome-ignore lint/a11y/noAutofocus: opened by an explicit Reply click
@@ -426,7 +427,7 @@ export function NewComment({
 
   return (
     <div className="flex gap-2">
-      <Avatar role="user" />
+      <Avatar role="user" name="You" />
       <div className="min-w-0 flex-1 space-y-1.5">
         <Textarea
           // biome-ignore lint/a11y/noAutofocus: the composer IS the point of this popover

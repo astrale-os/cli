@@ -5,8 +5,7 @@ domain (or a workspace) and it parses the whole thing — the **schema** above a
 and renders it far more legibly than raw code. Attach **comments / open questions**
 to any element, then hit **Submit to agent**: a local Claude Code or Codex harness,
 using your existing login, reads the context, edits the domain code on disk, and
-replies straight back into the comment threads. **Copy for agent** and
-**Merge reply** provide the same handoff as a manual fallback.
+replies in the conversation and straight back into any included comment threads.
 
 Lives in the astrale CLI repo (`cli/studio`) and is launched by **`astrale studio`**.
 
@@ -105,8 +104,8 @@ to send open threads to the agent.
 
 | Panel tab | What it does |
 |---|---|
-| **Agent** | The instruction composer plus the reference documents handed to the agent on every turn, stored under `.domain-studio/context/docs`. |
-| **Comments** | Open/resolved threads; opening one takes the main view to what it points at. **Copy for agent** / **Merge reply** live here too. |
+| **Agent** | The conversation with the agent: your message, what it did, what it answered. Documents dropped in join `.domain-studio/context/docs`; every turn lists them with their path, so the agent opens the ones it needs. |
+| **Comments** | Open/resolved threads; opening one takes the main view to what it points at. Threads still waiting on the agent ride along with the next turn, and it answers them in place. |
 
 ## How it's built
 
@@ -128,7 +127,7 @@ server/
 client/src/
   schema-studio/         canvases plus private graph/detail/Core component owners
   sections/              the Process screen
-  components/            shared UI, settings, work panel, comment/agent surfaces and manual handoff
+  components/            shared UI, settings, work panel and comment/agent surfaces
   lib/                   API client, queries, event stream and UI state
 ```
 

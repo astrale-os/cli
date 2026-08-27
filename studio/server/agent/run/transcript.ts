@@ -7,10 +7,11 @@ import {
   type MergeResult,
 } from '../../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
-import { readJson, writeJson } from '../../state/store'
+import { listState, readJson, writeJson } from '../../state/store'
 
 const LAST_RUN_FILE = '.cache/agent/last-run.json'
-const runFile = (id: string) => `.cache/agent/runs/${id}.json`
+const RUNS_DIR = '.cache/agent/runs'
+const runFile = (id: string) => `${RUNS_DIR}/${id}.json`
 
 const RUN_STATUSES = new Set<AgentRun['status']>([
   'queued',
@@ -139,6 +140,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     const decoded = decodeAgentEvent(event)
     return decoded ? [decoded] : []
   })
+  const instruction = asString(record.instruction)
   const finishedAt = asString(record.finishedAt)
   const sessionId = asString(record.sessionId)
   const resumed = asBoolean(record.resumed)
@@ -158,6 +160,7 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
     summary,
     targetCommentIds,
     events,
+    ...(instruction === undefined ? {} : { instruction }),
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(sessionId === undefined ? {} : { sessionId }),
     ...(resumed === undefined ? {} : { resumed }),
@@ -190,7 +193,29 @@ export function readLastRun(domainId: string, root: string): AgentRun | null {
     last.finishedAt = last.finishedAt ?? new Date().toISOString()
     last.error =
       'the studio restarted during this turn — your conversation is preserved; submit again to continue'
-    persistRun(root, last)
+    persistRun(root, last, true)
   }
   return last
+}
+
+/**
+ * The conversation so far, oldest first: every transcript this domain kept.
+ *
+ * Only terminal runs are written to `runs/`, so the ACTIVE one is missing here —
+ * callers layer it on top (the live run is already streamed to them).
+ */
+export function readRunHistory(domainId: string, root: string, limit = 40): AgentRun[] {
+  const boundedLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 40
+  const runs: AgentRun[] = []
+  for (const file of listState(root, RUNS_DIR)) {
+    if (!file.endsWith('.json')) continue
+    try {
+      const run = readJson(root, `${RUNS_DIR}/${file}`, decodeAgentRun, null)
+      if (run && run.domainId === domainId) runs.push(run)
+    } catch {
+      // One unreadable transcript must not hide the rest of the conversation.
+    }
+  }
+  runs.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  return runs.slice(-boundedLimit)
 }

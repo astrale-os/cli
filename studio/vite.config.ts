@@ -11,7 +11,10 @@ import { defineConfig } from 'vite'
 // --dev` proxy), the page origin is the studio port but Vite listens on its own
 // port — so the HMR WebSocket must target Vite directly. `astrale studio` passes
 // Vite's port as STUDIO_VITE_PORT for exactly that.
-const hmrPort = process.env.STUDIO_VITE_PORT ? Number(process.env.STUDIO_VITE_PORT) : undefined
+const configuredVitePort = process.env.STUDIO_VITE_PORT
+  ? Number(process.env.STUDIO_VITE_PORT)
+  : undefined
+const vitePort = configuredVitePort ?? 5173
 
 export default defineConfig({
   root: 'client',
@@ -26,9 +29,14 @@ export default defineConfig({
     // bind IPv4 explicitly: Node resolves `localhost` verbatim, so Vite could end up
     // on [::1] only while the studio's dev proxy dials 127.0.0.1 — the page then hangs
     host: '127.0.0.1',
-    port: 5173,
-    strictPort: false,
-    ...(hmrPort ? { hmr: { clientPort: hmrPort, host: '127.0.0.1' } } : {}),
+    port: vitePort,
+    strictPort: configuredVitePort !== undefined,
+    // The page is served by the studio's dev proxy on ANOTHER port and that proxy
+    // speaks HTTP only — a socket aimed at the page origin never connects, and the
+    // Vite client then reloads the page in a loop. Dial Vite itself.
+    ...(configuredVitePort === undefined
+      ? {}
+      : { hmr: { host: '127.0.0.1', clientPort: configuredVitePort } }),
   },
   // `@astrale-os/shell` resolves to a workspace SOURCE symlink in the monorepo
   // (not the published bundle it was as a standalone package). Pre-bundle it so

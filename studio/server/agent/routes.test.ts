@@ -3,11 +3,13 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { AgentRun } from '../../shared/types'
 import type { AskResult } from './harness/adapter'
 
 import { registerDomain, unregisterDomain } from '../domain'
 import { getHarnessById } from './harness/registry'
 import { handleAgentRoute } from './routes'
+import { persistRun } from './run/transcript'
 import { NdjsonChannel } from './stream'
 
 const roots: string[] = []
@@ -71,6 +73,36 @@ test('owns harness status and prompt routes behind one agent boundary', async ()
   expect(await prompt?.json()).toMatchObject({
     bridge: true,
   })
+})
+
+test('serves the bounded persisted conversation history', async () => {
+  const handle = fixture()
+  const saved = (id: string, createdAt: string): AgentRun => ({
+    id,
+    domainId: handle.id,
+    harness: 'codex',
+    status: 'succeeded',
+    createdAt,
+    summary: id,
+    instruction: `Do ${id}`,
+    targetCommentIds: [],
+    events: [],
+  })
+  persistRun(handle.root, saved('older', '2026-08-20T01:00:00.000Z'), true)
+  persistRun(handle.root, saved('newer', '2026-08-20T02:00:00.000Z'), true)
+
+  const url = new URL(`http://127.0.0.1/api/domain/${handle.id}/agent/history?limit=1`)
+  const response = await handleAgentRoute({
+    req: new Request(url),
+    url,
+    rest: '/agent/history',
+    body: {},
+    handle,
+    notify: () => {},
+  })
+
+  expect(response?.status).toBe(200)
+  expect(await response?.json()).toEqual([expect.objectContaining({ id: 'newer' })])
 })
 
 test('ignores non-agent routes and rejects unknown agent routes', async () => {

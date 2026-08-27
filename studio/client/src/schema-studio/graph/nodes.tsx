@@ -1,7 +1,7 @@
 import type { AnchorRef, Comment } from '@shared/types'
 
 import { Handle, type NodeProps, Position } from '@xyflow/react'
-import { Box, ChevronDown, ChevronRight, Globe, MessageSquare, UserRound } from 'lucide-react'
+import { Box, ChevronDown, ChevronRight, Globe, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 
 import { hasUnsentDraft } from '@/components/thread'
@@ -22,6 +22,9 @@ import { SchemaIcon } from '../schema-icon'
 function ClassNode({ data }: NodeProps) {
   const d = data as ClassNodeData
   const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `class.${d.name}`)
+  // chips and inheritance edges carry the same fact — show whichever the reader asked for
+  const showInheritedEdges = useUI((s) => s.showInheritedEdges)
+  const parents = d.parents ?? []
   const tint = moduleTint(d.hue)
   return (
     <div
@@ -44,9 +47,13 @@ function ClassNode({ data }: NodeProps) {
         <Box className="h-4 w-4 shrink-0" style={{ color: tint.mark }} />
       )}
       <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{d.name}</span>
-      {d.coreRole === 'identity' && (
-        <span title="Identity" className="shrink-0 text-muted-foreground">
-          <UserRound className="h-3.5 w-3.5" />
+      {!showInheritedEdges && parents.length > 0 && (
+        <span
+          title={`Extends ${parents.join(', ')}`}
+          className="max-w-[76px] shrink-0 truncate rounded bg-muted px-1 py-px text-[10px] leading-4 text-muted-foreground"
+        >
+          {parents[0]}
+          {parents.length > 1 && ` +${parents.length - 1}`}
         </span>
       )}
       <NodeCommentPin
