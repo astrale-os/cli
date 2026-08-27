@@ -123,13 +123,18 @@ describe('release workflow contract', () => {
     )
     assert.deepEqual(platforms.sort(), ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'])
     const build = binary.jobs.build.steps.find((step) => step.name === 'Build binary').run
+    const source = binary.jobs.build.steps.find((step) => step.id === 'source')
     const pack = binary.jobs.build.steps.find((step) => step.name === 'Package asset').run
     assert.equal(binary.env.BUN_VERSION, '1.4.0')
+    assert.match(source.run, /git rev-parse HEAD/)
     assert.match(build, /bun scripts\/build-viewer\.ts/)
     assert.match(build, /bun run --cwd studio build/)
     assert.match(build, /bun scripts\/generate-embedded-assets\.ts/)
     assert.match(build, /bun build --compile/)
-    assert.match(build, /--define '__ASTRALE_SOURCE_REVISION__="\$\{\{ github\.sha \}\}"'/)
+    assert.match(
+      build,
+      /--define '__ASTRALE_SOURCE_REVISION__="\$\{\{ steps\.source\.outputs\.sha \}\}"'/,
+    )
     assert.match(pack, /tar .* astrale/)
     assert.doesNotMatch(pack, /viewer/)
   })
@@ -139,6 +144,10 @@ describe('release workflow contract', () => {
       (step) => step.name === 'Qualify skill update with the built binary',
     )
     assert.equal(buildQualification.env.ASTRALE_E2E_CLI, './dist/astrale')
+    assert.equal(
+      buildQualification.env.ASTRALE_E2E_SOURCE_REVISION,
+      '${{ steps.source.outputs.sha }}',
+    )
     assert.match(buildQualification.run, /pnpm test:skills-e2e/)
 
     const publishedQualification = binary.jobs.publish.steps.find(
@@ -147,6 +156,10 @@ describe('release workflow contract', () => {
     assert.match(publishedQualification.run, /gh release download "\$CHANNEL"/)
     assert.match(publishedQualification.run, /astrale-linux-x64\.tar\.gz/)
     assert.match(publishedQualification.run, /scripts\/qualification\/skills-update-e2e\.mjs/)
+    assert.equal(
+      publishedQualification.env.ASTRALE_E2E_SOURCE_REVISION,
+      '${{ steps.source.outputs.sha }}',
+    )
 
     const publishNode = binary.jobs.publish.steps.find((step) =>
       step.uses?.startsWith('actions/setup-node@'),

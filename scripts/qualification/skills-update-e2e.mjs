@@ -200,7 +200,8 @@ try {
   assert.equal(checked.status, 'current')
   assert.equal(checked.source.repository, 'astrale-os/cli')
   if (process.env.ASTRALE_E2E_CLI) {
-    assert.match(checked.source.revision, /^[0-9a-f]{40}$/u)
+    assert.match(process.env.ASTRALE_E2E_SOURCE_REVISION ?? '', /^[0-9a-f]{40}$/u)
+    assert.equal(checked.source.revision, process.env.ASTRALE_E2E_SOURCE_REVISION)
   } else {
     assert.match(checked.source.revision, /^cli:(?:[0-9a-f]{40})(?::[0-9a-f]{40})*$/u)
   }
