@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.38](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.37...cli/v1.0.0-beta.38) (2026-08-27)
+
+
+### Bug Fixes
+
+* make embedded asset builds reproducible ([#236](https://github.com/astrale-os/cli/issues/236)) ([fb0067c](https://github.com/astrale-os/cli/commit/fb0067c2e1037335c5eb70e4471d3356cf1c8e9f))
+
 ## [1.0.0-beta.37](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.36...cli/v1.0.0-beta.37) (2026-08-27)
 
 
