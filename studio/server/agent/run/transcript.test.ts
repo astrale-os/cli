@@ -64,6 +64,14 @@ test('reads bounded terminal history oldest first and skips unrelated or unreada
     instruction: `Do ${id}`,
     targetCommentIds: [],
     events: [],
+    prompt: {
+      createdAt,
+      systemPrompt: 'system',
+      turnPrompt: 'the whole handoff markdown',
+      firstTurn: true,
+      resumed: false,
+      mcpTools: [],
+    },
   })
 
   persistRun(root, run('newer', '2026-08-20T02:00:00.000Z'), true)
@@ -76,6 +84,11 @@ test('reads bounded terminal history oldest first and skips unrelated or unreada
     expect.objectContaining({ id: 'newer', instruction: 'Do newer' }),
   ])
   expect(readRunHistory(domainId, root, 1)).toEqual([expect.objectContaining({ id: 'newer' })])
+  // the frozen prompt is the biggest field of a turn and the chat never shows it
+  expect(
+    readJson(root, '.cache/agent/runs/newer.json', (v) => v as AgentRun, null)?.prompt,
+  ).toBeDefined()
+  expect(readRunHistory(domainId, root).every((turn) => turn.prompt === undefined)).toBe(true)
   expect(readRunHistory(domainId, root, -10)).toEqual([expect.objectContaining({ id: 'newer' })])
 })
 

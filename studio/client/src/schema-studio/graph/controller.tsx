@@ -1,6 +1,7 @@
 import type { LayoutState, NodePosition, StudioSchemaBundle, VisibilityState } from '@shared/types'
 
 import { useQueryClient } from '@tanstack/react-query'
+import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
 import {
   Background,
   ControlButton,
@@ -37,10 +38,11 @@ import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
 import { CoreModeToggle } from '../core-view'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
+import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
 import { elkLayout } from '../elk-layout'
 import { crossDomainEdges, externalDomains } from '../external'
 import { viewportForNodes } from '../fit'
-import { edgeTypes, separateParallelEdges } from '../floating-edge'
+import { edgeTypes } from '../floating-edge'
 import {
   type Geometry,
   applyGeometry,
@@ -187,20 +189,18 @@ export function SchemaGraph({
       const all = [...internal, ...extNodes]
       const ids = new Set(all.map((n) => n.id))
       setNodes(all)
-      setEdges(
-        separateParallelEdges([
-          ...structure.edges,
-          ...buildCrossEdges(
-            crossE,
-            new Set(visibleDomains.map((d) => d.origin)),
-            ids,
-            bundle,
-            new Set(collapsedModules),
-            hidden,
-            showInheritedEdges,
-          ),
-        ]),
-      )
+      setEdges([
+        ...structure.edges,
+        ...buildCrossEdges(
+          crossE,
+          new Set(visibleDomains.map((d) => d.origin)),
+          ids,
+          bundle,
+          new Set(collapsedModules),
+          hidden,
+          showInheritedEdges,
+        ),
+      ])
     },
     [structure, allExternal, hidden, catalog, crossE, bundle, collapsedModules, showInheritedEdges],
   )
@@ -422,105 +422,113 @@ export function SchemaGraph({
       }),
     [edges, sets, selectedClass],
   )
+  const routedEdges = useMemo(
+    () => assignFloatingEdgePorts(nodes, displayEdges),
+    [nodes, displayEdges],
+  )
 
   return (
-    <ReactFlow
-      onPointerDownCapture={dismissMenusOnCanvasPress}
-      nodes={displayNodes}
-      edges={displayEdges}
-      nodeTypes={schemaNodeTypes}
-      edgeTypes={edgeTypes}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeDragStop={onNodeDragStop}
-      onNodeClick={(_, n) => {
-        if (n.id.startsWith('class.')) focusClass(n.id)
-        else if (n.id.startsWith('grp-')) selectClass(`module.${n.id.slice('grp-'.length)}`)
-      }}
-      onNodeMouseEnter={(_, n) => n.id.startsWith('class.') && setHoverId(n.id)}
-      onNodeMouseLeave={() => setHoverId(null)}
-      onEdgeClick={(_, edge) => {
-        if (!edge.id.startsWith('edge-')) return // ignore cross-domain (implements) edges
-        const name = (edge.data?.edgeClass as string | undefined) ?? edge.id.slice('edge-'.length)
-        selectClass(`class.${name}`)
-      }}
-      onPaneClick={() => {
-        setFocus(null)
-        // keep a half-written comment open — its own × closes it
-        if (!hasAnyUnsentDraft()) setOpenAnchor(null)
-      }}
-      minZoom={0.15}
-      nodesConnectable={false}
-      edgesFocusable={true}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background gap={20} size={1} color="var(--color-input)" />
-      <EdgeMarkerDefs />
-      <Controls showInteractive={false} position="bottom-left">
-        <ControlButton onClick={autoArrange} title="Auto-arrange — discards manual positions">
-          <LayoutGrid className="h-3.5 w-3.5" />
-        </ControlButton>
-      </Controls>
-      <MiniMap
-        pannable
-        zoomable
-        style={{ width: 168, height: 112 }}
-        nodeColor={(n) =>
-          n.type === 'classNode'
-            ? moduleTint((n.data as ClassNodeData).hue, scheme).mark
-            : 'transparent'
-        }
-        nodeStrokeWidth={0}
-      />
-      <Panel position="top-right" className="flex items-center gap-1.5">
-        {canvasFallbackComments.length > 0 && (
-          <CanvasCommentPin
-            threads={canvasFallbackComments}
-            anchor={{ ref: 'section.schema', kind: 'section' }}
-            excerpt="Schema canvas"
-          />
-        )}
-        <CanvasToolbar>
-          <CanvasToggle
-            icon={<Globe />}
-            label="Domains"
-            count={allExternal.length}
-            pressed={panelOverlay === 'domains'}
-            title="Imported domains"
-            onClick={() => setPanelOverlay(panelOverlay === 'domains' ? null : 'domains')}
-          />
-          <CanvasToggle
-            icon={<AppWindow />}
-            label="Views"
-            count={viewsCount}
-            pressed={panelOverlay === 'views'}
-            onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
-          />
-          <CanvasToggle
-            icon={<Plug />}
-            label="Integrations"
-            count={integrationsCount}
-            pressed={panelOverlay === 'integrations'}
-            onClick={() => setPanelOverlay(panelOverlay === 'integrations' ? null : 'integrations')}
-          />
-          <span className="mx-0.5 h-4 w-px bg-border" />
-          <CanvasToggle
-            icon={<Spline />}
-            label="Inherited"
-            pressed={showInheritedEdges}
-            title="Show inheritance edges"
-            onClick={toggleInheritedEdges}
-          />
-          <CanvasToggle
-            icon={<Sigma />}
-            label="Cardinality"
-            pressed={showCardinality}
-            title="Spell out how many of each side a relationship allows"
-            onClick={toggleCardinality}
-          />
-          <CoreModeToggle count={coreCount} />
-        </CanvasToolbar>
-      </Panel>
-    </ReactFlow>
+    <SmartEdgeProvider nodes={nodes} options={SMART_EDGE_PROVIDER_OPTIONS}>
+      <ReactFlow
+        onPointerDownCapture={dismissMenusOnCanvasPress}
+        nodes={displayNodes}
+        edges={routedEdges}
+        nodeTypes={schemaNodeTypes}
+        edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeDragStop={onNodeDragStop}
+        onNodeClick={(_, n) => {
+          if (n.id.startsWith('class.')) focusClass(n.id)
+          else if (n.id.startsWith('grp-')) selectClass(`module.${n.id.slice('grp-'.length)}`)
+        }}
+        onNodeMouseEnter={(_, n) => n.id.startsWith('class.') && setHoverId(n.id)}
+        onNodeMouseLeave={() => setHoverId(null)}
+        onEdgeClick={(_, edge) => {
+          if (!edge.id.startsWith('edge-')) return // ignore cross-domain (implements) edges
+          const name = (edge.data?.edgeClass as string | undefined) ?? edge.id.slice('edge-'.length)
+          selectClass(`class.${name}`)
+        }}
+        onPaneClick={() => {
+          setFocus(null)
+          // keep a half-written comment open — its own × closes it
+          if (!hasAnyUnsentDraft()) setOpenAnchor(null)
+        }}
+        minZoom={0.15}
+        nodesConnectable={false}
+        edgesFocusable={true}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background gap={20} size={1} color="var(--color-input)" />
+        <EdgeMarkerDefs />
+        <Controls showInteractive={false} position="bottom-left">
+          <ControlButton onClick={autoArrange} title="Auto-arrange — discards manual positions">
+            <LayoutGrid className="h-3.5 w-3.5" />
+          </ControlButton>
+        </Controls>
+        <MiniMap
+          pannable
+          zoomable
+          style={{ width: 168, height: 112 }}
+          nodeColor={(n) =>
+            n.type === 'classNode'
+              ? moduleTint((n.data as ClassNodeData).hue, scheme).mark
+              : 'transparent'
+          }
+          nodeStrokeWidth={0}
+        />
+        <Panel position="top-right" className="flex items-center gap-1.5">
+          {canvasFallbackComments.length > 0 && (
+            <CanvasCommentPin
+              threads={canvasFallbackComments}
+              anchor={{ ref: 'section.schema', kind: 'section' }}
+              excerpt="Schema canvas"
+            />
+          )}
+          <CanvasToolbar>
+            <CanvasToggle
+              icon={<Globe />}
+              label="Domains"
+              count={allExternal.length}
+              pressed={panelOverlay === 'domains'}
+              title="Imported domains"
+              onClick={() => setPanelOverlay(panelOverlay === 'domains' ? null : 'domains')}
+            />
+            <CanvasToggle
+              icon={<AppWindow />}
+              label="Views"
+              count={viewsCount}
+              pressed={panelOverlay === 'views'}
+              onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
+            />
+            <CanvasToggle
+              icon={<Plug />}
+              label="Integrations"
+              count={integrationsCount}
+              pressed={panelOverlay === 'integrations'}
+              onClick={() =>
+                setPanelOverlay(panelOverlay === 'integrations' ? null : 'integrations')
+              }
+            />
+            <span className="mx-0.5 h-4 w-px bg-border" />
+            <CanvasToggle
+              icon={<Spline />}
+              label="Inherited"
+              pressed={showInheritedEdges}
+              title="Show inheritance edges"
+              onClick={toggleInheritedEdges}
+            />
+            <CanvasToggle
+              icon={<Sigma />}
+              label="Cardinality"
+              pressed={showCardinality}
+              title="Spell out how many of each side a relationship allows"
+              onClick={toggleCardinality}
+            />
+            <CoreModeToggle count={coreCount} />
+          </CanvasToolbar>
+        </Panel>
+      </ReactFlow>
+    </SmartEdgeProvider>
   )
 }

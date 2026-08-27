@@ -8,6 +8,40 @@ import {
 } from '../state/documents'
 import { json, notFound, type DomainRouteContext } from './http'
 
+/**
+ * Types safe to render in a tab. Everything else downloads instead.
+ *
+ * The uploader chooses the stored MIME type, and this origin also serves the API
+ * that drives a local agent — so an `text/html` (or SVG) document opened from the
+ * studio would run its script with the studio's own privileges.
+ */
+const INLINE_TYPES = new Set([
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+])
+
+export function documentResponseHeaders(type: string, name: string): Record<string, string> {
+  const mime = (type.split(';')[0] ?? '').trim().toLowerCase()
+  if (INLINE_TYPES.has(mime))
+    return {
+      'content-type': type,
+      'content-disposition': 'inline',
+      'x-content-type-options': 'nosniff',
+    }
+  return {
+    'content-type': 'application/octet-stream',
+    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'x-content-type-options': 'nosniff',
+  }
+}
+
 /** Routes that must run before POST bodies are parsed as JSON. */
 export async function handleDocumentTransport(
   req: Request,
@@ -33,7 +67,7 @@ export async function handleDocumentTransport(
     const document = readDocument(root, decodeURIComponent(raw[1]))
     if (!document) return notFound()
     return new Response(Bun.file(document.abs), {
-      headers: { 'content-type': document.meta.type },
+      headers: documentResponseHeaders(document.meta.type, document.meta.name),
     })
   }
 
