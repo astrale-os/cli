@@ -112,6 +112,34 @@ Inspect the built or installed publication and require requested and materialize
 contain the exact callable. A complete dependency closure, a typed reference, or a successful build
 does not prove that installation authority was requested.
 
+## Kernel callable requirements
+
+Direct Client APIs can invoke protected Kernel callables just as a cross-Domain Provider invokes a
+protected foreign callable. The Schema dependency supplies the exact Kernel closure and types; it
+does not grant the installed Domain principal `can_use` authority. When an Action or Workflow calls a
+protected Kernel capability through `client`, first retain `KernelSchema` as an exact authored Schema
+dependency and then declare the exact callable in Application requirements:
+
+```ts
+import { defineApplication, requirements } from '@astrale-os/sdk/application'
+import { KernelSchema, schema as language } from '@astrale-os/sdk/schema'
+
+export const application = defineApplication({
+  schema,
+  runtime,
+  requirements: requirements({
+    callables: [language.resolve(KernelSchema).functions.provision],
+  }),
+})
+```
+
+For example, an Action using `client.auth.provision(...)` requires the exact Kernel `provision`
+callable above. Keep the requirement in inert Application composition. Do not create a new
+`requirements/` layer, forge the callable key, or grant the invoking human `can_use` as a substitute.
+After installation, require the exact callable under both requested and materialized capabilities;
+a successful typecheck, lint, build, or remote callable admission does not prove the nested Kernel
+capability exists.
+
 ## Query and Mutation owners
 
 Use `@astrale-os/sdk/query` for reusable observations and `@astrale-os/sdk/mutation` for one atomic
@@ -122,7 +150,8 @@ Inside an Action or Workflow, use the context's `query(definition, input)` and
 `mutate(definition, input)` executors. `executeQuery(client, ...)` and `executeMutation(client, ...)`
 remain the lower-level APIs for tests, scripts, and consumers that already own a Client.
 Direct `client` access in a handler is reserved for genuine admitted Kernel capabilities that are
-not graph Query or Mutation operations; do not use it as alternate graph plumbing.
+not graph Query or Mutation operations; declare each protected callable requirement and do not use
+the Client as alternate graph plumbing.
 
 A read followed by a write is not automatically atomic. If safety depends on current graph state,
 encode the predicate as a Mutation precondition. Several commits or any external call make the

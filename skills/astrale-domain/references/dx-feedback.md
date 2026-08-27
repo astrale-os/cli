@@ -45,9 +45,9 @@ For each candidate record:
 8. state: observed, reproduced, accepted, implemented, or rejected.
 
 Good candidates include direct Kernel imports, shadow canonical types, Action step APIs, foreign
-implementation imports, stored Clients for remote dispatch, missing Runtime registration, or source
-topology mutation during qualification. Do not create a rule for one preferred directory name or test
-style.
+implementation imports, stored Clients for remote dispatch, a statically visible protected Client
+call without its exact Application requirement, missing Runtime registration, or source topology
+mutation during qualification. Do not create a rule for one preferred directory name or test style.
 
 ## API and SDK DX ledger
 
