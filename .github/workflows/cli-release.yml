@@ -133,8 +133,12 @@ jobs:
         run: |
           set -eu
           asset="astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}"
-          tar -C dist -czf "$asset.tar.gz" astrale
+          node scripts/package-release-asset.mjs dist/astrale "$asset.tar.gz"
           tar -tzf "$asset.tar.gz" | grep -qx 'astrale'
+          mkdir -p dist/archive-check
+          tar -xzf "$asset.tar.gz" -C dist/archive-check
+          cmp dist/astrale dist/archive-check/astrale
+          test -x dist/archive-check/astrale
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}

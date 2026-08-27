@@ -143,7 +143,19 @@ describe('release workflow contract', () => {
       build,
       /--define '__ASTRALE_SOURCE_REVISION__="\$\{\{ steps\.source\.outputs\.sha \}\}"'/,
     )
-    assert.match(pack, /tar .* astrale/)
+    assert.match(pack, /node scripts\/package-release-asset\.mjs dist\/astrale "\$asset\.tar\.gz"/)
+    assert.deepEqual(
+      pack
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('tar ')),
+      [
+        `tar -tzf "$asset.tar.gz" | grep -qx 'astrale'`,
+        `tar -xzf "$asset.tar.gz" -C dist/archive-check`,
+      ],
+    )
+    assert.match(pack, /cmp dist\/astrale dist\/archive-check\/astrale/)
+    assert.match(pack, /test -x dist\/archive-check\/astrale/)
     assert.doesNotMatch(pack, /viewer/)
   })
 
