@@ -66,10 +66,55 @@ describe('release workflow contract', () => {
     const channel = binary.jobs.publish.steps.find(
       (step) => step.name === 'Publish channel release',
     )
+    assert.equal(channel.env.BINARY_VERSION, '${{ steps.meta.outputs.binary_version }}')
     assert.match(channel.run, /gh api --method PATCH/)
     assert.match(channel.run, /gh api --method POST/)
     assert.match(channel.run, /git\/refs\/tags\/\$CHANNEL/)
+    assert.match(
+      channel.run,
+      /node \.release-tooling\/scripts\/publish-release-assets\.mjs --mutable "\$CHANNEL" release-assets/,
+    )
     assert.doesNotMatch(channel.run, /git push/)
+    assert.match(channel.run, /compare\/\$current_sha\.\.\.\$EXPECTED_COMMIT/)
+    assert.match(channel.run, /ahead\|identical/)
+  })
+
+  it('delegates immutable and channel asset publication to the qualified helper', () => {
+    const immutable = binary.jobs.publish.steps.find(
+      (step) => step.name === 'Publish immutable version release',
+    )
+    const channel = binary.jobs.publish.steps.find(
+      (step) => step.name === 'Publish channel release',
+    )
+    const toolingCheckouts = binary.jobs.publish.steps.filter(
+      (step) =>
+        step.uses?.startsWith('actions/checkout@') && step.with?.path === '.release-tooling',
+    )
+    assert.equal(toolingCheckouts.length, 1)
+    assert.equal(toolingCheckouts[0].with.ref, '${{ github.workflow_sha }}')
+    assert.equal(immutable.env.BINARY_VERSION, '${{ steps.meta.outputs.binary_version }}')
+    assert.equal(immutable.env.CHANNEL, '${{ steps.meta.outputs.channel }}')
+    assert.match(
+      immutable.run,
+      /node \.release-tooling\/scripts\/publish-release-assets\.mjs "\$TAG" release-assets/,
+    )
+    assert.match(
+      immutable.run,
+      /node \.release-tooling\/scripts\/publish-release-assets\.mjs --verify-tag "\$TAG" "\$EXPECTED_COMMIT"/,
+    )
+    assert.match(immutable.run, /gh release create "\$TAG" --verify-tag/)
+    assert.ok(
+      immutable.run.indexOf(' --verify-tag "$TAG" "$EXPECTED_COMMIT"') <
+        immutable.run.indexOf('gh release create'),
+      'the immutable tag must be verified before a missing release can be created',
+    )
+    assert.doesNotMatch(immutable.run, /--clobber/)
+    assert.doesNotMatch(immutable.run, /release upload .*release-assets\/\*/)
+    assert.doesNotMatch(channel.run, /release upload .*release-assets\/\*/)
+    assert.deepEqual(binary.jobs.publish.concurrency, {
+      group: 'cli-release-channel-publication',
+      'cancel-in-progress': false,
+    })
   })
 
   it('builds every supported standalone platform exactly once per release run', () => {
@@ -130,6 +175,17 @@ describe('release workflow contract', () => {
               false,
               `${name} checkout must not persist credentials`,
             )
+            if (name === 'binary') {
+              if (step.with?.path === '.release-tooling') {
+                assert.equal(step.with.ref, '${{ github.workflow_sha }}')
+              } else {
+                assert.equal(
+                  step.with?.ref,
+                  "${{ inputs.version != '' && format('refs/tags/cli/v{0}', inputs.version) || github.sha }}",
+                  'binary recovery must build its requested immutable tag',
+                )
+              }
+            }
           }
         }
       }

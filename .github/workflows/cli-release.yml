@@ -33,6 +33,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.version != '' && format('refs/tags/cli/v{0}', inputs.version) || github.sha }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -83,6 +84,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.version != '' && format('refs/tags/cli/v{0}', inputs.version) || github.sha }}
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -136,10 +138,23 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    concurrency:
+      group: cli-release-channel-publication
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.version != '' && format('refs/tags/cli/v{0}', inputs.version) || github.sha }}
+      - name: Check out exact release tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.workflow_sha }}
+          path: .release-tooling
+      - id: source
+        name: Resolve checked-out source revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: '.nvmrc'
@@ -187,29 +202,41 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.meta.outputs.immutable_tag }}
           VERSION: ${{ steps.meta.outputs.version }}
+          BINARY_VERSION: ${{ steps.meta.outputs.binary_version }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           set -eu
+          node .release-tooling/scripts/publish-release-assets.mjs --verify-tag "$TAG" "$EXPECTED_COMMIT"
           flags=""
           if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "Astrale CLI $VERSION" --notes "Astrale CLI $VERSION" $flags
+            gh release create "$TAG" --verify-tag --title "Astrale CLI $VERSION" --notes "Astrale CLI $VERSION" $flags
           fi
-          gh release upload "$TAG" release-assets/* --clobber
+          node .release-tooling/scripts/publish-release-assets.mjs "$TAG" release-assets
       - name: Publish channel release
         env:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ steps.meta.outputs.channel }}
           VERSION: ${{ steps.meta.outputs.version }}
+          BINARY_VERSION: ${{ steps.meta.outputs.binary_version }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+          EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
         run: |
           set -eu
           if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$CHANNEL" >/dev/null 2>&1; then
+            current_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$CHANNEL" --jq .object.sha)"
+            relation="$(gh api "repos/$GITHUB_REPOSITORY/compare/$current_sha...$EXPECTED_COMMIT" --jq .status)"
+            case "$relation" in
+              ahead|identical) ;;
+              *) echo "refusing to move $CHANNEL from $current_sha to non-successor $EXPECTED_COMMIT ($relation)" >&2; exit 1 ;;
+            esac
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$CHANNEL" \
-              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+              -f sha="$EXPECTED_COMMIT" -F force=true >/dev/null
           else
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/$CHANNEL" -f sha="$GITHUB_SHA" >/dev/null
+              -f ref="refs/tags/$CHANNEL" -f sha="$EXPECTED_COMMIT" >/dev/null
           fi
           flags=""
           if [ "$PRERELEASE" = "true" ]; then flags="--prerelease"; fi
@@ -218,7 +245,7 @@ jobs:
           else
             gh release edit "$CHANNEL" --title "Astrale CLI $CHANNEL" --notes "Current $CHANNEL build: $VERSION" $flags
           fi
-          gh release upload "$CHANNEL" release-assets/* --clobber
+          node .release-tooling/scripts/publish-release-assets.mjs --mutable "$CHANNEL" release-assets
       - name: Qualify the published channel binary
         env:
           GH_TOKEN: ${{ github.token }}
