@@ -50,7 +50,17 @@ export class IdentityKeyMissingError extends AstraleError {
     super(
       'IDENTITY_KEY_MISSING',
       `No private key on disk for identity "${subject}"`,
-      `Run \`astrale identity create ${subject}\` to generate one.`,
+      'Restore or import its keypair, or create a different local identity.',
+    )
+  }
+}
+
+export class IdentityKeypairIncompleteError extends AstraleError {
+  constructor(subject: string, missing: readonly ('private' | 'public')[]) {
+    super(
+      'IDENTITY_KEYPAIR_INCOMPLETE',
+      `Identity "${subject}" has an incomplete keypair (missing ${missing.join(' and ')} key).`,
+      'Restore or import its complete keypair, or create a different local identity.',
     )
   }
 }

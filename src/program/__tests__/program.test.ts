@@ -199,7 +199,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '5d69f329e7137f8570f04dbd41e35601208727f94078d7d71aece878053c0bf4',
+      'b6e588597eca8f794464a1e659bf6768c4a4a2131e55f1ee61d36274a26b1d06',
     )
   })
 
@@ -252,6 +252,28 @@ describe('help contract — IdP/auth surface is registered', () => {
     expect(names).toContain('update')
     expect(program.helpInformation()).toContain('idp')
     expect(program.helpInformation()).toContain('update')
+  })
+
+  test('identity registration names its existing-local-identity prerequisite', async () => {
+    const program = await buildProgram()
+    const identityRegister = program.commands
+      .find((command) => command.name() === 'identity')
+      ?.commands.find((command) => command.name() === 'register')
+    let help = ''
+    identityRegister?.configureOutput({
+      writeOut: (chunk) => {
+        help += chunk ?? ''
+      },
+    })
+    identityRegister?.outputHelp()
+
+    expect(identityRegister?.description()).toBe(
+      'Register an existing local key identity through one atomic provision',
+    )
+    expect(help).toContain('Existing local identity name')
+    expect(help).toContain('astrale identity create alice')
+    expect(help).toContain('Register never creates or replaces the')
+    expect(help).not.toContain('Atomically provision a local key identity')
   })
 })
 
