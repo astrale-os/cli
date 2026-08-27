@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.39](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.38...cli/v1.0.0-beta.39) (2026-08-27)
+
+
+### Features
+
+* polish Studio graph routing and harden runtime ([#238](https://github.com/astrale-os/cli/issues/238)) ([de74058](https://github.com/astrale-os/cli/commit/de74058f505b340d9fd3adbc186a953b8ac6c975))
+
+
+### Bug Fixes
+
+* align CLI with current SDK schema ([#240](https://github.com/astrale-os/cli/issues/240)) ([f0c6fa8](https://github.com/astrale-os/cli/commit/f0c6fa8066f19a6429c4e44bbfc96383860df3b3))
+
 ## [1.0.0-beta.38](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.37...cli/v1.0.0-beta.38) (2026-08-27)
 
 
