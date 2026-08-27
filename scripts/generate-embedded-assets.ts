@@ -121,6 +121,12 @@ const archive: PackedArchive = {
   ],
 }
 const compressed = gzipSync(Buffer.from(JSON.stringify(archive)), { level: 9 })
+if (compressed[0] !== 0x1f || compressed[1] !== 0x8b || compressed.length < 10) {
+  throw new Error('embedded asset compressor did not emit a gzip stream')
+}
+// RFC 1952 byte 9 identifies the compressor's operating system but does not affect
+// decompression. Bun emits a platform-specific value, so normalize it before hashing.
+compressed[9] = 0xff
 const digest = createHash('sha256').update(compressed).digest('hex')
 const chunks = compressed
   .toString('base64')
