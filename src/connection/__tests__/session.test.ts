@@ -23,7 +23,7 @@ const config: AstraleConfig = {
     url: 'https://admin.example',
     kernelIssuer: 'https://admin.example',
   },
-  telemetry: { enabled: false },
+  telemetry: { enabled: false, analyzerEnabled: false },
   browser: {},
 }
 

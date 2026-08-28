@@ -190,10 +190,13 @@ function runClaude(
   opts: { model?: string },
 ): Promise<{ ok: boolean; note: string }> {
   return new Promise((resolve) => {
-    const env: Record<string, string> = { ASTRALE_TELEMETRY: '0' }
+    const env: Record<string, string> = {}
     for (const [k, v] of Object.entries(process.env)) {
       if (v !== undefined && !k.startsWith('CLAUDE')) env[k] = v
     }
+    // Apply this after copying the parent environment: an explicit global
+    // opt-in must not make the analyzer record its own `astrale` calls.
+    env.ASTRALE_TELEMETRY = '0'
     const args = ['-p', prompt, '--output-format', 'json', '--allowedTools', ALLOWED_TOOLS]
     if (opts.model) args.push('--model', opts.model)
 
