@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.51](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.50...cli/v1.0.0-beta.51) (2026-08-28)
+
+
+### Features
+
+* add invitation lifecycle status ([#288](https://github.com/astrale-os/cli/issues/288)) ([eda0635](https://github.com/astrale-os/cli/commit/eda06356122f02b06520e8fa30f0211c5d605aa9))
+
 ## [1.0.0-beta.50](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.49...cli/v1.0.0-beta.50) (2026-08-28)
 
 
