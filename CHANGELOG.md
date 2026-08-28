@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0-beta.48](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.47...cli/v1.0.0-beta.48) (2026-08-28)
+
+
+### Features
+
+* add seamless Domain development toolchain ([#241](https://github.com/astrale-os/cli/issues/241)) ([759b304](https://github.com/astrale-os/cli/commit/759b3045b4dfa30ebd9730622cbb9ced8b4fb57e))
+* **instance:** add member invitation journey ([#261](https://github.com/astrale-os/cli/issues/261)) ([05415b7](https://github.com/astrale-os/cli/commit/05415b744babfa40cfa47f7832854f32ca2b3e1a))
+* make session analyzer opt-in ([#262](https://github.com/astrale-os/cli/issues/262)) ([d907ad4](https://github.com/astrale-os/cli/commit/d907ad43c944f770afdd655bd56d5779262be0ce))
+* make Studio canvas focus read as lift-and-fade ([#264](https://github.com/astrale-os/cli/issues/264)) ([63ce913](https://github.com/astrale-os/cli/commit/63ce91334c849cd5aed706de0a51e32a028dbcb1))
+* promote Studio Core to a section and steady the canvas cursor ([#260](https://github.com/astrale-os/cli/issues/260)) ([25f4258](https://github.com/astrale-os/cli/commit/25f4258539fabb9ab02069341dee787a02fa2a9b))
+
+
+### Bug Fixes
+
+* **ci:** restore standalone-only CLI distribution ([#263](https://github.com/astrale-os/cli/issues/263)) ([27dbd49](https://github.com/astrale-os/cli/commit/27dbd49350bc965373bbe34036d6da737767c85e))
+* give the canvas one cursor, with no exceptions ([#271](https://github.com/astrale-os/cli/issues/271)) ([8d9599b](https://github.com/astrale-os/cli/commit/8d9599b288eeb736f1b894c99a3d27812c12d2da))
+* **instance:** return after sending invitations ([#265](https://github.com/astrale-os/cli/issues/265)) ([2fb5d78](https://github.com/astrale-os/cli/commit/2fb5d78cbc3ac1b9649ebdf906ac3b56cdf4a856))
+* make a domain frame behave like the module box it resembles ([#267](https://github.com/astrale-os/cli/issues/267)) ([5f61581](https://github.com/astrale-os/cli/commit/5f61581f6e6598012dfe1ef793f57ee3fa937f5b))
+
 ## [1.0.0-beta.47](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.46...cli/v1.0.0-beta.47) (2026-08-28)
 
 
