@@ -72,3 +72,6 @@ export const VIEW_HUE = 205
 export const MODULE_HEADER = 38
 export const MODULE_PAD = 18
 export const MODULE_COLLAPSED_H = 34
+/** Domain frame inset — even on every side. Unlike a module box the frame wears its
+ *  origin ON the top edge, so there is no label to reserve room under. */
+export const DOMAIN_PAD = 52

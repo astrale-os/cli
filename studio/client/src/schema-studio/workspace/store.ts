@@ -8,7 +8,6 @@ interface PersistedWorkspaceState {
   selectedDomainIds: string[]
   domainPositions: Record<string, WorkspacePoint>
   externalPositions: Record<string, WorkspacePoint>
-  domainContentOffsets: Record<string, WorkspacePoint>
   collapsedModules: Record<string, string[]>
 }
 
@@ -18,7 +17,6 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   setDomainPosition: (id: string, position: WorkspacePoint) => void
   ensureDomainPositions: (positions: Record<string, WorkspacePoint>) => void
   ensureExternalPositions: (positions: Record<string, WorkspacePoint>) => void
-  ensureDomainContentOffsets: (offsets: Record<string, WorkspacePoint>) => void
   resetWorkspaceFrames: () => void
   toggleModule: (domainId: string, path: string) => void
 }
@@ -29,7 +27,6 @@ const EMPTY: PersistedWorkspaceState = {
   selectedDomainIds: [],
   domainPositions: {},
   externalPositions: {},
-  domainContentOffsets: {},
   collapsedModules: {},
 }
 
@@ -61,7 +58,6 @@ function load(): PersistedWorkspaceState {
       selectedDomainIds: uniqueDomainIds(value.selectedDomainIds ?? []),
       domainPositions: value.domainPositions ?? {},
       externalPositions: value.externalPositions ?? {},
-      domainContentOffsets: value.domainContentOffsets ?? {},
       collapsedModules: value.collapsedModules ?? {},
     }
   } catch {
@@ -80,7 +76,6 @@ function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
     selectedDomainIds: state.selectedDomainIds,
     domainPositions: state.domainPositions,
     externalPositions: state.externalPositions,
-    domainContentOffsets: state.domainContentOffsets,
     collapsedModules: state.collapsedModules,
   }
 }
@@ -137,19 +132,6 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       if (!changed) return state
       persist({ ...persisted(state), externalPositions })
       return { externalPositions }
-    }),
-  ensureDomainContentOffsets: (offsets) =>
-    set((state) => {
-      const domainContentOffsets = { ...state.domainContentOffsets }
-      let changed = false
-      for (const [domainId, offset] of Object.entries(offsets)) {
-        if (domainContentOffsets[domainId]) continue
-        domainContentOffsets[domainId] = offset
-        changed = true
-      }
-      if (!changed) return state
-      persist({ ...persisted(state), domainContentOffsets })
-      return { domainContentOffsets }
     }),
   resetWorkspaceFrames: () =>
     set((state) => {
