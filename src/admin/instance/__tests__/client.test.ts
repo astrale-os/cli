@@ -198,24 +198,34 @@ describe('V2 Admin Instance adapter', () => {
   test('retries terminal deletion through the exact NodePath while public inventory stays empty', async () => {
     const deleted = instanceNode({ state: 'deleted' })
     let attempts = 0
+    let queries = 0
     const contract = fixture({
       useDefaultOperationIds: true,
       query: (ast, options) => {
-        const first = ast.source.kind === 'node' ? ast.source.terms[0] : undefined
-        if (first?.kind === 'path') {
-          expect(String(first.path)).toBe('@instance-node')
-          expect(JSON.parse(JSON.stringify(ast.steps))).toEqual([
-            {
-              op: 'filter',
-              binding: 'n0',
-              predicate: {
-                kind: 'class.equal',
-                class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
-              },
-            },
-          ])
-          expect(options).toEqual({ page: { size: 1 } })
+        queries += 1
+        if (queries === 1) {
+          expect(ast.source.kind).toBe('node')
+          if (ast.source.kind !== 'node') throw new TypeError('Expected the inventory source.')
+          expect(ast.source.terms[0]?.kind).toBe('class')
+          return { result: { kind: 'nodes' as const, nodes: [] }, page: {} }
         }
+        expect(ast.source.kind).toBe('node')
+        if (ast.source.kind !== 'node') throw new TypeError('Expected an exact Node source.')
+        const first = ast.source.terms[0]
+        expect(first?.kind).toBe('path')
+        if (first?.kind !== 'path') throw new TypeError('Expected an exact Instance path.')
+        expect(String(first.path)).toBe('@instance-node')
+        expect(JSON.parse(JSON.stringify(ast.steps))).toEqual([
+          {
+            op: 'filter',
+            binding: 'n0',
+            predicate: {
+              kind: 'class.equal',
+              class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
+            },
+          },
+        ])
+        expect(options).toEqual({ page: { size: 1 } })
         return {
           result: {
             kind: 'nodes' as const,
@@ -247,6 +257,7 @@ describe('V2 Admin Instance adapter', () => {
       '@instance-node::delete',
       '@instance-node::delete',
     ])
+    expect(queries).toBe(3)
     const operationIds = contract.calls.map(({ value }) =>
       String((value as { operationId: unknown }).operationId),
     )
