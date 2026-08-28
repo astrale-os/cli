@@ -117,13 +117,7 @@ assert.equal(
 assert.equal(workspaceConfig.trustLockfile, false, 'CLI must verify lock entries against policy')
 assert.deepEqual(
   workspaceConfig.minimumReleaseAgeExclude,
-  [
-    '@astrale-os/*',
-    '@astrale-domains/*',
-    '@astrale/*',
-    '@jsr/astrale__*',
-    'create-astrale-domain',
-  ],
+  ['@astrale-os/*', '@astrale-domains/*', '@astrale/*', '@jsr/astrale__*', 'create-astrale-domain'],
   'CLI must use only the approved release-age exceptions',
 )
 assert.equal(
