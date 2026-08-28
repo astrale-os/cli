@@ -42,9 +42,38 @@ export const CLI_UI_THEME_OWNERSHIP = defineLaw({
   tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-THEME-OWNERSHIP' }],
 })
 
-export const CLI_UI_SEMANTIC_DIFF = defineLaw({
-  id: 'CLI-UI-SEMANTIC-DIFF',
+export const CLI_UI_SEARCH_LOCKED_RELEASE = defineLaw({
+  id: 'CLI-UI-SEARCH-LOCKED-RELEASE',
   statement:
-    'Diff is read-only, path-contained, and classifies locked source and files as upstream changed, unchanged, modified, or deleted without delegating truth to tool output.',
-  tests: [{ file: '../__tests__/ui.test.ts', id: 'TEST-CLI-UI-SEMANTIC-DIFF' }],
+    'Search uses an initialized project exact UI lock without loading the registry and resolves npm beta only when no initialized lock owns the request.',
+  tests: [
+    {
+      file: '../search/__tests__/search.test.ts',
+      id: 'uses the exact project lock, returns canonical code, and never loads the registry',
+    },
+  ],
+})
+
+export const CLI_UI_SEARCH_INTEGRITY = defineLaw({
+  id: 'CLI-UI-SEARCH-INTEGRITY',
+  statement:
+    'Search admits manifest, scorer, artifact, partition, and canonical code integrity before use and caches admitted bytes only under their immutable UI commit.',
+  tests: [
+    {
+      file: '../search/__tests__/search.test.ts',
+      id: 'repairs a corrupt cached index from the immutable release',
+    },
+  ],
+})
+
+export const CLI_UI_SEARCH_HANDOFF = defineLaw({
+  id: 'CLI-UI-SEARCH-HANDOFF',
+  statement:
+    'Each returned registry candidate carries exact demo code and one directly executable astrale ui add command; runtime candidates carry their package import instead.',
+  tests: [
+    {
+      file: '../search/__tests__/search.test.ts',
+      id: 'hands a returned command directly to the existing add journey',
+    },
+  ],
 })

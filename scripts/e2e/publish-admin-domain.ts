@@ -2,8 +2,10 @@ import { invocation } from '@astrale-os/sdk/invocation'
 
 import { AdminContract, callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
+import { derivedIdempotencyKey } from '../../src/lib/idempotency.js'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
+const transportKey = await derivedIdempotencyKey('e2e.publish-domain', operationId)
 const result = await withAdminClientSession({}, async ({ session }) => {
   return callAdminMethod(
     session,
@@ -16,7 +18,7 @@ const result = await withAdminClientSession({}, async ({ session }) => {
       discoveryUrl: required('ASTRALE_E2E_DOMAIN_DISCOVERY_URL'),
     },
     {
-      idempotencyKey: invocation.acceptIdempotencyKey(operationId.replaceAll(':', '-')),
+      idempotencyKey: invocation.acceptIdempotencyKey(transportKey),
       timeoutMs: 120_000,
     },
   )

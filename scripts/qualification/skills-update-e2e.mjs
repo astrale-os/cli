@@ -156,22 +156,34 @@ function qualifySelfUpdate(sourceBinary) {
     })}\n`,
   )
 
+  const qualificationEnvironment = {
+    ...process.env,
+    ASTRALE_UPDATE_BASE: `file://${releaseDir}`,
+    ASTRALE_HOME: stateDir,
+    ASTRALE_SKILLS_HOME: skillRoot,
+    XDG_STATE_HOME: join(updateRoot, 'xdg-state'),
+    NO_SPINNER: '1',
+    CI: '1',
+  }
+  const configured = spawnSync(
+    installedBinary,
+    ['skills', 'configure', '--agent', 'codex', 'claude-code', '--json'],
+    {
+      cwd: cliRoot,
+      env: qualificationEnvironment,
+      encoding: 'utf8',
+      timeout: 180_000,
+    },
+  )
+  assert.equal(configured.status, 0, `${configured.stdout}\n${configured.stderr}`)
+
   const updated = spawnSync(installedBinary, ['update', '--yes', '--no-deps'], {
     cwd: cliRoot,
-    env: {
-      ...process.env,
-      ASTRALE_UPDATE_BASE: `file://${releaseDir}`,
-      ASTRALE_HOME: stateDir,
-      ASTRALE_SKILLS_HOME: skillRoot,
-      XDG_STATE_HOME: join(updateRoot, 'xdg-state'),
-      NO_SPINNER: '1',
-      CI: '1',
-    },
+    env: qualificationEnvironment,
     encoding: 'utf8',
     timeout: 180_000,
   })
   assert.equal(updated.status, 0, `${updated.stdout}\n${updated.stderr}`)
-  assert.match(updated.stdout, /Applying skills embedded in the updated CLI/u)
   const installed = JSON.parse(readFileSync(join(stateDir, 'install.json'), 'utf8'))
   assert.equal(installed.version, 'next-e2e')
   assert.equal(installed.cohort.cloudflaredVersion, cloudflaredVersion)

@@ -295,22 +295,21 @@ EOF
   printf '  astrale auth login\n'
   printf '  astrale instance create <slug>\n'
 
-  printf '\nConfigure Astrale skills for your coding agents:\n'
-  if [ -t 1 ] && [ -r /dev/tty ] && [ -w /dev/tty ]; then
-    if ! "$install_dir/astrale" skills configure </dev/tty; then
-      warn "Skill configuration skipped; run: astrale skills configure"
-      if ! "$install_dir/astrale" skills update --json >/dev/null; then
-        warn "Skills could not be installed; run: astrale skills update"
-      fi
-    fi
-  elif ! "$install_dir/astrale" skills update --json >/dev/null; then
-    warn "Skills could not be installed; run: astrale skills update"
-  fi
-
   printf '\nLet your agent drive the GUI (optional):\n'
   printf '  npm install -g agent-browser && agent-browser install\n'
   printf '  npx skills add vercel-labs/agent-browser\n'
   printf '  astrale browser                         # sign in once -> reusable session\n'
+
+  printf '\nConfigure Astrale skills for your coding agents:\n'
+  if [ -z "${CI:-}" ] &&
+    [ -z "${CONTINUOUS_INTEGRATION:-}" ] &&
+    ( : </dev/tty >/dev/tty ) 2>/dev/null
+  then
+    rm -rf "$tmp"
+    trap - 0
+    exec "$install_dir/astrale" skills configure --source install </dev/tty >/dev/tty 2>&1
+  fi
+  printf '  Skill setup skipped. Run: astrale skills configure\n'
 }
 
 main "$@"

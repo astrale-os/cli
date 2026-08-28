@@ -26,7 +26,13 @@ export function registerCommand(parent: Command, def: CommandDefinition): void {
 
   if (def.options) {
     for (const opt of def.options) {
-      if (opt.choices) {
+      if (opt.hidden) {
+        const o = new Option(opt.flags, opt.description)
+        if (opt.choices) o.choices(opt.choices)
+        if (opt.default !== undefined) o.default(opt.default)
+        o.hideHelp()
+        cmd.addOption(o)
+      } else if (opt.choices) {
         const o = new Option(opt.flags, opt.description)
         o.choices(opt.choices)
         if (opt.default !== undefined) o.default(opt.default)

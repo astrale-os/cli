@@ -145,7 +145,7 @@ function selfProvisionResult() {
 
 function selfProvenRequest(binding: ReturnType<typeof LocalBinding>): ProvisionRequest {
   return {
-    idempotencyKey: 'identity-register:operator',
+    idempotencyKey: `identity-register.${'a'.repeat(64)}`,
     mutation: {
       format: 'astrale.graph.mutation',
       version: 'v2',

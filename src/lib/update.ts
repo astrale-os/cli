@@ -193,8 +193,8 @@ export function detectUpdateExecution(): UpdateExecution {
 export function packageManagedUpdateError(executable: string): AstraleError {
   return new AstraleError(
     'UPDATE_PACKAGE_MANAGED',
-    'This Astrale source/development build cannot replace itself.',
-    `Active runtime: ${executable}. Install the official standalone binary to use \`astrale update\`.`,
+    'This Astrale process is not the official standalone executable and cannot replace itself.',
+    `Active runtime: ${executable}. Remove any package-managed copy, then install with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh`,
   )
 }
 

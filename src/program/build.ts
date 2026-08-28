@@ -78,7 +78,7 @@ export async function buildProgram(): Promise<Command> {
     description: 'Initialize and install Astrale UI in local applications',
     commands: [
       (await import('../commands/ui/init')).default,
-      (await import('../commands/ui/list')).default,
+      (await import('../commands/ui/search')).default,
       (await import('../commands/ui/add')).default,
       (await import('../commands/ui/doctor')).default,
     ],

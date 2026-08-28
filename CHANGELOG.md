@@ -1,5 +1,61 @@
 # Changelog
 
+## [1.0.0-beta.47](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.46...cli/v1.0.0-beta.47) (2026-08-28)
+
+
+### Bug Fixes
+
+* **release:** align standalone skill update qualification ([#258](https://github.com/astrale-os/cli/issues/258)) ([bdb2b23](https://github.com/astrale-os/cli/commit/bdb2b2394eb7c68cdbcaa3ebe76dfdbdd6c55433))
+* **release:** restore standalone-only CLI distribution
+
+## [1.0.0-beta.46](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.45...cli/v1.0.0-beta.46) (2026-08-28)
+
+
+### Bug Fixes
+
+* **cli:** harden idempotent admin recovery ([#257](https://github.com/astrale-os/cli/issues/257)) ([05c66c4](https://github.com/astrale-os/cli/commit/05c66c426334e3b0fd0149197645d7c1f6b51808))
+* make skill onboarding tty-safe ([2b6b2b7](https://github.com/astrale-os/cli/commit/2b6b2b74a83892cbd44030a380bd2b265cf33341))
+
+## [1.0.0-beta.45](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.44...cli/v1.0.0-beta.45) (2026-08-28)
+
+
+### Bug Fixes
+
+* **cli:** generate protocol-safe operation ids ([#254](https://github.com/astrale-os/cli/issues/254)) ([f38d09f](https://github.com/astrale-os/cli/commit/f38d09f55fb1fa450a8fac66c1c7233a6c56c077))
+
+## [1.0.0-beta.44](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.43...cli/v1.0.0-beta.44) (2026-08-28)
+
+
+### Bug Fixes
+
+* **update:** pin the public npm registry ([#252](https://github.com/astrale-os/cli/issues/252)) ([b2c766a](https://github.com/astrale-os/cli/commit/b2c766a135789f7507fbbb729e5564b28898e19a))
+
+## [1.0.0-beta.43](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.42...cli/v1.0.0-beta.43) (2026-08-28)
+
+
+### Features
+
+* **release:** restore public npm CLI distribution ([#249](https://github.com/astrale-os/cli/issues/249)) ([ec77818](https://github.com/astrale-os/cli/commit/ec778181974123205c8cca9046d34a4e7cf0ae57))
+
+
+### Bug Fixes
+
+* **release:** publish npm only on version manifest ([#251](https://github.com/astrale-os/cli/issues/251)) ([fb0df5b](https://github.com/astrale-os/cli/commit/fb0df5bffbcef7d2d108b4d25f5a1c9e4cecb861))
+
+## [1.0.0-beta.42](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.41...cli/v1.0.0-beta.42) (2026-08-28)
+
+
+### Performance Improvements
+
+* **instance:** query native admin inventory ([#247](https://github.com/astrale-os/cli/issues/247)) ([6129553](https://github.com/astrale-os/cli/commit/6129553fb5b335ce600e8328eab5984bbff6d15f))
+
+## [1.0.0-beta.41](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.40...cli/v1.0.0-beta.41) (2026-08-28)
+
+
+### Features
+
+* add ranked UI search command ([#244](https://github.com/astrale-os/cli/issues/244)) ([55c7cc2](https://github.com/astrale-os/cli/commit/55c7cc2b8d7f2c84cd663232c5688c1bc454f56c))
+
 ## [1.0.0-beta.40](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.39...cli/v1.0.0-beta.40) (2026-08-27)
 
 

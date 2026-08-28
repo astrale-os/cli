@@ -10,6 +10,7 @@ export interface CommandOption {
   readonly description: string
   readonly default?: string
   readonly choices?: string[]
+  readonly hidden?: boolean
 }
 
 export interface CommandDefinition {

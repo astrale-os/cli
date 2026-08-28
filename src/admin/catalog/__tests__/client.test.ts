@@ -38,6 +38,7 @@ function domainNode(id: string, origin: string): Node {
 function fixture(input: {
   domains?: readonly Node[]
   defaults?: readonly Node[]
+  useDefaultOperationIds?: boolean
   invoke?: (target: string, value: unknown) => unknown
 }) {
   const calls: Array<{
@@ -79,9 +80,9 @@ function fixture(input: {
     connect: () =>
       connectAdminCatalog(
         { session: remote.session, graph },
-        {
-          operationId: (kind) => `cli.domain.${kind}:test`,
-        },
+        input.useDefaultOperationIds
+          ? undefined
+          : { operationId: (kind) => `cli.domain.${kind}.test` },
       ),
   }
 }
@@ -170,7 +171,7 @@ describe('V2 Admin Domain catalog adapter', () => {
       {
         target: '/:admin.astrale.ai:core.fleet::publishDomain',
         value: {
-          operationId: 'cli.domain.publish:test',
+          operationId: 'cli.domain.publish.test',
           origin: 'crm.acme.dev',
           name: 'crm',
           discoveryUrl: 'https://crm.acme.dev',
@@ -179,10 +180,39 @@ describe('V2 Admin Domain catalog adapter', () => {
       {
         target: '@crm-domain::configureDefault',
         value: {
-          operationId: 'cli.domain.configure-default:test',
+          operationId: 'cli.domain.configure-default.test',
           enabled: true,
         },
       },
+    ])
+  })
+
+  test('uses protocol-safe generated operation ids on the default adapter path', async () => {
+    const contract = fixture({
+      useDefaultOperationIds: true,
+      invoke: () => summary('crm.acme.dev'),
+    })
+
+    await (
+      await contract.connect()
+    ).publish({
+      origin: 'crm.acme.dev',
+      name: 'crm',
+      url: 'https://crm.acme.dev',
+      installByDefault: true,
+    })
+
+    expect(contract.calls.map(({ value }) => value)).toEqual([
+      expect.objectContaining({
+        operationId: expect.stringMatching(
+          /^cli\.domain\.publish\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+        ),
+      }),
+      expect.objectContaining({
+        operationId: expect.stringMatching(
+          /^cli\.domain\.configure-default\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+        ),
+      }),
     ])
   })
 

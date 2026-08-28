@@ -1,4 +1,10 @@
-import { UiError, type UiCompatibility, type UiRegistry, type UiRelease } from './model'
+import {
+  UiError,
+  type UiCompatibility,
+  type UiRegistry,
+  type UiRelease,
+  type UiReleaseIdentity,
+} from './model'
 
 const NPM_PACKAGE = 'https://registry.npmjs.org/@astrale-os/ui'
 const GITHUB_API = 'https://api.github.com/repos/astrale-os/ui'
@@ -81,6 +87,13 @@ export async function resolveUiRelease(
   requested?: string,
   fetcher: Fetch = fetch,
 ): Promise<UiRelease> {
+  return readUiReleaseSnapshot(await resolveUiReleaseIdentity(requested, fetcher), fetcher)
+}
+
+export async function resolveUiReleaseIdentity(
+  requested?: string,
+  fetcher: Fetch = fetch,
+): Promise<UiReleaseIdentity> {
   const versionDocument = requested
     ? { version: requested.replace(/^v/u, '') }
     : await json<{ version: string }>(fetcher, NPM_PACKAGE + '/beta', 'npm UI release')
@@ -96,7 +109,7 @@ export async function resolveUiRelease(
   if (!/^[0-9a-f]{40}$/u.test(commit)) {
     throw new UiError('UI_REGISTRY_UNAVAILABLE', 'UI ref ' + ref + ' did not resolve to a commit.')
   }
-  return readUiReleaseSnapshot({ version, ref, commit }, fetcher)
+  return { version, ref, commit }
 }
 
 async function resolveReleaseCommit(ref: string, fetcher: Fetch): Promise<string> {
@@ -151,7 +164,7 @@ async function resolveReleaseCommit(ref: string, fetcher: Fetch): Promise<string
 }
 
 export async function readUiReleaseSnapshot(
-  identity: Pick<UiRelease, 'version' | 'ref' | 'commit'>,
+  identity: UiReleaseIdentity,
   fetcher: Fetch = fetch,
 ): Promise<UiRelease> {
   const [compatibility, registry] = await Promise.all([

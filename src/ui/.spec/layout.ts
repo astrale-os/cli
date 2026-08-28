@@ -11,6 +11,12 @@ export default defineLayout({
     'project.ts',
     'release.ts',
     'runner.ts',
+    'search/',
+    'search/__tests__/',
+    'search/artifacts.ts',
+    'search/engine.ts',
+    'search/index.ts',
+    'search/model.ts',
   ],
   exact: true,
 })

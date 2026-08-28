@@ -8,6 +8,7 @@ import {
   classifyUpdateExecution,
   DEFAULT_UPDATE_CHANNEL,
   InstallMetadataSchema,
+  packageManagedUpdateError,
   readInstallMetadata,
   releaseBase,
   replaceStandaloneCohort,
@@ -178,6 +179,14 @@ describe('update helpers', () => {
         bin: '/tmp/astrale',
       }).channel,
     ).toBe('beta')
+  })
+
+  test('directs externally managed processes to the standalone installer', () => {
+    const error = packageManagedUpdateError('/opt/homebrew/bin/node')
+    expect(error.code).toBe('UPDATE_PACKAGE_MANAGED')
+    expect(error.hint).toBe(
+      'Active runtime: /opt/homebrew/bin/node. Remove any package-managed copy, then install with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
+    )
   })
 
   test('releaseBase resolves exact versions and channels', () => {

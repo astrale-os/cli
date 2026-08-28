@@ -1,38 +1,30 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
+import { fixtureFetch } from '../../../ui/search/__tests__/fixture'
 import addCommand from '../add'
-import listCommand from '../list'
+import searchCommand from '../search'
 
 class ExitError extends Error {}
 
-const commit = 'a'.repeat(40)
-const item = {
-  name: 'pattern-chart-line-basic',
-  type: 'registry:block',
-  title: 'Line chart',
-  description: 'A controlled chart.',
-  dependencies: ['@astrale-os/ui@^0.3.0-beta.0'],
-  files: [
-    {
-      path: 'registry/patterns/chart/line-basic.tsx',
-      type: 'registry:component',
-      target: 'components/astrale/pattern/chart/line-basic.tsx',
-    },
-  ],
-  meta: { canonicalAddress: 'pattern/chart/line/basic' },
-}
-
 let stdout = ''
 let stderr = ''
+let home = ''
 let originalArgv: string[]
 let originalExit: typeof process.exit
 let originalFetch: typeof globalThis.fetch
 let originalStdout: typeof process.stdout.write
 let originalStderr: typeof process.stderr.write
+let originalHome: string | undefined
 
 beforeEach(() => {
   stdout = ''
   stderr = ''
+  home = mkdtempSync(path.join(tmpdir(), 'astrale-ui-command-'))
+  originalHome = process.env.ASTRALE_HOME
+  process.env.ASTRALE_HOME = home
   originalArgv = process.argv
   originalExit = process.exit
   originalFetch = globalThis.fetch
@@ -49,7 +41,7 @@ beforeEach(() => {
   process.exit = (() => {
     throw new ExitError()
   }) as typeof process.exit
-  globalThis.fetch = mockFetch()
+  globalThis.fetch = fixtureFetch()
 })
 
 afterEach(() => {
@@ -58,33 +50,53 @@ afterEach(() => {
   globalThis.fetch = originalFetch
   process.stdout.write = originalStdout
   process.stderr.write = originalStderr
+  if (originalHome === undefined) delete process.env.ASTRALE_HOME
+  else process.env.ASTRALE_HOME = originalHome
+  rmSync(home, { recursive: true, force: true })
 })
 
 describe('UI command machine contracts', () => {
-  test('list emits exactly one parseable JSON value', async () => {
-    const action = listCommand.action as (
-      query: string | undefined,
-      options: { json?: boolean; limit?: string },
+  test('search emits one parseable response with exact demo code', async () => {
+    const action = searchCommand.action as (
+      query: string,
+      options: { json?: boolean; limit?: string; offset?: string },
     ) => Promise<void>
-    await action('line-basic', { json: true, limit: '100' })
+    await action('payment table export', { json: true, limit: '5', offset: '0' })
 
     expect(stderr).toBe('')
-    expect(JSON.parse(stdout)).toEqual([item])
+    const response = JSON.parse(stdout)
+    expect(response).toMatchObject({
+      query: 'payment table export',
+      limit: 5,
+      offset: 0,
+      results: [
+        {
+          address: 'block/data-table/data-table-12',
+          command: 'astrale ui add block/data-table/data-table-12',
+          code: { language: 'tsx' },
+        },
+      ],
+    })
+    expect(response.results[0].code.source).toContain('Export payments')
   })
 
-  test('list forwards an explicit release without consulting the beta channel', async () => {
-    const seen: string[] = []
-    globalThis.fetch = mockFetch(seen)
-    const action = listCommand.action as (
-      query: string | undefined,
-      options: { json?: boolean; limit?: string; version?: string },
+  test('search keeps exact candidate code in interactive output', async () => {
+    const action = searchCommand.action as (
+      query: string,
+      options: { json?: boolean; limit?: string; offset?: string },
     ) => Promise<void>
-
-    await action('line-basic', { json: true, limit: '100', version: '0.3.0-beta.1' })
-
-    expect(JSON.parse(stdout)).toEqual([item])
-    expect(seen.some((url) => url.endsWith('/@astrale-os/ui/beta'))).toBe(false)
-    expect(seen.some((url) => url.includes('/git/ref/tags/v0.3.0-beta.1'))).toBe(true)
+    const descriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
+    Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true })
+    try {
+      await action('payment table export', { limit: '5', offset: '0' })
+    } finally {
+      if (descriptor) Object.defineProperty(process.stdout, 'isTTY', descriptor)
+      else delete (process.stdout as { isTTY?: boolean }).isTTY
+    }
+    expect(stderr).toBe('')
+    expect(stdout).toContain('block/data-table/data-table-12')
+    expect(stdout).toContain('astrale ui add block/data-table/data-table-12')
+    expect(stdout).toContain('Export payments')
   })
 
   test('add rejects missing items without prompting in machine mode', async () => {
@@ -95,58 +107,22 @@ describe('UI command machine contracts', () => {
     expect(stdout).toBe('')
   })
 
-  test('registry failures retain a stable code without leaking transport secrets', async () => {
+  test('search failures retain a stable code without leaking transport secrets', async () => {
     globalThis.fetch = (async () => {
       throw new Error('Authorization: Bearer npm_super_secret_value_that_must_not_escape')
     }) as unknown as typeof fetch
-    const action = listCommand.action as (
-      query: string | undefined,
-      options: { json?: boolean; limit?: string },
+    const action = searchCommand.action as (
+      query: string,
+      options: { json?: boolean; limit?: string; offset?: string },
     ) => Promise<void>
-    await expect(action('line-basic', { json: true, limit: '100' })).rejects.toBeInstanceOf(
-      ExitError,
-    )
+    await expect(
+      action('line basic', { json: true, limit: '5', offset: '0' }),
+    ).rejects.toBeInstanceOf(ExitError)
     expect(JSON.parse(stderr)).toEqual({
-      error: 'UI_REGISTRY_UNAVAILABLE',
-      message: 'Unable to reach npm UI release.',
+      error: 'UI_SEARCH_UNAVAILABLE',
+      message: 'The current public Astrale UI beta does not provide usable search artifacts.',
+      hint: 'Retry after the Astrale UI beta release is available.',
     })
     expect(stderr).not.toContain('super_secret')
   })
 })
-
-function mockFetch(seen: string[] = []): typeof fetch {
-  return (async (input: string | URL | Request) => {
-    const url = String(input)
-    seen.push(url)
-    if (url.endsWith('/@astrale-os/ui/beta')) return Response.json({ version: '0.3.0-beta.1' })
-    if (url.includes('/git/ref/tags/')) {
-      return Response.json({ object: { type: 'commit', sha: commit, url: '' } })
-    }
-    if (url.endsWith('/tooling/compatibility.json')) {
-      return Response.json({
-        version: 1,
-        shadcn: '4.18.0',
-        base: 'base',
-        style: 'nova',
-        baseUi: '1.7.0',
-        react: '^18.3.1 || ^19.0.0',
-        tailwind: '^4.3.3',
-        presets: ['astrale', 'compact', 'expressive'],
-      })
-    }
-    if (url.endsWith('/registry/patterns/chart/registry.json')) {
-      return Response.json({
-        items: [
-          {
-            ...item,
-            files: item.files.map((file) => ({ ...file, path: 'line-basic.tsx' })),
-          },
-        ],
-      })
-    }
-    if (url.endsWith('/registry.json')) {
-      return Response.json({ include: ['registry/patterns/chart/registry.json'] })
-    }
-    return new Response('not found', { status: 404 })
-  }) as typeof fetch
-}

@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -156,7 +157,8 @@ test('standalone installer places one verified cohort on all four admitted platf
         binaryVersion: '1.0.0-beta.test',
         cloudflaredVersion: '2026.8.2',
       })
-      assert.match(readFileSync(environment.invocations, 'utf8'), /^skills update --json$/mu)
+      assert.match(installed.stdout, /Skill setup skipped\. Run: astrale skills configure/u)
+      assert.equal(existsSync(environment.invocations), false)
       assert.equal(
         statSync(join(environment.install, '.astrale-install.lock'), { throwIfNoEntry: false }),
         undefined,

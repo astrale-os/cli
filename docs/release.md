@@ -1,8 +1,8 @@
 # CLI release lifecycle
 
-Release Please owns the CLI version and immutable GitHub release. V1 has one
-distribution: a standalone toolchain containing the CLI and its private,
-release-pinned cloudflared companion.
+Release Please owns the CLI version and immutable GitHub release. The CLI has
+one distribution: a standalone toolchain containing the public executable and
+its private, release-pinned cloudflared companion.
 
 ## Normal beta release
 

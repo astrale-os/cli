@@ -27,8 +27,10 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_VERSION=<version> sh
 ```
 
-There is no npm installation mode in v1. This keeps one update path and prevents
-two global Astrale versions from competing on `PATH`.
+The CLI is distributed only as this standalone executable; the npm package is
+deprecated. If a package-managed copy is still on `PATH`, remove it with that
+package manager, run the installer above, and verify that `command -v astrale`
+resolves to `~/.astrale/bin/astrale` (or your explicit `ASTRALE_INSTALL_DIR`).
 
 Generated Domains using `@astrale-os/adapter-astrale` consume the private
 companion automatically: `pnpm dev` creates temporary public ingress, runs the
@@ -105,6 +107,9 @@ same-version update repairs a missing or mismatched companion. It follows the
 beta channel by default. Use `--check`,
 `--channel <channel>`, or `--version <version>` to control the release target;
 `--no-skills` is the explicit opt-out.
+
+An old package-managed or source build never overwrites files it does not own.
+It directs you to migrate to the official standalone executable instead.
 
 On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version
