@@ -138,24 +138,26 @@ describe('update helpers', () => {
   })
 
   test('renders exact npm selectors for package-managed upgrades', () => {
-    expect(packageManagedInstallCommand({})).toBe('npm install -g @astrale-os/cli@beta')
+    expect(packageManagedInstallCommand({})).toBe(
+      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
+    )
     expect(packageManagedInstallCommand({ channel: 'stable' })).toBe(
-      'npm install -g @astrale-os/cli@latest',
+      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@latest',
     )
     expect(packageManagedInstallCommand({ channel: 'canary' })).toBe(
-      'npm install -g @astrale-os/cli@canary',
+      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@canary',
     )
     expect(packageManagedInstallCommand({ version: '1.0.0-beta.42' })).toBe(
-      'npm install -g @astrale-os/cli@1.0.0-beta.42',
+      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@1.0.0-beta.42',
     )
 
     const error = packageManagedUpdateError(
       '/opt/homebrew/bin/node',
-      'npm install -g @astrale-os/cli@beta',
+      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
     )
     expect(error.code).toBe('UPDATE_PACKAGE_MANAGED')
     expect(error.hint).toBe(
-      'Active runtime: /opt/homebrew/bin/node. Upgrade the public npm installation with: npm install -g @astrale-os/cli@beta',
+      'Active runtime: /opt/homebrew/bin/node. Upgrade the public npm installation with: npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
     )
   })
 
@@ -268,7 +270,8 @@ describe('updateAstrale', () => {
         status: 'managed',
         currentVersion: '2.0.0',
         executable: '/opt/homebrew/bin/node',
-        command: 'npm install -g @astrale-os/cli@beta',
+        command:
+          'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
       })
       expect(await readFile(meta.bin, 'utf8')).toBe(before)
     } finally {
