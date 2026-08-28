@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.46](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.45...cli/v1.0.0-beta.46) (2026-08-28)
+
+
+### Bug Fixes
+
+* **cli:** harden idempotent admin recovery ([#257](https://github.com/astrale-os/cli/issues/257)) ([05c66c4](https://github.com/astrale-os/cli/commit/05c66c426334e3b0fd0149197645d7c1f6b51808))
+* make skill onboarding tty-safe ([2b6b2b7](https://github.com/astrale-os/cli/commit/2b6b2b74a83892cbd44030a380bd2b265cf33341))
+
 ## [1.0.0-beta.45](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.44...cli/v1.0.0-beta.45) (2026-08-28)
 
 
