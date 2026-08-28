@@ -319,13 +319,13 @@ export function CanvasCommentPin({
         align="center"
         className="w-80"
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchor.ref, threads)) event.preventDefault()
+          if (hasUnsentDraft(anchor.ref, openThreads)) event.preventDefault()
         }}
       >
         <ThreadPopover
           anchor={anchor}
           excerpt={excerpt}
-          threads={threads}
+          threads={openThreads}
           onClose={() => setOpen(false)}
         />
       </PopoverContent>

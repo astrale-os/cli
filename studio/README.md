@@ -105,7 +105,7 @@ to send open threads to the agent.
 | Panel tab | What it does |
 |---|---|
 | **Agent** | The conversation with the agent: your message, what it did, what it answered. Documents dropped in join `.domain-studio/context/docs`; every turn lists them with their path, so the agent opens the ones it needs. |
-| **Comments** | Open/resolved threads; opening one takes the main view to what it points at. Threads still waiting on the agent ride along with the next turn, and it answers them in place. |
+| **Comments** | Open threads; opening one takes the main view to what it points at. Threads still waiting on the agent ride along with the next turn, and it answers them in place. Resolved threads are hidden. |
 
 ## How it's built
 

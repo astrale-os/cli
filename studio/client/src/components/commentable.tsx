@@ -34,7 +34,7 @@ export function Commentable({
   const openId = useUI((s) => s.openAnchorId)
   const open = openRef === anchor.ref && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
-  const { threads, openThreads, orphaned } = useAnchorThreads(anchor.ref)
+  const { openThreads, orphaned } = useAnchorThreads(anchor.ref)
 
   return (
     <Popover
@@ -83,14 +83,14 @@ export function Commentable({
         // an outside click closes the popover — unless a reply is half-written, in
         // which case the header's × is the deliberate way out
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchor.ref, threads)) event.preventDefault()
+          if (hasUnsentDraft(anchor.ref, openThreads)) event.preventDefault()
         }}
         className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
       >
         <ThreadPopover
           anchor={anchor}
           excerpt={excerpt}
-          threads={threads}
+          threads={openThreads}
           onClose={() => setOpenAnchor(null)}
         />
       </PopoverContent>

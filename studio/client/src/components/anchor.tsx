@@ -12,12 +12,11 @@ import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
-/** All threads for an anchor plus the open subset represented by its indicator. */
+/** Open threads for an anchor, which are the only ones represented in the interface. */
 export function useAnchorThreads(
   ref: string,
   ownerDomainId?: string,
 ): {
-  threads: Comment[]
   openThreads: Comment[]
   orphaned: boolean
 } {
@@ -26,7 +25,7 @@ export function useAnchorThreads(
   const threads = (data?.comments ?? []).filter((c) => c.anchorRefs.some((r) => r.ref === ref))
   const openThreads = openCommentThreads(threads)
   const orphaned = openThreads.some((c) => c.orphaned)
-  return { threads, openThreads, orphaned }
+  return { openThreads, orphaned }
 }
 
 /**
@@ -67,8 +66,8 @@ export function RevealedAnchor({
  * anchor has open threads it shows a CommentPin that opens the ThreadPopover. There is
  * NO "add" button — starting a comment is done via comment mode (press C), which
  * resolves the element from its data-anchor-ref. Renders nothing when there are
- * no open threads. Resolved history remains available in the comments panel. Open
- * state is shared globally via store.openAnchorRef.
+ * no open threads. Resolved threads are omitted from the interface. Open state is
+ * shared globally via store.openAnchorRef.
  */
 export function AnchorButton({
   anchorRef,
@@ -87,7 +86,7 @@ export function AnchorButton({
   const openKey = domainId ? `${domainId}::${anchorRef.ref}` : anchorRef.ref
   const open = openRef === openKey && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
-  const { threads, openThreads, orphaned } = useAnchorThreads(anchorRef.ref, domainId)
+  const { openThreads, orphaned } = useAnchorThreads(anchorRef.ref, domainId)
 
   if (openThreads.length === 0) return null
 
@@ -117,7 +116,7 @@ export function AnchorButton({
         // an outside click closes the popover — unless a reply is half-written, in
         // which case the header's × is the deliberate way out
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchorRef.ref, threads)) event.preventDefault()
+          if (hasUnsentDraft(anchorRef.ref, openThreads)) event.preventDefault()
         }}
         className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
       >
@@ -125,7 +124,7 @@ export function AnchorButton({
           domainId={domainId}
           anchor={anchorRef}
           excerpt={excerpt}
-          threads={threads}
+          threads={openThreads}
           onClose={() => setOpenAnchor(null)}
         />
       </PopoverContent>

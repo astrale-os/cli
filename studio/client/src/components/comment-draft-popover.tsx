@@ -14,7 +14,7 @@ import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 export function CommentDraftPopover() {
   const draft = useUI((s) => s.commentDraft)
   const setCommentDraft = useUI((s) => s.setCommentDraft)
-  const { threads } = useAnchorThreads(draft?.anchor.ref ?? '__none__', draft?.domainId)
+  const { openThreads } = useAnchorThreads(draft?.anchor.ref ?? '__none__', draft?.domainId)
 
   if (!draft) return null
 
@@ -42,14 +42,14 @@ export function CommentDraftPopover() {
         // nothing typed yet → an outside click just dismisses it; once there IS a
         // draft, only the × (or submitting) closes it, so nothing is lost by accident
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(draft.anchor.ref, threads)) event.preventDefault()
+          if (hasUnsentDraft(draft.anchor.ref, openThreads)) event.preventDefault()
         }}
       >
         <ThreadPopover
           domainId={draft.domainId}
           anchor={draft.anchor}
           excerpt={draft.excerpt}
-          threads={threads}
+          threads={openThreads}
           onClose={() => setCommentDraft(null)}
         />
       </PopoverContent>
