@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.43](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.42...cli/v1.0.0-beta.43) (2026-08-28)
+
+
+### Features
+
+* **release:** restore public npm CLI distribution ([#249](https://github.com/astrale-os/cli/issues/249)) ([ec77818](https://github.com/astrale-os/cli/commit/ec778181974123205c8cca9046d34a4e7cf0ae57))
+
+
+### Bug Fixes
+
+* **release:** publish npm only on version manifest ([#251](https://github.com/astrale-os/cli/issues/251)) ([fb0df5b](https://github.com/astrale-os/cli/commit/fb0df5bffbcef7d2d108b4d25f5a1c9e4cecb861))
+
 ## [1.0.0-beta.42](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.41...cli/v1.0.0-beta.42) (2026-08-28)
 
 
