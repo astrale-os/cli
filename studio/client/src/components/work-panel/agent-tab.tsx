@@ -2,10 +2,11 @@ import type { AgentRun } from '@shared/types'
 import type { DragEvent } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, Square, Upload } from 'lucide-react'
+import { ArrowUp, MessageSquare, Square, Upload } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { Chip } from '@/components/studio-kit'
 import { ScrollArea } from '@/components/ui/misc'
 import {
   isRunActive,
@@ -15,6 +16,8 @@ import {
   useDisplayRun,
 } from '@/lib/agent'
 import { api, qk } from '@/lib/api'
+import { threadsAwaitingAgent } from '@/lib/comments'
+import { useComments } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 import { AgentTurn, TurnDivider } from './agent-turn'
@@ -119,6 +122,27 @@ function needsDivider(previous: AgentRun | undefined, turn: AgentRun): boolean {
   return Date.parse(turn.createdAt) - Date.parse(previous.createdAt) > HOUR
 }
 
+/**
+ * What the next turn already carries, said in the composer itself: send a message and
+ * these threads go with it. Purely indicative — the threads are answered and resolved
+ * from the comments tab, never dismissed from here.
+ */
+function AwaitingThreadsChip({ domainId }: { domainId: string }) {
+  const { data: store } = useComments(domainId)
+  const awaiting = threadsAwaitingAgent(store?.comments)
+  if (awaiting.length === 0) return null
+  const plural = awaiting.length === 1 ? '' : 's'
+  return (
+    <Chip
+      tone="primary"
+      title={`The agent answers ${awaiting.length} open thread${plural} on its next turn`}
+    >
+      <MessageSquare className="h-3 w-3" />
+      {awaiting.length} open comment{plural}
+    </Chip>
+  )
+}
+
 function Composer({ domainId, run }: { domainId: string; run: AgentRun | null }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -179,6 +203,7 @@ function Composer({ domainId, run }: { domainId: string; run: AgentRun | null })
         />
         <div className="flex items-center gap-1 px-2 pb-2">
           <DocumentsMenu domainId={domainId} />
+          <AwaitingThreadsChip domainId={domainId} />
           <div className="ml-auto">
             {active ? (
               <button

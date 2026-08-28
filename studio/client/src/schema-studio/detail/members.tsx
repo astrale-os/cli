@@ -3,7 +3,7 @@ import type { HandlerLink, IrMethod, JsonSchema, StudioSchemaBundle } from '@sha
 import { classRefKey } from '@shared/types'
 import { ArrowUpRight, Box, Globe, HelpCircle, Hexagon, Layers } from 'lucide-react'
 
-import { AnchorButton } from '@/components/anchor'
+import { AnchorButton, RevealedAnchor } from '@/components/anchor'
 import { MethodAuthBadge } from '@/components/method-auth'
 import {
   Chip,
@@ -68,43 +68,45 @@ export function PropertyRow({
   const d = describe(schema)
 
   return (
-    <Row
-      anchorRef={pref}
-      anchorExcerpt={pname}
-      leading={
-        <IconTile tone="node" size="sm">
-          <Icon />
-        </IconTile>
-      }
-      title={
-        <span className="flex items-center gap-1.5">
-          {pname}
-          {pdoc && <DocHint doc={pdoc} />}
-          {ft.optional && <Chip tone="default">optional</Chip>}
-        </span>
-      }
-      subtitle={
-        <HoverCard openDelay={140}>
-          <HoverCardTrigger asChild>
-            <span className="cursor-default">{ft.label}</span>
-          </HoverCardTrigger>
-          <HoverCardContent className="w-auto max-w-sm">
-            <MetaGrid
-              items={[
-                { label: 'type', value: typeLabel(d) + (ft.optional ? ' (optional)' : '') },
-                { label: 'key', value: pref },
-              ]}
-            />
-          </HoverCardContent>
-        </HoverCard>
-      }
-      trailing={
-        <AnchorButton
-          anchorRef={{ ref: pref, kind: 'schema', file: bundle.overlay.sourceSpans[pref]?.file }}
-          excerpt={pname}
-        />
-      }
-    />
+    <RevealedAnchor anchorRef={pref}>
+      <Row
+        anchorRef={pref}
+        anchorExcerpt={pname}
+        leading={
+          <IconTile tone="node" size="sm">
+            <Icon />
+          </IconTile>
+        }
+        title={
+          <span className="flex items-center gap-1.5">
+            {pname}
+            {pdoc && <DocHint doc={pdoc} />}
+            {ft.optional && <Chip tone="default">optional</Chip>}
+          </span>
+        }
+        subtitle={
+          <HoverCard openDelay={140}>
+            <HoverCardTrigger asChild>
+              <span className="cursor-default">{ft.label}</span>
+            </HoverCardTrigger>
+            <HoverCardContent className="w-auto max-w-sm">
+              <MetaGrid
+                items={[
+                  { label: 'type', value: typeLabel(d) + (ft.optional ? ' (optional)' : '') },
+                  { label: 'key', value: pref },
+                ]}
+              />
+            </HoverCardContent>
+          </HoverCard>
+        }
+        trailing={
+          <AnchorButton
+            anchorRef={{ ref: pref, kind: 'schema', file: bundle.overlay.sourceSpans[pref]?.file }}
+            excerpt={pname}
+          />
+        }
+      />
+    </RevealedAnchor>
   )
 }
 
@@ -140,45 +142,53 @@ export function MethodCard({
   const unlinked = link?.unlinked
 
   return (
-    <Surface
-      className="px-3 py-2.5"
-      data-anchor-ref={mref}
-      data-anchor-excerpt={`${owner}.${mname}`}
-      data-commentable=""
-    >
-      <Row
-        className="px-0 py-0 hover:bg-transparent"
-        leading={
-          <IconTile tone={glyph.tone} size="sm">
-            <Glyph />
-          </IconTile>
-        }
-        title={
-          <span className="flex items-center gap-1.5">
-            <span className={cn(overridden && 'text-muted-foreground line-through')}>{mname}</span>
-            <MethodAuthBadge method={method} />
-            {doc && <DocHint doc={doc} />}
-            {method.inheritance === 'sealed' && <Chip tone="warning">sealed</Chip>}
-            {method.inheritance === 'abstract' && <Chip tone="fn">contract</Chip>}
-            {overridden && <Chip tone="default">overridden</Chip>}
-            {contractOnly && <Chip tone="warning">needs handler</Chip>}
-            {unlinked && <Chip tone="default">unlinked</Chip>}
-          </span>
-        }
-        trailing={
-          <AnchorButton
-            anchorRef={{ ref: mref, kind: 'schema', file: bundle.overlay.sourceSpans[mref]?.file }}
-            excerpt={`${owner}.${mname}`}
-          />
-        }
-      />
+    <RevealedAnchor anchorRef={mref}>
+      <Surface
+        className="px-3 py-2.5"
+        data-anchor-ref={mref}
+        data-anchor-excerpt={`${owner}.${mname}`}
+        data-commentable=""
+      >
+        <Row
+          className="px-0 py-0 hover:bg-transparent"
+          leading={
+            <IconTile tone={glyph.tone} size="sm">
+              <Glyph />
+            </IconTile>
+          }
+          title={
+            <span className="flex items-center gap-1.5">
+              <span className={cn(overridden && 'text-muted-foreground line-through')}>
+                {mname}
+              </span>
+              <MethodAuthBadge method={method} />
+              {doc && <DocHint doc={doc} />}
+              {method.inheritance === 'sealed' && <Chip tone="warning">sealed</Chip>}
+              {method.inheritance === 'abstract' && <Chip tone="fn">contract</Chip>}
+              {overridden && <Chip tone="default">overridden</Chip>}
+              {contractOnly && <Chip tone="warning">needs handler</Chip>}
+              {unlinked && <Chip tone="default">unlinked</Chip>}
+            </span>
+          }
+          trailing={
+            <AnchorButton
+              anchorRef={{
+                ref: mref,
+                kind: 'schema',
+                file: bundle.overlay.sourceSpans[mref]?.file,
+              }}
+              excerpt={`${owner}.${mname}`}
+            />
+          }
+        />
 
-      <div className="pl-10 pt-1.5">
-        <DetailsDisclosure label="Details">
-          <MethodDetails method={method} link={link} owner={owner} />
-        </DetailsDisclosure>
-      </div>
-    </Surface>
+        <div className="pl-10 pt-1.5">
+          <DetailsDisclosure label="Details">
+            <MethodDetails method={method} link={link} owner={owner} />
+          </DetailsDisclosure>
+        </div>
+      </Surface>
+    </RevealedAnchor>
   )
 }
 

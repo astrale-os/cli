@@ -187,8 +187,11 @@ body {
 
 /* Comment / ask targeting: outline whatever the next click would pin to. An edge
    gets its own line thickened instead — a box around it would cover its neighbours
-   and you could not tell which relationship the pin would land on. */
-[data-comment-target]:not(.react-flow__edge) {
+   and you could not tell which relationship the pin would land on.
+   `data-revealed` shares the outline on purpose: opening a thread from the comments
+   panel points at an element the same way targeting one does. */
+[data-comment-target]:not(.react-flow__edge),
+[data-revealed] {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
   border-radius: var(--radius-md);

@@ -2,6 +2,8 @@ import type { AnchorRef } from '@shared/types'
 
 import { create } from 'zustand'
 
+import { detailRefFor } from './targets'
+
 /** A targeting draft: what was clicked + where on screen to anchor the composer.
  *  `mode` decides which composer opens — a persistent comment or an ephemeral ask. */
 export interface CommentDraft {
@@ -90,6 +92,11 @@ interface UIState {
   showInheritedEdges: boolean
   /** Canvas reading mode: direction only (default) or the declared multiplicities. */
   showCardinality: boolean
+  /** The exact anchor a thread was just revealed from — kept alongside `selectedClass`
+   *  because the two differ: a comment on `class.Order.property.total` opens Order, and
+   *  this is what then singles the `total` row out inside it. Cleared by any other
+   *  selection. */
+  revealedRef: string | null
   /** which anchor's comment thread-popover is currently open (one at a time) */
   openAnchorRef: string | null
   /** which pin INSTANCE opened it (a `useId()`), so when the same ref is pinned in
@@ -111,7 +118,8 @@ interface UIState {
   setPanelTab: (tab: PanelTab) => void
   setPanelSide: (side: PanelSide) => void
   setPanelSize: (size: number) => void
-  /** Jump to whatever an anchor points at: the right section, class selected and focused. */
+  /** Jump to whatever an anchor points at: the right section, the member that declares
+   *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string) => void
   setPanelOverlay: (v: 'views' | 'domains' | 'integrations' | null) => void
   selectClass: (n?: string) => void
@@ -156,6 +164,7 @@ export const useUI = create<UIState>((set) => ({
   panelOverlay: null,
   collapsedModules: [],
   commentDraft: null,
+  revealedRef: null,
   hidden: {},
   showInheritedEdges: true,
   showCardinality: false,
@@ -178,6 +187,7 @@ export const useUI = create<UIState>((set) => ({
       panelOverlay: null,
       selectedClass: undefined,
       focusId: null,
+      revealedRef: null,
       openAnchorRef: null,
       // Visibility is PER-DOMAIN — clear it on switch so the previous domain's hide
       // set never bleeds into the new one. The graph then hydrates this domain's slice.
@@ -193,6 +203,7 @@ export const useUI = create<UIState>((set) => ({
     set((s) => ({
       section,
       panelOverlay: null,
+      revealedRef: null,
       openAnchorRef: null,
       ...((s.section === 'core') !== (section === 'core')
         ? { selectedClass: undefined, focusId: null }
@@ -223,21 +234,28 @@ export const useUI = create<UIState>((set) => ({
         : 'schema'
     const target = SECTION_KEYS.includes(section) ? section : 'schema'
     store('studio.lastSection', target)
+    // A property or method is revealed INSIDE the member that declares it — selecting
+    // the field itself would select a canvas node that does not exist.
+    const selection = detailRefFor(ref)
     set({
       section: target,
       panelOverlay: null,
-      ...(ref.startsWith('class.') || ref.startsWith('edge.') || ref.startsWith('module.')
-        ? { selectedClass: revealSelection(ref), focusId: revealFocus(ref) }
+      revealedRef: ref,
+      ...(selection.startsWith('class.') ||
+      selection.startsWith('edge.') ||
+      selection.startsWith('module.')
+        ? { selectedClass: revealSelection(selection), focusId: revealFocus(selection) }
         : {}),
     })
   },
   setPanelOverlay: (panelOverlay) => set({ panelOverlay }),
   selectClass: (selectedClass) =>
     set((s) => {
-      if (selectedClass === s.selectedClass && !s.panelOverlay) return {}
+      if (selectedClass === s.selectedClass && !s.panelOverlay && !s.revealedRef) return {}
       return {
         selectedClass,
         panelOverlay: null,
+        revealedRef: null,
         focusId: selectedClass?.startsWith('class.') ? selectedClass : s.focusId,
       }
     }),
@@ -245,6 +263,7 @@ export const useUI = create<UIState>((set) => ({
     set((s) => ({
       selectedClass: id,
       panelOverlay: null,
+      revealedRef: null,
       focusId: s.focusId === id ? null : id,
     })),
   setFocus: (focusId) => set({ focusId }),

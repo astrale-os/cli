@@ -9,6 +9,7 @@ import { ScrollArea } from '@/components/ui/misc'
 import { api, qk } from '@/lib/api'
 import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { isModuleRef } from '@/lib/targets'
 import { buildViewsModel } from '@/lib/views'
 
 import { SchemaDetail } from '../detail'
@@ -152,6 +153,9 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   }, [inputs, updateVisibility])
 
   const activeInput = inputs.find((input) => input.summary.id === activeDomainId)
+  // A module is a grouping, not a member: selecting one rings its box on the canvas and
+  // its row in the tree, and that is the whole answer — there is no module to inspect.
+  const detail = selected && !isModuleRef(selected) ? selected : undefined
   const solo = inputs.length === 1
   const ready = prepared.length === inputs.length && inputs.length === domainIds.length
   const providerKey = prepared
@@ -209,9 +213,9 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
           <PanelShell onClose={() => setPanelOverlay(null)}>
             <IntegrationsPanel domainId={activeInput.summary.id} />
           </PanelShell>
-        ) : selected && activeInput ? (
+        ) : detail && activeInput ? (
           <PanelShell onClose={() => select(undefined)}>
-            <SchemaDetail bundle={activeInput.bundle} selected={selected} />
+            <SchemaDetail bundle={activeInput.bundle} selected={detail} />
           </PanelShell>
         ) : null}
       </div>

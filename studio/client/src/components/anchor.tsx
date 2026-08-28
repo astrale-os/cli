@@ -1,6 +1,6 @@
 import type { AnchorRef, Comment } from '@shared/types'
 
-import { useId } from 'react'
+import { type ReactNode, useCallback, useId } from 'react'
 
 import { openCommentThreads } from '@/lib/comments'
 import { useComments } from '@/lib/hooks'
@@ -27,6 +27,39 @@ export function useAnchorThreads(
   const openThreads = openCommentThreads(threads)
   const orphaned = openThreads.some((c) => c.orphaned)
   return { threads, openThreads, orphaned }
+}
+
+/**
+ * Marks the element a revealed thread actually points at. Opening a comment on
+ * `class.Order.property.total` opens Order — this is what then says which row was
+ * meant: the element brings itself into view and wears the same outline comment mode
+ * uses when it targets something, so "this is the element" always reads the same.
+ * Spread on the surface itself where a wrapper would disturb the layout; otherwise
+ * reach for `RevealedAnchor`.
+ */
+export function useRevealedAnchor(anchorRef: string) {
+  const revealed = useUI((s) => s.revealedRef === anchorRef)
+  // a callback ref, so a surface already on screen scrolls the moment it becomes the
+  // revealed one — not only when it mounts with the panel
+  const bringIntoView = useCallback(
+    (node: HTMLElement | null) => {
+      if (node && revealed) node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    },
+    [revealed],
+  )
+  return { ref: bringIntoView, 'data-revealed': revealed ? '' : undefined } as const
+}
+
+/** `useRevealedAnchor` as a wrapper, for list rows and cards that stack vertically. */
+export function RevealedAnchor({
+  anchorRef,
+  children,
+}: {
+  anchorRef: string
+  children: ReactNode
+}) {
+  const revealed = useRevealedAnchor(anchorRef)
+  return <div {...revealed}>{children}</div>
 }
 
 /**

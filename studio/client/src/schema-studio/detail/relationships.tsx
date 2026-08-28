@@ -3,6 +3,7 @@ import type { IrClassRef, IrEndpoint, StudioSchemaBundle } from '@shared/types'
 import { classRefKey, isIrClassRef } from '@shared/types'
 import { ArrowRight, Box } from 'lucide-react'
 
+import { useRevealedAnchor } from '@/components/anchor'
 import { IconTile, Surface } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useUI } from '@/lib/store'
@@ -63,6 +64,9 @@ function EndpointCard({
   edgeName: string
 }) {
   const selectClass = useUI((s) => s.selectClass)
+  // The endpoints sit in a wrapping flex row that has to be free to shrink, so the
+  // reveal marking goes ON the end itself rather than around it.
+  const revealed = useRevealedAnchor(`edge.${edgeName}.endpoint.${endpoint?.name ?? ''}`)
   if (!endpoint) return null
   const ir = bundle.ir
   if (!ir) return null
@@ -129,6 +133,7 @@ function EndpointCard({
         disabled={!m.resolvable}
         title={m.resolvable ? `Open ${m.t}` : m.origin ? `${m.t} · ${m.origin}` : m.t}
         {...epAnchor}
+        {...revealed}
         className={cn(
           'flex min-w-0 max-w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors',
           m.resolvable ? 'cursor-pointer hover:bg-accent/60' : 'cursor-default',
@@ -152,7 +157,7 @@ function EndpointCard({
 
   // union — one clickable chip per allowed type
   return (
-    <div {...epAnchor} className="flex min-w-0 max-w-full flex-col gap-1 px-2 py-1.5">
+    <div {...epAnchor} {...revealed} className="flex min-w-0 max-w-full flex-col gap-1 px-2 py-1.5">
       <div className="flex flex-wrap items-center gap-1">
         {targets.map((target) => {
           const m = meta(target)
