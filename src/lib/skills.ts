@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { findAgentBrowser } from './browser'
 
 export * from './skills/sync'
+export * from './skills/onboarding'
 
 export const AGENT_BROWSER_SKILL = 'agent-browser'
 

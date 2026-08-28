@@ -56,6 +56,8 @@ export type SkillApplyStatus =
 
 export type SkillCheckResult = {
   status: SkillCheckStatus
+  /** Derived from the canonical skill cohort on disk; never persisted separately. */
+  installed?: boolean
   error?: string
   source?: {
     repository: typeof ASTRALE_CLI_SKILL_SOURCE
@@ -955,6 +957,7 @@ export async function checkAstraleSkills(
           : 'update-available'
     return {
       status,
+      installed: inspection.state !== 'absent',
       ...(status === 'current'
         ? {
             source: {

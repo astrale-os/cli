@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -54,5 +54,6 @@ test('standalone installer places one self-contained binary', () => {
     readFileSync(join(state, 'install.json'), 'utf8'),
     /"version": "1\.0\.0-beta\.test"/u,
   )
-  assert.match(readFileSync(invocations, 'utf8'), /^skills update --json$/mu)
+  assert.match(installed.stdout, /Skill setup skipped\. Run: astrale skills configure/u)
+  assert.equal(existsSync(invocations), false)
 })
