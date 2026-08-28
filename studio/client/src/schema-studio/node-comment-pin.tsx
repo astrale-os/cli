@@ -28,7 +28,7 @@ export function NodeCommentPin({
   excerpt: string
   className?: string
 }) {
-  const { threads, openThreads, orphaned } = useAnchorThreads(anchorRef, domainId)
+  const { openThreads, orphaned } = useAnchorThreads(anchorRef, domainId)
   const myId = useId()
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
@@ -67,14 +67,14 @@ export function NodeCommentPin({
         align="end"
         className="w-80"
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchorRef, threads)) event.preventDefault()
+          if (hasUnsentDraft(anchorRef, openThreads)) event.preventDefault()
         }}
       >
         <ThreadPopover
           domainId={domainId}
           anchor={{ ref: anchorRef, kind }}
           excerpt={excerpt}
-          threads={threads}
+          threads={openThreads}
           onClose={() => setOpenAnchor(null)}
         />
       </PopoverContent>

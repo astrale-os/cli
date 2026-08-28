@@ -1,10 +1,11 @@
 import type { Comment } from '@shared/types'
 
-import { CheckCheck, MessageSquare } from 'lucide-react'
+import { MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 
 import { Chip, EmptyState } from '@/components/studio-kit'
 import { ThreadView } from '@/components/thread'
+import { openCommentThreads } from '@/lib/comments'
 import { useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -26,7 +27,6 @@ function anchorLabel(ref: string): string {
  */
 export function CommentsTab({ domainId }: { domainId: string }) {
   const { data: store, isLoading } = useComments(domainId)
-  const [tab, setTab] = useState<'open' | 'closed'>('open')
   const [openId, setOpenId] = useState<string | null>(null)
   const revealAnchor = useUI((state) => state.revealAnchor)
 
@@ -38,10 +38,7 @@ export function CommentsTab({ domainId }: { domainId: string }) {
     )
   }
 
-  const comments = store?.comments ?? []
-  const open = comments.filter((c) => c.status === 'open')
-  const closed = comments.filter((c) => c.status === 'closed')
-  const shown = tab === 'open' ? open : closed
+  const comments = openCommentThreads(store?.comments)
   const reveal = (comment: Comment) => {
     const next = openId === comment.id ? null : comment.id
     setOpenId(next)
@@ -51,40 +48,16 @@ export function CommentsTab({ domainId }: { domainId: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-0.5 border-b px-2 py-1.5">
-        <span className="mr-auto pl-1 text-[11px] text-muted-foreground">
-          {shown.length} {tab === 'open' ? 'open' : 'resolved'}
-        </span>
-        <button
-          type="button"
-          aria-pressed={tab === 'closed'}
-          title={
-            tab === 'open'
-              ? `Show resolved threads (${closed.length})`
-              : `Show open threads (${open.length})`
-          }
-          onClick={() => setTab(tab === 'open' ? 'closed' : 'open')}
-          className={cn(
-            'grid h-7 w-7 place-items-center rounded-md transition-colors',
-            tab === 'closed'
-              ? 'bg-accent text-foreground'
-              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-          )}
-        >
-          <CheckCheck className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {shown.length === 0 ? (
+        {comments.length === 0 ? (
           <EmptyState
             icon={<MessageSquare />}
-            title={tab === 'open' ? 'No open threads' : 'No resolved threads yet'}
-            hint={tab === 'open' ? 'Press C, then click anything to pin a note.' : undefined}
+            title="No open threads"
+            hint="Press C, then click anything to pin a note."
           />
         ) : (
           <div className="divide-y">
-            {shown.map((c) => (
+            {comments.map((c) => (
               <div key={c.id}>
                 <button
                   type="button"
