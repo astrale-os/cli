@@ -124,6 +124,10 @@ export function IconTile({
 }
 
 // ── Row: the one list item — leading icon + title/subtitle + trailing ──
+// `dense` is the same idiom at table weight: the subtitle moves off its own line
+// and onto the title's, pinned right. A field's name and its type are one fact,
+// so a list of them reads as two columns instead of stacked pairs — the same rows
+// in roughly half the height, which is what makes long member lists scannable.
 export function Row({
   leading,
   title,
@@ -131,6 +135,7 @@ export function Row({
   trailing,
   onClick,
   active,
+  dense,
   className,
   children,
   anchorRef,
@@ -142,6 +147,8 @@ export function Row({
   trailing?: React.ReactNode
   onClick?: () => void
   active?: boolean
+  /** single-line variant: subtitle sits right-aligned on the title's line */
+  dense?: boolean
   className?: string
   children?: React.ReactNode
   /** makes the whole row a commentable target surface (comment mode) */
@@ -156,20 +163,36 @@ export function Row({
       data-anchor-excerpt={anchorExcerpt}
       data-commentable={anchorRef ? '' : undefined}
       className={cn(
-        'group/row flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
+        'group/row flex w-full items-center rounded-md text-left transition-colors',
+        dense ? 'gap-2 px-2.5 py-1' : 'gap-2.5 px-2.5 py-2',
         onClick && 'cursor-pointer hover:bg-accent',
         active && 'bg-accent',
         className,
       )}
     >
       {leading}
-      {(title || subtitle) && (
-        <div className="min-w-0 flex-1">
-          {title && <div className="truncate text-[13px] font-medium">{title}</div>}
-          {subtitle && (
-            <div className="truncate text-xs leading-snug text-muted-foreground">{subtitle}</div>
+      {dense ? (
+        <>
+          {title && (
+            <div className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">{title}</div>
           )}
-        </div>
+          {subtitle && (
+            // caps at half the row so a long type never crowds out the name it
+            // describes; `ml-auto` keeps it on the right edge even with no title
+            <div className="ml-auto min-w-0 max-w-[50%] truncate text-right text-xs text-muted-foreground">
+              {subtitle}
+            </div>
+          )}
+        </>
+      ) : (
+        (title || subtitle) && (
+          <div className="min-w-0 flex-1">
+            {title && <div className="truncate text-[13px] font-medium">{title}</div>}
+            {subtitle && (
+              <div className="truncate text-xs leading-snug text-muted-foreground">{subtitle}</div>
+            )}
+          </div>
+        )
       )}
       {children}
       {trailing && <div className="flex shrink-0 items-center gap-1.5">{trailing}</div>}

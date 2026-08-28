@@ -1,7 +1,7 @@
 import type { HandlerLink, IrMethod, JsonSchema, StudioSchemaBundle } from '@shared/types'
 
 import { classRefKey } from '@shared/types'
-import { ArrowUpRight, Box, Globe, HelpCircle, Hexagon, Layers } from 'lucide-react'
+import { ArrowUpRight, Box, Globe, Hexagon, Info, Layers } from 'lucide-react'
 
 import { AnchorButton, RevealedAnchor } from '@/components/anchor'
 import { MethodAuthBadge } from '@/components/method-auth'
@@ -27,7 +27,8 @@ import { originLabel } from './model'
 
 // ── Property row ──
 // A property/method's parsed description (JSDoc/comment), tucked behind a small
-// "?" so it's there on hover without spelling every doc out inline.
+// glyph so it's there on hover without spelling every doc out inline. An "i", not
+// a "?", because the optional marker next to it already IS a question mark.
 function DocHint({ doc }: { doc: string }) {
   return (
     <HoverCard openDelay={80}>
@@ -37,7 +38,7 @@ function DocHint({ doc }: { doc: string }) {
           aria-label="Description"
           className="text-muted-foreground transition-colors hover:text-foreground"
         >
-          <HelpCircle className="h-3.5 w-3.5" />
+          <Info className="h-3.5 w-3.5" />
         </button>
       </HoverCardTrigger>
       <HoverCardContent className="w-auto max-w-xs text-[13px] leading-relaxed text-muted-foreground">
@@ -70,18 +71,28 @@ export function PropertyRow({
   return (
     <RevealedAnchor anchorRef={pref}>
       <Row
+        dense
         anchorRef={pref}
         anchorExcerpt={pname}
-        leading={
-          <IconTile tone="node" size="sm">
-            <Icon />
-          </IconTile>
-        }
+        // name and type sit at opposite edges now, so the row tints under the cursor
+        // to keep the eye on one line while it crosses the gap between them
+        className="rounded-none hover:bg-accent/50"
+        // A bare glyph, not an IconTile: at one line a tinted 24px square is taller
+        // than the text it labels and turns the list into a column of buttons.
+        leading={<Icon className="h-3.5 w-3.5 shrink-0 text-schema-node" />}
         title={
           <span className="flex items-center gap-1.5">
-            {pname}
+            <span className="truncate">
+              {pname}
+              {/* `?` rather than an "optional" pill — the same mark the method params
+                  use, and it rides along with the name instead of costing a chip's width */}
+              {ft.optional && (
+                <span className="font-normal text-muted-foreground" title="optional">
+                  ?
+                </span>
+              )}
+            </span>
             {pdoc && <DocHint doc={pdoc} />}
-            {ft.optional && <Chip tone="default">optional</Chip>}
           </span>
         }
         subtitle={
@@ -338,7 +349,7 @@ export function InheritedSection({
               {/* full-weight members — identical treatment to the member's own */}
               <div className="space-y-2.5">
                 {g.props.length > 0 && (
-                  <Surface className="divide-y">
+                  <Surface className="divide-y overflow-hidden">
                     {g.props.map(([pname, schema, optional]) => (
                       <PropertyRow
                         key={`p-${pname}`}

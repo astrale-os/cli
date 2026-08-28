@@ -86,19 +86,21 @@ export function CoreDetail({
         {entries.length === 0 ? (
           <p className="mt-1 text-[12px] text-muted-foreground">No fields set.</p>
         ) : (
-          <div className="mt-1.5 flex flex-col gap-1.5">
+          // One table, not a card per field: the field name sits in a fixed left
+          // column so short values — which is most of them — cost one line instead
+          // of two. The value column still wraps, so nothing long gets clipped.
+          <div className="mt-1.5 divide-y overflow-hidden rounded-md border bg-card">
             {entries.map(({ key, label, value }) => (
-              <div
-                key={key}
-                className="flex flex-col gap-0.5 rounded-md border bg-card px-2.5 py-1.5"
-              >
+              <div key={key} className="flex items-baseline gap-3 px-2.5 py-1">
                 <span
-                  className="font-mono text-[11px] text-muted-foreground"
-                  title={label === key ? undefined : key}
+                  className="w-28 shrink-0 truncate font-mono text-[11px] text-muted-foreground"
+                  title={key}
                 >
                   {label}
                 </span>
-                <span className="break-words text-[13px] text-foreground/80">{fmtVal(value)}</span>
+                <span className="min-w-0 flex-1 break-words text-[13px] text-foreground/80">
+                  {fmtVal(value)}
+                </span>
               </div>
             ))}
           </div>
