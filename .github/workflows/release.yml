@@ -1,6 +1,9 @@
-name: Release (manual)
+name: Release Please
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch: {}
 
 concurrency:
@@ -14,7 +17,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    environment: cli-release
     outputs:
       created: ${{ steps.release.outputs.releases_created }}
       version: ${{ steps.version.outputs.version }}
