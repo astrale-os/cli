@@ -1,6 +1,6 @@
 /**
  * Keep `astrale --version` as the familiar root spelling without claiming the
- * same flag after a subcommand. Commands such as `ui list` and `update` own
+ * same flag after a subcommand. Commands such as `ui init` and `update` own
  * their release `--version` value.
  */
 export function normalizeRootVersionArgv(argv: readonly string[]): string[] {

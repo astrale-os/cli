@@ -11,6 +11,7 @@ describe('release workflow contract', () => {
   const release = workflow('.github/workflows/release.yml')
   const binary = workflow('.github/workflows/cli-release.yml')
   const ci = workflow('.github/workflows/ci.yml')
+  const uiSearch = workflow('.github/workflows/ui-search-contract.yml')
 
   it('uses Release Please beta versioning and the canonical CLI tag shape', () => {
     assert.equal(config.versioning, 'prerelease')
@@ -169,6 +170,24 @@ describe('release workflow contract', () => {
     assert.match(check.run, /git diff --exit-code -- src\/generated\/embedded-assets\.ts/)
   })
 
+  it('qualifies the current UI producer through the exact CLI search consumer', () => {
+    assert.equal(ci.jobs['ui-search-contract'].uses, './.github/workflows/ui-search-contract.yml')
+    assert.equal(ci.jobs['ui-search-contract'].with['ui-ref'], 'main')
+    assert.equal(uiSearch.on.workflow_call.inputs['ui-ref'].required, true)
+    assert.deepEqual(uiSearch.on.workflow_dispatch, {})
+    const providerCheckout = uiSearch.jobs['provider-consumer'].steps.find(
+      (step) => step.with?.repository === 'astrale-os/ui',
+    )
+    assert.equal(
+      providerCheckout.with.ref,
+      "${{ github.event_name == 'workflow_dispatch' && 'main' || inputs.ui-ref }}",
+    )
+    const qualification = uiSearch.jobs['provider-consumer'].steps.find(
+      (step) => step.name === 'Qualify exact UI producer through the CLI consumer',
+    )
+    assert.match(qualification.run, /pnpm qualification:ui-search/u)
+  })
+
   it('rebuilds pinned embedded inputs before compiling a development bundle', () => {
     const build = read('scripts/build.ts')
     assert.ok(
@@ -220,7 +239,7 @@ describe('release workflow contract', () => {
   })
 
   it('pins every external action to one immutable revision', () => {
-    for (const [name, document] of Object.entries({ release, binary, ci })) {
+    for (const [name, document] of Object.entries({ release, binary, ci, uiSearch })) {
       for (const job of Object.values(document.jobs)) {
         for (const step of job.steps ?? []) {
           if (typeof step.uses !== 'string' || step.uses.startsWith('./')) continue
