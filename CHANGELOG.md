@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0-beta.49](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.48...cli/v1.0.0-beta.49) (2026-08-28)
+
+
+### Bug Fixes
+
+* admit cloudflared build metadata in releases ([#278](https://github.com/astrale-os/cli/issues/278)) ([7ff1316](https://github.com/astrale-os/cli/commit/7ff1316bebbe7024897a649da6c089420b9adc54))
+* mark domain boundaries on the canvas and restore the Settings gear ([#273](https://github.com/astrale-os/cli/issues/273)) ([82490be](https://github.com/astrale-os/cli/commit/82490be20dacafd63449a336506b2957ca6f4095))
+* point comment threads at what they actually annotate ([#275](https://github.com/astrale-os/cli/issues/275)) ([e6f9369](https://github.com/astrale-os/cli/commit/e6f936981d7916dc32e716b0c2953a72d75abdf6))
+* simplify Studio instance controls ([#277](https://github.com/astrale-os/cli/issues/277)) ([611eb80](https://github.com/astrale-os/cli/commit/611eb8075e810ad655471499dd57b4d3e418df73))
+
 ## [1.0.0-beta.48](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.47...cli/v1.0.0-beta.48) (2026-08-28)
 
 
