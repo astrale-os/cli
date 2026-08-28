@@ -5,6 +5,8 @@ import { parse } from 'yaml'
 
 const read = (path) => readFileSync(path, 'utf8')
 const workflow = (path) => parse(read(path))
+const cloudflaredVersionCheck =
+  /grep -Eq '\^cloudflared version 2026\\\.8\\\.2\(\[\[:space:\]\]\|\$\)'/
 
 describe('release workflow contract', () => {
   const config = JSON.parse(read('.release-please-config.json'))
@@ -169,7 +171,7 @@ describe('release workflow contract', () => {
     )
     assert.match(acquire, /node scripts\/acquire-cloudflared\.mjs/)
     assert.match(acquire, /matrix\.target_os.*matrix\.target_arch/s)
-    assert.match(acquire, /cloudflared version 2026\.8\.2/)
+    assert.match(acquire, cloudflaredVersionCheck)
     assert.match(
       pack,
       /node scripts\/package-release-asset\.mjs \\\n\s+dist\/astrale dist\/astrale-cloudflared licenses\/cloudflared\.txt "\$asset\.tar\.gz"/,
@@ -294,6 +296,7 @@ describe('release workflow contract', () => {
     assert.match(publishedQualification.run, /astrale-linux-x64\.tar\.gz/)
     assert.match(publishedQualification.run, /scripts\/qualification\/skills-update-e2e\.mjs/)
     assert.match(publishedQualification.run, /astrale-cloudflared.*--version/s)
+    assert.match(publishedQualification.run, cloudflaredVersionCheck)
     assert.match(publishedQualification.run, /LICENSE\.cloudflared/)
     assert.equal(
       publishedQualification.env.ASTRALE_E2E_SOURCE_REVISION,

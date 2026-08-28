@@ -124,7 +124,8 @@ jobs:
           node scripts/acquire-cloudflared.mjs \
             '${{ matrix.target_os }}-${{ matrix.target_arch }}' \
             dist/astrale-cloudflared
-          ./dist/astrale-cloudflared --version | grep -qx 'cloudflared version 2026.8.2'
+          ./dist/astrale-cloudflared --version | \
+            grep -Eq '^cloudflared version 2026\.8\.2([[:space:]]|$)'
       - name: Qualify skill update with the built binary
         env:
           ASTRALE_E2E_CLI: ./dist/astrale
@@ -298,7 +299,7 @@ jobs:
           ASTRALE_E2E_CLI="$qualification_dir/astrale" \
             node scripts/qualification/skills-update-e2e.mjs
           "$qualification_dir/astrale-cloudflared" --version | \
-            grep -qx 'cloudflared version 2026.8.2'
+            grep -Eq '^cloudflared version 2026\.8\.2([[:space:]]|$)'
           test -s "$qualification_dir/LICENSE.cloudflared"
       - name: Release summary
         run: |
