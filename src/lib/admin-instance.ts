@@ -1,6 +1,6 @@
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
-import { connectAdminInstances, waitForInvitation } from '../admin/instance'
+import { connectAdminInstances } from '../admin/instance'
 import { withAdminClientSession } from '../connection'
 
 export {
@@ -62,32 +62,16 @@ export function inviteOwnedInstance(
   options: AdminConnectionOptions,
   identifier: string,
   email: string,
-  invitation: Readonly<{ expiresInDays?: number; waitTimeoutMs?: number }> = {},
+  expiresInDays?: number,
 ) {
-  return withAdminClientSession(options, async (context) => {
-    const api = await connectAdminInstances(context)
-    const created = await api.invite(identifier, email, invitation.expiresInDays)
-    return invitation.waitTimeoutMs === undefined
-      ? created
-      : waitForInvitation(created, () => api.reconcileInvitation(created.id), {
-          timeoutMs: invitation.waitTimeoutMs,
-        })
-  })
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).invite(identifier, email, expiresInDays),
+  )
 }
 
 /** Reconcile one Invitation sent by the active caller. */
-export function reconcileOwnedInvitation(
-  options: AdminConnectionOptions,
-  invitation: string,
-  waitTimeoutMs?: number,
-) {
-  return withAdminClientSession(options, async (context) => {
-    const api = await connectAdminInstances(context)
-    const current = await api.reconcileInvitation(invitation)
-    return waitTimeoutMs === undefined
-      ? current
-      : waitForInvitation(current, () => api.reconcileInvitation(current.id), {
-          timeoutMs: waitTimeoutMs,
-        })
-  })
+export function reconcileOwnedInvitation(options: AdminConnectionOptions, invitation: string) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).reconcileInvitation(invitation),
+  )
 }

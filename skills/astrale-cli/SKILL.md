@@ -138,9 +138,10 @@ admin-managed instance; `instance forget` removes only the local bookmark.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 `instance invite` requires authority to manage the exact Instance and grants
-only Instance member access. It waits for WorkOS acceptance and explicit child
-Shell reconciliation by default; use `--no-wait` to return the durable
-Invitation and resume it with `astrale instance invitation reconcile <id>`.
+only Instance member access. It returns the durable Invitation immediately;
+Admin automatically materializes child Shell access after WorkOS acceptance.
+`instance invitation reconcile <id>` is diagnostic recovery, not the normal
+invitation journey.
 Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
 instances (key-backed identities have no Admin token). Use
 `astrale instance list --bookmarked`.
