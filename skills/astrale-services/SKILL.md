@@ -5,10 +5,15 @@ description: Use the Services domain to turn existing code or requirements into 
 
 # Astrale Services
 
-Use `services.astrale.ai` as the control plane for deployed services. A service is a graph identity placed by the caller and backed by a provider deployment. `CloudflareWorker` is the current concrete backend and can host zero or many first-class kernel Functions.
+Use `services.astrale.ai` as the provider control plane for deployed Services. `CloudflareWorker` is
+the current concrete backend. A Service may publish an Astrale Application, but Services never
+installs or uninstalls that Application on a consumer Kernel.
 
 ## Intent router
 
-- Build or adopt code, deploy it as a service with hosted Functions, verify it end to end, and hand back exact calls: read [references/deployer-agent.md](references/deployer-agent.md).
+- Build or adopt code, deploy it as a Service with published Functions, deliberately install it on
+  the selected consumer Kernel, verify it end to end, and hand back exact calls: read
+  [references/deployer-agent.md](references/deployer-agent.md).
 - Deploy artifacts, operate a service, manage secrets/schedules/logs, delete, or open the GUI: read [references/workflows.md](references/workflows.md).
-- Understand the Service class, deploy payload, hosted Function reconciliation, and result shape: read [references/schema.md](references/schema.md).
+- Understand the Service class, deploy payload, Publication evidence, and result shape: read
+  [references/schema.md](references/schema.md).

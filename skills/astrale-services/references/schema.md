@@ -2,45 +2,28 @@
 
 Origin: `services.astrale.ai`
 
-## Service model
+`Service` is a provider-neutral abstract resource Class. `CloudflareWorker` is the current concrete
+provider implementation. A Service is addressed by its opaque graph Node ID; `serviceKey` is stable,
+owner-unique lookup metadata, not a graph path.
 
-`Service` is a provider-neutral interface and an Astrale `Identity`. A deployed service can receive grants and call a kernel as itself.
+Service state retains provider identity, URL, lifecycle, deployment receipt/digest, optional
+provider revision, and exact optional Published Application evidence:
 
-Instance methods shared by service implementations:
+- Publication issuer and Domain origin;
+- Schema revision and Publication ETag;
+- declared Function references and paths.
 
-- `setSecret({ name, value })` and `deleteSecret({ name })`.
-- `secrets()` returns names only; values are intentionally unreadable.
-- `setSchedule({ crons })` replaces the complete schedule; `[]` clears it.
-- `schedules()` returns current provider cron expressions.
-- `logs({ tail?, since? })` returns `{ name, lines[] }` with stable line ids and epoch-ms timestamps.
-- `delete()` tears down the provider service and removes the graph node.
+`service_owned_by` is the only Services-owned relationship. Services does not create
+`service_hosts_domain` or `hosted_by_service` links and does not return installed Kernel Function
+Node IDs. Each consumer Kernel owns its own installed Domain and Function nodes.
 
-Live graph properties include `url`, `state`, `digest`, and optional `error`.
+`CloudflareWorker.deploy` accepts canonical `serviceKey` plus either a plain or revisioned artifact.
+The result contains provider evidence and optional `application` metadata. A missing Publication is
+valid for a plain Service. Publication discovery does not install it.
 
-## Deploy factories
+Receiver Methods manage write-only secrets, schedules, logs, and convergent provider deletion.
+`Service.delete` removes provider resources and the Service graph anchor only. Consumer Domain
+installations remain until explicitly uninstalled by each consumer.
 
-| Class | Static method | Result |
-|---|---|---|
-| `CloudflareWorker` | `deploy` | A Worker Service plus all Functions declared by its signed SDK manifest |
-
-Deploy accepts an exact `path`, optional `name`, entry module name, modules, compatibility settings, service bindings, plaintext vars, static assets, and limits. Modules use `{ name, contentBase64, kind? }`; assets use `{ path, contentBase64, contentType? }`.
-
-SDK-authored workers derive the signed Function manifest from one registry:
-
-```ts
-export default serviceWorkerEntry({
-  functions: { receive: defineRemoteFunction({ inputSchema, outputSchema, execute }) },
-})
-```
-
-Deploy fetches and verifies the worker's signed manifest and reconciles exact Function state under `<service>/functions/<slug>`. Each Function shares the Service issuer/key, keeps its own node-id subject, and links to the Service through `hosted_by_service`.
-
-The result is `{ path, url, digest, state, error?, functions[] }`.
-
-## Placement
-
-Services live at caller-selected paths such as `/services/api` or `/orgs/acme/workers/importer`. Discover visible services through graph queries scoped to the part of the graph you own.
-
-## View
-
-`/:services.astrale.ai:view.service` applies to `CloudflareWorker`.
+`/:services.astrale.ai:view.service` targets a `CloudflareWorker`; the Application View lists all
+visible owned Services.
