@@ -17,10 +17,12 @@ semantic owner.
 ## Performance contract
 
 `instance list` performs one exact caller-authorized native Instance Query through 256 visible
-Instances, then follows only bounded Kernel cursors when more pages exist. It performs no Admin
-Method or schema-discovery call and rejects the complete inventory if any later page fails. Against
-the production beta Admin endpoint, the built CLI must finish in less than 1 second with a warm
-route and less than 2 seconds from a cold executable process when its authenticated exchange
-credential is current. Authentication bootstrap after login or credential expiry is measured
-separately. Unit tests prove the exact-Class AST, bounded pagination, fail-closed collection, and
-no-reflection shape; retained live evidence proves the wall-clock bounds.
+Instances, then follows only bounded Kernel cursors when more pages exist. Deleted lifecycle
+tombstones are not operational inventory and are excluded from the returned list. The journey
+performs no Admin Method or schema-discovery call and rejects the complete inventory if any later
+page fails. Against the production beta Admin endpoint, the built CLI must finish in less than 1
+second with a warm route and less than 2 seconds from a cold executable process when its
+authenticated exchange credential is current. Authentication bootstrap after login or credential
+expiry is measured separately. Unit tests prove the exact-Class AST, bounded pagination,
+fail-closed collection, tombstone exclusion, and no-reflection shape; retained live evidence proves
+the wall-clock bounds.

@@ -80,7 +80,7 @@ function fixture(input: {
       connectAdminCatalog(
         { session: remote.session, graph },
         {
-          operationId: (kind) => `cli.domain.${kind}:test`,
+          operationId: (kind) => `cli.domain.${kind}.test`,
         },
       ),
   }
@@ -170,7 +170,7 @@ describe('V2 Admin Domain catalog adapter', () => {
       {
         target: '/:admin.astrale.ai:core.fleet::publishDomain',
         value: {
-          operationId: 'cli.domain.publish:test',
+          operationId: 'cli.domain.publish.test',
           origin: 'crm.acme.dev',
           name: 'crm',
           discoveryUrl: 'https://crm.acme.dev',
@@ -179,7 +179,7 @@ describe('V2 Admin Domain catalog adapter', () => {
       {
         target: '@crm-domain::configureDefault',
         value: {
-          operationId: 'cli.domain.configure-default:test',
+          operationId: 'cli.domain.configure-default.test',
           enabled: true,
         },
       },
