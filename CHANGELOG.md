@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.41](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.40...cli/v1.0.0-beta.41) (2026-08-28)
+
+
+### Features
+
+* add ranked UI search command ([#244](https://github.com/astrale-os/cli/issues/244)) ([55c7cc2](https://github.com/astrale-os/cli/commit/55c7cc2b8d7f2c84cd663232c5688c1bc454f56c))
+
 ## [1.0.0-beta.40](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.39...cli/v1.0.0-beta.40) (2026-08-27)
 
 
