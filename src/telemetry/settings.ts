@@ -1,7 +1,7 @@
 /**
- * Telemetry kill-switch and retention budget, both read synchronously from
- * `~/.astrale/config.json` with env overrides. Off when ASTRALE_TELEMETRY is
- * 0/false/off, or when config telemetry.enabled is false; on by default.
+ * Telemetry switches and retention budget, read synchronously from
+ * `~/.astrale/config.json` with env overrides. Recording remains on by default;
+ * opportunistic analysis requires its own explicit opt-in.
  * Every read silent-fails to the default — a broken config must never break
  * the CLI, and must never leave the session store unbounded.
  */
@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs'
 import { createPaths } from '../state/index'
 
 const OFF_VALUES = new Set(['0', 'false', 'off'])
+const ON_VALUES = new Set(['1', 'true', 'on'])
 
 /** Sessions idle longer than this are dropped: a month-old session has nothing
  *  left to say, and the harness transcripts its report would cite are gone. */
@@ -23,6 +24,7 @@ export const DEFAULT_MAX_BYTES = 50 * 1024 * 1024
 
 type TelemetryConfig = {
   enabled?: boolean
+  analyzerEnabled?: boolean
   maxAgeDays?: number
   maxBytes?: number
 }
@@ -45,8 +47,24 @@ function readConfig(): TelemetryConfig {
 /** Whether telemetry recording is enabled for this process. */
 export function telemetryEnabled(): boolean {
   const env = process.env.ASTRALE_TELEMETRY
-  if (env !== undefined && OFF_VALUES.has(env.trim().toLowerCase())) return false
+  const override = switchValue(env)
+  if (override !== null) return override
   return readConfig().enabled !== false
+}
+
+/** Whether a CLI start may launch the detached session analyzer. */
+export function analyzerEnabled(): boolean {
+  const override = switchValue(process.env.ASTRALE_TELEMETRY_ANALYZER)
+  if (override !== null) return override
+  return readConfig().analyzerEnabled === true
+}
+
+function switchValue(raw: string | undefined): boolean | null {
+  if (raw === undefined) return null
+  const value = raw.trim().toLowerCase()
+  if (ON_VALUES.has(value)) return true
+  if (OFF_VALUES.has(value)) return false
+  return null
 }
 
 /** The two bounds on the session store — see retention.ts for how they apply. */

@@ -21,6 +21,7 @@ describe('AstraleConfigSchema', () => {
       kernelIssuer: DEFAULT_ADMIN_TARGET_URL,
       domainIssuer: DEFAULT_ADMIN_DOMAIN_ISSUER,
     })
+    expect(result.telemetry).toEqual({ enabled: true, analyzerEnabled: false })
   })
 
   test('retention bounds survive a parse — a read/write cycle must not drop them', () => {
@@ -30,7 +31,12 @@ describe('AstraleConfigSchema', () => {
       telemetry: { enabled: true, maxAgeDays: 7, maxBytes: 1_048_576 },
       browser: { maxCacheBytes: 52_428_800, maxProfileAgeDays: 14 },
     })
-    expect(result.telemetry).toEqual({ enabled: true, maxAgeDays: 7, maxBytes: 1_048_576 })
+    expect(result.telemetry).toEqual({
+      enabled: true,
+      analyzerEnabled: false,
+      maxAgeDays: 7,
+      maxBytes: 1_048_576,
+    })
     expect(result.browser).toEqual({ maxCacheBytes: 52_428_800, maxProfileAgeDays: 14 })
   })
 

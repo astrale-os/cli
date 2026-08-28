@@ -14,7 +14,7 @@ const config: AstraleConfig = {
     kernelIssuer: 'https://admin.example/issuer',
     domainIssuer: 'https://admin-domain.example',
   },
-  telemetry: { enabled: false },
+  telemetry: { enabled: false, analyzerEnabled: false },
   browser: {},
 }
 
