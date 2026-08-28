@@ -1,8 +1,12 @@
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { Node } from '@astrale-os/sdk/graph/node'
 
+import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
+import { Query } from '@astrale-os/sdk/query'
 
 import { AdminContract, callAdminMethod } from '../contract'
+import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import {
   AdminInstanceNotFoundError,
   findOwnedInstance,
@@ -14,6 +18,7 @@ import {
 
 export interface AdminInstanceContext {
   readonly session: ClientSession
+  readonly graph: AdminGraphQueryApi
 }
 
 export interface AdminInstanceApi {
@@ -28,6 +33,10 @@ export interface AdminInstanceDependencies {
   readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
 }
 
+const PAGE_SIZE = 256
+const MAXIMUM_INSTANCES = 10_000
+const MAXIMUM_PAGES = Math.ceil(MAXIMUM_INSTANCES / PAGE_SIZE) + 1
+
 /**
  * Connect the public Instance journey through stable Admin call paths. Routine
  * operations perform no schema discovery. No Host lifecycle method is present.
@@ -39,14 +48,24 @@ export async function connectAdminInstances(
   const operationId = dependencies.operationId ?? defaultOperationId
 
   const list = async (): Promise<OwnedInstanceInfo[]> => {
-    const result: unknown = await callAdminMethod(
-      context.session,
-      AdminContract.fleet,
-      'listInstances',
-      {},
+    const Instance = AdminContract.classes.Instance
+    const instances = Query.from({ nodes: [Instance] }).filter({
+      class: { equals: Instance },
+    })
+    const nodes = await readAllNodes(
+      context.graph,
+      instances.select({
+        kind: 'nodes',
+        binding: instances.node,
+        projection: { kind: 'value' },
+      }),
+      {
+        label: 'Admin Instance inventory',
+        maximum: MAXIMUM_INSTANCES,
+        maximumPages: MAXIMUM_PAGES,
+      },
     )
-    if (!Array.isArray(result)) throw new TypeError('Admin Instance inventory is invalid.')
-    return result.map((value) => instanceFromSummary(value) as OwnedInstanceInfo)
+    return nodes.map(instanceFromNode)
   }
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
@@ -93,6 +112,25 @@ export async function connectAdminInstances(
       return domainInstallReceipt(output)
     },
   })
+}
+
+function instanceFromNode(node: Node): OwnedInstanceInfo {
+  const Instance = AdminContract.classes.Instance
+  if (node.class !== ClassKey.of(Instance)) {
+    throw new TypeError('Admin Instance inventory returned a non-Instance Node.')
+  }
+  const property = AdminContract.properties.instance
+  return instanceFromSummary({
+    id: Path.id(node.id).raw,
+    slug: node.props[property.slug],
+    url: node.props[property.url],
+    organizationId: node.props[property.organizationId],
+    state: node.props[property.state],
+    phase: node.props[property.phase],
+    failure: node.props[property.failure],
+    createdAt: node.props[property.createdAt],
+    updatedAt: node.props[property.updatedAt],
+  }) as OwnedInstanceInfo
 }
 
 function instanceFromSummary(input: unknown): InstanceInfo {

@@ -13,12 +13,14 @@ function classRef(name: string): ClassRef {
 }
 
 const Domain = classRef('Domain')
+const Instance = classRef('Instance')
 
 export const AdminContract = Object.freeze({
   origin,
   fleet: Path.parse('/:admin.astrale.ai:core.fleet'),
   classes: Object.freeze({
     Domain,
+    Instance,
   }),
   edges: Object.freeze({
     fleetInstallsDomainByDefault: classRef('fleet_installs_domain_by_default'),
@@ -29,6 +31,16 @@ export const AdminContract = Object.freeze({
       name: K.classes.Named.properties.name.key,
       discoveryUrl: PropertyKey.of(Domain, 'discoveryUrl'),
       description: K.classes.Descriptable.properties.description.key,
+      createdAt: K.classes.Timestamped.properties.createdAt.key,
+      updatedAt: K.classes.Timestamped.properties.updatedAt.key,
+    }),
+    instance: Object.freeze({
+      slug: PropertyKey.of(Instance, 'slug'),
+      url: PropertyKey.of(Instance, 'url'),
+      organizationId: PropertyKey.of(Instance, 'organizationId'),
+      state: PropertyKey.of(Instance, 'state'),
+      phase: PropertyKey.of(Instance, 'phase'),
+      failure: PropertyKey.of(Instance, 'failure'),
       createdAt: K.classes.Timestamped.properties.createdAt.key,
       updatedAt: K.classes.Timestamped.properties.updatedAt.key,
     }),
