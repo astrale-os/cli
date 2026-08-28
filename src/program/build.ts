@@ -111,8 +111,9 @@ export async function buildProgram(): Promise<Command> {
     subgroups: [
       {
         name: 'invitation',
-        description: 'Resume managed Instance invitations',
+        description: 'Inspect or repair managed Instance invitations',
         commands: [
+          withKernelOptions((await import('../commands/instance/invitation/status')).default),
           withKernelOptions((await import('../commands/instance/invitation/reconcile')).default),
         ],
       },

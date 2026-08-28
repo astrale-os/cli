@@ -30,6 +30,21 @@ export interface DomainInstallReceipt {
   readonly error?: string
 }
 
+export type InvitationState = 'pending' | 'accepted' | 'revoked' | 'expired'
+
+export interface InvitationInfo {
+  readonly id: string
+  readonly email: string
+  readonly state: InvitationState
+  readonly access: 'member'
+  readonly instance: string
+  readonly invitedBy?: string
+  readonly claimedBy?: string
+  readonly createdAt: string
+  readonly expiresAt?: string
+  readonly acceptedAt?: string
+}
+
 export interface AdminInstanceContext {
   readonly session: ClientSession
   readonly graph: Pick<GraphApi, 'query'>
@@ -41,6 +56,9 @@ export interface AdminInstanceApi {
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
+  invite(identifier: string, email: string, expiresInDays?: number): Promise<InvitationInfo>
+  statusInvitation(invitation: string): Promise<InvitationInfo>
+  reconcileInvitation(invitation: string): Promise<InvitationInfo>
 }
 
 export class AdminInstanceNotFoundError extends Error {
@@ -50,7 +68,9 @@ export class AdminInstanceNotFoundError extends Error {
 }
 
 export interface AdminInstanceDependencies {
-  readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
+  readonly operationId?: (
+    kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
+  ) => string
 }
 
 export function connectAdminInstances(

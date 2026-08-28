@@ -12,9 +12,21 @@ import { adminSession } from '../../__tests__/fixture'
 import { AdminContract } from '../../contract'
 import { connectAdminInstances } from '../client'
 
+async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise
+  } catch (error) {
+    return error
+  }
+  throw new Error('Expected the promise to reject.')
+}
+
 function fixture(input: {
   instances?: readonly Node[]
   useDefaultOperationIds?: boolean
+  operationId?: (
+    kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
+  ) => string
   invoke?: (target: string, input: unknown) => unknown
   query?: (
     ast: QueryAST,
@@ -58,7 +70,7 @@ function fixture(input: {
         { session: remote.session, graph },
         input.useDefaultOperationIds
           ? undefined
-          : { operationId: (kind) => `cli.instance.${kind}.test` },
+          : { operationId: input.operationId ?? ((kind) => `cli.instance.${kind}.test`) },
       ),
   }
 }
@@ -301,7 +313,7 @@ describe('V2 Admin Instance adapter', () => {
     expect(contract.reflection).not.toHaveBeenCalled()
   })
 
-  test('invites through the exact Instance receiver and reconciles the direct Invitation', async () => {
+  test('invites through the exact Instance receiver and observes before explicit recovery', async () => {
     const summary = {
       id: '@invitation-node',
       email: 'person@example.com',
@@ -315,6 +327,7 @@ describe('V2 Admin Instance adapter', () => {
     const api = await contract.connect()
 
     await expect(api.invite('demo', 'Person@Example.com', 7)).resolves.toEqual(summary)
+    await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
     await expect(api.reconcileInvitation('@invitation-node')).resolves.toEqual(summary)
     expect(contract.calls).toEqual([
       {
@@ -326,11 +339,67 @@ describe('V2 Admin Instance adapter', () => {
         },
       },
       {
+        target: '@invitation-node::status',
+        value: {},
+      },
+      {
         target: '@invitation-node::reconcile',
         value: { operationId: 'cli.instance.reconcile-invitation.test' },
       },
     ])
     expect(contract.reflection).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    ['Invitation id', { id: '@other-invitation' }],
+    ['missing Instance', { instance: undefined }],
+    ['Fleet access', { access: 'administrator' }],
+  ] as const)('rejects status with mismatched %s scope', async (_label, mismatch) => {
+    const contract = fixture({
+      invoke: () => ({
+        id: '@invitation-node',
+        email: 'person@example.com',
+        state: 'pending',
+        access: 'member',
+        instance: '@instance-node',
+        createdAt: '2026-08-28T10:00:00.000Z',
+        ...mismatch,
+      }),
+    })
+
+    const error = await captureRejection(
+      (await contract.connect()).statusInvitation('@invitation-node'),
+    )
+    expect(error).toBeInstanceOf(TypeError)
+    expect((error as Error).message).toBe(
+      'Admin Invitation status does not match its requested scope.',
+    )
+  })
+
+  test('status is one read-only direct call and rejects a callable receiver before I/O', async () => {
+    const summary = {
+      id: '@invitation-node',
+      email: 'person@example.com',
+      state: 'pending',
+      access: 'member',
+      instance: '@instance-node',
+      createdAt: '2026-08-28T10:00:00.000Z',
+    } as const
+    const operationId = mock(() => 'must-not-be-called')
+    const contract = fixture({ operationId, invoke: () => summary })
+    const api = await contract.connect()
+
+    await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
+    expect(contract.calls).toEqual([{ target: '@invitation-node::status', value: {} }])
+    expect(contract.query).not.toHaveBeenCalled()
+    expect(contract.reflection).not.toHaveBeenCalled()
+    expect(operationId).not.toHaveBeenCalled()
+
+    contract.calls.length = 0
+    const error = await captureRejection(api.statusInvitation('@invitation-node::status'))
+    expect(error).toBeInstanceOf(TypeError)
+    expect((error as Error).message).toBe('Admin Invitation id is invalid.')
+    expect(contract.calls).toEqual([])
   })
 
   test('uses fresh production operation IDs for invite and reconciliation', async () => {
