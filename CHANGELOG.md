@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0-beta.50](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.49...cli/v1.0.0-beta.50) (2026-08-28)
+
+
+### Bug Fixes
+
+* **commands:** keep source Studio updates non-fatal ([#280](https://github.com/astrale-os/cli/issues/280)) ([5a56c19](https://github.com/astrale-os/cli/commit/5a56c19da1063b19e9d173b74a9a0153c869ee61))
+* fit an object's properties on one line each in Studio ([#284](https://github.com/astrale-os/cli/issues/284)) ([7fa9e7c](https://github.com/astrale-os/cli/commit/7fa9e7ca1fef1ba294f477c0512fa4f682185f82))
+* let a box follow the node dragged past its edge, and the frame follow the box ([#279](https://github.com/astrale-os/cli/issues/279)) ([6169bd7](https://github.com/astrale-os/cli/commit/6169bd7d2f79acd3553e129bd80ce964c21228f5))
+* **studio:** hide resolved comments ([#282](https://github.com/astrale-os/cli/issues/282)) ([f0cb3e1](https://github.com/astrale-os/cli/commit/f0cb3e115220c283fff56320d0c1db3991be962b))
+* **studio:** put inheritance on the card, and stop the canvas chasing a selection ([#285](https://github.com/astrale-os/cli/issues/285)) ([d7aa0e2](https://github.com/astrale-os/cli/commit/d7aa0e2de606d89fecac14d8c5598e70d5d3870e))
+* **studio:** refine workspace domain hierarchy ([#283](https://github.com/astrale-os/cli/issues/283)) ([0804be3](https://github.com/astrale-os/cli/commit/0804be3382a2433c56b6191d38e2718a5296ec0f))
+* unselect on every click outside, and keep dimmed edge labels opaque ([#281](https://github.com/astrale-os/cli/issues/281)) ([220f7fe](https://github.com/astrale-os/cli/commit/220f7feea1a207ed814928e59ce91904ecb83a20))
+
+
+### Performance Improvements
+
+* **connection:** use exact exchange cache before source refresh ([#287](https://github.com/astrale-os/cli/issues/287)) ([f4528df](https://github.com/astrale-os/cli/commit/f4528df9058c83abef3796773356e9ff80fd7567))
+
 ## [1.0.0-beta.49](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.48...cli/v1.0.0-beta.49) (2026-08-28)
 
 
