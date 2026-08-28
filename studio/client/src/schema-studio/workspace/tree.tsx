@@ -29,6 +29,29 @@ export function WorkspaceModuleTree({
     if (ref) useUI.getState().selectClass(ref)
   }
 
+  // One domain needs no domain rail: the sidebar IS that domain's modules. The
+  // per-domain header only earns its row once there is a second domain to pick.
+  if (domains.length === 1) {
+    const domain = domains[0]!
+    const domainId = domain.input.summary.id
+    return (
+      <div data-domain-id={domainId} data-testid="workspace-module-tree">
+        <ModuleTree
+          root={buildModuleTree(domain.input.bundle)}
+          selected={selected}
+          onSelect={(ref) => activate(domainId, ref)}
+          controls={{
+            domainId,
+            collapsedModules: collapsedByDomain[domainId] ?? [],
+            hidden: domain.input.visibility.hidden,
+            toggleModule: (path) => toggleModule(domainId, path),
+            toggleHidden: (ref) => onToggleHidden(domainId, ref),
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="py-2" data-testid="workspace-module-tree">
       <div className="flex items-center gap-1.5 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

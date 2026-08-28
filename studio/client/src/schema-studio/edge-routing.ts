@@ -171,10 +171,6 @@ export function edgeLabelObstacles(nodes: Node[]): EdgeLabelObstacle[] {
       obstacles.push(...frameObstacles(node.id, rect, 36))
       continue
     }
-    if (node.type === 'internalRegion') {
-      obstacles.push(...frameObstacles(node.id, rect, 18))
-      continue
-    }
 
     obstacles.push(fullObstacle(node.id, rect))
   }

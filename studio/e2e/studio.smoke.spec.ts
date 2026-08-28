@@ -42,6 +42,11 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
 
+  // one canvas draws the schema, whether the workspace holds one domain or several
+  await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
+  // a declared view is a node on that canvas, not a panel behind a button
+  await expect(page.getByRole('button', { name: 'overview', exact: true })).toBeVisible()
+
   const monitorNode = page.getByText('Monitor', { exact: true }).first()
   await expect(monitorNode).toBeVisible()
   await monitorNode.click()

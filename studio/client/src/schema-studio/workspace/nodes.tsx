@@ -7,7 +7,7 @@ import type { GroupNodeData } from '../projection'
 import type { WorkspaceDomainNodeData } from './projection'
 
 import { GroupNode, schemaNodeTypes } from '../graph'
-import { DOMAIN_MIN_SIZE, MODULE_MIN_SIZE, type WorkspaceSize, workspaceGeometry } from './geometry'
+import { DOMAIN_MIN_SIZE, type WorkspaceSize } from './geometry'
 
 export interface WorkspaceNodeActions {
   activateDomain: (domainId: string) => void
@@ -41,12 +41,10 @@ function ResizeCorner({
   nodeId,
   minimum,
   label,
-  placement = 'module',
 }: {
   nodeId: string
   minimum: WorkspaceSize
   label: string
-  placement?: 'domain' | 'module'
 }) {
   const actions = useWorkspaceNodeActions()
   return (
@@ -77,6 +75,24 @@ function ResizeCorner({
 function WorkspaceDomainNode({ id, data }: NodeProps) {
   const actions = useWorkspaceNodeActions()
   const domain = data as WorkspaceDomainNodeData
+  // Alone on the canvas, the frame is scenery: a dashed outline with the origin on its
+  // shoulder, exactly what the single-domain canvas has always drawn. It only grows a
+  // header, a grab handle and a resize corner once there is a neighbour to arrange against.
+  if (domain.solo) {
+    return (
+      <div
+        data-domain-id={domain.domainId}
+        className="relative h-full w-full rounded-xl border border-dashed border-border"
+      >
+        <span
+          className="absolute -top-2 left-4 whitespace-nowrap px-2 text-[11px] font-medium text-muted-foreground"
+          style={{ background: 'var(--color-canvas)' }}
+        >
+          {domain.origin}
+        </span>
+      </div>
+    )
+  }
   return (
     <div
       data-domain-id={domain.domainId}
@@ -103,35 +119,17 @@ function WorkspaceDomainNode({ id, data }: NodeProps) {
         <span className="truncate text-[13px] font-semibold tracking-tight">{domain.origin}</span>
       </div>
       {domain.active && (
-        <ResizeCorner
-          nodeId={id}
-          minimum={DOMAIN_MIN_SIZE}
-          label={`Resize ${domain.origin}`}
-          placement="domain"
-        />
+        <ResizeCorner nodeId={id} minimum={DOMAIN_MIN_SIZE} label={`Resize ${domain.origin}`} />
       )}
     </div>
   )
 }
 
+/** A module box that knows which domain it belongs to, so collapsing it activates that domain. */
 function WorkspaceGroupNode(props: NodeProps) {
   const actions = useWorkspaceNodeActions()
-  const metadata = workspaceGeometry(props)
   const data = props.data as GroupNodeData
-  return (
-    <div className="group/frame relative h-full w-full">
-      <GroupNode
-        {...props}
-        data={{
-          ...data,
-          onToggleModule: actions.toggleModule,
-        }}
-      />
-      {props.type === 'group' && metadata?.active && (
-        <ResizeCorner nodeId={props.id} minimum={MODULE_MIN_SIZE} label="Resize module" />
-      )}
-    </div>
-  )
+  return <GroupNode {...props} data={{ ...data, onToggleModule: actions.toggleModule }} />
 }
 
 export const workspaceNodeTypes = {

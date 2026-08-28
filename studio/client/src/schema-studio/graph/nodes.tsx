@@ -48,19 +48,22 @@ function ClassNode({ data }: NodeProps) {
       // its own comment pin (which sits on the corner) with `overflow-hidden`.
       // Selection paints in the card's OWN hue — a generic accent would tell you
       // that something is selected but not which family it belongs to. `--node-tint`
-      // carries the same hue to focus.css, which highlights the ends of a picked edge.
+      // carries the same hue to focus.css, which rings a picked edge's endpoints and
+      // the neighbours of a focused node.
       style={
         {
           width: CLASS_W,
           height: CLASS_H,
           borderLeft: `3px solid ${tint.mark}`,
           '--node-tint': tint.mark,
-          '--node-halo': tint.ring,
           ...(selected
             ? {
                 borderColor: tint.mark,
                 background: tint.wash,
-                boxShadow: `0 0 0 3px ${tint.ring}, 0 6px 18px -10px ${tint.ring}`,
+                // One hard ring in the card's own hue — no blur and no drop shadow. A soft
+                // halo reads as a smudge once the canvas is zoomed out, and the shadow made
+                // the card look like it had lifted off the module box it belongs to.
+                boxShadow: `0 0 0 2px ${tint.mark}`,
               }
             : null),
         } as CSSProperties
@@ -113,8 +116,8 @@ export function GroupNode({ data }: NodeProps) {
           borderColor: selected ? tint.mark : tint.border,
           background: tint.surface,
           '--node-tint': tint.mark,
-          '--node-halo': tint.ring,
-          ...(selected ? { boxShadow: `0 0 0 3px ${tint.ring}` } : null),
+          // same hard ring as a selected class card, so the two selections read as one idea
+          ...(selected ? { boxShadow: `0 0 0 2px ${tint.mark}` } : null),
         } as CSSProperties
       }
     >
@@ -246,21 +249,6 @@ function ExtMemberNode({ data }: NodeProps) {
   )
 }
 
-/** The rectangle delimiting THIS domain — everything inside belongs to it; imported domains sit outside. */
-function InternalRegionNode({ data }: NodeProps) {
-  const d = data as { label: string }
-  return (
-    <div className="relative h-full w-full rounded-xl border border-dashed border-border">
-      <span
-        className="absolute -top-2 left-4 whitespace-nowrap px-2 text-[11px] font-medium text-muted-foreground"
-        style={{ background: 'var(--color-canvas)' }}
-      >
-        {d.label}
-      </span>
-    </div>
-  )
-}
-
 function CanvasCommentNode({ data }: NodeProps) {
   const d = data as CanvasCommentNodeData
   return (
@@ -280,7 +268,6 @@ export const schemaNodeTypes = {
   moduleNode: GroupNode,
   extDomain: ExtDomainNode,
   extMember: ExtMemberNode,
-  internalRegion: InternalRegionNode,
   canvasComment: CanvasCommentNode,
 }
 
