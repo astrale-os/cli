@@ -15,8 +15,12 @@ export const CLI_CONNECTION_TARGET = defineLaw({
 export const CLI_CONNECTION_DOMAIN_EXCHANGE = defineLaw({
   id: 'CLI-CONNECTION-DOMAIN-EXCHANGE',
   statement:
-    'A target with an explicit Domain issuer resolves the source credential, authenticates whoami at the exact Kernel, requests explicit self attenuation for that User and Domain audience, posts the resulting envelope to the discovered standard endpoint, and returns only a Domain token bound back to the same Kernel; there is no inferred issuer or legacy broker fallback.',
+    'A target with an explicit Domain issuer first admits an exact live exchange credential selected by the persisted IdP issuer and subject; only a miss resolves fresh source authority, authenticates whoami at the exact Kernel, requests explicit self attenuation for that User and Domain audience, posts the envelope to the discovered standard endpoint, and returns a Domain token bound back to the same Kernel. Missing or mismatched local identity metadata falls through, and there is no inferred issuer or legacy broker fallback.',
   tests: [
+    {
+      file: '__tests__/credential.test.ts',
+      id: 'TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH',
+    },
     {
       file: '__tests__/exchange.test.ts',
       id: 'TEST-CLI-EXCHANGE-WHOAMI-DELEGATE-EXCHANGE-CACHE',

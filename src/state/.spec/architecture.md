@@ -17,9 +17,10 @@ Domain credential, expiry, and the exact registered Kernel User proven when that
 minted, together with the exact upstream source issuer and subject that selected the entry. This lets
 a warm command validate and reuse the credential before any network `whoami` without accepting a
 refresh result filed under another source identity.
-V1 is not migrated or retained; it is discarded and replaced by the next exact exchange. The
-registry reuses the same atomic-write and bounded file-lock primitives and maintains owner-only
-directory and file modes.
+V1 is not migrated or retained; it is discarded and replaced by the next exact exchange. Exact
+reads consume the current atomic snapshot without waiting behind an unrelated network refresh.
+Refreshes and invalidations reuse the bounded file-lock and atomic-write primitives and maintain
+owner-only directory and file modes.
 
 The session-route registry is a separate representation adapter for Kernel Client's versioned,
 bounded confidential route artifact. Kernel Client exclusively owns route keying, admission, expiry,

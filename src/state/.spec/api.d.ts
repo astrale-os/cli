@@ -65,8 +65,14 @@ export namespace exchange {
 /** Persist exact Domain bearer tokens under a private, cross-process synchronized cache. */
 export class ExchangeCredentialCache {
   constructor(path?: string)
+  get(
+    key: exchange.Key,
+    minimumRemainingSeconds: number,
+    now?: () => number,
+  ): Promise<string | undefined>
   getOrRefresh(
     key: exchange.Key,
+    minimumRemainingSeconds: number,
     refresh: () => Promise<exchange.Entry>,
     now?: () => number,
   ): Promise<string>

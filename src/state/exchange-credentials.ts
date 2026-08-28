@@ -36,15 +36,28 @@ export class ExchangeCredentialCache {
 
   constructor(private readonly path = EXCHANGE_CREDENTIALS_PATH) {}
 
+  async get(
+    key: exchange.Key,
+    minimumRemainingSeconds: number,
+    now = () => Math.floor(Date.now() / 1_000),
+  ): Promise<string | undefined> {
+    requireMinimumRemainingSeconds(minimumRemainingSeconds)
+    const encoded = encodeKey(key)
+    const store = await readStore(this.path)
+    const observedAt = now()
+    const cached = store.entries[encoded]
+    return cached !== undefined && validEntry(key, cached, observedAt, minimumRemainingSeconds)
+      ? cached.credential
+      : undefined
+  }
+
   getOrRefresh(
     key: exchange.Key,
     minimumRemainingSeconds: number,
     refresh: () => Promise<exchange.Entry>,
     now = () => Math.floor(Date.now() / 1_000),
   ): Promise<string> {
-    if (!Number.isSafeInteger(minimumRemainingSeconds) || minimumRemainingSeconds < 1) {
-      throw new TypeError('Exchange credential minimum lifetime must be a positive safe integer.')
-    }
+    requireMinimumRemainingSeconds(minimumRemainingSeconds)
     const encoded = encodeKey(key)
     const pendingKey = `${encoded}\0${minimumRemainingSeconds}`
     const current = this.refreshing.get(pendingKey)
@@ -113,6 +126,12 @@ export class ExchangeCredentialCache {
       change(store)
       await writeStore(this.path, store)
     })
+  }
+}
+
+function requireMinimumRemainingSeconds(input: number): void {
+  if (!Number.isSafeInteger(input) || input < 1) {
+    throw new TypeError('Exchange credential minimum lifetime must be a positive safe integer.')
   }
 }
 
