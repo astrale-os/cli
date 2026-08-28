@@ -54,8 +54,7 @@ astrale call "@$SERVICE_NODE_ID::logs" tail=100 -i "$TARGET" --json
 ## View and delete
 
 ```bash
-astrale view /:services.astrale.ai:view.service \
-  --target "@$SERVICE_NODE_ID" -i "$TARGET" --browser
+astrale view /:services.astrale.ai:view.application -i "$TARGET" --browser
 
 astrale call "@$SERVICE_NODE_ID::delete" -i "$TARGET" --json
 ```

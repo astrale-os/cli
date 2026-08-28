@@ -25,5 +25,5 @@ Receiver Methods manage write-only secrets, schedules, logs, and convergent prov
 `Service.delete` removes provider resources and the Service graph anchor only. Consumer Domain
 installations remain until explicitly uninstalled by each consumer.
 
-`/:services.astrale.ai:view.service` targets a `CloudflareWorker`; the Application View lists all
-visible owned Services.
+`/:services.astrale.ai:view.application` is a standalone Domain View that lists and operates all
+visible owned Services. It does not require a fabricated Service target.
