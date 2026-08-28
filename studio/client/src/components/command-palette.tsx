@@ -75,6 +75,7 @@ export function CommandPalette() {
   const setSection = useUI((s) => s.setSection)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
+  const revealOnCanvas = useUI((s) => s.revealOnCanvas)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
 
   const { data: bundle } = useBundle(domainId)
@@ -209,6 +210,7 @@ export function CommandPalette() {
                 onSelect={() => {
                   setSection('schema')
                   focusClass(`class.${c.name}`)
+                  revealOnCanvas(`class.${c.name}`)
                   close()
                 }}
               >
@@ -228,6 +230,7 @@ export function CommandPalette() {
                 onSelect={() => {
                   setSection('schema')
                   selectClass(`class.${e.name}`)
+                  revealOnCanvas(`class.${e.name}`)
                   close()
                 }}
               >
@@ -254,6 +257,7 @@ export function CommandPalette() {
                 onSelect={() => {
                   setSection('schema')
                   focusClass(`class.${p.owner}`)
+                  revealOnCanvas(`class.${p.owner}`)
                   close()
                 }}
               >
@@ -281,7 +285,10 @@ export function CommandPalette() {
                 className={ITEM_CLS}
                 onSelect={() => {
                   setSection('schema')
-                  if (m.firstClass) focusClass(`class.${m.firstClass}`)
+                  if (m.firstClass) {
+                    focusClass(`class.${m.firstClass}`)
+                    revealOnCanvas(`class.${m.firstClass}`)
+                  }
                   close()
                 }}
               >
