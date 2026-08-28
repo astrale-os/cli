@@ -109,6 +109,7 @@ function Branch({
   return (
     <div>
       <div
+        data-tree-row=""
         data-anchor-ref={moduleId}
         data-anchor-excerpt={node.path}
         className={cn(
@@ -206,6 +207,7 @@ function Member({
   return (
     <div
       ref={ref}
+      data-tree-row=""
       data-anchor-ref={m.selectId}
       data-anchor-excerpt={`${m.kind} ${m.name}`}
       className={cn(

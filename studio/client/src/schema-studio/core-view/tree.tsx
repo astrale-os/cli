@@ -62,6 +62,7 @@ function CoreRow({
   return (
     <div>
       <div
+        data-tree-row=""
         className={cn(
           'group/row flex items-center gap-0.5 rounded-md pr-2 hover:bg-accent',
           active && 'bg-accent',

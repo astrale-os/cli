@@ -88,7 +88,7 @@ function CoreSection({ domainId }: { domainId: string }) {
         </div>
       ) : (
         <div className="flex-1 flex min-h-0">
-          <ModulesSidebar>
+          <ModulesSidebar onClearSelection={() => setCorePath(null)}>
             <ScrollArea className="h-full">
               {core && (
                 <CoreTree

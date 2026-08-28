@@ -210,13 +210,17 @@ export function CoreView({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, n) => {
+          // a virtual node stands for something outside this core and has no detail to
+          // show — clicking it is clicking elsewhere, so it unselects like the pane does
           const data = n.data as CoreNodeData
-          if (!data.virtual) onSelect(data.path)
+          onSelect(data.virtual ? null : data.path)
         }}
         onPaneClick={() => {
           onSelect(null)
           if (!hasAnyUnsentDraft()) setOpenAnchor(null)
         }}
+        // nothing inspects a core edge, so pressing one is pressing elsewhere: unselect
+        onEdgeClick={() => onSelect(null)}
         minZoom={0.15}
         nodesConnectable={false}
         // React Flow derives an edge's z-index from its endpoints, and a SELECTED node is

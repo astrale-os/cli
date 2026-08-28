@@ -103,7 +103,9 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
         ring: style.boxShadow !== 'none',
       }
     })
-  expect(await cardEdges()).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
+  // polled, not read once: React Flow re-creates a node's element as the canvas settles,
+  // and computed styles read off the element it just replaced come back empty
+  await expect.poll(cardEdges).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
 
   const monitorNode = page.getByText('Monitor', { exact: true }).first()
   await expect(monitorNode).toBeVisible()
@@ -111,7 +113,7 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
 
   // …and selected, the SAME 3px on EVERY side: the bar drops to a hairline and hands its
   // 2px to the padding, so no side doubles up and the contents do not shift.
-  expect(await cardEdges()).toEqual({ left: '1px', top: '1px', padLeft: '12px', ring: true })
+  await expect.poll(cardEdges).toEqual({ left: '1px', top: '1px', padLeft: '12px', ring: true })
   // selecting inside a domain never selects the domain
   await expect(page.locator('.react-flow__node-workspaceDomain.selected')).toHaveCount(0)
 
@@ -120,6 +122,22 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
     page.getByText('A monitored resource rendered by the browser smoke test.'),
   ).toBeVisible()
   await expect(page.getByText('label', { exact: true })).toBeVisible()
+
+  // Pressing empty canvas unselects, and the detail panel goes with the selection that
+  // opened it — a panel outliving its selection is a panel for nothing.
+  const paneBox = (await page.getByTestId('workspace-schema-canvas').boundingBox())!
+  const framedAt = (await frame.boundingBox())!
+  // the fit leaves the frame floating in the pane, so the band above it is bare canvas —
+  // and unlike the sides it stays clear of the toolbar (top-right) and controls (bottom)
+  const emptyPoint = { x: paneBox.x + paneBox.width / 2, y: (paneBox.y + framedAt.y) / 2 }
+  // assert the premise rather than assume it: a click that lands ON the frame would be a
+  // node click, and the unselect it never tested would surface as a failure elsewhere
+  expect(framedAt.y - paneBox.y).toBeGreaterThan(40)
+  await page.mouse.click(emptyPoint.x, emptyPoint.y)
+  // polled here for a second reason too: the ring fades out on a transition, so the frame
+  // right after the click still carries a shrinking shadow
+  await expect.poll(cardEdges).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
+  await expect(page.getByRole('heading', { name: 'Monitor', exact: true })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Core', exact: true }).click()
   const coreNode = page.getByRole('button', { name: /Primary monitor/ }).first()
@@ -130,6 +148,12 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   await expect(
     detailPanel.getByText('/:studio-e2e.astrale.ai:core.primary', { exact: true }),
   ).toBeVisible()
+
+  // The rail beside the tree is empty space too: clicking it unselects exactly like the
+  // canvas pane does, and closes the panel the row had opened.
+  await page.getByTestId('modules-sidebar').click({ position: { x: 40, y: 320 } })
+  await expect(page.getByRole('button', { name: 'Close panel' })).toHaveCount(0)
+  await expect(coreNode).toBeVisible()
 
   expect(pageErrors).toEqual([])
   expect(consoleErrors).toEqual([])
