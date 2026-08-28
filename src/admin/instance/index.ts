@@ -15,4 +15,3 @@ export {
   type InstanceState,
   type OwnedInstanceInfo,
 } from './model'
-export { waitForInvitation, type InvitationWaitOptions } from './invitation'

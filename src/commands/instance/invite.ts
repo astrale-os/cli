@@ -10,8 +10,6 @@ import { isMachine, output } from '../../lib/output'
 type InviteOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
     expiresInDays?: string
-    wait?: boolean
-    waitTimeout?: string
   }
 
 export default {
@@ -23,12 +21,13 @@ Behavior:
   manage that Instance; ordinary Instance members cannot invite. Access is
   always Instance member access and never grants Fleet or Host authority.
 
-  By default the command waits for WorkOS acceptance and explicitly reconciles
-  child Shell access. Use --no-wait to return the durable Invitation immediately.
+  The command returns after WorkOS durably accepts the Invitation request.
+  After the recipient accepts, Admin automatically reconciles their child Shell
+  user and Instance access through its retryable webhook consumer.
 
 Examples:
   $ astrale instance invite my-app person@example.com
-  $ astrale instance invite my-app person@example.com --no-wait --json
+  $ astrale instance invite my-app person@example.com --json
 `,
   arguments: [
     { name: 'id', description: 'Instance slug or Node path', required: true },
@@ -37,30 +36,15 @@ Examples:
   options: [
     ...ADMIN_TARGET_OPTIONS,
     { flags: '--expires-in-days <days>', description: 'Invitation lifetime from 1 to 30 days' },
-    { flags: '--no-wait', description: 'Return after sending without waiting for acceptance' },
-    {
-      flags: '--wait-timeout <seconds>',
-      description: 'Maximum acceptance wait from 1 to 3600 seconds',
-      default: '600',
-    },
   ],
   action: async (id: string, email: string, opts: InviteOpts) => {
     try {
       const expiresInDays = optionalInteger(opts.expiresInDays, 1, 30, '--expires-in-days')
-      const timeoutSeconds = requiredInteger(opts.waitTimeout ?? '600', 1, 3_600, '--wait-timeout')
-      const waitTimeoutMs = opts.wait === false ? undefined : timeoutSeconds * 1_000
       const invitation = await withSpinner(
-        opts.wait === false
-          ? `Inviting ${email} to ${id}`
-          : `Inviting ${email} to ${id} and waiting for acceptance`,
+        `Inviting ${email} to ${id}`,
         !isMachine(opts),
-        () => inviteOwnedInstance(opts, id, email, { expiresInDays, waitTimeoutMs }),
-        {
-          success: () =>
-            opts.wait === false
-              ? `Invitation sent to ${email}`
-              : `Instance access ready for ${email}`,
-        },
+        () => inviteOwnedInstance(opts, id, email, expiresInDays),
+        { success: () => `Invitation sent to ${email}` },
       )
 
       if (isMachine(opts)) {
@@ -71,9 +55,7 @@ Examples:
       log.dim(`  state: ${invitation.state}`)
       if (invitation.instance) log.dim(`  instance: ${invitation.instance}`)
       if (invitation.claimedBy) log.dim(`  user: ${invitation.claimedBy}`)
-      if (opts.wait === false) {
-        log.dim(`  resume: astrale instance invitation reconcile ${invitation.id}`)
-      }
+      log.dim('  access: automatic after acceptance')
     } catch (error) {
       await formatKernelError(error, isMachine(opts), undefined, opts.debug)
       process.exit(1)
