@@ -72,11 +72,17 @@ export function WorkspaceModuleTree({
 
         return (
           <section key={domainId} className="border-b border-border last:border-b-0">
+            {/* The canvas no longer repaints a frame to say which domain you are in — this
+                row is the one place that answers it, so it says so unmistakably: an accent
+                spine, the origin in full weight, and a dot. */}
             <div
               data-domain-id={domainId}
+              aria-current={active ? 'true' : undefined}
               className={cn(
-                'flex items-center gap-1 px-2 py-2 transition-colors',
-                active ? 'bg-accent' : 'hover:bg-accent/60',
+                'relative flex items-center gap-1 px-2 py-2 transition-colors',
+                active
+                  ? 'bg-accent before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary'
+                  : 'hover:bg-accent/60',
               )}
             >
               <button
@@ -101,7 +107,10 @@ export function WorkspaceModuleTree({
               <button
                 type="button"
                 onClick={() => activate(domainId)}
-                className="min-w-0 flex-1 truncate text-left text-[12px] font-medium"
+                className={cn(
+                  'min-w-0 flex-1 truncate text-left text-[12px]',
+                  active ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground',
+                )}
                 title={`Make ${domain.input.summary.origin} active`}
               >
                 {domain.input.summary.origin}

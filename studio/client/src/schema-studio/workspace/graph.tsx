@@ -46,7 +46,7 @@ import {
 } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
 import { VIEW_HUE, moduleTint } from '../palette'
-import { workspaceLayoutUpdate, type WorkspaceSize } from './geometry'
+import { workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
   workspaceNodeTypes,
@@ -89,10 +89,8 @@ export function WorkspaceSchemaGraph({
   const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
-  const domainSizes = useSchemaWorkspace((state) => state.domainSizes)
   const domainContentOffsets = useSchemaWorkspace((state) => state.domainContentOffsets)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
-  const setDomainSize = useSchemaWorkspace((state) => state.setDomainSize)
   const ensureDomainPositions = useSchemaWorkspace((state) => state.ensureDomainPositions)
   const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
   const ensureDomainContentOffsets = useSchemaWorkspace((state) => state.ensureDomainContentOffsets)
@@ -105,15 +103,6 @@ export function WorkspaceSchemaGraph({
   const fittedDomains = useRef('')
   const fitAfterReset = useRef(false)
   const solo = domains.length === 1
-
-  // Only domain frames are sized by hand — a module box wraps its classes on its own.
-  const resizeNode = useCallback(
-    (nodeId: string, size: WorkspaceSize) => {
-      if (!nodeId.startsWith('workspace-domain:')) return
-      setDomainSize(nodeId.slice('workspace-domain:'.length), size)
-    },
-    [setDomainSize],
-  )
 
   // One click does both: focus the domain AND act on what was clicked. Requiring a
   // first click just to "enter" a domain made every selection a double click.
@@ -149,8 +138,8 @@ export function WorkspaceSchemaGraph({
   }, [activeDomainId, queryClient])
 
   const nodeActions = useMemo<WorkspaceNodeActions>(
-    () => ({ activateDomain: activate, resizeNode, toggleModule: toggleWorkspaceModule }),
-    [activate, resizeNode, toggleWorkspaceModule],
+    () => ({ toggleModule: toggleWorkspaceModule }),
+    [toggleWorkspaceModule],
   )
 
   const projection = useMemo(
@@ -160,18 +149,9 @@ export function WorkspaceSchemaGraph({
         catalog,
         contentOffsets: domainContentOffsets,
         domainPositions,
-        domainSizes,
         externalPositions,
       }),
-    [
-      activeDomainId,
-      catalog,
-      domainContentOffsets,
-      domainPositions,
-      domainSizes,
-      domains,
-      externalPositions,
-    ],
+    [activeDomainId, catalog, domainContentOffsets, domainPositions, domains, externalPositions],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
@@ -376,10 +356,6 @@ export function WorkspaceSchemaGraph({
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => {
             setSelectedEdgeId(null)
-            if (node.id.startsWith('workspace-domain:')) {
-              activate(node.id.slice('workspace-domain:'.length))
-              return
-            }
             const target = localNodeRef(node.id)
             if (!target) return
             if (target.localId.startsWith('class.')) activate(target.domainId, target.localId)

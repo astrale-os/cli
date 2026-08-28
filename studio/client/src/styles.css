@@ -199,11 +199,14 @@ body {
   stroke: var(--color-primary);
 }
 
-/* Every edge label is portalled into this shared layer, after the SVG edge layer. This guarantees
-   that a later edge cannot strike through an earlier label. Class cards still paint later in the
-   DOM, while expanded module frames remain behind labels drawn inside their usable body. */
+/* Every edge label is portalled into this shared layer, so no edge can strike through the words
+   that name it — but only if the layer outranks EVERY edge layer, and z-index 1 did not.
+   React Flow derives an edge's z-index from its endpoints' nesting depth: a class inside a module
+   inside a domain frame already scores 12, and selecting an edge adds 1000 more. So the layer is
+   lifted clear of all of it. This cannot reach the toolbar or the minimap — the layer lives inside
+   `.react-flow__viewport`, whose transform makes it a stacking context of its own. */
 .react-flow__edgelabel-renderer {
-  z-index: 1;
+  z-index: 2000;
 }
 
 .schema-edge-label {

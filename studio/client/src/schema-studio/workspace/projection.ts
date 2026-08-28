@@ -24,7 +24,6 @@ import {
   layoutWorkspaceFrames,
   type WorkspaceNodeGeometryData,
   type WorkspacePoint,
-  type WorkspaceSize,
 } from './geometry'
 
 export interface WorkspaceDomainProjection {
@@ -37,9 +36,6 @@ export interface WorkspaceDomainProjection {
 export interface WorkspaceDomainNodeData extends Record<string, unknown> {
   domainId: string
   origin: string
-  active: boolean
-  /** the only domain on the canvas — the frame is scenery, not a thing to arrange */
-  solo: boolean
 }
 
 export interface WorkspaceProjection {
@@ -56,7 +52,6 @@ export interface ComposeWorkspaceCanvasOptions {
   domainPositions?: Record<string, WorkspacePoint>
   externalPositions?: Record<string, WorkspacePoint>
   contentOffsets?: Record<string, WorkspacePoint>
-  domainSizes?: Record<string, WorkspaceSize>
   catalog?: DomainCatalogEntry[]
 }
 
@@ -325,7 +320,6 @@ export function composeWorkspaceCanvas(
     domainPositions = {},
     externalPositions = {},
     contentOffsets = {},
-    domainSizes = {},
     catalog,
   }: ComposeWorkspaceCanvasOptions,
 ): WorkspaceProjection {
@@ -339,7 +333,6 @@ export function composeWorkspaceCanvas(
   const frames = layoutWorkspaceFrames(
     domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
     domainPositions,
-    domainSizes,
     contentOffsets,
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
@@ -355,16 +348,14 @@ export function composeWorkspaceCanvas(
       id: rootId,
       type: 'workspaceDomain',
       position: frame.position,
-      // A lone frame is the dashed outline that says "this is your domain" — there is
-      // nothing to arrange it against, so it neither drags nor selects.
-      draggable: domains.length > 1,
-      dragHandle: '.workspace-domain-drag-handle',
-      selectable: domains.length > 1,
+      // A frame moves exactly like a module box: grab it anywhere, drag it. It is never
+      // SELECTED though — a domain is a place, not a thing you open, and which one is
+      // active is answered by the modules rail, not by repainting the canvas.
+      draggable: true,
+      selectable: false,
       data: {
         domainId,
         origin: domain.input.summary.origin,
-        active,
-        solo: domains.length === 1,
       } satisfies WorkspaceDomainNodeData,
       style: { width: frame.size.width, height: frame.size.height },
     })
@@ -383,7 +374,6 @@ export function composeWorkspaceCanvas(
             domainId,
             localId: node.id,
             offset,
-            active,
           } satisfies WorkspaceNodeGeometryData,
         },
         extent: 'parent',

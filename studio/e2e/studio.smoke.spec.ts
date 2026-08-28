@@ -47,9 +47,41 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   // a declared view is a node on that canvas, not a panel behind a button
   await expect(page.getByRole('button', { name: 'overview', exact: true })).toBeVisible()
 
+  // A domain frame is furniture you move, not a thing you open: grabbing it anywhere —
+  // no header, no handle — drags it, exactly like a module box.
+  const frame = page.locator('.react-flow__node-workspaceDomain').first()
+  const frameTransform = () => frame.evaluate((el) => (el as HTMLElement).style.transform)
+  const parked = await frameTransform()
+  const frameBox = (await frame.boundingBox())!
+  await page.mouse.move(frameBox.x + 16, frameBox.y + frameBox.height - 16)
+  await page.mouse.down()
+  await page.mouse.move(frameBox.x + 96, frameBox.y + frameBox.height - 56, { steps: 8 })
+  await page.mouse.up()
+  expect(await frameTransform()).not.toBe(parked)
+
+  // A card wears its module hue as a 3px bar on the left and a hairline elsewhere…
+  const card = page.locator('.react-flow__node-classNode > div').first()
+  const cardEdges = () =>
+    card.evaluate((el) => {
+      const style = getComputedStyle(el)
+      return {
+        left: style.borderLeftWidth,
+        top: style.borderTopWidth,
+        padLeft: style.paddingLeft,
+        ring: style.boxShadow !== 'none',
+      }
+    })
+  expect(await cardEdges()).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
+
   const monitorNode = page.getByText('Monitor', { exact: true }).first()
   await expect(monitorNode).toBeVisible()
   await monitorNode.click()
+
+  // …and selected, the SAME 3px on EVERY side: the bar drops to a hairline and hands its
+  // 2px to the padding, so no side doubles up and the contents do not shift.
+  expect(await cardEdges()).toEqual({ left: '1px', top: '1px', padLeft: '12px', ring: true })
+  // selecting inside a domain never selects the domain
+  await expect(page.locator('.react-flow__node-workspaceDomain.selected')).toHaveCount(0)
 
   await expect(page.getByRole('heading', { name: 'Monitor', exact: true })).toBeVisible()
   await expect(
