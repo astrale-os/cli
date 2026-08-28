@@ -5,12 +5,11 @@ import type { DomainRouteContext, Notify } from './http'
 import { handleAgentRoute } from '../agent/routes'
 import { handleCanvasRoute } from './canvas'
 import { handleCommentRoute } from './comments'
-import { handleContextRoute } from './context'
-import { handleDeploymentRoute } from './deployment'
 import { handleDocumentMutation, handleDocumentTransport } from './documents'
 import { notFound } from './http'
 import { handleProjectRoute } from './project'
 import { handleSchemaRoute } from './schema'
+import { handleUpdateRoute } from './updates'
 import { handleViewRoute } from './views'
 
 export async function handleDomainRoute(input: {
@@ -34,8 +33,8 @@ export async function handleDomainRoute(input: {
   const schema = await handleSchemaRoute(context)
   if (schema) return schema
 
-  const deployment = await handleDeploymentRoute(context)
-  if (deployment) return deployment
+  const update = await handleUpdateRoute(context)
+  if (update) return update
 
   const view = await handleViewRoute(context)
   if (view) return view
@@ -45,9 +44,6 @@ export async function handleDomainRoute(input: {
 
   const agent = await handleAgentRoute({ req, url, rest, body, handle, notify })
   if (agent) return agent
-
-  const contextResponse = await handleContextRoute(context)
-  if (contextResponse) return contextResponse
 
   const project = await handleProjectRoute(context)
   if (project) return project

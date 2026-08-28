@@ -25,7 +25,7 @@ import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
 import { useAgentLive, useAgentSnapshot } from '@/lib/agent'
 import { qk } from '@/lib/api'
-import { useComments, useInvalidateDomain, useWorkspace } from '@/lib/hooks'
+import { useInvalidateDomain, useWorkspace } from '@/lib/hooks'
 import { useEventStream } from '@/lib/sse'
 import { type SectionKey, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -202,12 +202,6 @@ export function App() {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [toggleCommentMode, toggleAskMode])
-
-  const { data: comments } = useComments(domainId)
-  // "waiting for my reply" = open threads whose last word came from the agent.
-  const myReplyCount =
-    comments?.comments.filter((c) => c.status === 'open' && c.thread.at(-1)?.role === 'author')
-      .length ?? 0
 
   if (!domains) {
     return (

@@ -26,10 +26,6 @@ import { WorkspaceModuleTree } from './tree'
 import { useWorkspaceDomainInputs, type WorkspaceDomainInput } from './use-domain-inputs'
 import { WorkspaceViewsPanel } from './views-panel'
 
-const MODULES_MIN = 220
-const MODULES_MAX = 620
-const MODULES_DEFAULT = 300
-
 function domainPreparationKey(input: WorkspaceDomainInput, collapsedModules: string[]): string {
   return [
     input.summary.id,

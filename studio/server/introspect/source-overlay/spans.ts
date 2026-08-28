@@ -207,18 +207,18 @@ export function buildSourceSpans(args: {
       const ns = resolveMemberKind(ir, name, member?.section, helperKind)
 
       const stmt = v.getVariableStatement() ?? v
-      spans[`${ns}.${name}`] = makeSpan(domainRoot, fileRel, stmt, v)
+      spans[`${ns}.${name}`] = makeSpan(fileRel, stmt, v)
 
       // The single object-literal argument: nodeClass({ properties, methods })
       // and current edgeClass.directed({ source, target, properties }).
       const cfgArg = init.getArguments()[0]
       if (ns !== 'function' && cfgArg && Node.isObjectLiteralExpression(cfgArg)) {
-        collectPropsAndMethods(spans, ns, name, cfgArg, domainRoot, fileRel)
+        collectPropsAndMethods(spans, ns, name, cfgArg, fileRel)
       }
 
       // Edges: endpoints are the first two args; props live in the third.
       if (ns === 'edge') {
-        collectEdge(spans, name, init, domainRoot, fileRel)
+        collectEdge(spans, name, init, fileRel)
       }
     }
   }
@@ -227,7 +227,7 @@ export function buildSourceSpans(args: {
 }
 
 /** Build a SourceSpan, harvesting leading doc from the declaration `docNode`. */
-function makeSpan(domainRoot: string, fileRel: string, spanNode: Node, docNode: Node): SourceSpan {
+function makeSpan(fileRel: string, spanNode: Node, docNode: Node): SourceSpan {
   const span: SourceSpan = {
     file: fileRel,
     startLine: spanNode.getStartLineNumber(),
@@ -244,7 +244,6 @@ function collectPropsAndMethods(
   ns: string,
   name: string,
   cfg: Node,
-  domainRoot: string,
   fileRel: string,
 ): void {
   if (!Node.isObjectLiteralExpression(cfg)) return
@@ -253,7 +252,7 @@ function collectPropsAndMethods(
     for (const p of propsObj.getProperties()) {
       const pName = propertyKey(p)
       if (!pName) continue
-      spans[`${ns}.${name}.property.${pName}`] = makeSpan(domainRoot, fileRel, p, p)
+      spans[`${ns}.${name}.property.${pName}`] = makeSpan(fileRel, p, p)
     }
   }
   const methodsObj = getObjectProp(cfg, 'methods')
@@ -261,7 +260,7 @@ function collectPropsAndMethods(
     for (const m of methodsObj.getProperties()) {
       const mName = propertyKey(m)
       if (!mName) continue
-      spans[`${ns}.${name}.method.${mName}`] = makeSpan(domainRoot, fileRel, m, m)
+      spans[`${ns}.${name}.method.${mName}`] = makeSpan(fileRel, m, m)
     }
   }
 }
@@ -271,7 +270,6 @@ function collectEdge(
   spans: Record<string, SourceSpan>,
   name: string,
   init: CallExpression,
-  domainRoot: string,
   fileRel: string,
 ): void {
   const argsList = init.getArguments()
@@ -289,14 +287,14 @@ function collectEdge(
         const ep = getObjectProp(config, endpointName)
         if (!ep) continue
         const role = stringLiteralOfProp(ep, 'as') ?? stringLiteralOfProp(ep, 'role')
-        if (role) spans[`edge.${name}.endpoint.${role}`] = makeSpan(domainRoot, fileRel, ep, ep)
+        if (role) spans[`edge.${name}.endpoint.${role}`] = makeSpan(fileRel, ep, ep)
       }
       const properties = getObjectProp(config, 'properties') ?? getObjectProp(config, 'props')
       if (properties) {
         for (const p of properties.getProperties()) {
           const pName = propertyKey(p)
           if (!pName) continue
-          spans[`edge.${name}.property.${pName}`] = makeSpan(domainRoot, fileRel, p, p)
+          spans[`edge.${name}.property.${pName}`] = makeSpan(fileRel, p, p)
         }
       }
     }
@@ -308,7 +306,7 @@ function collectEdge(
     if (!Node.isObjectLiteralExpression(ep)) continue
     const role = stringLiteralOfProp(ep, 'as')
     if (!role) continue
-    spans[`edge.${name}.endpoint.${role}`] = makeSpan(domainRoot, fileRel, ep, ep)
+    spans[`edge.${name}.endpoint.${role}`] = makeSpan(fileRel, ep, ep)
   }
 }
 

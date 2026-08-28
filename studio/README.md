@@ -118,7 +118,7 @@ server/
   api/                   capability route handlers behind the thin api.ts router
   introspect/            canonical projection, source overlay, anatomy and structural diff
   state/                 repositories confined to persisted `.domain-studio` state
-  instances/             instance discovery, schema probe, status and deployment
+  instances/             active-instance discovery and selection
   views/                 View model, target selection and verified CLI sessions
   workspace/             domain creation, catalogue, updates and Git inspection
   environment/           explicit `.env.dev` / `.env.prod` editing and preview parsing
@@ -139,7 +139,7 @@ from the same admitted root. A ts-morph overlay is limited to information absent
 from the DSL (handler-file links, source spans and JSDoc).
 
 Schema inspection does not rewrite an existing schema. Studio does perform
-explicit writes requested by the user: comments, context, documents, settings,
+explicit writes requested by the user: comments, documents, settings,
 layout and visibility are stored under `.domain-studio/`; the environment editor
 writes `.env.dev` or `.env.prod`; creating a domain scaffolds a new source tree and
 installs its dependencies. A submitted agent may edit source and run commands at

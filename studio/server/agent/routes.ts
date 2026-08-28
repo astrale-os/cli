@@ -24,7 +24,6 @@ import {
   getSessionId,
   getSnapshot,
   isRunning,
-  resetConversation,
   setSessionId,
   submitRun,
 } from './run/coordinator'
@@ -92,7 +91,6 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
   if (rest === '/agent/history' && req.method === 'GET')
     return json(readRunHistory(id, root, Number(url.searchParams.get('limit')) || undefined))
   if (rest === '/agent/cancel' && req.method === 'POST') return json({ ok: cancelRun(id) })
-  if (rest === '/agent/reset' && req.method === 'POST') return json({ ok: resetConversation(id) })
   if (rest === '/agent/session') {
     if (req.method === 'GET') return json(getSessionId(id))
     if (req.method === 'POST') {

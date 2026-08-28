@@ -114,33 +114,10 @@ export function useEnv(id?: string, env: EnvName = 'dev', enabled = true) {
     enabled: enabled && !!id,
   })
 }
-export function useInstance(id?: string) {
-  const { data: settings } = useSettings(id)
-  return useQuery({
-    queryKey: qk.instance(id ?? ''),
-    queryFn: () => api.instance(id!),
-    enabled: !!id,
-    refetchInterval: settings?.instancePollMs ?? 30000,
-  })
-}
 export function useComments(id?: string) {
   return useQuery({
     queryKey: qk.comments(id ?? ''),
     queryFn: () => api.comments(id!),
-    enabled: !!id,
-  })
-}
-export function useContext(id?: string) {
-  return useQuery({
-    queryKey: qk.context(id ?? ''),
-    queryFn: () => api.context(id!),
-    enabled: !!id,
-  })
-}
-export function useIntegrations(id?: string) {
-  return useQuery({
-    queryKey: qk.integrations(id ?? ''),
-    queryFn: () => api.integrations(id!),
     enabled: !!id,
   })
 }
@@ -190,15 +167,7 @@ export function useInvalidateDomain() {
   const qc = useQueryClient()
   return useCallback(
     (id: string) => {
-      for (const key of [
-        'bundle',
-        'anatomy',
-        'comments',
-        'context',
-        'integrations',
-        'core',
-        'env',
-      ]) {
+      for (const key of ['bundle', 'anatomy', 'comments', 'core', 'env']) {
         qc.invalidateQueries({ queryKey: [key, id] })
       }
     },

@@ -1,7 +1,7 @@
 /** Persisted canvas layout and visibility preference routes. */
 import { getBundle } from '../cache'
 import { readLayout, resetLayout, saveLayout, setNodePositions } from '../state/layout'
-import { readVisibility, resetVisibility, saveVisibility } from '../state/visibility'
+import { readVisibility, saveVisibility } from '../state/visibility'
 import { badRequest, json, type DomainRouteContext } from './http'
 
 export async function handleCanvasRoute(context: DomainRouteContext): Promise<Response | null> {
@@ -35,7 +35,6 @@ export async function handleCanvasRoute(context: DomainRouteContext): Promise<Re
         }),
       )
     }
-    if (body.action === 'reset') return json(resetVisibility(root))
     return badRequest('unknown visibility action')
   }
 

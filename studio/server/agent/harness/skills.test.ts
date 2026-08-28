@@ -26,11 +26,7 @@ test('Codex skill discovery prefers the nearest project skill and preserves disa
   roots.push(parent)
   const root = join(parent, 'domain')
   mkdirSync(root)
-  const parentSkill = skill(
-    join(parent, '.agents', 'skills'),
-    'project-check',
-    'name: Parent\ndescription: parent',
-  )
+  skill(join(parent, '.agents', 'skills'), 'project-check', 'name: Parent\ndescription: parent')
   const nearestSkill = skill(
     join(root, '.agents', 'skills'),
     'project-check',

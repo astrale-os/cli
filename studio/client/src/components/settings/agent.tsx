@@ -4,7 +4,6 @@ import { updateAgentModel } from '@shared/agent-models'
 import {
   AGENT_ACCESS_LEVELS,
   AGENT_EFFORT_LEVELS,
-  type AgentAccess,
   type HarnessStatus,
   type StudioSettings,
 } from '@shared/types'

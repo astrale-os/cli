@@ -107,7 +107,7 @@ test('serves the bounded persisted conversation history', async () => {
 
 test('ignores non-agent routes and rejects unknown agent routes', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
-  expect(await route('/context')).toBeNull()
+  expect(await route('/settings')).toBeNull()
   expect((await route('/agent/unknown'))?.status).toBe(404)
 })
 

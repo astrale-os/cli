@@ -1,7 +1,6 @@
-/** Domain project configuration routes: integrations, settings, and env files. */
-import { getAnatomy, invalidate } from '../cache'
+/** Domain project configuration routes: settings and env files. */
+import { invalidate } from '../cache'
 import { isEnvName, readEnvModel, writeEnvUpdates } from '../environment/files'
-import { deleteIntegration, readIntegrations, upsertIntegration } from '../state/integrations'
 import { readSettings, updateSettings } from '../state/settings'
 import { badRequest, json, type DomainRouteContext } from './http'
 
@@ -9,14 +8,6 @@ export async function handleProjectRoute(context: DomainRouteContext): Promise<R
   const { req, url, rest, body, handle, notify } = context
   const id = handle.id
   const root = handle.root
-
-  if (rest === '/integrations') {
-    const detected = (await getAnatomy(id))?.detectedIntegrations ?? []
-    if (req.method === 'GET') return json(readIntegrations(root, detected))
-    if (body.action === 'upsert') return json(upsertIntegration(root, body))
-    if (body.action === 'delete') return json({ ok: deleteIntegration(root, body.id) })
-    return badRequest('unknown integrations action')
-  }
 
   if (rest === '/settings') {
     if (req.method === 'GET') return json(readSettings(root))

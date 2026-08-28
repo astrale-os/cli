@@ -133,4 +133,3 @@ export function AnchorButton({
 }
 
 /** Legacy shim: the global composer dialog is gone; popovers are anchored now. */
-export const CommentComposer = () => null

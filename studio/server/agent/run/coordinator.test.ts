@@ -20,14 +20,7 @@ import { updateSettings } from '../../state/settings'
 import { handleBridge } from '../bridge/routes'
 import { readConversation, saveConversation } from '../conversation'
 import { setHarnessGateway } from '../harness/gateway/config'
-import {
-  cancelRun,
-  getSnapshot,
-  isRunning,
-  resetConversation,
-  setSessionId,
-  submitRun,
-} from './coordinator'
+import { cancelRun, getSnapshot, isRunning, setSessionId, submitRun } from './coordinator'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -113,7 +106,6 @@ describe.serial('agent runner invariants', () => {
     const first = submitRun(handle, () => {}, { message: 'first' })
     expect(isRunning(handle.id)).toBe(true)
     expect(setSessionId(handle.id, 'hijack')).toBe(false)
-    expect(resetConversation(handle.id)).toBe(false)
 
     const second = await submitRun(handle, () => {}, { message: 'second' })
     expect(second).toEqual({ error: 'an agent run is already in progress for this domain' })

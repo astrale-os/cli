@@ -8,7 +8,7 @@
 import type { VisibilityState } from '../../shared/types'
 
 import { asBoolean, asJsonRecord } from '../json'
-import { readJson, removeState, writeJson } from './store'
+import { readJson, writeJson } from './store'
 
 const FILE = 'visibility.json'
 const DEFAULT: VisibilityState = {
@@ -40,9 +40,4 @@ export function readVisibility(root: string): VisibilityState {
 export function saveVisibility(root: string, state: VisibilityState): VisibilityState {
   writeJson(root, FILE, state)
   return state
-}
-
-export function resetVisibility(root: string): VisibilityState {
-  removeState(root, FILE)
-  return DEFAULT
 }

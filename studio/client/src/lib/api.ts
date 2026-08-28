@@ -6,11 +6,7 @@ import type {
   AnchorRef,
   Comment,
   CommentStore,
-  ContextItem,
-  ContextStore,
-  CopyPayload,
   DocMeta,
-  DeployResult,
   DomainCatalogEntry,
   DomainAnatomy,
   DomainSummary,
@@ -21,10 +17,7 @@ import type {
   HarnessGatewayState,
   HarnessLoadout,
   HarnessStatus,
-  InstanceStatus,
   InstancesState,
-  Integration,
-  IntegrationsState,
   StudioSettings,
   LayoutState,
   MergeResult,
@@ -80,8 +73,6 @@ export const api = {
     post<{ ok: true }>(`${d(id)}/views/sessions/close`, { sessionId }),
   updates: (id: string) => get<StaleReport>(`${d(id)}/updates`),
   applyUpdate: (id: string) => post<{ ok: boolean; output: string }>(`${d(id)}/updates/apply`, {}),
-  instance: (id: string) => get<InstanceStatus>(`${d(id)}/instance`),
-  deployInstance: (id: string) => post<DeployResult>(`${d(id)}/instance/deploy`, {}),
 
   comments: (id: string) => get<CommentStore>(`${d(id)}/comments`),
   createComment: (
@@ -109,30 +100,9 @@ export const api = {
     post<{ ok: true }>(`${d(id)}/comments`, { action: 'delete', id: commentId }),
   mergeReply: (id: string, text: string) => post<MergeResult>(`${d(id)}/comments/merge`, { text }),
 
-  context: (id: string) => get<ContextStore>(`${d(id)}/context`),
-  addContext: (id: string, body: { title: string; body: string; source?: string }) =>
-    post<ContextItem>(`${d(id)}/context`, { action: 'add', ...body }),
-  updateContext: (id: string, itemId: string, patch: { title?: string; body?: string }) =>
-    post<ContextItem>(`${d(id)}/context`, { action: 'update', id: itemId, ...patch }),
-  deleteContext: (id: string, itemId: string) =>
-    post<{ ok: true }>(`${d(id)}/context`, { action: 'delete', id: itemId }),
-  setAutoInclude: (id: string, itemId: string, include: boolean) =>
-    post<ContextItem>(`${d(id)}/context`, { action: 'include', id: itemId, include }),
-
-  integrations: (id: string) => get<IntegrationsState>(`${d(id)}/integrations`),
-  upsertIntegration: (
-    id: string,
-    body: { id?: string; name: string; kind: string; status: string; notes?: string },
-  ) => post<Integration>(`${d(id)}/integrations`, { action: 'upsert', ...body }),
-  deleteIntegration: (id: string, itemId: string) =>
-    post<{ ok: true }>(`${d(id)}/integrations`, { action: 'delete', id: itemId }),
-
   settings: (id: string) => get<StudioSettings>(`${d(id)}/settings`),
   updateSettings: (id: string, settings: Partial<StudioSettings>) =>
     post<StudioSettings>(`${d(id)}/settings`, { action: 'update', settings }),
-
-  copyPayload: (id: string, includeAuto: boolean) =>
-    post<CopyPayload>(`${d(id)}/copy-payload`, { includeAuto }),
 
   agentSnapshot: (id: string) => get<AgentRunSnapshot>(`${d(id)}/agent`),
   /** every terminal turn this domain kept, oldest first — the chat transcript */
@@ -143,7 +113,6 @@ export const api = {
   agentResume: (id: string) =>
     post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, { resume: true }),
   agentCancel: (id: string) => post<{ ok: boolean }>(`${d(id)}/agent/cancel`, {}),
-  agentReset: (id: string) => post<{ ok: boolean }>(`${d(id)}/agent/reset`, {}),
   agentSession: (id: string) => get<AgentSessionInfo>(`${d(id)}/agent/session`),
   setAgentSession: (id: string, harness: string, sessionId: string) =>
     post<AgentSessionInfo>(`${d(id)}/agent/session`, { harness, sessionId }),
@@ -197,8 +166,6 @@ export const api = {
   visibility: (id: string) => get<VisibilityState>(`${d(id)}/visibility`),
   setVisibility: (id: string, state: VisibilityState) =>
     post<VisibilityState>(`${d(id)}/visibility`, { action: 'set', ...state }),
-  resetVisibility: (id: string) =>
-    post<VisibilityState>(`${d(id)}/visibility`, { action: 'reset' }),
 }
 
 export const qk = {
@@ -210,10 +177,7 @@ export const qk = {
   anatomy: (id: string) => ['anatomy', id] as const,
   viewRuntime: (id: string, slug: string) => ['view-runtime', id, slug] as const,
   updates: (id: string) => ['updates', id] as const,
-  instance: (id: string) => ['instance', id] as const,
   comments: (id: string) => ['comments', id] as const,
-  context: (id: string) => ['context', id] as const,
-  integrations: (id: string) => ['integrations', id] as const,
   settings: (id: string) => ['settings', id] as const,
   layout: (id: string) => ['layout', id] as const,
   visibility: (id: string) => ['visibility', id] as const,
