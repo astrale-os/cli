@@ -21,7 +21,7 @@ const TARGET_CALL = Object.freeze({
 const config: AstraleConfig = {
   issuer: 'https://cli.example',
   admin: { name: 'admin', url: SOURCE, kernelIssuer: SOURCE },
-  telemetry: { enabled: false },
+  telemetry: { enabled: false, analyzerEnabled: false },
   browser: {},
 }
 

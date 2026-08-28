@@ -18,8 +18,13 @@ export const AstraleConfigSchema = z.object({
   // consume them: zod strips unknown keys, so a config the CLI rewrites (see
   // setup/steps/admin.ts) would silently drop anything declared elsewhere.
   telemetry: z
-    .object({ enabled: z.boolean().default(true), maxAgeDays: bound, maxBytes: bound })
-    .default({ enabled: true }),
+    .object({
+      enabled: z.boolean().default(true),
+      analyzerEnabled: z.boolean().default(false),
+      maxAgeDays: bound,
+      maxBytes: bound,
+    })
+    .default({ enabled: true, analyzerEnabled: false }),
   browser: z.object({ maxCacheBytes: bound, maxProfileAgeDays: bound }).default({}),
 })
 

@@ -1,0 +1,8 @@
+/.github/workflows/ @madavic @bdjafer
+/package.json @madavic @bdjafer
+/.release-please-config.json @madavic @bdjafer
+/.release-please-manifest.json @madavic @bdjafer
+/docs/release.md @madavic @bdjafer
+/docs/decisions/cli-distribution.md @madavic @bdjafer
+/scripts/release-workflow-contract.test.mjs @madavic @bdjafer
+/scripts/verify-public-dependency-boundary.mjs @madavic @bdjafer

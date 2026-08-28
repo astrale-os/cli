@@ -103,9 +103,19 @@ export async function buildProgram(): Promise<Command> {
       (await import('../commands/instance/forget')).default,
       withKernelOptions((await import('../commands/instance/create')).default),
       withKernelOptions((await import('../commands/instance/delete')).default),
+      withKernelOptions((await import('../commands/instance/invite')).default),
       withKernelOptions((await import('../commands/instance/status')).default),
       (await import('../commands/instance/active')).default,
       (await import('../commands/instance/use')).default,
+    ],
+    subgroups: [
+      {
+        name: 'invitation',
+        description: 'Resume managed Instance invitations',
+        commands: [
+          withKernelOptions((await import('../commands/instance/invitation/reconcile')).default),
+        ],
+      },
     ],
   })
 
@@ -203,6 +213,7 @@ Examples:
   $ astrale update --check
   $ astrale instance bookmark staging --url https://kernel.example.com
   $ astrale instance create my-app
+  $ astrale instance invite my-app person@example.com
   $ astrale instance status staging
   $ astrale token --audience shell.astrale.ai
   $ astrale query /:notes.example.dev:class.Note --limit 50

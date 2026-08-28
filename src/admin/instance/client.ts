@@ -12,6 +12,7 @@ import {
   AdminInstanceNotFoundError,
   findOwnedInstance,
   type DomainInstallReceipt,
+  type InvitationInfo,
   type InstanceInfo,
   type InstanceState,
   type OwnedInstanceInfo,
@@ -28,10 +29,14 @@ export interface AdminInstanceApi {
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
+  invite(identifier: string, email: string, expiresInDays?: number): Promise<InvitationInfo>
+  reconcileInvitation(invitation: string): Promise<InvitationInfo>
 }
 
 export interface AdminInstanceDependencies {
-  readonly operationId?: (kind: 'create' | 'status' | 'delete' | 'install-domain') => string
+  readonly operationId?: (
+    kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
+  ) => string
 }
 
 const PAGE_SIZE = 256
@@ -118,6 +123,41 @@ export async function connectAdminInstances(
         },
       )
       return domainInstallReceipt(output)
+    },
+    async invite(identifier: string, email: string, expiresInDays?: number) {
+      const instance = await requireInstance(identifier)
+      const invitation = invitationFromSummary(
+        await callAdminMethod(context.session, Path.parse(instance.id), 'inviteUser', {
+          operationId: operationId('invite'),
+          email,
+          ...(expiresInDays === undefined ? {} : { expiresInDays }),
+        }),
+      )
+      if (
+        invitation.instance !== instance.id ||
+        invitation.access !== 'member' ||
+        invitation.email.toLowerCase() !== email.toLowerCase()
+      ) {
+        throw new TypeError('Admin Instance invitation does not match its requested scope.')
+      }
+      return invitation
+    },
+    async reconcileInvitation(invitation: string) {
+      const receiver = directNodePath(invitation)
+      if (receiver === undefined) throw new TypeError('Admin Invitation id is invalid.')
+      const reconciled = invitationFromSummary(
+        await callAdminMethod(context.session, receiver, 'reconcile', {
+          operationId: operationId('reconcile-invitation'),
+        }),
+      )
+      if (
+        reconciled.id !== receiver.raw ||
+        reconciled.instance === undefined ||
+        reconciled.access !== 'member'
+      ) {
+        throw new TypeError('Admin Invitation reconciliation does not match its requested scope.')
+      }
+      return reconciled
     },
   })
 }
@@ -217,6 +257,40 @@ function domainInstallReceipt(input: unknown): DomainInstallReceipt {
   })
 }
 
+function invitationFromSummary(input: unknown): InvitationInfo {
+  const value = record(input, 'Admin Invitation summary')
+  const state = value.state
+  if (state !== 'pending' && state !== 'accepted' && state !== 'revoked' && state !== 'expired') {
+    throw new TypeError('Admin Invitation state is invalid.')
+  }
+  const access = value.access
+  if (access !== 'administrator' && access !== 'member') {
+    throw new TypeError('Admin Invitation access is invalid.')
+  }
+  return Object.freeze({
+    id: requiredNodePath(value.id, 'Admin Invitation id'),
+    email: requiredString(value.email, 'Admin Invitation email'),
+    state,
+    access,
+    ...(value.instance === undefined
+      ? {}
+      : { instance: requiredNodePath(value.instance, 'Admin Invitation Instance') }),
+    ...(value.invitedBy === undefined
+      ? {}
+      : { invitedBy: requiredNodePath(value.invitedBy, 'Admin Invitation sender') }),
+    ...(value.claimedBy === undefined
+      ? {}
+      : { claimedBy: requiredNodePath(value.claimedBy, 'Admin Invitation claimant') }),
+    createdAt: requiredString(value.createdAt, 'Admin Invitation creation time'),
+    ...(value.expiresAt === undefined
+      ? {}
+      : { expiresAt: requiredString(value.expiresAt, 'Admin Invitation expiry time') }),
+    ...(value.acceptedAt === undefined
+      ? {}
+      : { acceptedAt: requiredString(value.acceptedAt, 'Admin Invitation acceptance time') }),
+  })
+}
+
 function instanceState(input: unknown): InstanceState {
   if (
     input === 'provisioning' ||
@@ -256,6 +330,8 @@ function record(input: unknown, label: string): Readonly<Record<string, unknown>
   return input as Readonly<Record<string, unknown>>
 }
 
-function defaultOperationId(kind: 'create' | 'status' | 'delete' | 'install-domain'): string {
+function defaultOperationId(
+  kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
+): string {
   return randomOperationId('cli', 'instance', kind)
 }
