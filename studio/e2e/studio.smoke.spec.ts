@@ -47,18 +47,6 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   // a declared view is a node on that canvas, not a panel behind a button
   await expect(page.getByRole('button', { name: 'overview', exact: true })).toBeVisible()
 
-  // A domain frame is furniture you move, not a thing you open: grabbing it anywhere —
-  // no header, no handle — drags it, exactly like a module box.
-  const frame = page.locator('.react-flow__node-workspaceDomain').first()
-  const frameTransform = () => frame.evaluate((el) => (el as HTMLElement).style.transform)
-  const parked = await frameTransform()
-  const frameBox = (await frame.boundingBox())!
-  await page.mouse.move(frameBox.x + 16, frameBox.y + frameBox.height - 16)
-  await page.mouse.down()
-  await page.mouse.move(frameBox.x + 96, frameBox.y + frameBox.height - 56, { steps: 8 })
-  await page.mouse.up()
-  expect(await frameTransform()).not.toBe(parked)
-
   // A card wears its module hue as a 3px bar on the left and a hairline elsewhere…
   const card = page.locator('.react-flow__node-classNode > div').first()
   const cardEdges = () =>
@@ -88,6 +76,19 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
     page.getByText('A monitored resource rendered by the browser smoke test.'),
   ).toBeVisible()
   await expect(page.getByText('label', { exact: true })).toBeVisible()
+
+  // A domain frame is furniture you move, not a thing you open: grabbing it anywhere —
+  // no header, no handle — drags it, exactly like a module box. Last, because dragging
+  // the canvas content is the one action that can carry a node out of the pane.
+  const frame = page.locator('.react-flow__node-workspaceDomain').first()
+  const frameTransform = () => frame.evaluate((el) => (el as HTMLElement).style.transform)
+  const parked = await frameTransform()
+  const frameBox = (await frame.boundingBox())!
+  await page.mouse.move(frameBox.x + 16, frameBox.y + frameBox.height - 16)
+  await page.mouse.down()
+  await page.mouse.move(frameBox.x + 96, frameBox.y + frameBox.height - 56, { steps: 8 })
+  await page.mouse.up()
+  expect(await frameTransform()).not.toBe(parked)
 
   await page.getByRole('button', { name: 'Core', exact: true }).click()
   const coreNode = page.getByRole('button', { name: /Primary monitor/ }).first()

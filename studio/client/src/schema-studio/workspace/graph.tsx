@@ -45,7 +45,7 @@ import {
   selectedRelationshipContext,
 } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
-import { VIEW_HUE, moduleTint } from '../palette'
+import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
 import { workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
@@ -73,7 +73,7 @@ export function WorkspaceSchemaGraph({
   domains: WorkspaceDomainProjection[]
   onToggleInherited: () => void
 }) {
-  const { getNode, getNodes, setViewport } = useReactFlow()
+  const { getInternalNode, getNode, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
   const paneWidth = useStore((state) => state.width)
   const paneHeight = useStore((state) => state.height)
   const panZoomReady = useStore((state) => state.panZoom !== null)
@@ -253,6 +253,29 @@ export function WorkspaceSchemaGraph({
     },
     [commitLayout, getNode, getNodes, setDomainPosition],
   )
+
+  // Selecting a class opens the right panel, which narrows the pane — pan the selection
+  // back into view when it would sit under the panel (or off-screen after a ⌘K jump).
+  // Zoom is preserved: only the framing moves. Without this the canvas answers a
+  // selection with nothing visible, and `onlyRenderVisibleElements` even unmounts the
+  // card that was just picked.
+  useEffect(() => {
+    if (!selected?.startsWith('class.') || !paneWidth || !paneHeight) return
+    const node = getInternalNode(qualifiedNodeId(activeDomainId, selected))
+    if (!node) return
+    const { x, y, zoom } = getViewport()
+    const cx = node.internals.positionAbsolute.x + (node.measured.width ?? CLASS_W) / 2
+    const cy = node.internals.positionAbsolute.y + (node.measured.height ?? CLASS_H) / 2
+    const screenX = cx * zoom + x
+    const screenY = cy * zoom + y
+    const margin = 24
+    const onScreen =
+      screenX > margin &&
+      screenX < paneWidth - margin &&
+      screenY > margin &&
+      screenY < paneHeight - margin
+    if (!onScreen) setCenter(cx, cy, { zoom })
+  }, [activeDomainId, selected, paneWidth, paneHeight, getInternalNode, getViewport, setCenter])
 
   // ── focus + context, one canvas-wide reading ──
   // `focusId` is a LOCAL ref (`class.Foo`); on this canvas the same class exists in every
