@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.45](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.44...cli/v1.0.0-beta.45) (2026-08-28)
+
+
+### Bug Fixes
+
+* **cli:** generate protocol-safe operation ids ([#254](https://github.com/astrale-os/cli/issues/254)) ([f38d09f](https://github.com/astrale-os/cli/commit/f38d09f55fb1fa450a8fac66c1c7233a6c56c077))
+
 ## [1.0.0-beta.44](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.43...cli/v1.0.0-beta.44) (2026-08-28)
 
 
