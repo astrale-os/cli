@@ -1,5 +1,6 @@
 import type { DomainBundle, DomainInfo, SchemaApi } from '@astrale-os/sdk/client/schema'
 
+import { ResponseError } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
 
 import type { KernelCommandOpts } from '../connection'
@@ -65,12 +66,33 @@ export function readInstalledDomain(
   origin: string,
   includeBundle: boolean,
 ): Promise<DomainInfo | DomainBundle>
-export function readInstalledDomain(
+export async function readInstalledDomain(
   schema: Pick<SchemaApi, 'inspect' | 'bundle'>,
   origin: string,
   includeBundle: boolean,
 ): Promise<DomainInfo | DomainBundle> {
-  return includeBundle ? schema.bundle(origin) : schema.inspect(origin)
+  try {
+    return await (includeBundle ? schema.bundle(origin) : schema.inspect(origin))
+  } catch (error) {
+    if (isSchemaNotFound(error)) {
+      throw new AstraleError(
+        'DOMAIN_NOT_INSTALLED',
+        `Domain "${origin}" is not installed on the target instance.`,
+      )
+    }
+    throw error
+  }
+}
+
+function isSchemaNotFound(error: unknown): boolean {
+  if (!(error instanceof ResponseError) || error.code !== 1003) return false
+  const reason = error.reason
+  return (
+    reason !== null &&
+    typeof reason === 'object' &&
+    !Array.isArray(reason) &&
+    (reason as Readonly<Record<string, unknown>>).code === 'SCHEMA_NOT_FOUND'
+  )
 }
 
 export function parseIntrospectTarget(target: string): { origin: string; path: Path } {

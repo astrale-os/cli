@@ -1,5 +1,6 @@
 import type { DomainBundle, DomainInfo } from '@astrale-os/sdk/client/schema'
 
+import { ResponseError } from '@astrale-os/sdk/client'
 import { bundle, defineSchema, func, method, nodeClass, schema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
@@ -26,6 +27,11 @@ const source = defineSchema('host.astrale.ai', {
     }),
   },
 })
+
+const TEST_INVOCATION = {
+  source: 'https://kernel.test',
+  id: 'introspect-domain-absence',
+} as ConstructorParameters<typeof ResponseError>[2]
 
 const info = {
   origin: source.origin,
@@ -96,5 +102,31 @@ describe('parseIntrospectTarget', () => {
       'bundle:host.astrale.ai',
       'bundle:host.astrale.ai',
     ])
+  })
+
+  test('reports an absent installed Domain with a stable machine error', async () => {
+    const absent = new ResponseError(1003, 'Domain was not found.', TEST_INVOCATION, {
+      code: 'SCHEMA_NOT_FOUND',
+      details: { origin: 'missing.astrale.ai' },
+    })
+
+    await expect(
+      introspectCommand(
+        'missing.astrale.ai',
+        { json: true },
+        {
+          runKernelCommand: (async (input: { fn: (context: unknown) => Promise<unknown> }) => {
+            await input.fn({
+              session: {
+                schema: {
+                  inspect: async () => Promise.reject(absent),
+                  bundle: async () => Promise.reject(absent),
+                },
+              },
+            })
+          }) as never,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'DOMAIN_NOT_INSTALLED' })
   })
 })

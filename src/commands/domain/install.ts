@@ -22,7 +22,6 @@ import { isMachine, output } from '../../lib/output'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
 
-/** Public Kernel install syscall input for one remote URL. */
 export function directInstallCallInput(
   url: string,
   operation: string,
