@@ -29,6 +29,22 @@ export function createExchangeCredentialResolver(
   return Object.freeze({
     async resolve(kernelIssuer: IssuerId, signal: AbortSignal): Promise<string> {
       requireLive(signal)
+      const hintedIdentity = await readCacheIdentity(source)
+      requireLive(signal)
+      if (hintedIdentity !== undefined) {
+        const cached = await cache.get(
+          Object.freeze({
+            kernelIssuer,
+            domainIssuer: target.domainIssuer,
+            sourceIssuer: hintedIdentity.issuer,
+            sourceSubject: hintedIdentity.subject,
+          }),
+          cacheTtlSeconds,
+        )
+        requireLive(signal)
+        if (cached !== undefined) return cached
+      }
+
       const sourceToken = await source.resolve(kernelIssuer, signal)
       const sourceIdentity = sourceCacheIdentity(sourceToken)
       requireLive(signal)
@@ -92,6 +108,16 @@ export function createExchangeCredentialResolver(
       )
     },
   })
+}
+
+async function readCacheIdentity(
+  source: SourceCredentialResolver,
+): Promise<Readonly<{ issuer: string; subject: string }> | undefined> {
+  try {
+    return await source.cacheIdentity?.()
+  } catch {
+    return undefined
+  }
 }
 
 function sourceCacheIdentity(sourceToken: string): { issuer: string; subject: string } {

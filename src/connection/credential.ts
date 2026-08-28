@@ -8,7 +8,7 @@ import type { ConnectionOptions, ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
-import { resolveCredential } from './auth'
+import { resolveCredential, resolvePersistedIdpSourceIdentity } from './auth'
 import { createExchangeCredentialResolver } from './exchange'
 import { exchangeCredentialTtlSeconds, invocationCredentialTtlSeconds } from './lifetime'
 import { registrationKeyForTarget } from './target'
@@ -16,6 +16,8 @@ import { registrationKeyForTarget } from './target'
 const DELEGATION_TTL_SECONDS = 60
 
 export interface SourceCredentialResolver {
+  /** Stable local identity metadata may select an already-bound persisted exchange credential. */
+  cacheIdentity?(): Promise<Readonly<{ issuer: string; subject: string }> | undefined>
   resolve(audience: IssuerId, signal: AbortSignal): Promise<string>
 }
 
@@ -88,6 +90,9 @@ export function createCliCredential(
         : exchangeCredentialTtlSeconds(timeoutMs),
   })
   const source: SourceCredentialResolver = {
+    async cacheIdentity() {
+      return resolvePersistedIdpSourceIdentity(authOptions)
+    },
     async resolve(audience, signal) {
       requireLive(signal)
       const credential = await resolveCredential(

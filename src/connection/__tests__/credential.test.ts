@@ -26,6 +26,29 @@ const config: AstraleConfig = {
 }
 
 describe('connection credential', () => {
+  /** @evidence TEST-CLI-CONNECTION-USES-PERSISTED-EXCHANGE-BEFORE-SOURCE-REFRESH */
+  test('composes named and active IdP identities into exact persisted exchange hits', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'astrale-connection-exchange-'))
+    try {
+      const fixture = join(import.meta.dir, 'fixtures', 'exchange-cache-cli-process.ts')
+      const child = Bun.spawn([process.execPath, fixture], {
+        env: { ...process.env, ASTRALE_HOME: directory },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ])
+
+      expect(exitCode, stderr).toBe(0)
+      expect(JSON.parse(stdout)).toEqual({ explicit: true, active: true, fetches: 0 })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   test('pins the bookmark identity while leaving explicit credentials unnamed', async () => {
     const target = {
       url: `${SOURCE}/invoke`,

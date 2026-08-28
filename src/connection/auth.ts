@@ -8,6 +8,8 @@ import {
   accessTokenForAudience,
   classifyRefreshFailure,
   IdpAudienceMismatchError,
+  readIdpSession,
+  type IdpSession,
 } from '../lib/idp'
 import {
   ensureFreshSession,
@@ -20,6 +22,58 @@ export type KeyIdentityAuthOptions = {
   issuer: string
   subject?: string
   audience: string
+}
+
+export interface PersistedSourceIdentity {
+  readonly issuer: string
+  readonly subject: string
+}
+
+/**
+ * Read only stable IdP identity metadata for an exact persisted exchange-cache lookup.
+ * Credential freshness remains the exchange cache's responsibility; any ambiguity falls
+ * through to the ordinary source-token resolver.
+ */
+export async function resolvePersistedIdpSourceIdentity(opts: {
+  readonly as?: string
+  readonly defaultIdentity?: string
+}): Promise<PersistedSourceIdentity | undefined> {
+  const explicit = opts.as ?? opts.defaultIdentity
+  let name: string
+  let selected: Identity
+  if (explicit === undefined) {
+    const active = await getDefault()
+    name = active.name
+    selected = active
+  } else {
+    name = explicit
+    selected = await getIdentity(explicit)
+  }
+  if ((selected.source ?? 'key') !== 'idp') return undefined
+  const session = await readIdpSession(name).catch(() => null)
+  if (session === null || session.identity !== name) return undefined
+  return persistedIdpSourceIdentity(selected, session)
+}
+
+/** Pure admission seam for persisted source identity metadata. */
+export function persistedIdpSourceIdentity(
+  identity: Identity,
+  session: Pick<IdpSession, 'claims'>,
+): PersistedSourceIdentity | undefined {
+  if ((identity.source ?? 'key') !== 'idp') return undefined
+  const issuer = session.claims?.iss
+  const subject = session.claims?.sub
+  if (
+    typeof issuer !== 'string' ||
+    issuer.length === 0 ||
+    issuer !== identity.issuer ||
+    typeof subject !== 'string' ||
+    subject.length === 0 ||
+    subject !== identity.subject
+  ) {
+    return undefined
+  }
+  return Object.freeze({ issuer, subject })
 }
 
 /** Pin the local identity label before a session performs any authenticated effect. */
