@@ -40,7 +40,7 @@ export function bundle(
     extractedBy: 'runtime-bun',
     depsInstalled: true,
     ir: {
-      version: '1',
+      version: 'v1',
       format: 'astrale.dsl',
       domain,
       classes,

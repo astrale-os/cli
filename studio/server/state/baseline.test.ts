@@ -216,20 +216,14 @@ for (const scenario of corruptBaselineCases) {
   })
 }
 
-test('keeps a valid current-format legacy baseline without a canonical root or revision', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-legacy-v2-baseline-'))
+test('invalidates a current-format baseline whose render IR predates V1', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-retired-ir-baseline-'))
   roots.push(root)
   const legacyIr = { ...schema('notes.example.dev'), version: 'legacy' }
 
-  captureBaseline(root, { ir: legacyIr, root: null, revision: null }, { source: 'hash' })
+  captureBaseline(root, { ir: legacyIr as never, root: null, revision: null }, { source: 'hash' })
 
-  expect(loadBaseline(root)).toMatchObject({
-    formatVersion: BASELINE_FORMAT_VERSION,
-    ir: legacyIr,
-    root: null,
-    revision: null,
-    files: { source: 'hash' },
-  })
+  expect(loadBaseline(root)).toBeNull()
 })
 
 test('uses equal admitted revisions to suppress projection-only schema churn', () => {

@@ -96,7 +96,7 @@ describe('canonical Schema projection', () => {
       properties: { slug: { type: 'string' } },
       required: ['slug'],
       propertyMetadata: {
-        slug: { required: true, visibility: 'public', description: 'Stable slug.' },
+        slug: { required: true, description: 'Stable slug.' },
       },
       methods: {
         rename: {
