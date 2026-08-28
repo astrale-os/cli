@@ -29,6 +29,21 @@ export interface DomainInstallReceipt {
   readonly error?: string
 }
 
+export type InvitationState = 'pending' | 'accepted' | 'revoked' | 'expired'
+
+export interface InvitationInfo {
+  readonly id: string
+  readonly email: string
+  readonly state: InvitationState
+  readonly access: 'administrator' | 'member'
+  readonly instance?: string
+  readonly invitedBy?: string
+  readonly claimedBy?: string
+  readonly createdAt: string
+  readonly expiresAt?: string
+  readonly acceptedAt?: string
+}
+
 export class AdminInstanceNotFoundError extends AstraleError {
   constructor(readonly identifier: string) {
     super(
