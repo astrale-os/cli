@@ -346,8 +346,10 @@ Examples:
         log.info(`Astrale toolchain repair available: ${result.currentVersion}`)
         anyAvailable = true
       } else if (result.status === 'managed') {
-        const error = packageManagedUpdateError(result.executable)
-        throw error
+        const warning = packageManagedUpdateError(result.executable)
+        log.warn(
+          `${warning.code}: ${warning.message}${warning.hint ? `\n  hint: ${warning.hint}` : ''}`,
+        )
       }
 
       // Axis B — agent skills. A successful real update guarantees a verified

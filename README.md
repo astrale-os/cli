@@ -109,7 +109,8 @@ beta channel by default. Use `--check`,
 `--no-skills` is the explicit opt-out.
 
 An old package-managed or source build never overwrites files it does not own.
-It directs you to migrate to the official standalone executable instead.
+It directs you to migrate to the official standalone executable instead, while
+still updating installed Astrale skills and project SDK dependencies.
 
 On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version

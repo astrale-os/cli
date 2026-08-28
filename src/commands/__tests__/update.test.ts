@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 
 import pkg from '../../../package.json' with { type: 'json' }
 import { cliStale } from '../update'
@@ -85,5 +86,38 @@ describe('CLI update staleness', () => {
       managed: false,
       error: 'release endpoint unavailable',
     })
+  })
+})
+
+describe('CLI update application', () => {
+  test('warns for a source runtime without blocking the remaining update axes', async () => {
+    const root = join(import.meta.dir, '../../..')
+    const proc = Bun.spawn(
+      [
+        process.execPath,
+        join(root, 'bin/astrale.ts'),
+        'update',
+        '--yes',
+        '--no-skills',
+        '--no-deps',
+      ],
+      {
+        cwd: root,
+        env: { ...process.env, NO_COLOR: '1' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+
+    expect(exitCode).toBe(0)
+    expect(stderr).toContain('UPDATE_PACKAGE_MANAGED')
+    expect(stderr).toContain('cannot replace itself')
+    expect(stdout).toContain('Astrale skills skipped')
   })
 })
