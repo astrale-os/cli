@@ -18,7 +18,6 @@ import { CommandPalette } from '@/components/command-palette'
 import { CommentDraftPopover } from '@/components/comment-draft-popover'
 import { CommentModeOverlay } from '@/components/comment-mode'
 import { DomainSelector } from '@/components/domain-selector'
-import { InstanceBadge } from '@/components/instance-badge'
 import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
@@ -222,12 +221,11 @@ export function App() {
     <TooltipProvider delayDuration={250}>
       <div className="flex h-full flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-          {/* what you are looking at: instance → domain → its deploy state */}
+          {/* what you are looking at: instance → domain */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <InstanceSwitcher />
             <span className="mx-1 h-4 w-px bg-border" />
             <DomainSelector />
-            {domainId && <InstanceBadge domainId={domainId} />}
             {domainId && <UpdatesBadge domainId={domainId} />}
           </div>
 

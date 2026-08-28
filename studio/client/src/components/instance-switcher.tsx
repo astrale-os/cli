@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronsUpDown, ExternalLink, Loader2, Network } from 'lucide-react'
+import { Check, ChevronsUpDown, ExternalLink, Loader2, Server } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -61,7 +61,7 @@ export function InstanceSwitcher() {
             className="inline-flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-accent/50"
           >
             <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary/15 text-primary">
-              <Network className="h-4 w-4" />
+              <Server className="h-4 w-4" />
             </span>
             <span className="font-semibold tracking-tight">{active ?? 'no instance'}</span>
             <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
