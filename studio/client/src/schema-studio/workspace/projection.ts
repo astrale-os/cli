@@ -3,6 +3,8 @@ import type { Edge, Node } from '@xyflow/react'
 
 import { isIrClassRef } from '@shared/schema/identity'
 
+import { buildViewsModel } from '@/lib/views'
+
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from '../edge-markers'
@@ -10,7 +12,8 @@ import { elkLayout } from '../elk-layout'
 import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
 import { moduleOfClass } from '../modules'
 import { projectDomainCanvas } from '../projection'
-import { classRef, edgeRef, isHidden } from '../visibility'
+import { viewGraph } from '../view-graph'
+import { classRef, domainRef, edgeRef, isHidden } from '../visibility'
 import {
   projectExternalFrames,
   workspaceExternalMemberNodeId,
@@ -21,7 +24,6 @@ import {
   layoutWorkspaceFrames,
   type WorkspaceNodeGeometryData,
   type WorkspacePoint,
-  type WorkspaceSize,
 } from './geometry'
 
 export interface WorkspaceDomainProjection {
@@ -34,7 +36,6 @@ export interface WorkspaceDomainProjection {
 export interface WorkspaceDomainNodeData extends Record<string, unknown> {
   domainId: string
   origin: string
-  active: boolean
 }
 
 export interface WorkspaceProjection {
@@ -51,7 +52,6 @@ export interface ComposeWorkspaceCanvasOptions {
   domainPositions?: Record<string, WorkspacePoint>
   externalPositions?: Record<string, WorkspacePoint>
   contentOffsets?: Record<string, WorkspacePoint>
-  domainSizes?: Record<string, WorkspaceSize>
   catalog?: DomainCatalogEntry[]
 }
 
@@ -75,12 +75,24 @@ export async function prepareWorkspaceDomain(
   collapsedModules: string[],
 ): Promise<WorkspaceDomainProjection> {
   const collapsed = new Set(collapsedModules)
-  const structure = projectDomainCanvas(
+  const schema = projectDomainCanvas(
     input.bundle,
     collapsed,
     input.visibility.hidden,
     input.visibility.showInheritedEdges,
   )
+  // Views ride in the domain's own projection, so the frame layout, the drag
+  // persistence and the id prefixing below treat them exactly like a class.
+  const views = viewGraph(
+    buildViewsModel(input.anatomy, input.bundle),
+    input.bundle,
+    collapsed,
+    input.visibility.hidden,
+  )
+  const structure = {
+    nodes: [...schema.nodes, ...views.nodes],
+    edges: [...schema.edges, ...views.edges],
+  }
   const saved = input.layout.positions
   const placed = structure.nodes.filter((node) => saved[node.id])
   const pending = structure.nodes.filter((node) => !saved[node.id])
@@ -147,6 +159,10 @@ function resolveClass(
     const target = localTarget(owner, ref.name)
     return target ? [target] : []
   }
+
+  // An imported domain the reader hid stays hidden — the Domains panel's eye writes
+  // `domain.<origin>` into the owner's visibility, and this is where it lands.
+  if (isHidden(domainRef(ref.origin), owner.input.visibility.hidden)) return []
 
   const candidates = origins.get(ref.origin) ?? []
   if (candidates.length > 1) {
@@ -304,7 +320,6 @@ export function composeWorkspaceCanvas(
     domainPositions = {},
     externalPositions = {},
     contentOffsets = {},
-    domainSizes = {},
     catalog,
   }: ComposeWorkspaceCanvasOptions,
 ): WorkspaceProjection {
@@ -318,7 +333,6 @@ export function composeWorkspaceCanvas(
   const frames = layoutWorkspaceFrames(
     domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
     domainPositions,
-    domainSizes,
     contentOffsets,
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
@@ -334,13 +348,14 @@ export function composeWorkspaceCanvas(
       id: rootId,
       type: 'workspaceDomain',
       position: frame.position,
+      // A frame moves exactly like a module box: grab it anywhere, drag it. It is never
+      // SELECTED though — a domain is a place, not a thing you open, and which one is
+      // active is answered by the modules rail, not by repainting the canvas.
       draggable: true,
-      dragHandle: '.workspace-domain-drag-handle',
-      selectable: true,
+      selectable: false,
       data: {
         domainId,
         origin: domain.input.summary.origin,
-        active,
       } satisfies WorkspaceDomainNodeData,
       style: { width: frame.size.width, height: frame.size.height },
     })
@@ -359,7 +374,6 @@ export function composeWorkspaceCanvas(
             domainId,
             localId: node.id,
             offset,
-            active,
           } satisfies WorkspaceNodeGeometryData,
         },
         extent: 'parent',

@@ -29,8 +29,8 @@ const NODE_SHEBANG = '#!/usr/bin/env node\n'
 
 await rm('dist', { recursive: true, force: true })
 
-// The executable imports the checked-in archive. Rebuild its inputs first so
-// Studio/viewer changes cannot produce a stale development or release binary.
+// The executable imports the local generated archive. Ensure its exact inputs
+// are current before bundling; cache hits avoid rebuilding Studio and Viewer.
 await buildEmbeddedAssets()
 
 const result = await Bun.build({
@@ -38,6 +38,7 @@ const result = await Bun.build({
   outdir: 'dist',
   target: 'node',
   format: 'esm',
+  define: { __ASTRALE_BUNDLED__: 'true' },
   plugins: [preferJsoncParserEsm],
   // Bundle everything (no externals) so the artifact carries its own deps.
 })

@@ -18,7 +18,6 @@ export interface WorkspaceNodeGeometryData {
   domainId: string
   localId: string
   offset: NodePosition
-  active: boolean
 }
 
 export interface WorkspaceFrameSource {
@@ -42,7 +41,6 @@ export const DOMAIN_MIN_SIZE: WorkspaceSize = { width: 360, height: 220 }
 export const MODULE_MIN_SIZE: WorkspaceSize = { width: 200, height: 120 }
 
 const DOMAIN_PADDING = 52
-const DOMAIN_HEADER = 48
 export const WORKSPACE_DOMAIN_GAP = 112
 const SHELF_WIDTH = 1900
 
@@ -126,11 +124,14 @@ function positionFrames(
   })
 }
 
-/** Resolve stable domain frames. Default positions are persisted by the caller after first projection. */
+/**
+ * Resolve stable domain frames. A frame wraps exactly what it holds — the same rule a
+ * module box follows — so its SIZE is never a stored preference, only its position is.
+ * Default positions are persisted by the caller after the first projection.
+ */
 export function layoutWorkspaceFrames(
   sources: WorkspaceFrameSource[],
   savedPositions: Record<string, WorkspacePoint>,
-  savedSizes: Record<string, WorkspaceSize>,
   savedContentOffsets: Record<string, WorkspacePoint>,
 ): WorkspaceDomainFrame[] {
   const unpositioned = sources.map((source) => {
@@ -141,24 +142,17 @@ export function layoutWorkspaceFrames(
     const saved = savedContentOffsets[source.domainId]
     const contentOffset = {
       x: Math.max(saved?.x ?? Number.NEGATIVE_INFINITY, DOMAIN_PADDING - bounds.minX),
-      y: Math.max(
-        saved?.y ?? Number.NEGATIVE_INFINITY,
-        DOMAIN_PADDING + DOMAIN_HEADER - bounds.minY,
-      ),
+      // Even padding all round: the origin sits ON the frame's top edge, so there is no
+      // header to reserve room for.
+      y: Math.max(saved?.y ?? Number.NEGATIVE_INFINITY, DOMAIN_PADDING - bounds.minY),
     }
-    // the same padding on the far side — a resized frame can shrink to the content
-    // but never past it
-    const minimumSize = {
-      width: Math.max(DOMAIN_MIN_SIZE.width, bounds.maxX + contentOffset.x + DOMAIN_PADDING),
-      height: Math.max(DOMAIN_MIN_SIZE.height, bounds.maxY + contentOffset.y + DOMAIN_PADDING),
-    }
-    const savedSize = savedSizes[source.domainId]
+    // the same padding on the far side, so the frame never crowds its content
     return {
       domainId: source.domainId,
       contentOffset,
       size: {
-        width: savedSize ? Math.max(minimumSize.width, savedSize.width) : minimumSize.width,
-        height: savedSize ? Math.max(minimumSize.height, savedSize.height) : minimumSize.height,
+        width: Math.max(DOMAIN_MIN_SIZE.width, bounds.maxX + contentOffset.x + DOMAIN_PADDING),
+        height: Math.max(DOMAIN_MIN_SIZE.height, bounds.maxY + contentOffset.y + DOMAIN_PADDING),
       },
     }
   })

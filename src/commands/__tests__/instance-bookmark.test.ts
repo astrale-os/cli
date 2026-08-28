@@ -129,6 +129,17 @@ describe('instance bookmark command', () => {
       createdAt: '2026-08-20T00:00:00.000Z',
     })
   })
+
+  test('active --json reports missing selection through the machine failure contract', async () => {
+    const result = await runCli('instance', 'active', '--json')
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(JSON.parse(result.stderr)).toEqual({
+      error: 'INSTANCE_NOT_FOUND',
+      message: 'No active instance. Run: astrale instance bookmark <name> --url <url> --use',
+    })
+  })
 })
 
 async function readInstances(): Promise<{

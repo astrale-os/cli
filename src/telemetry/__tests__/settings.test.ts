@@ -10,6 +10,7 @@ process.env.ASTRALE_HOME = mkdtempSync(join(tmpdir(), 'astrale-tele-settings-'))
 
 let retentionBudget: () => RetentionBudget
 let telemetryEnabled: () => boolean
+let analyzerEnabled: () => boolean
 let DEFAULT_MAX_AGE_DAYS: number
 let DEFAULT_MAX_BYTES: number
 let configPath: string
@@ -20,6 +21,7 @@ beforeAll(async () => {
   const settings = await import('../settings')
   retentionBudget = settings.retentionBudget
   telemetryEnabled = settings.telemetryEnabled
+  analyzerEnabled = settings.analyzerEnabled
   DEFAULT_MAX_AGE_DAYS = settings.DEFAULT_MAX_AGE_DAYS
   DEFAULT_MAX_BYTES = settings.DEFAULT_MAX_BYTES
   configPath = join(process.env.ASTRALE_HOME!, 'config.json')
@@ -32,8 +34,10 @@ function writeConfig(telemetry: unknown): void {
 beforeEach(() => {
   rmSync(configPath, { force: true })
   delete process.env.ASTRALE_TELEMETRY
+  delete process.env.ASTRALE_TELEMETRY_ANALYZER
   delete process.env.ASTRALE_TELEMETRY_MAX_AGE_DAYS
   delete process.env.ASTRALE_TELEMETRY_MAX_BYTES
+  delete process.env.ASTRALE_TELEMETRY_ANALYZER
 })
 
 afterEach(() => {
@@ -98,5 +102,40 @@ describe('telemetryEnabled', () => {
   test.each(['0', 'false', 'off', 'OFF', ' off '])('off via ASTRALE_TELEMETRY=%p', (value) => {
     process.env.ASTRALE_TELEMETRY = value
     expect(telemetryEnabled()).toBe(false)
+  })
+})
+
+describe('analyzerEnabled', () => {
+  test('off by default, including when recording is enabled', () => {
+    writeConfig({ enabled: true })
+    expect(analyzerEnabled()).toBe(false)
+  })
+
+  test('on only through the dedicated config toggle', () => {
+    writeConfig({ enabled: true, analyzerEnabled: true })
+    expect(analyzerEnabled()).toBe(true)
+  })
+
+  test.each(['1', 'true', 'on', 'TRUE', ' on '])(
+    'on via ASTRALE_TELEMETRY_ANALYZER=%p',
+    (value) => {
+      writeConfig({ analyzerEnabled: false })
+      process.env.ASTRALE_TELEMETRY_ANALYZER = value
+      expect(analyzerEnabled()).toBe(true)
+    },
+  )
+
+  test.each(['0', 'false', 'off', 'OFF', ' off '])(
+    'off via ASTRALE_TELEMETRY_ANALYZER=%p',
+    (value) => {
+      writeConfig({ analyzerEnabled: true })
+      process.env.ASTRALE_TELEMETRY_ANALYZER = value
+      expect(analyzerEnabled()).toBe(false)
+    },
+  )
+
+  test('an unrecognized environment value does not opt in', () => {
+    process.env.ASTRALE_TELEMETRY_ANALYZER = 'enabled-ish'
+    expect(analyzerEnabled()).toBe(false)
   })
 })

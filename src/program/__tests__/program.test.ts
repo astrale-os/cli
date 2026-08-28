@@ -167,6 +167,9 @@ describe('program composition', () => {
       'instance create',
       'instance delete',
       'instance forget',
+      'instance invitation',
+      'instance invitation reconcile',
+      'instance invite',
       'instance list',
       'instance status',
       'instance use',
@@ -199,7 +202,7 @@ describe('program composition', () => {
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '2f6a793b9017f0febc03775a8af5487e0013911c7449d64008451ee90d80b63f',
+      '420e7f3e0349610f40d2c2098f7954c9e839869ac44a621c2eea50d229e4e206',
     )
   })
 

@@ -2,6 +2,7 @@ import type { SmartEdgeOptions, SmartEdgeProviderOptions } from '@tisoap/react-f
 
 import { type Edge, type Node, Position } from '@xyflow/react'
 
+import { createEdgeLabelObstacleIndex, type EdgeLabelObstacle } from './edge-label-layout'
 import { CLASS_H, CLASS_W } from './palette'
 
 const PORT_CORNER_MARGIN = 8
@@ -27,6 +28,41 @@ interface NodeRect {
   y: number
   width: number
   height: number
+}
+
+const FRAME_STROKE = 2
+
+function fullObstacle(id: string, rect: NodeRect): EdgeLabelObstacle {
+  return { id, ...rect }
+}
+
+function frameObstacles(id: string, rect: NodeRect, headerHeight: number): EdgeLabelObstacle[] {
+  const stroke = Math.min(FRAME_STROKE, rect.width / 2, rect.height / 2)
+  const header = Math.min(headerHeight, rect.height)
+  return [
+    { id: `${id}:header`, x: rect.x, y: rect.y, width: rect.width, height: header },
+    {
+      id: `${id}:left`,
+      x: rect.x,
+      y: rect.y + header,
+      width: stroke,
+      height: rect.height - header,
+    },
+    {
+      id: `${id}:right`,
+      x: rect.x + rect.width - stroke,
+      y: rect.y + header,
+      width: stroke,
+      height: rect.height - header,
+    },
+    {
+      id: `${id}:bottom`,
+      x: rect.x,
+      y: rect.y + rect.height - stroke,
+      width: rect.width,
+      height: stroke,
+    },
+  ].filter((obstacle) => obstacle.width > 0 && obstacle.height > 0)
 }
 
 interface Attachment {
@@ -59,10 +95,9 @@ export const SMART_EDGE_PROVIDER_OPTIONS = {
   cacheSize: 1_000,
 } satisfies SmartEdgeProviderOptions
 
-/** Edge-local presentation: rounded circuit traces with bridges at unavoidable crossings. */
+/** Edge-local presentation: rounded traces without decorative bridges at crossings. */
 export const SMART_EDGE_RENDER_OPTIONS = {
   borderRadius: 8,
-  hops: { radius: 5, borderRadius: 8 },
 } satisfies SmartEdgeOptions
 
 function dimension(node: Node, axis: 'width' | 'height'): number {
@@ -108,6 +143,39 @@ function absoluteRects(nodes: Node[]): Map<string, NodeRect> {
 
   for (const node of nodes) resolve(node)
   return rects
+}
+
+/**
+ * Rectangles a label must not cover. Expanded containers contribute only their visible header and
+ * frame: treating their entire body as solid would make labels for the classes inside impossible.
+ */
+export function edgeLabelObstacles(nodes: Node[]): EdgeLabelObstacle[] {
+  const rects = absoluteRects(nodes)
+  const obstacles: EdgeLabelObstacle[] = []
+
+  for (const node of nodes) {
+    if (node.hidden) continue
+    const rect = rects.get(node.id)
+    if (!rect || rect.width <= 0 || rect.height <= 0) continue
+
+    if (node.type === 'group' || node.type === 'moduleNode') {
+      if (node.data?.collapsed === true) obstacles.push(fullObstacle(node.id, rect))
+      else obstacles.push(...frameObstacles(node.id, rect, 32))
+      continue
+    }
+    if (node.type === 'workspaceDomain') {
+      obstacles.push(...frameObstacles(node.id, rect, 48))
+      continue
+    }
+    if (node.type === 'extDomain') {
+      obstacles.push(...frameObstacles(node.id, rect, 36))
+      continue
+    }
+
+    obstacles.push(fullObstacle(node.id, rect))
+  }
+
+  return obstacles
 }
 
 const sideLength = (rect: NodeRect, side: Position) =>
@@ -301,6 +369,7 @@ function offsetsFor(count: number, length: number): number[] {
 export function assignFloatingEdgePorts(nodes: Node[], edges: Edge[]): Edge[] {
   if (nodes.length === 0 || edges.length === 0) return edges
   const rects = absoluteRects(nodes)
+  const labelObstacleIndex = createEdgeLabelObstacleIndex(edgeLabelObstacles(nodes))
   const byNode = new Map<string, Attachment[]>()
 
   for (const edge of edges) {
@@ -354,7 +423,8 @@ export function assignFloatingEdgePorts(nodes: Node[], edges: Edge[]): Edge[] {
   }
 
   return edges.map((edge) => {
+    if (edge.type !== 'floating') return edge
     const pair = ports.get(edge.id)
-    return pair ? { ...edge, data: { ...edge.data, ...pair } } : edge
+    return { ...edge, data: { ...edge.data, ...pair, labelObstacleIndex } }
   })
 }

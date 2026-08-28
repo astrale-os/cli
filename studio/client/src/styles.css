@@ -43,6 +43,7 @@
   --edge-line: oklch(0.74 0.02 255);
   --edge-cross: oklch(0.68 0.1 45);
   --edge-inherit: oklch(0.55 0.14 300);
+  --edge-view: oklch(0.62 0.09 205);
   --edge-soft: oklch(0.78 0.01 255);
   --minimap-mask: oklch(0.55 0.01 255 / 0.12);
 }
@@ -79,6 +80,7 @@
   --edge-line: oklch(0.47 0.02 255);
   --edge-cross: oklch(0.66 0.11 45);
   --edge-inherit: oklch(0.66 0.13 300);
+  --edge-view: oklch(0.64 0.08 205);
   --edge-soft: oklch(0.42 0.012 255);
   --minimap-mask: oklch(0.15 0.01 255 / 0.5);
 }
@@ -117,6 +119,7 @@
   --color-edge-line: var(--edge-line);
   --color-edge-cross: var(--edge-cross);
   --color-edge-inherit: var(--edge-inherit);
+  --color-edge-view: var(--edge-view);
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
   --font-sans:
     ui-sans-serif, -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui,
@@ -163,6 +166,14 @@ body {
 [data-radix-scroll-area-viewport]::-webkit-scrollbar {
   display: none;
 }
+/* Radix wraps the viewport's children in a `display: table` div so it can measure
+   them. A table box is shrink-to-fit: one unbreakable string — an agent reporting
+   `Read · /Users/…/some/very/long/path` — widened the whole column past the panel,
+   where the viewport's clip swallowed it (and every sibling with it). We only ever
+   scroll vertically, so the wrapper is a plain block that keeps the panel's width. */
+[data-radix-scroll-area-viewport] > div {
+  display: block !important;
+}
 *::-webkit-scrollbar-thumb {
   background: var(--color-input);
   border-radius: 9999px;
@@ -188,10 +199,35 @@ body {
   stroke: var(--color-primary);
 }
 
-/* Edge labels belong above the module boxes they cross (z-index 0) but below the
-   class cards (z-index 1) — same value, and the nodes layer comes later in the DOM. */
+/* Every edge label is portalled into this shared layer, so no edge can strike through the words
+   that name it — but only if the layer outranks EVERY edge layer, and z-index 1 did not.
+   React Flow derives an edge's z-index from its endpoints' nesting depth: a class inside a module
+   inside a domain frame already scores 12, and selecting an edge adds 1000 more. So the layer is
+   lifted clear of all of it. This cannot reach the toolbar or the minimap — the layer lives inside
+   `.react-flow__viewport`, whose transform makes it a stacking context of its own. */
 .react-flow__edgelabel-renderer {
-  z-index: 1;
+  z-index: 2000;
+}
+
+.schema-edge-label {
+  position: absolute;
+  visibility: hidden;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  background: var(--color-card);
+  color: var(--color-muted-foreground);
+  font-family: var(--font-sans);
+  font-size: 10px;
+  line-height: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.schema-edge-cardinality {
+  padding: 1px 5px;
 }
 
 /* ── React Flow surface ── */
@@ -215,6 +251,38 @@ body {
   /* our nodes own their selected/hover treatment — drop React Flow's black hairline */
   --xy-node-boxshadow-selected: none;
   --xy-node-boxshadow-hover: none;
+}
+/* The graph is ONE draggable surface, so it wears ONE cursor. React Flow picks a cursor per
+   element instead: `default` on a node that is neither draggable nor selectable (the derived
+   region rectangle alone covers a third of the canvas), `pointer` on a selectable-but-not-
+   draggable node and across an edge's wide invisible hit target, `crosshair` on the hidden
+   handles that anchor those edges. Sweeping the mouse over a graph therefore flickered
+   hand → arrow → pointer with nothing on screen to explain it. Pin the hand everywhere; the
+   two rules below carve out the only exceptions — a real click target, and an active drag. */
+.react-flow__pane,
+.react-flow__node,
+.react-flow__node.draggable,
+.react-flow__node.selectable,
+.react-flow__nodesselection-rect,
+.react-flow__edge.selectable,
+.react-flow__handle.connectionindicator,
+/* the minimap pans and zooms as well — same gesture, same cursor */
+.react-flow__minimap {
+  cursor: grab;
+}
+/* A <button> gets the browser's arrow, which flashed over the module chevrons, the view pills
+   and the comment pins. Inside the canvas a button is a click target, so it says so. */
+.react-flow__pane button,
+.react-flow__panel button {
+  cursor: pointer;
+}
+/* Mid-drag the whole surface holds the closed hand: whatever slides under the pointer would
+   otherwise re-assert its own `grab` and flicker for as long as the drag lasts. */
+.react-flow__pane.dragging,
+.react-flow__pane.dragging *,
+.react-flow__node.dragging,
+.react-flow__node.dragging * {
+  cursor: grabbing;
 }
 .react-flow__controls {
   box-shadow: none;

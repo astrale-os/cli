@@ -9,6 +9,8 @@ export {
   findOwnedInstance,
   formatInstanceState,
   type DomainInstallReceipt,
+  type InvitationInfo,
+  type InvitationState,
   type InstanceInfo,
   type InstanceState,
   type OwnedInstanceInfo,

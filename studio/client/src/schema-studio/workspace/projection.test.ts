@@ -1,4 +1,4 @@
-import type { IrClass, StudioSchemaBundle } from '@shared/types'
+import type { DomainAnatomy, IrClass, StudioSchemaBundle } from '@shared/types'
 
 import { describe, expect, test } from 'bun:test'
 
@@ -6,6 +6,7 @@ import { bundle, classRef, edgeClass, nodeClass } from '../__tests__/fixture'
 import { projectDomainCanvas } from '../projection'
 import {
   composeWorkspaceCanvas,
+  prepareWorkspaceDomain,
   qualifiedNodeId,
   type WorkspaceDomainProjection,
 } from './projection'
@@ -45,7 +46,41 @@ function prepared(value: StudioSchemaBundle): WorkspaceDomainProjection {
   }
 }
 
+function anatomy(views: DomainAnatomy['views'], origin: string): DomainAnatomy {
+  return {
+    overview: { origin, adapter: 'astrale', requires: [], astraleDeps: {}, schemaDir: 'schema' },
+    views,
+    client: { routes: {}, shell: [], features: [], present: true },
+    env: [],
+    detectedIntegrations: [],
+  }
+}
+
 describe('workspace projection', () => {
+  test("a domain's views arrive as nodes of the domain, bound to what they render", async () => {
+    const value = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
+    const input = prepared(value).input
+    input.anatomy = anatomy(
+      [{ slug: 'board', kind: 'spa', mount: '/ui/board', viewFor: 'User' }],
+      'local.example.dev',
+    )
+    // every id already placed, so the layout is a repaint — no ELK worker in a unit test
+    input.layout = {
+      positions: {
+        'grp-root': { x: 0, y: 0 },
+        'class.User': { x: 0, y: 0 },
+        'view.board': { x: 0, y: 0 },
+      },
+    }
+
+    const result = await prepareWorkspaceDomain(input, [])
+
+    expect(result.nodes.map((node) => node.id)).toContain('view.board')
+    expect(result.edges).toContainEqual(
+      expect.objectContaining({ source: 'view.board', target: 'class.User' }),
+    )
+  })
+
   test('resolves an exact dependency Class to the selected Domain frame', () => {
     const remote = classRef('remote.example.dev', 'Remote')
     const local = domainBundle('local', 'local.example.dev', {
@@ -98,6 +133,48 @@ describe('workspace projection', () => {
     expect(result.nodes.map((node) => node.id)).toContain(
       'workspace-external-member:remote.example.dev:class:Remote',
     )
+  })
+
+  test('a frame is moved, never selected — with one domain on the canvas or several', () => {
+    const first = domainBundle('first', 'first.example.dev', { User: nodeClass('User') })
+    const second = domainBundle('second', 'second.example.dev', { Team: nodeClass('Team') })
+    const solo = composeWorkspaceCanvas([prepared(first)], { activeDomainId: 'first' })
+    const pair = composeWorkspaceCanvas([prepared(first), prepared(second)], {
+      activeDomainId: 'first',
+    })
+    const frames = [...solo.nodes, ...pair.nodes].filter((node) => node.type === 'workspaceDomain')
+
+    expect(frames).toHaveLength(3)
+    // no dragHandle: you grab a frame anywhere, exactly like a module box
+    expect(frames.every((frame) => frame.draggable && frame.dragHandle === undefined)).toBe(true)
+    expect(frames.some((frame) => frame.selectable)).toBe(false)
+  })
+
+  test('an imported Domain the reader hid contributes no external frame', () => {
+    const remote = classRef('remote.example.dev', 'Remote')
+    const local = domainBundle('local', 'local.example.dev', {
+      User: nodeClass('User'),
+      assigned_to: edgeClass('assigned_to', [
+        { name: 'user', types: ['User'] },
+        { name: 'remote', types: ['Remote'], refs: [remote] },
+      ]),
+    })
+    local.ir!.importsByKey = {
+      'remote.example.dev:class.Remote': {
+        origin: remote.origin,
+        ref: remote,
+        key: 'remote.example.dev:class.Remote',
+      },
+    }
+    const projection = prepared(local)
+    projection.input.visibility = {
+      hidden: { 'domain.remote.example.dev': true },
+      showInheritedEdges: true,
+    }
+
+    const result = composeWorkspaceCanvas([projection], { activeDomainId: 'local' })
+
+    expect(result.nodes.some((node) => node.id.startsWith('workspace-external:'))).toBe(false)
   })
 
   test('draws cross-domain Class inheritance only when the owner enables it', () => {

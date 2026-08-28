@@ -1,7 +1,8 @@
 /**
  * Opportunistic analysis trigger — the `git gc --auto` model. Each CLI start
  * cheaply scans for a closed, unanalyzed session and spawns ONE detached
- * analyzer for it. No daemon, no cron; a lockfile keeps it single-flight.
+ * analyzer for it when the analyzer is explicitly enabled. No daemon, no cron;
+ * a lockfile keeps it single-flight.
  * The same scan pays for the age sweep (see retention.ts), which is why the
  * store stays bounded without anything resembling a background job.
  */
@@ -10,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { join } from 'node:path'
 
 import { MAX_REMOVALS_ON_START, sweepByAge } from './retention'
-import { telemetryEnabled } from './settings'
+import { analyzerEnabled, telemetryEnabled } from './settings'
 import { scanSessions, sessionsRoot, type SessionScan } from './store'
 
 const LOCK_STALE_MS = 30 * 60 * 1000
@@ -63,11 +64,11 @@ export function maybeTriggerAnalysis(argv: string[], scan?: readonly SessionScan
     if (process.env.ASTRALE_TELEMETRY_NO_TRIGGER === '1') return
 
     const sessions = scan ?? scanSessions()
-    // Retention runs ahead of the kill-switch check and on `session` commands
-    // too — turning telemetry off must still drain what is already on disk.
+    // Retention runs ahead of the recording/analyzer switches and on `session`
+    // commands too — turning either off must still drain old on-disk evidence.
     const swept = new Set(sweepByAge(sessions, { limit: MAX_REMOVALS_ON_START }).removed)
 
-    if (!telemetryEnabled()) return
+    if (!telemetryEnabled() || !analyzerEnabled()) return
     // Never cascade off the session commands themselves.
     if (argv[2] === 'session') return
 

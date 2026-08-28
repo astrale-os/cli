@@ -43,36 +43,93 @@ export function geometryOf(nodes: Node[]): Geometry {
   return geometry
 }
 
+/** Smallest a module box may get: one class row, padded, clear of the header. */
+export const MODULE_MIN_W = CLASS_W + MODULE_PAD * 2
+export const MODULE_MIN_H = MODULE_HEADER + CLASS_H + MODULE_PAD
+
 /**
- * Widen/heighten module boxes until they contain their classes.
- *
- * Load-bearing: classes are placed with `extent: 'parent'`, so a class that falls
- * outside its box is CLAMPED back inside — right on top of a sibling. Returns only
- * the boxes that had to change, so the caller can persist just that.
+ * A class belongs to the PADDED area of its box: never on the module label, never
+ * flush against a side. The box has no bottom/right bound — it grows to follow.
  */
-export function growModuleBoxes(nodes: Node[], geometry: Geometry): Geometry {
-  const needed = new Map<string, { w: number; h: number }>()
+export function clampInsideModule(position: { x: number; y: number }): { x: number; y: number } {
+  return { x: Math.max(position.x, MODULE_PAD), y: Math.max(position.y, MODULE_HEADER) }
+}
+
+/** The box that exactly wraps `children` (parent-relative offsets) plus its padding. */
+export function moduleBoxSize(children: { x: number; y: number }[]): { w: number; h: number } {
+  let w = MODULE_MIN_W
+  let h = MODULE_MIN_H
+  for (const child of children) {
+    w = Math.max(w, child.x + CLASS_W + MODULE_PAD)
+    h = Math.max(h, child.y + CLASS_H + MODULE_PAD)
+  }
+  return { w: Math.round(w), h: Math.round(h) }
+}
+
+/**
+ * Re-size module boxes so each one exactly wraps its classes.
+ *
+ * Load-bearing in BOTH directions: a box left too small drops a class on top of a
+ * sibling, and a box left too large never gives the space back when the classes are
+ * dragged together. Returns only the boxes that had to change, so the caller can
+ * persist just that.
+ */
+export function fitModuleBoxes(nodes: Node[], geometry: Geometry): Geometry {
+  const children = new Map<string, { x: number; y: number }[]>()
   for (const node of nodes) {
-    const position = node.parentId ? geometry[node.id] : undefined
-    if (!position || !node.parentId) continue
-    const current = needed.get(node.parentId)
-    needed.set(node.parentId, {
-      w: Math.max(current?.w ?? 0, position.x + CLASS_W + MODULE_PAD),
-      h: Math.max(current?.h ?? 0, position.y + CLASS_H + MODULE_PAD),
-    })
+    if (node.type === 'group') children.set(node.id, children.get(node.id) ?? [])
+  }
+  for (const node of nodes) {
+    const siblings = node.parentId ? children.get(node.parentId) : undefined
+    const position = geometry[node.id]
+    if (siblings && position) siblings.push(position)
   }
 
-  const grown: Geometry = {}
-  for (const node of nodes) {
-    if (node.type !== 'group') continue
-    const box = geometry[node.id]
-    const need = needed.get(node.id)
-    if (!box || !need) continue
-    const w = Math.max(box.w ?? 0, need.w)
-    const h = Math.max(box.h ?? 0, need.h)
-    if (w !== box.w || h !== box.h) grown[node.id] = { ...box, w, h }
+  const fitted: Geometry = {}
+  for (const [id, siblings] of children) {
+    const box = geometry[id]
+    if (!box) continue
+    const size = moduleBoxSize(siblings)
+    if (size.w !== box.w || size.h !== box.h) fitted[id] = { ...box, ...size }
   }
-  return grown
+  return fitted
+}
+
+/**
+ * The painted counterpart of `fitModuleBoxes`: clamp every class into its module's
+ * padded area, then size every box around what it now holds. Runs on each drag frame,
+ * so the box tracks the class both ways — out as it grows, back as it shrinks.
+ */
+export function normalizeModuleLayout(nodes: Node[]): Node[] {
+  const boxes = new Map<string, { w: number; h: number }>()
+  for (const node of nodes) {
+    if (node.type === 'group') boxes.set(node.id, { w: MODULE_MIN_W, h: MODULE_MIN_H })
+  }
+  if (boxes.size === 0) return nodes
+
+  // only module children: an imported domain's members carry a parentId too, and
+  // their box has its own (smaller) header.
+  const clamped = nodes.map((node) => {
+    if (!node.parentId || !boxes.has(node.parentId)) return node
+    const inside = clampInsideModule(node.position)
+    return inside.x === node.position.x && inside.y === node.position.y
+      ? node
+      : { ...node, position: inside }
+  })
+
+  for (const node of clamped) {
+    const box = node.parentId ? boxes.get(node.parentId) : undefined
+    if (!box) continue
+    const size = moduleBoxSize([node.position])
+    box.w = Math.max(box.w, size.w)
+    box.h = Math.max(box.h, size.h)
+  }
+
+  return clamped.map((node) => {
+    const box = boxes.get(node.id)
+    if (!box || (node.style?.width === box.w && node.style?.height === box.h)) return node
+    return { ...node, style: { ...node.style, width: box.w, height: box.h } }
+  })
 }
 
 /** Place only newly introduced nodes while preserving every known position. */
@@ -111,5 +168,5 @@ export function packPendingNodes(
 
   const all = [...placed.map((entry) => entry.node), ...pending]
   const known = Object.fromEntries(placed.map((entry) => [entry.node.id, entry.position]))
-  return { ...geometry, ...growModuleBoxes(all, { ...known, ...geometry }) }
+  return { ...geometry, ...fitModuleBoxes(all, { ...known, ...geometry }) }
 }

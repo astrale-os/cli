@@ -1,28 +1,60 @@
-/* Focus + context: dim non-neighbors on select/hover. Opacity is the single
-   dominant channel (desaturated context stays visible at ~0.2, never removed).
-   Group containers keep their chrome legible (only class nodes + edges dim) so
-   the user keeps their bearings. Numbers follow Cytoscape/GraphQL-Voyager. */
+/* Focus + context: clicking a node fades everything it is NOT wired to and lifts what it is.
+   Opacity carries the fade; the node's own module hue carries the lift, so a highlight always
+   says WHICH family a connection belongs to. Group containers keep their chrome legible (only
+   class + view nodes and edges fade) so the user keeps their bearings.
 
-.react-flow__node.classNode {
+   Every selector below hangs off React Flow's OWN wrapper classes — `react-flow__node` and,
+   where a rule is type-specific, `react-flow__node-<nodeType>`. A node's own class (`classNode`)
+   is never emitted on its own, so a `.classNode` selector would silently match nothing. */
+
+.react-flow__node,
+.react-flow__edge,
+.schema-edge-label {
   transition: opacity 180ms ease;
 }
-.react-flow__edge {
-  transition: opacity 180ms ease;
-}
 
-.react-flow__node.classNode.is-dimmed {
-  opacity: 0.25;
+/* ── context: everything the selection does not reach ── */
+.react-flow__node.is-dimmed {
+  opacity: 0.34;
 }
 .react-flow__edge.is-dimmed {
-  opacity: 0.1;
+  opacity: 0.24;
 }
-.react-flow__edge.is-on .react-flow__edge-path {
-  stroke-width: 2.4px;
+/* Edge labels render in React Flow's own portal, OUTSIDE the <g> that carries the classes
+   above — so they have to be told separately (see `data.focus` in floating-edge.tsx) or a
+   faded edge keeps a full-strength label floating over it. */
+.schema-edge-label.is-dimmed {
+  opacity: 0.3;
 }
+
+/* ── foreground: the focused node's neighbours ──
+   A lifted edge's stroke WIDTH is set inline by the controller: React Flow writes an edge's
+   `style` straight onto its path, so no stylesheet rule here could ever outrank it. */
+.react-flow__node-classNode.is-related > div {
+  border-color: var(--node-tint);
+}
+.react-flow__node-viewNode.is-related > div > button {
+  border-color: currentColor;
+}
+.schema-edge-label.is-on {
+  border-color: var(--color-muted-foreground);
+  color: var(--color-foreground);
+}
+
 /* selected edge: emphasize over focus/dim state so it always reads clearly */
 .react-flow__edge.is-selected {
   opacity: 1;
 }
 .react-flow__edge.is-selected .react-flow__edge-path {
   stroke-width: 3px;
+}
+
+/* Selecting a relationship promotes its actual endpoints while leaving every other node and
+   edge untouched. The rule sits on the rendered card — that is where `--node-tint` (the
+   module hue the node already paints itself with) is declared, and its shape is the one the
+   ring should follow, including collapsed groups. Nodes without a hue fall back to the accent.
+   A hard outline, never a glow: at canvas zoom a blurred halo only reads as a smudge. */
+.react-flow__node.is-edge-endpoint > div {
+  outline: 2px solid var(--node-tint, var(--color-primary));
+  outline-offset: 2px;
 }

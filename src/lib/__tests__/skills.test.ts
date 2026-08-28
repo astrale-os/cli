@@ -551,7 +551,7 @@ describe('Astrale skill reconciliation', () => {
         lockPath: target.lockPath,
         resolveSource: async () => source.snapshot,
       }),
-    ).toEqual({ status: 'repair-needed' })
+    ).toEqual({ status: 'repair-needed', installed: true })
 
     expect(
       await syncAstraleSkills({
@@ -576,7 +576,7 @@ describe('Astrale skill reconciliation', () => {
         lockPath: target.lockPath,
         resolveSource: async () => source.snapshot,
       }),
-    ).toEqual({ status: 'update-available' })
+    ).toEqual({ status: 'update-available', installed: false })
     expect(await filesystemSnapshot(target.root)).toBe(beforeAbsentCheck)
 
     await installFixture(source.root, source.snapshot, target.home, target.lockPath)
@@ -589,6 +589,7 @@ describe('Astrale skill reconciliation', () => {
       }),
     ).toEqual({
       status: 'current',
+      installed: true,
       source: {
         repository: 'astrale-os/cli',
         revision: source.snapshot.revision,
@@ -609,7 +610,7 @@ describe('Astrale skill reconciliation', () => {
         lockPath: target.lockPath,
         resolveSource: async () => source.snapshot,
       }),
-    ).toEqual({ status: 'repair-needed' })
+    ).toEqual({ status: 'repair-needed', installed: true })
     expect(await filesystemSnapshot(target.root)).toBe(beforeRepairCheck)
 
     const beforeUnavailableCheck = await filesystemSnapshot(target.root)

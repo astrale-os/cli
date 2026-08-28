@@ -4,6 +4,7 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
+import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import {
@@ -191,5 +192,5 @@ function record(input: unknown, label: string): Readonly<Record<string, unknown>
 }
 
 function defaultOperationId(kind: 'publish' | 'configure-default'): string {
-  return `cli.domain.${kind}:${globalThis.crypto.randomUUID()}`
+  return randomOperationId('cli', 'domain', kind)
 }

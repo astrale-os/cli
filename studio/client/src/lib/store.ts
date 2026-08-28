@@ -16,9 +16,9 @@ export interface CommentDraft {
 
 /** The main views of a domain. Talking to the agent and reading comments are NOT
  *  sections — they follow you across every view, from the work panel. */
-export type SectionKey = 'schema' | 'process'
+export type SectionKey = 'schema' | 'core' | 'process'
 
-const SECTION_KEYS: readonly SectionKey[] = ['schema', 'process']
+const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'process']
 
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
@@ -78,8 +78,6 @@ interface UIState {
   selectionHistory: string[]
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
-  /** schema graph vs the core (genesis) data view — toggled from the Domains panel */
-  canvasMode: 'schema' | 'core'
   /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains / Integrations
    *  overview) instead of the selected-class detail. Cleared by selecting a class / navigating. */
   panelOverlay: 'views' | 'domains' | 'integrations' | null
@@ -117,8 +115,6 @@ interface UIState {
   setPanelSize: (size: number) => void
   /** Jump to whatever an anchor points at: the right section, class selected and focused. */
   revealAnchor: (ref: string) => void
-  /** switch the schema canvas between the schema graph and the core (genesis) view */
-  setCanvasMode: (m: 'schema' | 'core') => void
   setPanelOverlay: (v: 'views' | 'domains' | 'integrations' | null) => void
   selectClass: (n?: string) => void
   /** restore the previous selection from selectionHistory (detail-pane Back) */
@@ -161,7 +157,6 @@ export const useUI = create<UIState>((set) => ({
   panelSide: loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'left'),
   panelSize: loadNumber('studio.panelSize', 360, 260, 900),
   focusId: null,
-  canvasMode: 'schema',
   panelOverlay: null,
   selectionHistory: [],
   collapsedModules: [],
@@ -185,7 +180,6 @@ export const useUI = create<UIState>((set) => ({
     } catch {}
     set({
       domainId,
-      canvasMode: 'schema',
       panelOverlay: null,
       selectedClass: undefined,
       focusId: null,
@@ -199,7 +193,17 @@ export const useUI = create<UIState>((set) => ({
   },
   setSection: (section) => {
     store('studio.lastSection', section)
-    set({ section, canvasMode: 'schema', panelOverlay: null, openAnchorRef: null })
+    // Schema and Core are two canvases over the same domain with DISJOINT selection
+    // namespaces (`class.X` vs a core path), so crossing between them starts clean —
+    // carrying a class selection into Core would open a detail panel for nothing.
+    set((s) => ({
+      section,
+      panelOverlay: null,
+      openAnchorRef: null,
+      ...((s.section === 'core') !== (section === 'core')
+        ? { selectedClass: undefined, focusId: null, selectionHistory: [] }
+        : {}),
+    }))
   },
   setPanelOpen: (panelOpen) => {
     store('studio.panelOpen', panelOpen ? 'yes' : 'no')
@@ -220,12 +224,13 @@ export const useUI = create<UIState>((set) => ({
   revealAnchor: (ref) => {
     const section: SectionKey = ref.startsWith('section.')
       ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')
-      : 'schema'
+      : ref.startsWith('core.')
+        ? 'core'
+        : 'schema'
     const target = SECTION_KEYS.includes(section) ? section : 'schema'
     store('studio.lastSection', target)
     set((state) => ({
       section: target,
-      canvasMode: 'schema',
       panelOverlay: null,
       ...(ref.startsWith('class.') || ref.startsWith('edge.') || ref.startsWith('module.')
         ? { selectedClass: revealSelection(ref), focusId: revealFocus(ref) }
@@ -235,15 +240,6 @@ export const useUI = create<UIState>((set) => ({
         : state.selectionHistory,
     }))
   },
-  setCanvasMode: (canvasMode) =>
-    set({
-      canvasMode,
-      panelOverlay: null,
-      selectedClass: undefined,
-      focusId: null,
-      openAnchorRef: null,
-      selectionHistory: [],
-    }),
   setPanelOverlay: (panelOverlay) => set({ panelOverlay }),
   selectClass: (selectedClass) =>
     set((s) => {

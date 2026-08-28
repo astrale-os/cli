@@ -36,8 +36,10 @@ async function completeFixture() {
   await writeFile(
     join(directory, 'manifest.json'),
     JSON.stringify({
+      schemaVersion: 2,
       version: '1.0.0-beta.35',
       binaryVersion: '1.0.0-beta.35',
+      cloudflaredVersion: '2026.8.2',
       channel: 'beta',
       repo: 'astrale-os/cli',
       assets: Object.fromEntries(entries),
@@ -257,6 +259,7 @@ describe('release asset publication', () => {
     await validateCliReleaseClosure(directory, assets, {
       version: '1.0.0-beta.35',
       binaryVersion: '1.0.0-beta.35',
+      cloudflaredVersion: '2026.8.2',
       channel: 'beta',
       repo: 'astrale-os/cli',
     })
@@ -273,6 +276,7 @@ describe('release asset publication', () => {
     await validateCliReleaseClosure(directory, assets, {
       version: 'main-1234567890ab',
       binaryVersion: '1.0.0-beta.35',
+      cloudflaredVersion: '2026.8.2',
       channel: 'canary',
       repo: 'astrale-os/cli',
     })
@@ -304,12 +308,24 @@ describe('release asset publication', () => {
     )
   })
 
-  it('rejects wrong release identity, missing platforms, and duplicate checksums', async () => {
+  it('rejects wrong release identity, schema, missing platforms, and duplicate checksums', async () => {
     const identityDirectory = await completeFixture()
     const identityAssets = await fixtureAssets(identityDirectory)
     await assert.rejects(
       validateCliReleaseClosure(identityDirectory, identityAssets, { version: '1.0.0-beta.99' }),
       /manifest version does not match/u,
+    )
+
+    const schemaDirectory = await completeFixture()
+    const schemaAssets = await fixtureAssets(schemaDirectory)
+    const schemaManifest = JSON.parse(
+      await readFile(join(schemaDirectory, 'manifest.json'), 'utf8'),
+    )
+    delete schemaManifest.schemaVersion
+    await writeFile(join(schemaDirectory, 'manifest.json'), JSON.stringify(schemaManifest))
+    await assert.rejects(
+      validateCliReleaseClosure(schemaDirectory, schemaAssets),
+      /manifest schemaVersion is invalid/u,
     )
 
     const platformDirectory = await completeFixture()

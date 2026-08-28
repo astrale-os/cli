@@ -14,7 +14,7 @@ const config: AstraleConfig = {
     url: 'https://admin.eu.astrale.ai/api',
     kernelIssuer: 'https://admin.eu.astrale.ai/api',
   },
-  telemetry: { enabled: true },
+  telemetry: { enabled: true, analyzerEnabled: false },
   browser: {},
 }
 

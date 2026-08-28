@@ -1,3 +1,6 @@
+import type { LayoutState } from '@shared/types'
+
+import { useQueryClient } from '@tanstack/react-query'
 import { SmartEdgeProvider } from '@tisoap/react-flow-smart-edge'
 import {
   Background,
@@ -15,30 +18,45 @@ import {
   useReactFlow,
   useStore,
 } from '@xyflow/react'
-import { AppWindow, LayoutGrid, Sigma, Spline, TriangleAlert } from 'lucide-react'
+import { Frame, LayoutGrid, Sigma, Spline, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { useCatalog } from '@/lib/hooks'
+import { hasAnyUnsentDraft } from '@/components/thread'
+import { api, qk } from '@/lib/api'
+import { useCatalog, useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import type { ClassNodeData } from '../projection'
 
-import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
+import { CanvasIconToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
 import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
 import { viewportForNodes } from '../fit'
-import { edgeTypes } from '../floating-edge'
+import { type EdgeFocus, edgeTypes } from '../floating-edge'
+import { clampInsideModule, moduleBoxSize, normalizeModuleLayout } from '../geometry'
+import { CanvasCommentPin } from '../graph'
+import {
+  commentNodes,
+  neighborSet,
+  schemaCanvasCommentGroups,
+  schemaCanvasFallbackComments,
+  selectedRelationshipContext,
+} from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
-import { moduleTint } from '../palette'
-import { workspaceLayoutUpdate, type WorkspaceSize } from './geometry'
+import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
+import { workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
   workspaceNodeTypes,
   type WorkspaceNodeActions,
 } from './nodes'
-import { composeWorkspaceCanvas, type WorkspaceDomainProjection } from './projection'
+import {
+  composeWorkspaceCanvas,
+  qualifiedNodeId,
+  type WorkspaceDomainProjection,
+} from './projection'
 import { useSchemaWorkspace } from './store'
 
 function localNodeRef(id: string): { domainId: string; localId: string } | null {
@@ -50,14 +68,12 @@ function localNodeRef(id: string): { domainId: string; localId: string } | null 
 
 export function WorkspaceSchemaGraph({
   domains,
-  viewsCount,
   onToggleInherited,
 }: {
   domains: WorkspaceDomainProjection[]
-  viewsCount: number
   onToggleInherited: () => void
 }) {
-  const { getNode, setViewport } = useReactFlow()
+  const { getInternalNode, getNode, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
   const paneWidth = useStore((state) => state.width)
   const paneHeight = useStore((state) => state.height)
   const panZoomReady = useStore((state) => state.panZoom !== null)
@@ -65,47 +81,39 @@ export function WorkspaceSchemaGraph({
   const { data: catalog } = useCatalog()
   const activeDomainId = useUI((state) => state.domainId) ?? domains[0]?.input.summary.id ?? ''
   const selected = useUI((state) => state.selectedClass)
+  const focusId = useUI((state) => state.focusId)
   const setDomain = useUI((state) => state.setDomain)
-  const setPanelOverlay = useUI((state) => state.setPanelOverlay)
-  const panelOverlay = useUI((state) => state.panelOverlay)
+  const setOpenAnchor = useUI((state) => state.setOpenAnchor)
   const showCardinality = useUI((state) => state.showCardinality)
   const scheme = useUI((state) => state.resolvedTheme)
   const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
-  const domainSizes = useSchemaWorkspace((state) => state.domainSizes)
   const domainContentOffsets = useSchemaWorkspace((state) => state.domainContentOffsets)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
-  const setDomainSize = useSchemaWorkspace((state) => state.setDomainSize)
   const ensureDomainPositions = useSchemaWorkspace((state) => state.ensureDomainPositions)
   const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
   const ensureDomainContentOffsets = useSchemaWorkspace((state) => state.ensureDomainContentOffsets)
   const resetWorkspaceFrames = useSchemaWorkspace((state) => state.resetWorkspaceFrames)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
   const { commitLayout } = useLayoutCommitter()
+  const queryClient = useQueryClient()
+  const { data: commentStore } = useComments(activeDomainId)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const fittedDomains = useRef('')
   const fitAfterReset = useRef(false)
-
-  const resizeNode = useCallback(
-    (nodeId: string, size: WorkspaceSize) => {
-      if (nodeId.startsWith('workspace-domain:')) {
-        setDomainSize(nodeId.slice('workspace-domain:'.length), size)
-        return
-      }
-      const node = getNode(nodeId)
-      if (!node || node.type !== 'group') return
-      const update = workspaceLayoutUpdate(node, size)
-      if (update) commitLayout(update.domainId, update.updates)
-    },
-    [commitLayout, getNode, setDomainSize],
-  )
+  const solo = domains.length === 1
 
   // One click does both: focus the domain AND act on what was clicked. Requiring a
   // first click just to "enter" a domain made every selection a double click.
   const activate = useCallback(
     (domainId: string, ref?: string) => {
       if (useUI.getState().domainId !== domainId) setDomain(domainId)
-      if (ref) useUI.getState().selectClass(ref)
+      if (!ref) return
+      // a class both selects AND pins graph focus (which dims what it is not wired to);
+      // a module box only selects — there is nothing to trace from a container.
+      if (ref.startsWith('class.')) useUI.getState().focusClass(ref)
+      else useUI.getState().selectClass(ref)
     },
     [setDomain],
   )
@@ -118,9 +126,20 @@ export function WorkspaceSchemaGraph({
     [setDomain, toggleModule],
   )
 
+  // Auto-arrange goes through the SAME path as a cold canvas: empty the domain's layout
+  // of record, and `prepareWorkspaceDomain` lays it out with ELK on the next pass.
+  const autoArrange = useCallback(async () => {
+    if (!activeDomainId) return
+    fitAfterReset.current = true
+    // Drop the record on disk FIRST: a refetch that lands between the two would
+    // restore the very positions this is discarding.
+    await api.resetLayout(activeDomainId).catch(() => {})
+    queryClient.setQueryData<LayoutState>(qk.layout(activeDomainId), { positions: {} })
+  }, [activeDomainId, queryClient])
+
   const nodeActions = useMemo<WorkspaceNodeActions>(
-    () => ({ activateDomain: activate, resizeNode, toggleModule: toggleWorkspaceModule }),
-    [activate, resizeNode, toggleWorkspaceModule],
+    () => ({ toggleModule: toggleWorkspaceModule }),
+    [toggleWorkspaceModule],
   )
 
   const projection = useMemo(
@@ -130,18 +149,9 @@ export function WorkspaceSchemaGraph({
         catalog,
         contentOffsets: domainContentOffsets,
         domainPositions,
-        domainSizes,
         externalPositions,
       }),
-    [
-      activeDomainId,
-      catalog,
-      domainContentOffsets,
-      domainPositions,
-      domainSizes,
-      domains,
-      externalPositions,
-    ],
+    [activeDomainId, catalog, domainContentOffsets, domainPositions, domains, externalPositions],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
@@ -150,7 +160,9 @@ export function WorkspaceSchemaGraph({
     ensureDomainPositions(projection.domainPositions)
     ensureExternalPositions(projection.externalPositions)
     ensureDomainContentOffsets(projection.contentOffsets)
-    setNodes(projection.nodes)
+    // A box saved too small for its classes would clamp them onto each other, one saved
+    // too large keeps space no class uses — paint the fit, and let the next drag persist it.
+    setNodes(normalizeModuleLayout(projection.nodes))
     setEdges(projection.edges)
     if (fitAfterReset.current) {
       fitAfterReset.current = false
@@ -182,12 +194,17 @@ export function WorkspaceSchemaGraph({
     setViewport(viewport)
   }, [fitRequest, paneWidth, paneHeight, panZoomReady, setViewport])
 
+  // Every position change (a drag frame included) is re-normalized: that is what keeps a
+  // class off its module label and the box wrapped tight around the classes it holds.
+  // Domain frames are not module boxes, so they pass through untouched.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) =>
       setNodes((current) =>
-        applyNodeChanges(
-          changes.filter((change) => change.type !== 'remove'),
-          current,
+        normalizeModuleLayout(
+          applyNodeChanges(
+            changes.filter((change) => change.type !== 'remove'),
+            current,
+          ),
         ),
       ),
     [],
@@ -214,33 +231,133 @@ export function WorkspaceSchemaGraph({
         return
       }
 
-      const update = workspaceLayoutUpdate(node)
-      if (update) commitLayout(update.domainId, update.updates)
+      // The event carries the RAW pointer position — `normalizeModuleLayout` clamped what is
+      // painted, so clamp again here or the record and the canvas disagree.
+      const parent = node.parentId ? getNode(node.parentId) : undefined
+      const inBox = parent?.type === 'group'
+      const dragged = inBox ? { ...node, position: clampInsideModule(node.position) } : node
+      const update = workspaceLayoutUpdate(dragged)
+      if (!update) return
+      const updates = { ...update.updates }
+      if (inBox && parent) {
+        // Persist the box's re-fitted size too, or the next recompose restores the stale
+        // one and clamps the class back.
+        const siblings = getNodes()
+          .filter((candidate) => candidate.parentId === parent.id)
+          .map((candidate) => (candidate.id === node.id ? dragged.position : candidate.position))
+        const box = moduleBoxSize(siblings)
+        const boxUpdate = workspaceLayoutUpdate(parent, { width: box.w, height: box.h })
+        if (boxUpdate) Object.assign(updates, boxUpdate.updates)
+      }
+      commitLayout(update.domainId, updates)
     },
-    [commitLayout, setDomainPosition],
+    [commitLayout, getNode, getNodes, setDomainPosition],
   )
+
+  // Selecting a class opens the right panel, which narrows the pane — pan the selection
+  // back into view when it would sit under the panel (or off-screen after a ⌘K jump).
+  // Zoom is preserved: only the framing moves. Without this the canvas answers a
+  // selection with nothing visible, and `onlyRenderVisibleElements` even unmounts the
+  // card that was just picked.
+  useEffect(() => {
+    if (!selected?.startsWith('class.') || !paneWidth || !paneHeight) return
+    const node = getInternalNode(qualifiedNodeId(activeDomainId, selected))
+    if (!node) return
+    const { x, y, zoom } = getViewport()
+    const cx = node.internals.positionAbsolute.x + (node.measured.width ?? CLASS_W) / 2
+    const cy = node.internals.positionAbsolute.y + (node.measured.height ?? CLASS_H) / 2
+    const screenX = cx * zoom + x
+    const screenY = cy * zoom + y
+    const margin = 24
+    const onScreen =
+      screenX > margin &&
+      screenX < paneWidth - margin &&
+      screenY > margin &&
+      screenY < paneHeight - margin
+    if (!onScreen) setCenter(cx, cy, { zoom })
+  }, [activeDomainId, selected, paneWidth, paneHeight, getInternalNode, getViewport, setCenter])
+
+  // ── focus + context, one canvas-wide reading ──
+  // `focusId` is a LOCAL ref (`class.Foo`); on this canvas the same class exists in every
+  // frame, so it only means anything once qualified with the domain the click activated.
+  const focusNodeId = focusId ? qualifiedNodeId(activeDomainId, focusId) : null
+  const selectedEdgeContext = useMemo(
+    () => selectedRelationshipContext(selectedEdgeId, edges),
+    [edges, selectedEdgeId],
+  )
+  useEffect(() => {
+    if (!selectedEdgeId) return
+    const edge = edges.find((candidate) => candidate.id === selectedEdgeId)
+    const edgeClass = edge?.data?.edgeClass as string | undefined
+    if (!edgeClass || selected !== `class.${edgeClass}`) setSelectedEdgeId(null)
+  }, [edges, selected, selectedEdgeId])
+  const sets = useMemo(
+    () => (focusNodeId && !selectedEdgeContext ? neighborSet(focusNodeId, edges) : null),
+    [edges, focusNodeId, selectedEdgeContext],
+  )
+
+  // Canvas-pinned comments belong to the active domain — they are anchored to
+  // `section.schema`, which is per domain, not per workspace.
+  const canvasCommentNodes = useMemo(
+    () => commentNodes(schemaCanvasCommentGroups(commentStore?.comments)),
+    [commentStore?.comments],
+  )
+  const canvasFallbackComments = useMemo(
+    () => schemaCanvasFallbackComments(commentStore?.comments),
+    [commentStore?.comments],
+  )
+
+  const displayNodes = useMemo(() => {
+    const mapped = nodes.map((node) => {
+      const focusable = node.type === 'classNode' || node.type === 'viewNode'
+      const inFocus = focusable && sets ? sets.nodeIds.has(node.id) : false
+      const cls =
+        cn(
+          selectedEdgeContext?.nodeIds.has(node.id) && 'is-edge-endpoint',
+          focusable && sets && !inFocus && 'is-dimmed',
+          inFocus && node.id !== focusNodeId && 'is-related',
+        ) || undefined
+      return node.className === cls ? node : { ...node, className: cls }
+    })
+    return canvasCommentNodes.length ? [...mapped, ...canvasCommentNodes] : mapped
+  }, [nodes, sets, focusNodeId, selectedEdgeContext, canvasCommentNodes])
 
   const displayEdges = useMemo(
     () =>
       edges.map((edge) => {
         const ownerDomainId = edge.data?.ownerDomainId as string | undefined
         const edgeClass = edge.data?.edgeClass as string | undefined
-        const isSelected =
-          !!edgeClass && ownerDomainId === activeDomainId && selected === `class.${edgeClass}`
-        if (!isSelected) return edge
-        const accent = 'var(--color-primary)'
-        return {
-          ...edge,
-          className: cn(edge.className, 'is-selected'),
-          data: { ...edge.data, selected: true },
-          style: { ...edge.style, stroke: accent, strokeWidth: 3 },
-          markerEnd:
-            typeof edge.markerEnd === 'object'
-              ? { ...edge.markerEnd, color: accent }
-              : edge.markerEnd,
+        const isSelected = selectedEdgeId
+          ? edge.id === selectedEdgeId
+          : !!edgeClass && ownerDomainId === activeDomainId && selected === `class.${edgeClass}`
+        const focus: EdgeFocus | undefined = !sets
+          ? undefined
+          : sets.edgeIds.has(edge.id)
+            ? 'on'
+            : 'dim'
+        const focusCls = focus && (focus === 'on' ? 'is-on' : 'is-dimmed')
+        const cls = cn(isSelected && 'is-selected', focusCls) || undefined
+        // An edge's labels render in React Flow's own portal, outside the <g> `className`
+        // lands on, so the focus state has to ride along in `data` for them to follow.
+        const data = { ...edge.data, selected: isSelected, focus }
+        if (isSelected) {
+          const accent = 'var(--color-primary)'
+          return {
+            ...edge,
+            className: cls,
+            data,
+            style: { ...edge.style, stroke: accent, strokeWidth: 3 },
+            markerEnd:
+              typeof edge.markerEnd === 'object'
+                ? { ...edge.markerEnd, color: accent }
+                : edge.markerEnd,
+          }
         }
+        if (focus === 'on')
+          return { ...edge, className: cls, data, style: { ...edge.style, strokeWidth: 2.4 } }
+        return { ...edge, className: cls, data }
       }),
-    [activeDomainId, edges, selected],
+    [activeDomainId, edges, selected, selectedEdgeId, sets],
   )
   const routedEdges = useMemo(
     () => assignFloatingEdgePorts(nodes, displayEdges),
@@ -253,7 +370,7 @@ export function WorkspaceSchemaGraph({
         <ReactFlow
           onPointerDownCapture={dismissMenusOnCanvasPress}
           data-testid="workspace-schema-canvas"
-          nodes={nodes}
+          nodes={displayNodes}
           edges={routedEdges}
           nodeTypes={workspaceNodeTypes}
           edgeTypes={edgeTypes}
@@ -261,10 +378,7 @@ export function WorkspaceSchemaGraph({
           onEdgesChange={onEdgesChange}
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => {
-            if (node.id.startsWith('workspace-domain:')) {
-              activate(node.id.slice('workspace-domain:'.length))
-              return
-            }
+            setSelectedEdgeId(null)
             const target = localNodeRef(node.id)
             if (!target) return
             if (target.localId.startsWith('class.')) activate(target.domainId, target.localId)
@@ -274,27 +388,48 @@ export function WorkspaceSchemaGraph({
           onEdgeClick={(_, edge) => {
             const ownerDomainId = edge.data?.ownerDomainId as string | undefined
             const edgeClass = edge.data?.edgeClass as string | undefined
-            if (ownerDomainId && edgeClass) activate(ownerDomainId, `class.${edgeClass}`)
+            if (!ownerDomainId || !edgeClass) return
+            setSelectedEdgeId(edge.id)
+            if (useUI.getState().domainId !== ownerDomainId) setDomain(ownerDomainId)
+            useUI.getState().selectClass(`class.${edgeClass}`)
+            useUI.getState().setFocus(null)
           }}
-          onPaneClick={() => useUI.getState().setFocus(null)}
+          onPaneClick={() => {
+            useUI.getState().setFocus(null)
+            // keep a half-written comment open — its own × closes it
+            if (!hasAnyUnsentDraft()) setOpenAnchor(null)
+          }}
           minZoom={0.08}
           nodesConnectable={false}
           edgesFocusable
+          // React Flow derives an edge's z-index from its endpoints, and a SELECTED node is
+          // lifted to 1000 — which dragged that node's edges over the label layer and struck
+          // every one of their labels through. Our nodes never overlap, so the lift buys
+          // nothing and edges stay below the labels they belong to.
+          elevateNodesOnSelect={false}
           onlyRenderVisibleElements
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={20} size={1} color="var(--color-input)" />
           <EdgeMarkerDefs />
-          <Controls showInteractive={false} position="bottom-left">
+          <Controls showFitView={false} showInteractive={false} position="bottom-left">
             <ControlButton
-              onClick={() => {
-                fitAfterReset.current = true
-                resetWorkspaceFrames()
-              }}
-              title="Reset and auto-pack workspace regions"
+              onClick={() => void autoArrange()}
+              title="Auto-arrange — discards manual positions"
             >
               <LayoutGrid className="h-4 w-4 text-foreground" />
             </ControlButton>
+            {!solo && (
+              <ControlButton
+                onClick={() => {
+                  fitAfterReset.current = true
+                  resetWorkspaceFrames()
+                }}
+                title="Reset and auto-pack workspace regions"
+              >
+                <Frame className="h-4 w-4 text-foreground" />
+              </ControlButton>
+            )}
           </Controls>
           <MiniMap
             pannable
@@ -303,9 +438,11 @@ export function WorkspaceSchemaGraph({
             nodeColor={(node) =>
               node.type === 'classNode'
                 ? moduleTint((node.data as ClassNodeData).hue, scheme).mark
-                : node.type === 'workspaceDomain'
-                  ? moduleTint(255, scheme).border
-                  : 'transparent'
+                : node.type === 'viewNode'
+                  ? moduleTint(VIEW_HUE, scheme).mark
+                  : node.type === 'workspaceDomain' && !solo
+                    ? moduleTint(255, scheme).border
+                    : 'transparent'
             }
             nodeStrokeWidth={0}
           />
@@ -319,28 +456,27 @@ export function WorkspaceSchemaGraph({
             </Panel>
           )}
 
-          <Panel position="top-right">
-            <CanvasToolbar>
-              <CanvasToggle
-                icon={<AppWindow />}
-                label="Views"
-                count={viewsCount}
-                pressed={panelOverlay === 'views'}
-                title="Views across selected domains"
-                onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
+          <Panel position="top-right" className="flex items-center gap-1.5">
+            {canvasFallbackComments.length > 0 && (
+              <CanvasCommentPin
+                threads={canvasFallbackComments}
+                anchor={{ ref: 'section.schema', kind: 'section' }}
+                excerpt="Schema canvas"
               />
-              <CanvasToggle
+            )}
+            <CanvasToolbar>
+              <CanvasIconToggle
                 icon={<Spline />}
-                label="Inherited"
+                label="Inheritance"
+                hint="draw an edge from each class to the one it extends, in every selected domain"
                 pressed={inheritedOn}
-                title="Inheritance edges in every selected domain"
                 onClick={onToggleInherited}
               />
-              <CanvasToggle
+              <CanvasIconToggle
                 icon={<Sigma />}
                 label="Cardinality"
+                hint="spell out how many of each side a relationship allows"
                 pressed={showCardinality}
-                title="Spell out how many of each side a relationship allows"
                 onClick={toggleCardinality}
               />
             </CanvasToolbar>

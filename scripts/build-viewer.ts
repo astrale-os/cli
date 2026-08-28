@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { copyFile, readdir, rm } from 'node:fs/promises'
 
-export async function buildViewer(): Promise<void> {
+export async function buildViewer(options: { quiet?: boolean } = {}): Promise<void> {
   const viewerDir = new URL('../viewer', import.meta.url).pathname
   const outdir = `${viewerDir}/dist`
   await rm(outdir, { recursive: true, force: true })
@@ -21,7 +21,7 @@ export async function buildViewer(): Promise<void> {
   if (files.join('\n') !== 'index.html\nmain.js') {
     throw new Error(`viewer build emitted an unsupported asset set: ${files.join(', ')}`)
   }
-  console.log('built viewer/dist')
+  if (!options.quiet) console.log('built viewer/dist')
 }
 
 if (import.meta.main) await buildViewer()

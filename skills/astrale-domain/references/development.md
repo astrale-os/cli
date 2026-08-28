@@ -9,7 +9,7 @@ Start from the public scaffold and keep it load-bearing:
 
 ```sh
 npx create-astrale-domain@beta contacts \
-  --yes --adapter cloudflare --frontend react \
+  --yes --adapter astrale --frontend react \
   --origin contacts.example.dev --dir contacts --no-link
 ```
 
@@ -90,6 +90,48 @@ composition root.
 Use ordinary imports for pure helpers and Rules, bound Query/Mutation executors for graph access, and
 Integrations and Providers for environment-backed behavior.
 
+## Development session
+
+With the managed `astrale` adapter, the generated command is the complete development journey:
+
+```sh
+pnpm dev
+```
+
+It resolves the configured instance or the Astrale CLI's active instance, acquires the CLI-shipped
+private Quick Tunnel, starts the Worker and optional Vite frontend with hot reload, verifies one
+exact local/public Release, reconciles its Kernel installation, and starts a non-opening local View
+host when the Domain declares a View. No Cloudflare account, separate tunnel command, copied URL, or
+manual development install is part of this path. The official standalone Astrale installer owns the
+pinned `astrale-cloudflared` companion; do not install or discover a separate ambient binary.
+
+The printed Domain, Runtime, Public, Installed, View, and Ready coordinates are the session's live
+evidence. A runtime-only Domain skips Vite and View startup without warning. Source, runtime,
+declared-secret, and frontend changes retain the last good Release until a replacement verifies;
+configuration changes explicitly ask for a command restart.
+
+Stopping closes the View host, Worker/Vite, and owned Quick Tunnel, but deliberately retains the
+Kernel installation and a non-secret local reconciliation record. On the next `pnpm dev`, a changed
+Quick issuer is replaced only when that record still matches fresh Kernel introspection; drift
+fails safely with the exact manual uninstall command instead of risking another installation.
+Use stable ingress before putting continuity-bearing collaborative data into a development Domain:
+
+```sh
+pnpm dev --host https://contacts-dev.example --port 8787
+```
+
+An explicit host is externally owned and its installation remains after stop. It must already route
+to the strict local Worker port. The command starts no companion and never creates or deletes that
+ingress.
+
+Each real project root and environment owns an independent session, OS-allocated ports, public
+origin, and lifecycle. A second local lock excludes another session targeting the same instance and
+Domain origin, including from a different project. Different target coordinates may run together;
+a duplicate owner fails before ingress or Kernel mutation.
+
+The direct `cloudflare` adapter intentionally remains provider-local: `pnpm dev` starts only its
+local Worker and optional Vite frontend. It does not own a Kernel, public ingress, or installation.
+
 ## Qualify before deployment
 
 Run the generated commands in this order so failures retain their owner:
@@ -146,6 +188,7 @@ Application -> Build -> Release -> adapter deployment -> Kernel installation
 ```
 
 - `pnpm build` proves provider-neutral compilation and adapter preparation.
+- managed `pnpm dev` owns only the disposable development installation described above.
 - `pnpm prod` performs the configured provider deployment and returns observed deployment evidence.
 - `astrale domain publish --origin <origin> --name <name> --public-url <url>` registers that
   observed deployment in the Admin catalog when product distribution requires it.

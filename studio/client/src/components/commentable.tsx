@@ -34,7 +34,7 @@ export function Commentable({
   const openId = useUI((s) => s.openAnchorId)
   const open = openRef === anchor.ref && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
-  const { threads, status, orphaned } = useAnchorThreads(anchor.ref)
+  const { threads, openThreads, orphaned } = useAnchorThreads(anchor.ref)
 
   return (
     <Popover
@@ -66,11 +66,11 @@ export function Commentable({
             <MessageSquarePlus className="h-3 w-3" />
           </button>
 
-          {/* persistent pin when threads exist */}
-          {threads.length > 0 && (
+          {/* persistent pin while threads remain open */}
+          {openThreads.length > 0 && (
             <CommentPin
-              count={threads.length}
-              status={status}
+              count={openThreads.length}
+              status="open"
               orphaned={orphaned}
               onClick={() => setOpenAnchor(open ? null : anchor.ref, myId)}
               className="absolute -right-1.5 -top-1.5 z-10"

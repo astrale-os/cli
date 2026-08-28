@@ -3,8 +3,10 @@ import { invocation } from '@astrale-os/sdk/invocation'
 
 import { callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
+import { derivedIdempotencyKey } from '../../src/lib/idempotency.js'
 
 const operationId = required('ASTRALE_E2E_OPERATION_ID')
+const transportKey = await derivedIdempotencyKey('e2e.assign-host', operationId)
 const host = Path.parse(required('ASTRALE_E2E_HOST'))
 const principal = Path.parse(required('ASTRALE_E2E_PRINCIPAL')).raw
 const result = await withAdminClientSession({}, async ({ session }) => {
@@ -14,7 +16,7 @@ const result = await withAdminClientSession({}, async ({ session }) => {
     'assignPrincipal',
     { operationId, principal },
     {
-      idempotencyKey: invocation.acceptIdempotencyKey(operationId.replaceAll(':', '-')),
+      idempotencyKey: invocation.acceptIdempotencyKey(transportKey),
       timeoutMs: 120_000,
     },
   )

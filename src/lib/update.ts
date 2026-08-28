@@ -17,6 +17,9 @@ import { z } from 'zod'
 import { AstraleError } from '../errors'
 import { INSTALL_PATH } from '../state/index'
 import { run } from './proc'
+import { replaceStandaloneCohort } from './standalone-cohort'
+
+export { replaceStandaloneCohort, type StandaloneCohortReplacement } from './standalone-cohort'
 
 const DEFAULT_REPO = 'astrale-os/cli'
 export const DEFAULT_UPDATE_CHANNEL = 'beta'
@@ -27,6 +30,13 @@ export const InstallMetadataSchema = z.object({
   version: z.string().min(1).optional(),
   repo: z.string().min(1).default(DEFAULT_REPO),
   bin: z.string().min(1),
+  cohort: z
+    .object({
+      schemaVersion: z.literal(2),
+      binaryVersion: z.string().min(1),
+      cloudflaredVersion: z.string().min(1),
+    })
+    .optional(),
   installedAt: z.string().optional(),
 })
 
@@ -40,11 +50,15 @@ const ManifestAssetSchema = z.object({
     .optional(),
 })
 
-export const UpdateManifestSchema = z.object({
+const ManifestBaseSchema = z.object({
   version: z.string().min(1),
-  binaryVersion: z.string().min(1).optional(),
   channel: z.string().min(1),
   repo: z.string().min(1).optional(),
+})
+
+const LegacyUpdateManifestSchema = ManifestBaseSchema.extend({
+  schemaVersion: z.undefined().optional(),
+  binaryVersion: z.string().min(1).optional(),
   assets: z.record(
     z.string(),
     z.union([
@@ -56,6 +70,18 @@ export const UpdateManifestSchema = z.object({
     ]),
   ),
 })
+
+const CohortUpdateManifestSchema = ManifestBaseSchema.extend({
+  schemaVersion: z.literal(2),
+  binaryVersion: z.string().min(1),
+  cloudflaredVersion: z.string().min(1),
+  assets: z.record(z.string(), ManifestAssetSchema.required({ sha256: true })),
+})
+
+export const UpdateManifestSchema = z.union([
+  CohortUpdateManifestSchema,
+  LegacyUpdateManifestSchema,
+])
 
 export type UpdateManifest = z.infer<typeof UpdateManifestSchema>
 
@@ -105,8 +131,20 @@ export type UpdateResult =
       channel: string
     }
   | {
+      status: 'repair-available'
+      currentVersion: string
+      channel: string
+      bin: string
+    }
+  | {
       status: 'updated'
       previousVersion: string
+      currentVersion: string
+      channel: string
+      bin: string
+    }
+  | {
+      status: 'repaired'
       currentVersion: string
       channel: string
       bin: string
@@ -155,8 +193,8 @@ export function detectUpdateExecution(): UpdateExecution {
 export function packageManagedUpdateError(executable: string): AstraleError {
   return new AstraleError(
     'UPDATE_PACKAGE_MANAGED',
-    'This Astrale source/development build cannot replace itself.',
-    `Active runtime: ${executable}. Install the official standalone binary to use \`astrale update\`.`,
+    'This Astrale process is not the official standalone executable and cannot replace itself.',
+    `Active runtime: ${executable}. Remove any package-managed copy, then install with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh`,
   )
 }
 
@@ -232,8 +270,12 @@ async function realpathIfExists(path: string): Promise<string | undefined> {
 export async function writeInstallMetadata(
   meta: InstallMetadata,
   path = INSTALL_PATH,
-  filesystem: Pick<CohortFilesystem, 'rename' | 'rm'> &
-    Readonly<{ mkdir: typeof mkdir; writeFile: typeof writeFile }> = {
+  filesystem: Readonly<{
+    mkdir: typeof mkdir
+    rename: typeof rename
+    rm: typeof rm
+    writeFile: typeof writeFile
+  }> = {
     mkdir,
     rename,
     rm,
@@ -295,78 +337,6 @@ export function shouldUpdate(currentVersion: string, manifestVersion: string): b
   return currentVersion !== manifestVersion
 }
 
-interface CohortFilesystem {
-  readonly chmod: typeof chmod
-  readonly copyFile: typeof copyFile
-  readonly rename: typeof rename
-  readonly rm: typeof rm
-}
-
-const defaultCohortFilesystem: CohortFilesystem = { chmod, copyFile, rename, rm }
-
-export interface StandaloneCohortReplacement {
-  readonly finalize: () => Promise<void>
-  readonly rollback: () => Promise<void>
-}
-
-/** Replace the single standalone executable with rollback until metadata commits. */
-export async function replaceStandaloneCohort(
-  installedBinary: string,
-  nextBinary: string,
-  filesystem: Partial<CohortFilesystem> = {},
-): Promise<StandaloneCohortReplacement> {
-  const fs = { ...defaultCohortFilesystem, ...filesystem }
-  const previousBinary = `${installedBinary}.previous`
-  const stagedBinary = `${installedBinary}.next`
-
-  try {
-    await fs.copyFile(installedBinary, previousBinary)
-    await fs.copyFile(nextBinary, stagedBinary)
-    await fs.chmod(stagedBinary, 0o755)
-  } catch (error) {
-    await fs.rm(stagedBinary, { force: true }).catch(() => undefined)
-    throw error
-  }
-
-  let binaryCommitted = false
-  try {
-    await fs.rename(stagedBinary, installedBinary)
-    binaryCommitted = true
-  } catch (error) {
-    const rollback: unknown[] = []
-    if (binaryCommitted) {
-      await fs.copyFile(previousBinary, installedBinary).catch((failure) => rollback.push(failure))
-      await fs.chmod(installedBinary, 0o755).catch((failure) => rollback.push(failure))
-    }
-    if (rollback.length > 0) {
-      throw new AggregateError([error, ...rollback], 'Standalone update and rollback both failed.')
-    }
-    throw error
-  } finally {
-    await fs.rm(stagedBinary, { force: true }).catch(() => undefined)
-  }
-
-  let settled = false
-  return Object.freeze({
-    finalize: async () => {
-      if (settled) return
-      settled = true
-      await fs.rm(previousBinary, { force: true }).catch(() => undefined)
-    },
-    rollback: async () => {
-      if (settled) return
-      settled = true
-      const rollback: unknown[] = []
-      await fs.copyFile(previousBinary, installedBinary).catch((failure) => rollback.push(failure))
-      await fs.chmod(installedBinary, 0o755).catch((failure) => rollback.push(failure))
-      await fs.rm(previousBinary, { force: true }).catch((failure) => rollback.push(failure))
-      if (rollback.length > 0) {
-        throw new AggregateError(rollback, 'Standalone update rollback failed.')
-      }
-    },
-  })
-}
-
 interface UpdateDependencies {
   readonly replaceStandaloneCohort: typeof replaceStandaloneCohort
   readonly writeInstallMetadata: typeof writeInstallMetadata
@@ -405,7 +375,9 @@ export async function updateAstrale(
     )
   }
 
-  if (!shouldUpdate(currentVersion, manifest.version)) {
+  const installPath = req.installPath ?? INSTALL_PATH
+  const repair = await cohortNeedsRepair(meta, installPath, manifest)
+  if (!shouldUpdate(currentVersion, manifest.version) && !repair) {
     return {
       status: 'up-to-date',
       currentVersion,
@@ -415,6 +387,14 @@ export async function updateAstrale(
   }
 
   if (req.check) {
+    if (!shouldUpdate(currentVersion, manifest.version) && repair) {
+      return {
+        status: 'repair-available',
+        currentVersion,
+        channel: manifest.channel,
+        bin: meta.bin,
+      }
+    }
     return {
       status: 'available',
       currentVersion,
@@ -438,18 +418,49 @@ export async function updateAstrale(
       )
     }
 
-    await extractTarGz(archive, tmp)
+    const cohortManifest = manifest.schemaVersion === 2
+    const cloudflaredVersion =
+      manifest.schemaVersion === 2 ? manifest.cloudflaredVersion : undefined
+    await extractTarGz(
+      archive,
+      tmp,
+      cohortManifest ? ['astrale', 'astrale-cloudflared', 'LICENSE.cloudflared'] : undefined,
+    )
     const nextBin = join(tmp, 'astrale')
     await chmod(nextBin, 0o755)
     await smokeVersion(nextBin, manifest.binaryVersion ?? manifest.version)
+    const nextCloudflared = cohortManifest ? join(tmp, 'astrale-cloudflared') : undefined
+    const nextLicense = cohortManifest ? join(tmp, 'LICENSE.cloudflared') : undefined
+    const installedLicense = cohortManifest
+      ? join(dirname(installPath), 'licenses', 'cloudflared.txt')
+      : undefined
+    if (nextCloudflared && cloudflaredVersion) {
+      await chmod(nextCloudflared, 0o755)
+      await smokeCloudflaredVersion(nextCloudflared, cloudflaredVersion)
+    }
 
-    const replacement = await update.replaceStandaloneCohort(meta.bin, nextBin)
+    const replacement = await update.replaceStandaloneCohort({
+      installedBinary: meta.bin,
+      nextBinary: nextBin,
+      nextCloudflared,
+      installedLicense,
+      nextLicense,
+    })
     try {
       await update.writeInstallMetadata(
         {
           ...meta,
           channel: manifest.channel,
           version: manifest.version,
+          ...(manifest.schemaVersion === 2
+            ? {
+                cohort: {
+                  schemaVersion: 2 as const,
+                  binaryVersion: manifest.binaryVersion,
+                  cloudflaredVersion: manifest.cloudflaredVersion,
+                },
+              }
+            : { cohort: undefined }),
           installedAt: new Date().toISOString(),
         },
         req.installPath,
@@ -467,13 +478,20 @@ export async function updateAstrale(
     }
     await replacement.finalize()
 
-    return {
-      status: 'updated',
-      previousVersion: currentVersion,
-      currentVersion: manifest.version,
-      channel: manifest.channel,
-      bin: meta.bin,
-    }
+    return repair && currentVersion === manifest.version
+      ? {
+          status: 'repaired',
+          currentVersion: manifest.version,
+          channel: manifest.channel,
+          bin: meta.bin,
+        }
+      : {
+          status: 'updated',
+          previousVersion: currentVersion,
+          currentVersion: manifest.version,
+          channel: manifest.channel,
+          bin: meta.bin,
+        }
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }
@@ -519,7 +537,21 @@ async function sha256File(path: string): Promise<string> {
   return hash.digest('hex')
 }
 
-async function extractTarGz(archive: string, cwd: string): Promise<void> {
+async function extractTarGz(
+  archive: string,
+  cwd: string,
+  exactFiles?: readonly string[],
+): Promise<void> {
+  const listed = await run('tar', ['-tzf', archive])
+  if (listed.code !== 0) {
+    throw new Error(`Could not inspect update archive: ${listed.stderr.trim()}`)
+  }
+  if (exactFiles && listed.stdout !== `${exactFiles.join('\n')}\n`) {
+    throw new Error(
+      `Update archive closure is invalid: expected ${exactFiles.join(', ')}, got ` +
+        `${listed.stdout.trim().split(/\r?\n/u).join(', ')}`,
+    )
+  }
   const { code, stderr } = await run('tar', ['-xzf', archive, '-C', cwd])
   if (code !== 0) {
     throw new Error(`Could not extract update archive: ${stderr.trim()}`)
@@ -532,5 +564,42 @@ async function smokeVersion(bin: string, expectedVersion: string): Promise<void>
   const actual = stdout.trim()
   if (actual !== expectedVersion) {
     throw new Error(`Updated binary reported version ${actual}, expected ${expectedVersion}`)
+  }
+}
+
+async function smokeCloudflaredVersion(bin: string, expectedVersion: string): Promise<void> {
+  const { code, stdout, stderr } = await run(bin, ['--version'])
+  if (code !== 0) throw new Error(`Updated cloudflared failed --version: ${stderr.trim()}`)
+  const actual = /cloudflared version ([^\s]+)/u.exec(stdout.trim())?.[1]
+  if (actual !== expectedVersion) {
+    throw new Error(
+      `Updated cloudflared reported version ${actual ?? '<invalid>'}, expected ${expectedVersion}`,
+    )
+  }
+}
+
+async function cohortNeedsRepair(
+  meta: InstallMetadata,
+  installPath: string,
+  manifest: UpdateManifest,
+): Promise<boolean> {
+  if (manifest.schemaVersion !== 2) return false
+  if (
+    meta.cohort?.schemaVersion !== 2 ||
+    meta.cohort.binaryVersion !== manifest.binaryVersion ||
+    meta.cohort.cloudflaredVersion !== manifest.cloudflaredVersion
+  ) {
+    return true
+  }
+  const cloudflared = join(dirname(meta.bin), 'astrale-cloudflared')
+  const license = join(dirname(installPath), 'licenses', 'cloudflared.txt')
+  try {
+    const [, licenseBytes] = await Promise.all([
+      smokeCloudflaredVersion(cloudflared, manifest.cloudflaredVersion),
+      readFile(license),
+    ])
+    return licenseBytes.length === 0
+  } catch {
+    return true
   }
 }

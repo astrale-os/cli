@@ -1,21 +1,35 @@
 import type { AnchorRef, Comment } from '@shared/types'
 
 import { Handle, type NodeProps, Position } from '@xyflow/react'
-import { Box, ChevronDown, ChevronRight, Globe, MessageSquare } from 'lucide-react'
-import { useState } from 'react'
+import {
+  AppWindow,
+  Box,
+  ChevronDown,
+  ChevronRight,
+  FileCode2,
+  Globe,
+  MessageSquare,
+  Play,
+  TriangleAlert,
+} from 'lucide-react'
+import { type CSSProperties, useState } from 'react'
 
 import { hasUnsentDraft } from '@/components/thread'
 import { ThreadPopover } from '@/components/thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { ViewModal } from '@/components/view-modal'
+import { openCommentThreads } from '@/lib/comments'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { driftLabel } from '@/lib/views'
 
 import type { CanvasCommentNodeData } from './structure'
 
 import { NodeCommentPin } from '../node-comment-pin'
-import { CLASS_H, CLASS_W, moduleTint } from '../palette'
+import { CLASS_H, CLASS_W, VIEW_H, VIEW_W, moduleTint } from '../palette'
 import { type ClassNodeData, type GroupNodeData } from '../projection'
 import { SchemaIcon } from '../schema-icon'
+import { type ViewNodeData, viewNodeId } from '../view-graph'
 
 // ── custom nodes ──
 
@@ -32,12 +46,39 @@ function ClassNode({ data }: NodeProps) {
       data-core-role={d.coreRole ?? undefined}
       // the module colour is a left border, not an inset bar: the card can't clip
       // its own comment pin (which sits on the corner) with `overflow-hidden`.
-      style={{ width: CLASS_W, height: CLASS_H, borderLeft: `3px solid ${tint.mark}` }}
+      // Selection paints in the card's OWN hue — a generic accent would tell you
+      // that something is selected but not which family it belongs to. `--node-tint`
+      // carries the same hue to focus.css, which rings a picked edge's endpoints and
+      // the neighbours of a focused node.
+      //
+      // Selected, the ring is the SAME 3px everywhere — including the left, where the
+      // module bar would otherwise stack under it and make one side twice as heavy. The
+      // bar drops to a hairline and its 2px are handed to the padding, so the card's
+      // contents do not shift by a pixel on the way in or out of selection.
+      style={
+        {
+          width: CLASS_W,
+          height: CLASS_H,
+          borderLeftWidth: selected ? 1 : 3,
+          borderLeftColor: tint.mark,
+          paddingLeft: selected ? 12 : 10,
+          '--node-tint': tint.mark,
+          ...(selected
+            ? {
+                borderColor: tint.mark,
+                background: tint.wash,
+                // One hard ring in the card's own hue — no blur and no drop shadow. A soft
+                // halo reads as a smudge once the canvas is zoomed out, and the shadow made
+                // the card look like it had lifted off the module box it belongs to.
+                boxShadow: `0 0 0 2px ${tint.mark}`,
+              }
+            : null),
+        } as CSSProperties
+      }
       className={cn(
-        'relative flex items-center gap-2 rounded-md border bg-card pl-2.5 pr-2 transition-[border-color,box-shadow]',
-        selected
-          ? 'border-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-primary)_16%,transparent)]'
-          : 'hover:border-muted-foreground/40',
+        'relative flex items-center gap-2 rounded-md border bg-card pr-2',
+        'transition-[border-color,box-shadow,background-color] duration-150',
+        !selected && 'hover:border-muted-foreground/40',
       )}
     >
       <Handle type="target" position={Position.Top} className="!opacity-0" />
@@ -76,15 +117,16 @@ export function GroupNode({ data }: NodeProps) {
   return (
     <div
       data-domain-id={d.domainId}
-      className={cn(
-        'relative h-full w-full rounded-lg border transition-[border-color,box-shadow]',
-        selected && 'shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-primary)_14%,transparent)]',
-        d.collapsed && 'cursor-pointer',
-      )}
-      style={{
-        borderColor: selected ? 'var(--color-primary)' : tint.border,
-        background: tint.surface,
-      }}
+      className="relative h-full w-full rounded-lg border transition-[border-color,box-shadow]"
+      style={
+        {
+          borderColor: selected ? tint.mark : tint.border,
+          background: tint.surface,
+          '--node-tint': tint.mark,
+          // same hard ring as a selected class card, so the two selections read as one idea
+          ...(selected ? { boxShadow: `0 0 0 2px ${tint.mark}` } : null),
+        } as CSSProperties
+      }
     >
       <NodeCommentPin
         domainId={d.domainId}
@@ -127,6 +169,64 @@ export function GroupNode({ data }: NodeProps) {
   )
 }
 
+// ── views ──
+
+/**
+ * A declared view, on the canvas next to what it renders. Deliberately NOT a card:
+ * a pill in the view hue reads as a different kind of thing than the class boxes it
+ * hangs off, at any zoom. Clicking it runs the view — that is what a view is for.
+ */
+function ViewNode({ data }: NodeProps) {
+  const d = data as ViewNodeData
+  const [open, setOpen] = useState(false)
+  const view = d.view
+  const drift = driftLabel(view.drift)
+  // AppWindow is the view glyph; Globe would collide with the imported-domain boxes.
+  const KindIcon = view.kind === 'inline-html' ? FileCode2 : AppWindow
+  return (
+    <div
+      data-domain-id={d.domainId}
+      data-anchor-ref={viewNodeId(view.slug)}
+      data-anchor-excerpt={view.slug}
+      style={{ width: VIEW_W, height: VIEW_H }}
+      className="relative"
+    >
+      <Handle type="target" position={Position.Top} className="!opacity-0" />
+      <button
+        type="button"
+        title={[`Open ${view.slug}`, view.mount, drift?.text].filter(Boolean).join(' · ')}
+        onClick={(event) => {
+          event.stopPropagation()
+          setOpen(true)
+        }}
+        className={cn(
+          'group flex h-full w-full items-center gap-1.5 rounded-full border px-2.5',
+          'border-schema-view/45 bg-schema-view/10 text-schema-view',
+          'transition-colors hover:bg-schema-view/20',
+        )}
+      >
+        <KindIcon className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-left text-[12px] font-medium">
+          {view.slug}
+        </span>
+        {drift?.tone === 'warn' ? (
+          <TriangleAlert className="h-3 w-3 shrink-0 text-warning" />
+        ) : (
+          <Play className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+        )}
+      </button>
+      <NodeCommentPin
+        domainId={d.domainId}
+        anchorRef={viewNodeId(view.slug)}
+        kind="section"
+        excerpt={view.slug}
+      />
+      <Handle type="source" position={Position.Bottom} className="!opacity-0" />
+      {open && <ViewModal domainId={d.domainId} view={view} open={open} onOpenChange={setOpen} />}
+    </div>
+  )
+}
+
 // ── external (cross-domain) nodes ──
 
 function ExtDomainNode({ data }: NodeProps) {
@@ -156,21 +256,6 @@ function ExtMemberNode({ data }: NodeProps) {
   )
 }
 
-/** The rectangle delimiting THIS domain — everything inside belongs to it; imported domains sit outside. */
-function InternalRegionNode({ data }: NodeProps) {
-  const d = data as { label: string }
-  return (
-    <div className="relative h-full w-full rounded-xl border border-dashed border-border">
-      <span
-        className="absolute -top-2 left-4 whitespace-nowrap px-2 text-[11px] font-medium text-muted-foreground"
-        style={{ background: 'var(--color-canvas)' }}
-      >
-        {d.label}
-      </span>
-    </div>
-  )
-}
-
 function CanvasCommentNode({ data }: NodeProps) {
   const d = data as CanvasCommentNodeData
   return (
@@ -185,11 +270,11 @@ function CanvasCommentNode({ data }: NodeProps) {
 
 export const schemaNodeTypes = {
   classNode: ClassNode,
+  viewNode: ViewNode,
   group: GroupNode,
   moduleNode: GroupNode,
   extDomain: ExtDomainNode,
   extMember: ExtMemberNode,
-  internalRegion: InternalRegionNode,
   canvasComment: CanvasCommentNode,
 }
 
@@ -205,9 +290,9 @@ export function CanvasCommentPin({
   className?: string
 }) {
   const [open, setOpen] = useState(false)
-  if (threads.length === 0) return null
-  const status = threads.some((c) => c.status === 'open') ? 'open' : 'resolved'
-  const orphaned = threads.some((c) => c.orphaned)
+  const openThreads = openCommentThreads(threads)
+  if (openThreads.length === 0) return null
+  const orphaned = openThreads.some((c) => c.orphaned)
   return (
     <Popover modal={false} open={open} onOpenChange={setOpen}>
       <PopoverAnchor asChild>
@@ -220,15 +305,13 @@ export function CanvasCommentPin({
           }}
           className={cn(
             'flex h-6 min-w-6 items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-semibold ring-2 ring-card transition-colors',
-            status === 'open'
-              ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-              : 'bg-muted text-muted-foreground hover:bg-accent',
+            'bg-primary text-primary-foreground hover:bg-primary/90',
             orphaned && 'bg-destructive text-white hover:bg-destructive/90',
             className,
           )}
         >
           <MessageSquare className="h-3 w-3" />
-          {threads.length}
+          {openThreads.length}
         </button>
       </PopoverAnchor>
       <PopoverContent

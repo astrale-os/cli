@@ -4,7 +4,7 @@ import pkg from '../../package.json' with { type: 'json' }
 import { AstraleError } from '../errors'
 import { fatal, log } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
-import { run } from '../lib/proc'
+import { run, runInherit } from '../lib/proc'
 import { confirmDefaultYes } from '../lib/prompt'
 import {
   applySdkUpdate,
@@ -13,13 +13,9 @@ import {
   inDomainProject,
   type SdkOutdated,
 } from '../lib/sdk-deps'
-import {
-  checkAstraleSkills,
-  type SkillApplyResult,
-  type SkillCheckResult,
-  syncAstraleSkills,
-} from '../lib/skills'
+import { checkAstraleSkills, SKILL_CONFIGURE_COMMAND, type SkillCheckResult } from '../lib/skills'
 import { DEFAULT_UPDATE_CHANNEL, packageManagedUpdateError, updateAstrale } from '../lib/update'
+import { configureAstraleSkills, renderSkillConfigureOutcome } from './skills/configure'
 
 type UpdateOpts = RawOutputOpts & {
   check?: boolean
@@ -30,14 +26,22 @@ type UpdateOpts = RawOutputOpts & {
   yes?: boolean
 }
 
-async function refreshSkills(): Promise<SkillApplyResult> {
-  log.step('Ensuring Astrale agent skills are current and healthy')
-  const result = await syncAstraleSkills()
-  if (result.status === 'unchanged') log.success('Astrale skills already up to date')
-  else if (result.status === 'installed') log.success('Astrale skills installed')
-  else if (result.status === 'updated') log.success('Astrale skills updated')
-  else if (result.status === 'repaired') log.success('Astrale skills repaired and updated')
-  return result
+async function refreshSkills(interactive: boolean, humanOutput: boolean): Promise<void> {
+  if (humanOutput) log.step('Ensuring Astrale agent skills are current and healthy')
+  const outcome = await configureAstraleSkills({ source: 'update', interactive })
+  if (humanOutput) renderSkillConfigureOutcome(outcome)
+}
+
+function skillInstallPromptAllowed(opts: UpdateOpts): boolean {
+  return (
+    opts.yes !== true &&
+    !isMachine(opts) &&
+    process.stdin.isTTY === true &&
+    process.stdout.isTTY === true &&
+    !process.env.CI &&
+    !process.env.CONTINUOUS_INTEGRATION &&
+    !process.argv.includes('--no-prompt')
+  )
 }
 
 function skillCheckStale(skills: SkillCheckResult): boolean {
@@ -158,7 +162,7 @@ export async function cliStale(
         current: running,
       }
     }
-    if (r.status === 'updated') {
+    if (r.status === 'updated' || r.status === 'repaired') {
       return {
         stale: false,
         managed: false,
@@ -168,10 +172,10 @@ export async function cliStale(
       }
     }
     return {
-      stale: r.status === 'available',
+      stale: r.status === 'available' || r.status === 'repair-available',
       managed: false,
       current: r.currentVersion,
-      latest: r.latestVersion,
+      latest: r.status === 'repair-available' ? r.currentVersion : r.latestVersion,
       channel: r.channel,
     }
   } catch (error) {
@@ -184,13 +188,46 @@ export async function cliStale(
   }
 }
 
-async function refreshSkillsWithUpdatedBinary(bin: string): Promise<void> {
-  const result = await run(bin, ['skills', 'update', '--json'])
-  if (result.code === 0) return
+async function refreshSkillsWithUpdatedBinary(bin: string, interactive: boolean): Promise<void> {
+  if (interactive) {
+    const code = await runInherit(bin, ['skills', 'configure', '--source', 'update'])
+    if (code === 0) return
+    throw new AstraleError(
+      'SKILL_UPDATE_FAILED',
+      'The CLI was updated, but its embedded skills could not be applied.',
+      `Retry with \`${bin} skills configure\`.`,
+    )
+  }
+
+  const result = await run(bin, [
+    '--no-prompt',
+    'skills',
+    'configure',
+    '--source',
+    'update',
+    '--json',
+  ])
+  if (result.code === 0) {
+    if (!isMachine()) {
+      try {
+        const outcome = JSON.parse(result.stdout) as { status?: string }
+        if (outcome.status === 'not-interactive') {
+          log.dim(`  Skills are not installed. Run: ${SKILL_CONFIGURE_COMMAND}`)
+        } else if (outcome.status === 'unchanged') {
+          log.success('Astrale skills already up to date')
+        } else if (['installed', 'updated', 'repaired'].includes(outcome.status ?? '')) {
+          log.success('Astrale skills updated')
+        }
+      } catch {
+        // The child succeeded; its optional machine output is only for nicer human feedback.
+      }
+    }
+    return
+  }
   throw new AstraleError(
     'SKILL_UPDATE_FAILED',
     'The CLI was updated, but its embedded skills could not be applied.',
-    `Retry with \`${bin} skills update\`.${result.stderr.trim() ? ` ${result.stderr.trim()}` : ''}`,
+    `Retry with \`${bin} skills configure\`.${result.stderr.trim() ? ` ${result.stderr.trim()}` : ''}`,
   )
 }
 
@@ -217,18 +254,19 @@ export default {
     { flags: '--no-deps', description: 'Skip checking @astrale-os SDK dependency versions' },
     {
       flags: '--yes',
-      description: 'Non-interactive: apply CLI + skills + SDK deps without prompts',
+      description: 'Non-interactive: apply updates without opting into a first skill install',
     },
     ...RAW_OUTPUT_OPTIONS,
   ],
   afterHelpText: `
 Behavior:
-  Keeps three things current, in order. (1) The CLI binary: updates official
-  standalone installs; downloads are checksum-verified before the binary is
-  replaced. (2) The Astrale agent skills: installs every skill embedded in that
-  exact CLI release, updates healthy older
-  installs, repairs inconsistent installs, and verifies the result before
-  reporting success. (3) SDK deps: inside a pnpm domain
+  Keeps three things current, in order. (1) The CLI toolchain: updates official
+  standalone installs; the CLI, pinned private provider, license, and metadata
+  are checksum-verified and replaced as one recoverable cohort; externally managed
+  processes are directed to the standalone installer and never overwritten. (2) The Astrale
+  agent skills: aligns an existing cohort with the exact CLI release, repairs
+  inconsistent installs, and verifies the result. If skills are absent, an
+  interactive update offers to install them. (3) SDK deps: inside a pnpm domain
   project, proposes any @astrale-os/* dependency with a newer release and, on
   confirm, runs "pnpm update --latest --lockfile-only" (updates package.json AND
   the lockfile, honoring your registry + supply-chain age policy; run "pnpm
@@ -237,9 +275,10 @@ Behavior:
   The default release channel is beta; --channel overrides it for one run.
   --check is a dry run (binary + skills + SDK deps; exit 10 if anything is available) and
   never writes. With --json it emits a unified staleness report
-  ({ stale, cli, skills, sdk }) for tooling. --yes applies all three non-interactively and
-  without additional confirmation. A skill failure fails the command rather than
-  claiming a partial success. --no-skills / --no-deps explicitly skip those axes.
+  ({ stale, cli, skills, sdk }) for tooling. --yes applies existing updates
+  non-interactively but does not opt into a first skill installation. A skill
+  failure fails the command rather than claiming a partial success. --no-skills
+  / --no-deps explicitly skip those axes.
 
 Examples:
   $ astrale update
@@ -300,6 +339,12 @@ Examples:
         log.success(`Updated astrale ${result.previousVersion} -> ${result.currentVersion}`)
         log.dim(`  channel: ${result.channel}`)
         log.dim(`  binary: ${result.bin}`)
+      } else if (result.status === 'repaired') {
+        log.success(`Repaired Astrale toolchain ${result.currentVersion}`)
+        log.dim(`  binary: ${result.bin}`)
+      } else if (result.status === 'repair-available') {
+        log.info(`Astrale toolchain repair available: ${result.currentVersion}`)
+        anyAvailable = true
       } else if (result.status === 'managed') {
         const error = packageManagedUpdateError(result.executable)
         throw error
@@ -309,16 +354,17 @@ Examples:
       // latest cohort by running the newly installed binary, never the old
       // process's embedded assets. --check remains read-only.
       if (opts.skills !== false) {
+        const interactiveSkills = skillInstallPromptAllowed(opts)
+        const humanSkills = !isMachine(opts)
         if (opts.check) {
           const skills = await checkAstraleSkills()
           printSkillCheck(skills)
           if (skillCheckStale(skills)) anyAvailable = true
         } else if (result.status === 'updated') {
-          log.step('Applying skills embedded in the updated CLI')
-          await refreshSkillsWithUpdatedBinary(result.bin)
-          log.success('Astrale skills updated')
+          if (humanSkills) log.step('Applying skills embedded in the updated CLI')
+          await refreshSkillsWithUpdatedBinary(result.bin, interactiveSkills)
         } else {
-          await refreshSkills()
+          await refreshSkills(interactiveSkills, humanSkills)
         }
       } else if (!opts.check) {
         log.dim('  Astrale skills skipped (--no-skills)')

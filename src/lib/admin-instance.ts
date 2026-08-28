@@ -9,6 +9,8 @@ export {
   formatInstanceState,
   type InstanceInfo,
   type InstanceState,
+  type InvitationInfo,
+  type InvitationState,
   type OwnedInstanceInfo,
 } from '../admin/instance'
 
@@ -52,5 +54,24 @@ export function statusOwnedInstance(options: AdminConnectionOptions, identifier:
 export function deleteOwnedInstance(options: AdminConnectionOptions, identifier: string) {
   return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).delete(identifier),
+  )
+}
+
+/** Invite one external member to an exact caller-managed Instance. */
+export function inviteOwnedInstance(
+  options: AdminConnectionOptions,
+  identifier: string,
+  email: string,
+  expiresInDays?: number,
+) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).invite(identifier, email, expiresInDays),
+  )
+}
+
+/** Reconcile one Invitation sent by the active caller. */
+export function reconcileOwnedInvitation(options: AdminConnectionOptions, invitation: string) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).reconcileInvitation(invitation),
   )
 }

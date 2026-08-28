@@ -104,6 +104,16 @@ async function availableRelease(): Promise<AvailableRelease | undefined> {
       execution,
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
     })
+    if (result.status === 'repair-available') {
+      await writeCache({
+        version: CACHE_VERSION,
+        checkedAt: new Date().toISOString(),
+        currentVersion: result.currentVersion,
+        latestVersion: result.currentVersion,
+        channel: result.channel,
+      })
+      return undefined
+    }
     if (result.status !== 'available' && result.status !== 'up-to-date') return undefined
     const next: UpdateNoticeCache = {
       version: CACHE_VERSION,
@@ -163,7 +173,7 @@ async function updateAndReexec(
   if (execution.kind !== 'standalone') return false
   log.step(`Updating Astrale ${release.currentVersion} → ${release.latestVersion}`)
   const environment = { ...process.env, [REEXEC_ENV]: '1' }
-  const updated = await runInherit(execution.executable, ['update', '--yes', '--no-deps'], {
+  const updated = await runInherit(execution.executable, ['update', '--no-deps'], {
     env: environment,
   })
   if (updated !== 0) {
@@ -200,6 +210,18 @@ async function offerReleaseUpdate(argv: readonly string[]): Promise<boolean> {
 
 async function offerSkillMaintenance(): Promise<void> {
   const state = await checkAstraleSkills()
+  if (state.installed === false) {
+    const { configureAstraleSkills, renderSkillConfigureOutcome } =
+      await import('../commands/skills/configure')
+    try {
+      renderSkillConfigureOutcome(await configureAstraleSkills({ source: 'reminder' }))
+    } catch (error) {
+      log.warn(
+        `Skill configuration could not be offered; run \`astrale skills configure\`. ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    return
+  }
   if (state.status !== 'update-available' && state.status !== 'repair-needed') return
   const label = state.status === 'repair-needed' ? 'need repair' : 'have an update available'
   if (!(await confirmDefaultYes(`Astrale agent skills ${label}. Update them now?`))) return

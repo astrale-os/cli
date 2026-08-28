@@ -1,15 +1,21 @@
 import type { AnchorRef, Comment } from '@shared/types'
+import type { Edge } from '@xyflow/react'
 
 import { expect, test } from 'bun:test'
 
-import { commentNodes, schemaCanvasCommentGroups, schemaCanvasFallbackComments } from './structure'
+import {
+  commentNodes,
+  schemaCanvasCommentGroups,
+  schemaCanvasFallbackComments,
+  selectedRelationshipContext,
+} from './structure'
 
-function comment(id: string, anchor: AnchorRef): Comment {
+function comment(id: string, anchor: AnchorRef, status: Comment['status'] = 'open'): Comment {
   return {
     id,
     anchors: ['Schema canvas'],
     anchorRefs: [anchor],
-    status: 'open',
+    status,
     thread: [],
     createdAt: '2026-08-20T00:00:00.000Z',
     kind: 'comment',
@@ -33,4 +39,32 @@ test('groups nearby pinned canvas comments and keeps unpinned comments in the fa
     position: { x: 96, y: 120 },
   })
   expect(schemaCanvasFallbackComments(comments).map(({ id }) => id)).toEqual(['fallback'])
+})
+
+test('resolved canvas comments do not create indicators', () => {
+  const pinned = comment(
+    'resolved-pinned',
+    { ref: 'section.schema', kind: 'section', x: 96, y: 120 },
+    'closed',
+  )
+  const fallback = comment(
+    'resolved-fallback',
+    { ref: 'section.schema', kind: 'section' },
+    'closed',
+  )
+
+  expect(schemaCanvasCommentGroups([pinned])).toEqual([])
+  expect(schemaCanvasFallbackComments([fallback])).toEqual([])
+})
+
+test('a clicked physical edge promotes exactly its own two endpoints', () => {
+  const edges: Edge[] = [
+    { id: 'edge-member-a', source: 'class.Team', target: 'class.Alice' },
+    { id: 'edge-member-b', source: 'class.Team', target: 'class.Bob' },
+  ]
+
+  const context = selectedRelationshipContext('edge-member-b', edges)
+  expect(context?.edgeId).toBe('edge-member-b')
+  expect([...context!.nodeIds]).toEqual(['class.Team', 'class.Bob'])
+  expect(selectedRelationshipContext('missing', edges)).toBeNull()
 })

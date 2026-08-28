@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { bundle, classRef, edgeClass, nodeClass } from './__tests__/fixture'
-import {
-  crossDomainEdges,
-  externalDomains,
-  externalMemberNodeId,
-  localEndpointTargets,
-} from './external'
+import { crossDomainEdges, externalDomains, localEndpointTargets } from './external'
 
 describe('external Class projection', () => {
   test('projects only local node endpoints as local targets', () => {
@@ -70,9 +65,6 @@ describe('external Class projection', () => {
         members: [{ name: 'Remote', ref: remote }],
       },
     ])
-    expect(externalMemberNodeId(remote.origin, remote.name)).toBe(
-      'extmember.remote.example.dev.class.Remote',
-    )
   })
 
   test('does not infer an import from a short-name collision', () => {

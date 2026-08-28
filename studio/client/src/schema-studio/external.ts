@@ -24,10 +24,6 @@ export interface CrossDomainEdge {
   toCard?: IrEndpoint['cardinality']
 }
 
-export function externalMemberNodeId(origin: string, name: string): string {
-  return `extmember.${origin}.class.${name}`
-}
-
 function endpointClasses(endpoint: Pick<IrEndpoint, 'types' | 'refs'> | undefined): Array<{
   name: string
   ref?: IrClassRef

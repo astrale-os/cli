@@ -2,7 +2,12 @@ import { routeSmartEdgeBatch } from '@tisoap/react-flow-smart-edge'
 import { type Edge, type Node, Position } from '@xyflow/react'
 import { describe, expect, test } from 'bun:test'
 
-import { assignFloatingEdgePorts, type FloatingEdgePort } from './edge-routing'
+import {
+  assignFloatingEdgePorts,
+  edgeLabelObstacles,
+  SMART_EDGE_RENDER_OPTIONS,
+  type FloatingEdgePort,
+} from './edge-routing'
 
 const node = (
   id: string,
@@ -123,6 +128,10 @@ describe('floating-edge port assignment', () => {
 })
 
 describe('smart edge routing', () => {
+  test('draws ordinary crossings without bridge hops', () => {
+    expect(SMART_EDGE_RENDER_OPTIONS).not.toHaveProperty('hops')
+  })
+
   test('routes around an intervening node instead of crossing it', () => {
     const result = routeSmartEdgeBatch(
       [
@@ -151,5 +160,51 @@ describe('smart edge routing', () => {
     if (result?.kind === 'routed') {
       expect(result.points.some(([, y]) => Math.abs(y - 20) > 1)).toBe(true)
     }
+  })
+})
+
+describe('edge label obstacles', () => {
+  test('blocks cards but leaves the usable body of an expanded module open', () => {
+    const group = node('group', 100, 50, 400, 300)
+    group.type = 'group'
+    group.data = { collapsed: false }
+    const child = node('child', 20, 80, 200, 44, 'group')
+    child.type = 'classNode'
+
+    const obstacles = edgeLabelObstacles([group, child])
+
+    expect(obstacles).toContainEqual({
+      id: 'group:header',
+      x: 100,
+      y: 50,
+      width: 400,
+      height: 32,
+    })
+    expect(obstacles).toContainEqual({
+      id: 'child',
+      x: 120,
+      y: 130,
+      width: 200,
+      height: 44,
+    })
+    expect(
+      obstacles.some(
+        (obstacle) =>
+          obstacle.x <= 250 &&
+          obstacle.x + obstacle.width >= 250 &&
+          obstacle.y <= 250 &&
+          obstacle.y + obstacle.height >= 250,
+      ),
+    ).toBe(false)
+  })
+
+  test('blocks the complete rectangle of a collapsed module', () => {
+    const group = node('group', 100, 50, 240, 44)
+    group.type = 'group'
+    group.data = { collapsed: true }
+
+    expect(edgeLabelObstacles([group])).toEqual([
+      { id: 'group', x: 100, y: 50, width: 240, height: 44 },
+    ])
   })
 })
