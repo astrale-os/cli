@@ -43,7 +43,6 @@ test('resets domain and external frame geometry as one workspace layout', () => 
       selectedDomainIds: before.selectedDomainIds,
       domainPositions: before.domainPositions,
       externalPositions: before.externalPositions,
-      domainContentOffsets: before.domainContentOffsets,
       collapsedModules: before.collapsedModules,
     })
   }

@@ -1,8 +1,8 @@
 import type { NodePosition } from '@shared/types'
 import type { Node } from '@xyflow/react'
 
-import { type Geometry, sizeOfNode } from '../geometry'
-import { CLASS_H, CLASS_W } from '../palette'
+import { containerBoxSize, DOMAIN_BOX, nodeSize, type Geometry, sizeOfNode } from '../geometry'
+import { DOMAIN_PAD } from '../palette'
 
 export interface WorkspacePoint {
   x: number
@@ -29,7 +29,6 @@ export interface WorkspaceDomainFrame {
   domainId: string
   position: WorkspacePoint
   size: WorkspaceSize
-  contentOffset: WorkspacePoint
 }
 
 export interface WorkspaceLayoutUpdate {
@@ -37,47 +36,26 @@ export interface WorkspaceLayoutUpdate {
   updates: Geometry
 }
 
-export const DOMAIN_MIN_SIZE: WorkspaceSize = { width: 360, height: 220 }
-export const MODULE_MIN_SIZE: WorkspaceSize = { width: 200, height: 120 }
+/**
+ * Where a domain's own coordinates land inside its frame. A CONSTANT, not a stored
+ * preference: the fit keeps the frame's content pinned to exactly one padding on the
+ * leading edges (see `normalizeContainerLayout`), so this offset is the padding itself
+ * and the frame's saved position stays the only thing a reader ever moves.
+ */
+export const DOMAIN_CONTENT_ORIGIN: WorkspacePoint = { x: DOMAIN_PAD, y: DOMAIN_PAD }
 
-const DOMAIN_PADDING = 52
 export const WORKSPACE_DOMAIN_GAP = 112
 const SHELF_WIDTH = 1900
 
-function nodeSize(node: Node): WorkspaceSize {
-  const fallback =
-    node.type === 'classNode'
-      ? { width: CLASS_W, height: CLASS_H }
-      : node.type === 'moduleNode'
-        ? { width: 200, height: 44 }
-        : MODULE_MIN_SIZE
-  return {
-    width:
-      node.measured?.width ??
-      (typeof node.style?.width === 'number' ? node.style.width : fallback.width),
-    height:
-      node.measured?.height ??
-      (typeof node.style?.height === 'number' ? node.style.height : fallback.height),
-  }
-}
-
-function domainBounds(nodes: Node[]) {
-  const roots = nodes.filter((node) => !node.parentId)
-  if (roots.length === 0) {
-    return { minX: 0, minY: 0, maxX: 0, maxY: 0 }
-  }
-  let minX = Number.POSITIVE_INFINITY
-  let minY = Number.POSITIVE_INFINITY
-  let maxX = Number.NEGATIVE_INFINITY
-  let maxY = Number.NEGATIVE_INFINITY
-  for (const node of roots) {
-    const size = nodeSize(node)
-    minX = Math.min(minX, node.position.x)
-    minY = Math.min(minY, node.position.y)
-    maxX = Math.max(maxX, node.position.x + size.width)
-    maxY = Math.max(maxY, node.position.y + size.height)
-  }
-  return { minX, minY, maxX, maxY }
+/** The frame-relative rectangles a domain's root nodes occupy. */
+function contentRects(nodes: Node[]) {
+  return nodes
+    .filter((node) => !node.parentId)
+    .map((node) => ({
+      x: node.position.x + DOMAIN_CONTENT_ORIGIN.x,
+      y: node.position.y + DOMAIN_CONTENT_ORIGIN.y,
+      ...nodeSize(node),
+    }))
 }
 
 function packInitialFrames(frames: Omit<WorkspaceDomainFrame, 'position'>[]): WorkspacePoint[] {
@@ -132,29 +110,10 @@ function positionFrames(
 export function layoutWorkspaceFrames(
   sources: WorkspaceFrameSource[],
   savedPositions: Record<string, WorkspacePoint>,
-  savedContentOffsets: Record<string, WorkspacePoint>,
 ): WorkspaceDomainFrame[] {
   const unpositioned = sources.map((source) => {
-    const bounds = domainBounds(source.nodes)
-    // A saved offset may predate the current module metrics, which is how one domain
-    // ended up with its modules flush against its frame while its neighbour had air.
-    // Never let the content sit closer than the padding; a wider offset is the user's.
-    const saved = savedContentOffsets[source.domainId]
-    const contentOffset = {
-      x: Math.max(saved?.x ?? Number.NEGATIVE_INFINITY, DOMAIN_PADDING - bounds.minX),
-      // Even padding all round: the origin sits ON the frame's top edge, so there is no
-      // header to reserve room for.
-      y: Math.max(saved?.y ?? Number.NEGATIVE_INFINITY, DOMAIN_PADDING - bounds.minY),
-    }
-    // the same padding on the far side, so the frame never crowds its content
-    return {
-      domainId: source.domainId,
-      contentOffset,
-      size: {
-        width: Math.max(DOMAIN_MIN_SIZE.width, bounds.maxX + contentOffset.x + DOMAIN_PADDING),
-        height: Math.max(DOMAIN_MIN_SIZE.height, bounds.maxY + contentOffset.y + DOMAIN_PADDING),
-      },
-    }
+    const box = containerBoxSize(DOMAIN_BOX, contentRects(source.nodes))
+    return { domainId: source.domainId, size: { width: box.w, height: box.h } }
   })
   const positions = positionFrames(unpositioned, savedPositions)
   return unpositioned.map((frame, index) => ({ ...frame, position: positions[index]! }))
@@ -166,10 +125,8 @@ export function workspaceGeometry(node: {
   return (node.data?.workspaceGeometry as WorkspaceNodeGeometryData | undefined) ?? null
 }
 
-export function workspaceLayoutUpdate(
-  node: Node,
-  resized?: WorkspaceSize,
-): WorkspaceLayoutUpdate | null {
+/** One canvas node, back in the owner-local coordinates its domain persists. */
+export function workspaceLayoutUpdate(node: Node): WorkspaceLayoutUpdate | null {
   const metadata = workspaceGeometry(node)
   if (!metadata) return null
   return {
@@ -178,9 +135,7 @@ export function workspaceLayoutUpdate(
       [metadata.localId]: {
         x: Math.round(node.position.x - metadata.offset.x),
         y: Math.round(node.position.y - metadata.offset.y),
-        ...(resized
-          ? { w: Math.round(resized.width), h: Math.round(resized.height) }
-          : sizeOfNode(node)),
+        ...sizeOfNode(node),
       },
     },
   }

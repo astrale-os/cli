@@ -99,9 +99,10 @@ export function projectDomainCanvas(
         id: `class.${className}`,
         type: 'classNode',
         parentId: groupId,
-        // Containment is ours, not React Flow's: `extent:'parent'` clamps to the RAW box
-        // (so a class can sit on the module label) and `expandParent` grows it flush to the
-        // class and never shrinks it back. `normalizeModuleLayout` does both with padding.
+        // Containment is ours, not React Flow's: `extent:'parent'` pins the class to the RAW
+        // box instead of moving the edge it was dragged past, and `expandParent` grows the
+        // box flush to the class and never shrinks it back. `normalizeContainerLayout` does
+        // the whole job — insets, all four sides, both ways.
         position: { x: 0, y: 0 },
         data: {
           domainId: bundle.domainId,

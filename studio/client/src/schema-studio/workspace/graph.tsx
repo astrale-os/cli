@@ -35,7 +35,7 @@ import { EdgeMarkerDefs } from '../edge-markers'
 import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
 import { viewportForNodes } from '../fit'
 import { type EdgeFocus, edgeTypes } from '../floating-edge'
-import { clampInsideModule, moduleBoxSize, normalizeModuleLayout } from '../geometry'
+import { type Geometry, normalizeContainerLayout } from '../geometry'
 import { CanvasCommentPin } from '../graph'
 import {
   commentNodes,
@@ -46,7 +46,7 @@ import {
 } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
 import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
-import { workspaceLayoutUpdate } from './geometry'
+import { workspaceGeometry, workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
   workspaceNodeTypes,
@@ -55,6 +55,7 @@ import {
 import {
   composeWorkspaceCanvas,
   qualifiedNodeId,
+  workspaceDomainNodeId,
   type WorkspaceDomainProjection,
 } from './projection'
 import { useSchemaWorkspace } from './store'
@@ -73,7 +74,7 @@ export function WorkspaceSchemaGraph({
   domains: WorkspaceDomainProjection[]
   onToggleInherited: () => void
 }) {
-  const { getInternalNode, getNode, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
+  const { getInternalNode, getViewport, setCenter, setViewport } = useReactFlow()
   const paneWidth = useStore((state) => state.width)
   const paneHeight = useStore((state) => state.height)
   const panZoomReady = useStore((state) => state.panZoom !== null)
@@ -89,11 +90,9 @@ export function WorkspaceSchemaGraph({
   const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
-  const domainContentOffsets = useSchemaWorkspace((state) => state.domainContentOffsets)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
   const ensureDomainPositions = useSchemaWorkspace((state) => state.ensureDomainPositions)
   const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
-  const ensureDomainContentOffsets = useSchemaWorkspace((state) => state.ensureDomainContentOffsets)
   const resetWorkspaceFrames = useSchemaWorkspace((state) => state.resetWorkspaceFrames)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
   const { commitLayout } = useLayoutCommitter()
@@ -147,11 +146,10 @@ export function WorkspaceSchemaGraph({
       composeWorkspaceCanvas(domains, {
         activeDomainId,
         catalog,
-        contentOffsets: domainContentOffsets,
         domainPositions,
         externalPositions,
       }),
-    [activeDomainId, catalog, domainContentOffsets, domainPositions, domains, externalPositions],
+    [activeDomainId, catalog, domainPositions, domains, externalPositions],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
@@ -159,10 +157,9 @@ export function WorkspaceSchemaGraph({
   useEffect(() => {
     ensureDomainPositions(projection.domainPositions)
     ensureExternalPositions(projection.externalPositions)
-    ensureDomainContentOffsets(projection.contentOffsets)
-    // A box saved too small for its classes would clamp them onto each other, one saved
+    // A box saved too small for its classes would drop them onto each other, one saved
     // too large keeps space no class uses — paint the fit, and let the next drag persist it.
-    setNodes(normalizeModuleLayout(projection.nodes))
+    setNodes(normalizeContainerLayout(projection.nodes))
     setEdges(projection.edges)
     if (fitAfterReset.current) {
       fitAfterReset.current = false
@@ -173,13 +170,7 @@ export function WorkspaceSchemaGraph({
     if (fittedDomains.current === domainKey) return
     fittedDomains.current = domainKey
     setFitRequest((n) => n + 1)
-  }, [
-    domains,
-    ensureDomainContentOffsets,
-    ensureDomainPositions,
-    ensureExternalPositions,
-    projection,
-  ])
+  }, [domains, ensureDomainPositions, ensureExternalPositions, projection])
 
   // React Flow's queued fitView waits on its measurement lifecycle, so frame the
   // canvas from the geometry we already hold (see fit.ts).
@@ -195,12 +186,12 @@ export function WorkspaceSchemaGraph({
   }, [fitRequest, paneWidth, paneHeight, panZoomReady, setViewport])
 
   // Every position change (a drag frame included) is re-normalized: that is what keeps a
-  // class off its module label and the box wrapped tight around the classes it holds.
-  // Domain frames are not module boxes, so they pass through untouched.
+  // class off its module label, wraps each box tight around what it holds, and carries a
+  // module dragged past its frame's edge out into the domain frame around it.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) =>
       setNodes((current) =>
-        normalizeModuleLayout(
+        normalizeContainerLayout(
           applyNodeChanges(
             changes.filter((change) => change.type !== 'remove'),
             current,
@@ -223,35 +214,38 @@ export function WorkspaceSchemaGraph({
 
   const onNodeDragStop = useCallback(
     (_event: unknown, node: Node) => {
-      if (node.id.startsWith('workspace-domain:')) {
-        setDomainPosition(node.id.slice('workspace-domain:'.length), {
-          x: Math.round(node.position.x),
-          y: Math.round(node.position.y),
-        })
-        return
-      }
+      // The event carries the RAW pointer position; the canvas holds the re-fitted one, so
+      // the record is read off the canvas or the two disagree the moment a box had to move.
+      const painted = nodesRef.current
+      const frameDrag = node.id.startsWith('workspace-domain:')
+      const domainId = frameDrag
+        ? node.id.slice('workspace-domain:'.length)
+        : workspaceGeometry(node)?.domainId
+      if (!domainId) return
 
-      // The event carries the RAW pointer position — `normalizeModuleLayout` clamped what is
-      // painted, so clamp again here or the record and the canvas disagree.
-      const parent = node.parentId ? getNode(node.parentId) : undefined
-      const inBox = parent?.type === 'group'
-      const dragged = inBox ? { ...node, position: clampInsideModule(node.position) } : node
-      const update = workspaceLayoutUpdate(dragged)
-      if (!update) return
-      const updates = { ...update.updates }
-      if (inBox && parent) {
-        // Persist the box's re-fitted size too, or the next recompose restores the stale
-        // one and clamps the class back.
-        const siblings = getNodes()
-          .filter((candidate) => candidate.parentId === parent.id)
-          .map((candidate) => (candidate.id === node.id ? dragged.position : candidate.position))
-        const box = moduleBoxSize(siblings)
-        const boxUpdate = workspaceLayoutUpdate(parent, { width: box.w, height: box.h })
-        if (boxUpdate) Object.assign(updates, boxUpdate.updates)
+      // The frame's position is the domain's anchor on the canvas, and a drag INSIDE it can
+      // move that anchor: growing a box leftwards walks its own edge out to meet the drag.
+      const frame = painted.find((candidate) => candidate.id === workspaceDomainNodeId(domainId))
+      if (frame) {
+        setDomainPosition(domainId, {
+          x: Math.round(frame.position.x),
+          y: Math.round(frame.position.y),
+        })
       }
-      commitLayout(update.domainId, updates)
+      // A frame carries its content along, so dragging one leaves every local position alone.
+      if (frameDrag) return
+
+      // Persist the WHOLE domain rather than the node that was dragged: a box growing
+      // leftwards shifts every sibling it holds by the same amount, and a partial record
+      // would put those siblings back where they no longer belong.
+      const updates: Geometry = {}
+      for (const candidate of painted) {
+        const update = workspaceLayoutUpdate(candidate)
+        if (update?.domainId === domainId) Object.assign(updates, update.updates)
+      }
+      if (Object.keys(updates).length > 0) commitLayout(domainId, updates)
     },
-    [commitLayout, getNode, getNodes, setDomainPosition],
+    [commitLayout, setDomainPosition],
   )
 
   // Selecting a class opens the right panel, which narrows the pane — pan the selection

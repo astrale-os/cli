@@ -21,6 +21,7 @@ import {
   type WorkspaceExternalReference,
 } from './external-frames'
 import {
+  DOMAIN_CONTENT_ORIGIN,
   layoutWorkspaceFrames,
   type WorkspaceNodeGeometryData,
   type WorkspacePoint,
@@ -44,14 +45,12 @@ export interface WorkspaceProjection {
   diagnostics: string[]
   domainPositions: Record<string, WorkspacePoint>
   externalPositions: Record<string, WorkspacePoint>
-  contentOffsets: Record<string, WorkspacePoint>
 }
 
 export interface ComposeWorkspaceCanvasOptions {
   activeDomainId: string
   domainPositions?: Record<string, WorkspacePoint>
   externalPositions?: Record<string, WorkspacePoint>
-  contentOffsets?: Record<string, WorkspacePoint>
   catalog?: DomainCatalogEntry[]
 }
 
@@ -319,7 +318,6 @@ export function composeWorkspaceCanvas(
     activeDomainId,
     domainPositions = {},
     externalPositions = {},
-    contentOffsets = {},
     catalog,
   }: ComposeWorkspaceCanvasOptions,
 ): WorkspaceProjection {
@@ -333,7 +331,6 @@ export function composeWorkspaceCanvas(
   const frames = layoutWorkspaceFrames(
     domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
     domainPositions,
-    contentOffsets,
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
   const nodes: Node[] = []
@@ -362,7 +359,7 @@ export function composeWorkspaceCanvas(
 
     for (const node of domain.nodes) {
       const root = !node.parentId
-      const offset = root ? frame.contentOffset : { x: 0, y: 0 }
+      const offset = root ? DOMAIN_CONTENT_ORIGIN : { x: 0, y: 0 }
       nodes.push({
         ...node,
         id: qualifiedNodeId(domainId, node.id),
@@ -376,7 +373,9 @@ export function composeWorkspaceCanvas(
             offset,
           } satisfies WorkspaceNodeGeometryData,
         },
-        extent: 'parent',
+        // Containment is OURS, not React Flow's: `extent:'parent'` pins a node to the box
+        // it happens to be in, which is exactly what must NOT happen — dragging past an
+        // edge moves that edge. `normalizeContainerLayout` re-fits the box instead.
         expandParent: false,
         // Only the active domain's nodes are draggable (a drag edits ITS layout),
         // but every node stays clickable: one click focuses the domain and selects
@@ -409,8 +408,5 @@ export function composeWorkspaceCanvas(
     diagnostics: [...diagnostics].sort(),
     domainPositions: Object.fromEntries(frames.map((frame) => [frame.domainId, frame.position])),
     externalPositions: externals.positions,
-    contentOffsets: Object.fromEntries(
-      frames.map((frame) => [frame.domainId, frame.contentOffset]),
-    ),
   }
 }
