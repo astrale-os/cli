@@ -106,18 +106,13 @@ export function WorkspaceSchemaGraph({
   const fitAfterReset = useRef(false)
   const solo = domains.length === 1
 
+  // Only domain frames are sized by hand — a module box wraps its classes on its own.
   const resizeNode = useCallback(
     (nodeId: string, size: WorkspaceSize) => {
-      if (nodeId.startsWith('workspace-domain:')) {
-        setDomainSize(nodeId.slice('workspace-domain:'.length), size)
-        return
-      }
-      const node = getNode(nodeId)
-      if (!node || node.type !== 'group') return
-      const update = workspaceLayoutUpdate(node, size)
-      if (update) commitLayout(update.domainId, update.updates)
+      if (!nodeId.startsWith('workspace-domain:')) return
+      setDomainSize(nodeId.slice('workspace-domain:'.length), size)
     },
-    [commitLayout, getNode, setDomainSize],
+    [setDomainSize],
   )
 
   // One click does both: focus the domain AND act on what was clicked. Requiring a
