@@ -1,3 +1,4 @@
+import type { GraphApi } from '@astrale-os/sdk/client'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
 
 export type InstanceState = 'provisioning' | 'ready' | 'deleting' | 'failed' | 'deleted'
@@ -31,6 +32,7 @@ export interface DomainInstallReceipt {
 
 export interface AdminInstanceContext {
   readonly session: ClientSession
+  readonly graph: Pick<GraphApi, 'query'>
 }
 
 export interface AdminInstanceApi {
