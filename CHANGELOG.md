@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.42](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.41...cli/v1.0.0-beta.42) (2026-08-28)
+
+
+### Performance Improvements
+
+* **instance:** query native admin inventory ([#247](https://github.com/astrale-os/cli/issues/247)) ([6129553](https://github.com/astrale-os/cli/commit/6129553fb5b335ce600e8328eab5984bbff6d15f))
+
 ## [1.0.0-beta.41](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.40...cli/v1.0.0-beta.41) (2026-08-28)
 
 
