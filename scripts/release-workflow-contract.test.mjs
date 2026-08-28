@@ -34,7 +34,7 @@ describe('release workflow contract', () => {
       registry: 'https://registry.npmjs.org/',
     })
     assert.equal(existsSync('.github/workflows/publish.yml'), true)
-    assert.deepEqual(npm.on.push.paths, ['package.json', '.release-please-manifest.json'])
+    assert.deepEqual(npm.on.push.paths, ['.release-please-manifest.json'])
     assert.equal(npm.permissions.contents, 'read')
     assert.equal(npm.permissions['id-token'], 'write')
     const publisher = npm.jobs.publish.steps.find((step) =>
