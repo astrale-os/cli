@@ -57,6 +57,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const activeDomainId = useUI((state) => state.domainId)
   const selected = useUI((state) => state.selectedClass)
   const select = useUI((state) => state.selectClass)
+  const clearSelection = useUI((state) => state.clearSelection)
   const setFocus = useUI((state) => state.setFocus)
   const panelOverlay = useUI((state) => state.panelOverlay)
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
@@ -182,7 +183,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <ModulesSidebar>
+        <ModulesSidebar onClearSelection={clearSelection}>
           <ScrollArea className="h-full">
             <WorkspaceModuleTree domains={prepared} onToggleHidden={toggleHidden} />
           </ScrollArea>

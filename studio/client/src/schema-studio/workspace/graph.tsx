@@ -389,7 +389,10 @@ export function WorkspaceSchemaGraph({
             useUI.getState().setFocus(null)
           }}
           onPaneClick={() => {
-            useUI.getState().setFocus(null)
+            // empty space is "nothing here": drop the selection (which closes its detail
+            // panel) as well as the focus and the selected edge
+            setSelectedEdgeId(null)
+            useUI.getState().clearSelection()
             // keep a half-written comment open — its own × closes it
             if (!hasAnyUnsentDraft()) setOpenAnchor(null)
           }}

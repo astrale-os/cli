@@ -18,8 +18,25 @@ function storedWidth(): number {
   return DEFAULT
 }
 
-export function ModulesSidebar({ children }: { children: ReactNode }) {
+export function ModulesSidebar({
+  children,
+  onClearSelection,
+}: {
+  children: ReactNode
+  /** Called when the rail's empty space is clicked — see `clearOnBackgroundClick`. */
+  onClearSelection?: () => void
+}) {
   const [width, setWidth] = useState(storedWidth)
+
+  // Clicking the rail beside the tree means the same thing as clicking the canvas pane:
+  // nothing is selected. A press on a control — or anywhere on a tree row, whose padding
+  // reads as part of the row it highlights — is that control's business and passes through.
+  const clearOnBackgroundClick = (event: React.MouseEvent) => {
+    if (!onClearSelection) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('[data-tree-row], button, a, input, textarea, [role="separator"]')) return
+    onClearSelection()
+  }
 
   const startResize = (event: React.PointerEvent) => {
     event.preventDefault()
@@ -46,7 +63,12 @@ export function ModulesSidebar({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="relative min-h-0 shrink-0 border-r" style={{ width }}>
+    <div
+      data-testid="modules-sidebar"
+      className="relative min-h-0 shrink-0 border-r"
+      style={{ width }}
+      onClick={clearOnBackgroundClick}
+    >
       {children}
       {/* drag handle straddling the right border */}
       <div

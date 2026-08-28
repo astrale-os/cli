@@ -125,6 +125,9 @@ interface UIState {
   selectClass: (n?: string) => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
   focusClass: (id: string) => void
+  /** Drop the selection and its graph focus — what clicking empty space means. Leaves an
+   *  open overlay panel (Views / Domains / Integrations) alone: it is not a selection. */
+  clearSelection: () => void
   setFocus: (id: string | null) => void
   toggleModule: (path: string) => void
   toggleHidden: (ref: string) => void
@@ -266,6 +269,12 @@ export const useUI = create<UIState>((set) => ({
       revealedRef: null,
       focusId: s.focusId === id ? null : id,
     })),
+  clearSelection: () =>
+    set((s) =>
+      s.selectedClass === undefined && s.focusId === null && s.revealedRef === null
+        ? {}
+        : { selectedClass: undefined, focusId: null, revealedRef: null },
+    ),
   setFocus: (focusId) => set({ focusId }),
   toggleModule: (path) =>
     set((s) => ({
