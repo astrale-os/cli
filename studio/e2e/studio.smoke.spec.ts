@@ -32,7 +32,13 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
 
   await page.goto('/')
   await expect(page.getByTestId('domain-selector')).toContainText('studio-e2e.astrale.ai')
-  await expect(page.getByRole('button', { name: 'Settings' })).toHaveCount(0)
+  // The gear is the ONLY way into per-domain settings — no palette entry, no shortcut —
+  // so this opens the dialog rather than just counting the button: a mounted button over
+  // an unmounted dialog is exactly the state that made the settings unreachable before.
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await expect(page.getByText('Saved to .domain-studio/settings.json')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Fit View' })).toHaveCount(0)
   await expect(
     page.getByRole('button', { name: 'Auto-arrange — discards manual positions' }),
