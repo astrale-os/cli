@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { Project, SyntaxKind } from 'ts-morph'
 import { parse, parseAllDocuments } from 'yaml'
@@ -170,6 +171,7 @@ assert.doesNotMatch(
 )
 const cliTypeScriptFiles = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
   .split('\n')
+  .filter((path) => path.length > 0 && existsSync(path))
   .filter(
     (path) =>
       /\.(?:[cm]?[jt]sx?|mjs|cjs)$/u.test(path) &&

@@ -17,6 +17,11 @@ env:
   BUN_VERSION: 1.4.0
 
 jobs:
+  ui-search-contract:
+    uses: ./.github/workflows/ui-search-contract.yml
+    with:
+      ui-ref: main
+
   compatibility:
     name: CI (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest

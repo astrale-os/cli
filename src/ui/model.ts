@@ -62,6 +62,8 @@ export type UiRelease = {
   registry: UiRegistry
 }
 
+export type UiReleaseIdentity = Pick<UiRelease, 'version' | 'ref' | 'commit'>
+
 export class UiError extends AstraleError {
   constructor(
     code:
@@ -73,7 +75,9 @@ export class UiError extends AstraleError {
       | 'UI_LOCAL_CHANGES'
       | 'UI_DEPENDENCY_INSTALL_FAILED'
       | 'UI_LOCK_INVALID'
-      | 'UI_TOOL_FAILED',
+      | 'UI_TOOL_FAILED'
+      | 'UI_SEARCH_QUERY_INVALID'
+      | 'UI_SEARCH_UNAVAILABLE',
     message: string,
     hint?: string,
     options?: ErrorOptions,

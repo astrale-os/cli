@@ -523,24 +523,6 @@ async function pinUiDependency(
   }
 }
 
-export async function listUi(
-  query: string | undefined,
-  options: { type?: string; limit?: number; version?: string },
-  dependencies: Dependencies = {},
-): Promise<UiRegistryItem[]> {
-  const release = await resolveUiRelease(options.version, dependencies.fetcher)
-  const needle = query?.trim().toLowerCase()
-  return release.registry.items
-    .filter((item) => {
-      if (options.type && !item.meta.canonicalAddress.startsWith(options.type + '/')) return false
-      if (!needle) return true
-      return [item.meta.canonicalAddress, item.name, item.title, item.description]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(needle))
-    })
-    .slice(0, options.limit ?? 100)
-}
-
 export async function listLockedUi(
   input: string | undefined,
   dependencies: Dependencies = {},
@@ -973,7 +955,7 @@ function findItem(release: UiRelease, address: string): UiRegistryItem {
       : 'UI item "' + address + '" was not found.',
     shorthand.length > 1
       ? 'Use one of: ' + shorthand.map((item) => item.meta.canonicalAddress).join(', ')
-      : 'Run astrale ui list to discover canonical addresses.',
+      : 'Run astrale ui search with a short description to discover canonical addresses.',
   )
 }
 

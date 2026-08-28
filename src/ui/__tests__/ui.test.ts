@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { digest, parseUiLock } from '../lock'
 import { UiError, type UiLock, type UiRegistry } from '../model'
-import { addUi, applyPreset, doctorUi, initUi, listUi } from '../operations'
+import { addUi, applyPreset, doctorUi, initUi } from '../operations'
 import { resolveUiRelease } from '../release'
 import { shadcnInvocation } from '../runner'
 
@@ -467,15 +467,6 @@ describe('UI release and runner contracts', () => {
     await expect(resolveUiRelease('0.3.0-beta.0', mockFetch([], invalid))).rejects.toMatchObject({
       code: 'UI_REGISTRY_UNAVAILABLE',
     })
-  })
-
-  test('lists release themes through the public type filter', async () => {
-    const themes = await listUi(
-      undefined,
-      { type: 'theme', version: '0.3.0-beta.0' },
-      { fetcher: themeFetch() },
-    )
-    expect(themes.map((item) => item.meta.canonicalAddress)).toEqual(['theme/observatory'])
   })
 
   test('constructs exact on-demand commands for every supported package manager', () => {

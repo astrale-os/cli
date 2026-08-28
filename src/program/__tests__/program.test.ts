@@ -189,17 +189,17 @@ describe('program composition', () => {
       'ui add',
       'ui doctor',
       'ui init',
-      'ui list',
       'ui preset',
       'ui preset apply',
       'ui preset list',
+      'ui search',
       'update',
       'use',
       'view',
       'whoami',
     ])
     expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      'b6e588597eca8f794464a1e659bf6768c4a4a2131e55f1ee61d36274a26b1d06',
+      '2f6a793b9017f0febc03775a8af5487e0013911c7449d64008451ee90d80b63f',
     )
   })
 
@@ -372,17 +372,17 @@ describe('help contract — UI is project tooling', () => {
     expect(program.helpInformation()).toMatch(/root alias:\s+--version/u)
   })
 
-  test('routes root and subcommand version flags to their exact owners', async () => {
+  test('routes the root version alias without rewriting UI search arguments', async () => {
     const program = await buildProgram()
-    const uiList = program.commands
+    const uiSearch = program.commands
       .find((command) => command.name() === 'ui')
-      ?.commands.find((command) => command.name() === 'list')
-    let observedVersion: unknown
-    uiList?.action((_query, options) => {
-      observedVersion = options.version
+      ?.commands.find((command) => command.name() === 'search')
+    let observedQuery: unknown
+    uiSearch?.action((query) => {
+      observedQuery = query
     })
 
-    const uiArgv = ['node', 'astrale', 'ui', 'list', 'chart', '--version', '0.3.0-beta.1']
+    const uiArgv = ['node', 'astrale', 'ui', 'search', 'chart', '--limit', '5']
     expect(normalizeRootVersionArgv(uiArgv)).toEqual(uiArgv)
     expect(normalizeRootVersionArgv(['node', 'astrale', '--version'])).toEqual([
       'node',
@@ -398,7 +398,7 @@ describe('help contract — UI is project tooling', () => {
 
     await program.parseAsync(uiArgv)
 
-    expect(observedVersion).toBe('0.3.0-beta.1')
+    expect(observedQuery).toBe('chart')
   })
 
   test('routes explicit versions with positional inputs for UI init and update', async () => {
@@ -436,15 +436,15 @@ describe('help contract — UI is project tooling', () => {
 
   test('continues to admit global machine flags after a subcommand', async () => {
     const program = await buildProgram()
-    const uiList = program.commands
+    const uiSearch = program.commands
       .find((command) => command.name() === 'ui')
-      ?.commands.find((command) => command.name() === 'list')
+      ?.commands.find((command) => command.name() === 'search')
     let invoked = false
-    uiList?.action(() => {
+    uiSearch?.action(() => {
       invoked = true
     })
 
-    await program.parseAsync(['node', 'astrale', 'ui', 'list', '--ci', '--no-prompt'])
+    await program.parseAsync(['node', 'astrale', 'ui', 'search', 'chart', '--ci', '--no-prompt'])
 
     expect(invoked).toBe(true)
   })
@@ -456,7 +456,7 @@ describe('help contract — UI is project tooling', () => {
 
     expect(ui?.commands.map((command) => command.name())).toEqual([
       'init',
-      'list',
+      'search',
       'add',
       'doctor',
       'preset',
