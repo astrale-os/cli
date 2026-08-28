@@ -2,6 +2,7 @@ import type { AnchorRef, Comment } from '@shared/types'
 
 import { useId } from 'react'
 
+import { openCommentThreads } from '@/lib/comments'
 import { useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -11,29 +12,30 @@ import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
-/** Threads (comments) whose anchor matches a given ref, + a derived pin status. */
+/** All threads for an anchor plus the open subset represented by its indicator. */
 export function useAnchorThreads(
   ref: string,
   ownerDomainId?: string,
 ): {
   threads: Comment[]
-  status: 'open' | 'resolved'
+  openThreads: Comment[]
   orphaned: boolean
 } {
   const activeDomainId = useUI((s) => s.domainId)
   const { data } = useComments(ownerDomainId ?? activeDomainId)
   const threads = (data?.comments ?? []).filter((c) => c.anchorRefs.some((r) => r.ref === ref))
-  const status = threads.some((c) => c.status === 'open') ? 'open' : 'resolved'
-  const orphaned = threads.some((c) => c.orphaned)
-  return { threads, status, orphaned }
+  const openThreads = openCommentThreads(threads)
+  const orphaned = openThreads.some((c) => c.orphaned)
+  return { threads, openThreads, orphaned }
 }
 
 /**
  * A view affordance for existing comments on an anchorable element: when the
- * anchor has threads it shows a CommentPin that opens the ThreadPopover. There is
+ * anchor has open threads it shows a CommentPin that opens the ThreadPopover. There is
  * NO "add" button — starting a comment is done via comment mode (press C), which
  * resolves the element from its data-anchor-ref. Renders nothing when there are
- * no threads. Open state is shared globally via store.openAnchorRef.
+ * no open threads. Resolved history remains available in the comments panel. Open
+ * state is shared globally via store.openAnchorRef.
  */
 export function AnchorButton({
   anchorRef,
@@ -52,9 +54,9 @@ export function AnchorButton({
   const openKey = domainId ? `${domainId}::${anchorRef.ref}` : anchorRef.ref
   const open = openRef === openKey && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
-  const { threads, status, orphaned } = useAnchorThreads(anchorRef.ref, domainId)
+  const { threads, openThreads, orphaned } = useAnchorThreads(anchorRef.ref, domainId)
 
-  if (threads.length === 0) return null
+  if (openThreads.length === 0) return null
 
   return (
     <Popover
@@ -74,7 +76,7 @@ export function AnchorButton({
           }}
           className={cn('inline-flex shrink-0 align-middle', className)}
         >
-          <CommentPin count={threads.length} status={status} orphaned={orphaned} />
+          <CommentPin count={openThreads.length} status="open" orphaned={orphaned} />
         </button>
       </PopoverAnchor>
 

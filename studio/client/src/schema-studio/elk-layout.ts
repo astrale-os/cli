@@ -47,10 +47,12 @@ export async function elkLayout(nodes: Node[], edges: Edge[]): Promise<Node[]> {
   for (const n of nodes) if (n.parentId) hasChildren.add(n.parentId)
 
   for (const n of nodes) {
-    // classNodes, core (genesis) nodes, and collapsed (childless) module boxes are
-    // fixed-size leaves; expanded module boxes are containers ELK sizes around children.
+    // classNodes, view pills, core (genesis) nodes, and collapsed (childless) module
+    // boxes are fixed-size leaves; expanded module boxes are containers ELK sizes
+    // around children.
     const leaf =
       n.type === 'classNode' ||
+      n.type === 'viewNode' ||
       n.type === 'coreNode' ||
       n.type === 'moduleNode' ||
       (n.type === 'group' && !hasChildren.has(n.id))

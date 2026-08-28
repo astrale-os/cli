@@ -85,7 +85,7 @@ function WorkspaceDomainNode({ id, data }: NodeProps) {
         'group/frame relative h-full w-full rounded-xl border bg-card transition-colors',
         domain.active
           ? 'border-primary/45 bg-primary/[0.03]'
-          : 'cursor-pointer border-border hover:border-muted-foreground/40',
+          : 'border-border hover:border-muted-foreground/40',
       )}
     >
       <div

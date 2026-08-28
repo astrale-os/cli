@@ -17,29 +17,38 @@ export interface ModuleTint {
   text: string
   /** the class node's leading bar + icon */
   mark: string
+  /** selected card fill — the same hue, barely there, but unmistakably not neutral */
+  wash: string
+  /** selected card halo: translucent so a ring can sit over the canvas or a module box */
+  ring: string
 }
 
 type Part = keyof ModuleTint
-/** lightness + chroma per part; the hue comes from the module. */
-const TONES: Record<'light' | 'dark', Record<Part, [number, number]>> = {
+/** lightness + chroma (+ optional alpha) per part; the hue comes from the module. */
+type Tone = [number, number] | [number, number, number]
+const TONES: Record<'light' | 'dark', Record<Part, Tone>> = {
   light: {
     surface: [0.977, 0.014],
     border: [0.875, 0.04],
     text: [0.46, 0.09],
     mark: [0.58, 0.12],
+    wash: [0.985, 0.022],
+    ring: [0.58, 0.12, 0.24],
   },
   dark: {
     surface: [0.245, 0.022],
     border: [0.345, 0.04],
     text: [0.8, 0.07],
     mark: [0.74, 0.11],
+    wash: [0.28, 0.035],
+    ring: [0.74, 0.11, 0.3],
   },
 }
 
-const PARTS: Part[] = ['surface', 'border', 'text', 'mark']
+const PARTS: Part[] = ['surface', 'border', 'text', 'mark', 'wash', 'ring']
 
-const tone = ([lightness, chroma]: [number, number], hue: number) =>
-  `oklch(${lightness} ${chroma} ${hue})`
+const tone = ([lightness, chroma, alpha]: Tone, hue: number) =>
+  `oklch(${lightness} ${chroma} ${hue}${alpha === undefined ? '' : ` / ${alpha}`})`
 
 /**
  * Tint for a module hue. Without a scheme the colour is a `light-dark()` pair —
@@ -58,6 +67,12 @@ export function moduleTint(hue: number, scheme?: 'light' | 'dark'): ModuleTint {
 /** Rendered size of a class node — the layout contract (see elk-layout.ts). */
 export const CLASS_W = 184
 export const CLASS_H = 40
+/** Rendered size of a view node — narrower and shorter than a class, so the two
+ *  never read as the same kind of thing even before you reach their shapes. */
+export const VIEW_W = 168
+export const VIEW_H = 32
+/** The view hue (matching `--schema-view`), for surfaces that need a literal colour. */
+export const VIEW_HUE = 205
 /** Module box insets: children start below the header, padded on every side. */
 export const MODULE_HEADER = 38
 export const MODULE_PAD = 18

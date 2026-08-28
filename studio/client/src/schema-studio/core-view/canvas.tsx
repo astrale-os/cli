@@ -19,14 +19,14 @@ import {
   useReactFlow,
   useStore,
 } from '@xyflow/react'
-import { Box, Boxes, FolderClosed, FolderTree, Network, Spline } from 'lucide-react'
+import { Box, FolderClosed, FolderTree, Spline } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { hasAnyUnsentDraft } from '@/components/thread'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
+import { CanvasIconToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
 import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
@@ -37,27 +37,6 @@ import { NodeCommentPin } from '../node-comment-pin'
 import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
 import { type CoreNodeData, buildCoreGraph, hueMapOf, nodeAnchor } from './model'
-
-// ── the toggle (mounted on both the schema canvas and the core canvas) ──────
-
-/** Switch the schema canvas between the schema graph and the core (genesis) view.
- *  `count` (core element total: nodes + edges) renders a badge mirroring the
- *  Domains/Views/Integrations buttons — shown only in the "Core" state. */
-export function CoreModeToggle({ count }: { count?: number }) {
-  const mode = useUI((s) => s.canvasMode)
-  const setMode = useUI((s) => s.setCanvasMode)
-  const core = mode === 'core'
-  return (
-    <CanvasToggle
-      icon={core ? <Network /> : <Boxes />}
-      label={core ? 'Schema' : 'Core'}
-      count={core ? undefined : count}
-      pressed={core}
-      title={core ? 'Back to the schema graph' : 'Show core (genesis) data'}
-      onClick={() => setMode(core ? 'schema' : 'core')}
-    />
-  )
-}
 
 // ── canvas node ─────────────────────────────────────────────────────────────
 
@@ -240,6 +219,11 @@ export function CoreView({
         }}
         minZoom={0.15}
         nodesConnectable={false}
+        // React Flow derives an edge's z-index from its endpoints, and a SELECTED node is
+        // lifted to 1000 — which dragged that node's edges over the label layer and struck
+        // every one of their labels through. Our nodes never overlap, so the lift buys
+        // nothing and edges stay below the labels they belong to.
+        elevateNodesOnSelect={false}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={20} size={1} color="var(--color-input)" />
@@ -254,22 +238,20 @@ export function CoreView({
         />
         <Panel position="top-right">
           <CanvasToolbar>
-            <CanvasToggle
+            <CanvasIconToggle
               icon={<FolderTree />}
               label="Structure"
+              hint="folders and the parent→child tree"
               pressed={showStructure}
-              title="Folders and the parent→child tree"
               onClick={() => setShowStructure((v) => !v)}
             />
-            <CanvasToggle
+            <CanvasIconToggle
               icon={<Spline />}
               label="Semantics"
+              hint="typed edges between core nodes"
               pressed={showSemantics}
-              title="Typed edges between core nodes"
               onClick={() => setShowSemantics((v) => !v)}
             />
-            <span className="mx-0.5 h-4 w-px bg-border" />
-            <CoreModeToggle />
           </CanvasToolbar>
         </Panel>
       </ReactFlow>

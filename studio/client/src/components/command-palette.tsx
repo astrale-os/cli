@@ -1,5 +1,5 @@
 import { Command } from 'cmdk'
-import { ArrowRight, Box, Folder, Settings, Spline, Tag } from 'lucide-react'
+import { AppWindow, ArrowRight, Box, Folder, Globe, Plug, Spline, Tag } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 
 import { useBundle } from '@/lib/hooks'
@@ -10,8 +10,18 @@ import { folderModules, moduleOfClass } from '@/schema-studio/modules'
 /** The nav sections, mirroring app.tsx's NAV order/labels. */
 const SECTIONS: { key: SectionKey; label: string }[] = [
   { key: 'schema', label: 'Schema' },
+  { key: 'core', label: 'Core' },
   { key: 'process', label: 'Process' },
 ]
+
+/** The domain-level overviews. They open in the schema section's right panel —
+ *  reachable from here rather than from a permanent row of canvas buttons. */
+const OVERVIEWS: { key: 'domains' | 'views' | 'integrations'; label: string; icon: typeof Box }[] =
+  [
+    { key: 'domains', label: 'Imported domains', icon: Globe },
+    { key: 'views', label: 'Views', icon: AppWindow },
+    { key: 'integrations', label: 'Integrations', icon: Plug },
+  ]
 
 /** Summarise a JSON Schema property type for the muted meta column. */
 function propTypeLabel(
@@ -65,7 +75,7 @@ export function CommandPalette() {
   const setSection = useUI((s) => s.setSection)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
-  const setSettingsOpen = useUI((s) => s.setSettingsOpen)
+  const setPanelOverlay = useUI((s) => s.setPanelOverlay)
 
   const { data: bundle } = useBundle(domainId)
 
@@ -189,20 +199,6 @@ export function CommandPalette() {
           No results
         </Command.Empty>
 
-        <Command.Group heading="Studio">
-          <Command.Item
-            value="settings power-user options integrations folder configuration"
-            className={ITEM_CLS}
-            onSelect={() => {
-              setSettingsOpen(true)
-              close()
-            }}
-          >
-            <Settings className="h-4 w-4 text-muted-foreground" />
-            Settings…
-          </Command.Item>
-        </Command.Group>
-
         {index.classes.length > 0 && (
           <Command.Group heading="Classes">
             {index.classes.map((c) => (
@@ -294,6 +290,23 @@ export function CommandPalette() {
             ))}
           </Command.Group>
         )}
+
+        <Command.Group heading="Overviews">
+          {OVERVIEWS.map((o) => (
+            <Command.Item
+              key={`overview.${o.key}`}
+              value={`open ${o.label} ${o.key} overview`}
+              className={ITEM_CLS}
+              onSelect={() => {
+                setSection('schema')
+                setPanelOverlay(o.key)
+                close()
+              }}
+            >
+              <Row icon={o.icon} label={o.label} meta="overview" />
+            </Command.Item>
+          ))}
+        </Command.Group>
 
         <Command.Group heading="Go to">
           {SECTIONS.map((s) => (
