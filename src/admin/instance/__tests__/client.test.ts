@@ -195,11 +195,35 @@ describe('V2 Admin Instance adapter', () => {
     expect(contract.reflection).not.toHaveBeenCalled()
   })
 
-  test('replays terminal deletion by exact NodePath while public inventory stays empty', async () => {
+  test('retries terminal deletion through the exact NodePath while public inventory stays empty', async () => {
     const deleted = instanceNode({ state: 'deleted' })
     let attempts = 0
     const contract = fixture({
-      instances: [deleted],
+      useDefaultOperationIds: true,
+      query: (ast, options) => {
+        const first = ast.source.kind === 'node' ? ast.source.terms[0] : undefined
+        if (first?.kind === 'path') {
+          expect(String(first.path)).toBe('@instance-node')
+          expect(JSON.parse(JSON.stringify(ast.steps))).toEqual([
+            {
+              op: 'filter',
+              binding: 'n0',
+              predicate: {
+                kind: 'class.equal',
+                class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
+              },
+            },
+          ])
+          expect(options).toEqual({ page: { size: 1 } })
+        }
+        return {
+          result: {
+            kind: 'nodes' as const,
+            nodes: [{ kind: 'value' as const, value: deleted }],
+          },
+          page: {},
+        }
+      },
       invoke: () => {
         attempts += 1
         if (attempts === 1) throw new Error('response lost after terminal commit')
@@ -219,16 +243,21 @@ describe('V2 Admin Instance adapter', () => {
       'response lost after terminal commit',
     )
     await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
-    expect(contract.calls).toEqual([
-      {
-        target: '@instance-node::delete',
-        value: { operationId: 'cli.instance.delete.test' },
-      },
-      {
-        target: '@instance-node::delete',
-        value: { operationId: 'cli.instance.delete.test' },
-      },
+    expect(contract.calls.map(({ target }) => target)).toEqual([
+      '@instance-node::delete',
+      '@instance-node::delete',
     ])
+    const operationIds = contract.calls.map(({ value }) =>
+      String((value as { operationId: unknown }).operationId),
+    )
+    expect(operationIds).toHaveLength(2)
+    expect(operationIds[0]).toMatch(
+      /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    expect(operationIds[1]).toMatch(
+      /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    expect(operationIds[0]).not.toBe(operationIds[1])
   })
 
   test('installs a resolved catalog Domain through Instance.installDomain', async () => {
