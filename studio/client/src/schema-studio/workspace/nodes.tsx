@@ -40,6 +40,13 @@ function useWorkspaceNodeActions(): WorkspaceNodeActions {
  * makes its domain the active one, but the frame does not repaint to say so. Which
  * domain is active is answered once, in the modules rail, instead of every boundary on
  * the canvas changing colour whenever a selection moves.
+ *
+ * The boundary is carried by TWO things, because the canvas is read at every zoom: a
+ * 2px dashed rule, which says "edge of a territory" up close, and a neutral wash over
+ * the whole area, which is the only part that survives being zoomed out — a hairline
+ * scaled to a third of a pixel does not. The wash is `foreground`, not a hue: it darkens
+ * on the light canvas and lightens on the dark one, and leaves the module hues inside
+ * as the only colour in the frame.
  */
 function WorkspaceDomainNode({ data }: NodeProps) {
   const domain = data as WorkspaceDomainNodeData
@@ -48,10 +55,12 @@ function WorkspaceDomainNode({ data }: NodeProps) {
       data-domain-id={domain.domainId}
       data-testid={`workspace-domain-${domain.domainId}`}
       title={`Drag ${domain.origin}`}
-      className="relative h-full w-full rounded-xl border border-dashed border-border"
+      className="relative h-full w-full rounded-xl border-2 border-dashed border-muted-foreground/35 bg-foreground/[0.04]"
     >
+      {/* The origin sits ON the rule, painted over it in the canvas colour, so the frame
+          reads as one labelled boundary rather than a box with a caption floating above. */}
       <span
-        className="absolute -top-2 left-4 whitespace-nowrap px-2 text-[11px] font-medium text-muted-foreground"
+        className="absolute -top-2.5 left-4 whitespace-nowrap px-2 text-[12px] font-semibold text-foreground/75"
         style={{ background: 'var(--color-canvas)' }}
       >
         {domain.origin}
