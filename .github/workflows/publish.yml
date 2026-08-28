@@ -1,0 +1,36 @@
+name: Publish npm package
+
+# Release Please owns package.json. Only its version commit reaches this path,
+# so npm and the standalone release publish the same immutable CLI version.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'package.json'
+      - '.release-please-manifest.json'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - uses: astrale-os/config/.github/actions/publish/packages@8e2e2abd0320be0c2f64033916519ab3b66c7dd7
+        with:
+          dirs: '.'
+          mirror-public-packages: 'false'
+          build-command: 'pnpm install --frozen-lockfile --ignore-scripts'
+          prerelease-tag: auto
