@@ -8,7 +8,6 @@ import {
   classifyUpdateExecution,
   DEFAULT_UPDATE_CHANNEL,
   InstallMetadataSchema,
-  packageManagedInstallCommand,
   packageManagedUpdateError,
   readInstallMetadata,
   releaseBase,
@@ -137,27 +136,11 @@ describe('update helpers', () => {
     ).toBe('beta')
   })
 
-  test('renders exact npm selectors for package-managed upgrades', () => {
-    expect(packageManagedInstallCommand({})).toBe(
-      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
-    )
-    expect(packageManagedInstallCommand({ channel: 'stable' })).toBe(
-      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@latest',
-    )
-    expect(packageManagedInstallCommand({ channel: 'canary' })).toBe(
-      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@canary',
-    )
-    expect(packageManagedInstallCommand({ version: '1.0.0-beta.42' })).toBe(
-      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@1.0.0-beta.42',
-    )
-
-    const error = packageManagedUpdateError(
-      '/opt/homebrew/bin/node',
-      'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
-    )
+  test('directs externally managed processes to the standalone installer', () => {
+    const error = packageManagedUpdateError('/opt/homebrew/bin/node')
     expect(error.code).toBe('UPDATE_PACKAGE_MANAGED')
     expect(error.hint).toBe(
-      'Active runtime: /opt/homebrew/bin/node. Upgrade the public npm installation with: npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
+      'Active runtime: /opt/homebrew/bin/node. Remove any package-managed copy, then install with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh',
     )
   })
 
@@ -270,8 +253,6 @@ describe('updateAstrale', () => {
         status: 'managed',
         currentVersion: '2.0.0',
         executable: '/opt/homebrew/bin/node',
-        command:
-          'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta',
       })
       expect(await readFile(meta.bin, 'utf8')).toBe(before)
     } finally {

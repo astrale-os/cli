@@ -261,8 +261,8 @@ export default {
   afterHelpText: `
 Behavior:
   Keeps three things current, in order. (1) The CLI distribution: updates official
-  standalone installs with checksum verification; npm-owned installs report the
-  exact npm command and never overwrite package-manager files. (2) The Astrale
+  standalone installs with checksum verification; externally managed processes
+  direct users to the standalone installer and never overwrite files they do not own. (2) The Astrale
   agent skills: aligns an existing cohort with the exact CLI release, repairs
   inconsistent installs, and verifies the result. If skills are absent, an
   interactive update offers to install them. (3) SDK deps: inside a pnpm domain
@@ -339,7 +339,7 @@ Examples:
         log.dim(`  channel: ${result.channel}`)
         log.dim(`  binary: ${result.bin}`)
       } else if (result.status === 'managed') {
-        const error = packageManagedUpdateError(result.executable, result.command)
+        const error = packageManagedUpdateError(result.executable)
         throw error
       }
 

@@ -133,27 +133,8 @@ assert.equal(
   'CLI must pin the local Bun 1.4 runtime',
 )
 assert.equal(cliManifest.packageManager, 'pnpm@12.0.0', 'CLI must pin the qualification pnpm')
-assert.equal(cliManifest.private, undefined, 'public CLI package must not be marked private')
-assert.deepEqual(
-  cliManifest.publishConfig,
-  { access: 'public', registry: 'https://registry.npmjs.org/' },
-  'CLI publication must target only the public npm registry',
-)
-assert.equal(
-  cliManifest.files?.includes('src'),
-  false,
-  'public CLI package must not ship the complete source and test tree',
-)
-assert.equal(
-  cliManifest.files?.includes('src/identity/.spec/schemas/identity-export-v1.schema.json'),
-  true,
-  'public CLI package must retain its exported portable identity schema',
-)
-assert.equal(
-  cliManifest.scripts?.prepare,
-  undefined,
-  'public CLI consumers must not receive repository hook lifecycle scripts',
-)
+assert.equal(cliManifest.private, true, 'standalone-only CLI package must remain private')
+assert.equal(cliManifest.publishConfig, undefined, 'standalone-only CLI must not be publishable')
 assert.equal(
   cliManifest.devDependencies?.typescript,
   '7.0.2',

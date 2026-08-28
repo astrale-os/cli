@@ -37,8 +37,6 @@ describe('CLI update staleness', () => {
           status: 'managed',
           currentVersion: '1.0.0-beta.0',
           executable: '/opt/homebrew/bin/node',
-          command:
-            'npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@canary',
         }),
       },
     )
