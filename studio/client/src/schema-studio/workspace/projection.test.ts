@@ -177,6 +177,21 @@ describe('workspace projection', () => {
     expect(result.nodes.some((node) => node.id.startsWith('workspace-external:'))).toBe(false)
   })
 
+  test('draws a same-domain `extends` once, not once per pass', () => {
+    const value = domainBundle('solo', 'solo.example.dev', {
+      Base: nodeClass('Base', { origin: 'solo.example.dev' }),
+      Document: nodeClass('Document', {
+        origin: 'solo.example.dev',
+        extendsRefs: [classRef('solo.example.dev', 'Base')],
+      }),
+    })
+
+    const result = composeWorkspaceCanvas([prepared(value)], { activeDomainId: 'solo' })
+
+    // the domain's own projection owns it; the workspace pass only adds what crosses domains
+    expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toHaveLength(1)
+  })
+
   test('draws cross-domain Class inheritance only when the owner enables it', () => {
     const base = classRef('base.example.dev', 'Base')
     const childBundle = domainBundle('child', 'child.example.dev', {

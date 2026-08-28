@@ -6,11 +6,15 @@ import {
   Box,
   ChevronDown,
   ChevronRight,
+  CornerDownRight,
   FileCode2,
+  Fingerprint,
   Globe,
+  type LucideIcon,
   MessageSquare,
   Play,
   TriangleAlert,
+  Zap,
 } from 'lucide-react'
 import { type CSSProperties, useState } from 'react'
 
@@ -25,6 +29,7 @@ import { driftLabel } from '@/lib/views'
 
 import type { CanvasCommentNodeData } from './structure'
 
+import { type KernelRole } from '../inheritance'
 import { NodeCommentPin } from '../node-comment-pin'
 import { CLASS_H, CLASS_W, VIEW_H, VIEW_W, moduleTint } from '../palette'
 import { type ClassNodeData, type GroupNodeData } from '../projection'
@@ -33,17 +38,28 @@ import { type ViewNodeData, viewNodeId } from '../view-graph'
 
 // ── custom nodes ──
 
+/**
+ * What a Class IS, in one glyph each: a principal, a callable. `Zap` is already how the
+ * rest of the Studio draws something that runs (actions, methods), so a Class that IS one
+ * wears the same mark; the fingerprint is the identity vocabulary and is used nowhere else.
+ */
+const ROLE_GLYPHS: Record<KernelRole, { icon: LucideIcon; label: string }> = {
+  identity: { icon: Fingerprint, label: 'Identity' },
+  function: { icon: Zap, label: 'Function' },
+}
+
 function ClassNode({ data }: NodeProps) {
   const d = data as ClassNodeData
   const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `class.${d.name}`)
-  // chips and inheritance edges carry the same fact — show whichever the reader asked for
-  const showInheritedEdges = useUI((s) => s.showInheritedEdges)
+  // The projection already applied the reader's choice: `parents` is empty while the
+  // inheritance EDGES are drawn, since the chips below would only repeat them.
   const parents = d.parents ?? []
+  const roles = d.roles ?? []
   const tint = moduleTint(d.hue)
   return (
     <div
       data-domain-id={d.domainId}
-      data-core-role={d.coreRole ?? undefined}
+      data-kernel-roles={roles.length > 0 ? roles.join(' ') : undefined}
       // the module colour is a left border, not an inset bar: the card can't clip
       // its own comment pin (which sits on the corner) with `overflow-hidden`.
       // Selection paints in the card's OWN hue — a generic accent would tell you
@@ -87,16 +103,39 @@ function ClassNode({ data }: NodeProps) {
       ) : (
         <Box className="h-4 w-4 shrink-0" style={{ color: tint.mark }} />
       )}
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{d.name}</span>
-      {!showInheritedEdges && parents.length > 0 && (
-        <span
-          title={`Extends ${parents.join(', ')}`}
-          className="max-w-[76px] shrink-0 truncate rounded bg-muted px-1 py-px text-[10px] leading-4 text-muted-foreground"
-        >
-          {parents[0]}
-          {parents.length > 1 && ` +${parents.length - 1}`}
-        </span>
-      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[13px] font-medium leading-tight">{d.name}</div>
+        {/* With the inheritance edges off, the card carries that fact itself: one chip per
+            class it extends, under the name where it does not eat into it. `↳` says
+            "extends" in the width the word would not fit, and the chips share the row —
+            each elides rather than all but the first hiding behind a `+2`. */}
+        {parents.length > 0 && (
+          <div className="mt-px flex items-center gap-1">
+            <CornerDownRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/60" />
+            {parents.map((parent) => (
+              <span
+                key={parent}
+                className="min-w-0 truncate rounded-sm bg-muted px-1 text-[10px] leading-[14px] text-muted-foreground"
+              >
+                {parent}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {/* A role is inherited whole, so it is read off the WHOLE chain and shown even when
+          the parent that conferred it is several hops away and nowhere on the card. It is
+          a glyph rather than a chip: what a Class is stays legible zoomed out, where a word
+          would not be, and it never competes with the name for the row. */}
+      {roles.map((role) => {
+        const Glyph = ROLE_GLYPHS[role].icon
+        // the tooltip rides on the span: `title` on an <svg> is not the one browsers show
+        return (
+          <span key={role} title={ROLE_GLYPHS[role].label} className="shrink-0">
+            <Glyph className="h-3.5 w-3.5 text-muted-foreground" />
+          </span>
+        )
+      })}
       <NodeCommentPin
         domainId={d.domainId}
         anchorRef={`class.${d.name}`}

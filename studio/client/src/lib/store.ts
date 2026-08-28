@@ -88,8 +88,6 @@ interface UIState {
   /** Per-element canvas hide-set keyed by ref: `class.X` | `edge.X` | `domain.<origin>`.
    *  Everything is shown by default, so membership ⇒ hidden (no tri-state). Persisted per domain. */
   hidden: Record<string, true>
-  /** Category control for Class inheritance edges. Persisted per domain. */
-  showInheritedEdges: boolean
   /** Canvas reading mode: direction only (default) or the declared multiplicities. */
   showCardinality: boolean
   /** The exact anchor a thread was just revealed from — kept alongside `selectedClass`
@@ -97,6 +95,10 @@ interface UIState {
    *  this is what then singles the `total` row out inside it. Cleared by any other
    *  selection. */
   revealedRef: string | null
+  /** A class an explicit JUMP asked the canvas to bring into view (⌘K, or revealing a
+   *  comment's anchor). A plain click never sets it: selecting a node must leave the canvas
+   *  exactly where the reader put it. The canvas clears it once it has framed the target. */
+  revealTarget: string | null
   /** which anchor's comment thread-popover is currently open (one at a time) */
   openAnchorRef: string | null
   /** which pin INSTANCE opened it (a `useId()`), so when the same ref is pinned in
@@ -131,11 +133,10 @@ interface UIState {
   setFocus: (id: string | null) => void
   toggleModule: (path: string) => void
   toggleHidden: (ref: string) => void
-  /** Replace the whole visibility slice (used to hydrate from the persisted per-domain state). */
-  setVisibility: (v: { hidden: Record<string, true>; showInheritedEdges: boolean }) => void
-  toggleInheritedEdges: () => void
   toggleCardinality: () => void
   setOpenAnchor: (ref: string | null, id?: string | null) => void
+  /** ask the canvas to frame a class (the ⌘K path) — and, once framed, to forget it */
+  revealOnCanvas: (ref: string | null) => void
   toggleCommentMode: (on?: boolean) => void
   toggleAskMode: (on?: boolean) => void
   setCommentDraft: (d: CommentDraft | null) => void
@@ -168,8 +169,8 @@ export const useUI = create<UIState>((set) => ({
   collapsedModules: [],
   commentDraft: null,
   revealedRef: null,
+  revealTarget: null,
   hidden: {},
-  showInheritedEdges: true,
   showCardinality: false,
   openAnchorRef: null,
   openAnchorId: null,
@@ -191,11 +192,11 @@ export const useUI = create<UIState>((set) => ({
       selectedClass: undefined,
       focusId: null,
       revealedRef: null,
+      revealTarget: null,
       openAnchorRef: null,
       // Visibility is PER-DOMAIN — clear it on switch so the previous domain's hide
       // set never bleeds into the new one. The graph then hydrates this domain's slice.
       hidden: {},
-      showInheritedEdges: true,
     })
   },
   setSection: (section) => {
@@ -207,6 +208,7 @@ export const useUI = create<UIState>((set) => ({
       section,
       panelOverlay: null,
       revealedRef: null,
+      revealTarget: null,
       openAnchorRef: null,
       ...((s.section === 'core') !== (section === 'core')
         ? { selectedClass: undefined, focusId: null }
@@ -247,7 +249,11 @@ export const useUI = create<UIState>((set) => ({
       ...(selection.startsWith('class.') ||
       selection.startsWith('edge.') ||
       selection.startsWith('module.')
-        ? { selectedClass: revealSelection(selection), focusId: revealFocus(selection) }
+        ? {
+            selectedClass: revealSelection(selection),
+            focusId: revealFocus(selection),
+            revealTarget: revealFocus(selection),
+          }
         : {}),
     })
   },
@@ -259,6 +265,7 @@ export const useUI = create<UIState>((set) => ({
         selectedClass,
         panelOverlay: null,
         revealedRef: null,
+        revealTarget: null,
         focusId: selectedClass?.startsWith('class.') ? selectedClass : s.focusId,
       }
     }),
@@ -267,13 +274,17 @@ export const useUI = create<UIState>((set) => ({
       selectedClass: id,
       panelOverlay: null,
       revealedRef: null,
+      revealTarget: null,
       focusId: s.focusId === id ? null : id,
     })),
   clearSelection: () =>
     set((s) =>
-      s.selectedClass === undefined && s.focusId === null && s.revealedRef === null
+      s.selectedClass === undefined &&
+      s.focusId === null &&
+      s.revealedRef === null &&
+      s.revealTarget === null
         ? {}
-        : { selectedClass: undefined, focusId: null, revealedRef: null },
+        : { selectedClass: undefined, focusId: null, revealedRef: null, revealTarget: null },
     ),
   setFocus: (focusId) => set({ focusId }),
   toggleModule: (path) =>
@@ -289,10 +300,9 @@ export const useUI = create<UIState>((set) => ({
       else next[ref] = true
       return { hidden: next }
     }),
-  setVisibility: ({ hidden, showInheritedEdges }) => set({ hidden, showInheritedEdges }),
-  toggleInheritedEdges: () => set((s) => ({ showInheritedEdges: !s.showInheritedEdges })),
   toggleCardinality: () => set((s) => ({ showCardinality: !s.showCardinality })),
   setOpenAnchor: (openAnchorRef, openAnchorId = null) => set({ openAnchorRef, openAnchorId }),
+  revealOnCanvas: (revealTarget) => set({ revealTarget }),
   toggleCommentMode: (on) =>
     set((s) => ({ commentMode: on ?? !s.commentMode, askMode: false, openAnchorRef: null })),
   toggleAskMode: (on) =>

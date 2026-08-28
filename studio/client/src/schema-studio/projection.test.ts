@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { bundle, classRef, edgeClass, nodeClass } from './__tests__/fixture'
-import { projectDomainCanvas } from './projection'
+import { type ClassNodeData, projectDomainCanvas } from './projection'
 
 describe('Domain canvas projection', () => {
   test('renders Node Classes, relation edges, and Class inheritance', () => {
@@ -62,5 +62,47 @@ describe('Domain canvas projection', () => {
         .nodes.filter((node) => node.type === 'classNode')
         .map((node) => node.id),
     ).toEqual(['class.Document'])
+  })
+
+  test('badges a Kernel role at any depth, and never repeats it as a chip', () => {
+    const fixture = bundle({
+      Principal: nodeClass('Principal', {
+        extendsRefs: [classRef('kernel.astrale.ai', 'Identity')],
+      }),
+      Employee: nodeClass('Employee', {
+        extendsRefs: [
+          classRef('local.example.dev', 'Principal'),
+          classRef('local.example.dev', 'Base'),
+        ],
+      }),
+      Base: nodeClass('Base'),
+    })
+    const cards = projectDomainCanvas(fixture, new Set(), {}, false)
+      .nodes.filter((node) => node.type === 'classNode')
+      .map((node) => node.data as ClassNodeData)
+    const card = (name: string) => cards.find((data) => data.name === name)!
+
+    expect(card('Employee').roles).toEqual(['identity'])
+    expect(card('Employee').parents).toEqual(['Principal', 'Base'])
+    // declared right on it: still a glyph, and the chip that would repeat it is dropped
+    expect(card('Principal')).toMatchObject({ roles: ['identity'], parents: [] })
+    expect(card('Base')).toMatchObject({ roles: [], parents: [] })
+  })
+
+  test('hands the Class its parents as chips exactly when the edges are off', () => {
+    const fixture = bundle({
+      Base: nodeClass('Base'),
+      Document: nodeClass('Document', {
+        extendsRefs: [classRef('local.example.dev', 'Base')],
+      }),
+    })
+    const parentsOf = (showInheritedEdges: boolean) =>
+      projectDomainCanvas(fixture, new Set(), {}, showInheritedEdges)
+        .nodes.filter((node) => node.type === 'classNode')
+        .map((node) => (node.data as ClassNodeData).parents)
+
+    // edges on: the chips would only repeat what the canvas already draws
+    expect(parentsOf(true)).toEqual([[], []])
+    expect(parentsOf(false)).toEqual([[], ['Base']])
   })
 })
