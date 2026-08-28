@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.47](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.46...cli/v1.0.0-beta.47) (2026-08-28)
+
+
+### Bug Fixes
+
+* **release:** align standalone skill update qualification ([#258](https://github.com/astrale-os/cli/issues/258)) ([bdb2b23](https://github.com/astrale-os/cli/commit/bdb2b2394eb7c68cdbcaa3ebe76dfdbdd6c55433))
+
 ## [1.0.0-beta.46](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.45...cli/v1.0.0-beta.46) (2026-08-28)
 
 
