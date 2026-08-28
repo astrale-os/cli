@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { createHash } from 'node:crypto'
-import { lstat, readFile, readdir, readlink, writeFile } from 'node:fs/promises'
+import { createHash, randomUUID } from 'node:crypto'
+import { lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
@@ -156,11 +156,18 @@ const source = formatted.stdout.toString()
 if (process.argv.includes('--check')) {
   const current = await readFile(OUTPUT, 'utf8').catch(() => '')
   if (current !== source) {
-    console.error('embedded assets are stale — run: bun scripts/generate-embedded-assets.ts')
+    console.error('embedded assets are stale — run: bun scripts/build-embedded-assets.ts')
     process.exit(1)
   }
 } else {
-  await writeFile(OUTPUT, source)
+  await mkdir(dirname(OUTPUT), { recursive: true })
+  const temporary = `${OUTPUT}.${process.pid}.${randomUUID()}.tmp`
+  try {
+    await writeFile(temporary, source)
+    await rename(temporary, OUTPUT)
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined)
+  }
   console.log(
     `embedded ${archive.files.length} files (${compressed.length} compressed bytes, ${skills.length} skills)`,
   )

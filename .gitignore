@@ -3,6 +3,7 @@ node_modules
 
 # Build outputs
 dist
+src/generated/embedded-assets.ts
 .*.bun-build
 *.tsbuildinfo
 .output

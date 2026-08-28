@@ -98,7 +98,7 @@ describe('studio server runtime deps', () => {
 describe('studio test gate', () => {
   test('the root and Studio suites include all client, server, and shared tests', () => {
     expect(cliPackage.scripts?.test).toBe(
-      'node scripts/qualification/source-boundary.mjs --target && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs',
+      'pnpm run assets:ensure && node scripts/qualification/source-boundary.mjs --target && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs',
     )
     expect(cliPackage.scripts?.['test:studio']).toBe('pnpm --dir studio test')
     expect(studioPackage.scripts?.test).toBe('bun test client/src server shared')
