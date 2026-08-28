@@ -2,13 +2,14 @@ import type { AnchorRef, Comment } from '@shared/types'
 
 import { type ReactNode, useCallback, useId } from 'react'
 
+import { hasUnsentDraft } from '@/lib/comment-drafts'
 import { openCommentThreads } from '@/lib/comments'
 import { useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { anchorKey } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { CommentPin } from './comment-pin'
-import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
@@ -81,12 +82,14 @@ export function AnchorButton({
   domainId?: string
 }) {
   const myId = useId()
+  const activeDomainId = useUI((s) => s.domainId)
+  const ownerDomainId = domainId ?? activeDomainId ?? ''
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
-  const openKey = domainId ? `${domainId}::${anchorRef.ref}` : anchorRef.ref
+  const openKey = anchorKey(ownerDomainId, anchorRef.ref)
   const open = openRef === openKey && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
-  const { openThreads, orphaned } = useAnchorThreads(anchorRef.ref, domainId)
+  const { openThreads, orphaned } = useAnchorThreads(anchorRef.ref, ownerDomainId)
 
   if (openThreads.length === 0) return null
 
@@ -100,7 +103,7 @@ export function AnchorButton({
         <button
           type="button"
           data-anchor-ref={anchorRef.ref}
-          data-domain-id={domainId}
+          data-domain-id={ownerDomainId}
           aria-label={`Comments on ${anchorRef.ref}`}
           onClick={(e) => {
             e.stopPropagation()
@@ -116,12 +119,12 @@ export function AnchorButton({
         // an outside click closes the popover — unless a reply is half-written, in
         // which case the header's × is the deliberate way out
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchorRef.ref, openThreads)) event.preventDefault()
+          if (hasUnsentDraft(ownerDomainId, anchorRef.ref, openThreads)) event.preventDefault()
         }}
         className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
       >
         <ThreadPopover
-          domainId={domainId}
+          domainId={ownerDomainId}
           anchor={anchorRef}
           excerpt={excerpt}
           threads={openThreads}
@@ -131,5 +134,3 @@ export function AnchorButton({
     </Popover>
   )
 }
-
-/** Legacy shim: the global composer dialog is gone; popovers are anchored now. */

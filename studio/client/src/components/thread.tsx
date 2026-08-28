@@ -5,6 +5,13 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { useAgentSnapshot } from '@/lib/agent'
+import {
+  clearCommentDraft,
+  newCommentDraftKey,
+  readCommentDraft,
+  replyDraftKey,
+  writeCommentDraft,
+} from '@/lib/comment-drafts'
 import { relativeTime } from '@/lib/format'
 import { useCommentMutations } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
@@ -24,32 +31,20 @@ import { Textarea } from './ui/textarea'
  * thread is noise, and there is usually more than one thread on screen.
  */
 
-/** Unsent text (per thread, and per anchor for a new comment) — survives closing a popover. */
-const drafts = new Map<string, string>()
-
-export function hasAnyUnsentDraft(): boolean {
-  for (const value of drafts.values()) if (value.trim()) return true
-  return false
-}
-
-/** Is there unsent text in this anchor's composer (new comment or any reply)? */
-export function hasUnsentDraft(anchorRef: string, threads: Comment[]): boolean {
-  for (const [key, value] of drafts) {
-    if (!value.trim()) continue
-    if (key.startsWith('new::') && key.endsWith(`::${anchorRef}`)) return true
-    if (threads.some((thread) => key === `reply::${thread.id}`)) return true
-  }
-  return false
-}
-
 function useDraft(key: string): [string, (value: string) => void, () => void] {
-  const [value, setValue] = useState(() => drafts.get(key) ?? '')
+  const [value, setValue] = useState(() => readCommentDraft(key))
   const update = (next: string) => {
     setValue(next)
-    if (next) drafts.set(key, next)
-    else drafts.delete(key)
+    writeCommentDraft(key, next)
   }
-  return [value, update, () => update('')]
+  return [
+    value,
+    update,
+    () => {
+      setValue('')
+      clearCommentDraft(key)
+    },
+  ]
 }
 
 /** Who wrote an entry: you, or the local agent (named after the harness handling it). */
@@ -286,7 +281,7 @@ function Entries({ domainId, comment }: { domainId: string; comment: Comment }) 
 /** One thread: what was said, then Reply / Resolve. */
 export function ThreadView({ domainId, comment }: { domainId: string; comment: Comment }) {
   const { reply, setStatus, remove } = useCommentMutations(domainId)
-  const [text, setText, clearText] = useDraft(`reply::${comment.id}`)
+  const [text, setText, clearText] = useDraft(replyDraftKey(domainId, comment.id))
   const [replying, setReplying] = useState(() => !!text)
   const closed = comment.status === 'closed'
 
@@ -403,7 +398,7 @@ export function NewComment({
   onCancel?: () => void
 }) {
   const { create } = useCommentMutations(domainId)
-  const [text, setText, clearText] = useDraft(`new::${domainId}::${anchor.ref}`)
+  const [text, setText, clearText] = useDraft(newCommentDraftKey(domainId, anchor.ref))
 
   const submit = () => {
     const value = text.trim()

@@ -3,12 +3,13 @@ import type { AnchorRef } from '@shared/types'
 import { MessageSquarePlus } from 'lucide-react'
 import { useId, type ReactNode } from 'react'
 
+import { hasUnsentDraft } from '@/lib/comment-drafts'
 import { useUI } from '@/lib/store'
+import { anchorKey } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { useAnchorThreads } from './anchor'
 import { CommentPin } from './comment-pin'
-import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
@@ -23,28 +24,34 @@ export function Commentable({
   excerpt,
   children,
   className,
+  domainId,
 }: {
   anchor: AnchorRef
   excerpt: string
   children: ReactNode
   className?: string
+  domainId?: string
 }) {
   const myId = useId()
+  const activeDomainId = useUI((s) => s.domainId)
+  const ownerDomainId = domainId ?? activeDomainId ?? ''
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
-  const open = openRef === anchor.ref && (openId === null || openId === myId)
+  const openKey = anchorKey(ownerDomainId, anchor.ref)
+  const open = openRef === openKey && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
-  const { openThreads, orphaned } = useAnchorThreads(anchor.ref)
+  const { openThreads, orphaned } = useAnchorThreads(anchor.ref, ownerDomainId)
 
   return (
     <Popover
       modal={false}
       open={open}
-      onOpenChange={(o) => setOpenAnchor(o ? anchor.ref : null, o ? myId : null)}
+      onOpenChange={(o) => setOpenAnchor(o ? openKey : null, o ? myId : null)}
     >
       <PopoverAnchor asChild>
         <span
           data-anchor-ref={anchor.ref}
+          data-domain-id={ownerDomainId}
           data-commentable=""
           className={cn('group relative block', className)}
         >
@@ -55,7 +62,7 @@ export function Commentable({
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              setOpenAnchor(open ? null : anchor.ref, myId)
+              setOpenAnchor(open ? null : openKey, myId)
             }}
             title={`Comment on ${anchor.ref}`}
             className={cn(
@@ -72,7 +79,7 @@ export function Commentable({
               count={openThreads.length}
               status="open"
               orphaned={orphaned}
-              onClick={() => setOpenAnchor(open ? null : anchor.ref, myId)}
+              onClick={() => setOpenAnchor(open ? null : openKey, myId)}
               className="absolute -right-1.5 -top-1.5 z-10"
             />
           )}
@@ -83,11 +90,12 @@ export function Commentable({
         // an outside click closes the popover — unless a reply is half-written, in
         // which case the header's × is the deliberate way out
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchor.ref, openThreads)) event.preventDefault()
+          if (hasUnsentDraft(ownerDomainId, anchor.ref, openThreads)) event.preventDefault()
         }}
         className="max-h-[var(--radix-popover-content-available-height)] overflow-y-auto"
       >
         <ThreadPopover
+          domainId={ownerDomainId}
           anchor={anchor}
           excerpt={excerpt}
           threads={openThreads}

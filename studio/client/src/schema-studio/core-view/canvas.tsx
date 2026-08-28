@@ -22,7 +22,7 @@ import {
 import { Box, FolderClosed, FolderTree, Spline } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { hasAnyUnsentDraft } from '@/components/thread'
+import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 

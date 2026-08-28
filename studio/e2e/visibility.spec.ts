@@ -5,7 +5,7 @@ test('an imported domain is hidden and restored through its persisted visibility
   request,
 }) => {
   const workspace = (await (await request.get('/api/workspace')).json()) as Array<{ id: string }>
-  const domainId = workspace[0]!.id
+  const domainId = workspace.find((domain) => domain.id === 'fixture')!.id
   const visibilityUrl = `/api/domain/${encodeURIComponent(domainId)}/visibility`
 
   await page.goto('/')

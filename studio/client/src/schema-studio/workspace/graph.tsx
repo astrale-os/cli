@@ -21,10 +21,11 @@ import {
 import { Frame, LayoutGrid, Sigma, Spline, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { hasAnyUnsentDraft } from '@/components/thread'
 import { api, qk } from '@/lib/api'
+import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
 import { useCatalog, useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { decodeFlowNodeId } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import type { ClassNodeData } from '../projection'
@@ -61,10 +62,8 @@ import {
 import { useSchemaWorkspace } from './store'
 
 function localNodeRef(id: string): { domainId: string; localId: string } | null {
-  if (!id.startsWith('workspace:')) return null
-  const [, encodedDomainId, ...rest] = id.split(':')
-  if (!encodedDomainId || rest.length === 0) return null
-  return { domainId: decodeURIComponent(encodedDomainId), localId: rest.join(':') }
+  const identity = decodeFlowNodeId(id)
+  return identity.domainId ? { domainId: identity.domainId, localId: identity.localId } : null
 }
 
 export function WorkspaceSchemaGraph({

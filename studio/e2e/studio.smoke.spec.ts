@@ -15,9 +15,14 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   const workspaceResponse = await request.get('/api/workspace')
   expect(workspaceResponse.ok()).toBe(true)
   const workspace = (await workspaceResponse.json()) as Array<{ id: string; origin: string }>
-  expect(workspace).toEqual([expect.objectContaining({ origin: 'studio-e2e.astrale.ai' })])
+  expect(workspace).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ origin: 'studio-e2e.astrale.ai' }),
+      expect.objectContaining({ origin: 'studio-peer-e2e.astrale.ai' }),
+    ]),
+  )
 
-  const domainId = workspace[0]?.id
+  const domainId = workspace.find((domain) => domain.origin === 'studio-e2e.astrale.ai')?.id
   expect(domainId).toBeTruthy()
   const bundleResponse = await request.get(`/api/domain/${encodeURIComponent(domainId!)}/bundle`)
   expect(bundleResponse.ok()).toBe(true)

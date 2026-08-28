@@ -3,7 +3,14 @@ import { useEffect } from 'react'
 
 import { useAsks } from '@/lib/asks'
 import { type CommentDraft, useUI } from '@/lib/store'
-import { anchorKindForRef, flowEdgeAnchorRef } from '@/lib/targets'
+import {
+  anchorKindForRef,
+  decodeFlowNodeId,
+  flowEdgeAnchorRef,
+  flowEdgeOwnerDomainId,
+  flowNodeAnchorRef,
+  targetElementDomainId,
+} from '@/lib/targets'
 
 function flowPoint(target: HTMLElement, x: number, y: number): { x: number; y: number } | null {
   const flow = target.closest<HTMLElement>('.react-flow')
@@ -39,7 +46,7 @@ function resolveDraft(
   y: number,
 ): CommentDraft | null {
   if (!target) return null
-  const scopedDomainId = target.closest<HTMLElement>('[data-domain-id]')?.dataset.domainId
+  const scopedDomainId = targetElementDomainId(target)
 
   // 1) an element explicitly marked commentable (detail props/methods, section items…)
   const tagged = target.closest<HTMLElement>('[data-anchor-ref]')
@@ -48,7 +55,7 @@ function resolveDraft(
     const excerpt = (tagged.dataset.anchorExcerpt || tagged.textContent || ref).trim().slice(0, 80)
     return {
       mode,
-      domainId: tagged.dataset.domainId ?? scopedDomainId,
+      domainId: targetElementDomainId(tagged) ?? scopedDomainId,
       anchor: { ref, kind: anchorKindForRef(ref) },
       excerpt,
       x,
@@ -60,23 +67,25 @@ function resolveDraft(
   const node = target.closest<HTMLElement>('.react-flow__node')
   if (node) {
     const rawId = node.getAttribute('data-id') ?? ''
-    const id = rawId.startsWith('workspace:') ? rawId.split(':').slice(2).join(':') : rawId
-    if (id.startsWith('class.'))
+    const identity = decodeFlowNodeId(rawId)
+    const ref = flowNodeAnchorRef(rawId)
+    const domainId = identity.domainId ?? targetElementDomainId(node) ?? scopedDomainId
+    if (ref?.startsWith('class.'))
       return {
         mode,
-        domainId: scopedDomainId,
-        anchor: { ref: id, kind: 'schema' },
-        excerpt: id.slice(6),
+        domainId,
+        anchor: { ref, kind: 'schema' },
+        excerpt: ref.slice(6),
         x,
         y,
       }
-    if (id.startsWith('grp-')) {
-      const p = id.slice(4)
+    if (ref?.startsWith('module.')) {
+      const path = ref.slice('module.'.length)
       return {
         mode,
-        domainId: scopedDomainId,
-        anchor: { ref: `module.${p}`, kind: 'section' },
-        excerpt: p,
+        domainId,
+        anchor: { ref, kind: 'section' },
+        excerpt: path,
         x,
         y,
       }
@@ -88,11 +97,10 @@ function resolveDraft(
   if (edge) {
     const edgeId = edge.getAttribute('data-id') ?? ''
     const ref = flowEdgeAnchorRef(edgeId)
-    const encodedOwner = edgeId.startsWith('workspace-edge:') ? edgeId.split(':')[1] : undefined
     if (ref)
       return {
         mode,
-        domainId: encodedOwner ? decodeURIComponent(encodedOwner) : scopedDomainId,
+        domainId: flowEdgeOwnerDomainId(edgeId) ?? targetElementDomainId(edge) ?? scopedDomainId,
         anchor: { ref, kind: 'schema' },
         excerpt: ref.slice(5),
         x,
@@ -124,8 +132,7 @@ function resolveTargetElement(target: HTMLElement | null): HTMLElement | null {
   const node = target.closest<HTMLElement>('.react-flow__node')
   if (node) {
     const rawId = node.getAttribute('data-id') ?? ''
-    const id = rawId.startsWith('workspace:') ? rawId.split(':').slice(2).join(':') : rawId
-    return id.startsWith('class.') || id.startsWith('grp-') ? node : null
+    return flowNodeAnchorRef(rawId) ? node : null
   }
   return target.closest<HTMLElement>('.react-flow__edge')
 }

@@ -3,29 +3,27 @@ import { useEffect, useState } from 'react'
 
 import { type AskEntry, useAsks } from '@/lib/asks'
 import { useUI } from '@/lib/store'
+import { locateTargetElement } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { Button } from './ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 import { Textarea } from './ui/textarea'
 
-/** Top-right corner of the ask's target element on screen, or the click point if it's
- *  not currently rendered (e.g. a section/canvas anchor, or scrolled out of view). */
-function locate(entry: AskEntry): { x: number; y: number } {
-  const ref = entry.ref
-  let el: Element | null = null
-  try {
-    if (ref.startsWith('module.'))
-      el = document.querySelector(`.react-flow__node[data-id="grp-${ref.slice(7)}"]`)
-    else if (ref.startsWith('edge.'))
-      el = document.querySelector(`.react-flow__edge[data-id="edge-${ref.slice(5)}"]`)
-    else
-      el =
-        document.querySelector(`.react-flow__node[data-id="${ref}"]`) ||
-        document.querySelector(`[data-anchor-ref="${ref}"]`)
-  } catch {
-    el = null
+function domainIsRendered(domainId: string, activeDomainId?: string): boolean {
+  if (activeDomainId === domainId) return true
+  for (const element of document.querySelectorAll<HTMLElement>('[data-domain-id]')) {
+    if (element.dataset.domainId === domainId) return true
   }
+  return false
+}
+
+/** Top-right corner of the ask's target element on screen, or the click point for a
+ *  rendered section/canvas anchor. Hidden domains return null instead of leaking a dot
+ *  at stale coordinates into the next canvas. */
+function locate(entry: AskEntry, activeDomainId?: string): { x: number; y: number } | null {
+  if (!domainIsRendered(entry.domainId, activeDomainId)) return null
+  const el = locateTargetElement(document, entry.domainId, entry.ref)
   if (el) {
     const r = el.getBoundingClientRect()
     if ((r.width || r.height) && r.bottom > 0 && r.top < window.innerHeight)
@@ -215,21 +213,16 @@ function AskDot({ entry, pos }: { entry: AskEntry; pos: { x: number; y: number }
 }
 
 /**
- * Renders every ephemeral ask for the current domain as a dot anchored to its target
+ * Renders every ephemeral ask for the domains on the current canvas as a dot anchored to its target
  * element (tracked each frame so it follows pan/zoom/scroll). The stream runs in the
  * store, so the answer arrives even while the popover is collapsed — the dot turns
  * green ("answer ready") to bring you back. Mounted once, app-level.
  */
 export function AskLayer() {
-  const domainId = useUI((s) => s.domainId)
+  const activeDomainId = useUI((s) => s.domainId)
   const entries = useAsks((s) => s.entries)
-  const keepOnly = useAsks((s) => s.keepOnly)
-  const list = Object.values(entries).filter((e) => e.domainId === domainId)
+  const list = Object.values(entries)
   const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({})
-
-  useEffect(() => {
-    if (domainId) keepOnly(domainId)
-  }, [domainId, keepOnly])
 
   const keys = list.map((e) => e.key).join('|')
   useEffect(() => {
@@ -246,7 +239,11 @@ export function AskLayer() {
         for (const k of keys.split('|')) {
           const e = cur[k]
           if (!e) continue
-          const p = locate(e)
+          const p = locate(e, activeDomainId)
+          if (!p) {
+            if (prev[k]) changed = true
+            continue
+          }
           next[k] = p
           const pp = prev[k]
           if (!pp || pp.x !== p.x || pp.y !== p.y) changed = true
@@ -258,7 +255,7 @@ export function AskLayer() {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [keys])
+  }, [activeDomainId, keys])
 
   return (
     <>{list.map((e) => (pos[e.key] ? <AskDot key={e.key} entry={e} pos={pos[e.key]} /> : null))}</>

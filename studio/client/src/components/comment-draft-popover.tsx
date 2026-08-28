@@ -1,7 +1,7 @@
+import { hasUnsentDraft } from '@/lib/comment-drafts'
 import { useUI } from '@/lib/store'
 
 import { useAnchorThreads } from './anchor'
-import { hasUnsentDraft } from './thread'
 import { ThreadPopover } from './thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 
@@ -13,8 +13,10 @@ import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
  */
 export function CommentDraftPopover() {
   const draft = useUI((s) => s.commentDraft)
+  const activeDomainId = useUI((s) => s.domainId)
   const setCommentDraft = useUI((s) => s.setCommentDraft)
-  const { openThreads } = useAnchorThreads(draft?.anchor.ref ?? '__none__', draft?.domainId)
+  const ownerDomainId = draft?.domainId ?? activeDomainId ?? ''
+  const { openThreads } = useAnchorThreads(draft?.anchor.ref ?? '__none__', ownerDomainId)
 
   if (!draft) return null
 
@@ -42,11 +44,11 @@ export function CommentDraftPopover() {
         // nothing typed yet → an outside click just dismisses it; once there IS a
         // draft, only the × (or submitting) closes it, so nothing is lost by accident
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(draft.anchor.ref, openThreads)) event.preventDefault()
+          if (hasUnsentDraft(ownerDomainId, draft.anchor.ref, openThreads)) event.preventDefault()
         }}
       >
         <ThreadPopover
-          domainId={draft.domainId}
+          domainId={ownerDomainId}
           anchor={draft.anchor}
           excerpt={draft.excerpt}
           threads={openThreads}

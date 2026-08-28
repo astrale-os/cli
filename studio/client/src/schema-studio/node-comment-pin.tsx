@@ -4,10 +4,11 @@ import { MessageSquare } from 'lucide-react'
 import { useId } from 'react'
 
 import { useAnchorThreads } from '@/components/anchor'
-import { hasUnsentDraft } from '@/components/thread'
 import { ThreadPopover } from '@/components/thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { hasUnsentDraft } from '@/lib/comment-drafts'
 import { useUI } from '@/lib/store'
+import { anchorKey } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 /**
@@ -28,11 +29,13 @@ export function NodeCommentPin({
   excerpt: string
   className?: string
 }) {
-  const { openThreads, orphaned } = useAnchorThreads(anchorRef, domainId)
+  const activeDomainId = useUI((s) => s.domainId)
+  const ownerDomainId = domainId ?? activeDomainId ?? ''
+  const { openThreads, orphaned } = useAnchorThreads(anchorRef, ownerDomainId)
   const myId = useId()
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
-  const openKey = domainId ? `${domainId}::${anchorRef}` : anchorRef
+  const openKey = anchorKey(ownerDomainId, anchorRef)
   const open = openRef === openKey && (openId === null || openId === myId)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
   if (openThreads.length === 0) return null
@@ -45,6 +48,8 @@ export function NodeCommentPin({
       <PopoverAnchor asChild>
         <button
           type="button"
+          data-anchor-ref={anchorRef}
+          data-domain-id={ownerDomainId}
           title="View comments"
           onClick={(e) => {
             e.stopPropagation()
@@ -67,11 +72,11 @@ export function NodeCommentPin({
         align="end"
         className="w-80"
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchorRef, openThreads)) event.preventDefault()
+          if (hasUnsentDraft(ownerDomainId, anchorRef, openThreads)) event.preventDefault()
         }}
       >
         <ThreadPopover
-          domainId={domainId}
+          domainId={ownerDomainId}
           anchor={{ ref: anchorRef, kind }}
           excerpt={excerpt}
           threads={openThreads}

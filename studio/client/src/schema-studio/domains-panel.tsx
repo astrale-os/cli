@@ -10,6 +10,7 @@ import { ScrollArea, Separator } from '@/components/ui/misc'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useBundle, useCatalog, useCommentMutations, useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { anchorKey } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { type ExternalDomain, externalDomains } from './external'
@@ -78,11 +79,12 @@ function DomainRow({
 }
 
 /** A pending "please import X" wish — an open comment the agent reads; its thread opens inline here. */
-function RequestedRow({ origin }: { origin: string }) {
+function RequestedRow({ domainId, origin }: { domainId: string; origin: string }) {
   const resolve = useResolve()
   const entry = resolve(origin)
   return (
     <Commentable
+      domainId={domainId}
       anchor={{ ref: importAnchor(origin), kind: 'section' }}
       excerpt={`Import ${entry.name}`}
     >
@@ -118,7 +120,7 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
       },
       {
         onSuccess: () => {
-          setOpenAnchor(ref)
+          setOpenAnchor(anchorKey(domainId, ref))
           toast.success('Import requested — add the why/how in the comment')
         },
         onError: (err) => toast.error(String(err)),
@@ -255,7 +257,7 @@ export function DomainsPanel({
             </div>
             <div className="flex flex-col gap-0.5">
               {requested.map((origin) => (
-                <RequestedRow key={origin} origin={origin} />
+                <RequestedRow key={origin} domainId={domainId} origin={origin} />
               ))}
             </div>
           </>
