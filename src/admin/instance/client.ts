@@ -5,6 +5,7 @@ import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
 
+import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import {
@@ -65,7 +66,7 @@ export async function connectAdminInstances(
         maximumPages: MAXIMUM_PAGES,
       },
     )
-    return nodes.map(instanceFromNode)
+    return nodes.map(instanceFromNode).filter((instance) => instance.state !== 'deleted')
   }
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
@@ -225,5 +226,5 @@ function record(input: unknown, label: string): Readonly<Record<string, unknown>
 }
 
 function defaultOperationId(kind: 'create' | 'status' | 'delete' | 'install-domain'): string {
-  return `cli.instance.${kind}:${globalThis.crypto.randomUUID()}`
+  return randomOperationId('cli', 'instance', kind)
 }

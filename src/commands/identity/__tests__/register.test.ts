@@ -214,7 +214,7 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
   })
 
   expect(String(prepared.binding)).toBe('identity')
-  expect(prepared.request.idempotencyKey).toBe('identity-register:alice')
+  expect(prepared.request.idempotencyKey).toBe('identity-register.alice')
   expect(JSON.parse(JSON.stringify(prepared.request.mutation))).toEqual({
     format: 'astrale.graph.mutation',
     version: 'v3',

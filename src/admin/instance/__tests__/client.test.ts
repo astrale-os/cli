@@ -56,7 +56,7 @@ function fixture(input: {
       connectAdminInstances(
         { session: remote.session, graph },
         {
-          operationId: (kind) => `cli.instance.${kind}:test`,
+          operationId: (kind) => `cli.instance.${kind}.test`,
         },
       ),
   }
@@ -65,7 +65,7 @@ function fixture(input: {
 describe('V2 Admin Instance adapter', () => {
   test('lists caller-visible Instances through one exact native graph Query', async () => {
     const contract = fixture({
-      instances: [instanceNode()],
+      instances: [instanceNode(), instanceNode({ id: 'deleted', state: 'deleted' })],
     })
 
     await expect((await contract.connect()).list()).resolves.toEqual([
@@ -131,7 +131,7 @@ describe('V2 Admin Instance adapter', () => {
     expect(contract.calls).toEqual([
       {
         target: '/:admin.astrale.ai:core.fleet::createInstance',
-        value: { operationId: 'cli.instance.create:test', slug: 'demo' },
+        value: { operationId: 'cli.instance.create.test', slug: 'demo' },
       },
     ])
   })
@@ -155,11 +155,11 @@ describe('V2 Admin Instance adapter', () => {
     expect(contract.calls).toEqual([
       {
         target: '@instance-node::status',
-        value: { operationId: 'cli.instance.status:test' },
+        value: { operationId: 'cli.instance.status.test' },
       },
       {
         target: '@instance-node::delete',
-        value: { operationId: 'cli.instance.delete:test' },
+        value: { operationId: 'cli.instance.delete.test' },
       },
     ])
     expect(contract.reflection).not.toHaveBeenCalled()
@@ -186,7 +186,7 @@ describe('V2 Admin Instance adapter', () => {
     })
     expect(contract.calls.at(-1)).toEqual({
       target: '@instance-node::installDomain',
-      value: { operationId: 'cli.instance.install-domain:test', domain: '@crm-domain' },
+      value: { operationId: 'cli.instance.install-domain.test', domain: '@crm-domain' },
     })
     expect(contract.reflection).not.toHaveBeenCalled()
   })
