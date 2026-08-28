@@ -110,9 +110,11 @@ evidence. A runtime-only Domain skips Vite and View startup without warning. Sou
 declared-secret, and frontend changes retain the last good Release until a replacement verifies;
 configuration changes explicitly ask for a command restart.
 
-Quick installations are disposable and are removed on clean stop only under exact issuer and
-generation guards. Use stable ingress before putting continuity-bearing collaborative data into a
-development Domain:
+Stopping closes the View host, Worker/Vite, and owned Quick Tunnel, but deliberately retains the
+Kernel installation and a non-secret local reconciliation record. On the next `pnpm dev`, a changed
+Quick issuer is replaced only when that record still matches fresh Kernel introspection; drift
+fails safely with the exact manual uninstall command instead of risking another installation.
+Use stable ingress before putting continuity-bearing collaborative data into a development Domain:
 
 ```sh
 pnpm dev --host https://contacts-dev.example --port 8787
@@ -123,8 +125,9 @@ to the strict local Worker port. The command starts no companion and never creat
 ingress.
 
 Each real project root and environment owns an independent session, OS-allocated ports, public
-origin, and lifecycle. Different projects/environments may run together; a second command for the
-same project/environment fails with the live owner instead of corrupting shared state.
+origin, and lifecycle. A second local lock excludes another session targeting the same instance and
+Domain origin, including from a different project. Different target coordinates may run together;
+a duplicate owner fails before ingress or Kernel mutation.
 
 The direct `cloudflare` adapter intentionally remains provider-local: `pnpm dev` starts only its
 local Worker and optional Vite frontend. It does not own a Kernel, public ingress, or installation.

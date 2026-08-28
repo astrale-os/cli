@@ -22,31 +22,16 @@ import { isMachine, output } from '../../lib/output'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
 
-/** Public Kernel install syscall input for one remote URL. */
-export type DirectInstallRequest = Omit<InstallRequest, 'domains'> & {
-  readonly domains: readonly [
-    {
-      readonly publication: {
-        readonly url: string
-        readonly token?: string
-      }
-      readonly currentGeneration?: string | null
-    },
-  ]
-}
-
 export function directInstallCallInput(
   url: string,
   operation: string,
   token?: string,
-  currentGeneration?: string | null,
-): DirectInstallRequest {
+): InstallRequest {
   const domain = Object.freeze({
     publication: Object.freeze({
       url,
       ...(token === undefined ? {} : { token }),
     }),
-    ...(currentGeneration === undefined ? {} : { currentGeneration }),
   })
   return Object.freeze({
     operation: acceptOperationId(operation),
@@ -111,7 +96,6 @@ type InstallOpts = KernelCommandOpts &
     direct?: boolean
     operation?: string
     token?: string
-    currentGeneration?: string
     allowIdentityOverride?: boolean
     // Global flags (program.ts) that force non-interactive.
     ci?: boolean
@@ -170,10 +154,6 @@ Examples:
       description: 'Reuse an exact direct-install operation id for explicit retry/recovery',
     },
     {
-      flags: '--current-generation <digest|absent>',
-      description: 'Require the exact current Domain generation for a direct install',
-    },
-    {
       flags: '--allow-identity-override',
       description: 'Consent to a domain whose origin differs from its serving host (--direct only)',
     },
@@ -185,16 +165,6 @@ Examples:
           'INVALID_FLAG',
           '--operation is valid only with --direct.',
           'Ordinary direct installs generate a fresh operation id automatically.',
-        ),
-        opts,
-      )
-    }
-    if (opts.currentGeneration !== undefined && !opts.direct) {
-      fatal(
-        new AstraleError(
-          'INVALID_FLAG',
-          '--current-generation is valid only with --direct.',
-          'Use it to guard a direct install against the exact observed Domain generation.',
         ),
         opts,
       )
@@ -438,7 +408,6 @@ export async function installDirect(
   let host = ''
   let consentedOrigin: string | undefined
   let operation: string
-  let currentGeneration: string | null | undefined
   try {
     if (!target) {
       throw new AstraleError(
@@ -452,7 +421,6 @@ export async function installDirect(
       opts.operation === undefined
         ? direct.createOperationId()
         : direct.acceptOperationId(opts.operation)
-    currentGeneration = directInstallCurrentGeneration(opts.currentGeneration)
     consentedOrigin = await ensureIdentityOverrideConsent(
       target,
       host,
@@ -470,7 +438,7 @@ export async function installDirect(
     label: `Installing domain from ${url} (operation ${operation})`,
     recovery: { operation, retry },
     fn: async ({ session }) =>
-      session.schema.install(directInstallCallInput(url, operation, opts.token, currentGeneration)),
+      session.schema.install(directInstallCallInput(url, operation, opts.token)),
     format: (result, fmtOpts, isRaw) => {
       if (isRaw) {
         output(result, fmtOpts)
@@ -497,16 +465,7 @@ export async function installDirect(
 
 function directInstallRetry(url: string, operation: string, opts: InstallOpts): string {
   const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
-  const generation =
-    opts.currentGeneration === undefined ? '' : ` --current-generation ${opts.currentGeneration}`
-  return `astrale domain install ${url} --direct --operation ${operation}${generation}${instance}`
-}
-
-/** Project the CLI-only `absent` spelling onto the Kernel's explicit null guard. */
-export function directInstallCurrentGeneration(
-  input: string | undefined,
-): string | null | undefined {
-  return input === 'absent' ? null : input
+  return `astrale domain install ${url} --direct --operation ${operation}${instance}`
 }
 
 function validateInstallUrl(value: string): string {

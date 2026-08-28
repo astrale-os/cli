@@ -3,11 +3,7 @@ import type { InstallResult } from '@astrale-os/sdk/client/schema'
 import { defineSchema, schema } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
-import {
-  directInstallCallInput,
-  directInstallCurrentGeneration,
-  directInstallPresentation,
-} from '../domain/install'
+import { directInstallCallInput, directInstallPresentation } from '../domain/install'
 
 const currentRevision = schema.revision(defineSchema('tasks.astrale.ai', {}))
 
@@ -25,26 +21,6 @@ describe('directInstallCallInput', () => {
         },
       },
     ])
-  })
-
-  test('passes a supplied current-generation value through without replacing Kernel admission', () => {
-    const operation = '4a4c9a18-50f6-4d84-a7b7-2d83e3e45dc8'
-    const digest = `sha256:${'a'.repeat(64)}`
-
-    expect(
-      directInstallCallInput(
-        'https://tasks.example.test',
-        operation,
-        undefined,
-        directInstallCurrentGeneration(digest),
-      ).domains,
-    ).toEqual([
-      {
-        publication: { url: 'https://tasks.example.test' },
-        currentGeneration: digest,
-      },
-    ])
-    expect(directInstallCurrentGeneration('not-a-digest')).toBe('not-a-digest')
   })
 
   test('presents a committed install from its receipt', () => {
