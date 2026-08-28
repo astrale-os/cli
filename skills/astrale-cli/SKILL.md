@@ -126,6 +126,7 @@ astrale call @self::deactivate
 ```bash
 astrale instance create my-app
 astrale instance invite my-app person@example.com
+astrale instance invitation status @invitation-id
 astrale instance status my-app
 astrale instance status staging --bookmarked
 astrale instance use my-app
@@ -140,6 +141,10 @@ to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 `instance invite` requires authority to manage the exact Instance and grants
 only Instance member access. It returns the durable Invitation immediately;
 Admin automatically materializes child Shell access after WorkOS acceptance.
+`instance invitation status <id>` performs one read-only observation of the
+retained Invitation. `accepted` means access is materialized; `pending` means
+it is not yet materialized and deliberately does not expose WorkOS or Queue
+internals. The command requires the exact Invitation id.
 `instance invitation reconcile <id>` is diagnostic recovery, not the normal
 invitation journey.
 Without a deployed Admin Domain, `astrale instance list` cannot fetch managed

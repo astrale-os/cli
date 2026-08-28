@@ -69,6 +69,13 @@ export function inviteOwnedInstance(
   )
 }
 
+/** Observe one retained Instance Invitation without reconciling or mutating it. */
+export function statusOwnedInvitation(options: AdminConnectionOptions, invitation: string) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).statusInvitation(invitation),
+  )
+}
+
 /** Reconcile one Invitation sent by the active caller. */
 export function reconcileOwnedInvitation(options: AdminConnectionOptions, invitation: string) {
   return withAdminClientSession(options, async (context) =>

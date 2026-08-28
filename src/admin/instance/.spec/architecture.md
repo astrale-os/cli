@@ -10,3 +10,10 @@ Automatic creation invokes `Fleet.createInstance`. Status, deletion, and Domain 
 resolve a caller-visible Instance through the same native inventory and then invoke that exact
 Instance receiver. The adapter creates internal operation IDs but preserves the existing CLI
 projection and selection-required experience.
+
+Instance invitation creation invokes the exact resolved Instance. Invitation status invokes the
+exact retained Invitation receiver and returns its recorded lifecycle without provider refresh,
+reconciliation, mutation, or operation identity. A sender or Fleet administrator can observe it;
+the claimed user can observe it after acceptance. Diagnostic reconciliation remains a separate,
+explicit recovery operation. Every Invitation result must remain scoped to one member invitation
+for one managed Instance.

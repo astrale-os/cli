@@ -35,8 +35,8 @@ export interface InvitationInfo {
   readonly id: string
   readonly email: string
   readonly state: InvitationState
-  readonly access: 'administrator' | 'member'
-  readonly instance?: string
+  readonly access: 'member'
+  readonly instance: string
   readonly invitedBy?: string
   readonly claimedBy?: string
   readonly createdAt: string

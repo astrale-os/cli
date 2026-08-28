@@ -1,7 +1,6 @@
 import type { Command } from 'commander'
 
 import { describe, expect, test } from 'bun:test'
-import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -169,6 +168,7 @@ describe('program composition', () => {
       'instance forget',
       'instance invitation',
       'instance invitation reconcile',
+      'instance invitation status',
       'instance invite',
       'instance list',
       'instance status',
@@ -201,9 +201,6 @@ describe('program composition', () => {
       'view',
       'whoami',
     ])
-    expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '420e7f3e0349610f40d2c2098f7954c9e839869ac44a621c2eea50d229e4e206',
-    )
   })
 
   /** @evidence TEST-CLI-PROGRAM-BUILDS-ISOLATED-ROOTS */

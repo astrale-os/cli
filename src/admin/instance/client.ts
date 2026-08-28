@@ -30,6 +30,7 @@ export interface AdminInstanceApi {
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
   invite(identifier: string, email: string, expiresInDays?: number): Promise<InvitationInfo>
+  statusInvitation(invitation: string): Promise<InvitationInfo>
   reconcileInvitation(invitation: string): Promise<InvitationInfo>
 }
 
@@ -126,40 +127,62 @@ export async function connectAdminInstances(
     },
     async invite(identifier: string, email: string, expiresInDays?: number) {
       const instance = await requireInstance(identifier)
-      const invitation = invitationFromSummary(
+      const invitation = memberInstanceInvitationFromSummary(
         await callAdminMethod(context.session, Path.parse(instance.id), 'inviteUser', {
           operationId: operationId('invite'),
           email,
           ...(expiresInDays === undefined ? {} : { expiresInDays }),
         }),
+        'Admin Instance invitation does not match its requested scope.',
       )
       if (
         invitation.instance !== instance.id ||
-        invitation.access !== 'member' ||
         invitation.email.toLowerCase() !== email.toLowerCase()
       ) {
         throw new TypeError('Admin Instance invitation does not match its requested scope.')
       }
       return invitation
     },
+    async statusInvitation(invitation: string) {
+      const receiver = invitationReceiver(invitation)
+      return instanceInvitationFromSummary(
+        await callAdminMethod(context.session, receiver, 'status', {}),
+        receiver,
+        'status',
+      )
+    },
     async reconcileInvitation(invitation: string) {
-      const receiver = directNodePath(invitation)
-      if (receiver === undefined) throw new TypeError('Admin Invitation id is invalid.')
-      const reconciled = invitationFromSummary(
+      const receiver = invitationReceiver(invitation)
+      return instanceInvitationFromSummary(
         await callAdminMethod(context.session, receiver, 'reconcile', {
           operationId: operationId('reconcile-invitation'),
         }),
+        receiver,
+        'reconciliation',
       )
-      if (
-        reconciled.id !== receiver.raw ||
-        reconciled.instance === undefined ||
-        reconciled.access !== 'member'
-      ) {
-        throw new TypeError('Admin Invitation reconciliation does not match its requested scope.')
-      }
-      return reconciled
     },
   })
+}
+
+function invitationReceiver(invitation: string): ReturnType<typeof Path.parse> {
+  const receiver = directNodePath(invitation)
+  if (receiver === undefined) throw new TypeError('Admin Invitation id is invalid.')
+  return receiver
+}
+
+function instanceInvitationFromSummary(
+  input: unknown,
+  receiver: ReturnType<typeof Path.parse>,
+  operation: 'status' | 'reconciliation',
+): InvitationInfo {
+  const invitation = memberInstanceInvitationFromSummary(
+    input,
+    `Admin Invitation ${operation} does not match its requested scope.`,
+  )
+  if (invitation.id !== receiver.raw) {
+    throw new TypeError(`Admin Invitation ${operation} does not match its requested scope.`)
+  }
+  return invitation
 }
 
 async function readExactInstance(
@@ -257,7 +280,20 @@ function domainInstallReceipt(input: unknown): DomainInstallReceipt {
   })
 }
 
-function invitationFromSummary(input: unknown): InvitationInfo {
+interface InvitationSummary {
+  readonly id: string
+  readonly email: string
+  readonly state: InvitationInfo['state']
+  readonly access: 'administrator' | 'member'
+  readonly instance?: string
+  readonly invitedBy?: string
+  readonly claimedBy?: string
+  readonly createdAt: string
+  readonly expiresAt?: string
+  readonly acceptedAt?: string
+}
+
+function invitationFromSummary(input: unknown): InvitationSummary {
   const value = record(input, 'Admin Invitation summary')
   const state = value.state
   if (state !== 'pending' && state !== 'accepted' && state !== 'revoked' && state !== 'expired') {
@@ -289,6 +325,14 @@ function invitationFromSummary(input: unknown): InvitationInfo {
       ? {}
       : { acceptedAt: requiredString(value.acceptedAt, 'Admin Invitation acceptance time') }),
   })
+}
+
+function memberInstanceInvitationFromSummary(input: unknown, scopeError: string): InvitationInfo {
+  const invitation = invitationFromSummary(input)
+  if (invitation.instance === undefined || invitation.access !== 'member') {
+    throw new TypeError(scopeError)
+  }
+  return Object.freeze({ ...invitation, access: 'member', instance: invitation.instance })
 }
 
 function instanceState(input: unknown): InstanceState {
