@@ -159,7 +159,9 @@ describe('release workflow contract', () => {
     assert.doesNotMatch(build, /bun scripts\/build-viewer\.ts/)
     assert.doesNotMatch(build, /bun run --cwd studio build/)
     assert.doesNotMatch(build, /bun scripts\/generate-embedded-assets\.ts/)
+    assert.doesNotMatch(build, /git diff .*src\/generated\/embedded-assets\.ts/)
     assert.match(build, /bun build --compile/)
+    assert.match(build, /--define '__ASTRALE_BUNDLED__=true'/)
     assert.match(
       build,
       /--define '__ASTRALE_SOURCE_REVISION__="\$\{\{ steps\.source\.outputs\.sha \}\}"'/,
@@ -205,13 +207,32 @@ describe('release workflow contract', () => {
     assert.match(manifest, /steps\.cohort\.outputs\.cloudflared_version/)
   })
 
-  it('rejects stale embedded assets in ordinary CI', () => {
-    const buildIndex = ci.jobs.compatibility.steps.findIndex(
-      (step) => step.name === 'Build development artifacts',
+  it('generates ignored embedded assets before source verification', () => {
+    const manifest = JSON.parse(read('package.json'))
+    assert.equal(manifest.scripts['assets:ensure'], 'bun scripts/build-embedded-assets.ts')
+    assert.match(manifest.scripts.typecheck, /^pnpm run assets:ensure &&/u)
+    assert.match(manifest.scripts.test, /^pnpm run assets:ensure &&/u)
+    assert.match(manifest.scripts['test:watch'], /^pnpm run assets:ensure &&/u)
+
+    const generateIndex = ci.jobs.compatibility.steps.findIndex(
+      (step) => step.name === 'Generate embedded assets',
     )
-    const check = ci.jobs.compatibility.steps[buildIndex + 1]
-    assert.equal(check.name, 'Check embedded assets are current')
-    assert.match(check.run, /git diff --exit-code -- src\/generated\/embedded-assets\.ts/)
+    const typecheckIndex = ci.jobs.compatibility.steps.findIndex(
+      (step) => step.name === 'Typecheck',
+    )
+    assert.ok(generateIndex >= 0 && generateIndex < typecheckIndex)
+    assert.equal(ci.jobs.compatibility.steps[generateIndex].run, 'pnpm assets:ensure')
+    assert.equal(
+      ci.jobs.compatibility.steps.some((step) => step.name === 'Check embedded assets are current'),
+      false,
+    )
+
+    const releaseGenerate = binary.jobs.test.steps.find(
+      (step) => step.name === 'Generate embedded assets',
+    )
+    assert.equal(releaseGenerate.run, 'pnpm assets:ensure')
+    assert.match(read('.gitignore'), /^src\/generated\/embedded-assets\.ts$/mu)
+    assert.equal(existsSync('src/generated/embedded-assets.d.ts'), true)
   })
 
   it('qualifies the current UI producer through the exact CLI search consumer', () => {
@@ -242,6 +263,16 @@ describe('release workflow contract', () => {
     const embedded = read('scripts/build-embedded-assets.ts')
     assert.match(embedded, /readFile\(new URL\('\.\.\/\.bun-version'/)
     assert.match(embedded, /Bun\.version !== expectedBun/)
+    assert.match(embedded, /embeddedAssetCacheIsCurrent/)
+
+    const cache = read('scripts/embedded-assets-cache.ts')
+    assert.match(cache, /node_modules.*\.cache.*astrale-cli/su)
+    assert.match(cache, /new Bun\.Transpiler/)
+
+    const entrypoint = read('bin/astrale.ts')
+    assert.match(entrypoint, /typeof __ASTRALE_BUNDLED__ === 'undefined'/)
+    assert.match(entrypoint, /buildEmbeddedAssets/)
+    assert.match(build, /__ASTRALE_BUNDLED__/)
   })
 
   it('qualifies skill reconciliation before and after publishing', () => {

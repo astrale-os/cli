@@ -48,18 +48,19 @@
   },
   "scripts": {
     "prepare": "husky",
+    "assets:ensure": "bun scripts/build-embedded-assets.ts",
     "build": "bun scripts/build.ts",
     "prepack": "pnpm run package:check",
     "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs && node scripts/verify-public-dependency-boundary.mjs",
-    "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.tests.json && tsgo --noEmit -p tsconfig.scripts.json && tsgo --noEmit -p viewer && pnpm --dir studio run typecheck",
+    "typecheck": "pnpm run assets:ensure && tsgo --noEmit && tsgo --noEmit -p tsconfig.tests.json && tsgo --noEmit -p tsconfig.scripts.json && tsgo --noEmit -p viewer && pnpm --dir studio run typecheck",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "pnpm exec oxfmt --write .",
     "format:check": "pnpm exec oxfmt --check .",
-    "test": "node scripts/qualification/source-boundary.mjs --target && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
-    "test:skills-e2e": "node scripts/qualification/skills-update-e2e.mjs",
+    "test": "pnpm run assets:ensure && node scripts/qualification/source-boundary.mjs --target && bun test src studio/client/src studio/server studio/shared && node --test scripts/*.test.mjs",
+    "test:skills-e2e": "pnpm run assets:ensure && node scripts/qualification/skills-update-e2e.mjs",
     "test:studio": "pnpm --dir studio test",
-    "test:watch": "bun test --watch src",
+    "test:watch": "pnpm run assets:ensure && bun test --watch src",
     "qualification:ui-search": "bun scripts/qualification/ui-search-provider.ts"
   },
   "dependencies": {

@@ -248,6 +248,12 @@ bun cli/bin/astrale.ts <command>
 pnpm -C cli build
 ```
 
+The first source command that needs embedded Skills, Studio, or Viewer assets
+generates `cli/src/generated/embedded-assets.ts` automatically. Its input digest
+is cached under `cli/node_modules/.cache/astrale-cli`, so unchanged commands are
+fast. The generated archive is local build output: do not commit it. Run
+`pnpm -C cli assets:ensure` to prepare it explicitly.
+
 ### Testing local changes live: `astrale-dev`
 
 When developing inside the [workspace](https://github.com/astrale-os/workspace),

@@ -50,6 +50,8 @@ jobs:
           NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
           NPM_CONFIG_USERCONFIG: /dev/null
         run: STANDALONE=true pnpm install --frozen-lockfile --ignore-scripts
+      - name: Generate embedded assets
+        run: pnpm assets:ensure
       - name: Check public dependency closure
         run: node scripts/verify-public-dependency-boundary.mjs
       - name: Test
@@ -109,8 +111,8 @@ jobs:
           set -eu
           mkdir -p dist
           bun scripts/build-embedded-assets.ts
-          git diff --exit-code -- src/generated/embedded-assets.ts
           bun build --compile --target=${{ matrix.bun_target }} \
+            --define '__ASTRALE_BUNDLED__=true' \
             --define '__ASTRALE_SOURCE_REVISION__="${{ steps.source.outputs.sha }}"' \
             bin/astrale.ts --outfile dist/astrale
           ./dist/astrale --version
