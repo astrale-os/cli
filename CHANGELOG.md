@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.44](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.43...cli/v1.0.0-beta.44) (2026-08-28)
+
+
+### Bug Fixes
+
+* **update:** pin the public npm registry ([#252](https://github.com/astrale-os/cli/issues/252)) ([b2c766a](https://github.com/astrale-os/cli/commit/b2c766a135789f7507fbbb729e5564b28898e19a))
+
 ## [1.0.0-beta.43](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.42...cli/v1.0.0-beta.43) (2026-08-28)
 
 
