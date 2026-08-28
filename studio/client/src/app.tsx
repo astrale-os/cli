@@ -1,7 +1,15 @@
 import type { StudioEvent } from '@shared/types'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { Boxes, type LucideIcon, MessagesSquare, Network, Search, Workflow } from 'lucide-react'
+import {
+  Boxes,
+  type LucideIcon,
+  MessagesSquare,
+  Network,
+  Search,
+  Settings,
+  Workflow,
+} from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useCallback, useEffect } from 'react'
 
 import { AgentSubmitButton } from '@/components/agent-activity'
@@ -12,6 +20,7 @@ import { CommentModeOverlay } from '@/components/comment-mode'
 import { DomainSelector } from '@/components/domain-selector'
 import { InstanceBadge } from '@/components/instance-badge'
 import { InstanceSwitcher } from '@/components/instance-switcher'
+import { SettingsDialog } from '@/components/settings-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
 import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
@@ -102,6 +111,7 @@ export function App() {
   const setDomain = useUI((s) => s.setDomain)
   const setSection = useUI((s) => s.setSection)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
+  const setSettingsOpen = useUI((s) => s.setSettingsOpen)
   const commentMode = useUI((s) => s.commentMode)
   const panelOpen = useUI((s) => s.panelOpen)
   const panelSide = useUI((s) => s.panelSide)
@@ -259,6 +269,13 @@ export function App() {
             >
               <MessagesSquare className="h-4 w-4" />
             </IconAction>
+            {/* Settings are per-domain (they save to that domain's .domain-studio/settings.json),
+                so the gear only exists once there is a domain to settle them on. */}
+            {domainId && (
+              <IconAction label="Settings" onClick={() => setSettingsOpen(true)}>
+                <Settings className="h-4 w-4" />
+              </IconAction>
+            )}
             {/* the panel's own composer is the way to reach the agent while it is open */}
             {!panelOpen && (
               <>
@@ -294,6 +311,7 @@ export function App() {
       <CommentModeOverlay />
       <CommentDraftPopover />
       <AskLayer />
+      <SettingsDialog />
     </TooltipProvider>
   )
 }
