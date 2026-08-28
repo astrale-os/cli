@@ -2,7 +2,7 @@
  * agent.ts — client state for the live agent loop. The authoritative run lives
  * on the server; here we mirror it: seed from GET /agent (react-query), then keep
  * it fresh from the SSE stream (`agent-run` replaces the run, `agent-event`
- * appends one activity event). The activity drawer + submit button read this.
+ * appends one activity event). The work panel + submit button read this.
  */
 import type { AgentEvent, AgentRun } from '@shared/types'
 
@@ -15,10 +15,8 @@ import { api, qk } from './api'
 interface AgentLiveState {
   /** the active-or-latest run per domain, mirrored from SSE */
   runs: Record<string, AgentRun>
-  drawerOpen: boolean
   setRun: (run: AgentRun) => void
   appendEvent: (domainId: string, runId: string, event: AgentEvent) => void
-  setDrawer: (open: boolean) => void
 }
 
 const TERMINAL: Record<AgentRun['status'], number> = {
@@ -34,7 +32,6 @@ const NO_RUNS: AgentRun[] = []
 
 export const useAgentLive = create<AgentLiveState>((set) => ({
   runs: {},
-  drawerOpen: false,
   // merge-forward: the HTTP submit response and the SSE stream race; never let an
   // earlier snapshot of the SAME run regress the event list or the terminal status.
   setRun: (run) =>
@@ -54,7 +51,6 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       if (cur.events.some((e) => e.id === event.id)) return s
       return { runs: { ...s.runs, [domainId]: { ...cur, events: [...cur.events, event] } } }
     }),
-  setDrawer: (drawerOpen) => set({ drawerOpen }),
 }))
 
 /** Initial snapshot (harness availability + most-recent run). */

@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { Boxes, type LucideIcon, MessagesSquare, Network, Search, Workflow } from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useCallback, useEffect } from 'react'
 
-import { AgentActivityDrawer, AgentSubmitButton } from '@/components/agent-activity'
+import { AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
 import { CommandPalette } from '@/components/command-palette'
 import { CommentDraftPopover } from '@/components/comment-draft-popover'
@@ -294,7 +294,6 @@ export function App() {
       <CommentModeOverlay />
       <CommentDraftPopover />
       <AskLayer />
-      <AgentActivityDrawer />
     </TooltipProvider>
   )
 }
