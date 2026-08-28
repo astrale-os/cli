@@ -74,8 +74,6 @@ interface UIState {
   /** panel thickness in px — width when docked left/right, height when docked bottom */
   panelSize: number
   selectedClass?: string
-  /** navigation history of prior `selectedClass` values (powers the detail-pane Back button) */
-  selectionHistory: string[]
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
   /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains / Integrations
@@ -117,8 +115,6 @@ interface UIState {
   revealAnchor: (ref: string) => void
   setPanelOverlay: (v: 'views' | 'domains' | 'integrations' | null) => void
   selectClass: (n?: string) => void
-  /** restore the previous selection from selectionHistory (detail-pane Back) */
-  back: () => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
   focusClass: (id: string) => void
   setFocus: (id: string | null) => void
@@ -158,7 +154,6 @@ export const useUI = create<UIState>((set) => ({
   panelSize: loadNumber('studio.panelSize', 360, 260, 900),
   focusId: null,
   panelOverlay: null,
-  selectionHistory: [],
   collapsedModules: [],
   commentDraft: null,
   hidden: {},
@@ -184,7 +179,6 @@ export const useUI = create<UIState>((set) => ({
       selectedClass: undefined,
       focusId: null,
       openAnchorRef: null,
-      selectionHistory: [],
       // Visibility is PER-DOMAIN — clear it on switch so the previous domain's hide
       // set never bleeds into the new one. The graph then hydrates this domain's slice.
       hidden: {},
@@ -201,7 +195,7 @@ export const useUI = create<UIState>((set) => ({
       panelOverlay: null,
       openAnchorRef: null,
       ...((s.section === 'core') !== (section === 'core')
-        ? { selectedClass: undefined, focusId: null, selectionHistory: [] }
+        ? { selectedClass: undefined, focusId: null }
         : {}),
     }))
   },
@@ -229,16 +223,13 @@ export const useUI = create<UIState>((set) => ({
         : 'schema'
     const target = SECTION_KEYS.includes(section) ? section : 'schema'
     store('studio.lastSection', target)
-    set((state) => ({
+    set({
       section: target,
       panelOverlay: null,
       ...(ref.startsWith('class.') || ref.startsWith('edge.') || ref.startsWith('module.')
         ? { selectedClass: revealSelection(ref), focusId: revealFocus(ref) }
         : {}),
-      selectionHistory: state.selectedClass
-        ? [...state.selectionHistory, state.selectedClass].slice(-50)
-        : state.selectionHistory,
-    }))
+    })
   },
   setPanelOverlay: (panelOverlay) => set({ panelOverlay }),
   selectClass: (selectedClass) =>
@@ -248,9 +239,6 @@ export const useUI = create<UIState>((set) => ({
         selectedClass,
         panelOverlay: null,
         focusId: selectedClass?.startsWith('class.') ? selectedClass : s.focusId,
-        selectionHistory: s.selectedClass
-          ? [...s.selectionHistory, s.selectedClass].slice(-50)
-          : s.selectionHistory,
       }
     }),
   focusClass: (id) =>
@@ -258,23 +246,8 @@ export const useUI = create<UIState>((set) => ({
       selectedClass: id,
       panelOverlay: null,
       focusId: s.focusId === id ? null : id,
-      selectionHistory:
-        s.selectedClass && s.selectedClass !== id
-          ? [...s.selectionHistory, s.selectedClass].slice(-50)
-          : s.selectionHistory,
     })),
   setFocus: (focusId) => set({ focusId }),
-  back: () =>
-    set((s) => {
-      if (!s.selectionHistory.length) return {}
-      const prev = s.selectionHistory[s.selectionHistory.length - 1]
-      return {
-        selectedClass: prev,
-        panelOverlay: null,
-        focusId: prev.startsWith('class.') ? prev : s.focusId,
-        selectionHistory: s.selectionHistory.slice(0, -1),
-      }
-    }),
   toggleModule: (path) =>
     set((s) => ({
       collapsedModules: s.collapsedModules.includes(path)
