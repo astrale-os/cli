@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Layers3 } from 'lucide-react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 
 import { useUI } from '@/lib/store'
@@ -9,6 +9,18 @@ import type { WorkspaceDomainProjection } from './projection'
 import { buildModuleTree } from '../modules'
 import { ModuleTree, type ModuleTreeControls } from '../tree'
 import { useSchemaWorkspace } from './store'
+
+export function shouldShowDomainSelectionIndicator({
+  active,
+  closed,
+  selected,
+}: {
+  active: boolean
+  closed: boolean
+  selected?: string
+}): boolean {
+  return active && closed && selected !== undefined
+}
 
 export function WorkspaceModuleTree({
   domains,
@@ -54,13 +66,15 @@ export function WorkspaceModuleTree({
 
   return (
     <div className="py-2" data-testid="workspace-module-tree">
-      <div className="flex items-center gap-1.5 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <Layers3 className="h-3 w-3" /> Workspace modules
-      </div>
       {domains.map((domain) => {
         const domainId = domain.input.summary.id
         const active = activeDomainId === domainId
         const closed = !!closedDomains[domainId]
+        const showSelectionIndicator = shouldShowDomainSelectionIndicator({
+          active,
+          closed,
+          selected,
+        })
         const controls: ModuleTreeControls = {
           domainId,
           collapsedModules: collapsedByDomain[domainId] ?? [],
@@ -72,9 +86,8 @@ export function WorkspaceModuleTree({
 
         return (
           <section key={domainId} className="border-b border-border last:border-b-0">
-            {/* The canvas no longer repaints a frame to say which domain you are in — this
-                row is the one place that answers it, so it says so unmistakably: an accent
-                spine, the origin in full weight, and a dot. */}
+            {/* The accent spine identifies the active domain. When its hierarchy is closed,
+                the dot keeps a selection hidden inside it discoverable. */}
             <div
               data-domain-id={domainId}
               aria-current={active ? 'true' : undefined}
@@ -115,8 +128,11 @@ export function WorkspaceModuleTree({
               >
                 {domain.input.summary.origin}
               </button>
-              {active && (
-                <span className="h-1.5 w-1.5 rounded-full bg-primary" title="Active domain" />
+              {showSelectionIndicator && (
+                <span
+                  className="h-1.5 w-1.5 rounded-full bg-primary"
+                  title="Selected element in collapsed domain"
+                />
               )}
             </div>
             {!closed && (
