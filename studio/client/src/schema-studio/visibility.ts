@@ -17,6 +17,13 @@ export function isHidden(ref: string, hidden: Hidden): boolean {
   return hidden[ref] === true
 }
 
+export function toggleVisibilityRef(state: VisibilityState, ref: string): VisibilityState {
+  const hidden = { ...state.hidden }
+  if (hidden[ref]) delete hidden[ref]
+  else hidden[ref] = true
+  return { ...state, hidden }
+}
+
 export function visibilityEqual(left: VisibilityState, right: VisibilityState): boolean {
   if (left.showInheritedEdges !== right.showInheritedEdges) return false
   const keys = Object.keys(left.hidden)

@@ -36,8 +36,6 @@ import { type ViewNodeData, viewNodeId } from '../view-graph'
 function ClassNode({ data }: NodeProps) {
   const d = data as ClassNodeData
   const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `class.${d.name}`)
-  // chips and inheritance edges carry the same fact — show whichever the reader asked for
-  const showInheritedEdges = useUI((s) => s.showInheritedEdges)
   const parents = d.parents ?? []
   const tint = moduleTint(d.hue)
   return (
@@ -88,7 +86,7 @@ function ClassNode({ data }: NodeProps) {
         <Box className="h-4 w-4 shrink-0" style={{ color: tint.mark }} />
       )}
       <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{d.name}</span>
-      {!showInheritedEdges && parents.length > 0 && (
+      {!d.showInheritedEdges && parents.length > 0 && (
         <span
           title={`Extends ${parents.join(', ')}`}
           className="max-w-[76px] shrink-0 truncate rounded bg-muted px-1 py-px text-[10px] leading-4 text-muted-foreground"
@@ -109,9 +107,9 @@ function ClassNode({ data }: NodeProps) {
 }
 
 export function GroupNode({ data }: NodeProps) {
-  const d = data as GroupNodeData
-  const setDomain = useUI((s) => s.setDomain)
-  const toggleModule = useUI((s) => s.toggleModule)
+  const d = data as GroupNodeData & {
+    onToggleModule: (domainId: string, path: string) => void
+  }
   const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `module.${d.path}`)
   const tint = moduleTint(d.hue)
   return (
@@ -146,11 +144,7 @@ export function GroupNode({ data }: NodeProps) {
           title={d.collapsed ? 'Show classes' : 'Hide classes'}
           onClick={(e) => {
             e.stopPropagation()
-            if (d.onToggleModule) d.onToggleModule(d.domainId, d.path)
-            else {
-              if (useUI.getState().domainId !== d.domainId) setDomain(d.domainId)
-              toggleModule(d.path)
-            }
+            d.onToggleModule(d.domainId, d.path)
           }}
           className="shrink-0 rounded p-0.5 transition-colors hover:bg-foreground/5"
         >

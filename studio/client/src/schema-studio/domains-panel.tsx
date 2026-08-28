@@ -1,4 +1,4 @@
-import type { DomainCatalogEntry } from '@shared/types'
+import type { DomainCatalogEntry, VisibilityState } from '@shared/types'
 
 import { Eye, EyeOff, Globe, Plus } from 'lucide-react'
 import { useMemo } from 'react'
@@ -35,10 +35,16 @@ function useResolve() {
     byOrigin.get(origin) ?? { name: origin.split('.')[0] || origin, icon: '' }
 }
 
-function DomainRow({ domain }: { domain: ExternalDomain }) {
+function DomainRow({
+  domain,
+  hidden,
+  onToggleHidden,
+}: {
+  domain: ExternalDomain
+  hidden: boolean
+  onToggleHidden: (ref: string) => void
+}) {
   const resolve = useResolve()
-  const hidden = useUI((s) => isHidden(domainRef(domain.origin), s.hidden))
-  const toggleHidden = useUI((s) => s.toggleHidden)
   const entry = resolve(domain.origin)
   const tone = domain.kind === 'kernel' ? 'violet' : 'emerald'
   const count = domain.members.length
@@ -61,7 +67,7 @@ function DomainRow({ domain }: { domain: ExternalDomain }) {
       </div>
       <button
         type="button"
-        onClick={() => toggleHidden(domainRef(domain.origin))}
+        onClick={() => onToggleHidden(domainRef(domain.origin))}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
       >
@@ -174,7 +180,15 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
   )
 }
 
-export function DomainsPanel({ domainId }: { domainId: string }) {
+export function DomainsPanel({
+  domainId,
+  visibility,
+  onToggleHidden,
+}: {
+  domainId: string
+  visibility: VisibilityState
+  onToggleHidden: (ref: string) => void
+}) {
   const { data: bundle } = useBundle(domainId)
   const { data: comments } = useComments(domainId)
   const domains = useMemo(() => (bundle ? externalDomains(bundle) : []), [bundle])
@@ -222,7 +236,12 @@ export function DomainsPanel({ domainId }: { domainId: string }) {
             </div>
             <div className="flex flex-col gap-0.5">
               {domains.map((d) => (
-                <DomainRow key={d.origin} domain={d} />
+                <DomainRow
+                  key={d.origin}
+                  domain={d}
+                  hidden={isHidden(domainRef(d.origin), visibility.hidden)}
+                  onToggleHidden={onToggleHidden}
+                />
               ))}
             </div>
           </>

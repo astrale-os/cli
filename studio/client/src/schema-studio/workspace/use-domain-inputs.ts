@@ -9,7 +9,12 @@ import type {
 import { useQueries } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
-import { api, qk } from '@/lib/api'
+import {
+  anatomyQueryOptions,
+  bundleQueryOptions,
+  layoutQueryOptions,
+  visibilityQueryOptions,
+} from '@/lib/domain-queries'
 
 export interface WorkspaceDomainInput {
   summary: DomainSummary
@@ -30,19 +35,16 @@ export function useWorkspaceDomainInputs(
   domains: DomainSummary[] | undefined,
 ): { inputs: WorkspaceDomainInput[]; pending: boolean; errors: string[] } {
   const bundles = useQueries({
-    queries: ids.map((id) => ({ queryKey: qk.bundle(id), queryFn: () => api.bundle(id) })),
+    queries: ids.map(bundleQueryOptions),
   })
   const anatomies = useQueries({
-    queries: ids.map((id) => ({ queryKey: qk.anatomy(id), queryFn: () => api.anatomy(id) })),
+    queries: ids.map(anatomyQueryOptions),
   })
   const layouts = useQueries({
-    queries: ids.map((id) => ({ queryKey: qk.layout(id), queryFn: () => api.layout(id) })),
+    queries: ids.map(layoutQueryOptions),
   })
   const visibilities = useQueries({
-    queries: ids.map((id) => ({
-      queryKey: qk.visibility(id),
-      queryFn: () => api.visibility(id),
-    })),
+    queries: ids.map(visibilityQueryOptions),
   })
 
   return useMemo(() => {

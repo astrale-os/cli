@@ -11,7 +11,6 @@ import {
 import { useEffect, useRef, useState } from 'react'
 
 import { AnchorButton } from '@/components/anchor'
-import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { type MemberRef, type TreeNode } from './modules'
@@ -43,10 +42,10 @@ export function ModuleTree({
   root: TreeNode
   selected?: string
   onSelect: (id: string) => void
-  controls?: ModuleTreeControls
+  controls: ModuleTreeControls
 }) {
   return (
-    <div className="py-2 text-[13px]" data-domain-id={controls?.domainId}>
+    <div className="py-2 text-[13px]" data-domain-id={controls.domainId}>
       <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         Modules
       </div>
@@ -85,12 +84,8 @@ function Branch({
   depth: number
   selected?: string
   onSelect: (id: string) => void
-  controls?: ModuleTreeControls
+  controls: ModuleTreeControls
 }) {
-  const storeCollapsedModules = useUI((s) => s.collapsedModules)
-  const storeToggleModule = useUI((s) => s.toggleModule)
-  const collapsedModules = controls?.collapsedModules ?? storeCollapsedModules
-  const toggleModule = controls?.toggleModule ?? storeToggleModule
   const [localOpen, setLocalOpen] = useState(true)
   const moduleId = `module.${node.path}`
   const active = selected === moduleId
@@ -100,9 +95,10 @@ function Branch({
   // shared with the canvas. Pure parent folders only control the tree locally.
   // Either auto-reveals when the current selection lives beneath it.
   const open = hasCanvasModule
-    ? !collapsedModules.includes(node.path) || subtreeHasSelected(node, selected)
+    ? !controls.collapsedModules.includes(node.path) || subtreeHasSelected(node, selected)
     : localOpen || subtreeHasSelected(node, selected)
-  const toggle = () => (hasCanvasModule ? toggleModule(node.path) : setLocalOpen((value) => !value))
+  const toggle = () =>
+    hasCanvasModule ? controls.toggleModule(node.path) : setLocalOpen((value) => !value)
 
   const pad = { paddingLeft: 8 + depth * 12 }
   const FolderIcon = open ? FolderOpen : FolderClosed
@@ -141,7 +137,7 @@ function Branch({
           <span className="truncate">{node.name}</span>
         </button>
         <AnchorButton
-          domainId={controls?.domainId}
+          domainId={controls.domainId}
           anchorRef={{ ref: moduleId, kind: 'section' }}
           excerpt={node.path}
           className="ml-1"
@@ -186,15 +182,12 @@ function Member({
   depth: number
   selected?: string
   onSelect: (id: string) => void
-  controls?: ModuleTreeControls
+  controls: ModuleTreeControls
 }) {
   const active = selected === m.selectId
   // `m.ref` (class.X / edge.X) is the hide-set key — NOT `m.selectId`, whose edges share the
   // class.X namespace and would collide with a same-named node class.
-  const storeHidden = useUI((s) => isHidden(m.ref, s.hidden))
-  const storeToggleHidden = useUI((s) => s.toggleHidden)
-  const hidden = controls ? isHidden(m.ref, controls.hidden) : storeHidden
-  const toggleHidden = controls?.toggleHidden ?? storeToggleHidden
+  const hidden = isHidden(m.ref, controls.hidden)
   const dimmed = hidden
   const Icon = m.kind === 'edge' ? Spline : Box
   const color = m.kind === 'edge' ? 'text-schema-edge' : 'text-schema-node'
@@ -237,7 +230,7 @@ function Member({
         type="button"
         onClick={(e) => {
           e.stopPropagation()
-          toggleHidden(m.ref)
+          controls.toggleHidden(m.ref)
         }}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
         className={cn(
@@ -248,7 +241,7 @@ function Member({
         {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
       </button>
       <AnchorButton
-        domainId={controls?.domainId}
+        domainId={controls.domainId}
         anchorRef={{ ref: m.selectId, kind: 'schema' }}
         excerpt={`${m.kind} ${m.name}`}
         className="ml-1"

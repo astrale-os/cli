@@ -81,15 +81,8 @@ interface UIState {
   /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains / Integrations
    *  overview) instead of the selected-class detail. Cleared by selecting a class / navigating. */
   panelOverlay: 'views' | 'domains' | 'integrations' | null
-  /** file-module paths the user has collapsed (hidden in tree + canvas) */
-  collapsedModules: string[]
   /** comment-mode draft: the floating composer target + screen position */
   commentDraft: CommentDraft | null
-  /** Per-element canvas hide-set keyed by ref: `class.X` | `edge.X` | `domain.<origin>`.
-   *  Everything is shown by default, so membership ⇒ hidden (no tri-state). Persisted per domain. */
-  hidden: Record<string, true>
-  /** Category control for Class inheritance edges. Persisted per domain. */
-  showInheritedEdges: boolean
   /** Canvas reading mode: direction only (default) or the declared multiplicities. */
   showCardinality: boolean
   /** The exact anchor a thread was just revealed from — kept alongside `selectedClass`
@@ -129,11 +122,6 @@ interface UIState {
    *  open overlay panel (Views / Domains / Integrations) alone: it is not a selection. */
   clearSelection: () => void
   setFocus: (id: string | null) => void
-  toggleModule: (path: string) => void
-  toggleHidden: (ref: string) => void
-  /** Replace the whole visibility slice (used to hydrate from the persisted per-domain state). */
-  setVisibility: (v: { hidden: Record<string, true>; showInheritedEdges: boolean }) => void
-  toggleInheritedEdges: () => void
   toggleCardinality: () => void
   setOpenAnchor: (ref: string | null, id?: string | null) => void
   toggleCommentMode: (on?: boolean) => void
@@ -165,11 +153,8 @@ export const useUI = create<UIState>((set) => ({
   panelSize: loadNumber('studio.panelSize', 360, 260, 900),
   focusId: null,
   panelOverlay: null,
-  collapsedModules: [],
   commentDraft: null,
   revealedRef: null,
-  hidden: {},
-  showInheritedEdges: true,
   showCardinality: false,
   openAnchorRef: null,
   openAnchorId: null,
@@ -192,10 +177,6 @@ export const useUI = create<UIState>((set) => ({
       focusId: null,
       revealedRef: null,
       openAnchorRef: null,
-      // Visibility is PER-DOMAIN — clear it on switch so the previous domain's hide
-      // set never bleeds into the new one. The graph then hydrates this domain's slice.
-      hidden: {},
-      showInheritedEdges: true,
     })
   },
   setSection: (section) => {
@@ -276,21 +257,6 @@ export const useUI = create<UIState>((set) => ({
         : { selectedClass: undefined, focusId: null, revealedRef: null },
     ),
   setFocus: (focusId) => set({ focusId }),
-  toggleModule: (path) =>
-    set((s) => ({
-      collapsedModules: s.collapsedModules.includes(path)
-        ? s.collapsedModules.filter((p) => p !== path)
-        : [...s.collapsedModules, path],
-    })),
-  toggleHidden: (ref) =>
-    set((s) => {
-      const next = { ...s.hidden }
-      if (next[ref]) delete next[ref]
-      else next[ref] = true
-      return { hidden: next }
-    }),
-  setVisibility: ({ hidden, showInheritedEdges }) => set({ hidden, showInheritedEdges }),
-  toggleInheritedEdges: () => set((s) => ({ showInheritedEdges: !s.showInheritedEdges })),
   toggleCardinality: () => set((s) => ({ showCardinality: !s.showCardinality })),
   setOpenAnchor: (openAnchorRef, openAnchorId = null) => set({ openAnchorRef, openAnchorId }),
   toggleCommentMode: (on) =>

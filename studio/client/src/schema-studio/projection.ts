@@ -19,6 +19,7 @@ export interface ClassNodeData extends Record<string, unknown> {
   /** every class this one extends, kernel bases included — shown as chips when the
    *  inheritance EDGES are off (the two say the same thing, so never both). */
   parents: string[]
+  showInheritedEdges: boolean
   hue: number
   icon?: string
 }
@@ -31,7 +32,6 @@ export interface GroupNodeData extends Record<string, unknown> {
   hue: number
   collapsed: boolean
   classCount: number
-  onToggleModule?: (domainId: string, path: string) => void
 }
 
 /** What the cardinality mode shows at one end of a relationship. */
@@ -112,6 +112,7 @@ export function projectDomainCanvas(
           methods: Object.keys(definition?.methods ?? {}).length,
           coreRole: coreRole(definition?.extendsRefs ?? []),
           parents: (definition?.extendsRefs ?? []).map((ref) => ref.name),
+          showInheritedEdges,
           hue: module.hue,
           icon: definition?.icon,
         } satisfies ClassNodeData,

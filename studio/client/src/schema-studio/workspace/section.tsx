@@ -3,7 +3,7 @@ import type { VisibilityState } from '@shared/types'
 import { useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
 import { AlertTriangle } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 
 import { ScrollArea } from '@/components/ui/misc'
 import { api, qk } from '@/lib/api'
@@ -17,34 +17,14 @@ import { DomainsPanel } from '../domains-panel'
 import { IntegrationsPanel } from '../integrations-panel'
 import { PanelShell } from '../panel-shell'
 import { ModulesSidebar } from '../sidebar'
-import { viewGraphKey } from '../view-graph'
 import { ViewsPanel } from '../views-panel'
+import { toggleVisibilityRef } from '../visibility'
 import { WorkspaceSchemaGraph } from './graph'
-import { prepareWorkspaceDomain, type WorkspaceDomainProjection } from './projection'
 import { useSchemaWorkspace } from './store'
 import { WorkspaceModuleTree } from './tree'
-import { useWorkspaceDomainInputs, type WorkspaceDomainInput } from './use-domain-inputs'
+import { useWorkspaceDomainInputs } from './use-domain-inputs'
+import { usePreparedWorkspaceDomains } from './use-prepared-domains'
 import { WorkspaceViewsPanel } from './views-panel'
-
-function domainPreparationKey(input: WorkspaceDomainInput, collapsedModules: string[]): string {
-  return [
-    input.summary.id,
-    input.summary.origin,
-    input.bundle.renderFingerprint,
-    // views come from anatomy, which the render fingerprint does not cover
-    viewGraphKey(buildViewsModel(input.anatomy, input.bundle)),
-    Object.keys(input.visibility.hidden).sort().join(','),
-    input.visibility.showInheritedEdges,
-    Object.entries(input.layout.positions)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(
-        ([id, position]) =>
-          `${id}:${position.x}:${position.y}:${position.w ?? ''}:${position.h ?? ''}`,
-      )
-      .join(','),
-    collapsedModules.slice().sort().join(','),
-  ].join('|')
-}
 
 export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const { data: domains } = useWorkspace()
@@ -58,9 +38,9 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const panelOverlay = useUI((state) => state.panelOverlay)
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const collapsedModules = useSchemaWorkspace((state) => state.collapsedModules)
-  const [prepared, setPrepared] = useState<WorkspaceDomainProjection[]>([])
-  const preparedCache = useRef(
-    new Map<string, { key: string; projection: WorkspaceDomainProjection }>(),
+  const { domains: prepared, ready: preparationReady } = usePreparedWorkspaceDomains(
+    inputs,
+    collapsedModules,
   )
 
   useEffect(() => {
@@ -68,41 +48,6 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
       setPanelOverlay(null)
     }
   }, [setPanelOverlay])
-
-  const preparationKey = useMemo(
-    () =>
-      inputs
-        .map((input) => domainPreparationKey(input, collapsedModules[input.summary.id] ?? []))
-        .join('::'),
-    [collapsedModules, inputs],
-  )
-
-  useEffect(() => {
-    let cancelled = false
-    const selected = new Set(inputs.map((input) => input.summary.id))
-    for (const domainId of preparedCache.current.keys()) {
-      if (!selected.has(domainId)) preparedCache.current.delete(domainId)
-    }
-    Promise.all(
-      inputs.map(async (input) => {
-        const domainId = input.summary.id
-        const collapsed = collapsedModules[domainId] ?? []
-        const key = domainPreparationKey(input, collapsed)
-        const cached = preparedCache.current.get(domainId)
-        if (cached?.key === key) return { ...cached.projection, input }
-        const projection = await prepareWorkspaceDomain(input, collapsed)
-        if (!cancelled) preparedCache.current.set(domainId, { key, projection })
-        return projection
-      }),
-    ).then((next) => {
-      if (!cancelled) setPrepared(next)
-    })
-    return () => {
-      cancelled = true
-    }
-    // preparationKey is the intentionally compact dependency for the server and local slices.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preparationKey])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -130,12 +75,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
 
   const toggleHidden = useCallback(
     (domainId: string, ref: string) =>
-      updateVisibility(domainId, (current) => {
-        const hidden = { ...current.hidden }
-        if (hidden[ref]) delete hidden[ref]
-        else hidden[ref] = true
-        return { ...current, hidden }
-      }),
+      updateVisibility(domainId, (current) => toggleVisibilityRef(current, ref)),
     [updateVisibility],
   )
 
@@ -154,7 +94,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   // its row in the tree, and that is the whole answer — there is no module to inspect.
   const detail = selected && !isModuleRef(selected) ? selected : undefined
   const solo = inputs.length === 1
-  const ready = prepared.length === inputs.length && inputs.length === domainIds.length
+  const ready = preparationReady && inputs.length === domainIds.length
   const providerKey = prepared
     .map((domain) => `${domain.input.summary.id}:${domain.input.bundle.renderFingerprint}`)
     .join('|')
@@ -204,7 +144,11 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
           </PanelShell>
         ) : panelOverlay === 'domains' && activeInput ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>
-            <DomainsPanel domainId={activeInput.summary.id} />
+            <DomainsPanel
+              domainId={activeInput.summary.id}
+              visibility={activeInput.visibility}
+              onToggleHidden={(ref) => toggleHidden(activeInput.summary.id, ref)}
+            />
           </PanelShell>
         ) : panelOverlay === 'integrations' && activeInput ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>

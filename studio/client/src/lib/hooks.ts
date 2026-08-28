@@ -5,6 +5,7 @@ import { useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 
 import { api, qk } from './api'
+import { anatomyQueryOptions, bundleQueryOptions } from './domain-queries'
 import { type ViewsModel, buildViewsModel } from './views'
 
 export function useWorkspace() {
@@ -17,14 +18,10 @@ export function useInstances() {
   return useQuery({ queryKey: qk.instances, queryFn: api.instances, refetchInterval: 30000 })
 }
 export function useBundle(id?: string) {
-  return useQuery({ queryKey: qk.bundle(id ?? ''), queryFn: () => api.bundle(id!), enabled: !!id })
+  return useQuery({ ...bundleQueryOptions(id ?? ''), enabled: !!id })
 }
 export function useAnatomy(id?: string) {
-  return useQuery({
-    queryKey: qk.anatomy(id ?? ''),
-    queryFn: () => api.anatomy(id!),
-    enabled: !!id,
-  })
+  return useQuery({ ...anatomyQueryOptions(id ?? ''), enabled: !!id })
 }
 /** Lazily start the domain frontend and resolve target candidates for one view. */
 export function useViewRuntime(id?: string, slug?: string, enabled = true) {
@@ -130,27 +127,6 @@ export function useSettings(id?: string) {
 }
 export function useCore(id?: string) {
   return useQuery({ queryKey: qk.core(id ?? ''), queryFn: () => api.core(id!), enabled: !!id })
-}
-export function useLayout(id?: string) {
-  // client-authoritative: every layout write keeps this cache in sync via setQueryData,
-  // so it must NOT be refetched out from under us (a stale refetch would clobber a fresh
-  // drag while its debounced disk write is still in flight — e.g. on a core⇄schema remount).
-  return useQuery({
-    queryKey: qk.layout(id ?? ''),
-    queryFn: () => api.layout(id!),
-    enabled: !!id,
-    staleTime: Number.POSITIVE_INFINITY,
-  })
-}
-export function useVisibility(id?: string) {
-  // client-authoritative like layout: every toggle keeps this cache in sync (setQueryData)
-  // and flushes to disk debounced, so it must not be refetched out from under a live edit.
-  return useQuery({
-    queryKey: qk.visibility(id ?? ''),
-    queryFn: () => api.visibility(id!),
-    enabled: !!id,
-    staleTime: Number.POSITIVE_INFINITY,
-  })
 }
 export function useDocuments(id?: string) {
   return useQuery({

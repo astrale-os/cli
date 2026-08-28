@@ -56,7 +56,16 @@ describe('Domain canvas projection', () => {
         extendsRefs: [classRef('local.example.dev', 'Base')],
       }),
     })
-    expect(projectDomainCanvas(fixture, new Set(), {}, false).edges).toHaveLength(0)
+    const withoutInheritance = projectDomainCanvas(fixture, new Set(), {}, false)
+    expect(withoutInheritance.edges).toHaveLength(0)
+    expect(
+      withoutInheritance.nodes.find((node) => node.id === 'class.Document')?.data,
+    ).toMatchObject({ parents: ['Base'], showInheritedEdges: false })
+    expect(
+      projectDomainCanvas(fixture, new Set(), {}, true).nodes.find(
+        (node) => node.id === 'class.Document',
+      )?.data,
+    ).toMatchObject({ parents: ['Base'], showInheritedEdges: true })
     expect(
       projectDomainCanvas(fixture, new Set(), { 'class.Base': true }, true)
         .nodes.filter((node) => node.type === 'classNode')
