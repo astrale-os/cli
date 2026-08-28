@@ -53,8 +53,9 @@
    edge untouched. The rule sits on the rendered card — that is where `--node-tint` (the
    module hue the node already paints itself with) is declared, and its shape is the one the
    ring should follow, including collapsed groups. Nodes without a hue fall back to the accent.
-   A hard outline, never a glow: at canvas zoom a blurred halo only reads as a smudge. */
+   Keep the hard outline flush with the card's border: an offset leaves a second floating frame
+   around the node, especially once the canvas is zoomed out. */
 .react-flow__node.is-edge-endpoint > div {
   outline: 2px solid var(--node-tint, var(--color-primary));
-  outline-offset: 2px;
+  outline-offset: 0;
 }

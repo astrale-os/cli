@@ -48,7 +48,7 @@ function WorkspaceDomainNode({ data }: NodeProps) {
       data-domain-id={domain.domainId}
       data-testid={`workspace-domain-${domain.domainId}`}
       title={`Drag ${domain.origin}`}
-      className="relative h-full w-full cursor-grab rounded-xl border border-dashed border-border active:cursor-grabbing"
+      className="relative h-full w-full rounded-xl border border-dashed border-border"
     >
       <span
         className="absolute -top-2 left-4 whitespace-nowrap px-2 text-[11px] font-medium text-muted-foreground"

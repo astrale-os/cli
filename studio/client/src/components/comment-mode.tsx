@@ -147,8 +147,9 @@ export function CommentModeOverlay() {
 
   useEffect(() => {
     if (!active) return
-    const prevCursor = document.body.style.cursor
-    document.body.style.cursor = 'pointer'
+    // one flag, one cursor: the stylesheet paints the whole window — canvas included — with
+    // the pointer that says "this click lands somewhere"
+    document.body.setAttribute('data-target-mode', '')
     const exit = () => (useUI.getState().askMode ? toggleAskMode(false) : toggleCommentMode(false))
 
     // outline what the click would target, so the pin never lands somewhere unexpected
@@ -200,7 +201,7 @@ export function CommentModeOverlay() {
     document.addEventListener('keydown', onKeyDown, true)
     document.addEventListener('mousemove', onMove, true)
     return () => {
-      document.body.style.cursor = prevCursor
+      document.body.removeAttribute('data-target-mode')
       highlight(null)
       document.removeEventListener('click', onClick, true)
       document.removeEventListener('keydown', onKeyDown, true)
