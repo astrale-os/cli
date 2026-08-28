@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { bundle, edgeClass, nodeClass } from './__tests__/fixture'
-import { buildModuleTree, folderModules, moduleMembers, moduleOfClass } from './modules'
+import { buildModuleTree, folderModules, moduleOfClass } from './modules'
 
 describe('schema modules', () => {
   const fixture = bundle({
@@ -37,13 +37,5 @@ describe('schema modules', () => {
       ['class', 'class.Space', 'class.Space'],
       ['edge', 'class.owns', 'edge.owns'],
     ])
-  })
-
-  test('summarizes nested module contents without inventing schema members', () => {
-    expect(moduleMembers(fixture, 'space')).toMatchObject({
-      classes: [{ name: 'Space' }],
-      edges: [{ name: 'owns' }],
-      files: ['space/owns', 'space/space'],
-    })
   })
 })

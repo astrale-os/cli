@@ -1,18 +1,16 @@
 import type { IrClassRef, JsonSchema, StudioSchemaBundle } from '@shared/types'
 
 import { classRefKey, parseClassRefKey } from '@shared/types'
-import { Box, FolderClosed, MousePointerClick, Spline } from 'lucide-react'
+import { Box, MousePointerClick, Spline } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
-import { Chip, EmptyState, Group, IconTile, Row, Surface } from '@/components/studio-kit'
+import { Chip, EmptyState, Group, IconTile, Surface } from '@/components/studio-kit'
 import { useCatalog, useViewsModel } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { anchorData, schemaMemberRef } from '@/lib/targets'
 import { viewsForClass } from '@/lib/views'
 
 import { inheritedGroupsOfClass, resolveClass } from '../inheritance'
-import { type MemberRef, moduleMembers } from '../modules'
-import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
 import { InheritedSection, MethodCard, PropertyRow } from './members'
@@ -44,10 +42,6 @@ export function SchemaDetail({
       </div>
     )
   }
-  if (selected.startsWith('module.')) {
-    return <ModuleDetail bundle={bundle} path={selected.slice('module.'.length)} />
-  }
-
   const token = selected.startsWith('class.') ? selected.slice('class.'.length) : selected
   const importedRef = parseClassRefKey(token)
   const local = importedRef === undefined || importedRef.origin === ir.domain
@@ -193,61 +187,6 @@ export function SchemaDetail({
 
         {properties.length === 0 && methods.length === 0 && inherited.length === 0 && !isEdge && (
           <EmptyState title="No properties or methods" hint="This Class declares no own members." />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function ModuleDetail({ bundle, path }: { bundle: StudioSchemaBundle; path: string }) {
-  const selectClass = useUI((state) => state.selectClass)
-  const info = moduleMembers(bundle, path)
-  const memberRow = (member: MemberRef) => (
-    <Row
-      key={member.selectId}
-      onClick={() => selectClass(member.selectId)}
-      anchorRef={member.ref}
-      anchorExcerpt={member.name}
-      leading={
-        <IconTile tone={member.kind === 'edge' ? 'edge' : 'node'} size="sm">
-          {member.icon ? (
-            <SchemaIcon svg={member.icon} className="h-4 w-4" />
-          ) : member.kind === 'edge' ? (
-            <Spline />
-          ) : (
-            <Box />
-          )}
-        </IconTile>
-      }
-      title={member.name}
-    />
-  )
-
-  return (
-    <div className="h-full overflow-y-auto" {...anchorData(`module.${path}`, info.label)}>
-      <div className="space-y-6 px-5 py-5">
-        <header className="flex items-start gap-3">
-          <IconTile tone="muted" size="lg" style={{ color: moduleTint(info.hue).mark }}>
-            <FolderClosed />
-          </IconTile>
-          <div className="flex-1 min-w-0 pt-0.5">
-            <h2 className="truncate text-[15px] font-semibold tracking-tight">{info.label}</h2>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">
-              {info.classes.length} {info.classes.length === 1 ? 'class' : 'classes'}
-              {info.edges.length > 0 &&
-                ` · ${info.edges.length} relationship${info.edges.length === 1 ? '' : 's'}`}
-            </p>
-          </div>
-        </header>
-        {info.classes.length > 0 && (
-          <Group label="Classes">
-            <Surface className="divide-y">{info.classes.map(memberRow)}</Surface>
-          </Group>
-        )}
-        {info.edges.length > 0 && (
-          <Group label="Relationships">
-            <Surface className="divide-y">{info.edges.map(memberRow)}</Surface>
-          </Group>
         )}
       </div>
     </div>

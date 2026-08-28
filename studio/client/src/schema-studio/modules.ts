@@ -27,15 +27,6 @@ export interface FolderModule {
   edges: string[]
 }
 
-export interface ModuleInfo {
-  path: string
-  label: string
-  hue: number
-  classes: MemberRef[]
-  edges: MemberRef[]
-  files: string[]
-}
-
 const HUES = [264, 190, 150, 90, 30, 320, 220, 55, 0, 170, 120, 290]
 
 export function moduleHue(index: number): number {
@@ -175,35 +166,4 @@ export function moduleOfClass(
 ): string {
   return schemaLocation(bundle.overlay.sourceSpans[`class.${className}`]?.file, schemaDir)
     .modulePath
-}
-
-export function moduleMembers(
-  bundle: StudioSchemaBundle,
-  path: string,
-  schemaDir = 'schema',
-): ModuleInfo {
-  const members = collectMembers(bundle, schemaDir)
-  const hues = topHueMap(members)
-  const selected = members.filter(
-    (value) =>
-      value.modulePath === path || (path !== 'root' && value.modulePath.startsWith(`${path}/`)),
-  )
-  return {
-    path,
-    label: path === 'root' ? schemaDir : path,
-    hue: hues.get(path.split('/')[0]) ?? 264,
-    classes: selected
-      .filter((value) => value.kind === 'class')
-      .map(member)
-      .sort(byName),
-    edges: selected
-      .filter((value) => value.kind === 'edge')
-      .map(member)
-      .sort(byName),
-    files: [...new Set(selected.map((value) => value.sourcePath))].sort(),
-  }
-}
-
-function byName(left: MemberRef, right: MemberRef): number {
-  return left.name.localeCompare(right.name)
 }

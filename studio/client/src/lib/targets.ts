@@ -19,12 +19,44 @@ import type { AnchorKind } from '@shared/types'
 
 export type SchemaMemberKind = 'class' | 'edge'
 
+/** The finest targets in the hierarchy: the fields a schema member owns. */
+export type MemberFieldKind = 'property' | 'method' | 'endpoint'
+
+/** Non-greedy owner so the FIRST field segment splits the ref, not a later namesake. */
+const MEMBER_FIELD = /^((?:class|edge)\..+?)\.(property|method|endpoint)\.(.+)$/
+
 /** The AnchorKind implied by a ref's namespace (used when stamping a free click). */
 export function anchorKindForRef(ref: string): AnchorKind {
   if (/^(class|edge)\./.test(ref)) return 'schema'
   if (/^(module|section|view)\./.test(ref)) return 'section'
   if (ref.startsWith('file.')) return 'file'
   return 'free'
+}
+
+/**
+ * Split a member field ref (`class.Order.property.total`) into the member that owns it
+ * and the field itself. Returns null for anything coarser — a member, a module, a section.
+ */
+export function parseMemberFieldRef(
+  ref: string,
+): { owner: string; kind: MemberFieldKind; name: string } | null {
+  const match = MEMBER_FIELD.exec(ref)
+  if (!match) return null
+  return { owner: match[1]!, kind: match[2] as MemberFieldKind, name: match[3]! }
+}
+
+/**
+ * The ref whose detail view CONTAINS `ref`. A field has no view of its own, so the
+ * panel opens its owning Class and singles the field out there; everything else
+ * already is its own detail.
+ */
+export function detailRefFor(ref: string): string {
+  return parseMemberFieldRef(ref)?.owner ?? ref
+}
+
+/** A module only GROUPS members, so the detail panel never opens one. */
+export function isModuleRef(ref: string): boolean {
+  return ref.startsWith('module.')
 }
 
 /** The anchor ref for a schema member (edges live under the `edge.` namespace). */
