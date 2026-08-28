@@ -18,11 +18,14 @@ semantic owner.
 
 `instance list` performs one exact caller-authorized native Instance Query through 256 visible
 Instances, then follows only bounded Kernel cursors when more pages exist. Deleted lifecycle
-tombstones are not operational inventory and are excluded from the returned list. The journey
-performs no Admin Method or schema-discovery call and rejects the complete inventory if any later
-page fails. Against the production beta Admin endpoint, the built CLI must finish in less than 1
-second with a warm route and less than 2 seconds from a cold executable process when its
-authenticated exchange credential is current. Authentication bootstrap after login or credential
-expiry is measured separately. Unit tests prove the exact-Class AST, bounded pagination,
-fail-closed collection, tombstone exclusion, and no-reflection shape; retained live evidence proves
-the wall-clock bounds.
+tombstones are not operational inventory: the exact state ordering places them after every
+operational state, so the bounded collector stops at the first admitted tombstone without traversing
+retained-only pages. Exact NodePath lifecycle operations use a bounded direct lookup so a terminal
+delete can still be replayed after response loss. The journey performs no Admin Method or
+schema-discovery call and rejects the complete operational inventory if any required later page
+fails. Against the production beta Admin endpoint, the built CLI must finish in less than 1 second
+with a warm route and less than 2 seconds from a cold executable process when its authenticated
+exchange credential is current. Authentication bootstrap after login or credential expiry is
+measured separately. Unit tests prove the exact-Class AST, bounded pagination, fail-closed
+collection, tombstone-boundary termination, terminal lifecycle replay, and no-reflection shape;
+retained live evidence proves the wall-clock bounds.

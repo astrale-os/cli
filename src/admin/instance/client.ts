@@ -50,6 +50,7 @@ export async function connectAdminInstances(
 
   const list = async (): Promise<OwnedInstanceInfo[]> => {
     const Instance = AdminContract.classes.Instance
+    const property = AdminContract.properties.instance
     const instances = Query.from({ nodes: [Instance] }).filter({
       class: { equals: Instance },
     })
@@ -59,18 +60,24 @@ export async function connectAdminInstances(
         kind: 'nodes',
         binding: instances.node,
         projection: { kind: 'value' },
+        order: { property: property.state, direction: 'desc', unranked: 'last' },
       }),
       {
         label: 'Admin Instance inventory',
         maximum: MAXIMUM_INSTANCES,
         maximumPages: MAXIMUM_PAGES,
+        orderedBoundary: (node) => instanceFromNode(node).state === 'deleted',
       },
     )
-    return nodes.map(instanceFromNode).filter((instance) => instance.state !== 'deleted')
+    return nodes.map(instanceFromNode)
   }
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
-    const found = findOwnedInstance(await list(), identifier)
+    const direct = directNodePath(identifier)
+    const found =
+      direct === undefined
+        ? findOwnedInstance(await list(), identifier)
+        : await readExactInstance(context.graph, direct)
     if (found === undefined) throw new AdminInstanceNotFoundError(identifier)
     return found
   }
@@ -113,6 +120,30 @@ export async function connectAdminInstances(
       return domainInstallReceipt(output)
     },
   })
+}
+
+async function readExactInstance(
+  graph: AdminGraphQueryApi,
+  instance: ReturnType<typeof Path.parse>,
+): Promise<OwnedInstanceInfo | undefined> {
+  const Instance = AdminContract.classes.Instance
+  const selected = Query.from({ nodes: [instance] }).filter({ class: { equals: Instance } })
+  const nodes = await readAllNodes(
+    graph,
+    selected.select({ kind: 'nodes', binding: selected.node, projection: { kind: 'value' } }),
+    { label: 'Admin Instance lookup', maximum: 1, maximumPages: 1 },
+  )
+  if (nodes.length > 1) throw new TypeError('Admin Instance lookup returned more than one Node.')
+  return nodes[0] === undefined ? undefined : instanceFromNode(nodes[0])
+}
+
+function directNodePath(input: string): ReturnType<typeof Path.parse> | undefined {
+  try {
+    const parsed = Path.parse(input)
+    return parsed.ast.anchor.kind === 'id' && parsed.ast.steps.length === 0 ? parsed : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function instanceFromNode(node: Node): OwnedInstanceInfo {
