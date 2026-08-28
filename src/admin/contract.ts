@@ -14,6 +14,7 @@ function classRef(name: string): ClassRef {
 
 const Domain = classRef('Domain')
 const Instance = classRef('Instance')
+const Invitation = classRef('Invitation')
 
 export const AdminContract = Object.freeze({
   origin,
@@ -21,6 +22,7 @@ export const AdminContract = Object.freeze({
   classes: Object.freeze({
     Domain,
     Instance,
+    Invitation,
   }),
   edges: Object.freeze({
     fleetInstallsDomainByDefault: classRef('fleet_installs_domain_by_default'),

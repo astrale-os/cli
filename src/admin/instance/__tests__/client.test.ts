@@ -301,6 +301,122 @@ describe('V2 Admin Instance adapter', () => {
     expect(contract.reflection).not.toHaveBeenCalled()
   })
 
+  test('invites through the exact Instance receiver and reconciles the direct Invitation', async () => {
+    const summary = {
+      id: '@invitation-node',
+      email: 'person@example.com',
+      state: 'pending',
+      access: 'member',
+      instance: '@instance-node',
+      invitedBy: '@owner',
+      createdAt: '2026-08-28T10:00:00.000Z',
+    } as const
+    const contract = fixture({ instances: [instanceNode()], invoke: () => summary })
+    const api = await contract.connect()
+
+    await expect(api.invite('demo', 'Person@Example.com', 7)).resolves.toEqual(summary)
+    await expect(api.reconcileInvitation('@invitation-node')).resolves.toEqual(summary)
+    expect(contract.calls).toEqual([
+      {
+        target: '@instance-node::inviteUser',
+        value: {
+          operationId: 'cli.instance.invite.test',
+          email: 'Person@Example.com',
+          expiresInDays: 7,
+        },
+      },
+      {
+        target: '@invitation-node::reconcile',
+        value: { operationId: 'cli.instance.reconcile-invitation.test' },
+      },
+    ])
+    expect(contract.reflection).not.toHaveBeenCalled()
+  })
+
+  test('uses fresh production operation IDs for invite and reconciliation', async () => {
+    const summary = {
+      id: '@invitation-node',
+      email: 'person@example.com',
+      state: 'pending',
+      access: 'member',
+      instance: '@instance-node',
+      createdAt: '2026-08-28T10:00:00.000Z',
+    } as const
+    const contract = fixture({
+      instances: [instanceNode()],
+      useDefaultOperationIds: true,
+      invoke: () => summary,
+    })
+    const api = await contract.connect()
+
+    await api.invite('demo', 'person@example.com')
+    await api.reconcileInvitation('@invitation-node')
+    await api.reconcileInvitation('@invitation-node')
+
+    const operationIds = contract.calls.map(({ value }) =>
+      String((value as { operationId: unknown }).operationId),
+    )
+    expect(operationIds[0]).toMatch(
+      /^cli\.instance\.invite\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    expect(operationIds[1]).toMatch(
+      /^cli\.instance\.reconcile-invitation\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    expect(operationIds[2]).toMatch(
+      /^cli\.instance\.reconcile-invitation\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    expect(operationIds[0]).not.toBe(operationIds[1])
+    expect(operationIds[1]).not.toBe(operationIds[2])
+  })
+
+  test.each([
+    ['Instance', { instance: '@another-instance' }],
+    ['access', { access: 'administrator' }],
+    ['email', { email: 'another@example.com' }],
+  ] as const)(
+    'rejects an invitation response with mismatched %s scope',
+    async (_label, mismatch) => {
+      const contract = fixture({
+        instances: [instanceNode()],
+        invoke: () => ({
+          id: '@invitation-node',
+          email: 'person@example.com',
+          state: 'pending',
+          access: 'member',
+          instance: '@instance-node',
+          createdAt: '2026-08-28T10:00:00.000Z',
+          ...mismatch,
+        }),
+      })
+
+      await expect((await contract.connect()).invite('demo', 'person@example.com')).rejects.toThrow(
+        'Admin Instance invitation does not match its requested scope.',
+      )
+    },
+  )
+
+  test.each([
+    ['Invitation id', { id: '@other-invitation' }],
+    ['missing Instance', { instance: undefined }],
+    ['Fleet access', { access: 'administrator' }],
+  ] as const)('rejects reconciliation with mismatched %s scope', async (_label, mismatch) => {
+    const contract = fixture({
+      invoke: () => ({
+        id: '@invitation-node',
+        email: 'person@example.com',
+        state: 'pending',
+        access: 'member',
+        instance: '@instance-node',
+        createdAt: '2026-08-28T10:00:00.000Z',
+        ...mismatch,
+      }),
+    })
+
+    await expect(
+      (await contract.connect()).reconcileInvitation('@invitation-node'),
+    ).rejects.toThrow('Admin Invitation reconciliation does not match its requested scope.')
+  })
+
   test('connects without network I/O and list performs exactly one graph call', async () => {
     const contract = fixture({})
 
@@ -434,6 +550,21 @@ describe('V2 Admin Instance adapter', () => {
     await expect(
       (await malformedInstallPath.connect()).installDomain('demo', '@crm-domain'),
     ).rejects.toThrow('Admin Domain reference is invalid.')
+
+    const malformedInvitation = fixture({
+      instances: [instanceNode()],
+      invoke: () => ({
+        id: '@invitation-node',
+        email: 'person@example.com',
+        state: 'unknown',
+        access: 'member',
+        instance: '@instance-node',
+        createdAt: '2026-08-28T10:00:00.000Z',
+      }),
+    })
+    await expect(
+      (await malformedInvitation.connect()).invite('demo', 'person@example.com'),
+    ).rejects.toThrow('Admin Invitation state is invalid.')
   })
 })
 

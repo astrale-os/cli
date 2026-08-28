@@ -9,7 +9,10 @@ export {
   findOwnedInstance,
   formatInstanceState,
   type DomainInstallReceipt,
+  type InvitationInfo,
+  type InvitationState,
   type InstanceInfo,
   type InstanceState,
   type OwnedInstanceInfo,
 } from './model'
+export { waitForInvitation, type InvitationWaitOptions } from './invitation'
