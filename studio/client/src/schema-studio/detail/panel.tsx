@@ -1,7 +1,7 @@
 import type { IrClassRef, JsonSchema, StudioSchemaBundle } from '@shared/types'
 
 import { classRefKey, parseClassRefKey } from '@shared/types'
-import { ArrowLeft, Box, FolderClosed, MousePointerClick, Spline } from 'lucide-react'
+import { Box, FolderClosed, MousePointerClick, Spline } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
 import { Chip, EmptyState, Group, IconTile, Row, Surface } from '@/components/studio-kit'
@@ -18,25 +18,6 @@ import { ViewRow } from '../views-panel'
 import { InheritedSection, MethodCard, PropertyRow } from './members'
 import { originLabel } from './model'
 import { EdgeRelationship } from './relationships'
-
-function BackBar() {
-  const back = useUI((state) => state.back)
-  const canGoBack = useUI((state) => state.selectionHistory.length > 0)
-  if (!canGoBack) return null
-  return (
-    <div className="px-3 pt-3">
-      <button
-        type="button"
-        onClick={() => back()}
-        title="Back to previous selection"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back
-      </button>
-    </div>
-  )
-}
 
 export function SchemaDetail({
   bundle,
@@ -92,7 +73,6 @@ export function SchemaDetail({
 
   return (
     <div className="h-full overflow-y-auto" {...anchorData(refBase, name)}>
-      <BackBar />
       <div className="space-y-6 px-5 py-5">
         <header className="space-y-3">
           <div className="flex items-start gap-3 pr-8">
@@ -245,7 +225,6 @@ function ModuleDetail({ bundle, path }: { bundle: StudioSchemaBundle; path: stri
 
   return (
     <div className="h-full overflow-y-auto" {...anchorData(`module.${path}`, info.label)}>
-      <BackBar />
       <div className="space-y-6 px-5 py-5">
         <header className="flex items-start gap-3">
           <IconTile tone="muted" size="lg" style={{ color: moduleTint(info.hue).mark }}>
