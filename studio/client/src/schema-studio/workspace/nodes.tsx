@@ -77,6 +77,24 @@ function ResizeCorner({
 function WorkspaceDomainNode({ id, data }: NodeProps) {
   const actions = useWorkspaceNodeActions()
   const domain = data as WorkspaceDomainNodeData
+  // Alone on the canvas, the frame is scenery: a dashed outline with the origin on its
+  // shoulder, exactly what the single-domain canvas has always drawn. It only grows a
+  // header, a grab handle and a resize corner once there is a neighbour to arrange against.
+  if (domain.solo) {
+    return (
+      <div
+        data-domain-id={domain.domainId}
+        className="relative h-full w-full rounded-xl border border-dashed border-border"
+      >
+        <span
+          className="absolute -top-2 left-4 whitespace-nowrap px-2 text-[11px] font-medium text-muted-foreground"
+          style={{ background: 'var(--color-canvas)' }}
+        >
+          {domain.origin}
+        </span>
+      </div>
+    )
+  }
   return (
     <div
       data-domain-id={domain.domainId}
@@ -127,9 +145,6 @@ function WorkspaceGroupNode(props: NodeProps) {
           onToggleModule: actions.toggleModule,
         }}
       />
-      {props.type === 'group' && metadata?.active && (
-        <ResizeCorner nodeId={props.id} minimum={MODULE_MIN_SIZE} label="Resize module" />
-      )}
     </div>
   )
 }
