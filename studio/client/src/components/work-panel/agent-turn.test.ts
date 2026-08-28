@@ -2,7 +2,7 @@ import type { AgentEvent, AgentRun } from '@shared/types'
 
 import { expect, test } from 'bun:test'
 
-import { activityLabel } from './agent-turn'
+import { activityLabel, compactTarget } from './agent-turn'
 
 const event = (
   kind: AgentEvent['kind'],
@@ -50,4 +50,26 @@ test('prose already on screen never becomes the activity line', () => {
 test('a turn with nothing reported yet still says something', () => {
   expect(activityLabel(run([]))).toBe('Working…')
   expect(activityLabel(run([event('thinking', '')]))).toBe('Thinking…')
+})
+
+test('a long path keeps its tail — CSS truncation would have cut exactly that off', () => {
+  const label = activityLabel(
+    run([
+      event('tool', '', {
+        tool: 'Read',
+        target: '/Users/dev/conductor/workspaces/cli-v1/manila/.context/fixture.ts',
+      }),
+    ]),
+  )
+
+  expect(label).toBe('Read · …/manila/.context/fixture.ts')
+})
+
+test('compacting never invents a shortening it cannot afford', () => {
+  // short enough to read whole — left alone
+  expect(compactTarget('schema/billing/index.ts')).toBe('schema/billing/index.ts')
+  // no separators to fold on: trimmed from the front, still ending on the real tail
+  const flat = `${'a'.repeat(80)}END`
+  expect(compactTarget(flat).endsWith('END')).toBe(true)
+  expect(compactTarget(flat).length).toBeLessThanOrEqual(44)
 })

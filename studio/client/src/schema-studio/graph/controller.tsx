@@ -18,24 +18,16 @@ import {
   useReactFlow,
   useStore,
 } from '@xyflow/react'
-import { AppWindow, Globe, LayoutGrid, Plug, Sigma, Spline } from 'lucide-react'
+import { LayoutGrid, Sigma, Spline } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { hasAnyUnsentDraft } from '@/components/thread'
 import { api, qk } from '@/lib/api'
-import {
-  useAnatomy,
-  useCatalog,
-  useComments,
-  useCore,
-  useViewsModel,
-  useVisibility,
-} from '@/lib/hooks'
+import { useCatalog, useComments, useViewsModel, useVisibility } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
-import { CoreModeToggle } from '../core-view'
+import { CanvasIconToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
 import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
@@ -46,15 +38,19 @@ import { edgeTypes } from '../floating-edge'
 import {
   type Geometry,
   applyGeometry,
+  clampInsideModule,
+  fitModuleBoxes,
   geometryOf,
-  growModuleBoxes,
+  moduleBoxSize,
+  normalizeModuleLayout,
   packPendingNodes,
   sizeOfNode,
 } from '../geometry'
 import { useLayoutCommitter } from '../layout-commit'
 import { moduleOfClass } from '../modules'
-import { CLASS_H, CLASS_W, MODULE_PAD, moduleTint } from '../palette'
+import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
 import { type ClassNodeData, projectDomainCanvas } from '../projection'
+import { viewGraph, viewGraphKey } from '../view-graph'
 import { VISIBILITY_DEFAULT, domainVisible, visibilityEqual } from '../visibility'
 import { CanvasCommentPin, schemaNodeTypes } from './nodes'
 import {
@@ -65,6 +61,7 @@ import {
   neighborSet,
   schemaCanvasCommentGroups,
   schemaCanvasFallbackComments,
+  selectedRelationshipContext,
 } from './structure'
 
 export function SchemaGraph({
@@ -84,12 +81,7 @@ export function SchemaGraph({
   const focusId = useUI((s) => s.focusId)
   const scheme = useUI((s) => s.resolvedTheme)
   const focusClass = useUI((s) => s.focusClass)
-  const panelOverlay = useUI((s) => s.panelOverlay)
-  const setPanelOverlay = useUI((s) => s.setPanelOverlay)
-  const viewsCount = useViewsModel(domainId).all.length
-  const integrationsCount = useAnatomy(domainId).data?.detectedIntegrations?.length ?? 0
-  const core = useCore(domainId).data
-  const coreCount = (core?.nodes.length ?? 0) + (core?.edges.length ?? 0)
+  const viewsModel = useViewsModel(domainId)
   const selectClass = useUI((s) => s.selectClass)
   const selectedClass = useUI((s) => s.selectedClass)
   const setFocus = useUI((s) => s.setFocus)
@@ -109,12 +101,21 @@ export function SchemaGraph({
 
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
-  const [hoverId, setHoverId] = useState<string | null>(null)
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
 
-  const structure = useMemo(
-    () => projectDomainCanvas(bundle, new Set(collapsedModules), hidden, showInheritedEdges),
-    [bundle.renderFingerprint, bundle, collapsedModules, hidden, showInheritedEdges],
-  )
+  // Views are part of the canvas, not a panel behind a button: project them alongside
+  // the schema so they go through the SAME layout, drag and persistence path as classes.
+  const viewsKey = viewGraphKey(viewsModel)
+  const structure = useMemo(() => {
+    const collapsed = new Set(collapsedModules)
+    const schema = projectDomainCanvas(bundle, collapsed, hidden, showInheritedEdges)
+    const views = viewGraph(viewsModel, bundle, collapsed, hidden)
+    return {
+      nodes: [...schema.nodes, ...views.nodes],
+      edges: [...schema.edges, ...views.edges],
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bundle.renderFingerprint, bundle, collapsedModules, hidden, showInheritedEdges, viewsKey])
   const allExternal = useMemo(() => externalDomains(bundle), [bundle])
   const crossE = useMemo(() => crossDomainEdges(bundle), [bundle])
   const hiddenKey = Object.keys(hidden).sort().join(',') + `|${showInheritedEdges}`
@@ -186,7 +187,7 @@ export function SchemaGraph({
       const internal = structure.nodes.map((n) => applyGeometry(n, g))
       const visibleDomains = allExternal.filter((d) => domainVisible(d.origin, hidden))
       const { extNodes } = buildExternalLayout(internal, visibleDomains, catalog, g)
-      const all = [...internal, ...extNodes]
+      const all = normalizeModuleLayout([...internal, ...extNodes])
       const ids = new Set(all.map((n) => n.id))
       setNodes(all)
       setEdges([
@@ -230,11 +231,12 @@ export function SchemaGraph({
     const placed = structure.nodes.filter((n) => cur[n.id])
     const pending = structure.nodes.filter((n) => !cur[n.id])
     if (pending.length === 0) {
-      // A box saved too small for its classes would clamp them onto each other — heal it
-      // (and persist the repair) instead of repainting the overlap every load.
-      const grown = growModuleBoxes(structure.nodes, cur)
-      compose(Object.keys(grown).length ? { ...cur, ...grown } : cur)
-      if (Object.keys(grown).length) commit(grown)
+      // A box saved too small for its classes would clamp them onto each other, one saved
+      // too large keeps space no class uses — heal it (and persist the repair) instead of
+      // repainting the stale box every load.
+      const fitted = fitModuleBoxes(structure.nodes, cur)
+      compose(Object.keys(fitted).length ? { ...cur, ...fitted } : cur)
+      if (Object.keys(fitted).length) commit(fitted)
       firstFit()
       return
     }
@@ -263,13 +265,17 @@ export function SchemaGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structure, layoutReady, allExternal, crossE, catalog, hiddenKey])
 
-  // the 'region' rectangle is a derived node (not in state) — ignore changes targeting it
+  // the 'region' rectangle is a derived node (not in state) — ignore changes targeting it.
+  // Every position change (a drag frame included) is re-normalized, which is what keeps a
+  // class off its module label and the box wrapped tight around the classes it holds.
   const onNodesChange = useCallback(
     (c: NodeChange[]) =>
       setNodes((nds) =>
-        applyNodeChanges(
-          c.filter((ch) => (ch as { id?: string }).id !== 'region'),
-          nds,
+        normalizeModuleLayout(
+          applyNodeChanges(
+            c.filter((ch) => (ch as { id?: string }).id !== 'region'),
+            nds,
+          ),
         ),
       ),
     [],
@@ -280,40 +286,31 @@ export function SchemaGraph({
   )
 
   // a drag commits to the layout of record (cache now, disk debounced). For a class drag we
-  // ALSO persist its module box's grown size — `expandParent` enlarged it to fit the class,
-  // and if we didn't save that, the next recompose would shrink it and clamp the class back
-  // (the rollback). `extent:'parent'` keeps classes at ≥0 offsets, so the box origin never
+  // ALSO persist its module box's re-fitted size, or the next recompose would restore the
+  // stale one and clamp the class back (the rollback). The event carries the RAW pointer
+  // position — `normalizeModuleLayout` clamped what is painted, so clamp again here or the
+  // record and the canvas disagree. Classes stay at ≥ pad offsets, so the box origin never
   // moves and siblings never shift — only the box SIZE needs capturing.
   const onNodeDragStop = useCallback(
     (_: unknown, node: Node) => {
+      const all = getNodes()
+      const parent = node.parentId ? all.find((n) => n.id === node.parentId) : undefined
+      const position = parent ? clampInsideModule(node.position) : node.position
       const updates: Geometry = {
         [node.id]: {
-          x: Math.round(node.position.x),
-          y: Math.round(node.position.y),
+          x: Math.round(position.x),
+          y: Math.round(position.y),
           ...sizeOfNode(node),
         },
       }
-      if (node.parentId) {
-        const all = getNodes()
-        const parent = all.find((n) => n.id === node.parentId)
-        if (parent) {
-          let w =
-            parent.measured?.width ??
-            (typeof parent.style?.width === 'number' ? parent.style.width : 200)
-          let h =
-            parent.measured?.height ??
-            (typeof parent.style?.height === 'number' ? parent.style.height : 120)
-          for (const k of all) {
-            if (k.parentId !== node.parentId) continue
-            w = Math.max(w, k.position.x + (k.measured?.width ?? CLASS_W) + MODULE_PAD)
-            h = Math.max(h, k.position.y + (k.measured?.height ?? CLASS_H) + MODULE_PAD)
-          }
-          updates[parent.id] = {
-            x: Math.round(parent.position.x),
-            y: Math.round(parent.position.y),
-            w: Math.round(w),
-            h: Math.round(h),
-          }
+      if (parent) {
+        const classes = all
+          .filter((n) => n.parentId === parent.id)
+          .map((n) => (n.id === node.id ? position : n.position))
+        updates[parent.id] = {
+          x: Math.round(parent.position.x),
+          y: Math.round(parent.position.y),
+          ...moduleBoxSize(classes),
         }
       }
       commit(updates)
@@ -370,9 +367,23 @@ export function SchemaGraph({
     if (!onScreen) setCenter(cx, cy, { zoom })
   }, [selectedClass, paneWidth, paneHeight, getInternalNode, getViewport, setCenter])
 
-  // focus + context: dim non-neighbors of the active (pinned or hovered) node
-  const active = focusId ?? hoverId
-  const sets = useMemo(() => (active ? neighborSet(active, edges) : null), [active, edges])
+  // A selected relationship highlights its two endpoints without suppressing the rest of the
+  // graph. Node focus is deliberately click-only: merely crossing a card must not repaint the
+  // canvas or make the pointer flicker as edges appear and disappear beneath it.
+  const selectedEdgeContext = useMemo(
+    () => selectedRelationshipContext(selectedEdgeId, edges),
+    [edges, selectedEdgeId],
+  )
+  useEffect(() => {
+    if (!selectedEdgeId) return
+    const edge = edges.find((candidate) => candidate.id === selectedEdgeId)
+    const edgeClass = edge?.data?.edgeClass as string | undefined
+    if (!edgeClass || selectedClass !== `class.${edgeClass}`) setSelectedEdgeId(null)
+  }, [edges, selectedClass, selectedEdgeId])
+  const sets = useMemo(
+    () => (focusId && !selectedEdgeContext ? neighborSet(focusId, edges) : null),
+    [edges, focusId, selectedEdgeContext],
+  )
 
   // the internal rectangle, re-derived from the live module positions → auto-resizes on drag
   const regionNode = useMemo(
@@ -391,18 +402,26 @@ export function SchemaGraph({
 
   const displayNodes = useMemo(() => {
     const mapped = nodes.map((n) => {
-      if (n.type !== 'classNode') return n.className ? { ...n, className: undefined } : n
-      const cls = sets && !sets.nodeIds.has(n.id) ? 'is-dimmed' : undefined
+      const cls =
+        cn(
+          selectedEdgeContext?.nodeIds.has(n.id) && 'is-edge-endpoint',
+          (n.type === 'classNode' || n.type === 'viewNode') &&
+            sets &&
+            !sets.nodeIds.has(n.id) &&
+            'is-dimmed',
+        ) || undefined
       return n.className === cls ? n : { ...n, className: cls }
     })
     const base = regionNode ? [regionNode, ...mapped] : mapped
     return canvasCommentNodes.length ? [...base, ...canvasCommentNodes] : base
-  }, [nodes, sets, regionNode, canvasCommentNodes])
+  }, [nodes, sets, selectedEdgeContext, regionNode, canvasCommentNodes])
   const displayEdges = useMemo(
     () =>
       edges.map((e) => {
         const edgeName = (e.data?.edgeClass as string | undefined) ?? e.id.replace(/^edge-/, '')
-        const isSelected = selectedClass === `class.${edgeName}`
+        const isSelected = selectedEdgeId
+          ? e.id === selectedEdgeId
+          : selectedClass === `class.${edgeName}`
         const focusCls = !sets ? undefined : sets.edgeIds.has(e.id) ? 'is-on' : 'is-dimmed'
         const cls = isSelected ? cn('is-selected', focusCls) : focusCls
         if (isSelected) {
@@ -420,7 +439,7 @@ export function SchemaGraph({
           ? e
           : { ...e, className: cls, data: { ...e.data, selected: false } }
       }),
-    [edges, sets, selectedClass],
+    [edges, sets, selectedClass, selectedEdgeId],
   )
   const routedEdges = useMemo(
     () => assignFloatingEdgePorts(nodes, displayEdges),
@@ -439,15 +458,16 @@ export function SchemaGraph({
         onEdgesChange={onEdgesChange}
         onNodeDragStop={onNodeDragStop}
         onNodeClick={(_, n) => {
+          setSelectedEdgeId(null)
           if (n.id.startsWith('class.')) focusClass(n.id)
           else if (n.id.startsWith('grp-')) selectClass(`module.${n.id.slice('grp-'.length)}`)
         }}
-        onNodeMouseEnter={(_, n) => n.id.startsWith('class.') && setHoverId(n.id)}
-        onNodeMouseLeave={() => setHoverId(null)}
         onEdgeClick={(_, edge) => {
           if (!edge.id.startsWith('edge-')) return // ignore cross-domain (implements) edges
           const name = (edge.data?.edgeClass as string | undefined) ?? edge.id.slice('edge-'.length)
+          setSelectedEdgeId(edge.id)
           selectClass(`class.${name}`)
+          setFocus(null)
         }}
         onPaneClick={() => {
           setFocus(null)
@@ -457,11 +477,16 @@ export function SchemaGraph({
         minZoom={0.15}
         nodesConnectable={false}
         edgesFocusable={true}
+        // React Flow derives an edge's z-index from its endpoints, and a SELECTED node is
+        // lifted to 1000 — which dragged that node's edges over the label layer and struck
+        // every one of their labels through. Our nodes never overlap, so the lift buys
+        // nothing and edges stay below the labels they belong to.
+        elevateNodesOnSelect={false}
         proOptions={{ hideAttribution: true }}
       >
         <Background gap={20} size={1} color="var(--color-input)" />
         <EdgeMarkerDefs />
-        <Controls showInteractive={false} position="bottom-left">
+        <Controls showFitView={false} showInteractive={false} position="bottom-left">
           <ControlButton onClick={autoArrange} title="Auto-arrange — discards manual positions">
             <LayoutGrid className="h-3.5 w-3.5" />
           </ControlButton>
@@ -473,7 +498,9 @@ export function SchemaGraph({
           nodeColor={(n) =>
             n.type === 'classNode'
               ? moduleTint((n.data as ClassNodeData).hue, scheme).mark
-              : 'transparent'
+              : n.type === 'viewNode'
+                ? moduleTint(VIEW_HUE, scheme).mark
+                : 'transparent'
           }
           nodeStrokeWidth={0}
         />
@@ -486,46 +513,20 @@ export function SchemaGraph({
             />
           )}
           <CanvasToolbar>
-            <CanvasToggle
-              icon={<Globe />}
-              label="Domains"
-              count={allExternal.length}
-              pressed={panelOverlay === 'domains'}
-              title="Imported domains"
-              onClick={() => setPanelOverlay(panelOverlay === 'domains' ? null : 'domains')}
-            />
-            <CanvasToggle
-              icon={<AppWindow />}
-              label="Views"
-              count={viewsCount}
-              pressed={panelOverlay === 'views'}
-              onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
-            />
-            <CanvasToggle
-              icon={<Plug />}
-              label="Integrations"
-              count={integrationsCount}
-              pressed={panelOverlay === 'integrations'}
-              onClick={() =>
-                setPanelOverlay(panelOverlay === 'integrations' ? null : 'integrations')
-              }
-            />
-            <span className="mx-0.5 h-4 w-px bg-border" />
-            <CanvasToggle
+            <CanvasIconToggle
               icon={<Spline />}
-              label="Inherited"
+              label="Inheritance"
+              hint="draw an edge from each class to the one it extends"
               pressed={showInheritedEdges}
-              title="Show inheritance edges"
               onClick={toggleInheritedEdges}
             />
-            <CanvasToggle
+            <CanvasIconToggle
               icon={<Sigma />}
               label="Cardinality"
+              hint="spell out how many of each side a relationship allows"
               pressed={showCardinality}
-              title="Spell out how many of each side a relationship allows"
               onClick={toggleCardinality}
             />
-            <CoreModeToggle count={coreCount} />
           </CanvasToolbar>
         </Panel>
       </ReactFlow>

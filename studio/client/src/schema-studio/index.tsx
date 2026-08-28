@@ -23,24 +23,35 @@ const MODULES_MIN = 180
 const MODULES_MAX = 560
 const MODULES_DEFAULT = 240
 
-export function SchemaSection({ domainId }: { domainId: string }) {
+/** Which canvas this section shows: the schema graph, or the core (genesis) data. */
+export type SchemaMode = 'schema' | 'core'
+
+export function SchemaSection({
+  domainId,
+  mode = 'schema',
+}: {
+  domainId: string
+  mode?: SchemaMode
+}) {
   const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
   const workspaceIds = selectedDomainIds.includes(domainId)
     ? selectedDomainIds
     : [domainId, ...selectedDomainIds]
-  if (workspaceIds.length > 1) return <WorkspaceSchemaSection domainIds={workspaceIds} />
-  return <SingleDomainSchemaSection domainId={domainId} />
+  // Core is a reading of ONE domain's genesis data; a multi-domain workspace has no
+  // such thing, so the Core tab always falls back to the active domain.
+  if (mode === 'schema' && workspaceIds.length > 1)
+    return <WorkspaceSchemaSection domainIds={workspaceIds} />
+  return <SingleDomainSchemaSection domainId={domainId} mode={mode} />
 }
 
-function SingleDomainSchemaSection({ domainId }: { domainId: string }) {
+function SingleDomainSchemaSection({ domainId, mode }: { domainId: string; mode: SchemaMode }) {
   const { data: bundle, isLoading } = useBundle(domainId)
   const { data: layout } = useLayout(domainId)
   const { data: core } = useCore(domainId)
   const selected = useUI((s) => s.selectedClass)
   const select = useUI((s) => s.selectClass)
   const setFocus = useUI((s) => s.setFocus)
-  const canvasMode = useUI((s) => s.canvasMode)
-  const coreMode = canvasMode === 'core'
+  const coreMode = mode === 'core'
   const panelOverlay = useUI((s) => s.panelOverlay)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
   const viewsModel = useViewsModel(domainId)
@@ -81,7 +92,7 @@ function SingleDomainSchemaSection({ domainId }: { domainId: string }) {
   // core-view selection (a genesis node path) — local to this section, reset when
   // the domain or canvas mode changes so re-entering Core starts cleared.
   const [corePath, setCorePath] = useState<string | null>(null)
-  useEffect(() => setCorePath(null), [domainId, canvasMode])
+  useEffect(() => setCorePath(null), [domainId, mode])
 
   // Esc clears graph focus + selection (the latter hides the detail panel), unless
   // a Radix overlay (popover / dialog / command palette) already consumed the Esc.
@@ -157,7 +168,7 @@ function SingleDomainSchemaSection({ domainId }: { domainId: string }) {
                 interface node — into a stale store (with a queued fitView) drives a setNodes-
                 during-commit loop → React #185 blank screen. A keyed provider makes a switch
                 behave exactly like a working fresh load. */}
-            <ReactFlowProvider key={`${domainId}:${canvasMode}`}>
+            <ReactFlowProvider key={`${domainId}:${mode}`}>
               {coreMode ? (
                 core ? (
                   <CoreView

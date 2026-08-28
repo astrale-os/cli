@@ -1,7 +1,7 @@
 import type { StudioEvent } from '@shared/types'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { type LucideIcon, MessagesSquare, Network, Search, Settings, Workflow } from 'lucide-react'
+import { Boxes, type LucideIcon, MessagesSquare, Network, Search, Workflow } from 'lucide-react'
 import { lazy, type ReactNode, Suspense, useCallback, useEffect } from 'react'
 
 import { AgentActivityDrawer, AgentSubmitButton } from '@/components/agent-activity'
@@ -10,10 +10,8 @@ import { CommandPalette } from '@/components/command-palette'
 import { CommentDraftPopover } from '@/components/comment-draft-popover'
 import { CommentModeOverlay } from '@/components/comment-mode'
 import { DomainSelector } from '@/components/domain-selector'
-import { EnvBadge } from '@/components/env-editor'
 import { InstanceBadge } from '@/components/instance-badge'
 import { InstanceSwitcher } from '@/components/instance-switcher'
-import { SettingsDialog } from '@/components/settings-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
 import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
@@ -31,12 +29,16 @@ const LazySchemaSection = lazy(() =>
 
 const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
   { key: 'schema', label: 'Schema', icon: Network },
+  { key: 'core', label: 'Core', icon: Boxes },
   { key: 'process', label: 'Process', icon: Workflow },
 ]
 
 function SectionRouter({ section, domainId }: { section: SectionKey; domainId: string }) {
   switch (section) {
+    // Schema and Core are two readings of one domain — the same lazily-loaded studio,
+    // asked for a different canvas.
     case 'schema':
+    case 'core':
       return (
         <Suspense
           fallback={
@@ -45,7 +47,7 @@ function SectionRouter({ section, domainId }: { section: SectionKey; domainId: s
             </div>
           }
         >
-          <LazySchemaSection domainId={domainId} />
+          <LazySchemaSection domainId={domainId} mode={section} />
         </Suspense>
       )
     case 'process':
@@ -100,7 +102,6 @@ export function App() {
   const setDomain = useUI((s) => s.setDomain)
   const setSection = useUI((s) => s.setSection)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
-  const setSettingsOpen = useUI((s) => s.setSettingsOpen)
   const commentMode = useUI((s) => s.commentMode)
   const panelOpen = useUI((s) => s.panelOpen)
   const panelSide = useUI((s) => s.panelSide)
@@ -218,7 +219,6 @@ export function App() {
             <DomainSelector />
             {domainId && <InstanceBadge domainId={domainId} />}
             {domainId && <UpdatesBadge domainId={domainId} />}
-            {domainId && <EnvBadge domainId={domainId} />}
           </div>
 
           {/* where you are */}
@@ -259,11 +259,6 @@ export function App() {
             >
               <MessagesSquare className="h-4 w-4" />
             </IconAction>
-            {domainId && (
-              <IconAction label="Settings" onClick={() => setSettingsOpen(true)}>
-                <Settings className="h-4 w-4" />
-              </IconAction>
-            )}
             {/* the panel's own composer is the way to reach the agent while it is open */}
             {!panelOpen && (
               <>
@@ -300,7 +295,6 @@ export function App() {
       <CommentDraftPopover />
       <AskLayer />
       <AgentActivityDrawer />
-      <SettingsDialog />
     </TooltipProvider>
   )
 }

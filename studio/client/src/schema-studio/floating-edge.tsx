@@ -1,17 +1,26 @@
 import { SmartEdge } from '@tisoap/react-flow-smart-edge'
 import {
   BaseEdge,
+  EdgeLabelRenderer,
   type EdgeProps,
-  EdgeText,
   type InternalNode,
   type Node,
   Position,
   getSmoothStepPath,
   useInternalNode,
 } from '@xyflow/react'
+import { type RefObject, useLayoutEffect, useRef } from 'react'
 
 import { useUI } from '@/lib/store'
 
+import {
+  edgeLabelRect,
+  placeEdgeLabel,
+  type EdgeLabelObstacle,
+  type EdgeLabelObstacleIndex,
+  type EdgeLabelObstacleSource,
+  type EdgePathSample,
+} from './edge-label-layout'
 import { type FloatingEdgePort, SMART_EDGE_RENDER_OPTIONS } from './edge-routing'
 
 /** One end of a relationship as the schema declares it. */
@@ -28,7 +37,34 @@ interface FloatingEdgeData extends Record<string, unknown> {
   targetPort?: FloatingEdgePort
   sourceEnd?: FloatingEdgeEnd
   targetEnd?: FloatingEdgeEnd
+  labelObstacleIndex?: EdgeLabelObstacleIndex
 }
+
+interface FloatingEdgeGeometry {
+  sx: number
+  sy: number
+  tx: number
+  ty: number
+  sourcePosition: Position
+  targetPosition: Position
+}
+
+interface EdgeLabelElements {
+  path: RefObject<SVGGElement | null>
+  main: RefObject<HTMLDivElement | null>
+  source: RefObject<HTMLDivElement | null>
+  target: RefObject<HTMLDivElement | null>
+}
+
+const EMPTY_LABEL_OBSTACLES: EdgeLabelObstacle[] = []
+const PATH_SAMPLE_GAP = 8
+const MAX_PATH_SAMPLES = 256
+const ENDPOINT_CHIP_DISTANCE = 25
+const MIN_CHIP_PATH_LENGTH = 110
+const PATH_SAMPLE_CACHE = new WeakMap<
+  SVGPathElement,
+  { pathData: string | null; samples: EdgePathSample[] }
+>()
 
 // Standard react-flow "floating edge" geometry: connect at the node border on
 // the side facing the other node, so edges take a sane path regardless of where
@@ -99,23 +135,161 @@ function pointAtPort(
   }
 }
 
-function chipAtPort(
-  point: { x: number; y: number },
-  position: Position,
-  other: { x: number; y: number },
-): { x: number; y: number } | null {
-  if (Math.hypot(other.x - point.x, other.y - point.y) < 110) return null
-  const travel = 25
-  switch (position) {
-    case Position.Left:
-      return { x: point.x - travel, y: point.y }
-    case Position.Right:
-      return { x: point.x + travel, y: point.y }
-    case Position.Top:
-      return { x: point.x, y: point.y - travel }
-    case Position.Bottom:
-      return { x: point.x, y: point.y + travel }
+function fallbackPathSamples(geometry: FloatingEdgeGeometry | null): EdgePathSample[] {
+  if (!geometry) return []
+  const middle = { x: (geometry.sx + geometry.tx) / 2, y: (geometry.sy + geometry.ty) / 2 }
+  const firstLength = Math.hypot(middle.x - geometry.sx, middle.y - geometry.sy)
+  return [
+    { x: geometry.sx, y: geometry.sy, distance: 0 },
+    { ...middle, distance: firstLength },
+    {
+      x: geometry.tx,
+      y: geometry.ty,
+      distance: firstLength + Math.hypot(geometry.tx - middle.x, geometry.ty - middle.y),
+    },
+  ]
+}
+
+function renderedPathSamples(
+  path: SVGPathElement | null,
+  geometry: FloatingEdgeGeometry | null,
+): EdgePathSample[] {
+  if (!path || typeof path.getTotalLength !== 'function') return fallbackPathSamples(geometry)
+  try {
+    const pathData = path.getAttribute('d')
+    const cached = PATH_SAMPLE_CACHE.get(path)
+    if (cached?.pathData === pathData) return cached.samples
+    const length = path.getTotalLength()
+    if (!Number.isFinite(length) || length <= 0) return fallbackPathSamples(geometry)
+    const segments = Math.max(2, Math.min(MAX_PATH_SAMPLES, Math.ceil(length / PATH_SAMPLE_GAP)))
+    const samples = Array.from({ length: segments + 1 }, (_, index) => {
+      const distance = (length * index) / segments
+      const point = path.getPointAtLength(distance)
+      return { x: point.x, y: point.y, distance }
+    })
+    PATH_SAMPLE_CACHE.set(path, { pathData, samples })
+    return samples
+  } catch {
+    return fallbackPathSamples(geometry)
   }
+}
+
+function hideLabel(element: HTMLDivElement | null) {
+  if (element) element.style.visibility = 'hidden'
+}
+
+function placeLabelElement(
+  id: string,
+  element: HTMLDivElement | null,
+  samples: EdgePathSample[],
+  obstacles: EdgeLabelObstacleSource,
+  additionalObstacles: EdgeLabelObstacle[],
+  preferredDistance: number,
+  maxPathDistance?: number,
+): EdgeLabelObstacle | null {
+  if (!element) return null
+  const size = {
+    width: Math.max(element.offsetWidth, 16),
+    height: Math.max(element.offsetHeight, 12),
+  }
+  const point = placeEdgeLabel(samples, size, obstacles, {
+    preferredDistance,
+    maxPathDistance,
+    additionalObstacles,
+  })
+  if (!point) {
+    hideLabel(element)
+    return null
+  }
+
+  element.style.transform = `translate(-50%, -50%) translate(${point.x}px, ${point.y}px)`
+  element.style.visibility = 'visible'
+  return { id, ...edgeLabelRect(point, size) }
+}
+
+function useEdgeLabelLayout({
+  id,
+  elements,
+  geometry,
+  obstacles,
+  hasMainLabel,
+  sourceChip,
+  targetChip,
+  selected,
+}: {
+  id: string
+  elements: EdgeLabelElements
+  geometry: FloatingEdgeGeometry | null
+  obstacles: EdgeLabelObstacleSource
+  hasMainLabel: boolean
+  sourceChip?: FloatingEdgeEnd
+  targetChip?: FloatingEdgeEnd
+  selected: boolean
+}) {
+  useLayoutEffect(() => {
+    const update = () => {
+      const path = elements.path.current?.querySelector<SVGPathElement>(
+        'path.react-flow__edge-path',
+      )
+      const samples = renderedPathSamples(path ?? null, geometry)
+      const pathLength = samples.at(-1)?.distance ?? 0
+      const occupied: EdgeLabelObstacle[] = []
+
+      if (hasMainLabel) {
+        const placed = placeLabelElement(
+          `${id}:label`,
+          elements.main.current,
+          samples,
+          obstacles,
+          occupied,
+          pathLength / 2,
+        )
+        if (placed) occupied.push(placed)
+      } else hideLabel(elements.main.current)
+
+      if (sourceChip && pathLength >= MIN_CHIP_PATH_LENGTH) {
+        const placed = placeLabelElement(
+          `${id}:source`,
+          elements.source.current,
+          samples,
+          obstacles,
+          occupied,
+          ENDPOINT_CHIP_DISTANCE,
+          40,
+        )
+        if (placed) occupied.push(placed)
+      } else hideLabel(elements.source.current)
+
+      if (targetChip && pathLength >= MIN_CHIP_PATH_LENGTH) {
+        placeLabelElement(
+          `${id}:target`,
+          elements.target.current,
+          samples,
+          obstacles,
+          occupied,
+          Math.max(0, pathLength - ENDPOINT_CHIP_DISTANCE),
+          40,
+        )
+      } else hideLabel(elements.target.current)
+    }
+
+    update()
+    const group = elements.path.current
+    let mutationObserver: MutationObserver | null = null
+    if (group && typeof MutationObserver !== 'undefined') {
+      mutationObserver = new MutationObserver(update)
+      mutationObserver.observe(group, {
+        attributes: true,
+        attributeFilter: ['d'],
+        childList: true,
+        subtree: true,
+      })
+    }
+
+    return () => {
+      mutationObserver?.disconnect()
+    }
+  }, [elements, geometry, hasMainLabel, id, obstacles, selected, sourceChip, targetChip])
 }
 
 export function FloatingEdge(props: EdgeProps) {
@@ -123,88 +297,107 @@ export function FloatingEdge(props: EdgeProps) {
   const showCardinality = useUI((state) => state.showCardinality)
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
-  if (!sourceNode || !targetNode) return null
-
   const d = data as FloatingEdgeData | undefined
-  const sourcePort = pointAtPort(sourceNode, d?.sourcePort)
-  const targetPort = pointAtPort(targetNode, d?.targetPort)
-  const fallback = getEdgeParams(sourceNode, targetNode)
-  const sx = sourcePort?.x ?? fallback.sx
-  const sy = sourcePort?.y ?? fallback.sy
-  const tx = targetPort?.x ?? fallback.tx
-  const ty = targetPort?.y ?? fallback.ty
-  const sourcePosition = sourcePort?.position ?? fallback.sourcePos
-  const targetPosition = targetPort?.position ?? fallback.targetPos
-
   // A dashed inheritance trace already says "extends". Repeating that word on every long
   // connector adds noise without information, so relationship labels keep the visual priority.
   const label = d?.kind === 'extends' ? undefined : d?.label
   const selected = d?.selected === true
+  const sourceChip = showCardinality ? d?.sourceEnd : undefined
+  const targetChip = showCardinality ? d?.targetEnd : undefined
+  const pathRef = useRef<SVGGElement>(null)
+  const mainLabelRef = useRef<HTMLDivElement>(null)
+  const sourceLabelRef = useRef<HTMLDivElement>(null)
+  const targetLabelRef = useRef<HTMLDivElement>(null)
+  const elements = useRef<EdgeLabelElements>({
+    path: pathRef,
+    main: mainLabelRef,
+    source: sourceLabelRef,
+    target: targetLabelRef,
+  }).current
+
+  let geometry: FloatingEdgeGeometry | null = null
+  if (sourceNode && targetNode) {
+    const sourcePort = pointAtPort(sourceNode, d?.sourcePort)
+    const targetPort = pointAtPort(targetNode, d?.targetPort)
+    const fallback = getEdgeParams(sourceNode, targetNode)
+    geometry = {
+      sx: sourcePort?.x ?? fallback.sx,
+      sy: sourcePort?.y ?? fallback.sy,
+      tx: targetPort?.x ?? fallback.tx,
+      ty: targetPort?.y ?? fallback.ty,
+      sourcePosition: sourcePort?.position ?? fallback.sourcePos,
+      targetPosition: targetPort?.position ?? fallback.targetPos,
+    }
+  }
+
+  useEdgeLabelLayout({
+    id,
+    elements,
+    geometry,
+    obstacles: d?.labelObstacleIndex ?? EMPTY_LABEL_OBSTACLES,
+    hasMainLabel: Boolean(label),
+    sourceChip,
+    targetChip,
+    selected,
+  })
+
+  if (!geometry) return null
+
+  const { sx, sy, tx, ty, sourcePosition, targetPosition } = geometry
   const strokeColor = selected
     ? 'var(--color-primary)'
     : ((style?.stroke as string) ?? 'var(--color-muted-foreground)')
   const edgeStyle = selected ? { ...style, stroke: strokeColor, strokeWidth: 3 } : style
-  const chipLabelStyle = { fill: 'var(--color-muted-foreground)' }
-  const chipBgStyle = { fill: 'var(--color-card)', stroke: 'var(--color-border)' }
-  const sourceChip = showCardinality ? d?.sourceEnd : undefined
-  const targetChip = showCardinality ? d?.targetEnd : undefined
-  const sourceChipAt = sourceChip
-    ? chipAtPort({ x: sx, y: sy }, sourcePosition, { x: tx, y: ty })
-    : null
-  const targetChipAt = targetChip
-    ? chipAtPort({ x: tx, y: ty }, targetPosition, { x: sx, y: sy })
-    : null
   return (
     <>
-      <SmartEdge
-        {...props}
-        sourceX={sx}
-        sourceY={sy}
-        targetX={tx}
-        targetY={ty}
-        sourcePosition={sourcePosition}
-        targetPosition={targetPosition}
-        preset="smoothstep"
-        options={SMART_EDGE_RENDER_OPTIONS}
-        style={edgeStyle}
-        label={label}
-        labelStyle={selected ? { fill: strokeColor, fontWeight: 600 } : chipLabelStyle}
-        labelShowBg
-        labelBgStyle={chipBgStyle}
-        labelBgPadding={[6, 2]}
-        labelBgBorderRadius={4}
-        interactionWidth={18}
-      />
-      {sourceChip && sourceChipAt && (
-        <g>
-          <title>{endpointTitle(sourceChip, d?.label)}</title>
-          <EdgeText
-            x={sourceChipAt.x}
-            y={sourceChipAt.y}
-            label={sourceChip.cardinality}
-            labelStyle={chipLabelStyle}
-            labelShowBg
-            labelBgStyle={chipBgStyle}
-            labelBgPadding={[5, 1]}
-            labelBgBorderRadius={4}
-          />
-        </g>
-      )}
-      {targetChip && targetChipAt && (
-        <g>
-          <title>{endpointTitle(targetChip, d?.label)}</title>
-          <EdgeText
-            x={targetChipAt.x}
-            y={targetChipAt.y}
-            label={targetChip.cardinality}
-            labelStyle={chipLabelStyle}
-            labelShowBg
-            labelBgStyle={chipBgStyle}
-            labelBgPadding={[5, 1]}
-            labelBgBorderRadius={4}
-          />
-        </g>
-      )}
+      <g ref={pathRef}>
+        <SmartEdge
+          {...props}
+          sourceX={sx}
+          sourceY={sy}
+          targetX={tx}
+          targetY={ty}
+          sourcePosition={sourcePosition}
+          targetPosition={targetPosition}
+          preset="smoothstep"
+          options={SMART_EDGE_RENDER_OPTIONS}
+          style={edgeStyle}
+          label={undefined}
+          interactionWidth={18}
+        />
+      </g>
+      <EdgeLabelRenderer>
+        {label ? (
+          <div
+            ref={mainLabelRef}
+            data-edge-id={id}
+            className="schema-edge-label"
+            style={selected ? { color: strokeColor, fontWeight: 600 } : undefined}
+          >
+            {label}
+          </div>
+        ) : null}
+        {sourceChip ? (
+          <div
+            ref={sourceLabelRef}
+            data-edge-id={id}
+            title={endpointTitle(sourceChip, d?.label)}
+            className="schema-edge-label schema-edge-cardinality"
+          >
+            {sourceChip.cardinality}
+          </div>
+        ) : null}
+        {targetChip ? (
+          <div
+            ref={targetLabelRef}
+            data-edge-id={id}
+            title={endpointTitle(targetChip, d?.label)}
+            className="schema-edge-label schema-edge-cardinality"
+          >
+            {targetChip.cardinality}
+          </div>
+        ) : null}
+      </EdgeLabelRenderer>
     </>
   )
 }

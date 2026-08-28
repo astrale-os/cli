@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 
 import type { ClassNodeData } from '../projection'
 
-import { CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
+import { CanvasIconToggle, CanvasToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
 import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
@@ -280,12 +280,17 @@ export function WorkspaceSchemaGraph({
           minZoom={0.08}
           nodesConnectable={false}
           edgesFocusable
+          // React Flow derives an edge's z-index from its endpoints, and a SELECTED node is
+          // lifted to 1000 — which dragged that node's edges over the label layer and struck
+          // every one of their labels through. Our nodes never overlap, so the lift buys
+          // nothing and edges stay below the labels they belong to.
+          elevateNodesOnSelect={false}
           onlyRenderVisibleElements
           proOptions={{ hideAttribution: true }}
         >
           <Background gap={20} size={1} color="var(--color-input)" />
           <EdgeMarkerDefs />
-          <Controls showInteractive={false} position="bottom-left">
+          <Controls showFitView={false} showInteractive={false} position="bottom-left">
             <ControlButton
               onClick={() => {
                 fitAfterReset.current = true
@@ -329,18 +334,18 @@ export function WorkspaceSchemaGraph({
                 title="Views across selected domains"
                 onClick={() => setPanelOverlay(panelOverlay === 'views' ? null : 'views')}
               />
-              <CanvasToggle
+              <CanvasIconToggle
                 icon={<Spline />}
-                label="Inherited"
+                label="Inheritance"
+                hint="draw an edge from each class to the one it extends, in every selected domain"
                 pressed={inheritedOn}
-                title="Inheritance edges in every selected domain"
                 onClick={onToggleInherited}
               />
-              <CanvasToggle
+              <CanvasIconToggle
                 icon={<Sigma />}
                 label="Cardinality"
+                hint="spell out how many of each side a relationship allows"
                 pressed={showCardinality}
-                title="Spell out how many of each side a relationship allows"
                 onClick={toggleCardinality}
               />
             </CanvasToolbar>

@@ -95,7 +95,7 @@ export function SchemaDetail({
       <BackBar />
       <div className="space-y-6 px-5 py-5">
         <header className="space-y-3">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3 pr-8">
             <IconTile tone={isEdge ? 'edge' : 'node'} size="lg">
               {member.icon ? (
                 <SchemaIcon svg={member.icon} className="h-5 w-5" />
@@ -150,10 +150,10 @@ export function SchemaDetail({
           )}
         </header>
 
+        {/* No "Relationship" label: the header already reads `<Name> · edge`, and the card
+            below is unmistakably the relationship. The heading only cost a row. */}
         {isEdge && (member.endpoints?.length ?? 0) >= 2 && (
-          <Group label="Relationship">
-            <EdgeRelationship bundle={bundle} endpoints={member.endpoints!} edgeName={name} />
-          </Group>
+          <EdgeRelationship bundle={bundle} endpoints={member.endpoints!} edgeName={name} />
         )}
 
         {properties.length > 0 && (

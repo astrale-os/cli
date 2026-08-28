@@ -32,6 +32,14 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
 
   await page.goto('/')
   await expect(page.getByTestId('domain-selector')).toContainText('studio-e2e.astrale.ai')
+  await expect(page.getByRole('button', { name: 'Settings' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Fit View' })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Auto-arrange — discards manual positions' }),
+  ).toHaveCount(1)
+  await page.getByRole('button', { name: 'Search' }).click()
+  await expect(page.getByRole('option', { name: /Settings/ })).toHaveCount(0)
+  await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
 
   const monitorNode = page.getByText('Monitor', { exact: true }).first()
@@ -44,7 +52,7 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   ).toBeVisible()
   await expect(page.getByText('label', { exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Core 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Core', exact: true }).click()
   const coreNode = page.getByRole('button', { name: /Primary monitor/ }).first()
   await expect(coreNode).toBeVisible()
   await coreNode.click()

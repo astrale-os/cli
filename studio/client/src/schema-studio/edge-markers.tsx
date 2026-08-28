@@ -39,11 +39,11 @@ export function EdgeMarkerDefs() {
   return (
     <svg width="0" height="0" aria-hidden className="absolute" style={{ position: 'absolute' }}>
       <defs>
-        {/* open chevron, tip standing off the node border by 2 units */}
+        {/* The chevron tip is the marker reference point, so it lands on the node border. */}
         <marker
           id={EDGE_ARROW}
           viewBox="0 0 16 12"
-          refX={13}
+          refX={10.5}
           refY={6}
           markerWidth={16}
           markerHeight={12}

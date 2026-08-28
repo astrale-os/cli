@@ -7,6 +7,8 @@ import type {
 } from '@shared/types'
 import type { Edge, Node } from '@xyflow/react'
 
+import { openCommentThreads } from '@/lib/comments'
+
 import { edgeMarkers, formatCardinality } from '../edge-markers'
 import {
   type CrossDomainEdge,
@@ -107,7 +109,9 @@ export function deriveRegion(nodes: Node[], label: string): Node | null {
   let maxX = Number.NEGATIVE_INFINITY
   let maxY = Number.NEGATIVE_INFINITY
   for (const n of nodes) {
-    if (!n.id.startsWith('grp-')) continue // internal module boxes only (classes are their children)
+    // internal module boxes (classes are their children) + the view pills that hang
+    // off them — both belong to THIS domain, so the rectangle has to hold them.
+    if (!n.id.startsWith('grp-') && n.type !== 'viewNode') continue
     const w = (n.style?.width as number) ?? 200
     const h = (n.style?.height as number) ?? 120
     minX = Math.min(minX, n.position.x)
@@ -203,7 +207,7 @@ export function schemaCanvasCommentGroups(
   comments: Comment[] | undefined,
 ): { key: string; anchor: AnchorRef; comments: Comment[] }[] {
   const byKey = new Map<string, { key: string; anchor: AnchorRef; comments: Comment[] }>()
-  for (const comment of comments ?? []) {
+  for (const comment of openCommentThreads(comments)) {
     const anchor = comment.anchorRefs.find((a) => a.ref === 'section.schema')
     if (!anchor) continue
     const pt = canvasPoint(anchor)
@@ -217,7 +221,7 @@ export function schemaCanvasCommentGroups(
 }
 
 export function schemaCanvasFallbackComments(comments: Comment[] | undefined): Comment[] {
-  return (comments ?? []).filter((comment) => {
+  return openCommentThreads(comments).filter((comment) => {
     const anchor = comment.anchorRefs.find((a) => a.ref === 'section.schema')
     return !!anchor && !canvasPoint(anchor)
   })
@@ -260,4 +264,13 @@ export function neighborSet(activeId: string, edges: Edge[]) {
     }
   }
   return { nodeIds, edgeIds }
+}
+
+/** The exact two rendered endpoints of a clicked edge. Relationship classes can fan out into
+ * several paths, so the physical edge id—not only its schema class—must drive this highlight. */
+export function selectedRelationshipContext(edgeId: string | null, edges: Edge[]) {
+  if (!edgeId) return null
+  const edge = edges.find((candidate) => candidate.id === edgeId)
+  if (!edge) return null
+  return { edgeId: edge.id, nodeIds: new Set([edge.source, edge.target]) }
 }
