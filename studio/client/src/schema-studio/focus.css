@@ -1,6 +1,7 @@
 /* Focus + context: clicking a node fades everything it is NOT wired to and lifts what it is.
-   Opacity carries the fade; the node's own module hue carries the lift, so a highlight always
-   says WHICH family a connection belongs to. Group containers keep their chrome legible (only
+   Opacity carries the fade — except on edge labels, which fade through their colours so they
+   keep hiding the line they name; the node's own module hue carries the lift, so a highlight
+   always says WHICH family a connection belongs to. Group containers keep their chrome legible (only
    class + view nodes and edges fade) so the user keeps their bearings.
 
    Every selector below hangs off React Flow's OWN wrapper classes — `react-flow__node` and,
@@ -8,9 +9,15 @@
    is never emitted on its own, so a `.classNode` selector would silently match nothing. */
 
 .react-flow__node,
-.react-flow__edge,
-.schema-edge-label {
+.react-flow__edge {
   transition: opacity 180ms ease;
+}
+/* A label fades through its COLOURS, not its opacity (see `.schema-edge-label.is-dimmed`). */
+.schema-edge-label {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease;
 }
 
 /* ── context: everything the selection does not reach ── */
@@ -22,9 +29,16 @@
 }
 /* Edge labels render in React Flow's own portal, OUTSIDE the <g> that carries the classes
    above — so they have to be told separately (see `data.focus` in floating-edge.tsx) or a
-   faded edge keeps a full-strength label floating over it. */
+   faded edge keeps a full-strength label floating over it.
+
+   The fade is mixed into OPAQUE colours instead of being an `opacity`: a see-through label
+   is one the edge it names runs straight through, striking out its own words. Mixing each
+   colour toward the canvas lands where 30% opacity over that canvas landed anyway — the
+   label reads just as faint, and still hides the line beneath it. */
 .schema-edge-label.is-dimmed {
-  opacity: 0.3;
+  background: color-mix(in oklch, var(--color-card) 30%, var(--color-canvas));
+  border-color: color-mix(in oklch, var(--color-border) 30%, var(--color-canvas));
+  color: color-mix(in oklch, var(--color-muted-foreground) 30%, var(--color-canvas));
 }
 
 /* ── foreground: the focused node's neighbours ──
