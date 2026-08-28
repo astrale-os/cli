@@ -1,11 +1,26 @@
 import type { AgentEvent, AgentRun } from '@shared/types'
 
-import { Loader2, TriangleAlert } from 'lucide-react'
+import { Loader2, MessageSquare, TriangleAlert } from 'lucide-react'
 
 import { Markdown } from '@/components/markdown'
 import { relativeTime } from '@/lib/format'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
+
+/** The panel is narrow, and CSS truncation eats the END of a string — the only
+ *  part of a path or URL that says anything. Long targets keep their tail. */
+const TARGET_BUDGET = 44
+
+export function compactTarget(target: string): string {
+  if (target.length <= TARGET_BUDGET) return target
+  const segments = target.split('/').filter(Boolean)
+  for (let take = 3; take >= 1; take -= 1) {
+    if (segments.length <= take) break
+    const tail = `…/${segments.slice(-take).join('/')}`
+    if (tail.length <= TARGET_BUDGET) return tail
+  }
+  return `…${target.slice(1 - TARGET_BUDGET)}`
+}
 
 /**
  * What the agent is doing right now, in one line — never the whole event log, and
@@ -13,7 +28,8 @@ import { cn } from '@/lib/utils'
  */
 export function activityLabel(run: AgentRun): string {
   for (const event of [...run.events].reverse()) {
-    if (event.kind === 'tool') return [event.tool, event.target].filter(Boolean).join(' · ')
+    if (event.kind === 'tool')
+      return [event.tool, event.target && compactTarget(event.target)].filter(Boolean).join(' · ')
     if (event.kind === 'thinking') return 'Thinking…'
   }
   return 'Working…'
@@ -84,12 +100,15 @@ export function AgentTurn({ run, onResume }: { run: AgentRun; onResume?: () => v
                 Continue
               </button>
             )}
-            {!active && answered > 0 && (
+            {/* The count, never the replies themselves: a turn that answered threads says
+                so from the moment the first reply lands — reading them is one click away. */}
+            {answered > 0 && (
               <button
                 type="button"
                 onClick={() => setPanelTab('comments')}
-                className="text-left text-[12px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+                className="inline-flex items-center gap-1.5 text-left text-[12px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
               >
+                <MessageSquare className="h-3 w-3 shrink-0" />
                 Answered {answered} comment {answered === 1 ? 'thread' : 'threads'}
               </button>
             )}

@@ -156,29 +156,44 @@ CLI state lives under `~/.astrale/`:
 - `identities.json`
 - keypairs
 - cached IdP sessions
-- `sessions/` — locally recorded work sessions (see below)
+- `sessions/` — local work-session telemetry (see below)
 
-### Session retention
+### Session telemetry and analyzer
 
-Each invocation appends one line to a local session record under
-`~/.astrale/sessions/`; `astrale session list` shows them. The store is swept
-automatically against two bounds — sessions idle past `maxAgeDays` are dropped,
-then the store is trimmed to `maxBytes`, oldest first. Both are optional:
+Each invocation appends one redacted event to a local session under
+`~/.astrale/sessions/`; `astrale session list` shows the retained sessions. The
+opportunistic session analyzer is disabled by default. No detached analyzer or
+Claude process is launched unless its dedicated toggle is explicitly enabled.
+
+To opt in persistently, enabling analysis of local CLI events and overlapping
+Codex or Claude Code transcripts after 30 minutes of inactivity:
 
 ```jsonc
 // ~/.astrale/config.json
 {
   "telemetry": {
-    "enabled": true,      // false disables recording (the sweep still runs)
+    "enabled": true,
+    "analyzerEnabled": true,
     "maxAgeDays": 30,     // default
     "maxBytes": 52428800  // default: 50 MB
   }
 }
 ```
 
-`ASTRALE_TELEMETRY_MAX_AGE_DAYS` and `ASTRALE_TELEMETRY_MAX_BYTES` override the
-config for one invocation. Values that are not positive numbers are ignored in
-favour of the default, so a typo cannot leave the store unbounded.
+For a shell or one invocation, use `ASTRALE_TELEMETRY_ANALYZER=1`; accepted
+opt-in values are `1`, `true`, and `on`. Set it to `0` (also `false` or `off`)
+to override an enabled config. An unrecognized value does not opt in.
+
+`ASTRALE_TELEMETRY=0` disables session recording and therefore also prevents
+automatic analysis. Manual `astrale session analyze` remains an explicit way to
+analyze a retained session while the automatic analyzer is disabled.
+
+The retained store is swept automatically even while telemetry is disabled:
+sessions idle past `maxAgeDays` are dropped, then the store is trimmed to
+`maxBytes`, oldest first. `ASTRALE_TELEMETRY_MAX_AGE_DAYS` and
+`ASTRALE_TELEMETRY_MAX_BYTES` override those bounds for one invocation. Values
+that are not positive numbers are ignored in favour of the default, so a typo
+cannot leave the store unbounded.
 
 Once a session has been analyzed it is reduced to its durable artifacts —
 `meta.json`, `events.jsonl`, `report.md`, the marker and a clamped

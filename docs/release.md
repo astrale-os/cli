@@ -1,92 +1,44 @@
 # CLI release lifecycle
 
-Release Please owns the CLI version and immutable GitHub release. The CLI has
-one distribution: a standalone toolchain containing the public executable and
-its private, release-pinned cloudflared companion.
+The CLI v1 is distributed only as a standalone executable through GitHub
+Releases. The legacy `@astrale-os/cli` npm package is frozen and deprecated; it
+must never be published again.
 
-## Normal beta release
+Each platform archive is one standalone toolchain containing the public
+`astrale` executable, its private release-pinned `astrale-cloudflared`
+companion, and the companion license.
 
-1. Merge conventional feature and fix pull requests into `main`.
-2. The `Release` workflow creates or updates the open Release Please pull request.
-3. Select **Approve workflows to run** on the Release Please pull request, then wait for its required
-   checks. GitHub puts pull-request workflows created through `GITHUB_TOKEN` in `action_required`
-   by design; this is an approval gate, not a failed CI run.
-4. Review the proposed version, changelog, `package.json`, and `.release-please-manifest.json`.
-5. Merge the Release Please pull request.
-6. `Release` creates the immutable `cli/v<version>` GitHub prerelease, then calls
-   `CLI Release` to test and build four standalone toolchains with Bun 1.4.0.
-   Each CLI executable embeds Studio, viewer assets, and the release's skills;
-   each archive also contains the exact cloudflared version pinned by
+## Manual release
+
+1. Merge conventional feature and fix pull requests into `main`. No release
+   workflow runs automatically.
+2. Manually dispatch **Release (manual)** and approve its protected
+   `cli-release` environment. Release Please creates or updates its pull request.
+3. Review the version, changelog, `package.json`, and release manifest; wait for
+   required CI and code-owner approval, then merge the pull request.
+4. Manually dispatch **Release (manual)** again. After environment approval,
+   Release Please creates `cli/v<version>` and calls **CLI Release**.
+5. Approve the `cli-release` publication job. It tests and builds the four Bun
+   1.4.0 toolchains. Each CLI embeds Studio, viewer assets, and the release's
+   Skills. Each archive also includes the exact cloudflared version pinned by
    `cloudflared.lock.json` and the distribution copy at
-   `licenses/cloudflared.txt`.
-   `CLI Release` uploads the assets and advances the movable `beta` tag and
-   channel release.
+   `licenses/cloudflared.txt`. The job uploads the immutable assets, then
+   advances the requested channel release.
 
-Do not manually edit `package.json` or `.release-please-manifest.json`, and do not manually push a
-version tag during the normal flow.
-
-Removing the workflow-approval click requires configuring a repository or organization GitHub App
-installation token or PAT for Release Please. Do not replace this gate with `pull_request_target`,
-which would run privileged base-repository automation against release-PR content.
-
-## Enter beta once
-
-The repository previously released `alpha` versions. Changing only `prerelease-type` does not
-rename an existing prerelease sequence. The pull request that installs this beta configuration
-must therefore use this one-time conventional commit message:
-
-```text
-fix(ci): automate CLI beta releases
-
-Release-As: 1.0.0-beta.0
-```
-
-Do not merge an outstanding alpha Release Please pull request. After the configuration pull
-request lands, confirm that Release Please updates or replaces it with `1.0.0-beta.0` before
-merging the release. The configuration keeps `always-update` enabled so the long-lived Release
-Please pull request cannot retain an old channel or version after lifecycle changes.
-
-## Promote to stable
-
-Create one promotion pull request that removes these three beta-only settings from
-`.release-please-config.json`:
-
-```json
-"versioning": "prerelease",
-"prerelease": true,
-"prerelease-type": "beta"
-```
-
-Keep `"tag-separator": "/"`. Give the promotion commit this one-time message:
-
-```text
-chore(ci): promote CLI releases to stable
-
-Release-As: 1.0.0
-```
-
-After the promotion pull request lands, Release Please proposes `1.0.0`. Merging that release pull
-request creates `cli/v1.0.0` and advances the standalone `stable` channel.
-Subsequent releases use ordinary stable semantic versioning with no workflow changes.
+Never edit release versions or push release tags manually. `CLI Release` may be
+dispatched directly only to recover an existing version or create an explicit
+canary; it has no push or tag trigger.
 
 ## Verification
 
-For a beta `<version>`:
-
 ```bash
-gh run list --repo astrale-os/cli --workflow Release --limit 5
+gh run list --repo astrale-os/cli --workflow "Release (manual)" --limit 5
 gh release view --repo astrale-os/cli "cli/v<version>"
 gh release view --repo astrale-os/cli beta
-```
-
-Install and verify the standalone beta through the default channel:
-
-```bash
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 astrale --version
 ~/.astrale/bin/astrale-cloudflared --version
 astrale update --check --json
-astrale studio --help
 astrale skills status --json
 ```
 
@@ -98,17 +50,13 @@ release version, compiled `binaryVersion`, and pinned `cloudflaredVersion`; the
 four asset digests close over those archives. A closure, version, checksum, or
 native smoke mismatch fails `CLI Release` before publication.
 
-## Recovery and canary
+## Required controls
 
-Manual version tags are recovery-only. A tag must match the version already present in
-`package.json`:
-
-```bash
-git tag "cli/v<version>" <release-commit>
-git push origin "refs/tags/cli/v<version>"
-```
-
-`CLI Release` can also be dispatched with an existing package version to rebuild its immutable and
-channel assets. Dispatch it without a version only for an explicit `canary` build. Normal pushes to
-`main` do not build or publish canaries, so merging a Release Please pull request produces exactly
-one four-platform binary build.
+- `main` requires pull requests, required CI, code-owner review, and approval of
+  the latest change; administrators do not bypass these rules.
+- `cli-release` requires a reviewer other than the person who started the job.
+- npm Trusted Publishing is revoked. Package publishing requires an interactive
+  human with 2FA and rejects granular tokens; the `beta` dist-tag is absent and
+  every accidentally published beta is deprecated.
+- `.github/CODEOWNERS` and CI protect the workflow, package, release policy, and
+  their contract tests.

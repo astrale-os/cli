@@ -7,8 +7,6 @@ on:
         description: Immutable package version created by Release Please
         required: true
         type: string
-  push:
-    tags: ['cli/v*']
   workflow_dispatch:
     inputs:
       version:
@@ -21,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   BUN_VERSION: 1.4.0
@@ -159,6 +157,9 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    environment: cli-release
+    permissions:
+      contents: write
     concurrency:
       group: cli-release-channel-publication
       cancel-in-progress: false

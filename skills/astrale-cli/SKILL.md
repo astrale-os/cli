@@ -125,6 +125,7 @@ astrale call @self::deactivate
 
 ```bash
 astrale instance create my-app
+astrale instance invite my-app person@example.com
 astrale instance status my-app
 astrale instance status staging --bookmarked
 astrale instance use my-app
@@ -136,6 +137,10 @@ Use explicit `-i <instance>` in scripts. `instance delete` affects an
 admin-managed instance; `instance forget` removes only the local bookmark.
 `instance status` reports Admin-owned lifecycle by default; add `--bookmarked`
 to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
+`instance invite` requires authority to manage the exact Instance and grants
+only Instance member access. It waits for WorkOS acceptance and explicit child
+Shell reconciliation by default; use `--no-wait` to return the durable
+Invitation and resume it with `astrale instance invitation reconcile <id>`.
 Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
 instances (key-backed identities have no Admin token). Use
 `astrale instance list --bookmarked`.

@@ -1,20 +1,23 @@
-/* Focus + context: dim non-neighbors on select/hover. Opacity is the single
-   dominant channel (desaturated context stays visible at ~0.2, never removed).
+/* Focus + context: dim non-neighbors only after a node click. Opacity is the single
+   dominant channel, but context stays comfortably readable instead of disappearing.
    Group containers keep their chrome legible (only class nodes + edges dim) so
-   the user keeps their bearings. Numbers follow Cytoscape/GraphQL-Voyager. */
+   the user keeps their bearings.
 
-.react-flow__node.classNode {
+   React Flow types the wrapper `react-flow__node-classNode` — a `.classNode` class it never
+   emits, so these two rules matched nothing and only the edges were dimming. */
+
+.react-flow__node-classNode {
   transition: opacity 180ms ease;
 }
 .react-flow__edge {
   transition: opacity 180ms ease;
 }
 
-.react-flow__node.classNode.is-dimmed {
-  opacity: 0.25;
+.react-flow__node-classNode.is-dimmed {
+  opacity: 0.42;
 }
 .react-flow__edge.is-dimmed {
-  opacity: 0.1;
+  opacity: 0.38;
 }
 .react-flow__edge.is-on .react-flow__edge-path {
   stroke-width: 2.4px;
@@ -25,4 +28,14 @@
 }
 .react-flow__edge.is-selected .react-flow__edge-path {
   stroke-width: 3px;
+}
+
+/* Selecting a relationship promotes its actual endpoints while leaving every other node and
+   edge untouched. Both rules sit on the rendered card — that is where `--node-tint` (the
+   module hue the node already paints itself with) is declared, and its shape is the one the
+   glow should follow, including collapsed groups. Nodes without a hue fall back to the accent. */
+.react-flow__node.is-edge-endpoint > div {
+  outline: 2px solid var(--node-tint, var(--color-primary));
+  outline-offset: 2px;
+  filter: drop-shadow(0 0 7px var(--node-halo, var(--color-ring)));
 }

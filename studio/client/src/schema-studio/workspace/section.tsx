@@ -51,7 +51,6 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const setFocus = useUI((state) => state.setFocus)
   const panelOverlay = useUI((state) => state.panelOverlay)
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
-  const setCanvasMode = useUI((state) => state.setCanvasMode)
   const collapsedModules = useSchemaWorkspace((state) => state.collapsedModules)
   const [prepared, setPrepared] = useState<WorkspaceDomainProjection[]>([])
   const preparedCache = useRef(
@@ -66,11 +65,10 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   })
 
   useEffect(() => {
-    setCanvasMode('schema')
     if (useUI.getState().panelOverlay && useUI.getState().panelOverlay !== 'views') {
       setPanelOverlay(null)
     }
-  }, [setCanvasMode, setPanelOverlay])
+  }, [setPanelOverlay])
 
   const preparationKey = useMemo(
     () =>

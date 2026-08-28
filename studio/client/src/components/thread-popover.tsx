@@ -1,14 +1,12 @@
 import type { AnchorRef, Comment } from '@shared/types'
 
-import { Crosshair, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useState } from 'react'
 
 import { useUI } from '@/lib/store'
 
-import { MetaGrid } from './studio-kit'
 import { NewComment, ThreadView } from './thread'
 import { Button } from './ui/button'
-import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card'
 
 /**
  * The body rendered inside a comment Popover: what this anchor's threads say,
@@ -41,26 +39,6 @@ export function ThreadPopover({
             ? `${threads.length} comment${threads.length === 1 ? '' : 's'}`
             : 'New comment'}
         </span>
-        <HoverCard openDelay={120}>
-          <HoverCardTrigger asChild>
-            <button
-              type="button"
-              title="Target"
-              className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Crosshair className="h-3.5 w-3.5" />
-            </button>
-          </HoverCardTrigger>
-          <HoverCardContent className="w-auto max-w-xs">
-            <MetaGrid
-              items={[
-                { label: 'target', value: anchor.ref },
-                ...(excerpt && excerpt !== anchor.ref ? [{ label: 'on', value: excerpt }] : []),
-                ...(anchor.file ? [{ label: 'file', value: anchor.file }] : []),
-              ]}
-            />
-          </HoverCardContent>
-        </HoverCard>
         <button
           type="button"
           onClick={onClose}

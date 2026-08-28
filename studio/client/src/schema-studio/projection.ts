@@ -99,8 +99,9 @@ export function projectDomainCanvas(
         id: `class.${className}`,
         type: 'classNode',
         parentId: groupId,
-        extent: 'parent',
-        expandParent: true,
+        // Containment is ours, not React Flow's: `extent:'parent'` clamps to the RAW box
+        // (so a class can sit on the module label) and `expandParent` grows it flush to the
+        // class and never shrinks it back. `normalizeModuleLayout` does both with padding.
         position: { x: 0, y: 0 },
         data: {
           domainId: bundle.domainId,
