@@ -132,7 +132,7 @@ export function SchemaDetail({
 
         {properties.length > 0 && (
           <Group label="Properties" hint={`${properties.length}`}>
-            <Surface className="divide-y">
+            <Surface className="divide-y overflow-hidden">
               {properties.map(([propertyName, value]) => (
                 <PropertyRow
                   key={propertyName}
