@@ -252,37 +252,37 @@ body {
   --xy-node-boxshadow-selected: none;
   --xy-node-boxshadow-hover: none;
 }
-/* The graph is ONE draggable surface, so it wears ONE cursor. React Flow picks a cursor per
-   element instead: `default` on a node that is neither draggable nor selectable (the derived
-   region rectangle alone covers a third of the canvas), `pointer` on a selectable-but-not-
-   draggable node and across an edge's wide invisible hit target, `crosshair` on the hidden
-   handles that anchor those edges. Sweeping the mouse over a graph therefore flickered
-   hand → arrow → pointer with nothing on screen to explain it. Pin the hand everywhere; the
-   two rules below carve out the only exceptions — a real click target, and an active drag. */
-.react-flow__pane,
-.react-flow__node,
-.react-flow__node.draggable,
-.react-flow__node.selectable,
-.react-flow__nodesselection-rect,
-.react-flow__edge.selectable,
-.react-flow__handle.connectionindicator,
-/* the minimap pans and zooms as well — same gesture, same cursor */
-.react-flow__minimap {
+/* The graph is ONE draggable surface, so it wears ONE cursor — over every pixel of it. React
+   Flow picks a cursor per element instead: `default` on a node that is neither draggable nor
+   selectable, `pointer` on a selectable one and across an edge's wide invisible hit target,
+   `crosshair` on the hidden handles that anchor those edges — and every <button> a node paints
+   inside itself (the module chevron, the view pill, the comment pin) lays its own `pointer` on
+   top. At the 0.08 minimum zoom a view pill measures 13px and a chevron barely 1px, so none of
+   those reads as an affordance: sweeping the mouse across a dense graph merely flickered
+   hand → pointer → hand several times a second. Hence one rule and no exceptions — the hand
+   covers the pane, the nodes and their buttons, the edges, the handles, and the floating chrome
+   (toolbar, controls, minimap all pan and zoom the same surface). The class is repeated so this
+   sweep outweighs React Flow's own two-class cursor rules — `.react-flow__node.selectable` and
+   friends — which a plain descendant selector would lose to. */
+.react-flow,
+.react-flow.react-flow * {
   cursor: grab;
 }
-/* A <button> gets the browser's arrow, which flashed over the module chevrons, the view pills
-   and the comment pins. Inside the canvas a button is a click target, so it says so. */
-.react-flow__pane button,
-.react-flow__panel button {
-  cursor: pointer;
-}
-/* Mid-drag the whole surface holds the closed hand: whatever slides under the pointer would
-   otherwise re-assert its own `grab` and flicker for as long as the drag lasts. */
-.react-flow__pane.dragging,
-.react-flow__pane.dragging *,
-.react-flow__node.dragging,
-.react-flow__node.dragging * {
+/* Mid-drag the whole surface holds the closed hand: whatever slides under the pointer — another
+   node, the minimap, the toolbar — would otherwise re-assert `grab` and flicker for as long as
+   the drag lasts. React Flow marks the pane mid-pan and the node mid-move; either one closes
+   the hand across the canvas. */
+.react-flow:has(.dragging),
+.react-flow.react-flow:has(.dragging) * {
   cursor: grabbing;
+}
+/* Comment and Ask mode turn EVERY element into a click target, so while one is armed the whole
+   window wears the single cursor that says so — the canvas included, whose hand would otherwise
+   contradict the mode the moment the pointer crossed into it. */
+body[data-target-mode],
+body[data-target-mode] *,
+body[data-target-mode] .react-flow.react-flow * {
+  cursor: pointer;
 }
 .react-flow__controls {
   box-shadow: none;
