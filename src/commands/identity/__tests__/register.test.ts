@@ -212,9 +212,28 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     publicKey: publicJwk,
     kernelIssuer,
   })
+  const longName = 'identity'.repeat(32)
+  const longFirst = await prepareIdentityProvision({
+    name: longName,
+    classPath,
+    properties,
+    privateKey: privateJwk,
+    publicKey: publicJwk,
+    kernelIssuer,
+  })
+  const longReplay = await prepareIdentityProvision({
+    name: longName,
+    classPath,
+    properties,
+    privateKey: privateJwk,
+    publicKey: publicJwk,
+    kernelIssuer,
+  })
 
   expect(String(prepared.binding)).toBe('identity')
-  expect(prepared.request.idempotencyKey).toBe('identity-register.alice')
+  expect(prepared.request.idempotencyKey).toMatch(/^identity-register\.[a-f0-9]{64}$/u)
+  expect(longFirst.request.idempotencyKey).toBe(longReplay.request.idempotencyKey)
+  expect(longFirst.request.idempotencyKey.length).toBeLessThanOrEqual(128)
   expect(JSON.parse(JSON.stringify(prepared.request.mutation))).toEqual({
     format: 'astrale.graph.mutation',
     version: 'v3',

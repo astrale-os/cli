@@ -18,7 +18,7 @@ import { AstraleError, IdentityKeypairIncompleteError } from '../../errors'
 import { classKey } from '../../graph'
 import { getIdentity, setRegistration, submitIdentityProvision } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
-import { idempotencyKey } from '../../lib/idempotency'
+import { derivedIdempotencyKey } from '../../lib/idempotency'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 
@@ -181,7 +181,7 @@ export async function prepareIdentityProvision(input: {
     builder.createNode({ as: binding, class: input.classPath, props: input.properties })
     return undefined
   })
-  const registrationKey = idempotencyKey('identity-register', input.name)
+  const registrationKey = await derivedIdempotencyKey('identity-register', input.name)
   const unsigned = provision.accept({
     idempotencyKey: registrationKey,
     mutation,

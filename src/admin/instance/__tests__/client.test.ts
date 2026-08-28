@@ -14,6 +14,7 @@ import { connectAdminInstances } from '../client'
 
 function fixture(input: {
   instances?: readonly Node[]
+  useDefaultOperationIds?: boolean
   invoke?: (target: string, input: unknown) => unknown
   query?: (
     ast: QueryAST,
@@ -55,9 +56,9 @@ function fixture(input: {
     connect: () =>
       connectAdminInstances(
         { session: remote.session, graph },
-        {
-          operationId: (kind) => `cli.instance.${kind}.test`,
-        },
+        input.useDefaultOperationIds
+          ? undefined
+          : { operationId: (kind) => `cli.instance.${kind}.test` },
       ),
   }
 }
@@ -103,7 +104,16 @@ describe('V2 Admin Instance adapter', () => {
             },
           },
         ],
-        select: { kind: 'nodes', binding: 'n0', projection: { kind: 'value' } },
+        select: {
+          kind: 'nodes',
+          binding: 'n0',
+          projection: { kind: 'value' },
+          order: {
+            property: 'admin.astrale.ai:class.Instance.property.state',
+            direction: 'desc',
+            unranked: 'last',
+          },
+        },
       },
       { page: { size: 256 } },
     )
@@ -136,6 +146,26 @@ describe('V2 Admin Instance adapter', () => {
     ])
   })
 
+  test('uses a protocol-safe generated operation id on the default adapter path', async () => {
+    const created = {
+      id: '@instance-node',
+      slug: 'demo',
+      url: 'https://demo.eu.astrale.ai',
+      state: 'ready',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    }
+    const contract = fixture({ useDefaultOperationIds: true, invoke: () => created })
+
+    await (await contract.connect()).create('demo')
+
+    expect(contract.calls[0]?.value).toMatchObject({
+      operationId: expect.stringMatching(
+        /^cli\.instance\.create\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+      ),
+    })
+  })
+
   test('refreshes and deletes through the resolved Instance receiver', async () => {
     const contract = fixture({
       instances: [instanceNode()],
@@ -163,6 +193,86 @@ describe('V2 Admin Instance adapter', () => {
       },
     ])
     expect(contract.reflection).not.toHaveBeenCalled()
+  })
+
+  test('retries terminal deletion through the exact NodePath while public inventory stays empty', async () => {
+    const deleted = instanceNode({ state: 'deleted' })
+    let attempts = 0
+    let queries = 0
+    const contract = fixture({
+      useDefaultOperationIds: true,
+      query: (ast, options) => {
+        queries += 1
+        if (queries === 1) {
+          expect(ast.source.kind).toBe('node')
+          if (ast.source.kind !== 'node') throw new TypeError('Expected the inventory source.')
+          expect(ast.source.terms[0]?.kind).toBe('class')
+          return { result: { kind: 'nodes' as const, nodes: [] }, page: {} }
+        }
+        expect(JSON.parse(JSON.stringify(ast))).toEqual({
+          format: 'astrale.graph.query',
+          version: 'v6',
+          source: {
+            kind: 'node',
+            terms: [{ kind: 'path', path: '@instance-node' }],
+            binding: 'n0',
+          },
+          steps: [
+            {
+              op: 'filter',
+              binding: 'n0',
+              predicate: {
+                kind: 'class.equal',
+                class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
+              },
+            },
+          ],
+          select: { kind: 'nodes', binding: 'n0', projection: { kind: 'value' } },
+        })
+        expect(options).toEqual({ page: { size: 1 } })
+        return {
+          result: {
+            kind: 'nodes' as const,
+            nodes: [{ kind: 'value' as const, value: deleted }],
+          },
+          page: {},
+        }
+      },
+      invoke: () => {
+        attempts += 1
+        if (attempts === 1) throw new Error('response lost after terminal commit')
+        return {
+          id: '@instance-node',
+          slug: 'demo',
+          state: 'deleted',
+          createdAt: '2026-08-12T00:00:00.000Z',
+          updatedAt: '2026-08-12T00:00:00.000Z',
+        }
+      },
+    })
+    const api = await contract.connect()
+
+    await expect(api.list()).resolves.toEqual([])
+    await expect(api.delete('@instance-node')).rejects.toThrow(
+      'response lost after terminal commit',
+    )
+    await expect(api.delete('@instance-node')).resolves.toMatchObject({ state: 'deleted' })
+    expect(contract.calls.map(({ target }) => target)).toEqual([
+      '@instance-node::delete',
+      '@instance-node::delete',
+    ])
+    expect(queries).toBe(3)
+    const operationIds = contract.calls.map(({ value }) =>
+      String((value as { operationId: unknown }).operationId),
+    )
+    expect(operationIds).toHaveLength(2)
+    expect(operationIds[0]).toMatch(
+      /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    expect(operationIds[1]).toMatch(
+      /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    )
+    expect(operationIds[0]).not.toBe(operationIds[1])
   })
 
   test('installs a resolved catalog Domain through Instance.installDomain', async () => {
@@ -242,6 +352,23 @@ describe('V2 Admin Instance adapter', () => {
 
     await expect((await failed.connect()).list()).rejects.toThrow('later page failed')
     expect(failed.query).toHaveBeenCalledTimes(2)
+  })
+
+  test('stops at the ordered tombstone boundary before following retained-only pages', async () => {
+    const contract = fixture({
+      query: () => ({
+        result: {
+          kind: 'nodes' as const,
+          nodes: [instanceNode(), instanceNode({ id: 'deleted', state: 'deleted' })].map(
+            (value) => ({ kind: 'value' as const, value }),
+          ),
+        },
+        page: { next: 'more-than-10000-deleted' },
+      }),
+    })
+
+    await expect((await contract.connect()).list()).resolves.toHaveLength(1)
+    expect(contract.query).toHaveBeenCalledTimes(1)
   })
 
   test('rejects malformed inventory, lifecycle, Method, and install outputs', async () => {

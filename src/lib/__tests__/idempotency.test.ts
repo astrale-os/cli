@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 
-import { idempotencyKey, randomOperationId } from '../idempotency'
+import { derivedIdempotencyKey, idempotencyKey, randomOperationId } from '../idempotency'
 
 describe('Kernel-compatible idempotency keys', () => {
   it('joins semantic coordinates with only URL-safe separators', () => {
@@ -15,6 +15,19 @@ describe('Kernel-compatible idempotency keys', () => {
       /^cli\.instance\.delete\.[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
     )
     expect(value.length).toBeLessThanOrEqual(128)
+  })
+
+  it('derives stable bounded keys without normalizing distinct caller material', async () => {
+    const long = 'a'.repeat(256)
+    const first = await derivedIdempotencyKey('identity-register', long)
+    const replay = await derivedIdempotencyKey('identity-register', long)
+    const colon = await derivedIdempotencyKey('e2e.assign-host', 'a:b')
+    const hyphen = await derivedIdempotencyKey('e2e.assign-host', 'a-b')
+
+    expect(first).toBe(replay)
+    expect(first).toMatch(/^identity-register\.[a-f0-9]{64}$/u)
+    expect(first.length).toBeLessThanOrEqual(128)
+    expect(colon).not.toBe(hyphen)
   })
 
   it.each(['', 'contains:colon', 'contains space', 'a'.repeat(129)])(
