@@ -161,7 +161,8 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   if ((pending || !ready) && errors.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
-        Composing workspace…
+        {/* `inputs` is still empty here, so the count of domains ASKED for is what knows */}
+        {domainIds.length === 1 ? 'Introspecting schema…' : 'Composing workspace…'}
       </div>
     )
   }
