@@ -3,6 +3,8 @@ import type { Edge, Node } from '@xyflow/react'
 
 import { isIrClassRef } from '@shared/schema/identity'
 
+import { buildViewsModel } from '@/lib/views'
+
 import type { WorkspaceDomainInput } from './use-domain-inputs'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from '../edge-markers'
@@ -10,7 +12,8 @@ import { elkLayout } from '../elk-layout'
 import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
 import { moduleOfClass } from '../modules'
 import { projectDomainCanvas } from '../projection'
-import { classRef, edgeRef, isHidden } from '../visibility'
+import { viewGraph } from '../view-graph'
+import { classRef, domainRef, edgeRef, isHidden } from '../visibility'
 import {
   projectExternalFrames,
   workspaceExternalMemberNodeId,
@@ -35,6 +38,8 @@ export interface WorkspaceDomainNodeData extends Record<string, unknown> {
   domainId: string
   origin: string
   active: boolean
+  /** the only domain on the canvas — the frame is scenery, not a thing to arrange */
+  solo: boolean
 }
 
 export interface WorkspaceProjection {
@@ -75,12 +80,24 @@ export async function prepareWorkspaceDomain(
   collapsedModules: string[],
 ): Promise<WorkspaceDomainProjection> {
   const collapsed = new Set(collapsedModules)
-  const structure = projectDomainCanvas(
+  const schema = projectDomainCanvas(
     input.bundle,
     collapsed,
     input.visibility.hidden,
     input.visibility.showInheritedEdges,
   )
+  // Views ride in the domain's own projection, so the frame layout, the drag
+  // persistence and the id prefixing below treat them exactly like a class.
+  const views = viewGraph(
+    buildViewsModel(input.anatomy, input.bundle),
+    input.bundle,
+    collapsed,
+    input.visibility.hidden,
+  )
+  const structure = {
+    nodes: [...schema.nodes, ...views.nodes],
+    edges: [...schema.edges, ...views.edges],
+  }
   const saved = input.layout.positions
   const placed = structure.nodes.filter((node) => saved[node.id])
   const pending = structure.nodes.filter((node) => !saved[node.id])
@@ -147,6 +164,10 @@ function resolveClass(
     const target = localTarget(owner, ref.name)
     return target ? [target] : []
   }
+
+  // An imported domain the reader hid stays hidden — the Domains panel's eye writes
+  // `domain.<origin>` into the owner's visibility, and this is where it lands.
+  if (isHidden(domainRef(ref.origin), owner.input.visibility.hidden)) return []
 
   const candidates = origins.get(ref.origin) ?? []
   if (candidates.length > 1) {
@@ -334,13 +355,16 @@ export function composeWorkspaceCanvas(
       id: rootId,
       type: 'workspaceDomain',
       position: frame.position,
-      draggable: true,
+      // A lone frame is the dashed outline that says "this is your domain" — there is
+      // nothing to arrange it against, so it neither drags nor selects.
+      draggable: domains.length > 1,
       dragHandle: '.workspace-domain-drag-handle',
-      selectable: true,
+      selectable: domains.length > 1,
       data: {
         domainId,
         origin: domain.input.summary.origin,
         active,
+        solo: domains.length === 1,
       } satisfies WorkspaceDomainNodeData,
       style: { width: frame.size.width, height: frame.size.height },
     })

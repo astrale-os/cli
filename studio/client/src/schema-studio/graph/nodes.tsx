@@ -249,21 +249,6 @@ function ExtMemberNode({ data }: NodeProps) {
   )
 }
 
-/** The rectangle delimiting THIS domain — everything inside belongs to it; imported domains sit outside. */
-function InternalRegionNode({ data }: NodeProps) {
-  const d = data as { label: string }
-  return (
-    <div className="relative h-full w-full rounded-xl border border-dashed border-border">
-      <span
-        className="absolute -top-2 left-4 whitespace-nowrap px-2 text-[11px] font-medium text-muted-foreground"
-        style={{ background: 'var(--color-canvas)' }}
-      >
-        {d.label}
-      </span>
-    </div>
-  )
-}
-
 function CanvasCommentNode({ data }: NodeProps) {
   const d = data as CanvasCommentNodeData
   return (
@@ -283,7 +268,6 @@ export const schemaNodeTypes = {
   moduleNode: GroupNode,
   extDomain: ExtDomainNode,
   extMember: ExtMemberNode,
-  internalRegion: InternalRegionNode,
   canvasComment: CanvasCommentNode,
 }
 

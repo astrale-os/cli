@@ -1,0 +1,63 @@
+import { type ReactNode, useState } from 'react'
+
+/**
+ * The modules rail down the left of every schema canvas, with the drag handle that
+ * resizes it. One component and ONE stored width: the rail is the same furniture
+ * whether the canvas holds one domain, several, or a domain's core data.
+ */
+const MIN = 180
+const MAX = 560
+const DEFAULT = 240
+const STORAGE_KEY = 'studio.modulesWidth'
+
+function storedWidth(): number {
+  try {
+    const value = Number(localStorage.getItem(STORAGE_KEY))
+    if (Number.isFinite(value) && value >= MIN && value <= MAX) return value
+  } catch {}
+  return DEFAULT
+}
+
+export function ModulesSidebar({ children }: { children: ReactNode }) {
+  const [width, setWidth] = useState(storedWidth)
+
+  const startResize = (event: React.PointerEvent) => {
+    event.preventDefault()
+    const startX = event.clientX
+    const startWidth = width
+    let latest = startWidth
+    const onMove = (move: PointerEvent) => {
+      latest = Math.min(MAX, Math.max(MIN, startWidth + (move.clientX - startX)))
+      setWidth(latest)
+    }
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      try {
+        localStorage.setItem(STORAGE_KEY, String(latest))
+      } catch {}
+    }
+    document.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
+
+  return (
+    <div className="relative min-h-0 shrink-0 border-r" style={{ width }}>
+      {children}
+      {/* drag handle straddling the right border */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        onPointerDown={startResize}
+        title="Drag to resize"
+        className="group absolute right-0 top-0 z-20 h-full w-1.5 translate-x-1/2 cursor-col-resize"
+      >
+        <div className="mx-auto h-full w-px bg-transparent transition-colors group-hover:bg-primary/50" />
+      </div>
+    </div>
+  )
+}
