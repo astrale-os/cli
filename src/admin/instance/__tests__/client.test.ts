@@ -209,22 +209,26 @@ describe('V2 Admin Instance adapter', () => {
           expect(ast.source.terms[0]?.kind).toBe('class')
           return { result: { kind: 'nodes' as const, nodes: [] }, page: {} }
         }
-        expect(ast.source.kind).toBe('node')
-        if (ast.source.kind !== 'node') throw new TypeError('Expected an exact Node source.')
-        const first = ast.source.terms[0]
-        expect(first?.kind).toBe('path')
-        if (first?.kind !== 'path') throw new TypeError('Expected an exact Instance path.')
-        expect(String(first.path)).toBe('@instance-node')
-        expect(JSON.parse(JSON.stringify(ast.steps))).toEqual([
-          {
-            op: 'filter',
+        expect(JSON.parse(JSON.stringify(ast))).toEqual({
+          format: 'astrale.graph.query',
+          version: 'v6',
+          source: {
+            kind: 'node',
+            terms: [{ kind: 'path', path: '@instance-node' }],
             binding: 'n0',
-            predicate: {
-              kind: 'class.equal',
-              class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
-            },
           },
-        ])
+          steps: [
+            {
+              op: 'filter',
+              binding: 'n0',
+              predicate: {
+                kind: 'class.equal',
+                class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
+              },
+            },
+          ],
+          select: { kind: 'nodes', binding: 'n0', projection: { kind: 'value' } },
+        })
         expect(options).toEqual({ page: { size: 1 } })
         return {
           result: {
