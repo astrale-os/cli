@@ -159,7 +159,7 @@ export function packageManagedInstallCommand(input: {
 }): string {
   const channel = input.channel ?? DEFAULT_UPDATE_CHANNEL
   const selector = input.version ?? (channel === 'stable' ? 'latest' : channel)
-  return `npm install -g @astrale-os/cli@${selector}`
+  return `npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@${selector}`
 }
 
 export function packageManagedUpdateError(executable: string, command: string): AstraleError {

@@ -7,12 +7,13 @@
 ## Installation
 
 ```bash
-npm install -g @astrale-os/cli@beta
+npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta
 ```
 
-The npm package is the primary consumer installation. It requires Node.js 22
-or newer and installs one bundled `astrale` executable without exposing the SDK
-or Kernel package graph at runtime.
+The npm package is the primary consumer installation. The explicit scoped
+registry keeps a project-local private-package registry from shadowing the
+public CLI. It requires Node.js 22 or newer and installs one bundled `astrale`
+executable without exposing the SDK or Kernel package graph at runtime.
 
 The standalone binary remains available when installing Node is undesirable:
 
@@ -111,7 +112,7 @@ An npm-installed CLI never overwrites its own package-manager files. It reports
 the exact package-manager command instead:
 
 ```bash
-npm install -g @astrale-os/cli@beta
+npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta
 ```
 
 On ordinary interactive launches, Astrale checks for CLI updates at most once

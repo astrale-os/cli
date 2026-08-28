@@ -93,7 +93,7 @@ astrale skills status --json
 Install and verify the same beta from public npm in an isolated prefix:
 
 ```bash
-npm install --global --prefix "$PWD/.npm-e2e" @astrale-os/cli@beta
+npm --@astrale-os:registry=https://registry.npmjs.org install --global --prefix "$PWD/.npm-e2e" @astrale-os/cli@beta
 "$PWD/.npm-e2e/bin/astrale" --version
 "$PWD/.npm-e2e/bin/astrale" instance list --admin-only --json
 ```
