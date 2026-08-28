@@ -10,7 +10,6 @@ describe('release workflow contract', () => {
   const config = JSON.parse(read('.release-please-config.json'))
   const release = workflow('.github/workflows/release.yml')
   const binary = workflow('.github/workflows/cli-release.yml')
-  const npm = workflow('.github/workflows/publish.yml')
   const ci = workflow('.github/workflows/ci.yml')
   const uiSearch = workflow('.github/workflows/ui-search-contract.yml')
 
@@ -26,31 +25,11 @@ describe('release workflow contract', () => {
     )
   })
 
-  it('publishes one public npm package alongside the standalone binary', () => {
+  it('ships the CLI only as a private, standalone package', () => {
     const manifest = JSON.parse(read('package.json'))
-    assert.equal(manifest.private, undefined)
-    assert.deepEqual(manifest.publishConfig, {
-      access: 'public',
-      registry: 'https://registry.npmjs.org/',
-    })
-    assert.equal(existsSync('.github/workflows/publish.yml'), true)
-    assert.deepEqual(npm.on.push.paths, ['.release-please-manifest.json'])
-    assert.equal(npm.permissions.contents, 'read')
-    assert.equal(npm.permissions['id-token'], 'write')
-    const publisher = npm.jobs.publish.steps.find((step) =>
-      step.uses?.startsWith('astrale-os/config/.github/actions/publish/packages@'),
-    )
-    assert.equal(
-      publisher.uses,
-      'astrale-os/config/.github/actions/publish/packages@8e2e2abd0320be0c2f64033916519ab3b66c7dd7',
-    )
-    assert.equal(publisher.with.dirs, '.')
-    assert.equal(publisher.with['mirror-public-packages'], 'false')
-    assert.equal(publisher.with['prerelease-tag'], 'auto')
-    assert.match(
-      publisher.with['build-command'],
-      /pnpm install --frozen-lockfile --ignore-scripts/u,
-    )
+    assert.equal(manifest.private, true)
+    assert.equal(manifest.publishConfig, undefined)
+    assert.equal(existsSync('.github/workflows/publish.yml'), false)
   })
 
   it('runs the binary publisher only after Release Please creates a release', () => {
@@ -261,7 +240,7 @@ describe('release workflow contract', () => {
   })
 
   it('pins every external action to one immutable revision', () => {
-    for (const [name, document] of Object.entries({ release, binary, npm, ci, uiSearch })) {
+    for (const [name, document] of Object.entries({ release, binary, ci, uiSearch })) {
       for (const job of Object.values(document.jobs)) {
         for (const step of job.steps ?? []) {
           if (typeof step.uses !== 'string' || step.uses.startsWith('./')) continue

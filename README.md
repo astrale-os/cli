@@ -7,17 +7,6 @@
 ## Installation
 
 ```bash
-npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta
-```
-
-The npm package is the primary consumer installation. The explicit scoped
-registry keeps a project-local private-package registry from shadowing the
-public CLI. It requires Node.js 22 or newer and installs one bundled `astrale`
-executable without exposing the SDK or Kernel package graph at runtime.
-
-The standalone binary remains available when installing Node is undesirable:
-
-```bash
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
@@ -36,9 +25,10 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_VERSION=<version> sh
 ```
 
-Keep only one global `astrale` installation on `PATH`. When migrating from the
-standalone installer, remove or move its old `~/.astrale/bin/astrale` executable
-after confirming the npm-installed command with `command -v astrale`.
+The CLI is distributed only as this standalone executable; the npm package is
+deprecated. If a package-managed copy is still on `PATH`, remove it with that
+package manager, run the installer above, and verify that `command -v astrale`
+resolves to `~/.astrale/bin/astrale` (or your explicit `ASTRALE_INSTALL_DIR`).
 
 ## Quickstart
 
@@ -108,12 +98,8 @@ release. It follows the beta channel by default. Use `--check`,
 `--channel <channel>`, or `--version <version>` to control the release target;
 `--no-skills` is the explicit opt-out.
 
-An npm-installed CLI never overwrites its own package-manager files. It reports
-the exact package-manager command instead:
-
-```bash
-npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@beta
-```
+An old package-managed or source build never overwrites files it does not own.
+It directs you to migrate to the official standalone executable instead.
 
 On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version

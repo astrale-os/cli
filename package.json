@@ -1,6 +1,7 @@
 {
   "name": "@astrale-os/cli",
-  "version": "1.0.0-beta.46",
+  "version": "1.0.0-beta.47",
+  "private": true,
   "description": "Astrale CLI — connect to existing Astrale kernels",
   "keywords": [
     "astrale",
@@ -17,7 +18,7 @@
   },
   "files": [
     "dist",
-    "src/identity/.spec/schemas/identity-export-v1.schema.json",
+    "src",
     "tsconfig.json",
     "studio/server",
     "studio/shared",
@@ -45,11 +46,8 @@
     },
     "./identity-export-v1.schema.json": "./src/identity/.spec/schemas/identity-export-v1.schema.json"
   },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org/"
-  },
   "scripts": {
+    "prepare": "husky",
     "build": "bun scripts/build.ts",
     "prepack": "pnpm run package:check",
     "package:check": "pnpm run typecheck && pnpm run test && pnpm run build && node scripts/verify-public-exports.mjs && node scripts/verify-public-dependency-boundary.mjs",

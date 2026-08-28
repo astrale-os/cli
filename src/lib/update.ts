@@ -91,7 +91,6 @@ export type UpdateResult =
       status: 'managed'
       currentVersion: string
       executable: string
-      command: string
     }
   | {
       status: 'up-to-date'
@@ -153,20 +152,11 @@ export function detectUpdateExecution(): UpdateExecution {
   })
 }
 
-export function packageManagedInstallCommand(input: {
-  channel?: string
-  version?: string
-}): string {
-  const channel = input.channel ?? DEFAULT_UPDATE_CHANNEL
-  const selector = input.version ?? (channel === 'stable' ? 'latest' : channel)
-  return `npm --@astrale-os:registry=https://registry.npmjs.org install -g @astrale-os/cli@${selector}`
-}
-
-export function packageManagedUpdateError(executable: string, command: string): AstraleError {
+export function packageManagedUpdateError(executable: string): AstraleError {
   return new AstraleError(
     'UPDATE_PACKAGE_MANAGED',
-    'This Astrale installation is owned by a package manager and cannot replace itself.',
-    `Active runtime: ${executable}. Upgrade the public npm installation with: ${command}`,
+    'This Astrale process is not the official standalone executable and cannot replace itself.',
+    `Active runtime: ${executable}. Remove any package-managed copy, then install with: curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh`,
   )
 }
 
@@ -395,7 +385,6 @@ export async function updateAstrale(
       status: 'managed',
       currentVersion: req.currentVersion,
       executable: execution.executable,
-      command: packageManagedInstallCommand(req),
     }
   }
 
