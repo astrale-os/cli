@@ -237,9 +237,7 @@ describe.serial('agent runner invariants', () => {
       readFileSync(join(handle.root, '.domain-studio', '.cache', 'agent', bridgeFile), 'utf8'),
     ) as { token: string }
     expect(cancelRun(handle.id)).toBe(true)
-    expect(
-      (await handleBridge(handle, 'threads', new Request('http://studio.test'), { token })).status,
-    ).toBe(401)
+    expect((await handleBridge(handle, 'threads', { token })).status).toBe(401)
     const canceled = await waitForTerminal(handle.id)
 
     expect(canceled.status).toBe('canceled')

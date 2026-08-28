@@ -1,6 +1,9 @@
 /** Internal HTTP contract shared by Studio API route modules. */
 import type { StudioEvent } from '../../shared/types'
 import type { DomainHandle } from '../domain'
+import type { JsonRecord } from '../json'
+
+import { asJsonRecord } from '../json'
 
 export type Notify = (event: StudioEvent) => void
 
@@ -8,7 +11,7 @@ export interface DomainRouteContext {
   req: Request
   url: URL
   rest: string
-  body: any
+  body: JsonRecord
   handle: DomainHandle
   notify: Notify
 }
@@ -22,6 +25,12 @@ export function json(data: unknown, status = 200): Response {
 
 export const notFound = () => json({ error: 'not found' }, 404)
 export const badRequest = (message: string) => json({ error: message }, 400)
+
+/** Parse an HTTP JSON body once and keep malformed/non-object payloads untrusted. */
+export async function readJsonRecord(req: Request): Promise<JsonRecord> {
+  const value: unknown = await req.json().catch(() => undefined)
+  return asJsonRecord(value) ?? {}
+}
 
 /**
  * Block cross-site state-changing requests. Same-origin browser requests and

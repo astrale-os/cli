@@ -118,6 +118,27 @@ test('domain dispatch preserves canvas success, validation, and unknown-domain r
   expect(invalid?.status).toBe(400)
   expect(await invalid?.json()).toEqual({ error: 'unknown visibility action' })
 
+  const nonObjectBody = await route(`${base}/visibility`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(['set', { hidden: { 'class.Injected': true } }]),
+  })
+  expect(nonObjectBody?.status).toBe(400)
+  expect(await (await route(`${base}/visibility`))?.json()).toEqual({
+    hidden: {},
+    showInheritedEdges: true,
+  })
+
+  const filteredLayout = await route(`${base}/layout`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      action: 'set',
+      positions: { valid: { x: 12, y: 24 }, invalid: { x: '12', y: 24 } },
+    }),
+  })
+  expect((await filteredLayout?.json()).positions).toEqual({ valid: { x: 12, y: 24 } })
+
   const missing = await route('/api/domain/not-registered/visibility')
   expect(missing?.status).toBe(404)
   expect(await missing?.json()).toEqual({ error: 'not found' })

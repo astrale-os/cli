@@ -1,4 +1,5 @@
 /** Context-document HTTP transport, including multipart uploads and raw bodies. */
+import { asString } from '../json'
 import {
   addDocument,
   deleteDocument,
@@ -79,10 +80,14 @@ export function handleDocumentMutation(context: DomainRouteContext): Response | 
   const { req, rest, body, handle } = context
   const root = handle.root
   if (rest === '/context/documents/delete' && req.method === 'POST') {
-    return json({ ok: deleteDocument(root, body.id) })
+    return json({ ok: deleteDocument(root, asString(body.id) ?? '') })
   }
   if (rest === '/context/documents/update' && req.method === 'POST') {
-    const meta = updateDocument(root, body.id, new TextEncoder().encode(String(body.content ?? '')))
+    const meta = updateDocument(
+      root,
+      asString(body.id) ?? '',
+      new TextEncoder().encode(asString(body.content) ?? ''),
+    )
     return meta ? json(meta) : notFound()
   }
   return null

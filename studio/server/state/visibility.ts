@@ -16,6 +16,11 @@ const DEFAULT: VisibilityState = {
   showInheritedEdges: true,
 }
 
+const defaultVisibility = (): VisibilityState => ({
+  hidden: {},
+  showInheritedEdges: DEFAULT.showInheritedEdges,
+})
+
 function trueSet(value: unknown): Record<string, true> {
   return Object.fromEntries(
     Object.entries(asJsonRecord(value) ?? {}).filter(
@@ -33,8 +38,12 @@ function decodeVisibility(value: unknown): VisibilityState | undefined {
   }
 }
 
+export function normalizeVisibility(value: unknown): VisibilityState {
+  return decodeVisibility(value) ?? defaultVisibility()
+}
+
 export function readVisibility(root: string): VisibilityState {
-  return readJson(root, FILE, decodeVisibility, { ...DEFAULT })
+  return readJson(root, FILE, decodeVisibility, defaultVisibility())
 }
 
 export function saveVisibility(root: string, state: VisibilityState): VisibilityState {

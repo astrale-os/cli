@@ -2,10 +2,11 @@
 import { getBundle } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
 import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
+import { asString } from '../json'
 import { buildCatalog } from '../workspace/catalog'
 import { createDomain } from '../workspace/create'
 import { detectGit } from '../workspace/git'
-import { badRequest, json, type Notify } from './http'
+import { badRequest, json, readJsonRecord, type Notify } from './http'
 
 export async function handleWorkspaceRoute(
   req: Request,
@@ -31,8 +32,8 @@ export async function handleWorkspaceRoute(
   }
 
   if (path === '/api/workspace/create' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const result = await createDomain(String(body.name ?? ''), await activeInstanceName())
+    const body = await readJsonRecord(req)
+    const result = await createDomain(asString(body.name) ?? '', await activeInstanceName())
     if (result.ok) notify({ type: 'workspace', domains: allDomains().map((domain) => domain.id) })
     return json(result)
   }
@@ -50,8 +51,8 @@ export async function handleWorkspaceRoute(
 
   if (path === '/api/instances' && req.method === 'GET') return json(await listInstances())
   if (path === '/api/instances/use' && req.method === 'POST') {
-    const body = await req.json().catch(() => ({}))
-    const name = String(body.name ?? '').trim()
+    const body = await readJsonRecord(req)
+    const name = (asString(body.name) ?? '').trim()
     if (!name) return badRequest('name is required')
     return json(await setActiveInstance(name))
   }

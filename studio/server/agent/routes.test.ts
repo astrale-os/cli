@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { AgentRun } from '../../shared/types'
+import type { JsonRecord } from '../json'
 import type { AskResult } from './harness/adapter'
 
 import { registerDomain, unregisterDomain } from '../domain'
@@ -41,7 +42,7 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   return handle
 }
 
-async function route(rest: string, method = 'GET', body: any = {}, search = '') {
+async function route(rest: string, method = 'GET', body: JsonRecord = {}, search = '') {
   const handle = fixture()
   const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}${search}`)
   const req = new Request(url, {

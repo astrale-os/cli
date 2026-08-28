@@ -86,14 +86,15 @@ test('Studio production modules form an acyclic dependency graph', () => {
   expect(cycles).toEqual([])
 })
 
-test('production boundaries keep client/shared out of server and shared out of client', () => {
+test('production boundaries keep client and server separate with shared depending on neither', () => {
   const violations = files.flatMap((file) =>
     imports(file)
       .filter(
         (dependency) =>
-          (dependency.startsWith(SERVER_ROOT) &&
-            (file.startsWith(CLIENT_ROOT) || file.startsWith(SHARED_ROOT))) ||
-          (file.startsWith(SHARED_ROOT) && dependency.startsWith(CLIENT_ROOT)),
+          (file.startsWith(CLIENT_ROOT) && dependency.startsWith(SERVER_ROOT)) ||
+          (file.startsWith(SERVER_ROOT) && dependency.startsWith(CLIENT_ROOT)) ||
+          (file.startsWith(SHARED_ROOT) &&
+            (dependency.startsWith(CLIENT_ROOT) || dependency.startsWith(SERVER_ROOT))),
       )
       .map((dependency) => `${studioPath(file)} -> ${studioPath(dependency)}`),
   )

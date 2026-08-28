@@ -1,6 +1,9 @@
-import type { StudioEvent } from '../../../shared/types'
+import type { AnchorKind, StudioEvent } from '../../../shared/types'
 import type { DomainHandle } from '../../domain'
+import type { JsonRecord } from '../../json'
 
+import { json } from '../../api/http'
+import { asString, asStringArray } from '../../json'
 import { addThreadEntry, readComments, setStatus, upsertComment } from '../../state/comments'
 import { emitStudioEvent } from '../notify'
 
@@ -16,24 +19,18 @@ export interface BridgeSession {
   token: string
   onReply(callback: (commentId: string, text: string) => void): void
   onProgress(callback: (text: string) => void): void
-  invoke(sub: string, body: Record<string, unknown>): Promise<Response>
+  invoke(sub: string, body: JsonRecord): Promise<Response>
   dispose(): void
 }
 
 const bridges = new Map<string, RunBridge>()
 
-function ok(data: unknown): Response {
-  return new Response(JSON.stringify(data), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  })
+function error(message: string, status = 400): Response {
+  return json({ error: message }, status)
 }
 
-function error(message: string, status = 400): Response {
-  return new Response(JSON.stringify({ error: message }), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
+function anchorKind(value: unknown): AnchorKind {
+  return value === 'section' || value === 'file' || value === 'free' ? value : 'schema'
 }
 
 /** Open the authenticated write-back session owned by one agent run. */
@@ -69,14 +66,17 @@ export function openBridgeSession(
 export function handleBridge(
   handle: DomainHandle,
   sub: string,
-  _req: Request,
-  body: any,
+  body: JsonRecord,
 ): Promise<Response> {
   return applyBridgeCall(handle, sub, body)
 }
 
-async function applyBridgeCall(handle: DomainHandle, sub: string, body: any): Promise<Response> {
-  const token = String(body?.token ?? '')
+async function applyBridgeCall(
+  handle: DomainHandle,
+  sub: string,
+  body: JsonRecord,
+): Promise<Response> {
+  const token = asString(body.token) ?? ''
   const bridge = bridges.get(token)
   if (!bridge || bridge.domainId !== handle.id) return error('invalid or expired bridge token', 401)
   const root = bridge.root
@@ -86,7 +86,7 @@ async function applyBridgeCall(handle: DomainHandle, sub: string, body: any): Pr
       const open = readComments(root).comments.filter(
         (comment) => comment.status === 'open' && comment.thread.at(-1)?.role !== 'author',
       )
-      return ok({
+      return json({
         threads: open.map((comment) => ({
           id: comment.id,
           kind: comment.kind,
@@ -97,50 +97,56 @@ async function applyBridgeCall(handle: DomainHandle, sub: string, body: any): Pr
       })
     }
     case 'reply': {
-      const commentId = String(body.commentId ?? '')
-      const text = String(body.text ?? '').trim()
+      const commentId = asString(body.commentId) ?? ''
+      const text = (asString(body.text) ?? '').trim()
       if (!commentId || !text) return error('commentId and text are required')
+      const options = asStringArray(body.options)
+      const answer = body.answer === null ? null : asString(body.answer)
       const comment = addThreadEntry(root, commentId, {
         role: 'author',
-        type: body.options ? 'choice' : 'text',
+        type: options ? 'choice' : 'text',
         text,
-        options: body.options,
-        answer: body.answer,
+        ...(options === undefined ? {} : { options }),
+        ...(answer === undefined ? {} : { answer }),
       })
       if (!comment) return error('unknown commentId', 404)
-      if (body.resolve) setStatus(root, commentId, 'closed', body.closeNote)
+      const closeNote = asString(body.closeNote)
+      if (body.resolve === true) setStatus(root, commentId, 'closed', closeNote)
       bridge.onReply(commentId, text)
       emitStudioEvent(bridge.notify, { type: 'comments', domainId: handle.id })
-      return ok({ ok: true, resolved: !!body.resolve })
+      return json({ ok: true, resolved: body.resolve === true })
     }
     case 'resolve': {
-      const commentId = String(body.commentId ?? '')
+      const commentId = asString(body.commentId) ?? ''
       if (!commentId) return error('commentId is required')
-      const comment = setStatus(root, commentId, 'closed', body.closeNote)
+      const closeNote = asString(body.closeNote)
+      const comment = setStatus(root, commentId, 'closed', closeNote)
       if (!comment) return error('unknown commentId', 404)
-      bridge.onReply(commentId, body.closeNote ? `resolved: ${body.closeNote}` : 'resolved')
+      bridge.onReply(commentId, closeNote ? `resolved: ${closeNote}` : 'resolved')
       emitStudioEvent(bridge.notify, { type: 'comments', domainId: handle.id })
-      return ok({ ok: true })
+      return json({ ok: true })
     }
     case 'progress': {
-      const text = String(body.text ?? '').trim()
+      const text = (asString(body.text) ?? '').trim()
       if (text) bridge.onProgress(text)
-      return ok({ ok: true })
+      return json({ ok: true })
     }
     case 'raise_question': {
-      const ref = String(body.ref ?? '')
-      const text = String(body.text ?? '').trim()
+      const ref = asString(body.ref) ?? ''
+      const text = (asString(body.text) ?? '').trim()
       if (!ref || !text) return error('ref and text are required')
+      const options = asStringArray(body.options)
+      const file = asString(body.file)
       const comment = upsertComment(root, {
-        anchors: [body.label ?? ref],
-        anchorRefs: [{ ref, kind: (body.kind ?? 'schema') as any, file: body.file }],
+        anchors: [asString(body.label) ?? ref],
+        anchorRefs: [{ ref, kind: anchorKind(body.kind), ...(file ? { file } : {}) }],
         text,
         firstRole: 'author',
-        type: body.options ? 'choice' : 'text',
-        options: body.options,
+        type: options ? 'choice' : 'text',
+        options,
       })
       emitStudioEvent(bridge.notify, { type: 'comments', domainId: handle.id })
-      return ok({ ok: true, id: comment.id })
+      return json({ ok: true, id: comment.id })
     }
     default:
       return error('unknown bridge route', 404)

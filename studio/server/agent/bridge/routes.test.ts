@@ -55,14 +55,12 @@ test('authorizes one domain and applies live thread mutations', async () => {
   const progress: string[] = []
   bridge.onReply((id, text) => replies.push(`${id}:${text}`))
   bridge.onProgress((text) => progress.push(text))
-  const request = new Request('http://studio.test')
-
-  const invalid = await handleBridge(domainA, 'reply', request, {
+  const invalid = await handleBridge(domainA, 'reply', {
     token: 'wrong',
     commentId: awaiting.id,
     text: 'forged',
   })
-  const crossDomain = await handleBridge(domainB, 'reply', request, {
+  const crossDomain = await handleBridge(domainB, 'reply', {
     token,
     commentId: awaiting.id,
     text: 'forged',
@@ -70,7 +68,7 @@ test('authorizes one domain and applies live thread mutations', async () => {
   expect([invalid.status, crossDomain.status]).toEqual([401, 401])
   expect(readComments(rootA).comments[0]!.thread).toHaveLength(1)
 
-  const listed = await handleBridge(domainA, 'threads', request, { token })
+  const listed = await handleBridge(domainA, 'threads', { token })
   expect(await listed.json()).toEqual({
     threads: [
       {
@@ -83,15 +81,15 @@ test('authorizes one domain and applies live thread mutations', async () => {
     ],
   })
 
-  const replied = await handleBridge(domainA, 'reply', request, {
+  const replied = await handleBridge(domainA, 'reply', {
     token,
     commentId: awaiting.id,
     text: 'done',
     resolve: true,
     closeNote: 'complete',
   })
-  await handleBridge(domainA, 'progress', request, { token, text: 'working' })
-  const raised = await handleBridge(domainA, 'raise_question', request, {
+  await handleBridge(domainA, 'progress', { token, text: 'working' })
+  const raised = await handleBridge(domainA, 'raise_question', {
     token,
     ref: 'class.Test.property.value',
     text: 'Which value?',
@@ -117,7 +115,7 @@ test('authorizes one domain and applies live thread mutations', async () => {
   expect(notifications).toEqual(['comments:domain-a', 'comments:domain-a'])
 
   bridge.dispose()
-  const expired = await handleBridge(domainA, 'threads', request, { token })
+  const expired = await handleBridge(domainA, 'threads', { token })
   expect(expired.status).toBe(401)
 })
 
@@ -136,7 +134,7 @@ test('returns committed success when UI notification delivery fails', async () =
   const configPath = bridge.mcpServers[0]!.args!.at(-1)!
   const { token } = JSON.parse(readFileSync(configPath, 'utf8')) as { token: string }
 
-  const response = await handleBridge(handle, 'reply', new Request('http://studio.test'), {
+  const response = await handleBridge(handle, 'reply', {
     token,
     commentId: comment.id,
     text: 'committed',

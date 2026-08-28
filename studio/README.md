@@ -131,6 +131,17 @@ client/src/
   lib/                   API client, queries, event stream and UI state
 ```
 
+The domain HTTP boundary parses each non-multipart JSON body once as an untrusted
+`JsonRecord`; capability routes then admit only the fields they own before calling
+typed repositories or workflows. Agent routes reuse the same response helpers.
+Client-side SSE handling follows a pure event-to-effects table behind one stable
+subscription, so adding an event does not expand `App` or reconnect the stream.
+
+Canvas bundle, anatomy, layout and visibility queries share one policy module.
+Persisted visibility is the sole source for the tree, panels and graph projection,
+while comment and Ask targets share domain-qualified identities across composed
+workspace canvases.
+
 Schema parsing delegates admission, semantic resolution, revisioning and exact
 dependency reachability to the Astrale DSL installed by the domain. Studio resolves
 the Application's `schema` binding statically, then a Bun subprocess imports only
