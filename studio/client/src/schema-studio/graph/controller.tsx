@@ -34,7 +34,7 @@ import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-ro
 import { elkLayout } from '../elk-layout'
 import { crossDomainEdges, externalDomains } from '../external'
 import { viewportForNodes } from '../fit'
-import { edgeTypes } from '../floating-edge'
+import { type EdgeFocus, edgeTypes } from '../floating-edge'
 import {
   type Geometry,
   applyGeometry,
@@ -63,6 +63,9 @@ import {
   schemaCanvasFallbackComments,
   selectedRelationshipContext,
 } from './structure'
+
+/** Stroke width of an edge touching the focused node — base widths sit at 1.3–1.6px. */
+const RELATED_STROKE = 2.4
 
 export function SchemaGraph({
   bundle,
@@ -400,21 +403,24 @@ export function SchemaGraph({
   )
   const canvasCommentNodes = useMemo(() => commentNodes(canvasCommentGroups), [canvasCommentGroups])
 
+  // Focus reads as a three-way split: the clicked card keeps its own selected chrome, its
+  // neighbours are LIFTED (`is-related`), and everything else recedes (`is-dimmed`). Lifting
+  // the neighbours is what makes a fade legible — dimming alone only says "not this one".
   const displayNodes = useMemo(() => {
     const mapped = nodes.map((n) => {
+      const focusable = n.type === 'classNode' || n.type === 'viewNode'
+      const inFocus = focusable && sets ? sets.nodeIds.has(n.id) : false
       const cls =
         cn(
           selectedEdgeContext?.nodeIds.has(n.id) && 'is-edge-endpoint',
-          (n.type === 'classNode' || n.type === 'viewNode') &&
-            sets &&
-            !sets.nodeIds.has(n.id) &&
-            'is-dimmed',
+          focusable && sets && !inFocus && 'is-dimmed',
+          inFocus && n.id !== focusId && 'is-related',
         ) || undefined
       return n.className === cls ? n : { ...n, className: cls }
     })
     const base = regionNode ? [regionNode, ...mapped] : mapped
     return canvasCommentNodes.length ? [...base, ...canvasCommentNodes] : base
-  }, [nodes, sets, selectedEdgeContext, regionNode, canvasCommentNodes])
+  }, [nodes, sets, focusId, selectedEdgeContext, regionNode, canvasCommentNodes])
   const displayEdges = useMemo(
     () =>
       edges.map((e) => {
@@ -422,22 +428,34 @@ export function SchemaGraph({
         const isSelected = selectedEdgeId
           ? e.id === selectedEdgeId
           : selectedClass === `class.${edgeName}`
-        const focusCls = !sets ? undefined : sets.edgeIds.has(e.id) ? 'is-on' : 'is-dimmed'
+        const focus: EdgeFocus | undefined = !sets
+          ? undefined
+          : sets.edgeIds.has(e.id)
+            ? 'on'
+            : 'dim'
+        const focusCls = focus && (focus === 'on' ? 'is-on' : 'is-dimmed')
         const cls = isSelected ? cn('is-selected', focusCls) : focusCls
+        // An edge's labels render in React Flow's own portal, outside the <g> `className`
+        // lands on, so the focus state has to ride along in `data` for them to follow.
+        const data = { ...e.data, selected: isSelected, focus }
         if (isSelected) {
           const accent = 'var(--color-primary)'
           return {
             ...e,
             className: cls,
-            data: { ...e.data, selected: true },
+            data,
             style: { ...e.style, stroke: accent, strokeWidth: 3 },
             markerEnd:
               typeof e.markerEnd === 'object' ? { ...e.markerEnd, color: accent } : e.markerEnd,
           }
         }
-        return e.className === cls && !e.data?.selected
+        // A neighbour's edge only reads as connected once it visibly thickens, and React Flow
+        // writes `style` straight onto the path — a stylesheet rule could never outrank it.
+        if (focus === 'on')
+          return { ...e, className: cls, data, style: { ...e.style, strokeWidth: RELATED_STROKE } }
+        return e.className === cls && !e.data?.selected && e.data?.focus === focus
           ? e
-          : { ...e, className: cls, data: { ...e.data, selected: false } }
+          : { ...e, className: cls, data }
       }),
     [edges, sets, selectedClass, selectedEdgeId],
   )

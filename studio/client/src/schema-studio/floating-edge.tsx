@@ -12,6 +12,7 @@ import {
 import { type RefObject, useLayoutEffect, useRef } from 'react'
 
 import { useUI } from '@/lib/store'
+import { cn } from '@/lib/utils'
 
 import {
   edgeLabelRect,
@@ -29,10 +30,14 @@ export interface FloatingEdgeEnd {
   cardinality: string
 }
 
+/** Where this edge sits relative to the focused node: wired to it, or context behind it. */
+export type EdgeFocus = 'on' | 'dim'
+
 interface FloatingEdgeData extends Record<string, unknown> {
   label?: string
   kind?: string
   selected?: boolean
+  focus?: EdgeFocus
   sourcePort?: FloatingEdgePort
   targetPort?: FloatingEdgePort
   sourceEnd?: FloatingEdgeEnd
@@ -302,6 +307,9 @@ export function FloatingEdge(props: EdgeProps) {
   // connector adds noise without information, so relationship labels keep the visual priority.
   const label = d?.kind === 'extends' ? undefined : d?.label
   const selected = d?.selected === true
+  // The <g> that carries the edge's focus class is not this label's ancestor — React Flow
+  // portals labels into its own layer — so the class has to be repeated here by hand.
+  const focusCls = d?.focus === 'on' ? 'is-on' : d?.focus === 'dim' ? 'is-dimmed' : undefined
   const sourceChip = showCardinality ? d?.sourceEnd : undefined
   const targetChip = showCardinality ? d?.targetEnd : undefined
   const pathRef = useRef<SVGGElement>(null)
@@ -371,7 +379,7 @@ export function FloatingEdge(props: EdgeProps) {
           <div
             ref={mainLabelRef}
             data-edge-id={id}
-            className="schema-edge-label"
+            className={cn('schema-edge-label', focusCls)}
             style={selected ? { color: strokeColor, fontWeight: 600 } : undefined}
           >
             {label}
@@ -382,7 +390,7 @@ export function FloatingEdge(props: EdgeProps) {
             ref={sourceLabelRef}
             data-edge-id={id}
             title={endpointTitle(sourceChip, d?.label)}
-            className="schema-edge-label schema-edge-cardinality"
+            className={cn('schema-edge-label schema-edge-cardinality', focusCls)}
           >
             {sourceChip.cardinality}
           </div>
@@ -392,7 +400,7 @@ export function FloatingEdge(props: EdgeProps) {
             ref={targetLabelRef}
             data-edge-id={id}
             title={endpointTitle(targetChip, d?.label)}
-            className="schema-edge-label schema-edge-cardinality"
+            className={cn('schema-edge-label schema-edge-cardinality', focusCls)}
           >
             {targetChip.cardinality}
           </div>
