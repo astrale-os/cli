@@ -7,6 +7,16 @@
 ## Installation
 
 ```bash
+npm install -g @astrale-os/cli@beta
+```
+
+The npm package is the primary consumer installation. It requires Node.js 22
+or newer and installs one bundled `astrale` executable without exposing the SDK
+or Kernel package graph at runtime.
+
+The standalone binary remains available when installing Node is undesirable:
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | sh
 ```
 
@@ -25,8 +35,9 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | ASTRALE_VERSION=<version> sh
 ```
 
-There is no npm installation mode in v1. This keeps one update path and prevents
-two global Astrale versions from competing on `PATH`.
+Keep only one global `astrale` installation on `PATH`. When migrating from the
+standalone installer, remove or move its old `~/.astrale/bin/astrale` executable
+after confirming the npm-installed command with `command -v astrale`.
 
 ## Quickstart
 
@@ -95,6 +106,13 @@ new binary to install, update, or repair the skills embedded in that exact
 release. It follows the beta channel by default. Use `--check`,
 `--channel <channel>`, or `--version <version>` to control the release target;
 `--no-skills` is the explicit opt-out.
+
+An npm-installed CLI never overwrites its own package-manager files. It reports
+the exact package-manager command instead:
+
+```bash
+npm install -g @astrale-os/cli@beta
+```
 
 On ordinary interactive launches, Astrale checks for CLI updates at most once
 per 24 hours and offers **Update now**, **Later**, or **Do not offer this version

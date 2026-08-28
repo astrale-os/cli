@@ -1,7 +1,8 @@
 # CLI release lifecycle
 
-Release Please owns the CLI version and immutable GitHub release. V1 has one
-distribution: the standalone executable.
+Release Please owns one CLI version published in two forms: the public npm
+package and the standalone executable. Both carry the same bundled CLI, Studio,
+viewer, and skills cohort.
 
 ## Normal beta release
 
@@ -17,6 +18,10 @@ distribution: the standalone executable.
    Each executable embeds Studio, viewer assets, and the release's skills.
    `CLI Release` uploads the assets and advances the movable `beta` tag and
    channel release.
+7. The same version commit triggers `Publish npm package`; the pinned shared
+   publisher builds the Node bundle, publishes through npm OIDC Trusted
+   Publishing, and maps prereleases to their native `alpha`, `beta`, or `rc`
+   dist-tag (`stable` publishes as `latest`).
 
 Do not manually edit `package.json` or `.release-please-manifest.json`, and do not manually push a
 version tag during the normal flow.
@@ -83,6 +88,14 @@ astrale --version
 astrale update --check --json
 astrale studio --help
 astrale skills status --json
+```
+
+Install and verify the same beta from public npm in an isolated prefix:
+
+```bash
+npm install --global --prefix "$PWD/.npm-e2e" @astrale-os/cli@beta
+"$PWD/.npm-e2e/bin/astrale" --version
+"$PWD/.npm-e2e/bin/astrale" instance list --admin-only --json
 ```
 
 The immutable and movable releases must contain `manifest.json`,

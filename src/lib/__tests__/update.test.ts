@@ -8,6 +8,8 @@ import {
   classifyUpdateExecution,
   DEFAULT_UPDATE_CHANNEL,
   InstallMetadataSchema,
+  packageManagedInstallCommand,
+  packageManagedUpdateError,
   readInstallMetadata,
   releaseBase,
   replaceStandaloneCohort,
@@ -135,6 +137,28 @@ describe('update helpers', () => {
     ).toBe('beta')
   })
 
+  test('renders exact npm selectors for package-managed upgrades', () => {
+    expect(packageManagedInstallCommand({})).toBe('npm install -g @astrale-os/cli@beta')
+    expect(packageManagedInstallCommand({ channel: 'stable' })).toBe(
+      'npm install -g @astrale-os/cli@latest',
+    )
+    expect(packageManagedInstallCommand({ channel: 'canary' })).toBe(
+      'npm install -g @astrale-os/cli@canary',
+    )
+    expect(packageManagedInstallCommand({ version: '1.0.0-beta.42' })).toBe(
+      'npm install -g @astrale-os/cli@1.0.0-beta.42',
+    )
+
+    const error = packageManagedUpdateError(
+      '/opt/homebrew/bin/node',
+      'npm install -g @astrale-os/cli@beta',
+    )
+    expect(error.code).toBe('UPDATE_PACKAGE_MANAGED')
+    expect(error.hint).toBe(
+      'Active runtime: /opt/homebrew/bin/node. Upgrade the public npm installation with: npm install -g @astrale-os/cli@beta',
+    )
+  })
+
   test('releaseBase resolves exact versions and channels', () => {
     const meta: InstallMetadata = {
       method: 'script',
@@ -244,6 +268,7 @@ describe('updateAstrale', () => {
         status: 'managed',
         currentVersion: '2.0.0',
         executable: '/opt/homebrew/bin/node',
+        command: 'npm install -g @astrale-os/cli@beta',
       })
       expect(await readFile(meta.bin, 'utf8')).toBe(before)
     } finally {
