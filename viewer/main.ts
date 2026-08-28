@@ -1,4 +1,4 @@
-import type { MountedWindow, ResolvedView, SandboxProfile } from '@astrale-os/shell'
+import type { MountedWindow, ResolvedView, SandboxProfile, ViewTransport } from '@astrale-os/shell'
 
 import {
   createIframeShellAdapter,
@@ -7,6 +7,7 @@ import {
   replyToIntent,
 } from '@astrale-os/shell'
 
+import { openDevelopmentView } from '../src/lib/view/development/mount'
 import {
   installExternalOpenIntentHandler,
   openExternalBrowserWindow,
@@ -23,6 +24,7 @@ import { createViewTokenBroker, type ViewToken } from './token'
 
 type Config = {
   view: ResolvedView
+  transport?: ViewTransport
   /** Direct kernel URL (public https) or the nonce-scoped local proxy. */
   kernelUrl: string
   kernelIssuer: ResolvedView['route']['issuer']
@@ -144,14 +146,18 @@ async function main(): Promise<void> {
             refresh: () => tokens!.refresh(),
           }
         : undefined
-    return shell.openView({
-      host: container,
-      view,
-      capabilities: hostCapabilities,
-      sandbox: VIEW_SANDBOX,
-      handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
-      ...(credential === undefined ? {} : { credential }),
-    })
+    return openDevelopmentView(
+      shell,
+      {
+        host: container,
+        view,
+        capabilities: hostCapabilities,
+        sandbox: VIEW_SANDBOX,
+        handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
+        ...(credential === undefined ? {} : { credential }),
+      },
+      cfg.transport,
+    )
   }
 
   installOpenIntentHandler(shell, {

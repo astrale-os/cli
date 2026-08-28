@@ -5,7 +5,7 @@ import type { CommandDefinition } from '../../program/index'
 import { listOwnedInstances } from '../../lib/admin-instance'
 import { findOwnedInstance } from '../../lib/admin-instance'
 import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance'
-import { log } from '../../lib/log'
+import { fatal, log } from '../../lib/log'
 import { RAW_OUTPUT_OPTIONS, isMachine, output, type RawOutputOpts } from '../../lib/output'
 
 export default {
@@ -33,8 +33,7 @@ export default {
       if (defaultIdentity) log.dim(`  identity: ${defaultIdentity}`)
       if (caFile) log.dim(`  ca:       ${caFile}`)
     } catch (e) {
-      log.error(e instanceof Error ? e.message : String(e))
-      process.exit(1)
+      fatal(e, opts)
     }
   },
 } satisfies CommandDefinition

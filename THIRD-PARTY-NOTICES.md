@@ -42,6 +42,20 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## cloudflared
+
+- **Project:** `cloudflare/cloudflared`
+- **Bundled version:** 2026.8.2
+- **License:** Apache License 2.0
+- **Copyright:** Cloudflare, Inc. and contributors
+- **Source:** https://github.com/cloudflare/cloudflared/tree/2026.8.2
+
+Standalone release archives carry the unmodified official executable as
+`astrale-cloudflared` and include the Apache License 2.0 text as
+`LICENSE.cloudflared`, sourced from the reviewed distribution copy at
+`licenses/cloudflared.txt`. Astrale disables cloudflared self-update and
+advances the binary only through a checksum-pinned Astrale CLI release.
+
 ## elkjs (Eclipse Layout Kernel for JavaScript)
 
 - **Package:** `elkjs` (used by `@astrale-os/studio`, bundled into `studio/client/dist`)

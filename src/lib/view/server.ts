@@ -96,6 +96,7 @@ export function startViewServer(config: ViewServeConfig): Server {
     if (sub === '/config.json' && req.method === 'GET') {
       json(res, 200, {
         view: session.view,
+        transport: config.transport,
         kernelUrl: proxy.direct ? proxy.kernelUrl : `${base}/k`,
         kernelIssuer: proxy.issuer,
         identity: session.identity ?? null,

@@ -1,4 +1,4 @@
-import type { ResolvedView } from '@astrale-os/shell'
+import type { ResolvedView, ViewTransport } from '@astrale-os/shell'
 
 import chalk from 'chalk'
 import { randomBytes } from 'node:crypto'
@@ -19,6 +19,7 @@ import { fatal, log } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
+import { proveDevelopmentViewTransport } from '../lib/view/development/publication'
 import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
@@ -53,8 +54,7 @@ type ViewOpts = KernelCommandOpts &
     target?: string
     view?: string
     list?: boolean
-    viewUrl?: string
-    handshake?: 'shell' | 'none'
+    developmentLocalUrl?: string
     headed?: boolean
     browser?: boolean
     open?: boolean
@@ -71,6 +71,7 @@ const VIEW_PORT_SPAN = 20
 const IDLE_MS = 30 * 60_000
 const READY_TIMEOUT_MS = 8000
 const STATE_TIMEOUT_MS = 25_000
+const DEVELOPMENT_PUBLICATION_TIMEOUT_MS = 10_000
 const POLL_MS = 250
 /** Dedicated agent-browser profile for view sessions (no cookies involved). */
 const VIEW_PROFILE = `${BROWSER_DIR}/_view`
@@ -81,7 +82,6 @@ export async function resolveSession(
   spec: string,
   opts: ViewOpts,
 ): Promise<{ view?: ResolvedView; candidates: ViewCandidate[] }> {
-  rejectUnrepresentableOverrides(opts)
   const parsed = parseViewSpec(spec)
   if (parsed.kind === 'target' && opts.target) {
     fatal(new Error('Pass the target either as the positional or as --target, not both'))
@@ -105,21 +105,6 @@ export async function resolveSession(
     view: selectedView(picked),
     candidates,
   }
-}
-
-/**
- * Retain the frozen command flags while failing closed: neither legacy flag
- * has a truthful representation in V2's verified View placement contract.
- */
-export function rejectUnrepresentableOverrides(
-  opts: Pick<ViewOpts, 'handshake' | 'viewUrl'>,
-): void {
-  if (opts.viewUrl === undefined && opts.handshake === undefined) return
-  throw new AstraleError(
-    'UNSUPPORTED_VIEW_OVERRIDE',
-    '--view-url and --handshake cannot override a V2 View: the Shell mounts one verified View placement with complete provenance.',
-    'Pass a ViewPath or target and use the placement published by its Domain.',
-  )
 }
 
 async function chooseCandidate(
@@ -245,7 +230,11 @@ async function newerThan(dir: string, mtimeMs: number): Promise<boolean> {
 }
 
 /** Spawn the detached session server (the CLI re-invoking itself) and wait for it. */
-async function startSession(view: ResolvedView, opts: ViewOpts): Promise<ViewSessionRecord> {
+async function startSession(
+  view: ResolvedView,
+  opts: ViewOpts,
+  transport?: ViewTransport,
+): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
   const kernelTarget = await withClientSession(
     opts,
@@ -257,17 +246,48 @@ async function startSession(view: ResolvedView, opts: ViewOpts): Promise<ViewSes
     resolveServeRuntime(),
   ])
   return withViewPortAllocationLock(() =>
-    startSessionLocked(view, opts, kernelTarget, instances.active, identities.default, runtime),
+    startSessionLocked(
+      view,
+      opts,
+      kernelTarget,
+      instances.active,
+      identities.default,
+      runtime,
+      transport,
+    ),
   )
+}
+
+interface DevelopmentSessionDependencies {
+  readonly prove: typeof proveDevelopmentViewTransport
+  readonly start: typeof startSession
+  readonly signal: () => AbortSignal
+}
+
+/** Prove the optional local transport before creating any persistent session state. */
+export async function startDevelopmentViewSession(
+  view: ResolvedView,
+  opts: ViewOpts,
+  dependencies: Partial<DevelopmentSessionDependencies> = {},
+): Promise<ViewSessionRecord> {
+  const prove = dependencies.prove ?? proveDevelopmentViewTransport
+  const start = dependencies.start ?? startSession
+  if (opts.developmentLocalUrl === undefined) return start(view, opts)
+  const signal =
+    dependencies.signal ?? (() => AbortSignal.timeout(DEVELOPMENT_PUBLICATION_TIMEOUT_MS))
+  const transport = await prove(view, opts.developmentLocalUrl, signal())
+  return start(view, opts, transport)
 }
 
 export function createViewServeConfig(
   record: ViewSessionRecord,
   opts: Pick<ViewOpts, 'allowExternalOrigin' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'>,
   kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
+  transport?: ViewTransport,
 ): ViewServeConfig {
   return {
     session: record,
+    ...(transport === undefined ? {} : { transport }),
     kernel: {
       url: opts.url,
       instance: opts.instance,
@@ -298,6 +318,7 @@ async function startSessionLocked(
   activeInstance: string | undefined,
   defaultIdentity: string | undefined,
   runtime: { file: string; args: string[] },
+  transport: ViewTransport | undefined,
 ): Promise<ViewSessionRecord> {
   const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
   if (port === null) {
@@ -319,7 +340,7 @@ async function startSessionLocked(
     identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? defaultIdentity),
     createdAt: new Date().toISOString(),
   }
-  const serveConfig = createViewServeConfig(record, opts, kernelTarget)
+  const serveConfig = createViewServeConfig(record, opts, kernelTarget, transport)
 
   await saveServeConfig(serveConfig)
   const logFd = await openSessionLog(id)
@@ -540,13 +561,8 @@ export default {
     { flags: '--view <slug>', description: 'Pick a view when the target resolves several' },
     { flags: '--list', description: 'Resolve and print the candidate views; do not open' },
     {
-      flags: '--view-url <url>',
-      description: 'Override the view frontend URL (origin swaps origin; full URL replaces)',
-    },
-    {
-      flags: '--handshake <mode>',
-      description: 'Override the mount mode (needed with a bare --view-url)',
-      choices: ['shell', 'none'],
+      flags: '--development-local-url <origin>',
+      description: 'Internal: use an exact proven loopback transport for Domain development',
     },
     { flags: '--headed', description: 'Visible agent-browser window' },
     { flags: '--browser', description: 'Open in the system default browser instead' },
@@ -590,7 +606,6 @@ Examples:
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)
 
-    rejectUnrepresentableOverrides(opts)
     if (!spec) return fatal(new Error('Nothing to open — pass a ViewPath or target node.'))
     const wantsAgentBrowser = !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
@@ -621,7 +636,9 @@ Examples:
     }
     if (!view) throw new Error('View resolution completed without a selected view')
 
-    const record = await startSession(view, opts)
+    const record = await startDevelopmentViewSession(view, opts).catch((error) =>
+      fatal(error, opts),
+    )
 
     let mode: 'agent' | 'system' | 'none' = 'none'
     if (wantsAgentBrowser) {

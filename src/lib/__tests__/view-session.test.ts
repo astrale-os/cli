@@ -69,6 +69,12 @@ describe('view session private state', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
+      transport: {
+        href: 'http://127.0.0.1:8787/ui',
+        issuer: issuer('https://example.test'),
+        etag: `sha256:${'a'.repeat(64)}`,
+        revision: revision('b'),
+      },
       externalOrigins: [],
       idleMs: 60_000,
     } satisfies ViewServeConfig
@@ -85,6 +91,9 @@ describe('view session private state', () => {
     expect(await readFile(configPath(config.session.id, directory), 'utf8')).toContain(
       'raw-secret-carrier',
     )
+    expect(
+      JSON.parse(await readFile(configPath(config.session.id, directory), 'utf8')),
+    ).toMatchObject({ transport: config.transport })
 
     await removeSessionFiles(config.session.id, directory)
     await expect(stat(configPath(config.session.id, directory))).rejects.toMatchObject({

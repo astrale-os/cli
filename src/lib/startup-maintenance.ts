@@ -104,6 +104,16 @@ async function availableRelease(): Promise<AvailableRelease | undefined> {
       execution,
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
     })
+    if (result.status === 'repair-available') {
+      await writeCache({
+        version: CACHE_VERSION,
+        checkedAt: new Date().toISOString(),
+        currentVersion: result.currentVersion,
+        latestVersion: result.currentVersion,
+        channel: result.channel,
+      })
+      return undefined
+    }
     if (result.status !== 'available' && result.status !== 'up-to-date') return undefined
     const next: UpdateNoticeCache = {
       version: CACHE_VERSION,
