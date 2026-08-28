@@ -12,36 +12,29 @@ const moduleNode = (id: string): Node => ({
   style: { width: 240, height: 180 },
 })
 
-test('keeps initialized sibling positions stable when another domain is resized', () => {
+test('a domain moved on the canvas leaves its neighbours where they were', () => {
   const sources = [
     { domainId: 'alpha', nodes: [moduleNode('alpha-module')] },
     { domainId: 'beta', nodes: [moduleNode('beta-module')] },
   ]
-  const initial = layoutWorkspaceFrames(sources, {}, {}, {})
+  const initial = layoutWorkspaceFrames(sources, {}, {})
   const positions = Object.fromEntries(initial.map((frame) => [frame.domainId, frame.position]))
-  const resized = layoutWorkspaceFrames(
-    sources,
-    positions,
-    { alpha: { width: 800, height: 500 } },
-    {},
-  )
+  const moved = layoutWorkspaceFrames(sources, { ...positions, alpha: { x: 900, y: 40 } }, {})
 
-  expect(resized[0].size).toEqual({ width: 800, height: 500 })
-  expect(resized[1].position).toEqual(initial[1].position)
+  expect(moved[0].position).toEqual({ x: 900, y: 40 })
+  expect(moved[1].position).toEqual(initial[1].position)
 })
 
-test('grows an explicit domain size until its content clears the frame edge', () => {
-  const touching = moduleNode('catalog')
-  touching.style = { width: 805, height: 180 }
+test('a frame wraps its content, padding included — its size is never a preference', () => {
+  const wide = moduleNode('catalog')
+  wide.style = { width: 805, height: 180 }
   const [frame] = layoutWorkspaceFrames(
-    [{ domainId: 'alpha', nodes: [touching] }],
+    [{ domainId: 'alpha', nodes: [wide] }],
     { alpha: { x: 0, y: 0 } },
-    { alpha: { width: 857, height: 300 } },
     { alpha: { x: 52, y: 100 } },
   )
 
-  // 52 (content offset) + 805 (content) + 52 (padding): a saved size that would leave
-  // the modules flush against the frame is widened instead of honoured as-is.
+  // 52 (content offset) + 805 (content) + 52 (padding)
   expect(frame.size).toEqual({ width: 909, height: 332 })
 })
 
@@ -55,7 +48,6 @@ test('converts a workspace node back to owner-local persisted geometry', () => {
         domainId: 'services',
         localId: 'grp-service',
         offset: { x: 80, y: 96 },
-        active: true,
       },
     },
   }

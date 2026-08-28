@@ -50,11 +50,18 @@ function ClassNode({ data }: NodeProps) {
       // that something is selected but not which family it belongs to. `--node-tint`
       // carries the same hue to focus.css, which rings a picked edge's endpoints and
       // the neighbours of a focused node.
+      //
+      // Selected, the ring is the SAME 3px everywhere — including the left, where the
+      // module bar would otherwise stack under it and make one side twice as heavy. The
+      // bar drops to a hairline and its 2px are handed to the padding, so the card's
+      // contents do not shift by a pixel on the way in or out of selection.
       style={
         {
           width: CLASS_W,
           height: CLASS_H,
-          borderLeft: `3px solid ${tint.mark}`,
+          borderLeftWidth: selected ? 1 : 3,
+          borderLeftColor: tint.mark,
+          paddingLeft: selected ? 12 : 10,
           '--node-tint': tint.mark,
           ...(selected
             ? {
@@ -69,7 +76,7 @@ function ClassNode({ data }: NodeProps) {
         } as CSSProperties
       }
       className={cn(
-        'relative flex items-center gap-2 rounded-md border bg-card pl-2.5 pr-2',
+        'relative flex items-center gap-2 rounded-md border bg-card pr-2',
         'transition-[border-color,box-shadow,background-color] duration-150',
         !selected && 'hover:border-muted-foreground/40',
       )}

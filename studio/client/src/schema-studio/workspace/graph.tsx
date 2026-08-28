@@ -45,8 +45,8 @@ import {
   selectedRelationshipContext,
 } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
-import { VIEW_HUE, moduleTint } from '../palette'
-import { workspaceLayoutUpdate, type WorkspaceSize } from './geometry'
+import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
+import { workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
   workspaceNodeTypes,
@@ -73,7 +73,7 @@ export function WorkspaceSchemaGraph({
   domains: WorkspaceDomainProjection[]
   onToggleInherited: () => void
 }) {
-  const { getNode, getNodes, setViewport } = useReactFlow()
+  const { getInternalNode, getNode, getNodes, getViewport, setCenter, setViewport } = useReactFlow()
   const paneWidth = useStore((state) => state.width)
   const paneHeight = useStore((state) => state.height)
   const panZoomReady = useStore((state) => state.panZoom !== null)
@@ -89,10 +89,8 @@ export function WorkspaceSchemaGraph({
   const toggleCardinality = useUI((state) => state.toggleCardinality)
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
-  const domainSizes = useSchemaWorkspace((state) => state.domainSizes)
   const domainContentOffsets = useSchemaWorkspace((state) => state.domainContentOffsets)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
-  const setDomainSize = useSchemaWorkspace((state) => state.setDomainSize)
   const ensureDomainPositions = useSchemaWorkspace((state) => state.ensureDomainPositions)
   const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
   const ensureDomainContentOffsets = useSchemaWorkspace((state) => state.ensureDomainContentOffsets)
@@ -105,15 +103,6 @@ export function WorkspaceSchemaGraph({
   const fittedDomains = useRef('')
   const fitAfterReset = useRef(false)
   const solo = domains.length === 1
-
-  // Only domain frames are sized by hand — a module box wraps its classes on its own.
-  const resizeNode = useCallback(
-    (nodeId: string, size: WorkspaceSize) => {
-      if (!nodeId.startsWith('workspace-domain:')) return
-      setDomainSize(nodeId.slice('workspace-domain:'.length), size)
-    },
-    [setDomainSize],
-  )
 
   // One click does both: focus the domain AND act on what was clicked. Requiring a
   // first click just to "enter" a domain made every selection a double click.
@@ -149,8 +138,8 @@ export function WorkspaceSchemaGraph({
   }, [activeDomainId, queryClient])
 
   const nodeActions = useMemo<WorkspaceNodeActions>(
-    () => ({ activateDomain: activate, resizeNode, toggleModule: toggleWorkspaceModule }),
-    [activate, resizeNode, toggleWorkspaceModule],
+    () => ({ toggleModule: toggleWorkspaceModule }),
+    [toggleWorkspaceModule],
   )
 
   const projection = useMemo(
@@ -160,18 +149,9 @@ export function WorkspaceSchemaGraph({
         catalog,
         contentOffsets: domainContentOffsets,
         domainPositions,
-        domainSizes,
         externalPositions,
       }),
-    [
-      activeDomainId,
-      catalog,
-      domainContentOffsets,
-      domainPositions,
-      domainSizes,
-      domains,
-      externalPositions,
-    ],
+    [activeDomainId, catalog, domainContentOffsets, domainPositions, domains, externalPositions],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
@@ -273,6 +253,29 @@ export function WorkspaceSchemaGraph({
     },
     [commitLayout, getNode, getNodes, setDomainPosition],
   )
+
+  // Selecting a class opens the right panel, which narrows the pane — pan the selection
+  // back into view when it would sit under the panel (or off-screen after a ⌘K jump).
+  // Zoom is preserved: only the framing moves. Without this the canvas answers a
+  // selection with nothing visible, and `onlyRenderVisibleElements` even unmounts the
+  // card that was just picked.
+  useEffect(() => {
+    if (!selected?.startsWith('class.') || !paneWidth || !paneHeight) return
+    const node = getInternalNode(qualifiedNodeId(activeDomainId, selected))
+    if (!node) return
+    const { x, y, zoom } = getViewport()
+    const cx = node.internals.positionAbsolute.x + (node.measured.width ?? CLASS_W) / 2
+    const cy = node.internals.positionAbsolute.y + (node.measured.height ?? CLASS_H) / 2
+    const screenX = cx * zoom + x
+    const screenY = cy * zoom + y
+    const margin = 24
+    const onScreen =
+      screenX > margin &&
+      screenX < paneWidth - margin &&
+      screenY > margin &&
+      screenY < paneHeight - margin
+    if (!onScreen) setCenter(cx, cy, { zoom })
+  }, [activeDomainId, selected, paneWidth, paneHeight, getInternalNode, getViewport, setCenter])
 
   // ── focus + context, one canvas-wide reading ──
   // `focusId` is a LOCAL ref (`class.Foo`); on this canvas the same class exists in every
@@ -376,10 +379,6 @@ export function WorkspaceSchemaGraph({
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => {
             setSelectedEdgeId(null)
-            if (node.id.startsWith('workspace-domain:')) {
-              activate(node.id.slice('workspace-domain:'.length))
-              return
-            }
             const target = localNodeRef(node.id)
             if (!target) return
             if (target.localId.startsWith('class.')) activate(target.domainId, target.localId)

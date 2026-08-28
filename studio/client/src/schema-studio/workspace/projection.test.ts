@@ -135,27 +135,19 @@ describe('workspace projection', () => {
     )
   })
 
-  test('a lone domain gets a frame that is scenery, not furniture to arrange', () => {
-    const solo = domainBundle('solo', 'solo.example.dev', { User: nodeClass('User') })
-    const result = composeWorkspaceCanvas([prepared(solo)], { activeDomainId: 'solo' })
-    const frame = result.nodes.find((node) => node.type === 'workspaceDomain')!
-
-    expect(frame.data).toMatchObject({ solo: true })
-    expect(frame.draggable).toBe(false)
-    expect(frame.selectable).toBe(false)
-  })
-
-  test('a second domain turns both frames into things you can move', () => {
+  test('a frame is moved, never selected — with one domain on the canvas or several', () => {
     const first = domainBundle('first', 'first.example.dev', { User: nodeClass('User') })
     const second = domainBundle('second', 'second.example.dev', { Team: nodeClass('Team') })
-    const result = composeWorkspaceCanvas([prepared(first), prepared(second)], {
+    const solo = composeWorkspaceCanvas([prepared(first)], { activeDomainId: 'first' })
+    const pair = composeWorkspaceCanvas([prepared(first), prepared(second)], {
       activeDomainId: 'first',
     })
-    const frames = result.nodes.filter((node) => node.type === 'workspaceDomain')
+    const frames = [...solo.nodes, ...pair.nodes].filter((node) => node.type === 'workspaceDomain')
 
-    expect(frames).toHaveLength(2)
-    expect(frames.every((frame) => frame.draggable && frame.selectable)).toBe(true)
-    expect(frames.every((frame) => (frame.data as { solo: boolean }).solo === false)).toBe(true)
+    expect(frames).toHaveLength(3)
+    // no dragHandle: you grab a frame anywhere, exactly like a module box
+    expect(frames.every((frame) => frame.draggable && frame.dragHandle === undefined)).toBe(true)
+    expect(frames.some((frame) => frame.selectable)).toBe(false)
   })
 
   test('an imported Domain the reader hid contributes no external frame', () => {
