@@ -7,12 +7,7 @@ on:
         description: Exact Astrale UI ref to qualify
         required: true
         type: string
-  workflow_dispatch:
-    inputs:
-      ui-ref:
-        description: Exact Astrale UI ref to qualify
-        required: true
-        type: string
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -30,7 +25,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: astrale-os/ui
-          ref: ${{ inputs.ui-ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || inputs.ui-ref }}
           path: .provider/ui
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2

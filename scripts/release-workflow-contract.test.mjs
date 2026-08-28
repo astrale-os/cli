@@ -174,11 +174,14 @@ describe('release workflow contract', () => {
     assert.equal(ci.jobs['ui-search-contract'].uses, './.github/workflows/ui-search-contract.yml')
     assert.equal(ci.jobs['ui-search-contract'].with['ui-ref'], 'main')
     assert.equal(uiSearch.on.workflow_call.inputs['ui-ref'].required, true)
-    assert.equal(uiSearch.on.workflow_dispatch.inputs['ui-ref'].required, true)
+    assert.deepEqual(uiSearch.on.workflow_dispatch, {})
     const providerCheckout = uiSearch.jobs['provider-consumer'].steps.find(
       (step) => step.with?.repository === 'astrale-os/ui',
     )
-    assert.equal(providerCheckout.with.ref, '${{ inputs.ui-ref }}')
+    assert.equal(
+      providerCheckout.with.ref,
+      "${{ github.event_name == 'workflow_dispatch' && 'main' || inputs.ui-ref }}",
+    )
     const qualification = uiSearch.jobs['provider-consumer'].steps.find(
       (step) => step.name === 'Qualify exact UI producer through the CLI consumer',
     )
