@@ -450,7 +450,7 @@ describe('help contract — UI is project tooling', () => {
     expect(invoked).toBe(true)
   })
 
-  test('UI commands are local-only and add accepts zero or more canonical addresses', async () => {
+  test('only UI request connects to a Kernel and add accepts canonical addresses', async () => {
     const program = await buildProgram()
     const ui = program.commands.find((command) => command.name() === 'ui')
     const add = ui?.commands.find((command) => command.name() === 'add')
@@ -464,11 +464,15 @@ describe('help contract — UI is project tooling', () => {
       'preset',
     ])
     expect(add?.helpInformation()).toContain('[items...]')
-    for (const command of ui?.commands ?? []) {
+    for (const command of ui?.commands.filter((candidate) => candidate.name() !== 'request') ??
+      []) {
       const help = command.helpInformation()
       expect(help).not.toContain('--url <url>')
       expect(help).not.toContain('--anonymous')
     }
+    const request = ui?.commands.find((command) => command.name() === 'request')
+    expect(request?.helpInformation()).toContain('--url <url>')
+    expect(request?.helpInformation()).toContain('--anonymous')
   })
 })
 

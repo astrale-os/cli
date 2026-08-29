@@ -75,11 +75,11 @@ export async function buildProgram(): Promise<Command> {
 
   registerGroup(program, {
     name: 'ui',
-    description: 'Initialize and install Astrale UI in local applications',
+    description: 'Search, request, and install Astrale UI in applications',
     commands: [
       (await import('../commands/ui/init')).default,
       (await import('../commands/ui/search')).default,
-      (await import('../commands/ui/request')).default,
+      withKernelOptions((await import('../commands/ui/request')).default),
       (await import('../commands/ui/add')).default,
       (await import('../commands/ui/doctor')).default,
     ],
