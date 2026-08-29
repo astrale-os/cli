@@ -2,7 +2,7 @@ import type { KernelCommandOpts } from '../../../connection'
 import type { CommandDefinition } from '../../../program/index'
 
 import { formatKernelError } from '../../../connection/errors'
-import { statusOwnedInvitation } from '../../../lib/admin-instance'
+import { statusManagedInvitation } from '../../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../../lib/admin-target'
 import { log, withSpinner } from '../../../lib/log'
 import { isMachine, output } from '../../../lib/output'
@@ -10,10 +10,10 @@ import { isMachine, output } from '../../../lib/output'
 type StatusOpts = KernelCommandOpts & AdminTargetCommandOpts
 
 export interface InvitationStatusDependencies {
-  readonly statusOwnedInvitation: typeof statusOwnedInvitation
+  readonly statusManagedInvitation: typeof statusManagedInvitation
 }
 
-const defaultDependencies: InvitationStatusDependencies = Object.freeze({ statusOwnedInvitation })
+const defaultDependencies: InvitationStatusDependencies = Object.freeze({ statusManagedInvitation })
 
 export function createInvitationStatusCommand(
   dependencies: InvitationStatusDependencies = defaultDependencies,
@@ -40,7 +40,7 @@ Examples:
     action: async (id: string, opts: StatusOpts) => {
       try {
         const invitation = await withSpinner('Fetching invitation', !isMachine(opts), () =>
-          dependencies.statusOwnedInvitation(opts, id),
+          dependencies.statusManagedInvitation(opts, id),
         )
         if (isMachine(opts)) {
           output(invitation, opts)
@@ -49,7 +49,9 @@ Examples:
         log.success(`Invitation ${invitation.state}: ${invitation.email}`)
         log.dim(`  invitation: ${invitation.id}`)
         log.dim(`  instance: ${invitation.instance}`)
-        if (invitation.claimedBy) log.dim(`  user: ${invitation.claimedBy}`)
+        if (invitation.invitedBy) log.dim(`  invited by: ${invitation.invitedBy}`)
+        if (invitation.claimedBy) log.dim(`  claimed by: ${invitation.claimedBy}`)
+        log.dim(`  created: ${invitation.createdAt}`)
         if (invitation.expiresAt) log.dim(`  expires: ${invitation.expiresAt}`)
         if (invitation.acceptedAt) log.dim(`  accepted: ${invitation.acceptedAt}`)
       } catch (error) {

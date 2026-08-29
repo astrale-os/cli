@@ -70,7 +70,7 @@ export function inviteOwnedInstance(
 }
 
 /** Observe one retained Instance Invitation without reconciling or mutating it. */
-export function statusOwnedInvitation(options: AdminConnectionOptions, invitation: string) {
+export function statusManagedInvitation(options: AdminConnectionOptions, invitation: string) {
   return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).statusInvitation(invitation),
   )

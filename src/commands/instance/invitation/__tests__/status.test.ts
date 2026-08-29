@@ -47,8 +47,8 @@ afterEach(() => {
 })
 
 test('forwards the exact Invitation and Admin options and emits one machine value', async () => {
-  const statusOwnedInvitation = mock(async () => invitation)
-  const command = createInvitationStatusCommand({ statusOwnedInvitation })
+  const statusManagedInvitation = mock(async () => invitation)
+  const command = createInvitationStatusCommand({ statusManagedInvitation })
   const action = command.action as (
     id: string,
     opts: { readonly json: boolean; readonly admin: string },
@@ -57,15 +57,15 @@ test('forwards the exact Invitation and Admin options and emits one machine valu
 
   await action('@invitation-node', options)
 
-  expect(statusOwnedInvitation).toHaveBeenCalledTimes(1)
-  expect(statusOwnedInvitation).toHaveBeenCalledWith(options, '@invitation-node')
+  expect(statusManagedInvitation).toHaveBeenCalledTimes(1)
+  expect(statusManagedInvitation).toHaveBeenCalledWith(options, '@invitation-node')
   expect(JSON.parse(stdout)).toEqual(invitation)
   expect(stdout).toBe(`${JSON.stringify(invitation, null, 2)}\n`)
 })
 
 test('prints one human headline and the useful durable lifecycle fields', async () => {
-  const statusOwnedInvitation = mock(async () => invitation)
-  const command = createInvitationStatusCommand({ statusOwnedInvitation })
+  const statusManagedInvitation = mock(async () => invitation)
+  const command = createInvitationStatusCommand({ statusManagedInvitation })
   const action = command.action as (id: string, opts: Record<string, never>) => Promise<void>
   const stdoutDescriptor = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY')
   const stderrDescriptor = Object.getOwnPropertyDescriptor(process.stderr, 'isTTY')
@@ -85,6 +85,8 @@ test('prints one human headline and the useful durable lifecycle fields', async 
   expect(rendered).not.toContain('Invitation is accepted')
   expect(rendered).toContain('invitation: @invitation-node')
   expect(rendered).toContain('instance: @instance-node')
-  expect(rendered).toContain('user: @member')
+  expect(rendered).toContain('invited by: @owner')
+  expect(rendered).toContain('claimed by: @member')
+  expect(rendered).toContain('created: 2026-08-28T10:00:00.000Z')
   expect(rendered).toContain('accepted: 2026-08-29T10:00:00.000Z')
 })
