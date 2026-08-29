@@ -130,7 +130,7 @@ export function decodeSchemaIR(value: unknown): SchemaIR | undefined {
   if (
     !record ||
     record.format !== 'astrale.dsl' ||
-    typeof record.version !== 'string' ||
+    record.version !== 'v1' ||
     typeof record.domain !== 'string' ||
     !recordOf(record.classes, isClass) ||
     !recordOf(record.functions, isFunction) ||
