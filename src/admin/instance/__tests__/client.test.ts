@@ -7,6 +7,7 @@ import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { describe, expect, mock, test } from 'bun:test'
 
 import type { AdminGraphQueryApi } from '../../graph'
+import type { InstanceLifecycleInfo } from '../model'
 
 import { adminSession } from '../../__tests__/fixture'
 import { AdminContract } from '../../contract'
@@ -133,7 +134,7 @@ describe('V2 Admin Instance adapter', () => {
   })
 
   test('reads administrator lifecycle evidence through one exact Fleet Method', async () => {
-    const lifecycle = [
+    const lifecycle: InstanceLifecycleInfo[] = [
       {
         slug: 'active',
         state: 'ready',
@@ -147,7 +148,7 @@ describe('V2 Admin Instance adapter', () => {
         lifecycle: 'retired',
         updatedAt: '2026-08-29T09:00:00.000Z',
       },
-    ] as const
+    ]
     const contract = fixture({ invoke: () => lifecycle })
     const api = await contract.connect()
 
