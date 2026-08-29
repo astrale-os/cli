@@ -21,7 +21,7 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@astrale-os/sdk": "0.5.0-beta.64",
+    "@astrale-os/sdk": "0.5.0-beta.75",
     "@astrale-os/shell": "0.4.2-beta.8",
     "@dagrejs/dagre": "^3.0.0",
     "@radix-ui/react-collapsible": "^1.1.0",
