@@ -77,7 +77,9 @@ export class UiError extends AstraleError {
       | 'UI_LOCK_INVALID'
       | 'UI_TOOL_FAILED'
       | 'UI_SEARCH_QUERY_INVALID'
-      | 'UI_SEARCH_UNAVAILABLE',
+      | 'UI_SEARCH_UNAVAILABLE'
+      | 'UI_REQUEST_QUERY_INVALID'
+      | 'UI_REQUEST_UNAVAILABLE',
     message: string,
     hint?: string,
     options?: ErrorOptions,

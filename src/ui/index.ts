@@ -9,5 +9,12 @@ export {
 export { UI_PRESETS, UiError, type UiLock, type UiPreset } from './model'
 export { discoverUiProject, type UiProject } from './project'
 export { resolveUiRelease } from './release'
+export {
+  createUiRequestDraft,
+  requestUi,
+  UI_REQUEST_LIMITS,
+  type UiRequestDraft,
+  type UiRequestLauncher,
+} from './request'
 export { shadcnInvocation, type UiRunner } from './runner'
 export { searchUi, type SearchResponse, type SearchResult } from './search'

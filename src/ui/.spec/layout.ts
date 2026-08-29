@@ -10,6 +10,7 @@ export default defineLayout({
     'operations.ts',
     'project.ts',
     'release.ts',
+    'request.ts',
     'runner.ts',
     'search/',
     'search/__tests__/',
