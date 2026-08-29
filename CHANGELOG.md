@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.53](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.52...cli/v1.0.0-beta.53) (2026-08-29)
+
+
+### Features
+
+* **studio:** remove Property visibility from canonical V1 projection ([#291](https://github.com/astrale-os/cli/issues/291)) ([b575869](https://github.com/astrale-os/cli/commit/b57586950f57a7d7bcc677f2e50bbe6d073ecdf5))
+
 ## [1.0.0-beta.52](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.51...cli/v1.0.0-beta.52) (2026-08-29)
 
 
