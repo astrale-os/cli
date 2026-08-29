@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.52](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.51...cli/v1.0.0-beta.52) (2026-08-29)
+
+
+### Features
+
+* **ui:** add request draft command ([#294](https://github.com/astrale-os/cli/issues/294)) ([f3492b8](https://github.com/astrale-os/cli/commit/f3492b8b34f4e9b0bd233b23504537b46cd5cefc))
+
 ## [1.0.0-beta.51](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.50...cli/v1.0.0-beta.51) (2026-08-28)
 
 
