@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.54](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.53...cli/v1.0.0-beta.54) (2026-08-29)
+
+
+### Features
+
+* **commands:** submit UI requests through the Domain ([#297](https://github.com/astrale-os/cli/issues/297)) ([80a495c](https://github.com/astrale-os/cli/commit/80a495c654ae6392e09415568b241b307e03b54f))
+
 ## [1.0.0-beta.53](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.52...cli/v1.0.0-beta.53) (2026-08-29)
 
 
