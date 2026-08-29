@@ -18,3 +18,8 @@ the same immutable UI commit, never loads the registry before ranking, and hydra
 canonical demos. Admitted artifacts and code are cached under that commit with digest verification;
 corrupt cache entries are repaired from the same release. The public result exposes no internal
 family, provider, or score and hands registry candidates directly to `astrale ui add`.
+
+Request is the separate contribution journey. It creates one bounded prefilled public GitHub issue
+form draft and opens it only for human output. The browser uses the user's existing GitHub session;
+the CLI receives no GitHub or managed-agent credential and never claims a request exists before the
+form is submitted.

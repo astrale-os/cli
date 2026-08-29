@@ -195,6 +195,7 @@ describe('program composition', () => {
       'ui preset',
       'ui preset apply',
       'ui preset list',
+      'ui request',
       'ui search',
       'update',
       'use',
@@ -457,6 +458,7 @@ describe('help contract — UI is project tooling', () => {
     expect(ui?.commands.map((command) => command.name())).toEqual([
       'init',
       'search',
+      'request',
       'add',
       'doctor',
       'preset',

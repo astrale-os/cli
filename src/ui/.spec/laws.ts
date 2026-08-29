@@ -77,3 +77,19 @@ export const CLI_UI_SEARCH_HANDOFF = defineLaw({
     },
   ],
 })
+
+export const CLI_UI_REQUEST_DRAFT = defineLaw({
+  id: 'CLI-UI-REQUEST-DRAFT',
+  statement:
+    'A UI request command produces one bounded prefilled public GitHub form URL; opening it never claims that an issue exists, and machine output has no browser side effect.',
+  tests: [
+    {
+      file: '../__tests__/request.test.ts',
+      id: 'normalizes only line endings and outer whitespace into the canonical form URL',
+    },
+    {
+      file: '../__tests__/request.test.ts',
+      id: 'has no browser side effect in machine mode',
+    },
+  ],
+})

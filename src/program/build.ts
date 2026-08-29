@@ -79,6 +79,7 @@ export async function buildProgram(): Promise<Command> {
     commands: [
       (await import('../commands/ui/init')).default,
       (await import('../commands/ui/search')).default,
+      (await import('../commands/ui/request')).default,
       (await import('../commands/ui/add')).default,
       (await import('../commands/ui/doctor')).default,
     ],

@@ -66,6 +66,7 @@ published UI release:
 ```bash
 astrale ui init --preset astrale
 astrale ui search "editable chart with export"
+astrale ui request "accessible async combobox with creation"
 astrale ui add pattern/chart/line-basic
 astrale ui add theme/observatory
 astrale ui add ./my-playground-export.css
@@ -86,6 +87,10 @@ installed files; review those files, then use `--overwrite --yes` only when
 replacement is intentional. `--dry-run` leaves project files and the lock
 unchanged. Use `astrale ui search <free-text> --json` to receive a short ranked candidate list with
 exact demo code and its `command` or runtime `packageImport`.
+
+Use `astrale ui request <free-text>` when search does not satisfy the need. Human mode opens one
+prefilled public GitHub issue form and still requires submission; `--json` returns the same draft
+URL without opening a browser. The CLI does not receive a GitHub or managed-agent credential.
 
 Patterns, blocks, and themes are application-owned source after installation. A
 theme is copied to `components/astrale/theme/` and activated through one relative

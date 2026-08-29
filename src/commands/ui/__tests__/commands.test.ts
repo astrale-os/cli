@@ -3,8 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
+import { buildProgram } from '../../../program'
 import { fixtureFetch } from '../../../ui/search/__tests__/fixture'
 import addCommand from '../add'
+import requestCommand from '../request'
 import searchCommand from '../search'
 
 class ExitError extends Error {}
@@ -78,6 +80,39 @@ describe('UI command machine contracts', () => {
       ],
     })
     expect(response.results[0].code.source).toContain('Export payments')
+  })
+
+  test('request emits one parseable draft without claiming issue creation', async () => {
+    const action = requestCommand.action as (
+      query: string,
+      options: { json?: boolean },
+    ) => Promise<void>
+    await action('accessible async combobox', { json: true })
+
+    expect(stderr).toBe('')
+    const response = JSON.parse(stdout)
+    expect(response.query).toBe('accessible async combobox')
+    expect(response.submissionUrl).toStartWith('https://github.com/astrale-os/ui/issues/new?')
+    expect(response).not.toHaveProperty('issue')
+    expect(response).not.toHaveProperty('created')
+  })
+
+  test('program parser routes the request positional and machine option end to end', async () => {
+    const program = await buildProgram()
+    await program.parseAsync([
+      'node',
+      'astrale',
+      'ui',
+      'request',
+      'accessible async combobox',
+      '--json',
+    ])
+
+    expect(stderr).toBe('')
+    expect(JSON.parse(stdout)).toMatchObject({
+      query: 'accessible async combobox',
+      submissionUrl: expect.stringContaining('template=ui-request.yml'),
+    })
   })
 
   test('search keeps exact candidate code in interactive output', async () => {
