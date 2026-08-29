@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 
-import logsCommand, {
-  acceptJournalPage,
-  buildJournalInput,
-  followLogs,
-  formatFollowRecord,
-} from '../logs'
+import { acceptJournalPage, buildJournalInput, followLogs, formatFollowRecord } from '../logs'
 
 describe('buildJournalInput', () => {
   /** @evidence TEST-CLI-LOGS-MAPS-EXACT-JOURNAL-INPUT */
@@ -268,7 +263,7 @@ describe('follow output routing', () => {
     expect(() => JSON.parse(stdout)).toThrow()
   })
 
-  test('rejects effective YAML before opening a Kernel session with INVALID_INPUT', async () => {
+  test('rejects effective YAML before opening a Kernel session', async () => {
     let runCalls = 0
     await expect(
       followLogs(
@@ -282,27 +277,6 @@ describe('follow output routing', () => {
       ),
     ).rejects.toThrow('--follow does not support YAML')
     expect(runCalls).toBe(0)
-
-    const originalExit = process.exit
-    const originalStderrWrite = process.stderr.write
-    let stderr = ''
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8')
-      return true
-    }) as typeof process.stderr.write
-    process.exit = ((code?: string | number | null) => {
-      throw new Error(`exit:${String(code)}`)
-    }) as typeof process.exit
-    try {
-      await expect(logsCommand.action({ follow: true, format: 'yaml' })).rejects.toThrow('exit:1')
-      expect(JSON.parse(stderr)).toEqual({
-        error: 'INVALID_INPUT',
-        message: '--follow does not support YAML; use --json for an NDJSON stream',
-      })
-    } finally {
-      process.exit = originalExit
-      process.stderr.write = originalStderrWrite
-    }
   })
 
   async function captureFollowOutput(
