@@ -8,6 +8,8 @@ export {
   findOwnedInstance,
   formatInstanceState,
   type InstanceInfo,
+  type InstanceLifecycle,
+  type InstanceLifecycleInfo,
   type InstanceState,
   type InvitationInfo,
   type InvitationState,
@@ -18,6 +20,16 @@ export {
 export function listOwnedInstances(options: AdminConnectionOptions) {
   return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).list(),
+  )
+}
+
+/** Read administrator-authorized active and optional retired Kernel lifecycle evidence. */
+export function listManagedInstanceLifecycle(
+  options: AdminConnectionOptions,
+  includeRetired: boolean,
+) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).listLifecycle({ includeRetired }),
   )
 }
 

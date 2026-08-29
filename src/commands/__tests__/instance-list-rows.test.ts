@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 
 import type { InstanceInfo } from '../../lib/admin-instance'
 
-import { buildInstanceRows, type Bookmark } from '../instance/list'
+import { buildInstanceRows, buildLifecycleRows, type Bookmark } from '../instance/list'
 
 const managed: InstanceInfo[] = [
   { id: 'demo', slug: 'demo', url: 'https://demo.eu.astrale.ai', state: 'ready' },
@@ -60,5 +60,28 @@ describe('buildInstanceRows', () => {
     const rows = buildInstanceRows(managed, [bookmark()], { managed: false, bookmarks: true })
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ kind: 'bookmark' })
+  })
+})
+
+describe('buildLifecycleRows', () => {
+  test('keeps technical issuer evidence only in the explicit lifecycle projection', () => {
+    expect(
+      buildLifecycleRows([
+        {
+          slug: 'demo',
+          state: 'deleted',
+          lifecycle: 'retired',
+          issuer: 'https://demo.example.test/kernel/host',
+          updatedAt: '2026-08-29T08:00:00.000Z',
+        },
+      ]),
+    ).toEqual([
+      {
+        name: 'demo',
+        state: 'deleted',
+        lifecycle: 'retired',
+        issuer: 'https://demo.example.test/kernel/host',
+      },
+    ])
   })
 })

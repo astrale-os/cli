@@ -20,6 +20,17 @@ export interface OwnedInstanceInfo extends InstanceInfo {
   readonly state: InstanceState
 }
 
+export type InstanceLifecycle = 'active' | 'retired'
+
+/** Administrator-authorized lifecycle evidence for provider operator composition. */
+export interface InstanceLifecycleInfo {
+  readonly slug: string
+  readonly state: InstanceState
+  readonly lifecycle: InstanceLifecycle
+  readonly issuer?: string
+  readonly updatedAt: string
+}
+
 export interface DomainInstallReceipt {
   readonly domain: string
   readonly instance: string

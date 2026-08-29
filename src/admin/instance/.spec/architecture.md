@@ -17,3 +17,9 @@ reconciliation, mutation, or operation identity. A sender or Fleet administrator
 the claimed user can observe it after acceptance. Diagnostic reconciliation remains a separate,
 explicit recovery operation. Every Invitation result must remain scoped to one member invitation
 for one managed Instance.
+
+Administrator lifecycle inventory is deliberately separate from ordinary caller-visible listing.
+It invokes `Fleet.listInstanceLifecycle` through the stable Core receiver, admits the returned
+portable values, and excludes retired tombstones unless the caller explicitly requests them. This
+is the only adapter surface that exposes retained child issuers; it exists for authorized operator
+composition and never infers retirement from reachability or a missing graph result.

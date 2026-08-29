@@ -14,6 +14,7 @@ import {
   type DomainInstallReceipt,
   type InvitationInfo,
   type InstanceInfo,
+  type InstanceLifecycleInfo,
   type InstanceState,
   type OwnedInstanceInfo,
 } from './model'
@@ -25,6 +26,7 @@ export interface AdminInstanceContext {
 
 export interface AdminInstanceApi {
   list(): Promise<OwnedInstanceInfo[]>
+  listLifecycle(options?: Readonly<{ includeRetired?: boolean }>): Promise<InstanceLifecycleInfo[]>
   create(slug: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
@@ -101,6 +103,16 @@ export async function connectAdminInstances(
 
   return Object.freeze({
     list,
+    async listLifecycle(options: Readonly<{ includeRetired?: boolean }> = {}) {
+      return instanceLifecycleInventory(
+        await callAdminMethod(
+          context.session,
+          AdminContract.fleet,
+          'listInstanceLifecycle',
+          options.includeRetired === undefined ? {} : { includeRetired: options.includeRetired },
+        ),
+      )
+    },
     async create(slug: string) {
       const input = Object.freeze({
         operationId: operationId('create'),
@@ -257,6 +269,45 @@ function instanceFromSummary(input: unknown): InstanceInfo {
     ...(value.organizationId === undefined
       ? {}
       : { organizationId: requiredString(value.organizationId, 'Admin organization id') }),
+  })
+}
+
+function instanceLifecycleInventory(input: unknown): InstanceLifecycleInfo[] {
+  if (!Array.isArray(input)) throw new TypeError('Admin Instance lifecycle inventory is invalid.')
+  if (input.length > MAXIMUM_INSTANCES) {
+    throw new TypeError('Admin Instance lifecycle inventory exceeds its bound.')
+  }
+  return input.map((entry) => instanceLifecycleEntry(entry))
+}
+
+function instanceLifecycleEntry(input: unknown): InstanceLifecycleInfo {
+  const value = record(input, 'Admin Instance lifecycle')
+  const state = instanceState(value.state)
+  const lifecycle = value.lifecycle
+  if (lifecycle !== 'active' && lifecycle !== 'retired') {
+    throw new TypeError('Admin Instance lifecycle classification is invalid.')
+  }
+  if ((state === 'deleted') !== (lifecycle === 'retired')) {
+    throw new TypeError('Admin Instance lifecycle state is inconsistent.')
+  }
+  const issuer = optionalStringValue(value.issuer)
+  if (issuer !== undefined) {
+    let parsed: URL
+    try {
+      parsed = new URL(issuer)
+    } catch {
+      throw new TypeError('Admin Instance lifecycle issuer is invalid.')
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      throw new TypeError('Admin Instance lifecycle issuer is invalid.')
+    }
+  }
+  return Object.freeze({
+    slug: requiredString(value.slug, 'Admin Instance lifecycle slug'),
+    state,
+    lifecycle,
+    ...(issuer === undefined ? {} : { issuer }),
+    updatedAt: requiredString(value.updatedAt, 'Admin Instance lifecycle update time'),
   })
 }
 

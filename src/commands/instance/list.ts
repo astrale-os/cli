@@ -5,10 +5,11 @@ import type { Column } from '../../lib/output'
 import type { CommandDefinition } from '../../program/index'
 
 import { AstraleError } from '../../errors'
-import { listOwnedInstances } from '../../lib/admin-instance'
+import { listManagedInstanceLifecycle, listOwnedInstances } from '../../lib/admin-instance'
 import {
   formatInstanceState,
   type InstanceInfo,
+  type InstanceLifecycleInfo,
   type OwnedInstanceInfo,
 } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
@@ -22,6 +23,8 @@ type ListOpts = KernelCommandOpts &
   RawOutputOpts & {
     bookmarked?: boolean
     adminOnly?: boolean
+    lifecycle?: boolean
+    includeRetired?: boolean
   }
 
 export type Bookmark = {
@@ -41,6 +44,13 @@ const COLUMNS: Column[] = [
   { key: 'extra', header: '', color: chalk.dim },
 ]
 
+const LIFECYCLE_COLUMNS: Column[] = [
+  { key: 'name', header: 'NAME', color: chalk.bold },
+  { key: 'lifecycle', header: 'LIFECYCLE', color: chalk.dim },
+  { key: 'state', header: 'STATE', color: chalk.dim },
+  { key: 'issuer', header: 'ISSUER', color: chalk.dim },
+]
+
 export default {
   name: 'list',
   description: 'List admin-managed instances and local bookmarks',
@@ -48,9 +58,53 @@ export default {
     ...ADMIN_TARGET_OPTIONS,
     { flags: '--bookmarked', description: 'Only show locally bookmarked kernel connections' },
     { flags: '--admin-only', description: 'Only show instances returned by the admin kernel' },
+    {
+      flags: '--lifecycle',
+      description: 'Show administrator-authorized Kernel lifecycle evidence',
+    },
+    {
+      flags: '--include-retired',
+      description: 'Include explicitly retired Instance tombstones in lifecycle evidence',
+    },
   ],
   action: async (opts: ListOpts) => {
     try {
+      if (opts.includeRetired && !opts.lifecycle) {
+        throw new AstraleError(
+          'INVALID_FLAG',
+          '--include-retired requires --lifecycle.',
+          'Use `astrale instance list --lifecycle --include-retired --json`.',
+        )
+      }
+      if (opts.lifecycle && opts.bookmarked) {
+        throw new AstraleError(
+          'INVALID_FLAG',
+          '--lifecycle cannot be combined with --bookmarked.',
+          'Lifecycle authority comes from Admin, not local bookmarks.',
+        )
+      }
+      if (opts.lifecycle) {
+        let lifecycle: InstanceLifecycleInfo[]
+        try {
+          lifecycle = await withSpinner('Fetching instance lifecycle', !isMachine(opts), () =>
+            listManagedInstanceLifecycle(opts, opts.includeRetired ?? false),
+          )
+        } catch (error) {
+          throw adminInventoryUnavailable(error)
+        }
+        if (isMachine(opts)) {
+          output({ lifecycle }, opts)
+          return
+        }
+        if (lifecycle.length === 0) {
+          log.dim('  No managed Instance lifecycle evidence.')
+          return
+        }
+        process.stdout.write(
+          renderTable(buildLifecycleRows(lifecycle), { columns: LIFECYCLE_COLUMNS }) + '\n',
+        )
+        return
+      }
       const store = await readInstances()
       const bookmarks: Bookmark[] = Object.entries(store.instances).map(([name, entry]) => ({
         name,
@@ -156,6 +210,17 @@ export function buildInstanceRows(
   }
 
   return rows
+}
+
+export function buildLifecycleRows(
+  lifecycle: readonly InstanceLifecycleInfo[],
+): Array<Record<string, string>> {
+  return lifecycle.map((entry) => ({
+    name: entry.slug,
+    lifecycle: entry.lifecycle,
+    state: entry.state,
+    issuer: entry.issuer ?? '',
+  }))
 }
 
 function formatBookmarkConnection(bookmark: Bookmark): string {

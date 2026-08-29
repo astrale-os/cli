@@ -132,6 +132,84 @@ describe('V2 Admin Instance adapter', () => {
     expect(contract.reflection).not.toHaveBeenCalled()
   })
 
+  test('reads administrator lifecycle evidence through one exact Fleet Method', async () => {
+    const lifecycle = [
+      {
+        slug: 'active',
+        state: 'ready',
+        lifecycle: 'active',
+        issuer: 'https://active.example.test/kernel/host',
+        updatedAt: '2026-08-29T08:00:00.000Z',
+      },
+      {
+        slug: 'retired',
+        state: 'deleted',
+        lifecycle: 'retired',
+        updatedAt: '2026-08-29T09:00:00.000Z',
+      },
+    ] as const
+    const contract = fixture({ invoke: () => lifecycle })
+    const api = await contract.connect()
+
+    await expect(api.listLifecycle()).resolves.toEqual(lifecycle)
+    await expect(api.listLifecycle({ includeRetired: true })).resolves.toEqual(lifecycle)
+    expect(contract.calls).toEqual([
+      {
+        target: '/:admin.astrale.ai:core.fleet::listInstanceLifecycle',
+        value: {},
+      },
+      {
+        target: '/:admin.astrale.ai:core.fleet::listInstanceLifecycle',
+        value: { includeRetired: true },
+      },
+    ])
+    expect(contract.query).not.toHaveBeenCalled()
+    expect(contract.reflection).not.toHaveBeenCalled()
+  })
+
+  test.each([
+    ['non-array', {}],
+    [
+      'unknown classification',
+      [
+        {
+          slug: 'demo',
+          state: 'ready',
+          lifecycle: 'unknown',
+          updatedAt: '2026-08-29T08:00:00.000Z',
+        },
+      ],
+    ],
+    [
+      'contradictory state',
+      [
+        {
+          slug: 'demo',
+          state: 'ready',
+          lifecycle: 'retired',
+          updatedAt: '2026-08-29T08:00:00.000Z',
+        },
+      ],
+    ],
+    [
+      'invalid issuer',
+      [
+        {
+          slug: 'demo',
+          state: 'ready',
+          lifecycle: 'active',
+          issuer: 'not-an-issuer',
+          updatedAt: '2026-08-29T08:00:00.000Z',
+        },
+      ],
+    ],
+  ])('rejects malformed lifecycle evidence: %s', async (_label, output) => {
+    const contract = fixture({ invoke: () => output })
+    await expect(
+      (await contract.connect()).listLifecycle({ includeRetired: true }),
+    ).rejects.toThrow(/lifecycle/u)
+  })
+
   test('delegates default placement to Fleet without reading Host inventory', async () => {
     const created = {
       id: '@instance-node',
