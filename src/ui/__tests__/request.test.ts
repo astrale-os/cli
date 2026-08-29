@@ -1,24 +1,33 @@
 import { describe, expect, test } from 'bun:test'
 
 import { UiError } from '../model'
-import { browserInvocation, createUiRequestDraft, requestUi } from '../request'
+import {
+  admitUiRequestResult,
+  createUiRequestInput,
+  requestUi,
+  UI_REQUEST_LIMITS,
+} from '../request'
 
-describe('UI request draft', () => {
-  test('normalizes only line endings and outer whitespace into the canonical form URL', () => {
-    const draft = createUiRequestDraft('  Async\r\ncombobox  ')
-    expect(draft.query).toBe('Async\ncombobox')
-    const url = new URL(draft.submissionUrl)
-    expect(url.origin + url.pathname).toBe('https://github.com/astrale-os/ui/issues/new')
-    expect(url.searchParams.get('template')).toBe('ui-request.yml')
-    expect(url.searchParams.get('need')).toBe('Async\ncombobox')
+describe('UI request contract', () => {
+  test('normalizes intent and derives one deterministic bounded key', () => {
+    const first = createUiRequestInput('  accessible\r\ncombobox  ')
+    const replay = createUiRequestInput('accessible\ncombobox')
+
+    expect(first).toEqual({
+      intent: 'accessible\ncombobox',
+      idempotencyKey: expect.stringMatching(/^ui-request:v1:[a-f0-9]{64}$/),
+    })
+    expect(replay).toEqual(first)
   })
 
   test('admits exact Unicode boundaries and rejects empty or oversized intent', () => {
-    expect(createUiRequestDraft('🪐'.repeat(512)).query).toHaveLength(1024)
+    expect(
+      createUiRequestInput('🪐'.repeat(UI_REQUEST_LIMITS.queryCodePoints)).intent,
+    ).toHaveLength(UI_REQUEST_LIMITS.queryCodePoints * 2)
     for (const value of ['', '   ', '🪐'.repeat(513)]) {
       let failure: unknown
       try {
-        createUiRequestDraft(value)
+        createUiRequestInput(value)
       } catch (error) {
         failure = error
       }
@@ -27,52 +36,46 @@ describe('UI request draft', () => {
     }
   })
 
-  test('uses argument-safe browser launchers without routing URLs through a shell', () => {
-    const url = 'https://github.com/astrale-os/ui/issues/new?template=ui-request.yml&need=a%26b'
-    expect(browserInvocation(url, 'darwin')).toEqual(['open', [url]])
-    expect(browserInvocation(url, 'linux')).toEqual(['xdg-open', [url]])
-    expect(browserInvocation(url, 'win32')).toEqual([
-      'rundll32.exe',
-      ['url.dll,FileProtocolHandler', url],
-    ])
+  test('submits exactly the admitted input and returns the admitted receipt', async () => {
+    let submitted: unknown
+    const receipt = await requestUi('api status monitor', async (input) => {
+      submitted = input
+      return {
+        state: 'submitted',
+        requestId: 'request-1',
+        collaborationUrl: 'https://github.com/astrale-os/ui/issues/68',
+      }
+    })
+
+    expect(submitted).toEqual(createUiRequestInput('api status monitor'))
+    expect(receipt).toEqual({
+      state: 'submitted',
+      requestId: 'request-1',
+      collaborationUrl: 'https://github.com/astrale-os/ui/issues/68',
+    })
   })
 
-  test('passes the exact draft URL to the selected browser launcher', async () => {
-    let invocation: { file: string; args: readonly string[] } | undefined
-    const draft = await requestUi('loading data table', {
-      open: true,
-      launcher: async (file, args) => {
-        invocation = { file, args }
-        return { code: 0 }
-      },
-    })
-    expect(invocation?.args).toContain(draft.submissionUrl)
+  test('admits every non-submitted Domain state', () => {
+    for (const state of ['pending', 'outcome-unknown', 'failed', 'conflict'] as const) {
+      expect(admitUiRequestResult({ state, requestId: 'request-1' })).toEqual({
+        state,
+        requestId: 'request-1',
+      })
+    }
   })
 
-  test('has no browser side effect in machine mode', async () => {
-    let launches = 0
-    const draft = await requestUi('loading data table', {
-      open: false,
-      launcher: async () => {
-        launches += 1
-        return { code: 0 }
+  test('rejects widened, malformed, and unsafe receipts', () => {
+    const malformed = [
+      undefined,
+      { state: 'submitted', requestId: '' },
+      { state: 'pending', requestId: 'request-1', extra: true },
+      {
+        state: 'submitted',
+        requestId: 'request-1',
+        collaborationUrl: 'javascript:alert(1)',
       },
-    })
-    expect(launches).toBe(0)
-    expect(draft.submissionUrl).toContain('need=loading+data+table')
-  })
-
-  test('retains the usable draft URL when the browser launcher fails', async () => {
-    let invocation: { file: string; args: readonly string[] } | undefined
-    const draft = await requestUi('loading data table', {
-      open: true,
-      launcher: async (file, args) => {
-        invocation = { file, args }
-        throw new Error('browser unavailable')
-      },
-    })
-    expect(invocation).toBeDefined()
-    expect(invocation?.args).toContain(draft.submissionUrl)
-    expect(draft.submissionUrl).toStartWith('https://github.com/astrale-os/ui/issues/new?')
+      { state: 'unknown', requestId: 'request-1' },
+    ]
+    for (const value of malformed) expect(() => admitUiRequestResult(value)).toThrow(UiError)
   })
 })
