@@ -55,10 +55,10 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(implementing, /Action context has no `step`/)
   assert.match(implementing, /graph\.self\.query\(readVisit/)
   assert.match(implementing, /graph\.self\.mutate\(recordForecast/)
-  assert.match(implementing, /Default `query` and `mutate` use the admitted union authority/)
+  assert.match(implementing, /Default `query` and `mutate` preserve only the admitted caller Grant/)
   assert.match(
     implementing,
-    /Select `graph\.self` for Domain-owned facts,\s+`graph\.caller` for caller-only authority, and `graph\.union` only deliberately/,
+    /Select `graph\.self` for\s+narrowly scoped Domain-owned work, and `graph\.union` only when an operation explicitly requires\s+both authorities/,
   )
   assert.match(implementing, /`domain` is the exact resolved Domain/)
   assert.match(

@@ -11,18 +11,14 @@ const caller = (credential = 'caller-proof'): UnresolvedIdentityExpr => ({
 const self = (): UnresolvedIdentityExpr => ({ kind: 'identity', self: true })
 
 describe('exchange caller proof', () => {
-  test('accepts caller-only and exact trusted unions in either order', () => {
+  test('accepts only one exact caller credential leaf', () => {
     expect(exchangeCallerProof(caller())).toBe('caller-proof')
-    expect(exchangeCallerProof({ kind: 'union', operands: [self(), caller('forward')] })).toBe(
-      'forward',
-    )
-    expect(exchangeCallerProof({ kind: 'union', operands: [caller('reverse'), self()] })).toBe(
-      'reverse',
-    )
   })
 
   test.each([
     ['bare self', self()],
+    ['self then caller union', { kind: 'union', operands: [self(), caller('forward')] }],
+    ['caller then self union', { kind: 'union', operands: [caller('reverse'), self()] }],
     ['duplicate self', { kind: 'union', operands: [self(), self()] }],
     ['duplicate caller', { kind: 'union', operands: [caller(), caller('other')] }],
     ['extra operand', { kind: 'union', operands: [self(), caller(), caller('extra')] }],

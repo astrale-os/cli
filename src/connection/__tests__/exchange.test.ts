@@ -197,7 +197,7 @@ describe('Domain token exchange', () => {
     expect(sourceResolved).toBe(true)
   })
 
-  test('accepts a trusted Domain union that retains the exact caller proof', async () => {
+  test('rejects a widened Domain exchange credential even when it retains caller proof', async () => {
     const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT, EXPIRES_AT, 'union')
     const resolver = createExchangeCredentialResolver(
       TARGET,
@@ -207,8 +207,10 @@ describe('Domain token exchange', () => {
       new ExchangeCredentialCache(join(directory, 'trusted-union.json')),
     )
 
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
-    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'TOKEN_EXCHANGE_PROTOCOL_ERROR',
+      message: 'Token exchange returned an invalid carried identity proof.',
+    })
   })
 
   test('does not reuse an exchange credential after the persisted source identity changes', async () => {

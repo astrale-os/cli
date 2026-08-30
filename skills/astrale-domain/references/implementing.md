@@ -33,9 +33,9 @@ export const renameVisit = defineAction<typeof schema, typeof integrations>()(
 - A top-level or static callable has no `self`.
 - Protected callables receive an authenticated caller and non-null bound Client session.
 - Anonymous callables may receive an anonymous caller and null Client.
-- Default `query` and `mutate` use the admitted union authority. Select `graph.self` for Domain-owned facts,
-  `graph.caller` for caller-only authority, and `graph.union` only deliberately. They are absent when
-  an anonymous invocation has no bound Client.
+- Default `query` and `mutate` preserve only the admitted caller Grant. Select `graph.self` for
+  narrowly scoped Domain-owned work, and `graph.union` only when an operation explicitly requires
+  both authorities. They are absent when an anonymous invocation has no bound Client.
 - `execution` owns cancellation, deadline, background work, and request-body access.
 - `domain` is the exact resolved Domain loaded from the deployed Build; it is not the authored
   Schema and must not be reconstructed at module scope.

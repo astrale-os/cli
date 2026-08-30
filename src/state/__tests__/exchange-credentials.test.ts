@@ -82,7 +82,7 @@ describe('exchange credential cache', () => {
     await expect(cache.get(candidate, 30, () => 100)).resolves.toBeUndefined()
   })
 
-  test('retains a trusted Domain union only when it carries the exact caller proof', async () => {
+  test('rejects widened Domain exchange credentials from refresh and persisted cache', async () => {
     const cache = new ExchangeCredentialCache(path)
     const candidate = key('https://kernel.example', 'https://domain.example', 'user')
     const trusted = entry(candidate, 200, undefined, 200, 'union')
@@ -94,8 +94,15 @@ describe('exchange credential cache', () => {
         async () => trusted,
         () => 100,
       ),
-    ).resolves.toBe(trusted.credential)
-    await expect(cache.get(candidate, 30, () => 100)).resolves.toBe(trusted.credential)
+    ).rejects.toThrow('credential inconsistent with its cache key')
+    const encoded = JSON.stringify([
+      candidate.kernelIssuer,
+      candidate.domainIssuer,
+      candidate.sourceIssuer,
+      candidate.sourceSubject,
+    ])
+    await writeFile(path, JSON.stringify({ version: 2, entries: { [encoded]: trusted } }))
+    await expect(cache.get(candidate, 30, () => 100)).resolves.toBeUndefined()
   })
 
   /** @evidence TEST-CLI-EXCHANGE-CACHE-READ-DOES-NOT-WAIT-FOR-REFRESH */
