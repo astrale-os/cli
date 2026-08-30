@@ -102,7 +102,7 @@ export const application = defineApplication({
   schema: LogisticsSchema,
   runtime,
   requirements: requirements({
-    callables: [language.resolve(MessagingSchema).functions.send],
+    functions: [language.resolve(MessagingSchema).functions.send],
   }),
 })
 ```
@@ -134,7 +134,7 @@ export const application = defineApplication({
   schema,
   runtime,
   requirements: requirements({
-    callables: [K.functions.query, K.functions.mutate],
+    functions: [K.functions.query, K.functions.mutate],
   }),
 })
 ```
