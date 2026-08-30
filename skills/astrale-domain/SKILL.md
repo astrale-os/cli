@@ -20,8 +20,8 @@ Load detailed domain knowledge from the references that matches the goal.
 
 ## Intent Router
 
-Use this router for focused work on an existing domain. It is not sufficient by itself for creating a
-complete new domain; use the phased workflow below for that.
+Use this router to load only the references owned by the current task. For new Domains, also use the
+phased workflow below; an existing public scaffold already satisfies its foundation phase.
 
 - Scaffold, deploy, install, or test a domain: read `references/development.md`.
 - Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/modeling.md` first. Always read it for schema work.
@@ -42,18 +42,21 @@ complete new domain; use the phased workflow below for that.
 
 ## New Domain Creation Workflow
 
-For every request to create, build, prototype, or make a POC of a domain, follow every phase in order.
-Load references when their phase begins rather than loading them all at once.
+For a request to create, build, prototype, or make a POC of a Domain, follow the applicable phases in
+order and load a reference only when its phase begins.
 
-1. **Foundation:** Before scaffolding or defining boundaries, read `references/development.md` and
-   `references/domains.md`.
+1. **Foundation:** Inspect the workspace first. When no public scaffold exists, read
+   `references/development.md`; read `references/domains.md` only when deciding whether to reuse a
+   native Domain. When the workspace already declares the SDK, deployment adapter, Application, and
+   Runtime, keep that plumbing and move directly to Schema.
 2. **Schema:** Before authoring the schema, read `references/modeling.md`.
 3. **Callables:** Before implementing callables, read `references/implementing.md` and
    `references/security.md`. If an external system is involved, also read `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition.
-5. **Completion:** Read `references/simulating.md` and `references/dx-feedback.md`; apply the focused
-   validation workflow and classify reusable author friction before considering the domain complete.
+5. **Completion:** Run the scaffold's focused tests, typecheck, lint, build, and package scripts.
+   Read `references/simulating.md` only when sample data or fixtures are part of the request. Read
+   `references/dx-feedback.md` only after reusable authoring friction is observed.
 
 Read `references/migration.md`, `references/performance.md`, and `references/debugging.md` only when the
 domain's lifecycle or current problem calls for them.
@@ -61,7 +64,7 @@ domain's lifecycle or current problem calls for them.
 ## Always-On Workflow
 
 1. Classify the request as full domain creation or focused work on an existing domain.
-2. For full creation, follow the phased workflow; for focused work, load the router's matching references.
+2. For creation, follow its applicable phases; for focused work, load the router's matching references.
 3. For schema changes, always load `references/modeling.md`.
 4. Inspect the current repo or scaffold before trusting API syntax from memory.
 5. For live behavior, use `references/debugging.md` and prove the deployed/installed/runtime path before treating source edits as effective.
