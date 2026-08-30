@@ -60,37 +60,20 @@ export function createExchangeCredentialResolver(
         cacheTtlSeconds,
         async () => {
           const delegationTtlSeconds = delegationLifetime(sourceToken, exchangeTtlSeconds)
+          const exchangeEndpoint = discoverExchangeEndpoint(target.domainIssuer, fetch, signal)
           const client = new Client({ url: `${kernelIssuer}/invoke`, fetch, timeoutMs })
           try {
-            const authenticated = client.as(sourceToken)
-            const auth = createAuth(async (path, input, options) => {
-              const result = await authenticated.call(call(path, input), {
-                ...options,
-                delegate: { ttlSeconds: delegationTtlSeconds },
-              })
-              return result.value
-            })
-            const user = await auth.whoami({ signal })
-            let envelope: string | undefined
-            for (let attempt = 0; attempt < 3; attempt += 1) {
-              try {
-                envelope = await auth.delegate(
-                  user.id,
-                  {
-                    audience: target.domainIssuer,
-                    ttlSeconds: delegationTtlSeconds,
-                    attenuation: { kind: 'identity', self: true },
-                  },
-                  { signal },
-                )
-                break
-              } catch (cause) {
-                if (attempt === 2 || !unknownFunctionOutcome(cause)) throw cause
-              }
-            }
-            if (envelope === undefined) throw new Error('Token delegation returned no credential.')
+            const delegated = delegate(
+              client,
+              sourceToken,
+              target.domainIssuer,
+              delegationTtlSeconds,
+              signal,
+            )
+            const [{ envelope, user }, endpoint] = await Promise.all([delegated, exchangeEndpoint])
             return {
               ...(await exchange(
+                endpoint,
                 target.domainIssuer,
                 kernelIssuer,
                 envelope,
@@ -98,7 +81,7 @@ export function createExchangeCredentialResolver(
                 fetch,
                 signal,
               )),
-              user: user.id,
+              user,
               sourceIssuer: sourceIdentity.issuer,
               sourceSubject: sourceIdentity.subject,
             }
@@ -109,6 +92,41 @@ export function createExchangeCredentialResolver(
       )
     },
   })
+}
+
+async function delegate(
+  client: Client,
+  sourceToken: string,
+  domainIssuer: IssuerId,
+  ttlSeconds: number,
+  signal: AbortSignal,
+): Promise<{ readonly envelope: string; readonly user: string }> {
+  const authenticated = client.as(sourceToken)
+  const auth = createAuth(async (path, input, options) => {
+    const result = await authenticated.call(call(path, input), {
+      ...options,
+      delegate: { ttlSeconds },
+    })
+    return result.value
+  })
+  const user = await auth.whoami({ signal })
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const envelope = await auth.delegate(
+        user.id,
+        {
+          audience: domainIssuer,
+          ttlSeconds,
+          attenuation: { kind: 'identity', self: true },
+        },
+        { signal },
+      )
+      return Object.freeze({ envelope, user: user.id })
+    } catch (cause) {
+      if (attempt === 2 || !unknownFunctionOutcome(cause)) throw cause
+    }
+  }
+  throw new Error('Token delegation returned no credential.')
 }
 
 async function readCacheIdentity(
@@ -170,14 +188,11 @@ function delegationLifetime(sourceToken: string, requiredTtlSeconds: number): nu
   return requiredTtlSeconds
 }
 
-async function exchange(
+async function discoverExchangeEndpoint(
   domainIssuer: IssuerId,
-  kernelIssuer: IssuerId,
-  envelope: string,
-  requiredTtlSeconds: number,
   fetch: Fetch,
   signal: AbortSignal,
-): Promise<{ readonly credential: string; readonly expiresAt: number }> {
+): Promise<string> {
   const configurationUrl = new URL(
     exchangeProtocol.paths(domainIssuer).configuration,
     domainIssuer,
@@ -214,7 +229,18 @@ async function exchange(
       'This command has no legacy token fallback.',
     )
   }
+  return endpoint
+}
 
+async function exchange(
+  endpoint: string,
+  domainIssuer: IssuerId,
+  kernelIssuer: IssuerId,
+  envelope: string,
+  requiredTtlSeconds: number,
+  fetch: Fetch,
+  signal: AbortSignal,
+): Promise<{ readonly credential: string; readonly expiresAt: number }> {
   const response = await fetchExchange(
     fetch,
     endpoint,
