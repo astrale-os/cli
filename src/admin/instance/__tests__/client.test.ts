@@ -117,6 +117,7 @@ describe('V2 Admin Instance adapter', () => {
         updatedAt: '2026-08-12T00:00:00.000Z',
       },
     ])
+    await api.list({ includeRetired: false })
     await expect(api.list({ includeRetired: true })).resolves.toEqual([
       {
         id: '@instance-node',
@@ -137,6 +138,10 @@ describe('V2 Admin Instance adapter', () => {
       },
     ])
     expect(contract.listCalls).toEqual([
+      {
+        target: '/:admin.astrale.ai:core.fleet::listInstances',
+        value: {},
+      },
       {
         target: '/:admin.astrale.ai:core.fleet::listInstances',
         value: {},

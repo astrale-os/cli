@@ -59,7 +59,7 @@ export async function connectAdminInstances(
       context.session,
       AdminContract.fleet,
       'listInstances',
-      options.includeRetired === undefined ? {} : { includeRetired: options.includeRetired },
+      options.includeRetired === true ? { includeRetired: true } : {},
     )
     if (!Array.isArray(output)) throw new TypeError('Admin Instance inventory is invalid.')
     if (output.length > MAXIMUM_INSTANCES) {
