@@ -7,6 +7,7 @@ export interface InstanceInfo {
   readonly id: string
   readonly slug: string
   readonly url: string
+  readonly issuer?: string
   readonly hostId?: string
   readonly region?: string
   readonly state: InstanceState
@@ -51,7 +52,7 @@ export interface AdminInstanceContext {
 }
 
 export interface AdminInstanceApi {
-  list(): Promise<OwnedInstanceInfo[]>
+  list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
   create(slug: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>

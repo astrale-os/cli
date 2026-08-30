@@ -5,6 +5,7 @@ export interface InstanceInfo {
   readonly id: string
   readonly slug: string
   readonly url: string
+  readonly issuer?: string
   readonly hostId?: string
   readonly region?: string
   readonly state: InstanceState

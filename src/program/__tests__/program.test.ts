@@ -311,6 +311,18 @@ describe('help contract — admin target surface is registered', () => {
     expect(help).not.toContain('--no-use')
     expect(help).not.toContain('Instance.init')
   })
+
+  test('retired Instances extend the ordinary administrator inventory', async () => {
+    const program = await buildProgram()
+    const instanceList = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'list')
+    const help = instanceList?.helpInformation() ?? ''
+
+    expect(help).toContain('--include-retired')
+    expect(help).toContain('--admin <name>')
+    expect(help).not.toContain('--lifecycle')
+  })
 })
 
 describe('help contract — connect-only command surface', () => {
