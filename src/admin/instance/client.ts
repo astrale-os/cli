@@ -14,7 +14,6 @@ import {
   type DomainInstallReceipt,
   type InvitationInfo,
   type InstanceInfo,
-  type InstanceLifecycleInfo,
   type InstanceState,
   type OwnedInstanceInfo,
 } from './model'
@@ -25,8 +24,7 @@ export interface AdminInstanceContext {
 }
 
 export interface AdminInstanceApi {
-  list(): Promise<OwnedInstanceInfo[]>
-  listLifecycle(options?: Readonly<{ includeRetired?: boolean }>): Promise<InstanceLifecycleInfo[]>
+  list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
   create(slug: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
@@ -42,9 +40,7 @@ export interface AdminInstanceDependencies {
   ) => string
 }
 
-const PAGE_SIZE = 256
 const MAXIMUM_INSTANCES = 10_000
-const MAXIMUM_PAGES = Math.ceil(MAXIMUM_INSTANCES / PAGE_SIZE) + 1
 
 /**
  * Connect the public Instance journey through stable Admin call paths. Routine
@@ -56,28 +52,20 @@ export async function connectAdminInstances(
 ): Promise<AdminInstanceApi> {
   const operationId = dependencies.operationId ?? defaultOperationId
 
-  const list = async (): Promise<OwnedInstanceInfo[]> => {
-    const Instance = AdminContract.classes.Instance
-    const property = AdminContract.properties.instance
-    const instances = Query.from({ nodes: [Instance] }).filter({
-      class: { equals: Instance },
-    })
-    const nodes = await readAllNodes(
-      context.graph,
-      instances.select({
-        kind: 'nodes',
-        binding: instances.node,
-        projection: { kind: 'value' },
-        order: { property: property.state, direction: 'desc', unranked: 'last' },
-      }),
-      {
-        label: 'Admin Instance inventory',
-        maximum: MAXIMUM_INSTANCES,
-        maximumPages: MAXIMUM_PAGES,
-        orderedBoundary: (node) => instanceFromNode(node).state === 'deleted',
-      },
+  const list = async (
+    options: Readonly<{ includeRetired?: boolean }> = {},
+  ): Promise<OwnedInstanceInfo[]> => {
+    const output = await callAdminMethod(
+      context.session,
+      AdminContract.fleet,
+      'listInstances',
+      options.includeRetired === undefined ? {} : { includeRetired: options.includeRetired },
     )
-    return nodes.map(instanceFromNode)
+    if (!Array.isArray(output)) throw new TypeError('Admin Instance inventory is invalid.')
+    if (output.length > MAXIMUM_INSTANCES) {
+      throw new TypeError('Admin Instance inventory exceeds its bound.')
+    }
+    return output.map((entry) => instanceFromSummary(entry) as OwnedInstanceInfo)
   }
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
@@ -103,16 +91,6 @@ export async function connectAdminInstances(
 
   return Object.freeze({
     list,
-    async listLifecycle(options: Readonly<{ includeRetired?: boolean }> = {}) {
-      return instanceLifecycleInventory(
-        await callAdminMethod(
-          context.session,
-          AdminContract.fleet,
-          'listInstanceLifecycle',
-          options.includeRetired === undefined ? {} : { includeRetired: options.includeRetired },
-        ),
-      )
-    },
     async create(slug: string) {
       const input = Object.freeze({
         operationId: operationId('create'),
@@ -231,6 +209,7 @@ function instanceFromNode(node: Node): OwnedInstanceInfo {
     id: Path.id(node.id).raw,
     slug: node.props[property.slug],
     url: node.props[property.url],
+    issuer: node.props[property.issuer],
     organizationId: node.props[property.organizationId],
     state: node.props[property.state],
     phase: node.props[property.phase],
@@ -243,10 +222,12 @@ function instanceFromNode(node: Node): OwnedInstanceInfo {
 function instanceFromSummary(input: unknown): InstanceInfo {
   const value = record(input, 'Admin Instance summary')
   const failure = value.failure === undefined ? undefined : record(value.failure, 'Admin failure')
+  const issuer = optionalHttpUrl(value.issuer, 'Admin Instance issuer')
   return Object.freeze({
     id: requiredNodePath(value.id, 'Admin Instance id'),
     slug: requiredString(value.slug, 'Admin Instance slug'),
     url: optionalStringValue(value.url) ?? '',
+    ...(issuer === undefined ? {} : { issuer }),
     ...(value.hostId === undefined
       ? {}
       : { hostId: requiredNodePath(value.hostId, 'Admin Host id') }),
@@ -269,45 +250,6 @@ function instanceFromSummary(input: unknown): InstanceInfo {
     ...(value.organizationId === undefined
       ? {}
       : { organizationId: requiredString(value.organizationId, 'Admin organization id') }),
-  })
-}
-
-function instanceLifecycleInventory(input: unknown): InstanceLifecycleInfo[] {
-  if (!Array.isArray(input)) throw new TypeError('Admin Instance lifecycle inventory is invalid.')
-  if (input.length > MAXIMUM_INSTANCES) {
-    throw new TypeError('Admin Instance lifecycle inventory exceeds its bound.')
-  }
-  return input.map((entry) => instanceLifecycleEntry(entry))
-}
-
-function instanceLifecycleEntry(input: unknown): InstanceLifecycleInfo {
-  const value = record(input, 'Admin Instance lifecycle')
-  const state = instanceState(value.state)
-  const lifecycle = value.lifecycle
-  if (lifecycle !== 'active' && lifecycle !== 'retired') {
-    throw new TypeError('Admin Instance lifecycle classification is invalid.')
-  }
-  if ((state === 'deleted') !== (lifecycle === 'retired')) {
-    throw new TypeError('Admin Instance lifecycle state is inconsistent.')
-  }
-  const issuer = optionalStringValue(value.issuer)
-  if (issuer !== undefined) {
-    let parsed: URL
-    try {
-      parsed = new URL(issuer)
-    } catch {
-      throw new TypeError('Admin Instance lifecycle issuer is invalid.')
-    }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-      throw new TypeError('Admin Instance lifecycle issuer is invalid.')
-    }
-  }
-  return Object.freeze({
-    slug: requiredString(value.slug, 'Admin Instance lifecycle slug'),
-    state,
-    lifecycle,
-    ...(issuer === undefined ? {} : { issuer }),
-    updatedAt: requiredString(value.updatedAt, 'Admin Instance lifecycle update time'),
   })
 }
 
@@ -416,6 +358,21 @@ function requiredNodePath(input: unknown, label: string): string {
 function optionalStringValue(input: unknown): string | undefined {
   if (input === undefined) return undefined
   return requiredString(input, 'Admin string value')
+}
+
+function optionalHttpUrl(input: unknown, label: string): string | undefined {
+  if (input === undefined) return undefined
+  const value = requiredString(input, label)
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new TypeError(`${label} is invalid.`)
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new TypeError(`${label} is invalid.`)
+  }
+  return value
 }
 
 function record(input: unknown, label: string): Readonly<Record<string, unknown>> {

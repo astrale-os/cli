@@ -7,7 +7,6 @@ import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { describe, expect, mock, test } from 'bun:test'
 
 import type { AdminGraphQueryApi } from '../../graph'
-import type { InstanceLifecycleInfo } from '../model'
 
 import { adminSession } from '../../__tests__/fixture'
 import { AdminContract } from '../../contract'
@@ -24,6 +23,7 @@ async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
 
 function fixture(input: {
   instances?: readonly Node[]
+  listOutput?: unknown
   useDefaultOperationIds?: boolean
   operationId?: (
     kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
@@ -39,7 +39,22 @@ function fixture(input: {
     target: string
     value: unknown
   }> = []
+  const listCalls: Array<{
+    target: string
+    value: unknown
+  }> = []
   const remote = adminSession((target, value) => {
+    if (target === '/:admin.astrale.ai:core.fleet::listInstances') {
+      listCalls.push({ target, value })
+      if (input.listOutput !== undefined) return input.listOutput
+      const includeRetired =
+        typeof value === 'object' &&
+        value !== null &&
+        (value as { includeRetired?: unknown }).includeRetired === true
+      return (input.instances ?? [])
+        .map(instanceSummaryFromNode)
+        .filter((instance) => includeRetired || instance.state !== 'deleted')
+    }
     calls.push({ target, value })
     return input.invoke?.(target, value)
   })
@@ -66,6 +81,7 @@ function fixture(input: {
     reflection: remote.reflection,
     query,
     calls,
+    listCalls,
     connect: () =>
       connectAdminInstances(
         { session: remote.session, graph },
@@ -77,12 +93,21 @@ function fixture(input: {
 }
 
 describe('V2 Admin Instance adapter', () => {
-  test('lists caller-visible Instances through one exact native graph Query', async () => {
+  test('lists caller-visible Instances through the one Fleet inventory Method', async () => {
     const contract = fixture({
-      instances: [instanceNode(), instanceNode({ id: 'deleted', state: 'deleted' })],
+      instances: [
+        instanceNode(),
+        instanceNode({
+          id: 'deleted',
+          slug: 'retired',
+          state: 'deleted',
+          issuer: 'https://retired.example.test/kernel/host',
+        }),
+      ],
     })
+    const api = await contract.connect()
 
-    await expect((await contract.connect()).list()).resolves.toEqual([
+    await expect(api.list()).resolves.toEqual([
       {
         id: '@instance-node',
         slug: 'demo',
@@ -92,123 +117,38 @@ describe('V2 Admin Instance adapter', () => {
         updatedAt: '2026-08-12T00:00:00.000Z',
       },
     ])
-    expect(contract.calls).toEqual([])
-    expect(contract.query).toHaveBeenCalledWith(
+    await expect(api.list({ includeRetired: true })).resolves.toEqual([
       {
-        format: 'astrale.graph.query',
-        version: 'v6',
-        source: {
-          kind: 'node',
-          terms: [
-            {
-              kind: 'class',
-              class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
-            },
-          ],
-          binding: 'n0',
-        },
-        steps: [
-          {
-            op: 'filter',
-            binding: 'n0',
-            predicate: {
-              kind: 'class.equal',
-              class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Instance' },
-            },
-          },
-        ],
-        select: {
-          kind: 'nodes',
-          binding: 'n0',
-          projection: { kind: 'value' },
-          order: {
-            property: 'admin.astrale.ai:class.Instance.property.state',
-            direction: 'desc',
-            unranked: 'last',
-          },
-        },
-      },
-      { page: { size: 256 } },
-    )
-    expect(contract.reflection).not.toHaveBeenCalled()
-  })
-
-  test('reads administrator lifecycle evidence through one exact Fleet Method', async () => {
-    const lifecycle: InstanceLifecycleInfo[] = [
-      {
-        slug: 'active',
+        id: '@instance-node',
+        slug: 'demo',
+        url: 'https://demo.eu.astrale.ai',
         state: 'ready',
-        lifecycle: 'active',
-        issuer: 'https://active.example.test/kernel/host',
-        updatedAt: '2026-08-29T08:00:00.000Z',
+        createdAt: '2026-08-12T00:00:00.000Z',
+        updatedAt: '2026-08-12T00:00:00.000Z',
       },
       {
+        id: '@deleted',
         slug: 'retired',
+        url: 'https://demo.eu.astrale.ai',
+        issuer: 'https://retired.example.test/kernel/host',
         state: 'deleted',
-        lifecycle: 'retired',
-        updatedAt: '2026-08-29T09:00:00.000Z',
+        createdAt: '2026-08-12T00:00:00.000Z',
+        updatedAt: '2026-08-12T00:00:00.000Z',
       },
-    ]
-    const contract = fixture({ invoke: () => lifecycle })
-    const api = await contract.connect()
-
-    await expect(api.listLifecycle()).resolves.toEqual(lifecycle)
-    await expect(api.listLifecycle({ includeRetired: true })).resolves.toEqual(lifecycle)
-    expect(contract.calls).toEqual([
+    ])
+    expect(contract.listCalls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::listInstanceLifecycle',
+        target: '/:admin.astrale.ai:core.fleet::listInstances',
         value: {},
       },
       {
-        target: '/:admin.astrale.ai:core.fleet::listInstanceLifecycle',
+        target: '/:admin.astrale.ai:core.fleet::listInstances',
         value: { includeRetired: true },
       },
     ])
+    expect(contract.calls).toEqual([])
     expect(contract.query).not.toHaveBeenCalled()
     expect(contract.reflection).not.toHaveBeenCalled()
-  })
-
-  test.each([
-    ['non-array', {}],
-    [
-      'unknown classification',
-      [
-        {
-          slug: 'demo',
-          state: 'ready',
-          lifecycle: 'unknown',
-          updatedAt: '2026-08-29T08:00:00.000Z',
-        },
-      ],
-    ],
-    [
-      'contradictory state',
-      [
-        {
-          slug: 'demo',
-          state: 'ready',
-          lifecycle: 'retired',
-          updatedAt: '2026-08-29T08:00:00.000Z',
-        },
-      ],
-    ],
-    [
-      'invalid issuer',
-      [
-        {
-          slug: 'demo',
-          state: 'ready',
-          lifecycle: 'active',
-          issuer: 'not-an-issuer',
-          updatedAt: '2026-08-29T08:00:00.000Z',
-        },
-      ],
-    ],
-  ])('rejects malformed lifecycle evidence: %s', async (_label, output) => {
-    const contract = fixture({ invoke: () => output })
-    await expect(
-      (await contract.connect()).listLifecycle({ includeRetired: true }),
-    ).rejects.toThrow(/lifecycle/u)
   })
 
   test('delegates default placement to Fleet without reading Host inventory', async () => {
@@ -291,15 +231,10 @@ describe('V2 Admin Instance adapter', () => {
     let attempts = 0
     let queries = 0
     const contract = fixture({
+      instances: [deleted],
       useDefaultOperationIds: true,
       query: (ast, options) => {
         queries += 1
-        if (queries === 1) {
-          expect(ast.source.kind).toBe('node')
-          if (ast.source.kind !== 'node') throw new TypeError('Expected the inventory source.')
-          expect(ast.source.terms[0]?.kind).toBe('class')
-          return { result: { kind: 'nodes' as const, nodes: [] }, page: {} }
-        }
         expect(JSON.parse(JSON.stringify(ast))).toEqual({
           format: 'astrale.graph.query',
           version: 'v6',
@@ -352,7 +287,7 @@ describe('V2 Admin Instance adapter', () => {
       '@instance-node::delete',
       '@instance-node::delete',
     ])
-    expect(queries).toBe(3)
+    expect(queries).toBe(2)
     const operationIds = contract.calls.map(({ value }) =>
       String((value as { operationId: unknown }).operationId),
     )
@@ -565,7 +500,7 @@ describe('V2 Admin Instance adapter', () => {
     ).rejects.toThrow('Admin Invitation reconciliation does not match its requested scope.')
   })
 
-  test('connects without network I/O and list performs exactly one graph call', async () => {
+  test('connects without network I/O and list performs exactly one Fleet call', async () => {
     const contract = fixture({})
 
     const api = await contract.connect()
@@ -573,90 +508,41 @@ describe('V2 Admin Instance adapter', () => {
     expect(contract.reflection).not.toHaveBeenCalled()
 
     await expect(api.list()).resolves.toEqual([])
-    expect(contract.query).toHaveBeenCalledTimes(1)
-    expect(contract.call).not.toHaveBeenCalled()
+    expect(contract.listCalls).toEqual([
+      { target: '/:admin.astrale.ai:core.fleet::listInstances', value: {} },
+    ])
+    expect(contract.query).not.toHaveBeenCalled()
+    expect(contract.call).toHaveBeenCalledTimes(1)
     expect(contract.reflection).not.toHaveBeenCalled()
   })
 
-  test('collects bounded pages and never returns a partial inventory after a later failure', async () => {
-    const firstPage = Array.from({ length: 256 }, (_, index) =>
-      instanceNode({ id: `instance-${index}`, slug: `demo-${index}` }),
-    )
-    const paginated = fixture({
-      query: (_ast, options) => ({
-        result: {
-          kind: 'nodes' as const,
-          nodes: (options.page.after === undefined
-            ? firstPage
-            : [instanceNode({ id: 'instance-256', slug: 'demo-256' })]
-          ).map((value) => ({ kind: 'value' as const, value })),
-        },
-        page: options.page.after === undefined ? { next: 'page-2' } : {},
-      }),
-    })
-
-    await expect((await paginated.connect()).list()).resolves.toHaveLength(257)
-    expect(paginated.query).toHaveBeenCalledTimes(2)
-    expect(paginated.query.mock.calls[1]?.[1]).toEqual({
-      page: { size: 256, after: 'page-2' },
-    })
-
-    const failed = fixture({
-      query: (_ast, options) => {
-        if (options.page.after !== undefined) throw new Error('later page failed')
-        return {
-          result: {
-            kind: 'nodes' as const,
-            nodes: firstPage.map((value) => ({ kind: 'value' as const, value })),
-          },
-          page: { next: 'page-2' },
-        }
-      },
-    })
-
-    await expect((await failed.connect()).list()).rejects.toThrow('later page failed')
-    expect(failed.query).toHaveBeenCalledTimes(2)
-  })
-
-  test('stops at the ordered tombstone boundary before following retained-only pages', async () => {
-    const contract = fixture({
-      query: () => ({
-        result: {
-          kind: 'nodes' as const,
-          nodes: [instanceNode(), instanceNode({ id: 'deleted', state: 'deleted' })].map(
-            (value) => ({ kind: 'value' as const, value }),
-          ),
-        },
-        page: { next: 'more-than-10000-deleted' },
-      }),
-    })
-
-    await expect((await contract.connect()).list()).resolves.toHaveLength(1)
-    expect(contract.query).toHaveBeenCalledTimes(1)
-  })
-
-  test('rejects malformed inventory, lifecycle, Method, and install outputs', async () => {
+  test('rejects malformed inventory, Method, and install outputs', async () => {
     await expect(
       (
         await fixture({
-          queryResult: { result: { kind: 'edges', edges: [] }, page: {} },
+          listOutput: {},
         }).connect()
       ).list(),
-    ).rejects.toThrow('Admin Instance inventory returned the wrong projection.')
+    ).rejects.toThrow('Admin Instance inventory is invalid.')
     await expect(
       (
         await fixture({
-          instances: [instanceNode({ state: 'mystery' })],
+          listOutput: [instanceSummaryFromNode(instanceNode({ state: 'mystery' }))],
         }).connect()
       ).list(),
     ).rejects.toThrow('Admin Instance state is invalid.')
     await expect(
       (
         await fixture({
-          instances: [instanceNode({ class: ClassKey.of(AdminContract.classes.Domain) })],
+          listOutput: [
+            {
+              ...instanceSummaryFromNode(instanceNode()),
+              issuer: 'not-an-issuer',
+            },
+          ],
         }).connect()
       ).list(),
-    ).rejects.toThrow('Admin Instance inventory returned a non-Instance Node.')
+    ).rejects.toThrow('Admin Instance issuer is invalid.')
 
     const malformedStatus = fixture({
       instances: [instanceNode()],
@@ -722,6 +608,7 @@ function instanceNode(
     class?: Node['class']
     slug?: unknown
     url?: unknown
+    issuer?: unknown
     organizationId?: unknown
     state?: unknown
     phase?: unknown
@@ -741,6 +628,7 @@ function instanceNode(
   if (input.organizationId !== undefined) {
     properties[property.organizationId] = input.organizationId
   }
+  if (input.issuer !== undefined) properties[property.issuer] = input.issuer
   if (input.phase !== undefined) properties[property.phase] = input.phase
   if (input.failure !== undefined) properties[property.failure] = input.failure
   return Object.freeze({
@@ -748,4 +636,24 @@ function instanceNode(
     class: input.class ?? ClassKey.of(AdminContract.classes.Instance),
     props: normalizeProperties(properties),
   })
+}
+
+function instanceSummaryFromNode(node: Node): Record<string, unknown> {
+  const property = AdminContract.properties.instance
+  return {
+    id: `@${node.id}`,
+    slug: node.props[property.slug],
+    url: node.props[property.url],
+    ...(node.props[property.issuer] === undefined ? {} : { issuer: node.props[property.issuer] }),
+    state: node.props[property.state],
+    ...(node.props[property.phase] === undefined ? {} : { phase: node.props[property.phase] }),
+    ...(node.props[property.failure] === undefined
+      ? {}
+      : { failure: node.props[property.failure] }),
+    createdAt: node.props[property.createdAt],
+    updatedAt: node.props[property.updatedAt],
+    ...(node.props[property.organizationId] === undefined
+      ? {}
+      : { organizationId: node.props[property.organizationId] }),
+  }
 }

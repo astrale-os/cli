@@ -7,6 +7,7 @@ export interface InstanceInfo {
   readonly id: string
   readonly slug: string
   readonly url: string
+  readonly issuer?: string
   readonly hostId?: string
   readonly region?: string
   readonly state: InstanceState
@@ -19,16 +20,6 @@ export interface InstanceInfo {
 
 export interface OwnedInstanceInfo extends InstanceInfo {
   readonly state: InstanceState
-}
-
-export type InstanceLifecycle = 'active' | 'retired'
-
-export interface InstanceLifecycleInfo {
-  readonly slug: string
-  readonly state: InstanceState
-  readonly lifecycle: InstanceLifecycle
-  readonly issuer?: string
-  readonly updatedAt: string
 }
 
 export interface DomainInstallReceipt {
@@ -61,8 +52,7 @@ export interface AdminInstanceContext {
 }
 
 export interface AdminInstanceApi {
-  list(): Promise<OwnedInstanceInfo[]>
-  listLifecycle(options?: Readonly<{ includeRetired?: boolean }>): Promise<InstanceLifecycleInfo[]>
+  list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
   create(slug: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>

@@ -12,8 +12,6 @@ export {
   type InvitationInfo,
   type InvitationState,
   type InstanceInfo,
-  type InstanceLifecycle,
-  type InstanceLifecycleInfo,
   type InstanceState,
   type OwnedInstanceInfo,
 } from './model'

@@ -5,6 +5,7 @@ export interface InstanceInfo {
   readonly id: string
   readonly slug: string
   readonly url: string
+  readonly issuer?: string
   readonly hostId?: string
   readonly region?: string
   readonly state: InstanceState
@@ -18,17 +19,6 @@ export interface InstanceInfo {
 /** An Instance returned through the caller-scoped Admin graph inventory. */
 export interface OwnedInstanceInfo extends InstanceInfo {
   readonly state: InstanceState
-}
-
-export type InstanceLifecycle = 'active' | 'retired'
-
-/** Administrator-authorized lifecycle evidence for provider operator composition. */
-export interface InstanceLifecycleInfo {
-  readonly slug: string
-  readonly state: InstanceState
-  readonly lifecycle: InstanceLifecycle
-  readonly issuer?: string
-  readonly updatedAt: string
 }
 
 export interface DomainInstallReceipt {

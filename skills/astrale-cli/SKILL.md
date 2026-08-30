@@ -134,7 +134,7 @@ astrale instance invite my-app person@example.com
 astrale instance invitation status @invitation-id
 astrale instance status my-app
 astrale instance status staging --bookmarked
-astrale instance list --lifecycle --include-retired --json
+astrale instance list --include-retired --admin-only --json
 astrale instance use my-app
 astrale instance bookmark staging --url https://kernel.example.com
 astrale instance forget staging
@@ -157,11 +157,11 @@ Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
 instances (key-backed identities have no Admin token). Use
 `astrale instance list --bookmarked`.
 
-Fleet administrators may add `--lifecycle` to request Admin-authorized Kernel lifecycle evidence.
-This mode is separate from ordinary user-visible listing and local bookmarks. It excludes retired
-tombstones unless `--include-retired` is also present, and its JSON output includes the retained
-issuer only when Admin has exact evidence. Unreachable does not mean retired; only Admin's terminal
-`deleted` lifecycle is reported as retired.
+Fleet administrators may add `--include-retired` to the ordinary Admin inventory. The default
+continues to exclude retired tombstones; included retired Instances use the same output shape and
+are identified by terminal `state: "deleted"`. The optional `issuer` is present only when Admin has
+retained exact evidence. Unreachable does not mean retired. Add `--admin-only` when local bookmarks
+should be omitted from the machine-readable envelope.
 
 The CLI is connect-only: it does not build or run domains. The SDK's
 `astrale-domain` binary owns `dev`, `prod`, `build`, and deploy workflows.

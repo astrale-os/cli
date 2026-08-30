@@ -312,16 +312,16 @@ describe('help contract — admin target surface is registered', () => {
     expect(help).not.toContain('Instance.init')
   })
 
-  test('instance lifecycle evidence is an explicit administrator listing mode', async () => {
+  test('retired Instances extend the ordinary administrator inventory', async () => {
     const program = await buildProgram()
     const instanceList = program.commands
       .find((command) => command.name() === 'instance')
       ?.commands.find((command) => command.name() === 'list')
     const help = instanceList?.helpInformation() ?? ''
 
-    expect(help).toContain('--lifecycle')
     expect(help).toContain('--include-retired')
     expect(help).toContain('--admin <name>')
+    expect(help).not.toContain('--lifecycle')
   })
 })
 
