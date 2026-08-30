@@ -133,6 +133,47 @@ describe('Domain token exchange', () => {
     ).toHaveLength(1)
   })
 
+  test('discovers the Domain exchange endpoint while Kernel delegation is in flight', async () => {
+    let discoveryStarted = false
+    let kernelRequests = 0
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)
+    const fetch: Fetch = async (input, init) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/openid-configuration')) {
+        discoveryStarted = true
+        return jsonResponse(configuration(true))
+      }
+      if (url === INVOCATION) {
+        expect(discoveryStarted).toBe(true)
+        kernelRequests += 1
+        const body = JSON.parse(await new Response(init?.body).text()) as Record<string, any>
+        return invocationResponse(
+          body.requestId,
+          kernelRequests === 1 ? { id: 'user-1' } : 'kernel-destination-envelope',
+          new Headers(init?.headers).get('accept')!,
+        )
+      }
+      if (url.endsWith('/.well-known/astrale/token')) {
+        expect(kernelRequests).toBe(2)
+        return jsonResponse(
+          { token: exchanged, expiresAt: EXPIRES_AT },
+          200,
+          'application/vnd.astrale+json',
+        )
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => SOURCE_TOKEN },
+      fetch,
+      5_000,
+      new ExchangeCredentialCache(join(directory, 'concurrent-discovery.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+  })
+
   test('falls through when persisted identity metadata is unavailable', async () => {
     let sourceResolved = false
     const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT)

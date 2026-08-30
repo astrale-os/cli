@@ -29,8 +29,8 @@ export type ProvisionResult = {
   selectionError?: unknown
 }
 
-/** Provisioning a child instance runs a multi-step saga (1-3 min). */
-const SAGA_TIMEOUT_MS = '240000'
+/** Provisioning a child instance runs a multi-step saga. */
+const SAGA_TIMEOUT_MS = '120000'
 
 /**
  * Provision an instance through the admin kernel, then bookmark it and
@@ -56,7 +56,7 @@ export async function provisionInstance(
   // the worker's request mid-saga and leaves TORN state (slug taken, routing
   // live, no instance node — unrecoverable by retry). Default to a saga-sized
   // timeout; an explicit --timeout still wins.
-  const createOpts = { ...opts, timeout: opts.timeout ?? SAGA_TIMEOUT_MS }
+  const createOpts = instanceCreateOptions(opts)
 
   const runProvision = () =>
     withSpinner(
@@ -102,6 +102,10 @@ export async function provisionInstance(
   }
 
   return { created, slug, repointedFrom, ...(selectionError ? { selectionError } : {}) }
+}
+
+export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {
+  return { ...opts, timeout: opts.timeout ?? SAGA_TIMEOUT_MS }
 }
 
 async function instanceCreateAuthentication(opts: ProvisionOpts): Promise<{
