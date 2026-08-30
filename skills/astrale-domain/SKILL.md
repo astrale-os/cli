@@ -54,17 +54,14 @@ order and load a reference only when its phase begins.
    `references/security.md`. If an external system is involved, also read `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition.
-5. **Completion:** Run the scaffold's focused tests, typecheck, lint, build, and package scripts.
-   Read `references/simulating.md` only when sample data or fixtures are part of the request. Read
-   `references/dx-feedback.md` only after reusable authoring friction is observed.
+5. **Completion:** Read `references/simulating.md`; invoke every public Action and Workflow definition
+   with representative success and applicable refusal inputs, then run focused tests, typecheck, lint,
+   build, and package. Read `references/dx-feedback.md` only after reusable authoring friction is observed.
 
 Read `references/migration.md`, `references/performance.md`, and `references/debugging.md` only when the
 domain's lifecycle or current problem calls for them.
 
 ## Always-On Workflow
 
-1. Classify the request as full domain creation or focused work on an existing domain.
-2. For creation, follow its applicable phases; for focused work, load the router's matching references.
-3. For schema changes, always load `references/modeling.md`.
-4. Inspect the current repo or scaffold before trusting API syntax from memory.
-5. For live behavior, use `references/debugging.md` and prove the deployed/installed/runtime path before treating source edits as effective.
+1. Inspect the current repo or scaffold before trusting API syntax from memory.
+2. For live behavior, use `references/debugging.md` and prove the deployed/installed/runtime path before treating source edits as effective.
