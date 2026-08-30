@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   findBookmarkTrustConflicts,
   InstanceStoreSchema,
+  managedShellDomainIssuer,
   normalizeInstanceKernelUrl,
   sanitizeStore,
 } from '../instance'
@@ -99,6 +100,17 @@ describe('InstanceStoreSchema', () => {
       'https://testmarc.eu.astrale.ai?debug=1',
     )
   })
+
+  test('resolves the trusted Shell issuer only for managed public routes', () => {
+    expect(managedShellDomainIssuer('https://bryan.eu.beta.astrale.ai/api')).toBe(
+      'https://shell.beta.astrale.ai',
+    )
+    expect(managedShellDomainIssuer('https://bryan.eu.astrale.ai/api')).toBe(
+      'https://shell.astrale.ai',
+    )
+    expect(managedShellDomainIssuer('https://kernel.example.com/api')).toBeUndefined()
+    expect(managedShellDomainIssuer('http://bryan.eu.beta.astrale.ai/api')).toBeUndefined()
+  })
 })
 
 describe('sanitizeStore — read must not rewrite', () => {
@@ -143,6 +155,43 @@ describe('sanitizeStore — read must not rewrite', () => {
     const { store: out, changed } = sanitizeStore(store)
     expect(out.instances.a.organizationId).toBe('org_123')
     expect(changed).toBe(false)
+  })
+
+  test('repairs a managed bookmark with its trusted Shell issuer on ordinary reads', () => {
+    const store = {
+      active: 'bryan',
+      instances: {
+        bryan: {
+          url: 'https://bryan.eu.beta.astrale.ai/api',
+          issuer: 'https://bryan.eu.beta.astrale.ai/api',
+          slug: 'bryan',
+          name: 'bryan',
+          kind: 'bookmark' as const,
+        },
+      },
+    }
+
+    const { store: repaired, changed } = sanitizeStore(store)
+
+    expect(changed).toBe(true)
+    expect(repaired.instances.bryan.domainIssuer).toBe('https://shell.beta.astrale.ai')
+  })
+
+  test('does not infer a Shell issuer for an ordinary bookmark on an official hostname', () => {
+    const store = {
+      active: 'control',
+      instances: {
+        control: {
+          url: 'https://admin.eu.beta.astrale.ai/api',
+          kind: 'bookmark' as const,
+        },
+      },
+    }
+
+    const { store: retained, changed } = sanitizeStore(store)
+
+    expect(changed).toBe(false)
+    expect(retained.instances.control.domainIssuer).toBeUndefined()
   })
 })
 

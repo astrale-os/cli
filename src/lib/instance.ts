@@ -92,11 +92,16 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     }
     const normalizedUrl = normalizeInstanceKernelUrl(entry.url)
     const normalizedIssuer = entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : entry.issuer
+    const domainIssuer =
+      entry.domainIssuer ??
+      (entry.slug !== undefined && entry.name !== undefined
+        ? managedShellDomainIssuer(normalizedUrl)
+        : undefined)
     const next: InstanceEntry = {
       ...entry,
       url: normalizedUrl,
       issuer: normalizedIssuer,
-      domainIssuer: entry.domainIssuer,
+      domainIssuer,
       kind: 'bookmark',
     }
     // VALUE comparison only. The old `next !== entry` (object identity) was
@@ -108,7 +113,8 @@ export function sanitizeStore(store: InstanceStore): { store: InstanceStore; cha
     if (
       entry.kind !== 'bookmark' ||
       normalizedUrl !== entry.url ||
-      normalizedIssuer !== entry.issuer
+      normalizedIssuer !== entry.issuer ||
+      domainIssuer !== entry.domainIssuer
     ) {
       changed = true
     }
@@ -308,6 +314,7 @@ export async function upsertManagedBookmark(
   const store = await readInstances()
   const previousUrl = store.instances[input.key]?.url
   const url = normalizeInstanceKernelUrl(input.url)
+  const domainIssuer = managedShellDomainIssuer(url)
   const { entry } = await upsertInstance(input.key, {
     url,
     issuer: url,
@@ -315,6 +322,7 @@ export async function upsertManagedBookmark(
     name: input.slug,
     kind: 'bookmark',
     mode: 'remote',
+    ...(domainIssuer === undefined ? {} : { domainIssuer }),
     ...(input.organizationId ? { organizationId: input.organizationId } : {}),
     ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
   })
@@ -322,6 +330,20 @@ export async function upsertManagedBookmark(
     entry,
     ...(previousUrl && previousUrl !== entry.url ? { repointedFrom: previousUrl } : {}),
   }
+}
+
+/** Resolve the trusted Shell issuer for an Astrale-managed public Instance route. */
+export function managedShellDomainIssuer(input: string): string | undefined {
+  let url: URL
+  try {
+    url = new URL(input)
+  } catch {
+    return undefined
+  }
+  if (url.protocol !== 'https:') return undefined
+  if (url.hostname.endsWith('.beta.astrale.ai')) return 'https://shell.beta.astrale.ai'
+  if (url.hostname.endsWith('.astrale.ai')) return 'https://shell.astrale.ai'
+  return undefined
 }
 
 export async function removeInstance(key: string): Promise<void> {
