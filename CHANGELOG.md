@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.58](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.57...cli/v1.0.0-beta.58) (2026-08-30)
+
+
+### Bug Fixes
+
+* **deps:** consume Zod-coherent SDK cohort ([#315](https://github.com/astrale-os/cli/issues/315)) ([cfea683](https://github.com/astrale-os/cli/commit/cfea6836c57649ae96a358f82acc1cfecda7428b))
+* **skills:** teach function and authority requirements ([#313](https://github.com/astrale-os/cli/issues/313)) ([974c57e](https://github.com/astrale-os/cli/commit/974c57ecc0b2322c29dd18296bd2873462ede643))
+
 ## [1.0.0-beta.57](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.56...cli/v1.0.0-beta.57) (2026-08-30)
 
 
