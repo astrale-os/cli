@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.57](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.56...cli/v1.0.0-beta.57) (2026-08-30)
+
+
+### Bug Fixes
+
+* **skills:** require public callable execution ([#311](https://github.com/astrale-os/cli/issues/311)) ([c11e844](https://github.com/astrale-os/cli/commit/c11e84480642a05310f4cf6678244fb24344fabb))
+
+
+### Performance Improvements
+
+* accelerate managed instance authentication ([#309](https://github.com/astrale-os/cli/issues/309)) ([d98b305](https://github.com/astrale-os/cli/commit/d98b3059f52cb966b9f300f02cc137b1162ea705))
+
 ## [1.0.0-beta.56](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.55...cli/v1.0.0-beta.56) (2026-08-30)
 
 
