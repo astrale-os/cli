@@ -16,10 +16,10 @@ import type { schema } from '#schema'
 
 export const renameVisit = defineAction<typeof schema, typeof integrations>()(
   'FieldVisit.rename',
-  async ({ domain, self, input, query, mutate }) => {
+  async ({ domain, self, input, graph }) => {
     const Visit = domain.classes.FieldVisit
-    const visit = await query(readVisit, { self })
-    return mutate(renameVisitMutation, {
+    const visit = await graph.self.query(readVisit, { self })
+    return graph.self.mutate(renameVisitMutation, {
       self,
       class: Visit,
       title: input.title,
@@ -33,8 +33,9 @@ export const renameVisit = defineAction<typeof schema, typeof integrations>()(
 - A top-level or static callable has no `self`.
 - Protected callables receive an authenticated caller and non-null bound Client session.
 - Anonymous callables may receive an anonymous caller and null Client.
-- `query` and `mutate` execute authored definitions through that same admitted Client; they are absent
-  when an anonymous invocation has no bound Client.
+- Default `query` and `mutate` use the admitted union authority. Select `graph.self` for Domain-owned facts,
+  `graph.caller` for caller-only authority, and `graph.union` only deliberately. They are absent when
+  an anonymous invocation has no bound Client.
 - `execution` owns cancellation, deadline, background work, and request-body access.
 - `domain` is the exact resolved Domain loaded from the deployed Build; it is not the authored
   Schema and must not be reconstructed at module scope.
@@ -53,13 +54,13 @@ import type { schema } from '#schema'
 
 export const refreshForecast = defineWorkflow<typeof schema, typeof integrations>()(
   'FieldVisit.refreshForecast',
-  async ({ self, query, mutate, integrations, step }) => {
-    const visit = await step.run('read-visit', () => query(readVisit, { self }))
+  async ({ self, graph, integrations, step }) => {
+    const visit = await step.run('read-visit', () => graph.self.query(readVisit, { self }))
     const forecast = await step.run('fetch-forecast', () =>
       integrations.openMeteo.forecast(visit.coordinates),
     )
     await step.run('record-forecast', () =>
-      mutate(recordForecast, { self, forecast }),
+      graph.self.mutate(recordForecast, { self, forecast }),
     )
     return { visitId: self, forecast, steps: ['read-visit', 'fetch-forecast', 'record-forecast'] }
   },
@@ -106,39 +107,43 @@ export const application = defineApplication({
 })
 ```
 
-Use the resolved callable from the dependency's public Schema facade; do not forge its key. Keep the
-Provider caller-bound with `execution.invoke(reference(domain, domain.functions.send), input)`.
-Inspect the built or installed publication and require requested and materialized capabilities to
-contain the exact callable. A complete dependency closure, a typed reference, or a successful build
-does not prove that installation authority was requested.
+Use the public resolved callable—never a forged key—and keep the Provider caller-bound with
+`execution.invoke(reference(domain, domain.functions.send), input)`. Verify the exact callable in
+requested and materialized capabilities; dependency closure, typing, and build do not prove authority.
 
 ## Kernel callable requirements
 
-Direct Client APIs can invoke protected Kernel callables just as a cross-Domain Provider invokes a
-protected foreign callable. The Schema dependency supplies the exact Kernel closure and types; it
-does not grant the installed Domain principal `can_use` authority. When an Action or Workflow calls a
-protected Kernel capability through `client`, first retain `KernelSchema` as an exact authored Schema
-dependency and then declare the exact callable in Application requirements:
+Bound graph executors and direct Client APIs invoke protected Kernel callables. The Schema dependency
+pins their exact closure; Application requirements let installation materialize `can_use` authority
+for the Domain principal. A callable can admit successfully and still return Kernel `2004` when these
+requirements are absent. Retain the generated defaults while any handler reads or writes graph state:
 
 ```ts
+// schema/schema.ts
+import { defineSchema, KernelSchema } from '@astrale-os/sdk/schema'
+
+export const schema = defineSchema('shipment.example', {
+  dependencies: { kernel: KernelSchema },
+})
+
+// application.ts
 import { defineApplication, requirements } from '@astrale-os/sdk/application'
-import { KernelSchema, schema as language } from '@astrale-os/sdk/schema'
+import { K } from '@astrale-os/sdk/schema'
 
 export const application = defineApplication({
   schema,
   runtime,
   requirements: requirements({
-    callables: [language.resolve(KernelSchema).functions.provision],
+    callables: [K.functions.query, K.functions.mutate],
   }),
 })
 ```
 
-For example, an Action using `client.auth.provision(...)` requires the exact Kernel `provision`
-callable above. Keep the requirement in inert Application composition. Do not create a new
-`requirements/` layer, forge the callable key, or grant the invoking human `can_use` as a substitute.
-After installation, require the exact callable under both requested and materialized capabilities;
-a successful typecheck, lint, build, or remote callable admission does not prove the nested Kernel
-capability exists.
+Add other exact Kernel callables, such as `K.functions.provision` for `client.auth.provision(...)`,
+only when used. Keep requirements in inert Application composition: do not create a `requirements/`
+layer, forge keys, or grant the invoking human `can_use`. Inspect requested and materialized
+capabilities after installation; typecheck, lint, build, and outer callable admission do not prove a
+nested Kernel capability.
 
 ## Query and Mutation owners
 

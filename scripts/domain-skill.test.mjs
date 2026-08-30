@@ -52,17 +52,30 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(implementing, /defineAction/)
   assert.match(implementing, /defineWorkflow/)
   assert.match(implementing, /Action context has no `step`/)
-  assert.match(implementing, /`query` and `mutate` execute authored definitions/)
+  assert.match(implementing, /graph\.self\.query\(readVisit/)
+  assert.match(implementing, /graph\.self\.mutate\(recordForecast/)
+  assert.match(implementing, /Default `query` and `mutate` use the admitted union authority/)
+  assert.match(
+    implementing,
+    /Select `graph\.self` for Domain-owned facts,\s+`graph\.caller` for caller-only authority, and `graph\.union` only deliberately/,
+  )
   assert.match(implementing, /`domain` is the exact resolved Domain/)
   assert.match(
     implementing,
     /`executeQuery\(client, \.\.\.\)` and `executeMutation\(client, \.\.\.\)`/,
   )
+  assert.match(implementing, /dependencies: \{ kernel: KernelSchema \}/)
+  assert.match(implementing, /callables:\s*\[K\.functions\.query, K\.functions\.mutate\]/)
+  assert.match(implementing, /still return Kernel `2004` when these\s+requirements are absent/)
   assert.match(
     implementing,
-    /`client\.auth\.provision\(\.\.\.\)` requires the exact Kernel `provision`/,
+    /`K\.functions\.provision` for `client\.auth\.provision\(\.\.\.\)`,\s+only when used/,
   )
-  assert.match(implementing, /Do not create a new\s+`requirements\/` layer/)
+  assert.match(implementing, /materialize `can_use` authority\s+for the Domain principal/)
+  assert.match(
+    implementing,
+    /do not create a `requirements\/`\s+layer, forge keys, or grant the invoking human `can_use`/i,
+  )
   assert.match(integrations, /defineIntegration/)
   assert.match(integrations, /Runtime `initialize\(environment\)`/)
   assert.match(development, /Use ordinary imports for pure helpers and Rules/)
