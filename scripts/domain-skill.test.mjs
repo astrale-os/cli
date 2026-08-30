@@ -47,6 +47,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   const views = readFileSync(join(root, 'references', 'views.md'), 'utf8')
   const development = readFileSync(join(root, 'references', 'development.md'), 'utf8')
   const debugging = readFileSync(join(root, 'references', 'debugging.md'), 'utf8')
+  const simulating = readFileSync(join(root, 'references', 'simulating.md'), 'utf8')
 
   assert.match(entrypoint, /Keep authorization in Schema-owned Policy and callable `auth` mode/)
   assert.match(implementing, /defineAction/)
@@ -86,6 +87,10 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(development, /declare `zod` directly in the\s+Domain manifest/)
   assert.match(development, /Do not create a\s+top-level `requirements\/` source tree/)
   assert.match(debugging, /Treat authentication and provision journal inputs as secret/)
+  assert.match(entrypoint, /invoke every public Action and Workflow definition/)
+  assert.match(entrypoint, /representative success and applicable refusal inputs/)
+  assert.match(simulating, /Binding metadata, lower-level AST checks/)
+  assert.match(simulating, /one tested\s+handler cannot stand in for an unexecuted public callable/)
   assert.match(modeling, /Object definitions\s+belong to one Class hierarchy/)
   assert.match(modeling, /rather than parallel object-definition kinds/)
   assert.match(views, /defineFrontend/)

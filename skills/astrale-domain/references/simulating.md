@@ -61,9 +61,10 @@ before it is not part of that transaction.
 
 ## Actions and Workflows
 
-Actions deliberately have no Step API. For an Action, prove the selected Query, Mutation, or
-Integration call and its output. For a Workflow, supply the SDK runner used by the Runtime and assert
-stable step identifiers, serializable step values, and effect order.
+Actions have no Step API. Before completion, invoke every exposed Action and Workflow definition with
+representative success and applicable refusal inputs. Prove each selected Query, Mutation,
+Integration, output, step order, and effect. Binding metadata, lower-level AST checks, or one tested
+handler cannot stand in for an unexecuted public callable.
 
 The current inline runner gives structure and observability. It does not prove durable replay,
 exactly-once effects, compensation, or crash recovery. Never claim those guarantees from an in-memory
