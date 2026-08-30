@@ -10,6 +10,7 @@ import type { ConnectionTarget } from './target'
 
 import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
+import { exchangeCallerProof } from '../lib/exchange-grant'
 import { ExchangeCredentialCache } from '../state/exchange-credentials'
 import { cachedCredentialTtlSeconds, exchangeCredentialTtlSeconds } from './lifetime'
 
@@ -288,15 +289,11 @@ function effectiveExchangeLifetime(
 ): number {
   let proofExpiresAt: number
   try {
-    const carried = grant.acceptUnresolved(inspected.claims.grant).expr
-    if (
-      carried.kind !== 'identity' ||
-      !('credential' in carried) ||
-      typeof carried.credential !== 'string'
-    ) {
+    const carried = exchangeCallerProof(grant.acceptUnresolved(inspected.claims.grant).expr)
+    if (carried === undefined) {
       throw new TypeError('Domain credential does not carry an identity proof.')
     }
-    const value = credential.inspect(carried.credential).claims.exp
+    const value = credential.inspect(carried).claims.exp
     if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
       throw new TypeError('Domain credential carries an identity proof without an expiration.')
     }
