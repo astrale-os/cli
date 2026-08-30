@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.56](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.55...cli/v1.0.0-beta.56) (2026-08-30)
+
+
+### Bug Fixes
+
+* render ordinary call dry runs offline ([#306](https://github.com/astrale-os/cli/issues/306)) ([e75d6f6](https://github.com/astrale-os/cli/commit/e75d6f615aca450c90874933ea348c5bb289c54a))
+* teach Domain graph authority requirements ([#308](https://github.com/astrale-os/cli/issues/308)) ([586303d](https://github.com/astrale-os/cli/commit/586303d1b9574fe6c25a963f24a5d25a99f5ee59))
+
 ## [1.0.0-beta.55](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.54...cli/v1.0.0-beta.55) (2026-08-30)
 
 
