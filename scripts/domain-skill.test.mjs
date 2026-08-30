@@ -66,7 +66,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
     /`executeQuery\(client, \.\.\.\)` and `executeMutation\(client, \.\.\.\)`/,
   )
   assert.match(implementing, /dependencies: \{ kernel: KernelSchema \}/)
-  assert.match(implementing, /callables:\s*\[K\.functions\.query, K\.functions\.mutate\]/)
+  assert.match(implementing, /functions:\s*\[K\.functions\.query, K\.functions\.mutate\]/)
   assert.match(implementing, /still return Kernel `2004` when these\s+requirements are absent/)
   assert.match(
     implementing,
