@@ -242,14 +242,6 @@ describe('View development Publication proof', () => {
     const common: Omit<MountParams, 'transport' | 'view'> = {
       host: {} as HTMLElement,
       capabilities: viewHostCapabilities([]),
-      sandbox: {
-        allowScripts: true,
-        allowForms: false,
-        allowPopups: false,
-        allowPopupsToEscapeSandbox: false,
-        allowSameOrigin: true,
-        allowModals: false,
-      },
     }
 
     await expect(
