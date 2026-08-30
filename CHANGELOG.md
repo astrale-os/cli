@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.55](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.54...cli/v1.0.0-beta.55) (2026-08-30)
+
+
+### Features
+
+* **instance:** include retired instances in ordinary list ([#293](https://github.com/astrale-os/cli/issues/293)) ([e91cdd8](https://github.com/astrale-os/cli/commit/e91cdd88edb337422f7b0d4c6e51eb8ad2dfbc70))
+
+
+### Bug Fixes
+
+* admit trusted Domain exchange unions ([#304](https://github.com/astrale-os/cli/issues/304)) ([56f09a0](https://github.com/astrale-os/cli/commit/56f09a0d76e6705f4ba098c73645a23c80b2452c))
+* **instance:** omit inactive inventory option ([#301](https://github.com/astrale-os/cli/issues/301)) ([9deb824](https://github.com/astrale-os/cli/commit/9deb8245a141ea854313ab83216cc6be7df66764))
+* refresh CLI schema decoder cohort ([#303](https://github.com/astrale-os/cli/issues/303)) ([59c070a](https://github.com/astrale-os/cli/commit/59c070a48e961bbb5acfdb6838cdea8ed0c6047d))
+* resolve managed Shell token exchange automatically ([#302](https://github.com/astrale-os/cli/issues/302)) ([a96d839](https://github.com/astrale-os/cli/commit/a96d839598034df37780bf7fee9a286801d566b3))
+
 ## [1.0.0-beta.54](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.53...cli/v1.0.0-beta.54) (2026-08-29)
 
 
