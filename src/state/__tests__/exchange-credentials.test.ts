@@ -82,6 +82,22 @@ describe('exchange credential cache', () => {
     await expect(cache.get(candidate, 30, () => 100)).resolves.toBeUndefined()
   })
 
+  test('retains a trusted Domain union only when it carries the exact caller proof', async () => {
+    const cache = new ExchangeCredentialCache(path)
+    const candidate = key('https://kernel.example', 'https://domain.example', 'user')
+    const trusted = entry(candidate, 200, undefined, 200, 'union')
+
+    await expect(
+      cache.getOrRefresh(
+        candidate,
+        30,
+        async () => trusted,
+        () => 100,
+      ),
+    ).resolves.toBe(trusted.credential)
+    await expect(cache.get(candidate, 30, () => 100)).resolves.toBe(trusted.credential)
+  })
+
   /** @evidence TEST-CLI-EXCHANGE-CACHE-READ-DOES-NOT-WAIT-FOR-REFRESH */
   test('an exact read never waits behind an unrelated refresh lock', async () => {
     const cache = new ExchangeCredentialCache(path)
@@ -363,9 +379,10 @@ function entry(
   expiresAt: number,
   malformed?: 'outer-delegation' | 'proof-without-delegation',
   proofExpiresAt = expiresAt,
+  mode: 'caller' | 'union' = 'caller',
 ) {
   return {
-    credential: token(candidate, expiresAt, malformed, proofExpiresAt),
+    credential: token(candidate, expiresAt, malformed, proofExpiresAt, mode),
     expiresAt,
     user: candidate.sourceSubject,
     sourceIssuer: candidate.sourceIssuer,
@@ -378,6 +395,7 @@ function token(
   exp: number,
   malformed?: 'outer-delegation' | 'proof-without-delegation',
   proofExp = exp,
+  mode: 'caller' | 'union' = 'caller',
 ): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
@@ -399,7 +417,19 @@ function token(
     sub: 'domain',
     aud: candidate.kernelIssuer,
     exp,
-    grant: { v: 1, expr: { kind: 'identity', credential: proof } },
+    grant: {
+      v: 1,
+      expr:
+        mode === 'caller'
+          ? { kind: 'identity', credential: proof }
+          : {
+              kind: 'union',
+              operands: [
+                { kind: 'identity', self: true },
+                { kind: 'identity', credential: proof },
+              ],
+            },
+    },
     ...(malformed === 'outer-delegation' ? { delegation: { credential: proof } } : {}),
   })}.signature`
 }

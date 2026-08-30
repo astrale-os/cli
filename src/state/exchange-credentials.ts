@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { credentialLifetimeCovers } from '../lib/credential-lifetime'
+import { exchangeCallerProof } from '../lib/exchange-grant'
 import { atomicWrite, withFileLock } from './files'
 import { EXCHANGE_CREDENTIALS_PATH } from './paths'
 
@@ -192,15 +193,9 @@ function validEntry(
   }
   try {
     const inspected = credential.inspect(entry.credential)
-    const carried = grant.acceptUnresolved(inspected.claims.grant).expr
-    if (
-      carried.kind !== 'identity' ||
-      !('credential' in carried) ||
-      typeof carried.credential !== 'string'
-    ) {
-      return false
-    }
-    const proof = credential.inspect(carried.credential)
+    const carried = exchangeCallerProof(grant.acceptUnresolved(inspected.claims.grant).expr)
+    if (carried === undefined) return false
+    const proof = credential.inspect(carried)
     const issued = proof.claims.delegation
     if (
       issued === null ||

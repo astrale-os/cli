@@ -156,6 +156,20 @@ describe('Domain token exchange', () => {
     expect(sourceResolved).toBe(true)
   })
 
+  test('accepts a trusted Domain union that retains the exact caller proof', async () => {
+    const exchanged = token(DOMAIN, KERNEL, 'user-1', EXPIRES_AT, EXPIRES_AT, 'union')
+    const resolver = createExchangeCredentialResolver(
+      TARGET,
+      { resolve: async () => SOURCE_TOKEN },
+      exchangeFetch(exchanged),
+      5_000,
+      new ExchangeCredentialCache(join(directory, 'trusted-union.json')),
+    )
+
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+    await expect(resolver.resolve(KERNEL, new AbortController().signal)).resolves.toBe(exchanged)
+  })
+
   test('does not reuse an exchange credential after the persisted source identity changes', async () => {
     const path = join(directory, 'credentials.json')
     const first = createExchangeCredentialResolver(
@@ -458,7 +472,14 @@ function jsonResponse(value: unknown, status = 200, contentType = 'application/j
   })
 }
 
-function token(iss: string, aud: string, user: string, exp: number, proofExp = exp): string {
+function token(
+  iss: string,
+  aud: string,
+  user: string,
+  exp: number,
+  proofExp = exp,
+  mode: 'caller' | 'union' = 'caller',
+): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
     iss: aud,
@@ -472,7 +493,19 @@ function token(iss: string, aud: string, user: string, exp: number, proofExp = e
     sub: 'admin-domain',
     aud,
     exp,
-    grant: { v: 1, expr: { kind: 'identity', credential: proof } },
+    grant: {
+      v: 1,
+      expr:
+        mode === 'caller'
+          ? { kind: 'identity', credential: proof }
+          : {
+              kind: 'union',
+              operands: [
+                { kind: 'identity', self: true },
+                { kind: 'identity', credential: proof },
+              ],
+            },
+    },
   })}.signature`
 }
 
