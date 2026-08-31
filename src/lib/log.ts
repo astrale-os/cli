@@ -61,6 +61,15 @@ const SPINNER_SAFETY_MS = 60_000
 
 const IS_CI = !!(process.env.CI || process.env.CONTINUOUS_INTEGRATION || process.env.NO_SPINNER)
 
+type SpinnerOptions = {
+  readonly longRunningText?: string
+  readonly safetyMs?: number
+}
+
+type WithSpinnerOptions<T> = SpinnerOptions & {
+  readonly success?: (result: T) => string
+}
+
 /**
  * Run an async operation behind a spinner. Pass `enabled: false` for
  * machine-readable output modes. Errors are rethrown after the spinner is
@@ -69,16 +78,20 @@ const IS_CI = !!(process.env.CI || process.env.CONTINUOUS_INTEGRATION || process
  * On success the spinner line is cleared — commands print their own result.
  * Pass `opts.success` to instead persist a single final line
  * (✔ <success text> <elapsed>) so a command ends on one line, not a
- * spinner line + result line pair.
+ * spinner line + result line pair. `opts.longRunningText` replaces an animation
+ * that reaches the safety limit with one durable status line.
  */
 export async function withSpinner<T>(
   label: string,
   enabled: boolean,
   fn: () => Promise<T>,
-  opts: { success?: (result: T) => string } = {},
+  opts: WithSpinnerOptions<T> = {},
 ): Promise<T> {
   if (!enabled) return await fn()
-  const spin = spinner(`${label}...`)
+  const spin = spinner(`${label}...`, {
+    longRunningText: opts.longRunningText,
+    safetyMs: opts.safetyMs,
+  })
   const start = performance.now()
   try {
     const result = await fn()
@@ -94,7 +107,7 @@ export async function withSpinner<T>(
   }
 }
 
-export function spinner(text: string): Ora {
+export function spinner(text: string, opts: SpinnerOptions = {}): Ora {
   const target = process.stderr
 
   if (!target.writable || IS_CI) {
@@ -108,8 +121,13 @@ export function spinner(text: string): Ora {
   const spin = ora({ text, color: 'cyan', stream: target }).start()
 
   const safety = setTimeout(() => {
-    if (spin.isSpinning) spin.stop()
-  }, SPINNER_SAFETY_MS)
+    if (!spin.isSpinning) return
+    if (opts.longRunningText) {
+      spin.info(opts.longRunningText)
+    } else {
+      spin.stop()
+    }
+  }, opts.safetyMs ?? SPINNER_SAFETY_MS)
   safety.unref()
 
   const onTargetError = () => {

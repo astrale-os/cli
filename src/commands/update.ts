@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../program/index'
 
 import pkg from '../../package.json' with { type: 'json' }
 import { AstraleError } from '../errors'
-import { fatal, log } from '../lib/log'
+import { fatal, log, withSpinner } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 import { run, runInherit } from '../lib/proc'
 import { confirmDefaultYes } from '../lib/prompt'
@@ -311,12 +311,21 @@ Examples:
       }
 
       // Axis A — the standalone CLI binary.
-      const result = await updateAstrale({
-        check: opts.check,
-        channel: opts.channel,
-        version: opts.version,
-        currentVersion: pkg.version,
-      })
+      const updateLabel = opts.check
+        ? 'Checking for Astrale updates'
+        : 'Checking and updating Astrale'
+      const result = await withSpinner(
+        updateLabel,
+        !isMachine(opts),
+        () =>
+          updateAstrale({
+            check: opts.check,
+            channel: opts.channel,
+            version: opts.version,
+            currentVersion: pkg.version,
+          }),
+        { longRunningText: `${updateLabel} — still working` },
+      )
 
       // Machine mode WITHOUT --yes (e.g. `astrale update --json`): emit the binary
       // result and stop — never silently refresh skills / edit deps for a pipe.
