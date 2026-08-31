@@ -4,13 +4,13 @@ import type { AgentHarness } from './adapter'
  * Register the concrete local harness adapters and reuse their process-level
  * caches across domains.
  */
-import { ClaudeCodeHarness } from './claude/adapter'
-import { CodexHarness } from './codex/adapter'
+import { AcpClaudeHarness } from './acp/claude'
+import { AcpCodexHarness } from './acp/codex'
 import { MockHarness } from './mock/adapter'
 
 const harnesses: Record<string, () => AgentHarness> = {
-  claude: () => new ClaudeCodeHarness(),
-  codex: () => new CodexHarness(),
+  claude: () => new AcpClaudeHarness(),
+  codex: () => new AcpCodexHarness(),
   mock: () => new MockHarness(),
 }
 
