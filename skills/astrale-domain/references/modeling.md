@@ -28,8 +28,26 @@ many Edge merely to satisfy storage identity.
 ## Properties
 
 Choose required versus optional from the business invariant, not fixture convenience. Reuse inherited
-native node properties rather than redeclaring them. Use closed literal/enum vocabulary for a stable
-finite state and preserve timestamps/identities through SDK-owned canonical types.
+native node properties rather than redeclaring them. Preserve timestamps and identities through
+SDK-owned canonical types.
+
+One exported `stateMachine` is the authority for a finite lifecycle. Persist it with
+`stateProperty(machine)` and reuse `machine.stateSchema` or `machine.eventSchema` in callable values;
+do not copy its states or events into sibling enums or transition Rules.
+
+```ts
+import { nodeClass, stateProperty } from '@astrale-os/sdk/schema'
+import { stateMachine } from '@astrale-os/sdk/state'
+
+export const lifecycle = stateMachine({
+  initial: 'open',
+  transitions: { open: { close: 'closed' }, closed: {} },
+})
+
+export const Issue = nodeClass({
+  properties: { status: stateProperty(lifecycle) },
+})
+```
 
 Mutable presentation text is not a stable identity. Node identity is canonical and opaque; serving
 URLs and caller-assigned paths are not semantic node identifiers.

@@ -143,32 +143,31 @@ const unformatted =
   `export const EMBEDDED_SKILLS = ${JSON.stringify(skills, null, 2)} as const\n` +
   `export const EMBEDDED_ASSET_ARCHIVE_BASE64 = [\n${chunks}\n].join('')\n`
 const formatter = join(ROOT, 'node_modules', '.bin', 'oxfmt')
-const formatted = Bun.spawnSync([formatter, '--stdin-filepath', OUTPUT], {
-  stdin: Buffer.from(unformatted),
-  stdout: 'pipe',
-  stderr: 'pipe',
-})
-if (formatted.exitCode !== 0) {
-  throw new Error(`could not format embedded assets: ${formatted.stderr.toString().trim()}`)
-}
-const source = formatted.stdout.toString()
+await mkdir(dirname(OUTPUT), { recursive: true })
+const temporary = `${OUTPUT}.${process.pid}.${randomUUID()}.ts`
+try {
+  await writeFile(temporary, unformatted)
+  const formatted = Bun.spawnSync([formatter, '--write', temporary], {
+    stdout: 'ignore',
+    stderr: 'pipe',
+  })
+  if (formatted.exitCode !== 0) {
+    throw new Error(`could not format embedded assets: ${formatted.stderr.toString().trim()}`)
+  }
 
-if (process.argv.includes('--check')) {
-  const current = await readFile(OUTPUT, 'utf8').catch(() => '')
-  if (current !== source) {
-    console.error('embedded assets are stale — run: bun scripts/build-embedded-assets.ts')
-    process.exit(1)
-  }
-} else {
-  await mkdir(dirname(OUTPUT), { recursive: true })
-  const temporary = `${OUTPUT}.${process.pid}.${randomUUID()}.tmp`
-  try {
-    await writeFile(temporary, source)
+  const source = await readFile(temporary, 'utf8')
+  if (process.argv.includes('--check')) {
+    const current = await readFile(OUTPUT, 'utf8').catch(() => '')
+    if (current !== source) {
+      console.error('embedded assets are stale — run: bun scripts/build-embedded-assets.ts')
+      process.exitCode = 1
+    }
+  } else {
     await rename(temporary, OUTPUT)
-  } finally {
-    await rm(temporary, { force: true }).catch(() => undefined)
+    console.log(
+      `embedded ${archive.files.length} files (${compressed.length} compressed bytes, ${skills.length} skills)`,
+    )
   }
-  console.log(
-    `embedded ${archive.files.length} files (${compressed.length} compressed bytes, ${skills.length} skills)`,
-  )
+} finally {
+  await rm(temporary, { force: true }).catch(() => undefined)
 }
