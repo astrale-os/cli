@@ -84,6 +84,24 @@ export const workflows = [refreshForecast] as const
 Missing, duplicate, foreign-Schema, and Action/Workflow-conflicting registrations must fail SDK
 admission or typecheck. Do not reconstruct callable keys or dispatch by parsing graph paths.
 
+Every semantic production owner lives in its own submodule with focused evidence beside it. Layer
+roots are curated re-export facades and contain no behavior:
+
+```text
+actions/register-visit/index.ts
+actions/register-visit/__tests__/register-visit.test.ts
+actions/index.ts
+queries/visit-by-id/index.ts
+mutations/record-visit/index.ts
+workflows/refresh-forecast/index.ts
+providers/open-meteo/index.ts
+```
+
+Integrations also keep the typed collection in `integrations/integrations.ts`; their root
+`integrations/index.ts` only re-exports that collection and its semantic submodules. Apply the same
+`<layer>/<owner>/index.ts` shape to Rules, Views, UI, and other enabled layers. Do not start with
+behavior in `<layer>/index.ts` and wait for lint to relocate it.
+
 ## Cross-Domain capability requirements
 
 A Schema dependency pins the foreign Domain closure; it does not grant the installed caller Domain
@@ -151,6 +169,52 @@ Use `@astrale-os/sdk/query` for reusable observations and `@astrale-os/sdk/mutat
 graph change. Build with resolved Schema Classes/Properties rather than copied key strings. Keep pure
 projection in the Query owner and live preconditions in the same Mutation that changes state.
 
+The stable authoring facades are narrow: Schema declarations come from `@astrale-os/sdk/schema`,
+StateMachine from `@astrale-os/sdk/state`, graph language and `defineQuery` from
+`@astrale-os/sdk/query`, and graph change language and `defineMutation` from
+`@astrale-os/sdk/mutation`. Actions, Workflows, and Integrations use their matching SDK subpaths.
+
+Start a single Query from this shape; the outer callback receives the resolved Domain once, while
+`build` receives the invocation input:
+
+```ts
+import { defineQuery, Property, Query, queryResult, type QueryResult } from '@astrale-os/sdk/query'
+
+export const issueByReference = defineQuery<typeof schema>()((domain) => {
+  const Issue = domain.classes.Issue
+  return {
+    id: 'issue.by-reference',
+    build: (input: { reference: string }) =>
+      Query.from({ nodes: [Issue] })
+        .filter({ predicate: Property(Issue.properties.reference.key).equals(input.reference) })
+        .select({ kind: 'nodes', projection: { kind: 'value' } }),
+    project: (result: QueryResult) => queryResult.optionalNode(result, 'issue.by-reference'),
+  }
+})
+```
+
+Start an atomic StateMachine change from this shape. `transition` owns the stale-state precondition,
+legal target derivation, state update, and any additional property update in the same document:
+
+```ts
+import type { NodeId } from '@astrale-os/sdk/graph/node'
+import { defineMutation } from '@astrale-os/sdk/mutation'
+
+export const closeIssue = defineMutation<typeof schema>()((domain) => ({
+  id: 'issue.close',
+  build(input: { issue: NodeId; from: 'open' }, mutation) {
+    mutation.transition({
+      node: input.issue,
+      class: domain.classes.Issue,
+      property: 'status',
+      from: input.from,
+      event: 'close',
+    })
+  },
+  project: () => true,
+}))
+```
+
 Inside an Action or Workflow, use the context's `query(definition, input)` and
 `mutate(definition, input)` executors. `executeQuery(client, ...)` and `executeMutation(client, ...)`
 remain the lower-level APIs for tests, scripts, and consumers that already own a Client.
@@ -162,9 +226,8 @@ A read followed by a write is not automatically atomic. If safety depends on cur
 encode the predicate as a Mutation precondition. Several commits or any external call make the
 operation a Workflow.
 
-Inspect the installed SDK declarations and generated examples for the exact Query/Mutation builder
-shape. Do not invent a repository facade, alternate AST, raw syscall wrapper, or structural clone of
-canonical SDK values.
+Use the installed declarations only to resolve a detail absent from these public shapes. Do not invent
+a repository facade, alternate AST, raw syscall wrapper, or structural clone of canonical SDK values.
 
 ## Outputs and failures
 

@@ -77,6 +77,10 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
     implementing,
     /do not create a `requirements\/`\s+layer, forge keys, or grant the invoking human `can_use`/i,
   )
+  assert.match(implementing, /actions\/register-visit\/index\.ts/)
+  assert.match(implementing, /Layer\s+roots are curated re-export facades and contain no behavior/)
+  assert.match(implementing, /defineQuery<typeof schema>\(\)\(\(domain\)/)
+  assert.match(implementing, /mutation\.transition\(\{/)
   assert.match(integrations, /defineIntegration/)
   assert.match(integrations, /Runtime `initialize\(environment\)`/)
   assert.match(development, /Use ordinary imports for pure helpers and Rules/)
@@ -93,6 +97,9 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(simulating, /one tested\s+handler cannot stand in for an unexecuted public callable/)
   assert.match(modeling, /Object definitions\s+belong to one Class hierarchy/)
   assert.match(modeling, /rather than parallel object-definition kinds/)
+  assert.match(modeling, /One exported `stateMachine` is the authority for a finite lifecycle/)
+  assert.match(modeling, /`stateProperty\(machine\)`/)
+  assert.match(modeling, /`machine\.stateSchema` or `machine\.eventSchema`/)
   assert.match(views, /defineFrontend/)
   assert.match(views, /astrale-frontend-design/)
   assert.match(views, /Do not depend directly on Shell or\s+Shell-React packages/)
