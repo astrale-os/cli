@@ -24,12 +24,13 @@ export interface AdminInstanceContext {
 }
 
 export interface AdminInstanceApi {
-  list(): Promise<OwnedInstanceInfo[]>
+  list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
   create(slug: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
   invite(identifier: string, email: string, expiresInDays?: number): Promise<InvitationInfo>
+  statusInvitation(invitation: string): Promise<InvitationInfo>
   reconcileInvitation(invitation: string): Promise<InvitationInfo>
 }
 
@@ -39,9 +40,7 @@ export interface AdminInstanceDependencies {
   ) => string
 }
 
-const PAGE_SIZE = 256
 const MAXIMUM_INSTANCES = 10_000
-const MAXIMUM_PAGES = Math.ceil(MAXIMUM_INSTANCES / PAGE_SIZE) + 1
 
 /**
  * Connect the public Instance journey through stable Admin call paths. Routine
@@ -53,28 +52,20 @@ export async function connectAdminInstances(
 ): Promise<AdminInstanceApi> {
   const operationId = dependencies.operationId ?? defaultOperationId
 
-  const list = async (): Promise<OwnedInstanceInfo[]> => {
-    const Instance = AdminContract.classes.Instance
-    const property = AdminContract.properties.instance
-    const instances = Query.from({ nodes: [Instance] }).filter({
-      class: { equals: Instance },
-    })
-    const nodes = await readAllNodes(
-      context.graph,
-      instances.select({
-        kind: 'nodes',
-        binding: instances.node,
-        projection: { kind: 'value' },
-        order: { property: property.state, direction: 'desc', unranked: 'last' },
-      }),
-      {
-        label: 'Admin Instance inventory',
-        maximum: MAXIMUM_INSTANCES,
-        maximumPages: MAXIMUM_PAGES,
-        orderedBoundary: (node) => instanceFromNode(node).state === 'deleted',
-      },
+  const list = async (
+    options: Readonly<{ includeRetired?: boolean }> = {},
+  ): Promise<OwnedInstanceInfo[]> => {
+    const output = await callAdminMethod(
+      context.session,
+      AdminContract.fleet,
+      'listInstances',
+      options.includeRetired === true ? { includeRetired: true } : {},
     )
-    return nodes.map(instanceFromNode)
+    if (!Array.isArray(output)) throw new TypeError('Admin Instance inventory is invalid.')
+    if (output.length > MAXIMUM_INSTANCES) {
+      throw new TypeError('Admin Instance inventory exceeds its bound.')
+    }
+    return output.map((entry) => instanceFromSummary(entry) as OwnedInstanceInfo)
   }
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
@@ -126,40 +117,62 @@ export async function connectAdminInstances(
     },
     async invite(identifier: string, email: string, expiresInDays?: number) {
       const instance = await requireInstance(identifier)
-      const invitation = invitationFromSummary(
+      const invitation = memberInstanceInvitationFromSummary(
         await callAdminMethod(context.session, Path.parse(instance.id), 'inviteUser', {
           operationId: operationId('invite'),
           email,
           ...(expiresInDays === undefined ? {} : { expiresInDays }),
         }),
+        'Admin Instance invitation does not match its requested scope.',
       )
       if (
         invitation.instance !== instance.id ||
-        invitation.access !== 'member' ||
         invitation.email.toLowerCase() !== email.toLowerCase()
       ) {
         throw new TypeError('Admin Instance invitation does not match its requested scope.')
       }
       return invitation
     },
+    async statusInvitation(invitation: string) {
+      const receiver = invitationReceiver(invitation)
+      return instanceInvitationFromSummary(
+        await callAdminMethod(context.session, receiver, 'status', {}),
+        receiver,
+        'status',
+      )
+    },
     async reconcileInvitation(invitation: string) {
-      const receiver = directNodePath(invitation)
-      if (receiver === undefined) throw new TypeError('Admin Invitation id is invalid.')
-      const reconciled = invitationFromSummary(
+      const receiver = invitationReceiver(invitation)
+      return instanceInvitationFromSummary(
         await callAdminMethod(context.session, receiver, 'reconcile', {
           operationId: operationId('reconcile-invitation'),
         }),
+        receiver,
+        'reconciliation',
       )
-      if (
-        reconciled.id !== receiver.raw ||
-        reconciled.instance === undefined ||
-        reconciled.access !== 'member'
-      ) {
-        throw new TypeError('Admin Invitation reconciliation does not match its requested scope.')
-      }
-      return reconciled
     },
   })
+}
+
+function invitationReceiver(invitation: string): ReturnType<typeof Path.parse> {
+  const receiver = directNodePath(invitation)
+  if (receiver === undefined) throw new TypeError('Admin Invitation id is invalid.')
+  return receiver
+}
+
+function instanceInvitationFromSummary(
+  input: unknown,
+  receiver: ReturnType<typeof Path.parse>,
+  operation: 'status' | 'reconciliation',
+): InvitationInfo {
+  const invitation = memberInstanceInvitationFromSummary(
+    input,
+    `Admin Invitation ${operation} does not match its requested scope.`,
+  )
+  if (invitation.id !== receiver.raw) {
+    throw new TypeError(`Admin Invitation ${operation} does not match its requested scope.`)
+  }
+  return invitation
 }
 
 async function readExactInstance(
@@ -196,6 +209,7 @@ function instanceFromNode(node: Node): OwnedInstanceInfo {
     id: Path.id(node.id).raw,
     slug: node.props[property.slug],
     url: node.props[property.url],
+    issuer: node.props[property.issuer],
     organizationId: node.props[property.organizationId],
     state: node.props[property.state],
     phase: node.props[property.phase],
@@ -208,10 +222,12 @@ function instanceFromNode(node: Node): OwnedInstanceInfo {
 function instanceFromSummary(input: unknown): InstanceInfo {
   const value = record(input, 'Admin Instance summary')
   const failure = value.failure === undefined ? undefined : record(value.failure, 'Admin failure')
+  const issuer = optionalHttpUrl(value.issuer, 'Admin Instance issuer')
   return Object.freeze({
     id: requiredNodePath(value.id, 'Admin Instance id'),
     slug: requiredString(value.slug, 'Admin Instance slug'),
     url: optionalStringValue(value.url) ?? '',
+    ...(issuer === undefined ? {} : { issuer }),
     ...(value.hostId === undefined
       ? {}
       : { hostId: requiredNodePath(value.hostId, 'Admin Host id') }),
@@ -257,7 +273,20 @@ function domainInstallReceipt(input: unknown): DomainInstallReceipt {
   })
 }
 
-function invitationFromSummary(input: unknown): InvitationInfo {
+interface InvitationSummary {
+  readonly id: string
+  readonly email: string
+  readonly state: InvitationInfo['state']
+  readonly access: 'administrator' | 'member'
+  readonly instance?: string
+  readonly invitedBy?: string
+  readonly claimedBy?: string
+  readonly createdAt: string
+  readonly expiresAt?: string
+  readonly acceptedAt?: string
+}
+
+function invitationFromSummary(input: unknown): InvitationSummary {
   const value = record(input, 'Admin Invitation summary')
   const state = value.state
   if (state !== 'pending' && state !== 'accepted' && state !== 'revoked' && state !== 'expired') {
@@ -291,6 +320,14 @@ function invitationFromSummary(input: unknown): InvitationInfo {
   })
 }
 
+function memberInstanceInvitationFromSummary(input: unknown, scopeError: string): InvitationInfo {
+  const invitation = invitationFromSummary(input)
+  if (invitation.instance === undefined || invitation.access !== 'member') {
+    throw new TypeError(scopeError)
+  }
+  return Object.freeze({ ...invitation, access: 'member', instance: invitation.instance })
+}
+
 function instanceState(input: unknown): InstanceState {
   if (
     input === 'provisioning' ||
@@ -321,6 +358,21 @@ function requiredNodePath(input: unknown, label: string): string {
 function optionalStringValue(input: unknown): string | undefined {
   if (input === undefined) return undefined
   return requiredString(input, 'Admin string value')
+}
+
+function optionalHttpUrl(input: unknown, label: string): string | undefined {
+  if (input === undefined) return undefined
+  const value = requiredString(input, label)
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    throw new TypeError(`${label} is invalid.`)
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new TypeError(`${label} is invalid.`)
+  }
+  return value
 }
 
 function record(input: unknown, label: string): Readonly<Record<string, unknown>> {

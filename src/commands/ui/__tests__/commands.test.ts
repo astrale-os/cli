@@ -3,8 +3,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
+import { buildProgram } from '../../../program'
 import { fixtureFetch } from '../../../ui/search/__tests__/fixture'
 import addCommand from '../add'
+import { requestUiCommand } from '../request'
 import searchCommand from '../search'
 
 class ExitError extends Error {}
@@ -78,6 +80,57 @@ describe('UI command machine contracts', () => {
       ],
     })
     expect(response.results[0].code.source).toContain('Export payments')
+  })
+
+  test('request dispatches the exact Domain call through the Kernel command lifecycle', async () => {
+    let dispatched: unknown
+    let label: string | undefined
+    await requestUiCommand(
+      'accessible async combobox',
+      { json: true },
+      {
+        runKernelCommand: (async (input: {
+          label: string
+          fn: (context: unknown) => Promise<unknown>
+        }) => {
+          label = input.label
+          await input.fn({
+            session: {
+              call: async (call: unknown) => {
+                dispatched = JSON.parse(JSON.stringify(call))
+                return {
+                  state: 'submitted',
+                  requestId: 'request-1',
+                  collaborationUrl: 'https://github.com/astrale-os/ui/issues/68',
+                }
+              },
+            },
+          })
+        }) as never,
+      },
+    )
+
+    expect(label).toBe('UI request')
+    expect(dispatched).toEqual({
+      target: '/:ui.astrale.ai:function.request',
+      input: {
+        intent: 'accessible async combobox',
+        idempotencyKey: expect.stringMatching(/^ui-request:v1:[a-f0-9]{64}$/),
+      },
+    })
+  })
+
+  test('program exposes request as an authenticated Kernel command', async () => {
+    const program = await buildProgram()
+    const ui = program.commands.find((command) => command.name() === 'ui')
+    const request = ui?.commands.find((command) => command.name() === 'request')
+    const help = request?.helpInformation() ?? ''
+
+    expect(help).toContain('--instance <name>')
+    expect(help).toContain('--as <identity>')
+    expect(help).toContain('--anonymous')
+    expect(help).toContain('--json')
+    expect(help).not.toContain('issues/new')
   })
 
   test('search keeps exact candidate code in interactive output', async () => {

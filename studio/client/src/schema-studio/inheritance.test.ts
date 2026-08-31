@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 
 import { bundle, classRef, nodeClass } from './__tests__/fixture'
-import { classTier, inheritedCount, inheritedGroupsOfClass, resolveClass } from './inheritance'
+import {
+  classTier,
+  inheritedCount,
+  inheritedGroupsOfClass,
+  kernelRolesOfClass,
+  resolveClass,
+} from './inheritance'
 
 describe('Class inheritance', () => {
   test('resolves exact local, dependency, and Kernel base Classes', () => {
@@ -88,5 +94,34 @@ describe('Class inheritance', () => {
       props: [['title', { type: 'string' }, true]],
       methods: [{ name: 'rename', overridden: true }],
     })
+  })
+
+  test('reads Kernel roles off the whole chain, not just the declared parents', () => {
+    const identity = classRef('kernel.astrale.ai', 'Identity')
+    const fn = classRef('kernel.astrale.ai', 'Function')
+    const principal = classRef('local.example.dev', 'Principal')
+    const employee = classRef('local.example.dev', 'Employee')
+    const fixture = bundle({
+      Principal: nodeClass('Principal', { extendsRefs: [identity] }),
+      Employee: nodeClass('Employee', { extendsRefs: [principal] }),
+      Manager: nodeClass('Manager', { extendsRefs: [employee] }),
+      Plain: nodeClass('Plain'),
+      Callable: nodeClass('Callable', { extendsRefs: [fn] }),
+    })
+
+    // three hops from the kernel base and still an Identity — that is what inheritance means
+    expect(kernelRolesOfClass(fixture, [employee])).toEqual(['identity'])
+    expect(kernelRolesOfClass(fixture, [classRef('local.example.dev', 'Plain')])).toEqual([])
+    expect(kernelRolesOfClass(fixture, [fn, identity])).toEqual(['identity', 'function'])
+  })
+
+  test('survives a cycle in the declared chain', () => {
+    const left = classRef('local.example.dev', 'Left')
+    const right = classRef('local.example.dev', 'Right')
+    const fixture = bundle({
+      Left: nodeClass('Left', { extendsRefs: [right] }),
+      Right: nodeClass('Right', { extendsRefs: [left, classRef('kernel.astrale.ai', 'Identity')] }),
+    })
+    expect(kernelRolesOfClass(fixture, [left])).toEqual(['identity'])
   })
 })

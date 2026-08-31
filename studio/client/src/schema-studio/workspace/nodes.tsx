@@ -54,7 +54,6 @@ function WorkspaceDomainNode({ data }: NodeProps) {
     <div
       data-domain-id={domain.domainId}
       data-testid={`workspace-domain-${domain.domainId}`}
-      title={`Drag ${domain.origin}`}
       className="relative h-full w-full rounded-xl border-2 border-dashed border-muted-foreground/35 bg-foreground/[0.04]"
     >
       {/* The origin sits ON the rule, painted over it in the canvas colour, so the frame

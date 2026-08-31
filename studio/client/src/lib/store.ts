@@ -90,6 +90,10 @@ interface UIState {
    *  this is what then singles the `total` row out inside it. Cleared by any other
    *  selection. */
   revealedRef: string | null
+  /** A class an explicit JUMP asked the canvas to bring into view (⌘K, or revealing a
+   *  comment's anchor). A plain click never sets it: selecting a node must leave the canvas
+   *  exactly where the reader put it. The canvas clears it once it has framed the target. */
+  revealTarget: string | null
   /** which anchor's comment thread-popover is currently open (one at a time) */
   openAnchorRef: string | null
   /** which pin INSTANCE opened it (a `useId()`), so when the same ref is pinned in
@@ -124,6 +128,8 @@ interface UIState {
   setFocus: (id: string | null) => void
   toggleCardinality: () => void
   setOpenAnchor: (ref: string | null, id?: string | null) => void
+  /** ask the canvas to frame a class (the ⌘K path) — and, once framed, to forget it */
+  revealOnCanvas: (ref: string | null) => void
   toggleCommentMode: (on?: boolean) => void
   toggleAskMode: (on?: boolean) => void
   setCommentDraft: (d: CommentDraft | null) => void
@@ -155,6 +161,7 @@ export const useUI = create<UIState>((set) => ({
   panelOverlay: null,
   commentDraft: null,
   revealedRef: null,
+  revealTarget: null,
   showCardinality: false,
   openAnchorRef: null,
   openAnchorId: null,
@@ -176,6 +183,7 @@ export const useUI = create<UIState>((set) => ({
       selectedClass: undefined,
       focusId: null,
       revealedRef: null,
+      revealTarget: null,
       openAnchorRef: null,
     })
   },
@@ -188,6 +196,7 @@ export const useUI = create<UIState>((set) => ({
       section,
       panelOverlay: null,
       revealedRef: null,
+      revealTarget: null,
       openAnchorRef: null,
       ...((s.section === 'core') !== (section === 'core')
         ? { selectedClass: undefined, focusId: null }
@@ -228,7 +237,11 @@ export const useUI = create<UIState>((set) => ({
       ...(selection.startsWith('class.') ||
       selection.startsWith('edge.') ||
       selection.startsWith('module.')
-        ? { selectedClass: revealSelection(selection), focusId: revealFocus(selection) }
+        ? {
+            selectedClass: revealSelection(selection),
+            focusId: revealFocus(selection),
+            revealTarget: revealFocus(selection),
+          }
         : {}),
     })
   },
@@ -240,6 +253,7 @@ export const useUI = create<UIState>((set) => ({
         selectedClass,
         panelOverlay: null,
         revealedRef: null,
+        revealTarget: null,
         focusId: selectedClass?.startsWith('class.') ? selectedClass : s.focusId,
       }
     }),
@@ -248,17 +262,22 @@ export const useUI = create<UIState>((set) => ({
       selectedClass: id,
       panelOverlay: null,
       revealedRef: null,
+      revealTarget: null,
       focusId: s.focusId === id ? null : id,
     })),
   clearSelection: () =>
     set((s) =>
-      s.selectedClass === undefined && s.focusId === null && s.revealedRef === null
+      s.selectedClass === undefined &&
+      s.focusId === null &&
+      s.revealedRef === null &&
+      s.revealTarget === null
         ? {}
-        : { selectedClass: undefined, focusId: null, revealedRef: null },
+        : { selectedClass: undefined, focusId: null, revealedRef: null, revealTarget: null },
     ),
   setFocus: (focusId) => set({ focusId }),
   toggleCardinality: () => set((s) => ({ showCardinality: !s.showCardinality })),
   setOpenAnchor: (openAnchorRef, openAnchorId = null) => set({ openAnchorRef, openAnchorId }),
+  revealOnCanvas: (revealTarget) => set({ revealTarget }),
   toggleCommentMode: (on) =>
     set((s) => ({ commentMode: on ?? !s.commentMode, askMode: false, openAnchorRef: null })),
   toggleAskMode: (on) =>

@@ -1117,6 +1117,14 @@ describe('UI source operations', () => {
   /** @evidence TEST-CLI-UI-THEME-OWNERSHIP */
   test('installs a playground-exported theme without registry or shadcn and preserves edits', async () => {
     const root = await lockedFixture()
+    await writeFile(
+      path.join(root, 'components.json'),
+      JSON.stringify({ style: 'base-nova', tailwind: { css: 'src/index.css' } }),
+    )
+    await writeFile(
+      path.join(root, 'src/index.css'),
+      "@import '@astrale-os/ui/theme.css';\n@import '@astrale-os/ui/presets/astrale.css';\n",
+    )
     const source = path.join(root, 'observatory.css')
     const target = path.join(root, 'components/astrale/theme/observatory.css')
     await writeFile(source, themeCss)
@@ -1165,6 +1173,7 @@ describe('UI source operations', () => {
     expect(await readFile(path.join(root, 'src/index.css'), 'utf8')).toContain(
       "@import '../components/astrale/theme/observatory.css';",
     )
+    expect((await doctorUi(root)).healthy).toBe(true)
 
     await writeFile(target, 'consumer edit\n')
     await expect(addUi(['./observatory.css'], { project: root })).rejects.toMatchObject({

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { ExchangeCredentialCache } from '../exchange-credentials'
+import { withFileLock } from '../files'
 
 let directory: string
 let path: string
@@ -55,6 +56,86 @@ describe('exchange credential cache', () => {
     expect(refreshes).toBe(partitions.length)
     expect((await stat(path)).mode & 0o777).toBe(0o600)
     expect((await stat(join(directory, 'private'))).mode & 0o777).toBe(0o700)
+  })
+
+  /** @evidence TEST-CLI-EXCHANGE-CACHE-EXACT-LIVE-LOOKUP */
+  test('reads only an exact live binding without invoking a refresh', async () => {
+    const cache = new ExchangeCredentialCache(path)
+    const candidate = key('https://kernel.example', 'https://domain.example', 'user')
+    await cache.getOrRefresh(
+      candidate,
+      30,
+      async () => entry(candidate, 200),
+      () => 100,
+    )
+
+    await expect(cache.get(candidate, 30, () => 100)).resolves.toBe(token(candidate, 200))
+    await expect(
+      cache.get({ ...candidate, sourceSubject: 'other-user' }, 30, () => 100),
+    ).resolves.toBeUndefined()
+    await expect(cache.get(candidate, 101, () => 100)).resolves.toBeUndefined()
+
+    const stored = JSON.parse(await readFile(path, 'utf8'))
+    const [encoded] = Object.keys(stored.entries)
+    stored.entries[encoded].user = 'substituted-user'
+    await writeFile(path, JSON.stringify(stored))
+    await expect(cache.get(candidate, 30, () => 100)).resolves.toBeUndefined()
+  })
+
+  /** @evidence TEST-CLI-EXCHANGE-CACHE-REJECTS-DOMAIN-SELF-AUTHORITY */
+  test('rejects and never retains a Domain union carrying self authority', async () => {
+    const cache = new ExchangeCredentialCache(path)
+    const candidate = key('https://kernel.example', 'https://domain.example', 'user')
+    const widened = entry(candidate, 200, undefined, 200, 'union')
+
+    await expect(
+      cache.getOrRefresh(
+        candidate,
+        30,
+        async () => widened,
+        () => 100,
+      ),
+    ).rejects.toThrow(/inconsistent with its cache key/i)
+    await expect(cache.get(candidate, 30, () => 100)).resolves.toBeUndefined()
+  })
+
+  /** @evidence TEST-CLI-EXCHANGE-CACHE-READ-DOES-NOT-WAIT-FOR-REFRESH */
+  test('an exact read never waits behind an unrelated refresh lock', async () => {
+    const cache = new ExchangeCredentialCache(path)
+    const candidate = key('https://kernel.example', 'https://domain.example', 'user')
+    await cache.getOrRefresh(
+      candidate,
+      30,
+      async () => entry(candidate, 200),
+      () => 100,
+    )
+
+    let unlock!: () => void
+    let markLocked!: () => void
+    const locked = new Promise<void>((resolve) => {
+      markLocked = resolve
+    })
+    const release = new Promise<void>((resolve) => {
+      unlock = resolve
+    })
+    const holder = withFileLock(`${path}.lock`, async () => {
+      markLocked()
+      await release
+    })
+    await locked
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('exact cache read waited for refresh lock')), 100)
+      })
+      await expect(Promise.race([cache.get(candidate, 30, () => 100), timeout])).resolves.toBe(
+        token(candidate, 200),
+      )
+    } finally {
+      clearTimeout(timer)
+      unlock()
+      await holder
+    }
   })
 
   /** @evidence TEST-CLI-EXCHANGE-CACHE-SINGLEFLIGHT-CROSS-INSTANCE */
@@ -299,9 +380,10 @@ function entry(
   expiresAt: number,
   malformed?: 'outer-delegation' | 'proof-without-delegation',
   proofExpiresAt = expiresAt,
+  mode: 'caller' | 'union' = 'caller',
 ) {
   return {
-    credential: token(candidate, expiresAt, malformed, proofExpiresAt),
+    credential: token(candidate, expiresAt, malformed, proofExpiresAt, mode),
     expiresAt,
     user: candidate.sourceSubject,
     sourceIssuer: candidate.sourceIssuer,
@@ -314,6 +396,7 @@ function token(
   exp: number,
   malformed?: 'outer-delegation' | 'proof-without-delegation',
   proofExp = exp,
+  mode: 'caller' | 'union' = 'caller',
 ): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   const proof = `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
@@ -335,7 +418,19 @@ function token(
     sub: 'domain',
     aud: candidate.kernelIssuer,
     exp,
-    grant: { v: 1, expr: { kind: 'identity', credential: proof } },
+    grant: {
+      v: 1,
+      expr:
+        mode === 'caller'
+          ? { kind: 'identity', credential: proof }
+          : {
+              kind: 'union',
+              operands: [
+                { kind: 'identity', self: true },
+                { kind: 'identity', credential: proof },
+              ],
+            },
+    },
     ...(malformed === 'outer-delegation' ? { delegation: { credential: proof } } : {}),
   })}.signature`
 }

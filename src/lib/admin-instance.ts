@@ -15,9 +15,9 @@ export {
 } from '../admin/instance'
 
 /** Resolve the Admin target and read only the caller-visible Instance inventory. */
-export function listOwnedInstances(options: AdminConnectionOptions) {
+export function listOwnedInstances(options: AdminConnectionOptions, includeRetired = false) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances(context)).list(),
+    (await connectAdminInstances(context)).list({ includeRetired }),
   )
 }
 
@@ -66,6 +66,13 @@ export function inviteOwnedInstance(
 ) {
   return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).invite(identifier, email, expiresInDays),
+  )
+}
+
+/** Observe one retained Instance Invitation without reconciling or mutating it. */
+export function statusManagedInvitation(options: AdminConnectionOptions, invitation: string) {
+  return withAdminClientSession(options, async (context) =>
+    (await connectAdminInstances(context)).statusInvitation(invitation),
   )
 }
 

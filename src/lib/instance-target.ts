@@ -10,6 +10,7 @@ import {
 } from './admin-target'
 import {
   getActive,
+  managedShellDomainIssuer,
   normalizeInstanceKernelUrl,
   resolveInstance,
   resolveInstanceKey,
@@ -99,11 +100,13 @@ async function resolveNamedInstanceTarget(
   }
 
   const url = normalizeInstanceKernelUrl(managed.url)
+  const domainIssuer = managedShellDomainIssuer(url)
   return {
     name: managed.slug,
     source: 'managed',
     url,
     kernelIssuer: url,
+    ...(domainIssuer === undefined ? {} : { domainIssuer }),
   }
 }
 
@@ -121,7 +124,11 @@ async function resolveBookmarkedInstanceTarget(
       source: 'bookmark',
       url,
       kernelIssuer: entry.issuer ? normalizeInstanceKernelUrl(entry.issuer) : url,
-      domainIssuer: entry.domainIssuer,
+      domainIssuer:
+        entry.domainIssuer ??
+        (entry.slug !== undefined && entry.name !== undefined
+          ? managedShellDomainIssuer(url)
+          : undefined),
       defaultIdentity: entry.defaultIdentity,
       caFile: entry.caFile,
     }

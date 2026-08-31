@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
 import { credentialLifetimeCovers } from '../lib/credential-lifetime'
+import { exchangeCallerProof } from '../lib/exchange-grant'
 import { atomicWrite, withFileLock } from './files'
 import { EXCHANGE_CREDENTIALS_PATH } from './paths'
 
@@ -36,15 +37,28 @@ export class ExchangeCredentialCache {
 
   constructor(private readonly path = EXCHANGE_CREDENTIALS_PATH) {}
 
+  async get(
+    key: exchange.Key,
+    minimumRemainingSeconds: number,
+    now = () => Math.floor(Date.now() / 1_000),
+  ): Promise<string | undefined> {
+    requireMinimumRemainingSeconds(minimumRemainingSeconds)
+    const encoded = encodeKey(key)
+    const store = await readStore(this.path)
+    const observedAt = now()
+    const cached = store.entries[encoded]
+    return cached !== undefined && validEntry(key, cached, observedAt, minimumRemainingSeconds)
+      ? cached.credential
+      : undefined
+  }
+
   getOrRefresh(
     key: exchange.Key,
     minimumRemainingSeconds: number,
     refresh: () => Promise<exchange.Entry>,
     now = () => Math.floor(Date.now() / 1_000),
   ): Promise<string> {
-    if (!Number.isSafeInteger(minimumRemainingSeconds) || minimumRemainingSeconds < 1) {
-      throw new TypeError('Exchange credential minimum lifetime must be a positive safe integer.')
-    }
+    requireMinimumRemainingSeconds(minimumRemainingSeconds)
     const encoded = encodeKey(key)
     const pendingKey = `${encoded}\0${minimumRemainingSeconds}`
     const current = this.refreshing.get(pendingKey)
@@ -116,6 +130,12 @@ export class ExchangeCredentialCache {
   }
 }
 
+function requireMinimumRemainingSeconds(input: number): void {
+  if (!Number.isSafeInteger(input) || input < 1) {
+    throw new TypeError('Exchange credential minimum lifetime must be a positive safe integer.')
+  }
+}
+
 async function readStore(path: string): Promise<exchange.Artifact> {
   try {
     const input = JSON.parse(await readFile(path, 'utf8')) as unknown
@@ -173,15 +193,9 @@ function validEntry(
   }
   try {
     const inspected = credential.inspect(entry.credential)
-    const carried = grant.acceptUnresolved(inspected.claims.grant).expr
-    if (
-      carried.kind !== 'identity' ||
-      !('credential' in carried) ||
-      typeof carried.credential !== 'string'
-    ) {
-      return false
-    }
-    const proof = credential.inspect(carried.credential)
+    const carried = exchangeCallerProof(grant.acceptUnresolved(inspected.claims.grant).expr)
+    if (carried === undefined) return false
+    const proof = credential.inspect(carried)
     const issued = proof.claims.delegation
     if (
       issued === null ||

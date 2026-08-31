@@ -6,6 +6,7 @@ import { AuthError } from '../../errors'
 import { findOwnedInstance, type OwnedInstanceInfo } from '../../lib/admin-instance'
 import {
   assertInstanceCreateIdentity,
+  instanceCreateOptions,
   selectInstanceCreateIdentity,
 } from '../../lib/provision-instance'
 
@@ -61,6 +62,11 @@ describe('admin-backed instance commands', () => {
 
     expect(() => assertInstanceCreateIdentity(store)).not.toThrow()
     expect(selectInstanceCreateIdentity(store)).toBe('bryan')
+  })
+
+  test('instance create uses a cache-compatible saga timeout unless explicitly overridden', () => {
+    expect(instanceCreateOptions({}).timeout).toBe('120000')
+    expect(instanceCreateOptions({ timeout: '90000' }).timeout).toBe('90000')
   })
 
   test('--as selection must also be IdP-backed', () => {

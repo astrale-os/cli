@@ -1,7 +1,6 @@
 import type { Command } from 'commander'
 
 import { describe, expect, test } from 'bun:test'
-import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -169,6 +168,7 @@ describe('program composition', () => {
       'instance forget',
       'instance invitation',
       'instance invitation reconcile',
+      'instance invitation status',
       'instance invite',
       'instance list',
       'instance status',
@@ -195,15 +195,13 @@ describe('program composition', () => {
       'ui preset',
       'ui preset apply',
       'ui preset list',
+      'ui request',
       'ui search',
       'update',
       'use',
       'view',
       'whoami',
     ])
-    expect(createHash('sha256').update(JSON.stringify(surface)).digest('hex')).toBe(
-      '420e7f3e0349610f40d2c2098f7954c9e839869ac44a621c2eea50d229e4e206',
-    )
   })
 
   /** @evidence TEST-CLI-PROGRAM-BUILDS-ISOLATED-ROOTS */
@@ -312,6 +310,18 @@ describe('help contract — admin target surface is registered', () => {
     expect(help).not.toContain('--host-id')
     expect(help).not.toContain('--no-use')
     expect(help).not.toContain('Instance.init')
+  })
+
+  test('retired Instances extend the ordinary administrator inventory', async () => {
+    const program = await buildProgram()
+    const instanceList = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'list')
+    const help = instanceList?.helpInformation() ?? ''
+
+    expect(help).toContain('--include-retired')
+    expect(help).toContain('--admin <name>')
+    expect(help).not.toContain('--lifecycle')
   })
 })
 
@@ -452,7 +462,7 @@ describe('help contract — UI is project tooling', () => {
     expect(invoked).toBe(true)
   })
 
-  test('UI commands are local-only and add accepts zero or more canonical addresses', async () => {
+  test('only UI request connects to a Kernel and add accepts canonical addresses', async () => {
     const program = await buildProgram()
     const ui = program.commands.find((command) => command.name() === 'ui')
     const add = ui?.commands.find((command) => command.name() === 'add')
@@ -460,16 +470,21 @@ describe('help contract — UI is project tooling', () => {
     expect(ui?.commands.map((command) => command.name())).toEqual([
       'init',
       'search',
+      'request',
       'add',
       'doctor',
       'preset',
     ])
     expect(add?.helpInformation()).toContain('[items...]')
-    for (const command of ui?.commands ?? []) {
+    for (const command of ui?.commands.filter((candidate) => candidate.name() !== 'request') ??
+      []) {
       const help = command.helpInformation()
       expect(help).not.toContain('--url <url>')
       expect(help).not.toContain('--anonymous')
     }
+    const request = ui?.commands.find((command) => command.name() === 'request')
+    expect(request?.helpInformation()).toContain('--url <url>')
+    expect(request?.helpInformation()).toContain('--anonymous')
   })
 })
 

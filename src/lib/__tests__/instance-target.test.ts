@@ -25,6 +25,11 @@ const store: InstanceStore = {
       issuer: 'https://bookmarked-admin-issuer.example.com',
       domainIssuer: 'https://bookmarked-admin-domain.example.com',
     },
+    bryan: {
+      url: 'https://bryan.eu.beta.astrale.ai/api',
+      slug: 'bryan',
+      name: 'bryan',
+    },
   },
 }
 
@@ -122,6 +127,20 @@ describe('resolveInstanceTarget', () => {
       source: 'managed',
       url: 'https://bryan.eu.astrale.ai/api',
       kernelIssuer: 'https://bryan.eu.astrale.ai/api',
+      domainIssuer: 'https://shell.astrale.ai',
+    })
+  })
+
+  test('resolves a pre-exchange managed bookmark through the trusted route profile', async () => {
+    await expect(
+      resolveInstanceTarget(
+        { source: 'name', name: 'bryan' },
+        { config: DEFAULT_CONFIG, instances: store },
+      ),
+    ).resolves.toMatchObject({
+      source: 'bookmark',
+      kernelIssuer: 'https://bryan.eu.beta.astrale.ai/api',
+      domainIssuer: 'https://shell.beta.astrale.ai',
     })
   })
 

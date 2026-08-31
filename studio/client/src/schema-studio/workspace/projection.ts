@@ -289,6 +289,10 @@ function inheritanceEdges(
       for (const parent of definition.extendsRefs ?? []) {
         for (const target of resolveClass(owner, parent, origins, diagnostics)) {
           if (target.unresolved || target.nodeId === source.nodeId) continue
+          // A parent in the owner's OWN domain is already drawn by that domain's projection.
+          // Same guard the relationship edges use above — without it every local `extends`
+          // lands on the canvas twice, perfectly superposed and routed twice over.
+          if (target.domainId === owner.input.summary.id) continue
           const id = `workspace-extends:${source.nodeId}:${target.nodeId}`
           if (seen.has(id)) continue
           seen.add(id)

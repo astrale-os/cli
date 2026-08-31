@@ -22,6 +22,7 @@ type ListOpts = KernelCommandOpts &
   RawOutputOpts & {
     bookmarked?: boolean
     adminOnly?: boolean
+    includeRetired?: boolean
   }
 
 export type Bookmark = {
@@ -48,9 +49,20 @@ export default {
     ...ADMIN_TARGET_OPTIONS,
     { flags: '--bookmarked', description: 'Only show locally bookmarked kernel connections' },
     { flags: '--admin-only', description: 'Only show instances returned by the admin kernel' },
+    {
+      flags: '--include-retired',
+      description: 'Include caller-visible retired Instance tombstones',
+    },
   ],
   action: async (opts: ListOpts) => {
     try {
+      if (opts.includeRetired && opts.bookmarked) {
+        throw new AstraleError(
+          'INVALID_FLAG',
+          '--include-retired cannot be combined with --bookmarked.',
+          'Retired Instance evidence comes from Admin, not local bookmarks.',
+        )
+      }
       const store = await readInstances()
       const bookmarks: Bookmark[] = Object.entries(store.instances).map(([name, entry]) => ({
         name,
@@ -66,7 +78,7 @@ export default {
       if (!opts.bookmarked) {
         try {
           managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
-            listOwnedInstances(opts),
+            listOwnedInstances(opts, opts.includeRetired ?? false),
           )
         } catch (error) {
           throw adminInventoryUnavailable(error)

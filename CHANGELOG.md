@@ -1,5 +1,94 @@
 # Changelog
 
+## [1.0.0-beta.58](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.57...cli/v1.0.0-beta.58) (2026-08-30)
+
+
+### Bug Fixes
+
+* **deps:** consume Zod-coherent SDK cohort ([#315](https://github.com/astrale-os/cli/issues/315)) ([cfea683](https://github.com/astrale-os/cli/commit/cfea6836c57649ae96a358f82acc1cfecda7428b))
+* **skills:** teach function and authority requirements ([#313](https://github.com/astrale-os/cli/issues/313)) ([974c57e](https://github.com/astrale-os/cli/commit/974c57ecc0b2322c29dd18296bd2873462ede643))
+
+## [1.0.0-beta.57](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.56...cli/v1.0.0-beta.57) (2026-08-30)
+
+
+### Bug Fixes
+
+* **skills:** require public callable execution ([#311](https://github.com/astrale-os/cli/issues/311)) ([c11e844](https://github.com/astrale-os/cli/commit/c11e84480642a05310f4cf6678244fb24344fabb))
+
+
+### Performance Improvements
+
+* accelerate managed instance authentication ([#309](https://github.com/astrale-os/cli/issues/309)) ([d98b305](https://github.com/astrale-os/cli/commit/d98b3059f52cb966b9f300f02cc137b1162ea705))
+
+## [1.0.0-beta.56](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.55...cli/v1.0.0-beta.56) (2026-08-30)
+
+
+### Bug Fixes
+
+* render ordinary call dry runs offline ([#306](https://github.com/astrale-os/cli/issues/306)) ([e75d6f6](https://github.com/astrale-os/cli/commit/e75d6f615aca450c90874933ea348c5bb289c54a))
+* teach Domain graph authority requirements ([#308](https://github.com/astrale-os/cli/issues/308)) ([586303d](https://github.com/astrale-os/cli/commit/586303d1b9574fe6c25a963f24a5d25a99f5ee59))
+
+## [1.0.0-beta.55](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.54...cli/v1.0.0-beta.55) (2026-08-30)
+
+
+### Features
+
+* **instance:** include retired instances in ordinary list ([#293](https://github.com/astrale-os/cli/issues/293)) ([e91cdd8](https://github.com/astrale-os/cli/commit/e91cdd88edb337422f7b0d4c6e51eb8ad2dfbc70))
+
+
+### Bug Fixes
+
+* admit trusted Domain exchange unions ([#304](https://github.com/astrale-os/cli/issues/304)) ([56f09a0](https://github.com/astrale-os/cli/commit/56f09a0d76e6705f4ba098c73645a23c80b2452c))
+* **instance:** omit inactive inventory option ([#301](https://github.com/astrale-os/cli/issues/301)) ([9deb824](https://github.com/astrale-os/cli/commit/9deb8245a141ea854313ab83216cc6be7df66764))
+* refresh CLI schema decoder cohort ([#303](https://github.com/astrale-os/cli/issues/303)) ([59c070a](https://github.com/astrale-os/cli/commit/59c070a48e961bbb5acfdb6838cdea8ed0c6047d))
+* resolve managed Shell token exchange automatically ([#302](https://github.com/astrale-os/cli/issues/302)) ([a96d839](https://github.com/astrale-os/cli/commit/a96d839598034df37780bf7fee9a286801d566b3))
+
+## [1.0.0-beta.54](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.53...cli/v1.0.0-beta.54) (2026-08-29)
+
+
+### Features
+
+* **commands:** submit UI requests through the Domain ([#297](https://github.com/astrale-os/cli/issues/297)) ([80a495c](https://github.com/astrale-os/cli/commit/80a495c654ae6392e09415568b241b307e03b54f))
+
+## [1.0.0-beta.53](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.52...cli/v1.0.0-beta.53) (2026-08-29)
+
+
+### Features
+
+* **studio:** remove Property visibility from canonical V1 projection ([#291](https://github.com/astrale-os/cli/issues/291)) ([b575869](https://github.com/astrale-os/cli/commit/b57586950f57a7d7bcc677f2e50bbe6d073ecdf5))
+
+## [1.0.0-beta.52](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.51...cli/v1.0.0-beta.52) (2026-08-29)
+
+
+### Features
+
+* **ui:** add request draft command ([#294](https://github.com/astrale-os/cli/issues/294)) ([f3492b8](https://github.com/astrale-os/cli/commit/f3492b8b34f4e9b0bd233b23504537b46cd5cefc))
+
+## [1.0.0-beta.51](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.50...cli/v1.0.0-beta.51) (2026-08-28)
+
+
+### Features
+
+* add invitation lifecycle status ([#288](https://github.com/astrale-os/cli/issues/288)) ([eda0635](https://github.com/astrale-os/cli/commit/eda06356122f02b06520e8fa30f0211c5d605aa9))
+
+## [1.0.0-beta.50](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.49...cli/v1.0.0-beta.50) (2026-08-28)
+
+
+### Bug Fixes
+
+* **commands:** keep source Studio updates non-fatal ([#280](https://github.com/astrale-os/cli/issues/280)) ([5a56c19](https://github.com/astrale-os/cli/commit/5a56c19da1063b19e9d173b74a9a0153c869ee61))
+* fit an object's properties on one line each in Studio ([#284](https://github.com/astrale-os/cli/issues/284)) ([7fa9e7c](https://github.com/astrale-os/cli/commit/7fa9e7ca1fef1ba294f477c0512fa4f682185f82))
+* let a box follow the node dragged past its edge, and the frame follow the box ([#279](https://github.com/astrale-os/cli/issues/279)) ([6169bd7](https://github.com/astrale-os/cli/commit/6169bd7d2f79acd3553e129bd80ce964c21228f5))
+* **studio:** hide resolved comments ([#282](https://github.com/astrale-os/cli/issues/282)) ([f0cb3e1](https://github.com/astrale-os/cli/commit/f0cb3e115220c283fff56320d0c1db3991be962b))
+* **studio:** put inheritance on the card, and stop the canvas chasing a selection ([#285](https://github.com/astrale-os/cli/issues/285)) ([d7aa0e2](https://github.com/astrale-os/cli/commit/d7aa0e2de606d89fecac14d8c5598e70d5d3870e))
+* **studio:** refine workspace domain hierarchy ([#283](https://github.com/astrale-os/cli/issues/283)) ([0804be3](https://github.com/astrale-os/cli/commit/0804be3382a2433c56b6191d38e2718a5296ec0f))
+* unselect on every click outside, and keep dimmed edge labels opaque ([#281](https://github.com/astrale-os/cli/issues/281)) ([220f7fe](https://github.com/astrale-os/cli/commit/220f7feea1a207ed814928e59ce91904ecb83a20))
+
+
+### Performance Improvements
+
+* **connection:** use exact exchange cache before source refresh ([#287](https://github.com/astrale-os/cli/issues/287)) ([f4528df](https://github.com/astrale-os/cli/commit/f4528df9058c83abef3796773356e9ff80fd7567))
+
 ## [1.0.0-beta.49](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.48...cli/v1.0.0-beta.49) (2026-08-28)
 
 

@@ -96,6 +96,13 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   await page.mouse.move(grab.x, grab.y, { steps: 8 })
   await page.mouse.up()
 
+  // Give the canvas the whole window first. Selecting a class opens the detail panel and
+  // NEVER pans the canvas to keep up — that is the contract — so with the agent panel also
+  // docked the card can end up behind the detail panel, unmounted by
+  // `onlyRenderVisibleElements`, and there is nothing left to measure.
+  await page.getByRole('button', { name: 'Collapse the panel' }).click()
+  await expect(page.getByRole('button', { name: 'Collapse the panel' })).toHaveCount(0)
+
   // A card wears its module hue as a 3px bar on the left and a hairline elsewhere…
   const card = page.locator('.react-flow__node-classNode > div').first()
   const cardEdges = () =>

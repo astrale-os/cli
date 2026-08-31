@@ -82,6 +82,8 @@ export function WorkspaceSchemaGraph({
   const activeDomainId = useUI((state) => state.domainId) ?? domains[0]?.input.summary.id ?? ''
   const selected = useUI((state) => state.selectedClass)
   const focusId = useUI((state) => state.focusId)
+  const revealTarget = useUI((state) => state.revealTarget)
+  const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const setDomain = useUI((state) => state.setDomain)
   const setOpenAnchor = useUI((state) => state.setOpenAnchor)
   const showCardinality = useUI((state) => state.showCardinality)
@@ -247,14 +249,15 @@ export function WorkspaceSchemaGraph({
     [commitLayout, setDomainPosition],
   )
 
-  // Selecting a class opens the right panel, which narrows the pane — pan the selection
-  // back into view when it would sit under the panel (or off-screen after a ⌘K jump).
-  // Zoom is preserved: only the framing moves. Without this the canvas answers a
-  // selection with nothing visible, and `onlyRenderVisibleElements` even unmounts the
-  // card that was just picked.
+  // A JUMP has to land somewhere visible: ⌘K, or a comment revealed from the panel, can
+  // name a class that is off-screen entirely, and `onlyRenderVisibleElements` would not even
+  // mount the card. So those — and only those — pan the target in, at the current zoom.
+  // A click never moves the canvas: the reader put it where it is, and answering a selection
+  // by sliding the whole graph under the cursor loses the place they were reading.
   useEffect(() => {
-    if (!selected?.startsWith('class.') || !paneWidth || !paneHeight) return
-    const node = getInternalNode(qualifiedNodeId(activeDomainId, selected))
+    if (!revealTarget?.startsWith('class.') || !paneWidth || !paneHeight) return
+    const node = getInternalNode(qualifiedNodeId(activeDomainId, revealTarget))
+    // not mounted yet — leave the request standing, the canvas settles within a frame or two
     if (!node) return
     const { x, y, zoom } = getViewport()
     const cx = node.internals.positionAbsolute.x + (node.measured.width ?? CLASS_W) / 2
@@ -268,7 +271,17 @@ export function WorkspaceSchemaGraph({
       screenY > margin &&
       screenY < paneHeight - margin
     if (!onScreen) setCenter(cx, cy, { zoom })
-  }, [activeDomainId, selected, paneWidth, paneHeight, getInternalNode, getViewport, setCenter])
+    revealOnCanvas(null)
+  }, [
+    activeDomainId,
+    revealTarget,
+    paneWidth,
+    paneHeight,
+    getInternalNode,
+    getViewport,
+    setCenter,
+    revealOnCanvas,
+  ])
 
   // ── focus + context, one canvas-wide reading ──
   // `focusId` is a LOCAL ref (`class.Foo`); on this canvas the same class exists in every

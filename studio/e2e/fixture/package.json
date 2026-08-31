@@ -6,7 +6,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@astrale-os/sdk": "0.5.0-beta.64"
+    "@astrale-os/sdk": "0.5.0-beta.95"
   },
   "devDependencies": {
     "typescript": "7.0.2"

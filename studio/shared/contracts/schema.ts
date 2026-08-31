@@ -43,7 +43,7 @@ export function isSchemaRevision(value: unknown): value is SchemaRevision {
  * Version of Studio's lossy canonical-schema -> render-IR projection. Persisted
  * baselines must match this value before their IR can be compared.
  */
-export const STUDIO_SCHEMA_PROJECTION_VERSION = 3
+export const STUDIO_SCHEMA_PROJECTION_VERSION = 4
 
 export type IrCallableAuth = 'anonymous' | 'authenticated' | 'authorized'
 
@@ -118,7 +118,7 @@ export interface IrView {
 
 export interface SchemaIR {
   format: 'astrale.dsl'
-  version: string
+  version: 'v1'
   domain: string
   classes: Record<string, IrClass>
   importsByKey: Record<IrClassKey, IrImportDescriptor>

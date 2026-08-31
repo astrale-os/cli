@@ -8,7 +8,9 @@ terminates.
 
 When a target also names an exact Domain issuer, the connection owner performs the client-mediated
 `whoami -> delegate(attenuation) -> issuer exchange` journey. The resulting Domain token crosses
-into ClientSession as an opaque credential; connection does not authorize Domain operations.
+into ClientSession as an opaque credential; connection does not authorize Domain operations. Its
+carried Grant must be exactly the caller proof. Fresh or cached credentials that add Domain self or
+any other authority are rejected rather than forwarded to the Kernel.
 
 ```mermaid
 flowchart LR
@@ -28,8 +30,10 @@ selection, and the single safe stale-route recovery. The CLI does not reproduce 
 discover destination identity. `SessionAuth.resolve(call, signal)` returns source-Kernel authority and
 ClientSession supplies an audience-free Delegate with omitted attenuation, preserving the exact
 current Grant for routing. Connection itself persists no credential or route; the separate state
-owner persists exchanged source credentials and the separate Kernel Client route artifact. A valid exchanged credential is selected by the
-authenticated source issuer and subject before any live `whoami`; cache misses alone resolve the
+owner persists exchanged source credentials and the separate Kernel Client route artifact. Stable
+issuer and subject metadata from the selected persisted IdP identity may select only an exact,
+cryptographically admitted exchange entry before source-token refresh. Missing, unreadable, or
+mismatched metadata falls through to ordinary source resolution. Cache misses alone resolve the
 registered Kernel User and perform delegation plus Domain exchange.
 Exchange and destination-carrier authority cover the selected command timeout plus one bounded
 receipt margin, never outlive the current source credential, and retain the existing one-minute

@@ -1,13 +1,12 @@
-import type { IrClassRef, IrEndpoint, StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, StudioSchemaBundle } from '@shared/types'
 import type { Edge, Node } from '@xyflow/react'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from './edge-markers'
 import { localEndpointTargets } from './external'
+import { type KernelRole, kernelRoleOf, kernelRolesOfClass } from './inheritance'
 import { folderModules, moduleOfClass } from './modules'
 import { CLASS_H, CLASS_W, MODULE_COLLAPSED_H, MODULE_HEADER, MODULE_PAD } from './palette'
 import { type Hidden, classNodeVisible, classRef, edgeVisible, isHidden } from './visibility'
-
-export type SchemaCoreRole = 'container' | 'identity'
 
 export interface ClassNodeData extends Record<string, unknown> {
   domainId: string
@@ -15,11 +14,14 @@ export interface ClassNodeData extends Record<string, unknown> {
   name: string
   props: number
   methods: number
-  coreRole?: SchemaCoreRole | null
-  /** every class this one extends, kernel bases included — shown as chips when the
-   *  inheritance EDGES are off (the two say the same thing, so never both). */
+  /** the kernel bases this Class carries, at any depth — painted as glyphs, and always,
+   *  because a role is not a parent list: it holds whether or not the reader asked to see
+   *  inheritance, and most of the time nothing on the canvas would otherwise say it. */
+  roles: KernelRole[]
+  /** the classes this one extends, painted as chips on the card — the roles above excluded,
+   *  they already have their glyph. EMPTY while the inheritance edges are on: the chips and
+   *  the edges carry the same fact, so the canvas draws one reading of it or the other. */
   parents: string[]
-  showInheritedEdges: boolean
   hue: number
   icon?: string
 }
@@ -45,13 +47,6 @@ function endpointOf(endpoint?: IrEndpoint): { role?: string; cardinality: string
 export interface DomainProjection {
   nodes: Node[]
   edges: Edge[]
-}
-
-function coreRole(refs: readonly IrClassRef[]): SchemaCoreRole | null {
-  const kernel = refs.filter((ref) => ref.origin === 'kernel.astrale.ai')
-  if (kernel.some((ref) => ref.name === 'Identity')) return 'identity'
-  if (kernel.some((ref) => ref.name === 'Container')) return 'container'
-  return null
 }
 
 /** Project one Domain into ReactFlow structure without positions. */
@@ -110,9 +105,12 @@ export function projectDomainCanvas(
           name: className,
           props: Object.keys(definition?.properties ?? {}).length,
           methods: Object.keys(definition?.methods ?? {}).length,
-          coreRole: coreRole(definition?.extendsRefs ?? []),
-          parents: (definition?.extendsRefs ?? []).map((ref) => ref.name),
-          showInheritedEdges,
+          roles: kernelRolesOfClass(bundle, definition?.extendsRefs ?? []),
+          parents: showInheritedEdges
+            ? []
+            : (definition?.extendsRefs ?? [])
+                .filter((ref) => !kernelRoleOf(ref))
+                .map((ref) => ref.name),
           hue: module.hue,
           icon: definition?.icon,
         } satisfies ClassNodeData,

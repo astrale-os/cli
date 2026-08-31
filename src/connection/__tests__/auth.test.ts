@@ -5,7 +5,11 @@ import type { AstraleConfig } from '../../lib/config'
 
 import { IdpAudienceMismatchError } from '../../lib/idp'
 import { IdpSessionNoRefreshTokenError } from '../../lib/idp-session'
-import { classifyNoRefreshTokenError, resolveKeyIdentityAuthOptions } from '../auth'
+import {
+  classifyNoRefreshTokenError,
+  persistedIdpSourceIdentity,
+  resolveKeyIdentityAuthOptions,
+} from '../auth'
 
 const config: AstraleConfig = {
   issuer: 'https://unregistered.invalid',
@@ -125,5 +129,44 @@ describe('classifyNoRefreshTokenError', () => {
       requested: 'https://child.example',
       actual: 'https://manager.example',
     })
+  })
+})
+
+describe('persistedIdpSourceIdentity', () => {
+  const identity: Identity = {
+    subject: 'user-1',
+    source: 'idp',
+    idp: 'workos',
+    mode: 'remote',
+    issuer: 'https://issuer.example',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  }
+
+  test('admits only matching non-empty issuer and subject claims', () => {
+    expect(
+      persistedIdpSourceIdentity(identity, {
+        claims: { iss: 'https://issuer.example', sub: 'user-1' },
+      }),
+    ).toEqual({ issuer: 'https://issuer.example', subject: 'user-1' })
+
+    for (const claims of [
+      undefined,
+      {},
+      { iss: '', sub: 'user-1' },
+      { iss: 'https://other-issuer.example', sub: 'user-1' },
+      { iss: 'https://issuer.example', sub: '' },
+      { iss: 'https://issuer.example', sub: 'user-2' },
+    ]) {
+      expect(persistedIdpSourceIdentity(identity, { claims })).toBeUndefined()
+    }
+  })
+
+  test('never supplies a cache identity for a key-backed identity', () => {
+    expect(
+      persistedIdpSourceIdentity(
+        { ...identity, source: 'key', mode: 'local' },
+        { claims: { iss: 'https://issuer.example', sub: 'user-1' } },
+      ),
+    ).toBeUndefined()
   })
 })

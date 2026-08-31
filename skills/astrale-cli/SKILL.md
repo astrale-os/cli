@@ -66,6 +66,7 @@ published UI release:
 ```bash
 astrale ui init --preset astrale
 astrale ui search "editable chart with export"
+astrale ui request "accessible async combobox with creation"
 astrale ui add pattern/chart/line-basic
 astrale ui add theme/observatory
 astrale ui add ./my-playground-export.css
@@ -86,6 +87,10 @@ installed files; review those files, then use `--overwrite --yes` only when
 replacement is intentional. `--dry-run` leaves project files and the lock
 unchanged. Use `astrale ui search <free-text> --json` to receive a short ranked candidate list with
 exact demo code and its `command` or runtime `packageImport`.
+
+Use `astrale ui request <free-text>` when search does not satisfy the need. Human mode opens one
+prefilled public GitHub issue form and still requires submission; `--json` returns the same draft
+URL without opening a browser. The CLI does not receive a GitHub or managed-agent credential.
 
 Patterns, blocks, and themes are application-owned source after installation. A
 theme is copied to `components/astrale/theme/` and activated through one relative
@@ -126,8 +131,10 @@ astrale call @self::deactivate
 ```bash
 astrale instance create my-app
 astrale instance invite my-app person@example.com
+astrale instance invitation status @invitation-id
 astrale instance status my-app
 astrale instance status staging --bookmarked
+astrale instance list --include-retired --admin-only --json
 astrale instance use my-app
 astrale instance bookmark staging --url https://kernel.example.com
 astrale instance forget staging
@@ -140,11 +147,21 @@ to probe one local bookmark's exact issuer, JWKS, and TLS trust instead.
 `instance invite` requires authority to manage the exact Instance and grants
 only Instance member access. It returns the durable Invitation immediately;
 Admin automatically materializes child Shell access after WorkOS acceptance.
+`instance invitation status <id>` performs one read-only observation of the
+retained Invitation. `accepted` means access is materialized; `pending` means
+it is not yet materialized and deliberately does not expose WorkOS or Queue
+internals. The command requires the exact Invitation id.
 `instance invitation reconcile <id>` is diagnostic recovery, not the normal
 invitation journey.
 Without a deployed Admin Domain, `astrale instance list` cannot fetch managed
 instances (key-backed identities have no Admin token). Use
 `astrale instance list --bookmarked`.
+
+Fleet administrators may add `--include-retired` to the ordinary Admin inventory. The default
+continues to exclude retired tombstones; included retired Instances use the same output shape and
+are identified by terminal `state: "deleted"`. The optional `issuer` is present only when Admin has
+retained exact evidence. Unreachable does not mean retired. Add `--admin-only` when local bookmarks
+should be omitted from the machine-readable envelope.
 
 The CLI is connect-only: it does not build or run domains. The SDK's
 `astrale-domain` binary owns `dev`, `prod`, `build`, and deploy workflows.

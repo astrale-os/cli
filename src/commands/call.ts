@@ -7,12 +7,20 @@ import { createPathCall, expandSelfInCall, runKernelCommand, withSelfHint } from
 import { presentBinary, readBinaryBody } from '../lib/binary'
 import { failInput, log } from '../lib/log'
 import { output, present } from '../lib/output'
+import { containsSelfRef } from '../lib/self'
 
 type CallOpts = KernelCommandOpts & {
   data?: string
   dryRun?: boolean
   output?: string
 }
+
+type CallDependencies = {
+  readonly runKernelCommand: typeof runKernelCommand
+  readonly output: typeof output
+}
+
+const dependencies: CallDependencies = { runKernelCommand, output }
 
 type CallResult = Awaited<ReturnType<ConnectionContext['session']['dispatch']>>
 type BinaryCallResult = Extract<CallResult, { readonly kind: 'binary' }>
@@ -35,6 +43,7 @@ export async function callCommand(
   path: string,
   rawParams: string[],
   opts: CallOpts,
+  adapters: CallDependencies = dependencies,
 ): Promise<void> {
   let params: Record<string, unknown>
   try {
@@ -44,38 +53,56 @@ export async function callCommand(
     failInput(error, opts)
   }
 
-  await runKernelCommand<MaterializedCallResult | { readonly kind: 'dry'; readonly call: unknown }>(
-    {
-      opts,
-      label: path,
-      fn: async (ctx) => {
-        const expanded = await expandSelfInCall(path, params, ctx)
-        const request = createPathCall(expanded.path, expanded.parameters)
-        if (opts.dryRun) return { kind: 'dry', call: request }
-        return withSelfHint(
-          async () => materializeCallResult(await ctx.session.dispatch(request)),
-          expanded.meta,
-        )
-      },
-      format: async (result, fmtOpts) => {
-        switch (result.kind) {
-          case 'dry':
-            output(result.call, fmtOpts)
-            return
-          case 'value':
-            present(result.value, fmtOpts)
-            return
-          case 'binary':
-            await presentBinary(result.value, fmtOpts, { outFile: opts.output })
-            return
-          case 'stream':
-            output(result.values, fmtOpts)
-            return
-          case 'redirect':
-            throw new Error('Client Session returned an unresolved redirect.')
-        }
-      },
+  const expandParameterSelf = opts.data === undefined && rawParams.length > 0
+  const expansionParams = expandParameterSelf ? params : {}
+
+  if (opts.dryRun && !requiresSelfExpansion(path, expansionParams)) {
+    adapters.output(createPathCall(path, params), opts)
+    return
+  }
+
+  await adapters.runKernelCommand<
+    MaterializedCallResult | { readonly kind: 'dry'; readonly call: unknown }
+  >({
+    opts,
+    label: path,
+    fn: async (ctx) => {
+      const expanded = await expandSelfInCall(path, expansionParams, ctx)
+      const request = createPathCall(
+        expanded.path,
+        expandParameterSelf ? expanded.parameters : params,
+      )
+      if (opts.dryRun) return { kind: 'dry', call: request }
+      return withSelfHint(
+        async () => materializeCallResult(await ctx.session.dispatch(request)),
+        expanded.meta,
+      )
     },
+    format: async (result, fmtOpts) => {
+      switch (result.kind) {
+        case 'dry':
+          adapters.output(result.call, fmtOpts)
+          return
+        case 'value':
+          present(result.value, fmtOpts)
+          return
+        case 'binary':
+          await presentBinary(result.value, fmtOpts, { outFile: opts.output })
+          return
+        case 'stream':
+          output(result.values, fmtOpts)
+          return
+        case 'redirect':
+          throw new Error('Client Session returned an unresolved redirect.')
+      }
+    },
+  })
+}
+
+function requiresSelfExpansion(path: string, params: Readonly<Record<string, unknown>>): boolean {
+  return (
+    containsSelfRef(path) ||
+    Object.values(params).some((value) => typeof value === 'string' && containsSelfRef(value))
   )
 }
 
@@ -102,7 +129,7 @@ export async function parseParams(
   rawParams: string[],
   dataFlag?: string,
 ): Promise<Record<string, unknown>> {
-  if (dataFlag) {
+  if (dataFlag !== undefined) {
     if (rawParams.length > 0) {
       log.warn('--data provided, ignoring key=value params')
     }
@@ -189,7 +216,8 @@ Behavior:
   both --data and key=value are given, key=value is ignored (warned).
   Stdin is read only when piped and no --data/key=value is present
   (ignored on a TTY). --dry-run admits the Path and prints the call
-  input without executing. Remote-bound functions auto-mint a
+  input offline without resolving an instance; @self still requires
+  authenticated expansion. Remote-bound functions auto-mint a
   worker-scoped credential; --creds overrides it.
 
   Streaming binary bodies are consumed while the Client session remains live,

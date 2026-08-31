@@ -47,22 +47,36 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   const views = readFileSync(join(root, 'references', 'views.md'), 'utf8')
   const development = readFileSync(join(root, 'references', 'development.md'), 'utf8')
   const debugging = readFileSync(join(root, 'references', 'debugging.md'), 'utf8')
+  const simulating = readFileSync(join(root, 'references', 'simulating.md'), 'utf8')
 
   assert.match(entrypoint, /Keep authorization in Schema-owned Policy and callable `auth` mode/)
   assert.match(implementing, /defineAction/)
   assert.match(implementing, /defineWorkflow/)
   assert.match(implementing, /Action context has no `step`/)
-  assert.match(implementing, /`query` and `mutate` execute authored definitions/)
+  assert.match(implementing, /graph\.self\.query\(readVisit/)
+  assert.match(implementing, /graph\.self\.mutate\(recordForecast/)
+  assert.match(implementing, /Default `query` and `mutate` use the admitted union authority/)
+  assert.match(
+    implementing,
+    /Select `graph\.self` for Domain-owned facts,\s+`graph\.caller` for caller-only authority, and `graph\.union` only deliberately/,
+  )
   assert.match(implementing, /`domain` is the exact resolved Domain/)
   assert.match(
     implementing,
     /`executeQuery\(client, \.\.\.\)` and `executeMutation\(client, \.\.\.\)`/,
   )
+  assert.match(implementing, /dependencies: \{ kernel: KernelSchema \}/)
+  assert.match(implementing, /functions:\s*\[K\.functions\.query, K\.functions\.mutate\]/)
+  assert.match(implementing, /still return Kernel `2004` when these\s+requirements are absent/)
   assert.match(
     implementing,
-    /`client\.auth\.provision\(\.\.\.\)` requires the exact Kernel `provision`/,
+    /`K\.functions\.provision` for `client\.auth\.provision\(\.\.\.\)`,\s+only when used/,
   )
-  assert.match(implementing, /Do not create a new\s+`requirements\/` layer/)
+  assert.match(implementing, /materialize `can_use` authority\s+for the Domain principal/)
+  assert.match(
+    implementing,
+    /do not create a `requirements\/`\s+layer, forge keys, or grant the invoking human `can_use`/i,
+  )
   assert.match(integrations, /defineIntegration/)
   assert.match(integrations, /Runtime `initialize\(environment\)`/)
   assert.match(development, /Use ordinary imports for pure helpers and Rules/)
@@ -73,6 +87,10 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(development, /declare `zod` directly in the\s+Domain manifest/)
   assert.match(development, /Do not create a\s+top-level `requirements\/` source tree/)
   assert.match(debugging, /Treat authentication and provision journal inputs as secret/)
+  assert.match(entrypoint, /invoke every public Action and Workflow definition/)
+  assert.match(entrypoint, /representative success and applicable refusal inputs/)
+  assert.match(simulating, /Binding metadata, lower-level AST checks/)
+  assert.match(simulating, /one tested\s+handler cannot stand in for an unexecuted public callable/)
   assert.match(modeling, /Object definitions\s+belong to one Class hierarchy/)
   assert.match(modeling, /rather than parallel object-definition kinds/)
   assert.match(views, /defineFrontend/)

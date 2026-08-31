@@ -61,4 +61,22 @@ describe('buildInstanceRows', () => {
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ kind: 'bookmark' })
   })
+
+  test('renders an explicitly included retired Instance through the ordinary row shape', () => {
+    const rows = buildInstanceRows(
+      [
+        {
+          id: '@retired',
+          slug: 'retired',
+          url: '',
+          issuer: 'https://retired.example.test/kernel/host',
+          state: 'deleted',
+        },
+      ],
+      [],
+      { managed: true, bookmarks: false },
+    )
+
+    expect(rows).toEqual([{ name: 'retired', kind: 'managed', url: '', extra: 'deleted' }])
+  })
 })

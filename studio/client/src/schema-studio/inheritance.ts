@@ -33,6 +33,50 @@ export function classTier(bundle: StudioSchemaBundle, reference: IrClassRef): Cl
   return reference.origin === KERNEL_ORIGIN ? 'kernel' : 'external'
 }
 
+/** A kernel base that says what a Class IS, rather than what it declares. */
+export type KernelRole = 'identity' | 'function'
+
+const KERNEL_ROLES: Record<string, KernelRole> = { Identity: 'identity', Function: 'function' }
+/** stable painting order, so two Classes with the same roles read the same way */
+const KERNEL_ROLE_ORDER: KernelRole[] = ['identity', 'function']
+
+/** The role a single `extends` reference confers, if it is one of the kernel bases. */
+export function kernelRoleOf(reference: IrClassRef): KernelRole | undefined {
+  return reference.origin === KERNEL_ORIGIN ? KERNEL_ROLES[reference.name] : undefined
+}
+
+/**
+ * Every kernel role a Class carries, however far up the chain it was picked up.
+ *
+ * Being a principal or a callable is inherited whole: a Class three levels below
+ * `Identity` is exactly as much an Identity as one that extends it outright, and the
+ * canvas has to say so — the intermediate hops are nowhere in sight on the card.
+ *
+ * The walk resolves each parent through the bundle, so it crosses into imported domains
+ * as far as their definitions were shipped; a parent that cannot be resolved simply ends
+ * that branch. Cycles are guarded by `visited`, which a malformed schema can present.
+ */
+export function kernelRolesOfClass(
+  bundle: StudioSchemaBundle,
+  extendsRefs: readonly IrClassRef[],
+): KernelRole[] {
+  const found = new Set<KernelRole>()
+  const visited = new Set<string>()
+  const queue = [...extendsRefs]
+
+  while (queue.length > 0) {
+    const ref = queue.shift()!
+    const key = classRefKey(ref)
+    if (visited.has(key)) continue
+    visited.add(key)
+    const role = kernelRoleOf(ref)
+    if (role) found.add(role)
+    queue.push(...(resolveClass(bundle, ref)?.extendsRefs ?? []))
+  }
+
+  return KERNEL_ROLE_ORDER.filter((role) => found.has(role))
+}
+
 export function inheritedGroupsOfClass(
   bundle: StudioSchemaBundle,
   className: string,

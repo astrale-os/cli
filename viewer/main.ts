@@ -1,4 +1,4 @@
-import type { MountedWindow, ResolvedView, SandboxProfile, ViewTransport } from '@astrale-os/shell'
+import type { MountedWindow, ResolvedView, ViewTransport } from '@astrale-os/shell'
 
 import {
   createIframeShellAdapter,
@@ -37,14 +37,6 @@ type Config = {
 const HEARTBEAT_MS = 5 * 60_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
-const VIEW_SANDBOX: SandboxProfile = Object.freeze({
-  allowScripts: true,
-  allowForms: false,
-  allowPopups: false,
-  allowPopupsToEscapeSandbox: false,
-  allowSameOrigin: true,
-  allowModals: false,
-})
 const base = location.pathname.replace(/\/+$/, '')
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
@@ -152,7 +144,6 @@ async function main(): Promise<void> {
         host: container,
         view,
         capabilities: hostCapabilities,
-        sandbox: VIEW_SANDBOX,
         handshakeTimeoutMs: HANDSHAKE_TIMEOUT_MS,
         ...(credential === undefined ? {} : { credential }),
       },
