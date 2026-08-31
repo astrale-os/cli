@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.59](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.58...cli/v1.0.0-beta.59) (2026-08-31)
+
+
+### Features
+
+* **commands:** show progress during self-update ([#319](https://github.com/astrale-os/cli/issues/319)) ([8dd5b02](https://github.com/astrale-os/cli/commit/8dd5b02e32c0eaa295b157888ab52d604352d52c))
+* **studio:** route local agents through ACP ([#320](https://github.com/astrale-os/cli/issues/320)) ([3918136](https://github.com/astrale-os/cli/commit/391813606777bf5a696d5bc58ad1d4f41ec816ea))
+
+
+### Bug Fixes
+
+* **auth:** reject widened Domain exchange grants ([#316](https://github.com/astrale-os/cli/issues/316)) ([dfa02f8](https://github.com/astrale-os/cli/commit/dfa02f84a3a2a9594c4639703e461b2ea987ddfb))
+
 ## [1.0.0-beta.58](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.57...cli/v1.0.0-beta.58) (2026-08-30)
 
 
