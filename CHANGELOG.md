@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.60](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.59...cli/v1.0.0-beta.60) (2026-08-31)
+
+
+### Bug Fixes
+
+* **skills:** make Domain authoring guidance executable ([#321](https://github.com/astrale-os/cli/issues/321)) ([73e100c](https://github.com/astrale-os/cli/commit/73e100c73eb4fef9fb66dc2c5b09ea02176e26d3))
+
 ## [1.0.0-beta.59](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.58...cli/v1.0.0-beta.59) (2026-08-31)
 
 
