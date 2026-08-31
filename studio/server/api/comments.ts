@@ -1,8 +1,12 @@
 /** Schema-anchored review comment routes and agent reply merge. */
+import type { ThreadEntry } from '../../shared/types'
+
 import { getBundle } from '../cache'
 import { schemaRefs } from '../introspect/schema-refs'
+import { asJsonRecord, asString, asStringArray } from '../json'
 import {
   addThreadEntry,
+  decodeAnchorRefs,
   deleteComment,
   editThreadEntry,
   markOrphans,
@@ -12,6 +16,23 @@ import {
   upsertComment,
 } from '../state/comments'
 import { badRequest, json, notFound, type DomainRouteContext } from './http'
+
+function replyEntry(value: unknown): Omit<ThreadEntry, 'id'> | undefined {
+  const record = asJsonRecord(value)
+  const text = asString(record?.text)
+  const role = record?.role === 'author' ? 'author' : record?.role === 'user' ? 'user' : undefined
+  if (!record || text === undefined || role === undefined) return undefined
+  const type = record.type === 'choice' ? 'choice' : 'text'
+  const options = asStringArray(record.options)
+  const answer = record.answer === null ? null : asString(record.answer)
+  return {
+    role,
+    type,
+    text,
+    ...(options === undefined ? {} : { options }),
+    ...(answer === undefined ? {} : { answer }),
+  }
+}
 
 export async function handleCommentRoute(context: DomainRouteContext): Promise<Response | null> {
   const { req, rest, body, handle, notify } = context
@@ -34,34 +55,46 @@ export async function handleCommentRoute(context: DomainRouteContext): Promise<R
     if (body.action === 'create') {
       const bundle = await getBundle(id)
       const comment = upsertComment(root, {
-        anchors: body.anchors ?? [],
-        anchorRefs: body.anchorRefs ?? [],
-        text: body.text,
-        firstRole: body.firstRole,
-        type: body.type,
-        options: body.options,
+        anchors: asStringArray(body.anchors) ?? [],
+        anchorRefs: decodeAnchorRefs(body.anchorRefs),
+        text: asString(body.text),
+        firstRole:
+          body.firstRole === 'author' ? 'author' : body.firstRole === 'user' ? 'user' : undefined,
+        type: body.type === 'choice' ? 'choice' : body.type === 'text' ? 'text' : undefined,
+        options: asStringArray(body.options),
         schemaVersion: bundle?.renderFingerprint,
       })
       notify({ type: 'comments', domainId: id })
       return json(comment)
     }
     if (body.action === 'reply') {
-      const comment = addThreadEntry(root, body.id, body.entry)
+      const commentId = asString(body.id)
+      const entry = replyEntry(body.entry)
+      if (!commentId || !entry) return badRequest('id and a valid entry are required')
+      const comment = addThreadEntry(root, commentId, entry)
       notify({ type: 'comments', domainId: id })
       return comment ? json(comment) : notFound()
     }
     if (body.action === 'edit') {
-      const comment = editThreadEntry(root, body.id, body.entryId, String(body.text ?? ''))
+      const comment = editThreadEntry(
+        root,
+        asString(body.id) ?? '',
+        asString(body.entryId) ?? '',
+        asString(body.text) ?? '',
+      )
       notify({ type: 'comments', domainId: id })
       return comment ? json(comment) : notFound()
     }
     if (body.action === 'status') {
-      const comment = setStatus(root, body.id, body.status, body.closeNote)
+      const status =
+        body.status === 'closed' ? 'closed' : body.status === 'open' ? 'open' : undefined
+      if (!status) return badRequest('status must be open or closed')
+      const comment = setStatus(root, asString(body.id) ?? '', status, asString(body.closeNote))
       notify({ type: 'comments', domainId: id })
       return comment ? json(comment) : notFound()
     }
     if (body.action === 'delete') {
-      const ok = deleteComment(root, body.id)
+      const ok = deleteComment(root, asString(body.id) ?? '')
       notify({ type: 'comments', domainId: id })
       return json({ ok })
     }
@@ -71,13 +104,13 @@ export async function handleCommentRoute(context: DomainRouteContext): Promise<R
   if (rest === '/comments/merge' && req.method === 'POST') {
     const bundle = await getBundle(id)
     try {
-      const result = mergeReply(root, bundle?.renderFingerprint ?? '', String(body.text ?? ''), {
+      const result = mergeReply(root, bundle?.renderFingerprint ?? '', asString(body.text) ?? '', {
         dedupeAuthorText: true,
       })
       notify({ type: 'comments', domainId: id })
       return json(result)
-    } catch (error: any) {
-      return badRequest(String(error?.message ?? error))
+    } catch (error) {
+      return badRequest(error instanceof Error ? error.message : String(error))
     }
   }
 

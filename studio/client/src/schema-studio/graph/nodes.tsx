@@ -18,10 +18,10 @@ import {
 } from 'lucide-react'
 import { type CSSProperties, useState } from 'react'
 
-import { hasUnsentDraft } from '@/components/thread'
 import { ThreadPopover } from '@/components/thread-popover'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { ViewModal } from '@/components/view-modal'
+import { hasUnsentDraft } from '@/lib/comment-drafts'
 import { openCommentThreads } from '@/lib/comments'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -148,9 +148,9 @@ function ClassNode({ data }: NodeProps) {
 }
 
 export function GroupNode({ data }: NodeProps) {
-  const d = data as GroupNodeData
-  const setDomain = useUI((s) => s.setDomain)
-  const toggleModule = useUI((s) => s.toggleModule)
+  const d = data as GroupNodeData & {
+    onToggleModule: (domainId: string, path: string) => void
+  }
   const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `module.${d.path}`)
   const tint = moduleTint(d.hue)
   return (
@@ -185,11 +185,7 @@ export function GroupNode({ data }: NodeProps) {
           title={d.collapsed ? 'Show classes' : 'Hide classes'}
           onClick={(e) => {
             e.stopPropagation()
-            if (d.onToggleModule) d.onToggleModule(d.domainId, d.path)
-            else {
-              if (useUI.getState().domainId !== d.domainId) setDomain(d.domainId)
-              toggleModule(d.path)
-            }
+            d.onToggleModule(d.domainId, d.path)
           }}
           className="shrink-0 rounded p-0.5 transition-colors hover:bg-foreground/5"
         >
@@ -328,6 +324,7 @@ export function CanvasCommentPin({
   excerpt: string
   className?: string
 }) {
+  const domainId = useUI((s) => s.domainId) ?? ''
   const [open, setOpen] = useState(false)
   const openThreads = openCommentThreads(threads)
   if (openThreads.length === 0) return null
@@ -358,10 +355,11 @@ export function CanvasCommentPin({
         align="center"
         className="w-80"
         onInteractOutside={(event) => {
-          if (hasUnsentDraft(anchor.ref, openThreads)) event.preventDefault()
+          if (hasUnsentDraft(domainId, anchor.ref, openThreads)) event.preventDefault()
         }}
       >
         <ThreadPopover
+          domainId={domainId}
           anchor={anchor}
           excerpt={excerpt}
           threads={openThreads}

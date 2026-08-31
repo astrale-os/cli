@@ -1,7 +1,9 @@
-import type { HarnessStatus, StudioEvent } from '../../shared/types'
-import type { DomainHandle } from '../domain'
+import type { HarnessStatus } from '../../shared/types'
 
-import { runAsk } from './ask'
+import { badRequest, json, notFound, type DomainRouteContext } from '../api/http'
+import { asJsonRecord, asString } from '../json'
+import { decodeAnchorRef } from '../state/comments'
+import { type AskRequest, runAsk } from './ask'
 import { handleBridge } from './bridge/routes'
 import { inspectHarnessHealth } from './harness/adapter'
 import {
@@ -24,7 +26,6 @@ import {
   getSessionId,
   getSnapshot,
   isRunning,
-  resetConversation,
   setSessionId,
   submitRun,
 } from './run/coordinator'
@@ -32,15 +33,9 @@ import { readRunHistory } from './run/transcript'
 import { readUsage } from './run/usage'
 import { NdjsonChannel } from './stream'
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
-
-const badRequest = (message: string) => json({ error: message }, 400)
-const notFound = () => json({ error: 'not found' }, 404)
 
 async function harnessStatus(root: string, selected = false): Promise<HarnessStatus> {
   const selection = getHarnessSelection(root)
@@ -62,17 +57,8 @@ async function harnessStatus(root: string, selected = false): Promise<HarnessSta
   }
 }
 
-export interface AgentRouteInput {
-  req: Request
-  url: URL
-  rest: string
-  body: any
-  handle: DomainHandle
-  notify: (event: StudioEvent) => void
-}
-
 /** Own every `/agent/*` HTTP route for one Studio domain. */
-export async function handleAgentRoute(input: AgentRouteInput): Promise<Response | null> {
+export async function handleAgentRoute(input: DomainRouteContext): Promise<Response | null> {
   const { req, url, rest, body, handle, notify } = input
   if (rest !== '/agent' && !rest.startsWith('/agent/')) return null
   const id = handle.id
@@ -92,16 +78,15 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
   if (rest === '/agent/history' && req.method === 'GET')
     return json(readRunHistory(id, root, Number(url.searchParams.get('limit')) || undefined))
   if (rest === '/agent/cancel' && req.method === 'POST') return json({ ok: cancelRun(id) })
-  if (rest === '/agent/reset' && req.method === 'POST') return json({ ok: resetConversation(id) })
   if (rest === '/agent/session') {
     if (req.method === 'GET') return json(getSessionId(id))
     if (req.method === 'POST') {
       const harness = getHarness(root)
       if (body.harness !== harness.id)
         return badRequest(
-          `selected harness changed from ${String(body.harness ?? '(unknown)')} to ${harness.id}`,
+          `selected harness changed from ${asString(body.harness) ?? '(unknown)'} to ${harness.id}`,
         )
-      const ok = setSessionId(id, typeof body.sessionId === 'string' ? body.sessionId : '')
+      const ok = setSessionId(id, asString(body.sessionId) ?? '')
       if (!ok) return badRequest('the session id cannot be changed while a turn is running')
       return json(getSessionId(id))
     }
@@ -113,10 +98,10 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
   if (rest === '/agent/harness' && req.method === 'POST') {
     if (isRunning(id)) return badRequest('the harness cannot be changed while a turn is running')
     try {
-      setHarnessSelection(root, String(body.id ?? ''))
+      setHarnessSelection(root, asString(body.id) ?? '')
       return json(await harnessStatus(root, true))
     } catch (error) {
-      return badRequest(String((error as Error)?.message ?? error))
+      return badRequest(errorMessage(error))
     }
   }
   if (rest === '/agent/loadout' && req.method === 'GET') {
@@ -159,9 +144,9 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
       const scope = body.scope === 'global' ? 'global' : 'domain'
       if (body.action === 'set') {
         try {
-          return json(setHarnessGateway(root, { scope, config: body.config ?? {} }))
+          return json(setHarnessGateway(root, { scope, config: asJsonRecord(body.config) ?? {} }))
         } catch (error) {
-          return badRequest(String((error as Error)?.message ?? error))
+          return badRequest(errorMessage(error))
         }
       }
       if (body.action === 'clear') return json(clearHarnessGateway(root, scope))
@@ -171,7 +156,7 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
   if (rest === '/agent/harness-gateway/host-token' && req.method === 'POST') {
     const audience = gatewayAudience(root)
     if (!audience) return badRequest('no gateway base URL configured for this domain')
-    return json({ ok: setHostToken(audience, String(body.token ?? '')) })
+    return json({ ok: setHostToken(audience, asString(body.token) ?? '') })
   }
   if (rest === '/agent/usage' && req.method === 'GET') return json(readUsage(root))
   if (rest === '/agent/skill' && req.method === 'GET') {
@@ -182,6 +167,13 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
     return content ? json(content) : notFound()
   }
   if (rest === '/agent/ask' && req.method === 'POST') {
+    const excerpt = asString(body.excerpt)
+    const anchor = decodeAnchorRef(body.anchor)
+    const ask: AskRequest = {
+      question: asString(body.question) ?? '',
+      ...(excerpt === undefined ? {} : { excerpt }),
+      ...(anchor === undefined ? {} : { anchor }),
+    }
     const controller = new AbortController()
     req.signal?.addEventListener('abort', () => controller.abort(), { once: true })
     let channel: NdjsonChannel | undefined
@@ -189,14 +181,14 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
       async start(target) {
         channel = new NdjsonChannel(target, controller)
         try {
-          const result = await runAsk(handle, body, controller.signal, (delta) =>
+          const result = await runAsk(handle, ask, controller.signal, (delta) =>
             channel!.send({ delta }),
           )
           channel.send(
             result.isError ? { error: result.errorMessage || 'ask failed' } : { done: result.text },
           )
-        } catch (error: any) {
-          channel.send({ error: String(error?.message ?? error) })
+        } catch (error) {
+          channel.send({ error: errorMessage(error) })
         } finally {
           channel.close()
         }
@@ -211,7 +203,7 @@ export async function handleAgentRoute(input: AgentRouteInput): Promise<Response
     })
   }
   if (rest.startsWith('/agent/bridge/'))
-    return handleBridge(handle, rest.slice('/agent/bridge/'.length), req, body)
+    return handleBridge(handle, rest.slice('/agent/bridge/'.length), body)
 
   return notFound()
 }

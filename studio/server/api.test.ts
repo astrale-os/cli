@@ -63,7 +63,7 @@ test('router blocks cross-site mutations before route dispatch but permits same-
 
 test('cross-site protection compares the complete origin and leaves mutation state unchanged', async () => {
   const handle = fixture()
-  const contextPath = `/api/domain/${encodeURIComponent(handle.id)}/context`
+  const visibilityPath = `/api/domain/${encodeURIComponent(handle.id)}/visibility`
   const mutation = {
     method: 'POST',
     headers: {
@@ -71,50 +71,87 @@ test('cross-site protection compares the complete origin and leaves mutation sta
       // The host matches Studio, but the scheme does not: this is not same-origin.
       origin: 'https://127.0.0.1',
     },
-    body: JSON.stringify({ action: 'add', title: 'Injected', body: 'Must not persist' }),
+    body: JSON.stringify({
+      action: 'set',
+      hidden: { 'class.Injected': true },
+      showInheritedEdges: false,
+    }),
   }
 
-  const blocked = await route(contextPath, mutation)
+  const blocked = await route(visibilityPath, mutation)
   expect(blocked?.status).toBe(403)
   expect(await blocked?.json()).toEqual({ error: 'cross-site request blocked' })
 
-  const wrongPort = await route(contextPath, {
+  const wrongPort = await route(visibilityPath, {
     ...mutation,
     headers: { ...mutation.headers, origin: 'http://127.0.0.1:3000' },
   })
   expect(wrongPort?.status).toBe(403)
 
-  const unchanged = await route(contextPath)
-  expect(await unchanged?.json()).toEqual({ user: [], auto: [] })
+  const unchanged = await route(visibilityPath)
+  expect(await unchanged?.json()).toEqual({ hidden: {}, showInheritedEdges: true })
 
-  const allowed = await route(contextPath, {
+  const allowed = await route(visibilityPath, {
     ...mutation,
     headers: { ...mutation.headers, origin: 'http://127.0.0.1' },
   })
   expect(allowed?.status).toBe(200)
-  const stored = (await (await route(contextPath))?.json()) as { user: unknown[] }
-  expect(stored.user).toHaveLength(1)
+  expect(await (await route(visibilityPath))?.json()).toEqual({
+    hidden: { 'class.Injected': true },
+    showInheritedEdges: false,
+  })
 })
 
-test('domain dispatch preserves context success, validation, and unknown-domain responses', async () => {
+test('domain dispatch preserves canvas success, validation, and unknown-domain responses', async () => {
   const handle = fixture()
   const base = `/api/domain/${encodeURIComponent(handle.id)}`
 
-  const context = await route(`${base}/context`)
-  expect(context?.status).toBe(200)
-  expect(await context?.json()).toEqual({ user: [], auto: [] })
+  const visibility = await route(`${base}/visibility`)
+  expect(visibility?.status).toBe(200)
+  expect(await visibility?.json()).toEqual({ hidden: {}, showInheritedEdges: true })
 
-  const invalid = await route(`${base}/context`, {
+  const invalid = await route(`${base}/visibility`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ action: 'invalid' }),
   })
   expect(invalid?.status).toBe(400)
-  expect(await invalid?.json()).toEqual({ error: 'unknown context action' })
+  expect(await invalid?.json()).toEqual({ error: 'unknown visibility action' })
 
-  const missing = await route('/api/domain/not-registered/context')
+  const nonObjectBody = await route(`${base}/visibility`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(['set', { hidden: { 'class.Injected': true } }]),
+  })
+  expect(nonObjectBody?.status).toBe(400)
+  expect(await (await route(`${base}/visibility`))?.json()).toEqual({
+    hidden: {},
+    showInheritedEdges: true,
+  })
+
+  const filteredLayout = await route(`${base}/layout`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      action: 'set',
+      positions: { valid: { x: 12, y: 24 }, invalid: { x: '12', y: 24 } },
+    }),
+  })
+  expect((await filteredLayout?.json()).positions).toEqual({ valid: { x: 12, y: 24 } })
+
+  const missing = await route('/api/domain/not-registered/visibility')
   expect(missing?.status).toBe(404)
   expect(await missing?.json()).toEqual({ error: 'not found' })
+})
+
+test('retired internal domain routes return the stable JSON 404', async () => {
+  const handle = fixture()
+  const base = `/api/domain/${encodeURIComponent(handle.id)}`
+  for (const path of ['/context', '/copy-payload', '/integrations', '/instance']) {
+    const response = await route(`${base}${path}`)
+    expect(response?.status).toBe(404)
+    expect(await response?.json()).toEqual({ error: 'not found' })
+  }
 })
 
 test('workspace dispatch preserves catalog responses and instance request validation', async () => {

@@ -20,14 +20,7 @@ import { updateSettings } from '../../state/settings'
 import { handleBridge } from '../bridge/routes'
 import { readConversation, saveConversation } from '../conversation'
 import { setHarnessGateway } from '../harness/gateway/config'
-import {
-  cancelRun,
-  getSnapshot,
-  isRunning,
-  resetConversation,
-  setSessionId,
-  submitRun,
-} from './coordinator'
+import { cancelRun, getSnapshot, isRunning, setSessionId, submitRun } from './coordinator'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -113,7 +106,6 @@ describe.serial('agent runner invariants', () => {
     const first = submitRun(handle, () => {}, { message: 'first' })
     expect(isRunning(handle.id)).toBe(true)
     expect(setSessionId(handle.id, 'hijack')).toBe(false)
-    expect(resetConversation(handle.id)).toBe(false)
 
     const second = await submitRun(handle, () => {}, { message: 'second' })
     expect(second).toEqual({ error: 'an agent run is already in progress for this domain' })
@@ -245,9 +237,7 @@ describe.serial('agent runner invariants', () => {
       readFileSync(join(handle.root, '.domain-studio', '.cache', 'agent', bridgeFile), 'utf8'),
     ) as { token: string }
     expect(cancelRun(handle.id)).toBe(true)
-    expect(
-      (await handleBridge(handle, 'threads', new Request('http://studio.test'), { token })).status,
-    ).toBe(401)
+    expect((await handleBridge(handle, 'threads', { token })).status).toBe(401)
     const canceled = await waitForTerminal(handle.id)
 
     expect(canceled.status).toBe('canceled')

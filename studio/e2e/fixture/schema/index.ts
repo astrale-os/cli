@@ -1,4 +1,12 @@
-import { core, defineSchema, nodeClass, property, valueSchema, view } from '@astrale-os/sdk/schema'
+import {
+  core,
+  defineSchema,
+  edgeClass,
+  nodeClass,
+  property,
+  valueSchema,
+  view,
+} from '@astrale-os/sdk/schema'
 
 const string = valueSchema<string>()({ type: 'string' })
 const boolean = valueSchema<boolean>()({ type: 'boolean' })
@@ -12,6 +20,15 @@ const Monitor = nodeClass({
   },
 })
 
+const RemoteMonitor = nodeClass({ properties: { label: string } })
+const RemoteSchema = defineSchema('remote-e2e.astrale.ai', {
+  classes: { RemoteMonitor },
+})
+const reportsTo = edgeClass.directed({
+  source: { as: 'monitor', accepts: [Monitor], outgoing: '0..*' },
+  target: { as: 'remote', accepts: [RemoteMonitor], incoming: '0..*' },
+})
+
 const primary = core.node(Monitor, {
   name: 'Primary monitor',
   label: 'Browser fixture',
@@ -19,7 +36,8 @@ const primary = core.node(Monitor, {
 })
 
 export const StudioE2ESchema = defineSchema('studio-e2e.astrale.ai', {
-  classes: { Monitor },
+  dependencies: { remote: RemoteSchema },
+  classes: { Monitor, reportsTo },
   views: {
     overview: view({
       description: 'Fixture overview.',

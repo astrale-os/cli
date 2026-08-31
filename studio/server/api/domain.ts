@@ -5,12 +5,11 @@ import type { DomainRouteContext, Notify } from './http'
 import { handleAgentRoute } from '../agent/routes'
 import { handleCanvasRoute } from './canvas'
 import { handleCommentRoute } from './comments'
-import { handleContextRoute } from './context'
-import { handleDeploymentRoute } from './deployment'
 import { handleDocumentMutation, handleDocumentTransport } from './documents'
-import { notFound } from './http'
+import { notFound, readJsonRecord } from './http'
 import { handleProjectRoute } from './project'
 import { handleSchemaRoute } from './schema'
+import { handleUpdateRoute } from './updates'
 import { handleViewRoute } from './views'
 
 export async function handleDomainRoute(input: {
@@ -25,7 +24,7 @@ export async function handleDomainRoute(input: {
   const documentTransport = await handleDocumentTransport(req, rest, handle.root)
   if (documentTransport) return documentTransport
 
-  const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
+  const body = req.method === 'POST' ? await readJsonRecord(req) : {}
   const context: DomainRouteContext = { req, url, rest, body, handle, notify }
 
   const documentMutation = handleDocumentMutation(context)
@@ -34,8 +33,8 @@ export async function handleDomainRoute(input: {
   const schema = await handleSchemaRoute(context)
   if (schema) return schema
 
-  const deployment = await handleDeploymentRoute(context)
-  if (deployment) return deployment
+  const update = await handleUpdateRoute(context)
+  if (update) return update
 
   const view = await handleViewRoute(context)
   if (view) return view
@@ -43,11 +42,8 @@ export async function handleDomainRoute(input: {
   const comment = await handleCommentRoute(context)
   if (comment) return comment
 
-  const agent = await handleAgentRoute({ req, url, rest, body, handle, notify })
+  const agent = await handleAgentRoute(context)
   if (agent) return agent
-
-  const contextResponse = await handleContextRoute(context)
-  if (contextResponse) return contextResponse
 
   const project = await handleProjectRoute(context)
   if (project) return project

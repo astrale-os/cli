@@ -1,6 +1,3 @@
-import type { StudioEvent } from '@shared/types'
-
-import { useQueryClient } from '@tanstack/react-query'
 import {
   Boxes,
   type LucideIcon,
@@ -10,7 +7,7 @@ import {
   Settings,
   Workflow,
 } from 'lucide-react'
-import { lazy, type ReactNode, Suspense, useCallback, useEffect } from 'react'
+import { lazy, type ReactNode, Suspense, useEffect } from 'react'
 
 import { AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
@@ -24,10 +21,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { UpdatesBadge } from '@/components/updates-badge'
 import { WorkPanel } from '@/components/work-panel'
 import { useAgentLive, useAgentSnapshot } from '@/lib/agent'
-import { qk } from '@/lib/api'
-import { useComments, useInvalidateDomain, useWorkspace } from '@/lib/hooks'
-import { useEventStream } from '@/lib/sse'
+import { useWorkspace } from '@/lib/hooks'
 import { type SectionKey, useUI } from '@/lib/store'
+import { useStudioEventSync } from '@/lib/studio-events'
 import { cn } from '@/lib/utils'
 import { ProcessSection } from '@/sections/process'
 
@@ -116,10 +112,7 @@ export function App() {
   const panelSide = useUI((s) => s.panelSide)
   const toggleCommentMode = useUI((s) => s.toggleCommentMode)
   const toggleAskMode = useUI((s) => s.toggleAskMode)
-  const invalidate = useInvalidateDomain()
   const setRun = useAgentLive((s) => s.setRun)
-  const appendEvent = useAgentLive((s) => s.appendEvent)
-  const qc = useQueryClient()
 
   // pick the first domain once the workspace loads
   useEffect(() => {
@@ -132,51 +125,7 @@ export function App() {
     }
   }, [domains, domainId, setDomain])
 
-  // live updates
-  const onEvent = useCallback(
-    (e: StudioEvent) => {
-      // (re)connected — SSE has no replay, so resync the active domain in case
-      // frames were missed during a drop (the snapshot effect below adopts the
-      // authoritative run, recovering a stuck "running" drawer after a backend restart).
-      if (e.type === 'hello') {
-        const id = useUI.getState().domainId
-        if (id) {
-          invalidate(id)
-          qc.invalidateQueries({ queryKey: qk.agent(id) })
-          qc.invalidateQueries({ queryKey: qk.agentHistory(id) })
-        }
-        return
-      }
-      // workspace changed (a domain was added/removed on disk) — refresh the domain list
-      if (e.type === 'workspace') {
-        qc.invalidateQueries({ queryKey: qk.workspace })
-        return
-      }
-      // agent loop: feed the live store directly (don't refetch the whole domain on every event)
-      if (e.type === 'agent-event') {
-        appendEvent(e.domainId, e.runId, e.event)
-        return
-      }
-      if (e.type === 'agent-run') {
-        setRun(e.run)
-        qc.invalidateQueries({ queryKey: qk.agent(e.domainId) })
-        // a finished turn joins the stored transcript the chat reads
-        if (e.run.status !== 'running' && e.run.status !== 'queued')
-          qc.invalidateQueries({ queryKey: qk.agentHistory(e.domainId) })
-        return
-      }
-      // the origin lives in the schema, so a schema edit can rename the domain —
-      // refresh the workspace list too, keeping the selector label in sync.
-      if (e.type === 'schema-diff') {
-        invalidate(e.domainId)
-        qc.invalidateQueries({ queryKey: qk.workspace })
-        return
-      }
-      if ('domainId' in e && e.domainId) invalidate(e.domainId)
-    },
-    [invalidate, setRun, appendEvent, qc],
-  )
-  useEventStream(onEvent)
+  useStudioEventSync()
 
   // keep the merge-forward agent store in sync with the authoritative snapshot —
   // recovers the terminal run state if an `agent-run` frame was ever missed.
@@ -202,12 +151,6 @@ export function App() {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [toggleCommentMode, toggleAskMode])
-
-  const { data: comments } = useComments(domainId)
-  // "waiting for my reply" = open threads whose last word came from the agent.
-  const myReplyCount =
-    comments?.comments.filter((c) => c.status === 'open' && c.thread.at(-1)?.role === 'author')
-      .length ?? 0
 
   if (!domains) {
     return (

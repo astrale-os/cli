@@ -3,6 +3,7 @@ import type { AnchorRef } from '@shared/types'
 import { create } from 'zustand'
 
 import { streamAsk } from './ask'
+import { anchorKey } from './targets'
 
 /**
  * Ephemeral "Ask" state. Unlike comments (persisted to comments.json), an ask lives
@@ -32,7 +33,6 @@ export interface AskEntry {
   seen: boolean
 }
 
-const keyOf = (domainId: string, ref: string) => `${domainId}::${ref}`
 const controllers = new Map<string, AbortController>()
 
 interface AsksState {
@@ -45,7 +45,6 @@ interface AsksState {
   open: (key: string) => void
   collapse: () => void
   remove: (key: string) => void
-  keepOnly: (domainId: string) => void
 }
 
 export const useAsks = create<AsksState>((set, get) => ({
@@ -54,7 +53,7 @@ export const useAsks = create<AsksState>((set, get) => ({
 
   // ask-mode click → create (or reopen) the ask for this element and expand it
   start: (domainId, anchor, excerpt, x, y) => {
-    const key = keyOf(domainId, anchor.ref)
+    const key = anchorKey(domainId, anchor.ref)
     set((s) => {
       const existing = s.entries[key]
       const entry: AskEntry = existing
@@ -167,18 +166,4 @@ export const useAsks = create<AsksState>((set, get) => ({
       return { entries: rest, openKey: s.openKey === key ? null : s.openKey }
     })
   },
-
-  // asks are scoped to the domain they were opened in — abort + drop the rest on a switch
-  keepOnly: (domainId) =>
-    set((s) => {
-      const entries: Record<string, AskEntry> = {}
-      for (const [k, e] of Object.entries(s.entries)) {
-        if (e.domainId === domainId) entries[k] = e
-        else {
-          controllers.get(k)?.abort()
-          controllers.delete(k)
-        }
-      }
-      return { entries, openKey: s.openKey && entries[s.openKey] ? s.openKey : null }
-    }),
 }))

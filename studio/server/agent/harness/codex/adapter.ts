@@ -14,7 +14,6 @@ import { readSkillContent } from '../skills'
 import { runCodexForkAsk } from './ask'
 import { runCodexExec } from './exec'
 import { loadCodexConfiguration } from './loadout'
-import { scanCodexSkills } from './skills'
 
 const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CODEX_BIN || 'codex'
 

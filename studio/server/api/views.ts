@@ -1,5 +1,6 @@
 /** CLI-resolved View target discovery and Shell session routes. */
 import { getAnatomy, getBundle } from '../cache'
+import { asString } from '../json'
 import { readSettings } from '../state/settings'
 import { getViewRuntime } from '../views/runtime'
 import { closeViewSession, launchViewSession } from '../views/session'
@@ -13,7 +14,7 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
   const root = handle.root
 
   if (rest === '/views/sessions/close' && req.method === 'POST') {
-    return json(await closeViewSession(String(body.sessionId ?? '')))
+    return json(await closeViewSession(asString(body.sessionId) ?? ''))
   }
 
   const runtimeMatch = rest.match(/^\/views\/([^/]+)\/runtime$/)

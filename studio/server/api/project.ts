@@ -1,7 +1,7 @@
-/** Domain project configuration routes: integrations, settings, and env files. */
-import { getAnatomy, invalidate } from '../cache'
+/** Domain project configuration routes: settings and env files. */
+import { invalidate } from '../cache'
 import { isEnvName, readEnvModel, writeEnvUpdates } from '../environment/files'
-import { deleteIntegration, readIntegrations, upsertIntegration } from '../state/integrations'
+import { asJsonRecord, asString } from '../json'
 import { readSettings, updateSettings } from '../state/settings'
 import { badRequest, json, type DomainRouteContext } from './http'
 
@@ -10,18 +10,10 @@ export async function handleProjectRoute(context: DomainRouteContext): Promise<R
   const id = handle.id
   const root = handle.root
 
-  if (rest === '/integrations') {
-    const detected = (await getAnatomy(id))?.detectedIntegrations ?? []
-    if (req.method === 'GET') return json(readIntegrations(root, detected))
-    if (body.action === 'upsert') return json(upsertIntegration(root, body))
-    if (body.action === 'delete') return json({ ok: deleteIntegration(root, body.id) })
-    return badRequest('unknown integrations action')
-  }
-
   if (rest === '/settings') {
     if (req.method === 'GET') return json(readSettings(root))
     if (body.action === 'update') {
-      const next = updateSettings(root, body.settings ?? {})
+      const next = updateSettings(root, asJsonRecord(body.settings) ?? {})
       invalidate(id, 'anatomy')
       notify({ type: 'anatomy-diff', domainId: id })
       return json(next)
@@ -30,15 +22,16 @@ export async function handleProjectRoute(context: DomainRouteContext): Promise<R
   }
 
   if (rest === '/env') {
-    const envName = req.method === 'GET' ? url.searchParams.get('env') : body.env
+    const envName = req.method === 'GET' ? url.searchParams.get('env') : asString(body.env)
     if (!isEnvName(envName)) return badRequest('env must be "dev" or "prod"')
     if (req.method === 'GET') return json(readEnvModel(root, envName))
     if (req.method === 'POST') {
-      if (!body.updates || typeof body.updates !== 'object') {
+      const requestedUpdates = asJsonRecord(body.updates)
+      if (!requestedUpdates) {
         return badRequest('updates object required')
       }
       const updates: Record<string, string | null> = {}
-      for (const [key, value] of Object.entries(body.updates as Record<string, unknown>)) {
+      for (const [key, value] of Object.entries(requestedUpdates)) {
         if (!/^[A-Za-z_]\w*$/.test(key)) continue
         updates[key] = value === null ? null : String(value)
       }
@@ -46,8 +39,8 @@ export async function handleProjectRoute(context: DomainRouteContext): Promise<R
         const model = writeEnvUpdates(root, envName, updates)
         notify({ type: 'anatomy-diff', domainId: id })
         return json(model)
-      } catch (error: any) {
-        return badRequest(String(error?.message ?? error))
+      } catch (error) {
+        return badRequest(error instanceof Error ? error.message : String(error))
       }
     }
     return badRequest('GET or POST')

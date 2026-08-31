@@ -3,6 +3,7 @@ import type { Edge, Node } from '@xyflow/react'
 
 import { isIrClassRef } from '@shared/schema/identity'
 
+import { encodeFlowEdgeId, encodeFlowNodeId } from '@/lib/targets'
 import { buildViewsModel } from '@/lib/views'
 
 import type { WorkspaceDomainInput } from './use-domain-inputs'
@@ -65,8 +66,7 @@ const CROSS_COLOR = 'var(--edge-cross)'
 const INHERITANCE_COLOR = 'var(--edge-inherit)'
 
 export const workspaceDomainNodeId = (domainId: string) => `workspace-domain:${domainId}`
-export const qualifiedNodeId = (domainId: string, localId: string) =>
-  `workspace:${encodeURIComponent(domainId)}:${localId}`
+export const qualifiedNodeId = encodeFlowNodeId
 
 /** Layout one Domain independently, reusing persisted geometry and packing only new nodes. */
 export async function prepareWorkspaceDomain(
@@ -186,7 +186,7 @@ function resolveClass(
 }
 
 function edgeId(ownerId: string, name: string, source: string, target: string): string {
-  return `workspace-edge:${encodeURIComponent(ownerId)}:${name}:${source}:${target}`
+  return encodeFlowEdgeId(ownerId, name, source, target)
 }
 
 function crossDomainEdges(

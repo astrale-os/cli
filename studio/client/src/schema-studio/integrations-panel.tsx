@@ -8,6 +8,7 @@ import { ScrollArea, Separator } from '@/components/ui/misc'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useAnatomy, useCommentMutations, useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { anchorKey } from '@/lib/targets'
 
 /**
  * IntegrationsPanel — the external-service integrations overview in the RIGHT PANEL
@@ -26,9 +27,10 @@ const slugify = (s: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'integration'
 
-function DetectedRow({ name }: { name: string }) {
+function DetectedRow({ domainId, name }: { domainId: string; name: string }) {
   return (
     <Commentable
+      domainId={domainId}
       anchor={{ ref: `section.integrations.${name}`, kind: 'section' }}
       excerpt={`${name} integration`}
     >
@@ -45,9 +47,18 @@ function DetectedRow({ name }: { name: string }) {
   )
 }
 
-function RequestedRow({ slug, label }: { slug: string; label: string }) {
+function RequestedRow({
+  domainId,
+  slug,
+  label,
+}: {
+  domainId: string
+  slug: string
+  label: string
+}) {
   return (
     <Commentable
+      domainId={domainId}
       anchor={{ ref: requestAnchor(slug), kind: 'section' }}
       excerpt={`Add ${label} integration`}
     >
@@ -90,7 +101,7 @@ function RequestButton({ domainId, taken }: { domainId: string; taken: Set<strin
           setName('')
           setWhy('')
           setOpen(false)
-          setOpenAnchor(ref)
+          setOpenAnchor(anchorKey(domainId, ref))
           toast.success('Integration requested — add the why/how in the comment')
         },
         onError: (err) => toast.error(String(err)),
@@ -187,7 +198,7 @@ export function IntegrationsPanel({ domainId }: { domainId: string }) {
             </div>
             <div className="flex flex-col gap-0.5">
               {detected.map((n) => (
-                <DetectedRow key={n} name={n} />
+                <DetectedRow key={n} domainId={domainId} name={n} />
               ))}
             </div>
           </>
@@ -201,7 +212,7 @@ export function IntegrationsPanel({ domainId }: { domainId: string }) {
             </div>
             <div className="flex flex-col gap-0.5">
               {requested.map((r) => (
-                <RequestedRow key={r.slug} slug={r.slug} label={r.label} />
+                <RequestedRow key={r.slug} domainId={domainId} slug={r.slug} label={r.label} />
               ))}
             </div>
           </>

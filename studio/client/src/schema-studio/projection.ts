@@ -1,4 +1,4 @@
-import type { IrClassRef, IrEndpoint, StudioSchemaBundle } from '@shared/types'
+import type { IrEndpoint, StudioSchemaBundle } from '@shared/types'
 import type { Edge, Node } from '@xyflow/react'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from './edge-markers'
@@ -34,7 +34,6 @@ export interface GroupNodeData extends Record<string, unknown> {
   hue: number
   collapsed: boolean
   classCount: number
-  onToggleModule?: (domainId: string, path: string) => void
 }
 
 /** What the cardinality mode shows at one end of a relationship. */

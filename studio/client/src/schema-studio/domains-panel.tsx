@@ -1,4 +1,4 @@
-import type { DomainCatalogEntry } from '@shared/types'
+import type { DomainCatalogEntry, VisibilityState } from '@shared/types'
 
 import { Eye, EyeOff, Globe, Plus } from 'lucide-react'
 import { useMemo } from 'react'
@@ -10,6 +10,7 @@ import { ScrollArea, Separator } from '@/components/ui/misc'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useBundle, useCatalog, useCommentMutations, useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { anchorKey } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { type ExternalDomain, externalDomains } from './external'
@@ -35,10 +36,16 @@ function useResolve() {
     byOrigin.get(origin) ?? { name: origin.split('.')[0] || origin, icon: '' }
 }
 
-function DomainRow({ domain }: { domain: ExternalDomain }) {
+function DomainRow({
+  domain,
+  hidden,
+  onToggleHidden,
+}: {
+  domain: ExternalDomain
+  hidden: boolean
+  onToggleHidden: (ref: string) => void
+}) {
   const resolve = useResolve()
-  const hidden = useUI((s) => isHidden(domainRef(domain.origin), s.hidden))
-  const toggleHidden = useUI((s) => s.toggleHidden)
   const entry = resolve(domain.origin)
   const tone = domain.kind === 'kernel' ? 'violet' : 'emerald'
   const count = domain.members.length
@@ -61,7 +68,7 @@ function DomainRow({ domain }: { domain: ExternalDomain }) {
       </div>
       <button
         type="button"
-        onClick={() => toggleHidden(domainRef(domain.origin))}
+        onClick={() => onToggleHidden(domainRef(domain.origin))}
         title={hidden ? 'Show in canvas' : 'Hide in canvas'}
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
       >
@@ -72,11 +79,12 @@ function DomainRow({ domain }: { domain: ExternalDomain }) {
 }
 
 /** A pending "please import X" wish — an open comment the agent reads; its thread opens inline here. */
-function RequestedRow({ origin }: { origin: string }) {
+function RequestedRow({ domainId, origin }: { domainId: string; origin: string }) {
   const resolve = useResolve()
   const entry = resolve(origin)
   return (
     <Commentable
+      domainId={domainId}
       anchor={{ ref: importAnchor(origin), kind: 'section' }}
       excerpt={`Import ${entry.name}`}
     >
@@ -112,7 +120,7 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
       },
       {
         onSuccess: () => {
-          setOpenAnchor(ref)
+          setOpenAnchor(anchorKey(domainId, ref))
           toast.success('Import requested — add the why/how in the comment')
         },
         onError: (err) => toast.error(String(err)),
@@ -174,7 +182,15 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
   )
 }
 
-export function DomainsPanel({ domainId }: { domainId: string }) {
+export function DomainsPanel({
+  domainId,
+  visibility,
+  onToggleHidden,
+}: {
+  domainId: string
+  visibility: VisibilityState
+  onToggleHidden: (ref: string) => void
+}) {
   const { data: bundle } = useBundle(domainId)
   const { data: comments } = useComments(domainId)
   const domains = useMemo(() => (bundle ? externalDomains(bundle) : []), [bundle])
@@ -222,7 +238,12 @@ export function DomainsPanel({ domainId }: { domainId: string }) {
             </div>
             <div className="flex flex-col gap-0.5">
               {domains.map((d) => (
-                <DomainRow key={d.origin} domain={d} />
+                <DomainRow
+                  key={d.origin}
+                  domain={d}
+                  hidden={isHidden(domainRef(d.origin), visibility.hidden)}
+                  onToggleHidden={onToggleHidden}
+                />
               ))}
             </div>
           </>
@@ -236,7 +257,7 @@ export function DomainsPanel({ domainId }: { domainId: string }) {
             </div>
             <div className="flex flex-col gap-0.5">
               {requested.map((origin) => (
-                <RequestedRow key={origin} origin={origin} />
+                <RequestedRow key={origin} domainId={domainId} origin={origin} />
               ))}
             </div>
           </>

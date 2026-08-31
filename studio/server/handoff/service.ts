@@ -1,8 +1,7 @@
 /**
  * Handoff service that turns live domain state into the "what changed
- * + what to read" material both the Copy payload (api.ts) and the live agent
- * runner depend on. Extracted so there is ONE definition of the change text and
- * the auto-context refresh.
+ * + what to read" material the live agent runner depends on. It keeps one
+ * definition of the change text and the auto-context refresh.
  */
 import type { ChangeSet } from '../../shared/types'
 import type { DomainHandle } from '../domain'

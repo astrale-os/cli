@@ -1,6 +1,34 @@
 import { expect, test } from 'bun:test'
 
-import { detailRefFor, flowEdgeAnchorRef, parseMemberFieldRef } from './targets'
+import {
+  anchorKey,
+  decodeFlowNodeId,
+  detailRefFor,
+  encodeFlowNodeId,
+  flowEdgeAnchorRef,
+  flowEdgeOwnerDomainId,
+  flowNodeAnchorRef,
+  parseMemberFieldRef,
+} from './targets'
+
+test('uses one stable domain-qualified key for comments and Ask', () => {
+  expect(anchorKey('billing', 'class.Invoice')).toBe('billing::class.Invoice')
+})
+
+test('decodes workspace node ids without losing colons in the local ref', () => {
+  expect(encodeFlowNodeId('https://docs.dev', 'class.remote:Document')).toBe(
+    'workspace:https%3A%2F%2Fdocs.dev:class.remote:Document',
+  )
+  expect(decodeFlowNodeId('workspace:docs.example.dev:class.Document')).toEqual({
+    domainId: 'docs.example.dev',
+    localId: 'class.Document',
+  })
+  expect(decodeFlowNodeId('workspace:https%3A%2F%2Fdocs.dev:class.remote:Document')).toEqual({
+    domainId: 'https://docs.dev',
+    localId: 'class.remote:Document',
+  })
+  expect(flowNodeAnchorRef('workspace:billing:grp-sales.orders')).toBe('module.sales.orders')
+})
 
 test('normalizes workspace internal and cross-domain edge ids to their declaring edge class', () => {
   expect(flowEdgeAnchorRef('workspace:services:edge-hosted_by_service__a__b')).toBe(
@@ -8,6 +36,10 @@ test('normalizes workspace internal and cross-domain edge ids to their declaring
   )
   expect(flowEdgeAnchorRef('workspace-edge:services:hosted_by_service:a:b')).toBe(
     'edge.hosted_by_service',
+  )
+  expect(flowEdgeOwnerDomainId('workspace:services:edge-hosted_by_service__a__b')).toBe('services')
+  expect(flowEdgeOwnerDomainId('workspace-edge:docs.example.dev:links:a:b')).toBe(
+    'docs.example.dev',
   )
 })
 

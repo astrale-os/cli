@@ -24,7 +24,7 @@ import { readJson, writeJson } from './store'
 
 const FILE = 'comments.json'
 
-function decodeAnchorRef(value: unknown): AnchorRef | undefined {
+export function decodeAnchorRef(value: unknown): AnchorRef | undefined {
   const record = asJsonRecord(value)
   const ref = asString(record?.ref)
   const kind = record?.kind
@@ -45,6 +45,15 @@ function decodeAnchorRef(value: unknown): AnchorRef | undefined {
     ...(x === undefined ? {} : { x }),
     ...(y === undefined ? {} : { y }),
   }
+}
+
+export function decodeAnchorRefs(value: unknown): AnchorRef[] {
+  return Array.isArray(value)
+    ? value.flatMap((anchor) => {
+        const decoded = decodeAnchorRef(anchor)
+        return decoded ? [decoded] : []
+      })
+    : []
 }
 
 function decodeThreadEntry(value: unknown): ThreadEntry | undefined {
@@ -80,12 +89,7 @@ function decodeComment(value: unknown): Comment | undefined {
   const id = asString(record.id)
   if (!id) return undefined
   const anchors = asStringArray(record.anchors) ?? []
-  const anchorRefs = Array.isArray(record.anchorRefs)
-    ? record.anchorRefs.flatMap((anchor) => {
-        const decoded = decodeAnchorRef(anchor)
-        return decoded ? [decoded] : []
-      })
-    : []
+  const anchorRefs = decodeAnchorRefs(record.anchorRefs)
   const thread = Array.isArray(record.thread)
     ? record.thread.flatMap((entry) => {
         const decoded = decodeThreadEntry(entry)

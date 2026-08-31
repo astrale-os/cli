@@ -1,7 +1,13 @@
 /** Persisted canvas layout and visibility preference routes. */
 import { getBundle } from '../cache'
-import { readLayout, resetLayout, saveLayout, setNodePositions } from '../state/layout'
-import { readVisibility, resetVisibility, saveVisibility } from '../state/visibility'
+import {
+  decodeNodePositions,
+  readLayout,
+  resetLayout,
+  saveLayout,
+  setNodePositions,
+} from '../state/layout'
+import { normalizeVisibility, readVisibility, saveVisibility } from '../state/visibility'
 import { badRequest, json, type DomainRouteContext } from './http'
 
 export async function handleCanvasRoute(context: DomainRouteContext): Promise<Response | null> {
@@ -13,10 +19,12 @@ export async function handleCanvasRoute(context: DomainRouteContext): Promise<Re
     const bundle = await getBundle(id)
     if (req.method === 'GET') return json(readLayout(root))
     if (body.action === 'set') {
-      return json(setNodePositions(root, body.positions ?? {}, bundle?.renderFingerprint))
+      return json(
+        setNodePositions(root, decodeNodePositions(body.positions), bundle?.renderFingerprint),
+      )
     }
     if (body.action === 'save') {
-      return json(saveLayout(root, body.positions ?? {}, bundle?.renderFingerprint))
+      return json(saveLayout(root, decodeNodePositions(body.positions), bundle?.renderFingerprint))
     }
     if (body.action === 'reset') {
       resetLayout(root)
@@ -28,14 +36,8 @@ export async function handleCanvasRoute(context: DomainRouteContext): Promise<Re
   if (rest === '/visibility') {
     if (req.method === 'GET') return json(readVisibility(root))
     if (body.action === 'set') {
-      return json(
-        saveVisibility(root, {
-          hidden: body.hidden ?? {},
-          showInheritedEdges: body.showInheritedEdges ?? true,
-        }),
-      )
+      return json(saveVisibility(root, normalizeVisibility(body)))
     }
-    if (body.action === 'reset') return json(resetVisibility(root))
     return badRequest('unknown visibility action')
   }
 

@@ -54,13 +54,6 @@ export function cancelRun(domainId: string): boolean {
   return cancelActiveRun(domainId)
 }
 
-export function resetConversation(domainId: string): boolean {
-  const handle = getDomain(domainId)
-  if (!handle || isRunActive(domainId)) return false
-  clearConversation(handle.root, getHarness(handle.root).id)
-  return true
-}
-
 export function getSessionId(domainId: string): {
   sessionId: string | null
   turns: number

@@ -26,14 +26,19 @@ function decodePosition(value: unknown): NodePosition | undefined {
   return { x, y, ...(w === undefined ? {} : { w }), ...(h === undefined ? {} : { h }) }
 }
 
-function decodeStoredLayout(value: unknown): StoredLayout | undefined {
-  const record = asJsonRecord(value)
-  if (!record) return undefined
+export function decodeNodePositions(value: unknown): Record<string, NodePosition> {
   const positions: Record<string, NodePosition> = {}
-  for (const [id, candidate] of Object.entries(asJsonRecord(record.positions) ?? {})) {
+  for (const [id, candidate] of Object.entries(asJsonRecord(value) ?? {})) {
     const position = decodePosition(candidate)
     if (position) positions[id] = position
   }
+  return positions
+}
+
+function decodeStoredLayout(value: unknown): StoredLayout | undefined {
+  const record = asJsonRecord(value)
+  if (!record) return undefined
+  const positions = decodeNodePositions(record.positions)
   const renderFingerprint = asString(record.renderFingerprint)
   const schemaHash = asString(record.schemaHash)
   return {

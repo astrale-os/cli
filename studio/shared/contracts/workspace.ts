@@ -22,39 +22,6 @@ export interface InstancesState {
   instances: InstanceInfo[]
 }
 
-/** What the studio recorded the last time it ran a deploy for this domain. */
-export interface DeployRecord {
-  at: string
-  /** UI/cache fingerprint recorded by Studio; not a canonical schema revision. */
-  renderFingerprint: string
-  ok: boolean
-  url?: string
-}
-
-/** Per-domain deploy/install state (the active instance is global — see InstancesState). */
-export interface InstanceStatus {
-  /** the domain's configured deploy target (astrale.config.ts prod.instance) */
-  deployTarget: string | null
-  /** has a `prod` script → deployable via `pnpm prod` */
-  deployable: boolean
-  /** GROUND TRUTH — queried from `astrale introspect <origin> --bundle`, not local state.
-   *  'unknown' = the instance couldn't be reached/queried (no target, not authed, offline). */
-  install: 'installed' | 'not-installed' | 'unknown'
-  /** local schema vs the schema actually INSTALLED on the instance (ground truth) */
-  drift: 'in-sync' | 'drifted' | 'unknown'
-  /** Canonical revisions compared only after local and installed SDK admission. */
-  localRevision: SchemaRevision | null
-  installedRevision: SchemaRevision | null
-  /** the studio's own last deploy — supplementary (service URL / when), not the source of truth */
-  lastDeploy: DeployRecord | null
-}
-
-export interface DeployResult {
-  ok: boolean
-  url: string | null
-  output: string
-}
-
 export type ThreadRole = 'user' | 'author'
 export type ThreadEntryType = 'text' | 'choice'
 
@@ -205,19 +172,6 @@ export interface DocMeta {
 /** Where context documents live inside a domain — shown in the UI, read by the agent. */
 export const DOCUMENTS_DIR = '.domain-studio/context/docs'
 
-export interface Integration {
-  id: string
-  name: string
-  kind: string
-  status: 'planned' | 'active' | 'deprecated' | string
-  notes?: string
-}
-
-export interface IntegrationsState {
-  integrations: Integration[]
-  detectedSubfolders: string[]
-}
-
 /** A domain in the catalog — local to this workspace, a faked external service, or the kernel. */
 export interface DomainCatalogEntry {
   origin: string
@@ -238,11 +192,6 @@ export interface DomainSummary {
   depsInstalled: boolean
   hasGit: boolean
   configFile: string
-}
-
-export interface CopyPayload {
-  markdown: string
-  openComments: number
 }
 
 export interface NodePosition {

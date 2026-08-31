@@ -8,13 +8,18 @@
 import type { VisibilityState } from '../../shared/types'
 
 import { asBoolean, asJsonRecord } from '../json'
-import { readJson, removeState, writeJson } from './store'
+import { readJson, writeJson } from './store'
 
 const FILE = 'visibility.json'
 const DEFAULT: VisibilityState = {
   hidden: {},
   showInheritedEdges: true,
 }
+
+const defaultVisibility = (): VisibilityState => ({
+  hidden: {},
+  showInheritedEdges: DEFAULT.showInheritedEdges,
+})
 
 function trueSet(value: unknown): Record<string, true> {
   return Object.fromEntries(
@@ -33,16 +38,15 @@ function decodeVisibility(value: unknown): VisibilityState | undefined {
   }
 }
 
+export function normalizeVisibility(value: unknown): VisibilityState {
+  return decodeVisibility(value) ?? defaultVisibility()
+}
+
 export function readVisibility(root: string): VisibilityState {
-  return readJson(root, FILE, decodeVisibility, { ...DEFAULT })
+  return readJson(root, FILE, decodeVisibility, defaultVisibility())
 }
 
 export function saveVisibility(root: string, state: VisibilityState): VisibilityState {
   writeJson(root, FILE, state)
   return state
-}
-
-export function resetVisibility(root: string): VisibilityState {
-  removeState(root, FILE)
-  return DEFAULT
 }
