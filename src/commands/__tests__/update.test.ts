@@ -4,6 +4,49 @@ import { join } from 'node:path'
 import pkg from '../../../package.json' with { type: 'json' }
 import { cliStale } from '../update'
 
+function interactiveEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env, NO_COLOR: '1', TERM: 'xterm-256color' }
+  delete env.CI
+  delete env.CONTINUOUS_INTEGRATION
+  delete env.NO_SPINNER
+  return env
+}
+
+async function runInTerminal(
+  command: string[],
+  cwd: string,
+): Promise<{
+  exitCode: number
+  output: string
+}> {
+  const decoder = new TextDecoder()
+  let output = ''
+  let terminalExited!: () => void
+  const terminalExit = new Promise<void>((resolve) => {
+    terminalExited = resolve
+  })
+
+  const proc = Bun.spawn(command, {
+    cwd,
+    env: interactiveEnv(),
+    terminal: {
+      cols: 120,
+      rows: 24,
+      data: (_terminal, data) => {
+        output += decoder.decode(data, { stream: true })
+      },
+      exit: () => {
+        output += decoder.decode()
+        terminalExited()
+      },
+    },
+  })
+
+  const [exitCode] = await Promise.all([proc.exited, terminalExit])
+  proc.terminal?.close()
+  return { exitCode, output }
+}
+
 describe('CLI update staleness', () => {
   test('trusts the release manifest for a script install without consulting npm latest', async () => {
     const result = await cliStale(
@@ -90,6 +133,44 @@ describe('CLI update staleness', () => {
 })
 
 describe('CLI update application', () => {
+  test('shows activity while updating in an interactive terminal', async () => {
+    const root = join(import.meta.dir, '../../..')
+    const result = await runInTerminal(
+      [
+        process.execPath,
+        join(root, 'bin/astrale.ts'),
+        'update',
+        '--yes',
+        '--no-skills',
+        '--no-deps',
+      ],
+      root,
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(result.output).toContain('Checking and updating Astrale...')
+    expect(result.output).toContain('UPDATE_PACKAGE_MANAGED')
+  })
+
+  test('keeps a durable status line when an operation outlives the spinner', async () => {
+    const root = join(import.meta.dir, '../../..')
+    const script = `
+      const { withSpinner } = await import('./src/lib/log.ts')
+      await withSpinner(
+        'Slow operation',
+        true,
+        () => Bun.sleep(80),
+        { longRunningText: 'Slow operation — still working', safetyMs: 10 },
+      )
+      console.log('complete')
+    `
+    const result = await runInTerminal([process.execPath, '-e', script], root)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.output).toContain('Slow operation — still working')
+    expect(result.output).toContain('complete')
+  })
+
   test('warns for a source runtime without blocking the remaining update axes', async () => {
     const root = join(import.meta.dir, '../../..')
     const proc = Bun.spawn(
@@ -118,6 +199,7 @@ describe('CLI update application', () => {
     expect(exitCode).toBe(0)
     expect(stderr).toContain('UPDATE_PACKAGE_MANAGED')
     expect(stderr).toContain('cannot replace itself')
+    expect(stderr).not.toContain('Checking and updating Astrale')
     expect(stdout).toContain('Astrale skills skipped')
   })
 })
