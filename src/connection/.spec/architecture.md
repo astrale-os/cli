@@ -8,7 +8,9 @@ terminates.
 
 When a target also names an exact Domain issuer, the connection owner performs the client-mediated
 `whoami -> delegate(attenuation) -> issuer exchange` journey. The resulting Domain token crosses
-into ClientSession as an opaque credential; connection does not authorize Domain operations.
+into ClientSession as an opaque credential; connection does not authorize Domain operations. Its
+carried Grant must be exactly the caller proof. Fresh or cached credentials that add Domain self or
+any other authority are rejected rather than forwarded to the Kernel.
 
 ```mermaid
 flowchart LR
