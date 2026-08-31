@@ -2,9 +2,35 @@
 
 `@astrale-os/cli` is licensed under the **Apache License 2.0** (see `LICENSE`).
 
-The standalone executable additionally ships a pre-built web client for the local
-Domain Studio (`studio/client/dist`). That bundle embeds third-party open-source
+The standalone executable additionally ships a pre-built web client and local
+agent-protocol runtime for Domain Studio. Those bundles embed third-party
 components. Components whose license requires attribution are listed below.
+
+## Agent Client Protocol runtime
+
+Domain Studio embeds these ACP components:
+
+- **Package:** `@agentclientprotocol/sdk` 1.4.0
+  - **License:** Apache License 2.0
+  - **Copyright:** © 2025 Zed Industries, Inc. and contributors
+  - **Source:** https://github.com/agentclientprotocol/typescript-sdk
+- **Package:** `@agentclientprotocol/codex-acp` 1.6.2
+  - **License:** Apache License 2.0
+  - **Copyright:** © 2025 JetBrains s.r.o.
+  - **Source:** https://github.com/agentclientprotocol/codex-acp
+- **Package:** `@agentclientprotocol/claude-agent-acp` 0.70.0
+  - **License:** Apache License 2.0
+  - **Copyright:** © 2025 Zed Industries, Inc. and contributors
+  - **Source:** https://github.com/agentclientprotocol/claude-agent-acp
+- **Transitive package:** `@openai/codex` 0.148.0
+  - **License:** Apache License 2.0
+  - **Source:** https://github.com/openai/codex
+
+The Claude adapter also contains `@anthropic-ai/claude-agent-sdk` 0.3.232.
+Copyright © Anthropic PBC; all rights reserved. Its use is subject to Anthropic's
+[legal and compliance terms](https://code.claude.com/docs/en/legal-and-compliance).
+Studio points the adapter at the user's separately installed and authenticated
+Claude Code executable.
 
 ## skills (agent registry compatibility)
 

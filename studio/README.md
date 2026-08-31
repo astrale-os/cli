@@ -53,9 +53,23 @@ harness and disables the selector.
 
 - **Claude Code:** install `claude` and authenticate normally. Studio can also
   route this harness through its Anthropic-compatible model-gateway settings.
-- **Codex:** install `codex` and run `codex login`. Main turns use
-  `codex exec --json`; **Ask** side questions fork the current Codex thread through
-  App Server without mutating the parent conversation.
+- **Codex:** install `codex` and run `codex login`; Codex keeps using that local
+  binary, login, and configuration.
+
+Both execution paths go through Studio's shared **Agent Client Protocol (ACP)**
+adapter. The standalone CLI embeds the official Claude and Codex ACP agent
+servers, starts one short-lived stdio connection per turn, and uses ACP
+`session/new`, `session/resume`, configuration, prompt, update, permission, and
+cancel messages. The previous Claude `stream-json` and Codex `exec` / App Server
+implementations remain in the source tree for compatibility reference and
+native health/loadout probes, but they are no longer registered for turns or
+Ask.
+
+Claude's ACP server advertises `session/fork`, so **Ask** inherits its parent
+conversation and deletes the ephemeral fork afterward. The current Codex ACP
+server does not advertise fork yet; Codex Ask therefore uses a fresh ephemeral
+ACP session and still leaves the main conversation untouched. Capability
+detection will use a fork automatically when the Codex server adds it.
 
 The Agent settings also choose the reasoning effort and access level. **Workspace**
 uses the harness's workspace-write sandbox. **Full automation** preserves the
@@ -68,8 +82,8 @@ Model selection is also remembered independently per domain and harness. Leaving
 reports its effective model from the runtime init event. Codex resolves its
 project/profile/user/system config plus catalog default through App Server and
 shows the authenticated account's live model list. Choosing an explicit model
-passes `--model` to new turns, resumed turns, and isolated Ask forks without
-rewriting the user's global harness config.
+sets the ACP session's model configuration for new turns, resumed turns, and
+isolated Ask sessions without rewriting the user's global harness config.
 
 Codex custom providers require the OpenAI Responses API. Astrale's current
 AI-gateway surface exposes Chat Completions and Anthropic Messages, so Studio does
