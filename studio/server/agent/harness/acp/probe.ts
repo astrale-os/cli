@@ -12,6 +12,8 @@ import { effortConfig, effortOptions, modelConfig, modelOptions } from './option
 import { providerEnvironment, providerSessionMeta } from './provider'
 
 const PROBE_TIMEOUT_MS = 30_000
+/** How long a failed request waits for the process to say what went wrong. */
+const EXIT_GRACE_MS = 250
 const CLEANUP_TIMEOUT_MS = 5_000
 const MAX_STDERR = 16_000
 
@@ -116,9 +118,27 @@ async function runAcpProbe(
       )
       timer.unref?.()
     })
+    // An agent that dies on startup closes the stream before Node reports the
+    // exit, so the SDK gets there first with "ACP connection closed" — which is
+    // the one thing nobody needs to be told. Give the process the last word when
+    // it is on its way out: its exit code and its stderr are the whole of the
+    // answer to "why can I not connect?", and that answer is now on screen.
+    const explained = promise.catch(async (error: unknown) => {
+      let settle: ReturnType<typeof setTimeout> | undefined
+      const grace = new Promise<null>((resolve) => {
+        settle = setTimeout(() => resolve(null), EXIT_GRACE_MS)
+        settle.unref?.()
+      })
+      try {
+        const result = await Promise.race([exit, grace])
+        throw result ? processFailure(result) : error
+      } finally {
+        if (settle) clearTimeout(settle)
+      }
+    })
     try {
       return await Promise.race([
-        promise,
+        explained,
         exit.then((result) => Promise.reject(processFailure(result))),
         timeout,
         ...(aborted ? [aborted] : []),

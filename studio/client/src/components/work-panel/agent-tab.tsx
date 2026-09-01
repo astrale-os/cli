@@ -2,13 +2,24 @@ import type { AgentRun, ChatList, QueuedMessage } from '@shared/types'
 import type { DragEvent, ReactNode } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, ListPlus, MessageSquare, Square, Upload } from 'lucide-react'
+import {
+  ArrowUp,
+  ListPlus,
+  Loader2,
+  MessageSquare,
+  Square,
+  TriangleAlert,
+  Upload,
+} from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ScrollArea } from '@/components/ui/misc'
 import {
+  type HarnessLink,
+  harnessLink,
   isRunActive,
+  pendingRun,
   useAgentLive,
   useAgentSnapshot,
   useAgentTurns,
@@ -17,12 +28,12 @@ import {
 import { api, qk } from '@/lib/api'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
 import { threadsAwaitingAgent } from '@/lib/comments'
-import { labelOf } from '@/lib/harnesses'
+import { labelOf, presenceOf } from '@/lib/harnesses'
 import { useComments, useDocuments, useHarness } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { AgentTurn, TurnDivider } from './agent-turn'
+import { activityLabel, AgentTurn, TurnDivider } from './agent-turn'
 import { ChatEffortPicker } from './chat-effort'
 import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
@@ -240,6 +251,73 @@ function TurnPayload({ domainId }: { domainId: string }) {
 }
 
 /**
+ * What the agent is doing, on the bar the dock rests as.
+ *
+ * The transcript is closed here and this layout spends no room in the header on
+ * the agent, so without this line a turn runs entirely out of sight — the reader
+ * is left with a Stop button and nothing that says what it would stop. Same line
+ * the transcript shows, on the one row the bar has. Pressing it opens the
+ * conversation, like pressing anywhere else on the resting bar.
+ */
+function RestingActivity({ run, queued }: { run: AgentRun; queued: number }) {
+  return (
+    <div className="flex items-center gap-1.5 px-3 pt-2 text-[12px] text-muted-foreground">
+      <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+      <span className="min-w-0 flex-1 truncate">{activityLabel(run)}</span>
+      {/* the strip that holds the queue only exists once the chat opens; until then
+          this is the whole of what it would say */}
+      {queued > 0 && <span className="shrink-0 tabular-nums">{queued} queued</span>}
+    </div>
+  )
+}
+
+/**
+ * Whether the agent can be written to at all, said above the field it governs.
+ *
+ * A disabled composer with no explanation is the whole of the bug this answers:
+ * reaching the agent means spawning it and handshaking over ACP, which takes
+ * seconds, and until that lands there is nothing to send TO. So the wait says it
+ * is a wait — spinner, and the agent it is waiting on — and a handshake that
+ * came back empty-handed says what came back instead of leaving the field mute.
+ *
+ * A line is what a PANEL can spend on this. The dock's resting bar is one line
+ * and stays one line, so there the same three states ride in the row itself —
+ * see `linkMark`.
+ */
+function LinkStatus({
+  link,
+  label,
+  reason,
+}: {
+  link: HarnessLink
+  label: string
+  /** what the probe reported when it failed — the only real answer to "why not" */
+  reason?: string
+}) {
+  const connecting = link === 'connecting'
+  return (
+    <div
+      role="status"
+      className={cn(
+        'flex items-center gap-1.5 px-3 pt-2 text-[12px]',
+        connecting ? 'text-muted-foreground' : 'text-destructive',
+      )}
+    >
+      {connecting ? (
+        <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+      ) : (
+        <TriangleAlert className="h-3 w-3 shrink-0" />
+      )}
+      {/* the reason runs long — a spawn failure carries the agent's own stderr —
+          so the row shows what fits and the hover carries the rest */}
+      <span className="min-w-0 flex-1 truncate" title={connecting ? undefined : reason}>
+        {connecting ? `Connecting to ${label}…` : (reason ?? `${label} is not reachable`)}
+      </span>
+    </div>
+  )
+}
+
+/**
  * Where you write to the agent. Docked, it is the last row of the panel; in the
  * bottom dock it is the whole resting state, floating over the view — which is
  * why it resolves its own chat instead of being handed one, and why `onFocus` is
@@ -275,11 +353,19 @@ export function AgentComposer({
   const field = useRef<HTMLTextAreaElement>(null)
   const snapshot = useAgentSnapshot(domainId, chatId)
   const setRun = useAgentLive((state) => state.setRun)
+  const dropRun = useAgentLive((state) => state.dropRun)
   const { data: store } = useComments(domainId)
   const { data: docs } = useDocuments(domainId)
   const qc = useQueryClient()
   const active = isRunActive(run)
-  const available = snapshot.data?.available ?? false
+  // Three states, not two: an agent Studio has not REACHED yet is not an agent
+  // that is not there. Both close the composer, but only one of them is over.
+  const link = harnessLink(snapshot.data?.available, snapshot.isError)
+  const available = link === 'ready'
+  const harnessId = chat?.harness ?? snapshot.data?.harness ?? ''
+  const harnessLabel = labelOf(harness, harnessId) || 'the agent'
+  const presence = presenceOf(harness, harnessId)
+  const unreachableReason = presence && !presence.ok ? presence.message : undefined
   // Open threads and attached documents are themselves something to send: with either,
   // an empty composer is a valid submit that carries them as they are. Mirrors the
   // server's own rule (agent/run/preparation.ts), which only rejects an empty turn.
@@ -332,40 +418,59 @@ export function AgentComposer({
   }
 
   /**
-   * Send what is typed — into the turn if the chat is free, into the queue if not.
+   * Send what is typed — as a turn if the chat is free, into the queue if not.
    *
    * The field empties on the KEYSTROKE, not on the answer: a submit builds the
    * domain bundle and probes the harness before it replies, and a composer that
    * holds the text until then reads as an Enter that never registered. What
-   * replaces it immediately is a row in the queue strip, so the message is
-   * visible the whole way — and comes back to the field if the send failed.
+   * takes its place says which of the two happened — a turn at the foot of the
+   * conversation, or a row in the queue strip — so the message is visible the
+   * whole way, and comes back to the field if the send failed.
+   *
+   * A free chat therefore never shows a queue: queueing is what a BUSY chat does
+   * with a message, and saying it of an idle one only made the send look refused.
    */
-  // what an empty send is carrying, said in one phrase for the queue strip
+  // what an empty send is carrying, in the words the run itself will use
   const carriedLabel =
     awaiting > 0
-      ? `${awaiting} open comment${awaiting === 1 ? '' : 's'}`
+      ? `${awaiting} open thread${awaiting === 1 ? '' : 's'}`
       : `${docs?.length ?? 0} document${(docs?.length ?? 0) === 1 ? '' : 's'}`
 
   const send = () => {
     if (!canSend) return
     const message = text.trim()
-    const entry: PendingSend = {
-      id: `pending-${(ticket.current += 1)}`,
-      label: message || carriedLabel,
-      chatId,
-    }
+    const id = `pending-${(ticket.current += 1)}`
+    const started =
+      active || !chatId
+        ? null
+        : pendingRun({
+            id,
+            domainId,
+            chatId,
+            harness: chat?.harness ?? '',
+            message,
+            summary: message || carriedLabel,
+          })
     setText('')
-    setPending((current) => [...current, entry])
-    const drop = () => setPending((current) => current.filter((row) => row.id !== entry.id))
+    if (started) setRun(started)
+    else setPending((current) => [...current, { id, label: message || carriedLabel, chatId }])
+    // take back whatever this send put up — a turn the server never confirmed, or
+    // the queue row that stood for it
+    const drop = () => {
+      if (started) dropRun(started.chatId, started.id)
+      else setPending((current) => current.filter((row) => row.id !== id))
+    }
     const refresh = () => {
       qc.invalidateQueries({ queryKey: qk.agent(domainId, chatId) })
       qc.invalidateQueries({ queryKey: qk.chats(domainId) })
     }
     void api.agentSubmit(domainId, message, chatId).then(
       (result) => {
+        // the real turn takes the shown one's place first, so nothing blinks out
+        // between the two — `drop` then finds none of ours left to take back
+        if (result.run) setRun(result.run)
         drop()
         if (result.error) restore(message, result.error)
-        else if (result.run) setRun(result.run)
         else if (result.queued) landQueued(result.queued)
         refresh()
       },
@@ -395,7 +500,11 @@ export function AgentComposer({
       // One prompt, whatever the turn happens to be carrying. The chips above already
       // show the threads and the documents; saying it again here only made the field
       // read differently from one moment to the next.
-      placeholder={available ? PROMPT : 'Agent unavailable'}
+      // Two altitudes, never the same sentence twice: the line above is the state
+      // and the reason behind it, the field is only ever what YOU can do about it.
+      placeholder={
+        available ? PROMPT : link === 'connecting' ? 'Connecting…' : `${harnessLabel} unavailable`
+      }
       disabled={!available}
       className={cn(
         'resize-none bg-transparent text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground',
@@ -423,35 +532,71 @@ export function AgentComposer({
     </button>
   )
 
+  // What the line above would have said, for the one place that has no line to
+  // spare: the icon carries the state, the field's own placeholder carries what
+  // it means, and the reason is one hover away. The resting bar is one line.
+  const linkSaid =
+    link === 'connecting'
+      ? `Connecting to ${harnessLabel}…`
+      : (unreachableReason ?? `${harnessLabel} is not reachable`)
+  const linkMark = available ? null : (
+    <span
+      role="status"
+      title={linkSaid}
+      aria-label={linkSaid}
+      className={cn(
+        'grid h-8 w-8 shrink-0 place-items-center',
+        link === 'connecting' ? 'text-muted-foreground' : 'text-destructive',
+      )}
+    >
+      {link === 'connecting' ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <TriangleAlert className="h-3.5 w-3.5" />
+      )}
+    </span>
+  )
+
+  const sendTitle = () => {
+    if (link === 'connecting') return `Connecting to ${harnessLabel} — nothing can be sent yet`
+    if (!available) return unreachableReason ?? `${harnessLabel} is not reachable`
+    if (active) return 'Queue for when this turn ends (↵)'
+    return sendsPayload ? 'Send what the composer carries (↵)' : 'Send (↵)'
+  }
+
   const submit = (
     <button
       type="button"
       onClick={send}
       disabled={!canSend}
-      title={
-        active
-          ? 'Queue for when this turn ends (↵)'
-          : sendsPayload
-            ? 'Send what the composer carries (↵)'
-            : 'Send (↵)'
-      }
+      title={sendTitle()}
       aria-label={active ? 'Queue message' : 'Send'}
       className={cn(
         'grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90',
         'disabled:bg-muted disabled:text-muted-foreground',
       )}
     >
-      {active ? <ListPlus className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
+      {/* nothing can leave until the handshake lands, and the button is where the
+          hand already is — so it is the button that spins, not just the row above */}
+      {link === 'connecting' ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : active ? (
+        <ListPlus className="h-4 w-4" />
+      ) : (
+        <ArrowUp className="h-4 w-4" />
+      )}
     </button>
   )
 
   // The dock's bar: one line, and on it only what is worth a line. At rest that is
   // the clip, the field and the way to the threads — no payload, no model to read,
-  // and nothing to send until there is something written to send.
+  // and nothing to send until there is something written to send. A turn in flight
+  // buys the one exception: what the agent is doing is the only thing the reader
+  // cannot find anywhere else in this layout.
   if (bar)
     return (
       <div className="shrink-0">
-        {payloadShowing && (
+        {payloadShowing ? (
           <>
             <MessageQueue
               domainId={domainId}
@@ -462,12 +607,21 @@ export function AgentComposer({
             />
             <TurnPayload domainId={domainId} />
           </>
+        ) : (
+          run && active && <RestingActivity run={run} queued={chat?.queued.length ?? 0} />
+        )}
+        {/* below the payload and above the field: the last thing read before the
+            caret, because it is the thing that decides whether the caret matters.
+            Only once the chat is open — a resting bar has no second line to give */}
+        {payloadShowing && link !== 'ready' && (
+          <LinkStatus link={link} label={harnessLabel} reason={unreachableReason} />
         )}
         {/* items-end so a field that grew to several lines keeps the controls at its
             foot; the controls then centre among THEMSELVES, or the model's 11px label
             would sit a third of a line below the icons it shares the row with */}
         <div className="flex items-end gap-1 px-2 py-2">
           <AttachButton domainId={domainId} onPicked={() => field.current?.focus()} />
+          {!payloadShowing && linkMark}
           {composed}
           <div className="flex shrink-0 items-center gap-1">
             {/* the meter sits before the model, in reading order: how hard, on what */}
@@ -497,6 +651,9 @@ export function AgentComposer({
       />
       <div className="rounded-xl border bg-card transition-colors focus-within:border-ring">
         <TurnPayload domainId={domainId} />
+        {link !== 'ready' && (
+          <LinkStatus link={link} label={harnessLabel} reason={unreachableReason} />
+        )}
         {composed}
         <div className="flex items-center gap-1 px-2 pb-2">
           <AttachButton domainId={domainId} onPicked={() => field.current?.focus()} />

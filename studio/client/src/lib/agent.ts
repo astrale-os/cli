@@ -20,6 +20,8 @@ interface AgentLiveState {
   /** the active-or-latest run per chat, mirrored from SSE */
   runs: Record<string, AgentRun>
   setRun: (run: AgentRun) => void
+  /** forget a run this client put up itself — see `pendingRun` */
+  dropRun: (chatId: string, runId: string) => void
   appendEvent: (chatId: string, runId: string, event: AgentEvent) => void
 }
 
@@ -48,6 +50,14 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       }
       return { runs: { ...s.runs, [run.chatId]: run } }
     }),
+  dropRun: (chatId, runId) =>
+    set((s) => {
+      // guarded by id: a real run that already took this one's place stays
+      if (s.runs[chatId]?.id !== runId) return s
+      const runs = { ...s.runs }
+      delete runs[chatId]
+      return { runs }
+    }),
   appendEvent: (chatId, runId, event) =>
     set((s) => {
       const cur = s.runs[chatId]
@@ -56,6 +66,62 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
       return { runs: { ...s.runs, [chatId]: { ...cur, events: [...cur.events, event] } } }
     }),
 }))
+
+/**
+ * The turn a submit is about to become, put up from the keystroke.
+ *
+ * On a free chat a message is a TURN, not a queue entry — but the server takes a
+ * moment to say so: it refreshes the domain bundle and probes the harness before
+ * it answers, and a message that waits for all that reads as an Enter nobody
+ * caught. So the conversation shows the turn straight away, and the server's own
+ * copy replaces it the moment it lands.
+ *
+ * It is the one run here the server has never seen: a submit that fails takes it
+ * back with `dropRun`, and the message goes back to the composer.
+ */
+export function pendingRun(input: {
+  id: string
+  domainId: string
+  chatId: string
+  harness: string
+  /** what was typed; empty when the turn only carries documents and threads */
+  message: string
+  summary: string
+}): AgentRun {
+  return {
+    id: input.id,
+    domainId: input.domainId,
+    chatId: input.chatId,
+    harness: input.harness,
+    // not `running`: nothing runs until the server says it reserved the chat
+    status: 'queued',
+    createdAt: new Date().toISOString(),
+    summary: input.summary,
+    ...(input.message ? { instruction: input.message } : {}),
+    targetCommentIds: [],
+    events: [],
+  }
+}
+
+/**
+ * Whether Studio has reached the agent behind a chat yet.
+ *
+ * Two states were one too few. `available` answers "did the ACP handshake
+ * succeed", and a missing answer read as a NO — so for the seconds the
+ * handshake takes (spawn the agent server, negotiate the protocol, up to its
+ * own 30s timeout) the composer said the agent was unavailable, in the very
+ * words it uses for an agent that is genuinely not installed. Waiting is not
+ * failing, and the one place you write to the agent has to say which of the two
+ * it is doing.
+ */
+export type HarnessLink = 'connecting' | 'ready' | 'unreachable'
+
+export function harnessLink(available: boolean | undefined, failed = false): HarnessLink {
+  if (available !== undefined) return available ? 'ready' : 'unreachable'
+  // no snapshot: still on the wire, unless the read itself gave up — then nothing
+  // more is coming and saying "connecting" would be a spinner that never stops
+  return failed ? 'unreachable' : 'connecting'
+}
 
 /** Initial snapshot for one chat (harness availability + most-recent run). */
 export function useAgentSnapshot(id?: string, chatId?: string) {
@@ -69,7 +135,16 @@ export function useAgentSnapshot(id?: string, chatId?: string) {
     // a frame emitted while the socket was down is gone for good. While the SERVER
     // still says a turn is in flight, keep asking — otherwise the one frame that
     // says "it stopped" is the one the composer waits on forever.
-    refetchInterval: (query) => (isRunActive(query.state.data?.run) ? 5_000 : false),
+    //
+    // And keep asking while the agent is OUT of reach: the handshake is retried
+    // by asking again, so an agent that comes up on its own — a login that
+    // landed, an install that finished, a harness restarted — reaches the
+    // composer without anyone reloading the page.
+    refetchInterval: (query) => {
+      const snapshot = query.state.data
+      if (isRunActive(snapshot?.run)) return 5_000
+      return snapshot?.available ? false : 15_000
+    },
   })
 }
 
