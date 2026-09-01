@@ -21,8 +21,10 @@ import {
   describeInstanceCandidate,
   type InstanceCandidate,
 } from '../../lib/instance-candidates'
-import { fatal, log } from '../../lib/log'
+import { canPrompt, type PromptGate } from '../../lib/interactive'
+import { fatal, log, withSpinner } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
+import { isMachine } from '../../lib/output'
 import { confirmDefaultYes, selectFrom } from '../../lib/prompt'
 import { validateSlug } from '../../lib/validation'
 
@@ -48,10 +50,15 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
       return
     }
 
-    const resolved = await resolveUseTarget(name, opts)
+    const spin = !isMachine(opts)
+    const resolved = await withSpinner(`Resolving instance ${name}`, spin, () =>
+      resolveUseTarget(name, opts),
+    )
 
     if (!opts.skipJwksCheck) {
-      await probeBookmark(resolved)
+      await withSpinner(`Checking ${resolved.name} is reachable`, spin, () =>
+        probeBookmark(resolved),
+      )
     }
 
     await setActive(resolved.name)
@@ -67,8 +74,7 @@ async function useInstance(name?: string, opts: UseOpts = {}): Promise<void> {
     const active = await getDefault().catch(() => null)
     if (active?.name === identityCandidate) return
 
-    const inCi = opts.ci || opts.noPrompt || !!process.env.CI
-    if (inCi) {
+    if (!canPrompt(opts)) {
       if (opts.adoptDefault) {
         await setDefault(identityCandidate)
         log.success(`Identity switched to "${identityCandidate}" (--adopt-default)`)
@@ -154,13 +160,8 @@ async function resolveUseTarget(name: string, opts: UseOpts): Promise<ResolvedIn
     )
   }
 
-  const interactive = !(opts.ci || opts.noPrompt || process.env.CI)
   const chosen =
-    candidates.length === 1
-      ? candidates[0]
-      : interactive
-        ? await pickCandidate(name, candidates)
-        : null
+    candidates.length === 1 ? candidates[0] : await pickCandidate(name, candidates, opts)
   if (!chosen) throw ambiguousError(name, candidates)
 
   if (chosen.source === 'bookmark') {
@@ -212,9 +213,11 @@ function assertManagedReady(info: OwnedInstanceInfo): void {
   )
 }
 
+/** Returns null when the terminal cannot be asked — the caller then errors out. */
 async function pickCandidate(
   name: string,
   candidates: InstanceCandidate[],
+  gate: PromptGate,
 ): Promise<InstanceCandidate | null> {
   return selectFrom(
     `Multiple instances match "${name}":`,
@@ -222,6 +225,7 @@ async function pickCandidate(
       label: describeInstanceCandidate(candidate),
       value: candidate,
     })),
+    gate,
   )
 }
 

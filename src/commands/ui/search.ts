@@ -18,11 +18,14 @@ export default {
   afterHelpText:
     '\nExamples:\n  $ astrale ui search "editable payment table with export"\n  $ astrale ui search "loading button" --limit 5 --json\n',
   action: async (query: string, options: Options) =>
-    runUiCommand(options, () =>
-      searchUi(query, {
-        project: options.project,
-        limit: Number(options.limit),
-        offset: Number(options.offset),
-      }),
+    runUiCommand(
+      options,
+      () =>
+        searchUi(query, {
+          project: options.project,
+          limit: Number(options.limit),
+          offset: Number(options.offset),
+        }),
+      `Searching Astrale UI for "${query}"`,
     ),
 } satisfies CommandDefinition

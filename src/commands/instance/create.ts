@@ -1,6 +1,7 @@
 import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
+import { AstraleError } from '../../errors'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { isMachine, output } from '../../lib/output'
 import { promptText } from '../../lib/prompt'
@@ -38,13 +39,20 @@ Examples:
   options: [...ADMIN_TARGET_OPTIONS],
   action: async (id: string | undefined, opts: ProvisionOpts) => {
     try {
-      // Interactive (TTY only): prompt for the slug when omitted, with live
-      // validation. No TTY / --ci / --no-prompt / CI → the slug arg is required
-      // (fail fast, never hang a piped / agent / LLM run).
-      const interactive = !!process.stdin.isTTY && !(opts.ci || opts.noPrompt || process.env.CI)
-      if (!id && interactive) id = await promptText('Instance slug', { validate: slugError })
+      // Prompt for the slug when omitted, with live validation. A terminal the
+      // CLI may not question — piped, --ci / --no-prompt, CI — makes promptText
+      // yield undefined, so the slug argument becomes required and the run fails
+      // fast instead of hanging.
+      if (!id) id = await promptText('Instance slug', { ...opts, validate: slugError })
       if (!id) {
-        throw new Error('`instance create` needs a slug, e.g. `astrale instance create demo`.')
+        // AstraleError, not Error: `fatal` keeps a coded error's message and
+        // drops a plain one behind "unexpected internal failure" — and this is
+        // exactly what a piped / --no-prompt / agent run lands on.
+        throw new AstraleError(
+          'MISSING_ARG',
+          '`instance create` needs a slug when the terminal cannot be prompted.',
+          'astrale instance create demo',
+        )
       }
 
       const { created } = await provisionInstance(id, opts)

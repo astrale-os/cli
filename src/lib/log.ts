@@ -31,8 +31,10 @@ export function fatal(e: unknown, opts?: MachineOpts & { readonly debug?: boolea
     if (e instanceof AstraleError && e.hint) payload.hint = e.hint
     process.stderr.write(JSON.stringify(payload) + '\n')
   } else {
-    log.error(`${code}: ${msg}`)
-    if (e instanceof AstraleError && e.hint) log.dim(`  hint: ${e.hint}`)
+    // Same shape as `renderFailure` (connection/failure): bold code, then the
+    // hint as one dim detail line. Two renderers, one error to read.
+    log.error(`${chalk.bold(code)}: ${msg}`)
+    if (e instanceof AstraleError && e.hint) log.dim(`  ${e.hint}`)
   }
   if (opts?.debug) printFailureDebug(e, '')
   process.exit(1)
@@ -110,7 +112,19 @@ export async function withSpinner<T>(
 export function spinner(text: string, opts: SpinnerOptions = {}): Ora {
   const target = process.stderr
 
-  if (!target.writable || IS_CI) {
+  // Animate only where the animation can be seen. A redirected stderr (`2>log`)
+  // or CI gets the unstarted spinner: it writes nothing while running and still
+  // persists one durable line on succeed/fail. Without this, ora auto-disables
+  // itself on a non-TTY but `start()` still drops a stray `- label` line into
+  // whatever is capturing stderr — including the JSON that machine mode emits
+  // there.
+  //
+  // A zero-column terminal is refused for a harder reason: it is a real pty
+  // state (`script`, some CI wrappers report isTTY with columns 0), and ora
+  // guards the width with `?? 80`, which a 0 walks straight through. It then
+  // divides by it, gets an Infinity line count, and `clear()` loops forever —
+  // the command hangs instead of finishing.
+  if (!target.writable || !target.isTTY || !target.columns || IS_CI) {
     return ora({ text, isEnabled: false })
   }
 

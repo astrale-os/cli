@@ -5,7 +5,7 @@ import type { CommandDefinition } from '../../program/index'
 import { listOwnedInstances } from '../../lib/admin-instance'
 import { findOwnedInstance } from '../../lib/admin-instance'
 import { getActive, normalizeInstanceKernelUrl } from '../../lib/instance'
-import { fatal, log } from '../../lib/log'
+import { fatal, log, withSpinner } from '../../lib/log'
 import { RAW_OUTPUT_OPTIONS, isMachine, output, type RawOutputOpts } from '../../lib/output'
 
 export default {
@@ -59,7 +59,12 @@ async function resolveActiveForDisplay(): Promise<{
   }
 
   try {
-    const managed = findOwnedInstance(await listOwnedInstances({}), active.name)
+    const managed = findOwnedInstance(
+      await withSpinner(`Looking up instance ${active.name}`, !isMachine(), () =>
+        listOwnedInstances({}),
+      ),
+      active.name,
+    )
     if (!managed) return { name: active.name }
     return {
       name: managed.slug,

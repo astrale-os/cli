@@ -2,6 +2,8 @@ import type { Command, CommanderError } from 'commander'
 
 import chalk from 'chalk'
 
+import { stripAnsi } from './format'
+
 export type CommandCatalogEntry = {
   path: string[]
   usage: string
@@ -141,11 +143,9 @@ function usageFor(path: string[], command: Command): string {
   return [path.join(' '), suffix].filter(Boolean).join(' ')
 }
 
-const ANSI_RE = new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g')
-
 function maybeMachine(text: string, machine: boolean): string {
   if (!machine) return text
-  const plain = text.replace(ANSI_RE, '')
+  const plain = stripAnsi(text)
   const first = plain.split('\n').find((line) => line.trim().length > 0) ?? plain
   return JSON.stringify({ error: 'USAGE_ERROR', message: first, detail: plain })
 }

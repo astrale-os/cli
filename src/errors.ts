@@ -1,3 +1,16 @@
+/**
+ * The CLI writes a recovery hint in one of two registers, picked by where the
+ * command sits in the sentence:
+ *
+ *   tail     `No identities. Run: astrale identity create <name>`
+ *            the command ends the line — nothing follows it, so no delimiters
+ *            and no final period.
+ *   inline   ``Run `astrale instance list` to see your instances.``
+ *            the command sits inside prose, so backticks delimit it and the
+ *            sentence takes its period.
+ *
+ * Both forms are in use on purpose. Pick by position, not by taste.
+ */
 export class AstraleError extends Error {
   code: string
   hint?: string
@@ -13,7 +26,7 @@ export class AstraleError extends Error {
 
 export class AuthError extends AstraleError {
   constructor(message: string, hint?: string) {
-    super('AUTH_ERROR', message, hint ?? 'Run `astrale identity create <name>` to set up keys')
+    super('AUTH_ERROR', message, hint ?? 'Run `astrale identity create <name>` to set up keys.')
   }
 }
 

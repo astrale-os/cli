@@ -4,8 +4,8 @@ import { AstraleError } from '../../errors'
 import { getDefault, getIdentity, readIdentities } from '../../identity/index'
 import { isSessionExpired, readIdpSession, type IdpSession } from '../../lib/idp'
 import { ensureFreshSession } from '../../lib/idp-session'
-import { fatal, log } from '../../lib/log'
-import { output } from '../../lib/output'
+import { fatal, log, withSpinner } from '../../lib/log'
+import { isMachine, output } from '../../lib/output'
 
 type AuthTokenType = 'access' | 'id'
 
@@ -69,7 +69,7 @@ Examples:
   action: async (opts: AuthTokenOpts) => {
     let result: AuthTokenResult
     try {
-      result = await resolveAuthToken(opts)
+      result = await withSpinner('Resolving token', !isMachine(opts), () => resolveAuthToken(opts))
     } catch (error) {
       fatal(error, opts)
     }

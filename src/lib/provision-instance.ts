@@ -13,7 +13,9 @@ import { validateSlug } from './validation'
 
 export type ProvisionOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
-    // Global flags (program.ts) that force non-interactive — mirrors `instance use`.
+    // Programmatic opt-out for callers that drive this command as a function.
+    // The matching CLI flags are read from argv by `canPrompt` — Commander
+    // keeps root options out of a subcommand's action arguments.
     ci?: boolean
     noPrompt?: boolean
   }

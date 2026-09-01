@@ -2,7 +2,8 @@ import chalk from 'chalk'
 
 import type { CommandDefinition } from '../../program/index'
 
-import { log } from '../../lib/log'
+import { log, withSpinner } from '../../lib/log'
+import { isMachine } from '../../lib/output'
 import { analyzeSession } from '../../telemetry/analyze'
 import { sweepStore } from '../../telemetry/retention'
 import { scanSessions } from '../../telemetry/store'
@@ -42,8 +43,16 @@ export default {
         }
         target = candidate.id
       }
-      if (!opts.auto) log.step(`analyzing session ${target} …`)
-      const outcome = await analyzeSession(target, opts)
+      const session = target
+      const outcome = await withSpinner(
+        `Analyzing session ${session}`,
+        !opts.auto && !isMachine(),
+        () => analyzeSession(session, opts),
+        {
+          safetyMs: 10 * 60_000,
+          longRunningText: `Still analyzing session ${session} — the model is taking a while.`,
+        },
+      )
       if (opts.auto) return
       if (outcome.outcome === 'skipped-quiet') {
         log.dim(`quiet session (${outcome.note}) — nothing to analyze`)

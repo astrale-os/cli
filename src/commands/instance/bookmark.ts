@@ -8,8 +8,9 @@ import {
   setActive,
   upsertInstance,
 } from '../../lib/instance'
-import { fatal, log } from '../../lib/log'
+import { fatal, log, withSpinner } from '../../lib/log'
 import { checkIssuerReachability } from '../../lib/meta'
+import { isMachine } from '../../lib/output'
 
 export default {
   name: 'bookmark',
@@ -62,10 +63,12 @@ export default {
 
       if (!opts.skipProbe) {
         try {
-          const { issuer, keys } = await checkIssuerReachability(
-            url,
-            expectedIssuer,
-            effectiveCa ? fetchWithCaFile(effectiveCa) : undefined,
+          const { issuer, keys } = await withSpinner(`Probing ${name}`, !isMachine(), () =>
+            checkIssuerReachability(
+              url,
+              expectedIssuer,
+              effectiveCa ? fetchWithCaFile(effectiveCa) : undefined,
+            ),
           )
           log.dim(`  iss=${issuer} keys=${keys.length}`)
         } catch (e) {

@@ -3,7 +3,8 @@ import { join } from 'node:path'
 
 import { paths } from '../../state'
 import { atomicWrite, withFileLock } from '../../state/files'
-import { promptSelect } from '../prompt'
+import { canPrompt } from '../interactive'
+import { promptYesNo } from '../prompt'
 
 const STATE_VERSION = 1
 const DAY_MS = 24 * 60 * 60 * 1_000
@@ -156,24 +157,10 @@ export async function recordSkillInstallDecline(
   })
 }
 
-function defaultInteractive(): boolean {
-  return (
-    process.stdin.isTTY === true &&
-    process.stdout.isTTY === true &&
-    !process.env.CI &&
-    !process.env.CONTINUOUS_INTEGRATION &&
-    !process.argv.includes('--ci') &&
-    !process.argv.includes('--no-prompt') &&
-    !process.argv.includes('--json') &&
-    !process.argv.includes('--raw')
-  )
-}
-
 async function defaultInstallPrompt(): Promise<'yes' | 'no' | undefined> {
-  return promptSelect('Install Astrale skills?', [
-    { name: 'Yes', value: 'yes' as const },
-    { name: 'No', value: 'no' as const },
-  ])
+  const answer = await promptYesNo('Install Astrale skills?', { default: true })
+  if (answer === undefined) return undefined
+  return answer ? 'yes' : 'no'
 }
 
 export async function offerAstraleSkillInstallation(
@@ -183,7 +170,7 @@ export async function offerAstraleSkillInstallation(
   const state = await readSkillOnboardingState(options)
   if (state.dismissed) return { status: 'suppressed' }
   if (!skillInstallOfferDue(source, state, options.now)) return { status: 'not-due' }
-  if (!(options.interactive ?? defaultInteractive())) return { status: 'not-interactive' }
+  if (!(options.interactive ?? canPrompt())) return { status: 'not-interactive' }
 
   const answer = await (options.prompt ?? defaultInstallPrompt)()
   if (answer === undefined) return { status: 'not-interactive' }

@@ -15,5 +15,5 @@ export default {
     UI_JSON_OPTION,
   ],
   action: async (name: UiPreset, options: Options) =>
-    runUiCommand(options, () => applyPreset(name, options)),
+    runUiCommand(options, () => applyPreset(name, options), `Applying the ${name} preset`),
 } satisfies CommandDefinition

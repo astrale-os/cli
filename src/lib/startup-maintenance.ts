@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import pkg from '../../package.json' with { type: 'json' }
 import { paths } from '../state'
 import { atomicWrite } from '../state/files'
+import { canPrompt } from './interactive'
 import { log } from './log'
 import { runInherit } from './proc'
 import { confirmDefaultYes, promptSelect } from './prompt'
@@ -153,12 +154,13 @@ export function shouldRunStartupMaintenance(
   environment: NodeJS.ProcessEnv = process.env,
   tty = process.stdin.isTTY === true && process.stdout.isTTY === true,
 ): boolean {
-  if (!tty || environment.CI || environment.CONTINUOUS_INTEGRATION || environment[REEXEC_ENV]) {
-    return false
-  }
+  // Maintenance opens with a question, so it runs exactly where a question is
+  // allowed — and nowhere else. On top of that shared rule it stays out of the
+  // way of its own machinery: the update re-exec, a bare or help/version
+  // invocation, and the commands that own updating.
   const args = argv.slice(2)
-  if (args.length === 0) return false
-  if (args.some((arg) => ['--json', '--raw', '--ci', '--no-prompt'].includes(arg))) return false
+  if (!canPrompt({ argv: args, env: environment, tty })) return false
+  if (environment[REEXEC_ENV] || args.length === 0) return false
   if (args.some((arg) => ['--help', '-h', '--version', '--cli-version', '-V'].includes(arg))) {
     return false
   }

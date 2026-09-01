@@ -10,7 +10,7 @@ import {
   upsertIdpConfig,
   workosAuthKitMetadata,
 } from '../../lib/idp'
-import { log } from '../../lib/log'
+import { log, withSpinner } from '../../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
 import { validateName, validateUrl } from '../../lib/validation'
 
@@ -73,6 +73,7 @@ Security:
 `,
   action: async (name: string, opts: AddOpts) => {
     validateName(name, 'IdP')
+    const spin = !isMachine(opts)
     if (!opts.issuer && !opts.metadata && !opts.workosAuthkit) {
       throw new Error('Either --issuer, --metadata, or --workos-authkit is required')
     }
@@ -81,7 +82,9 @@ Security:
       ? workosAuthKitMetadata(opts.workosApiHostname, opts.clientId)
       : opts.metadata
         ? OidcMetadataSchema.parse(JSON.parse(await readFile(opts.metadata, 'utf-8')))
-        : await fetchOidcMetadata(opts.issuer!)
+        : await withSpinner(`Fetching discovery metadata from ${opts.issuer}`, spin, () =>
+            fetchOidcMetadata(opts.issuer!),
+          )
 
     if (opts.issuer) {
       validateUrl(opts.issuer)
@@ -103,10 +106,12 @@ Security:
     }
 
     if (opts.workosApp) {
-      const app = await fetchWorkosApplication({
-        app: opts.workosApp,
-        apiKeyEnv: opts.workosApiKeyEnv ?? 'WORKOS_API_KEY',
-      })
+      const app = await withSpinner(`Fetching WorkOS application ${opts.workosApp}`, spin, () =>
+        fetchWorkosApplication({
+          app: opts.workosApp!,
+          apiKeyEnv: opts.workosApiKeyEnv ?? 'WORKOS_API_KEY',
+        }),
+      )
       client = {
         ...client,
         client_id: client.client_id ?? app.client_id,

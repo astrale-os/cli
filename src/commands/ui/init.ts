@@ -34,5 +34,5 @@ export default {
   afterHelpText:
     '\nExamples:\n  $ astrale ui init --preset astrale\n  $ astrale ui init ./app --dry-run --json\n',
   action: async (path: string | undefined, options: Options) =>
-    runUiCommand(options, () => initUi({ path, ...options })),
+    runUiCommand(options, () => initUi({ path, ...options }), 'Initializing Astrale UI'),
 } satisfies CommandDefinition
