@@ -1,7 +1,7 @@
 /**
  * harnesses.ts — naming the local agents in the UI.
  *
- * `HarnessStatus.options` is the server's own list, so it stays right when a
+ * `HarnessStatus.harnesses` is the server's own list, so it stays right when a
  * harness is added or renamed. The fallback only covers the moment before that
  * query lands: a tab strip that briefly says "codex" instead of "Codex" reads
  * as a bug.
@@ -14,7 +14,9 @@ const FALLBACK: { id: string; label: string }[] = [
 ]
 
 export function harnessOptions(harness?: HarnessStatus): { id: string; label: string }[] {
-  return harness?.options?.length ? harness.options : FALLBACK
+  return harness?.harnesses?.length
+    ? harness.harnesses.map(({ id, label }) => ({ id, label }))
+    : FALLBACK
 }
 
 export function labelOf(harness: HarnessStatus | undefined, id: string): string {

@@ -23,6 +23,7 @@ import { useComments, useHarness } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 import { AgentTurn, TurnDivider } from './agent-turn'
+import { ChatEffortPicker } from './chat-effort'
 import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
@@ -252,6 +253,8 @@ function Composer({
           <DocumentsMenu domainId={domainId} />
           <AwaitingThreadsChip count={awaiting} />
           <div className="ml-auto flex items-center gap-1.5">
+            {/* the meter sits before the model, in reading order: how hard, on what */}
+            <ChatEffortPicker domainId={domainId} chat={chat} harness={harness} />
             <ChatModelPicker domainId={domainId} chat={chat} harness={harness} />
             {active ? (
               <button

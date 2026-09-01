@@ -4,12 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { updateSettings } from '../../state/settings'
-import {
-  getHarness,
-  getHarnessSelection,
-  resolveHarnessConfiguration,
-  setHarnessSelection,
-} from './selection'
+import { getHarnessById } from './registry'
+import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './selection'
 
 const roots: string[] = []
 const previous = process.env.DOMAIN_STUDIO_HARNESS
@@ -20,58 +16,36 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('persists a per-domain Codex selection', () => {
+test('the starred model names the agent a domain opens on', () => {
   delete process.env.DOMAIN_STUDIO_HARNESS
   const rootA = mkdtempSync(join(tmpdir(), 'studio-harness-a-'))
   const rootB = mkdtempSync(join(tmpdir(), 'studio-harness-b-'))
   roots.push(rootA, rootB)
   expect(getHarnessSelection(rootA)).toMatchObject({ id: 'claude', source: 'default' })
-  expect(getHarnessSelection(rootB)).toMatchObject({ id: 'claude', source: 'default' })
 
-  setHarnessSelection(rootA, 'codex')
-  expect(getHarnessSelection(rootA)).toEqual({
-    id: 'codex',
-    locked: false,
-    source: 'domain',
-  })
+  updateSettings(rootA, { agentModel: { harness: 'codex', model: 'gpt-5.6-sol' } })
+  expect(getHarnessSelection(rootA)).toEqual({ id: 'codex', locked: false, source: 'domain' })
   expect(getHarness(rootA).id).toBe('codex')
-  expect(getHarnessSelection(rootB)).toEqual({
-    id: 'claude',
-    locked: false,
-    source: 'default',
-  })
+
+  // one domain's star says nothing about another's
+  expect(getHarnessSelection(rootB)).toEqual({ id: 'claude', locked: false, source: 'default' })
   expect(getHarness(rootB).id).toBe('claude')
 })
 
-test('environment selection locks the GUI override', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-harness-'))
+test('an unknown starred agent falls back instead of breaking the domain', () => {
+  delete process.env.DOMAIN_STUDIO_HARNESS
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-unknown-'))
   roots.push(root)
-  process.env.DOMAIN_STUDIO_HARNESS = 'codex'
-  expect(getHarnessSelection(root)).toEqual({
-    id: 'codex',
-    locked: true,
-    source: 'environment',
-  })
-  expect(() => setHarnessSelection(root, 'claude')).toThrow('locked to codex')
+  updateSettings(root, { agentModel: { harness: 'gemini', model: 'flash' } })
+  expect(getHarnessSelection(root)).toMatchObject({ id: 'claude', source: 'default' })
 })
 
-test('resolves persisted Claude max and Ultracode effort modes', async () => {
-  delete process.env.DOMAIN_STUDIO_HARNESS
-  const root = mkdtempSync(join(tmpdir(), 'studio-harness-effort-'))
+test('the environment outranks the starred model, and says so', () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-'))
   roots.push(root)
-  updateSettings(root, { agentEffort: 'max' })
-
-  const resolved = await resolveHarnessConfiguration(root)
-  expect(resolved.ok).toBe(true)
-  if (!resolved.ok) return
-  expect(resolved.configuration.harness.id).toBe('claude')
-  expect(resolved.configuration.effort).toBe('max')
-
-  updateSettings(root, { agentEffort: 'ultracode' })
-  const ultracode = await resolveHarnessConfiguration(root)
-  expect(ultracode.ok).toBe(true)
-  if (!ultracode.ok) return
-  expect(ultracode.configuration.effort).toBe('ultracode')
+  updateSettings(root, { agentModel: { harness: 'claude', model: 'opus[1m]' } })
+  process.env.DOMAIN_STUDIO_HARNESS = 'codex'
+  expect(getHarnessSelection(root)).toEqual({ id: 'codex', locked: true, source: 'environment' })
 })
 
 test('an unpinned chat runs the harness default model, not whatever the agent ships with', async () => {
@@ -83,16 +57,34 @@ test('an unpinned chat runs the harness default model, not whatever the agent sh
   expect(untouched.ok).toBe(true)
   if (!untouched.ok) return
   expect(untouched.configuration.model).toBe('opus[1m]')
+  // nothing pinned the reasoning level, so nothing is sent: the agent keeps its own
+  expect(untouched.configuration.effort).toBeUndefined()
 
-  // the domain default outranks it, and the chat's own pick outranks both
-  updateSettings(root, { agentModels: { claude: 'sonnet' } })
-  const domainWide = await resolveHarnessConfiguration(root)
-  expect(domainWide.ok).toBe(true)
-  if (!domainWide.ok) return
-  expect(domainWide.configuration.model).toBe('sonnet')
+  // the starred model outranks it, and the chat's own pick outranks both
+  updateSettings(root, { agentModel: { harness: 'claude', model: 'sonnet' } })
+  const starred = await resolveHarnessConfiguration(root)
+  expect(starred.ok).toBe(true)
+  if (!starred.ok) return
+  expect(starred.configuration.model).toBe('sonnet')
 
-  const perChat = await resolveHarnessConfiguration(root, undefined, 'haiku')
+  const perChat = await resolveHarnessConfiguration(root, undefined, {
+    model: 'haiku',
+    effort: 'max',
+  })
   expect(perChat.ok).toBe(true)
   if (!perChat.ok) return
   expect(perChat.configuration.model).toBe('haiku')
+  expect(perChat.configuration.effort).toBe('max')
+})
+
+test('a star on the other agent does not lend this one its model', async () => {
+  delete process.env.DOMAIN_STUDIO_HARNESS
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-cross-'))
+  roots.push(root)
+  updateSettings(root, { agentModel: { harness: 'claude', model: 'sonnet' } })
+
+  const codex = await resolveHarnessConfiguration(root, getHarnessById('codex'))
+  expect(codex.ok).toBe(true)
+  if (!codex.ok) return
+  expect(codex.configuration.model).toBe('gpt-5.6-sol')
 })

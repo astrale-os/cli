@@ -40,7 +40,10 @@ export async function runAsk(
   const resolved = await resolveHarnessConfiguration(
     handle.root,
     chat ? getHarnessById(chat.harness) : undefined,
-    chat?.model,
+    {
+      ...(chat?.model ? { model: chat.model } : {}),
+      ...(chat?.effort ? { effort: chat.effort } : {}),
+    },
   )
   if (!resolved.ok)
     return {

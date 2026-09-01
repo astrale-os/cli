@@ -1,14 +1,18 @@
+/**
+ * selection.ts — which agent a domain opens on, and how one is invoked.
+ *
+ * Nothing selects the agent by itself anymore: the domain's PREFERRED MODEL does,
+ * because picking a model is picking an agent. Star one in the composer and every
+ * new conversation starts there; star nothing and Studio opens on the harness this
+ * machine actually has, each on its own built-in default model.
+ */
 import type { AgentEffort, StudioSettings } from '../../../shared/types'
 import type { AgentHarness } from './adapter'
 
-import { effectiveAgentEffort } from '../../../shared/agent-effort'
-import { asJsonRecord, asString } from '../../json'
 import { readSettings } from '../../state/settings'
-import { readJson, writeJson } from '../../state/store'
+import { lastKnownPresence } from './adapter'
 import { resolveHarnessEnv } from './gateway/config'
 import { getHarnessById, hasHarness } from './registry'
-
-const SELECTION_FILE = '.cache/agent/harness.json'
 
 export interface HarnessSelection {
   id: string
@@ -28,31 +32,30 @@ export type HarnessConfigurationResult =
   | { ok: true; configuration: HarnessConfiguration }
   | { ok: false; error: string }
 
-function decodeStoredSelection(value: unknown): { id?: string } | undefined {
-  const record = asJsonRecord(value)
-  if (!record) return undefined
-  const id = asString(record.id)
-  return id === undefined ? {} : { id }
+/** Per-turn overrides a chat carries — each one outranks the domain preference. */
+export interface HarnessOverrides {
+  model?: string
+  effort?: AgentEffort
+}
+
+/**
+ * The agent to fall back on when nothing has been starred.
+ *
+ * Claude unless the probes say it is precisely the missing one — a machine with
+ * only Codex installed must not open on a harness it cannot run.
+ */
+function installedHarnessId(): string {
+  if (lastKnownPresence('claude') === false && lastKnownPresence('codex') === true) return 'codex'
+  return 'claude'
 }
 
 export function getHarnessSelection(root: string): HarnessSelection {
   const environment = process.env.DOMAIN_STUDIO_HARNESS?.trim().toLowerCase()
   if (environment && hasHarness(environment))
     return { id: environment, locked: true, source: 'environment' }
-  const stored = readJson(root, SELECTION_FILE, decodeStoredSelection, {})
-  const id = stored.id?.toLowerCase()
-  if (id && hasHarness(id)) return { id, locked: false, source: 'domain' }
-  return { id: 'claude', locked: false, source: 'default' }
-}
-
-export function setHarnessSelection(root: string, id: string): HarnessSelection {
-  const normalized = id.trim().toLowerCase()
-  if (!hasHarness(normalized) || normalized === 'mock') throw new Error(`unknown harness: ${id}`)
-  const current = getHarnessSelection(root)
-  if (current.locked)
-    throw new Error(`the harness is locked to ${current.id} by DOMAIN_STUDIO_HARNESS / --harness`)
-  writeJson(root, SELECTION_FILE, { id: normalized })
-  return { id: normalized, locked: false, source: 'domain' }
+  const preferred = readSettings(root).agentModel?.harness
+  if (preferred && hasHarness(preferred)) return { id: preferred, locked: false, source: 'domain' }
+  return { id: installedHarnessId(), locked: false, source: 'default' }
 }
 
 export function getHarness(root: string): AgentHarness {
@@ -62,21 +65,23 @@ export function getHarness(root: string): AgentHarness {
 /**
  * Resolve one adapter and every option used to invoke it.
  *
- * `modelOverride` is the chat's own pick: each tab may run a different model of
- * its harness, and only falls back to the domain-wide choice when it has none.
+ * `overrides` are the chat's own picks: each tab may run a different model and a
+ * different reasoning level, and only falls back to the domain's starred model
+ * when it pins none. An unpinned EFFORT stays unpinned all the way down — the
+ * agent then runs at whatever level its own configuration is set to.
  */
 export async function resolveHarnessConfiguration(
   root: string,
   harness = getHarness(root),
-  modelOverride?: string,
+  overrides?: HarnessOverrides,
 ): Promise<HarnessConfigurationResult> {
   const settings = readSettings(root)
+  const preferred = settings.agentModel
   const model =
-    modelOverride?.trim() ||
-    settings.agentModels[harness.id]?.trim() ||
+    overrides?.model?.trim() ||
+    (preferred?.harness === harness.id ? preferred.model.trim() : '') ||
     harness.defaultModel ||
     undefined
-  const effort = effectiveAgentEffort(harness.capabilities.effortLevels, settings.agentEffort)
   const environment =
     harness.capabilities.gateway === 'anthropic'
       ? await resolveHarnessEnv(root)
@@ -88,7 +93,7 @@ export async function resolveHarnessConfiguration(
       harness,
       settings,
       model,
-      effort,
+      ...(overrides?.effort ? { effort: overrides.effort } : {}),
       env: environment.env,
     },
   }

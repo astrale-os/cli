@@ -88,7 +88,10 @@ export async function prepareRun(
   const renderFingerprint = bundle?.renderFingerprint ?? ''
   const context = readContext(root)
   const documents = listDocuments(root)
-  const configuration = await resolveHarnessConfiguration(root, harness, chat.model)
+  const configuration = await resolveHarnessConfiguration(root, harness, {
+    ...(chat.model ? { model: chat.model } : {}),
+    ...(chat.effort ? { effort: chat.effort } : {}),
+  })
   if (!configuration.ok) return { error: `model gateway auth failed — ${configuration.error}` }
   const { settings, model, effort, env } = configuration.configuration
   if (controller.signal.aborted) return { error: 'agent run canceled during setup' }

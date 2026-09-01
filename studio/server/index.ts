@@ -12,6 +12,7 @@ import { existsSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 import { setBridgePort } from './agent/bridge/grant'
+import { probeInstalledHarnesses } from './agent/harness/registry'
 import { handleApi } from './api'
 import { resolveTarget } from './detect'
 import { allDomains } from './domain'
@@ -51,6 +52,11 @@ for (const h of domains) {
   stoppers.set(h.id, stop)
   console.log(`    • ${origin}${depsInstalled ? '' : ' [deps not installed — static fallback]'}`)
 }
+
+// Ask each local agent whether it is here, before anything needs the answer: a
+// domain with no chat yet opens on the harness this machine actually has, and
+// that decision is made from synchronous code (see harness/selection).
+void probeInstalledHarnesses()
 
 // keep the registry in sync with the workspace — pick up domains added/removed at runtime
 const watchRoot = target.endsWith('astrale.config.ts') ? dirname(resolve(target)) : resolve(target)

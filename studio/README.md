@@ -68,13 +68,30 @@ stays at the top of the chat as a collapsible chip, so where the work came from
 is never lost. The original chat is left exactly as it was — same session, same
 history, still resumable.
 
-**Settings → Agent** holds the domain-wide defaults: which agent and model a new
-chat starts on. Picking another agent there forks a tab the same way.
+Opening a tab asks nothing: `+` opens on the **preferred model** — the one
+starred in that same menu. There is exactly one star across every agent, so it
+names both the model AND the agent a new conversation starts on. With nothing
+starred, a new tab continues with the agent you are already working with, each
+agent falls back to its own default (Claude Opus 5, GPT-5.6), and Studio opens
+on whichever of the two this machine actually has.
+
+Beside the model sits a small meter: the chat's **reasoning level**. The rungs
+are the ones the agent itself reports over ACP for the model in use, so they
+differ per agent and per model — Claude ends at Max (plus Studio's own
+Ultracode), Codex goes to Ultra, and a model that does no reasoning at all
+(Haiku) shows no meter. Leaving it untouched runs the level the agent's own
+configuration is set to; forking to the other agent carries the level over,
+mapped onto its nearest rung there.
+
+**Settings → Agent** decides nothing. It lists the local agents this machine
+has, detected or not, with the ACP server that answered — diagnostics, not a
+choice.
 
 ### Local agent harness
 
 Studio detects both local harnesses. `--harness` (or `DOMAIN_STUDIO_HARNESS`)
-locks the whole Studio process to one harness and disables the selector.
+locks the whole Studio process to one harness; the composer then offers only its
+models, and Settings says what is holding the lock.
 
 - **Claude Code:** install `claude` and authenticate normally. Studio can also
   route this harness through its Anthropic-compatible model-gateway settings.
@@ -97,19 +114,21 @@ server does not advertise fork yet; Codex Ask therefore uses a fresh ephemeral
 ACP session and still leaves the main conversation untouched. Capability
 detection will use a fork automatically when the Codex server adds it.
 
-The Agent settings also choose the reasoning effort and access level. **Workspace**
-uses the harness's workspace-write sandbox. **Full automation** preserves the
-existing deploy/install workflow and permits unrestricted local commands. Studio
-remains loopback-only by default because either harness can edit files and run
-commands with the authority you select.
+Settings → Details still owns the access level. **Workspace** uses the harness's
+workspace-write sandbox. **Full automation** preserves the existing deploy/install
+workflow and permits unrestricted local commands. Studio remains loopback-only by
+default because either harness can edit files and run commands with the authority
+you select.
 
-Model selection is remembered per chat, falling back to the domain default for
-that harness. Leaving it on **Default** preserves the harness's own resolution
-rules. Claude
-and Codex both report the current model and selectable models through the ACP
-session configuration. Choosing an explicit model sets that ACP configuration
-for new turns, resumed turns, isolated Ask sessions, and diagnostics without
-rewriting the user's global harness config.
+Model and reasoning level are remembered per chat, falling back to the domain's
+starred model and to the agent's own configured level. Claude and Codex both
+report their selectable models and their `thought_level` ladder through the ACP
+session configuration, and the ladder is read AFTER the model override because it
+is the model that decides which rungs exist. Choosing either sets that ACP
+configuration for new turns, resumed turns, isolated Ask sessions, and
+diagnostics without rewriting the user's global harness config. A level the
+selected model does not offer lands on its nearest rung instead of failing the
+turn.
 
 Codex custom providers require the OpenAI Responses API. Astrale's current
 AI-gateway surface exposes Chat Completions and Anthropic Messages, so Studio does

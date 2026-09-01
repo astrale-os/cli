@@ -21,7 +21,7 @@ export class AcpCodexHarness implements AgentHarness {
   label = 'Codex'
   defaultModel = 'gpt-5.6-sol'
   capabilities = {
-    effortLevels: ['minimal', 'low', 'medium', 'high', 'xhigh'],
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
     accessLevels: ['workspace', 'full'],
     ask: true,
     loadout: true,

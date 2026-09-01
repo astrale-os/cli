@@ -20,7 +20,6 @@ import type {
   HarnessLoadout,
   HarnessModelCatalog,
   HarnessStatus,
-  HarnessSwitchResult,
   InstancesState,
   StudioSettings,
   LayoutState,
@@ -149,8 +148,11 @@ export const api = {
     post<ChatList>(`${d(id)}/agent/chats`, { action: 'select', chatId }),
   closeChat: (id: string, chatId: string) =>
     post<ChatList>(`${d(id)}/agent/chats`, { action: 'close', chatId }),
-  updateChat: (id: string, chatId: string, patch: { title?: string; model?: string }) =>
-    post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'update', chatId, ...patch }),
+  updateChat: (
+    id: string,
+    chatId: string,
+    patch: { title?: string; model?: string; effort?: string },
+  ) => post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'update', chatId, ...patch }),
   /** fork this chat onto the other agent, carrying a summary of it */
   switchChatHarness: (id: string, chatId: string, harness: string, model?: string) =>
     post<ChatInfo>(`${d(id)}/agent/chats`, {
@@ -166,12 +168,6 @@ export const api = {
   harness: (id: string) => get<HarnessStatus>(`${d(id)}/agent/harness`),
   /** every harness's selectable models — what the composer's picker offers */
   models: (id: string) => get<HarnessModelCatalog[]>(`${d(id)}/agent/models`),
-  /** picks the default agent for NEW chats, and forks the active tab if it differs */
-  selectHarness: (id: string, harness: string, chatId?: string) =>
-    post<HarnessSwitchResult>(`${d(id)}/agent/harness`, {
-      id: harness,
-      ...(chatId ? { chatId } : {}),
-    }),
   harnessGateway: (id: string) => get<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`),
   setHarnessGateway: (id: string, scope: 'domain' | 'global', config: HarnessGatewayConfig) =>
     post<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`, { action: 'set', scope, config }),

@@ -73,9 +73,9 @@ test('settings modules form an acyclic dependency graph', () => {
 
 test('leaf settings controls do not depend on composition', () => {
   const leaves = new Set([
-    'agent-model.tsx',
-    'agent-pickers.tsx',
+    'agent-access.tsx',
     'agent-session.tsx',
+    'harness-presence.tsx',
     'gateway-auth.tsx',
     'gateway-fields.tsx',
     'gateway-validation.ts',

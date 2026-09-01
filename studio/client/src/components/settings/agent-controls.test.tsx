@@ -1,25 +1,17 @@
-import type { HarnessStatus } from '@shared/types'
-import type { Dispatch, SetStateAction } from 'react'
+import type { HarnessPresence, HarnessStatus } from '@shared/types'
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
 import { AgentSettings } from './agent'
-import { AgentModel } from './agent-model'
 
-const noopSetter: Dispatch<SetStateAction<Record<string, string>>> = () => {}
-
-const claudeHarness: HarnessStatus = {
+const claude: HarnessPresence = {
   id: 'claude',
   label: 'Claude Code',
   bin: 'claude',
   ok: true,
-  version: 'test',
-  message: 'Detected',
-  options: [{ id: 'claude', label: 'Claude Code' }],
-  locked: false,
-  source: 'domain',
+  version: '0.70.0',
+  message: 'Claude Agent initialized over ACP v1',
   capabilities: {
     effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'],
     accessLevels: ['workspace', 'full'],
@@ -29,49 +21,50 @@ const claudeHarness: HarnessStatus = {
   },
 }
 
-test('ACP diagnostics populate the model selector', () => {
-  const html = renderToStaticMarkup(
-    <AgentModel
-      selected="opus"
-      loadout={{
-        ok: true,
-        nativeModel: 'sonnet',
-        model: 'opus',
-        models: [
-          { id: 'fable', label: 'Fable' },
-          { id: 'sonnet', label: 'Sonnet' },
-          { id: 'opus', label: 'Opus' },
-        ],
-        probedAt: Date.now(),
-        source: 'acp',
-      }}
-      onChange={() => {}}
-    />,
-  )
+const codex: HarnessPresence = {
+  id: 'codex',
+  label: 'Codex',
+  bin: 'codex',
+  ok: false,
+  message: 'codex ACP agent exited 127: command not found',
+  capabilities: {
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
+    accessLevels: ['workspace', 'full'],
+    ask: true,
+    loadout: true,
+    gateway: 'none',
+  },
+}
 
-  expect(html).toMatch(/<select[^>]*aria-label="Agent model"/)
-  for (const [id, label] of [
-    ['fable', 'Fable'],
-    ['sonnet', 'Sonnet'],
-  ])
-    expect(html).toMatch(new RegExp(`<option value="${id}">${label}`))
-  expect(html).toMatch(/<option value="opus" selected="">Opus/)
+const status: HarnessStatus = {
+  ...claude,
+  harnesses: [claude, codex],
+  locked: false,
+  source: 'domain',
+}
+
+test('Settings reports every local agent, detected or not', () => {
+  const html = renderToStaticMarkup(<AgentSettings harness={status} />)
+
+  expect(html).toContain('Claude Code')
+  expect(html).toContain('0.70.0')
+  expect(html).toContain('Claude Agent initialized over ACP v1')
+  expect(html).toContain('Codex')
+  expect(html).toContain('not detected')
+  expect(html).toContain('command not found')
 })
 
-test('Claude settings expose native effort modes', () => {
-  const html = renderToStaticMarkup(
-    <QueryClientProvider client={new QueryClient()}>
-      <AgentSettings
-        harness={claudeHarness}
-        values={{ agentEffort: 'max' }}
-        setValues={noopSetter}
-        agentModels={{}}
-        setAgentModels={noopSetter}
-      />
-    </QueryClientProvider>,
-  )
+test('Settings offers no agent, model or effort to choose — those live in the composer', () => {
+  const html = renderToStaticMarkup(<AgentSettings harness={status} />)
 
-  expect(html).toMatch(/<select[^>]*aria-label="Agent effort"/)
-  expect(html).toMatch(/<option value="max" selected="">Max<\/option>/)
-  expect(html).toMatch(/<option value="ultracode">Ultracode<\/option>/)
+  expect(html).not.toContain('<select')
+  expect(html).not.toContain('<button')
+  expect(html).toContain('starred in the composer')
+})
+
+test('a process locked by --harness says so instead of pointing at the star', () => {
+  const html = renderToStaticMarkup(<AgentSettings harness={{ ...status, locked: true }} />)
+
+  expect(html).toContain('Locked to Claude Code by --harness')
+  expect(html).not.toContain('starred in the composer')
 })

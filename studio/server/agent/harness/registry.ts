@@ -1,11 +1,12 @@
+/**
+ * registry.ts — the concrete local harness adapters, and the process-level caches
+ * they reuse across domains.
+ */
 import type { AgentHarness } from './adapter'
 
-/**
- * Register the concrete local harness adapters and reuse their process-level
- * caches across domains.
- */
 import { AcpClaudeHarness } from './acp/claude'
 import { AcpCodexHarness } from './acp/codex'
+import { inspectHarnessHealth } from './adapter'
 import { MockHarness } from './mock/adapter'
 
 const harnesses: Record<string, () => AgentHarness> = {
@@ -29,9 +30,24 @@ export function getHarnessById(id: string): AgentHarness {
   return harness
 }
 
-/** All registered harnesses (id + label) — for the (currently locked) UI selector. */
+/** All registered harnesses (id + label) — every agent the GUI names. */
 export function listHarnesses(selected?: string): { id: string; label: string }[] {
   return Object.entries(harnesses)
     .filter(([id]) => id !== 'mock' || id === selected)
     .map(([id, make]) => ({ id, label: make().label }))
+}
+
+/**
+ * Ask every real harness whether it is installed, and remember the answers.
+ *
+ * Run once at boot so `lastKnownPresence` has something to say before the first
+ * domain is read: a machine with a single agent must open its first chat on that
+ * one, and that choice is made synchronously.
+ */
+export async function probeInstalledHarnesses(): Promise<void> {
+  await Promise.all(
+    listHarnesses().map((entry) =>
+      inspectHarnessHealth(getHarnessById(entry.id)).catch(() => undefined),
+    ),
+  )
 }

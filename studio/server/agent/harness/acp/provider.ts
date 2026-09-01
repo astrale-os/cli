@@ -1,4 +1,4 @@
-import type { AgentAccess, AgentEffort } from '../../../../shared/types'
+import type { AgentAccess } from '../../../../shared/types'
 import type { AgentTurnInput, AskInput } from '../adapter'
 import type { AcpProvider } from './command'
 
@@ -37,22 +37,6 @@ function claudeExtraArgs(raw: string | undefined): Record<string, string> {
     } else args[key] = ''
   }
   return args
-}
-
-function codexEffort(effort: AgentEffort): string {
-  return effort === 'max' || effort === 'ultracode' ? 'xhigh' : effort
-}
-
-function claudeEffort(effort: AgentEffort): string {
-  return effort === 'ultracode' ? 'xhigh' : effort
-}
-
-export function providerEffort(provider: AcpProvider, effort: AgentEffort): string {
-  return provider === 'codex' ? codexEffort(effort) : claudeEffort(effort)
-}
-
-export function providerEffortConfigId(provider: AcpProvider): string {
-  return provider === 'codex' ? 'reasoning_effort' : 'effort'
 }
 
 export function providerMode(provider: AcpProvider, access: AgentAccess | undefined): string {
@@ -106,6 +90,8 @@ export function providerSessionMeta(
   const extraArgs = claudeExtraArgs(
     input.env?.DOMAIN_STUDIO_CLAUDE_ARGS ?? process.env.DOMAIN_STUDIO_CLAUDE_ARGS,
   )
+  // The one rung ACP does not carry: `ultracode` reaches Claude as a setting, and
+  // the session's own ladder is separately pushed to its heaviest ACP level.
   if (input.effort === 'ultracode') extraArgs.settings = JSON.stringify({ ultracode: true })
   if (Object.keys(extraArgs).length)
     meta.claudeCode = {

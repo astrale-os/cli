@@ -57,17 +57,21 @@ const configOptions = () => [
       { value: 'studio-model', name: 'Studio' },
     ],
   },
-  {
-    id: effortId,
-    name: 'Effort',
-    category: 'thought_level',
-    type: 'select',
-    currentValue: 'medium',
-    options: ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({
-      value,
-      name: value,
-    })),
-  },
+  ...(process.env.FAKE_ACP_NO_EFFORT === '1'
+    ? []
+    : [
+        {
+          id: effortId,
+          name: 'Effort',
+          category: 'thought_level',
+          type: 'select',
+          currentValue: 'medium',
+          options: ['low', 'medium', 'high', 'xhigh', 'max'].map((value) => ({
+            value,
+            name: value,
+          })),
+        },
+      ]),
 ]
 const update = (sessionId, value) =>
   send({ method: 'session/update', params: { sessionId, update: value } })
@@ -316,6 +320,17 @@ describe('ACP harness adapter', () => {
         { id: 'native', label: 'Native' },
         { id: 'studio-model', label: 'Studio' },
       ],
+      // the reasoning ladder comes back with the model, so the composer can offer
+      // exactly the rungs this agent named — and say which one it is on
+      effort: 'medium',
+      nativeEffort: 'medium',
+      efforts: [
+        { id: 'low', label: 'low' },
+        { id: 'medium', label: 'medium' },
+        { id: 'high', label: 'high' },
+        { id: 'xhigh', label: 'xhigh' },
+        { id: 'max', label: 'max' },
+      ],
     })
     expect(messages(log).flatMap((message) => (message.method ? [message.method] : []))).toEqual([
       'initialize',
@@ -323,6 +338,37 @@ describe('ACP harness adapter', () => {
       'session/set_config_option',
       'session/delete',
     ])
+  })
+
+  test('Claude adds Studio’s own top rung above the ladder ACP reports', async () => {
+    const root = temporaryRoot('studio-acp-probe-claude-')
+    const harness = new AcpClaudeHarness('/opt/claude-test', fakeAcpAgent(root))
+
+    const loadout = await harness.loadout(root, {
+      env: { FAKE_ACP_PROVIDER: 'claude' },
+      refresh: true,
+    })
+    expect(loadout.efforts?.map((option) => option.id)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+      'ultracode',
+    ])
+  })
+
+  test('a model with no ladder reports none, rather than an empty guess', async () => {
+    const root = temporaryRoot('studio-acp-probe-flat-')
+    const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
+
+    const loadout = await harness.loadout(root, {
+      env: { FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_NO_EFFORT: '1' },
+      refresh: true,
+    })
+    expect(loadout.ok).toBe(true)
+    expect(loadout.efforts).toBeUndefined()
+    expect(loadout.effort).toBeUndefined()
   })
 
   test('runs Codex through ACP and maps MCP, configuration, permissions, usage, and events', async () => {
@@ -407,10 +453,8 @@ describe('ACP harness adapter', () => {
       'model',
       'reasoning_effort',
     ])
-    expect(configRequests.map((message) => message.params!.value)).toEqual([
-      'studio-model',
-      'xhigh',
-    ])
+    // `max` is a rung Codex really has, so it is sent as asked rather than capped
+    expect(configRequests.map((message) => message.params!.value)).toEqual(['studio-model', 'max'])
     expect(requests.find((message) => message.id === 'permission-1')!.result).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow' },
     })
@@ -468,11 +512,36 @@ describe('ACP harness adapter', () => {
         modeId: 'bypassPermissions',
       },
     )
+    // `ultracode` is Studio's own rung — the session goes to the heaviest level the
+    // agent DOES report, and the flag above carries the rest
     const configs = requests.filter((message) => message.method === 'session/set_config_option')
     expect(configs.map((message) => [message.params!.configId, message.params!.value])).toEqual([
       ['model', 'studio-model'],
-      ['effort', 'xhigh'],
+      ['effort', 'max'],
     ])
+  })
+
+  test('a model with no reasoning ladder is left alone instead of failing the turn', async () => {
+    const root = temporaryRoot('studio-acp-no-effort-')
+    const log = join(root, 'acp.jsonl')
+    const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
+
+    const result = await harness.run({
+      root,
+      prompt: 'think about it',
+      model: 'studio-model',
+      effort: 'max',
+      access: 'workspace',
+      env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex', FAKE_ACP_NO_EFFORT: '1' },
+      signal: new AbortController().signal,
+      onEvent: () => {},
+    })
+
+    expect(result.isError).toBe(false)
+    const configs = messages(log).filter(
+      (message) => message.method === 'session/set_config_option',
+    )
+    expect(configs.map((message) => message.params!.configId)).toEqual(['model'])
   })
 
   test('forks Claude Ask sessions, but creates a fresh ephemeral Codex Ask when fork is unavailable', async () => {

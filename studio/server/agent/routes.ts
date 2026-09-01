@@ -1,4 +1,4 @@
-import type { HarnessStatus } from '../../shared/types'
+import type { HarnessPresence, HarnessStatus } from '../../shared/types'
 import type { ChatResult } from './run/coordinator'
 
 import { badRequest, json, notFound, type DomainRouteContext } from '../api/http'
@@ -16,12 +16,7 @@ import {
 } from './harness/gateway/config'
 import { setHostToken } from './harness/gateway/token'
 import { getHarnessById, listHarnesses } from './harness/registry'
-import {
-  getHarness,
-  getHarnessSelection,
-  resolveHarnessConfiguration,
-  setHarnessSelection,
-} from './harness/selection'
+import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './harness/selection'
 import { buildSystemPrompt } from './prompts/system'
 import {
   cancelRun,
@@ -52,9 +47,8 @@ function chatJson<T>(result: ChatResult<T>): Response {
   return result.ok ? json(result.value) : badRequest(result.error)
 }
 
-async function harnessStatus(root: string, selected = false): Promise<HarnessStatus> {
-  const selection = getHarnessSelection(root)
-  const harness = getHarness(root)
+async function harnessPresence(id: string): Promise<HarnessPresence> {
+  const harness = getHarnessById(id)
   const health = await inspectHarnessHealth(harness)
   return {
     id: harness.id,
@@ -63,12 +57,31 @@ async function harnessStatus(root: string, selected = false): Promise<HarnessSta
     ok: health.ok,
     version: health.version,
     message: health.ok
-      ? `${selected ? `Selected ${harness.label}` : 'Detected'}${health.version ? ` — ${health.version}` : ''}`
+      ? (health.detail ?? `Detected${health.version ? ` — ${health.version}` : ''}`)
       : (health.detail ?? `${harness.label} is not detected. Is it installed and on your PATH?`),
-    options: listHarnesses(harness.id),
+    capabilities: harness.capabilities,
+  }
+}
+
+/**
+ * The agent this domain opens on, and every agent detected beside it.
+ *
+ * Both are probed on every read: the composer needs each one's reasoning ladder
+ * before any of them is chosen, and Settings lists them as pure diagnostics. The
+ * adapters cache their own ACP handshake, so this stays one cheap call.
+ */
+async function harnessStatus(root: string): Promise<HarnessStatus> {
+  const selection = getHarnessSelection(root)
+  const harnesses = await Promise.all(
+    listHarnesses(selection.id).map((entry) => harnessPresence(entry.id)),
+  )
+  const selected =
+    harnesses.find((entry) => entry.id === selection.id) ?? (await harnessPresence(selection.id))
+  return {
+    ...selected,
+    harnesses,
     locked: selection.locked,
     source: selection.source,
-    capabilities: harness.capabilities,
   }
 }
 
@@ -94,6 +107,7 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
       const harness = asString(body.harness)
       const title = asString(body.title)
       const model = asString(body.model)
+      const effort = asString(body.effort)
       switch (asString(body.action) ?? 'open') {
         case 'open':
           return chatJson(
@@ -111,6 +125,7 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
             updateChat(id, chatBody ?? '', {
               ...(title === undefined ? {} : { title }),
               ...(model === undefined ? {} : { model }),
+              ...(effort === undefined ? {} : { effort }),
             }),
           )
         case 'switch-harness':
@@ -153,23 +168,6 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
   if (rest === '/agent/harness' && req.method === 'GET') return json(await harnessStatus(root))
   if (rest === '/agent/models' && req.method === 'GET')
     return json(await readModelCatalog(root, req.signal))
-  if (rest === '/agent/harness' && req.method === 'POST') {
-    const target = asString(body.id) ?? ''
-    try {
-      setHarnessSelection(root, target)
-    } catch (error) {
-      return badRequest(errorMessage(error))
-    }
-    // A chat cannot change agent, so picking the other one forks a tab that runs
-    // it — briefed on this conversation, which stays open and untouched.
-    const active = chatHarness(id, chatBody)
-    const forked = active && active !== target ? switchChatHarness(id, chatBody, target) : undefined
-    if (forked && !forked.ok) return badRequest(forked.error)
-    return json({
-      harness: await harnessStatus(root, true),
-      chat: forked?.value ?? null,
-    })
-  }
   if (rest === '/agent/loadout' && req.method === 'GET') {
     // Probe the models of the chat's OWN harness — the domain default is only
     // what a new tab would get.
@@ -183,7 +181,9 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
         probedAt: Date.now(),
         source: 'acp',
       })
-    const configuration = await resolveHarnessConfiguration(root, harness, override)
+    const configuration = await resolveHarnessConfiguration(root, harness, {
+      ...(override ? { model: override } : {}),
+    })
     if (!configuration.ok)
       return json({
         ok: false,

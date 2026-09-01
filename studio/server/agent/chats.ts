@@ -18,8 +18,9 @@
  */
 import { randomUUID } from 'node:crypto'
 
-import type { ChatInfo, ChatStatus } from '../../shared/types'
+import type { AgentEffort, ChatInfo, ChatStatus } from '../../shared/types'
 
+import { isAgentEffort } from '../../shared/agent-effort'
 import { DEFAULT_CHAT_TITLE } from '../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString } from '../json'
 import { readJson, writeJson } from '../state/store'
@@ -52,6 +53,7 @@ export interface StoredChat {
   title: string
   harness: string
   model?: string
+  effort?: AgentEffort
   sessionId?: string
   turns: number
   createdAt: string
@@ -76,6 +78,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   if (!id || !harness) return undefined
   const turns = asFiniteNumber(record.turns)
   const model = asString(record.model)
+  const effort = isAgentEffort(record.effort) ? record.effort : undefined
   const sessionId = asString(record.sessionId)
   const handoff = decodeHandoff(record.handoff)
   const createdAt = asString(record.createdAt) ?? new Date().toISOString()
@@ -87,6 +90,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
     createdAt,
     updatedAt: asString(record.updatedAt) ?? createdAt,
     ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
     ...(sessionId ? { sessionId } : {}),
     ...(handoff ? { handoff } : {}),
     ...(asBoolean(record.adoptsLegacyRuns) ? { adoptsLegacyRuns: true } : {}),
@@ -231,12 +235,19 @@ export function resolveChat(
 
 export function createChat(
   root: string,
-  input: { harness: string; title?: string; model?: string; handoff?: ChatHandoff },
+  input: {
+    harness: string
+    title?: string
+    model?: string
+    effort?: AgentEffort
+    handoff?: ChatHandoff
+  },
 ): StoredChat {
   const store = ensureChats(root, input.harness)
   const chat = newChat(input.harness, {
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
+    ...(input.effort ? { effort: input.effort } : {}),
     ...(input.handoff
       ? {
           handoff: { ...input.handoff, summary: input.handoff.summary.slice(0, MAX_HANDOFF_CHARS) },
@@ -265,6 +276,9 @@ export function forkChat(
     harness,
     title: source.title === DEFAULT_TITLE ? DEFAULT_TITLE : `${source.title} (${harness})`,
     ...(model ? { model } : {}),
+    // how hard you asked this work to be thought about is about the work, not
+    // about the agent — it follows, mapped onto whatever ladder it lands on
+    ...(source.effort ? { effort: source.effort } : {}),
     handoff: {
       fromChatId: source.id,
       fromHarness: source.harness,
@@ -303,6 +317,24 @@ export function titleChatFromMessage(root: string, chatId: string, message: stri
   mutateChat(root, chatId, (chat) => {
     if (chat.title === DEFAULT_TITLE)
       chat.title = summary.length > 48 ? `${summary.slice(0, 48).trimEnd()}…` : summary
+  })
+}
+
+/**
+ * The reasoning level this chat runs at — cleared by an empty string.
+ *
+ * Unpinned is a real state, not a missing one: the chat then runs at whatever
+ * level the agent's own configuration is set to, and follows it if it changes.
+ */
+export function setChatEffort(
+  root: string,
+  chatId: string,
+  effort: string,
+): StoredChat | undefined {
+  const level = isAgentEffort(effort) ? effort : undefined
+  return mutateChat(root, chatId, (chat) => {
+    if (level) chat.effort = level
+    else delete chat.effort
   })
 }
 
@@ -408,6 +440,7 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
     updatedAt: chat.updatedAt,
     status,
     ...(chat.model === undefined ? {} : { model: chat.model }),
+    ...(chat.effort === undefined ? {} : { effort: chat.effort }),
     ...(chat.sessionId === undefined ? {} : { sessionId: chat.sessionId }),
     ...(chat.handoff
       ? {

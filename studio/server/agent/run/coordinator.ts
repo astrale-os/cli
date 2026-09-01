@@ -25,12 +25,14 @@ import {
   renameChat,
   resolveChat,
   setActiveChat,
+  setChatEffort,
   setChatModel,
   setChatSession,
   titleChatFromMessage,
 } from '../chats'
+import { inspectHarnessHealth } from '../harness/adapter'
 import { getHarnessById, hasHarness } from '../harness/registry'
-import { getHarness } from '../harness/selection'
+import { getHarness, getHarnessSelection } from '../harness/selection'
 import { emitStudioEvent } from '../notify'
 import { summarizeChatTranscript } from '../transfer'
 import { completeRun } from './completion'
@@ -50,9 +52,26 @@ import { deleteChatRuns, persistRun, readChatTranscript, readRunHistory } from '
 
 export type ChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
-/** The default harness for a domain's NEW chats; existing tabs keep their own. */
+/** The agent a domain falls back on — the starred model's; see harness/selection. */
 function defaultHarness(root: string): string {
   return getHarness(root).id
+}
+
+/**
+ * The agent a new tab opens on — a question the GUI never asks.
+ *
+ * A starred model, or a `--harness` lock, names the agent outright: both are
+ * deliberate statements about where conversations start, and the star's whole
+ * promise is that new chats open on it. With neither, the tab continues with the
+ * agent you are already working with, which is the only other honest answer.
+ *
+ * Either way, changing agent stays what it always was: pick a model of the
+ * other one, in the conversation you want to move.
+ */
+function newChatHarness(root: string): string {
+  const selection = getHarnessSelection(root)
+  if (selection.source !== 'default') return selection.id
+  return resolveChat(root, selection.id)?.harness ?? selection.id
 }
 
 /** A chat's status is its own live run's — tabs never report each other's work. */
@@ -108,7 +127,7 @@ export function openChat(
 ): ChatResult<ChatInfo> {
   const handle = getDomain(domainId)
   if (!handle) return { ok: false, error: `unknown domain: ${domainId}` }
-  const harness = input.harness?.trim().toLowerCase() || defaultHarness(handle.root)
+  const harness = input.harness?.trim().toLowerCase() || newChatHarness(handle.root)
   if (!hasHarness(harness)) return { ok: false, error: `unknown harness: ${harness}` }
   const chat = createChat(handle.root, {
     harness,
@@ -168,12 +187,13 @@ export function selectChat(domainId: string, chatId: string): ChatResult<ChatLis
 export function updateChat(
   domainId: string,
   chatId: string,
-  patch: { title?: string; model?: string },
+  patch: { title?: string; model?: string; effort?: string },
 ): ChatResult<ChatInfo> {
   return withChat(domainId, chatId, (handle, chat) => {
     // The harness is deliberately absent from this patch: see switchChatHarness.
     if (patch.title !== undefined) renameChat(handle.root, chat.id, patch.title)
     if (patch.model !== undefined) setChatModel(handle.root, chat.id, patch.model)
+    if (patch.effort !== undefined) setChatEffort(handle.root, chat.id, patch.effort)
     return describe(handle, resolveChat(handle.root, defaultHarness(handle.root), chat.id) ?? chat)
   })
 }
@@ -223,7 +243,7 @@ export async function getSnapshot(domainId: string, chatId?: string): Promise<Ag
     return {
       chatId: '',
       harness: harness.id,
-      available: await harness.isAvailable(),
+      available: (await inspectHarnessHealth(harness)).ok,
       run: null,
       conversation: { active: false, turns: 0 },
     }
@@ -233,7 +253,9 @@ export async function getSnapshot(domainId: string, chatId?: string): Promise<Ag
   const chat =
     resolveChat(handle.root, defaultHarness(handle.root), chatId) ??
     activeChat(handle.root, defaultHarness(handle.root))
-  const harness = getHarness(handle.root)
+  // The tab's own agent, not the domain's: a Codex chat is unavailable when Codex
+  // is missing, whatever the domain would open a NEW conversation with.
+  const harness = getHarnessById(chat.harness)
   hydrateRun(domainId, handle.root, chat)
   const conversation: ConversationInfo = {
     active: !!chat.sessionId,
@@ -243,7 +265,7 @@ export async function getSnapshot(domainId: string, chatId?: string): Promise<Ag
   return {
     chatId: chat.id,
     harness: chat.harness,
-    available: await harness.isAvailable(),
+    available: (await inspectHarnessHealth(harness)).ok,
     run: currentRun(chat.id) ?? null,
     conversation,
   }

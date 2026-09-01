@@ -47,9 +47,10 @@ async function catalogOf(
     ...(signal === undefined ? {} : { signal }),
   })
   const models = loadout.models ?? []
-  // What a NEW chat of this harness runs: the domain's own preferred model when
-  // the user starred one, Studio's default otherwise — `resolveHarnessConfiguration`
-  // already ranks those, so the picker's star and the runner never disagree.
+  // What a NEW chat of this harness runs: the domain's starred model when the star
+  // is on THIS harness (there is only one, across every agent), Studio's default
+  // otherwise — `resolveHarnessConfiguration` already ranks those, so the picker's
+  // star and the runner never disagree.
   //
   // Each candidate has to still be in the catalog. A domain that starred a slug
   // the agent has since renamed (`opus` → `opus[1m]`) falls through to Studio's
