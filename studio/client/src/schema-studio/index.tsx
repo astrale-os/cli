@@ -7,6 +7,7 @@ import { useBundle, useCore } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
 import { CoreDetail, CoreTree, CoreView } from './core-view'
+import { DomainPicker, DomainsRailHeader } from './domains-rail'
 import { PanelShell } from './panel-shell'
 import { ModulesSidebar } from './sidebar'
 import { WorkspaceSchemaSection } from './workspace/section'
@@ -88,16 +89,20 @@ function CoreSection({ domainId }: { domainId: string }) {
         </div>
       ) : (
         <div className="flex-1 flex min-h-0">
-          <ModulesSidebar onClearSelection={() => setCorePath(null)}>
+          {/* Core reads ONE domain, so its rail is the same list of domains with no
+              canvas composition to make — the genesis tree hangs under the active one. */}
+          <ModulesSidebar onClearSelection={() => setCorePath(null)} header={<DomainsRailHeader />}>
             <ScrollArea className="h-full">
-              {core && (
-                <CoreTree
-                  core={core}
-                  bundle={bundle}
-                  selectedPath={corePath}
-                  onSelect={setCorePath}
-                />
-              )}
+              <DomainPicker>
+                {core && (
+                  <CoreTree
+                    core={core}
+                    bundle={bundle}
+                    selectedPath={corePath}
+                    onSelect={setCorePath}
+                  />
+                )}
+              </DomainPicker>
             </ScrollArea>
           </ModulesSidebar>
           <div className="flex-1 min-w-0 relative">

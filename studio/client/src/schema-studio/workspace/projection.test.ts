@@ -101,9 +101,7 @@ describe('workspace projection', () => {
       Remote: nodeClass('Remote', { origin: remote.origin, ref: remote }),
     })
 
-    const result = composeWorkspaceCanvas([prepared(local), prepared(remoteBundle)], {
-      activeDomainId: 'local',
-    })
+    const result = composeWorkspaceCanvas([prepared(local), prepared(remoteBundle)])
     expect(result.edges).toContainEqual(
       expect.objectContaining({
         source: qualifiedNodeId('local', 'class.User'),
@@ -129,7 +127,7 @@ describe('workspace projection', () => {
         key: 'remote.example.dev:class.Remote',
       },
     }
-    const result = composeWorkspaceCanvas([prepared(local)], { activeDomainId: 'local' })
+    const result = composeWorkspaceCanvas([prepared(local)])
     expect(result.nodes.map((node) => node.id)).toContain(
       'workspace-external-member:remote.example.dev:class:Remote',
     )
@@ -138,10 +136,8 @@ describe('workspace projection', () => {
   test('a frame is moved, never selected — with one domain on the canvas or several', () => {
     const first = domainBundle('first', 'first.example.dev', { User: nodeClass('User') })
     const second = domainBundle('second', 'second.example.dev', { Team: nodeClass('Team') })
-    const solo = composeWorkspaceCanvas([prepared(first)], { activeDomainId: 'first' })
-    const pair = composeWorkspaceCanvas([prepared(first), prepared(second)], {
-      activeDomainId: 'first',
-    })
+    const solo = composeWorkspaceCanvas([prepared(first)])
+    const pair = composeWorkspaceCanvas([prepared(first), prepared(second)])
     const frames = [...solo.nodes, ...pair.nodes].filter((node) => node.type === 'workspaceDomain')
 
     expect(frames).toHaveLength(3)
@@ -172,7 +168,7 @@ describe('workspace projection', () => {
       showInheritedEdges: true,
     }
 
-    const result = composeWorkspaceCanvas([projection], { activeDomainId: 'local' })
+    const result = composeWorkspaceCanvas([projection])
 
     expect(result.nodes.some((node) => node.id.startsWith('workspace-external:'))).toBe(false)
   })
@@ -186,7 +182,7 @@ describe('workspace projection', () => {
       }),
     })
 
-    const result = composeWorkspaceCanvas([prepared(value)], { activeDomainId: 'solo' })
+    const result = composeWorkspaceCanvas([prepared(value)])
 
     // the domain's own projection owns it; the workspace pass only adds what crosses domains
     expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toHaveLength(1)
@@ -207,9 +203,7 @@ describe('workspace projection', () => {
     const baseBundle = domainBundle('base', base.origin, {
       Base: nodeClass('Base', { origin: base.origin, ref: base }),
     })
-    const result = composeWorkspaceCanvas([prepared(childBundle), prepared(baseBundle)], {
-      activeDomainId: 'child',
-    })
+    const result = composeWorkspaceCanvas([prepared(childBundle), prepared(baseBundle)])
     expect(result.edges).toContainEqual(
       expect.objectContaining({
         id: `workspace-extends:${qualifiedNodeId('child', 'class.Child')}:${qualifiedNodeId('base', 'class.Base')}`,

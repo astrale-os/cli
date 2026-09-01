@@ -42,7 +42,7 @@ export function useViewsModel(id?: string): ViewsModel {
 /** Staleness for the header Update badge — checked on load, then occasionally
  *  (the check shells out to the CLI + registry, so keep the cadence relaxed). */
 export function useUpdates(id?: string) {
-  const { data: settings } = useSettings(id)
+  const { data: settings } = useSettings()
   return useQuery({
     queryKey: qk.updates(id ?? ''),
     queryFn: () => api.updates(id!),
@@ -110,12 +110,8 @@ export function useComments(id?: string) {
     enabled: !!id,
   })
 }
-export function useSettings(id?: string) {
-  return useQuery({
-    queryKey: qk.settings(id ?? ''),
-    queryFn: () => api.settings(id!),
-    enabled: !!id,
-  })
+export function useSettings() {
+  return useQuery({ queryKey: qk.settings, queryFn: api.settings })
 }
 export function useCore(id?: string) {
   return useQuery({ queryKey: qk.core(id ?? ''), queryFn: () => api.core(id!), enabled: !!id })

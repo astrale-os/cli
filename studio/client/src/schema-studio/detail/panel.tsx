@@ -85,6 +85,7 @@ export function SchemaDetail({
                 {isEdge && <Chip tone="outline">edge</Chip>}
                 {!local && <Chip tone="outline">{originLabel(ref.origin)}</Chip>}
                 <AnchorButton
+                  domainId={bundle.domainId}
                   anchorRef={{ ref: refBase, kind: 'schema', file: span?.file }}
                   excerpt={name}
                   className="ml-auto"
@@ -111,7 +112,7 @@ export function SchemaDetail({
                     key={classRefKey(parent)}
                     type="button"
                     disabled={!navigable}
-                    onClick={() => navigable && selectClass(target)}
+                    onClick={() => navigable && selectClass(target, bundle.domainId)}
                   >
                     <Chip tone="outline">
                       extends {parent.name}

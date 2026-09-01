@@ -1,8 +1,18 @@
 /**
- * settings.ts — per-domain power-user overrides for values the studio otherwise
- * hard-codes (first: the integrations/ folder name). Stored at
- * `.domain-studio/settings.json`; missing keys fall back to DEFAULT_SETTINGS.
- * Surfaced subtly in the UI (command palette + a faint gear) for power users.
+ * settings.ts — power-user overrides for values the studio otherwise hard-codes.
+ *
+ * These are preferences of the TOOL — how hard the agent thinks, which model it runs,
+ * how long extraction may take — not properties of any one domain, and the studio holds
+ * several domains at once. So there is ONE file, at the root the studio was pointed at:
+ * `<workspace>/.domain-studio/settings.json`. Pointed at a single domain (the common
+ * case), that root IS the domain, and the file is the one that was always there.
+ *
+ * Missing keys fall back to DEFAULT_SETTINGS. Surfaced subtly in the UI (command palette
+ * + a faint gear) for power users.
+ *
+ * This module is the REPOSITORY — read and write a settings.json under a given root. Which
+ * root that is is process context, and lives in `server/studio-settings.ts`; production
+ * callers go through its `studioSettings()`, tests hold a root of their own.
  */
 import {
   parseStudioNumericSetting,

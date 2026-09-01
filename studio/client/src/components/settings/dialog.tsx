@@ -28,18 +28,24 @@ import { generalSettingsPatch, SettingsFields } from './fields'
 import { HarnessGatewaySettings } from './gateway'
 
 interface SettingsSaveInput {
-  domainId: string
   settings: StudioSettings
   harness?: HarnessStatus
   values: Record<string, string>
 }
 
-/** Settings composition and persistence for the active domain. */
+/**
+ * The studio's settings. `StudioSettings` is one file for the whole workspace — how hard
+ * the agent thinks, which model it opens on, how long extraction may take — so none of it
+ * moves when you change the domain you work in.
+ *
+ * A few rows below still belong to ONE domain, because what they configure does: which
+ * harness that domain talks to, its gateway credentials, its .env files. They say so.
+ */
 export function SettingsDialog() {
   const open = useUI((state) => state.settingsOpen)
   const setOpen = useUI((state) => state.setSettingsOpen)
   const domainId = useUI((state) => state.domainId)
-  const { data: settings } = useSettings(open ? domainId : undefined)
+  const { data: settings } = useSettings()
   const { data: harness } = useHarness(open ? domainId : undefined)
   const queryClient = useQueryClient()
   const [values, setValues] = useState<Record<string, string>>({})
@@ -76,13 +82,16 @@ export function SettingsDialog() {
           ? 'full'
           : accessLevels[0]
       if (access) patch.agentAccess = access
-      return api.updateSettings(input.domainId, patch as Partial<StudioSettings>)
+      return api.updateSettings(patch as Partial<StudioSettings>)
     },
-    onSuccess: (_, input) => {
-      queryClient.invalidateQueries({ queryKey: qk.settings(input.domainId) })
-      queryClient.invalidateQueries({ queryKey: qk.anatomy(input.domainId) })
-      queryClient.invalidateQueries({ queryKey: qk.agent(input.domainId) })
-      queryClient.invalidateQueries({ queryKey: qk.loadout(input.domainId) })
+    // Every domain composes its anatomy through `integrationsDir` and runs its agent on
+    // these values, so a save is news to all of them — the key prefixes below drop the
+    // per-domain caches wholesale rather than naming the domain that happened to be open.
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.settings })
+      queryClient.invalidateQueries({ queryKey: ['anatomy'] })
+      queryClient.invalidateQueries({ queryKey: ['agent'] })
+      queryClient.invalidateQueries({ queryKey: ['loadout'] })
       toast.success('Settings saved')
       changeOpen(false)
     },
@@ -94,7 +103,7 @@ export function SettingsDialog() {
       <DialogContent className="w-[calc(100%-2rem)] max-w-xl">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Saved to .domain-studio/settings.json</DialogDescription>
+          <DialogDescription>Studio-wide — saved to .domain-studio/settings.json</DialogDescription>
         </DialogHeader>
         <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen} className="contents">
           <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
@@ -141,10 +150,9 @@ export function SettingsDialog() {
               </button>
               <button
                 type="button"
-                disabled={!domainId || !settings || save.isPending}
+                disabled={!settings || save.isPending}
                 onClick={() =>
                   save.mutate({
-                    domainId: domainId!,
                     settings: settings!,
                     harness,
                     values: { ...values },

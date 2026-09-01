@@ -1,15 +1,19 @@
 /**
- * selection.ts — which agent a domain opens on, and how one is invoked.
+ * selection.ts — which agent the studio opens on, and how one is invoked.
  *
- * Nothing selects the agent by itself anymore: the domain's PREFERRED MODEL does,
- * because picking a model is picking an agent. Star one in the composer and every
- * new conversation starts there; star nothing and Studio opens on the harness this
+ * Nothing selects the agent by itself anymore: the PREFERRED MODEL does, because
+ * picking a model is picking an agent. Star one in the composer and every new
+ * conversation starts there; star nothing and Studio opens on the harness this
  * machine actually has, each on its own built-in default model.
+ *
+ * That preference lives in the studio's settings, which are global — so the harness
+ * is too, and neither call below takes a domain root. Invoking one still does: the
+ * gateway credentials it runs with are that domain's.
  */
 import type { AgentEffort, StudioSettings } from '../../../shared/types'
 import type { AgentHarness } from './adapter'
 
-import { readSettings } from '../../state/settings'
+import { studioSettings } from '../../studio-settings'
 import { lastKnownPresence } from './adapter'
 import { resolveHarnessEnv } from './gateway/config'
 import { getHarnessById, hasHarness } from './registry'
@@ -49,17 +53,17 @@ function installedHarnessId(): string {
   return 'claude'
 }
 
-export function getHarnessSelection(root: string): HarnessSelection {
+export function getHarnessSelection(): HarnessSelection {
   const environment = process.env.DOMAIN_STUDIO_HARNESS?.trim().toLowerCase()
   if (environment && hasHarness(environment))
     return { id: environment, locked: true, source: 'environment' }
-  const preferred = readSettings(root).agentModel?.harness
+  const preferred = studioSettings().agentModel?.harness
   if (preferred && hasHarness(preferred)) return { id: preferred, locked: false, source: 'domain' }
   return { id: installedHarnessId(), locked: false, source: 'default' }
 }
 
-export function getHarness(root: string): AgentHarness {
-  return getHarnessById(getHarnessSelection(root).id)
+export function getHarness(): AgentHarness {
+  return getHarnessById(getHarnessSelection().id)
 }
 
 /**
@@ -72,10 +76,10 @@ export function getHarness(root: string): AgentHarness {
  */
 export async function resolveHarnessConfiguration(
   root: string,
-  harness = getHarness(root),
+  harness = getHarness(),
   overrides?: HarnessOverrides,
 ): Promise<HarnessConfigurationResult> {
-  const settings = readSettings(root)
+  const settings = studioSettings()
   const preferred = settings.agentModel
   const model =
     overrides?.model?.trim() ||

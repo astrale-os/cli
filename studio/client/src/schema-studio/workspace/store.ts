@@ -6,6 +6,8 @@ export type { WorkspacePoint, WorkspaceSize } from './geometry'
 
 interface PersistedWorkspaceState {
   selectedDomainIds: string[]
+  /** On the canvas, but put away — the rail's eye. A subset of `selectedDomainIds`. */
+  hiddenDomainIds: string[]
   domainPositions: Record<string, WorkspacePoint>
   externalPositions: Record<string, WorkspacePoint>
   collapsedModules: Record<string, string[]>
@@ -14,6 +16,7 @@ interface PersistedWorkspaceState {
 interface WorkspaceCanvasState extends PersistedWorkspaceState {
   replaceDomains: (ids: string[]) => void
   toggleDomain: (id: string, primaryDomainId: string) => void
+  toggleDomainHidden: (id: string) => void
   setDomainPosition: (id: string, position: WorkspacePoint) => void
   setExternalPosition: (origin: string, position: WorkspacePoint) => void
   ensureDomainPositions: (positions: Record<string, WorkspacePoint>) => void
@@ -26,6 +29,7 @@ const STORAGE_KEY = 'studio.schemaWorkspace.v1'
 
 const EMPTY: PersistedWorkspaceState = {
   selectedDomainIds: [],
+  hiddenDomainIds: [],
   domainPositions: {},
   externalPositions: {},
   collapsedModules: {},
@@ -57,6 +61,7 @@ function load(): PersistedWorkspaceState {
     if (!value) return EMPTY
     return {
       selectedDomainIds: uniqueDomainIds(value.selectedDomainIds ?? []),
+      hiddenDomainIds: uniqueDomainIds(value.hiddenDomainIds ?? []),
       domainPositions: value.domainPositions ?? {},
       externalPositions: value.externalPositions ?? {},
       collapsedModules: value.collapsedModules ?? {},
@@ -82,9 +87,29 @@ function samePoint(current: WorkspacePoint | undefined, next: WorkspacePoint): b
   return current !== undefined && current.x === next.x && current.y === next.y
 }
 
+/**
+ * Hiding is a reading of what the canvas HOLDS: a domain taken off it is no longer hidden,
+ * it is simply gone. Left behind, that record would come back the next time the domain is
+ * checked and make it land invisible, for a gesture the reader made long before.
+ */
+function pruneHidden(
+  state: WorkspaceCanvasState,
+  selectedDomainIds: string[],
+): { hiddenDomainIds: string[] } {
+  const selected = new Set(selectedDomainIds)
+  const hiddenDomainIds = state.hiddenDomainIds.filter((id) => selected.has(id))
+  return {
+    hiddenDomainIds:
+      hiddenDomainIds.length === state.hiddenDomainIds.length
+        ? state.hiddenDomainIds
+        : hiddenDomainIds,
+  }
+}
+
 function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
   return {
     selectedDomainIds: state.selectedDomainIds,
+    hiddenDomainIds: state.hiddenDomainIds,
     domainPositions: state.domainPositions,
     externalPositions: state.externalPositions,
     collapsedModules: state.collapsedModules,
@@ -98,9 +123,13 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
   replaceDomains: (ids) =>
     set((state) => {
       const selectedDomainIds = uniqueDomainIds(ids)
-      const next = { ...persisted(state), selectedDomainIds }
+      const next = {
+        ...persisted(state),
+        selectedDomainIds,
+        ...pruneHidden(state, selectedDomainIds),
+      }
       persist(next)
-      return { selectedDomainIds }
+      return { selectedDomainIds, hiddenDomainIds: next.hiddenDomainIds }
     }),
   toggleDomain: (id, primaryDomainId) =>
     set((state) => {
@@ -109,8 +138,18 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       else selected.add(id)
       selected.add(primaryDomainId)
       const selectedDomainIds = [...selected]
-      persist({ ...persisted(state), selectedDomainIds })
-      return { selectedDomainIds }
+      const { hiddenDomainIds } = pruneHidden(state, selectedDomainIds)
+      persist({ ...persisted(state), selectedDomainIds, hiddenDomainIds })
+      return { selectedDomainIds, hiddenDomainIds }
+    }),
+  toggleDomainHidden: (id) =>
+    set((state) => {
+      const hidden = new Set(state.hiddenDomainIds)
+      if (hidden.has(id)) hidden.delete(id)
+      else hidden.add(id)
+      const hiddenDomainIds = [...hidden]
+      persist({ ...persisted(state), hiddenDomainIds })
+      return { hiddenDomainIds }
     }),
   setDomainPosition: (id, position) =>
     set((state) => {

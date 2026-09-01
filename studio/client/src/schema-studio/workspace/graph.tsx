@@ -94,10 +94,14 @@ export function WorkspaceSchemaGraph({
   const { data: catalog } = useCatalog()
   const activeDomainId = useUI((state) => state.domainId) ?? domains[0]?.input.summary.id ?? ''
   const selected = useUI((state) => state.selectedClass)
+  const selectionDomainId = useUI((state) => state.selectionDomainId)
+  // What the reader picked, and where it lives. A selection with no owner yet (nothing
+  // clicked since load) reads as the active domain's — that is what ⌘K and the comments
+  // tab select into.
+  const selectionDomain = selectionDomainId ?? activeDomainId
   const focusId = useUI((state) => state.focusId)
   const revealTarget = useUI((state) => state.revealTarget)
   const revealOnCanvas = useUI((state) => state.revealOnCanvas)
-  const setDomain = useUI((state) => state.setDomain)
   const setOpenAnchor = useUI((state) => state.setOpenAnchor)
   const showCardinality = useUI((state) => state.showCardinality)
   const scheme = useUI((state) => state.resolvedTheme)
@@ -119,26 +123,20 @@ export function WorkspaceSchemaGraph({
   const reorganizing = useRef<string[] | null>(null)
   const solo = domains.length === 1
 
-  // One click does both: focus the domain AND act on what was clicked. Requiring a
-  // first click just to "enter" a domain made every selection a double click.
-  const activate = useCallback(
-    (domainId: string, ref?: string) => {
-      if (useUI.getState().domainId !== domainId) setDomain(domainId)
-      if (!ref) return
-      // a class both selects AND pins graph focus (which dims what it is not wired to);
-      // a module box only selects — there is nothing to trace from a container.
-      if (ref.startsWith('class.')) useUI.getState().focusClass(ref)
-      else useUI.getState().selectClass(ref)
-    },
-    [setDomain],
-  )
+  // Selecting on the canvas says what you are looking at, and nothing else. It used to
+  // also make the clicked node's domain ACTIVE — which silently swapped the agent
+  // conversation, the comment threads and what Core/Process show, for a click that only
+  // meant "show me this class". The selection carries its own domain instead.
+  const select = useCallback((domainId: string, ref: string) => {
+    // a class both selects AND pins graph focus (which dims what it is not wired to);
+    // a module box only selects — there is nothing to trace from a container.
+    if (ref.startsWith('class.')) useUI.getState().focusClass(ref, domainId)
+    else useUI.getState().selectClass(ref, domainId)
+  }, [])
 
   const toggleWorkspaceModule = useCallback(
-    (domainId: string, path: string) => {
-      if (useUI.getState().domainId !== domainId) setDomain(domainId)
-      toggleModule(domainId, path)
-    },
-    [setDomain, toggleModule],
+    (domainId: string, path: string) => toggleModule(domainId, path),
+    [toggleModule],
   )
 
   // One gesture, the whole canvas: discard EVERY hand-placed position — the geometry inside
@@ -169,12 +167,11 @@ export function WorkspaceSchemaGraph({
   const projection = useMemo(
     () =>
       composeWorkspaceCanvas(domains, {
-        activeDomainId,
         catalog,
         domainPositions,
         externalPositions,
       }),
-    [activeDomainId, catalog, domainPositions, domains, externalPositions],
+    [catalog, domainPositions, domains, externalPositions],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
@@ -188,19 +185,17 @@ export function WorkspaceSchemaGraph({
   // domain is active, or the catalog. The frame anchors alone are never news to it.
   const adopted = useRef<{
     domains: WorkspaceDomainProjection[]
-    activeDomainId: string
     catalog: typeof catalog
   } | null>(null)
   useEffect(() => {
     const echo =
       adopted.current !== null &&
       adopted.current.domains === domains &&
-      adopted.current.activeDomainId === activeDomainId &&
       adopted.current.catalog === catalog
     // …unless a reorganize is in flight, whose first wave is exactly a frame-only change and
     // the one time the canvas is not already painting the answer.
     if (echo && reorganizing.current === null) return
-    adopted.current = { domains, activeDomainId, catalog }
+    adopted.current = { domains, catalog }
     // A reorganize lands in two waves (see `reorganizeSettled`), and the first one packs the
     // frames around the very geometry it is discarding. Paint that wave — it is what the
     // canvas holds until the re-layout arrives — but do not KEEP it: the store never
@@ -233,7 +228,7 @@ export function WorkspaceSchemaGraph({
     if (fittedNodes.current === nodeKey) return
     fittedNodes.current = nodeKey
     setFitRequest((n) => n + 1)
-  }, [activeDomainId, catalog, domains, ensureDomainPositions, ensureExternalPositions, projection])
+  }, [catalog, domains, ensureDomainPositions, ensureExternalPositions, projection])
 
   // React Flow's queued fitView waits on its measurement lifecycle, so frame the
   // canvas from the geometry we already hold (see fit.ts).
@@ -328,7 +323,7 @@ export function WorkspaceSchemaGraph({
   // by sliding the whole graph under the cursor loses the place they were reading.
   useEffect(() => {
     if (!revealTarget || !paneWidth || !paneHeight) return
-    const targetId = revealTargetNodeId(activeDomainId, revealTarget)
+    const targetId = revealTargetNodeId(selectionDomain, revealTarget)
     // nothing on the canvas stands for it — drop the request rather than leave it pending
     if (!targetId) {
       revealOnCanvas(null)
@@ -359,7 +354,7 @@ export function WorkspaceSchemaGraph({
     if (!onScreen) setCenter(cx, cy, { zoom })
     revealOnCanvas(null)
   }, [
-    activeDomainId,
+    selectionDomain,
     revealTarget,
     // the projection that brings a just-restored frame into the store
     nodes,
@@ -373,8 +368,8 @@ export function WorkspaceSchemaGraph({
 
   // ── focus + context, one canvas-wide reading ──
   // `focusId` is a LOCAL ref (`class.Foo`); on this canvas the same class exists in every
-  // frame, so it only means anything once qualified with the domain the click activated.
-  const focusNodeId = focusId ? qualifiedNodeId(activeDomainId, focusId) : null
+  // frame, so it only means anything once qualified with the domain the selection carries.
+  const focusNodeId = focusId ? qualifiedNodeId(selectionDomain, focusId) : null
   const selectedEdgeContext = useMemo(
     () => selectedRelationshipContext(selectedEdgeId, edges),
     [edges, selectedEdgeId],
@@ -423,7 +418,7 @@ export function WorkspaceSchemaGraph({
         const edgeClass = edge.data?.edgeClass as string | undefined
         const isSelected = selectedEdgeId
           ? edge.id === selectedEdgeId
-          : !!edgeClass && ownerDomainId === activeDomainId && selected === `class.${edgeClass}`
+          : !!edgeClass && ownerDomainId === selectionDomain && selected === `class.${edgeClass}`
         const focus: EdgeFocus | undefined = !sets
           ? undefined
           : sets.edgeIds.has(edge.id)
@@ -451,7 +446,7 @@ export function WorkspaceSchemaGraph({
           return { ...edge, className: cls, data, style: { ...edge.style, strokeWidth: 2.4 } }
         return { ...edge, className: cls, data }
       }),
-    [activeDomainId, edges, selected, selectedEdgeId, sets],
+    [edges, selected, selectedEdgeId, selectionDomain, sets],
   )
   const routedEdges = useMemo(
     () => assignFloatingEdgePorts(nodes, displayEdges),
@@ -475,17 +470,16 @@ export function WorkspaceSchemaGraph({
             setSelectedEdgeId(null)
             const target = localNodeRef(node.id)
             if (!target) return
-            if (target.localId.startsWith('class.')) activate(target.domainId, target.localId)
+            if (target.localId.startsWith('class.')) select(target.domainId, target.localId)
             else if (target.localId.startsWith('grp-'))
-              activate(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
+              select(target.domainId, `module.${target.localId.slice('grp-'.length)}`)
           }}
           onEdgeClick={(_, edge) => {
             const ownerDomainId = edge.data?.ownerDomainId as string | undefined
             const edgeClass = edge.data?.edgeClass as string | undefined
             if (!ownerDomainId || !edgeClass) return
             setSelectedEdgeId(edge.id)
-            if (useUI.getState().domainId !== ownerDomainId) setDomain(ownerDomainId)
-            useUI.getState().selectClass(`class.${edgeClass}`)
+            useUI.getState().selectClass(`class.${edgeClass}`, ownerDomainId)
             useUI.getState().setFocus(null)
           }}
           onPaneClick={() => {

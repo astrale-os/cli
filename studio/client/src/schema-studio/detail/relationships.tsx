@@ -106,7 +106,7 @@ function EndpointCard({
     }
   }
   const go = (m: { resolvable: boolean; selectionId?: string }) => () => {
-    if (m.resolvable && m.selectionId) selectClass(m.selectionId)
+    if (m.resolvable && m.selectionId) selectClass(m.selectionId, bundle.domainId)
   }
   const role = roleAddsNothing(
     endpoint.name,

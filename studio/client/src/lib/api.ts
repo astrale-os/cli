@@ -108,9 +108,10 @@ export const api = {
     post<{ ok: true }>(`${d(id)}/comments`, { action: 'delete', id: commentId }),
   mergeReply: (id: string, text: string) => post<MergeResult>(`${d(id)}/comments/merge`, { text }),
 
-  settings: (id: string) => get<StudioSettings>(`${d(id)}/settings`),
-  updateSettings: (id: string, settings: Partial<StudioSettings>) =>
-    post<StudioSettings>(`${d(id)}/settings`, { action: 'update', settings }),
+  /** Studio-wide, not per domain: one file for the whole workspace. */
+  settings: () => get<StudioSettings>('/api/settings'),
+  updateSettings: (settings: Partial<StudioSettings>) =>
+    post<StudioSettings>('/api/settings', { action: 'update', settings }),
 
   // Every conversation call names its chat tab; omitting it means the active one.
   agentSnapshot: (id: string, chatId?: string) =>
@@ -227,7 +228,7 @@ export const qk = {
   viewRuntime: (id: string, slug: string) => ['view-runtime', id, slug] as const,
   updates: (id: string) => ['updates', id] as const,
   comments: (id: string) => ['comments', id] as const,
-  settings: (id: string) => ['settings', id] as const,
+  settings: ['settings'] as const,
   layout: (id: string) => ['layout', id] as const,
   visibility: (id: string) => ['visibility', id] as const,
   documents: (id: string) => ['documents', id] as const,

@@ -33,6 +33,8 @@ export interface WorkspaceDomainProjection {
   collapsed: Set<string>
   nodes: Node[]
   edges: Edge[]
+  /** Put away by the rail's eye: still composed, but nothing of it is drawn. */
+  hidden?: boolean
 }
 
 export interface WorkspaceDomainNodeData extends Record<string, unknown> {
@@ -49,7 +51,6 @@ export interface WorkspaceProjection {
 }
 
 export interface ComposeWorkspaceCanvasOptions {
-  activeDomainId: string
   domainPositions?: Record<string, WorkspacePoint>
   externalPositions?: Record<string, WorkspacePoint>
   catalog?: DomainCatalogEntry[]
@@ -124,7 +125,7 @@ function endpointClasses(endpoint: IrEndpoint): Array<string | IrClassRef> {
 
 function localTarget(domain: WorkspaceDomainProjection, name: string): ResolvedTarget | undefined {
   const ir = domain.input.bundle.ir
-  if (!ir || ir.classes[name]?.type !== 'node') return undefined
+  if (domain.hidden || !ir || ir.classes[name]?.type !== 'node') return undefined
   if (isHidden(classRef(name), domain.input.visibility.hidden)) return undefined
   const modulePath = moduleOfClass(domain.input.bundle, name)
   const localId = domain.collapsed.has(modulePath) ? `grp-${modulePath}` : `class.${name}`
@@ -170,6 +171,10 @@ function resolveClass(
   if (candidates.length === 1) {
     const target = localTarget(candidates[0], ref.name)
     if (target) return [target]
+    // A domain the reader put away is not missing — it is out of view, and what pointed
+    // at it goes with it. Drawing it back as an "unresolved" external box would answer
+    // the eye by replacing the domain with a stub of itself.
+    if (candidates[0].hidden) return []
     diagnostics.add(
       `${owner.input.summary.origin} imports ${ref.origin}:class.${ref.name}, but the selected schema does not expose it.`,
     )
@@ -214,7 +219,7 @@ function crossDomainEdges(
 
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
-    if (!ir) continue
+    if (!ir || owner.hidden) continue
     for (const edgeClass of Object.values(ir.classes)) {
       if (edgeClass.type !== 'edge' || edgeClass.endpoints?.length !== 2) continue
       if (isHidden(edgeRef(edgeClass.name), owner.input.visibility.hidden)) continue
@@ -281,7 +286,7 @@ function inheritanceEdges(
   const seen = new Set<string>()
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
-    if (!ir || !owner.input.visibility.showInheritedEdges) continue
+    if (!ir || owner.hidden || !owner.input.visibility.showInheritedEdges) continue
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node') continue
       const source = localTarget(owner, className)
@@ -318,12 +323,7 @@ function inheritanceEdges(
 
 export function composeWorkspaceCanvas(
   domains: WorkspaceDomainProjection[],
-  {
-    activeDomainId,
-    domainPositions = {},
-    externalPositions = {},
-    catalog,
-  }: ComposeWorkspaceCanvasOptions,
+  { domainPositions = {}, externalPositions = {}, catalog }: ComposeWorkspaceCanvasOptions = {},
 ): WorkspaceProjection {
   const diagnostics = new Set<string>()
   const origins = new Map<string, WorkspaceDomainProjection[]>()
@@ -332,26 +332,28 @@ export function composeWorkspaceCanvas(
     origins.set(origin, [...(origins.get(origin) ?? []), domain])
   }
 
+  // A hidden domain stays in `origins` — the resolver has to recognise it to answer
+  // "put away" rather than "never heard of it" — but nothing below draws it.
+  const drawn = domains.filter((domain) => !domain.hidden)
   const frames = layoutWorkspaceFrames(
-    domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
+    drawn.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
     domainPositions,
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
   const nodes: Node[] = []
   const edges: Edge[] = []
 
-  for (const domain of domains) {
+  for (const domain of drawn) {
     const domainId = domain.input.summary.id
     const frame = framesByDomain.get(domainId)!
     const rootId = workspaceDomainNodeId(domainId)
-    const active = domainId === activeDomainId
     nodes.push({
       id: rootId,
       type: 'workspaceDomain',
       position: frame.position,
       // A frame moves exactly like a module box: grab it anywhere, drag it. It is never
       // SELECTED though — a domain is a place, not a thing you open, and which one is
-      // active is answered by the modules rail, not by repainting the canvas.
+      // active is answered by the domains rail, not by repainting the canvas.
       draggable: true,
       selectable: false,
       data: {
@@ -381,10 +383,10 @@ export function composeWorkspaceCanvas(
         // it happens to be in, which is exactly what must NOT happen — dragging past an
         // edge moves that edge. `normalizeContainerLayout` re-fits the box instead.
         expandParent: false,
-        // Only the active domain's nodes are draggable (a drag edits ITS layout),
-        // but every node stays clickable: one click focuses the domain and selects
-        // what was clicked, instead of making the first click a no-op.
-        draggable: active,
+        // Every domain on the canvas is furniture you can move. A drag edits the layout
+        // of the domain the node belongs to — `onNodeDragStop` reads that owner off the
+        // node — so there is nothing for the ACTIVE domain to privilege here.
+        draggable: true,
         selectable: true,
         focusable: true,
         style: node.style,

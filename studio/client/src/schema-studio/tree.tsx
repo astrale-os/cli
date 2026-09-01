@@ -45,10 +45,7 @@ export function ModuleTree({
   controls: ModuleTreeControls
 }) {
   return (
-    <div className="py-2 text-[13px]" data-domain-id={controls.domainId}>
-      <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Modules
-      </div>
+    <div className="py-1.5 text-[13px]" data-domain-id={controls.domainId}>
       {root.children.map((c) => (
         <Branch
           key={c.path}

@@ -1,7 +1,7 @@
 /** CLI-resolved View target discovery and Shell session routes. */
 import { getAnatomy, getBundle } from '../cache'
 import { asString } from '../json'
-import { readSettings } from '../state/settings'
+import { studioSettings } from '../studio-settings'
 import { getViewRuntime } from '../views/runtime'
 import { closeViewSession, launchViewSession } from '../views/session'
 import { badRequest, json, notFound, type DomainRouteContext } from './http'
@@ -28,7 +28,7 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
     const origin = bundle?.ir?.domain || anatomy?.overview.origin
     if (!origin) return badRequest('domain origin is unavailable')
     return json(
-      await getViewRuntime(root, origin, view, bundle, readSettings(root).viewProbeTimeoutMs),
+      await getViewRuntime(root, origin, view, bundle, studioSettings().viewProbeTimeoutMs),
     )
   }
 
@@ -49,7 +49,7 @@ export async function handleViewRoute(context: DomainRouteContext): Promise<Resp
         view,
         bundle,
         body,
-        readSettings(root).viewProbeTimeoutMs,
+        studioSettings().viewProbeTimeoutMs,
       ),
     )
   }

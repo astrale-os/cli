@@ -38,12 +38,15 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   expect(bundle.ir?.classes).toHaveProperty('Subscription')
 
   await page.goto('/')
-  await expect(page.getByTestId('domain-selector')).toContainText('crm.studio-demo.astrale.ai')
+  // The rail names the domain everything else is about — the row carrying `aria-current`.
+  await expect(
+    page.locator('[data-testid="workspace-domain-tree"] [aria-current="true"]'),
+  ).toContainText('crm.studio-demo.astrale.ai')
   // The gear is the ONLY way into per-domain settings — no palette entry, no shortcut —
   // so this opens the dialog rather than just counting the button: a mounted button over
   // an unmounted dialog is exactly the state that made the settings unreachable before.
   await page.getByRole('button', { name: 'Settings' }).click()
-  await expect(page.getByText('Saved to .domain-studio/settings.json')).toBeVisible()
+  await expect(page.getByText('Studio-wide — saved to .domain-studio/settings.json')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Fit View' })).toHaveCount(0)

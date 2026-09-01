@@ -50,7 +50,9 @@ const ROLE_GLYPHS: Record<KernelRole, { icon: LucideIcon; label: string }> = {
 
 function ClassNode({ data }: NodeProps) {
   const d = data as ClassNodeData
-  const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `class.${d.name}`)
+  const selected = useUI(
+    (s) => s.selectionDomainId === d.domainId && s.selectedClass === `class.${d.name}`,
+  )
   // The projection already applied the reader's choice: `parents` is empty while the
   // inheritance EDGES are drawn, since the chips below would only repeat them.
   const parents = d.parents ?? []
@@ -151,7 +153,9 @@ export function GroupNode({ data }: NodeProps) {
   const d = data as GroupNodeData & {
     onToggleModule: (domainId: string, path: string) => void
   }
-  const selected = useUI((s) => s.domainId === d.domainId && s.selectedClass === `module.${d.path}`)
+  const selected = useUI(
+    (s) => s.selectionDomainId === d.domainId && s.selectedClass === `module.${d.path}`,
+  )
   const tint = moduleTint(d.hue)
   return (
     <div
