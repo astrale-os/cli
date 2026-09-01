@@ -77,8 +77,7 @@ Compose exact definitions as collections; Runtime resolves Action addresses to t
 top-level or receiver-bound callable:
 
 ```ts
-export const actions = [providerProbe, planVisit, renameVisit] as const
-export const workflows = [refreshForecast] as const
+export const functions = [providerProbe, planVisit, renameVisit, refreshForecast] as const
 ```
 
 Missing, duplicate, foreign-Schema, and Action/Workflow-conflicting registrations must fail SDK
@@ -88,12 +87,12 @@ Every semantic production owner lives in its own submodule with focused evidence
 roots are curated re-export facades and contain no behavior:
 
 ```text
-actions/register-visit/index.ts
-actions/register-visit/__tests__/register-visit.test.ts
-actions/index.ts
+functions/register-visit/index.ts
+functions/register-visit/__tests__/register-visit.test.ts
+functions/index.ts
 queries/visit-by-id/index.ts
 mutations/record-visit/index.ts
-workflows/refresh-forecast/index.ts
+functions/refresh-forecast/index.ts
 providers/open-meteo/index.ts
 ```
 

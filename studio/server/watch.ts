@@ -18,7 +18,7 @@ export const ANATOMY_PATHS = [...ANATOMY_GLOBS.files, ...ANATOMY_GLOBS.dirs]
 // These paths can feed the ts-morph handler/source overlay. Their content is
 // part of the schema bundle cache even though they are outside schema/ itself.
 const BUNDLE_SOURCE_DIRS = new Set([
-  'actions',
+  'functions',
   'integrations',
   'mutations',
   'providers',
@@ -26,7 +26,6 @@ const BUNDLE_SOURCE_DIRS = new Set([
   'rules',
   'runtime',
   'utils',
-  'workflows',
 ])
 
 function ignored(p: string): boolean {

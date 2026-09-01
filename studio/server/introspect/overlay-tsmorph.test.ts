@@ -55,17 +55,16 @@ describe('source overlay', () => {
   test('links modular Action and Workflow declarations to exact callables', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-runtime-overlay-'))
     roots.push(root)
-    mkdirSync(join(root, 'actions'))
-    mkdirSync(join(root, 'workflows'))
+    mkdirSync(join(root, 'functions'))
     writeFileSync(
-      join(root, 'actions/rename.ts'),
+      join(root, 'functions/rename.ts'),
       `
         import { defineAction } from '@astrale-os/sdk/action'
         export const rename = defineAction()('Issue.rename', async ({ input }) => graph.update(input))
       `,
     )
     writeFileSync(
-      join(root, 'workflows/create.ts'),
+      join(root, 'functions/create.ts'),
       `
         import { defineWorkflow } from '@astrale-os/sdk/workflow'
         export const create = defineWorkflow()('createIssue', async ({ input }) => graph.create(input))
@@ -87,7 +86,7 @@ describe('source overlay', () => {
         ownerKind: 'class',
         kind: 'action',
         method: 'rename',
-        handlerFile: 'actions/rename.ts',
+        handlerFile: 'functions/rename.ts',
         kernelCalls: ['graph.update'],
       },
       {
@@ -95,7 +94,7 @@ describe('source overlay', () => {
         ownerKind: 'function',
         kind: 'workflow',
         method: 'createIssue',
-        handlerFile: 'workflows/create.ts',
+        handlerFile: 'functions/create.ts',
         kernelCalls: ['graph.create'],
       },
     ])

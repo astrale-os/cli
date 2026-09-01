@@ -37,8 +37,8 @@ describe('authored package `imports` resolution', () => {
   })
 
   test('substitutes the matched segment into a wildcard target', () => {
-    const root = project({ '#actions/*': './actions/*.ts' })
-    expect(resolvePackageImport('#actions/risk', root)).toEqual([join(root, 'actions/risk.ts')])
+    const root = project({ '#functions/*': './functions/*.ts' })
+    expect(resolvePackageImport('#functions/risk', root)).toEqual([join(root, 'functions/risk.ts')])
   })
 
   test('prefers the exact key, then the most specific pattern', () => {
@@ -93,8 +93,8 @@ describe('authored package `imports` resolution', () => {
   })
 
   test('declines a wildcard match that walks the target out of the package', () => {
-    const root = project({ '#actions/*': './actions/*.ts' })
-    expect(resolvePackageImport('#actions/../../outside', root)).toEqual([])
+    const root = project({ '#functions/*': './functions/*.ts' })
+    expect(resolvePackageImport('#functions/../../outside', root)).toEqual([])
   })
 
   test('declines specifiers the spec reserves', () => {

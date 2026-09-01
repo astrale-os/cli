@@ -13,8 +13,7 @@ export function releaseFor<const Schema extends schema.DomainSchema>(
   const runtime = defineRuntime<Schema>()({
     integrations: {},
     initialize: () => ({ providers: {} }),
-    actions: [],
-    workflows: [],
+    functions: [],
   })
   return assemble(compile(defineApplication({ schema: source, runtime })), addressing(issuer))
 }
