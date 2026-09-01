@@ -1,12 +1,40 @@
 import type { EnvName } from '@shared/types'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { api, qk } from './api'
 import { anatomyQueryOptions, bundleQueryOptions } from './domain-queries'
+import { useUI } from './store'
 import { type ViewsModel, buildViewsModel } from './views'
+
+/** However slow the schema is, nothing waits on it longer than this. */
+const DEFER_CEILING_MS = 5_000
+
+/**
+ * Has the canvas got its schema yet — or is there no domain to wait for?
+ *
+ * A browser opens six connections to one origin, and several studio reads shell out
+ * to the CLI: a process start each, seconds apiece. Fired alongside the canvas
+ * queries they took the slots the canvas was waiting on, so the schema landed AFTER
+ * the update badge and the harness probe. They wait their turn now — but only for a
+ * few seconds: the instance switcher and the agent are not the canvas's dependants,
+ * and a domain being indexed for the first time can keep it waiting a while.
+ */
+function useSchemaSettled(): boolean {
+  const domainId = useUI((state) => state.domainId)
+  const bundle = useQuery({ ...bundleQueryOptions(domainId ?? ''), enabled: !!domainId })
+  const anatomy = useQuery({ ...anatomyQueryOptions(domainId ?? ''), enabled: !!domainId })
+  const [expiredDomainId, setExpiredDomainId] = useState<string>()
+  useEffect(() => {
+    if (!domainId) return undefined
+    const timer = setTimeout(() => setExpiredDomainId(domainId), DEFER_CEILING_MS)
+    return () => clearTimeout(timer)
+  }, [domainId])
+  const settled = (q: { data?: unknown; isError: boolean }) => q.data !== undefined || q.isError
+  return !domainId || expiredDomainId === domainId || (settled(bundle) && settled(anatomy))
+}
 
 export function useWorkspace() {
   return useQuery({ queryKey: qk.workspace, queryFn: api.workspace })
@@ -15,7 +43,15 @@ export function useCatalog() {
   return useQuery({ queryKey: qk.catalog, queryFn: api.catalog })
 }
 export function useInstances() {
-  return useQuery({ queryKey: qk.instances, queryFn: api.instances, refetchInterval: 30000 })
+  const settled = useSchemaSettled()
+  const { data: settings } = useSettings()
+  return useQuery({
+    queryKey: qk.instances,
+    queryFn: api.instances,
+    enabled: settled,
+    staleTime: 30_000,
+    refetchInterval: settings?.instancePollMs ?? 30_000,
+  })
 }
 export function useBundle(id?: string) {
   return useQuery({ ...bundleQueryOptions(id ?? ''), enabled: !!id })
@@ -43,10 +79,11 @@ export function useViewsModel(id?: string): ViewsModel {
  *  (the check shells out to the CLI + registry, so keep the cadence relaxed). */
 export function useUpdates(id?: string) {
   const { data: settings } = useSettings()
+  const settled = useSchemaSettled()
   return useQuery({
     queryKey: qk.updates(id ?? ''),
     queryFn: () => api.updates(id!),
-    enabled: !!id,
+    enabled: !!id && settled,
     staleTime: 5 * 60_000,
     refetchInterval: settings?.updatesPollMs ?? 10 * 60_000,
   })
@@ -85,10 +122,11 @@ export function useHarnessGateway(id?: string) {
 }
 export function useLoadout(id?: string, chatId?: string) {
   // Probes the chat's own local harness — keep it lazy and cached for a while.
+  const settled = useSchemaSettled()
   return useQuery({
     queryKey: qk.loadout(id ?? '', chatId),
     queryFn: () => api.loadout(id!, false, chatId),
-    enabled: !!id,
+    enabled: !!id && settled,
     staleTime: 60_000,
   })
 }

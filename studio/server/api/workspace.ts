@@ -1,5 +1,5 @@
 /** Workspace-wide routes that do not require a DomainHandle. */
-import { getBundle, invalidate } from '../cache'
+import { invalidate } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
 import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
 import { asJsonRecord, asString } from '../json'
@@ -16,20 +16,21 @@ export async function handleWorkspaceRoute(
   notify: Notify,
 ): Promise<Response | null> {
   if (path === '/api/workspace') {
-    const domains = await Promise.all(
-      allDomains().map(async (handle) => {
-        const bundle = await getBundle(handle.id)
-        return {
-          id: handle.id,
-          origin: bundle?.ir?.domain || handle.origin || handle.id,
-          path: handle.root,
-          schemaDir: handle.schemaDirName,
-          depsInstalled: depsInstalled(handle.root),
-          hasGit: detectGit(handle.root).hasGit,
-          configFile: handle.configFile,
-        }
-      }),
-    )
+    // The registry answers this, NOT the bundles. Every read of the studio is gated
+    // on this list — it is what turns "Connecting to studio…" into an interface —
+    // and awaiting a bundle per domain to read one string held the whole UI behind
+    // an extraction of the entire workspace. A domain not indexed yet answers under
+    // its directory name and is announced again, under its origin, the moment its
+    // bundle lands (see index.ts / watch.ts).
+    const domains = allDomains().map((handle) => ({
+      id: handle.id,
+      origin: handle.origin || handle.id,
+      path: handle.root,
+      schemaDir: handle.schemaDirName,
+      depsInstalled: depsInstalled(handle.root),
+      hasGit: detectGit(handle.root).hasGit,
+      configFile: handle.configFile,
+    }))
     return json(domains)
   }
 

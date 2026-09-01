@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { DomainHandle } from './domain'
 
 import { affectsBundle, ANATOMY_PATHS } from './watch'
-import { DOMAIN_SET_TRIGGER_FILES } from './workspace-watch'
+import { WORKSPACE_RESCAN_MS } from './workspace-watch'
 
 const handle: DomainHandle = {
   id: 'current',
@@ -23,9 +23,11 @@ test('watches current Application, Runtime, and vertical authoring roots', () =>
   expect(ANATOMY_PATHS).toContain('providers')
   expect(ANATOMY_PATHS).toContain('queries')
   expect(ANATOMY_PATHS).toContain('functions')
-  expect(DOMAIN_SET_TRIGGER_FILES.has('application.ts')).toBe(true)
-  expect(DOMAIN_SET_TRIGGER_FILES.has('astrale.config.ts')).toBe(true)
-  expect(DOMAIN_SET_TRIGGER_FILES.has('schema.ts')).toBe(false)
+})
+
+test('the workspace is re-scanned often enough to notice a domain, rarely enough to be free', () => {
+  expect(WORKSPACE_RESCAN_MS).toBeGreaterThanOrEqual(5_000)
+  expect(WORKSPACE_RESCAN_MS).toBeLessThanOrEqual(60_000)
 })
 
 test('Application, Runtime, and Function changes invalidate the schema bundle', () => {

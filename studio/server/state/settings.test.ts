@@ -69,7 +69,7 @@ test('drops destructive timing values from disk and API patches', () => {
   })
 
   expect(readSettings(root)).toMatchObject({
-    introspectTimeoutMs: 20_000,
+    introspectTimeoutMs: 60_000,
     instancePollMs: 30_000,
     updatesPollMs: 600_000,
     viewProbeTimeoutMs: 8_000,
@@ -82,7 +82,7 @@ test('drops destructive timing values from disk and API patches', () => {
     viewProbeTimeoutMs: 250,
   })
   expect(saved).toMatchObject({
-    introspectTimeoutMs: 20_000,
+    introspectTimeoutMs: 60_000,
     instancePollMs: 1_000,
     updatesPollMs: 86_400_000,
     viewProbeTimeoutMs: 250,

@@ -31,7 +31,7 @@ export interface RuntimeExtractResult {
 export async function runtimeExtract(
   schemaIndexPath: string,
   domainDir: string,
-  timeoutMs = 20000,
+  timeoutMs = 60_000,
 ): Promise<RuntimeExtractResult> {
   let launchDirectory: string | undefined
   try {

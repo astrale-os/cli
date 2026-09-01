@@ -16,16 +16,22 @@ import { watchDomain } from './watch'
 export interface BootedDomain {
   origin: string
   depsInstalled: boolean
+  /** identifies the render this boot produced, so clients can be told it landed */
+  renderFingerprint: string
   /** stops the domain's file watcher */
   stop: () => void
 }
 
 /** Initialize + start watching one domain. Returns its origin + a stop handle. */
-export async function bootDomain(handle: DomainHandle): Promise<BootedDomain> {
+export async function bootDomain(
+  handle: DomainHandle,
+  /** Startup indexing: yields the thread to anyone actually reading. */
+  options: { background?: boolean } = {},
+): Promise<BootedDomain> {
   initDotDir(handle.root)
   // one-shot: uuid-named documents become readable file names under context/docs
   migrateDocuments(handle.root)
-  const bundle = await getBundle(handle.id)
+  const bundle = await getBundle(handle.id, false, options.background === true)
   if (!loadBaseline(handle.root))
     captureBaseline(
       handle.root,
@@ -40,6 +46,7 @@ export async function bootDomain(handle: DomainHandle): Promise<BootedDomain> {
   return {
     origin: bundle?.ir?.domain ?? handle.origin ?? handle.id,
     depsInstalled: !!bundle?.depsInstalled,
+    renderFingerprint: bundle?.renderFingerprint ?? 'sha-none',
     stop,
   }
 }
