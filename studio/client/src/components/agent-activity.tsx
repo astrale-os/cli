@@ -83,10 +83,11 @@ export function AgentSubmitButton() {
     setBusy(true)
     try {
       const result = await api.agentSubmit(domainId)
-      if ((result as { error?: string }).error) {
-        toast.error((result as { error: string }).error)
-      } else {
-        setRun(result as AgentRun)
+      // this button only shows on an idle chat, so a submit either runs or fails
+      // — there is no turn for the threads to queue behind
+      if (result.error) toast.error(result.error)
+      else if (result.run) {
+        setRun(result.run)
         toast.success('Sent to the agent')
       }
     } catch (error) {

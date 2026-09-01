@@ -118,6 +118,29 @@ export interface AgentRun {
   prompt?: AgentPromptSnapshot
 }
 
+/**
+ * One message waiting behind the turn in progress.
+ *
+ * Typing while the agent works does not interrupt it: the message is parked on
+ * its chat, in order, and the turn that settles sends the next one. The list is
+ * the user's to arrange — reorder, edit, drop, or promote one to now.
+ */
+export interface QueuedMessage {
+  id: string
+  /** the message as typed, verbatim — what the turn it starts will carry */
+  text: string
+  createdAt: string
+}
+
+/** What POST /agent/submit did with the message: ran it, parked it, or neither. */
+export interface AgentSubmitResult {
+  /** the turn that started, when the chat was free */
+  run?: AgentRun
+  /** the message parked behind a running turn instead */
+  queued?: QueuedMessage
+  error?: string
+}
+
 /** The ongoing, resumable conversation for a domain and selected harness.
  *  Survives studio restarts (persisted on disk). */
 export interface ConversationInfo {
@@ -160,6 +183,8 @@ export interface ChatInfo {
   origin?: ChatOrigin
   /** this chat's own execution state — tabs run independently of each other */
   status: ChatStatus
+  /** messages typed while a turn was running, in the order they will be sent */
+  queued: QueuedMessage[]
 }
 
 /** Where a forked chat came from, and the briefing it was opened with. */

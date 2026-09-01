@@ -20,16 +20,20 @@ import { updateSettings } from '../../state/settings'
 import { listState, stateExists } from '../../state/store'
 import { initWorkspaceState } from '../../workspace-state'
 import { handleBridge } from '../bridge/routes'
-import { activeChat, recordChatTurn, resolveChat } from '../chats'
+import { activeChat, chatQueue, MAX_QUEUED_MESSAGES, recordChatTurn, resolveChat } from '../chats'
 import { setHarnessGateway } from '../harness/gateway/config'
 import { getHarness } from '../harness/selection'
 import {
   cancelRun,
   closeChat,
+  dropQueued,
+  editQueued,
   forgetChatOrigin,
   getSnapshot,
   listChats,
+  moveQueued,
   openChat,
+  sendQueuedNow,
   setSessionId,
   submitRun,
   switchChatHarness,
@@ -105,6 +109,28 @@ function chatId(handle: DomainHandle): string {
   return listChats(handle.id).activeId
 }
 
+/** The messages still waiting behind a chat's turn, oldest first. */
+function queueOf(handle: DomainHandle, chat?: string): string[] {
+  const stored = resolveChat(handle.root, 'mock', chat ?? chatId(handle))
+  return chatQueue(stored!).map((message) => message.text)
+}
+
+/** Nothing running and nothing left waiting — the queue has drained itself. */
+async function waitForDrained(handle: DomainHandle, chat?: string): Promise<void> {
+  const id = chat ?? chatId(handle)
+  for (let i = 0; i < 400; i++) {
+    if (!isRunActive(id) && queueOf(handle, id).length === 0) return
+    await Bun.sleep(25)
+  }
+  throw new Error(`timed out draining ${id}`)
+}
+
+/** What this chat actually ran, in order. */
+function ranMessages(handle: DomainHandle, chat?: string): (string | undefined)[] {
+  const stored = resolveChat(handle.root, 'mock', chat ?? chatId(handle))!
+  return readRunHistory(handle.id, handle.root, stored).map((run) => run.instruction)
+}
+
 function conversation(handle: DomainHandle): { sessionId?: string; turns: number } {
   const chat = activeChat(handle.root, 'mock')
   return { ...(chat.sessionId ? { sessionId: chat.sessionId } : {}), turns: chat.turns }
@@ -136,7 +162,7 @@ describe.serial('agent runner invariants', () => {
     expect(run.prompt?.model).toBe('mock-domain-model')
   })
 
-  test('reserves setup synchronously and starts exactly one turn', async () => {
+  test('reserves setup synchronously and parks the next message behind the turn', async () => {
     useMock()
     const handle = fixture()
 
@@ -144,15 +170,17 @@ describe.serial('agent runner invariants', () => {
     expect(isRunActive(chatId(handle))).toBe(true)
     expect(setSessionId(handle.id, undefined, 'hijack')).toMatchObject({ ok: false })
 
+    // one turn at a time is the invariant — the second message waits rather than
+    // racing it, and nothing about the running turn changes
     const second = await submitRun(handle, () => {}, { message: 'second' })
-    expect(second).toEqual({ error: 'a turn is already running in this chat' })
+    expect(second.run).toBeUndefined()
+    expect(second.queued).toMatchObject({ text: 'second' })
     expect((await first).run?.status).toBe('running')
-    const completed = await waitForTerminal(handle.id)
-    expect(completed.status).toBe('succeeded')
-    expect(conversation(handle)).toMatchObject({
-      sessionId: 'mock-session',
-      turns: 1,
-    })
+    expect(queueOf(handle)).toEqual(['second'])
+
+    await waitForDrained(handle)
+    expect(ranMessages(handle)).toEqual(['first', 'second'])
+    expect(conversation(handle)).toMatchObject({ sessionId: 'mock-session', turns: 2 })
     expect(isRunActive(chatId(handle))).toBe(false)
     expect(bridgeFiles(handle.root)).toEqual([])
   })
@@ -508,5 +536,90 @@ describe.serial('agent runner invariants', () => {
     expect(bridgeFiles(handle.root)).toEqual([])
     expect(stateExists(handle.root, `.cache/agent/last-run/${doomed}.json`)).toBe(false)
     expect(listState(handle.root, '.cache/agent/runs')).toEqual([])
+  })
+  test('a stopped turn holds the queue instead of sending it on', async () => {
+    useMock('normal', '5000')
+    const handle = fixture()
+
+    await submitRun(handle, () => {}, { message: 'the long one' })
+    expect((await submitRun(handle, () => {}, { message: 'wait for me' })).queued).toBeDefined()
+    expect(cancelRun(handle.id)).toBe(true)
+    expect((await waitForTerminal(handle.id)).status).toBe('canceled')
+
+    // stopping is how you take the wheel back: the queue is still yours to send
+    await Bun.sleep(150)
+    expect(queueOf(handle)).toEqual(['wait for me'])
+    expect(isRunActive(chatId(handle))).toBe(false)
+    expect(conversation(handle).turns).toBe(0)
+  })
+
+  test('sending a queued message now stops the turn in progress and jumps the line', async () => {
+    useMock('normal', '5000')
+    const handle = fixture()
+
+    await submitRun(handle, () => {}, { message: 'going the wrong way' })
+    await submitRun(handle, () => {}, { message: 'second' })
+    const third = (await submitRun(handle, () => {}, { message: 'third' })).queued!
+    expect(queueOf(handle)).toEqual(['second', 'third'])
+
+    process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = '0'
+    const promoted = unwrap(await sendQueuedNow(handle, () => {}, undefined, third.id))
+    expect(promoted.run).toMatchObject({ status: 'running', instruction: 'third' })
+    // promoting the same message twice is refused BEFORE anything is stopped —
+    // the turn it just started keeps running
+    expect(await sendQueuedNow(handle, () => {}, undefined, third.id)).toMatchObject({ ok: false })
+    expect(isRunActive(chatId(handle))).toBe(true)
+
+    await waitForDrained(handle)
+    // the interrupted turn is history, the promoted one ran in its place, and the
+    // rest of the queue picked up again behind it
+    expect(ranMessages(handle)).toEqual(['going the wrong way', 'third', 'second'])
+  })
+
+  test('a waiting message can be reordered, rewritten or dropped before it runs', async () => {
+    useMock('normal', '5000')
+    const handle = fixture()
+    const chat = chatId(handle)
+    const texts = (result: ReturnType<typeof moveQueued>) =>
+      unwrap(result).queued.map((message) => message.text)
+
+    await submitRun(handle, () => {}, { message: 'running' })
+    const one = (await submitRun(handle, () => {}, { message: 'one' })).queued!
+    const two = (await submitRun(handle, () => {}, { message: 'two' })).queued!
+    const three = (await submitRun(handle, () => {}, { message: 'three' })).queued!
+
+    expect(texts(moveQueued(handle.id, chat, three.id, 'up'))).toEqual(['one', 'three', 'two'])
+    // the front of the queue has nowhere earlier to go, and says so
+    expect(moveQueued(handle.id, chat, one.id, 'up')).toMatchObject({ ok: false })
+    expect(texts(editQueued(handle.id, chat, two.id, '  two, revised  '))).toEqual([
+      'one',
+      'three',
+      'two, revised',
+    ])
+    expect(editQueued(handle.id, chat, two.id, '   ')).toMatchObject({ ok: false })
+    expect(texts(dropQueued(handle.id, chat, one.id))).toEqual(['three', 'two, revised'])
+    expect(dropQueued(handle.id, chat, one.id)).toMatchObject({ ok: false })
+
+    expect(cancelRun(handle.id)).toBe(true)
+    await waitForTerminal(handle.id)
+  })
+
+  test('the queue is bounded, and refuses rather than growing', async () => {
+    useMock('normal', '5000')
+    const handle = fixture()
+
+    await submitRun(handle, () => {}, { message: 'running' })
+    for (let i = 0; i < MAX_QUEUED_MESSAGES; i++)
+      expect((await submitRun(handle, () => {}, { message: `queued ${i}` })).queued).toBeDefined()
+    expect(await submitRun(handle, () => {}, { message: 'one too many' })).toEqual({
+      error: `the queue is full — ${MAX_QUEUED_MESSAGES} messages already wait here`,
+    })
+    // a bare resume never queues: there is no message to hold on to
+    expect(await submitRun(handle, () => {}, { resume: true })).toEqual({
+      error: 'a turn is already running in this chat',
+    })
+
+    expect(cancelRun(handle.id)).toBe(true)
+    await waitForTerminal(handle.id)
   })
 })

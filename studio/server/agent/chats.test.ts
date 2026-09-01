@@ -7,20 +7,26 @@ import { readJson, writeJson } from '../state/store'
 import {
   activeChat,
   chatInfo,
+  chatQueue,
   clearChatHandoff,
   clearChatSession,
   createChat,
   deleteChat,
   ensureChats,
   forkChat,
+  editQueuedMessage,
+  enqueueChatMessage,
   markHandoffDelivered,
+  moveQueuedMessage,
   pendingHandoff,
   recordChatTurn,
   renameChat,
+  requeueChatMessage,
   resolveChat,
   setActiveChat,
   setChatModel,
   setChatSession,
+  takeQueuedMessage,
   titleChatFromMessage,
 } from './chats'
 
@@ -220,5 +226,96 @@ describe('chat tabs', () => {
     setChatSession(dir, chat.id, 'session-1')
     setChatSession(dir, chat.id, '   ')
     expect(resolveChat(dir, 'claude', chat.id)?.sessionId).toBeUndefined()
+  })
+})
+
+describe('queued messages', () => {
+  const texts = (dir: string, chatId: string): string[] =>
+    chatQueue(resolveChat(dir, 'claude', chatId)!).map((message) => message.text)
+
+  test('messages queue in the order they were sent and travel with the tab', () => {
+    const dir = root()
+    const chat = activeChat(dir, 'claude')
+    const other = createChat(dir, { harness: 'codex' })
+
+    const first = enqueueChatMessage(dir, chat.id, '  first  ')!
+    enqueueChatMessage(dir, chat.id, 'second')
+    enqueueChatMessage(dir, other.id, 'not this tab')
+
+    // trimmed on the way in, appended at the back, and never crossing tabs
+    expect(first.text).toBe('first')
+    expect(texts(dir, chat.id)).toEqual(['first', 'second'])
+    expect(texts(dir, other.id)).toEqual(['not this tab'])
+    expect(chatInfo(resolveChat(dir, 'claude', chat.id)!, 'running').queued).toHaveLength(2)
+
+    // an unqueued tab reports an empty list rather than nothing
+    expect(chatInfo(other, 'idle').queued).toEqual([])
+  })
+
+  test('the next message is taken from the front, and goes back there if it cannot run', () => {
+    const dir = root()
+    const chat = activeChat(dir, 'claude')
+    enqueueChatMessage(dir, chat.id, 'one')
+    enqueueChatMessage(dir, chat.id, 'two')
+
+    const next = takeQueuedMessage(dir, chat.id)!
+    expect(next.text).toBe('one')
+    expect(texts(dir, chat.id)).toEqual(['two'])
+
+    // a submit that never started must not silently reorder what is left
+    requeueChatMessage(dir, chat.id, next)
+    expect(texts(dir, chat.id)).toEqual(['one', 'two'])
+    expect(takeQueuedMessage(dir, chat.id, 'no-such-message')).toBeUndefined()
+    expect(texts(dir, chat.id)).toEqual(['one', 'two'])
+  })
+
+  test('reordering stops at both ends, and rewriting refuses to empty a message', () => {
+    const dir = root()
+    const chat = activeChat(dir, 'claude')
+    const one = enqueueChatMessage(dir, chat.id, 'one')!
+    const two = enqueueChatMessage(dir, chat.id, 'two')!
+
+    expect(moveQueuedMessage(dir, chat.id, two.id, -1)).toBe(true)
+    expect(texts(dir, chat.id)).toEqual(['two', 'one'])
+    expect(moveQueuedMessage(dir, chat.id, two.id, -1)).toBe(false)
+    expect(moveQueuedMessage(dir, chat.id, one.id, 1)).toBe(false)
+    expect(texts(dir, chat.id)).toEqual(['two', 'one'])
+
+    expect(editQueuedMessage(dir, chat.id, one.id, '  one, revised ')).toMatchObject({
+      id: one.id,
+      text: 'one, revised',
+    })
+    // a blank rewrite is a delete in disguise, and deleting has its own control
+    expect(editQueuedMessage(dir, chat.id, one.id, '   ')).toBeUndefined()
+    expect(texts(dir, chat.id)).toEqual(['two', 'one, revised'])
+  })
+
+  test('a queue survives a restart, and a corrupt entry is dropped rather than fatal', () => {
+    const dir = root()
+    const chat = activeChat(dir, 'claude')
+    enqueueChatMessage(dir, chat.id, 'still here')
+
+    const store = readJson<Record<string, unknown> | null>(
+      dir,
+      '.cache/agent/chats.json',
+      (value) => value as Record<string, unknown>,
+      null,
+    )!
+    const chats = store.chats as Record<string, unknown>[]
+    chats[0]!.queue = [{ id: 'kept', text: 'kept' }, { text: 'no id' }, 'nonsense']
+    writeJson(dir, '.cache/agent/chats.json', store)
+
+    expect(texts(dir, chat.id)).toEqual(['kept'])
+  })
+
+  test('closing a tab takes its queue with it', () => {
+    const dir = root()
+    const chat = activeChat(dir, 'claude')
+    createChat(dir, { harness: 'claude' })
+    enqueueChatMessage(dir, chat.id, 'never sent')
+
+    expect(deleteChat(dir, chat.id)).toBe(true)
+    expect(resolveChat(dir, 'claude', chat.id)).toBeUndefined()
+    expect(enqueueChatMessage(dir, chat.id, 'too late')).toBeUndefined()
   })
 })

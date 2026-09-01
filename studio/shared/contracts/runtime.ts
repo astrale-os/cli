@@ -14,6 +14,9 @@ export type StudioEvent =
   | { type: 'compile-error'; domainId: string; message: string }
   | { type: 'resolving'; domainId: string }
   | { type: 'agent-run'; domainId: string; chatId: string; run: AgentRun }
+  /** the tab strip changed for a reason no turn announced — a queued message
+   *  added, reordered, edited or dropped in one window, seen in every other */
+  | { type: 'chats'; domainId: string }
   | { type: 'agent-event'; domainId: string; chatId: string; runId: string; event: AgentEvent }
   | { type: 'hello'; domains: string[] }
   | { type: 'workspace'; domains: string[] }

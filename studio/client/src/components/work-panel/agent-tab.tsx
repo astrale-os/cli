@@ -1,8 +1,8 @@
-import type { AgentRun, ChatInfo, HarnessStatus } from '@shared/types'
+import type { AgentRun, ChatInfo, ChatList, HarnessStatus, QueuedMessage } from '@shared/types'
 import type { DragEvent } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { ArrowUp, MessageSquare, Square, Upload } from 'lucide-react'
+import { ArrowUp, ListPlus, MessageSquare, Square, Upload } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -29,9 +29,18 @@ import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
 import { DocumentsMenu, useDocumentMutations } from './documents'
 import { HandoffChip } from './handoff-chip'
+import { MessageQueue, type PendingMessage } from './message-queue'
 
 /** Turns more than an hour apart get a date between them; a burst does not. */
 const HOUR = 60 * 60 * 1000
+
+/** A chat with nothing waiting, as one stable array — a fresh [] would re-render. */
+const NO_QUEUE: QueuedMessage[] = []
+
+/** A submit still on the wire, and the tab it belongs to — tabs share a composer. */
+interface PendingSend extends PendingMessage {
+  chatId?: string
+}
 
 /**
  * The agent half of the work panel: the chat tabs on top, the selected
@@ -116,9 +125,14 @@ export function AgentTab({ domainId }: { domainId: string }) {
               <AgentTurn
                 run={turn}
                 onResume={() =>
-                  void api
-                    .agentResume(domainId, activeId)
-                    .catch((error) => toast.error(`Could not continue — ${String(error)}`))
+                  // a refused resume answers 200 with an error field; without
+                  // this the button would look like it did nothing at all
+                  void api.agentResume(domainId, activeId).then(
+                    (result) => {
+                      if (result.error) toast.error(`Could not continue — ${result.error}`)
+                    },
+                    (error) => toast.error(`Could not continue — ${String(error)}`),
+                  )
                 }
               />
             </div>
@@ -180,7 +194,8 @@ function Composer({
 }) {
   const chatId = chat?.id
   const [text, setText] = useState('')
-  const [sending, setSending] = useState(false)
+  const [pending, setPending] = useState<PendingSend[]>([])
+  const ticket = useRef(0)
   const field = useRef<HTMLTextAreaElement>(null)
   const snapshot = useAgentSnapshot(domainId, chatId)
   const setRun = useAgentLive((state) => state.setRun)
@@ -191,8 +206,11 @@ function Composer({
   // Open threads are themselves something to send: with any waiting, an empty composer
   // is a valid submit that carries them as they are. Mirrors the server's own rule
   // (agent/run/preparation.ts), which only rejects a turn that would carry nothing.
+  // Not while a turn runs, though — the threads go with whatever turn starts next,
+  // so an empty composer would queue a blank message to say so.
   const awaiting = threadsAwaitingAgent(store?.comments).length
-  const sendsComments = awaiting > 0 && !text.trim()
+  const sendsComments = awaiting > 0 && !text.trim() && !active
+  const canSend = available && (!!text.trim() || sendsComments)
 
   // grow with the content, up to half the panel
   useEffect(() => {
@@ -202,30 +220,82 @@ function Composer({
     el.style.height = `${Math.min(el.scrollHeight, window.innerHeight * 0.4)}px`
   }, [text])
 
-  const send = async () => {
+  // A failed send must never be the reason a message is gone: nothing typed
+  // since gets it back as it was, something typed gets it in front of that.
+  const restore = (message: string, error: string) => {
+    toast.error(error)
+    if (message) setText((current) => (current.trim() ? `${message}\n\n${current}` : message))
+  }
+
+  // The server parked the message; show it on the tab it belongs to now, rather
+  // than a refetch later — the refresh below reconciles either way.
+  const landQueued = (message: QueuedMessage) => {
+    if (!chatId) return
+    qc.setQueryData<ChatList>(qk.chats(domainId), (current) =>
+      current
+        ? {
+            ...current,
+            chats: current.chats.map((entry) =>
+              entry.id === chatId && !entry.queued.some((waiting) => waiting.id === message.id)
+                ? { ...entry, queued: [...entry.queued, message] }
+                : entry,
+            ),
+          }
+        : current,
+    )
+  }
+
+  /**
+   * Send what is typed — into the turn if the chat is free, into the queue if not.
+   *
+   * The field empties on the KEYSTROKE, not on the answer: a submit builds the
+   * domain bundle and probes the harness before it replies, and a composer that
+   * holds the text until then reads as an Enter that never registered. What
+   * replaces it immediately is a row in the queue strip, so the message is
+   * visible the whole way — and comes back to the field if the send failed.
+   */
+  const send = () => {
+    if (!canSend) return
     const message = text.trim()
-    if ((!message && awaiting === 0) || sending || active || !available) return
-    setSending(true)
-    try {
-      const result = await api.agentSubmit(domainId, message, chatId)
-      const error = (result as { error?: string }).error
-      if (error) {
-        toast.error(error)
-        return
-      }
-      setRun(result as AgentRun)
-      setText('')
-    } catch (error) {
-      toast.error(String(error))
-    } finally {
-      setSending(false)
+    const entry: PendingSend = {
+      id: `pending-${(ticket.current += 1)}`,
+      label: message || `${awaiting} open comment${awaiting === 1 ? '' : 's'}`,
+      chatId,
+    }
+    setText('')
+    setPending((current) => [...current, entry])
+    const drop = () => setPending((current) => current.filter((row) => row.id !== entry.id))
+    const refresh = () => {
       qc.invalidateQueries({ queryKey: qk.agent(domainId, chatId) })
       qc.invalidateQueries({ queryKey: qk.chats(domainId) })
     }
+    void api.agentSubmit(domainId, message, chatId).then(
+      (result) => {
+        drop()
+        if (result.error) restore(message, result.error)
+        else if (result.run) setRun(result.run)
+        else if (result.queued) landQueued(result.queued)
+        refresh()
+      },
+      (error) => {
+        drop()
+        restore(message, String(error))
+        refresh()
+      },
+    )
   }
 
   return (
     <div className="shrink-0 px-3 pb-3 pt-2">
+      <MessageQueue
+        domainId={domainId}
+        chatId={chatId}
+        queued={chat?.queued ?? NO_QUEUE}
+        // one composer serves every tab, so a send still on the wire must not
+        // show up under the queue of the tab you switched to meanwhile
+        pending={pending.filter((entry) => entry.chatId === chatId)}
+        running={active}
+      />
       <div className="rounded-xl border bg-card transition-colors focus-within:border-ring">
         <textarea
           ref={field}
@@ -242,9 +312,11 @@ function Composer({
           placeholder={
             !available
               ? 'Agent unavailable'
-              : awaiting > 0
-                ? 'Send the open comments — or add a message…'
-                : 'Message the agent…'
+              : active
+                ? 'Queue a message for when this turn ends…'
+                : awaiting > 0
+                  ? 'Send the open comments — or add a message…'
+                  : 'Message the agent…'
           }
           disabled={!available}
           className="w-full resize-none bg-transparent px-3 pt-2.5 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground"
@@ -256,7 +328,10 @@ function Composer({
             {/* the meter sits before the model, in reading order: how hard, on what */}
             <ChatEffortPicker domainId={domainId} chat={chat} harness={harness} />
             <ChatModelPicker domainId={domainId} chat={chat} harness={harness} />
-            {active ? (
+            {/* Stop and Send are both live while a turn runs: one ends what the
+                agent is doing, the other lines up what it does next, and needing
+                the first to reach the second is what the queue exists to undo. */}
+            {active && (
               <button
                 type="button"
                 onClick={() =>
@@ -273,21 +348,26 @@ function Composer({
               >
                 <Square className="h-3 w-3 fill-current" />
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={send}
-                disabled={(!text.trim() && awaiting === 0) || sending || !available}
-                title={sendsComments ? 'Send the open comments (↵)' : 'Send (↵)'}
-                aria-label="Send"
-                className={cn(
-                  'grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90',
-                  'disabled:bg-muted disabled:text-muted-foreground',
-                )}
-              >
-                <ArrowUp className="h-4 w-4" />
-              </button>
             )}
+            <button
+              type="button"
+              onClick={send}
+              disabled={!canSend}
+              title={
+                active
+                  ? 'Queue for when this turn ends (↵)'
+                  : sendsComments
+                    ? 'Send the open comments (↵)'
+                    : 'Send (↵)'
+              }
+              aria-label={active ? 'Queue message' : 'Send'}
+              className={cn(
+                'grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90',
+                'disabled:bg-muted disabled:text-muted-foreground',
+              )}
+            >
+              {active ? <ListPlus className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
+            </button>
           </div>
         </div>
       </div>
