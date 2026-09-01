@@ -47,7 +47,7 @@ import {
 } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
 import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
-import { workspaceExternalOrigin } from './external-frames'
+import { workspaceExternalNodeId, workspaceExternalOrigin } from './external-frames'
 import { workspaceGeometry, workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
@@ -62,6 +62,17 @@ import {
 } from './projection'
 import { reorganizeSettled } from './reorganize'
 import { useSchemaWorkspace } from './store'
+
+/**
+ * The node a reveal request points at: a class of the active domain, or the frame an
+ * imported domain is drawn as. Anything else (an edge, a module) has no single place to
+ * pan to.
+ */
+function revealTargetNodeId(domainId: string, target: string): string | null {
+  if (target.startsWith('class.')) return qualifiedNodeId(domainId, target)
+  if (target.startsWith('domain.')) return workspaceExternalNodeId(target.slice('domain.'.length))
+  return null
+}
 
 function localNodeRef(id: string): { domainId: string; localId: string } | null {
   const identity = decodeFlowNodeId(id)
@@ -309,19 +320,34 @@ export function WorkspaceSchemaGraph({
     [commitLayout, setDomainPosition, setExternalPosition],
   )
 
-  // A JUMP has to land somewhere visible: ⌘K, or a comment revealed from the panel, can
-  // name a class that is off-screen entirely, and `onlyRenderVisibleElements` would not even
-  // mount the card. So those — and only those — pan the target in, at the current zoom.
+  // A JUMP has to land somewhere visible: ⌘K, a comment revealed from the panel, or the
+  // eye that un-hides an imported domain can all name something off-screen entirely, and
+  // `onlyRenderVisibleElements` would not even mount it. So those — and only those — pan
+  // the target in, at the current zoom.
   // A click never moves the canvas: the reader put it where it is, and answering a selection
   // by sliding the whole graph under the cursor loses the place they were reading.
   useEffect(() => {
-    if (!revealTarget?.startsWith('class.') || !paneWidth || !paneHeight) return
-    const node = getInternalNode(qualifiedNodeId(activeDomainId, revealTarget))
-    // not mounted yet — leave the request standing, the canvas settles within a frame or two
+    if (!revealTarget || !paneWidth || !paneHeight) return
+    const targetId = revealTargetNodeId(activeDomainId, revealTarget)
+    // nothing on the canvas stands for it — drop the request rather than leave it pending
+    if (!targetId) {
+      revealOnCanvas(null)
+      return
+    }
+    const node = getInternalNode(targetId)
+    // Not in the store yet — leave the request standing and let the `nodes` dependency
+    // below re-run this when it lands. Un-hiding CREATES the node rather than merely
+    // scrolling to one, so the wait here is a projection round-trip, not a frame or two.
     if (!node) return
     const { x, y, zoom } = getViewport()
-    const cx = node.internals.positionAbsolute.x + (node.measured.width ?? CLASS_W) / 2
-    const cy = node.internals.positionAbsolute.y + (node.measured.height ?? CLASS_H) / 2
+    // An external frame is sized by style rather than measured until it is mounted, and it
+    // is precisely the unmounted case we are here to fix — so fall back to its own box, not
+    // to a class card's.
+    const box = node.style as { width?: number; height?: number } | undefined
+    const cx =
+      node.internals.positionAbsolute.x + (node.measured.width ?? box?.width ?? CLASS_W) / 2
+    const cy =
+      node.internals.positionAbsolute.y + (node.measured.height ?? box?.height ?? CLASS_H) / 2
     const screenX = cx * zoom + x
     const screenY = cy * zoom + y
     const margin = 24
@@ -335,6 +361,8 @@ export function WorkspaceSchemaGraph({
   }, [
     activeDomainId,
     revealTarget,
+    // the projection that brings a just-restored frame into the store
+    nodes,
     paneWidth,
     paneHeight,
     getInternalNode,
