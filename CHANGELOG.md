@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.61](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.60...cli/v1.0.0-beta.61) (2026-09-01)
+
+
+### Features
+
+* **studio:** rework the agent panel and finish the ACP consolidation ([#323](https://github.com/astrale-os/cli/issues/323)) ([6a29fd8](https://github.com/astrale-os/cli/commit/6a29fd85a1705ce1440532328331f6fdf96cc742))
+
 ## [1.0.0-beta.60](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.59...cli/v1.0.0-beta.60) (2026-08-31)
 
 
