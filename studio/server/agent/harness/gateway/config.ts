@@ -8,7 +8,7 @@
  *                  default applied to every domain that has no local override.
  *
  * The config never escapes the studio's spawned child: `harnessGatewayEnv` turns
- * it into ANTHROPIC_* env that runner / ask / loadout merge into the `claude`
+ * it into ANTHROPIC_* env that runner / ask / ACP diagnostics merge into the `claude`
  * subprocess env ONLY — never the studio's own process env, the user's shell, or
  * a `claude` they run themselves outside the studio.
  */

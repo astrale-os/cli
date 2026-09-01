@@ -7,7 +7,6 @@ import { useAgentSystemPrompt } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 import { SettingsHint } from './hint'
-import { SkillList } from './skills'
 
 function MetaRow({
   label,
@@ -80,7 +79,7 @@ function SystemPrompt({ domainId }: { domainId?: string }) {
   )
 }
 
-/** Read-only harness inventory, prompt, and domain-attributable usage. */
+/** Read-only ACP diagnostics, prompt, and domain-attributable usage. */
 export function AgentLoadout({
   loadout,
   loading,
@@ -97,9 +96,7 @@ export function AgentLoadout({
   onRefresh: () => void
 }) {
   const sourceHint =
-    loadout?.source === 'configured'
-      ? 'What the selected harness has configured or installed for this folder. Codex discovers runtime tools when a turn starts.'
-      : 'What the selected harness actually loaded for this folder, probed from its runtime initialization event.'
+    'Studio initializes a disposable ACP session for this folder, reads its agent and model configuration, then closes it without sending a prompt.'
 
   return (
     <>
@@ -113,7 +110,7 @@ export function AgentLoadout({
             disabled={loading}
             onClick={onRefresh}
             className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-            title="Re-probe"
+            title="Re-probe via ACP"
           >
             <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} /> re-probe
           </button>
@@ -125,26 +122,28 @@ export function AgentLoadout({
               : errorMessage}
           </p>
         ) : loading && !loadout ? (
-          <p className="text-[11px] text-muted-foreground">Probing the harness…</p>
+          <p className="text-[11px] text-muted-foreground">Probing the ACP agent…</p>
         ) : !loadout?.ok ? (
           <p className="text-[11px] text-muted-foreground">
-            {loadout?.detail ?? 'Loadout unavailable.'}
+            {loadout?.detail ?? 'ACP diagnostics unavailable.'}
           </p>
         ) : (
           <div className="space-y-2">
             <MetaRow label="Model" value={loadout.model ?? '—'} />
             <MetaRow
-              label="Source"
-              value={loadout.source === 'configured' ? 'configured' : 'runtime'}
+              label="Model source"
+              value={loadout.modelSource === 'studio' ? 'Studio override' : 'ACP session'}
               title={loadout.detail}
             />
-            <MetaRow label="Tools" value={loadout.tools.length} title={loadout.tools.join(', ')} />
             <MetaRow
-              label="Subagents"
-              value={loadout.agents.length}
-              title={loadout.agents.join(', ')}
+              label="Agent"
+              value={
+                loadout.agentVersion
+                  ? `${loadout.agentName ?? 'ACP agent'} ${loadout.agentVersion}`
+                  : (loadout.agentName ?? 'ACP agent')
+              }
             />
-            <SkillList skills={loadout.skills} domainId={domainId} />
+            <MetaRow label="Protocol" value={`ACP v${loadout.protocolVersion ?? '—'}`} />
           </div>
         )}
       </div>

@@ -10,6 +10,8 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
+import { isPackageImportSpecifier, resolvePackageImport } from './package-imports'
+
 export interface DomainHandle {
   readonly id: string
   readonly root: string
@@ -256,15 +258,15 @@ function schemaModuleOf(node: Node, source: SourceFile, root: string): string | 
 }
 
 function resolveAuthoredModule(root: string, from: SourceFile, specifier: string): string | null {
+  const fromDir = dirname(from.getFilePath())
   let candidates: string[] = []
   if (specifier.startsWith('.')) {
-    candidates = sourceCandidates(resolve(dirname(from.getFilePath()), specifier))
-  } else if (specifier.startsWith('#')) {
-    try {
-      candidates = sourceCandidates(Bun.resolveSync(specifier, dirname(from.getFilePath())))
-    } catch {
-      return null
-    }
+    candidates = sourceCandidates(resolve(fromDir, specifier))
+  } else if (isPackageImportSpecifier(specifier)) {
+    // Read the Domain's own `imports` map rather than asking the host resolver:
+    // a compiled standalone cannot resolve an external package's aliases, and
+    // rejected every Domain whose Application imports `#schema`.
+    candidates = resolvePackageImport(specifier, fromDir).flatMap(sourceCandidates)
   } else {
     return null
   }

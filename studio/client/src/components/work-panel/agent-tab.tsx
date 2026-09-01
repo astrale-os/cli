@@ -1,4 +1,4 @@
-import type { AgentRun } from '@shared/types'
+import type { AgentRun, ChatInfo, HarnessStatus } from '@shared/types'
 import type { DragEvent } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -16,24 +16,39 @@ import {
   useDisplayRun,
 } from '@/lib/agent'
 import { api, qk } from '@/lib/api'
+import { chatOf, useChatMutations, useChats } from '@/lib/chats'
 import { threadsAwaitingAgent } from '@/lib/comments'
-import { useComments } from '@/lib/hooks'
+import { labelOf } from '@/lib/harnesses'
+import { useComments, useHarness } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 import { AgentTurn, TurnDivider } from './agent-turn'
+import { ChatModelPicker } from './chat-model'
+import { ChatTabs } from './chat-tabs'
+import { toneOf } from './chat-tone'
 import { DocumentsMenu, useDocumentMutations } from './documents'
+import { HandoffChip } from './handoff-chip'
 
 /** Turns more than an hour apart get a date between them; a burst does not. */
 const HOUR = 60 * 60 * 1000
 
 /**
- * The agent half of the work panel: one conversation, oldest at the top, the
- * composer pinned at the bottom. Documents dropped here join the domain context
- * and can be named in the message, so the agent knows which one to open.
+ * The agent half of the work panel: the chat tabs on top, the selected
+ * conversation below with its composer pinned at the bottom. Documents dropped
+ * here join the domain context and can be named in the message, so the agent
+ * knows which one to open.
  */
 export function AgentTab({ domainId }: { domainId: string }) {
-  const turns = useAgentTurns(domainId)
-  const run = useDisplayRun(domainId)
+  const { data: chats } = useChats(domainId)
+  const activeId = chats?.activeId
+  const openChats = chats?.chats ?? []
+  const chat = chatOf(openChats, activeId)
+  const origin = chat?.origin
+  const sourceOpen = origin ? openChats.some((entry) => entry.id === origin.chatId) : false
+  const { select, forgetOrigin } = useChatMutations(domainId)
+  const { data: harness } = useHarness(domainId)
+  const turns = useAgentTurns(domainId, activeId)
+  const run = useDisplayRun(domainId, activeId)
   const [dragging, setDragging] = useState(false)
   const { upload } = useDocumentMutations(domainId)
   const scroller = useRef<HTMLDivElement>(null)
@@ -79,10 +94,21 @@ export function AgentTab({ domainId }: { domainId: string }) {
       }}
       onDrop={onDrop}
     >
+      <ChatTabs domainId={domainId} chats={openChats} activeId={activeId} harness={harness} />
+
       {/* type=scroll: the bar shows while scrolling and fades out — a chat should not
           carry a permanent gutter down its side. */}
       <ScrollArea ref={scroller} type="scroll" className="min-h-0 flex-1">
         <div className="space-y-4 px-3 py-3">
+          {origin && (
+            <HandoffChip
+              origin={origin}
+              harnessLabel={labelOf(harness, origin.harness)}
+              tone={toneOf(openChats, origin.chatId, origin.harness)}
+              onOpenSource={sourceOpen ? () => select.mutate(origin.chatId) : undefined}
+              onForget={origin.pendingHandoff ? () => forgetOrigin.mutate(chat.id) : undefined}
+            />
+          )}
           {turns.map((turn, index) => (
             <div key={turn.id} className="space-y-2.5">
               {needsDivider(turns[index - 1], turn) && <TurnDivider at={turn.createdAt} />}
@@ -90,7 +116,7 @@ export function AgentTab({ domainId }: { domainId: string }) {
                 run={turn}
                 onResume={() =>
                   void api
-                    .agentResume(domainId)
+                    .agentResume(domainId, activeId)
                     .catch((error) => toast.error(`Could not continue — ${String(error)}`))
                 }
               />
@@ -98,13 +124,15 @@ export function AgentTab({ domainId }: { domainId: string }) {
           ))}
           {turns.length === 0 && (
             <p className="px-2 py-6 text-center text-[12px] text-muted-foreground">
-              No turns yet. Describe the change you want below.
+              {chat?.origin
+                ? 'Continue the work below — the summary above goes with your first message.'
+                : 'No turns yet. Describe the change you want below.'}
             </p>
           )}
         </div>
       </ScrollArea>
 
-      <Composer domainId={domainId} run={run} />
+      <Composer domainId={domainId} chat={chat} harness={harness} run={run} />
 
       {dragging && (
         <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/75">
@@ -123,35 +151,47 @@ function needsDivider(previous: AgentRun | undefined, turn: AgentRun): boolean {
 }
 
 /**
- * What the next turn already carries, said in the composer itself: send a message and
- * these threads go with it. Purely indicative — the threads are answered and resolved
- * from the comments tab, never dismissed from here.
+ * What the next turn already carries, said in the composer itself: send and these
+ * threads go with it, message or no message. Purely indicative — the threads are
+ * answered and resolved from the comments tab, never dismissed from here.
  */
-function AwaitingThreadsChip({ domainId }: { domainId: string }) {
-  const { data: store } = useComments(domainId)
-  const awaiting = threadsAwaitingAgent(store?.comments)
-  if (awaiting.length === 0) return null
-  const plural = awaiting.length === 1 ? '' : 's'
+function AwaitingThreadsChip({ count }: { count: number }) {
+  if (count === 0) return null
+  const plural = count === 1 ? '' : 's'
   return (
-    <Chip
-      tone="primary"
-      title={`The agent answers ${awaiting.length} open thread${plural} on its next turn`}
-    >
+    <Chip tone="primary" title={`The agent answers ${count} open thread${plural} on its next turn`}>
       <MessageSquare className="h-3 w-3" />
-      {awaiting.length} open comment{plural}
+      {count} open comment{plural}
     </Chip>
   )
 }
 
-function Composer({ domainId, run }: { domainId: string; run: AgentRun | null }) {
+function Composer({
+  domainId,
+  chat,
+  harness,
+  run,
+}: {
+  domainId: string
+  chat?: ChatInfo
+  harness?: HarnessStatus
+  run: AgentRun | null
+}) {
+  const chatId = chat?.id
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const field = useRef<HTMLTextAreaElement>(null)
-  const snapshot = useAgentSnapshot(domainId)
+  const snapshot = useAgentSnapshot(domainId, chatId)
   const setRun = useAgentLive((state) => state.setRun)
+  const { data: store } = useComments(domainId)
   const qc = useQueryClient()
   const active = isRunActive(run)
   const available = snapshot.data?.available ?? false
+  // Open threads are themselves something to send: with any waiting, an empty composer
+  // is a valid submit that carries them as they are. Mirrors the server's own rule
+  // (agent/run/preparation.ts), which only rejects a turn that would carry nothing.
+  const awaiting = threadsAwaitingAgent(store?.comments).length
+  const sendsComments = awaiting > 0 && !text.trim()
 
   // grow with the content, up to half the panel
   useEffect(() => {
@@ -163,10 +203,10 @@ function Composer({ domainId, run }: { domainId: string; run: AgentRun | null })
 
   const send = async () => {
     const message = text.trim()
-    if (!message || sending || active || !available) return
+    if ((!message && awaiting === 0) || sending || active || !available) return
     setSending(true)
     try {
-      const result = await api.agentSubmit(domainId, message)
+      const result = await api.agentSubmit(domainId, message, chatId)
       const error = (result as { error?: string }).error
       if (error) {
         toast.error(error)
@@ -178,7 +218,8 @@ function Composer({ domainId, run }: { domainId: string; run: AgentRun | null })
       toast.error(String(error))
     } finally {
       setSending(false)
-      qc.invalidateQueries({ queryKey: qk.agent(domainId) })
+      qc.invalidateQueries({ queryKey: qk.agent(domainId, chatId) })
+      qc.invalidateQueries({ queryKey: qk.chats(domainId) })
     }
   }
 
@@ -197,21 +238,31 @@ function Composer({ domainId, run }: { domainId: string; run: AgentRun | null })
               send()
             }
           }}
-          placeholder={available ? 'Message the agent…' : 'Agent unavailable'}
+          placeholder={
+            !available
+              ? 'Agent unavailable'
+              : awaiting > 0
+                ? 'Send the open comments — or add a message…'
+                : 'Message the agent…'
+          }
           disabled={!available}
           className="w-full resize-none bg-transparent px-3 pt-2.5 text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-1 px-2 pb-2">
           <DocumentsMenu domainId={domainId} />
-          <AwaitingThreadsChip domainId={domainId} />
-          <div className="ml-auto">
+          <AwaitingThreadsChip count={awaiting} />
+          <div className="ml-auto flex items-center gap-1.5">
+            <ChatModelPicker domainId={domainId} chat={chat} harness={harness} />
             {active ? (
               <button
                 type="button"
                 onClick={() =>
                   void api
-                    .agentCancel(domainId)
+                    .agentCancel(domainId, chatId)
                     .catch((error) => toast.error(`Could not stop the agent — ${String(error)}`))
+                    // the turn settles a moment after the abort lands; ask the
+                    // server rather than waiting on the frame that says so
+                    .finally(() => qc.invalidateQueries({ queryKey: qk.agent(domainId, chatId) }))
                 }
                 title="Stop the agent"
                 aria-label="Stop the agent"
@@ -223,8 +274,8 @@ function Composer({ domainId, run }: { domainId: string; run: AgentRun | null })
               <button
                 type="button"
                 onClick={send}
-                disabled={!text.trim() || sending || !available}
-                title="Send (↵)"
+                disabled={(!text.trim() && awaiting === 0) || sending || !available}
+                title={sendsComments ? 'Send the open comments (↵)' : 'Send (↵)'}
                 aria-label="Send"
                 className={cn(
                   'grid h-8 w-8 place-items-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90',

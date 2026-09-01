@@ -59,13 +59,23 @@ export function getHarness(root: string): AgentHarness {
   return getHarnessById(getHarnessSelection(root).id)
 }
 
-/** Resolve the selected adapter and every per-domain option used to invoke it. */
+/**
+ * Resolve one adapter and every option used to invoke it.
+ *
+ * `modelOverride` is the chat's own pick: each tab may run a different model of
+ * its harness, and only falls back to the domain-wide choice when it has none.
+ */
 export async function resolveHarnessConfiguration(
   root: string,
   harness = getHarness(root),
+  modelOverride?: string,
 ): Promise<HarnessConfigurationResult> {
   const settings = readSettings(root)
-  const model = settings.agentModels[harness.id]?.trim() || undefined
+  const model =
+    modelOverride?.trim() ||
+    settings.agentModels[harness.id]?.trim() ||
+    harness.defaultModel ||
+    undefined
   const effort = effectiveAgentEffort(harness.capabilities.effortLevels, settings.agentEffort)
   const environment =
     harness.capabilities.gateway === 'anthropic'

@@ -129,6 +129,8 @@ export interface HarnessLoadoutOptions {
   model?: string
   /** Bypass the adapter's short-lived probe cache for an explicit user re-probe. */
   refresh?: boolean
+  /** Abort the disposable ACP probe when its HTTP request is canceled. */
+  signal?: AbortSignal
 }
 
 export interface AgentHarness {
@@ -136,6 +138,10 @@ export interface AgentHarness {
   id: string
   /** human label for the UI */
   label: string
+  /** the model Studio starts a chat on when nothing else picks one — the harness's
+   *  own native default is whatever it happens to ship with, which is not a choice
+   *  Studio wants to inherit silently. Ignored when the harness does not list it. */
+  defaultModel?: string
   capabilities: HarnessCapabilities
   /** is the underlying CLI/binary actually invokable here? */
   isAvailable(signal?: AbortSignal): Promise<boolean>
@@ -146,16 +152,9 @@ export interface AgentHarness {
   /** optional: answer a quick forked side question (Ask). Harnesses without a
    *  fork concept simply omit this; the studio falls back gracefully. */
   ask?(input: AskInput): Promise<AskResult>
-  /** optional: report what the harness ACTUALLY loaded for `root` (skills, MCP,
-   *  tools, agents) — a read-only window into the agent for the Settings page.
-   *  Harnesses without an introspectable loadout omit it. `env` (e.g. a custom
-   *  model gateway) is merged into the probe child so the reported model reflects it. */
+  /** optional: initialize a disposable ACP session for `root` and report the
+   *  negotiated agent/model diagnostics without sending a prompt. */
   loadout?(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout>
-  /** optional: the raw SKILL.md for a skill command, so the UI can show it. */
-  skillContent?(
-    root: string,
-    command: string,
-  ): Promise<{ command: string; content: string; path: string } | null>
 }
 
 /** Normalize optional rich health probes into one route-facing result. */

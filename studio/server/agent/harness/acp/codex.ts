@@ -9,16 +9,17 @@ import type {
   HarnessLoadoutOptions,
 } from '../adapter'
 
-import { CodexHarness } from '../codex/adapter'
 import { runAcpAsk, runAcpTurn } from './client'
 import { acpAgentCommand } from './command'
+import { probeAcpHealth, probeAcpLoadout } from './probe'
 
 const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CODEX_BIN || 'codex'
 
-/** Active Codex harness. The legacy native-JSON adapter remains in ../codex. */
+/** Codex harness backed exclusively by its bundled ACP agent server. */
 export class AcpCodexHarness implements AgentHarness {
   id = 'codex'
-  label = 'Codex (local)'
+  label = 'Codex'
+  defaultModel = 'gpt-5.6-sol'
   capabilities = {
     effortLevels: ['minimal', 'low', 'medium', 'high', 'xhigh'],
     accessLevels: ['workspace', 'full'],
@@ -27,29 +28,38 @@ export class AcpCodexHarness implements AgentHarness {
     gateway: 'none',
   } as const
 
-  private readonly legacy: CodexHarness
+  private healthCache?: { at: number; health: HarnessHealth }
+  private loadoutCache?: { at: number; key: string; data: HarnessLoadout }
 
   constructor(
     private readonly bin = DEFAULT_BIN,
     private readonly command?: string[],
-  ) {
-    this.legacy = new CodexHarness(bin)
+  ) {}
+
+  private acpOptions() {
+    return {
+      provider: 'codex' as const,
+      bin: this.bin,
+      command: this.command ?? acpAgentCommand('codex'),
+    }
   }
 
-  health(signal?: AbortSignal): Promise<HarnessHealth> {
-    return this.legacy.health(signal)
+  async health(signal?: AbortSignal): Promise<HarnessHealth> {
+    const now = Date.now()
+    if (this.healthCache && now - this.healthCache.at < 30_000) return this.healthCache.health
+    const health = await probeAcpHealth(this.acpOptions(), signal)
+    if (!signal?.aborted) this.healthCache = { at: now, health }
+    return health
   }
 
-  isAvailable(signal?: AbortSignal): Promise<boolean> {
-    return this.legacy.isAvailable(signal)
+  async isAvailable(signal?: AbortSignal): Promise<boolean> {
+    return (await this.health(signal)).ok
   }
 
   run(input: AgentTurnInput): Promise<AgentTurnResult> {
     return runAcpTurn(
       {
-        provider: 'codex',
-        bin: this.bin,
-        command: this.command ?? acpAgentCommand('codex'),
+        ...this.acpOptions(),
       },
       input,
     )
@@ -58,22 +68,24 @@ export class AcpCodexHarness implements AgentHarness {
   ask(input: AskInput): Promise<AskResult> {
     return runAcpAsk(
       {
-        provider: 'codex',
-        bin: this.bin,
-        command: this.command ?? acpAgentCommand('codex'),
+        ...this.acpOptions(),
       },
       input,
     )
   }
 
-  loadout(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout> {
-    return this.legacy.loadout(root, options)
-  }
-
-  skillContent(
-    root: string,
-    command: string,
-  ): Promise<{ command: string; content: string; path: string } | null> {
-    return this.legacy.skillContent(root, command)
+  async loadout(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout> {
+    const now = Date.now()
+    const key = `${root}\u0000${options?.model ?? ''}\u0000${JSON.stringify(options?.env ?? {})}`
+    if (
+      !options?.refresh &&
+      this.loadoutCache &&
+      this.loadoutCache.key === key &&
+      now - this.loadoutCache.at < 60_000
+    )
+      return this.loadoutCache.data
+    const data = await probeAcpLoadout(this.acpOptions(), root, options)
+    if (!options?.signal?.aborted) this.loadoutCache = { at: now, key, data }
+    return data
   }
 }

@@ -6,6 +6,7 @@ and renders it far more legibly than raw code. Attach **comments / open question
 to any element, then hit **Submit to agent**: a local Claude Code or Codex harness,
 using your existing login, reads the context, edits the domain code on disk, and
 replies in the conversation and straight back into any included comment threads.
+Several such conversations can run side by side, as tabs.
 
 Lives in the astrale CLI repo (`cli/studio`) and is launched by **`astrale studio`**.
 
@@ -43,13 +44,37 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > Current projects are detected through `astrale.config.ts` and an Application whose
 > `schema` binding resolves to authored source.
 
+### Chats
+
+A domain holds several conversations at once, as tabs above the agent panel.
+Each tab keeps its own transcript, its own model, its own harness-native session
+id and its own running turn, all persisted under `.domain-studio/.cache/agent/`
+— two tabs can work at the same time, and they survive a restart.
+
+Both the model and the agent are picked from one control: the discreet model
+name in the composer, next to the send button. Its menu lists every harness with
+its own models, and the consequence follows from which one you pick:
+
+- a model of **this chat's agent** → this conversation switches model, in place;
+- a model of **another agent** → a NEW chat opens on it. Always a new one, never
+  a jump to an existing tab of that agent: an older tab is a different
+  conversation.
+
+That is the whole reason a chat belongs to its harness for life — a Claude
+session id means nothing to Codex. The new tab carries a summary of the
+conversation it continues (what was asked, what the agent answered, which files
+it touched), sent with its first message and only that one. The summary then
+stays at the top of the chat as a collapsible chip, so where the work came from
+is never lost. The original chat is left exactly as it was — same session, same
+history, still resumable.
+
+**Settings → Agent** holds the domain-wide defaults: which agent and model a new
+chat starts on. Picking another agent there forks a tab the same way.
+
 ### Local agent harness
 
-Studio detects both local harnesses and lets you choose one per domain in
-**Settings → Agent → Harness**. Their resumable conversations are stored
-independently, so switching harnesses does not overwrite the other one's thread.
-`--harness` (or `DOMAIN_STUDIO_HARNESS`) locks the whole Studio process to one
-harness and disables the selector.
+Studio detects both local harnesses. `--harness` (or `DOMAIN_STUDIO_HARNESS`)
+locks the whole Studio process to one harness and disables the selector.
 
 - **Claude Code:** install `claude` and authenticate normally. Studio can also
   route this harness through its Anthropic-compatible model-gateway settings.
@@ -60,10 +85,11 @@ Both execution paths go through Studio's shared **Agent Client Protocol (ACP)**
 adapter. The standalone CLI embeds the official Claude and Codex ACP agent
 servers, starts one short-lived stdio connection per turn, and uses ACP
 `session/new`, `session/resume`, configuration, prompt, update, permission, and
-cancel messages. The previous Claude `stream-json` and Codex `exec` / App Server
-implementations remain in the source tree for compatibility reference and
-native health/loadout probes, but they are no longer registered for turns or
-Ask.
+cancel messages. Health checks and Settings diagnostics also use ACP directly.
+Re-probe initializes a disposable session, reads the agent identity and model
+configuration, applies Studio's optional model override, and deletes the session
+without sending a prompt. Studio does not infer unavailable inventories such as
+skills, MCP servers, tools, or subagents.
 
 Claude's ACP server advertises `session/fork`, so **Ask** inherits its parent
 conversation and deletes the ephemeral fork afterward. The current Codex ACP
@@ -77,13 +103,13 @@ existing deploy/install workflow and permits unrestricted local commands. Studio
 remains loopback-only by default because either harness can edit files and run
 commands with the authority you select.
 
-Model selection is also remembered independently per domain and harness. Leaving
-**Model** on **Default** preserves the harness's own resolution rules. Claude
-reports its effective model from the runtime init event. Codex resolves its
-project/profile/user/system config plus catalog default through App Server and
-shows the authenticated account's live model list. Choosing an explicit model
-sets the ACP session's model configuration for new turns, resumed turns, and
-isolated Ask sessions without rewriting the user's global harness config.
+Model selection is remembered per chat, falling back to the domain default for
+that harness. Leaving it on **Default** preserves the harness's own resolution
+rules. Claude
+and Codex both report the current model and selectable models through the ACP
+session configuration. Choosing an explicit model sets that ACP configuration
+for new turns, resumed turns, isolated Ask sessions, and diagnostics without
+rewriting the user's global harness config.
 
 Codex custom providers require the OpenAI Responses API. Astrale's current
 AI-gateway surface exposes Chat Completions and Anthropic Messages, so Studio does
@@ -118,7 +144,7 @@ to send open threads to the agent.
 
 | Panel tab | What it does |
 |---|---|
-| **Agent** | The conversation with the agent: your message, what it did, what it answered. Documents dropped in join `.domain-studio/context/docs`; every turn lists them with their path, so the agent opens the ones it needs. |
+| **Agent** | The chat tabs and the selected conversation: your message, what the agent did, what it answered. Each tab is its own conversation, agent and model. Documents dropped in join `.domain-studio/context/docs`; every turn lists them with their path, so the agent opens the ones it needs. |
 | **Comments** | Open threads; opening one takes the main view to what it points at. Threads still waiting on the agent ride along with the next turn, and it answers them in place. Resolved threads are hidden. |
 
 ## How it's built

@@ -10,6 +10,7 @@ import type { Geometry } from './geometry'
 export function useLayoutCommitter(): {
   commitLayout: (domainId: string, updates: Geometry) => void
   flushLayout: (domainId: string) => void
+  discardLayout: (domainId: string) => void
 } {
   const queryClient = useQueryClient()
   const dirty = useRef(new Map<string, Geometry>())
@@ -24,6 +25,16 @@ export function useLayoutCommitter(): {
     if (updates && Object.keys(updates).length > 0) {
       void api.setLayout(domainId, updates).catch(() => {})
     }
+  }, [])
+
+  // Drop a debounced write instead of sending it. Auto-arrange erases the record on disk,
+  // and a drag from the half-second before it would otherwise land AFTER that erase — the
+  // very positions the reader asked to discard, written straight back.
+  const discardLayout = useCallback((domainId: string) => {
+    const timer = timers.current.get(domainId)
+    if (timer) clearTimeout(timer)
+    timers.current.delete(domainId)
+    dirty.current.delete(domainId)
   }, [])
 
   const commitLayout = useCallback(
@@ -50,5 +61,5 @@ export function useLayoutCommitter(): {
     [flushLayout],
   )
 
-  return { commitLayout, flushLayout }
+  return { commitLayout, flushLayout, discardLayout }
 }

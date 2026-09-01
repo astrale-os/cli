@@ -64,10 +64,7 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   const body = await response!.json()
   expect(body).toMatchObject({
     ok: false,
-    tools: [],
-    mcpServers: [],
-    skills: [],
-    agents: [],
+    source: 'acp',
   })
   expect(body.detail).toContain('model gateway auth failed')
   expect(body.detail).toContain('no valid host-supplied token')

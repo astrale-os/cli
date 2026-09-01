@@ -12,9 +12,10 @@ import { useUI } from './store'
 export type StudioEventEffect =
   | { type: 'invalidate-domain'; domainId: string }
   | { type: 'invalidate-workspace' }
-  | { type: 'invalidate-agent'; domainId: string }
-  | { type: 'invalidate-agent-history'; domainId: string }
-  | { type: 'append-agent-event'; domainId: string; runId: string; event: AgentEvent }
+  | { type: 'invalidate-agent'; domainId: string; chatId?: string }
+  | { type: 'invalidate-agent-history'; domainId: string; chatId?: string }
+  | { type: 'invalidate-chats'; domainId: string }
+  | { type: 'append-agent-event'; chatId: string; runId: string; event: AgentEvent }
   | { type: 'synchronize-agent-run'; run: AgentRun }
 
 /** Pure policy table for translating one server event into client synchronizations. */
@@ -29,6 +30,7 @@ export function studioEventEffects(
             { type: 'invalidate-domain', domainId: activeDomainId },
             { type: 'invalidate-agent', domainId: activeDomainId },
             { type: 'invalidate-agent-history', domainId: activeDomainId },
+            { type: 'invalidate-chats', domainId: activeDomainId },
           ]
         : []
     case 'workspace':
@@ -37,7 +39,7 @@ export function studioEventEffects(
       return [
         {
           type: 'append-agent-event',
-          domainId: event.domainId,
+          chatId: event.chatId,
           runId: event.runId,
           event: event.event,
         },
@@ -45,10 +47,16 @@ export function studioEventEffects(
     case 'agent-run': {
       const effects: StudioEventEffect[] = [
         { type: 'synchronize-agent-run', run: event.run },
-        { type: 'invalidate-agent', domainId: event.domainId },
+        { type: 'invalidate-agent', domainId: event.domainId, chatId: event.chatId },
+        // the tab strip shows each chat's own execution state
+        { type: 'invalidate-chats', domainId: event.domainId },
       ]
       if (event.run.status !== 'running' && event.run.status !== 'queued') {
-        effects.push({ type: 'invalidate-agent-history', domainId: event.domainId })
+        effects.push({
+          type: 'invalidate-agent-history',
+          domainId: event.domainId,
+          chatId: event.chatId,
+        })
       }
       return effects
     }
@@ -83,13 +91,20 @@ export function useStudioEventSync(): void {
             void queryClient.invalidateQueries({ queryKey: qk.workspace })
             break
           case 'invalidate-agent':
-            void queryClient.invalidateQueries({ queryKey: qk.agent(effect.domainId) })
+            void queryClient.invalidateQueries({
+              queryKey: qk.agent(effect.domainId, effect.chatId),
+            })
             break
           case 'invalidate-agent-history':
-            void queryClient.invalidateQueries({ queryKey: qk.agentHistory(effect.domainId) })
+            void queryClient.invalidateQueries({
+              queryKey: qk.agentHistory(effect.domainId, effect.chatId),
+            })
+            break
+          case 'invalidate-chats':
+            void queryClient.invalidateQueries({ queryKey: qk.chats(effect.domainId) })
             break
           case 'append-agent-event':
-            appendEvent(effect.domainId, effect.runId, effect.event)
+            appendEvent(effect.chatId, effect.runId, effect.event)
             break
           case 'synchronize-agent-run':
             setRun(effect.run)

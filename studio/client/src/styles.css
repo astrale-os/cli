@@ -32,6 +32,21 @@
   --success: oklch(0.53 0.13 155);
   --warning: oklch(0.58 0.12 65);
 
+  /* chat tabs — one hue per open conversation, so a strip of logo-sized tabs
+     stays tellable apart. The first tab of each agent wears that agent's own
+     colour (below); these pick up from the second one, ordered so that
+     neighbours land far apart on the wheel. No amber: it reads as Claude's
+     terracotta at 14 pixels. */
+  --chat-1: oklch(0.52 0.15 300);
+  --chat-2: oklch(0.5 0.13 155);
+  --chat-3: oklch(0.5 0.14 265);
+  --chat-4: oklch(0.55 0.16 350);
+  --chat-5: oklch(0.52 0.11 200);
+
+  /* each agent's own colour — what a tab wears before the palette above kicks in */
+  --brand-claude: oklch(0.63 0.13 42);
+  --brand-codex: var(--foreground);
+
   /* schema grammar — one hue per kind, legible on light surfaces */
   --schema-node: oklch(0.5 0.12 250);
   --schema-edge: oklch(0.52 0.11 65);
@@ -70,6 +85,15 @@
   --ring: oklch(0.6 0.11 258);
   --success: oklch(0.68 0.13 155);
   --warning: oklch(0.75 0.13 70);
+
+  --chat-1: oklch(0.74 0.14 300);
+  --chat-2: oklch(0.72 0.12 155);
+  --chat-3: oklch(0.72 0.13 265);
+  --chat-4: oklch(0.75 0.14 350);
+  --chat-5: oklch(0.74 0.1 200);
+
+  --brand-claude: oklch(0.74 0.12 45);
+  --brand-codex: var(--foreground);
 
   --schema-node: oklch(0.72 0.11 250);
   --schema-edge: oklch(0.75 0.1 70);
@@ -111,6 +135,13 @@
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-chat-1: var(--chat-1);
+  --color-chat-2: var(--chat-2);
+  --color-chat-3: var(--chat-3);
+  --color-chat-4: var(--chat-4);
+  --color-chat-5: var(--chat-5);
+  --color-brand-claude: var(--brand-claude);
+  --color-brand-codex: var(--brand-codex);
   --color-schema-node: var(--schema-node);
   --color-schema-edge: var(--schema-edge);
   --color-schema-view: var(--schema-view);

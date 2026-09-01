@@ -30,26 +30,45 @@ export function domainPreparationKey(
   ].join('|')
 }
 
+/** The domains a prepared projection belongs to — its identity, whatever it was prepared from. */
+export function workspaceSelectionKey(inputs: WorkspaceDomainInput[]): string {
+  return inputs.map((input) => input.summary.id).join('::')
+}
+
 export interface PreparedWorkspaceState {
-  key: string | null
+  selection: string | null
   domains: WorkspaceDomainProjection[]
 }
 
-/** Never expose projections prepared for another, even same-sized, workspace selection. */
+/**
+ * Which projections this render may draw.
+ *
+ * Never the ones prepared for another SELECTION: a same-sized workspace of different domains
+ * would draw the previous one's canvas under the new one's name.
+ *
+ * A re-projection of the SAME selection is a different matter — a drag persisted, a class
+ * hidden, a module collapsed all rebuild the projection, and until the new one lands the
+ * canvas keeps the one it has. Blanking there swaps the canvas for a placeholder, which
+ * UNMOUNTS React Flow: what comes back has a fresh store with no viewport and re-frames
+ * itself, which is how a drop threw away the pan and zoom the reader had set.
+ */
 export function preparedWorkspaceStatus(
-  expectedKey: string,
+  expectedSelection: string,
   expectedCount: number,
   state: PreparedWorkspaceState,
 ): { domains: WorkspaceDomainProjection[]; ready: boolean } {
-  const current = state.key === expectedKey ? state.domains : []
-  return { domains: current, ready: state.key === expectedKey && current.length === expectedCount }
+  const matches = state.selection !== null && state.selection === expectedSelection
+  return {
+    domains: matches ? state.domains : [],
+    ready: matches && state.domains.length === expectedCount,
+  }
 }
 
 export function usePreparedWorkspaceDomains(
   inputs: WorkspaceDomainInput[],
   collapsedModules: Record<string, string[]>,
 ): { domains: WorkspaceDomainProjection[]; ready: boolean } {
-  const [state, setState] = useState<PreparedWorkspaceState>({ key: null, domains: [] })
+  const [state, setState] = useState<PreparedWorkspaceState>({ selection: null, domains: [] })
   const cache = useRef(new Map<string, { key: string; projection: WorkspaceDomainProjection }>())
   const preparationKey = useMemo(
     () =>
@@ -77,7 +96,7 @@ export function usePreparedWorkspaceDomains(
         return projection
       }),
     ).then((domains) => {
-      if (!cancelled) setState({ key: preparationKey, domains })
+      if (!cancelled) setState({ selection: workspaceSelectionKey(inputs), domains })
     })
     return () => {
       cancelled = true
@@ -86,5 +105,5 @@ export function usePreparedWorkspaceDomains(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preparationKey])
 
-  return preparedWorkspaceStatus(preparationKey, inputs.length, state)
+  return preparedWorkspaceStatus(workspaceSelectionKey(inputs), inputs.length, state)
 }

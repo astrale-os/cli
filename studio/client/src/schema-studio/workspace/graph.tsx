@@ -18,7 +18,7 @@ import {
   useReactFlow,
   useStore,
 } from '@xyflow/react'
-import { Frame, LayoutGrid, Sigma, Spline, TriangleAlert } from 'lucide-react'
+import { LayoutGrid, Sigma, Spline, TriangleAlert } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api, qk } from '@/lib/api'
@@ -47,6 +47,7 @@ import {
 } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
 import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
+import { workspaceExternalOrigin } from './external-frames'
 import { workspaceGeometry, workspaceLayoutUpdate } from './geometry'
 import {
   WorkspaceNodeActionsProvider,
@@ -59,6 +60,7 @@ import {
   workspaceDomainNodeId,
   type WorkspaceDomainProjection,
 } from './projection'
+import { reorganizeSettled } from './reorganize'
 import { useSchemaWorkspace } from './store'
 
 function localNodeRef(id: string): { domainId: string; localId: string } | null {
@@ -92,16 +94,18 @@ export function WorkspaceSchemaGraph({
   const domainPositions = useSchemaWorkspace((state) => state.domainPositions)
   const externalPositions = useSchemaWorkspace((state) => state.externalPositions)
   const setDomainPosition = useSchemaWorkspace((state) => state.setDomainPosition)
+  const setExternalPosition = useSchemaWorkspace((state) => state.setExternalPosition)
   const ensureDomainPositions = useSchemaWorkspace((state) => state.ensureDomainPositions)
   const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
   const resetWorkspaceFrames = useSchemaWorkspace((state) => state.resetWorkspaceFrames)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
-  const { commitLayout } = useLayoutCommitter()
+  const { commitLayout, discardLayout } = useLayoutCommitter()
   const queryClient = useQueryClient()
   const { data: commentStore } = useComments(activeDomainId)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
-  const fittedDomains = useRef('')
-  const fitAfterReset = useRef(false)
+  const fittedNodes = useRef('')
+  // The domains a running reorganize still waits on — see the projection effect below.
+  const reorganizing = useRef<string[] | null>(null)
   const solo = domains.length === 1
 
   // One click does both: focus the domain AND act on what was clicked. Requiring a
@@ -126,16 +130,25 @@ export function WorkspaceSchemaGraph({
     [setDomain, toggleModule],
   )
 
-  // Auto-arrange goes through the SAME path as a cold canvas: empty the domain's layout
-  // of record, and `prepareWorkspaceDomain` lays it out with ELK on the next pass.
-  const autoArrange = useCallback(async () => {
-    if (!activeDomainId) return
-    fitAfterReset.current = true
-    // Drop the record on disk FIRST: a refetch that lands between the two would
+  // One gesture, the whole canvas: discard EVERY hand-placed position — the geometry inside
+  // each domain (the record on disk) and the frames those domains sit in (the record in the
+  // workspace store) — and let ELK and the frame packer lay it out again, the exact path a
+  // cold canvas takes. Framing the result is left to the projection effect below: the two
+  // halves land on different schedules, and only it can see when the second one has.
+  const reorganize = useCallback(async () => {
+    const domainIds = domains.map((domain) => domain.input.summary.id)
+    reorganizing.current = domainIds
+    // A drag from the half-second before this click still owes a write; let it land and it
+    // would put the discarded positions straight back, after the reset erased them.
+    for (const domainId of domainIds) discardLayout(domainId)
+    resetWorkspaceFrames()
+    // Drop the records on disk FIRST: a refetch that lands between the two would
     // restore the very positions this is discarding.
-    await api.resetLayout(activeDomainId).catch(() => {})
-    queryClient.setQueryData<LayoutState>(qk.layout(activeDomainId), { positions: {} })
-  }, [activeDomainId, queryClient])
+    await Promise.all(domainIds.map((domainId) => api.resetLayout(domainId).catch(() => {})))
+    for (const domainId of domainIds) {
+      queryClient.setQueryData<LayoutState>(qk.layout(domainId), { positions: {} })
+    }
+  }, [discardLayout, domains, queryClient, resetWorkspaceFrames])
 
   const nodeActions = useMemo<WorkspaceNodeActions>(
     () => ({ toggleModule: toggleWorkspaceModule }),
@@ -155,23 +168,61 @@ export function WorkspaceSchemaGraph({
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
 
+  // While a drag is in flight the canvas OWNS the frame anchors: `onNodeDragStop` reads each
+  // one off the painted frame and writes it to the workspace store, which re-composes the
+  // projection around it. Adopting that echo would repaint every node from the geometry of
+  // record — still one drag behind, since its own projection lands a tick later — and flash
+  // the dropped node back to where the drag started. So a projection is adopted only when
+  // something the canvas does NOT already paint has changed: the prepared domains, which
+  // domain is active, or the catalog. The frame anchors alone are never news to it.
+  const adopted = useRef<{
+    domains: WorkspaceDomainProjection[]
+    activeDomainId: string
+    catalog: typeof catalog
+  } | null>(null)
   useEffect(() => {
-    ensureDomainPositions(projection.domainPositions)
-    ensureExternalPositions(projection.externalPositions)
+    const echo =
+      adopted.current !== null &&
+      adopted.current.domains === domains &&
+      adopted.current.activeDomainId === activeDomainId &&
+      adopted.current.catalog === catalog
+    // …unless a reorganize is in flight, whose first wave is exactly a frame-only change and
+    // the one time the canvas is not already painting the answer.
+    if (echo && reorganizing.current === null) return
+    adopted.current = { domains, activeDomainId, catalog }
+    // A reorganize lands in two waves (see `reorganizeSettled`), and the first one packs the
+    // frames around the very geometry it is discarding. Paint that wave — it is what the
+    // canvas holds until the re-layout arrives — but do not KEEP it: the store never
+    // overwrites an anchor it already has, so a packing recorded here is the one the reader
+    // is left with, spread across a canvas the re-layout has since made compact.
+    const settling =
+      reorganizing.current !== null && !reorganizeSettled(domains, reorganizing.current)
+    if (!settling) {
+      ensureDomainPositions(projection.domainPositions)
+      ensureExternalPositions(projection.externalPositions)
+    }
     // A box saved too small for its classes would drop them onto each other, one saved
     // too large keeps space no class uses — paint the fit, and let the next drag persist it.
     setNodes(normalizeContainerLayout(projection.nodes))
     setEdges(projection.edges)
-    if (fitAfterReset.current) {
-      fitAfterReset.current = false
+    if (settling) return
+    if (reorganizing.current) {
+      reorganizing.current = null
       setFitRequest((n) => n + 1)
       return
     }
-    const domainKey = domains.map((domain) => domain.input.summary.id).join('|')
-    if (fittedDomains.current === domainKey) return
-    fittedDomains.current = domainKey
+    // What is ON the canvas is what the framing answers to: a domain added or dropped, a
+    // module collapsed, an imported domain shown again. Keyed on the node set rather than on
+    // geometry, so the one thing that never re-frames is a drag — the reader put the canvas
+    // where it is, and a drop must leave it exactly there.
+    const nodeKey = projection.nodes
+      .map((node) => node.id)
+      .sort()
+      .join('|')
+    if (fittedNodes.current === nodeKey) return
+    fittedNodes.current = nodeKey
     setFitRequest((n) => n + 1)
-  }, [domains, ensureDomainPositions, ensureExternalPositions, projection])
+  }, [activeDomainId, catalog, domains, ensureDomainPositions, ensureExternalPositions, projection])
 
   // React Flow's queued fitView waits on its measurement lifecycle, so frame the
   // canvas from the geometry we already hold (see fit.ts).
@@ -218,6 +269,20 @@ export function WorkspaceSchemaGraph({
       // The event carries the RAW pointer position; the canvas holds the re-fitted one, so
       // the record is read off the canvas or the two disagree the moment a box had to move.
       const painted = nodesRef.current
+      const at = (id: string) => {
+        const found = painted.find((candidate) => candidate.id === id)
+        return found ? { x: Math.round(found.position.x), y: Math.round(found.position.y) } : null
+      }
+
+      // An imported domain's frame is laid out whole and holds no layout of ours, so its
+      // origin is the ENTIRE record a drag writes — no per-node geometry to commit with it.
+      const externalOrigin = workspaceExternalOrigin(node.id)
+      if (externalOrigin) {
+        const position = at(node.id)
+        if (position) setExternalPosition(externalOrigin, position)
+        return
+      }
+
       const frameDrag = node.id.startsWith('workspace-domain:')
       const domainId = frameDrag
         ? node.id.slice('workspace-domain:'.length)
@@ -226,13 +291,8 @@ export function WorkspaceSchemaGraph({
 
       // The frame's position is the domain's anchor on the canvas, and a drag INSIDE it can
       // move that anchor: growing a box leftwards walks its own edge out to meet the drag.
-      const frame = painted.find((candidate) => candidate.id === workspaceDomainNodeId(domainId))
-      if (frame) {
-        setDomainPosition(domainId, {
-          x: Math.round(frame.position.x),
-          y: Math.round(frame.position.y),
-        })
-      }
+      const frame = at(workspaceDomainNodeId(domainId))
+      if (frame) setDomainPosition(domainId, frame)
       // A frame carries its content along, so dragging one leaves every local position alone.
       if (frameDrag) return
 
@@ -246,7 +306,7 @@ export function WorkspaceSchemaGraph({
       }
       if (Object.keys(updates).length > 0) commitLayout(domainId, updates)
     },
-    [commitLayout, setDomainPosition],
+    [commitLayout, setDomainPosition, setExternalPosition],
   )
 
   // A JUMP has to land somewhere visible: ⌘K, or a comment revealed from the panel, can
@@ -423,22 +483,11 @@ export function WorkspaceSchemaGraph({
           <EdgeMarkerDefs />
           <Controls showFitView={false} showInteractive={false} position="bottom-left">
             <ControlButton
-              onClick={() => void autoArrange()}
-              title="Auto-arrange — discards manual positions"
+              onClick={() => void reorganize()}
+              title="Auto-arrange and center — discards manual positions"
             >
               <LayoutGrid className="h-4 w-4 text-foreground" />
             </ControlButton>
-            {!solo && (
-              <ControlButton
-                onClick={() => {
-                  fitAfterReset.current = true
-                  resetWorkspaceFrames()
-                }}
-                title="Reset and auto-pack workspace regions"
-              >
-                <Frame className="h-4 w-4 text-foreground" />
-              </ControlButton>
-            )}
           </Controls>
           <MiniMap
             pannable

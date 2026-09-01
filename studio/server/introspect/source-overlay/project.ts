@@ -8,6 +8,8 @@ import { existsSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve as resolvePath } from 'node:path'
 import { Node, Project, SyntaxKind, type CallExpression, type SourceFile } from 'ts-morph'
 
+import { isPackageImportSpecifier, resolvePackageImport } from '../../package-imports'
+
 /** A fresh, in-memory-ish ts-morph project: no tsconfig, tolerant of errors. */
 export function newProject(): Project {
   return new Project({
@@ -168,21 +170,23 @@ export function firstValueDeclaration(node: Node): Node | undefined {
 
 /** Resolve a relative module specifier to a concrete .ts file path on disk. */
 export function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
+  const baseDir = dirname(from.getFilePath())
   if (!spec.startsWith('.')) {
-    // Current SDK projects use package `imports` aliases such as
-    // `#actions/risk`. Resolve them from the authored file's directory through
-    // Bun so the overlay follows the same project-local map as runtime imports.
-    if (!spec.startsWith('#')) return undefined
-    try {
-      const resolved = Bun.resolveSync(spec, dirname(from.getFilePath()))
-      if (existsSync(resolved)) return resolved
-    } catch {
-      return undefined
+    // Current SDK projects use package `imports` aliases such as `#actions/risk`.
+    // Read the project's own manifest rather than asking the host resolver: a
+    // compiled standalone cannot resolve an external package's aliases at all.
+    if (!isPackageImportSpecifier(spec)) return undefined
+    for (const target of resolvePackageImport(spec, baseDir)) {
+      const found = firstExisting(target)
+      if (found) return found
     }
     return undefined
   }
-  const baseDir = dirname(from.getFilePath())
-  const base = resolvePath(baseDir, spec)
+  return firstExisting(resolvePath(baseDir, spec))
+}
+
+/** The authored file behind a module target, tolerating an emitted `.js` suffix. */
+function firstExisting(base: string): string | undefined {
   const sourceBase = base.replace(/\.(?:[cm]?js|jsx)$/, '')
   const candidates = [
     base,

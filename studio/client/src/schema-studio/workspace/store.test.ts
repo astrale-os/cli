@@ -47,3 +47,18 @@ test('resets domain and external frame geometry as one workspace layout', () => 
     })
   }
 })
+
+test('remembers where an external frame was dropped, under its origin', () => {
+  const before = useSchemaWorkspace.getState()
+  useSchemaWorkspace.setState({ externalPositions: { 'kernel.astrale.ai': { x: 600, y: 40 } } })
+
+  try {
+    useSchemaWorkspace.getState().setExternalPosition('remote.astrale.ai', { x: 812, y: 96 })
+    expect(useSchemaWorkspace.getState().externalPositions).toEqual({
+      'kernel.astrale.ai': { x: 600, y: 40 },
+      'remote.astrale.ai': { x: 812, y: 96 },
+    })
+  } finally {
+    useSchemaWorkspace.setState({ externalPositions: before.externalPositions })
+  }
+})

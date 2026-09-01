@@ -9,14 +9,14 @@ test('Ask and comments keep the owning domain for a homonymous workspace node', 
   await page.getByTestId('domain-selector').click()
   await page.getByRole('button', { name: 'Select all' }).click()
 
-  const peerNode = page.locator('.react-flow__node[data-id="workspace:peer:class.Monitor"]')
+  const peerNode = page.locator('.react-flow__node[data-id="workspace:peer:class.Company"]')
   await expect(peerNode).toBeVisible()
   await expect(page.getByTestId('workspace-domain-peer')).toBeVisible()
 
   await page.keyboard.press('a')
   await peerNode.click()
   const askDot = page.getByTitle('Ask', { exact: true })
-  await expect(page.getByPlaceholder('Ask about Monitor…')).toBeVisible()
+  await expect(page.getByPlaceholder('Ask about Company…')).toBeVisible()
   await expect(askDot).toBeVisible()
 
   const alignedWithPeer = async () => {
@@ -62,7 +62,7 @@ test('Ask and comments keep the owning domain for a homonymous workspace node', 
     id: string
     anchorRefs: Array<{ ref: string }>
   }
-  expect(comment.anchorRefs).toContainEqual(expect.objectContaining({ ref: 'class.Monitor' }))
+  expect(comment.anchorRefs).toContainEqual(expect.objectContaining({ ref: 'class.Company' }))
 
   const cleanup = await request.post('/api/domain/peer/comments', {
     data: { action: 'delete', id: comment.id },

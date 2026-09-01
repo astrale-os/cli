@@ -19,6 +19,7 @@ const event = (
 const run = (events: AgentEvent[]): AgentRun => ({
   id: 'run',
   domainId: 'crm',
+  chatId: 'chat',
   harness: 'claude',
   status: 'running',
   createdAt: new Date(0).toISOString(),

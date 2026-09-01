@@ -11,7 +11,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Lock } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { HarnessLogo } from '@/components/harness-logo'
+import { brandTone } from '@/components/work-panel/chat-tone'
 import { api, qk } from '@/lib/api'
+import { useActiveChatId } from '@/lib/chats'
 import { useLoadout, useUsage } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
@@ -31,7 +34,7 @@ export interface AgentSettingsProps {
   setAgentModels: Dispatch<SetStateAction<Record<string, string>>>
 }
 
-/** Harness, model, effort, access, conversation, and loadout settings. */
+/** Harness, model, and effort settings that stay visible in the main Settings view. */
 export function AgentSettings({
   domainId,
   settings,
@@ -41,34 +44,31 @@ export function AgentSettings({
   agentModels,
   setAgentModels,
 }: AgentSettingsProps) {
-  const { data: loadout, isFetching: loadoutFetching, error: loadoutError } = useLoadout(domainId)
-  const { data: usage } = useUsage(domainId)
+  const { data: loadout } = useLoadout(domainId)
   const queryClient = useQueryClient()
   const effortLevels = harness?.capabilities.effortLevels ?? [...AGENT_EFFORT_LEVELS]
-  const accessLevels = harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
+  // Choosing another agent does not convert the open chat — it cannot, the
+  // session belongs to one harness. The server forks a tab instead, and says so.
   const selectHarness = useMutation({
     mutationFn: (input: { domainId: string; harness: string }) =>
       api.selectHarness(input.domainId, input.harness),
-    onSuccess: (selected, input) => {
-      queryClient.setQueryData(qk.harness(input.domainId), selected)
-      queryClient.setQueryData(qk.agentSession(input.domainId), undefined)
-      queryClient.setQueryData(qk.loadout(input.domainId), undefined)
+    onSuccess: (result, input) => {
+      queryClient.setQueryData(qk.harness(input.domainId), result.harness)
       queryClient.invalidateQueries({ queryKey: qk.harness(input.domainId) })
       queryClient.invalidateQueries({ queryKey: qk.agentSession(input.domainId) })
       queryClient.invalidateQueries({ queryKey: qk.agent(input.domainId) })
       queryClient.invalidateQueries({ queryKey: qk.loadout(input.domainId) })
-      toast.success(`Using ${selected.label}`)
+      queryClient.invalidateQueries({ queryKey: qk.chats(input.domainId) })
+      toast.success(
+        result.chat
+          ? `New ${result.harness.label} chat — your previous conversation stays open, summarized for this one`
+          : `Using ${result.harness.label}`,
+      )
     },
     onError: (error) => toast.error(String(error)),
   })
 
-  const refreshLoadout = useMutation({
-    mutationFn: (id: string) => api.loadout(id, true),
-    onSuccess: (refreshed, id) => queryClient.setQueryData(qk.loadout(id), refreshed),
-    onError: (error) => toast.error(String(error)),
-  })
-
-  const harnessOptions = harness?.options ?? [{ id: 'claude', label: 'Claude Code (local)' }]
+  const harnessOptions = harness?.options ?? [{ id: 'claude', label: 'Claude Code' }]
   const harnessId = harness?.id ?? 'claude'
   const selectedModel = agentModels[harnessId] ?? ''
   const setSelectedModel = (model: string) =>
@@ -82,9 +82,18 @@ export function AgentSettings({
       <div className="divide-y divide-border rounded-lg border bg-card">
         <div className="space-y-2 px-3 py-2.5">
           <div className="flex items-center gap-3">
-            <span className="min-w-0 flex-1 truncate text-[13px]">Harness</span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px]">Default agent</div>
+              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                Picking another one opens a new chat with it — a conversation cannot change agent,
+                so this one stays as it is.
+              </p>
+            </div>
             <div className="flex shrink-0 items-center gap-1.5">
               {harness?.locked && <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />}
+              {/* a native <select> cannot carry a mark inside its options — this one
+                  sits beside it, naming the agent the same way the tab strip does */}
+              <HarnessLogo harness={harnessId} className={brandTone(harnessId).mark} />
               <SettingSelect
                 disabled={!domainId || !harness || harness.locked || selectHarness.isPending}
                 value={harness?.id ?? 'claude'}
@@ -121,12 +130,7 @@ export function AgentSettings({
           </div>
         </div>
 
-        <AgentModel
-          selected={selectedModel}
-          loadout={loadout}
-          modelOptions={harness?.capabilities.modelOptions}
-          onChange={setSelectedModel}
-        />
+        <AgentModel selected={selectedModel} loadout={loadout} onChange={setSelectedModel} />
 
         <SettingRow label="Reasoning effort">
           <AgentEffortPicker
@@ -135,7 +139,47 @@ export function AgentSettings({
             onChange={(effort) => setValues((current) => ({ ...current, agentEffort: effort }))}
           />
         </SettingRow>
+      </div>
+    </div>
+  )
+}
 
+export type AgentDetailsProps = Pick<
+  AgentSettingsProps,
+  'domainId' | 'settings' | 'harness' | 'values' | 'setValues'
+>
+
+/** Power-user agent controls and runtime diagnostics shown only inside Details. */
+export function AgentDetails({
+  domainId,
+  settings,
+  harness,
+  values,
+  setValues,
+}: AgentDetailsProps) {
+  // Diagnostics describe the conversation the user is in, not the domain default.
+  const chatId = useActiveChatId(domainId)
+  const {
+    data: loadout,
+    isFetching: loadoutFetching,
+    error: loadoutError,
+  } = useLoadout(domainId, chatId)
+  const { data: usage } = useUsage(domainId)
+  const queryClient = useQueryClient()
+  const accessLevels = harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
+
+  const refreshLoadout = useMutation({
+    mutationFn: (id: string) => api.loadout(id, true, chatId),
+    onSuccess: (refreshed, id) => queryClient.setQueryData(qk.loadout(id, chatId), refreshed),
+    onError: (error) => toast.error(String(error)),
+  })
+
+  return (
+    <div>
+      <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Agent details
+      </div>
+      <div className="divide-y divide-border rounded-lg border bg-card">
         <SettingRow
           label="Access"
           description="Workspace sandboxes the agent to local edits; full automation also lets it run commands and deploy."

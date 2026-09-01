@@ -103,6 +103,76 @@ export default defineApplication({ schema, runtime: {} as never })
     )
   })
 
+  test('follows a package `imports` alias to the authored Schema', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-alias-schema-'))
+    roots.push(root)
+    mkdirSync(join(root, 'schema'))
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'grc', type: 'module', imports: { '#schema': './schema/index.ts' } }),
+    )
+    writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+    writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
+    writeFileSync(
+      join(root, 'application.ts'),
+      `import { defineApplication } from '@astrale-os/sdk/application'
+import { schema } from '#schema'
+export default defineApplication({ schema, runtime: {} as never })
+`,
+    )
+
+    expect(isDomainDir(root)).toBe(true)
+    const handle = registerDomain(root)!
+    domainIds.push(handle.id)
+    expect(handle.schemaIndex).toBe(join(root, 'schema/index.ts'))
+    expect(handle.schemaDirName).toBe('schema')
+  })
+
+  test('resolves an alias whose manifest target is the emitted .js path', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-alias-emitted-'))
+    roots.push(root)
+    mkdirSync(join(root, 'schema'))
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'grc', type: 'module', imports: { '#schema': './schema/index.js' } }),
+    )
+    writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+    writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
+    writeFileSync(
+      join(root, 'application.ts'),
+      `import { defineApplication } from '@astrale-os/sdk/application'
+import { schema } from '#schema'
+export default defineApplication({ schema, runtime: {} as never })
+`,
+    )
+
+    expect(resolveSchemaEntry(root, join(root, 'application.ts'))).toBe(
+      join(root, 'schema/index.ts'),
+    )
+  })
+
+  test('rejects an alias that escapes the Domain root', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'studio-alias-outside-'))
+    roots.push(outside)
+    writeFileSync(join(outside, 'schema.ts'), 'export const schema = {}\n')
+    const root = join(outside, 'domain')
+    mkdirSync(root)
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'grc', type: 'module', imports: { '#schema': '../schema.ts' } }),
+    )
+    writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+    writeFileSync(
+      join(root, 'application.ts'),
+      `import { defineApplication } from '@astrale-os/sdk/application'
+import { schema } from '#schema'
+export default defineApplication({ schema, runtime: {} as never })
+`,
+    )
+
+    expect(isDomainDir(root)).toBe(false)
+  })
+
   test('rejects a conventional Schema that is not selected by Application', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-unbound-schema-'))
     roots.push(root)

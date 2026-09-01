@@ -13,8 +13,8 @@ export type StudioEvent =
   | { type: 'comments'; domainId: string }
   | { type: 'compile-error'; domainId: string; message: string }
   | { type: 'resolving'; domainId: string }
-  | { type: 'agent-run'; domainId: string; run: AgentRun }
-  | { type: 'agent-event'; domainId: string; runId: string; event: AgentEvent }
+  | { type: 'agent-run'; domainId: string; chatId: string; run: AgentRun }
+  | { type: 'agent-event'; domainId: string; chatId: string; runId: string; event: AgentEvent }
   | { type: 'hello'; domains: string[] }
   | { type: 'workspace'; domains: string[] }
 

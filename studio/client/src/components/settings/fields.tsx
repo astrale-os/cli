@@ -18,18 +18,6 @@ interface FieldDef {
 
 const SECTIONS: { title: string; fields: FieldDef[] }[] = [
   {
-    title: 'Detection',
-    fields: [
-      {
-        key: 'integrationsDir',
-        label: 'Integrations folder',
-        hint: 'Folder under the domain root scanned for integrations.',
-        type: 'text',
-        placeholder: 'integrations',
-      },
-    ],
-  },
-  {
     title: 'Performance',
     fields: [
       {
@@ -59,6 +47,18 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
         hint: 'How long to wait when resolving a live view URL from the instance (ms).',
         type: 'number',
         placeholder: '8000',
+      },
+    ],
+  },
+  {
+    title: 'Detection',
+    fields: [
+      {
+        key: 'integrationsDir',
+        label: 'Integrations folder',
+        hint: 'Folder under the domain root scanned for integrations.',
+        type: 'text',
+        placeholder: 'integrations',
       },
     ],
   },
