@@ -171,7 +171,9 @@ function revealFocus(ref: string): string | null {
 }
 
 const initialTheme = loadStored('studio.theme', ['system', 'light', 'dark'] as const, 'system')
-const initialSide = loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'left')
+// The floating dock is where the panel starts: it costs the view nothing, and a
+// first look at a domain should be the domain, not a column beside it.
+const initialSide = loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'bottom')
 
 export const useUI = create<UIState>((set) => ({
   section: loadStored('studio.lastSection', SECTION_KEYS, 'schema'),
