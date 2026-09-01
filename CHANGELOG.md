@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-beta.62](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.61...cli/v1.0.0-beta.62) (2026-09-01)
+
+
+### Features
+
+* **lib:** one rule for terminal interactivity, and a loader for every wait ([#327](https://github.com/astrale-os/cli/issues/327)) ([9b5cff7](https://github.com/astrale-os/cli/commit/9b5cff7b99c9803e19591dcf0083169068fb0e95))
+* **studio:** a domains rail, and a canvas that no longer has a favourite ([#328](https://github.com/astrale-os/cli/issues/328)) ([b58d255](https://github.com/astrale-os/cli/commit/b58d255ca7cb267f1d06005e9c026adaaa52b5ce))
+* **studio:** float the bottom agent dock and grow it out of its own bar ([#331](https://github.com/astrale-os/cli/issues/331)) ([8a54c1d](https://github.com/astrale-os/cli/commit/8a54c1d5fc04a2046954c4ef19ae92683a3568db))
+* **studio:** one preferred model, and reasoning where you send the message ([#325](https://github.com/astrale-os/cli/issues/325)) ([2553a06](https://github.com/astrale-os/cli/commit/2553a063ff3e417f936a410320bc33f3db74d6b8))
+* **studio:** queue a message behind the turn that is already running ([#330](https://github.com/astrale-os/cli/issues/330)) ([66c0ce5](https://github.com/astrale-os/cli/commit/66c0ce51d9040e708b707f70e73b241ef23b13ba))
+
 ## [1.0.0-beta.61](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.60...cli/v1.0.0-beta.61) (2026-09-01)
 
 
