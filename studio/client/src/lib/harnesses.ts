@@ -22,3 +22,15 @@ export function harnessOptions(harness?: HarnessStatus): { id: string; label: st
 export function labelOf(harness: HarnessStatus | undefined, id: string): string {
   return harnessOptions(harness).find((option) => option.id === id)?.label ?? id
 }
+
+/**
+ * One harness exactly as the last probe found it — `ok`, and the reason behind
+ * it. The composer needs the reason: "unavailable" alone is what sent people
+ * looking for a fault in the studio when the answer was in the probe all along.
+ */
+export function presenceOf(
+  harness: HarnessStatus | undefined,
+  id: string,
+): HarnessStatus['harnesses'][number] | undefined {
+  return harness?.harnesses?.find((entry) => entry.id === id)
+}

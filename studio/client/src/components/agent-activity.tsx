@@ -9,7 +9,13 @@ import { Loader2, Send } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
-import { isRunActive, useAgentLive, useAgentSnapshot, useDisplayRun } from '@/lib/agent'
+import {
+  harnessLink,
+  isRunActive,
+  useAgentLive,
+  useAgentSnapshot,
+  useDisplayRun,
+} from '@/lib/agent'
 import { api, qk } from '@/lib/api'
 import { useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
@@ -76,7 +82,11 @@ export function AgentSubmitButton() {
   const queryClient = useQueryClient()
 
   const active = isRunActive(run)
-  const available = snapshot.data?.available ?? false
+  // reaching the agent is an ACP handshake, not a lookup — say so while it runs,
+  // rather than blaming a PATH that is probably fine (see `harnessLink`)
+  const link = harnessLink(snapshot.data?.available, snapshot.isError)
+  const available = link === 'ready'
+  const connecting = link === 'connecting'
 
   const submit = async () => {
     if (!domainId) return
@@ -115,16 +125,22 @@ export function AgentSubmitButton() {
   // Keep the button live whenever the harness is available — don't gate on the
   // awaiting count, which can lag a freshly-added comment by one query refetch.
   const disabled = busy || !available
-  const title = !available
-    ? `${snapshot.data?.harness ?? 'agent'} not available — set DOMAIN_STUDIO_HARNESS or install the CLI`
-    : awaiting === 0
-      ? 'No open threads awaiting a reply yet'
-      : `Send ${awaiting} open thread${awaiting === 1 ? '' : 's'} to the agent`
+  const title = connecting
+    ? `Connecting to ${snapshot.data?.harness ?? 'the agent'}…`
+    : !available
+      ? `${snapshot.data?.harness ?? 'agent'} not available — set DOMAIN_STUDIO_HARNESS or install the CLI`
+      : awaiting === 0
+        ? 'No open threads awaiting a reply yet'
+        : `Send ${awaiting} open thread${awaiting === 1 ? '' : 's'} to the agent`
 
   return (
     <Button size="sm" onClick={submit} disabled={disabled} title={title}>
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Submit to
-      agent
+      {busy || connecting ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Send className="h-4 w-4" />
+      )}{' '}
+      Submit to agent
       {awaiting > 0 && (
         <span className="rounded-full bg-primary-foreground/20 px-1.5 text-[10px] font-semibold">
           {awaiting}
