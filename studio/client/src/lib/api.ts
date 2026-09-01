@@ -4,6 +4,8 @@ import type {
   AgentSystemPromptInfo,
   AgentSessionInfo,
   AnchorRef,
+  ChatInfo,
+  ChatList,
   Comment,
   CommentStore,
   DocMeta,
@@ -16,7 +18,9 @@ import type {
   HarnessGatewayConfig,
   HarnessGatewayState,
   HarnessLoadout,
+  HarnessModelCatalog,
   HarnessStatus,
+  HarnessSwitchResult,
   InstancesState,
   StudioSettings,
   LayoutState,
@@ -50,6 +54,11 @@ const post = <T>(p: string, body: unknown) =>
 
 const d = (id: string) => `/api/domain/${encodeURIComponent(id)}`
 
+/** `?chat=<id>`, or nothing at all when the active tab is meant. */
+function chatQuery(chatId?: string): string {
+  return chatId ? `?chat=${encodeURIComponent(chatId)}` : ''
+}
+
 export const api = {
   workspace: () => get<DomainSummary[]>('/api/workspace'),
   createDomain: (name: string) =>
@@ -72,7 +81,7 @@ export const api = {
   closeViewSession: (id: string, sessionId: string) =>
     post<{ ok: true }>(`${d(id)}/views/sessions/close`, { sessionId }),
   updates: (id: string) => get<StaleReport>(`${d(id)}/updates`),
-  applyUpdate: (id: string) => post<{ ok: boolean; output: string }>(`${d(id)}/updates/apply`, {}),
+  applyUpdate: (id: string) => post<{ ok: boolean; error: string }>(`${d(id)}/updates/apply`, {}),
 
   comments: (id: string) => get<CommentStore>(`${d(id)}/comments`),
   createComment: (
@@ -104,22 +113,65 @@ export const api = {
   updateSettings: (id: string, settings: Partial<StudioSettings>) =>
     post<StudioSettings>(`${d(id)}/settings`, { action: 'update', settings }),
 
-  agentSnapshot: (id: string) => get<AgentRunSnapshot>(`${d(id)}/agent`),
-  /** every terminal turn this domain kept, oldest first — the chat transcript */
-  agentHistory: (id: string) => get<AgentRun[]>(`${d(id)}/agent/history`),
-  agentSubmit: (id: string, message?: string) =>
-    post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, message ? { message } : {}),
+  // Every conversation call names its chat tab; omitting it means the active one.
+  agentSnapshot: (id: string, chatId?: string) =>
+    get<AgentRunSnapshot>(`${d(id)}/agent${chatQuery(chatId)}`),
+  /** every terminal turn one chat kept, oldest first — its transcript */
+  agentHistory: (id: string, chatId?: string) =>
+    get<AgentRun[]>(`${d(id)}/agent/history${chatQuery(chatId)}`),
+  agentSubmit: (id: string, message?: string, chatId?: string) =>
+    post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, {
+      ...(message ? { message } : {}),
+      ...(chatId ? { chatId } : {}),
+    }),
   // seamless continue after an interruption — resumes the live session with a bare nudge (no re-briefing)
-  agentResume: (id: string) =>
-    post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, { resume: true }),
-  agentCancel: (id: string) => post<{ ok: boolean }>(`${d(id)}/agent/cancel`, {}),
-  agentSession: (id: string) => get<AgentSessionInfo>(`${d(id)}/agent/session`),
-  setAgentSession: (id: string, harness: string, sessionId: string) =>
-    post<AgentSessionInfo>(`${d(id)}/agent/session`, { harness, sessionId }),
+  agentResume: (id: string, chatId?: string) =>
+    post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, {
+      resume: true,
+      ...(chatId ? { chatId } : {}),
+    }),
+  agentCancel: (id: string, chatId?: string) =>
+    post<{ ok: boolean }>(`${d(id)}/agent/cancel`, chatId ? { chatId } : {}),
+  agentSession: (id: string, chatId?: string) =>
+    get<AgentSessionInfo>(`${d(id)}/agent/session${chatQuery(chatId)}`),
+  setAgentSession: (id: string, harness: string, sessionId: string, chatId?: string) =>
+    post<AgentSessionInfo>(`${d(id)}/agent/session`, {
+      harness,
+      sessionId,
+      ...(chatId ? { chatId } : {}),
+    }),
   agentSystemPrompt: (id: string) => get<AgentSystemPromptInfo>(`${d(id)}/agent/prompt/system`),
+
+  chats: (id: string) => get<ChatList>(`${d(id)}/agent/chats`),
+  openChat: (id: string, harness?: string) =>
+    post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'open', ...(harness ? { harness } : {}) }),
+  selectChat: (id: string, chatId: string) =>
+    post<ChatList>(`${d(id)}/agent/chats`, { action: 'select', chatId }),
+  closeChat: (id: string, chatId: string) =>
+    post<ChatList>(`${d(id)}/agent/chats`, { action: 'close', chatId }),
+  updateChat: (id: string, chatId: string, patch: { title?: string; model?: string }) =>
+    post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'update', chatId, ...patch }),
+  /** fork this chat onto the other agent, carrying a summary of it */
+  switchChatHarness: (id: string, chatId: string, harness: string, model?: string) =>
+    post<ChatInfo>(`${d(id)}/agent/chats`, {
+      action: 'switch-harness',
+      chatId,
+      harness,
+      ...(model ? { model } : {}),
+    }),
+  /** drop an unsent fork summary — delivered conversation context is immutable */
+  forgetChatOrigin: (id: string, chatId: string) =>
+    post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'forget-origin', chatId }),
+
   harness: (id: string) => get<HarnessStatus>(`${d(id)}/agent/harness`),
-  selectHarness: (id: string, harness: string) =>
-    post<HarnessStatus>(`${d(id)}/agent/harness`, { id: harness }),
+  /** every harness's selectable models — what the composer's picker offers */
+  models: (id: string) => get<HarnessModelCatalog[]>(`${d(id)}/agent/models`),
+  /** picks the default agent for NEW chats, and forks the active tab if it differs */
+  selectHarness: (id: string, harness: string, chatId?: string) =>
+    post<HarnessSwitchResult>(`${d(id)}/agent/harness`, {
+      id: harness,
+      ...(chatId ? { chatId } : {}),
+    }),
   harnessGateway: (id: string) => get<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`),
   setHarnessGateway: (id: string, scope: 'domain' | 'global', config: HarnessGatewayConfig) =>
     post<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`, { action: 'set', scope, config }),
@@ -129,13 +181,14 @@ export const api = {
   // auth mode. Called by the Astrale GUI glue when the studio runs as an iframe.
   pushHostToken: (id: string, token: string) =>
     post<{ ok: boolean }>(`${d(id)}/agent/harness-gateway/host-token`, { token }),
-  loadout: (id: string, refresh = false) =>
-    get<HarnessLoadout>(`${d(id)}/agent/loadout${refresh ? '?refresh=1' : ''}`),
-  usage: (id: string) => get<DomainUsage>(`${d(id)}/agent/usage`),
-  skillContent: (id: string, command: string) =>
-    get<{ command: string; content: string; path: string }>(
-      `${d(id)}/agent/skill?command=${encodeURIComponent(command)}`,
+  loadout: (id: string, refresh = false, chatId?: string) =>
+    get<HarnessLoadout>(
+      `${d(id)}/agent/loadout?${new URLSearchParams({
+        ...(refresh ? { refresh: '1' } : {}),
+        ...(chatId ? { chat: chatId } : {}),
+      })}`,
     ),
+  usage: (id: string) => get<DomainUsage>(`${d(id)}/agent/usage`),
 
   env: (id: string, env: EnvName) => get<EnvFileModel>(`${d(id)}/env?env=${env}`),
   setEnv: (id: string, env: EnvName, updates: Record<string, string | null>) =>
@@ -182,14 +235,21 @@ export const qk = {
   layout: (id: string) => ['layout', id] as const,
   visibility: (id: string) => ['visibility', id] as const,
   documents: (id: string) => ['documents', id] as const,
-  agent: (id: string) => ['agent', id] as const,
-  agentHistory: (id: string) => ['agent-history', id] as const,
-  agentSession: (id: string) => ['agent-session', id] as const,
+  // Chat-scoped keys nest under the domain, so invalidating `['agent', id]`
+  // still refreshes every open tab of that domain.
+  agent: (id: string, chatId?: string) =>
+    chatId ? (['agent', id, chatId] as const) : (['agent', id] as const),
+  agentHistory: (id: string, chatId?: string) =>
+    chatId ? (['agent-history', id, chatId] as const) : (['agent-history', id] as const),
+  agentSession: (id: string, chatId?: string) =>
+    chatId ? (['agent-session', id, chatId] as const) : (['agent-session', id] as const),
   agentSystemPrompt: (id: string) => ['agent-system-prompt', id] as const,
+  chats: (id: string) => ['chats', id] as const,
+  models: (id: string) => ['agent-models', id] as const,
   harness: (id: string) => ['harness', id] as const,
   harnessGateway: (id: string) => ['harness-gateway', id] as const,
-  loadout: (id: string) => ['loadout', id] as const,
+  loadout: (id: string, chatId?: string) =>
+    chatId ? (['loadout', id, chatId] as const) : (['loadout', id] as const),
   usage: (id: string) => ['usage', id] as const,
-  skillContent: (id: string, command: string) => ['skill-content', id, command] as const,
   env: (id: string, env: string) => ['env', id, env] as const,
 }

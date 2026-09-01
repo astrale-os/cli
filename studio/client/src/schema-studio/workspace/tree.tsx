@@ -65,7 +65,7 @@ export function WorkspaceModuleTree({
   }
 
   return (
-    <div className="py-2" data-testid="workspace-module-tree">
+    <div data-testid="workspace-module-tree">
       {domains.map((domain) => {
         const domainId = domain.input.summary.id
         const active = activeDomainId === domainId

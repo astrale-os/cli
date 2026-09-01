@@ -37,6 +37,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const setFocus = useUI((state) => state.setFocus)
   const panelOverlay = useUI((state) => state.panelOverlay)
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
+  const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const collapsedModules = useSchemaWorkspace((state) => state.collapsedModules)
   const { domains: prepared, ready: preparationReady } = usePreparedWorkspaceDomains(
     inputs,
@@ -74,9 +75,17 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   )
 
   const toggleHidden = useCallback(
-    (domainId: string, ref: string) =>
-      updateVisibility(domainId, (current) => toggleVisibilityRef(current, ref)),
-    [updateVisibility],
+    (domainId: string, ref: string) => {
+      // Un-hiding has to land somewhere the reader can see. The canvas culls what sits
+      // off-screen, and an imported domain's frame is placed past the last domain box —
+      // so restoring one from the panel otherwise looks like the eye did nothing at all.
+      const wasHidden =
+        inputs.find((candidate) => candidate.summary.id === domainId)?.visibility.hidden[ref] ===
+        true
+      updateVisibility(domainId, (current) => toggleVisibilityRef(current, ref))
+      if (wasHidden) revealOnCanvas(ref)
+    },
+    [inputs, revealOnCanvas, updateVisibility],
   )
 
   const toggleInherited = useCallback(() => {

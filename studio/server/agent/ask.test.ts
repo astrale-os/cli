@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { registerDomain, unregisterDomain } from '../domain'
 import { updateSettings } from '../state/settings'
 import { runAsk } from './ask'
-import { saveConversation } from './conversation'
+import { activeChat, createChat, recordChatTurn, setActiveChat } from './chats'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -30,7 +30,7 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('Ask uses the active harness model and matching per-harness conversation', async () => {
+test('Ask uses the active chat model and forks the session of that chat alone', async () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-ask-model-'))
   roots.push(root)
   mkdirSync(join(root, 'schema'))
@@ -55,16 +55,12 @@ export default defineApplication({ schema: Test, runtime: {} as never })
       claude: 'claude-other-model',
     },
   })
-  saveConversation(root, 'mock', {
-    sessionId: 'mock-parent-session',
-    turns: 2,
-    updatedAt: 'now',
-  })
-  saveConversation(root, 'claude', {
-    sessionId: 'claude-other-session',
-    turns: 4,
-    updatedAt: 'now',
-  })
+  const chat = activeChat(root, 'mock')
+  recordChatTurn(root, chat.id, { sessionId: 'mock-parent-session', turns: 2 })
+  // A second tab on another agent must not lend Ask its session id.
+  const other = createChat(root, { harness: 'claude' })
+  recordChatTurn(root, other.id, { sessionId: 'claude-other-session', turns: 4 })
+  setActiveChat(root, chat.id)
 
   const deltas: string[] = []
   const result = await runAsk(

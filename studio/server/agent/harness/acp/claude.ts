@@ -9,42 +9,57 @@ import type {
   HarnessLoadoutOptions,
 } from '../adapter'
 
-import { ClaudeCodeHarness } from '../claude/adapter'
-import { CLAUDE_CAPABILITIES } from '../claude/capabilities'
 import { runAcpAsk, runAcpTurn } from './client'
 import { acpAgentCommand } from './command'
+import { probeAcpHealth, probeAcpLoadout } from './probe'
 
 const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CLAUDE_BIN || 'claude'
 
-/** Active Claude Code harness. The legacy stream-json adapter remains in ../claude. */
+/** Claude Code harness backed exclusively by its bundled ACP agent server. */
 export class AcpClaudeHarness implements AgentHarness {
   id = 'claude'
-  label = 'Claude Code (local)'
-  capabilities = CLAUDE_CAPABILITIES
+  label = 'Claude Code'
+  defaultModel = 'opus[1m]'
+  capabilities = {
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'],
+    accessLevels: ['workspace', 'full'],
+    ask: true,
+    loadout: true,
+    gateway: 'anthropic',
+  } as const
 
-  private readonly legacy: ClaudeCodeHarness
+  private healthCache?: { at: number; health: HarnessHealth }
+  private loadoutCache?: { at: number; key: string; data: HarnessLoadout }
 
   constructor(
     private readonly bin = DEFAULT_BIN,
     private readonly command?: string[],
-  ) {
-    this.legacy = new ClaudeCodeHarness(bin)
+  ) {}
+
+  private acpOptions() {
+    return {
+      provider: 'claude' as const,
+      bin: this.bin,
+      command: this.command ?? acpAgentCommand('claude'),
+    }
   }
 
-  health(signal?: AbortSignal): Promise<HarnessHealth> {
-    return this.legacy.health(signal)
+  async health(signal?: AbortSignal): Promise<HarnessHealth> {
+    const now = Date.now()
+    if (this.healthCache && now - this.healthCache.at < 30_000) return this.healthCache.health
+    const health = await probeAcpHealth(this.acpOptions(), signal)
+    if (!signal?.aborted) this.healthCache = { at: now, health }
+    return health
   }
 
-  isAvailable(signal?: AbortSignal): Promise<boolean> {
-    return this.legacy.isAvailable(signal)
+  async isAvailable(signal?: AbortSignal): Promise<boolean> {
+    return (await this.health(signal)).ok
   }
 
   run(input: AgentTurnInput): Promise<AgentTurnResult> {
     return runAcpTurn(
       {
-        provider: 'claude',
-        bin: this.bin,
-        command: this.command ?? acpAgentCommand('claude'),
+        ...this.acpOptions(),
       },
       input,
     )
@@ -53,22 +68,24 @@ export class AcpClaudeHarness implements AgentHarness {
   ask(input: AskInput): Promise<AskResult> {
     return runAcpAsk(
       {
-        provider: 'claude',
-        bin: this.bin,
-        command: this.command ?? acpAgentCommand('claude'),
+        ...this.acpOptions(),
       },
       input,
     )
   }
 
-  loadout(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout> {
-    return this.legacy.loadout(root, options)
-  }
-
-  skillContent(
-    root: string,
-    command: string,
-  ): Promise<{ command: string; content: string; path: string } | null> {
-    return this.legacy.skillContent(root, command)
+  async loadout(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout> {
+    const now = Date.now()
+    const key = `${root}\u0000${options?.model ?? ''}\u0000${JSON.stringify(options?.env ?? {})}`
+    if (
+      !options?.refresh &&
+      this.loadoutCache &&
+      this.loadoutCache.key === key &&
+      now - this.loadoutCache.at < 60_000
+    )
+      return this.loadoutCache.data
+    const data = await probeAcpLoadout(this.acpOptions(), root, options)
+    if (!options?.signal?.aborted) this.loadoutCache = { at: now, key, data }
+    return data
   }
 }

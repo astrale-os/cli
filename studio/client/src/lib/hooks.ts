@@ -52,10 +52,10 @@ export function useUpdates(id?: string) {
   })
 }
 
-export function useAgentSession(id?: string) {
+export function useAgentSession(id?: string, chatId?: string) {
   return useQuery({
-    queryKey: qk.agentSession(id ?? ''),
-    queryFn: () => api.agentSession(id!),
+    queryKey: qk.agentSession(id ?? '', chatId),
+    queryFn: () => api.agentSession(id!, chatId),
     enabled: !!id,
   })
 }
@@ -83,25 +83,17 @@ export function useHarnessGateway(id?: string) {
     enabled: !!id,
   })
 }
-export function useLoadout(id?: string) {
-  // Probes the selected local harness — keep it lazy and cached for a while.
+export function useLoadout(id?: string, chatId?: string) {
+  // Probes the chat's own local harness — keep it lazy and cached for a while.
   return useQuery({
-    queryKey: qk.loadout(id ?? ''),
-    queryFn: () => api.loadout(id!),
+    queryKey: qk.loadout(id ?? '', chatId),
+    queryFn: () => api.loadout(id!, false, chatId),
     enabled: !!id,
     staleTime: 60_000,
   })
 }
 export function useUsage(id?: string) {
   return useQuery({ queryKey: qk.usage(id ?? ''), queryFn: () => api.usage(id!), enabled: !!id })
-}
-export function useSkillContent(id?: string, command?: string) {
-  return useQuery({
-    queryKey: qk.skillContent(id ?? '', command ?? ''),
-    queryFn: () => api.skillContent(id!, command!),
-    enabled: !!id && !!command,
-    staleTime: 300_000,
-  })
 }
 export function useEnv(id?: string, env: EnvName = 'dev', enabled = true) {
   // refetches on any domain SSE (env.ts edits invalidate 'env') — see useInvalidateDomain

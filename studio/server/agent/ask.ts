@@ -13,8 +13,9 @@ import type { DomainHandle } from '../domain'
 import type { AskResult } from './harness/adapter'
 
 import { getBundle } from '../cache'
-import { readConversation } from './conversation'
-import { resolveHarnessConfiguration } from './harness/selection'
+import { resolveChat } from './chats'
+import { getHarnessById } from './harness/registry'
+import { getHarness, resolveHarnessConfiguration } from './harness/selection'
 import { buildAskPrompt, buildAskSystemPrompt } from './prompts/ask'
 import { studioSessionId } from './telemetry'
 
@@ -22,6 +23,8 @@ export interface AskRequest {
   anchor?: AnchorRef
   excerpt?: string
   question: string
+  /** the tab whose conversation to fork; absent ⇒ the one the user is looking at */
+  chatId?: string
 }
 
 export async function runAsk(
@@ -32,7 +35,13 @@ export async function runAsk(
 ): Promise<AskResult> {
   const question = String(body?.question ?? '').trim()
   if (!question) return { text: '', isError: true, errorMessage: 'question is required' }
-  const resolved = await resolveHarnessConfiguration(handle.root)
+  // The fork belongs to ONE chat: its harness, its model, its session id.
+  const chat = resolveChat(handle.root, getHarness(handle.root).id, body.chatId)
+  const resolved = await resolveHarnessConfiguration(
+    handle.root,
+    chat ? getHarnessById(chat.harness) : undefined,
+    chat?.model,
+  )
   if (!resolved.ok)
     return {
       text: '',
@@ -60,7 +69,7 @@ export async function runAsk(
     root: handle.root,
     prompt,
     appendSystemPrompt: buildAskSystemPrompt(),
-    sessionId: readConversation(handle.root, harness.id).sessionId,
+    ...(chat?.sessionId ? { sessionId: chat.sessionId } : {}),
     model,
     effort,
     access: resolved.configuration.settings.agentAccess,

@@ -10,6 +10,7 @@ import type {
 } from '../../../shared/types'
 import type { DomainHandle } from '../../domain'
 import type { Bridge } from '../bridge/grant'
+import type { StoredChat } from '../chats'
 import type { AgentHarness } from '../harness/adapter'
 
 import { getBundle } from '../../cache'
@@ -18,11 +19,13 @@ import { readComments } from '../../state/comments'
 import { readContext } from '../../state/context'
 import { listDocuments } from '../../state/documents'
 import { startBridge } from '../bridge/grant'
-import { readConversation } from '../conversation'
-import { getHarness, resolveHarnessConfiguration } from '../harness/selection'
+import { pendingHandoff } from '../chats'
+import { getHarnessById } from '../harness/registry'
+import { resolveHarnessConfiguration } from '../harness/selection'
 import { buildSystemPrompt } from '../prompts/system'
 import { buildResumePrompt, buildTurnPrompt } from '../prompts/turn'
 import { studioSessionId } from '../telemetry'
+import { handoffPreamble } from '../transfer'
 
 export interface SubmitOpts {
   message?: string
@@ -32,9 +35,9 @@ export interface SubmitOpts {
 export interface PreparedRun {
   domainId: string
   root: string
+  chat: StoredChat
   harness: AgentHarness
   settings: StudioSettings
-  session: ReturnType<typeof readConversation>
   resume?: string
   renderFingerprint: string
   model?: string
@@ -53,22 +56,24 @@ function awaitingThreads(root: string): Comment[] {
   )
 }
 
-/** Gather and freeze every input required to start one agent run. */
+/** Gather and freeze every input required to start one agent run in one chat. */
 export async function prepareRun(
   handle: DomainHandle,
+  chat: StoredChat,
   notify: (event: StudioEvent) => void,
   controller: AbortController,
   options?: SubmitOpts,
 ): Promise<PreparationResult> {
   const domainId = handle.id
   const root = handle.root
-  const harness = getHarness(root)
+  // The chat owns its harness for life, so the domain's current selection is
+  // irrelevant here: a Claude tab keeps running Claude after the user picks Codex.
+  const harness = getHarnessById(chat.harness)
   const available = await harness.isAvailable(controller.signal)
   if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
   if (!available) return { error: `${harness.label} is not available on this machine` }
 
-  const session = readConversation(root, harness.id)
-  const resume = session.sessionId
+  const resume = chat.sessionId
   const bareResume = options?.resume === true && !!resume
   const awaiting = awaitingThreads(root)
   const message = (options?.message ?? '').trim()
@@ -83,17 +88,23 @@ export async function prepareRun(
   const renderFingerprint = bundle?.renderFingerprint ?? ''
   const context = readContext(root)
   const documents = listDocuments(root)
-  const configuration = await resolveHarnessConfiguration(root, harness)
+  const configuration = await resolveHarnessConfiguration(root, harness, chat.model)
   if (!configuration.ok) return { error: `model gateway auth failed — ${configuration.error}` }
   const { settings, model, effort, env } = configuration.configuration
   if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
 
   const harnessEnv = { ...env, ASTRALE_SESSION: studioSessionId(domainId) }
   const bridge = startBridge(handle, notify)
+  // A forked tab opens on the summary of the conversation it came from — once,
+  // on the turn that actually starts its own session. The summary itself stays
+  // on the chat afterwards; only its delivery is one-shot.
+  const owed = pendingHandoff(chat)
+  const handoff = owed ? handoffPreamble(owed) : ''
   const makeTurn = (firstTurn: boolean) =>
     bareResume && !firstTurn
       ? buildResumePrompt()
-      : buildTurnPrompt({
+      : (firstTurn ? handoff : '') +
+        buildTurnPrompt({
           origin: bundle?.ir?.domain ?? handle.origin ?? domainId,
           root,
           renderFingerprint,
@@ -126,6 +137,7 @@ export async function prepareRun(
   const run: AgentRun = {
     id: randomUUID(),
     domainId,
+    chatId: chat.id,
     harness: harness.id,
     status: 'running',
     createdAt: new Date().toISOString(),
@@ -148,9 +160,9 @@ export async function prepareRun(
     prepared: {
       domainId,
       root,
+      chat,
       harness,
       settings,
-      session,
       resume,
       renderFingerprint,
       model,

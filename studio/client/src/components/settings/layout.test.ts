@@ -80,7 +80,6 @@ test('leaf settings controls do not depend on composition', () => {
     'gateway-fields.tsx',
     'gateway-validation.ts',
     'hint.tsx',
-    'skills.tsx',
   ])
   const forbidden = new Set(['agent.tsx', 'dialog.tsx', 'gateway.tsx', 'loadout.tsx'])
   const violations = sourceFiles().flatMap((file) => {

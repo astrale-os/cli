@@ -106,18 +106,67 @@ async function ensureBun(): Promise<void> {
   )
 }
 
-/** Poll a URL until it answers (any HTTP response = up) or the deadline passes. */
-async function waitForHttp(url: string, timeoutMs = 20_000): Promise<boolean> {
+/**
+ * Poll a URL until it answers (any HTTP response = up), the deadline passes, or
+ * `abort` fires. Aborting must also clear the pending retry timer: a live timer
+ * keeps the event loop — and therefore the whole CLI — alive long after we
+ * stopped caring about the answer.
+ */
+export async function waitForHttp(
+  url: string,
+  timeoutMs = 20_000,
+  abort?: AbortSignal,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
+  while (Date.now() < deadline && abort?.aborted !== true) {
     try {
       await fetch(url, { signal: AbortSignal.timeout(1000) })
       return true
     } catch {
-      await new Promise((r) => setTimeout(r, 150))
+      await delay(150, abort)
     }
   }
   return false
+}
+
+/** Sleep, but drop the timer the moment `abort` fires so it holds nothing open. */
+function delay(ms: number, abort?: AbortSignal): Promise<void> {
+  if (abort?.aborted === true) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      abort?.removeEventListener('abort', done)
+      resolve()
+    }
+    const timer = setTimeout(done, ms)
+    abort?.addEventListener('abort', done, { once: true })
+  })
+}
+
+export type StudioReadiness = 'ready' | 'exited' | 'timeout'
+
+/**
+ * Wait for the studio to answer, but stop the moment the server process ends.
+ *
+ * The server exits on its own when it has nothing to serve — a workspace with no
+ * domain, for one: it prints why and returns non-zero. Probing on regardless
+ * would hold the terminal for the whole indexing budget waiting on a port nobody
+ * is listening to, long after the reason was on screen. The probe is cancelled
+ * on the way out so no retry timer outlives this call.
+ */
+export async function awaitStudioReadiness(
+  probe: (abort: AbortSignal) => Promise<boolean>,
+  serverDone: Promise<unknown>,
+): Promise<StudioReadiness> {
+  const stop = new AbortController()
+  try {
+    return await Promise.race([
+      probe(stop.signal).then((up): StudioReadiness => (up ? 'ready' : 'timeout')),
+      serverDone.then((): StudioReadiness => 'exited'),
+    ])
+  } finally {
+    stop.abort()
+  }
 }
 
 function openBrowser(url: string): void {
@@ -412,8 +461,27 @@ Examples:
       // Indexing a multi-domain workspace is genuinely slow (the server boots +
       // introspects every domain before it answers), so be patient — `waitForHttp`
       // returns the instant the server is up, and only hits this ceiling in a
-      // pathological case. We open the browser once it actually answers.
-      const ready = await waitForHttp(probeUrl, 180_000)
+      // pathological case. A server that gives up first (no domain found, a lost
+      // port) ends the wait right there instead: it already told the user why, and
+      // the terminal is theirs again immediately. We open the browser once it
+      // actually answers.
+      const readiness = await awaitStudioReadiness(
+        (abort) => waitForHttp(probeUrl, 180_000, abort),
+        serverDone,
+      )
+      if (readiness === 'exited') {
+        const code = await serverDone
+        // A user Ctrl-C mid-indexing is not a failure — carry the server's own
+        // signal code out. Anything else stopped on its own and must be fatal.
+        if (!failed) {
+          process.exitCode = code
+          return
+        }
+        throw new Error(
+          `the Domain Studio server stopped before it was ready (exit ${code}) — see its output above.`,
+        )
+      }
+      const ready = readiness === 'ready'
       if (isMachine(opts)) {
         output({ url: displayUrl, port: studioPort, mode: dev ? 'dev' : 'prod', workspace }, opts)
       } else {

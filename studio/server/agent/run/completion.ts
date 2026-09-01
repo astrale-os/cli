@@ -4,7 +4,7 @@ import type { AgentEvent, StudioEvent } from '../../../shared/types'
 import type { PreparedRun } from './preparation'
 
 import { mergeReply } from '../../state/comments'
-import { clearConversation, saveConversation } from '../conversation'
+import { chatExists, clearChatSession, recordChatTurn } from '../chats'
 import { emitStudioEvent } from '../notify'
 import { releaseController } from './live-state'
 import { persistRun } from './transcript'
@@ -27,9 +27,9 @@ export async function completeRun(
   const {
     domainId,
     root,
+    chat,
     harness,
     settings,
-    session,
     resume,
     renderFingerprint,
     model,
@@ -52,7 +52,13 @@ export async function completeRun(
       text,
     }
     run.events.push(stored)
-    emitStudioEvent(notify, { type: 'agent-event', domainId, runId: run.id, event: stored })
+    emitStudioEvent(notify, {
+      type: 'agent-event',
+      domainId,
+      chatId: chat.id,
+      runId: run.id,
+      event: stored,
+    })
   }
 
   let bridgeReplies = 0
@@ -69,7 +75,7 @@ export async function completeRun(
     const runTurn = (sessionId: string | undefined, firstTurn: boolean) => {
       const prompt = promptSnapshot(sessionId, firstTurn)
       run.prompt = prompt
-      emitStudioEvent(notify, { type: 'agent-run', domainId, run })
+      emitStudioEvent(notify, { type: 'agent-run', domainId, chatId: chat.id, run })
       return harness.run({
         root,
         prompt: prompt.turnPrompt,
@@ -88,9 +94,9 @@ export async function completeRun(
     const resumeEventStart = run.events.length
     const resumeBridgeReplies = bridgeReplies
     let result = await runTurn(resume, !resume)
-    let conversationTurns = resume ? (session.turns ?? 0) : 0
+    let conversationTurns = resume ? chat.turns : 0
     if (resume && result.resumeRejected && !controller.signal.aborted) {
-      clearConversation(root, harness.id)
+      clearChatSession(root, chat.id)
       conversationTurns = 0
       run.sessionId = undefined
       run.resumed = false
@@ -171,23 +177,26 @@ export async function completeRun(
       run.error = replyError
     } else run.status = 'succeeded'
 
-    if (run.status === 'succeeded' && result.sessionId)
-      saveConversation(root, harness.id, {
+    if (run.status === 'succeeded' && result.sessionId) {
+      recordChatTurn(root, chat.id, {
         sessionId: result.sessionId,
         turns: conversationTurns + 1,
-        updatedAt: new Date().toISOString(),
       })
+    }
   } catch (error: any) {
     run.status = controller.signal.aborted ? 'canceled' : 'failed'
     run.error = String(error?.message ?? error)
     pushEvent({ kind: 'error', text: run.error })
   } finally {
     run.finishedAt = new Date().toISOString()
-    releaseController(domainId, controller)
+    releaseController(chat.id, controller)
     bridge.dispose()
+    // The spend happened whatever the user did with the tab meanwhile.
     recordRun(root, run)
-    persistRun(root, run, true)
-    emitStudioEvent(notify, { type: 'agent-run', domainId, run })
+    // The transcript did not: a turn settling after its tab was closed would
+    // otherwise recreate the files `closeChat` just removed.
+    if (chatExists(root, chat.id)) persistRun(root, run, true)
+    emitStudioEvent(notify, { type: 'agent-run', domainId, chatId: chat.id, run })
     emitStudioEvent(notify, { type: 'comments', domainId })
   }
 }

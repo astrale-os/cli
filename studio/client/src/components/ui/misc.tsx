@@ -18,9 +18,11 @@ export const ScrollArea = React.forwardRef<
     <ScrollAreaPrimitive.Viewport className="h-full w-full rounded-[inherit]">
       {children}
     </ScrollAreaPrimitive.Viewport>
+    {/* The gutter sits entirely on the left so the thumb rides flush against the panel's
+        right border, while the track stays a comfortable click target. */}
     <ScrollAreaPrimitive.Scrollbar
       orientation="vertical"
-      className="flex touch-none select-none transition-colors p-0.5 w-2.5"
+      className="flex w-2.5 touch-none select-none py-0.5 pl-1 transition-colors"
     >
       <ScrollAreaPrimitive.Thumb className="relative flex-1 rounded-full bg-border" />
     </ScrollAreaPrimitive.Scrollbar>

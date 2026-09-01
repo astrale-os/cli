@@ -131,7 +131,7 @@ export function HarnessGatewaySettings({
             />
             <GatewayTextField
               label="Model label"
-              hint="ANTHROPIC_MODEL — shown in the loadout and sent as the request `model`. Cosmetic: an Astrale gateway pins the real model by URL, so this is just a name (e.g. glm-5.2)."
+              hint="ANTHROPIC_MODEL — shown in ACP diagnostics and sent as the request `model`. Cosmetic: an Astrale gateway pins the real model by URL, so this is just a name (e.g. glm-5.2)."
               value={model}
               onChange={setModel}
               placeholder="glm-5.2 (optional)"

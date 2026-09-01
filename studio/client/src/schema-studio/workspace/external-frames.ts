@@ -41,8 +41,21 @@ const EXTERNAL_MEMBER_HEIGHT = 52
 const EXTERNAL_FOOTER_HEIGHT = 12
 const EXTERNAL_VERTICAL_GAP = 40
 
+const EXTERNAL_NODE_PREFIX = 'workspace-external:'
+
 export const workspaceExternalNodeId = (origin: string) =>
-  `workspace-external:${encodeURIComponent(origin)}`
+  `${EXTERNAL_NODE_PREFIX}${encodeURIComponent(origin)}`
+
+/**
+ * The origin an external frame stands for, or null for anything else on the canvas — a
+ * member card included, whose id is `workspace-external-member:…` and does not carry the
+ * frame prefix. The origin IS an external frame's whole record, so this is what a drag
+ * writes its new position under.
+ */
+export function workspaceExternalOrigin(nodeId: string): string | null {
+  if (!nodeId.startsWith(EXTERNAL_NODE_PREFIX)) return null
+  return decodeURIComponent(nodeId.slice(EXTERNAL_NODE_PREFIX.length))
+}
 
 export const workspaceExternalMemberNodeId = (
   origin: string,
@@ -140,7 +153,10 @@ export function projectExternalFrames(
       id: domainId,
       type: 'extDomain',
       position: frame.position,
-      draggable: false,
+      // Furniture you move, exactly like a domain frame: grab it anywhere and drag it, and
+      // its position is remembered under its origin. Not SELECTABLE, for the same reason a
+      // domain frame is not — it is a place, not a thing you open.
+      draggable: true,
       selectable: false,
       data: {
         name: entry?.name ?? frame.origin.split('.')[0],
@@ -155,11 +171,24 @@ export function projectExternalFrames(
         id: workspaceExternalMemberNodeId(frame.origin, member.name, member.definition),
         type: 'extMember',
         parentId: domainId,
-        extent: 'parent',
+        // A member rides with its frame. Unlike a class, it is not ours to place: the frame
+        // is a fixed list whose height is that list's length, so a moved member would have
+        // nowhere to be persisted and would snap back on the next projection. It is
+        // therefore TRANSPARENT to the pointer — React Flow gives every node `pointer-events:
+        // all` (the canvas has an `onNodeClick`), and a card that swallows the press would
+        // leave a dead zone in the middle of the very block the reader is trying to drag.
+        //
+        // And for the same reason it carries no `extent: 'parent'`, natural as that would
+        // look on a card that lives inside a box: there is no drag to bound. It was not
+        // free, either — React Flow re-resolves an extent against a parent it has not
+        // measured yet, so on the first frame after every repaint it painted the member at
+        // its frame's own origin, dropping the offset below. One visible flash per drop,
+        // and the only node on the canvas that had one.
         draggable: false,
+        selectable: false,
         position: { x: 12, y: 42 + index * EXTERNAL_MEMBER_HEIGHT },
         data: { name: member.name, kind, definition: member.definition },
-        style: { width: 192, height: 44 },
+        style: { width: 192, height: 44, pointerEvents: 'none' },
       })
     })
   }

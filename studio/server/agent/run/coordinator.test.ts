@@ -17,10 +17,23 @@ import type { AgentRun } from '../../../shared/types'
 import { registerDomain, unregisterDomain, type DomainHandle } from '../../domain'
 import { readComments, upsertComment } from '../../state/comments'
 import { updateSettings } from '../../state/settings'
+import { listState, stateExists } from '../../state/store'
 import { handleBridge } from '../bridge/routes'
-import { readConversation, saveConversation } from '../conversation'
+import { activeChat, recordChatTurn, resolveChat } from '../chats'
 import { setHarnessGateway } from '../harness/gateway/config'
-import { cancelRun, getSnapshot, isRunning, setSessionId, submitRun } from './coordinator'
+import {
+  cancelRun,
+  closeChat,
+  forgetChatOrigin,
+  getSnapshot,
+  listChats,
+  openChat,
+  setSessionId,
+  submitRun,
+  switchChatHarness,
+} from './coordinator'
+import { isRunActive } from './live-state'
+import { persistRun, readRunHistory } from './transcript'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -70,13 +83,32 @@ function bridgeFiles(root: string): string[] {
   return readdirSync(dir).filter((file) => file.startsWith('bridge-'))
 }
 
-async function waitForTerminal(domainId: string): Promise<AgentRun> {
+async function waitForTerminal(domainId: string, chatId?: string): Promise<AgentRun> {
   for (let i = 0; i < 200; i++) {
-    const run = (await getSnapshot(domainId)).run
+    const run = (await getSnapshot(domainId, chatId)).run
     if (run && !['queued', 'running'].includes(run.status)) return run
     await Bun.sleep(25)
   }
   throw new Error(`timed out waiting for ${domainId}`)
+}
+
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: string }): T {
+  if (!result.ok) throw new Error(result.error)
+  return result.value
+}
+
+/** The tab every submit in these tests lands in. */
+function chatId(handle: DomainHandle): string {
+  return listChats(handle.id).activeId
+}
+
+function conversation(handle: DomainHandle): { sessionId?: string; turns: number } {
+  const chat = activeChat(handle.root, 'mock')
+  return { ...(chat.sessionId ? { sessionId: chat.sessionId } : {}), turns: chat.turns }
+}
+
+function seedConversation(handle: DomainHandle, sessionId: string, turns: number): void {
+  recordChatTurn(handle.root, chatId(handle), { sessionId, turns })
 }
 
 function useMock(mode = 'normal', delay = '0'): void {
@@ -104,19 +136,19 @@ describe.serial('agent runner invariants', () => {
     const handle = fixture()
 
     const first = submitRun(handle, () => {}, { message: 'first' })
-    expect(isRunning(handle.id)).toBe(true)
-    expect(setSessionId(handle.id, 'hijack')).toBe(false)
+    expect(isRunActive(chatId(handle))).toBe(true)
+    expect(setSessionId(handle.id, undefined, 'hijack')).toMatchObject({ ok: false })
 
     const second = await submitRun(handle, () => {}, { message: 'second' })
-    expect(second).toEqual({ error: 'an agent run is already in progress for this domain' })
+    expect(second).toEqual({ error: 'a turn is already running in this chat' })
     expect((await first).run?.status).toBe('running')
     const completed = await waitForTerminal(handle.id)
     expect(completed.status).toBe('succeeded')
-    expect(readConversation(handle.root, 'mock')).toMatchObject({
+    expect(conversation(handle)).toMatchObject({
       sessionId: 'mock-session',
       turns: 1,
     })
-    expect(isRunning(handle.id)).toBe(false)
+    expect(isRunActive(chatId(handle))).toBe(false)
     expect(bridgeFiles(handle.root)).toEqual([])
   })
 
@@ -125,11 +157,11 @@ describe.serial('agent runner invariants', () => {
     const handle = fixture()
 
     const pending = submitRun(handle, () => {}, { message: 'cancel setup' })
-    expect(isRunning(handle.id)).toBe(true)
+    expect(isRunActive(chatId(handle))).toBe(true)
     expect(cancelRun(handle.id)).toBe(true)
     expect(await pending).toEqual({ error: 'agent run canceled during setup' })
-    expect(isRunning(handle.id)).toBe(false)
-    expect(readConversation(handle.root, 'mock').sessionId).toBeUndefined()
+    expect(isRunActive(chatId(handle))).toBe(false)
+    expect(conversation(handle).sessionId).toBeUndefined()
     expect(bridgeFiles(handle.root)).toEqual([])
   })
 
@@ -146,7 +178,7 @@ describe.serial('agent runner invariants', () => {
 
     expect(started.run?.status).toBe('running')
     expect((await waitForTerminal(handle.id)).status).toBe('succeeded')
-    expect(isRunning(handle.id)).toBe(false)
+    expect(isRunActive(chatId(handle))).toBe(false)
   })
 
   test('recovers a stale selected-harness session as one fresh first turn', async () => {
@@ -162,11 +194,7 @@ describe.serial('agent runner invariants', () => {
         auth: { mode: 'host' },
       },
     })
-    saveConversation(handle.root, 'mock', {
-      sessionId: 'stale-session',
-      turns: 7,
-      updatedAt: 'before',
-    })
+    seedConversation(handle, 'stale-session', 7)
 
     const started = await submitRun(handle, () => {}, { message: 'continue safely' })
     expect(started.run?.harness).toBe('mock')
@@ -186,7 +214,7 @@ describe.serial('agent runner invariants', () => {
     expect(run.events.map((event) => event.text)).toContain(
       'previous conversation was no longer available — started a new one',
     )
-    expect(readConversation(handle.root, 'mock')).toMatchObject({
+    expect(conversation(handle)).toMatchObject({
       sessionId: 'mock-session',
       turns: 1,
     })
@@ -196,11 +224,7 @@ describe.serial('agent runner invariants', () => {
   test('does not replay a rejected resume after observable activity', async () => {
     useMock('resumefailafterevent')
     const handle = fixture()
-    saveConversation(handle.root, 'mock', {
-      sessionId: 'stale-session',
-      turns: 2,
-      updatedAt: 'before',
-    })
+    seedConversation(handle, 'stale-session', 2)
 
     await submitRun(handle, () => {}, { message: 'continue once' })
     const run = await waitForTerminal(handle.id)
@@ -213,7 +237,7 @@ describe.serial('agent runner invariants', () => {
         'the previous conversation was rejected after observable activity — Studio did not retry automatically to avoid duplicating work',
     })
     expect(run.events.filter((event) => event.kind === 'tool')).toHaveLength(1)
-    expect(readConversation(handle.root, 'mock').sessionId).toBeUndefined()
+    expect(conversation(handle).sessionId).toBeUndefined()
   })
 
   test('cancellation skips partial replies, preserves the session, cleans up, and permits retry', async () => {
@@ -224,11 +248,7 @@ describe.serial('agent runner invariants', () => {
       anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
       text: 'keep this open if canceled',
     })
-    saveConversation(handle.root, 'mock', {
-      sessionId: 'stable-session',
-      turns: 2,
-      updatedAt: 'before',
-    })
+    seedConversation(handle, 'stable-session', 2)
 
     const started = await submitRun(handle, () => {})
     expect(started.run?.status).toBe('running')
@@ -241,7 +261,7 @@ describe.serial('agent runner invariants', () => {
     const canceled = await waitForTerminal(handle.id)
 
     expect(canceled.status).toBe('canceled')
-    expect(readConversation(handle.root, 'mock')).toMatchObject({
+    expect(conversation(handle)).toMatchObject({
       sessionId: 'stable-session',
       turns: 2,
     })
@@ -252,7 +272,7 @@ describe.serial('agent runner invariants', () => {
       },
     )
     expect(bridgeFiles(handle.root)).toEqual([])
-    expect(isRunning(handle.id)).toBe(false)
+    expect(isRunActive(chatId(handle))).toBe(false)
 
     process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = '0'
     const retry = await submitRun(handle, () => {}, { message: 'retry' })
@@ -268,11 +288,7 @@ describe.serial('agent runner invariants', () => {
       anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
       text: 'do not merge failed output',
     })
-    saveConversation(handle.root, 'mock', {
-      sessionId: 'stable-session',
-      turns: 4,
-      updatedAt: 'before',
-    })
+    seedConversation(handle, 'stable-session', 4)
 
     await submitRun(handle, () => {})
     const thrown = await waitForTerminal(handle.id)
@@ -280,7 +296,7 @@ describe.serial('agent runner invariants', () => {
       status: 'failed',
       error: 'mock harness failure (test)',
     })
-    expect(readConversation(handle.root, 'mock')).toMatchObject({
+    expect(conversation(handle)).toMatchObject({
       sessionId: 'stable-session',
       turns: 4,
     })
@@ -294,7 +310,7 @@ describe.serial('agent runner invariants', () => {
     const malformed = await waitForTerminal(handle.id)
     expect(malformed.status).toBe('failed')
     expect(malformed.error).toContain('malformed JSON')
-    expect(readConversation(handle.root, 'mock')).toMatchObject({
+    expect(conversation(handle)).toMatchObject({
       sessionId: 'stable-session',
       turns: 4,
     })
@@ -329,5 +345,132 @@ describe.serial('agent runner invariants', () => {
       'author:Additional final detail. (mock agent)',
     ])
     expect(bridgeFiles(handle.root)).toEqual([])
+  })
+
+  test('several tabs run at once, each with its own session and transcript', async () => {
+    useMock('normal', '150')
+    const handle = fixture()
+    const first = listChats(handle.id).activeId
+    const second = unwrap(openChat(handle.id, { harness: 'mock' })).id
+
+    const started = await Promise.all([
+      submitRun(handle, () => {}, { message: 'in the first tab', chatId: first }),
+      submitRun(handle, () => {}, { message: 'in the second tab', chatId: second }),
+    ])
+
+    // neither submit was refused: an open turn belongs to its chat, not the domain
+    expect(started.map((result) => result.run?.status)).toEqual(['running', 'running'])
+    expect(isRunActive(first)).toBe(true)
+    expect(isRunActive(second)).toBe(true)
+
+    expect((await waitForTerminal(handle.id, first)).status).toBe('succeeded')
+    expect((await waitForTerminal(handle.id, second)).status).toBe('succeeded')
+
+    for (const id of [first, second]) {
+      expect(resolveChat(handle.root, 'mock', id)).toMatchObject({
+        sessionId: 'mock-session',
+        turns: 1,
+      })
+    }
+    expect(
+      readRunHistory(handle.id, handle.root, resolveChat(handle.root, 'mock', first)!),
+    ).toEqual([expect.objectContaining({ instruction: 'in the first tab' })])
+    expect(
+      readRunHistory(handle.id, handle.root, resolveChat(handle.root, 'mock', second)!),
+    ).toEqual([expect.objectContaining({ instruction: 'in the second tab' })])
+  })
+
+  test('switching agent forks a briefed tab and leaves the original conversation alone', async () => {
+    useMock()
+    const handle = fixture()
+    const source = unwrap(openChat(handle.id, { harness: 'claude' }))
+    recordChatTurn(handle.root, source.id, { sessionId: 'claude-session', turns: 1 })
+    persistRun(
+      handle.root,
+      {
+        id: randomUUID(),
+        domainId: handle.id,
+        chatId: source.id,
+        harness: 'claude',
+        status: 'succeeded',
+        createdAt: '2026-08-20T00:00:00.000Z',
+        summary: 'earlier work',
+        instruction: 'Add a Subscription class',
+        targetCommentIds: [],
+        events: [
+          {
+            id: 'e1',
+            ts: '2026-08-20T00:00:00.000Z',
+            kind: 'message',
+            text: 'Added Subscription with a renewal date.',
+          },
+        ],
+      },
+      true,
+    )
+
+    const forked = unwrap(switchChatHarness(handle.id, source.id, 'mock'))
+    expect(forked).toMatchObject({
+      harness: 'mock',
+      turns: 0,
+      origin: { chatId: source.id, harness: 'claude', pendingHandoff: true },
+    })
+    // the conversation it came from keeps its agent, its session and its turns
+    expect(resolveChat(handle.root, 'mock', source.id)).toMatchObject({
+      harness: 'claude',
+      sessionId: 'claude-session',
+      turns: 1,
+    })
+    expect(
+      readRunHistory(handle.id, handle.root, resolveChat(handle.root, 'mock', source.id)!),
+    ).toHaveLength(1)
+
+    await submitRun(handle, () => {}, { message: 'carry on', chatId: forked.id })
+    expect(listChats(handle.id).chats.find((chat) => chat.id === forked.id)?.origin).toMatchObject({
+      pendingHandoff: false,
+    })
+    expect(forgetChatOrigin(handle.id, forked.id)).toEqual({
+      ok: false,
+      error: 'the transferred context was already sent to the agent',
+    })
+    const first = await waitForTerminal(handle.id, forked.id)
+    expect(first.status).toBe('succeeded')
+    expect(first.prompt?.turnPrompt).toContain('Transferred conversation')
+    expect(first.prompt?.turnPrompt).toContain('Add a Subscription class')
+
+    // delivered once: the next turn resumes the fork's own session instead
+    await submitRun(handle, () => {}, { message: 'and again', chatId: forked.id })
+    const second = await waitForTerminal(handle.id, forked.id)
+    expect(second.prompt?.turnPrompt).not.toContain('Transferred conversation')
+    expect(second).toMatchObject({ resumed: true, sessionId: 'mock-session' })
+  })
+
+  test('refuses to switch a chat onto the agent it already runs', () => {
+    useMock()
+    const handle = fixture()
+    expect(switchChatHarness(handle.id, listChats(handle.id).activeId, 'mock')).toEqual({
+      ok: false,
+      error: 'this chat already runs mock',
+    })
+  })
+
+  test('closing a tab stops its turn and its transcript never comes back', async () => {
+    useMock('normal', '5000')
+    const handle = fixture()
+    const doomed = unwrap(openChat(handle.id, { harness: 'mock' })).id
+
+    await submitRun(handle, () => {}, { message: 'will be closed', chatId: doomed })
+    expect(isRunActive(doomed)).toBe(true)
+    expect(stateExists(handle.root, `.cache/agent/last-run/${doomed}.json`)).toBe(true)
+
+    const remaining = unwrap(closeChat(handle.id, doomed))
+    expect(remaining.chats.some((chat) => chat.id === doomed)).toBe(false)
+    expect(isRunActive(doomed)).toBe(false)
+
+    // the canceled turn settles a moment later — it must not rewrite what it owned
+    for (let i = 0; i < 100 && bridgeFiles(handle.root).length > 0; i++) await Bun.sleep(25)
+    expect(bridgeFiles(handle.root)).toEqual([])
+    expect(stateExists(handle.root, `.cache/agent/last-run/${doomed}.json`)).toBe(false)
+    expect(listState(handle.root, '.cache/agent/runs')).toEqual([])
   })
 })

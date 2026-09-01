@@ -87,19 +87,20 @@ function decodeStaleReport(value: unknown): StaleReport | null {
 
 export interface UpdateApplyResult {
   ok: boolean
-  output: string
+  /** One-line reason when the run failed; empty on success. */
+  error: string
 }
 
 /**
- * Apply the update for the header "Update now" button — `astrale update --yes`,
- * run in the domain root. The CLI does the work non-interactively and resiliently
+ * Apply the update behind the header "Update" chip — `astrale update --yes`, run
+ * in the domain root. The CLI does the work non-interactively and resiliently
  * (binary + skills + SDK deps; a binary that can't self-update warns but doesn't
- * block the others), so we just spawn it and capture the combined output to show.
+ * block the others). We keep only the verdict: the transcript is CLI chatter the
+ * badge has no use for, and its warnings (e.g. a package-managed binary) are not
+ * failures. A failure collapses to one concise line for a toast.
  */
 export async function applyUpdates(root: string): Promise<UpdateApplyResult> {
   const result = await runStudioCliText(['update', '--yes'], { cwd: root })
-  return {
-    ok: result.ok,
-    output: `${result.stdout}${result.stderr}`.trim() || result.detail,
-  }
+  if (result.ok) return { ok: true, error: '' }
+  return { ok: false, error: result.detail || `astrale update exited ${result.exitCode}` }
 }

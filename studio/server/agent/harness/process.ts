@@ -19,7 +19,7 @@ export function childEnvironment(extra?: Record<string, string>): NodeJS.Process
   return extra && Object.keys(extra).length ? { ...process.env, ...extra } : undefined
 }
 
-/** Capture a short-lived harness command such as version or loadout discovery. */
+/** Capture a short-lived local command such as gateway-token minting. */
 export function captureCommand(
   bin: string,
   args: string[],

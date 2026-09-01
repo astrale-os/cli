@@ -25,6 +25,7 @@ const mode = process.env.FAKE_ACP_MODE || 'normal'
 const effortId = provider === 'codex' ? 'reasoning_effort' : 'effort'
 let buffer = ''
 let promptRequest
+let currentModel = 'native'
 
 const record = (value) => {
   if (log) appendFileSync(log, JSON.stringify(value) + '\\n')
@@ -50,7 +51,7 @@ const configOptions = () => [
     name: 'Model',
     category: 'model',
     type: 'select',
-    currentValue: 'native',
+    currentValue: currentModel,
     options: [
       { value: 'native', name: 'Native' },
       { value: 'studio-model', name: 'Studio' },
@@ -152,6 +153,7 @@ function handle(message) {
       send({ id: message.id, result: {} })
       return
     case 'session/set_config_option':
+      if (params.configId === 'model') currentModel = params.value
       send({ id: message.id, result: { configOptions: configOptions() } })
       return
     case 'session/delete':
@@ -284,6 +286,45 @@ async function waitForExit(pid: number): Promise<boolean> {
 }
 
 describe('ACP harness adapter', () => {
+  test('probes agent and model diagnostics through a disposable ACP session without prompting', async () => {
+    const root = temporaryRoot('studio-acp-probe-')
+    const log = join(root, 'acp.jsonl')
+    const harness = new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root))
+
+    expect(await harness.health()).toMatchObject({
+      ok: true,
+      bin: '/opt/codex-test',
+      version: '0.test',
+    })
+    const loadout = await harness.loadout(root, {
+      model: 'studio-model',
+      env: { FAKE_ACP_LOG: log, FAKE_ACP_PROVIDER: 'codex' },
+      refresh: true,
+    })
+
+    expect(loadout).toMatchObject({
+      ok: true,
+      nativeModel: 'native',
+      model: 'studio-model',
+      modelSource: 'studio',
+      cwd: root,
+      protocolVersion: 1,
+      agentName: 'fake-acp',
+      agentVersion: '0.test',
+      source: 'acp',
+      models: [
+        { id: 'native', label: 'Native' },
+        { id: 'studio-model', label: 'Studio' },
+      ],
+    })
+    expect(messages(log).flatMap((message) => (message.method ? [message.method] : []))).toEqual([
+      'initialize',
+      'session/new',
+      'session/set_config_option',
+      'session/delete',
+    ])
+  })
+
   test('runs Codex through ACP and maps MCP, configuration, permissions, usage, and events', async () => {
     const root = temporaryRoot('studio-acp-codex-')
     const log = join(root, 'acp.jsonl')

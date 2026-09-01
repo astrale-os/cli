@@ -83,8 +83,7 @@ test('leaf concepts do not depend on orchestration or HTTP ownership', () => {
         source.startsWith('bridge/') &&
         (dependency.startsWith('run/') ||
           dependency.startsWith('prompts/') ||
-          dependency.startsWith('harness/claude/') ||
-          dependency.startsWith('harness/codex/') ||
+          dependency.startsWith('harness/acp/') ||
           dependency.startsWith('harness/mock/') ||
           dependency === 'routes.ts')
       )

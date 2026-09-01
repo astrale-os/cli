@@ -18,6 +18,7 @@ function run(values: Partial<AgentRun>): AgentRun {
   return {
     id: crypto.randomUUID(),
     domainId: 'test',
+    chatId: 'chat',
     harness: 'mock',
     status: 'succeeded',
     createdAt: new Date().toISOString(),

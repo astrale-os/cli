@@ -1,4 +1,5 @@
 import type { HarnessStatus } from '../../shared/types'
+import type { ChatResult } from './run/coordinator'
 
 import { badRequest, json, notFound, type DomainRouteContext } from '../api/http'
 import { asJsonRecord, asString } from '../json'
@@ -6,6 +7,7 @@ import { decodeAnchorRef } from '../state/comments'
 import { type AskRequest, runAsk } from './ask'
 import { handleBridge } from './bridge/routes'
 import { inspectHarnessHealth } from './harness/adapter'
+import { readModelCatalog } from './harness/catalog'
 import {
   clearHarnessGateway,
   gatewayAudience,
@@ -13,7 +15,7 @@ import {
   setHarnessGateway,
 } from './harness/gateway/config'
 import { setHostToken } from './harness/gateway/token'
-import { listHarnesses } from './harness/registry'
+import { getHarnessById, listHarnesses } from './harness/registry'
 import {
   getHarness,
   getHarnessSelection,
@@ -23,18 +25,31 @@ import {
 import { buildSystemPrompt } from './prompts/system'
 import {
   cancelRun,
+  chatHarness,
+  chatModel,
+  closeChat,
+  forgetChatOrigin,
+  getHistory,
   getSessionId,
   getSnapshot,
-  isRunning,
+  listChats,
+  openChat,
+  selectChat,
   setSessionId,
   submitRun,
+  switchChatHarness,
+  updateChat,
 } from './run/coordinator'
-import { readRunHistory } from './run/transcript'
 import { readUsage } from './run/usage'
 import { NdjsonChannel } from './stream'
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/** Chat operations fail on user-supplied ids, so their errors are 400s, not 500s. */
+function chatJson<T>(result: ChatResult<T>): Response {
+  return result.ok ? json(result.value) : badRequest(result.error)
 }
 
 async function harnessStatus(root: string, selected = false): Promise<HarnessStatus> {
@@ -64,70 +79,117 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
   const id = handle.id
   const root = handle.root
 
+  // Every conversation route is chat-scoped; `?chat=` / `body.chatId` name the
+  // tab, and omitting it means the one the user is looking at.
+  const chatParam = asString(url.searchParams.get('chat') ?? undefined) || undefined
+  const chatBody = asString(body.chatId) || undefined
+
   if (rest === '/agent') {
-    if (req.method === 'GET') return json(await getSnapshot(id))
+    if (req.method === 'GET') return json(await getSnapshot(id, chatParam))
     return badRequest('use /agent/submit or /agent/cancel')
+  }
+  if (rest === '/agent/chats') {
+    if (req.method === 'GET') return json(listChats(id))
+    if (req.method === 'POST') {
+      const harness = asString(body.harness)
+      const title = asString(body.title)
+      const model = asString(body.model)
+      switch (asString(body.action) ?? 'open') {
+        case 'open':
+          return chatJson(
+            openChat(id, {
+              ...(harness === undefined ? {} : { harness }),
+              ...(title === undefined ? {} : { title }),
+            }),
+          )
+        case 'select':
+          return chatJson(selectChat(id, chatBody ?? ''))
+        case 'close':
+          return chatJson(closeChat(id, chatBody ?? ''))
+        case 'update':
+          return chatJson(
+            updateChat(id, chatBody ?? '', {
+              ...(title === undefined ? {} : { title }),
+              ...(model === undefined ? {} : { model }),
+            }),
+          )
+        case 'switch-harness':
+          return chatJson(switchChatHarness(id, chatBody, harness ?? '', model))
+        case 'forget-origin':
+          return chatJson(forgetChatOrigin(id, chatBody ?? ''))
+        default:
+          return badRequest(`unknown chat action: ${asString(body.action) ?? ''}`)
+      }
+    }
+    return badRequest('GET or POST')
   }
   if (rest === '/agent/submit' && req.method === 'POST') {
     const result = await submitRun(handle, notify, {
       message: typeof body.message === 'string' ? body.message : undefined,
       resume: body.resume === true,
+      ...(chatBody === undefined ? {} : { chatId: chatBody }),
     })
     return result.error ? json({ error: result.error }) : json(result.run)
   }
   if (rest === '/agent/history' && req.method === 'GET')
-    return json(readRunHistory(id, root, Number(url.searchParams.get('limit')) || undefined))
-  if (rest === '/agent/cancel' && req.method === 'POST') return json({ ok: cancelRun(id) })
+    return chatJson(getHistory(id, chatParam, Number(url.searchParams.get('limit')) || undefined))
+  if (rest === '/agent/cancel' && req.method === 'POST')
+    return json({ ok: cancelRun(id, chatBody) })
   if (rest === '/agent/session') {
-    if (req.method === 'GET') return json(getSessionId(id))
+    if (req.method === 'GET') return json(getSessionId(id, chatParam))
     if (req.method === 'POST') {
-      const harness = getHarness(root)
-      if (body.harness !== harness.id)
-        return badRequest(
-          `selected harness changed from ${asString(body.harness) ?? '(unknown)'} to ${harness.id}`,
-        )
-      const ok = setSessionId(id, asString(body.sessionId) ?? '')
-      if (!ok) return badRequest('the session id cannot be changed while a turn is running')
-      return json(getSessionId(id))
+      // The id belongs to ONE agent's conversation: refuse to graft a Codex thread
+      // onto a Claude tab (and vice versa) rather than fail cryptically at resume.
+      const expected = chatHarness(id, chatBody)
+      const claimed = asString(body.harness)
+      if (claimed && expected && claimed !== expected)
+        return badRequest(`this chat runs ${expected}, not ${claimed}`)
+      return chatJson(setSessionId(id, chatBody, asString(body.sessionId) ?? ''))
     }
     return badRequest('GET or POST')
   }
   if (rest === '/agent/prompt/system' && req.method === 'GET')
     return json({ bridge: true, systemPrompt: buildSystemPrompt({ bridge: true }) })
   if (rest === '/agent/harness' && req.method === 'GET') return json(await harnessStatus(root))
+  if (rest === '/agent/models' && req.method === 'GET')
+    return json(await readModelCatalog(root, req.signal))
   if (rest === '/agent/harness' && req.method === 'POST') {
-    if (isRunning(id)) return badRequest('the harness cannot be changed while a turn is running')
+    const target = asString(body.id) ?? ''
     try {
-      setHarnessSelection(root, asString(body.id) ?? '')
-      return json(await harnessStatus(root, true))
+      setHarnessSelection(root, target)
     } catch (error) {
       return badRequest(errorMessage(error))
     }
+    // A chat cannot change agent, so picking the other one forks a tab that runs
+    // it — briefed on this conversation, which stays open and untouched.
+    const active = chatHarness(id, chatBody)
+    const forked = active && active !== target ? switchChatHarness(id, chatBody, target) : undefined
+    if (forked && !forked.ok) return badRequest(forked.error)
+    return json({
+      harness: await harnessStatus(root, true),
+      chat: forked?.value ?? null,
+    })
   }
   if (rest === '/agent/loadout' && req.method === 'GET') {
-    const harness = getHarness(root)
+    // Probe the models of the chat's OWN harness — the domain default is only
+    // what a new tab would get.
+    const bound = chatHarness(id, chatParam)
+    const harness = bound ? getHarnessById(bound) : getHarness(root)
+    const override = chatModel(id, chatParam)
     if (!harness.loadout)
       return json({
         ok: false,
-        detail: `${harness.label} does not expose a loadout`,
-        tools: [],
-        mcpServers: [],
-        skills: [],
-        agents: [],
-        builtinCommandCount: 0,
+        detail: `${harness.label} does not expose ACP diagnostics`,
         probedAt: Date.now(),
+        source: 'acp',
       })
-    const configuration = await resolveHarnessConfiguration(root, harness)
+    const configuration = await resolveHarnessConfiguration(root, harness, override)
     if (!configuration.ok)
       return json({
         ok: false,
         detail: `model gateway auth failed — ${configuration.error}`,
-        tools: [],
-        mcpServers: [],
-        skills: [],
-        agents: [],
-        builtinCommandCount: 0,
         probedAt: Date.now(),
+        source: 'acp',
       })
     const { env, model } = configuration.configuration
     return json(
@@ -135,6 +197,7 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
         env,
         model,
         refresh: url.searchParams.get('refresh') === '1',
+        signal: req.signal,
       }),
     )
   }
@@ -159,13 +222,6 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
     return json({ ok: setHostToken(audience, asString(body.token) ?? '') })
   }
   if (rest === '/agent/usage' && req.method === 'GET') return json(readUsage(root))
-  if (rest === '/agent/skill' && req.method === 'GET') {
-    const command = url.searchParams.get('command')
-    const harness = getHarness(root)
-    if (!command || !harness.skillContent) return notFound()
-    const content = await harness.skillContent(root, command)
-    return content ? json(content) : notFound()
-  }
   if (rest === '/agent/ask' && req.method === 'POST') {
     const excerpt = asString(body.excerpt)
     const anchor = decodeAnchorRef(body.anchor)
@@ -173,6 +229,7 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
       question: asString(body.question) ?? '',
       ...(excerpt === undefined ? {} : { excerpt }),
       ...(anchor === undefined ? {} : { anchor }),
+      ...(chatBody === undefined ? {} : { chatId: chatBody }),
     }
     const controller = new AbortController()
     req.signal?.addEventListener('abort', () => controller.abort(), { once: true })

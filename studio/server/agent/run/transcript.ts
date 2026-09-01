@@ -1,3 +1,5 @@
+import type { StoredChat } from '../chats'
+
 import {
   AGENT_ACCESS_LEVELS,
   AGENT_EFFORT_LEVELS,
@@ -7,11 +9,28 @@ import {
   type MergeResult,
 } from '../../../shared/types'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
-import { listState, readJson, writeJson } from '../../state/store'
+import { listState, readJson, removeState, writeJson } from '../../state/store'
 
-const LAST_RUN_FILE = '.cache/agent/last-run.json'
+/** Written before Studio had chat tabs; adopted by the chat migrated from it. */
+const LEGACY_LAST_RUN_FILE = '.cache/agent/last-run.json'
 const RUNS_DIR = '.cache/agent/runs'
 const runFile = (id: string) => `${RUNS_DIR}/${id}.json`
+const lastRunFile = (chatId: string) => `.cache/agent/last-run/${chatId}.json`
+
+/** A transcript on disk, which predates `chatId` when written by an older Studio. */
+type StoredRun = Omit<AgentRun, 'chatId'> & { chatId?: string }
+
+/**
+ * Which chat a stored transcript belongs to.
+ *
+ * Turns written before tabs existed carry no chat id: the tab migrated from that
+ * harness's old conversation adopts them, so upgrading Studio keeps the history
+ * visible instead of opening on an empty chat.
+ */
+function belongsToChat(run: StoredRun, chat: StoredChat): boolean {
+  if (run.chatId) return run.chatId === chat.id
+  return !!chat.adoptsLegacyRuns && run.harness === chat.harness
+}
 
 const RUN_STATUSES = new Set<AgentRun['status']>([
   'queued',
@@ -114,7 +133,7 @@ function decodePrompt(value: unknown): AgentPromptSnapshot | undefined {
   }
 }
 
-function decodeAgentRun(value: unknown): AgentRun | undefined {
+function decodeAgentRun(value: unknown): StoredRun | undefined {
   const record = asJsonRecord(value)
   const id = asString(record?.id)
   const domainId = asString(record?.domainId)
@@ -151,10 +170,12 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
   const liveReplies = asFiniteNumber(record.liveReplies)
   const merge = decodeMergeResult(record.merge)
   const prompt = decodePrompt(record.prompt)
+  const chatId = asString(record.chatId)
   return {
     id,
     domainId,
     harness,
+    ...(chatId === undefined ? {} : { chatId }),
     status: status as AgentRun['status'],
     createdAt,
     summary,
@@ -174,20 +195,23 @@ function decodeAgentRun(value: unknown): AgentRun | undefined {
   }
 }
 
-/** Persist the latest run pointer and, when terminal, its transcript. */
+/** Persist a chat's latest run pointer and, when terminal, its transcript. */
 export function persistRun(root: string, run: AgentRun, transcript = false): void {
   try {
-    writeJson(root, LAST_RUN_FILE, run)
+    writeJson(root, lastRunFile(run.chatId), run)
     if (transcript) writeJson(root, runFile(run.id), run)
   } catch {
     /* run history is best-effort */
   }
 }
 
-/** Rehydrate the latest run and reconcile one orphaned by a Studio restart. */
-export function readLastRun(domainId: string, root: string): AgentRun | null {
-  const last = readJson(root, LAST_RUN_FILE, decodeAgentRun, null)
-  if (!last || last.domainId !== domainId) return null
+/** Rehydrate a chat's latest run and reconcile one orphaned by a Studio restart. */
+export function readLastRun(domainId: string, root: string, chat: StoredChat): AgentRun | null {
+  const stored =
+    readJson(root, lastRunFile(chat.id), decodeAgentRun, null) ??
+    (chat.adoptsLegacyRuns ? readJson(root, LEGACY_LAST_RUN_FILE, decodeAgentRun, null) : null)
+  if (!stored || stored.domainId !== domainId || !belongsToChat(stored, chat)) return null
+  const last: AgentRun = { ...stored, chatId: chat.id }
   if (last.status === 'running' || last.status === 'queued') {
     last.status = 'interrupted'
     last.finishedAt = last.finishedAt ?? new Date().toISOString()
@@ -198,8 +222,24 @@ export function readLastRun(domainId: string, root: string): AgentRun | null {
   return last
 }
 
+/** Every stored transcript of one chat, oldest first. */
+function chatRuns(domainId: string, root: string, chat: StoredChat): AgentRun[] {
+  const runs: AgentRun[] = []
+  for (const file of listState(root, RUNS_DIR)) {
+    if (!file.endsWith('.json')) continue
+    try {
+      const run = readJson(root, `${RUNS_DIR}/${file}`, decodeAgentRun, null)
+      if (run && run.domainId === domainId && belongsToChat(run, chat))
+        runs.push({ ...run, chatId: chat.id })
+    } catch {
+      // One unreadable transcript must not hide the rest of the conversation.
+    }
+  }
+  return runs.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
 /**
- * The conversation so far, oldest first: every transcript this domain kept.
+ * One chat's conversation so far, oldest first.
  *
  * Only terminal runs are written to `runs/`, so the ACTIVE one is missing here —
  * callers layer it on top (the live run is already streamed to them).
@@ -208,18 +248,35 @@ export function readLastRun(domainId: string, root: string): AgentRun | null {
  * whole handoff markdown) and nothing reads it here — the activity drawer inspects
  * the CURRENT run, which still carries it.
  */
-export function readRunHistory(domainId: string, root: string, limit = 40): AgentRun[] {
+export function readRunHistory(
+  domainId: string,
+  root: string,
+  chat: StoredChat,
+  limit = 40,
+): AgentRun[] {
   const boundedLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 40
-  const runs: AgentRun[] = []
-  for (const file of listState(root, RUNS_DIR)) {
-    if (!file.endsWith('.json')) continue
+  return chatRuns(domainId, root, chat)
+    .slice(-boundedLimit)
+    .map(({ prompt: _prompt, ...turn }) => turn)
+}
+
+/** The full transcript a fork summarizes — prompts included would be pure weight. */
+export function readChatTranscript(domainId: string, root: string, chat: StoredChat): AgentRun[] {
+  return chatRuns(domainId, root, chat)
+}
+
+/** Erase a closed tab's transcripts; a deleted chat leaves nothing to re-read. */
+export function deleteChatRuns(domainId: string, root: string, chat: StoredChat): void {
+  for (const run of chatRuns(domainId, root, chat)) {
     try {
-      const run = readJson(root, `${RUNS_DIR}/${file}`, decodeAgentRun, null)
-      if (run && run.domainId === domainId) runs.push(run)
+      removeState(root, runFile(run.id))
     } catch {
-      // One unreadable transcript must not hide the rest of the conversation.
+      /* best-effort cleanup — the chat row is already gone */
     }
   }
-  runs.sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  return runs.slice(-boundedLimit).map(({ prompt: _prompt, ...turn }) => turn)
+  try {
+    removeState(root, lastRunFile(chat.id))
+  } catch {
+    /* as above */
+  }
 }

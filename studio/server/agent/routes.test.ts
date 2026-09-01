@@ -8,8 +8,11 @@ import type { JsonRecord } from '../json'
 import type { AskResult } from './harness/adapter'
 
 import { registerDomain, unregisterDomain } from '../domain'
+import { updateSettings } from '../state/settings'
+import { markHandoffDelivered } from './chats'
 import { getHarnessById } from './harness/registry'
 import { handleAgentRoute } from './routes'
+import { listChats } from './run/coordinator'
 import { persistRun } from './run/transcript'
 import { NdjsonChannel } from './stream'
 
@@ -78,9 +81,11 @@ test('owns harness status and prompt routes behind one agent boundary', async ()
 
 test('serves the bounded persisted conversation history', async () => {
   const handle = fixture()
+  const chatId = listChats(handle.id).activeId
   const saved = (id: string, createdAt: string): AgentRun => ({
     id,
     domainId: handle.id,
+    chatId,
     harness: 'codex',
     status: 'succeeded',
     createdAt,
@@ -120,9 +125,7 @@ test('rejects stale session ownership and invalid gateway writes at the route bo
     sessionId: 'wrong-owner',
   })
   expect(staleSession?.status).toBe(400)
-  expect(await staleSession?.json()).toEqual({
-    error: 'selected harness changed from codex to mock',
-  })
+  expect(await staleSession?.json()).toEqual({ error: 'this chat runs mock, not codex' })
 
   const invalidGateway = await route('/agent/harness-gateway', 'POST', {
     action: 'set',
@@ -144,12 +147,8 @@ test('threads an explicit loadout refresh through to the selected harness', asyn
     refresh = options?.refresh
     return {
       ok: true,
-      tools: [],
-      mcpServers: [],
-      skills: [],
-      agents: [],
-      builtinCommandCount: 0,
       probedAt: Date.now(),
+      source: 'acp',
     }
   }
 
@@ -212,4 +211,273 @@ test('an NDJSON channel never enqueues after cancellation', () => {
   expect(abortController.signal.aborted).toBe(true)
   expect(channel.send({ delta: 'late' })).toBe(false)
   expect(chunks).toHaveLength(1)
+})
+
+test('a session id is checked against the chat that owns it, not the domain default', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  const handle = fixture()
+  const call = async (rest: string, body: JsonRecord) => {
+    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const req = new Request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return handleAgentRoute({ req, url, rest, body, handle, notify: () => {} })
+  }
+
+  // a Codex tab in a domain whose default agent is something else entirely
+  const opened = await call('/agent/chats', { action: 'open', harness: 'codex' })
+  const chat = (await opened?.json()) as { id: string; harness: string }
+  expect(chat.harness).toBe('codex')
+
+  const wrong = await call('/agent/session', {
+    chatId: chat.id,
+    harness: 'claude',
+    sessionId: 'from-another-agent',
+  })
+  expect(wrong?.status).toBe(400)
+  expect(await wrong?.json()).toEqual({ error: 'this chat runs codex, not claude' })
+
+  const right = await call('/agent/session', {
+    chatId: chat.id,
+    harness: 'codex',
+    sessionId: 'codex-thread',
+  })
+  expect(right?.status).toBe(200)
+  expect(await right?.json()).toMatchObject({ sessionId: 'codex-thread', harness: 'codex' })
+})
+
+test('the model catalog lists every harness, available or not', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  const claude = getHarnessById('claude')
+  const codex = getHarnessById('codex')
+  const originals = {
+    claudeHealth: claude.health,
+    claudeLoadout: claude.loadout,
+    codexHealth: codex.health,
+  }
+  claude.health = async () => ({ ok: true, bin: 'claude', version: '1.0' })
+  claude.loadout = async () => ({
+    ok: true,
+    nativeModel: 'sonnet-5',
+    models: [
+      { id: 'sonnet-5', label: 'Sonnet 5', isDefault: true },
+      { id: 'opus-5', label: 'Opus 5' },
+    ],
+    probedAt: Date.now(),
+    source: 'acp',
+  })
+  codex.health = async () => ({ ok: false, bin: 'codex', detail: 'codex is not on your PATH' })
+
+  try {
+    const response = await route('/agent/models')
+    expect(response?.status).toBe(200)
+    const catalog = (await response?.json()) as {
+      harness: string
+      available: boolean
+      detail?: string
+      nativeModel?: string
+      models: { id: string }[]
+    }[]
+
+    const byHarness = Object.fromEntries(catalog.map((entry) => [entry.harness, entry]))
+    expect(byHarness.claude).toMatchObject({
+      available: true,
+      nativeModel: 'sonnet-5',
+      models: [{ id: 'sonnet-5' }, { id: 'opus-5' }],
+    })
+    // an uninstalled agent is still offered, with the reason it cannot be picked
+    expect(byHarness.codex).toMatchObject({
+      available: false,
+      detail: 'codex is not on your PATH',
+      models: [],
+    })
+    // a harness that reports no models says so instead of pretending to have them
+    expect(byHarness.mock).toMatchObject({ available: true, models: [] })
+  } finally {
+    claude.health = originals.claudeHealth
+    claude.loadout = originals.claudeLoadout
+    codex.health = originals.codexHealth
+  }
+})
+
+test('picking a model of another agent forks a brand-new chat carrying it', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  const handle = fixture()
+  const call = async (rest: string, body: JsonRecord) => {
+    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const req = new Request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return handleAgentRoute({ req, url, rest, body, handle, notify: () => {} })
+  }
+
+  // an existing Codex tab: the fork must NOT reuse it
+  const existing = (await (
+    await call('/agent/chats', { action: 'open', harness: 'codex' })
+  )?.json()) as { id: string }
+  const source = (await (
+    await call('/agent/chats', { action: 'open', harness: 'mock' })
+  )?.json()) as { id: string }
+
+  const forked = (await (
+    await call('/agent/chats', {
+      action: 'switch-harness',
+      chatId: source.id,
+      harness: 'codex',
+      model: 'gpt-5.6-sol',
+    })
+  )?.json()) as { id: string; harness: string; model?: string; origin?: { chatId: string } }
+
+  expect(forked.harness).toBe('codex')
+  expect(forked.model).toBe('gpt-5.6-sol')
+  expect(forked.id).not.toBe(existing.id)
+  expect(forked.origin?.chatId).toBe(source.id)
+
+  const url = new URL(`http://127.0.0.1/api/domain/${handle.id}/agent/chats`)
+  const list = (await (
+    await handleAgentRoute({
+      req: new Request(url),
+      url,
+      rest: '/agent/chats',
+      body: {},
+      handle,
+      notify: () => {},
+    })
+  )?.json()) as { chats: { id: string }[]; activeId: string }
+  // the seeded tab plus all three: forking added a chat, it did not move into one
+  expect(list.chats.map((chat) => chat.id)).toEqual(
+    expect.arrayContaining([existing.id, source.id, forked.id]),
+  )
+  expect(list.chats).toHaveLength(4)
+  expect(list.activeId).toBe(forked.id)
+})
+
+test('the catalog ticks Studio default model, and falls back when the harness drops it', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  const claude = getHarnessById('claude')
+  const codex = getHarnessById('codex')
+  const originals = {
+    claudeHealth: claude.health,
+    claudeLoadout: claude.loadout,
+    claudeDefault: claude.defaultModel,
+    codexHealth: codex.health,
+  }
+  claude.health = async () => ({ ok: true, bin: 'claude', version: '1.0' })
+  claude.defaultModel = 'opus[1m]'
+  codex.health = async () => ({ ok: false, bin: 'codex', detail: 'not installed' })
+
+  try {
+    claude.loadout = async () => ({
+      ok: true,
+      nativeModel: 'fable',
+      models: [
+        { id: 'fable', label: 'Fable' },
+        { id: 'opus[1m]', label: 'Opus (1M context)' },
+      ],
+      probedAt: Date.now(),
+      source: 'acp',
+    })
+    const listed = (await (await route('/agent/models'))?.json()) as {
+      harness: string
+      defaultModel?: string
+    }[]
+    expect(listed.find((entry) => entry.harness === 'claude')?.defaultModel).toBe('opus[1m]')
+
+    // a domain that starred a slug the agent has since renamed falls back to
+    // Studio's default, not to whatever that machine is configured with
+    const starred = fixture()
+    updateSettings(starred.root, { agentModels: { claude: 'opus' } })
+    const staleUrl = new URL(`http://127.0.0.1/api/domain/${starred.id}/agent/models`)
+    const stale = (await (
+      await handleAgentRoute({
+        req: new Request(staleUrl),
+        url: staleUrl,
+        rest: '/agent/models',
+        body: {},
+        handle: starred,
+        notify: () => {},
+      })
+    )?.json()) as { harness: string; defaultModel?: string }[]
+    expect(stale.find((entry) => entry.harness === 'claude')?.defaultModel).toBe('opus[1m]')
+
+    // the harness stopped offering it too: ticking a model it would refuse is
+    // worse than falling back to whatever it picks on its own
+    claude.loadout = async () => ({
+      ok: true,
+      nativeModel: 'fable',
+      models: [{ id: 'fable', label: 'Fable' }],
+      probedAt: Date.now(),
+      source: 'acp',
+    })
+    const dropped = (await (await route('/agent/models'))?.json()) as {
+      harness: string
+      defaultModel?: string
+    }[]
+    expect(dropped.find((entry) => entry.harness === 'claude')?.defaultModel).toBe('fable')
+  } finally {
+    claude.health = originals.claudeHealth
+    claude.loadout = originals.claudeLoadout
+    claude.defaultModel = originals.claudeDefault
+    codex.health = originals.codexHealth
+  }
+})
+
+test('a chat origin can only be forgotten before it reaches the agent', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  const handle = fixture()
+  const call = async (rest: string, body: JsonRecord) => {
+    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const req = new Request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return handleAgentRoute({ req, url, rest, body, handle, notify: () => {} })
+  }
+
+  const source = (await (
+    await call('/agent/chats', { action: 'open', harness: 'mock' })
+  )?.json()) as { id: string }
+  const turn: AgentRun = {
+    id: 'turn-1',
+    domainId: handle.id,
+    chatId: source.id,
+    harness: 'mock',
+    status: 'succeeded',
+    createdAt: '2026-08-20T01:00:00.000Z',
+    summary: 'renamed it',
+    instruction: 'rename the Invoice class',
+    targetCommentIds: [],
+    events: [],
+  }
+  persistRun(handle.root, turn, true)
+  const forked = (await (
+    await call('/agent/chats', { action: 'switch-harness', chatId: source.id, harness: 'codex' })
+  )?.json()) as { id: string; origin?: { summary: string } }
+  expect(forked.origin?.summary).toContain('rename the Invoice class')
+
+  const forgotten = (await (
+    await call('/agent/chats', { action: 'forget-origin', chatId: forked.id })
+  )?.json()) as { id: string; origin?: unknown }
+  expect(forgotten.id).toBe(forked.id)
+  expect(forgotten.origin).toBeUndefined()
+
+  // the conversation it was forked from keeps its own tab and its transcript
+  const chats = listChats(handle.id)
+  expect(chats.chats.map((chat) => chat.id)).toContain(source.id)
+  expect(chats.chats.find((chat) => chat.id === forked.id)?.origin).toBeUndefined()
+
+  const delivered = (await (
+    await call('/agent/chats', { action: 'switch-harness', chatId: source.id, harness: 'codex' })
+  )?.json()) as { id: string; origin?: { summary: string } }
+  markHandoffDelivered(handle.root, delivered.id)
+
+  const refused = await call('/agent/chats', { action: 'forget-origin', chatId: delivered.id })
+  expect(refused?.status).toBe(400)
+  expect(await refused?.text()).toContain('already sent to the agent')
+  expect(listChats(handle.id).chats.find((chat) => chat.id === delivered.id)?.origin).toBeDefined()
 })

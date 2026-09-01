@@ -255,6 +255,9 @@ const studioProject = new Project({
 })
 const studioFiles = execFileSync('git', ['ls-files', 'studio'], { encoding: 'utf8' })
   .split('\n')
+  // `ls-files` lists the index: a file deleted in the working tree but not yet
+  // staged is still named here, and reading it would throw ENOENT.
+  .filter((path) => path.length > 0 && existsSync(path))
   .filter((path) => /\.(?:ts|tsx)$/u.test(path) && !path.startsWith('studio/client/dist/'))
 const studioCompilerApiImports = []
 for (const path of studioFiles) {

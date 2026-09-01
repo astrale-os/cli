@@ -17,12 +17,12 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   const workspace = (await workspaceResponse.json()) as Array<{ id: string; origin: string }>
   expect(workspace).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ origin: 'studio-e2e.astrale.ai' }),
-      expect.objectContaining({ origin: 'studio-peer-e2e.astrale.ai' }),
+      expect.objectContaining({ origin: 'crm.studio-demo.astrale.ai' }),
+      expect.objectContaining({ origin: 'ops.studio-demo.astrale.ai' }),
     ]),
   )
 
-  const domainId = workspace.find((domain) => domain.origin === 'studio-e2e.astrale.ai')?.id
+  const domainId = workspace.find((domain) => domain.origin === 'crm.studio-demo.astrale.ai')?.id
   expect(domainId).toBeTruthy()
   const bundleResponse = await request.get(`/api/domain/${encodeURIComponent(domainId!)}/bundle`)
   expect(bundleResponse.ok()).toBe(true)
@@ -33,10 +33,12 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   }
   expect(bundle.schemaMode).toBe('canonical-admitted')
   expect(bundle.schemaRevision).toMatch(/^sha256:[a-f0-9]{64}$/)
-  expect(bundle.ir?.classes).toHaveProperty('Monitor')
+  expect(bundle.ir?.classes).toHaveProperty('Company')
+  expect(bundle.ir?.classes).toHaveProperty('Invoice')
+  expect(bundle.ir?.classes).toHaveProperty('Subscription')
 
   await page.goto('/')
-  await expect(page.getByTestId('domain-selector')).toContainText('studio-e2e.astrale.ai')
+  await expect(page.getByTestId('domain-selector')).toContainText('crm.studio-demo.astrale.ai')
   // The gear is the ONLY way into per-domain settings — no palette entry, no shortcut —
   // so this opens the dialog rather than just counting the button: a mounted button over
   // an unmounted dialog is exactly the state that made the settings unreachable before.
@@ -46,7 +48,7 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Fit View' })).toHaveCount(0)
   await expect(
-    page.getByRole('button', { name: 'Auto-arrange — discards manual positions' }),
+    page.getByRole('button', { name: 'Auto-arrange and center — discards manual positions' }),
   ).toHaveCount(1)
   await page.getByRole('button', { name: 'Search' }).click()
   await expect(page.getByRole('option', { name: /Settings/ })).toHaveCount(0)
@@ -104,7 +106,11 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   await expect(page.getByRole('button', { name: 'Collapse the panel' })).toHaveCount(0)
 
   // A card wears its module hue as a 3px bar on the left and a hairline elsewhere…
-  const card = page.locator('.react-flow__node-classNode > div').first()
+  const companyNode = page.getByText('Company', { exact: true }).first()
+  const card = page
+    .locator('.react-flow__node-classNode')
+    .filter({ has: companyNode })
+    .locator(':scope > div')
   const cardEdges = () =>
     card.evaluate((el) => {
       const style = getComputedStyle(el)
@@ -119,9 +125,8 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   // and computed styles read off the element it just replaced come back empty
   await expect.poll(cardEdges).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
 
-  const monitorNode = page.getByText('Monitor', { exact: true }).first()
-  await expect(monitorNode).toBeVisible()
-  await monitorNode.click()
+  await expect(companyNode).toBeVisible()
+  await companyNode.click()
 
   // …and selected, the SAME 3px on EVERY side: the bar drops to a hairline and hands its
   // 2px to the padding, so no side doubles up and the contents do not shift.
@@ -129,11 +134,9 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   // selecting inside a domain never selects the domain
   await expect(page.locator('.react-flow__node-workspaceDomain.selected')).toHaveCount(0)
 
-  await expect(page.getByRole('heading', { name: 'Monitor', exact: true })).toBeVisible()
-  await expect(
-    page.getByText('A monitored resource rendered by the browser smoke test.'),
-  ).toBeVisible()
-  await expect(page.getByText('label', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Company', exact: true })).toBeVisible()
+  await expect(page.getByText('An organisation we do business with.')).toBeVisible()
+  await expect(page.getByText('legalName', { exact: true })).toBeVisible()
 
   // Pressing empty canvas unselects, and the detail panel goes with the selection that
   // opened it — a panel outliving its selection is a panel for nothing.
@@ -149,16 +152,16 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   // polled here for a second reason too: the ring fades out on a transition, so the frame
   // right after the click still carries a shrinking shadow
   await expect.poll(cardEdges).toEqual({ left: '3px', top: '1px', padLeft: '10px', ring: false })
-  await expect(page.getByRole('heading', { name: 'Monitor', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Company', exact: true })).toHaveCount(0)
 
   await page.getByRole('button', { name: 'Core', exact: true }).click()
-  const coreNode = page.getByRole('button', { name: /Primary monitor/ }).first()
+  const coreNode = page.getByRole('button', { name: /Platform/ }).first()
   await expect(coreNode).toBeVisible()
   await coreNode.click()
   const detailPanel = page.getByRole('button', { name: 'Close panel' }).locator('..')
-  await expect(detailPanel.getByText('Browser fixture', { exact: true })).toBeVisible()
+  await expect(detailPanel.getByText('EU', { exact: true })).toBeVisible()
   await expect(
-    detailPanel.getByText('/:studio-e2e.astrale.ai:core.primary', { exact: true }),
+    detailPanel.getByText('/:crm.studio-demo.astrale.ai:core.platform', { exact: true }),
   ).toBeVisible()
 
   // The rail beside the tree is empty space too: clicking it unselects exactly like the

@@ -73,3 +73,26 @@ test('resolves persisted Claude max and Ultracode effort modes', async () => {
   if (!ultracode.ok) return
   expect(ultracode.configuration.effort).toBe('ultracode')
 })
+
+test('an unpinned chat runs the harness default model, not whatever the agent ships with', async () => {
+  delete process.env.DOMAIN_STUDIO_HARNESS
+  const root = mkdtempSync(join(tmpdir(), 'studio-harness-model-'))
+  roots.push(root)
+
+  const untouched = await resolveHarnessConfiguration(root)
+  expect(untouched.ok).toBe(true)
+  if (!untouched.ok) return
+  expect(untouched.configuration.model).toBe('opus[1m]')
+
+  // the domain default outranks it, and the chat's own pick outranks both
+  updateSettings(root, { agentModels: { claude: 'sonnet' } })
+  const domainWide = await resolveHarnessConfiguration(root)
+  expect(domainWide.ok).toBe(true)
+  if (!domainWide.ok) return
+  expect(domainWide.configuration.model).toBe('sonnet')
+
+  const perChat = await resolveHarnessConfiguration(root, undefined, 'haiku')
+  expect(perChat.ok).toBe(true)
+  if (!perChat.ok) return
+  expect(perChat.configuration.model).toBe('haiku')
+})

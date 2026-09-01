@@ -76,6 +76,8 @@ export type AgentRunStatus =
 export interface AgentRun {
   id: string
   domainId: string
+  /** the chat tab this turn belongs to — turns never cross chats */
+  chatId: string
   harness: string
   status: AgentRunStatus
   createdAt: string
@@ -116,6 +118,57 @@ export interface ConversationInfo {
   harness?: string
 }
 
+/** What an unnamed chat is called until its first instruction titles it. */
+export const DEFAULT_CHAT_TITLE = 'New chat'
+
+/**
+ * One persistent chat tab in a domain — Studio's unit of conversation.
+ *
+ * A chat is bound to its harness for life: the native session id, the transcript
+ * and the resume semantics all belong to that one agent. Choosing the other
+ * harness therefore FORKS a new chat (carrying a summary of this one) rather than
+ * rewriting this one underneath the user.
+ */
+export interface ChatInfo {
+  id: string
+  /** tab label — derived from the first turn, renameable */
+  title: string
+  /** fixed at creation; see the fork rule above */
+  harness: string
+  /** per-chat model override WITHIN its harness; absent ⇒ the domain default */
+  model?: string
+  /** the harness-native resumable session id backing this chat */
+  sessionId?: string
+  /** successful turns recorded in this chat */
+  turns: number
+  createdAt: string
+  updatedAt: string
+  /** set when this chat was forked off another harness's chat */
+  origin?: ChatOrigin
+  /** this chat's own execution state — tabs run independently of each other */
+  status: ChatStatus
+}
+
+/** Where a forked chat came from, and the briefing it was opened with. */
+export interface ChatOrigin {
+  chatId: string
+  harness: string
+  /** the transferred summary has not reached the harness yet */
+  pendingHandoff: boolean
+  /** the summary itself — the chat shows it as a collapsible chip, and keeps
+   *  showing it after delivery: it is this conversation's first page. */
+  summary: string
+}
+
+/** A chat is 'idle' until it has run a turn; afterwards it mirrors that turn. */
+export type ChatStatus = 'idle' | AgentRunStatus
+
+export interface ChatList {
+  chats: ChatInfo[]
+  /** the tab the domain opens on; always one of `chats` */
+  activeId: string
+}
+
 /** The agent's raw resumable session id, surfaced for manual view/edit in Settings. */
 export interface AgentSessionInfo {
   sessionId: string | null
@@ -126,8 +179,6 @@ export interface AgentSessionInfo {
 export interface HarnessCapabilities {
   effortLevels: readonly AgentEffort[]
   accessLevels: readonly AgentAccess[]
-  /** Stable aliases advertised even when the harness has no catalog API. */
-  modelOptions?: readonly HarnessModelOption[]
   ask: boolean
   loadout: boolean
   /** Custom model-gateway wire contract this harness can consume in Studio. */
@@ -152,61 +203,55 @@ export interface HarnessStatus {
   capabilities: HarnessCapabilities
 }
 
-/** One MCP server the harness loaded, with its live connection status. */
-export interface McpServerInfo {
-  name: string
-  /** harness-reported status: 'connected' | 'needs-auth' | 'failed' | 'pending' | … */
-  status: string
-}
-
-/** One skill, reconciled between what is installed on disk and what the harness
- *  actually LOADED for this domain's cwd. */
-export interface LoadoutSkill {
-  /** the slash-command the harness invokes it by — e.g. 'astrale-domain' or 'vercel:nextjs' */
-  command: string
-  /** display name from SKILL.md frontmatter (falls back to `command`) */
-  name: string
-  description?: string
-  /** where it lives on disk */
-  source: 'project' | 'user' | 'plugin'
-  /** the providing plugin, when source==='plugin' */
-  plugin?: string
-  /** present in the harness's loaded slash-commands for this cwd */
-  loaded: boolean
-  /** absolute path to the skill's SKILL.md (so the UI can show its content) */
-  path?: string
-}
-
-/** What the harness actually loaded for a domain's cwd. */
-export interface HarnessLoadout {
-  /** the probe ran and returned an init event */
-  ok: boolean
-  /** reason when !ok (binary missing / probe timed out / no init event) */
+/**
+ * One harness's selectable models, for the composer's picker.
+ *
+ * The picker lists EVERY harness at once — choosing across them is how a user
+ * starts a chat on the other agent — so this describes an unselected harness too.
+ */
+export interface HarnessModelCatalog {
+  harness: string
+  label: string
+  /** the binary is installed and answered the probe */
+  available: boolean
+  /** why not, when `available` is false */
   detail?: string
-  /** Model the harness resolves before Studio applies its optional override. */
+  /** what the harness picks when Studio overrides nothing */
   nativeModel?: string
+  /** what a chat on this harness runs when it pins no model of its own — Studio's
+   *  preferred model when the harness lists it, the native one otherwise */
+  defaultModel?: string
+  models: HarnessModelOption[]
+}
+
+/** What picking another agent produced: the new default, and the tab it forked. */
+export interface HarnessSwitchResult {
+  harness: HarnessStatus
+  /** the chat opened on the new harness, or null when the active tab already ran it */
+  chat: ChatInfo | null
+}
+
+/** Diagnostics reported by a disposable ACP session for a domain's cwd. */
+export interface HarnessLoadout {
+  /** ACP initialization and session creation both succeeded. */
+  ok: boolean
+  /** Human-readable result, or the failure reason when `ok` is false. */
+  detail?: string
+  /** Model selected by the agent before Studio applies its optional override. */
+  nativeModel?: string
+  /** Effective model after applying Studio's optional ACP session override. */
   model?: string
-  /** Where the effective model came from. */
-  modelSource?: 'studio' | 'config' | 'default' | 'runtime'
-  /** Models the harness currently advertises for easy selection. */
+  modelSource?: 'studio' | 'agent'
+  /** Models exposed by the ACP session's model configuration option. */
   models?: HarnessModelOption[]
-  permissionMode?: string
-  /** how the harness is authed: 'none' | 'ANTHROPIC_API_KEY' | … */
-  apiKeySource?: string
-  /** the cwd the harness was probed in (the domain root) */
+  /** Domain root passed to `session/new`. */
   cwd?: string
-  /** built-in tool names loaded (Read, Edit, Bash, …) */
-  tools: string[]
-  mcpServers: McpServerInfo[]
-  skills: LoadoutSkill[]
-  /** subagent types available to the harness (incl. plugin-provided) */
-  agents: string[]
-  /** count of loaded slash-commands that are built-in/harness commands, not skills */
-  builtinCommandCount: number
-  /** epoch ms when probed */
+  /** ACP protocol version negotiated during initialization. */
+  protocolVersion?: number
+  agentName?: string
+  agentVersion?: string
   probedAt: number
-  /** Claude exposes a live init event; Codex exposes configured/installed state. */
-  source?: 'runtime' | 'configured'
+  source: 'acp'
 }
 
 export interface HarnessModelOption {
@@ -235,6 +280,8 @@ export interface DomainUsage {
 
 /** Snapshot returned by GET /agent — drives the activity drawer. */
 export interface AgentRunSnapshot {
+  /** the chat this snapshot describes */
+  chatId: string
   harness: string
   available: boolean
   /** the active or most-recent run for this domain (null if none yet) */

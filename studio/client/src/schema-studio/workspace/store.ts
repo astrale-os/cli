@@ -15,6 +15,7 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   replaceDomains: (ids: string[]) => void
   toggleDomain: (id: string, primaryDomainId: string) => void
   setDomainPosition: (id: string, position: WorkspacePoint) => void
+  setExternalPosition: (origin: string, position: WorkspacePoint) => void
   ensureDomainPositions: (positions: Record<string, WorkspacePoint>) => void
   ensureExternalPositions: (positions: Record<string, WorkspacePoint>) => void
   resetWorkspaceFrames: () => void
@@ -71,6 +72,16 @@ function persist(state: PersistedWorkspaceState): void {
   } catch {}
 }
 
+/**
+ * Every drag stop reports where its frame ended up, and all but a few leave it exactly
+ * where it was. Writing that unchanged anchor anyway is not free: it re-composes the
+ * canvas from a projection built BEFORE the drop, which paints the dropped node back at
+ * its old position until the new projection lands a tick later.
+ */
+function samePoint(current: WorkspacePoint | undefined, next: WorkspacePoint): boolean {
+  return current !== undefined && current.x === next.x && current.y === next.y
+}
+
 function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
   return {
     selectedDomainIds: state.selectedDomainIds,
@@ -103,9 +114,17 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
     }),
   setDomainPosition: (id, position) =>
     set((state) => {
+      if (samePoint(state.domainPositions[id], position)) return state
       const domainPositions = { ...state.domainPositions, [id]: position }
       persist({ ...persisted(state), domainPositions })
       return { domainPositions }
+    }),
+  setExternalPosition: (origin, position) =>
+    set((state) => {
+      if (samePoint(state.externalPositions[origin], position)) return state
+      const externalPositions = { ...state.externalPositions, [origin]: position }
+      persist({ ...persisted(state), externalPositions })
+      return { externalPositions }
     }),
   ensureDomainPositions: (positions) =>
     set((state) => {

@@ -311,15 +311,12 @@ describe('release workflow contract', () => {
 
   it('installs one standalone cohort and delegates global skill configuration to the CLI', () => {
     const installer = read('install.sh')
-    const studioSkills = read('studio/client/src/components/settings/skills.tsx')
     assert.doesNotMatch(installer, /install -m 0644 .*viewer/)
     assert.match(installer, /install -m 0755 "\$tmp\/astrale-cloudflared"/)
     assert.match(installer, /install -m 0644 "\$tmp\/LICENSE\.cloudflared"/)
     assert.match(installer, /exec "\$install_dir\/astrale" skills configure --source install/)
     assert.match(installer, /<\/dev\/tty >\/dev\/tty 2>&1/)
     assert.doesNotMatch(installer, /astrale" skills update --json/)
-    assert.match(studioSkills, /astrale skills configure/)
-    assert.doesNotMatch(studioSkills, /npx skills add astrale-os\/cli/)
   })
 
   it('pins every external action to one immutable revision', () => {
