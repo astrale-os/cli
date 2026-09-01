@@ -6,6 +6,7 @@ import { inferAlg } from './algorithm'
 import { fileExists, keypairPaths, persistKeypair, readKeypair } from './pair'
 
 const DEFAULT_MANAGER_ISSUER = 'http://localhost:4400/host'
+const LOCAL_OPERATOR_CREDENTIAL_TTL_SECONDS = 60 * 60
 
 type AuthOptions = {
   readonly issuer?: string
@@ -47,7 +48,7 @@ async function signIdentityCredential(options: {
     .setIssuer(options.issuer)
     .setSubject(options.subject)
     .setAudience(options.audience)
-    .setExpirationTime('5m')
+    .setExpirationTime(`${LOCAL_OPERATOR_CREDENTIAL_TTL_SECONDS}s`)
     .sign(privateKey)
 }
 

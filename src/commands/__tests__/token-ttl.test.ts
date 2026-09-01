@@ -6,7 +6,7 @@ import { AstraleError } from '../../errors'
 import { issueToken, parseTtl } from '../token'
 
 describe('parseTtl', () => {
-  test('defaults below the five-minute local source-credential lifetime', () => {
+  test('keeps ordinary tokens short beneath the one-hour local operator proof', () => {
     expect(parseTtl(undefined)).toBe(240)
   })
 

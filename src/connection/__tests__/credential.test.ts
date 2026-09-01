@@ -135,7 +135,7 @@ describe('connection credential', () => {
     }
   })
 
-  test('real five-minute local-key credentials reject a 600-second carrier before dispatch', async () => {
+  test('real one-hour local-key credentials cover a 30-minute operator carrier', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'astrale-carrier-ceiling-key-'))
     try {
       await persistKeypair('alice', { keysDir: directory })
@@ -143,10 +143,11 @@ describe('connection credential', () => {
         issuer: SOURCE,
         audience: SOURCE,
       })
-      const auth = createConnectionCredential(SOURCE, { resolve: async () => source }, 605)
+      const auth = createConnectionCredential(SOURCE, { resolve: async () => source }, 1_800)
 
-      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
-        code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
+      await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toMatchObject({
+        credential: source,
+        delegate: { ttlSeconds: 1_800 },
       })
     } finally {
       await rm(directory, { recursive: true, force: true })
