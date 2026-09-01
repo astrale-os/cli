@@ -64,6 +64,38 @@ export function preparedWorkspaceStatus(
   }
 }
 
+/**
+ * How many domain projections are kept beyond the ones on the canvas.
+ *
+ * Taking a domain off the canvas used to be two gestures — one that dropped it and one
+ * that only stopped drawing it — and the second one existed because dropping it threw the
+ * projection away, so putting it back paid for a fresh ELK layout. There is one gesture
+ * now, and this is what pays for it: an unchecked domain's projection survives, so
+ * checking it again repaints instead of re-laying out.
+ */
+export const PROJECTION_CACHE_SIZE = 12
+
+/** Least-recently-used eviction, with everything currently on the canvas held back. */
+export function evictStaleProjections<T>(
+  cache: Map<string, T>,
+  keep: string[],
+  max = PROJECTION_CACHE_SIZE,
+): void {
+  // A Map iterates in insertion order, so re-setting the live ids makes them the newest.
+  for (const id of keep) {
+    if (!cache.has(id)) continue
+    const entry = cache.get(id)!
+    cache.delete(id)
+    cache.set(id, entry)
+  }
+  const held = new Set(keep)
+  for (const id of [...cache.keys()]) {
+    if (cache.size <= max) break
+    if (held.has(id)) continue
+    cache.delete(id)
+  }
+}
+
 export function usePreparedWorkspaceDomains(
   inputs: WorkspaceDomainInput[],
   collapsedModules: Record<string, string[]>,
@@ -80,10 +112,6 @@ export function usePreparedWorkspaceDomains(
 
   useEffect(() => {
     let cancelled = false
-    const selected = new Set(inputs.map((input) => input.summary.id))
-    for (const domainId of cache.current.keys()) {
-      if (!selected.has(domainId)) cache.current.delete(domainId)
-    }
     Promise.all(
       inputs.map(async (input) => {
         const domainId = input.summary.id
@@ -96,7 +124,12 @@ export function usePreparedWorkspaceDomains(
         return projection
       }),
     ).then((domains) => {
-      if (!cancelled) setState({ selection: workspaceSelectionKey(inputs), domains })
+      if (cancelled) return
+      evictStaleProjections(
+        cache.current,
+        inputs.map((input) => input.summary.id),
+      )
+      setState({ selection: workspaceSelectionKey(inputs), domains })
     })
     return () => {
       cancelled = true

@@ -49,6 +49,9 @@ function DomainRow({
   const entry = resolve(domain.origin)
   const tone = domain.kind === 'kernel' ? 'violet' : 'emerald'
   const count = domain.members.length
+  // Linked = a relationship reaches it, which is what the canvas can draw. The rest is
+  // imported and used elsewhere — still a dependency, and still this domain's business.
+  const linked = domain.members.filter((member) => member.connected).length
 
   return (
     <div
@@ -63,7 +66,8 @@ function DomainRow({
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium leading-tight">{entry.name}</div>
         <div className="text-[11px] text-muted-foreground leading-tight">
-          {count} linked {count === 1 ? 'type' : 'types'}
+          {count} {count === 1 ? 'type' : 'types'}
+          {linked > 0 && ` · ${linked} linked`}
         </div>
       </div>
       <button

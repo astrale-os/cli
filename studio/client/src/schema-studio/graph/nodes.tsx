@@ -283,8 +283,23 @@ function ExtDomainNode({ data }: NodeProps) {
   )
 }
 
+/**
+ * One Class of a domain the canvas does not draw.
+ *
+ * An INERT one is a dependency with nothing to connect to — imported, used somewhere the
+ * canvas does not show — so it reads as a line in a list rather than a card: a footprint
+ * is routinely a dozen of these, and carding them all would drown the ones an edge lands on.
+ */
 function ExtMemberNode({ data }: NodeProps) {
-  const d = data as { name: string; kind: 'kernel' | 'external' }
+  const d = data as { name: string; kind: 'kernel' | 'external'; inert?: boolean }
+  if (d.inert) {
+    return (
+      <div className="flex h-full w-full items-center gap-1.5 px-2 text-muted-foreground">
+        <Box className="h-3 w-3 shrink-0 opacity-70" />
+        <span className="truncate text-[11px]">{d.name}</span>
+      </div>
+    )
+  }
   return (
     <div className="flex h-full w-full items-center gap-1.5 rounded-md border border-dashed bg-card px-2">
       <Handle type="target" position={Position.Left} className="!opacity-0" />

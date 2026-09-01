@@ -6,43 +6,41 @@ import { useUI } from '@/lib/store'
 import { selectionForActiveDomain, useSchemaWorkspace } from './store'
 
 /**
- * The canvas always holds the active domain, and only domains the workspace still has.
- * That invariant used to ride along in the header's domain selector; the selector is gone
- * (the rail owns the choice now), so it lives with the selection itself.
+ * The canvas only ever holds domains the workspace still has — and, the very first time
+ * the studio is opened, the domain you work in, so it does not open on nothing.
+ *
+ * After that the selection is yours: an empty canvas is a state you can reach and keep,
+ * and the active domain is NOT forced back onto it. Which domain the agent, the comments,
+ * Core and Process are about is a different question from what is drawn.
  */
 export function useCanvasSelectionSync(): void {
   const { data: domains } = useWorkspace()
   const domainId = useUI((state) => state.domainId)
   const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
+  const initialized = useSchemaWorkspace((state) => state.initialized)
   const replaceDomains = useSchemaWorkspace((state) => state.replaceDomains)
 
   useEffect(() => {
-    if (!domainId || !domains) return
+    if (!domains) return
     const valid = new Set(domains.map((domain) => domain.id))
     const next = selectedDomainIds.filter((id) => valid.has(id))
-    if (!next.includes(domainId)) next.unshift(domainId)
-    if (
-      next.length !== selectedDomainIds.length ||
-      next.some((id, index) => id !== selectedDomainIds[index])
-    ) {
-      replaceDomains(next)
+    if (!initialized && domainId && next.length === 0) {
+      replaceDomains([domainId])
+      return
     }
-  }, [domainId, domains, replaceDomains, selectedDomainIds])
+    if (next.length !== selectedDomainIds.length) replaceDomains(next)
+  }, [domainId, domains, initialized, replaceDomains, selectedDomainIds])
 }
 
 export interface CanvasDomainControls {
-  /** The domains the canvas composes — the active one is always among them. */
+  /** The domains the canvas draws. Not necessarily the one you are working in. */
   selected: Set<string>
-  /** The domains put away: still in the rail, no frame on the canvas. */
-  hidden: Set<string>
   /** Make a domain the active one; it joins the canvas if it was not on it. */
   activate: (id: string) => void
   /** What a click on a domain's name does: confirm first, unless that was turned off. */
   requestActivate: (id: string, origin: string) => void
-  /** Put a domain on the canvas, or take it off. The last one cannot leave. */
+  /** Put a domain on the canvas, or take it off. */
   toggleOnCanvas: (id: string) => void
-  /** Hide / show a domain's frame without taking it off the canvas. */
-  toggleHidden: (id: string) => void
 }
 
 /** Everything the rail does to the canvas composition, in one place. */
@@ -51,79 +49,52 @@ export function useCanvasDomains(): CanvasDomainControls {
   const setDomain = useUI((state) => state.setDomain)
   const requestDomainSwitch = useUI((state) => state.requestDomainSwitch)
   const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
-  const hiddenDomainIds = useSchemaWorkspace((state) => state.hiddenDomainIds)
   const replaceDomains = useSchemaWorkspace((state) => state.replaceDomains)
   const toggleDomain = useSchemaWorkspace((state) => state.toggleDomain)
-  const toggleDomainHidden = useSchemaWorkspace((state) => state.toggleDomainHidden)
 
-  const selected = useMemo(() => {
-    const ids = new Set(selectedDomainIds)
-    if (domainId) ids.add(domainId)
-    return ids
-  }, [domainId, selectedDomainIds])
-  const hidden = useMemo(() => new Set(hiddenDomainIds), [hiddenDomainIds])
+  const selected = useMemo(() => new Set(selectedDomainIds), [selectedDomainIds])
 
   const activate = useCallback(
     (id: string) => {
-      replaceDomains(domainId ? selectionForActiveDomain([...selected], domainId, id) : [id])
-      // Choosing to work in a domain is choosing to see it: leaving it put away would
-      // answer the click with a canvas that has nothing of the domain it is now about.
-      if (hidden.has(id)) toggleDomainHidden(id)
+      // Choosing to work in a domain is choosing to see it: activating one that is off
+      // the canvas would answer the click with a canvas that has nothing of the domain
+      // it is now about.
+      replaceDomains(selectionForActiveDomain(selectedDomainIds, id))
       setDomain(id)
     },
-    [domainId, hidden, replaceDomains, selected, setDomain, toggleDomainHidden],
+    [replaceDomains, selectedDomainIds, setDomain],
   )
 
   /**
-   * Unchecking the ACTIVE domain used to be a dead click; it hands the active role to
-   * another domain on the canvas and removes this one — the only reading of that gesture
-   * that means anything. The last remaining domain is checked and not yours to uncheck.
+   * The canvas composition is now the WHOLE meaning of this: a domain is drawn or it is
+   * not. Nothing is transferred, nothing is locked — taking the active domain off the
+   * canvas leaves it active (its chat, its threads and Core are untouched), and taking
+   * the last one off leaves an empty canvas, which is a thing a reader may want.
    */
-  const toggleOnCanvas = useCallback(
-    (id: string) => {
-      if (!domainId) {
-        setDomain(id)
-        return
-      }
-      if (!selected.has(id)) {
-        toggleDomain(id, domainId)
-        return
-      }
-      if (id !== domainId) {
-        toggleDomain(id, domainId)
-        return
-      }
-      const remaining = [...selected].filter((candidate) => candidate !== id)
-      if (remaining.length === 0) return
-      replaceDomains(remaining)
-      setDomain(remaining[0])
-    },
-    [domainId, replaceDomains, selected, setDomain, toggleDomain],
-  )
+  const toggleOnCanvas = useCallback((id: string) => toggleDomain(id), [toggleDomain])
 
   /**
    * Which domain you work in is the one choice on this rail that reaches outside the
    * canvas — the agent conversation, the comment threads, Core and Process all move with
    * it. It is confirmed rather than taken on a click, until the reader says not to ask.
+   *
+   * Clicking the domain you are ALREADY working in changes none of that, so when it is
+   * off the canvas the click simply puts it back — no dialog for a canvas gesture.
    */
   const requestActivate = useCallback(
     (id: string, origin: string) => {
-      if (id === domainId) return
+      if (id === domainId) {
+        if (!selected.has(id)) toggleDomain(id)
+        return
+      }
       if (!useUI.getState().confirmDomainSwitch) {
         activate(id)
         return
       }
       requestDomainSwitch({ id, origin })
     },
-    [activate, domainId, requestDomainSwitch],
+    [activate, domainId, requestDomainSwitch, selected, toggleDomain],
   )
 
-  return {
-    selected,
-    hidden,
-    activate,
-    requestActivate,
-    toggleOnCanvas,
-    toggleHidden: toggleDomainHidden,
-  }
+  return { selected, activate, requestActivate, toggleOnCanvas }
 }

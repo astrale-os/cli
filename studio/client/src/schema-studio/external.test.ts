@@ -62,9 +62,56 @@ describe('external Class projection', () => {
       {
         origin: 'remote.example.dev',
         kind: 'external',
-        members: [{ name: 'Remote', ref: remote }],
+        members: [{ name: 'Remote', ref: remote, connected: true }],
       },
     ])
+  })
+
+  test('lists a dependency the domain imports without linking, and marks it unconnected', () => {
+    const settings = classRef('config.example.dev', 'Settings')
+    const fixture = bundle({ User: nodeClass('User') })
+    fixture.ir!.importsByKey = {
+      'config.example.dev:class.Settings': {
+        origin: settings.origin,
+        ref: settings,
+        key: 'config.example.dev:class.Settings',
+      },
+    }
+    fixture.ir!.importedClassesByKey = {
+      'config.example.dev:class.Settings': nodeClass('Settings', {
+        origin: settings.origin,
+        ref: settings,
+      }),
+    }
+
+    // Nothing points at it, so nothing used to say it was a dependency at all.
+    expect(externalDomains(fixture)).toEqual([
+      {
+        origin: 'config.example.dev',
+        kind: 'external',
+        members: [{ name: 'Settings', ref: settings, connected: undefined }],
+      },
+    ])
+  })
+
+  test('an imported edge is the line it draws, not a member to list', () => {
+    const link = classRef('rel.example.dev', 'links_to')
+    const fixture = bundle({ User: nodeClass('User') })
+    fixture.ir!.importsByKey = {
+      'rel.example.dev:class.links_to': {
+        origin: link.origin,
+        ref: link,
+        key: 'rel.example.dev:class.links_to',
+      },
+    }
+    fixture.ir!.importedClassesByKey = {
+      'rel.example.dev:class.links_to': edgeClass('links_to', [
+        { name: 'from', types: ['User'] },
+        { name: 'to', types: ['User'] },
+      ]),
+    }
+
+    expect(externalDomains(fixture)).toEqual([])
   })
 
   test('does not infer an import from a short-name collision', () => {

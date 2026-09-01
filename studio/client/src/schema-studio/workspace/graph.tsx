@@ -23,7 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api, qk } from '@/lib/api'
 import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
-import { useCatalog, useComments } from '@/lib/hooks'
+import { useCatalog, useComments, useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { decodeFlowNodeId } from '@/lib/targets'
 import { cn } from '@/lib/utils'
@@ -92,6 +92,7 @@ export function WorkspaceSchemaGraph({
   const panZoomReady = useStore((state) => state.panZoom !== null)
   const [fitRequest, setFitRequest] = useState(0)
   const { data: catalog } = useCatalog()
+  const { data: workspace } = useWorkspace()
   const activeDomainId = useUI((state) => state.domainId) ?? domains[0]?.input.summary.id ?? ''
   const selected = useUI((state) => state.selectedClass)
   const selectionDomainId = useUI((state) => state.selectionDomainId)
@@ -114,6 +115,15 @@ export function WorkspaceSchemaGraph({
   const ensureExternalPositions = useSchemaWorkspace((state) => state.ensureExternalPositions)
   const resetWorkspaceFrames = useSchemaWorkspace((state) => state.resetWorkspaceFrames)
   const toggleModule = useSchemaWorkspace((state) => state.toggleModule)
+  const toggleDomain = useSchemaWorkspace((state) => state.toggleDomain)
+  const expandedExternals = useSchemaWorkspace((state) => state.expandedExternals)
+  const toggleExternalExpanded = useSchemaWorkspace((state) => state.toggleExternalExpanded)
+  // A grey frame that stands for a domain this workspace HAS can offer to draw it, so the
+  // reader promotes it where they found it rather than going back to the rail to look it up.
+  const workspaceOrigins = useMemo(
+    () => Object.fromEntries((workspace ?? []).map((domain) => [domain.origin, domain.id])),
+    [workspace],
+  )
   const { commitLayout, discardLayout } = useLayoutCommitter()
   const queryClient = useQueryClient()
   const { data: commentStore } = useComments(activeDomainId)
@@ -160,8 +170,12 @@ export function WorkspaceSchemaGraph({
   }, [discardLayout, domains, queryClient, resetWorkspaceFrames])
 
   const nodeActions = useMemo<WorkspaceNodeActions>(
-    () => ({ toggleModule: toggleWorkspaceModule }),
-    [toggleWorkspaceModule],
+    () => ({
+      toggleModule: toggleWorkspaceModule,
+      addDomainToCanvas: toggleDomain,
+      toggleExternalExpanded,
+    }),
+    [toggleDomain, toggleExternalExpanded, toggleWorkspaceModule],
   )
 
   const projection = useMemo(
@@ -170,8 +184,10 @@ export function WorkspaceSchemaGraph({
         catalog,
         domainPositions,
         externalPositions,
+        workspaceOrigins,
+        expandedExternals,
       }),
-    [catalog, domainPositions, domains, externalPositions],
+    [catalog, domainPositions, domains, expandedExternals, externalPositions, workspaceOrigins],
   )
   const [nodes, setNodes] = useState<Node[]>(projection.nodes)
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
@@ -186,16 +202,20 @@ export function WorkspaceSchemaGraph({
   const adopted = useRef<{
     domains: WorkspaceDomainProjection[]
     catalog: typeof catalog
+    expandedExternals: string[]
+    workspaceOrigins: Record<string, string>
   } | null>(null)
   useEffect(() => {
     const echo =
       adopted.current !== null &&
       adopted.current.domains === domains &&
-      adopted.current.catalog === catalog
+      adopted.current.catalog === catalog &&
+      adopted.current.expandedExternals === expandedExternals &&
+      adopted.current.workspaceOrigins === workspaceOrigins
     // …unless a reorganize is in flight, whose first wave is exactly a frame-only change and
     // the one time the canvas is not already painting the answer.
     if (echo && reorganizing.current === null) return
-    adopted.current = { domains, catalog }
+    adopted.current = { domains, catalog, expandedExternals, workspaceOrigins }
     // A reorganize lands in two waves (see `reorganizeSettled`), and the first one packs the
     // frames around the very geometry it is discarding. Paint that wave — it is what the
     // canvas holds until the re-layout arrives — but do not KEEP it: the store never
@@ -228,7 +248,15 @@ export function WorkspaceSchemaGraph({
     if (fittedNodes.current === nodeKey) return
     fittedNodes.current = nodeKey
     setFitRequest((n) => n + 1)
-  }, [catalog, domains, ensureDomainPositions, ensureExternalPositions, projection])
+  }, [
+    catalog,
+    domains,
+    ensureDomainPositions,
+    ensureExternalPositions,
+    expandedExternals,
+    projection,
+    workspaceOrigins,
+  ])
 
   // React Flow's queued fitView waits on its measurement lifecycle, so frame the
   // canvas from the geometry we already hold (see fit.ts).

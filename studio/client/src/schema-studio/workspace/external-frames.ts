@@ -12,12 +12,22 @@ export interface WorkspaceExternalReference {
   origin: string
   name: string
   definition: 'class'
+  /**
+   * Something drawn on the canvas points AT it. The others are dependencies all the same —
+   * the domain imports them — but they have no line to land on, so they are listed rather
+   * than carded, and only when the frame is unfolded.
+   */
+  connected?: boolean
 }
 
 export interface WorkspaceExternalCluster {
   origin: string
   members: WorkspaceExternalReference[]
   ownerDomainIds: string[]
+  /** Set when this origin is a domain of THIS workspace — one the reader can simply draw. */
+  domainId?: string
+  /** Unfolded by the reader: the dependencies with nothing to draw are listed too. */
+  expanded?: boolean
 }
 
 export interface WorkspaceExternalProjection {
@@ -28,6 +38,7 @@ export interface WorkspaceExternalProjection {
 interface ExternalFrame extends WorkspaceExternalCluster {
   position: WorkspacePoint
   size: WorkspaceSize
+  layout: ExternalFrameLayout
 }
 
 interface Rect {
@@ -36,10 +47,52 @@ interface Rect {
 }
 
 const EXTERNAL_WIDTH = 216
-const EXTERNAL_HEADER_HEIGHT = 48
+const EXTERNAL_MEMBER_TOP = 42
 const EXTERNAL_MEMBER_HEIGHT = 52
-const EXTERNAL_FOOTER_HEIGHT = 12
+/** A dependency with nothing to connect to is a line in a list, not a card. */
+const EXTERNAL_INERT_HEIGHT = 26
+const EXTERNAL_FOOTER_HEIGHT = 18
 const EXTERNAL_VERTICAL_GAP = 40
+
+export interface ExternalMemberPlacement {
+  member: WorkspaceExternalReference
+  y: number
+  height: number
+}
+
+export interface ExternalFrameLayout {
+  placements: ExternalMemberPlacement[]
+  size: WorkspaceSize
+  connectedCount: number
+  inertCount: number
+}
+
+/**
+ * What one external frame shows, and how tall that makes it.
+ *
+ * Connected members are always carded — an edge has to land somewhere. The inert ones are
+ * the reason this is folded by default: a domain's full dependency footprint is routinely
+ * a dozen classes it merely imports, and carding all of them would bury the canvas under
+ * grey boxes nothing points at.
+ */
+export function externalFrameLayout(cluster: WorkspaceExternalCluster): ExternalFrameLayout {
+  const connected = cluster.members.filter((member) => member.connected)
+  const inert = cluster.members.filter((member) => !member.connected)
+  const shown = cluster.expanded ? [...connected, ...inert] : connected
+  let y = EXTERNAL_MEMBER_TOP
+  const placements = shown.map((member) => {
+    const height = member.connected ? EXTERNAL_MEMBER_HEIGHT : EXTERNAL_INERT_HEIGHT
+    const placement = { member, y, height }
+    y += height
+    return placement
+  })
+  return {
+    placements,
+    size: { width: EXTERNAL_WIDTH, height: y + EXTERNAL_FOOTER_HEIGHT },
+    connectedCount: connected.length,
+    inertCount: inert.length,
+  }
+}
 
 const EXTERNAL_NODE_PREFIX = 'workspace-external:'
 
@@ -109,16 +162,10 @@ function layoutExternalFrames(
 ): ExternalFrame[] {
   const frames = [...clusters]
     .sort((a, b) => a.origin.localeCompare(b.origin))
-    .map((cluster) => ({
-      ...cluster,
-      size: {
-        width: EXTERNAL_WIDTH,
-        height:
-          EXTERNAL_HEADER_HEIGHT +
-          cluster.members.length * EXTERNAL_MEMBER_HEIGHT +
-          EXTERNAL_FOOTER_HEIGHT,
-      },
-    }))
+    .map((cluster) => {
+      const layout = externalFrameLayout(cluster)
+      return { ...cluster, layout, size: layout.size }
+    })
   const domainsById = new Map(domainFrames.map((frame) => [frame.domainId, frame]))
   const obstacles: Rect[] = domainFrames.map(({ position, size }) => ({ position, size }))
 
@@ -147,10 +194,10 @@ export function projectExternalFrames(
 
   for (const frame of frames) {
     const entry = entriesByOrigin.get(frame.origin)
-    const domainId = workspaceExternalNodeId(frame.origin)
+    const frameNodeId = workspaceExternalNodeId(frame.origin)
     const kind = frame.origin === 'kernel.astrale.ai' ? 'kernel' : 'external'
     nodes.push({
-      id: domainId,
+      id: frameNodeId,
       type: 'extDomain',
       position: frame.position,
       // Furniture you move, exactly like a domain frame: grab it anywhere and drag it, and
@@ -163,14 +210,20 @@ export function projectExternalFrames(
         origin: frame.origin,
         kind,
         icon: entry?.icon,
+        // Present only for an origin this workspace HAS: the frame can then offer to draw
+        // the domain itself, instead of sending the reader back to the rail to find it.
+        domainId: frame.domainId,
+        expanded: frame.expanded === true,
+        connectedCount: frame.layout.connectedCount,
+        inertCount: frame.layout.inertCount,
       },
       style: frame.size,
     })
-    frame.members.forEach((member, index) => {
+    frame.layout.placements.forEach(({ member, y, height }) => {
       nodes.push({
         id: workspaceExternalMemberNodeId(frame.origin, member.name, member.definition),
         type: 'extMember',
-        parentId: domainId,
+        parentId: frameNodeId,
         // A member rides with its frame. Unlike a class, it is not ours to place: the frame
         // is a fixed list whose height is that list's length, so a moved member would have
         // nowhere to be persisted and would snap back on the next projection. It is
@@ -186,9 +239,14 @@ export function projectExternalFrames(
         // and the only node on the canvas that had one.
         draggable: false,
         selectable: false,
-        position: { x: 12, y: 42 + index * EXTERNAL_MEMBER_HEIGHT },
-        data: { name: member.name, kind, definition: member.definition },
-        style: { width: 192, height: 44, pointerEvents: 'none' },
+        position: { x: 12, y },
+        data: {
+          name: member.name,
+          kind,
+          definition: member.definition,
+          inert: member.connected !== true,
+        },
+        style: { width: 192, height: height - 8, pointerEvents: 'none' },
       })
     })
   }

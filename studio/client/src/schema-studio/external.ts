@@ -5,6 +5,8 @@ import { classRefKey, isIrClassRef } from '@shared/schema/identity'
 export interface ExternalMember {
   name: string
   ref: IrClassRef
+  /** A relationship reaches it — as opposed to being imported and used somewhere else. */
+  connected?: boolean
 }
 
 export interface ExternalDomain {
@@ -92,18 +94,50 @@ export function crossDomainEdges(bundle: StudioSchemaBundle): CrossDomainEdge[] 
   return result
 }
 
+/**
+ * Every domain this one depends on, and what of it it depends on.
+ *
+ * Not just the far ends of relationships: `importsByKey` is the footprint the DSL resolved
+ * as reachable — Classes named in properties, in policies, in Views, in Core — so a domain
+ * imported without a single edge to it is a dependency all the same, and used to appear
+ * nowhere in the studio at all. The ones a relationship reaches are marked, because those
+ * are the ones the canvas draws a line to.
+ */
 export function externalDomains(bundle: StudioSchemaBundle): ExternalDomain[] {
+  const ir = bundle.ir
+  if (!ir) return []
   const byOrigin = new Map<string, Map<string, ExternalMember>>()
-  for (const edge of crossDomainEdges(bundle)) {
-    const members = byOrigin.get(edge.origin) ?? new Map<string, ExternalMember>()
-    members.set(classRefKey(edge.toRef), { name: edge.to, ref: edge.toRef })
-    byOrigin.set(edge.origin, members)
+  const remember = (origin: string, member: ExternalMember) => {
+    const members = byOrigin.get(origin) ?? new Map<string, ExternalMember>()
+    const key = classRefKey(member.ref)
+    members.set(key, { ...member, connected: members.get(key)?.connected || member.connected })
+    byOrigin.set(origin, members)
   }
+
+  for (const edge of crossDomainEdges(bundle)) {
+    remember(edge.origin, { name: edge.to, ref: edge.toRef, connected: true })
+  }
+  for (const descriptor of Object.values(ir.importsByKey)) {
+    const { origin, name } = descriptor.ref
+    if (origin === ir.domain) continue
+    // An imported EDGE is a relationship, not a member to list: it shows as the line
+    // between the two Classes it joins.
+    if (ir.importedClassesByKey[descriptor.key]?.type === 'edge') continue
+    remember(origin, { name, ref: descriptor.ref })
+  }
+
   return [...byOrigin]
     .map(([origin, members]) => ({
       origin,
       kind: origin === 'kernel.astrale.ai' ? ('kernel' as const) : ('external' as const),
-      members: [...members.values()].sort((left, right) => left.name.localeCompare(right.name)),
+      // What the canvas connects first: the same reading the external frames use.
+      members: [...members.values()].sort((left, right) =>
+        !left.connected === !right.connected
+          ? left.name.localeCompare(right.name)
+          : left.connected
+            ? -1
+            : 1,
+      ),
     }))
     .sort((left, right) =>
       left.kind === right.kind

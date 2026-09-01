@@ -11,7 +11,7 @@ import { DomainPicker, DomainsRailHeader } from './domains-rail'
 import { PanelShell } from './panel-shell'
 import { ModulesSidebar } from './sidebar'
 import { WorkspaceSchemaSection } from './workspace/section'
-import { useSchemaWorkspace } from './workspace/store'
+import { uniqueDomainIds, useSchemaWorkspace } from './workspace/store'
 
 /** Which canvas this section shows: the schema graph, or the core (genesis) data. */
 export type SchemaMode = 'schema' | 'core'
@@ -32,10 +32,11 @@ export function SchemaSection({
 }) {
   const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
   if (mode === 'core') return <CoreSection domainId={domainId} />
-  const workspaceIds = selectedDomainIds.includes(domainId)
-    ? selectedDomainIds
-    : [domainId, ...selectedDomainIds]
-  return <WorkspaceSchemaSection domainIds={workspaceIds} />
+  // What is INTROSPECTED, not what is drawn: the domain you work in is loaded whether or
+  // not the canvas draws it, because the panels that read it — Domains, Integrations, the
+  // detail fallback — answer to the active domain and not to the composition. Which of
+  // these get a frame is the canvas's business, decided from the same store below.
+  return <WorkspaceSchemaSection domainIds={uniqueDomainIds([...selectedDomainIds, domainId])} />
 }
 
 /** The core (genesis) reading of ONE domain: its data tree, canvas and detail. */
