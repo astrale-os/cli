@@ -20,7 +20,14 @@ async function activeName(): Promise<string | null> {
 export const activeInstanceName = activeName
 
 export async function listInstances(): Promise<InstancesState> {
-  const local = await astraleJson(['instance', 'list', '--bookmarked', '--json'])
+  // Each of these spawns the CLI — an 85 MB executable — and the header asks for the
+  // list on every load. Run them together instead of one after another: the header
+  // was costing three sequential process starts, on six browser connections the
+  // canvas also needs.
+  const [local, managed] = await Promise.all([
+    astraleJson(['instance', 'list', '--bookmarked', '--json']),
+    astraleJson(['instance', 'list', '--admin-only', '--json']),
+  ])
   const active = typeof local?.active === 'string' ? local.active : await activeName()
   const instances: InstanceInfo[] = []
   for (const bookmark of records(local?.bookmarks)) {
@@ -32,7 +39,6 @@ export async function listInstances(): Promise<InstancesState> {
       kind: 'bookmark',
     })
   }
-  const managed = await astraleJson(['instance', 'list', '--admin-only', '--json'])
   for (const item of records(managed?.instances)) {
     if (
       typeof item.slug !== 'string' ||

@@ -4,7 +4,7 @@
  *   anatomy fileset   → anatomy-diff
  * The studio is read-only, so this only ever pushes; the client refetches.
  */
-import chokidar from 'chokidar'
+import chokidar, { type FSWatcher } from 'chokidar'
 import { join, relative } from 'node:path'
 
 import type { DomainHandle } from './domain'
@@ -48,16 +48,55 @@ export function affectsBundle(handle: DomainHandle, path: string): boolean {
   )
 }
 
-export function watchDomain(handle: DomainHandle): () => void {
-  const schemaW = chokidar.watch([handle.applicationFile, handle.schemaDir], {
-    ignoreInitial: true,
-    ignored,
-  })
-  const anatomyW = chokidar.watch(
-    ANATOMY_PATHS.map((p) => join(handle.root, p)),
-    { ignoreInitial: true, ignored },
-  )
+/**
+ * Domains take their watchers ONE AT A TIME.
+ *
+ * Attaching a domain's watchers walks its authored tree and registers a watch per
+ * directory — hundreds, for a domain with a large `ui/` or `client/src`. A dozen
+ * domains doing that at once held the event loop so completely that the studio's
+ * port, open since before indexing, answered nothing for twenty seconds. Queued,
+ * the same work leaves gaps the server can serve in.
+ */
+let attachQueue: Promise<void> = Promise.resolve()
 
+function ready(watcher: FSWatcher): Promise<void> {
+  return new Promise((resolve) => {
+    watcher.once('ready', () => resolve())
+    watcher.once('error', () => resolve())
+  })
+}
+
+export function watchDomain(handle: DomainHandle): () => void {
+  let closed = false
+  const open: FSWatcher[] = []
+
+  const attach = async (): Promise<void> => {
+    if (closed) return
+    const schemaW = chokidar.watch([handle.applicationFile, handle.schemaDir], {
+      ignoreInitial: true,
+      ignored,
+    })
+    const anatomyW = chokidar.watch(
+      ANATOMY_PATHS.map((p) => join(handle.root, p)),
+      { ignoreInitial: true, ignored },
+    )
+    open.push(schemaW, anatomyW)
+    listen(handle, schemaW, anatomyW)
+    await Promise.all([ready(schemaW), ready(anatomyW)])
+    if (closed) for (const w of open) void w.close()
+  }
+
+  // `attach` on both settlements, then swallow: one domain's failure must neither
+  // stall the queue nor surface as an unhandled rejection.
+  attachQueue = attachQueue.then(attach, attach).catch(() => undefined)
+
+  return () => {
+    closed = true
+    for (const w of open) void w.close()
+  }
+}
+
+function listen(handle: DomainHandle, schemaW: FSWatcher, anatomyW: FSWatcher): void {
   let st: ReturnType<typeof setTimeout> | undefined
   let at: ReturnType<typeof setTimeout> | undefined
 
@@ -87,9 +126,4 @@ export function watchDomain(handle: DomainHandle): () => void {
       broadcast({ type: 'anatomy-diff', domainId: handle.id })
     }, 150)
   })
-
-  return () => {
-    schemaW.close()
-    anatomyW.close()
-  }
 }

@@ -33,7 +33,7 @@ export const DEFAULT_SETTINGS: StudioSettings = {
   agentAccess: 'full',
   agentModel: null,
   integrationsDir: 'integrations',
-  introspectTimeoutMs: 20000,
+  introspectTimeoutMs: 60_000,
   instancePollMs: 30000,
   updatesPollMs: 600000,
   viewProbeTimeoutMs: 8000,

@@ -454,19 +454,15 @@ Examples:
         serverChild.once('exit', (code) => res(code ?? 0)),
       )
 
-      if (!isMachine(opts))
-        log.step(
-          `Starting Domain Studio${dev ? ' (dev)' : ''} — ${displayUrl}  (indexing the workspace…)`,
-        )
-      // Indexing a multi-domain workspace is genuinely slow (the server boots +
-      // introspects every domain before it answers), so be patient — `waitForHttp`
-      // returns the instant the server is up, and only hits this ceiling in a
-      // pathological case. A server that gives up first (no domain found, a lost
-      // port) ends the wait right there instead: it already told the user why, and
-      // the terminal is theirs again immediately. We open the browser once it
-      // actually answers.
+      if (!isMachine(opts)) log.step(`Starting Domain Studio${dev ? ' (dev)' : ''} — ${displayUrl}`)
+      // The server binds its port before it indexes anything, so this is a wait on a
+      // process starting up — seconds — not on a workspace being introspected, which
+      // now happens behind the open port. A server that gives up first (no domain
+      // found, a lost port) ends the wait right there instead: it already told the
+      // user why, and the terminal is theirs again immediately. We open the browser
+      // once it actually answers.
       const readiness = await awaitStudioReadiness(
-        (abort) => waitForHttp(probeUrl, 180_000, abort),
+        (abort) => waitForHttp(probeUrl, 60_000, abort),
         serverDone,
       )
       if (readiness === 'exited') {
@@ -485,10 +481,13 @@ Examples:
       if (isMachine(opts)) {
         output({ url: displayUrl, port: studioPort, mode: dev ? 'dev' : 'prod', workspace }, opts)
       } else {
-        log.success(`Domain Studio${dev ? ' (dev — live reload)' : ''}`)
+        // "Serving", not "finished". The server answers as soon as it is listening and
+        // indexes the workspace behind that — so this must not read as a promise that
+        // every canvas is ready. The server's own `n/N` lines below say when they are.
+        log.success(`Domain Studio serving${dev ? ' (dev — live reload)' : ''}`)
         log.dim(`  ${workspace}`)
         log.dim(`  → ${displayUrl}`)
-        if (!ready) log.warn('Still starting — open the URL above once it finishes indexing.')
+        if (!ready) log.warn('Still starting — open the URL above once the server answers.')
       }
       if (ready && opts.open === true) openBrowser(displayUrl)
 

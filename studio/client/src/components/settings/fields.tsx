@@ -25,7 +25,7 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
         label: 'Schema extraction timeout',
         hint: 'How long the Bun introspector may run before it is killed (ms). Raise for very large domains.',
         type: 'number',
-        placeholder: '20000',
+        placeholder: '60000',
       },
       {
         key: 'instancePollMs',

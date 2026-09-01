@@ -2,7 +2,7 @@
  * Source coordinates and leading documentation for authored schema members.
  */
 import { existsSync } from 'node:fs'
-import { Node, SyntaxKind, type CallExpression, type SourceFile } from 'ts-morph'
+import { Node, SyntaxKind, type CallExpression, type Project, type SourceFile } from 'ts-morph'
 
 import type { SchemaIR, SourceSpan } from '../../../shared/types'
 
@@ -171,22 +171,28 @@ export function buildSourceSpans(args: {
   ir: SchemaIR | null
   domainRoot: string
   schemaDir: string
+  /** Shared with the handler reading — see buildOverlay. */
+  project?: Project
 }): Record<string, SourceSpan> {
   const { ir, domainRoot, schemaDir } = args
   if (!schemaDir || !existsSync(schemaDir)) return {}
 
-  const project = newProject()
-  let files: string[] = []
+  const project = args.project ?? newProject()
+  const dir = schemaDir.replace(/\/$/u, '')
   try {
-    const added = project.addSourceFilesAtPaths(`${schemaDir.replace(/\/$/, '')}/**/*.ts`)
-    files = added.map((f) => f.getFilePath())
+    project.addSourceFilesAtPaths(`${dir}/**/*.ts`)
   } catch {
     return {}
   }
 
   const spans: Record<string, SourceSpan> = {}
 
-  const sourceFiles = files.map((f) => project.getSourceFile(f)).filter((f): f is SourceFile => !!f)
+  // Select by path, not by what the add call returned: on a shared project the
+  // handler reading has already added most of these, and they come back as
+  // "nothing added" rather than as this reading's fileset.
+  const sourceFiles = project
+    .getSourceFiles()
+    .filter((f) => f.getFilePath() === dir || f.getFilePath().startsWith(`${dir}/`))
   // The Domain's `defineSchema` map is authoritative for each member's name.
   const memberNames = buildMemberNameMap(sourceFiles)
 

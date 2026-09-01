@@ -5,31 +5,36 @@
  * SSE; one whose composition vanished is unregistered. It reuses
  * `scanWorkspace` (detection) + `bootDomain` (lifecycle), so there is no second
  * source of truth for "what is a domain" or "how a domain comes online".
+ *
+ * It RE-SCANS on a timer rather than watching the tree. Watching meant a recursive
+ * chokidar over the whole workspace: on a real monorepo that is four thousand
+ * directory watchers, and registering them starved the event loop for a minute and
+ * a half — the studio's port was open that whole time and answered nothing. A scan
+ * is the same walk detection already does at boot, costs about a tenth of a second,
+ * and the thing it is watching for — a domain appearing on disk from somewhere
+ * other than Studio — is rare and in no hurry. `create new` never waits on this: it
+ * registers and boots the domain it just scaffolded itself (see workspace/create).
  */
-import chokidar from 'chokidar'
-import { basename } from 'node:path'
-
 import { invalidate } from './cache'
 import { scanWorkspace } from './detect'
 import { allDomains, isDomainDir, unregisterDomain } from './domain'
 import { bootDomain } from './lifecycle'
 import { broadcast } from './sse'
 
-const IGNORED =
-  /(^|[/\\])(node_modules|\.git|\.astrale|\.domain-studio|dist|\.dist|\.next|\.cache|\.turbo|\.vercel|coverage)([/\\]|$)/
-// only these file changes can change the domain SET (vs. ordinary in-domain edits)
-export const DOMAIN_SET_TRIGGER_FILES = new Set(['astrale.config.ts', 'application.ts'])
-const AUTHORED_SOURCE = /\.[cm]?[jt]sx?$/u
+/** How often the workspace is re-read for domains that appeared or vanished. */
+export const WORKSPACE_RESCAN_MS = 15_000
 
 /**
  * Watch `root` for domains appearing/disappearing.
  * @param stoppers shared `domainId → file-watcher stop` map. The startup scan seeds
  *   it (via bootDomain); this watcher keeps it in sync as domains come and go.
  */
-export function watchWorkspace(root: string, stoppers: Map<string, () => void>): () => void {
-  let timer: ReturnType<typeof setTimeout> | undefined
+export function watchWorkspace(
+  root: string,
+  stoppers: Map<string, () => void>,
+  intervalMs = WORKSPACE_RESCAN_MS,
+): () => void {
   let running = false
-  let queued = false
 
   const reconcile = async () => {
     const previous = new Map(allDomains().map((domain) => [domain.id, domain]))
@@ -68,12 +73,9 @@ export function watchWorkspace(root: string, stoppers: Map<string, () => void>):
     }
   }
 
-  // serialize reconciles — bootDomain is async; coalesce event bursts
+  // Never overlap: a reconcile boots domains, which is async and can outlast a tick.
   const run = async () => {
-    if (running) {
-      queued = true
-      return
-    }
+    if (running) return
     running = true
     try {
       await reconcile()
@@ -81,37 +83,10 @@ export function watchWorkspace(root: string, stoppers: Map<string, () => void>):
       console.error('  Domain Studio — workspace reconcile failed:', e)
     } finally {
       running = false
-      if (queued) {
-        queued = false
-        void run()
-      }
     }
   }
-  const schedule = () => {
-    clearTimeout(timer)
-    timer = setTimeout(() => void run(), 400)
-  }
-  const onCompositionChange = (p: string) => {
-    if (DOMAIN_SET_TRIGGER_FILES.has(basename(p))) schedule()
-  }
-  const onSourceAddedOrRemoved = (p: string) => {
-    if (DOMAIN_SET_TRIGGER_FILES.has(basename(p)) || AUTHORED_SOURCE.test(p)) schedule()
-  }
 
-  const watcher = chokidar.watch(root, {
-    ignoreInitial: true,
-    depth: 4,
-    ignored: (p: string) => IGNORED.test(p),
-  })
-  watcher
-    .on('addDir', schedule)
-    .on('unlinkDir', schedule)
-    .on('add', onSourceAddedOrRemoved)
-    .on('unlink', onSourceAddedOrRemoved)
-    .on('change', onCompositionChange)
-
-  return () => {
-    clearTimeout(timer)
-    void watcher.close()
-  }
+  const timer = setInterval(() => void run(), intervalMs)
+  timer.unref?.() // a periodic scan must never be the reason the process stays alive
+  return () => clearInterval(timer)
 }

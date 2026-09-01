@@ -1,12 +1,12 @@
 /** Source links for SDK V1 Action and Workflow declarations. */
 import { readdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { Node, SyntaxKind, type CallExpression } from 'ts-morph'
+import { Node, SyntaxKind, type CallExpression, type Project, type SourceFile } from 'ts-morph'
 
 import type { HandlerLink, SchemaIR } from '../../../shared/types'
 
 import { scanKernelCalls } from './kernel-calls'
-import { newProject, relToRoot, unwrapExpression, valueOfIdentifier } from './project'
+import { newProject, relToRoot, tryAddFile, unwrapExpression, valueOfIdentifier } from './project'
 
 const IGNORED_DIRECTORIES = new Set([
   '.git',
@@ -120,14 +120,20 @@ function isStubHandler(node: Node): boolean {
 export function buildHandlerLinks(args: {
   ir: SchemaIR | null
   domainRoot: string
+  /** Shared with the span reading — see buildOverlay. */
+  project?: Project
 }): HandlerLink[] {
   const { ir, domainRoot } = args
   if (!domainRoot) return []
-  const project = newProject()
-  for (const file of authoredTypeScriptFiles(domainRoot)) project.addSourceFileAtPath(file)
+  const project = args.project ?? newProject()
+  // Walk the files THIS reading owns, not everything the project happens to hold:
+  // the project is shared, and the span reading adds test files this one excludes.
+  const sources = authoredTypeScriptFiles(domainRoot)
+    .map((file) => tryAddFile(project, file))
+    .filter((source): source is SourceFile => source !== undefined)
   const links = new Map<string, HandlerLink>()
 
-  for (const source of project.getSourceFiles()) {
+  for (const source of sources) {
     for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
       const kind = declarationKind(call)
       if (!kind) continue

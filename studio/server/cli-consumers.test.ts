@@ -152,7 +152,14 @@ describe('instance CLI orchestration', () => {
         },
       ],
     })
-    expect(fake.calls().map((call) => call.args)).toEqual([activeArgs, bookmarkedArgs, managedArgs])
+    // The two list reads are issued together, so only the SET of invocations is
+    // fixed — asserting their order would assert that they are still sequential.
+    expect(
+      fake
+        .calls()
+        .map((call) => call.args.join(' '))
+        .sort(),
+    ).toEqual([activeArgs, bookmarkedArgs, managedArgs].map((args) => args.join(' ')).sort())
   })
 
   test('uses the exact non-interactive instance switch flags and re-reads CLI-owned state', async () => {

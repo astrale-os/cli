@@ -22,10 +22,26 @@ import { hashAnatomyFiles } from './state/baseline'
 import { readJson, writeJson } from './state/store'
 
 const bundles = new Map<string, StudioSchemaBundle>()
+/**
+ * The build a caller can JOIN instead of starting a second one.
+ *
+ * `bundles` only ever holds a finished bundle, so concurrent readers of a domain
+ * that has none yet each used to launch their own extraction: opening the studio
+ * asks for `/bundle`, `/anatomy` and `/core` at once, and the boot may still be
+ * indexing the same domain — four subprocesses bundling identical sources.
+ */
+const building = new Map<string, Promise<StudioSchemaBundle>>()
 const anatomies = new Map<string, Promise<DomainAnatomy>>()
 
 const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
-const BUNDLE_CACHE_VERSION = 6
+/**
+ * Bump whenever extraction or the overlay can produce a DIFFERENT answer from the
+ * same sources. The key below hashes the domain's files and this server's own
+ * sources — but a shipped standalone has no sources on disk to hash, so there the
+ * version is the only thing that can retire a bundle a newer Studio would compose
+ * differently. v7: the overlay reads both of its passes out of one ts-morph project.
+ */
+const BUNDLE_CACHE_VERSION = 7
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',
@@ -230,25 +246,71 @@ export function stillStands(bundle: StudioSchemaBundle): boolean {
   return Number.isFinite(extractedAt) && Date.now() - extractedAt < FAILED_BUNDLE_TTL_MS
 }
 
-export async function getBundle(id: string, rebuild = false): Promise<StudioSchemaBundle | null> {
+/**
+ * Background indexing steps aside for a reader.
+ *
+ * The schema itself is extracted in a subprocess, but hashing the domain's files
+ * and composing its ts-morph overlay run HERE, on the thread that answers HTTP —
+ * a few hundred milliseconds per domain, back to back for a whole workspace. A
+ * build somebody is waiting on says so; the boot loop asks for a gap before it
+ * picks up its next domain, and the reader's canvas is not stuck behind an
+ * indexing pass it does not care about.
+ */
+let awaitedBuilds = 0
+const gapWaiters: (() => void)[] = []
+
+/** Resolves as soon as no reader is waiting on a bundle of their own. */
+export function buildGap(): Promise<void> {
+  if (awaitedBuilds === 0) return Promise.resolve()
+  return new Promise((resolve) => gapWaiters.push(resolve))
+}
+
+export async function getBundle(
+  id: string,
+  rebuild = false,
+  /** Startup indexing: nobody is on the other end of this one. */
+  background = false,
+): Promise<StudioSchemaBundle | null> {
   const h = getDomain(id)
   if (!h) return null
   const held = bundles.get(id)
   if (!rebuild && held && stillStands(held)) return held
-  const keyBefore = bundleCacheKey(h.root, h.schemaDirName, h.applicationFile)
-  if (!rebuild) {
-    const cached = readCachedBundle(h.root, keyBefore)
-    if (cached && stillStands(cached)) {
-      if (cached.ir) h.origin = cached.ir.domain
-      bundles.set(id, cached)
-      return cached
+
+  if (!background) awaitedBuilds++
+  try {
+    // A plain read joins whatever build is already running; a rebuild is a demand
+    // for fresh sources, so it starts its own — later readers then join THAT one.
+    const running = building.get(id)
+    if (!rebuild && running) return await running
+
+    const run = (async (): Promise<StudioSchemaBundle> => {
+      const keyBefore = bundleCacheKey(h.root, h.schemaDirName, h.applicationFile)
+      if (!rebuild) {
+        const cached = readCachedBundle(h.root, keyBefore)
+        if (cached && stillStands(cached)) {
+          if (cached.ir) h.origin = cached.ir.domain
+          bundles.set(id, cached)
+          return cached
+        }
+      }
+      const b = await buildBundle(h)
+      bundles.set(id, b)
+      const keyAfter = bundleCacheKey(h.root, h.schemaDirName, h.applicationFile)
+      if (keyAfter === keyBefore) writeCachedBundle(h.root, keyAfter, b)
+      return b
+    })()
+
+    building.set(id, run)
+    try {
+      return await run
+    } finally {
+      if (building.get(id) === run) building.delete(id)
+    }
+  } finally {
+    if (!background && --awaitedBuilds === 0) {
+      for (const wake of gapWaiters.splice(0)) wake()
     }
   }
-  const b = await buildBundle(h)
-  bundles.set(id, b)
-  const keyAfter = bundleCacheKey(h.root, h.schemaDirName, h.applicationFile)
-  if (keyAfter === keyBefore) writeCachedBundle(h.root, keyAfter, b)
-  return b
 }
 
 export async function getAnatomy(id: string, rebuild = false): Promise<DomainAnatomy | null> {
