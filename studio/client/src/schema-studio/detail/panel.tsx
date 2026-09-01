@@ -132,7 +132,7 @@ export function SchemaDetail({
         )}
 
         {properties.length > 0 && (
-          <Group label="Properties" hint={`${properties.length}`}>
+          <Group label="Properties">
             <Surface className="divide-y overflow-hidden">
               {properties.map(([propertyName, value]) => (
                 <PropertyRow
@@ -149,7 +149,7 @@ export function SchemaDetail({
         )}
 
         {methods.length > 0 && (
-          <Group label="Methods" hint={methods.length}>
+          <Group label="Methods">
             <div className="space-y-2.5">
               {methods.map(([methodName, method]) => (
                 <MethodCard
@@ -168,7 +168,7 @@ export function SchemaDetail({
         )}
 
         {classViews.length > 0 && (
-          <Group label="Views" hint={`${classViews.length}`}>
+          <Group label="Views">
             <div className="flex flex-col gap-0.5">
               {classViews.map((view) => (
                 <ViewRow
