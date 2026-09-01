@@ -11,7 +11,7 @@ import {
   TriangleAlert,
   Upload,
 } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { ScrollArea } from '@/components/ui/misc'
@@ -33,11 +33,12 @@ import { useComments, useDocuments, useHarness } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { activityLabel, AgentTurn, TurnDivider } from './agent-turn'
+import { AgentTurn, TurnDivider } from './agent-turn'
 import { ChatEffortPicker } from './chat-effort'
 import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
+import { DockActivity } from './dock-activity'
 import { AttachButton, CHIP, DocumentChips, useDocumentMutations } from './documents'
 import { HandoffChip } from './handoff-chip'
 import { MessageQueue, type PendingMessage } from './message-queue'
@@ -251,27 +252,6 @@ function TurnPayload({ domainId }: { domainId: string }) {
 }
 
 /**
- * What the agent is doing, on the bar the dock rests as.
- *
- * The transcript is closed here and this layout spends no room in the header on
- * the agent, so without this line a turn runs entirely out of sight — the reader
- * is left with a Stop button and nothing that says what it would stop. Same line
- * the transcript shows, on the one row the bar has. Pressing it opens the
- * conversation, like pressing anywhere else on the resting bar.
- */
-function RestingActivity({ run, queued }: { run: AgentRun; queued: number }) {
-  return (
-    <div className="flex items-center gap-1.5 px-3 pt-2 text-[12px] text-muted-foreground">
-      <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-      <span className="min-w-0 flex-1 truncate">{activityLabel(run)}</span>
-      {/* the strip that holds the queue only exists once the chat opens; until then
-          this is the whole of what it would say */}
-      {queued > 0 && <span className="shrink-0 tabular-nums">{queued} queued</span>}
-    </div>
-  )
-}
-
-/**
  * Whether the agent can be written to at all, said above the field it governs.
  *
  * A disabled composer with no explanation is the whole of the bug this answers:
@@ -380,8 +360,11 @@ export function AgentComposer({
   const sendable = !!text.trim() || carriesPayload
   const canSend = available && sendable
 
-  // grow with the content, up to half the panel
-  useEffect(() => {
+  // Grow with the content before paint, up to half the panel. In the bottom dock
+  // the composer's height positions the whole frame; waiting for a passive effect
+  // would briefly leave the frame at its previous bounds while the textarea had
+  // already accepted the new value.
+  useLayoutEffect(() => {
     const el = field.current
     if (!el) return
     el.style.height = 'auto'
@@ -596,7 +579,7 @@ export function AgentComposer({
   if (bar)
     return (
       <div className="shrink-0">
-        {payloadShowing ? (
+        {payloadShowing && (
           <>
             <MessageQueue
               domainId={domainId}
@@ -607,8 +590,6 @@ export function AgentComposer({
             />
             <TurnPayload domainId={domainId} />
           </>
-        ) : (
-          run && active && <RestingActivity run={run} queued={chat?.queued.length ?? 0} />
         )}
         {/* below the payload and above the field: the last thing read before the
             caret, because it is the thing that decides whether the caret matters.
@@ -624,6 +605,16 @@ export function AgentComposer({
           {!payloadShowing && linkMark}
           {composed}
           <div className="flex shrink-0 items-center gap-1">
+            {/* Resting, this bar IS the agent on screen — nothing else on the window
+                says a turn is running, so it says so here. Opened, the transcript
+                above says it better, and in more words than a line has room for. */}
+            {active && !expanded && (
+              <DockActivity
+                run={run}
+                harness={chat?.harness ?? ''}
+                tone={toneOf(chats?.chats ?? [], chatId, chat?.harness)}
+              />
+            )}
             {/* the meter sits before the model, in reading order: how hard, on what */}
             {expanded && <ChatEffortPicker domainId={domainId} chat={chat} harness={harness} />}
             {expanded && <ChatModelPicker domainId={domainId} chat={chat} harness={harness} />}

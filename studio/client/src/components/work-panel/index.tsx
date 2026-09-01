@@ -2,6 +2,7 @@ import { MessageCircle, MessageSquare, PanelBottom, PanelLeft, PanelRight, X } f
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { isRunActive, useDisplayRun } from '@/lib/agent'
 import { useActiveChatId, useModelCatalog } from '@/lib/chats'
 import { useComments, useHarness, useLoadout } from '@/lib/hooks'
 import { type PanelSide, useUI } from '@/lib/store'
@@ -186,7 +187,11 @@ function FloatingDock({ domainId }: { domainId: string }) {
   const setPanelOpen = useUI((s) => s.setPanelOpen)
   const setPanelTab = useUI((s) => s.setPanelTab)
   const waiting = useWaitingCount(domainId)
+  const run = useDisplayRun(domainId)
   const box = useRef<HTMLDivElement>(null)
+  // Closed, the dock is all the agent has on screen — a running turn has to show
+  // on the bar itself. Open it needs nothing: the turn is unfolding right above.
+  const working = !open && isRunActive(run)
 
   const field = useCallback(
     () => box.current?.querySelector<HTMLTextAreaElement>('[data-agent-composer]'),
@@ -201,11 +206,17 @@ function FloatingDock({ domainId }: { domainId: string }) {
   useDismiss(box, open, close)
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-4">
+    // inset-0 rather than a bottom edge: the dock grows UPWARD, and only a box the
+    // height of the view can tell it where to stop. Without that the tab strip and
+    // the close button — the top of the dock — climbed off the screen as soon as a
+    // long message, a queue or a short window made the whole thing taller than the
+    // window, and the dock went on to cover the app header.
+    <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-center p-4">
       <AgentDropZone
         domainId={domainId}
         ref={box}
         data-testid="agent-dock"
+        aria-busy={working || undefined}
         onPointerDown={(event) => {
           // Anywhere on the resting bar means "open it" — not just the field. An
           // unreachable agent leaves that field disabled, and the bar is the only way
@@ -215,19 +226,37 @@ function FloatingDock({ domainId }: { domainId: string }) {
           field()?.focus()
         }}
         className={cn(
-          'pointer-events-auto relative flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border',
+          'pointer-events-auto relative flex max-h-full w-full max-w-3xl flex-col overflow-clip rounded-2xl border',
           'shadow-[0_20px_60px_-28px_rgb(0_0_0/0.55)] backdrop-blur-xl transition-colors duration-300',
           // at rest it is a bar over a canvas, and seeing the canvas through it is the
           // point; opened it is something to read, and that wants a solid page
           open ? 'bg-card' : 'bg-card/80',
+          // a working bar lifts off the canvas a little further
+          working && 'ring-[3px] ring-primary/10',
         )}
       >
+        {/* The edge breathes for as long as the turn runs — the sign you catch
+            without looking at the bar, while you are reading the graph it floats
+            over. It is the border itself, an overlay rather than a class on the
+            box, so only the outline pulses and never the bar with everything on it. */}
+        {working && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 z-10 animate-pulse rounded-2xl border border-primary/60 [animation-duration:2.4s]"
+          />
+        )}
         {/* The conversation. Its height IS the animation — the composer below is
-            shrink-0, so growing this pushes the whole box up off the bar. */}
+            shrink-0, so growing this pushes the whole box up off the bar.
+
+            `overflow-clip`, not `hidden`: a hidden box is still a scroll container,
+            and the tab strip calls scrollIntoView on the chat you are in. Mid-open
+            this box is shorter than its own contents, so that call scrolled it — and
+            the panel header slid out of the top for good, leaving the dock with no
+            way back to the threads and no way to close it. Clipping cannot scroll. */}
         <div
           inert={!open}
           className={cn(
-            'flex min-h-0 flex-col overflow-hidden transition-[height] duration-300 ease-out',
+            'flex min-h-0 flex-col overflow-clip transition-[height] duration-300 ease-out',
             open ? 'h-[min(60vh,480px)]' : 'h-0',
           )}
         >
@@ -241,24 +270,36 @@ function FloatingDock({ domainId }: { domainId: string }) {
           </div>
         </div>
 
-        <AgentComposer
-          domainId={domainId}
-          bar
-          expanded={open}
-          // opens on the agent, but never yanks you off the comments you opened it on
-          onFocus={() => !open && setPanelTab('agent')}
-          // the only way back to the threads while the dock rests: there is no tab
-          // strip until it opens, and the badge is how a reply announces itself
-          trailing={
-            <RailButton
-              label="Open comments"
-              badge={waiting}
-              onClick={() => setPanelTab('comments')}
-            >
-              <MessageSquare className="h-4 w-4" />
-            </RailButton>
-          }
-        />
+        {/* The composer belongs to the agent: opened on the threads, the dock is a
+            reading surface and shows them alone — no field, no chips, no queue,
+            the same as the docked column has always done. Unmounting it is safe
+            because nothing it holds lives in it: the draft is in the store and the
+            documents are on the server, so coming back finds the message exactly as
+            it was left. At rest it stays whatever tab it would open on — the bar IS
+            the dock, and there would otherwise be nothing on screen. */}
+        {(!open || tab === 'agent') && (
+          <AgentComposer
+            domainId={domainId}
+            bar
+            expanded={open}
+            // opens on the agent, but never yanks you off the comments you opened it on
+            onFocus={() => !open && setPanelTab('agent')}
+            // The only way back to the threads while the dock RESTS: there is no tab
+            // strip until it opens, and the badge is how a reply announces itself.
+            // Opened, the strip says it better and this would only say it twice.
+            trailing={
+              open ? undefined : (
+                <RailButton
+                  label="Open comments"
+                  badge={waiting}
+                  onClick={() => setPanelTab('comments')}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </RailButton>
+              )
+            }
+          />
+        )}
       </AgentDropZone>
     </div>
   )
