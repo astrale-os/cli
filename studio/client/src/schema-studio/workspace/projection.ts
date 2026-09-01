@@ -33,8 +33,6 @@ export interface WorkspaceDomainProjection {
   collapsed: Set<string>
   nodes: Node[]
   edges: Edge[]
-  /** Put away by the rail's eye: still composed, but nothing of it is drawn. */
-  hidden?: boolean
 }
 
 export interface WorkspaceDomainNodeData extends Record<string, unknown> {
@@ -54,6 +52,10 @@ export interface ComposeWorkspaceCanvasOptions {
   domainPositions?: Record<string, WorkspacePoint>
   externalPositions?: Record<string, WorkspacePoint>
   catalog?: DomainCatalogEntry[]
+  /** origin → domain id, for the origins this workspace holds but does not draw. */
+  workspaceOrigins?: Record<string, string>
+  /** Origins whose inert dependencies the reader unfolded. */
+  expandedExternals?: string[]
 }
 
 interface ResolvedTarget {
@@ -125,7 +127,7 @@ function endpointClasses(endpoint: IrEndpoint): Array<string | IrClassRef> {
 
 function localTarget(domain: WorkspaceDomainProjection, name: string): ResolvedTarget | undefined {
   const ir = domain.input.bundle.ir
-  if (domain.hidden || !ir || ir.classes[name]?.type !== 'node') return undefined
+  if (!ir || ir.classes[name]?.type !== 'node') return undefined
   if (isHidden(classRef(name), domain.input.visibility.hidden)) return undefined
   const modulePath = moduleOfClass(domain.input.bundle, name)
   const localId = domain.collapsed.has(modulePath) ? `grp-${modulePath}` : `class.${name}`
@@ -171,10 +173,6 @@ function resolveClass(
   if (candidates.length === 1) {
     const target = localTarget(candidates[0], ref.name)
     if (target) return [target]
-    // A domain the reader put away is not missing — it is out of view, and what pointed
-    // at it goes with it. Drawing it back as an "unresolved" external box would answer
-    // the eye by replacing the domain with a stub of itself.
-    if (candidates[0].hidden) return []
     diagnostics.add(
       `${owner.input.summary.origin} imports ${ref.origin}:class.${ref.name}, but the selected schema does not expose it.`,
     )
@@ -194,32 +192,110 @@ function edgeId(ownerId: string, name: string, source: string, target: string): 
   return encodeFlowEdgeId(ownerId, name, source, target)
 }
 
+interface ExternalIndex {
+  /** A dependency the canvas draws a line to. */
+  connect: (target: ResolvedTarget, ownerDomainId: string) => void
+  /** A dependency the owner merely imports — everything else in its footprint. */
+  note: (reference: WorkspaceExternalReference, ownerDomainId: string) => void
+  clusters: (options: {
+    workspaceOrigins: Record<string, string>
+    expanded: Set<string>
+  }) => WorkspaceExternalCluster[]
+}
+
+/**
+ * Every dependency of every domain on the canvas, gathered in one place.
+ *
+ * The three passes below find them by different routes — a relationship's endpoint, a
+ * class's parent, and the import footprint the DSL computed — and they overlap. A member
+ * is CONNECTED if any of those routes drew a line to it, wherever that line came from: it
+ * is a property of the canvas as a whole, not of the domain that happened to find it.
+ */
+function externalIndex(): ExternalIndex {
+  const byOrigin = new Map<
+    string,
+    { members: Map<string, WorkspaceExternalReference>; ownerDomainIds: Set<string> }
+  >()
+
+  const note = (reference: WorkspaceExternalReference, ownerDomainId: string) => {
+    const cluster = byOrigin.get(reference.origin) ?? {
+      members: new Map<string, WorkspaceExternalReference>(),
+      ownerDomainIds: new Set<string>(),
+    }
+    const current = cluster.members.get(reference.name)
+    cluster.members.set(reference.name, {
+      ...reference,
+      connected: current?.connected === true || reference.connected === true,
+    })
+    cluster.ownerDomainIds.add(ownerDomainId)
+    byOrigin.set(reference.origin, cluster)
+  }
+
+  return {
+    note,
+    connect: (target, ownerDomainId) => {
+      if (!target.unresolved) return
+      note({ ...target.unresolved, connected: true }, ownerDomainId)
+    },
+    clusters: ({ workspaceOrigins, expanded }) =>
+      [...byOrigin].map(([origin, cluster]) => ({
+        origin,
+        members: [...cluster.members.values()].sort((left, right) =>
+          left.connected === right.connected
+            ? left.name.localeCompare(right.name)
+            : left.connected
+              ? -1
+              : 1,
+        ),
+        ownerDomainIds: [...cluster.ownerDomainIds],
+        ...(workspaceOrigins[origin] ? { domainId: workspaceOrigins[origin] } : {}),
+        expanded: expanded.has(origin),
+      })),
+  }
+}
+
+/**
+ * The rest of each domain's footprint: everything it imports that no line reached above.
+ *
+ * `importsByKey` is what the DSL resolved as reachable — Classes named in properties, in
+ * policies, in Views, in Core — so a dependency shows on the canvas whether or not it
+ * happens to be wired through a relationship. An origin the canvas already DRAWS is not
+ * among them: the real frame is the answer, and a grey copy beside it would be a lie.
+ */
+function rememberDependencyFootprint(
+  domains: WorkspaceDomainProjection[],
+  origins: Map<string, WorkspaceDomainProjection[]>,
+  index: ExternalIndex,
+): void {
+  for (const owner of domains) {
+    const ir = owner.input.bundle.ir
+    if (!ir) continue
+    for (const descriptor of Object.values(ir.importsByKey)) {
+      const { origin, name } = descriptor.ref
+      if (origin === ir.domain) continue
+      if ((origins.get(origin)?.length ?? 0) > 0) continue
+      if (isHidden(domainRef(origin), owner.input.visibility.hidden)) continue
+      // An imported EDGE is a relationship, not a box: it is already on the canvas as the
+      // line between its endpoints, and a card for it would name the same thing twice.
+      if (ir.importedClassesByKey[descriptor.key]?.type === 'edge') continue
+      index.note({ origin, name, definition: 'class' }, owner.input.summary.id)
+    }
+  }
+}
+
 function crossDomainEdges(
   domains: WorkspaceDomainProjection[],
   origins: Map<string, WorkspaceDomainProjection[]>,
   diagnostics: Set<string>,
-): { edges: Edge[]; unresolved: WorkspaceExternalCluster[] } {
+  index: ExternalIndex,
+): Edge[] {
   const edges: Edge[] = []
-  const unresolved = new Map<
-    string,
-    { members: Map<string, WorkspaceExternalReference>; ownerDomainIds: Set<string> }
-  >()
   const seen = new Set<string>()
-
-  const remember = (target: ResolvedTarget, ownerDomainId: string) => {
-    if (!target.unresolved) return
-    const cluster = unresolved.get(target.unresolved.origin) ?? {
-      members: new Map(),
-      ownerDomainIds: new Set(),
-    }
-    cluster.members.set(target.unresolved.name, target.unresolved)
-    cluster.ownerDomainIds.add(ownerDomainId)
-    unresolved.set(target.unresolved.origin, cluster)
-  }
+  const remember = index.connect
 
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
-    if (!ir || owner.hidden) continue
+    if (!ir) continue
     for (const edgeClass of Object.values(ir.classes)) {
       if (edgeClass.type !== 'edge' || edgeClass.endpoints?.length !== 2) continue
       if (isHidden(edgeRef(edgeClass.name), owner.input.visibility.hidden)) continue
@@ -267,37 +343,35 @@ function crossDomainEdges(
     }
   }
 
-  return {
-    edges,
-    unresolved: [...unresolved.entries()].map(([origin, cluster]) => ({
-      origin,
-      members: [...cluster.members.values()].sort((a, b) => a.name.localeCompare(b.name)),
-      ownerDomainIds: [...cluster.ownerDomainIds],
-    })),
-  }
+  return edges
 }
 
 function inheritanceEdges(
   domains: WorkspaceDomainProjection[],
   origins: Map<string, WorkspaceDomainProjection[]>,
   diagnostics: Set<string>,
+  index: ExternalIndex,
 ): Edge[] {
   const edges: Edge[] = []
   const seen = new Set<string>()
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
-    if (!ir || owner.hidden || !owner.input.visibility.showInheritedEdges) continue
+    if (!ir || !owner.input.visibility.showInheritedEdges) continue
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node') continue
       const source = localTarget(owner, className)
       if (!source) continue
       for (const parent of definition.extendsRefs ?? []) {
         for (const target of resolveClass(owner, parent, origins, diagnostics)) {
-          if (target.unresolved || target.nodeId === source.nodeId) continue
+          if (target.nodeId === source.nodeId) continue
           // A parent in the owner's OWN domain is already drawn by that domain's projection.
           // Same guard the relationship edges use above — without it every local `extends`
           // lands on the canvas twice, perfectly superposed and routed twice over.
           if (target.domainId === owner.input.summary.id) continue
+          // A parent OUTSIDE the canvas used to be dropped here without a trace, which is
+          // the one dependency the reader could not see was there. It gets the same grey
+          // box a relationship's far end gets.
+          index.connect(target, owner.input.summary.id)
           const id = `workspace-extends:${source.nodeId}:${target.nodeId}`
           if (seen.has(id)) continue
           seen.add(id)
@@ -323,7 +397,13 @@ function inheritanceEdges(
 
 export function composeWorkspaceCanvas(
   domains: WorkspaceDomainProjection[],
-  { domainPositions = {}, externalPositions = {}, catalog }: ComposeWorkspaceCanvasOptions = {},
+  {
+    domainPositions = {},
+    externalPositions = {},
+    catalog,
+    workspaceOrigins = {},
+    expandedExternals = [],
+  }: ComposeWorkspaceCanvasOptions = {},
 ): WorkspaceProjection {
   const diagnostics = new Set<string>()
   const origins = new Map<string, WorkspaceDomainProjection[]>()
@@ -332,18 +412,15 @@ export function composeWorkspaceCanvas(
     origins.set(origin, [...(origins.get(origin) ?? []), domain])
   }
 
-  // A hidden domain stays in `origins` — the resolver has to recognise it to answer
-  // "put away" rather than "never heard of it" — but nothing below draws it.
-  const drawn = domains.filter((domain) => !domain.hidden)
   const frames = layoutWorkspaceFrames(
-    drawn.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
+    domains.map((domain) => ({ domainId: domain.input.summary.id, nodes: domain.nodes })),
     domainPositions,
   )
   const framesByDomain = new Map(frames.map((frame) => [frame.domainId, frame]))
   const nodes: Node[] = []
   const edges: Edge[] = []
 
-  for (const domain of drawn) {
+  for (const domain of domains) {
     const domainId = domain.input.summary.id
     const frame = framesByDomain.get(domainId)!
     const rootId = workspaceDomainNodeId(domainId)
@@ -402,11 +479,18 @@ export function composeWorkspaceCanvas(
     }
   }
 
-  const cross = crossDomainEdges(domains, origins, diagnostics)
-  const inheritance = inheritanceEdges(domains, origins, diagnostics)
-  const externals = projectExternalFrames(cross.unresolved, frames, externalPositions, catalog)
+  const index = externalIndex()
+  const cross = crossDomainEdges(domains, origins, diagnostics, index)
+  const inheritance = inheritanceEdges(domains, origins, diagnostics, index)
+  rememberDependencyFootprint(domains, origins, index)
+  const externals = projectExternalFrames(
+    index.clusters({ workspaceOrigins, expanded: new Set(expandedExternals) }),
+    frames,
+    externalPositions,
+    catalog,
+  )
   nodes.push(...externals.nodes)
-  edges.push(...cross.edges, ...inheritance)
+  edges.push(...cross, ...inheritance)
 
   return {
     nodes,

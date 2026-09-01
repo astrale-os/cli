@@ -41,22 +41,20 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const collapsedModules = useSchemaWorkspace((state) => state.collapsedModules)
-  const hiddenDomainIds = useSchemaWorkspace((state) => state.hiddenDomainIds)
+  const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
   const { domains: prepared, ready: preparationReady } = usePreparedWorkspaceDomains(
     inputs,
     collapsedModules,
   )
-  // A domain put away by the rail's eye keeps its projection — its hierarchy stays in the
-  // rail, and showing it again costs no re-layout — but the canvas is told not to draw it.
-  // Same array back when nothing is hidden: the graph reads that identity to tell a real
-  // change from the echo of its own drag.
+  // `prepared` may hold one domain the canvas does not draw — the active one, loaded for
+  // the panels that read it. Same array back when the two lists agree: the graph reads
+  // that identity to tell a real change from the echo of its own drag.
   const canvasDomains = useMemo(() => {
-    if (hiddenDomainIds.length === 0) return prepared
-    const hidden = new Set(hiddenDomainIds)
-    return prepared.map((domain) =>
-      hidden.has(domain.input.summary.id) ? { ...domain, hidden: true } : domain,
-    )
-  }, [hiddenDomainIds, prepared])
+    const selected = new Set(selectedDomainIds)
+    return prepared.every((domain) => selected.has(domain.input.summary.id))
+      ? prepared
+      : prepared.filter((domain) => selected.has(domain.input.summary.id))
+  }, [prepared, selectedDomainIds])
 
   useEffect(() => {
     if (useUI.getState().panelOverlay && useUI.getState().panelOverlay !== 'views') {
@@ -123,7 +121,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const detail = selected && !isModuleRef(selected) ? selected : undefined
   const solo = inputs.length === 1
   const ready = preparationReady && inputs.length === domainIds.length
-  const providerKey = prepared
+  const providerKey = canvasDomains
     .map((domain) => `${domain.input.summary.id}:${domain.input.bundle.renderFingerprint}`)
     .join('|')
 
@@ -154,9 +152,13 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
         </ModulesSidebar>
 
         <div className="relative min-w-0 flex-1">
-          <ReactFlowProvider key={providerKey}>
-            <WorkspaceSchemaGraph domains={canvasDomains} onToggleInherited={toggleInherited} />
-          </ReactFlowProvider>
+          {canvasDomains.length === 0 ? (
+            <EmptyCanvas />
+          ) : (
+            <ReactFlowProvider key={providerKey}>
+              <WorkspaceSchemaGraph domains={canvasDomains} onToggleInherited={toggleInherited} />
+            </ReactFlowProvider>
+          )}
         </div>
 
         {panelOverlay === 'views' ? (
@@ -188,6 +190,24 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
           </PanelShell>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A canvas with nothing on it. Reachable on purpose — the rail lets you take the last
+ * domain off — so it says what to do rather than looking like something failed to load.
+ */
+function EmptyCanvas() {
+  return (
+    <div
+      data-testid="workspace-empty-canvas"
+      className="flex h-full flex-col items-center justify-center gap-1 px-6 text-center"
+    >
+      <p className="text-sm font-medium">No domain on the canvas</p>
+      <p className="text-[13px] text-muted-foreground">
+        Check one in the rail to draw its schema here.
+      </p>
     </div>
   )
 }

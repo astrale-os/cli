@@ -5,66 +5,95 @@ import type { WorkspacePoint } from './geometry'
 export type { WorkspacePoint, WorkspaceSize } from './geometry'
 
 interface PersistedWorkspaceState {
+  /** The domains the canvas draws. There is no second list: on the canvas or not. */
   selectedDomainIds: string[]
-  /** On the canvas, but put away — the rail's eye. A subset of `selectedDomainIds`. */
-  hiddenDomainIds: string[]
+  /**
+   * Whether a reader has ever composed this canvas. An empty selection is a legitimate
+   * state — you took the last domain off — and only this tells it apart from a studio
+   * that has never been opened, whose canvas opens on the domain you work in.
+   */
+  initialized: boolean
   domainPositions: Record<string, WorkspacePoint>
   externalPositions: Record<string, WorkspacePoint>
   collapsedModules: Record<string, string[]>
+  /** External frames the reader unfolded — see `expandedExternals` in the projection. */
+  expandedExternals: string[]
 }
 
 interface WorkspaceCanvasState extends PersistedWorkspaceState {
   replaceDomains: (ids: string[]) => void
-  toggleDomain: (id: string, primaryDomainId: string) => void
-  toggleDomainHidden: (id: string) => void
+  toggleDomain: (id: string) => void
   setDomainPosition: (id: string, position: WorkspacePoint) => void
   setExternalPosition: (origin: string, position: WorkspacePoint) => void
   ensureDomainPositions: (positions: Record<string, WorkspacePoint>) => void
   ensureExternalPositions: (positions: Record<string, WorkspacePoint>) => void
   resetWorkspaceFrames: () => void
   toggleModule: (domainId: string, path: string) => void
+  toggleExternalExpanded: (origin: string) => void
 }
 
 const STORAGE_KEY = 'studio.schemaWorkspace.v1'
 
 const EMPTY: PersistedWorkspaceState = {
   selectedDomainIds: [],
-  hiddenDomainIds: [],
+  initialized: false,
   domainPositions: {},
   externalPositions: {},
   collapsedModules: {},
+  expandedExternals: [],
 }
 
 export function uniqueDomainIds(ids: string[]): string[] {
   return [...new Set(ids.filter(Boolean))]
 }
 
+/**
+ * What the canvas draws once you go and work in another domain.
+ *
+ * A canvas of one domain FOLLOWS you — that is the ordinary studio, and leaving the old
+ * domain behind on screen would compose a workspace nobody asked for. A canvas of several
+ * was composed on purpose, so the new domain joins it and nothing is taken away.
+ *
+ * The domain you leave is never put back on the canvas: taking it off was a choice, and
+ * it outlives the fact that you happened to be working in it.
+ */
 export function selectionForActiveDomain(
   selectedDomainIds: string[],
-  previousActiveDomainId: string,
   nextActiveDomainId: string,
 ): string[] {
   const selected = uniqueDomainIds(selectedDomainIds)
-  if (previousActiveDomainId && !selected.includes(previousActiveDomainId)) {
-    selected.unshift(previousActiveDomainId)
-  }
   if (selected.length <= 1) return [nextActiveDomainId]
   if (!selected.includes(nextActiveDomainId)) selected.push(nextActiveDomainId)
   return selected
 }
 
+/**
+ * A canvas that used to carry two lists — what it held, and what of that it drew — now
+ * carries one. What the reader had put away was not on screen, so it comes back off the
+ * canvas rather than on it: the first paint after the upgrade is the last one they saw.
+ */
+export function migrateSelection(value: {
+  selectedDomainIds?: string[]
+  hiddenDomainIds?: string[]
+}): string[] {
+  const hidden = new Set(value.hiddenDomainIds ?? [])
+  return uniqueDomainIds(value.selectedDomainIds ?? []).filter((id) => !hidden.has(id))
+}
+
 function load(): PersistedWorkspaceState {
   try {
-    const value = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) ?? 'null',
-    ) as Partial<PersistedWorkspaceState> | null
+    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Partial<
+      PersistedWorkspaceState & { hiddenDomainIds: string[] }
+    > | null
     if (!value) return EMPTY
     return {
-      selectedDomainIds: uniqueDomainIds(value.selectedDomainIds ?? []),
-      hiddenDomainIds: uniqueDomainIds(value.hiddenDomainIds ?? []),
+      selectedDomainIds: migrateSelection(value),
+      // A stored canvas has been composed by definition, whatever the upgrade left in it.
+      initialized: true,
       domainPositions: value.domainPositions ?? {},
       externalPositions: value.externalPositions ?? {},
       collapsedModules: value.collapsedModules ?? {},
+      expandedExternals: value.expandedExternals ?? [],
     }
   } catch {
     return EMPTY
@@ -87,32 +116,14 @@ function samePoint(current: WorkspacePoint | undefined, next: WorkspacePoint): b
   return current !== undefined && current.x === next.x && current.y === next.y
 }
 
-/**
- * Hiding is a reading of what the canvas HOLDS: a domain taken off it is no longer hidden,
- * it is simply gone. Left behind, that record would come back the next time the domain is
- * checked and make it land invisible, for a gesture the reader made long before.
- */
-function pruneHidden(
-  state: WorkspaceCanvasState,
-  selectedDomainIds: string[],
-): { hiddenDomainIds: string[] } {
-  const selected = new Set(selectedDomainIds)
-  const hiddenDomainIds = state.hiddenDomainIds.filter((id) => selected.has(id))
-  return {
-    hiddenDomainIds:
-      hiddenDomainIds.length === state.hiddenDomainIds.length
-        ? state.hiddenDomainIds
-        : hiddenDomainIds,
-  }
-}
-
 function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
   return {
     selectedDomainIds: state.selectedDomainIds,
-    hiddenDomainIds: state.hiddenDomainIds,
+    initialized: state.initialized,
     domainPositions: state.domainPositions,
     externalPositions: state.externalPositions,
     collapsedModules: state.collapsedModules,
+    expandedExternals: state.expandedExternals,
   }
 }
 
@@ -123,33 +134,17 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
   replaceDomains: (ids) =>
     set((state) => {
       const selectedDomainIds = uniqueDomainIds(ids)
-      const next = {
-        ...persisted(state),
-        selectedDomainIds,
-        ...pruneHidden(state, selectedDomainIds),
-      }
-      persist(next)
-      return { selectedDomainIds, hiddenDomainIds: next.hiddenDomainIds }
+      persist({ ...persisted(state), selectedDomainIds, initialized: true })
+      return { selectedDomainIds, initialized: true }
     }),
-  toggleDomain: (id, primaryDomainId) =>
+  toggleDomain: (id) =>
     set((state) => {
       const selected = new Set(state.selectedDomainIds)
-      if (selected.has(id) && id !== primaryDomainId) selected.delete(id)
+      if (selected.has(id)) selected.delete(id)
       else selected.add(id)
-      selected.add(primaryDomainId)
       const selectedDomainIds = [...selected]
-      const { hiddenDomainIds } = pruneHidden(state, selectedDomainIds)
-      persist({ ...persisted(state), selectedDomainIds, hiddenDomainIds })
-      return { selectedDomainIds, hiddenDomainIds }
-    }),
-  toggleDomainHidden: (id) =>
-    set((state) => {
-      const hidden = new Set(state.hiddenDomainIds)
-      if (hidden.has(id)) hidden.delete(id)
-      else hidden.add(id)
-      const hiddenDomainIds = [...hidden]
-      persist({ ...persisted(state), hiddenDomainIds })
-      return { hiddenDomainIds }
+      persist({ ...persisted(state), selectedDomainIds, initialized: true })
+      return { selectedDomainIds, initialized: true }
     }),
   setDomainPosition: (id, position) =>
     set((state) => {
@@ -204,5 +199,14 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       const collapsedModules = { ...state.collapsedModules, [domainId]: [...current] }
       persist({ ...persisted(state), collapsedModules })
       return { collapsedModules }
+    }),
+  toggleExternalExpanded: (origin) =>
+    set((state) => {
+      const current = new Set(state.expandedExternals)
+      if (current.has(origin)) current.delete(origin)
+      else current.add(origin)
+      const expandedExternals = [...current]
+      persist({ ...persisted(state), expandedExternals })
+      return { expandedExternals }
     }),
 }))

@@ -2,7 +2,6 @@ import { useState } from 'react'
 
 import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
-import { cn } from '@/lib/utils'
 
 import type { WorkspaceDomainProjection } from './projection'
 
@@ -35,8 +34,8 @@ export function shouldShowDomainSelectionIndicator({
 
 /**
  * The rail's body: every domain the workspace holds, and under the checked ones, their
- * schema hierarchy. The checkbox says what the canvas composes, the name says which domain
- * the studio is about, and the eye puts one away without taking it off the canvas.
+ * schema hierarchy. One control per question: the checkbox says what the canvas draws,
+ * the name says which domain the studio is about.
  */
 export function WorkspaceDomainTree({
   domains,
@@ -75,7 +74,6 @@ export function WorkspaceDomainTree({
         const domain = prepared.get(domainId)
         const active = activeDomainId === domainId
         const checked = canvas.selected.has(domainId)
-        const hidden = canvas.hidden.has(domainId)
         const closed = !(expandedDomains[domainId] ?? active)
         const controls: ModuleTreeControls | null = domain
           ? {
@@ -92,16 +90,13 @@ export function WorkspaceDomainTree({
             <DomainRow
               origin={summary.origin}
               active={active}
-              hidden={hidden}
               checked={checked}
-              lockedOnCanvas={checked && canvas.selected.size === 1}
               onActivate={() => canvas.requestActivate(domainId, summary.origin)}
               onToggleChecked={() => canvas.toggleOnCanvas(domainId)}
               {...(checked
                 ? {
                     expanded: !closed,
                     onToggleExpanded: () => toggleExpanded(domainId, !closed),
-                    onToggleHidden: () => canvas.toggleHidden(domainId),
                   }
                 : {})}
               showSelectionIndicator={shouldShowDomainSelectionIndicator({
@@ -110,24 +105,17 @@ export function WorkspaceDomainTree({
                 selected,
               })}
             />
-            {checked &&
-              !closed &&
-              controls &&
-              domain && (
-                // No rule and no tint between a domain and its modules: the rail is ONE
-                // tree, and the hierarchy is carried by the indent alone. A put-away domain
-                // keeps its hierarchy — it is still where you select and hide things — but
-                // the whole block dims with the row that owns it.
-                <div className={cn(hidden && 'opacity-50')}>
-                  <ModuleTree
-                    root={buildModuleTree(domain.input.bundle)}
-                    indent={MODULE_INDENT}
-                    selected={selectionDomainId === domainId ? selected : undefined}
-                    onSelect={(ref) => select(domainId, ref)}
-                    controls={controls}
-                  />
-                </div>
-              )}
+            {/* No rule and no tint between a domain and its modules: the rail is ONE tree,
+                and the hierarchy is carried by the indent alone. */}
+            {checked && !closed && controls && domain && (
+              <ModuleTree
+                root={buildModuleTree(domain.input.bundle)}
+                indent={MODULE_INDENT}
+                selected={selectionDomainId === domainId ? selected : undefined}
+                onSelect={(ref) => select(domainId, ref)}
+                controls={controls}
+              />
+            )}
           </section>
         )
       })}
