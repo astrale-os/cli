@@ -60,12 +60,14 @@ describe('DESIGN — per-identity keys', () => {
 
   test('signAs(alice) works when alice has her own key', async () => {
     await persistKeypair('alice', { keysDir: tmp })
+    const before = Math.floor(Date.now() / 1000)
     const jwt = await signAs('alice', tmp)
     expect(jwt.split('.').length).toBe(3)
     const claims = decodeJwt(jwt)
     expect(claims.iat).toBeUndefined()
     expect(claims.exp).toBeNumber()
-    expect((claims.exp as number) * 1_000).toBeGreaterThan(Date.now() + 299_000)
+    expect(claims.exp).toBeGreaterThanOrEqual(before + 3_600)
+    expect(claims.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1_000) + 3_600)
   })
 
   /** @evidence TEST-CLI-KEYS-DISTINGUISHES-KERNEL-ROOT-GRANT */
