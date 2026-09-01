@@ -126,7 +126,3 @@ export function inheritedGroupsOfClass(
   const rank: Record<ClassTier, number> = { local: 0, external: 1, kernel: 2 }
   return groups.sort((left, right) => rank[left.tier] - rank[right.tier])
 }
-
-export function inheritedCount(groups: readonly InheritedGroup[]): number {
-  return groups.reduce((count, group) => count + group.props.length + group.methods.length, 0)
-}

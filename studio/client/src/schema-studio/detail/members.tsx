@@ -21,7 +21,7 @@ import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-import { type ClassTier, type InheritedGroup, inheritedCount } from '../inheritance'
+import { type ClassTier, type InheritedGroup } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { originLabel } from './model'
 
@@ -324,7 +324,7 @@ export function InheritedSection({
 }) {
   const selectClass = useUI((s) => s.selectClass)
   return (
-    <Group label="Inherited" hint={`${inheritedCount(groups)}`}>
+    <Group label="Inherited">
       <div className="space-y-5">
         {groups.map((g) => {
           const tileTone = g.tier === 'local' ? 'fn' : g.tier === 'external' ? 'node' : 'muted'

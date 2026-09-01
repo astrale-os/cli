@@ -1,4 +1,5 @@
-import { type ReactNode, useState } from 'react'
+import { PanelLeftOpen } from 'lucide-react'
+import { type ReactNode, createContext, useContext, useState } from 'react'
 
 /**
  * The modules rail down the left of every schema canvas, with the drag handle that
@@ -9,6 +10,7 @@ const MIN = 180
 const MAX = 560
 const DEFAULT = 240
 const STORAGE_KEY = 'studio.modulesWidth'
+const COLLAPSED_KEY = 'studio.modulesCollapsed'
 
 function storedWidth(): number {
   try {
@@ -17,6 +19,21 @@ function storedWidth(): number {
   } catch {}
   return DEFAULT
 }
+
+function storedCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === '1'
+  } catch {}
+  return false
+}
+
+/**
+ * The rail's own close button, offered to whatever header it was given: the header owns
+ * its title bar's layout, so the control belongs beside its other controls rather than
+ * floating over them. Absent (null) outside a rail — the header renders no button then.
+ */
+const CollapseContext = createContext<{ collapse: () => void } | null>(null)
+export const useRailCollapse = () => useContext(CollapseContext)
 
 export function ModulesSidebar({
   children,
@@ -30,6 +47,14 @@ export function ModulesSidebar({
   onClearSelection?: () => void
 }) {
   const [width, setWidth] = useState(storedWidth)
+  const [collapsed, setCollapsed] = useState(storedCollapsed)
+
+  const setCollapsedPersisted = (value: boolean) => {
+    setCollapsed(value)
+    try {
+      localStorage.setItem(COLLAPSED_KEY, value ? '1' : '0')
+    } catch {}
+  }
 
   // Clicking the rail beside the tree means the same thing as clicking the canvas pane:
   // nothing is selected. A press on a control — or anywhere on a tree row, whose padding
@@ -65,6 +90,32 @@ export function ModulesSidebar({
     document.body.style.userSelect = 'none'
   }
 
+  // Closed, the rail keeps a strip of itself rather than disappearing: the same button
+  // that shut it is where you left it, so reopening never becomes a hunt.
+  if (collapsed) {
+    return (
+      <div
+        data-testid="modules-sidebar"
+        data-collapsed="true"
+        className="relative flex min-h-0 w-10 shrink-0 flex-col items-center border-r"
+      >
+        <button
+          type="button"
+          onClick={() => setCollapsedPersisted(false)}
+          title="Show domains"
+          aria-label="Show domains"
+          aria-expanded={false}
+          className="grid h-10 w-10 shrink-0 place-items-center text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+        <span className="mt-1 select-none text-[11px] font-semibold uppercase tracking-wider text-muted-foreground [writing-mode:vertical-rl]">
+          Domains
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div
       data-testid="modules-sidebar"
@@ -72,7 +123,9 @@ export function ModulesSidebar({
       style={{ width }}
       onClick={clearOnBackgroundClick}
     >
-      {header}
+      <CollapseContext.Provider value={{ collapse: () => setCollapsedPersisted(true) }}>
+        {header}
+      </CollapseContext.Provider>
       <div className="min-h-0 flex-1">{children}</div>
       {/* drag handle straddling the right border */}
       <div

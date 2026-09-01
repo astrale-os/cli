@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Plus } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Eye, EyeOff, PanelLeftClose, Plus } from 'lucide-react'
 import { useState } from 'react'
 
 import { CreateDomainDialog } from '@/components/create-domain-dialog'
@@ -8,6 +8,7 @@ import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
+import { useRailCollapse } from './sidebar'
 import { useCanvasDomains } from './workspace/canvas-selection'
 
 /**
@@ -19,28 +20,36 @@ import { useCanvasDomains } from './workspace/canvas-selection'
  * question: what am I looking at.
  */
 export function DomainsRailHeader() {
-  const { data: domains } = useWorkspace()
   const [createOpen, setCreateOpen] = useState(false)
   const setSection = useUI((state) => state.setSection)
   const { activate } = useCanvasDomains()
-  const count = domains?.length ?? 0
+  const rail = useRailCollapse()
 
   return (
     <>
-      <header className="flex h-10 shrink-0 items-center gap-1.5 border-b px-3">
-        <h2 className="text-[13px] font-semibold">Domains</h2>
-        {count > 0 && (
-          <span className="text-[11px] tabular-nums text-muted-foreground">{count}</span>
-        )}
+      <header className="flex h-10 shrink-0 items-center gap-0.5 border-b px-3">
+        <h2 className="mr-auto text-[13px] font-semibold">Domains</h2>
         <button
           type="button"
           title="New domain"
           aria-label="New domain"
           onClick={() => setCreateOpen(true)}
-          className="ml-auto grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           <Plus className="h-4 w-4" />
         </button>
+        {rail && (
+          <button
+            type="button"
+            title="Hide domains"
+            aria-label="Hide domains"
+            aria-expanded
+            onClick={rail.collapse}
+            className="-mr-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        )}
       </header>
 
       <CreateDomainDialog
@@ -211,15 +220,15 @@ export function DomainPicker({ children }: { children?: ReactNode }) {
       {(domains ?? []).map((domain) => {
         const active = domain.id === domainId
         return (
-          <section key={domain.id} className="border-b border-border last:border-b-0">
+          <section key={domain.id}>
             <DomainRow
               origin={domain.origin}
               active={active}
               onActivate={() => requestActivate(domain.id, domain.origin)}
             />
-            {active && children && (
-              <div className="border-t border-border bg-muted/40">{children}</div>
-            )}
+            {/* Nested, not partitioned: what hangs under a domain is one more level of the
+                same tree, so it is indented under the name instead of boxed off from it. */}
+            {active && children && <div className="pl-3">{children}</div>}
           </section>
         )
       })}

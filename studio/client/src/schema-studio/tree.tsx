@@ -38,19 +38,27 @@ export function ModuleTree({
   selected,
   onSelect,
   controls,
+  indent = 0,
 }: {
   root: TreeNode
   selected?: string
   onSelect: (id: string) => void
   controls: ModuleTreeControls
+  /**
+   * Pixels every row is pushed right by. The rail hangs this tree under the domain row
+   * that owns it, and one continuous hierarchy means the modules nest under that name
+   * rather than restarting at the rail's edge.
+   */
+  indent?: number
 }) {
   return (
-    <div className="py-1.5 text-[13px]" data-domain-id={controls.domainId}>
+    <div className="pb-1.5 text-[13px]" data-domain-id={controls.domainId}>
       {root.children.map((c) => (
         <Branch
           key={c.path}
           node={c}
           depth={0}
+          indent={indent}
           selected={selected}
           onSelect={onSelect}
           controls={controls}
@@ -61,6 +69,7 @@ export function ModuleTree({
           key={m.selectId}
           m={m}
           depth={1}
+          indent={indent}
           selected={selected}
           onSelect={onSelect}
           controls={controls}
@@ -73,12 +82,14 @@ export function ModuleTree({
 function Branch({
   node,
   depth,
+  indent,
   selected,
   onSelect,
   controls,
 }: {
   node: TreeNode
   depth: number
+  indent: number
   selected?: string
   onSelect: (id: string) => void
   controls: ModuleTreeControls
@@ -97,7 +108,7 @@ function Branch({
   const toggle = () =>
     hasCanvasModule ? controls.toggleModule(node.path) : setLocalOpen((value) => !value)
 
-  const pad = { paddingLeft: 8 + depth * 12 }
+  const pad = { paddingLeft: indent + 8 + depth * 12 }
   const FolderIcon = open ? FolderOpen : FolderClosed
   return (
     <div>
@@ -147,6 +158,7 @@ function Branch({
               key={c.path}
               node={c}
               depth={depth + 1}
+              indent={indent}
               selected={selected}
               onSelect={onSelect}
               controls={controls}
@@ -157,6 +169,7 @@ function Branch({
               key={m.selectId}
               m={m}
               depth={depth + 1}
+              indent={indent}
               selected={selected}
               onSelect={onSelect}
               controls={controls}
@@ -171,12 +184,14 @@ function Branch({
 function Member({
   m,
   depth,
+  indent,
   selected,
   onSelect,
   controls,
 }: {
   m: MemberRef
   depth: number
+  indent: number
   selected?: string
   onSelect: (id: string) => void
   controls: ModuleTreeControls
@@ -205,7 +220,7 @@ function Member({
         active && 'bg-accent',
         dimmed && 'opacity-45',
       )}
-      style={{ paddingLeft: 8 + (depth + 1) * 12 + 12 }}
+      style={{ paddingLeft: indent + 8 + (depth + 1) * 12 + 12 }}
       title={`${m.kind} ${m.name}`}
     >
       <button

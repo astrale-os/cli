@@ -12,6 +12,13 @@ import { ModuleTree, type ModuleTreeControls } from '../tree'
 import { useCanvasDomains } from './canvas-selection'
 import { useSchemaWorkspace } from './store'
 
+/**
+ * One step of the rail's hierarchy, in pixels: enough for a module row's name to clear the
+ * domain name above it, which is what makes the two levels read as one tree now that no
+ * rule separates them.
+ */
+const MODULE_INDENT = 18
+
 /** The dot that keeps a selection discoverable when its domain's hierarchy is closed. */
 export function shouldShowDomainSelectionIndicator({
   holdsSelection,
@@ -81,7 +88,7 @@ export function WorkspaceDomainTree({
           : null
 
         return (
-          <section key={domainId} className="border-b border-border last:border-b-0">
+          <section key={domainId}>
             <DomainRow
               origin={summary.origin}
               active={active}
@@ -107,11 +114,14 @@ export function WorkspaceDomainTree({
               !closed &&
               controls &&
               domain && (
-                // A put-away domain keeps its hierarchy — it is still where you select and
-                // hide things — but the whole block dims with the row that owns it.
-                <div className={cn('border-t border-border bg-muted/40', hidden && 'opacity-50')}>
+                // No rule and no tint between a domain and its modules: the rail is ONE
+                // tree, and the hierarchy is carried by the indent alone. A put-away domain
+                // keeps its hierarchy — it is still where you select and hide things — but
+                // the whole block dims with the row that owns it.
+                <div className={cn(hidden && 'opacity-50')}>
                   <ModuleTree
                     root={buildModuleTree(domain.input.bundle)}
+                    indent={MODULE_INDENT}
                     selected={selectionDomainId === domainId ? selected : undefined}
                     onSelect={(ref) => select(domainId, ref)}
                     controls={controls}

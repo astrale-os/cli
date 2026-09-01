@@ -1,13 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
 import { bundle, classRef, nodeClass } from './__tests__/fixture'
-import {
-  classTier,
-  inheritedCount,
-  inheritedGroupsOfClass,
-  kernelRolesOfClass,
-  resolveClass,
-} from './inheritance'
+import { classTier, inheritedGroupsOfClass, kernelRolesOfClass, resolveClass } from './inheritance'
 
 describe('Class inheritance', () => {
   test('resolves exact local, dependency, and Kernel base Classes', () => {
@@ -58,7 +52,6 @@ describe('Class inheritance', () => {
       ['Named', 'external'],
       ['Identity', 'kernel'],
     ])
-    expect(inheritedCount(groups)).toBe(2)
   })
 
   test('deduplicates transitive members and marks local overrides', () => {
