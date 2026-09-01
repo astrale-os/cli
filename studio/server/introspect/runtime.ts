@@ -1,10 +1,15 @@
 /**
  * runtime.ts — the introspection driver. Spawns the Bun extractor island in a
- * short-lived subprocess (cwd = domain dir so the domain's own node_modules
- * resolve the @astrale-os/* packages), with a hard timeout. Returns the raw
- * render IR plus the raw canonical root (when present), or an error render-state
- * — never throws.
+ * short-lived subprocess from a neutral directory, with a hard timeout. A Bun
+ * standalone executable captures its startup cwd for nested Bun.build package
+ * resolution, so starting it inside the Domain breaks authored `#` imports.
+ * Returns the raw render IR plus the raw canonical root (when present), or an
+ * error render-state — never throws.
  */
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import type { SchemaIR, SchemaRevision, StudioSchemaBundle } from '../../shared/types'
 
 import { isSchemaRevision } from '../../shared/types'
@@ -28,7 +33,9 @@ export async function runtimeExtract(
   domainDir: string,
   timeoutMs = 20000,
 ): Promise<RuntimeExtractResult> {
+  let launchDirectory: string | undefined
   try {
+    launchDirectory = await mkdtemp(join(tmpdir(), 'astrale-studio-launch-'))
     let command: string[]
     try {
       command = studioCliCommand(['__studio-extractor', schemaIndexPath, domainDir])
@@ -37,7 +44,7 @@ export async function runtimeExtract(
       command = [process.execPath, EXTRACTOR, schemaIndexPath, domainDir]
     }
     const proc = Bun.spawn(command, {
-      cwd: domainDir,
+      cwd: launchDirectory,
       stdout: 'pipe',
       stderr: 'pipe',
     })
@@ -98,6 +105,10 @@ export async function runtimeExtract(
       schemaMode: 'unavailable',
       revision: null,
       error: { message: String(e?.message ?? e) },
+    }
+  } finally {
+    if (launchDirectory !== undefined) {
+      await rm(launchDirectory, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 }
