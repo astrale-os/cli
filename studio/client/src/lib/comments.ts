@@ -14,3 +14,14 @@ export function openCommentThreads(comments: readonly Comment[] | undefined): Co
 export function threadsAwaitingAgent(comments: readonly Comment[] | undefined): Comment[] {
   return openCommentThreads(comments).filter((comment) => comment.thread.at(-1)?.role !== 'author')
 }
+
+/** A thread's anchor said in a few words: `Class · Invoice`, `View · overview`. */
+export function anchorLabel(ref: string): string {
+  if (ref === 'section.schema') return 'Schema canvas'
+  if (ref.startsWith('view.')) return `View · ${ref.slice('view.'.length)}`
+  if (ref.startsWith('module.')) return `Module · ${ref.slice('module.'.length)}`
+  if (ref.startsWith('class.')) return `Class · ${ref.slice('class.'.length)}`
+  if (ref.startsWith('edge.')) return `Edge · ${ref.slice('edge.'.length)}`
+  if (ref.startsWith('section.')) return ref.slice('section.'.length).replace(/\./g, ' · ')
+  return ref
+}

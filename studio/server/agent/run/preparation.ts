@@ -77,8 +77,12 @@ export async function prepareRun(
   const bareResume = options?.resume === true && !!resume
   const awaiting = awaitingThreads(root)
   const message = (options?.message ?? '').trim()
-  if (!bareResume && awaiting.length === 0 && !message)
-    return { error: 'nothing to send — type an instruction or open a thread' }
+  // A turn has to carry something, and a message is only one of the three things it
+  // can be: an attached document is an instruction in itself ("read this"), and so is
+  // an open thread. Only a turn carrying none of them is nothing to send.
+  const documents = listDocuments(root)
+  if (!bareResume && awaiting.length === 0 && !message && documents.length === 0)
+    return { error: 'nothing to send — type an instruction, attach a document or open a thread' }
 
   await refreshAuto(handle).catch(() => {})
   if (controller.signal.aborted) return { error: 'agent run canceled during setup' }
@@ -87,7 +91,6 @@ export async function prepareRun(
 
   const renderFingerprint = bundle?.renderFingerprint ?? ''
   const context = readContext(root)
-  const documents = listDocuments(root)
   const configuration = await resolveHarnessConfiguration(root, harness, {
     ...(chat.model ? { model: chat.model } : {}),
     ...(chat.effort ? { effort: chat.effort } : {}),
@@ -144,13 +147,18 @@ export async function prepareRun(
     harness: harness.id,
     status: 'running',
     createdAt: new Date().toISOString(),
+    // named after whatever the turn actually carries, in the order it was meant
     summary: bareResume
       ? 'continuing after interruption'
       : message
         ? message.slice(0, 60) + (message.length > 60 ? '…' : '')
-        : awaiting.length === 1
-          ? '1 open thread'
-          : `${awaiting.length} open threads`,
+        : awaiting.length > 0
+          ? awaiting.length === 1
+            ? '1 open thread'
+            : `${awaiting.length} open threads`
+          : documents.length === 1
+            ? '1 document'
+            : `${documents.length} documents`,
     ...(message ? { instruction: message } : {}),
     targetCommentIds: awaiting.map((comment) => comment.id),
     events: [],

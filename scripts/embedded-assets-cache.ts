@@ -16,6 +16,7 @@ const CACHE_FORMAT = 1
 const CACHE_DIRECTORY = join('node_modules', '.cache', 'astrale-cli')
 const CACHE_FILE = 'embedded-assets.json'
 const LOCK_DIRECTORY = 'embedded-assets.lock'
+const LOCK_OWNER_FILE = 'owner'
 const OUTPUT = join('src', 'generated', 'embedded-assets.ts')
 const LOCK_STALE_MS = 5 * 60_000
 const LOCK_WAIT_MS = 2 * 60_000
@@ -243,6 +244,32 @@ export async function writeEmbeddedAssetCache(root: string, inputDigest: string)
   }
 }
 
+/**
+ * Has the process that took the lock died without releasing it?
+ *
+ * It happens: the Studio's introspection driver gives its extractor subprocess a
+ * hard deadline and SIGKILLs it, and a SIGKILLed process never reaches the
+ * `finally` that removes the lock. Every CLI call takes this lock — even one that
+ * only checks the assets are already current — so an abandoned lock otherwise
+ * wedges the whole CLI until it goes stale, and each call that gives up in the
+ * meantime looks like a broken domain rather than a busy one.
+ *
+ * Unreadable or unowned locks are left alone: `LOCK_STALE_MS` is still the
+ * backstop, and a lock is briefly ownerless between its mkdir and its first write.
+ */
+async function lockOwnerIsGone(lock: string): Promise<boolean> {
+  const owner = Number(await readFile(join(lock, LOCK_OWNER_FILE), 'utf8').catch(() => ''))
+  if (!Number.isInteger(owner) || owner <= 0) return false
+  try {
+    // signal 0 checks for the process without touching it
+    process.kill(owner, 0)
+    return false
+  } catch (error) {
+    // EPERM means someone else's process holds it — alive, just not ours
+    return errorCode(error) === 'ESRCH'
+  }
+}
+
 export async function withEmbeddedAssetLock<T>(root: string, action: () => Promise<T>): Promise<T> {
   const cacheDirectory = join(root, CACHE_DIRECTORY)
   const lock = lockPath(root)
@@ -251,11 +278,15 @@ export async function withEmbeddedAssetLock<T>(root: string, action: () => Promi
   while (true) {
     try {
       await mkdir(lock)
+      await writeFile(join(lock, LOCK_OWNER_FILE), `${process.pid}\n`)
       break
     } catch (error) {
       if (errorCode(error) !== 'EEXIST') throw error
       const lockMetadata = await stat(lock).catch(() => undefined)
-      if (lockMetadata && Date.now() - lockMetadata.mtimeMs > LOCK_STALE_MS) {
+      if (
+        (lockMetadata && Date.now() - lockMetadata.mtimeMs > LOCK_STALE_MS) ||
+        (await lockOwnerIsGone(lock))
+      ) {
         await rm(lock, { recursive: true, force: true })
         continue
       }

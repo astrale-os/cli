@@ -9,17 +9,15 @@ import {
   FileText,
   FileType,
   Hash,
+  Loader2,
   Paperclip,
-  Pencil,
-  Trash2,
-  Upload,
+  X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { api, qk } from '@/lib/api'
 import { useDocuments } from '@/lib/hooks'
@@ -54,88 +52,40 @@ export const isMarkdown = (doc: DocMeta) =>
   doc.type === 'text/markdown' || /\.(md|mdx|markdown)$/i.test(doc.name)
 
 /**
- * The composer's paperclip: what the agent has been given to read.
+ * The composer's paperclip. One click, one meaning: pick files.
  *
- * There is nothing to insert into a message — every document is listed in the
- * prompt with its path on every turn, so the agent already knows they exist and
- * opens the ones it needs.
+ * What has already been given to the agent is not behind it — that is what
+ * `DocumentChips` shows, in the composer, where you can see it without asking.
  */
-export function DocumentsMenu({ domainId }: { domainId: string }) {
-  const { data: docs } = useDocuments(domainId)
-  const [open, setOpen] = useState(false)
-  const [editing, setEditing] = useState<DocMeta | null>(null)
+export function AttachButton({
+  domainId,
+  onPicked,
+}: {
+  domainId: string
+  /** Give the caret back to the composer — a page with nothing focused reads plain
+   *  letters as the global hotkeys, so typing after attaching would toggle Ask mode. */
+  onPicked?: () => void
+}) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const { upload, remove } = useDocumentMutations(domainId)
+  const { upload } = useDocumentMutations(domainId)
+  const label = upload.isPending ? 'Uploading…' : 'Attach a document'
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            title="Documents"
-            aria-label="Documents"
-            className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <Paperclip className="h-4 w-4" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" side="top" className="w-72 p-1">
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors hover:bg-accent"
-          >
-            <Upload className="h-3.5 w-3.5 text-muted-foreground" />
-            {upload.isPending ? 'Uploading…' : 'Upload a document'}
-          </button>
-          {docs && docs.length > 0 && (
-            <>
-              <div className="mt-1 border-t pt-1 text-[11px] text-muted-foreground">
-                <span className="px-2">The agent can read these</span>
-              </div>
-              <div className="max-h-64 overflow-y-auto">
-                {docs.map((doc) => {
-                  const kind = kindOf(doc)
-                  return (
-                    <div key={doc.id} className="group flex items-center gap-1">
-                      <a
-                        href={api.docUrl(domainId, doc.id)}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={`.domain-studio/${doc.stored}`}
-                        className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent"
-                      >
-                        <kind.Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1 truncate text-[13px]">{doc.name}</span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {fmtSize(doc.size)}
-                        </span>
-                      </a>
-                      <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                        {isMarkdown(doc) && (
-                          <IconBtn
-                            title="Edit"
-                            onClick={() => {
-                              setEditing(doc)
-                              setOpen(false)
-                            }}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </IconBtn>
-                        )}
-                        <IconBtn title="Remove" danger onClick={() => remove.mutate(doc.id)}>
-                          <Trash2 className="h-3 w-3" />
-                        </IconBtn>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </PopoverContent>
-      </Popover>
+      <button
+        type="button"
+        title={label}
+        aria-label={label}
+        disabled={upload.isPending}
+        onClick={() => fileRef.current?.click()}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+      >
+        {upload.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Paperclip className="h-4 w-4" />
+        )}
+      </button>
       <input
         ref={fileRef}
         type="file"
@@ -144,16 +94,85 @@ export function DocumentsMenu({ domainId }: { domainId: string }) {
         onChange={(event) => {
           const files = event.target.files ? [...event.target.files] : []
           event.target.value = ''
-          setOpen(false)
           if (files.length) upload.mutate(files)
+          onPicked?.()
         }}
       />
+    </>
+  )
+}
+
+/**
+ * What the agent can read, said in the composer rather than hidden in a menu.
+ *
+ * There is nothing to insert into a message — every document is listed in the
+ * prompt with its path on every turn, so the agent already knows they exist and
+ * opens the ones it needs. These are here to be seen, and to be taken back.
+ *
+ * Chips only, no row of their own: they share one with the open threads, which the
+ * next turn carries just the same.
+ */
+export function DocumentChips({ domainId }: { domainId: string }) {
+  const { data: docs } = useDocuments(domainId)
+  const [editing, setEditing] = useState<DocMeta | null>(null)
+  const { remove } = useDocumentMutations(domainId)
+
+  return (
+    <>
+      {docs?.map((doc) => {
+        const kind = kindOf(doc)
+        // markdown is the only kind the studio can edit, so for those the chip opens
+        // the editor; anything else it can only hand to the browser
+        const editable = isMarkdown(doc)
+        const face = (
+          <>
+            <kind.Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="truncate">{doc.name}</span>
+          </>
+        )
+        return (
+          <span key={doc.id} className={cn(CHIP, 'border-border bg-muted/60')}>
+            {editable ? (
+              <button
+                type="button"
+                onClick={() => setEditing(doc)}
+                title={`Edit ${doc.name}`}
+                className="flex min-w-0 items-center gap-1.5 pr-1"
+              >
+                {face}
+              </button>
+            ) : (
+              <a
+                href={api.docUrl(domainId, doc.id)}
+                target="_blank"
+                rel="noreferrer"
+                title={`${doc.name} — ${fmtSize(doc.size)}`}
+                className="flex min-w-0 items-center gap-1.5 pr-1"
+              >
+                {face}
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={() => remove.mutate(doc.id)}
+              title={`Remove ${doc.name}`}
+              aria-label={`Remove ${doc.name}`}
+              className="mr-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        )
+      })}
       {editing && <EditDialog domainId={domainId} doc={editing} onClose={() => setEditing(null)} />}
     </>
   )
 }
 
-/** Upload / remove, shared by the menu and the drop target. */
+/** The shape every chip on the composer wears, whatever it carries. */
+export const CHIP = 'group flex h-6 max-w-[220px] items-center rounded-full border pl-2 text-[11px]'
+
+/** Upload / remove, shared by the paperclip, the chips and the drop target. */
 export function useDocumentMutations(domainId: string) {
   const qc = useQueryClient()
   const invalidate = () => qc.invalidateQueries({ queryKey: qk.documents(domainId) })
@@ -182,34 +201,6 @@ export function useDocumentMutations(domainId: string) {
     onSettled: invalidate,
   })
   return { upload, remove }
-}
-
-function IconBtn({
-  title,
-  onClick,
-  danger,
-  children,
-}: {
-  title: string
-  onClick: () => void
-  danger?: boolean
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      onClick={onClick}
-      className={cn(
-        'grid h-6 w-6 place-items-center rounded text-muted-foreground transition-colors',
-        danger
-          ? 'hover:bg-destructive/10 hover:text-destructive'
-          : 'hover:bg-accent hover:text-foreground',
-      )}
-    >
-      {children}
-    </button>
-  )
 }
 
 function EditDialog({

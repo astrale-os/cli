@@ -209,14 +209,36 @@ function writeCachedBundle(root: string, key: string, bundle: StudioSchemaBundle
   }
 }
 
+/**
+ * How long a failed extraction is allowed to stand in for a real one.
+ *
+ * Everything else here is keyed to the sources and stays valid until they change,
+ * which is right for a bundle: it is derived from them. A FAILURE is not — it is a
+ * fact about a moment, a machine that was busy, a lock held elsewhere, an extractor
+ * that ran out of its deadline. Kept like a success it would leave an empty canvas
+ * until someone edited the schema or deleted a cache directory they cannot see;
+ * kept for no time at all it would re-run a 20 s extraction on every request of a
+ * domain that really is broken. So it stands briefly, and then the next reader
+ * tries again — the domain heals itself the moment the cause clears.
+ */
+const FAILED_BUNDLE_TTL_MS = 60_000
+
+/** A bundle to serve, or a failure old enough to be worth retrying? */
+export function stillStands(bundle: StudioSchemaBundle): boolean {
+  if (!bundle.error) return true
+  const extractedAt = Date.parse(bundle.extractedAt)
+  return Number.isFinite(extractedAt) && Date.now() - extractedAt < FAILED_BUNDLE_TTL_MS
+}
+
 export async function getBundle(id: string, rebuild = false): Promise<StudioSchemaBundle | null> {
   const h = getDomain(id)
   if (!h) return null
-  if (!rebuild && bundles.has(id)) return bundles.get(id)!
+  const held = bundles.get(id)
+  if (!rebuild && held && stillStands(held)) return held
   const keyBefore = bundleCacheKey(h.root, h.schemaDirName, h.applicationFile)
   if (!rebuild) {
     const cached = readCachedBundle(h.root, keyBefore)
-    if (cached) {
+    if (cached && stillStands(cached)) {
       if (cached.ir) h.origin = cached.ir.domain
       bundles.set(id, cached)
       return cached

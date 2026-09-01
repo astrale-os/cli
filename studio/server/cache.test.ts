@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
 
-import { decodeBundleCacheEntry } from './cache'
+import type { StudioSchemaBundle } from '../shared/types'
+
+import { decodeBundleCacheEntry, stillStands } from './cache'
 
 function entry(): Record<string, unknown> {
   return {
@@ -114,4 +116,32 @@ test('bundle cache rejects corrupt nested business shapes', () => {
   const overlay = secondBundle.overlay as Record<string, unknown>
   overlay.handlerLinks = [{ owner: 'Thing' }]
   expect(decodeBundleCacheEntry(corruptOverlay)).toBeUndefined()
+})
+
+function failed(extractedAt: string): StudioSchemaBundle {
+  return {
+    domainId: 'notes',
+    renderFingerprint: 'sha-none',
+    schemaMode: 'unavailable',
+    extractedBy: 'static-tsmorph-fallback',
+    depsInstalled: true,
+    ir: null,
+    overlay: { handlerLinks: [], sourceSpans: {} },
+    error: { message: 'extractor produced no output' },
+    extractedAt,
+  }
+}
+
+test('a bundle that extracted keeps standing, whatever its age', () => {
+  const bundle = { ...failed('1999-01-01T00:00:00.000Z'), error: null }
+  expect(stillStands(bundle)).toBe(true)
+})
+
+test('a failed bundle stands briefly, then asks to be retried', () => {
+  expect(stillStands(failed(new Date().toISOString()))).toBe(true)
+  expect(stillStands(failed(new Date(Date.now() - 5 * 60_000).toISOString()))).toBe(false)
+})
+
+test('a failed bundle with no readable timestamp is retried rather than trusted', () => {
+  expect(stillStands(failed('not a date'))).toBe(false)
 })
