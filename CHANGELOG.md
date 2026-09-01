@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-beta.64](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.63...cli/v1.0.0-beta.64) (2026-09-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* adopt unified Domain functions layer ([#329](https://github.com/astrale-os/cli/issues/329))
+
+### Features
+
+* adopt unified Domain functions layer ([#329](https://github.com/astrale-os/cli/issues/329)) ([c778ed6](https://github.com/astrale-os/cli/commit/c778ed618ca1a54b6b259b53a45bfe038f9efa07))
+
 ## [1.0.0-beta.63](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.62...cli/v1.0.0-beta.63) (2026-09-01)
 
 
