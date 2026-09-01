@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.65](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.64...cli/v1.0.0-beta.65) (2026-09-01)
+
+
+### Features
+
+* **studio:** one checkbox per domain, and every dependency drawn ([#338](https://github.com/astrale-os/cli/issues/338)) ([062dec8](https://github.com/astrale-os/cli/commit/062dec8a902df7e07fd256e24d821c8c63b87a4c))
+* **studio:** read the rail as one tree and drop the count badges ([#336](https://github.com/astrale-os/cli/issues/336)) ([7f6a9dc](https://github.com/astrale-os/cli/commit/7f6a9dc99d882dc427f7794a6275c16116709d11))
+
+
+### Performance Improvements
+
+* **studio:** serve the workspace while indexing ([#339](https://github.com/astrale-os/cli/issues/339)) ([021491c](https://github.com/astrale-os/cli/commit/021491c26a16b3e7fe3d9dc8f7d6cf7769f12202))
+
 ## [1.0.0-beta.64](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.63...cli/v1.0.0-beta.64) (2026-09-01)
 
 
