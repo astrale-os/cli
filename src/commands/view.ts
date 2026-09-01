@@ -613,7 +613,7 @@ Examples:
     if (opts.list && !spec) return sessionsCommand(opts)
 
     if (!spec) return fatal(new Error('Nothing to open — pass a ViewPath or target node.'))
-    const wantsAgentBrowser = !opts.browser && opts.open !== false
+    const wantsAgentBrowser = !opts.list && !opts.browser && opts.open !== false
     if ((opts.snapshot || opts.screenshot) && !wantsAgentBrowser) {
       return fatal(
         new Error('--snapshot/--screenshot need the agent-browser page (drop --browser/--no-open)'),

@@ -9,6 +9,7 @@ const abMock = mock(async (_args: string[]) => ({
   data: { snapshot: '- button "Ready" [ref=e1]' },
   error: null,
 }))
+const findAgentBrowserMock = mock(async () => '/usr/bin/agent-browser' as string | null)
 
 mock.module('../../connection', () => ({
   createPathCall: (target: string, input: unknown) => ({ target, input }),
@@ -31,12 +32,13 @@ mock.module('../../lib/browser', () => ({
   ab: abMock,
   AGENT_BROWSER_REPO: 'vercel-labs/agent-browser',
   BROWSER_DIR: '/tmp/astrale-browser',
-  findAgentBrowser: mock(async () => '/usr/bin/agent-browser'),
+  findAgentBrowser: findAgentBrowserMock,
 }))
 
 beforeEach(() => {
   viewsForMock.mockClear()
   abMock.mockClear()
+  findAgentBrowserMock.mockClear()
 })
 
 const route = (value: unknown) => value as ResolvedView['route']
@@ -118,6 +120,21 @@ describe('view session resolution', () => {
         origin: 'self',
       }),
     ])
+  })
+
+  test('lists candidates without consulting agent-browser', async () => {
+    const command = (await import('../view')).default
+    const action = command.action as unknown as (
+      spec: string,
+      opts: { list: boolean },
+    ) => Promise<void>
+    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
+
+    await action('@model-id', { list: true })
+
+    expect(viewsForMock).toHaveBeenCalledTimes(1)
+    expect(findAgentBrowserMock).not.toHaveBeenCalled()
+    expect(abMock).not.toHaveBeenCalled()
   })
 
   test('resolves an explicit ViewPath against its Domain owner when no target is supplied', async () => {
