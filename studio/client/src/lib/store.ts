@@ -27,7 +27,9 @@ export type Theme = 'system' | 'light' | 'dark'
 
 /** Which half of the work panel is showing. */
 export type PanelTab = 'agent' | 'comments'
-/** Where the work panel is docked. */
+/** Where the work panel lives. `left` and `right` dock a column beside the view;
+ *  `bottom` spends a single composer-shaped bar on it and floats the conversation
+ *  over the middle of the screen when you click in. */
 export type PanelSide = 'left' | 'right' | 'bottom'
 
 function loadStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
@@ -69,12 +71,16 @@ interface UIState {
   /** the theme actually painted — `system` resolved. Canvas colours that land in
    *  SVG attributes need a real value, not a CSS function. */
   resolvedTheme: 'light' | 'dark'
-  /** work panel: the agent conversation and the comment threads, docked beside the view */
+  /** work panel: the agent conversation and the comment threads, docked beside the view.
+   *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
   panelTab: PanelTab
   panelSide: PanelSide
-  /** panel thickness in px — width when docked left/right, height when docked bottom */
+  /** panel width in px when docked left/right; the bottom dock has no size to keep */
   panelSize: number
+  /** What is typed in the agent composer. It lives here, not in the composer, so that
+   *  closing the floating chat — or re-docking the panel — never throws a message away. */
+  agentDraft: string
   selectedClass?: string
   /**
    * Which domain `selectedClass` and `focusId` belong to. A class ref is LOCAL
@@ -128,6 +134,7 @@ interface UIState {
   setPanelTab: (tab: PanelTab) => void
   setPanelSide: (side: PanelSide) => void
   setPanelSize: (size: number) => void
+  setAgentDraft: (text: string) => void
   /** Jump to whatever an anchor points at: the right section, the member that declares
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string) => void
@@ -164,15 +171,21 @@ function revealFocus(ref: string): string | null {
 }
 
 const initialTheme = loadStored('studio.theme', ['system', 'light', 'dark'] as const, 'system')
+const initialSide = loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'left')
 
 export const useUI = create<UIState>((set) => ({
   section: loadStored('studio.lastSection', SECTION_KEYS, 'schema'),
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
-  panelOpen: loadStored('studio.panelOpen', ['yes', 'no'] as const, 'yes') === 'yes',
+  // The bottom dock always starts closed: there, `panelOpen` is a modal over the
+  // domain, and reopening one on load would hide the thing you came back to see.
+  panelOpen:
+    initialSide !== 'bottom' &&
+    loadStored('studio.panelOpen', ['yes', 'no'] as const, 'yes') === 'yes',
   panelTab: loadStored('studio.panelTab', ['agent', 'comments'] as const, 'agent'),
-  panelSide: loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'left'),
+  panelSide: initialSide,
   panelSize: loadNumber('studio.panelSize', 360, 260, 900),
+  agentDraft: '',
   focusId: null,
   panelOverlay: null,
   commentDraft: null,
@@ -235,12 +248,18 @@ export const useUI = create<UIState>((set) => ({
   },
   setPanelSide: (panelSide) => {
     store('studio.panelSide', panelSide)
-    set({ panelSide })
+    // Re-docking lands on that side's resting state: a column beside the view for
+    // left/right, the bar alone for bottom — nobody moves a panel to then dismiss
+    // a modal sitting where they moved it from.
+    const panelOpen = panelSide !== 'bottom'
+    store('studio.panelOpen', panelOpen ? 'yes' : 'no')
+    set({ panelSide, panelOpen })
   },
   setPanelSize: (panelSize) => {
     store('studio.panelSize', String(Math.round(panelSize)))
     set({ panelSize })
   },
+  setAgentDraft: (agentDraft) => set({ agentDraft }),
   revealAnchor: (ref) => {
     const section: SectionKey = ref.startsWith('section.')
       ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')

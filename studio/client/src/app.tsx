@@ -216,8 +216,9 @@ export function App() {
             <IconAction label="Settings" onClick={() => setSettingsOpen(true)}>
               <Settings className="h-4 w-4" />
             </IconAction>
-            {/* the panel's own composer is the way to reach the agent while it is open */}
-            {!panelOpen && (
+            {/* the panel's own composer is the way to reach the agent while it is open —
+                and the bottom dock always has one under the view, open or not */}
+            {!panelOpen && panelSide !== 'bottom' && (
               <>
                 <span className="mx-1 h-4 w-px bg-border" />
                 <AgentSubmitButton />
@@ -228,9 +229,10 @@ export function App() {
 
         <div
           className={cn(
-            // the panel is rendered AFTER <main>, so a left dock reverses the row
-            'flex min-h-0 flex-1',
-            panelSide === 'bottom' ? 'flex-col' : 'flex-row',
+            // the panel is rendered AFTER <main>, so a left dock reverses the row.
+            // `relative` is what the bottom dock hangs off: it takes no room in here,
+            // it floats over the view.
+            'relative flex min-h-0 flex-1 flex-row',
             panelSide === 'left' && 'flex-row-reverse',
           )}
         >

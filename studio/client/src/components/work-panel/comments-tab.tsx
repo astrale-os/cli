@@ -5,20 +5,10 @@ import { useState } from 'react'
 
 import { Chip, EmptyState } from '@/components/studio-kit'
 import { ThreadView } from '@/components/thread'
-import { openCommentThreads } from '@/lib/comments'
+import { anchorLabel, openCommentThreads } from '@/lib/comments'
 import { useComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
-
-function anchorLabel(ref: string): string {
-  if (ref === 'section.schema') return 'Schema canvas'
-  if (ref.startsWith('view.')) return `View · ${ref.slice('view.'.length)}`
-  if (ref.startsWith('module.')) return `Module · ${ref.slice('module.'.length)}`
-  if (ref.startsWith('class.')) return `Class · ${ref.slice('class.'.length)}`
-  if (ref.startsWith('edge.')) return `Edge · ${ref.slice('edge.'.length)}`
-  if (ref.startsWith('section.')) return ref.slice('section.'.length).replace(/\./g, ' · ')
-  return ref
-}
 
 /**
  * The comments half of the work panel. A thread is a note pinned somewhere in the
