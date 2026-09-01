@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.66](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.65...cli/v1.0.0-beta.66) (2026-09-01)
+
+
+### Features
+
+* **studio:** clarify agent connection and queue feedback ([#340](https://github.com/astrale-os/cli/issues/340)) ([1214c67](https://github.com/astrale-os/cli/commit/1214c6779f4f9afdc98b37c69024ae2a3e2a28e8))
+
 ## [1.0.0-beta.65](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.64...cli/v1.0.0-beta.65) (2026-09-01)
 
 
