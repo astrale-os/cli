@@ -79,6 +79,47 @@ test('owns harness status and prompt routes behind one agent boundary', async ()
   })
 })
 
+test('harness status reports every local agent, not just the one in use', async () => {
+  delete process.env.DOMAIN_STUDIO_HARNESS
+  const status = (await (await route('/agent/harness'))?.json()) as {
+    id: string
+    harnesses: { id: string; ok: boolean; capabilities: { effortLevels: string[] } }[]
+  }
+
+  expect(status.id).toBe('claude')
+  expect(status.harnesses.map((entry) => entry.id).sort()).toEqual(['claude', 'codex'])
+  // each one carries the ladder the composer falls back on before its ACP probe lands
+  for (const entry of status.harnesses)
+    expect(entry.capabilities.effortLevels.length).toBeGreaterThan(0)
+})
+
+test('a chat pins its own reasoning level, and the turn carries it', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  const handle = fixture()
+  const chatId = listChats(handle.id).activeId
+  const patch = async (effort: string) => {
+    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}/agent/chats`)
+    const body = { action: 'update', chatId, effort }
+    return (await (
+      await handleAgentRoute({
+        req: new Request(url, { method: 'POST' }),
+        url,
+        rest: '/agent/chats',
+        body,
+        handle,
+        notify: () => {},
+      })
+    )?.json()) as { effort?: string }
+  }
+
+  expect(await patch('xhigh')).toMatchObject({ effort: 'xhigh' })
+  // a level outside the shared vocabulary is refused rather than stored
+  expect(await patch('turbo')).not.toHaveProperty('effort')
+  expect(await patch('max')).toMatchObject({ effort: 'max' })
+  // clearing it hands the choice back to the agent's own configuration
+  expect(await patch('')).not.toHaveProperty('effort')
+})
+
 test('serves the bounded persisted conversation history', async () => {
   const handle = fixture()
   const chatId = listChats(handle.id).activeId
@@ -390,7 +431,7 @@ test('the catalog ticks Studio default model, and falls back when the harness dr
     // a domain that starred a slug the agent has since renamed falls back to
     // Studio's default, not to whatever that machine is configured with
     const starred = fixture()
-    updateSettings(starred.root, { agentModels: { claude: 'opus' } })
+    updateSettings(starred.root, { agentModel: { harness: 'claude', model: 'opus' } })
     const staleUrl = new URL(`http://127.0.0.1/api/domain/${starred.id}/agent/models`)
     const stale = (await (
       await handleAgentRoute({

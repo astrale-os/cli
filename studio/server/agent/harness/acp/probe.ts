@@ -2,11 +2,13 @@ import * as acp from '@agentclientprotocol/sdk'
 import { spawn } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 
-import type { HarnessLoadout, HarnessModelOption } from '../../../../shared/types'
+import type { HarnessLoadout } from '../../../../shared/types'
 import type { HarnessHealth, HarnessLoadoutOptions } from '../adapter'
 import type { AcpProviderOptions } from './provider'
 
+import { isAgentEffort } from '../../../../shared/agent-effort'
 import { childEnvironment, terminateProcessTree } from '../process'
+import { effortConfig, effortOptions, modelConfig, modelOptions } from './options'
 import { providerEnvironment, providerSessionMeta } from './provider'
 
 const PROBE_TIMEOUT_MS = 30_000
@@ -33,8 +35,6 @@ interface ProcessExit {
   spawnError?: string
 }
 
-type SelectConfigOption = Extract<acp.SessionConfigOption, { type: 'select' }>
-
 function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error)
 }
@@ -42,40 +42,6 @@ function errorText(error: unknown): string {
 function stderrSuffix(stderr: string): string {
   const text = stderr.trim()
   return text ? `: ${text.slice(-800)}` : ''
-}
-
-function modelConfig(options: acp.SessionConfigOption[]): SelectConfigOption | undefined {
-  const option =
-    options.find((candidate) => candidate.id === 'model') ??
-    options.find((candidate) => candidate.category === 'model')
-  return option?.type === 'select' ? option : undefined
-}
-
-/**
- * Rows that name no model.
- *
- * Claude Code offers a `default` row meaning "let me choose" — which resolves to
- * whatever that machine's own config says, and reads in the picker as a second
- * name for a model already listed below it. Studio resolves that question itself
- * (`AgentHarness.defaultModel` and the domain's starred model), so the row would
- * only be a third answer to it.
- */
-const META_MODEL_IDS = new Set(['default'])
-
-function modelOptions(
-  config: acp.SessionConfigSelect | undefined,
-): HarnessModelOption[] | undefined {
-  if (!config) return undefined
-  return config.options.flatMap((option) => {
-    const values = 'value' in option ? [option] : option.options
-    return values
-      .filter((value) => !META_MODEL_IDS.has(value.value))
-      .map((value) => ({
-        id: value.value,
-        label: value.name,
-        ...(value.description ? { description: value.description } : {}),
-      }))
-  })
 }
 
 async function runAcpProbe(
@@ -314,6 +280,11 @@ export async function probeAcpLoadout(
     const effectiveConfig = modelConfig(snapshot.configOptions)
     const nativeModel = nativeConfig?.currentValue
     const model = effectiveConfig?.currentValue ?? probeOptions?.model ?? nativeModel
+    // Read the ladder AFTER the model override: it is the selected model that
+    // decides which levels exist, and whether there are any at all.
+    const effort = effortConfig(snapshot.configOptions)
+    const efforts = effortOptions(options.provider, effort)
+    const nativeEffort = effortConfig(snapshot.nativeConfigOptions)?.currentValue
     const implementation = snapshot.initialized.agentInfo
     const agentName = implementation?.title ?? implementation?.name
     return {
@@ -323,6 +294,9 @@ export async function probeAcpLoadout(
       model,
       modelSource: probeOptions?.model ? 'studio' : 'agent',
       models: modelOptions(nativeConfig),
+      ...(isAgentEffort(effort?.currentValue) ? { effort: effort.currentValue } : {}),
+      ...(isAgentEffort(nativeEffort) ? { nativeEffort } : {}),
+      ...(efforts === undefined ? {} : { efforts }),
       cwd: root,
       protocolVersion: snapshot.initialized.protocolVersion,
       agentName,

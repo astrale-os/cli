@@ -49,12 +49,7 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-selected-model'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION = 'mock-parent-session'
-  updateSettings(root, {
-    agentModels: {
-      mock: 'mock-selected-model',
-      claude: 'claude-other-model',
-    },
-  })
+  updateSettings(root, { agentModel: { harness: 'mock', model: 'mock-selected-model' } })
   const chat = activeChat(root, 'mock')
   recordChatTurn(root, chat.id, { sessionId: 'mock-parent-session', turns: 2 })
   // A second tab on another agent must not lend Ask its session id.

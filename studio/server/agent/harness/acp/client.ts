@@ -13,10 +13,10 @@ import type {
 } from '../adapter'
 import type { AcpProvider } from './command'
 
+import { effectiveAgentEffort } from '../../../../shared/agent-effort'
 import { childEnvironment, terminateProcessTree } from '../process'
+import { effortConfig, effortValues, modelConfig } from './options'
 import {
-  providerEffort,
-  providerEffortConfigId,
   providerEnvironment,
   providerMode,
   providerSessionMeta,
@@ -136,17 +136,6 @@ function planText(entries: acp.PlanEntry[]): string {
       return `${marker} ${entry.content}`
     })
     .join('\n')
-}
-
-function optionByCategory(
-  options: acp.SessionConfigOption[],
-  id: string,
-  category: string,
-): acp.SessionConfigOption | undefined {
-  return (
-    options.find((option) => option.id === id) ??
-    options.find((option) => option.category === category)
-  )
 }
 
 function wait(ms: number): Promise<void> {
@@ -486,10 +475,7 @@ async function executeAcp(
     }
 
     let configOptions = setup.configOptions ?? []
-    const setConfig = async (id: string, category: string, value: string) => {
-      const config = optionByCategory(configOptions, id, category)
-      if (!config || config.type !== 'select')
-        throw new Error(`${options.provider} ACP agent did not expose its ${category} selector`)
+    const setConfig = async (config: acp.SessionConfigOption, category: string, value: string) => {
       const response = await withProcess(
         context!.request(acp.methods.agent.session.setConfigOption, {
           sessionId: activeSessionId!,
@@ -501,13 +487,21 @@ async function executeAcp(
       configOptions = response.configOptions
     }
 
-    if (input.model) await setConfig('model', 'model', input.model)
-    if (input.effort)
-      await setConfig(
-        providerEffortConfigId(options.provider),
-        'thought_level',
-        providerEffort(options.provider, input.effort),
-      )
+    if (input.model) {
+      const config = modelConfig(configOptions)
+      if (!config)
+        throw new Error(`${options.provider} ACP agent did not expose its model selector`)
+      await setConfig(config, 'model', input.model)
+    }
+    // The ladder belongs to the MODEL, so it is read after the model is set — and
+    // a level this one does not offer lands on its nearest rung rather than
+    // failing the turn. A model with no ladder at all (Haiku) is simply left alone.
+    if (input.effort) {
+      const config = effortConfig(configOptions)
+      const level = effectiveAgentEffort(effortValues(config), input.effort)
+      if (config && level && level !== config.currentValue)
+        await setConfig(config, 'thought_level', level)
+    }
 
     if (input.signal.aborted) throw new Error('canceled')
     const promptResponse = await withProcess(

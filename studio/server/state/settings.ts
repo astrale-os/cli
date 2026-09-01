@@ -9,16 +9,19 @@ import {
   STUDIO_NUMERIC_LIMITS,
   type NumericStudioSetting,
 } from '../../shared/settings-values'
-import { AGENT_ACCESS_LEVELS, AGENT_EFFORT_LEVELS, type StudioSettings } from '../../shared/types'
+import {
+  AGENT_ACCESS_LEVELS,
+  type AgentModelPreference,
+  type StudioSettings,
+} from '../../shared/types'
 import { asJsonRecord, asString } from '../json'
 import { readJson, writeJson } from './store'
 
 const PATH = 'settings.json'
 
 export const DEFAULT_SETTINGS: StudioSettings = {
-  agentEffort: 'high',
   agentAccess: 'full',
-  agentModels: {},
+  agentModel: null,
   integrationsDir: 'integrations',
   introspectTimeoutMs: 20000,
   instancePollMs: 30000,
@@ -35,24 +38,40 @@ function normalizeSettings(input: unknown): Partial<StudioSettings> {
     if (value !== null) out[key] = value
   }
 
-  const effort = AGENT_EFFORT_LEVELS.find((candidate) => candidate === record.agentEffort)
-  if (effort) out.agentEffort = effort
   const access = AGENT_ACCESS_LEVELS.find((candidate) => candidate === record.agentAccess)
   if (access) out.agentAccess = access
 
   const integrationsDir = asString(record.integrationsDir)
   if (integrationsDir !== undefined) out.integrationsDir = integrationsDir
 
-  const models = asJsonRecord(record.agentModels)
-  if (models) {
-    out.agentModels = Object.fromEntries(
-      Object.entries(models)
-        .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-        .map(([harness, model]) => [harness.trim().toLowerCase(), model.trim()])
-        .filter(([harness, model]) => !!harness && !!model),
-    )
-  }
+  if ('agentModel' in record) out.agentModel = decodeModelPreference(record.agentModel)
+  else if ('agentModels' in record) out.agentModel = adoptLegacyModels(record.agentModels)
   return out
+}
+
+function decodeModelPreference(value: unknown): AgentModelPreference | null {
+  const record = asJsonRecord(value)
+  const harness = asString(record?.harness)?.trim().toLowerCase()
+  const model = asString(record?.model)?.trim()
+  return harness && model ? { harness, model } : null
+}
+
+/**
+ * Fold a pre-star settings file — one model per harness — onto the single one.
+ *
+ * Claude wins when both were set: it is the agent Studio opens on, so its entry
+ * is the one that described what a new chat actually ran.
+ */
+function adoptLegacyModels(value: unknown): AgentModelPreference | null {
+  const record = asJsonRecord(value)
+  if (!record) return null
+  const entries = Object.entries(record)
+    .map(([harness, model]) => ({
+      harness: harness.trim().toLowerCase(),
+      model: asString(model)?.trim() ?? '',
+    }))
+    .filter((entry): entry is AgentModelPreference => !!entry.harness && !!entry.model)
+  return entries.find((entry) => entry.harness === 'claude') ?? entries[0] ?? null
 }
 
 function decodeSettings(value: unknown): Partial<StudioSettings> | undefined {

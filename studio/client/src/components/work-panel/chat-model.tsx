@@ -18,7 +18,6 @@
  */
 import type { ChatInfo, HarnessModelCatalog, HarnessStatus } from '@shared/types'
 
-import { updateAgentModel } from '@shared/agent-models'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2, Star } from 'lucide-react'
 import { useState } from 'react'
@@ -48,6 +47,7 @@ export function ChatModelPicker({
   // the label below only needs this chat's own harness.
   const { data: catalog, isFetching } = useModelCatalog(domainId, open)
   const { data: loadout } = useLoadout(domainId, chat?.id)
+  const { data: settings } = useSettings(domainId)
   const { update, switchHarness } = useChatMutations(domainId)
   const prefer = usePreferredModel(domainId)
 
@@ -64,6 +64,21 @@ export function ChatModelPicker({
     loadout?.models?.find((model) => model.id === running)?.label ??
     running ??
     'default model'
+
+  // The star is filled from the moment there is an answer, starred or not: with
+  // nothing pinned a new chat still opens SOMEWHERE — the domain's agent, on that
+  // agent's default model — and the list should say where.
+  const domainDefault = catalog?.find((entry) => entry.harness === harness?.id)?.defaultModel
+  const preferred =
+    settings?.agentModel ??
+    (harness && domainDefault ? { harness: harness.id, model: domainDefault } : null)
+
+  // A process locked to one agent by --harness offers that agent's models, and
+  // those of the tab you are in: every other row would open a chat this Studio
+  // will not start.
+  const offered = catalog?.filter(
+    (entry) => !harness?.locked || entry.harness === chat.harness || entry.harness === harness.id,
+  )
 
   const choose = (target: HarnessModelCatalog, model: string) => {
     setOpen(false)
@@ -92,11 +107,12 @@ export function ChatModelPicker({
             <Loader2 className="h-3 w-3 animate-spin" /> Asking each agent for its models…
           </p>
         )}
-        {catalog?.map((entry) => (
+        {offered?.map((entry) => (
           <HarnessGroup
             key={entry.harness}
             entry={entry}
             current={chat}
+            preferred={preferred?.harness === entry.harness ? preferred.model : null}
             onSelect={(model) => choose(entry, model)}
             onPrefer={(model) => prefer.mutate({ harness: entry.harness, model })}
           />
@@ -107,22 +123,20 @@ export function ChatModelPicker({
 }
 
 /**
- * Star a model as the one this harness opens new chats on.
+ * Star THE model new conversations open on — one for the whole domain.
  *
- * It is the domain-wide `agentModels` setting — the same field Settings edits —
- * so starring here and picking there are one preference, not two. Open chats are
- * untouched: a tab that pinned its own model keeps it.
+ * Not one per agent: a preferred model names its agent too, so starring a Codex
+ * model is how a domain stops opening on Claude. Open chats are untouched — a tab
+ * that pinned its own model keeps it, and one that pinned none moves with the star.
  */
 function usePreferredModel(domainId: string) {
-  const { data: settings } = useSettings(domainId)
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { harness: string; model: string }) =>
-      api.updateSettings(domainId, {
-        agentModels: updateAgentModel(settings?.agentModels ?? {}, input.harness, input.model),
-      }),
-    // The catalog is a live ACP probe of every harness — too slow to re-run for a
-    // star. Move the one field it would have changed and leave the rest alone.
+      api.updateSettings(domainId, { agentModel: { harness: input.harness, model: input.model } }),
+    // The catalog is a live ACP probe of every harness — too slow to block a star
+    // on. Move the one row it certainly changed now, and let the refetch settle
+    // the harness that just LOST the star (whose default Studio cannot compute here).
     onSuccess: (next, input) => {
       queryClient.setQueryData(qk.settings(domainId), next)
       queryClient.setQueryData<HarnessModelCatalog[]>(qk.models(domainId), (current) =>
@@ -130,6 +144,7 @@ function usePreferredModel(domainId: string) {
           entry.harness === input.harness ? { ...entry, defaultModel: input.model } : entry,
         ),
       )
+      queryClient.invalidateQueries({ queryKey: qk.models(domainId) })
       // the composer's label reads the loadout, and an unpinned chat just moved
       queryClient.invalidateQueries({ queryKey: qk.loadout(domainId) })
     },
@@ -140,11 +155,14 @@ function usePreferredModel(domainId: string) {
 function HarnessGroup({
   entry,
   current,
+  preferred,
   onSelect,
   onPrefer,
 }: {
   entry: HarnessModelCatalog
   current: ChatInfo
+  /** the starred model when the domain's one star is on THIS agent */
+  preferred: string | null
   onSelect: (model: string) => void
   onPrefer: (model: string) => void
 }) {
@@ -173,7 +191,7 @@ function HarnessGroup({
               key={model.id}
               label={model.label}
               selected={selected === model.id}
-              preferred={entry.defaultModel === model.id}
+              preferred={preferred === model.id}
               onSelect={() => onSelect(model.id)}
               onPrefer={() => onPrefer(model.id)}
             />
@@ -190,11 +208,12 @@ function HarnessGroup({
 }
 
 /**
- * One model: ✓ is what THIS chat runs, ★ is what this agent's next chat will.
+ * One model: ✓ is what THIS chat runs, ★ is what the NEXT one opens on.
  *
  * They answer different questions, so they are two controls on one row — and the
  * empty star only shows under the pointer, or the list would read as a column of
- * decisions rather than a list of models.
+ * decisions rather than a list of models. Exactly one ★ is filled in the whole
+ * list, across every agent: that is what "preferred model" means here.
  */
 function ModelOption({
   label,
@@ -227,8 +246,8 @@ function ModelOption({
         aria-pressed={preferred}
         title={
           preferred
-            ? 'New chats with this agent start on this model'
-            : 'Start new chats with this agent on this model'
+            ? 'New chats open on this model'
+            : 'Open new chats on this model — and on its agent'
         }
         aria-label={`Prefer ${label} for new chats`}
         className={cn(

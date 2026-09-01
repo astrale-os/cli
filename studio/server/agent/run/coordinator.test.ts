@@ -21,6 +21,7 @@ import { listState, stateExists } from '../../state/store'
 import { handleBridge } from '../bridge/routes'
 import { activeChat, recordChatTurn, resolveChat } from '../chats'
 import { setHarnessGateway } from '../harness/gateway/config'
+import { getHarness } from '../harness/selection'
 import {
   cancelRun,
   closeChat,
@@ -31,6 +32,7 @@ import {
   setSessionId,
   submitRun,
   switchChatHarness,
+  updateChat,
 } from './coordinator'
 import { isRunActive } from './live-state'
 import { persistRun, readRunHistory } from './transcript'
@@ -122,7 +124,7 @@ describe.serial('agent runner invariants', () => {
     useMock()
     const handle = fixture()
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-domain-model'
-    updateSettings(handle.root, { agentModels: { mock: 'mock-domain-model' } })
+    updateSettings(handle.root, { agentModel: { harness: 'mock', model: 'mock-domain-model' } })
 
     await submitRun(handle, () => {}, { message: 'use the selected model' })
     const run = await waitForTerminal(handle.id)
@@ -185,7 +187,7 @@ describe.serial('agent runner invariants', () => {
     useMock('resumefail')
     const handle = fixture()
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-recovery-model'
-    updateSettings(handle.root, { agentModels: { mock: 'mock-recovery-model' } })
+    updateSettings(handle.root, { agentModel: { harness: 'mock', model: 'mock-recovery-model' } })
     setHarnessGateway(handle.root, {
       scope: 'domain',
       config: {
@@ -378,6 +380,33 @@ describe.serial('agent runner invariants', () => {
     expect(
       readRunHistory(handle.id, handle.root, resolveChat(handle.root, 'mock', second)!),
     ).toEqual([expect.objectContaining({ instruction: 'in the second tab' })])
+  })
+
+  test('a new tab opens on the star, or continues with the agent already open', () => {
+    delete process.env.DOMAIN_STUDIO_HARNESS
+    const handle = fixture()
+    // nothing starred: the first tab is the agent this machine has
+    expect(unwrap(openChat(handle.id, {})).harness).toBe('claude')
+
+    // move the live conversation elsewhere and the next tab follows it — the
+    // agent that was live, since nothing states where chats should start
+    expect(unwrap(openChat(handle.id, { harness: 'mock' })).harness).toBe('mock')
+    expect(unwrap(openChat(handle.id, {})).harness).toBe('mock')
+
+    // starring one IS that statement, and it outranks the tab you happen to be in
+    updateSettings(handle.root, { agentModel: { harness: 'claude', model: 'opus[1m]' } })
+    expect(getHarness(handle.root).id).toBe('claude')
+    expect(unwrap(openChat(handle.id, {})).harness).toBe('claude')
+  })
+
+  test('a forked tab keeps the level the work was being thought at', async () => {
+    useMock()
+    const handle = fixture()
+    const source = unwrap(updateChat(handle.id, listChats(handle.id).activeId, { effort: 'max' }))
+    expect(source.effort).toBe('max')
+
+    const forked = unwrap(switchChatHarness(handle.id, source.id, 'claude'))
+    expect(forked).toMatchObject({ harness: 'claude', effort: 'max' })
   })
 
   test('switching agent forks a briefed tab and leaves the original conversation alone', async () => {

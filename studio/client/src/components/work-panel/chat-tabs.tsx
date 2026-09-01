@@ -8,6 +8,11 @@
  * A tab is its agent's mark in its own colour, and nothing else — the title
  * belongs to the tab you are actually in. That keeps a tab about 28 pixels wide,
  * so a domain can carry a row of them; past that the strip scrolls sideways.
+ *
+ * `+` asks nothing: a new tab opens on the domain's starred model, or continues
+ * with the agent you are already working with when nothing is starred. Changing
+ * agent is not a thing you do when OPENING a conversation — it is picking a model
+ * of the other one, in the composer, once you know what you want to ask.
  */
 import type { ChatInfo, HarnessStatus } from '@shared/types'
 
@@ -16,14 +21,13 @@ import { Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { hasHarnessLogo, HarnessLogo } from '@/components/harness-logo'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useChatMutations } from '@/lib/chats'
-import { harnessOptions, labelOf } from '@/lib/harnesses'
+import { labelOf } from '@/lib/harnesses'
 import { cn } from '@/lib/utils'
 
 import type { ChatTone } from './chat-tone'
 
-import { brandTone, chatTones } from './chat-tone'
+import { chatTones } from './chat-tone'
 
 const isBusy = (chat: ChatInfo) => chat.status === 'running' || chat.status === 'queued'
 
@@ -42,7 +46,6 @@ export function ChatTabs({
   harness?: HarnessStatus
 }) {
   const { open, select, close, update } = useChatMutations(domainId)
-  const [adding, setAdding] = useState(false)
   const strip = useRef<HTMLDivElement>(null)
   const edges = useSideScroll(strip, chats.length)
   const tones = chatTones(chats)
@@ -72,35 +75,16 @@ export function ChatTabs({
         ))}
       </div>
 
-      <Popover open={adding} onOpenChange={setAdding}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            title="New chat"
-            aria-label="New chat"
-            className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="end" side="bottom" className="w-52 p-1">
-          <p className="px-2 py-1 text-[11px] text-muted-foreground">Start a chat with</p>
-          {harnessOptions(harness).map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => {
-                open.mutate(option.id)
-                setAdding(false)
-              }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-accent"
-            >
-              <HarnessLogo harness={option.id} className={brandTone(option.id).mark} />
-              {option.label}
-            </button>
-          ))}
-        </PopoverContent>
-      </Popover>
+      <button
+        type="button"
+        title="New chat"
+        aria-label="New chat"
+        disabled={open.isPending}
+        onClick={() => open.mutate(undefined)}
+        className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 }

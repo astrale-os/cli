@@ -157,14 +157,29 @@ export interface AgentHarness {
   loadout?(root: string, options?: HarnessLoadoutOptions): Promise<HarnessLoadout>
 }
 
+/** What the last probe of each harness said — see `lastKnownPresence`. */
+const presence = new Map<string, boolean>()
+
+/**
+ * Whether a harness answered the last time anything probed it.
+ *
+ * Studio has to name a default agent from synchronous code (the chat store seeds
+ * a domain's first tab), and "the one that is installed" is the only answer worth
+ * giving on a machine with a single harness. Probing is async, so the answer is
+ * whatever the last probe recorded — `undefined` until one has run.
+ */
+export function lastKnownPresence(id: string): boolean | undefined {
+  return presence.get(id)
+}
+
 /** Normalize optional rich health probes into one route-facing result. */
 export async function inspectHarnessHealth(
   harness: AgentHarness,
   signal?: AbortSignal,
 ): Promise<HarnessHealth> {
-  if (harness.health) return harness.health(signal)
-  return {
-    ok: await harness.isAvailable(signal),
-    bin: harness.id,
-  }
+  const health = harness.health
+    ? await harness.health(signal)
+    : { ok: await harness.isAvailable(signal), bin: harness.id }
+  if (!signal?.aborted) presence.set(harness.id, health.ok)
+  return health
 }

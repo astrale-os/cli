@@ -23,6 +23,16 @@ export interface AgentEvent {
   commentId?: string
 }
 
+/**
+ * Every reasoning rung Studio can name, ordered lightest to heaviest.
+ *
+ * The ladder a chat actually offers comes from ACP — each agent reports its own
+ * `thought_level` options, and they differ per MODEL (Haiku exposes none at all).
+ * This list is the vocabulary those values are read into, so a level one agent
+ * lacks can still be mapped onto its nearest neighbour when a chat is forked.
+ * `ultracode` is the one rung ACP does not report: Studio adds it to Claude and
+ * implements it itself.
+ */
 export const AGENT_EFFORT_LEVELS = [
   'minimal',
   'low',
@@ -30,6 +40,7 @@ export const AGENT_EFFORT_LEVELS = [
   'high',
   'xhigh',
   'max',
+  'ultra',
   'ultracode',
 ] as const
 export type AgentEffort = (typeof AGENT_EFFORT_LEVELS)[number]
@@ -137,6 +148,8 @@ export interface ChatInfo {
   harness: string
   /** per-chat model override WITHIN its harness; absent ⇒ the domain default */
   model?: string
+  /** per-chat reasoning level; absent ⇒ whatever the agent itself is set to */
+  effort?: AgentEffort
   /** the harness-native resumable session id backing this chat */
   sessionId?: string
   /** successful turns recorded in this chat */
@@ -177,6 +190,7 @@ export interface AgentSessionInfo {
 }
 
 export interface HarnessCapabilities {
+  /** the ladder to assume until ACP reports this model's own — see AGENT_EFFORT_LEVELS */
   effortLevels: readonly AgentEffort[]
   accessLevels: readonly AgentAccess[]
   ask: boolean
@@ -185,22 +199,33 @@ export interface HarnessCapabilities {
   gateway: 'anthropic' | 'responses' | 'none'
 }
 
-/** Whether the selected agent harness is installed, invokable, and configurable. */
-export interface HarnessStatus {
+/** One local agent, probed over ACP: is it here, and which server answered. */
+export interface HarnessPresence {
   id: string
   label: string
   /** the binary/command probed (e.g. 'claude') */
   bin: string
   ok: boolean
+  /** the ACP agent server's version — not the CLI's own */
   version?: string
-  /** human message — install / PATH guidance when not ok */
+  /** human message — the ACP handshake, or install / PATH guidance when not ok */
   message: string
-  /** known harnesses for the selector (locked to one for now) */
-  options: { id: string; label: string }[]
-  /** an environment/CLI override owns the selection, so the GUI cannot change it */
+  capabilities: HarnessCapabilities
+}
+
+/**
+ * The agent a domain's next chat opens on, and every agent detected beside it.
+ *
+ * Nothing here is a setting: the default follows the preferred model (starred in
+ * the composer), and `harnesses` is pure diagnostics — Settings lists it so you
+ * can see which agents this machine actually has.
+ */
+export interface HarnessStatus extends HarnessPresence {
+  /** every known harness, this one included */
+  harnesses: HarnessPresence[]
+  /** an environment/CLI override owns the selection, so nothing in the GUI moves it */
   locked: boolean
   source: 'environment' | 'domain' | 'default'
-  capabilities: HarnessCapabilities
 }
 
 /**
@@ -224,13 +249,6 @@ export interface HarnessModelCatalog {
   models: HarnessModelOption[]
 }
 
-/** What picking another agent produced: the new default, and the tab it forked. */
-export interface HarnessSwitchResult {
-  harness: HarnessStatus
-  /** the chat opened on the new harness, or null when the active tab already ran it */
-  chat: ChatInfo | null
-}
-
 /** Diagnostics reported by a disposable ACP session for a domain's cwd. */
 export interface HarnessLoadout {
   /** ACP initialization and session creation both succeeded. */
@@ -244,6 +262,12 @@ export interface HarnessLoadout {
   modelSource?: 'studio' | 'agent'
   /** Models exposed by the ACP session's model configuration option. */
   models?: HarnessModelOption[]
+  /** Reasoning level the session runs at before Studio applies its override. */
+  nativeEffort?: AgentEffort
+  /** Effective reasoning level after applying Studio's optional override. */
+  effort?: AgentEffort
+  /** The reasoning ladder THIS model exposes — empty/absent ⇒ it has none. */
+  efforts?: HarnessEffortOption[]
   /** Domain root passed to `session/new`. */
   cwd?: string
   /** ACP protocol version negotiated during initialization. */
@@ -262,6 +286,13 @@ export interface HarnessModelOption {
   description?: string
   /** The harness catalog's built-in default when no config layer overrides it. */
   isDefault?: boolean
+}
+
+/** One rung of a model's ACP reasoning ladder, named as the agent names it. */
+export interface HarnessEffortOption {
+  id: AgentEffort
+  label: string
+  description?: string
 }
 
 /** Domain-attributable agent spend — accumulated from this studio's own runs on

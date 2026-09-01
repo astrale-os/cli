@@ -1,7 +1,5 @@
-import { effectiveAgentEffort } from '@shared/agent-effort'
 import {
   AGENT_ACCESS_LEVELS,
-  AGENT_EFFORT_LEVELS,
   type AgentAccess,
   type HarnessStatus,
   type StudioSettings,
@@ -34,7 +32,6 @@ interface SettingsSaveInput {
   settings: StudioSettings
   harness?: HarnessStatus
   values: Record<string, string>
-  agentModels: Record<string, string>
 }
 
 /** Settings composition and persistence for the active domain. */
@@ -46,7 +43,6 @@ export function SettingsDialog() {
   const { data: harness } = useHarness(open ? domainId : undefined)
   const queryClient = useQueryClient()
   const [values, setValues] = useState<Record<string, string>>({})
-  const [agentModels, setAgentModels] = useState<Record<string, string>>({})
   const [detailsOpen, setDetailsOpen] = useState(false)
   const detailsStartRef = useRef<HTMLDivElement>(null)
 
@@ -64,7 +60,6 @@ export function SettingsDialog() {
           .map(([key, value]) => [key, String(value)]),
       ),
     )
-    setAgentModels({ ...settings.agentModels })
   }, [settings])
 
   useLayoutEffect(() => {
@@ -74,17 +69,13 @@ export function SettingsDialog() {
   const save = useMutation({
     mutationFn: async (input: SettingsSaveInput) => {
       const patch = generalSettingsPatch(input.values, input.settings)
-      const effortLevels = input.harness?.capabilities.effortLevels ?? [...AGENT_EFFORT_LEVELS]
       const accessLevels = input.harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
-      const effort = effectiveAgentEffort(effortLevels, input.values.agentEffort)
-      if (effort) patch.agentEffort = effort
       const access = accessLevels.includes(input.values.agentAccess as AgentAccess)
         ? (input.values.agentAccess as AgentAccess)
         : accessLevels.includes('full')
           ? 'full'
           : accessLevels[0]
       if (access) patch.agentAccess = access
-      patch.agentModels = input.agentModels
       return api.updateSettings(input.domainId, patch as Partial<StudioSettings>)
     },
     onSuccess: (_, input) => {
@@ -108,15 +99,7 @@ export function SettingsDialog() {
         <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen} className="contents">
           <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
             <AppearanceSettings />
-            <AgentSettings
-              domainId={open ? domainId : undefined}
-              settings={settings}
-              harness={harness}
-              values={values}
-              setValues={setValues}
-              agentModels={agentModels}
-              setAgentModels={setAgentModels}
-            />
+            <AgentSettings harness={harness} />
             <CollapsibleContent
               forceMount
               className="overflow-hidden data-[state=open]:animate-in data-[state=closed]:hidden"
@@ -165,7 +148,6 @@ export function SettingsDialog() {
                     settings: settings!,
                     harness,
                     values: { ...values },
-                    agentModels: { ...agentModels },
                   })
                 }
                 className="rounded-md bg-primary px-3 py-1.5 text-[13px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
