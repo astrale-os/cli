@@ -6,8 +6,8 @@ test('Ask and comments keep the owning domain for a homonymous workspace node', 
 }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
-  await page.getByTestId('domain-selector').click()
-  await page.getByRole('button', { name: 'Select all' }).click()
+  // Checking a domain in the rail is what puts it on the canvas beside the active one.
+  await page.getByRole('checkbox', { name: 'Add ops.studio-demo.astrale.ai to the canvas' }).click()
 
   const peerNode = page.locator('.react-flow__node[data-id="workspace:peer:class.Company"]')
   await expect(peerNode).toBeVisible()

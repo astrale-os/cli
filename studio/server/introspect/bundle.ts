@@ -7,7 +7,7 @@
 import type { StudioSchemaBundle } from '../../shared/types'
 
 import { type DomainHandle, depsInstalled } from '../domain'
-import { readSettings } from '../state/settings'
+import { studioSettings } from '../studio-settings'
 import { renderFingerprintOf } from './hash'
 import { buildOverlay } from './overlay'
 import { runtimeExtract } from './runtime'
@@ -25,7 +25,7 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
     const r = await runtimeExtract(
       handle.schemaIndex,
       handle.root,
-      readSettings(handle.root).introspectTimeoutMs,
+      studioSettings().introspectTimeoutMs,
     )
     if (r.ok) {
       ir = r.ir

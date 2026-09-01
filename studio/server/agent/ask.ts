@@ -36,7 +36,7 @@ export async function runAsk(
   const question = String(body?.question ?? '').trim()
   if (!question) return { text: '', isError: true, errorMessage: 'question is required' }
   // The fork belongs to ONE chat: its harness, its model, its session id.
-  const chat = resolveChat(handle.root, getHarness(handle.root).id, body.chatId)
+  const chat = resolveChat(handle.root, getHarness().id, body.chatId)
   const resolved = await resolveHarnessConfiguration(
     handle.root,
     chat ? getHarnessById(chat.harness) : undefined,

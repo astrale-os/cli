@@ -9,6 +9,7 @@ import type { AskResult } from './harness/adapter'
 
 import { registerDomain, unregisterDomain } from '../domain'
 import { updateSettings } from '../state/settings'
+import { initWorkspaceState } from '../workspace-state'
 import { markHandoffDelivered } from './chats'
 import { getHarnessById } from './harness/registry'
 import { handleAgentRoute } from './routes'
@@ -431,6 +432,8 @@ test('the catalog ticks Studio default model, and falls back when the harness dr
     // a domain that starred a slug the agent has since renamed falls back to
     // Studio's default, not to whatever that machine is configured with
     const starred = fixture()
+    // Studio settings are global; point that global at this fixture's root.
+    initWorkspaceState(starred.root)
     updateSettings(starred.root, { agentModel: { harness: 'claude', model: 'opus' } })
     const staleUrl = new URL(`http://127.0.0.1/api/domain/${starred.id}/agent/models`)
     const stale = (await (

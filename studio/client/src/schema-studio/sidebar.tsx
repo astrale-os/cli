@@ -20,9 +20,12 @@ function storedWidth(): number {
 
 export function ModulesSidebar({
   children,
+  header,
   onClearSelection,
 }: {
   children: ReactNode
+  /** Pinned above the scroller — the rail's own title bar. */
+  header?: ReactNode
   /** Called when the rail's empty space is clicked — see `clearOnBackgroundClick`. */
   onClearSelection?: () => void
 }) {
@@ -65,11 +68,12 @@ export function ModulesSidebar({
   return (
     <div
       data-testid="modules-sidebar"
-      className="relative min-h-0 shrink-0 border-r"
+      className="relative flex min-h-0 shrink-0 flex-col border-r"
       style={{ width }}
       onClick={clearOnBackgroundClick}
     >
-      {children}
+      {header}
+      <div className="min-h-0 flex-1">{children}</div>
       {/* drag handle straddling the right border */}
       <div
         role="separator"

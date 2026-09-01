@@ -18,6 +18,7 @@ import { registerDomain, unregisterDomain, type DomainHandle } from '../../domai
 import { readComments, upsertComment } from '../../state/comments'
 import { updateSettings } from '../../state/settings'
 import { listState, stateExists } from '../../state/store'
+import { initWorkspaceState } from '../../workspace-state'
 import { handleBridge } from '../bridge/routes'
 import { activeChat, recordChatTurn, resolveChat } from '../chats'
 import { setHarnessGateway } from '../harness/gateway/config'
@@ -124,6 +125,8 @@ describe.serial('agent runner invariants', () => {
     useMock()
     const handle = fixture()
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-domain-model'
+    // Studio settings are global; point that global at this test's root.
+    initWorkspaceState(handle.root)
     updateSettings(handle.root, { agentModel: { harness: 'mock', model: 'mock-domain-model' } })
 
     await submitRun(handle, () => {}, { message: 'use the selected model' })
@@ -187,6 +190,8 @@ describe.serial('agent runner invariants', () => {
     useMock('resumefail')
     const handle = fixture()
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-recovery-model'
+    // Studio settings are global; point that global at this test's root.
+    initWorkspaceState(handle.root)
     updateSettings(handle.root, { agentModel: { harness: 'mock', model: 'mock-recovery-model' } })
     setHarnessGateway(handle.root, {
       scope: 'domain',
@@ -394,8 +399,10 @@ describe.serial('agent runner invariants', () => {
     expect(unwrap(openChat(handle.id, {})).harness).toBe('mock')
 
     // starring one IS that statement, and it outranks the tab you happen to be in
+    // Studio settings are global; point that global at this test's root.
+    initWorkspaceState(handle.root)
     updateSettings(handle.root, { agentModel: { harness: 'claude', model: 'opus[1m]' } })
-    expect(getHarness(handle.root).id).toBe('claude')
+    expect(getHarness().id).toBe('claude')
     expect(unwrap(openChat(handle.id, {})).harness).toBe('claude')
   })
 

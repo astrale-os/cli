@@ -112,6 +112,7 @@ export function PropertyRow({
         }
         trailing={
           <AnchorButton
+            domainId={bundle.domainId}
             anchorRef={{ ref: pref, kind: 'schema', file: bundle.overlay.sourceSpans[pref]?.file }}
             excerpt={pname}
           />
@@ -183,6 +184,7 @@ export function MethodCard({
           }
           trailing={
             <AnchorButton
+              domainId={bundle.domainId}
               anchorRef={{
                 ref: mref,
                 kind: 'schema',
@@ -333,7 +335,7 @@ export function InheritedSection({
               {/* Base Class header — substantial and navigable. */}
               <button
                 type="button"
-                onClick={() => selectClass(refBase)}
+                onClick={() => selectClass(refBase, bundle.domainId)}
                 title={g.origin ?? 'this domain'}
                 className="group/ih mb-2.5 flex w-full items-center gap-2.5 text-left"
               >

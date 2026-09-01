@@ -14,7 +14,7 @@ import type { DomainAnatomy, DomainOverview, SchemaIR } from '../../shared/types
 
 import { resolveApplicationEntry } from '../domain'
 import { asJsonRecord, asString, parseJson } from '../json'
-import { readSettings } from '../state/settings'
+import { studioSettings } from '../studio-settings'
 import { buildClientTree, buildEnvFields, buildViews, findSchemaDefinition } from './anatomy-extras'
 import { readConfigPreview } from './config-preview'
 
@@ -87,7 +87,7 @@ function buildOverview(
 }
 
 function detectIntegrations(root: string): string[] {
-  const dir = join(root, readSettings(root).integrationsDir)
+  const dir = join(root, studioSettings().integrationsDir)
   if (!existsSync(dir)) return []
   try {
     return readdirSync(dir).filter((e) => {

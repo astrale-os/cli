@@ -1,25 +1,17 @@
-/** Domain project configuration routes: settings and env files. */
-import { invalidate } from '../cache'
+/**
+ * Domain project configuration routes: the env files of ONE domain.
+ *
+ * Settings are not here — they are the studio's, not a domain's, and live at
+ * `/api/settings` (see api/workspace.ts).
+ */
 import { isEnvName, readEnvModel, writeEnvUpdates } from '../environment/files'
 import { asJsonRecord, asString } from '../json'
-import { readSettings, updateSettings } from '../state/settings'
 import { badRequest, json, type DomainRouteContext } from './http'
 
 export async function handleProjectRoute(context: DomainRouteContext): Promise<Response | null> {
   const { req, url, rest, body, handle, notify } = context
   const id = handle.id
   const root = handle.root
-
-  if (rest === '/settings') {
-    if (req.method === 'GET') return json(readSettings(root))
-    if (body.action === 'update') {
-      const next = updateSettings(root, asJsonRecord(body.settings) ?? {})
-      invalidate(id, 'anatomy')
-      notify({ type: 'anatomy-diff', domainId: id })
-      return json(next)
-    }
-    return badRequest('unknown settings action')
-  }
 
   if (rest === '/env') {
     const envName = req.method === 'GET' ? url.searchParams.get('env') : asString(body.env)

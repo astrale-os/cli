@@ -74,7 +74,7 @@ export async function readModelCatalog(
   root: string,
   signal?: AbortSignal,
 ): Promise<HarnessModelCatalog[]> {
-  const harnesses = listHarnesses(getHarnessSelection(root).id)
+  const harnesses = listHarnesses(getHarnessSelection().id)
   return Promise.all(
     harnesses.map(async (entry) => {
       const harness = getHarnessById(entry.id)

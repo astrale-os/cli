@@ -39,7 +39,7 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   domainIds.push(handle.id)
 
   process.env.DOMAIN_STUDIO_HARNESS = 'claude'
-  const harness = getHarness(root)
+  const harness = getHarness()
   const originalLoadout = harness.loadout
   let probes = 0
   harness.loadout = async () => {

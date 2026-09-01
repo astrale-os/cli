@@ -47,7 +47,7 @@ export function ChatModelPicker({
   // the label below only needs this chat's own harness.
   const { data: catalog, isFetching } = useModelCatalog(domainId, open)
   const { data: loadout } = useLoadout(domainId, chat?.id)
-  const { data: settings } = useSettings(domainId)
+  const { data: settings } = useSettings()
   const { update, switchHarness } = useChatMutations(domainId)
   const prefer = usePreferredModel(domainId)
 
@@ -125,20 +125,21 @@ export function ChatModelPicker({
 /**
  * Star THE model new conversations open on — one for the whole domain.
  *
- * Not one per agent: a preferred model names its agent too, so starring a Codex
- * model is how a domain stops opening on Claude. Open chats are untouched — a tab
- * that pinned its own model keeps it, and one that pinned none moves with the star.
+ * Not one per agent, and not one per domain: a preferred model names its agent too,
+ * so starring a Codex model is how the studio stops opening on Claude. Open chats are
+ * untouched — a tab that pinned its own model keeps it, and one that pinned none moves
+ * with the star.
  */
 function usePreferredModel(domainId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { harness: string; model: string }) =>
-      api.updateSettings(domainId, { agentModel: { harness: input.harness, model: input.model } }),
+      api.updateSettings({ agentModel: { harness: input.harness, model: input.model } }),
     // The catalog is a live ACP probe of every harness — too slow to block a star
     // on. Move the one row it certainly changed now, and let the refetch settle
     // the harness that just LOST the star (whose default Studio cannot compute here).
     onSuccess: (next, input) => {
-      queryClient.setQueryData(qk.settings(domainId), next)
+      queryClient.setQueryData(qk.settings, next)
       queryClient.setQueryData<HarnessModelCatalog[]>(qk.models(domainId), (current) =>
         current?.map((entry) =>
           entry.harness === input.harness ? { ...entry, defaultModel: input.model } : entry,

@@ -76,6 +76,14 @@ interface UIState {
   /** panel thickness in px — width when docked left/right, height when docked bottom */
   panelSize: number
   selectedClass?: string
+  /**
+   * Which domain `selectedClass` and `focusId` belong to. A class ref is LOCAL
+   * (`class.Order`), and on a workspace canvas the same name exists in several frames —
+   * so the selection carries its owner instead of borrowing the active domain's. Selecting
+   * in a domain no longer makes it active: the canvas draws every domain it holds at equal
+   * standing, and `domainId` answers a different question (see the store's doc on it).
+   */
+  selectionDomainId?: string
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
   /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains / Integrations
@@ -108,6 +116,11 @@ interface UIState {
   paletteOpen: boolean
   /** hidden power-user Settings dialog open */
   settingsOpen: boolean
+  /** A domain the reader asked to work in, waiting on the confirmation that says what
+   *  changes. Null when nothing is pending. */
+  domainSwitchRequest: { id: string; origin: string } | null
+  /** Ask before switching. Turned off from the confirmation itself, remembered here. */
+  confirmDomainSwitch: boolean
   setTheme: (theme: Theme) => void
   setDomain: (id?: string) => void
   setSection: (s: SectionKey) => void
@@ -119,9 +132,10 @@ interface UIState {
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
   revealAnchor: (ref: string) => void
   setPanelOverlay: (v: 'views' | 'domains' | 'integrations' | null) => void
-  selectClass: (n?: string) => void
+  /** `domainId` names the owner; omitted, the selection belongs to the active domain. */
+  selectClass: (n?: string, domainId?: string) => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
-  focusClass: (id: string) => void
+  focusClass: (id: string, domainId?: string) => void
   /** Drop the selection and its graph focus — what clicking empty space means. Leaves an
    *  open overlay panel (Views / Domains / Integrations) alone: it is not a selection. */
   clearSelection: () => void
@@ -135,6 +149,8 @@ interface UIState {
   setCommentDraft: (d: CommentDraft | null) => void
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
+  requestDomainSwitch: (request: { id: string; origin: string } | null) => void
+  setConfirmDomainSwitch: (on: boolean) => void
 }
 
 /** `edge.X` selects like a class (both live in the `class.` selection namespace). */
@@ -169,6 +185,9 @@ export const useUI = create<UIState>((set) => ({
   askMode: false,
   paletteOpen: false,
   settingsOpen: false,
+  domainSwitchRequest: null,
+  confirmDomainSwitch:
+    loadStored('studio.confirmDomainSwitch', ['yes', 'no'] as const, 'yes') === 'yes',
   setTheme: (theme) => {
     store('studio.theme', theme)
     set({ theme, resolvedTheme: paintTheme(theme) })
@@ -177,14 +196,17 @@ export const useUI = create<UIState>((set) => ({
     try {
       if (domainId) localStorage.setItem('studio.lastDomain', domainId)
     } catch {}
+    // The SELECTION is deliberately left alone: it carries its own domain now, and the
+    // canvas draws every domain it holds whether or not one of them is active. Only the
+    // things that are genuinely about the active domain are dropped — the domain-level
+    // overlays, and whatever a reveal was pointing at.
     set({
       domainId,
       panelOverlay: null,
-      selectedClass: undefined,
-      focusId: null,
       revealedRef: null,
       revealTarget: null,
       openAnchorRef: null,
+      domainSwitchRequest: null,
     })
   },
   setSection: (section) => {
@@ -199,7 +221,7 @@ export const useUI = create<UIState>((set) => ({
       revealTarget: null,
       openAnchorRef: null,
       ...((s.section === 'core') !== (section === 'core')
-        ? { selectedClass: undefined, focusId: null }
+        ? { selectedClass: undefined, selectionDomainId: undefined, focusId: null }
         : {}),
     }))
   },
@@ -230,10 +252,12 @@ export const useUI = create<UIState>((set) => ({
     // A property or method is revealed INSIDE the member that declares it — selecting
     // the field itself would select a canvas node that does not exist.
     const selection = detailRefFor(ref)
-    set({
+    set((s) => ({
       section: target,
       panelOverlay: null,
       revealedRef: ref,
+      // revealed from the comments tab, which is the ACTIVE domain's
+      selectionDomainId: s.domainId,
       ...(selection.startsWith('class.') ||
       selection.startsWith('edge.') ||
       selection.startsWith('module.')
@@ -243,28 +267,48 @@ export const useUI = create<UIState>((set) => ({
             revealTarget: revealFocus(selection),
           }
         : {}),
-    })
+    }))
   },
   setPanelOverlay: (panelOverlay) => set({ panelOverlay }),
-  selectClass: (selectedClass) =>
+  selectClass: (selectedClass, domainId) =>
     set((s) => {
-      if (selectedClass === s.selectedClass && !s.panelOverlay && !s.revealedRef) return {}
+      const owner = selectedClass === undefined ? undefined : (domainId ?? s.domainId)
+      if (
+        selectedClass === s.selectedClass &&
+        owner === s.selectionDomainId &&
+        !s.panelOverlay &&
+        !s.revealedRef
+      ) {
+        return {}
+      }
       return {
         selectedClass,
+        selectionDomainId: owner,
         panelOverlay: null,
         revealedRef: null,
         revealTarget: null,
-        focusId: selectedClass?.startsWith('class.') ? selectedClass : s.focusId,
+        // A same-named class in ANOTHER domain is a different node: focus follows the
+        // selection there rather than staying pinned on the one it used to mean.
+        focusId: selectedClass?.startsWith('class.')
+          ? selectedClass
+          : owner === s.selectionDomainId
+            ? s.focusId
+            : null,
       }
     }),
-  focusClass: (id) =>
-    set((s) => ({
-      selectedClass: id,
-      panelOverlay: null,
-      revealedRef: null,
-      revealTarget: null,
-      focusId: s.focusId === id ? null : id,
-    })),
+  focusClass: (id, domainId) =>
+    set((s) => {
+      const owner = domainId ?? s.domainId
+      const same = s.focusId === id && s.selectionDomainId === owner
+      return {
+        selectedClass: id,
+        selectionDomainId: owner,
+        panelOverlay: null,
+        revealedRef: null,
+        revealTarget: null,
+        focusId: same ? null : id,
+      }
+    }),
   clearSelection: () =>
     set((s) =>
       s.selectedClass === undefined &&
@@ -272,7 +316,13 @@ export const useUI = create<UIState>((set) => ({
       s.revealedRef === null &&
       s.revealTarget === null
         ? {}
-        : { selectedClass: undefined, focusId: null, revealedRef: null, revealTarget: null },
+        : {
+            selectedClass: undefined,
+            selectionDomainId: undefined,
+            focusId: null,
+            revealedRef: null,
+            revealTarget: null,
+          },
     ),
   setFocus: (focusId) => set({ focusId }),
   toggleCardinality: () => set((s) => ({ showCardinality: !s.showCardinality })),
@@ -285,6 +335,11 @@ export const useUI = create<UIState>((set) => ({
   setCommentDraft: (commentDraft) => set({ commentDraft }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  requestDomainSwitch: (domainSwitchRequest) => set({ domainSwitchRequest }),
+  setConfirmDomainSwitch: (confirmDomainSwitch) => {
+    store('studio.confirmDomainSwitch', confirmDomainSwitch ? 'yes' : 'no')
+    set({ confirmDomainSwitch })
+  },
 }))
 
 // Following the OS means following it live, not only at boot.

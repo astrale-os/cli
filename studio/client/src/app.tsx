@@ -14,7 +14,6 @@ import { AskLayer } from '@/components/ask-popover'
 import { CommandPalette } from '@/components/command-palette'
 import { CommentDraftPopover } from '@/components/comment-draft-popover'
 import { CommentModeOverlay } from '@/components/comment-mode'
-import { DomainSelector } from '@/components/domain-selector'
 import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
@@ -25,6 +24,8 @@ import { useWorkspace } from '@/lib/hooks'
 import { type SectionKey, useUI } from '@/lib/store'
 import { useStudioEventSync } from '@/lib/studio-events'
 import { cn } from '@/lib/utils'
+import { ActivateDomainDialog } from '@/schema-studio/activate-domain-dialog'
+import { useCanvasSelectionSync } from '@/schema-studio/workspace/canvas-selection'
 import { ProcessSection } from '@/sections/process'
 
 const LazySchemaSection = lazy(() =>
@@ -126,6 +127,9 @@ export function App() {
   }, [domains, domainId, setDomain])
 
   useStudioEventSync()
+  // The domains rail lives inside the section, so the invariant it depends on — the canvas
+  // always holds the active domain — is kept here, where every section can see it.
+  useCanvasSelectionSync()
 
   // keep the merge-forward agent store in sync with the authoritative snapshot —
   // recovers the terminal run state if an `agent-run` frame was ever missed.
@@ -164,11 +168,9 @@ export function App() {
     <TooltipProvider delayDuration={250}>
       <div className="flex h-full flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-          {/* what you are looking at: instance → domain */}
+          {/* what you are looking at — which DOMAIN is the rail's question, not this bar's */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <InstanceSwitcher />
-            <span className="mx-1 h-4 w-px bg-border" />
-            <DomainSelector />
             {domainId && <UpdatesBadge domainId={domainId} />}
           </div>
 
@@ -210,13 +212,10 @@ export function App() {
             >
               <MessagesSquare className="h-4 w-4" />
             </IconAction>
-            {/* Settings are per-domain (they save to that domain's .domain-studio/settings.json),
-                so the gear only exists once there is a domain to settle them on. */}
-            {domainId && (
-              <IconAction label="Settings" onClick={() => setSettingsOpen(true)}>
-                <Settings className="h-4 w-4" />
-              </IconAction>
-            )}
+            {/* Settings are the studio's, not a domain's — the gear is always there. */}
+            <IconAction label="Settings" onClick={() => setSettingsOpen(true)}>
+              <Settings className="h-4 w-4" />
+            </IconAction>
             {/* the panel's own composer is the way to reach the agent while it is open */}
             {!panelOpen && (
               <>
@@ -253,6 +252,7 @@ export function App() {
       <CommentDraftPopover />
       <AskLayer />
       <SettingsDialog />
+      <ActivateDomainDialog />
     </TooltipProvider>
   )
 }

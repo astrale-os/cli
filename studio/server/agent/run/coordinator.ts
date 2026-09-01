@@ -52,9 +52,9 @@ import { deleteChatRuns, persistRun, readChatTranscript, readRunHistory } from '
 
 export type ChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
-/** The agent a domain falls back on — the starred model's; see harness/selection. */
-function defaultHarness(root: string): string {
-  return getHarness(root).id
+/** The agent everything falls back on — the starred model's; see harness/selection. */
+function defaultHarness(): string {
+  return getHarness().id
 }
 
 /**
@@ -69,7 +69,7 @@ function defaultHarness(root: string): string {
  * other one, in the conversation you want to move.
  */
 function newChatHarness(root: string): string {
-  const selection = getHarnessSelection(root)
+  const selection = getHarnessSelection()
   if (selection.source !== 'default') return selection.id
   return resolveChat(root, selection.id)?.harness ?? selection.id
 }
@@ -88,21 +88,21 @@ function describe(handle: DomainHandle, chat: StoredChat): ChatInfo {
 export function chatHarness(domainId: string, chatId?: string): string | undefined {
   const handle = getDomain(domainId)
   if (!handle) return undefined
-  return resolveChat(handle.root, defaultHarness(handle.root), chatId)?.harness
+  return resolveChat(handle.root, defaultHarness(), chatId)?.harness
 }
 
 /** The model this chat overrides its harness with, if any. */
 export function chatModel(domainId: string, chatId?: string): string | undefined {
   const handle = getDomain(domainId)
   if (!handle) return undefined
-  return resolveChat(handle.root, defaultHarness(handle.root), chatId)?.model
+  return resolveChat(handle.root, defaultHarness(), chatId)?.model
 }
 
 /** Every open tab of a domain, plus the one it opens on. */
 export function listChats(domainId: string): ChatList {
   const handle = getDomain(domainId)
   if (!handle) return { chats: [], activeId: '' }
-  const store = ensureChats(handle.root, defaultHarness(handle.root))
+  const store = ensureChats(handle.root, defaultHarness())
   return {
     chats: store.chats.map((chat) => describe(handle, chat)),
     activeId: store.activeId,
@@ -116,7 +116,7 @@ function withChat<T>(
 ): ChatResult<T> {
   const handle = getDomain(domainId)
   if (!handle) return { ok: false, error: `unknown domain: ${domainId}` }
-  const chat = resolveChat(handle.root, defaultHarness(handle.root), chatId)
+  const chat = resolveChat(handle.root, defaultHarness(), chatId)
   if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
   return { ok: true, value: run(handle, chat) }
 }
@@ -155,7 +155,7 @@ export function switchChatHarness(
   if (!hasHarness(target)) return { ok: false, error: `unknown harness: ${harness}` }
   const handle = getDomain(domainId)
   if (!handle) return { ok: false, error: `unknown domain: ${domainId}` }
-  const source = resolveChat(handle.root, defaultHarness(handle.root), chatId)
+  const source = resolveChat(handle.root, defaultHarness(), chatId)
   if (!source) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
   if (source.harness === target) return { ok: false, error: `this chat already runs ${target}` }
 
@@ -194,7 +194,7 @@ export function updateChat(
     if (patch.title !== undefined) renameChat(handle.root, chat.id, patch.title)
     if (patch.model !== undefined) setChatModel(handle.root, chat.id, patch.model)
     if (patch.effort !== undefined) setChatEffort(handle.root, chat.id, patch.effort)
-    return describe(handle, resolveChat(handle.root, defaultHarness(handle.root), chat.id) ?? chat)
+    return describe(handle, resolveChat(handle.root, defaultHarness(), chat.id) ?? chat)
   })
 }
 
@@ -208,7 +208,7 @@ export function updateChat(
 export function forgetChatOrigin(domainId: string, chatId: string): ChatResult<ChatInfo> {
   const handle = getDomain(domainId)
   if (!handle) return { ok: false, error: `unknown domain: ${domainId}` }
-  const chat = resolveChat(handle.root, defaultHarness(handle.root), chatId)
+  const chat = resolveChat(handle.root, defaultHarness(), chatId)
   if (!chat) return { ok: false, error: `unknown chat: ${chatId}` }
   const cleared = clearChatHandoff(handle.root, chat.id)
   if (cleared === 'delivered')
@@ -217,7 +217,7 @@ export function forgetChatOrigin(domainId: string, chatId: string): ChatResult<C
     return { ok: false, error: 'this chat has no unsent transferred context' }
   return {
     ok: true,
-    value: describe(handle, resolveChat(handle.root, defaultHarness(handle.root), chat.id) ?? chat),
+    value: describe(handle, resolveChat(handle.root, defaultHarness(), chat.id) ?? chat),
   }
 }
 
@@ -225,7 +225,7 @@ export function forgetChatOrigin(domainId: string, chatId: string): ChatResult<C
 export function closeChat(domainId: string, chatId: string): ChatResult<ChatList> {
   const handle = getDomain(domainId)
   if (!handle) return { ok: false, error: `unknown domain: ${domainId}` }
-  const chat = resolveChat(handle.root, defaultHarness(handle.root), chatId)
+  const chat = resolveChat(handle.root, defaultHarness(), chatId)
   if (!chat) return { ok: false, error: `unknown chat: ${chatId}` }
   cancelActiveRun(chat.id)
   // Drop the row FIRST: a turn settling a moment later then finds no chat to
@@ -239,7 +239,7 @@ export function closeChat(domainId: string, chatId: string): ChatResult<ChatList
 export async function getSnapshot(domainId: string, chatId?: string): Promise<AgentRunSnapshot> {
   const handle = getDomain(domainId)
   if (!handle) {
-    const harness = getHarness(process.cwd())
+    const harness = getHarness()
     return {
       chatId: '',
       harness: harness.id,
@@ -251,8 +251,7 @@ export async function getSnapshot(domainId: string, chatId?: string): Promise<Ag
   // A client can hold the id of a tab another window just closed; showing the
   // active conversation beats erroring out of a plain read.
   const chat =
-    resolveChat(handle.root, defaultHarness(handle.root), chatId) ??
-    activeChat(handle.root, defaultHarness(handle.root))
+    resolveChat(handle.root, defaultHarness(), chatId) ?? activeChat(handle.root, defaultHarness())
   // The tab's own agent, not the domain's: a Codex chat is unavailable when Codex
   // is missing, whatever the domain would open a NEW conversation with.
   const harness = getHarnessById(chat.harness)
@@ -298,7 +297,7 @@ export function setSessionId(
 ): ChatResult<AgentSessionInfo> {
   const handle = getDomain(domainId)
   if (!handle) return { ok: false, error: `unknown domain: ${domainId}` }
-  const chat = resolveChat(handle.root, defaultHarness(handle.root), chatId)
+  const chat = resolveChat(handle.root, defaultHarness(), chatId)
   if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
   if (isRunActive(chat.id))
     return { ok: false, error: 'the session id cannot be changed while a turn is running' }
@@ -313,7 +312,7 @@ export async function submitRun(
   notify: (event: StudioEvent) => void,
   options?: SubmitOpts & { chatId?: string },
 ): Promise<{ run?: AgentRunSnapshot['run']; error?: string }> {
-  const chat = resolveChat(handle.root, defaultHarness(handle.root), options?.chatId)
+  const chat = resolveChat(handle.root, defaultHarness(), options?.chatId)
   if (!chat) return { error: `unknown chat: ${options?.chatId ?? '(active)'}` }
   const controller = reserveRun(chat.id)
   if (!controller) return { error: 'a turn is already running in this chat' }

@@ -3,7 +3,7 @@ import type { VisibilityState } from '@shared/types'
 import { useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
 import { AlertTriangle } from 'lucide-react'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 
 import { ScrollArea } from '@/components/ui/misc'
 import { api, qk } from '@/lib/api'
@@ -14,6 +14,7 @@ import { buildViewsModel } from '@/lib/views'
 
 import { SchemaDetail } from '../detail'
 import { DomainsPanel } from '../domains-panel'
+import { DomainsRailHeader } from '../domains-rail'
 import { IntegrationsPanel } from '../integrations-panel'
 import { PanelShell } from '../panel-shell'
 import { ModulesSidebar } from '../sidebar'
@@ -21,7 +22,7 @@ import { ViewsPanel } from '../views-panel'
 import { toggleVisibilityRef } from '../visibility'
 import { WorkspaceSchemaGraph } from './graph'
 import { useSchemaWorkspace } from './store'
-import { WorkspaceModuleTree } from './tree'
+import { WorkspaceDomainTree } from './tree'
 import { useWorkspaceDomainInputs } from './use-domain-inputs'
 import { usePreparedWorkspaceDomains } from './use-prepared-domains'
 import { WorkspaceViewsPanel } from './views-panel'
@@ -32,6 +33,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const queryClient = useQueryClient()
   const activeDomainId = useUI((state) => state.domainId)
   const selected = useUI((state) => state.selectedClass)
+  const selectionDomainId = useUI((state) => state.selectionDomainId)
   const select = useUI((state) => state.selectClass)
   const clearSelection = useUI((state) => state.clearSelection)
   const setFocus = useUI((state) => state.setFocus)
@@ -39,10 +41,22 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const collapsedModules = useSchemaWorkspace((state) => state.collapsedModules)
+  const hiddenDomainIds = useSchemaWorkspace((state) => state.hiddenDomainIds)
   const { domains: prepared, ready: preparationReady } = usePreparedWorkspaceDomains(
     inputs,
     collapsedModules,
   )
+  // A domain put away by the rail's eye keeps its projection — its hierarchy stays in the
+  // rail, and showing it again costs no re-layout — but the canvas is told not to draw it.
+  // Same array back when nothing is hidden: the graph reads that identity to tell a real
+  // change from the echo of its own drag.
+  const canvasDomains = useMemo(() => {
+    if (hiddenDomainIds.length === 0) return prepared
+    const hidden = new Set(hiddenDomainIds)
+    return prepared.map((domain) =>
+      hidden.has(domain.input.summary.id) ? { ...domain, hidden: true } : domain,
+    )
+  }, [hiddenDomainIds, prepared])
 
   useEffect(() => {
     if (useUI.getState().panelOverlay && useUI.getState().panelOverlay !== 'views') {
@@ -99,6 +113,11 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   }, [inputs, updateVisibility])
 
   const activeInput = inputs.find((input) => input.summary.id === activeDomainId)
+  // The detail panel answers to the SELECTION, not to the active domain: on a canvas of
+  // several domains, clicking a class in any of them opens that class — the one you
+  // clicked, from the schema that declares it.
+  const selectionInput =
+    inputs.find((input) => input.summary.id === selectionDomainId) ?? activeInput
   // A module is a grouping, not a member: selecting one rings its box on the canvas and
   // its row in the tree, and that is the whole answer — there is no module to inspect.
   const detail = selected && !isModuleRef(selected) ? selected : undefined
@@ -128,15 +147,15 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <ModulesSidebar onClearSelection={clearSelection}>
+        <ModulesSidebar onClearSelection={clearSelection} header={<DomainsRailHeader />}>
           <ScrollArea className="h-full">
-            <WorkspaceModuleTree domains={prepared} onToggleHidden={toggleHidden} />
+            <WorkspaceDomainTree domains={prepared} onToggleHidden={toggleHidden} />
           </ScrollArea>
         </ModulesSidebar>
 
         <div className="relative min-w-0 flex-1">
           <ReactFlowProvider key={providerKey}>
-            <WorkspaceSchemaGraph domains={prepared} onToggleInherited={toggleInherited} />
+            <WorkspaceSchemaGraph domains={canvasDomains} onToggleInherited={toggleInherited} />
           </ReactFlowProvider>
         </div>
 
@@ -163,9 +182,9 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
           <PanelShell onClose={() => setPanelOverlay(null)}>
             <IntegrationsPanel domainId={activeInput.summary.id} />
           </PanelShell>
-        ) : detail && activeInput ? (
+        ) : detail && selectionInput ? (
           <PanelShell onClose={() => select(undefined)}>
-            <SchemaDetail bundle={activeInput.bundle} selected={detail} />
+            <SchemaDetail bundle={selectionInput.bundle} selected={detail} />
           </PanelShell>
         ) : null}
       </div>

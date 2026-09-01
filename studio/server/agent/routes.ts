@@ -70,8 +70,8 @@ async function harnessPresence(id: string): Promise<HarnessPresence> {
  * before any of them is chosen, and Settings lists them as pure diagnostics. The
  * adapters cache their own ACP handshake, so this stays one cheap call.
  */
-async function harnessStatus(root: string): Promise<HarnessStatus> {
-  const selection = getHarnessSelection(root)
+async function harnessStatus(): Promise<HarnessStatus> {
+  const selection = getHarnessSelection()
   const harnesses = await Promise.all(
     listHarnesses(selection.id).map((entry) => harnessPresence(entry.id)),
   )
@@ -165,14 +165,14 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
   }
   if (rest === '/agent/prompt/system' && req.method === 'GET')
     return json({ bridge: true, systemPrompt: buildSystemPrompt({ bridge: true }) })
-  if (rest === '/agent/harness' && req.method === 'GET') return json(await harnessStatus(root))
+  if (rest === '/agent/harness' && req.method === 'GET') return json(await harnessStatus())
   if (rest === '/agent/models' && req.method === 'GET')
     return json(await readModelCatalog(root, req.signal))
   if (rest === '/agent/loadout' && req.method === 'GET') {
     // Probe the models of the chat's OWN harness — the domain default is only
     // what a new tab would get.
     const bound = chatHarness(id, chatParam)
-    const harness = bound ? getHarnessById(bound) : getHarness(root)
+    const harness = bound ? getHarnessById(bound) : getHarness()
     const override = chatModel(id, chatParam)
     if (!harness.loadout)
       return json({

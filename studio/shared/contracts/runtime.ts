@@ -19,10 +19,10 @@ export type StudioEvent =
   | { type: 'workspace'; domains: string[] }
 
 /**
- * The one model this domain's new chats open on — starred in the composer.
+ * The one model new chats open on — starred in the composer.
  *
  * There is exactly one, across every agent: it names the model AND, through it,
- * the agent a fresh domain starts on. Null until the user stars something, which
+ * the agent a fresh chat starts on. Null until the user stars something, which
  * leaves each harness on its own built-in default.
  */
 export interface AgentModelPreference {
@@ -30,7 +30,11 @@ export interface AgentModelPreference {
   model: string
 }
 
-/** Per-domain overrides stored at `.domain-studio/settings.json`. */
+/**
+ * Studio-wide overrides, stored once at `<workspace>/.domain-studio/settings.json`.
+ * These configure the TOOL, not a domain — changing which domain you work in leaves
+ * every value here exactly as it was.
+ */
 export interface StudioSettings {
   /** workspace = sandboxed edits; full = unrestricted local automation */
   agentAccess: AgentAccess

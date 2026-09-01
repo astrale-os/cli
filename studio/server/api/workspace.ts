@@ -1,8 +1,10 @@
 /** Workspace-wide routes that do not require a DomainHandle. */
-import { getBundle } from '../cache'
+import { getBundle, invalidate } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
 import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
-import { asString } from '../json'
+import { asJsonRecord, asString } from '../json'
+import { updateSettings } from '../state/settings'
+import { settingsRoot, studioSettings } from '../studio-settings'
 import { buildCatalog } from '../workspace/catalog'
 import { createDomain } from '../workspace/create'
 import { detectGit } from '../workspace/git'
@@ -47,6 +49,23 @@ export async function handleWorkspaceRoute(
         })),
       ),
     )
+  }
+
+  if (path === '/api/settings') {
+    if (req.method === 'GET') return json(studioSettings())
+    if (req.method === 'POST') {
+      const body = await readJsonRecord(req)
+      if (body.action !== 'update') return badRequest('unknown settings action')
+      const next = updateSettings(settingsRoot(), asJsonRecord(body.settings) ?? {})
+      // `integrationsDir` is read while composing every domain's anatomy, so a settings
+      // write is news to all of them — not to the one that happened to be on screen.
+      for (const handle of allDomains()) {
+        invalidate(handle.id, 'anatomy')
+        notify({ type: 'anatomy-diff', domainId: handle.id })
+      }
+      return json(next)
+    }
+    return badRequest('GET or POST')
   }
 
   if (path === '/api/instances' && req.method === 'GET') return json(await listInstances())

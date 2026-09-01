@@ -5,6 +5,7 @@ import { join } from 'node:path'
 
 import { registerDomain, unregisterDomain } from '../domain'
 import { updateSettings } from '../state/settings'
+import { initWorkspaceState } from '../workspace-state'
 import { runAsk } from './ask'
 import { activeChat, createChat, recordChatTurn, setActiveChat } from './chats'
 
@@ -45,6 +46,8 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   )
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
+  // Studio settings are global; point that global at this test's root.
+  initWorkspaceState(root)
 
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-selected-model'

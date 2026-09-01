@@ -1,7 +1,7 @@
 import type { IrFunction, IrMethod, StudioSchemaBundle, ViewInfo } from '@shared/types'
 
 import { ArrowUpRight, Box, Braces, LayoutTemplate, Sprout, Workflow, Zap } from 'lucide-react'
-import { useMemo } from 'react'
+import { type ReactNode, useMemo } from 'react'
 
 import { MethodAuthBadge } from '@/components/method-auth'
 import {
@@ -13,11 +13,14 @@ import {
   SectionShell,
   Surface,
 } from '@/components/studio-kit'
+import { ScrollArea } from '@/components/ui/misc'
 import { methodGlyph } from '@/lib/friendly'
 import { useAnatomy, useBundle } from '@/lib/hooks'
 import { handlerLinkFor } from '@/lib/method-auth'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
+import { DomainPicker, DomainsRailHeader } from '@/schema-studio/domains-rail'
+import { ModulesSidebar } from '@/schema-studio/sidebar'
 
 /** One callable contract enriched with its Action or Workflow implementation. */
 interface Fn {
@@ -123,101 +126,125 @@ export function ProcessSection({ domainId }: { domainId: string }) {
 
   if (bundleQ.isLoading || anatomyQ.isLoading) {
     return (
-      <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
-        Loading…
-      </div>
+      <ProcessLayout>
+        <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
+          Loading…
+        </div>
+      </ProcessLayout>
     )
   }
 
   return (
-    <SectionShell
-      title="Process"
-      subtitle="Actions and workflows implementing callable contracts"
-      icon={<Workflow className="h-5 w-5" />}
-    >
-      {!ir ? (
-        <Surface className="px-4 py-3 text-sm text-muted-foreground">
-          Schema unavailable — install dependencies to see this domain’s callable contracts.
-        </Surface>
-      ) : (
-        <>
-          {/* ── Entrypoints: how a process starts ── */}
-          <Group label="Entrypoints">
-            <Surface className="divide-y">
-              <Row
-                leading={
-                  <IconTile tone={coreCount > 0 ? 'core' : 'muted'}>
-                    <Sprout />
-                  </IconTile>
-                }
-                title="Core genesis"
-                subtitle={
-                  coreCount > 0
-                    ? `${coreCount} element${coreCount === 1 ? '' : 's'} installed with the schema`
-                    : 'None declared'
-                }
-              />
-              {views.length > 0 && (
+    <ProcessLayout>
+      <SectionShell
+        title="Process"
+        subtitle="Actions and workflows implementing callable contracts"
+        icon={<Workflow className="h-5 w-5" />}
+      >
+        {!ir ? (
+          <Surface className="px-4 py-3 text-sm text-muted-foreground">
+            Schema unavailable — install dependencies to see this domain’s callable contracts.
+          </Surface>
+        ) : (
+          <>
+            {/* ── Entrypoints: how a process starts ── */}
+            <Group label="Entrypoints">
+              <Surface className="divide-y">
                 <Row
-                  onClick={gotoViews}
                   leading={
-                    <IconTile tone="view">
-                      <LayoutTemplate />
+                    <IconTile tone={coreCount > 0 ? 'core' : 'muted'}>
+                      <Sprout />
                     </IconTile>
                   }
-                  title={`${views.length} view${views.length === 1 ? '' : 's'}`}
-                  subtitle={uiTargets.length > 0 ? uiTargets.join(' · ') : 'UI entrypoints'}
-                  trailing={<ArrowUpRight className="h-4 w-4 text-muted-foreground" />}
+                  title="Core genesis"
+                  subtitle={
+                    coreCount > 0
+                      ? `${coreCount} element${coreCount === 1 ? '' : 's'} installed with the schema`
+                      : 'None declared'
+                  }
                 />
-              )}
-            </Surface>
-          </Group>
-
-          {/* ── Functions, grouped by the class they run on ── */}
-          {fnCount === 0 ? (
-            <EmptyState
-              icon={<Workflow />}
-              title="No callable contracts yet"
-              hint="Add a standalone Function or class Method to the schema to see it here."
-            />
-          ) : (
-            <Group label="Runtime" hint={`${fnCount}`}>
-              <div className="space-y-3">
-                {groups.map((g) => (
-                  <Surface key={g.owner} className="overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={g.className ? () => gotoClass(g.className!) : undefined}
-                      className={cn(
-                        'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
-                        g.className && 'hover:bg-accent/40',
-                      )}
-                    >
-                      <IconTile tone="muted" size="sm">
-                        {g.className ? <Box /> : <Braces />}
+                {views.length > 0 && (
+                  <Row
+                    onClick={gotoViews}
+                    leading={
+                      <IconTile tone="view">
+                        <LayoutTemplate />
                       </IconTile>
-                      <span className="flex-1 truncate text-[13px] font-semibold">{g.label}</span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {g.fns.length} callable
-                      </span>
-                    </button>
-                    <div className="border-t">
-                      {g.fns.map((fn) => (
-                        <FnRow
-                          key={fn.name}
-                          fn={fn}
-                          onClick={fn.ownerKind === 'class' ? () => gotoClass(fn.owner) : undefined}
-                        />
-                      ))}
-                    </div>
-                  </Surface>
-                ))}
-              </div>
+                    }
+                    title={`${views.length} view${views.length === 1 ? '' : 's'}`}
+                    subtitle={uiTargets.length > 0 ? uiTargets.join(' · ') : 'UI entrypoints'}
+                    trailing={<ArrowUpRight className="h-4 w-4 text-muted-foreground" />}
+                  />
+                )}
+              </Surface>
             </Group>
-          )}
-        </>
-      )}
-    </SectionShell>
+
+            {/* ── Functions, grouped by the class they run on ── */}
+            {fnCount === 0 ? (
+              <EmptyState
+                icon={<Workflow />}
+                title="No callable contracts yet"
+                hint="Add a standalone Function or class Method to the schema to see it here."
+              />
+            ) : (
+              <Group label="Runtime" hint={`${fnCount}`}>
+                <div className="space-y-3">
+                  {groups.map((g) => (
+                    <Surface key={g.owner} className="overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={g.className ? () => gotoClass(g.className!) : undefined}
+                        className={cn(
+                          'flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors',
+                          g.className && 'hover:bg-accent/40',
+                        )}
+                      >
+                        <IconTile tone="muted" size="sm">
+                          {g.className ? <Box /> : <Braces />}
+                        </IconTile>
+                        <span className="flex-1 truncate text-[13px] font-semibold">{g.label}</span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {g.fns.length} callable
+                        </span>
+                      </button>
+                      <div className="border-t">
+                        {g.fns.map((fn) => (
+                          <FnRow
+                            key={fn.name}
+                            fn={fn}
+                            onClick={
+                              fn.ownerKind === 'class' ? () => gotoClass(fn.owner) : undefined
+                            }
+                          />
+                        ))}
+                      </div>
+                    </Surface>
+                  ))}
+                </div>
+              </Group>
+            )}
+          </>
+        )}
+      </SectionShell>
+    </ProcessLayout>
+  )
+}
+
+/**
+ * Process reads one domain at a time and draws no canvas, but it is still a place you
+ * work FROM — so it carries the same domains rail as the schema studio, or switching
+ * domains would mean leaving the section first.
+ */
+function ProcessLayout({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-full min-h-0">
+      <ModulesSidebar header={<DomainsRailHeader />}>
+        <ScrollArea className="h-full">
+          <DomainPicker />
+        </ScrollArea>
+      </ModulesSidebar>
+      <div className="min-h-0 min-w-0 flex-1">{children}</div>
+    </div>
   )
 }
 
