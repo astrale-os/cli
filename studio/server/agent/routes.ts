@@ -1,4 +1,4 @@
-import type { HarnessPresence, HarnessStatus } from '../../shared/types'
+import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/types'
 import type { ChatResult } from './run/coordinator'
 
 import { badRequest, json, notFound, type DomainRouteContext } from '../api/http'
@@ -17,19 +17,24 @@ import {
 import { setHostToken } from './harness/gateway/token'
 import { getHarnessById, listHarnesses } from './harness/registry'
 import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './harness/selection'
+import { emitStudioEvent } from './notify'
 import { buildSystemPrompt } from './prompts/system'
 import {
   cancelRun,
   chatHarness,
   chatModel,
   closeChat,
+  dropQueued,
+  editQueued,
   forgetChatOrigin,
   getHistory,
   getSessionId,
   getSnapshot,
   listChats,
+  moveQueued,
   openChat,
   selectChat,
+  sendQueuedNow,
   setSessionId,
   submitRun,
   switchChatHarness,
@@ -139,12 +144,42 @@ export async function handleAgentRoute(input: DomainRouteContext): Promise<Respo
     return badRequest('GET or POST')
   }
   if (rest === '/agent/submit' && req.method === 'POST') {
-    const result = await submitRun(handle, notify, {
-      message: typeof body.message === 'string' ? body.message : undefined,
-      resume: body.resume === true,
-      ...(chatBody === undefined ? {} : { chatId: chatBody }),
-    })
-    return result.error ? json({ error: result.error }) : json(result.run)
+    // One envelope for both outcomes: a free chat runs the message, a busy one
+    // parks it, and the composer must be able to tell which without guessing.
+    return json(
+      await submitRun(handle, notify, {
+        message: typeof body.message === 'string' ? body.message : undefined,
+        resume: body.resume === true,
+        ...(chatBody === undefined ? {} : { chatId: chatBody }),
+      }),
+    )
+  }
+  if (rest === '/agent/queue' && req.method === 'POST') {
+    const messageId = asString(body.id) ?? ''
+    // No run event announces a queue change, and every window shows the same
+    // queue — so the tab strip has to be told to resync itself.
+    const queued = (result: ChatResult<ChatInfo>): Response => {
+      if (result.ok) emitStudioEvent(notify, { type: 'chats', domainId: id })
+      return chatJson(result)
+    }
+    // Adding is deliberately absent: a message enters the queue by being SENT
+    // while a turn runs, so the composer has exactly one way to submit.
+    switch (asString(body.action)) {
+      case 'edit':
+        return queued(editQueued(id, chatBody, messageId, asString(body.message) ?? ''))
+      case 'remove':
+        return queued(dropQueued(id, chatBody, messageId))
+      case 'move':
+        return queued(
+          moveQueued(id, chatBody, messageId, body.direction === 'down' ? 'down' : 'up'),
+        )
+      case 'send': {
+        const result = await sendQueuedNow(handle, notify, chatBody, messageId)
+        return result.ok ? json(result.value) : badRequest(result.error)
+      }
+      default:
+        return badRequest(`unknown queue action: ${asString(body.action) ?? ''}`)
+    }
   }
   if (rest === '/agent/history' && req.method === 'GET')
     return chatJson(getHistory(id, chatParam, Number(url.searchParams.get('limit')) || undefined))

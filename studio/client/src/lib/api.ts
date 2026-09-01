@@ -1,6 +1,7 @@
 import type {
   AgentRun,
   AgentRunSnapshot,
+  AgentSubmitResult,
   AgentSystemPromptInfo,
   AgentSessionInfo,
   AnchorRef,
@@ -119,17 +120,28 @@ export const api = {
   /** every terminal turn one chat kept, oldest first — its transcript */
   agentHistory: (id: string, chatId?: string) =>
     get<AgentRun[]>(`${d(id)}/agent/history${chatQuery(chatId)}`),
+  /** run the message now, or park it behind the turn already running */
   agentSubmit: (id: string, message?: string, chatId?: string) =>
-    post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, {
+    post<AgentSubmitResult>(`${d(id)}/agent/submit`, {
       ...(message ? { message } : {}),
       ...(chatId ? { chatId } : {}),
     }),
   // seamless continue after an interruption — resumes the live session with a bare nudge (no re-briefing)
   agentResume: (id: string, chatId?: string) =>
-    post<AgentRun & { error?: string }>(`${d(id)}/agent/submit`, {
+    post<AgentSubmitResult>(`${d(id)}/agent/submit`, {
       resume: true,
       ...(chatId ? { chatId } : {}),
     }),
+  /** the waiting messages of one chat — each call answers with the tab as it stands */
+  editQueued: (id: string, chatId: string, messageId: string, message: string) =>
+    post<ChatInfo>(`${d(id)}/agent/queue`, { action: 'edit', chatId, id: messageId, message }),
+  removeQueued: (id: string, chatId: string, messageId: string) =>
+    post<ChatInfo>(`${d(id)}/agent/queue`, { action: 'remove', chatId, id: messageId }),
+  moveQueued: (id: string, chatId: string, messageId: string, direction: 'up' | 'down') =>
+    post<ChatInfo>(`${d(id)}/agent/queue`, { action: 'move', chatId, id: messageId, direction }),
+  /** jump one waiting message to the front, stopping the turn in progress for it */
+  sendQueued: (id: string, chatId: string, messageId: string) =>
+    post<AgentSubmitResult>(`${d(id)}/agent/queue`, { action: 'send', chatId, id: messageId }),
   agentCancel: (id: string, chatId?: string) =>
     post<{ ok: boolean }>(`${d(id)}/agent/cancel`, chatId ? { chatId } : {}),
   agentSession: (id: string, chatId?: string) =>

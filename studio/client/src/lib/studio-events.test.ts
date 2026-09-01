@@ -42,6 +42,14 @@ test('schema and workspace events preserve their distinct invalidation scopes', 
   ])
 })
 
+test('a queue change refreshes the strip and nothing else', () => {
+  // the queue lives on the chat, so the tab strip is the only thing to resync —
+  // no run started, no transcript moved
+  expect(studioEventEffects({ type: 'chats', domainId: 'billing' })).toEqual([
+    { type: 'invalidate-chats', domainId: 'billing' },
+  ])
+})
+
 test('live agent events merge directly and only terminal runs refresh history', () => {
   const event: AgentEvent = {
     id: 'event-1',

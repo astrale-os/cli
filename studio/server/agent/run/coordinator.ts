@@ -1,6 +1,8 @@
 import type {
   AgentRunSnapshot,
+  AgentRunStatus,
   AgentSessionInfo,
+  AgentSubmitResult,
   ChatInfo,
   ChatList,
   ChatStatus,
@@ -14,20 +16,27 @@ import { getDomain } from '../../domain'
 import {
   activeChat,
   chatInfo,
+  chatQueue,
   clearChatHandoff,
   clearChatSession,
   createChat,
   deleteChat,
+  editQueuedMessage,
+  enqueueChatMessage,
   ensureChats,
   forkChat,
   markHandoffDelivered,
+  MAX_QUEUED_MESSAGES,
+  moveQueuedMessage,
   pendingHandoff,
   renameChat,
+  requeueChatMessage,
   resolveChat,
   setActiveChat,
   setChatEffort,
   setChatModel,
   setChatSession,
+  takeQueuedMessage,
   titleChatFromMessage,
 } from '../chats'
 import { inspectHarnessHealth } from '../harness/adapter'
@@ -46,8 +55,9 @@ import {
   releasePreparation,
   reserveRun,
   setCurrentRun,
+  waitUntilIdle,
 } from './live-state'
-import { prepareRun, type SubmitOpts } from './preparation'
+import { prepareRun, type PreparedRun, type SubmitOpts } from './preparation'
 import { deleteChatRuns, persistRun, readChatTranscript, readRunHistory } from './transcript'
 
 export type ChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
@@ -307,15 +317,37 @@ export function setSessionId(
   return { ok: true, value: getSessionId(domainId, chat.id) }
 }
 
+/**
+ * Start a turn in one chat — or park the message behind the one already running.
+ *
+ * Typing while the agent works is not an error to report back: it is the queue,
+ * and the turn that settles sends the next message itself (`drainQueue`). Only a
+ * caller that has already taken responsibility for ordering passes `queue:
+ * false` — the drain and the promote below, which must be told they lost the
+ * chat rather than silently re-queued at the wrong end.
+ */
 export async function submitRun(
   handle: DomainHandle,
   notify: (event: StudioEvent) => void,
-  options?: SubmitOpts & { chatId?: string },
-): Promise<{ run?: AgentRunSnapshot['run']; error?: string }> {
+  options?: SubmitOpts & { chatId?: string; queue?: boolean },
+): Promise<AgentSubmitResult> {
   const chat = resolveChat(handle.root, defaultHarness(), options?.chatId)
   if (!chat) return { error: `unknown chat: ${options?.chatId ?? '(active)'}` }
   const controller = reserveRun(chat.id)
-  if (!controller) return { error: 'a turn is already running in this chat' }
+  if (!controller) {
+    // Reserving and parking are ONE synchronous decision: nothing can settle the
+    // running turn between them, so a message never lands in a queue that was
+    // drained a moment ago and will never be drained again.
+    const message = options?.message?.trim()
+    if (!message || options?.queue === false)
+      return { error: 'a turn is already running in this chat' }
+    if (chatQueue(chat).length >= MAX_QUEUED_MESSAGES)
+      return { error: `the queue is full — ${MAX_QUEUED_MESSAGES} messages already wait here` }
+    const queued = enqueueChatMessage(handle.root, chat.id, message)
+    if (!queued) return { error: `unknown chat: ${chat.id}` }
+    emitStudioEvent(notify, { type: 'chats', domainId: handle.id })
+    return { queued }
+  }
   try {
     const result = await prepareRun(handle, chat, notify, controller, options)
     if ('error' in result) return result
@@ -335,9 +367,152 @@ export async function submitRun(
       chatId: chat.id,
       run: prepared.run,
     })
-    void completeRun(prepared, controller, notify)
+    void runThenDrain(handle, prepared, controller, notify)
     return { run: prepared.run }
   } finally {
     releasePreparation(chat.id, controller)
   }
+}
+
+/** Run one turn to its end, then let the queue move. */
+async function runThenDrain(
+  handle: DomainHandle,
+  prepared: PreparedRun,
+  controller: AbortController,
+  notify: (event: StudioEvent) => void,
+): Promise<void> {
+  try {
+    await completeRun(prepared, controller, notify)
+  } catch {
+    /* completeRun records its own failure on the run it settles */
+  }
+  await drainQueue(handle, prepared.chat.id, notify, prepared.run.status)
+}
+
+/**
+ * Send the next queued message, now that the chat is free.
+ *
+ * A turn that RAN hands over to the next message, whether it ended well or
+ * badly — a failed turn is still a turn the user watched go by. A CANCELED one
+ * does not: stopping is how you take the wheel back, and the queue waits for
+ * you. Nor does an INTERRUPTED one, which means the Studio process died
+ * mid-turn: restarting must not replay work nobody is watching.
+ */
+async function drainQueue(
+  handle: DomainHandle,
+  chatId: string,
+  notify: (event: StudioEvent) => void,
+  settled: AgentRunStatus,
+): Promise<void> {
+  if (settled !== 'succeeded' && settled !== 'failed') return
+  const next = takeQueuedMessage(handle.root, chatId)
+  if (!next) return
+  emitStudioEvent(notify, { type: 'chats', domainId: handle.id })
+  let result: AgentSubmitResult
+  try {
+    result = await submitRun(handle, notify, { message: next.text, chatId, queue: false })
+  } catch (error) {
+    result = { error: error instanceof Error ? error.message : String(error) }
+  }
+  if (!result.error) return
+  // Nothing started, so the message goes back at the head it left. Another
+  // window may simply have claimed the chat first — that turn's own drain picks
+  // it up, and the queue keeps its order either way.
+  requeueChatMessage(handle.root, chatId, next)
+  emitStudioEvent(notify, { type: 'chats', domainId: handle.id })
+}
+
+/** Resolve a chat, change its queue, and answer with the tab as it now stands. */
+function withQueue(
+  domainId: string,
+  chatId: string | undefined,
+  change: (root: string, chat: StoredChat) => string | undefined,
+): ChatResult<ChatInfo> {
+  const handle = getDomain(domainId)
+  if (!handle) return { ok: false, error: `unknown domain: ${domainId}` }
+  const chat = resolveChat(handle.root, defaultHarness(), chatId)
+  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
+  const error = change(handle.root, chat)
+  if (error) return { ok: false, error }
+  const updated = resolveChat(handle.root, defaultHarness(), chat.id) ?? chat
+  return { ok: true, value: describe(handle, updated) }
+}
+
+/** Rewrite a message that has not been sent yet. */
+export function editQueued(
+  domainId: string,
+  chatId: string | undefined,
+  messageId: string,
+  text: string,
+): ChatResult<ChatInfo> {
+  return withQueue(domainId, chatId, (root, chat) => {
+    if (!text.trim()) return 'a queued message cannot be empty — delete it instead'
+    return editQueuedMessage(root, chat.id, messageId, text)
+      ? undefined
+      : `unknown queued message: ${messageId}`
+  })
+}
+
+/** Drop a message before it is ever sent. */
+export function dropQueued(
+  domainId: string,
+  chatId: string | undefined,
+  messageId: string,
+): ChatResult<ChatInfo> {
+  return withQueue(domainId, chatId, (root, chat) =>
+    takeQueuedMessage(root, chat.id, messageId)
+      ? undefined
+      : `unknown queued message: ${messageId}`,
+  )
+}
+
+/** Move a queued message one place towards the front ('up') or the back. */
+export function moveQueued(
+  domainId: string,
+  chatId: string | undefined,
+  messageId: string,
+  direction: 'up' | 'down',
+): ChatResult<ChatInfo> {
+  return withQueue(domainId, chatId, (root, chat) =>
+    moveQueuedMessage(root, chat.id, messageId, direction === 'up' ? -1 : 1)
+      ? undefined
+      : `${messageId} cannot move ${direction}`,
+  )
+}
+
+/**
+ * Jump one queued message to the front of the line, stopping the turn in
+ * progress for it.
+ *
+ * That interruption is the whole point — "send this now" answers a turn going
+ * the wrong way — so the running turn is CANCELLED rather than left to finish.
+ * Its own drain then holds the rest of the queue (a cancel means take the
+ * wheel), which is what keeps this from sending two messages at once.
+ */
+export async function sendQueuedNow(
+  handle: DomainHandle,
+  notify: (event: StudioEvent) => void,
+  chatId: string | undefined,
+  messageId: string,
+): Promise<ChatResult<AgentSubmitResult>> {
+  const chat = resolveChat(handle.root, defaultHarness(), chatId)
+  if (!chat) return { ok: false, error: `unknown chat: ${chatId ?? '(active)'}` }
+  const message = takeQueuedMessage(handle.root, chat.id, messageId)
+  if (!message) return { ok: false, error: `unknown queued message: ${messageId}` }
+  emitStudioEvent(notify, { type: 'chats', domainId: handle.id })
+
+  const restore = (error: string): ChatResult<AgentSubmitResult> => {
+    requeueChatMessage(handle.root, chat.id, message)
+    emitStudioEvent(notify, { type: 'chats', domainId: handle.id })
+    return { ok: false, error }
+  }
+  cancelActiveRun(chat.id)
+  if (!(await waitUntilIdle(chat.id)))
+    return restore('the running turn did not stop — try again in a moment')
+  const result = await submitRun(handle, notify, {
+    message: message.text,
+    chatId: chat.id,
+    queue: false,
+  })
+  return result.error ? restore(result.error) : { ok: true, value: result }
 }

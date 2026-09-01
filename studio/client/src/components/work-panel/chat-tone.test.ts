@@ -12,6 +12,7 @@ const chat = (id: string, harness = 'claude'): ChatInfo => ({
   createdAt: '2026-09-01T00:00:00.000Z',
   updatedAt: '2026-09-01T00:00:00.000Z',
   status: 'idle',
+  queued: [],
 })
 
 test('the first tab of each agent wears that agent\u2019s own colour', () => {

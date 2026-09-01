@@ -73,6 +73,25 @@ export function cancelActiveRun(chatId: string): boolean {
   return true
 }
 
+/**
+ * Wait until a chat has no turn in flight.
+ *
+ * `cancelActiveRun` only ABORTS: the harness child still has to unwind, and the
+ * reservation only lifts once the run settles. Promoting a queued message has to
+ * wait for that, or its submit would bounce off the reservation it just stopped.
+ * Polling rather than a promise per chat — a turn can also end without ever
+ * reaching completion (cancelled during setup), and idleness is the one signal
+ * both paths share.
+ */
+export async function waitUntilIdle(chatId: string, timeoutMs = 15_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (isRunActive(chatId)) {
+    if (Date.now() > deadline) return false
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  return true
+}
+
 export function hydrateRun(domainId: string, root: string, chat: StoredChat): void {
   if (hydrated.has(chat.id) || runs.has(chat.id)) return
   hydrated.add(chat.id)

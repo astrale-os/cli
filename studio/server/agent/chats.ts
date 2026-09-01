@@ -18,7 +18,7 @@
  */
 import { randomUUID } from 'node:crypto'
 
-import type { AgentEffort, ChatInfo, ChatStatus } from '../../shared/types'
+import type { AgentEffort, ChatInfo, ChatStatus, QueuedMessage } from '../../shared/types'
 
 import { isAgentEffort } from '../../shared/agent-effort'
 import { DEFAULT_CHAT_TITLE } from '../../shared/types'
@@ -30,6 +30,14 @@ const LEGACY_SESSION_FILE = '.cache/agent/session.json'
 
 /** Enough of the old conversation to orient the next agent, not a re-briefing. */
 const MAX_HANDOFF_CHARS = 8000
+
+/**
+ * How many messages may wait behind one turn.
+ *
+ * A queue is a short list you can still read at a glance, not a batch job: past
+ * this the enqueue fails loudly rather than growing a backlog nobody reviews.
+ */
+export const MAX_QUEUED_MESSAGES = 20
 const DEFAULT_TITLE = DEFAULT_CHAT_TITLE
 
 /**
@@ -60,6 +68,8 @@ export interface StoredChat {
   updatedAt: string
   /** carried over from the chat this one was forked from */
   handoff?: ChatHandoff
+  /** messages typed while a turn was running, oldest first */
+  queue?: QueuedMessage[]
   /** this chat owns the transcripts written before Studio had tabs (same harness) */
   adoptsLegacyRuns?: boolean
 }
@@ -81,6 +91,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const effort = isAgentEffort(record.effort) ? record.effort : undefined
   const sessionId = asString(record.sessionId)
   const handoff = decodeHandoff(record.handoff)
+  const queue = decodeQueue(record.queue)
   const createdAt = asString(record.createdAt) ?? new Date().toISOString()
   return {
     id,
@@ -93,8 +104,21 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
     ...(effort ? { effort } : {}),
     ...(sessionId ? { sessionId } : {}),
     ...(handoff ? { handoff } : {}),
+    ...(queue.length ? { queue } : {}),
     ...(asBoolean(record.adoptsLegacyRuns) ? { adoptsLegacyRuns: true } : {}),
   }
+}
+
+/** Queued messages read back from disk — a malformed entry is dropped, not fatal. */
+function decodeQueue(value: unknown): QueuedMessage[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    const record = asJsonRecord(entry)
+    const id = asString(record?.id)
+    const text = asString(record?.text)
+    if (!id || !text) return []
+    return [{ id, text, createdAt: asString(record?.createdAt) ?? new Date().toISOString() }]
+  })
 }
 
 function decodeHandoff(value: unknown): ChatHandoff | undefined {
@@ -378,6 +402,108 @@ export function recordChatTurn(
   })
 }
 
+/** The messages waiting behind this chat's turn, oldest first. */
+export function chatQueue(chat: StoredChat): QueuedMessage[] {
+  return chat.queue ?? []
+}
+
+/**
+ * Park a message behind the turn in progress.
+ *
+ * Appends: a queue you can reorder is only trustworthy if what you add lands
+ * where you expect it, which is last. The caller has already resolved the chat
+ * and checked `MAX_QUEUED_MESSAGES`, so `undefined` here means the tab closed
+ * between the two.
+ */
+export function enqueueChatMessage(
+  root: string,
+  chatId: string,
+  text: string,
+): QueuedMessage | undefined {
+  const message: QueuedMessage = {
+    id: randomUUID(),
+    text: text.trim(),
+    createdAt: new Date().toISOString(),
+  }
+  return mutateChat(root, chatId, (chat) => {
+    chat.queue = [...chatQueue(chat), message]
+  })
+    ? message
+    : undefined
+}
+
+/**
+ * Put a taken message back at the head.
+ *
+ * The drain removes before it submits, so a submit that could not start has to
+ * restore the message where it was — appending it would silently reorder the
+ * queue behind the user's back.
+ */
+export function requeueChatMessage(root: string, chatId: string, message: QueuedMessage): void {
+  mutateChat(root, chatId, (chat) => {
+    chat.queue = [message, ...chatQueue(chat).filter((entry) => entry.id !== message.id)]
+  })
+}
+
+/** Remove and return one queued message — the next one to run when unnamed. */
+export function takeQueuedMessage(
+  root: string,
+  chatId: string,
+  messageId?: string,
+): QueuedMessage | undefined {
+  const store = readStore(root)
+  const chat = store.chats.find((entry) => entry.id === chatId)
+  if (!chat) return undefined
+  const queue = chatQueue(chat)
+  const taken = messageId ? queue.find((entry) => entry.id === messageId) : queue[0]
+  if (!taken) return undefined
+  chat.queue = queue.filter((entry) => entry.id !== taken.id)
+  chat.updatedAt = new Date().toISOString()
+  writeStore(root, store)
+  return taken
+}
+
+/** Rewrite one queued message in place, keeping its turn in line. */
+export function editQueuedMessage(
+  root: string,
+  chatId: string,
+  messageId: string,
+  text: string,
+): QueuedMessage | undefined {
+  const trimmed = text.trim()
+  if (!trimmed) return undefined
+  let edited: QueuedMessage | undefined
+  mutateChat(root, chatId, (chat) => {
+    chat.queue = chatQueue(chat).map((entry) => {
+      if (entry.id !== messageId) return entry
+      edited = { ...entry, text: trimmed }
+      return edited
+    })
+  })
+  return edited
+}
+
+/** Swap a queued message with its neighbour; false at the end it already sits at. */
+export function moveQueuedMessage(
+  root: string,
+  chatId: string,
+  messageId: string,
+  delta: -1 | 1,
+): boolean {
+  const store = readStore(root)
+  const chat = store.chats.find((entry) => entry.id === chatId)
+  if (!chat) return false
+  const queue = [...chatQueue(chat)]
+  const from = queue.findIndex((entry) => entry.id === messageId)
+  const to = from + delta
+  if (from < 0 || to < 0 || to >= queue.length) return false
+  queue.splice(to, 0, queue.splice(from, 1)[0]!)
+  chat.queue = queue
+  chat.updatedAt = new Date().toISOString()
+  writeStore(root, store)
+  return true
+}
+
 /** The transferred summary has reached the harness; never send it twice. */
 export function markHandoffDelivered(root: string, chatId: string): void {
   mutateChat(root, chatId, (chat) => {
@@ -439,6 +565,7 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
     createdAt: chat.createdAt,
     updatedAt: chat.updatedAt,
     status,
+    queued: chatQueue(chat),
     ...(chat.model === undefined ? {} : { model: chat.model }),
     ...(chat.effort === undefined ? {} : { effort: chat.effort }),
     ...(chat.sessionId === undefined ? {} : { sessionId: chat.sessionId }),

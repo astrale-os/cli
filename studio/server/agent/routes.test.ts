@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AgentRun } from '../../shared/types'
+import type { AgentRun, AgentSubmitResult, ChatInfo, StudioEvent } from '../../shared/types'
 import type { JsonRecord } from '../json'
 import type { AskResult } from './harness/adapter'
 
@@ -13,17 +13,23 @@ import { initWorkspaceState } from '../workspace-state'
 import { markHandoffDelivered } from './chats'
 import { getHarnessById } from './harness/registry'
 import { handleAgentRoute } from './routes'
-import { listChats } from './run/coordinator'
+import { cancelRun, listChats } from './run/coordinator'
 import { persistRun } from './run/transcript'
 import { NdjsonChannel } from './stream'
 
 const roots: string[] = []
 const domainIds: string[] = []
-const previousHarness = process.env.DOMAIN_STUDIO_HARNESS
+const previousEnv = {
+  DOMAIN_STUDIO_HARNESS: process.env.DOMAIN_STUDIO_HARNESS,
+  DOMAIN_STUDIO_MOCK_MODE: process.env.DOMAIN_STUDIO_MOCK_MODE,
+  DOMAIN_STUDIO_MOCK_DELAY_MS: process.env.DOMAIN_STUDIO_MOCK_DELAY_MS,
+}
 
 afterEach(() => {
-  if (previousHarness === undefined) delete process.env.DOMAIN_STUDIO_HARNESS
-  else process.env.DOMAIN_STUDIO_HARNESS = previousHarness
+  for (const [name, value] of Object.entries(previousEnv)) {
+    if (value === undefined) delete process.env[name]
+    else process.env[name] = value
+  }
   while (domainIds.length) unregisterDomain(domainIds.pop()!)
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
@@ -524,4 +530,54 @@ test('a chat origin can only be forgotten before it reaches the agent', async ()
   expect(refused?.status).toBe(400)
   expect(await refused?.text()).toContain('already sent to the agent')
   expect(listChats(handle.id).chats.find((chat) => chat.id === delivered.id)?.origin).toBeDefined()
+})
+
+test('the queue route parks a message behind a turn and hands back the tab', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  process.env.DOMAIN_STUDIO_MOCK_MODE = 'normal'
+  process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = '5000'
+  const handle = fixture()
+  const events: StudioEvent[] = []
+  const call = async (rest: string, body: JsonRecord) => {
+    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const req = new Request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    return handleAgentRoute({ req, url, rest, body, handle, notify: (event) => events.push(event) })
+  }
+  const submit = async (message: string) =>
+    (await (await call('/agent/submit', { message }))?.json()) as AgentSubmitResult
+  const queue = async (body: JsonRecord) => call('/agent/queue', body)
+  const texts = async (response: Response | null | undefined) =>
+    ((await response?.json()) as ChatInfo).queued.map((message) => message.text)
+
+  // one envelope, two outcomes: the free chat runs it, the busy one parks it
+  expect((await submit('the long one')).run?.status).toBe('running')
+  const first = await submit('wait for me')
+  expect(first.run).toBeUndefined()
+  expect(first.queued?.text).toBe('wait for me')
+  const second = await submit('and me')
+
+  expect(
+    await texts(await queue({ action: 'move', id: second.queued!.id, direction: 'up' })),
+  ).toEqual(['and me', 'wait for me'])
+  expect(
+    await texts(await queue({ action: 'edit', id: first.queued!.id, message: 'on reflection' })),
+  ).toEqual(['and me', 'on reflection'])
+  expect(await texts(await queue({ action: 'remove', id: second.queued!.id }))).toEqual([
+    'on reflection',
+  ])
+
+  // every queue change is announced, because no run event covers one
+  expect(events.filter((event) => event.type === 'chats').length).toBeGreaterThanOrEqual(5)
+
+  const unknownMessage = await queue({ action: 'remove', id: 'not-a-message' })
+  expect(unknownMessage?.status).toBe(400)
+  const unknownAction = await queue({ action: 'shuffle' })
+  expect(unknownAction?.status).toBe(400)
+  expect(await unknownAction?.json()).toEqual({ error: 'unknown queue action: shuffle' })
+
+  expect(cancelRun(handle.id)).toBe(true)
 })

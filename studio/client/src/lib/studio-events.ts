@@ -60,6 +60,9 @@ export function studioEventEffects(
       }
       return effects
     }
+    case 'chats':
+      // a queued message moved in another window; nothing else changed
+      return [{ type: 'invalidate-chats', domainId: event.domainId }]
     case 'schema-diff':
       return [
         { type: 'invalidate-domain', domainId: event.domainId },

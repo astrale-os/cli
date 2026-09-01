@@ -18,6 +18,7 @@ const chat: ChatInfo = {
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   status: 'idle',
+  queued: [],
 }
 
 const harness: HarnessStatus = {
