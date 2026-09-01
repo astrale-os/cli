@@ -5,8 +5,7 @@ import type { StudioE2ESchema } from './schema/index.js'
 export const runtime = defineRuntime<StudioE2ESchema>()({
   integrations: {},
   initialize: () => ({ providers: {} }),
-  actions: [],
-  workflows: [],
+  functions: [],
 })
 
 export default runtime

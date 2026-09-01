@@ -26,7 +26,7 @@ test('hashes current Application and vertical authoring files', () => {
   roots.push(root)
   for (const dir of [
     'schema',
-    'actions/risk',
+    'functions/risk',
     'providers/mail',
     'queries/risk',
     'ui/risk',
@@ -38,7 +38,7 @@ test('hashes current Application and vertical authoring files', () => {
     'schema/index.ts',
     'application.ts',
     'runtime.ts',
-    'actions/risk/index.ts',
+    'functions/risk/index.ts',
     'providers/mail/index.ts',
     'queries/risk/index.ts',
     'ui/risk/screen.tsx',
@@ -50,8 +50,8 @@ test('hashes current Application and vertical authoring files', () => {
   writeFileSync(join(root, 'README.md'), 'not part of the anatomy fileset\n')
 
   expect(Object.keys(hashAnatomyFiles(root, 'schema')).sort()).toEqual([
-    'actions/risk/index.ts',
     'application.ts',
+    'functions/risk/index.ts',
     'package.json',
     'providers/mail/index.ts',
     'queries/risk/index.ts',

@@ -21,8 +21,7 @@ const schema = defineSchema('view-development.example', {
 const runtime = defineRuntime<typeof schema>()({
   integrations: {},
   initialize: () => ({ providers: {} }),
-  actions: [],
-  workflows: [],
+  functions: [],
 })
 const deployed = assemble(
   compile(

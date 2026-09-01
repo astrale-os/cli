@@ -172,7 +172,7 @@ export function firstValueDeclaration(node: Node): Node | undefined {
 export function resolveModuleFile(from: SourceFile, spec: string): string | undefined {
   const baseDir = dirname(from.getFilePath())
   if (!spec.startsWith('.')) {
-    // Current SDK projects use package `imports` aliases such as `#actions/risk`.
+    // Current SDK projects use package `imports` aliases such as `#functions/risk`.
     // Read the project's own manifest rather than asking the host resolver: a
     // compiled standalone cannot resolve an external package's aliases at all.
     if (!isPackageImportSpecifier(spec)) return undefined

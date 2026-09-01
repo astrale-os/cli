@@ -27,15 +27,14 @@ Keep these composition files narrow:
 
 ```text
 schema/             authored language declarations and Policies
-actions/            one-step callable implementations
-workflows/          explicit multi-step callable implementations
+functions/          Action and Workflow callable implementations
 integrations/       consumer-owned external contracts
 providers/          environment-backed implementations
 queries/            reusable graph observations
 mutations/          atomic graph changes
 rules/              pure business decisions
 views/ and ui/       frontend routing and presentation
-runtime.ts          integrations, initialize, Actions, Workflows
+runtime.ts          integrations, initialize, Functions
 application.ts      Schema, Runtime, frontend, routes, requirements
 astrale.config.ts   deployment adapter and environments
 ```
@@ -54,7 +53,7 @@ Every Runtime-side module imports authored Schema handles only as types. A value
 Runtime, Action, Workflow, Integration, Provider, Query, or Mutation can retain the build-only Schema
 DSL in the Worker closure; the SDK build boundary rejects that leak. Application/publication
 composition remains the value owner. Runtime realizes external Providers once and registers exact
-Action and Workflow definitions:
+Action and Workflow definitions in one ordered Functions collection:
 
 ```ts
 import { defineRuntime } from '@astrale-os/sdk/runtime'
@@ -69,8 +68,7 @@ export default defineRuntime<typeof schema>()({
       },
     }
   },
-  actions,
-  workflows,
+  functions,
 })
 ```
 
