@@ -88,6 +88,11 @@ async function main(): Promise<void> {
     const output = built.outputs.find((candidate) => candidate.kind === 'entry-point')
     if (!output) throw new Error('schema bundle produced no entrypoint')
     const source = await output.text()
+
+    // The extractor must start outside the Domain so a compiled Bun runtime can
+    // build authored package imports. Restore the author's expected cwd only
+    // after that build, before evaluating the inert Schema bundle.
+    process.chdir(projectRoot)
     const module = { exports: {} as Record<string, unknown> }
     const require = createRequire(pathToFileURL(join(projectRoot, 'package.json')))
     const factory = new Function(`return (\n${source}\n);`)() as (
