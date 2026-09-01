@@ -356,7 +356,7 @@ Examples:
         alive.add(c)
         c.once('error', (err) => {
           failed = true
-          log.error(`  studio ${role} failed: ${err instanceof Error ? err.message : String(err)}`)
+          log.error(`studio ${role} failed: ${err instanceof Error ? err.message : String(err)}`)
           killAll()
         })
         c.once('exit', () => {
@@ -486,9 +486,9 @@ Examples:
         output({ url: displayUrl, port: studioPort, mode: dev ? 'dev' : 'prod', workspace }, opts)
       } else {
         log.success(`Domain Studio${dev ? ' (dev — live reload)' : ''}`)
-        log.info(`  ${workspace}`)
-        log.info(`  → ${displayUrl}`)
-        if (!ready) log.warn('  still starting — open the URL above once it finishes indexing.')
+        log.dim(`  ${workspace}`)
+        log.dim(`  → ${displayUrl}`)
+        if (!ready) log.warn('Still starting — open the URL above once it finishes indexing.')
       }
       if (ready && opts.open === true) openBrowser(displayUrl)
 

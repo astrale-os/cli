@@ -1,5 +1,6 @@
 import type { CommandDefinition } from '../../program/index'
 
+import { canPrompt } from '../../lib/interactive'
 import { fatal, log } from '../../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../../lib/output'
 import { promptMultiSelect } from '../../lib/prompt'
@@ -44,19 +45,9 @@ export function astraleSkillAgentChoices(agents: readonly AstraleSkillAgentStatu
     }))
 }
 
-function canPrompt(opts: ConfigureOpts): boolean {
-  return (
-    opts.interactive !== false &&
-    process.stdin.isTTY === true &&
-    process.stdout.isTTY === true &&
-    !opts.yes &&
-    !process.env.CI &&
-    !process.env.CONTINUOUS_INTEGRATION &&
-    !process.argv.includes('--no-prompt') &&
-    !process.argv.includes('--ci') &&
-    !process.argv.includes('--json') &&
-    !process.argv.includes('--raw')
-  )
+/** The shared terminal rule, plus this command's own two opt-outs. */
+function mayChooseAgents(opts: ConfigureOpts): boolean {
+  return opts.interactive !== false && !opts.yes && canPrompt()
 }
 
 export async function chooseAstraleSkillAgents(
@@ -65,7 +56,7 @@ export async function chooseAstraleSkillAgents(
   const agents = await astraleSkillAgents()
   if (opts.agent) return opts.agent
   const configured = agents.filter((agent) => agent.configured).map((agent) => agent.name)
-  if (!canPrompt(opts)) {
+  if (!mayChooseAgents(opts)) {
     return configured.length > 0
       ? configured
       : agents.filter((agent) => agent.detected).map((agent) => agent.name)
@@ -89,7 +80,7 @@ export async function configureAstraleSkills(
     if (!skills.installed) {
       const offer = opts.yes
         ? ({ status: 'accepted' } as const)
-        : await offerAstraleSkillInstallation(opts.source, { interactive: canPrompt(opts) })
+        : await offerAstraleSkillInstallation(opts.source, { interactive: mayChooseAgents(opts) })
       if (offer.status !== 'accepted') return offer
     } else {
       const agents = (await astraleSkillAgents())

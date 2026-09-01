@@ -7,8 +7,10 @@ import type { CommandDefinition } from '../../program/index'
 
 import { createPathCall, runKernelCommand } from '../../connection'
 import { AstraleError } from '../../errors'
+import { canPrompt } from '../../lib/interactive'
 import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
+import { dangerPanel } from '../../lib/panel'
 import { confirmWithInput } from '../../lib/prompt'
 
 type UninstallOpts = KernelCommandOpts & {
@@ -94,14 +96,7 @@ Examples:
 async function confirmUninstall(origin: string, opts: UninstallOpts): Promise<void> {
   if (opts.yes) return
 
-  const nonInteractive =
-    opts.ci ||
-    opts.noPrompt ||
-    process.env.CI ||
-    process.argv.includes('--ci') ||
-    process.argv.includes('--no-prompt') ||
-    !process.stdin.isTTY
-  if (nonInteractive) {
+  if (!canPrompt(opts)) {
     throw new AstraleError(
       'CONFIRMATION_REQUIRED',
       `Uninstalling Domain "${origin}" requires explicit confirmation.`,
@@ -109,19 +104,13 @@ async function confirmUninstall(origin: string, opts: UninstallOpts): Promise<vo
     )
   }
 
-  const warning =
-    chalk.red.bold('⚠  DANGER — DOMAIN UNINSTALL') +
-    '\n' +
-    chalk.dim('│') +
-    `  origin     ${chalk.bold(origin)}\n` +
-    chalk.dim('│') +
-    '\n' +
-    chalk.dim('│') +
-    '  This removes the installed Domain from the target instance.\n' +
-    chalk.dim('│') +
-    '  This command never deletes business data.\n' +
-    chalk.dim('│') +
-    '  The Kernel refuses removal while dependents or business data remain.'
+  const warning = dangerPanel('DOMAIN UNINSTALL', [
+    `origin     ${chalk.bold(origin)}`,
+    '',
+    'This removes the installed Domain from the target instance.',
+    'This command never deletes business data.',
+    'The Kernel refuses removal while dependents or business data remain.',
+  ])
   if (!(await confirmWithInput(warning, origin))) {
     throw new AstraleError('UNINSTALL_CANCELLED', `Domain uninstall cancelled for "${origin}".`)
   }

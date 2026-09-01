@@ -17,7 +17,7 @@ export default {
       return
     }
     if (sessions.length === 0) {
-      log.dim('No sessions recorded yet. Run any astrale command in a workspace to start one.')
+      log.dim('  No sessions recorded yet. Run any astrale command in a workspace to start one.')
       return
     }
     for (const s of sessions) {

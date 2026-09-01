@@ -15,10 +15,11 @@ import { AstraleError } from '../errors'
 import { readIdentities } from '../identity/index'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
 import { readInstances } from '../lib/instance'
-import { fatal, log } from '../lib/log'
+import { fatal, log, withSpinner } from '../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
+import { promptSelect } from '../lib/prompt'
 import { proveDevelopmentViewTransport } from '../lib/view/development/publication'
 import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
@@ -115,15 +116,14 @@ async function chooseCandidate(
 ): Promise<ViewCandidate> {
   const picked = pickCandidate(candidates, anchor, selector)
   if (picked !== 'ambiguous') return picked
-  if (process.stdin.isTTY && !isMachine(opts)) {
-    const { select } = await import('@inquirer/prompts')
-    return select({
-      message: `${anchor} has ${candidates.length} views — open which?`,
-      choices: candidates.map((c) => ({
-        name: `${candidateSlug(c)}  ${chalk.dim(c.url)}`,
-        value: c,
-      })),
-    })
+  // promptSelect answers undefined when the terminal cannot be asked, so the
+  // ambiguity error below stays the single non-interactive outcome.
+  if (!isMachine(opts)) {
+    const chosen = await promptSelect(
+      `${anchor} has ${candidates.length} views — open which?`,
+      candidates.map((c) => ({ name: `${candidateSlug(c)}  ${chalk.dim(c.url)}`, value: c })),
+    )
+    if (chosen) return chosen
   }
   throw new AstraleError(
     'AMBIGUOUS_VIEW',
@@ -355,17 +355,23 @@ async function startSessionLocked(
   const live = { ...record, pid: child.pid }
   await saveRecord(live)
 
+  // The session server logs to a file rather than the terminal, so an animation
+  // here owns the line and cannot be trampled by the child's output.
   const deadline = Date.now() + READY_TIMEOUT_MS
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`${live.pageUrl}state`)
-      if (res.ok) return live
-    } catch {
-      // not up yet
+  const up = await withSpinner('Starting the view session', !isMachine(opts), async () => {
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch(`${live.pageUrl}state`)
+        if (res.ok) return true
+      } catch {
+        // not up yet
+      }
+      if (child.exitCode !== null) break
+      await sleep(POLL_MS)
     }
-    if (child.exitCode !== null) break
-    await sleep(POLL_MS)
-  }
+    return false
+  })
+  if (up) return live
   const tail = await readFile(logPath(id), 'utf8').catch(() => '')
   await closeSession(live)
   throw new Error(

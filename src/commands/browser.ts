@@ -15,7 +15,7 @@ import {
 } from '../lib/browser'
 import { sweepBrowserProfiles } from '../lib/browser-retention'
 import { readLocalStatus } from '../lib/local-status'
-import { fatal, log } from '../lib/log'
+import { fatal, log, withSpinner } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 
 type BrowserOpts = RawOutputOpts & {
@@ -173,7 +173,9 @@ Examples:
 
     // Attach mode: the external Chrome is the user's — never drive its login.
     if (usingCdp) {
-      const state = await navigateAndCheck(gui, target)
+      const state = await withSpinner(`Checking the Chrome attached on ${opts.cdp}`, !machine, () =>
+        navigateAndCheck(gui, target),
+      )
       if (!state.authed) {
         if (machine) output({ connected: false, url: gui, host, cdp: opts.cdp }, opts)
         else {
@@ -190,7 +192,9 @@ Examples:
     // hold a cookie. Skip for a brand-new profile — nothing to reuse, and it
     // avoids a throwaway headless navigation before the sign-in window opens.
     if (!opts.login && profile && existsSync(profile)) {
-      const reused = await navigateAndCheck(gui, target)
+      const reused = await withSpinner('Checking your saved browser session', !machine, () =>
+        navigateAndCheck(gui, target),
+      )
       if (reused.authed) {
         reportConnected(await persist(reused), machine, opts)
         return
@@ -218,12 +222,20 @@ Examples:
     await ab(['open', gui], headedTarget)
 
     const deadline = Date.now() + LOGIN_TIMEOUT_MS
-    let state = { authed: false } as { authed: boolean; email?: string }
-    while (Date.now() < deadline) {
-      await sleep(POLL_INTERVAL_MS)
-      state = await pollAuth(headedTarget)
-      if (state.authed) break
-    }
+    const state = await withSpinner(
+      'Waiting for you to sign in in the browser window',
+      !machine,
+      async () => {
+        let seen = { authed: false } as { authed: boolean; email?: string }
+        while (Date.now() < deadline) {
+          await sleep(POLL_INTERVAL_MS)
+          seen = await pollAuth(headedTarget)
+          if (seen.authed) break
+        }
+        return seen
+      },
+      { safetyMs: LOGIN_TIMEOUT_MS },
+    )
     if (!state.authed) {
       fatal(
         new Error(

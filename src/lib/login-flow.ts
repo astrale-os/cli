@@ -21,7 +21,8 @@ import {
   type IdpSession,
   type TokenResponse,
 } from './idp'
-import { log } from './log'
+import { log, withSpinner } from './log'
+import { isMachine } from './output'
 
 /**
  * The IdP login flow, lifted out of the `auth login` command so it can be
@@ -182,20 +183,38 @@ async function obtainToken(
     expiresIn: device.expires_in,
     message: device.message,
   }
+  // `log.*` writes to stdout, which a --json run reserves for its single
+  // parseable value — so the coordinates are only printed when a human is
+  // reading. A machine caller either supplies `onVerification` or reads the
+  // session from the command's JSON.
   if (opts.onVerification) opts.onVerification(verification)
-  else {
+  else if (!isMachine()) {
     if (device.verification_uri_complete) log.info(`Open: ${device.verification_uri_complete}`)
     else if (device.verification_uri) log.info(`Open: ${device.verification_uri}`)
     if (device.user_code) log.info(`Code: ${device.user_code}`)
     if (device.message) log.dim(`  ${device.message}`)
   }
 
-  return pollDeviceToken({
-    idp,
-    deviceCode: device.device_code,
-    clientId: opts.clientId,
-    clientSecretEnv: opts.clientSecretEnv,
-    intervalSec: device.interval,
-    expiresInSec: device.expires_in,
-  })
+  // The longest wait in the CLI: this polls until the user finishes in their
+  // browser, which is minutes, not seconds. The spinner outlives the default
+  // safety stop (it would give up while the user is still typing a password)
+  // and runs to the device code's own expiry instead.
+  const waitMs = device.expires_in * 1000
+  return withSpinner(
+    'Waiting for you to approve the sign-in in your browser',
+    !isMachine(),
+    () =>
+      pollDeviceToken({
+        idp,
+        deviceCode: device.device_code,
+        clientId: opts.clientId,
+        clientSecretEnv: opts.clientSecretEnv,
+        intervalSec: device.interval,
+        expiresInSec: device.expires_in,
+      }),
+    {
+      safetyMs: waitMs,
+      longRunningText: 'Still waiting for browser approval — the code expires soon.',
+    },
+  )
 }

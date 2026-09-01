@@ -2,6 +2,7 @@ import chalk from 'chalk'
 
 import type { SetupContext, SetupOpts } from './types'
 
+import { canPrompt } from '../lib/interactive'
 import { readLocalStatus } from '../lib/local-status'
 import { isMachine } from '../lib/output'
 import { promptMultiSelect } from '../lib/prompt'
@@ -19,7 +20,7 @@ export type { SetupOpts } from './types'
  */
 export async function runSetup(opts: SetupOpts, slug?: string): Promise<void> {
   const machine = isMachine(opts)
-  const interactive = !!process.stdin.isTTY && !(opts.ci || opts.noPrompt || process.env.CI)
+  const interactive = canPrompt(opts)
   const ctx: SetupContext = { interactive, machine, opts, slug }
 
   if (opts.plan || !interactive) {

@@ -1,6 +1,7 @@
 import { Command, Option } from 'commander'
 
 import pkg from '../../package.json' with { type: 'json' }
+import { canPrompt } from '../lib/interactive'
 import { withKernelOptions } from './options'
 import { registerCommand, registerGroup } from './registry'
 
@@ -25,8 +26,10 @@ export async function buildProgram(): Promise<Command> {
     .addOption(new Option('--no-prompt', 'Disable interactive prompts'))
     .action(async () => {
       // Bare `astrale` in an interactive terminal with nothing connected yet →
-      // launch the guided setup. Otherwise (configured, piped, or CI) show help.
-      if (process.stdin.isTTY && process.stdout.isTTY) {
+      // launch the guided setup. Otherwise (configured, piped, --no-prompt, or
+      // CI) show help — the wizard opens on a question, so it runs only where
+      // the CLI is allowed to ask one.
+      if (canPrompt()) {
         const { shouldAutostartSetup } = await import('../setup/engine')
         if (await shouldAutostartSetup()) {
           await (await import('../commands/setup')).default.action(undefined, {})
@@ -194,12 +197,12 @@ export async function buildProgram(): Promise<Command> {
     'after',
     `
 Command groups:
-  Getting started  setup     (sign in, pick an instance, equip your workspace)
+  Start         setup             sign in, pick an instance, equip your workspace
   Kernel        get, mutate, call, query, introspect, logs, view, token
   Management    admin, instance, domain, identity, auth, idp, update
-  Application   ui        (initialize, inspect, and install Astrale UI source)
-  Agent         browser, skills   (drive the GUI; configure global agent skills)
-  Studio        studio    (launch the local Domain Studio GUI for a workspace)
+  Application   ui                initialize, inspect, and install Astrale UI source
+  Agent         browser, skills   drive the GUI; configure global agent skills
+  Studio        studio            launch the local Domain Studio GUI for a workspace
 
 Path syntax:
   /:origin                       Domain root

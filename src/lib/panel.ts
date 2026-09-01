@@ -1,12 +1,6 @@
 import chalk from 'chalk'
 
-// ESC[…m — built without a control char in the source so no lint disable is needed.
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
-
-/** Printable width of a string, ignoring ANSI color codes. */
-function visibleWidth(s: string): number {
-  return s.replace(ANSI, '').length
-}
+import { visibleWidth } from './format'
 
 const BOX = { tl: '╭', tr: '╮', bl: '╰', br: '╯', h: '─', v: '│' } as const
 
@@ -40,6 +34,17 @@ export function panel(lines: string[], opts: PanelOpts = {}): string {
     )
   })
   return [top, ...body, bottom].join('\n')
+}
+
+/**
+ * The consent gate for a destructive action: the same rounded frame as every
+ * other panel, in red. Hand-drawn `│` gutters used to stand in for this, which
+ * left the CLI with two different shapes for "read this before you answer".
+ */
+export function dangerPanel(title: string, lines: string[]): string {
+  return panel([chalk.red.bold(`⚠  DANGER — ${title}`), '', ...lines], {
+    borderColor: chalk.red,
+  })
 }
 
 /**

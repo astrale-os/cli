@@ -4,9 +4,11 @@ import type { KernelCommandOpts } from '../../connection'
 import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
+import { AstraleError } from '../../errors'
 import { publishAdminDomain } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { domainPublicationUrl } from '../../lib/domain-publication'
+import { canPrompt } from '../../lib/interactive'
 import { withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 import { promptText } from '../../lib/prompt'
@@ -22,7 +24,9 @@ type PublishOpts = KernelCommandOpts &
     publicUrl?: string
     description?: string
     installByDefault?: boolean
-    // Global flags (program.ts) that force non-interactive — mirrors `instance use`.
+    // Programmatic opt-out for callers that drive this command as a function.
+    // The matching CLI flags are read from argv by `canPrompt` — Commander
+    // keeps root options out of a subcommand's action arguments.
     ci?: boolean
     noPrompt?: boolean
   }
@@ -80,9 +84,8 @@ Examples:
       // any missing field. Automation passes every flag. No TTY / --ci /
       // --no-prompt / CI env means no prompt: fall straight through to the
       // required-flag error below so a piped or agent run fails fast.
-      const interactive = !!process.stdin.isTTY && !(opts.ci || opts.noPrompt || process.env.CI)
       let { origin, name, publicUrl } = opts
-      if (interactive) {
+      if (canPrompt(opts)) {
         if (!publicUrl)
           publicUrl = await promptText('Public URL (https://…)', {
             validate: (v) => isHttpUrl(v) || 'Enter a valid http(s) URL',
@@ -95,9 +98,13 @@ Examples:
       }
 
       if (!origin || !name || !publicUrl) {
-        throw new Error(
-          'domain publish requires --origin, --name and --public-url, e.g.\n' +
-            '  astrale domain publish --origin crm.acme.dev --name crm --public-url https://crm.acme.dev',
+        // AstraleError, not Error: this is the landing point of every
+        // non-interactive run, and only a coded error keeps its message —
+        // a plain one renders as "unexpected internal failure".
+        throw new AstraleError(
+          'MISSING_ARG',
+          'domain publish requires --origin, --name and --public-url.',
+          'astrale domain publish --origin crm.acme.dev --name crm --public-url https://crm.acme.dev',
         )
       }
       validateName(origin, 'origin')

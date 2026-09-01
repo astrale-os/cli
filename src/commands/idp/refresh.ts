@@ -6,7 +6,7 @@ import {
   upsertIdpConfig,
   workosAuthKitMetadata,
 } from '../../lib/idp'
-import { log } from '../../lib/log'
+import { log, withSpinner } from '../../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS } from '../../lib/output'
 
 export default {
@@ -19,7 +19,9 @@ export default {
     const metadata =
       existing.client.token_response === 'workos-authkit'
         ? workosAuthKitMetadata(existing.entry.issuer)
-        : await fetchOidcMetadata(existing.entry.issuer)
+        : await withSpinner(`Fetching discovery metadata for ${name}`, !isMachine(opts), () =>
+            fetchOidcMetadata(existing.entry.issuer),
+          )
     const idp = await upsertIdpConfig({
       name,
       metadata,

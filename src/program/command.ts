@@ -5,6 +5,20 @@ export interface CommandArgument {
   readonly variadic?: boolean
 }
 
+/**
+ * Naming a flag that bypasses a safety gate — the CLI uses three, and they are
+ * not interchangeable:
+ *
+ *   --yes        skip a question the CLI would otherwise ask. The action is
+ *                unchanged; only the prompt disappears.
+ *   --force      proceed through a refusal. The CLI would decline outright,
+ *                and the flag overrides that judgment.
+ *   --overwrite  a --force scoped to destroying local work (edited source, a
+ *                lock), so the two can be demanded together.
+ *
+ * Consent to a specific hazard gets its own named flag rather than a generic
+ * one: `--allow-identity-override` says what is being allowed.
+ */
 export interface CommandOption {
   readonly flags: string
   readonly description: string

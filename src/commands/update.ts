@@ -2,6 +2,7 @@ import type { CommandDefinition } from '../program/index'
 
 import pkg from '../../package.json' with { type: 'json' }
 import { AstraleError } from '../errors'
+import { canPrompt } from '../lib/interactive'
 import { fatal, log, withSpinner } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 import { run, runInherit } from '../lib/proc'
@@ -33,15 +34,7 @@ async function refreshSkills(interactive: boolean, humanOutput: boolean): Promis
 }
 
 function skillInstallPromptAllowed(opts: UpdateOpts): boolean {
-  return (
-    opts.yes !== true &&
-    !isMachine(opts) &&
-    process.stdin.isTTY === true &&
-    process.stdout.isTTY === true &&
-    !process.env.CI &&
-    !process.env.CONTINUOUS_INTEGRATION &&
-    !process.argv.includes('--no-prompt')
-  )
+  return opts.yes !== true && !isMachine(opts) && canPrompt()
 }
 
 function skillCheckStale(skills: SkillCheckResult): boolean {
@@ -81,7 +74,11 @@ async function refreshSdkDeps(check: boolean, assumeYes = false): Promise<boolea
     return false
   }
 
-  const outdated = await findSdkOutdated()
+  const outdated = await withSpinner(
+    'Checking @astrale-os SDK versions',
+    !isMachine(),
+    findSdkOutdated,
+  )
   if (outdated.length === 0) {
     if (!check) log.dim('  @astrale-os SDK packages are up to date')
     return false
@@ -107,7 +104,7 @@ async function refreshSdkDeps(check: boolean, assumeYes = false): Promise<boolea
     log.success(`Updated ${outdated.length} @astrale-os dep${plural} in package.json + lockfile`)
     log.dim('  Run `pnpm install` to materialize the new versions.')
   } else {
-    log.warn('  Update did not complete — run it yourself: pnpm update --latest "@astrale-os/*"')
+    log.warn('Update did not complete — run it yourself: pnpm update --latest "@astrale-os/*"')
   }
   return true
 }

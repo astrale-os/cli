@@ -37,7 +37,7 @@ export default {
     try {
       const raw = await readFile(path, 'utf-8')
       const passphrase = isEncryptedIdentityExport(raw)
-        ? await readPassphrase('Passphrase: ')
+        ? await readPassphrase('Passphrase')
         : undefined
       const envelope = await decodeIdentityExport(raw, passphrase)
       const name = opts.name ?? envelope.subject

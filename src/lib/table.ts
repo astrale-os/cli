@@ -1,16 +1,11 @@
 import chalk from 'chalk'
 
+import { visibleWidth } from './format'
+
 /** A display column: which row key to read, its header, and an optional cell color. */
 export type Column = { key: string; header: string; color?: (s: string) => string }
 
 const GUTTER = '  '
-// ESC[…m — built without a control char in the source so no lint disable is needed.
-const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
-
-/** Printable width of a string, ignoring ANSI color codes. */
-function visibleWidth(s: string): number {
-  return s.replace(ANSI, '').length
-}
 
 /** Pad to a target *visible* width (color codes don't count toward length). */
 function pad(s: string, width: number): string {

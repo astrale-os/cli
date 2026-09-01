@@ -25,7 +25,7 @@ export default {
     try {
       const envelope = await exportIdentity(name)
       const passphrase = opts.encrypt
-        ? await readPassphrase('Passphrase (min 8 chars): ', { minLength: 8 })
+        ? await readPassphrase('Passphrase (min 8 chars)', { minLength: 8 })
         : undefined
       await writeIdentityExport(path, await encodeIdentityExport(envelope, passphrase))
 

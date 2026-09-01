@@ -28,7 +28,9 @@ export type SetupOpts = AdminTargetCommandOpts & {
   plan?: boolean
   json?: boolean
   raw?: boolean
-  // Global flags (program.ts) that force non-interactive.
+  // Programmatic opt-out for callers that drive this command as a function.
+  // The matching CLI flags are read from argv by `canPrompt` — Commander
+  // keeps root options out of a subcommand's action arguments.
   ci?: boolean
   noPrompt?: boolean
   // Threaded into admin-kernel calls (provisioning, instance listing).
@@ -39,7 +41,7 @@ export type SetupOpts = AdminTargetCommandOpts & {
 }
 
 export type SetupContext = {
-  /** TTY and not --ci / --no-prompt / CI: ok to prompt and mutate. */
+  /** `canPrompt(opts)`: a human is there to answer — ok to prompt and mutate. */
   interactive: boolean
   /** isMachine(opts): --json / --raw or piped — structured output, no spinners. */
   machine: boolean

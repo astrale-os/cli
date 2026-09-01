@@ -17,8 +17,10 @@ import { listOwnedInstancesInContext, type OwnedInstanceInfo } from '../../lib/a
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fetchDomainPublication } from '../../lib/domain-publication'
 import { getActive } from '../../lib/instance'
+import { canPrompt } from '../../lib/interactive'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
+import { dangerPanel } from '../../lib/panel'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
 
@@ -97,7 +99,9 @@ type InstallOpts = KernelCommandOpts &
     operation?: string
     token?: string
     allowIdentityOverride?: boolean
-    // Global flags (program.ts) that force non-interactive.
+    // Programmatic opt-out for callers that drive this command as a function.
+    // The matching CLI flags are read from argv by `canPrompt` — Commander
+    // keeps root options out of a subcommand's action arguments.
     ci?: boolean
     noPrompt?: boolean
   }
@@ -195,7 +199,7 @@ export async function installViaAdmin(
   dependencies: Partial<AdminInstallDependencies> = {},
 ): Promise<void> {
   const admin = { ...defaultAdminInstallDependencies, ...dependencies }
-  const interactive = !!process.stdin.isTTY && !(opts.ci || opts.noPrompt || process.env.CI)
+  const interactive = canPrompt(opts)
   if (!target && !interactive) {
     fatal(
       new AstraleError(
@@ -536,21 +540,14 @@ async function ensureIdentityOverrideConsent(
     return origin
   }
 
-  const banner =
-    chalk.red.bold('⚠  DANGER — IDENTITY OVERRIDE') +
-    '\n' +
-    chalk.dim('│') +
-    `  deployed   ${host}\n` +
-    chalk.dim('│') +
-    `  origin     ${chalk.bold(origin)}   ${chalk.red('(≠)')}\n` +
-    chalk.dim('│') +
-    '\n' +
-    chalk.dim('│') +
-    `  Every call to ${origin}/* on this instance —\n` +
-    chalk.dim('│') +
-    `  including from other domains — will hit ${host}.\n` +
-    chalk.dim('│') +
-    `  Only proceed if you trust ${host}.`
+  const banner = dangerPanel('IDENTITY OVERRIDE', [
+    `deployed   ${host}`,
+    `origin     ${chalk.bold(origin)}   ${chalk.red('(≠)')}`,
+    '',
+    `Every call to ${origin}/* on this instance —`,
+    `including from other domains — will hit ${host}.`,
+    `Only proceed if you trust ${host}.`,
+  ])
   const confirmed = await confirmWithInput(banner, origin)
   if (!confirmed) {
     throw new AstraleError(
