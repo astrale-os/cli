@@ -15,15 +15,18 @@ const MAX_SIZE = 900
 /** The sides that dock a column. `bottom` is the floating dock and never does. */
 type DockedSide = Exclude<PanelSide, 'bottom'>
 
+/** In the order the previews stand on screen: the centred dock BETWEEN the two
+ *  columns, so the row reads as the three places the panel can be rather than a
+ *  list with the default at one end. */
 const SIDES: { side: PanelSide; icon: typeof PanelLeft; label: string; hint: string }[] = [
   { side: 'left', icon: PanelLeft, label: 'Left', hint: 'A column left of the view' },
-  { side: 'right', icon: PanelRight, label: 'Right', hint: 'A column right of the view' },
   {
     side: 'bottom',
     icon: PanelBottom,
     label: 'Bottom',
     hint: 'Just a composer under the view — the chat opens in the middle',
   },
+  { side: 'right', icon: PanelRight, label: 'Right', hint: 'A column right of the view' },
 ]
 
 /** Threads whose last word came from the agent — the ones waiting on you. */

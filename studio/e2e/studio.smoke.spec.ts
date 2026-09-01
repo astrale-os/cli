@@ -37,6 +37,15 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   expect(bundle.ir?.classes).toHaveProperty('Invoice')
   expect(bundle.ir?.classes).toHaveProperty('Subscription')
 
+  // Dock the work panel to a side for this run. The studio now starts on the floating
+  // dock, which docks nothing — so the canvas is fitted across the WHOLE window, and the
+  // detail panel a selection opens later takes its width back out of the pane, leaving
+  // the graph's right half outside it. `onlyRenderVisibleElements` then unmounts the very
+  // card the assertions below measure. Docked and collapsed, the fit happens in the pane
+  // the card is measured in. Where the panel lives is bottom-dock.spec.ts's subject, not
+  // this one's.
+  await page.addInitScript(() => localStorage.setItem('studio.panelSide', 'left'))
+
   await page.goto('/')
   // The rail names the domain everything else is about — the row carrying `aria-current`.
   await expect(

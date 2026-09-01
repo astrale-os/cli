@@ -35,10 +35,11 @@ async function openDock(page: Page): Promise<void> {
   await expect.poll(() => dockHeight(page)).toBeGreaterThan(BAR_CEILING)
 }
 
+/** Just load the studio: the floating dock is where the panel starts. Nothing is
+ *  clicked to get here, and the resting bar has no dock control to click anyway. */
 async function goBottom(page: Page): Promise<void> {
   await page.goto('/')
-  await page.getByRole('button', { name: 'Where the panel sits' }).click()
-  await page.getByRole('button', { name: 'Bottom' }).click()
+  await expect(dock(page)).toBeVisible()
 }
 
 test('the bottom dock floats over the view instead of taking room from it', async ({ page }) => {
@@ -76,6 +77,10 @@ test('the paperclip goes straight to the file picker, and shows what it took', a
   // an upload queues behind the server's first introspection, and a cold fixture
   // spends most of the test budget on it — let the canvas say that is done
   await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  // Opened, because the chip this test is about only exists in the opened chat —
+  // the resting bar is one line and shows no payload. Left to the disabled field
+  // to open it, the assertion below would be testing that instead.
+  await openDock(page)
 
   // one click, one meaning — no menu standing between the clip and the picker
   const [chooser] = await Promise.all([
@@ -140,4 +145,44 @@ test('re-docking to a side leaves the floating dock behind', async ({ page }) =>
 
   await expect(dock(page)).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Collapse the panel' })).toBeVisible()
+})
+
+/**
+ * What the turn carries in threads is a COUNT, and the count is a door.
+ *
+ * Naming each thread on the composer put the comments tab's job on a line that has
+ * to stay one line — and said it in a place you cannot answer from. One chip says
+ * how much is coming, and clicking it goes where you can read it.
+ */
+test('the threads on the composer are one chip that counts them, and opens them', async ({
+  page,
+  request,
+}) => {
+  const workspace = (await (await request.get('/api/workspace')).json()) as Array<{ id: string }>
+  const domainId = workspace.find((domain) => domain.id === 'fixture')!.id
+  const url = `/api/domain/${encodeURIComponent(domainId)}/comments`
+  const made: string[] = []
+  for (const text of ['Rename this class', 'And split that module']) {
+    const created = await request.post(url, {
+      data: { action: 'create', anchors: ['class.Company'], anchorRefs: [], text },
+    })
+    expect(created.ok()).toBe(true)
+    made.push(((await created.json()) as { id: string }).id)
+  }
+
+  await goBottom(page)
+  await openDock(page)
+
+  // one chip for both threads, and it says how many — not what they are pinned on
+  const chip = dock(page).getByRole('button', { name: '2 comments' })
+  await expect(chip).toBeVisible()
+  await expect(dock(page).getByRole('button', { name: /Rename this class/ })).toHaveCount(0)
+
+  await chip.click()
+  await expect(dock(page).getByText('Rename this class')).toBeVisible()
+  await expect(dock(page).getByText('And split that module')).toBeVisible()
+
+  for (const id of made) {
+    expect((await request.post(url, { data: { action: 'delete', id } })).ok()).toBe(true)
+  }
 })

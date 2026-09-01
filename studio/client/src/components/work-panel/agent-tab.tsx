@@ -1,4 +1,4 @@
-import type { AgentRun, ChatList, Comment, QueuedMessage } from '@shared/types'
+import type { AgentRun, ChatList, QueuedMessage } from '@shared/types'
 import type { DragEvent, ReactNode } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -16,7 +16,7 @@ import {
 } from '@/lib/agent'
 import { api, qk } from '@/lib/api'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
-import { anchorLabel, threadsAwaitingAgent } from '@/lib/comments'
+import { threadsAwaitingAgent } from '@/lib/comments'
 import { labelOf } from '@/lib/harnesses'
 import { useComments, useDocuments, useHarness } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
@@ -199,43 +199,41 @@ function needsDivider(previous: AgentRun | undefined, turn: AgentRun): boolean {
 }
 
 /**
- * What to call a thread on a chip: where it is pinned, or failing that what it
- * says. A comment carries its anchor twice — the resolved `anchorRefs` and the raw
- * `anchors` it was pinned on — and only the raw one survives a target the studio
- * can no longer resolve.
- */
-function threadLabel(comment: Comment): string {
-  const ref = comment.anchorRefs[0]?.ref ?? comment.anchors[0]
-  if (ref) return anchorLabel(ref)
-  return (comment.thread[0]?.text ?? '').trim() || 'Open thread'
-}
-
-/**
  * What the next turn carries, laid out where you are about to send it: the
  * documents the agent can read, and the threads it will answer.
  *
- * The threads wear the same shape as the documents but cannot be taken off — a
- * turn answers every open thread, and that is the server's rule
+ * The threads come as ONE chip saying how many there are, not one chip each. What
+ * a thread is pinned on, and what it says, is the comments tab's job — this line
+ * only has to say how much the next turn is carrying, and stay one line while it
+ * does. So the chip is a way IN: it opens that tab. It cannot be taken off, unlike
+ * a document — a turn answers every open thread, and that is the server's rule
  * (agent/run/preparation.ts), not a choice made here.
  */
 function TurnPayload({ domainId }: { domainId: string }) {
   const { data: docs } = useDocuments(domainId)
   const { data: store } = useComments(domainId)
-  const awaiting = threadsAwaitingAgent(store?.comments)
-  if (!docs?.length && !awaiting.length) return null
+  const setPanelTab = useUI((state) => state.setPanelTab)
+  const awaiting = threadsAwaitingAgent(store?.comments).length
+  if (!docs?.length && !awaiting) return null
 
   return (
     <div className="flex flex-wrap items-center gap-1 px-2 pb-1.5 pt-2">
-      {awaiting.map((comment) => (
-        <span
-          key={comment.id}
-          title={`The agent answers this thread on its next turn — ${(comment.thread.at(-1)?.text ?? '').trim()}`}
-          className={cn(CHIP, 'gap-1.5 border-primary/30 bg-primary/10 pr-2.5 text-primary')}
+      {awaiting > 0 && (
+        <button
+          type="button"
+          onClick={() => setPanelTab('comments')}
+          title={`The agent answers ${awaiting === 1 ? 'this thread' : 'these threads'} on its next turn — click to read ${awaiting === 1 ? 'it' : 'them'}`}
+          className={cn(
+            CHIP,
+            'gap-1.5 border-primary/30 bg-primary/10 pr-2.5 text-primary transition-colors hover:bg-primary/20',
+          )}
         >
           <MessageSquare className="h-3 w-3 shrink-0" />
-          <span className="truncate">{threadLabel(comment)}</span>
-        </span>
-      ))}
+          <span className="truncate">
+            {awaiting} comment{awaiting === 1 ? '' : 's'}
+          </span>
+        </button>
+      )}
       <DocumentChips domainId={domainId} />
     </div>
   )
