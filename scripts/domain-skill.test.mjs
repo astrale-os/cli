@@ -77,7 +77,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
     implementing,
     /do not create a `requirements\/`\s+layer, forge keys, or grant the invoking human `can_use`/i,
   )
-  assert.match(implementing, /actions\/register-visit\/index\.ts/)
+  assert.match(implementing, /functions\/register-visit\/index\.ts/)
   assert.match(implementing, /Layer\s+roots are curated re-export facades and contain no behavior/)
   assert.match(implementing, /defineQuery<typeof schema>\(\)\(\(domain\)/)
   assert.match(implementing, /mutation\.transition\(\{/)
