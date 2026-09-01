@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.63](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.62...cli/v1.0.0-beta.63) (2026-09-01)
+
+
+### Features
+
+* **studio:** count the threads on the composer, and start in the floating dock ([#334](https://github.com/astrale-os/cli/issues/334)) ([5a9c6fd](https://github.com/astrale-os/cli/commit/5a9c6fdeff305d0d47e3253a73c3d9a6577ac21e))
+
+
+### Bug Fixes
+
+* **studio:** resolve domain imports in standalone extractor ([#332](https://github.com/astrale-os/cli/issues/332)) ([7954dd3](https://github.com/astrale-os/cli/commit/7954dd392801ed90de3f7b3902aef25706f68773))
+
 ## [1.0.0-beta.62](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.61...cli/v1.0.0-beta.62) (2026-09-01)
 
 
