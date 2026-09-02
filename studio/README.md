@@ -163,7 +163,10 @@ the canvas toolbar and opened live through `astrale view`.
 The `+` on the Domains rail opens one composer in the middle of the screen: a
 name, written like a title, and under it the agent's own field, clip and send
 button. Sending runs the whole order in one gesture —
-`create-astrale-domain <name> --yes` then `pnpm install` in the workspace root,
+`create-astrale-domain <name> --yes` then `pnpm install` in the workspace root
+(on the scaffolder line that matches the SDK Studio reads — NOT `@latest`, whose
+last stable release is a generation behind and writes domains nothing here can
+render),
 the staged files into the new domain's `.domain-studio/context/docs`, and the
 message to its agent as a first turn — and the studio lands on the new domain
 with that turn already running, the chat open on it.

@@ -43,11 +43,12 @@ export default defineApplication({ schema, runtime: {} as never })
 }
 
 /**
- * What `create-astrale-domain` emits today: `domain.ts` calling `defineDomain`
- * from the SDK root, reaching its Schema through the package's own `#schema`
- * import. Studio read only the older `application.ts` / `defineApplication`
- * pair, so every freshly scaffolded domain was invisible to it — and creating
- * one from the studio failed on "Scaffolding did not produce a domain…".
+ * What the scaffolder's LAST STABLE line emits: `domain.ts` calling
+ * `defineDomain` from the SDK root, reaching its Schema through the package's
+ * own `#schema` import. Studio no longer scaffolds that generation (see
+ * `SCAFFOLDER` in workspace/create.ts), but workspaces are full of domains that
+ * were made with it — and reading only the `application.ts` / `defineApplication`
+ * pair made every one of them invisible.
  */
 function scaffoldedFixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'studio-domain-layout-'))
