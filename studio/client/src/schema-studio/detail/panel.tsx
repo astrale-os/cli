@@ -11,7 +11,7 @@ import { anchorData, schemaMemberRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 import { viewsForClass } from '@/lib/views'
 
-import { ancestryOfClass, resolveClass } from '../inheritance'
+import { ancestryOfClass, isKernelClass, resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
 import { MemberList, MethodRow, PropertyRow } from './members'
@@ -200,6 +200,7 @@ function AncestorChip({
 }) {
   const selectClass = useUI((state) => state.selectClass)
   const local = parent.origin === bundle.ir?.domain
+  const kernel = isKernelClass(parent)
   const navigable = resolveClass(bundle, parent) !== undefined
   const target = local ? `class.${parent.name}` : `class.${classRefKey(parent)}`
   const where = local ? '' : ` (${parent.origin})`
@@ -213,7 +214,10 @@ function AncestorChip({
       disabled={!navigable}
       title={relation}
       onClick={() => selectClass(target, bundle.domainId)}
-      className="rounded-full disabled:cursor-default"
+      className={cn(
+        'rounded-full disabled:cursor-default',
+        kernel && 'opacity-70 transition-opacity hover:opacity-100',
+      )}
     >
       <Chip
         tone="outline"

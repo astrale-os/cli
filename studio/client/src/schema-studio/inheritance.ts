@@ -3,7 +3,6 @@ import type { IrClass, IrClassRef, IrMethod, JsonSchema, StudioSchemaBundle } fr
 import { classRefKey } from '@shared/schema/identity'
 
 const KERNEL_ORIGIN = 'kernel.astrale.ai'
-const UNIVERSAL_BASES = new Set(['Node', 'Edge'])
 
 export type ClassTier = 'local' | 'kernel' | 'external'
 
@@ -11,6 +10,10 @@ export interface InheritedGroup {
   owner: string
   ref: IrClassRef
   tier: ClassTier
+  /** One means declared directly by the selected Class; larger values are transitive hops. */
+  depth: number
+  /** False in best-effort preview mode when Studio has the ref but not its definition. */
+  resolved: boolean
   origin?: string
   props: [name: string, schema: JsonSchema, optional: boolean][]
   methods: { name: string; method: IrMethod; overridden: boolean }[]
@@ -33,12 +36,20 @@ export function classTier(bundle: StudioSchemaBundle, reference: IrClassRef): Cl
   return reference.origin === KERNEL_ORIGIN ? 'kernel' : 'external'
 }
 
-/** A kernel base that says what a Class IS, rather than what it declares. */
-export type KernelRole = 'identity' | 'function'
+export function isKernelClass(reference: IrClassRef): boolean {
+  return reference.origin === KERNEL_ORIGIN
+}
 
-const KERNEL_ROLES: Record<string, KernelRole> = { Identity: 'identity', Function: 'function' }
+/** A kernel base that says what a Class IS, rather than what it declares. */
+export type KernelRole = 'identity' | 'function' | 'view'
+
+const KERNEL_ROLES: Record<string, KernelRole> = {
+  Identity: 'identity',
+  Function: 'function',
+  View: 'view',
+}
 /** stable painting order, so two Classes with the same roles read the same way */
-const KERNEL_ROLE_ORDER: KernelRole[] = ['identity', 'function']
+const KERNEL_ROLE_ORDER: KernelRole[] = ['identity', 'function', 'view']
 
 /** The role a single `extends` reference confers, if it is one of the kernel bases. */
 export function kernelRoleOf(reference: IrClassRef): KernelRole | undefined {
@@ -79,69 +90,66 @@ export function kernelRolesOfClass(
 
 export function inheritedGroupsOfClass(
   bundle: StudioSchemaBundle,
-  className: string,
+  reference: string | IrClassRef,
 ): InheritedGroup[] {
-  const selected = bundle.ir?.classes[className]
+  const selected = resolveClass(bundle, reference)
   if (!selected) return []
   const ownProperties = new Set(Object.keys(selected.properties))
   const ownMethods = new Set(Object.keys(selected.methods))
   const claimedProperties = new Set(ownProperties)
   const claimedMethods = new Set<string>()
-  const visited = new Set<string>()
-  const queue = [...(selected.extendsRefs ?? [])]
+  const visited = new Set<string>([classRefKey(selected.ref)])
+  const queue = (selected.extendsRefs ?? []).map((ref) => ({ ref, depth: 1 }))
   const groups: InheritedGroup[] = []
 
   while (queue.length > 0) {
-    const ref = queue.shift()!
+    const { ref, depth } = queue.shift()!
     const key = classRefKey(ref)
-    if (visited.has(key) || (ref.origin === KERNEL_ORIGIN && UNIVERSAL_BASES.has(ref.name))) {
-      continue
-    }
+    if (visited.has(key)) continue
     visited.add(key)
     const owner = resolveClass(bundle, ref)
-    if (!owner) continue
-    queue.push(...(owner.extendsRefs ?? []))
-    const props = Object.entries(owner.properties)
+    if (owner) {
+      queue.push(...(owner.extendsRefs ?? []).map((parent) => ({ ref: parent, depth: depth + 1 })))
+    }
+    const props = Object.entries(owner?.properties ?? {})
       .filter(([name]) => !claimedProperties.has(name))
       .map(
         ([name, value]) =>
-          [name, value, !(owner.required ?? []).includes(name)] as InheritedGroup['props'][number],
+          [name, value, !(owner?.required ?? []).includes(name)] as InheritedGroup['props'][number],
       )
-    const methods = Object.entries(owner.methods)
+    const methods = Object.entries(owner?.methods ?? {})
       .filter(([name]) => !claimedMethods.has(name))
       .map(([name, method]) => ({ name, method, overridden: ownMethods.has(name) }))
     for (const [name] of props) claimedProperties.add(name)
     for (const { name } of methods) claimedMethods.add(name)
-    if (props.length === 0 && methods.length === 0) continue
     groups.push({
       owner: ref.name,
       ref,
       tier: classTier(bundle, ref),
+      depth,
+      resolved: owner !== undefined,
       ...(ref.origin === bundle.ir?.domain ? {} : { origin: ref.origin }),
       props,
       methods,
     })
   }
 
-  const rank: Record<ClassTier, number> = { local: 0, external: 1, kernel: 2 }
-  return groups.sort((left, right) => rank[left.tier] - rank[right.tier])
+  return groups
 }
 
 /**
  * The whole chain a Class descends from, nearest first: level 0 holds the declared
  * parents, level 1 their parents, and so on. A base reached by several routes is listed
- * once, at the shallowest depth it is met. The universal Node/Edge roots are left out:
- * every Class has them, so they would say nothing about THIS one.
+ * once, at the shallowest depth it is met. Kernel roots remain in the result because the
+ * detail panel is the exhaustive account of the inheritance chain.
  */
 export function ancestryOfClass(
   bundle: StudioSchemaBundle,
   extendsRefs: readonly IrClassRef[],
 ): IrClassRef[][] {
-  const universal = (ref: IrClassRef): boolean =>
-    ref.origin === KERNEL_ORIGIN && UNIVERSAL_BASES.has(ref.name)
   const levels: IrClassRef[][] = []
   const visited = new Set<string>()
-  let frontier = extendsRefs.filter((ref) => !universal(ref))
+  let frontier = [...extendsRefs]
   while (frontier.length > 0) {
     const level: IrClassRef[] = []
     const next: IrClassRef[] = []
@@ -150,7 +158,7 @@ export function ancestryOfClass(
       if (visited.has(key)) continue
       visited.add(key)
       level.push(ref)
-      next.push(...(resolveClass(bundle, ref)?.extendsRefs ?? []).filter((r) => !universal(r)))
+      next.push(...(resolveClass(bundle, ref)?.extendsRefs ?? []))
     }
     if (level.length > 0) levels.push(level)
     frontier = next

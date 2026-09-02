@@ -64,15 +64,26 @@ describe('Domain canvas projection', () => {
     ).toEqual(['class.Document'])
   })
 
-  test('badges a Kernel role at any depth, and never repeats it as a chip', () => {
+  test('badges Kernel roles at any depth and never shows Kernel parents as chips', () => {
     const fixture = bundle({
       Principal: nodeClass('Principal', {
-        extendsRefs: [classRef('kernel.astrale.ai', 'Identity')],
+        extendsRefs: [
+          classRef('kernel.astrale.ai', 'Identity'),
+          classRef('kernel.astrale.ai', 'Named'),
+          classRef('kernel.astrale.ai', 'Timestamped'),
+          classRef('shared.example.dev', 'Audited'),
+        ],
       }),
       Employee: nodeClass('Employee', {
         extendsRefs: [
           classRef('local.example.dev', 'Principal'),
           classRef('local.example.dev', 'Base'),
+        ],
+      }),
+      RenderableFunction: nodeClass('RenderableFunction', {
+        extendsRefs: [
+          classRef('kernel.astrale.ai', 'Function'),
+          classRef('kernel.astrale.ai', 'View'),
         ],
       }),
       Base: nodeClass('Base'),
@@ -84,8 +95,12 @@ describe('Domain canvas projection', () => {
 
     expect(card('Employee').roles).toEqual(['identity'])
     expect(card('Employee').parents).toEqual(['Principal', 'Base'])
-    // declared right on it: still a glyph, and the chip that would repeat it is dropped
-    expect(card('Principal')).toMatchObject({ roles: ['identity'], parents: [] })
+    // Every Kernel parent is semantic metadata on the card, never a parent chip.
+    expect(card('Principal')).toMatchObject({ roles: ['identity'], parents: ['Audited'] })
+    expect(card('RenderableFunction')).toMatchObject({
+      roles: ['function', 'view'],
+      parents: [],
+    })
     expect(card('Base')).toMatchObject({ roles: [], parents: [] })
   })
 
