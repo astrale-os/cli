@@ -39,7 +39,7 @@ test('renders canonical Core edges connected to the owning Domain endpoint', () 
     expect.objectContaining({
       source: 'core.node./:shell.astrale.ai:core.shell',
       target: 'core.node./:shell.astrale.ai',
-      data: { label: 'serves' },
+      data: { label: 'serves', index: 0 },
     }),
   ])
 })

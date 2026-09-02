@@ -7,15 +7,15 @@ import { useBundle, useCore } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
 import { CoreDetail, CoreTree, CoreView } from './core-view'
-import { DataSection } from './dataset-view/section'
+import { TestsSection } from './dataset-view/section'
 import { DomainPicker, DomainsRailHeader } from './domains-rail'
 import { PanelShell } from './panel-shell'
 import { ModulesSidebar } from './sidebar'
 import { WorkspaceSchemaSection } from './workspace/section'
 import { uniqueDomainIds, useSchemaWorkspace } from './workspace/store'
 
-/** Which canvas this section shows: the schema graph, or the core (genesis) data. */
-export type SchemaMode = 'schema' | 'core' | 'data'
+/** Which canvas this section shows: the schema graph, the core (genesis) data, or the test data. */
+export type SchemaMode = 'schema' | 'core' | 'tests'
 
 /**
  * The schema studio. ONE canvas draws the schema, whether it holds one domain or
@@ -33,7 +33,7 @@ export function SchemaSection({
 }) {
   const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
   if (mode === 'core') return <CoreSection domainId={domainId} />
-  if (mode === 'data') return <DataSection domainId={domainId} />
+  if (mode === 'tests') return <TestsSection domainId={domainId} />
   // What is INTROSPECTED, not what is drawn: the domain you work in is loaded whether or
   // not the canvas draws it, because the panels that read it — Domains, Integrations, the
   // detail fallback — answer to the active domain and not to the composition. Which of

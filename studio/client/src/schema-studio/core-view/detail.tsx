@@ -1,7 +1,7 @@
 import type { StudioCore, StudioSchemaBundle } from '@shared/types'
 
-import { Box, FolderClosed, Spline } from 'lucide-react'
-import { useMemo } from 'react'
+import { Box, Spline } from 'lucide-react'
+import { type ReactNode, useMemo } from 'react'
 
 import { Commentable } from '@/components/commentable'
 
@@ -23,10 +23,16 @@ export function CoreDetail({
   core,
   bundle,
   selectedPath,
+  children,
+  commentable = true,
 }: {
   core: StudioCore
   bundle: StudioSchemaBundle
   selectedPath: string | null
+  /** What a host knows about the node beyond its data — rendered under the edges. */
+  children?: ReactNode
+  /** whether the header is a comment target (genesis data is, demo data is not) */
+  commentable?: boolean
 }) {
   const node = useMemo(
     () => core.nodes.find((n) => n.path === selectedPath) ?? null,
@@ -44,33 +50,34 @@ export function CoreDetail({
 
   const hue = hues.get(node.className) ?? 264
   const icon = classIcon(bundle, node.className)
-  const isFolder = node.className === 'Folder'
   const entries = coreDataEntries(node.data)
   const relatedEdges = core.edges.filter((e) => e.from === node.path || e.to === node.path)
 
+  const header = (
+    <div className="flex items-center gap-2.5 border-b px-4 py-3 pr-12">
+      <span style={{ color: moduleTint(hue).mark }} className="shrink-0">
+        {icon ? <SchemaIcon svg={icon} className="h-7 w-7" /> : <Box className="h-6 w-6" />}
+      </span>
+      <div className="min-w-0">
+        <div className="truncate text-[15px] font-semibold">{displayName(node)}</div>
+        <div className="text-[11px] font-mono text-muted-foreground">{node.className}</div>
+      </div>
+    </div>
+  )
+
   return (
     <div className="h-full overflow-y-auto">
-      <Commentable
-        anchor={{ ref: nodeAnchor(node.path), kind: 'section' }}
-        excerpt={`${displayName(node)} (${node.className})`}
-        className="block"
-      >
-        <div className="flex items-center gap-2.5 border-b px-4 py-3">
-          <span style={{ color: moduleTint(hue).mark }} className="shrink-0">
-            {icon ? (
-              <SchemaIcon svg={icon} className="h-7 w-7" />
-            ) : isFolder ? (
-              <FolderClosed className="h-6 w-6" />
-            ) : (
-              <Box className="h-6 w-6" />
-            )}
-          </span>
-          <div className="min-w-0">
-            <div className="truncate text-[15px] font-semibold">{displayName(node)}</div>
-            <div className="text-[11px] font-mono text-muted-foreground">{node.className}</div>
-          </div>
-        </div>
-      </Commentable>
+      {commentable ? (
+        <Commentable
+          anchor={{ ref: nodeAnchor(node.path), kind: 'section' }}
+          excerpt={`${displayName(node)} (${node.className})`}
+          className="block"
+        >
+          {header}
+        </Commentable>
+      ) : (
+        header
+      )}
 
       <div className="px-4 py-3">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -130,6 +137,7 @@ export function CoreDetail({
           </div>
         </div>
       )}
+      {children}
     </div>
   )
 }

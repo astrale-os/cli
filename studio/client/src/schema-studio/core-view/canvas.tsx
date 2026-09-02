@@ -19,8 +19,8 @@ import {
   useReactFlow,
   useStore,
 } from '@xyflow/react'
-import { Box, FolderClosed, FolderTree, Spline } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Box, Group, Spline } from 'lucide-react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
 import { useUI } from '@/lib/store'
@@ -32,17 +32,33 @@ import { EdgeMarkerDefs } from '../edge-markers'
 import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
 import { elkLayout } from '../elk-layout'
 import { viewportForNodes } from '../fit'
-import { edgeTypes } from '../floating-edge'
+import { type EdgeFocus, edgeTypes } from '../floating-edge'
+import { neighborSet } from '../graph/structure'
 import { NodeCommentPin } from '../node-comment-pin'
-import { moduleTint } from '../palette'
+import { DOCK_CLEARANCE, moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
-import { type CoreNodeData, buildCoreGraph, hueMapOf, nodeAnchor } from './model'
+import { clusterByClass } from './cluster'
+import {
+  type CoreGraphOptions,
+  type CoreNodeData,
+  type CoreSpotlight,
+  type SpotlightTone,
+  buildCoreGraph,
+  hueMapOf,
+  nodeAnchor,
+} from './model'
 
 // ── canvas node ─────────────────────────────────────────────────────────────
 
+const MARK_TONE: Record<SpotlightTone, string> = {
+  focus: 'bg-primary/15 text-primary',
+  pass: 'bg-success/15 text-success',
+  fail: 'bg-destructive/15 text-destructive',
+}
+
 function CoreNodeCard({ data }: NodeProps) {
   const d = data as CoreNodeData
-  const isFolder = d.className === 'Folder'
+  const tint = moduleTint(d.hue)
   return (
     <div
       className={cn(
@@ -51,12 +67,11 @@ function CoreNodeCard({ data }: NodeProps) {
           ? 'border-primary shadow-[0_0_0_3px_color-mix(in_oklch,var(--color-primary)_16%,transparent)]'
           : 'hover:border-muted-foreground/40',
       )}
+      // the spotlight rings a lifted card in its own hue (see focus.css)
+      style={{ '--node-tint': tint.mark } as CSSProperties}
     >
-      <span
-        className="absolute inset-y-0 left-0 w-[3px]"
-        style={{ background: moduleTint(d.hue).mark }}
-      />
-      {!d.virtual && (
+      <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: tint.mark }} />
+      {!d.virtual && d.commentable !== false && (
         <NodeCommentPin
           anchorRef={nodeAnchor(d.path)}
           kind="section"
@@ -66,21 +81,25 @@ function CoreNodeCard({ data }: NodeProps) {
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div className="px-2.5 py-1.5">
         <div className="flex items-center gap-2">
-          <span style={{ color: moduleTint(d.hue).mark }} className="shrink-0">
-            {d.icon ? (
-              <SchemaIcon svg={d.icon} className="h-5 w-5" />
-            ) : isFolder ? (
-              <FolderClosed className="h-5 w-5" />
-            ) : (
-              <Box className="h-5 w-5" />
-            )}
+          <span style={{ color: tint.mark }} className="shrink-0">
+            {d.icon ? <SchemaIcon svg={d.icon} className="h-5 w-5" /> : <Box className="h-5 w-5" />}
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium leading-tight">{d.title}</div>
             <div className="truncate font-mono text-[10px] leading-tight text-muted-foreground">
               {d.className}
             </div>
           </div>
+          {d.mark && (
+            <span
+              className={cn(
+                'shrink-0 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider',
+                MARK_TONE[d.tone ?? 'focus'],
+              )}
+            >
+              {d.mark}
+            </span>
+          )}
         </div>
         {d.fields.length > 0 && (
           <div className="mt-1.5 flex flex-col gap-0.5">
@@ -100,6 +119,15 @@ function CoreNodeCard({ data }: NodeProps) {
 
 const nodeTypes = { coreNode: CoreNodeCard }
 
+const LIT_STROKE: Record<SpotlightTone, string | undefined> = {
+  focus: undefined,
+  pass: 'var(--color-success)',
+  fail: 'var(--color-destructive)',
+}
+
+/** Two readings of the same cards: laid along their edges, or gathered by class. */
+export type CoreLayout = 'flow' | 'class'
+
 // ── canvas ──────────────────────────────────────────────────────────────────
 
 export function CoreView({
@@ -107,36 +135,64 @@ export function CoreView({
   bundle,
   selectedPath,
   onSelect,
+  spotlight,
+  onEdgeClick,
+  compact = false,
+  commentable = true,
 }: {
   core: StudioCore
   bundle: StudioSchemaBundle
   selectedPath: string | null
   onSelect: (path: string | null) => void
+  /**
+   * What to lift and fade. Absent, a selected card lifts its own neighbourhood; given, it
+   * wins — a policy's proof outranks a click.
+   */
+  spotlight?: CoreSpotlight | null
+  /** A typed edge was clicked, by its `StudioCore.edges` index. Absent, it unselects. */
+  onEdgeClick?: (index: number) => void
+  /** cards show their name and class only */
+  compact?: boolean
+  /** cards and the detail can take comments (genesis data can, demo data cannot) */
+  commentable?: boolean
 }) {
   const { setViewport } = useReactFlow()
   const paneWidth = useStore((state) => state.width)
   const paneHeight = useStore((state) => state.height)
   const panZoomReady = useStore((state) => state.panZoom !== null)
   const setOpenAnchor = useUI((s) => s.setOpenAnchor)
+  const panelSide = useUI((s) => s.panelSide)
   const hues = useMemo(() => hueMapOf(core), [core])
-  const structure = useMemo(() => buildCoreGraph(core, bundle, hues), [core, bundle, hues])
+  const graphOptions = useMemo<CoreGraphOptions>(
+    () => ({ compact, commentable }),
+    [compact, commentable],
+  )
+  const structure = useMemo(
+    () => buildCoreGraph(core, bundle, hues, graphOptions),
+    [core, bundle, hues, graphOptions],
+  )
 
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
 
+  // The automatic layout follows the edges; the other reading gathers the cards by class.
+  // Switching either way starts from the structure again, so a hand-moved card is reset.
+  const [layout, setLayout] = useState<CoreLayout>('flow')
   const [laidOut, setLaidOut] = useState(0)
   useEffect(() => {
     let cancelled = false
-    elkLayout(structure.nodes, structure.edges).then((laid) => {
+    const apply = (laid: Node[]) => {
       if (cancelled) return
       setNodes(laid)
       setEdges(structure.edges)
       setLaidOut((n) => n + 1)
-    })
+    }
+    if (layout === 'class') apply(clusterByClass(structure.nodes))
+    else elkLayout(structure.nodes, structure.edges).then(apply)
     return () => {
       cancelled = true
     }
-  }, [structure])
+  }, [structure, layout])
 
   const nodesRef = useRef(nodes)
   nodesRef.current = nodes
@@ -158,46 +214,95 @@ export function CoreView({
     [],
   )
 
-  // the structural tree (folders + parent→child elbows) and the typed (semantic)
-  // edges toggle independently, so either layer can be isolated.
-  const [showStructure, setShowStructure] = useState(true)
+  // Typed edges can be hidden to read the cards alone — a selected card still shows its own,
+  // and so does a card being moved, until the next click says what to look at instead.
   const [showSemantics, setShowSemantics] = useState(true)
+  const [draggedId, setDraggedId] = useState<string | null>(null)
 
   const visibleNodes = useMemo(
-    () =>
-      nodes.filter((node) => {
-        const data = node.data as CoreNodeData
-        if (!showStructure && data.className === 'Folder') return false
-        if (!showSemantics && data.virtual) return false
-        return true
-      }),
-    [nodes, showSemantics, showStructure],
+    () => (showSemantics ? nodes : nodes.filter((node) => !(node.data as CoreNodeData).virtual)),
+    [nodes, showSemantics],
   )
   const visibleIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
 
-  // inject the selection flag without re-running layout
+  // ── focus + context ──
+  // A policy's spotlight comes from outside; otherwise the selected card, when it is drawn,
+  // lifts what it is wired to and fades the rest.
+  const focusNodeId = selectedPath ? nodeAnchor(selectedPath) : null
+  const sets = useMemo<CoreSpotlight | null>(() => {
+    if (spotlight) return spotlight
+    if (!focusNodeId || !visibleIds.has(focusNodeId)) return null
+    return { ...neighborSet(focusNodeId, edges), tone: 'focus' }
+  }, [spotlight, focusNodeId, visibleIds, edges])
+
+  // inject selection + spotlight without re-running layout
   const displayNodes = useMemo(
     () =>
       visibleNodes.map((n) => {
-        const sel = (n.data as CoreNodeData).path === selectedPath
-        return (n.data as CoreNodeData).selected === sel
-          ? n
-          : { ...n, data: { ...n.data, selected: sel } }
+        const data = n.data as CoreNodeData
+        const selected = data.path === selectedPath
+        const lit = !sets || sets.nodeIds.has(n.id)
+        const mark = sets?.marks?.get(n.id)
+        const tone = sets?.tone
+        const className =
+          cn(
+            !lit && 'is-dimmed',
+            lit && sets && tone === 'focus' && n.id !== focusNodeId && 'is-related',
+            lit && tone === 'pass' && 'is-pass',
+            lit && tone === 'fail' && 'is-fail',
+          ) || undefined
+        if (
+          data.selected === selected &&
+          data.mark === mark &&
+          data.tone === tone &&
+          n.className === className
+        ) {
+          return n
+        }
+        return { ...n, className, data: { ...data, selected, mark, tone } }
       }),
-    [visibleNodes, selectedPath],
+    [visibleNodes, selectedPath, sets, focusNodeId],
   )
   const displayEdges = useMemo(
     () =>
-      edges.filter((e) => {
-        if (!visibleIds.has(e.source) || !visibleIds.has(e.target)) return false
-        return e.type === 'tree' ? showStructure : showSemantics
-      }),
-    [edges, visibleIds, showStructure, showSemantics],
+      edges
+        .filter((e) => {
+          if (!visibleIds.has(e.source) || !visibleIds.has(e.target)) return false
+          // semantics off: only what the selection, a proof or the moved card reaches is drawn
+          return (
+            showSemantics ||
+            sets?.edgeIds.has(e.id) === true ||
+            (draggedId !== null && (e.source === draggedId || e.target === draggedId))
+          )
+        })
+        .map((e) => {
+          if (!sets) return e
+          const lit = sets.edgeIds.has(e.id)
+          const focus: EdgeFocus = lit ? 'on' : 'dim'
+          // labels render in React Flow's own portal, so the focus state rides in `data`
+          const data = { ...e.data, focus }
+          if (!lit) return { ...e, className: 'is-dimmed', data }
+          const stroke = LIT_STROKE[sets.tone]
+          return {
+            ...e,
+            className: undefined,
+            data,
+            style: { ...e.style, ...(stroke ? { stroke } : {}), strokeWidth: 2.6 },
+            markerEnd:
+              stroke && typeof e.markerEnd === 'object'
+                ? { ...e.markerEnd, color: stroke }
+                : e.markerEnd,
+          }
+        }),
+    [edges, visibleIds, showSemantics, sets, draggedId],
   )
   const routedEdges = useMemo(
     () => assignFloatingEdgePorts(displayNodes, displayEdges),
     [displayNodes, displayEdges],
   )
+
+  // the floating dock sits over the bottom of the view: keep the controls above it
+  const lift = panelSide === 'bottom' ? { bottom: DOCK_CLEARANCE } : undefined
 
   return (
     <SmartEdgeProvider nodes={displayNodes} options={SMART_EDGE_PROVIDER_OPTIONS}>
@@ -212,15 +317,23 @@ export function CoreView({
         onNodeClick={(_, n) => {
           // a virtual node stands for something outside this core and has no detail to
           // show — clicking it is clicking elsewhere, so it unselects like the pane does
+          setDraggedId(null)
           const data = n.data as CoreNodeData
           onSelect(data.virtual ? null : data.path)
         }}
+        onNodeDragStart={(_, n) => setDraggedId(n.id)}
         onPaneClick={() => {
+          setDraggedId(null)
           onSelect(null)
           if (!hasAnyUnsentDraft()) setOpenAnchor(null)
         }}
-        // nothing inspects a core edge, so pressing one is pressing elsewhere: unselect
-        onEdgeClick={() => onSelect(null)}
+        // a typed edge is something a policy can protect; anything else is pressing elsewhere
+        onEdgeClick={(_, e) => {
+          setDraggedId(null)
+          const index = (e.data as { index?: unknown } | undefined)?.index
+          if (onEdgeClick && typeof index === 'number') onEdgeClick(index)
+          else onSelect(null)
+        }}
         minZoom={0.15}
         nodesConnectable={false}
         // React Flow derives an edge's z-index from its endpoints, and a SELECTED node is
@@ -232,27 +345,27 @@ export function CoreView({
       >
         <Background gap={20} size={1} color="var(--color-input)" />
         <EdgeMarkerDefs />
-        <Controls showInteractive={false} position="bottom-left" />
+        <Controls showInteractive={false} position="bottom-left" style={lift} />
         <MiniMap
           pannable
           zoomable
-          style={{ width: 168, height: 112 }}
+          style={{ width: 168, height: 112, ...lift }}
           nodeColor={(n) => moduleTint((n.data as CoreNodeData).hue).mark}
           nodeStrokeWidth={0}
         />
         <Panel position="top-right">
           <CanvasToolbar>
             <CanvasIconToggle
-              icon={<FolderTree />}
-              label="Structure"
-              hint="folders and the parent→child tree"
-              pressed={showStructure}
-              onClick={() => setShowStructure((v) => !v)}
+              icon={<Group />}
+              label="By class"
+              hint="gather the cards by class; off returns to the layout along the edges"
+              pressed={layout === 'class'}
+              onClick={() => setLayout((current) => (current === 'class' ? 'flow' : 'class'))}
             />
             <CanvasIconToggle
               icon={<Spline />}
               label="Semantics"
-              hint="typed edges between core nodes"
+              hint="typed edges between cards — a selected card always shows its own"
               pressed={showSemantics}
               onClick={() => setShowSemantics((v) => !v)}
             />

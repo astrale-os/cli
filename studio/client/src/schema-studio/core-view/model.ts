@@ -7,7 +7,24 @@ import { moduleHue } from '../modules'
 // ── shared helpers ─────────────────────────────────────────────────────────
 
 export const nodeAnchor = (path: string) => `core.node.${path}`
+/** A typed edge is keyed by its position in `StudioCore.edges`: two edges may share a triple. */
+export const coreEdgeId = (index: number) => `core.edge.${index}`
 export const lastSeg = (path: string) => path.split('/').filter(Boolean).pop() ?? path
+
+export type SpotlightTone = 'focus' | 'pass' | 'fail'
+export type SpotlightMark = 'subject' | 'object'
+
+/**
+ * What the canvas lifts and what it fades — React Flow ids, so structural edges count too.
+ * `focus` is the neighbourhood of a clicked card; `pass` and `fail` are a policy's verdict,
+ * with the picked subject and object labelled through `marks`.
+ */
+export interface CoreSpotlight {
+  nodeIds: ReadonlySet<string>
+  edgeIds: ReadonlySet<string>
+  tone: SpotlightTone
+  marks?: ReadonlyMap<string, SpotlightMark>
+}
 
 const propertyKeyPattern = /^.+:class\.[A-Za-z][A-Za-z0-9_]*\.property\.([A-Za-z][A-Za-z0-9_]*)$/
 
@@ -90,6 +107,17 @@ export interface CoreNodeData extends Record<string, unknown> {
   selected: boolean
   /** A semantic endpoint (currently the owning Domain), not a materialized Core node. */
   virtual?: boolean
+  /** the spotlight's label on this card, and the tone it wears */
+  mark?: SpotlightMark
+  tone?: SpotlightTone
+  /** whether the card offers a comment pin — demo data is not something to annotate */
+  commentable?: boolean
+}
+
+export interface CoreGraphOptions {
+  /** name and class only, no data preview on the cards */
+  compact?: boolean
+  commentable?: boolean
 }
 
 // ── structure (nodes + edges, pre-layout) ───────────────────────────────────
@@ -98,10 +126,12 @@ export function buildCoreGraph(
   core: StudioCore,
   bundle: StudioSchemaBundle,
   hues: Map<string, number>,
+  options: CoreGraphOptions = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const ids = new Set(core.nodes.map((n) => nodeAnchor(n.path)))
+  const commentable = options.commentable !== false
   const nodes: Node[] = core.nodes.map((n) => {
-    const fields = previewFields(n)
+    const fields = options.compact ? [] : previewFields(n)
     return {
       id: nodeAnchor(n.path),
       type: 'coreNode',
@@ -114,6 +144,7 @@ export function buildCoreGraph(
         icon: classIcon(bundle, n.className),
         fields,
         selected: false,
+        commentable,
       } satisfies CoreNodeData,
       style: { width: 184, height: 50 + fields.length * 15 },
     }
@@ -149,36 +180,21 @@ export function buildCoreGraph(
   }
 
   const edges: Edge[] = []
-  // structural parent → child (subtle dashed) so the hierarchy reads on the canvas
-  for (const n of core.nodes) {
-    if (!n.parent) continue
-    const source = nodeAnchor(n.parent)
-    const target = nodeAnchor(n.path)
-    if (!ids.has(source) || !ids.has(target)) continue
-    edges.push({
-      id: `core.struct.${n.path}`,
-      source,
-      target,
-      type: 'tree',
-      data: { structural: true },
-      style: { stroke: 'var(--edge-soft)', strokeWidth: 1.4, strokeDasharray: '4 4' },
-    })
-  }
   // typed core edges (solid, coloured, labelled) — the genesis wiring
-  for (const e of core.edges) {
+  core.edges.forEach((e, index) => {
     const source = nodeAnchor(e.from)
     const target = nodeAnchor(e.to)
-    if (!ids.has(source) || !ids.has(target)) continue
+    if (!ids.has(source) || !ids.has(target)) return
     const color = 'oklch(0.6 0.12 35)'
     edges.push({
-      id: `core.edge.${e.from}__${e.edgeName}__${e.to}`,
+      id: coreEdgeId(index),
       source,
       target,
       type: 'floating',
-      data: { label: e.edgeName },
+      data: { label: e.edgeName, index },
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 16, height: 16 },
       style: { stroke: color, strokeWidth: 2 },
     })
-  }
+  })
   return { nodes, edges }
 }
