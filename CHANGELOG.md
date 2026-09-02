@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.68](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.67...cli/v1.0.0-beta.68) (2026-09-02)
+
+
+### Features
+
+* **studio:** find a relationship on the canvas, and comment on a domain ([#350](https://github.com/astrale-os/cli/issues/350)) ([bc1ab14](https://github.com/astrale-os/cli/commit/bc1ab14f90b8a9af10bec8bdfbe29ac588173ebf))
+* **studio:** render project Datasets and migrate configs to defineProject ([#352](https://github.com/astrale-os/cli/issues/352)) ([39a061a](https://github.com/astrale-os/cli/commit/39a061a7c7e3719cd5eded996733fac021a6e284))
+
 ## [1.0.0-beta.67](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.66...cli/v1.0.0-beta.67) (2026-09-02)
 
 
