@@ -1,6 +1,6 @@
 ---
 name: astrale-domain
-description: "Author Astrale domains end to end. Use when creating, editing, reviewing, productionizing, migrating, optimizing, securing, simulating, or debugging a domain; modeling schema; implementing Actions and Workflows; integrating external APIs; choosing native Astrale domains; designing views; or reasoning about Policy, authentication, kernel, migrations, core data, sample data, and live/runtime drift. For full creation, builds, prototypes, or POCs, follow the phased workflow across references; for focused existing-domain work, route to the relevant reference."
+description: "Author Astrale domains end to end. Use when creating, editing, reviewing, productionizing, migrating, optimizing, securing, simulating, or debugging a domain; modeling schema; implementing Actions and Workflows; integrating external APIs; choosing native Astrale domains; designing views; or reasoning about Policy, authentication, kernel, migrations, core data, demo Datasets, sample data, and live/runtime drift. For full creation, builds, prototypes, or POCs, follow the phased workflow across references; for focused existing-domain work, route to the relevant reference."
 ---
 
 # Astrale Domain
@@ -37,7 +37,9 @@ phased workflow below; an existing public scaffold already satisfies its foundat
 - Plan or qualify an installed Schema revision, data transition, or backfill: read
   `references/migration.md`.
 - Optimize graph access, reduce round trips, choose indexes/queries, or review call patterns for latency: read `references/performance.md`.
-- Create fake/sample/demo data, testing, fixtures, demo flows, or smoke-test scenarios: read `references/simulating.md`.
+- Author or update demo data — the Datasets under `tests/` the Studio draws and proves policies on:
+  read `references/datasets.md`.
+- Write tests, fixtures, demo flows, or smoke-test scenarios: read `references/simulating.md`.
 - Diagnose a failing live domain or runtime drift: read `references/debugging.md`.
 - Classify repeated author friction, propose an SDK linter rule, or record API/SDK DX improvements:
   read `references/dx-feedback.md`.
@@ -56,7 +58,10 @@ order and load a reference only when its phase begins.
    `references/security.md`. If an external system is involved, also read `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition.
-5. **Completion:** Read `references/simulating.md`; invoke every public Action and Workflow definition
+5. **Demo data:** Unless told otherwise, author at least one Dataset under `tests/`, referenced from
+   `astrale.config.ts`. Read `references/datasets.md` first. A Domain without its Dataset is not
+   finished.
+6. **Completion:** Read `references/simulating.md`; invoke every public Action and Workflow definition
    with representative success and applicable refusal inputs, then run focused tests, typecheck, lint,
    build, and package. Read `references/dx-feedback.md` only after reusable authoring friction is observed.
 
@@ -67,3 +72,6 @@ domain's lifecycle or current problem calls for them.
 
 1. Inspect the current repo or scaffold before trusting API syntax from memory.
 2. For live behavior, use `references/debugging.md` and prove the deployed/installed/runtime path before treating source edits as effective.
+3. When a change touches the Schema — a class, edge, property, state, or policy — update the
+   Domain's Datasets in the same change, unless told otherwise: they must still admit, and still
+   show every case and every policy. Read `references/datasets.md`.
