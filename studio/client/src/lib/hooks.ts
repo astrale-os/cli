@@ -21,8 +21,11 @@ const DEFER_CEILING_MS = 5_000
  * the update badge and the harness probe. They wait their turn now — but only for a
  * few seconds: the instance switcher and the agent are not the canvas's dependants,
  * and a domain being indexed for the first time can keep it waiting a while.
+ *
+ * Exported for the model catalog, which lives in `chats.ts` and is the heaviest of
+ * these reads — one ACP session per installed agent.
  */
-function useSchemaSettled(): boolean {
+export function useSchemaSettled(): boolean {
   const domainId = useUI((state) => state.domainId)
   const bundle = useQuery({ ...bundleQueryOptions(domainId ?? ''), enabled: !!domainId })
   const anatomy = useQuery({ ...anatomyQueryOptions(domainId ?? ''), enabled: !!domainId })
@@ -120,13 +123,16 @@ export function useHarnessGateway(id?: string) {
     enabled: !!id,
   })
 }
-export function useLoadout(id?: string, chatId?: string) {
-  // Probes the chat's own local harness — keep it lazy and cached for a while.
+export function useLoadout(id?: string, chatId?: string, enabled = true) {
+  // Probes the chat's own local harness — behind the canvas, and cached for a
+  // while. `enabled` is for the caller that must not probe before it knows WHICH
+  // chat: the key carries the chat id, so a render that has not learned it yet
+  // would spend a whole ACP session on a query nothing reads again.
   const settled = useSchemaSettled()
   return useQuery({
     queryKey: qk.loadout(id ?? '', chatId),
     queryFn: () => api.loadout(id!, false, chatId),
-    enabled: !!id && settled,
+    enabled: enabled && !!id && settled,
     staleTime: 60_000,
   })
 }

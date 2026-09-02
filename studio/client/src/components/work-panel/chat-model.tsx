@@ -43,9 +43,9 @@ export function ChatModelPicker({
   harness?: HarnessStatus
 }) {
   const [open, setOpen] = useState(false)
-  // Probing every harness is expensive, so it waits for the picker to open;
-  // the label below only needs this chat's own harness.
-  const { data: catalog, isFetching } = useModelCatalog(domainId, open)
+  // Warmed by the panel itself the moment a domain is on screen, so by the time
+  // this renders the answer is normally already in the cache.
+  const { data: catalog, isFetching } = useModelCatalog(domainId)
   const { data: loadout } = useLoadout(domainId, chat?.id)
   const { data: settings } = useSettings()
   const { update, switchHarness } = useChatMutations(domainId)
@@ -59,11 +59,16 @@ export function ChatModelPicker({
   // (`gpt-5.6-luna`) before settling on its label (`GPT-5.6-Luna`).
   const known = catalog?.find((entry) => entry.harness === chat.harness)
   const running = chat.model ?? known?.defaultModel ?? loadout?.model ?? loadout?.nativeModel
+  // No name, no control. The label's whole job is to say WHICH model, so with no
+  // answer yet there is nothing to put there — a "default model" placeholder read
+  // as the name of a model, and every agent's default is a different one. This is
+  // also the only honest state for an agent this machine does not have: it reports
+  // no model because it will run none, and the field beside it already says so.
+  if (!running) return null
   const label =
     known?.models.find((model) => model.id === running)?.label ??
     loadout?.models?.find((model) => model.id === running)?.label ??
-    running ??
-    'default model'
+    running
 
   // The star is filled from the moment there is an answer, starred or not: with
   // nothing pinned a new chat still opens SOMEWHERE — the domain's agent, on that

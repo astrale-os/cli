@@ -2,7 +2,8 @@ import { MessageCircle, MessageSquare, PanelBottom, PanelLeft, PanelRight, X } f
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { useComments } from '@/lib/hooks'
+import { useActiveChatId, useModelCatalog } from '@/lib/chats'
+import { useComments, useHarness, useLoadout } from '@/lib/hooks'
 import { type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +30,30 @@ const SIDES: { side: PanelSide; icon: typeof PanelLeft; label: string; hint: str
   { side: 'right', icon: PanelRight, label: 'Right', hint: 'A column right of the view' },
 ]
 
+/**
+ * Ask the agents what they are, while the user is still looking at the graph.
+ *
+ * Three ACP probes, and every control in the composer needs one of them the
+ * instant it appears: which agents this machine has, which models each offers
+ * (that is how the picker names the model a chat runs when it pins none), and
+ * what THIS chat's model reasons at. Probed on open, the composer spent those
+ * seconds unable to say anything true about itself — a placeholder where the
+ * model's name goes, and no reasoning meter at all. Probed here, it opens on
+ * the answers.
+ *
+ * Cached, and this is the one place mounted for all three layouts, so the cost
+ * is one round per visit however the panel is docked — collapsed to a rail
+ * included, since that rail is one click from the chat.
+ */
+function useWarmAgentSetup(domainId: string): void {
+  const chatId = useActiveChatId(domainId)
+  useHarness(domainId)
+  useModelCatalog(domainId)
+  // The loadout is keyed by chat, so it waits for the tab strip to say which one
+  // rather than burning a session on a key the composer will never read.
+  useLoadout(domainId, chatId, !!chatId)
+}
+
 /** Threads whose last word came from the agent — the ones waiting on you. */
 function useWaitingCount(domainId: string): number {
   const { data } = useComments(domainId)
@@ -48,6 +73,7 @@ function useWaitingCount(domainId: string): number {
  * grows out of it for as long as you are in it.
  */
 export function WorkPanel({ domainId }: { domainId: string }) {
+  useWarmAgentSetup(domainId)
   const side = useUI((s) => s.panelSide)
   const open = useUI((s) => s.panelOpen)
   if (side === 'bottom') return <FloatingDock domainId={domainId} />
