@@ -52,6 +52,20 @@ The Runtime implements `Project.rename` as an Action or Workflow. The implementa
 the caller, authority, Client, and receiver admitted for that callable. It must not query a role and
 then treat the observation as authorization.
 
+## Scope existential Node witnesses deliberately
+
+Policy Node selectors are authorization scope, not a typing convenience. `node()` can be witnessed by
+any active concrete Node Class that satisfies the Policy topology. `node(Class)` can be witnessed by
+the Class and any active concrete descendant, including descendants supplied by other installed
+Domains. `node.exact(Class)` can be witnessed only by that exact concrete Class; an abstract exact
+selector is empty.
+
+Prefer `node.exact(Class)` when authorization depends on exact identity, `node(Class)` when concrete
+descendants must inherit the path, and `node()` only when the connected Edge constraints fully express
+the intended boundary. Test each intentionally broad selector with an allowed witness and a connected
+but unauthorized witness from outside the intended family. For polymorphic selectors, include a
+concrete descendant in the success evidence.
+
 ## Use Policy probes only as observations
 
 The bound Client authentication API may evaluate a Policy for presentation or diagnostics:

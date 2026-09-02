@@ -68,6 +68,20 @@ Schema Policy owns authorization predicates. Keep authentication mode, callable 
 as distinct gates. Policy may refer to the authenticated subject, receiver, Core Groups, and graph
 facts supported by the language. Do not move caller admission into Action/Workflow code.
 
+An existential Policy variable must declare the intended Node extent:
+
+- `node()` starts from every active concrete Node Class in the pinned Registry. Use it when the Edge
+  topology, rather than a named Class family, defines the witness.
+- `node(Class)` includes that Class when concrete and every active concrete descendant. This includes
+  descendants installed from dependency and foreign Domains, so use it only for a genuine “is-a”
+  business rule.
+- `node.exact(Class)` includes only the exact concrete Class. An exact abstract Class has an empty
+  extent.
+
+Use the narrowest form whose semantics are correct. When migrating an existing Policy whose Class
+binder was exact, preserve its behavior with `node.exact(Class)` unless descendant inheritance is an
+intentional product decision.
+
 ## Core data
 
 Use Core for stable Domain-owned reference facts needed immediately after installation, such as one

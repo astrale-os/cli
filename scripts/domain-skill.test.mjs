@@ -47,9 +47,12 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   const views = readFileSync(join(root, 'references', 'views.md'), 'utf8')
   const development = readFileSync(join(root, 'references', 'development.md'), 'utf8')
   const debugging = readFileSync(join(root, 'references', 'debugging.md'), 'utf8')
+  const performance = readFileSync(join(root, 'references', 'performance.md'), 'utf8')
+  const security = readFileSync(join(root, 'references', 'security.md'), 'utf8')
   const simulating = readFileSync(join(root, 'references', 'simulating.md'), 'utf8')
 
   assert.match(entrypoint, /Keep authorization in Schema-owned Policy and callable `auth` mode/)
+  assert.match(entrypoint, /`node\(\)` for topology-owned matching/)
   assert.match(implementing, /defineAction/)
   assert.match(implementing, /defineWorkflow/)
   assert.match(implementing, /Action context has no `step`/)
@@ -100,6 +103,15 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(modeling, /One exported `stateMachine` is the authority for a finite lifecycle/)
   assert.match(modeling, /`stateProperty\(machine\)`/)
   assert.match(modeling, /`machine\.stateSchema` or `machine\.eventSchema`/)
+  assert.match(
+    modeling,
+    /`node\(Class\)` includes that Class when concrete and every active concrete descendant/,
+  )
+  assert.match(modeling, /preserve its behavior with `node\.exact\(Class\)`/)
+  assert.match(security, /Policy Node selectors are authorization scope, not a typing convenience/)
+  assert.match(security, /concrete descendant in the success evidence/)
+  assert.match(performance, /Kernel resolves\s+`node\(Class\)` through the pinned Registry/)
+  assert.match(performance, /narrows that set from\s+the variable's Edge endpoints/)
   assert.match(views, /defineFrontend/)
   assert.match(views, /astrale-frontend-design/)
   assert.match(views, /Do not depend directly on Shell or\s+Shell-React packages/)

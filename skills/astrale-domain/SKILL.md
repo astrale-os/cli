@@ -15,6 +15,8 @@ Load detailed domain knowledge from the references that matches the goal.
   `@astrale-os/kernel-dsl` directly, and do not replace them with a flat SDK root barrel.
 - Keep authorization in Schema-owned Policy and callable `auth` mode; handlers execute only admitted
   calls and do not define a second authorization model.
+- Choose each existential Policy Node extent deliberately: `node()` for topology-owned matching,
+  `node(Class)` for a polymorphic Class family, or `node.exact(Class)` for exact identity.
 - Treat the installed SDK's public exports and the current Domain source as authoritative
   for API syntax.
 
