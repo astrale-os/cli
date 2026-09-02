@@ -69,3 +69,35 @@ export function paramSummary(method: IrMethod): string {
   if (keys.length === 0) return 'No input'
   return keys.join(', ')
 }
+
+/** `friendlyType`, with a List naming what it holds: "List of Text" says more than "List". */
+export function friendlyFieldType(
+  schema?: JsonSchema,
+  optionalOverride?: boolean,
+): ReturnType<typeof friendlyType> {
+  const ft = friendlyType(schema, optionalOverride)
+  if (schema?.items && describe(schema).kind === 'array') {
+    return { ...ft, label: `List of ${friendlyType(schema.items).label}` }
+  }
+  return ft
+}
+
+/**
+ * The named fields a value schema carries — an object's own properties, or those of the
+ * objects a List holds — so a structured input or return reads as rows rather than as
+ * one opaque "Object". A Node path is a reference, never opened.
+ */
+export function fieldChildren(
+  schema?: JsonSchema,
+): { name: string; schema: JsonSchema; optional: boolean }[] {
+  if (!schema) return []
+  const kind = describe(schema).kind
+  const holder = kind === 'object' ? schema : kind === 'array' ? schema.items : undefined
+  if (!holder?.properties) return []
+  const required = new Set(holder.required ?? [])
+  return Object.entries(holder.properties).map(([name, value]) => ({
+    name,
+    schema: value,
+    optional: !required.has(name),
+  }))
+}

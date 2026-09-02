@@ -1,7 +1,7 @@
-import { nodeClass, property } from '@astrale-os/sdk/schema'
+import { method, nodeClass, property, valueSchema } from '@astrale-os/sdk/schema'
 
 import { icons } from '../icons.js'
-import { date, string } from '../values.js'
+import { boolean, date, string } from '../values.js'
 
 export const Document = nodeClass({
   abstract: true,
@@ -10,6 +10,17 @@ export const Document = nodeClass({
   properties: {
     reference: string,
     issuedOn: property(date, { required: false }),
+  },
+  methods: {
+    archive: method({
+      description: 'Move the document out of the active set.',
+      auth: 'authenticated',
+      input: valueSchema<{ reason?: string }>()({
+        type: 'object',
+        properties: { reason: { type: 'string' } },
+      }),
+      output: boolean,
+    }),
   },
 })
 

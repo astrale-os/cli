@@ -1,20 +1,21 @@
-import type { IrClassRef, JsonSchema, StudioSchemaBundle } from '@shared/types'
+import type { IrClassRef, StudioSchemaBundle } from '@shared/types'
 
 import { classRefKey, parseClassRefKey } from '@shared/types'
 import { Box, MousePointerClick, Spline } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
-import { Chip, EmptyState, Group, IconTile, Surface } from '@/components/studio-kit'
-import { useCatalog, useViewsModel } from '@/lib/hooks'
+import { Chip, DescriptionText, EmptyState, Group, IconTile } from '@/components/studio-kit'
+import { useViewsModel } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { anchorData, schemaMemberRef } from '@/lib/targets'
+import { cn } from '@/lib/utils'
 import { viewsForClass } from '@/lib/views'
 
-import { inheritedGroupsOfClass, resolveClass } from '../inheritance'
+import { ancestryOfClass, resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
-import { InheritedSection, MethodCard, PropertyRow } from './members'
-import { originLabel } from './model'
+import { MemberList, MethodRow, PropertyRow } from './members'
+import { memberLists, originLabel } from './model'
 import { EdgeRelationship } from './relationships'
 
 export function SchemaDetail({
@@ -25,11 +26,7 @@ export function SchemaDetail({
   selected?: string
 }) {
   const ir = bundle.ir
-  const selectClass = useUI((state) => state.selectClass)
-  const { data: catalog } = useCatalog()
   const viewsModel = useViewsModel(bundle.domainId)
-  const originIcon = (origin?: string): string | undefined =>
-    origin ? catalog?.find((entry) => entry.origin === origin)?.icon : undefined
 
   if (!ir || !selected) {
     return (
@@ -60,9 +57,10 @@ export function SchemaDetail({
   const memberKind = isEdge ? 'edge' : 'class'
   const refBase = local ? schemaMemberRef(memberKind, name) : `class.${classRefKey(ref)}`
   const span = local ? bundle.overlay.sourceSpans[refBase] : undefined
-  const properties = Object.entries(member.properties)
-  const methods = Object.entries(member.methods)
-  const inherited = local && !isEdge ? inheritedGroupsOfClass(bundle, name) : []
+  // Own members first, inherited after them under the Class that declares each — one
+  // list per kind, so the panel answers "what does it have" before "where from".
+  const lists = memberLists(bundle, name, member, local && !isEdge)
+  const ancestry = ancestryOfClass(bundle, member.extendsRefs ?? [])
   const classViews = local && !isEdge ? viewsForClass(viewsModel, name) : []
 
   return (
@@ -92,35 +90,34 @@ export function SchemaDetail({
                 />
               </div>
               {(span?.doc ?? member.description) && (
-                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                <DescriptionText className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
                   {span?.doc ?? member.description}
-                </p>
+                </DescriptionText>
               )}
             </div>
           </div>
 
-          {(member.extendsRefs ?? []).length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pl-11">
-              {(member.extendsRefs ?? []).map((parent) => {
-                const navigable = resolveClass(bundle, parent) !== undefined
-                const target =
-                  parent.origin === ir.domain
-                    ? `class.${parent.name}`
-                    : `class.${classRefKey(parent)}`
-                return (
-                  <button
+          {/* The whole chain, with no word in front of it and no separator inside it: a
+              row of Class chips under a Class reads as its bases on its own. The parents
+              come first, then THEIR parents, and so on up; the hover says which is which.
+              Each Class is a chip that opens it. */}
+          {ancestry.length > 0 && (
+            <div
+              data-class-ancestry=""
+              aria-label={`${name} extends`}
+              className="flex flex-wrap items-center gap-x-1.5 gap-y-1 pl-11"
+            >
+              {ancestry.flatMap((level, depth) =>
+                level.map((parent) => (
+                  <AncestorChip
                     key={classRefKey(parent)}
-                    type="button"
-                    disabled={!navigable}
-                    onClick={() => navigable && selectClass(target, bundle.domainId)}
-                  >
-                    <Chip tone="outline">
-                      extends {parent.name}
-                      {parent.origin === ir.domain ? '' : ` · ${originLabel(parent.origin)}`}
-                    </Chip>
-                  </button>
-                )
-              })}
+                    bundle={bundle}
+                    owner={name}
+                    parent={parent}
+                    depth={depth}
+                  />
+                )),
+              )}
             </div>
           )}
         </header>
@@ -131,39 +128,35 @@ export function SchemaDetail({
           <EdgeRelationship bundle={bundle} endpoints={member.endpoints!} edgeName={name} />
         )}
 
-        {properties.length > 0 && (
+        {lists.properties.length > 0 && (
           <Group label="Properties">
-            <Surface className="divide-y overflow-hidden">
-              {properties.map(([propertyName, value]) => (
+            <MemberList>
+              {lists.properties.map((entry) => (
                 <PropertyRow
-                  key={propertyName}
+                  key={`${entry.owner?.refBase ?? ''}.${entry.name}`}
                   bundle={bundle}
                   refBase={refBase}
-                  pname={propertyName}
-                  schema={value as JsonSchema}
-                  optional={!(member.required ?? []).includes(propertyName)}
+                  entry={entry}
                 />
               ))}
-            </Surface>
+            </MemberList>
           </Group>
         )}
 
-        {methods.length > 0 && (
+        {lists.methods.length > 0 && (
           <Group label="Methods">
-            <div className="space-y-2.5">
-              {methods.map(([methodName, method]) => (
-                <MethodCard
-                  key={methodName}
+            <MemberList>
+              {lists.methods.map((entry) => (
+                <MethodRow
+                  key={`${entry.owner?.refBase ?? ''}.${entry.name}`}
                   bundle={bundle}
                   owner={name}
-                  ownerKind="class"
-                  handlerOwnerLocal={local}
                   refBase={refBase}
-                  mname={methodName}
-                  method={method}
+                  entry={entry}
+                  handlerOwnerLocal={local}
                 />
               ))}
-            </div>
+            </MemberList>
           </Group>
         )}
 
@@ -182,14 +175,55 @@ export function SchemaDetail({
           </Group>
         )}
 
-        {inherited.length > 0 && (
-          <InheritedSection bundle={bundle} groups={inherited} originIcon={originIcon} />
-        )}
-
-        {properties.length === 0 && methods.length === 0 && inherited.length === 0 && !isEdge && (
+        {lists.properties.length === 0 && lists.methods.length === 0 && !isEdge && (
           <EmptyState title="No properties or methods" hint="This Class declares no own members." />
         )}
       </div>
     </div>
+  )
+}
+
+// One ancestor: its name, its domain when that is not this one, and a click that opens
+// it. The hover spells the relation out — the row carries no word for it — and says
+// whether the base is a declared parent or reached further up. A base the bundle cannot
+// resolve still names itself, but leads nowhere.
+function AncestorChip({
+  bundle,
+  owner,
+  parent,
+  depth,
+}: {
+  bundle: StudioSchemaBundle
+  owner: string
+  parent: IrClassRef
+  depth: number
+}) {
+  const selectClass = useUI((state) => state.selectClass)
+  const local = parent.origin === bundle.ir?.domain
+  const navigable = resolveClass(bundle, parent) !== undefined
+  const target = local ? `class.${parent.name}` : `class.${classRefKey(parent)}`
+  const where = local ? '' : ` (${parent.origin})`
+  const relation =
+    depth === 0
+      ? `${owner} extends ${parent.name}${where}`
+      : `${owner} inherits ${parent.name}${where} through its bases`
+  return (
+    <button
+      type="button"
+      disabled={!navigable}
+      title={relation}
+      onClick={() => selectClass(target, bundle.domainId)}
+      className="rounded-full disabled:cursor-default"
+    >
+      <Chip
+        tone="outline"
+        className={cn(
+          navigable && 'transition-colors hover:border-foreground/40 hover:text-foreground',
+        )}
+      >
+        {/* the name alone — where it comes from is on the hover, not on the chip */}
+        {parent.name}
+      </Chip>
+    </button>
   )
 }

@@ -390,3 +390,12 @@ body[data-target-mode] .react-flow.react-flow * {
 [data-studio-rise][data-state='open'] {
   animation: studio-rise 180ms ease-out;
 }
+
+/* A row in a list card sits flush against the card's clipped edge, so the targeting outline
+   above — drawn OUTSIDE the row — lost its top on the first row, its bottom on the last, and
+   its sides on every one: only a stray line or two survived the card's `overflow: hidden`.
+   Rows in a list wear the ring inside their own box instead, where nothing can cut it. */
+[data-member-list] > [data-comment-target],
+[data-member-list] > [data-revealed] {
+  outline-offset: -2px;
+}

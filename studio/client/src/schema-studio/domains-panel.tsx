@@ -5,7 +5,7 @@ import { useMemo } from 'react'
 import { toast } from 'sonner'
 
 import { Commentable } from '@/components/commentable'
-import { IconTile } from '@/components/studio-kit'
+import { DescriptionText, IconTile } from '@/components/studio-kit'
 import { ScrollArea, Separator } from '@/components/ui/misc'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useBundle, useCatalog, useCommentMutations, useComments } from '@/lib/hooks'
@@ -170,9 +170,9 @@ function ImportButton({ domainId, taken }: { domainId: string; taken: Set<string
                 </IconTile>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13px] font-medium leading-tight">{e.name}</div>
-                  <div className="truncate text-[11px] text-muted-foreground leading-tight">
+                  <DescriptionText className="truncate text-[11px] leading-tight text-muted-foreground">
                     {e.description}
-                  </div>
+                  </DescriptionText>
                 </div>
                 <span className="shrink-0 text-[11px] font-medium text-primary opacity-0 transition-opacity group-hover/imp:opacity-100">
                   Import

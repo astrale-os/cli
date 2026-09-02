@@ -126,3 +126,34 @@ export function inheritedGroupsOfClass(
   const rank: Record<ClassTier, number> = { local: 0, external: 1, kernel: 2 }
   return groups.sort((left, right) => rank[left.tier] - rank[right.tier])
 }
+
+/**
+ * The whole chain a Class descends from, nearest first: level 0 holds the declared
+ * parents, level 1 their parents, and so on. A base reached by several routes is listed
+ * once, at the shallowest depth it is met. The universal Node/Edge roots are left out:
+ * every Class has them, so they would say nothing about THIS one.
+ */
+export function ancestryOfClass(
+  bundle: StudioSchemaBundle,
+  extendsRefs: readonly IrClassRef[],
+): IrClassRef[][] {
+  const universal = (ref: IrClassRef): boolean =>
+    ref.origin === KERNEL_ORIGIN && UNIVERSAL_BASES.has(ref.name)
+  const levels: IrClassRef[][] = []
+  const visited = new Set<string>()
+  let frontier = extendsRefs.filter((ref) => !universal(ref))
+  while (frontier.length > 0) {
+    const level: IrClassRef[] = []
+    const next: IrClassRef[] = []
+    for (const ref of frontier) {
+      const key = classRefKey(ref)
+      if (visited.has(key)) continue
+      visited.add(key)
+      level.push(ref)
+      next.push(...(resolveClass(bundle, ref)?.extendsRefs ?? []).filter((r) => !universal(r)))
+    }
+    if (level.length > 0) levels.push(level)
+    frontier = next
+  }
+  return levels
+}

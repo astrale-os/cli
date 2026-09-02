@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 
 import { bundle, classRef, nodeClass } from './__tests__/fixture'
-import { classTier, inheritedGroupsOfClass, kernelRolesOfClass, resolveClass } from './inheritance'
+import {
+  ancestryOfClass,
+  classTier,
+  inheritedGroupsOfClass,
+  kernelRolesOfClass,
+  resolveClass,
+} from './inheritance'
 
 describe('Class inheritance', () => {
   test('resolves exact local, dependency, and Kernel base Classes', () => {
@@ -116,5 +122,29 @@ describe('Class inheritance', () => {
       Right: nodeClass('Right', { extendsRefs: [left, classRef('kernel.astrale.ai', 'Identity')] }),
     })
     expect(kernelRolesOfClass(fixture, [left])).toEqual(['identity'])
+  })
+
+  test('lists the whole ancestry by depth, nearest first, each base once', () => {
+    const identity = classRef('kernel.astrale.ai', 'Identity')
+    const node = classRef('kernel.astrale.ai', 'Node')
+    const named = classRef('local.example.dev', 'Named')
+    const party = classRef('local.example.dev', 'Party')
+    const fixture = bundle({
+      Named: nodeClass('Named', { extendsRefs: [node] }),
+      Party: nodeClass('Party', { extendsRefs: [named, identity] }),
+      // Named is declared here AND reached again through Party: it stays at depth 0
+      Member: nodeClass('Member', { extendsRefs: [party, named] }),
+    })
+    expect(
+      ancestryOfClass(fixture, [party, named]).map((level) => level.map((ref) => ref.name)),
+    ).toEqual([['Party', 'Named'], ['Identity']])
+    // the universal root is never listed, even when it is the only parent
+    expect(ancestryOfClass(fixture, [node])).toEqual([])
+    // an unresolvable base still names itself, and ends its branch there
+    expect(
+      ancestryOfClass(fixture, [classRef('other.example.dev', 'Ghost')]).map((level) =>
+        level.map((ref) => ref.name),
+      ),
+    ).toEqual([['Ghost']])
   })
 })
