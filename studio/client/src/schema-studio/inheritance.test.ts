@@ -114,6 +114,71 @@ describe('Class inheritance', () => {
     expect(kernelRolesOfClass(fixture, [fn, identity])).toEqual(['identity', 'function'])
   })
 
+  test('reads every Kernel role through an imported base Class', () => {
+    const imported = classRef('shared.example.dev', 'InteractiveSurface')
+    const identity = classRef('kernel.astrale.ai', 'Identity')
+    const fn = classRef('kernel.astrale.ai', 'Function')
+    const view = classRef('kernel.astrale.ai', 'View')
+    const fixture = bundle({
+      Dashboard: nodeClass('Dashboard', { extendsRefs: [imported] }),
+    })
+    fixture.ir!.importedClassesByKey = {
+      'shared.example.dev:class.InteractiveSurface': nodeClass('InteractiveSurface', {
+        origin: imported.origin,
+        ref: imported,
+        extendsRefs: [identity, fn, view],
+      }),
+    }
+
+    expect(kernelRolesOfClass(fixture, [imported])).toEqual(['identity', 'function', 'view'])
+  })
+
+  test('keeps the complete ancestry, including empty and universal Kernel bases', () => {
+    const line = classRef('local.example.dev', 'Line')
+    const named = classRef('kernel.astrale.ai', 'Named')
+    const timestamped = classRef('kernel.astrale.ai', 'Timestamped')
+    const node = classRef('kernel.astrale.ai', 'Node')
+    const fixture = bundle({
+      Line: nodeClass('Line', { extendsRefs: [named, timestamped] }),
+      SalaryLine: nodeClass('SalaryLine', { extendsRefs: [line] }),
+    })
+    fixture.ir!.importedClassesByKey = {
+      'kernel.astrale.ai:class.Named': nodeClass('Named', {
+        origin: named.origin,
+        ref: named,
+        extendsRefs: [node],
+        properties: { name: { type: 'string' } },
+      }),
+      'kernel.astrale.ai:class.Timestamped': nodeClass('Timestamped', {
+        origin: timestamped.origin,
+        ref: timestamped,
+        extendsRefs: [node],
+        properties: {
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      }),
+      'kernel.astrale.ai:class.Node': nodeClass('Node', {
+        origin: node.origin,
+        ref: node,
+      }),
+    }
+
+    expect(
+      inheritedGroupsOfClass(fixture, 'SalaryLine').map((group) => ({
+        owner: group.owner,
+        depth: group.depth,
+        tier: group.tier,
+        resolved: group.resolved,
+      })),
+    ).toEqual([
+      { owner: 'Line', depth: 1, tier: 'local', resolved: true },
+      { owner: 'Named', depth: 2, tier: 'kernel', resolved: true },
+      { owner: 'Timestamped', depth: 2, tier: 'kernel', resolved: true },
+      { owner: 'Node', depth: 3, tier: 'kernel', resolved: true },
+    ])
+  })
+
   test('survives a cycle in the declared chain', () => {
     const left = classRef('local.example.dev', 'Left')
     const right = classRef('local.example.dev', 'Right')
@@ -137,9 +202,12 @@ describe('Class inheritance', () => {
     })
     expect(
       ancestryOfClass(fixture, [party, named]).map((level) => level.map((ref) => ref.name)),
-    ).toEqual([['Party', 'Named'], ['Identity']])
-    // the universal root is never listed, even when it is the only parent
-    expect(ancestryOfClass(fixture, [node])).toEqual([])
+    ).toEqual([
+      ['Party', 'Named'],
+      ['Identity', 'Node'],
+    ])
+    // The detail panel is exhaustive, including a universal Kernel root on its own.
+    expect(ancestryOfClass(fixture, [node])).toEqual([[node]])
     // an unresolvable base still names itself, and ends its branch there
     expect(
       ancestryOfClass(fixture, [classRef('other.example.dev', 'Ghost')]).map((level) =>

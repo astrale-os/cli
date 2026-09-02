@@ -3,7 +3,7 @@ import type { Edge, Node } from '@xyflow/react'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from './edge-markers'
 import { localEndpointTargets } from './external'
-import { type KernelRole, kernelRoleOf, kernelRolesOfClass } from './inheritance'
+import { isKernelClass, type KernelRole, kernelRolesOfClass } from './inheritance'
 import { folderModules, moduleOfClass } from './modules'
 import { CLASS_H, CLASS_W, MODULE_COLLAPSED_H, MODULE_HEADER, MODULE_PAD } from './palette'
 import { type Hidden, classNodeVisible, classRef, edgeVisible, isHidden } from './visibility'
@@ -18,9 +18,9 @@ export interface ClassNodeData extends Record<string, unknown> {
    *  because a role is not a parent list: it holds whether or not the reader asked to see
    *  inheritance, and most of the time nothing on the canvas would otherwise say it. */
   roles: KernelRole[]
-  /** the classes this one extends, painted as chips on the card — the roles above excluded,
-   *  they already have their glyph. EMPTY while the inheritance edges are on: the chips and
-   *  the edges carry the same fact, so the canvas draws one reading of it or the other. */
+  /** the non-Kernel classes this one extends, painted as chips on the card. Kernel ancestry
+   *  belongs in the detail panel; Identity, Function, and View remain legible here as roles.
+   *  EMPTY while inheritance edges are on, because the chips and edges carry the same fact. */
   parents: string[]
   hue: number
   icon?: string
@@ -109,7 +109,7 @@ export function projectDomainCanvas(
           parents: showInheritedEdges
             ? []
             : (definition?.extendsRefs ?? [])
-                .filter((ref) => !kernelRoleOf(ref))
+                .filter((ref) => !isKernelClass(ref))
                 .map((ref) => ref.name),
           hue: module.hue,
           icon: definition?.icon,

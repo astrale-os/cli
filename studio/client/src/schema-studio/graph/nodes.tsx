@@ -6,7 +6,6 @@ import {
   Box,
   ChevronDown,
   ChevronRight,
-  CornerDownRight,
   FileCode2,
   Fingerprint,
   Globe,
@@ -39,13 +38,14 @@ import { type ViewNodeData, viewNodeId } from '../view-graph'
 // ── custom nodes ──
 
 /**
- * What a Class IS, in one glyph each: a principal, a callable. `Zap` is already how the
- * rest of the Studio draws something that runs (actions, methods), so a Class that IS one
- * wears the same mark; the fingerprint is the identity vocabulary and is used nowhere else.
+ * What a Class IS, in one glyph each: a principal, a callable, or a browser surface.
+ * The same glyphs already name those concepts elsewhere in Studio, so the card remains
+ * legible without repeating Kernel base Classes as parent chips.
  */
 const ROLE_GLYPHS: Record<KernelRole, { icon: LucideIcon; label: string }> = {
   identity: { icon: Fingerprint, label: 'Identity' },
   function: { icon: Zap, label: 'Function' },
+  view: { icon: AppWindow, label: 'View' },
 }
 
 function ClassNode({ data }: NodeProps) {
@@ -108,12 +108,10 @@ function ClassNode({ data }: NodeProps) {
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-medium leading-tight">{d.name}</div>
         {/* With the inheritance edges off, the card carries that fact itself: one chip per
-            class it extends, under the name where it does not eat into it. `↳` says
-            "extends" in the width the word would not fit, and the chips share the row —
-            each elides rather than all but the first hiding behind a `+2`. */}
+            class it extends, under the name where it does not eat into it. The chips share
+            the row; each elides rather than all but the first hiding behind a `+2`. */}
         {parents.length > 0 && (
           <div className="mt-px flex items-center gap-1">
-            <CornerDownRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/60" />
             {parents.map((parent) => (
               <span
                 key={parent}
