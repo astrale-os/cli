@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
 import {
+  analyzeProjectConfig,
   depsInstalled,
   isDomainDir,
   registerDomain,
@@ -83,6 +84,40 @@ describe('SDK V1 project discovery', () => {
     // and it follows the `#schema` subpath import to the authored module
     expect(handle.schemaIndex).toBe(join(root, 'schema/index.ts'))
     expect(handle.schemaDirName).toBe('schema')
+  })
+
+  test('follows the Application declared by defineProject before the conventional root file', () => {
+    const root = fixture(true)
+    // A stray root application.ts must not shadow the Project's declared Application.
+    writeFileSync(join(root, 'application.ts'), 'export default {}\n')
+    writeFileSync(
+      join(root, 'astrale.config.ts'),
+      `import { deploy, runtime } from '@astrale-os/sdk/deployment'
+import { defineProject } from '@astrale-os/sdk/project'
+import { dataset, tests } from '@astrale-os/sdk/testing'
+import { application as authored } from './domain/application.js'
+const deployment = deploy({ application: authored, entrypoint: runtime('./runtime.ts'), adapter: {} as never })
+export default defineProject({
+  deployment,
+  tests: tests({ datasets: [dataset('./tests/datasets/demo.ts'), dataset(\`./tests/datasets/big.ts\`)] }),
+})
+`,
+    )
+    expect(analyzeProjectConfig(root)).toEqual({
+      applicationFile: join(root, 'domain/application.ts'),
+      datasets: ['./tests/datasets/demo.ts', './tests/datasets/big.ts'],
+    })
+    expect(resolveApplicationEntry(root)).toBe(join(root, 'domain/application.ts'))
+    expect(isDomainDir(root)).toBe(true)
+    const handle = registerDomain(root)!
+    domainIds.push(handle.id)
+    expect(handle.applicationFile).toBe(join(root, 'domain/application.ts'))
+  })
+
+  test('keeps the conventional root Application for projects without defineProject', () => {
+    const root = fixture()
+    expect(analyzeProjectConfig(root)).toEqual({ applicationFile: null, datasets: [] })
+    expect(basename(resolveApplicationEntry(root)!)).toBe('application.ts')
   })
 
   test('discovers the Schema selected by the conventional root Application', () => {

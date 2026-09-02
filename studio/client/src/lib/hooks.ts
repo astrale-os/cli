@@ -160,6 +160,13 @@ export function useSettings() {
 export function useCore(id?: string) {
   return useQuery({ queryKey: qk.core(id ?? ''), queryFn: () => api.core(id!), enabled: !!id })
 }
+export function useDatasets(id?: string) {
+  return useQuery({
+    queryKey: qk.datasets(id ?? ''),
+    queryFn: () => api.datasets(id!),
+    enabled: !!id,
+  })
+}
 export function useDocuments(id?: string) {
   return useQuery({
     queryKey: qk.documents(id ?? ''),
@@ -175,7 +182,7 @@ export function useInvalidateDomain() {
   const qc = useQueryClient()
   return useCallback(
     (id: string) => {
-      for (const key of ['bundle', 'anatomy', 'comments', 'core', 'env']) {
+      for (const key of ['bundle', 'anatomy', 'comments', 'core', 'datasets', 'env']) {
         qc.invalidateQueries({ queryKey: [key, id] })
       }
     },

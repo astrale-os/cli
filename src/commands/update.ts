@@ -6,6 +6,7 @@ import { canPrompt } from '../lib/interactive'
 import { fatal, log, withSpinner } from '../lib/log'
 import { isMachine, output, RAW_OUTPUT_OPTIONS, type RawOutputOpts } from '../lib/output'
 import { run, runInherit } from '../lib/proc'
+import { inspectProjectConfig, migrateProjectConfigFile } from '../lib/project-config'
 import { confirmDefaultYes } from '../lib/prompt'
 import {
   applySdkUpdate,
@@ -105,6 +106,43 @@ async function refreshSdkDeps(check: boolean, assumeYes = false): Promise<boolea
     log.dim('  Run `pnpm install` to materialize the new versions.')
   } else {
     log.warn('Update did not complete — run it yourself: pnpm update --latest "@astrale-os/*"')
+  }
+  return true
+}
+
+/**
+ * Bring `astrale.config.ts` to the Project shape the SDK requires: a bare
+ * `export default deploy({ ... })` is rewritten as `defineProject({ deployment })`
+ * behind one confirm (never on a dry run). Shapes the codemod cannot rewrite are
+ * reported for a manual migration. Returns true when a rewrite is available.
+ */
+async function refreshProjectConfig(check: boolean, assumeYes = false): Promise<boolean> {
+  if (!inDomainProject()) return false
+  const migration = inspectProjectConfig(process.cwd())
+  if (!migration || migration.status === 'current') return false
+  if (migration.status === 'unsupported') {
+    log.warn(
+      `astrale.config.ts needs a manual migration to defineProject({ deployment }): ${migration.reason}`,
+    )
+    return false
+  }
+  log.info('astrale.config.ts still exports a bare Deployment; the SDK now requires a Project')
+  if (check) return true
+  if (
+    !assumeYes &&
+    !(await confirmDefaultYes(
+      'Rewrite astrale.config.ts as defineProject({ deployment: deploy({ ... }) })?',
+    ))
+  ) {
+    log.dim('  Skipped — astrale.config.ts is unchanged.')
+    return true
+  }
+  if (migrateProjectConfigFile(process.cwd())?.status === 'migrated') {
+    log.success(
+      'Rewrote astrale.config.ts: export default defineProject({ deployment: deploy({ ... }) })',
+    )
+  } else {
+    log.warn('astrale.config.ts changed underneath the update; run `astrale update` again')
   }
   return true
 }
@@ -267,7 +305,9 @@ Behavior:
   project, proposes any @astrale-os/* dependency with a newer release and, on
   confirm, runs "pnpm update --latest --lockfile-only" (updates package.json AND
   the lockfile, honoring your registry + supply-chain age policy; run "pnpm
-  install" to materialize).
+  install" to materialize). (4) The project configuration: a bare
+  "export default deploy({ ... })" in astrale.config.ts is rewritten, on confirm, as the
+  "defineProject({ deployment })" the SDK now requires.
 
   The default release channel is beta; --channel overrides it for one run.
   --check is a dry run (binary + skills + SDK deps; exit 10 if anything is available) and
@@ -383,6 +423,9 @@ Examples:
       if (opts.deps !== false && (await refreshSdkDeps(opts.check === true, opts.yes === true))) {
         anyAvailable = true
       }
+
+      // Axis D — the project configuration shape. Local and cheap; runs on --check too.
+      if (await refreshProjectConfig(opts.check === true, opts.yes === true)) anyAvailable = true
 
       if (opts.check && anyAvailable) process.exitCode = 10
     } catch (e) {

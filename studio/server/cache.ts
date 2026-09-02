@@ -7,7 +7,13 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
-import type { DomainAnatomy, SchemaOverlay, StudioCore, StudioSchemaBundle } from '../shared/types'
+import type {
+  DomainAnatomy,
+  SchemaOverlay,
+  StudioCore,
+  StudioDatasets,
+  StudioSchemaBundle,
+} from '../shared/types'
 
 import { isSchemaRevision } from '../shared/types'
 import { invalidateClientPackage, resolveClientPackage } from './client-package'
@@ -16,10 +22,12 @@ import { buildAnatomy } from './introspect/anatomy'
 import { buildBundle } from './introspect/bundle'
 import { isCanonicalDomainSchemaV1 } from './introspect/canonical-schema'
 import { buildCore } from './introspect/core'
+import { buildDatasets } from './introspect/datasets'
 import { decodeSchemaIR } from './introspect/schema-ir-json'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString } from './json'
 import { hashAnatomyFiles } from './state/baseline'
 import { readJson, writeJson } from './state/store'
+import { studioSettings } from './studio-settings'
 
 const bundles = new Map<string, StudioSchemaBundle>()
 /**
@@ -32,6 +40,8 @@ const bundles = new Map<string, StudioSchemaBundle>()
  */
 const building = new Map<string, Promise<StudioSchemaBundle>>()
 const anatomies = new Map<string, Promise<DomainAnatomy>>()
+/** Demo Datasets, extracted on demand; they follow the bundle (revision) and the tests/ tree. */
+const datasets = new Map<string, Promise<StudioDatasets>>()
 
 const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
 /**
@@ -49,6 +59,7 @@ const TOOL_INPUTS = [
   'introspect/bundle.ts',
   'introspect/runtime.ts',
   'introspect/extractor.ts',
+  'introspect/island.ts',
   'introspect/canonical-schema.ts',
   'introspect/overlay.ts',
   'introspect/overlay-tsmorph.ts',
@@ -336,8 +347,26 @@ export async function getCore(id: string, rebuild = false): Promise<StudioCore |
   return buildCore(h, await getBundle(id, rebuild))
 }
 
+export async function getDatasets(id: string, rebuild = false): Promise<StudioDatasets | null> {
+  const h = getDomain(id)
+  if (!h) return null
+  if (!rebuild && datasets.has(id)) return datasets.get(id)!
+  const run = getBundle(id, rebuild).then((bundle) =>
+    buildDatasets(h, bundle, studioSettings().introspectTimeoutMs),
+  )
+  datasets.set(id, run)
+  return run
+}
+
+export function invalidateDatasets(id: string): void {
+  datasets.delete(id)
+}
+
 export function invalidate(id: string, what: 'schema' | 'anatomy' | 'all'): void {
-  if (what !== 'anatomy') bundles.delete(id)
+  if (what !== 'anatomy') {
+    bundles.delete(id)
+    datasets.delete(id)
+  }
   if (what !== 'schema') {
     anatomies.delete(id)
     const domain = getDomain(id)

@@ -1,5 +1,6 @@
 import {
   Boxes,
+  Database,
   type LucideIcon,
   MessagesSquare,
   Network,
@@ -37,6 +38,7 @@ const LazySchemaSection = lazy(() =>
 const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
   { key: 'schema', label: 'Schema', icon: Network },
   { key: 'core', label: 'Core', icon: Boxes },
+  { key: 'data', label: 'Data', icon: Database },
   { key: 'process', label: 'Process', icon: Workflow },
 ]
 
@@ -46,6 +48,7 @@ function SectionRouter({ section, domainId }: { section: SectionKey; domainId: s
     // asked for a different canvas.
     case 'schema':
     case 'core':
+    case 'data':
       return (
         <Suspense
           fallback={

@@ -153,6 +153,7 @@ values, search, comment mode, and the agent loop:
 | Section | What it shows |
 |---|---|
 | **Schema** ★ | A module tree, relationship canvas and definition details. The canvas reads as DIRECTION by default and has a Cardinality mode; it also exposes canonical Core data plus the Domains, Views and detected Integrations panels, and can compose multiple workspace domains. |
+| **Data** | The demo Datasets the project references from `astrale.config.ts` (`tests: tests({ datasets })`), extracted on demand through the domain's own SDK and drawn with the Core canvas: a Dataset picker, records grouped by Class, entry points, and a detail panel. Never part of a Build or an installation. |
 | **Process** | Canonical Core genesis, standalone Functions, class Methods, their auth/handler links and View entrypoints. |
 
 Views are not a section of their own: they belong to the landscape, listed from

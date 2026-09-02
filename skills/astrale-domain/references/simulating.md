@@ -77,6 +77,39 @@ hook, or a migration mechanism. Put throwaway sample data in a test fixture or e
 demo owner. Runtime- or environment-dependent setup belongs to an Action, Workflow, or operator-owned
 journey with declared requirements.
 
+Demo data has one owner: a Dataset under `tests/`, referenced lazily from `astrale.config.ts`.
+
+```ts
+// tests/datasets/demo.ts
+import { defineDataset } from '@astrale-os/sdk/testing'
+import { schema } from '#schema'
+
+export default defineDataset(schema, {
+  id: 'demo',
+  title: 'Demo data',
+  graph({ classes: { Project, Task, contains }, node, edge }) {
+    const inbox = node(Project, { id: 'inbox', props: { name: 'Inbox' } })
+    const draft = node(Task, { props: { title: 'Write the docs', completed: false } })
+    edge(contains, inbox, draft)
+    return { inbox }
+  },
+})
+
+// astrale.config.ts
+export default defineProject({
+  deployment: deploy({ application, entrypoint: runtime('./runtime.ts'), adapter }),
+  tests: tests({ datasets: [dataset('./tests/datasets/demo.ts')] }),
+})
+```
+
+`defineDataset` admits the facts once, against the exact Schema, with the Kernel graph diagnostics
+(unknown or abstract Class, invalid or missing Property, endpoint Class, duplicates). The result
+carries canonical Kernel Nodes and Edges, an indexed `graph`, and the named `variables` returned by
+the author. `dataset(path)` is a lazy coordinate: building or deploying never loads the module, and a
+Dataset never reaches a Build, a Release, or an installation. The Domain Studio extracts referenced
+Datasets on demand and renders them in its Data section; several Datasets per project are fine as
+long as their ids differ. Production code never imports `tests/`.
+
 ## Live acceptance
 
 At least one acceptance journey should use packed or published packages outside every source

@@ -28,6 +28,7 @@ import type {
   NodePosition,
   StaleReport,
   StudioCore,
+  StudioDatasets,
   StudioSchemaBundle,
   ThreadEntry,
   ViewRuntime,
@@ -225,6 +226,7 @@ export const api = {
     post<LayoutState>(`${d(id)}/layout`, { action: 'set', positions }),
   resetLayout: (id: string) => post<{ ok: true }>(`${d(id)}/layout`, { action: 'reset' }),
 
+  datasets: (id: string) => get<StudioDatasets>(`${d(id)}/datasets`),
   visibility: (id: string) => get<VisibilityState>(`${d(id)}/visibility`),
   setVisibility: (id: string, state: VisibilityState) =>
     post<VisibilityState>(`${d(id)}/visibility`, { action: 'set', ...state }),
@@ -236,6 +238,7 @@ export const qk = {
   instances: ['instances'] as const,
   bundle: (id: string) => ['bundle', id] as const,
   core: (id: string) => ['core', id] as const,
+  datasets: (id: string) => ['datasets', id] as const,
   anatomy: (id: string) => ['anatomy', id] as const,
   viewRuntime: (id: string, slug: string) => ['view-runtime', id, slug] as const,
   updates: (id: string) => ['updates', id] as const,

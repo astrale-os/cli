@@ -361,6 +361,40 @@ export interface StudioCore {
   extractedAt: string
 }
 
+/** One demo Dataset declared under the project's test resources, projected like Core data. */
+export interface StudioDataset {
+  status: 'ready'
+  /** module coordinate exactly as written in astrale.config.ts */
+  path: string
+  id: string
+  title?: string
+  description?: string
+  /** the Schema origin the Dataset was admitted against */
+  origin: string
+  /** the DSL revision the Dataset was admitted against */
+  revision: string
+  /** false when the current schema bundle carries another revision (stale until re-extracted) */
+  schemaMatch: boolean
+  /** `path` is the Dataset Node id; `className` is the local Class name or the exact imported key */
+  nodes: StudioCoreNode[]
+  edges: StudioCoreEdge[]
+  /** named entry points, each resolved to one or more Node ids */
+  variables: Record<string, string[]>
+}
+
+export interface StudioDatasetFailure {
+  status: 'failed'
+  path: string
+  error: { message: string }
+}
+
+/** Every Dataset the project references, extracted on demand and never deployed. */
+export interface StudioDatasets {
+  domainId: string
+  datasets: (StudioDataset | StudioDatasetFailure)[]
+  extractedAt: string
+}
+
 /** Client-side rendering description derived from a JSON value schema. */
 export type TypeDescriptor =
   | { kind: 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'unknown'; optional: boolean }

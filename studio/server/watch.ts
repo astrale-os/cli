@@ -5,11 +5,12 @@
  * The studio is read-only, so this only ever pushes; the client refetches.
  */
 import chokidar, { type FSWatcher } from 'chokidar'
+import { existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 import type { DomainHandle } from './domain'
 
-import { getBundle, invalidate } from './cache'
+import { getBundle, invalidate, invalidateDatasets } from './cache'
 import { broadcast } from './sse'
 import { ANATOMY_GLOBS } from './state/baseline'
 
@@ -80,9 +81,16 @@ export function watchDomain(handle: DomainHandle): () => void {
       ANATOMY_PATHS.map((p) => join(handle.root, p)),
       { ignoreInitial: true, ignored },
     )
-    open.push(schemaW, anatomyW)
-    listen(handle, schemaW, anatomyW)
-    await Promise.all([ready(schemaW), ready(anatomyW)])
+    // Demo Datasets live under tests/ and are referenced from the configuration; neither is
+    // part of the schema bundle, so they get their own channel and never trigger a rebuild.
+    const testsDir = join(handle.root, 'tests')
+    const datasetsW = chokidar.watch(
+      [handle.configFile, ...(existsSync(testsDir) ? [testsDir] : [])],
+      { ignoreInitial: true, ignored },
+    )
+    open.push(schemaW, anatomyW, datasetsW)
+    listen(handle, schemaW, anatomyW, datasetsW)
+    await Promise.all([ready(schemaW), ready(anatomyW), ready(datasetsW)])
     if (closed) for (const w of open) void w.close()
   }
 
@@ -96,9 +104,23 @@ export function watchDomain(handle: DomainHandle): () => void {
   }
 }
 
-function listen(handle: DomainHandle, schemaW: FSWatcher, anatomyW: FSWatcher): void {
+function listen(
+  handle: DomainHandle,
+  schemaW: FSWatcher,
+  anatomyW: FSWatcher,
+  datasetsW: FSWatcher,
+): void {
   let st: ReturnType<typeof setTimeout> | undefined
   let at: ReturnType<typeof setTimeout> | undefined
+  let dt: ReturnType<typeof setTimeout> | undefined
+
+  datasetsW.on('all', () => {
+    clearTimeout(dt)
+    dt = setTimeout(() => {
+      invalidateDatasets(handle.id)
+      broadcast({ type: 'datasets', domainId: handle.id })
+    }, 150)
+  })
 
   schemaW.on('all', () => {
     clearTimeout(st)
