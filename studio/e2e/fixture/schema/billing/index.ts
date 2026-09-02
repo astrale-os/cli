@@ -1,4 +1,12 @@
-import { edgeClass, nodeClass, property } from '@astrale-os/sdk/schema'
+import {
+  edgeClass,
+  method,
+  nodeClass,
+  output,
+  policy,
+  property,
+  valueSchema,
+} from '@astrale-os/sdk/schema'
 
 import { PaymentProcessor } from '../external.js'
 import { icons } from '../icons.js'
@@ -7,11 +15,61 @@ import { Quote } from '../sales/index.js'
 import { Document } from '../shared/index.js'
 import { boolean, number, string } from '../values.js'
 
+export const mayManageInvoice = policy({
+  description: 'The caller is the account this invoice is billed to.',
+  match: ({ edge, subject, object }) =>
+    edge({ source: object, class: () => BilledTo, target: subject }),
+})
+
 export const Invoice = nodeClass({
   description: 'A demand for payment issued to a customer.',
   icon: icons.invoice,
   extends: [Document],
   properties: { total: number, paid: property(boolean, { required: false }) },
+  methods: {
+    settle: method({
+      description: 'Record a payment against this invoice.',
+      auth: 'authorized',
+      input: valueSchema<{ amount: number; note?: string }>()({
+        type: 'object',
+        properties: { amount: { type: 'number' }, note: { type: 'string' } },
+        required: ['amount'],
+      }),
+      output: boolean,
+      policy: ({ check, self }) => check(mayManageInvoice, self),
+    }),
+    remind: method({
+      description: 'Send the customer a reminder.',
+      auth: 'authorized',
+      input: valueSchema<{ channel: 'email' | 'sms' }>()({
+        type: 'object',
+        properties: { channel: { type: 'string', enum: ['email', 'sms'] } },
+        required: ['channel'],
+      }),
+      output: valueSchema<{ sentAt: string; channel: string }>()({
+        type: 'object',
+        properties: { sentAt: { type: 'string' }, channel: { type: 'string' } },
+        required: ['sentAt', 'channel'],
+      }),
+    }),
+    search: method({
+      description: 'Find invoices by reference.',
+      static: true,
+      auth: 'anonymous',
+      input: valueSchema<{ query: string; limit?: number }>()({
+        type: 'object',
+        properties: { query: { type: 'string' }, limit: { type: 'number' } },
+        required: ['query'],
+      }),
+      output: output.stream(
+        valueSchema<{ reference: string; total: number }>()({
+          type: 'object',
+          properties: { reference: { type: 'string' }, total: { type: 'number' } },
+          required: ['reference', 'total'],
+        }),
+      ),
+    }),
+  },
 })
 
 export const Payment = nodeClass({

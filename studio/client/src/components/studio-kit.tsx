@@ -79,6 +79,14 @@ export function Surface({ className, ...props }: React.HTMLAttributes<HTMLDivEle
   return <div className={cn('rounded-lg border bg-card', className)} {...props} />
 }
 
+/** Domain-authored prose, visually distinct from structural labels and values. */
+export function DescriptionText({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLParagraphElement>) {
+  return <p data-description="" className={cn('italic', className)} {...props} />
+}
+
 // ── IconTile: a rounded square holding an icon, tinted by schema role ──
 const TONES: Record<string, string> = {
   primary: 'bg-primary/10 text-primary',

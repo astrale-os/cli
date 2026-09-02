@@ -206,6 +206,39 @@ export function decodePolicyCheck(value: unknown): PolicyCheck | undefined {
   return isIrSchemaRef(record.check) && object ? { check: record.check, object } : undefined
 }
 
+/**
+ * A callable Policy check normalized for recursive UI rendering. The canonical decoder above
+ * deliberately preserves the DSL shape for the Dataset policy tooling; this reader adds an
+ * explicit discriminator without changing that existing contract.
+ */
+export type ParsedPolicyCheck =
+  | { kind: 'check'; policy: IrSchemaRef; object: PolicyCheckObject }
+  | { kind: 'allOf' | 'anyOf'; items: ParsedPolicyCheck[] }
+
+function parsePolicyCheckBranch(value: unknown): ParsedPolicyCheck[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  const items = value.map(parsePolicyCheck)
+  return items.every((item): item is ParsedPolicyCheck => item !== undefined) ? items : undefined
+}
+
+export function parsePolicyCheck(value: unknown): ParsedPolicyCheck | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+  if ('check' in record) {
+    const object = decodeCheckObject(record.object)
+    return isIrSchemaRef(record.check) && record.check.kind === 'policy' && object
+      ? { kind: 'check', policy: record.check, object }
+      : undefined
+  }
+  for (const operator of ['allOf', 'anyOf'] as const) {
+    if (operator in record) {
+      const items = parsePolicyCheckBranch(record[operator])
+      return items ? { kind: operator, items } : undefined
+    }
+  }
+  return undefined
+}
+
 // ── reading ─────────────────────────────────────────────────────────────────
 
 /** Every `check` a callable's policy expression bottoms out in, in source order. */
@@ -334,4 +367,23 @@ export function policyUsage(ir: SchemaIR, policy: Policy): PolicyUsage {
   for (const [name, fn] of Object.entries(ir.functions))
     collect(ir.domain, 'function', name, fn.policy)
   return usage
+}
+
+/** What a check is evaluated against, in the words a reader of the Class uses. */
+export function policyObjectLabel(object: PolicyCheckObject, owner: string): string {
+  switch (object.kind) {
+    case 'self':
+      return `this ${owner}`
+    case 'input':
+      return `input.${object.field}`
+    case 'ref':
+      return `${object.ref.kind} ${object.ref.name}`
+  }
+}
+
+/** The description a local Policy was declared with; foreign Policies ship none. */
+export function policyDescription(ir: SchemaIR, ref: IrSchemaRef): string | undefined {
+  if (ref.origin !== ir.domain) return undefined
+  const declaration = asRecord(ir.policies[ref.name])
+  return typeof declaration?.description === 'string' ? declaration.description : undefined
 }

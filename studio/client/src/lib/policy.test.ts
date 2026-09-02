@@ -1,14 +1,17 @@
 import type { SchemaIR } from '@shared/types'
 
-import { expect, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 
 import {
   decodePolicy,
   decodePolicyCheck,
   indexPolicies,
+  parsePolicyCheck,
   patternTerms,
   policyCheckLeaves,
+  policyDescription,
   policyGuard,
+  policyObjectLabel,
   policyUsage,
 } from './policy'
 
@@ -193,4 +196,93 @@ test('finds where a policy is used: protected classes and checking callables', (
       composed: true,
     },
   ])
+})
+
+const mayManage = { origin: 'crm.example.dev', kind: 'policy', name: 'mayManage' } as const
+const isAdmin = { origin: 'kernel.astrale.ai', kind: 'policy', name: 'isAdmin' } as const
+
+describe('callable Policy checks', () => {
+  test('reads a single check and every object form the grammar allows', () => {
+    expect(parsePolicyCheck({ check: mayManage, object: { kind: 'self' } })).toEqual({
+      kind: 'check',
+      policy: mayManage,
+      object: { kind: 'self' },
+    })
+    expect(
+      parsePolicyCheck({ check: mayManage, object: { kind: 'input', field: 'projectId' } }),
+    ).toMatchObject({ object: { kind: 'input', field: 'projectId' } })
+    const target = { origin: 'crm.example.dev', kind: 'class', name: 'Project' } as const
+    expect(
+      parsePolicyCheck({ check: mayManage, object: { kind: 'ref', ref: target } }),
+    ).toMatchObject({ object: { kind: 'ref', ref: target } })
+  })
+
+  test('keeps the composition tree, nested as declared', () => {
+    expect(
+      parsePolicyCheck({
+        anyOf: [
+          { check: isAdmin, object: { kind: 'self' } },
+          {
+            allOf: [
+              { check: mayManage, object: { kind: 'self' } },
+              { check: mayManage, object: { kind: 'input', field: 'other' } },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
+      kind: 'anyOf',
+      items: [
+        { kind: 'check', policy: isAdmin, object: { kind: 'self' } },
+        {
+          kind: 'allOf',
+          items: [
+            { kind: 'check', policy: mayManage, object: { kind: 'self' } },
+            { kind: 'check', policy: mayManage, object: { kind: 'input', field: 'other' } },
+          ],
+        },
+      ],
+    })
+  })
+
+  test('refuses what it does not recognise instead of rendering a guess', () => {
+    expect(parsePolicyCheck(undefined)).toBeUndefined()
+    expect(parsePolicyCheck('mayManage')).toBeUndefined()
+    // a check against a Class ref is not a Policy ref
+    expect(
+      parsePolicyCheck({ check: { ...mayManage, kind: 'class' }, object: { kind: 'self' } }),
+    ).toBeUndefined()
+    expect(parsePolicyCheck({ check: mayManage, object: { kind: 'elsewhere' } })).toBeUndefined()
+    // one bad leaf spoils the branch: half a tree would misstate the rule
+    expect(
+      parsePolicyCheck({ allOf: [{ check: mayManage, object: { kind: 'self' } }, {}] }),
+    ).toBeUndefined()
+    expect(parsePolicyCheck({ allOf: [] })).toBeUndefined()
+  })
+
+  test('names the object the way the Class reads', () => {
+    expect(policyObjectLabel({ kind: 'self' }, 'Invoice')).toBe('this Invoice')
+    expect(policyObjectLabel({ kind: 'input', field: 'accountId' }, 'Invoice')).toBe(
+      'input.accountId',
+    )
+    expect(
+      policyObjectLabel(
+        { kind: 'ref', ref: { origin: 'crm.example.dev', kind: 'core', name: 'platform' } },
+        'Invoice',
+      ),
+    ).toBe('core platform')
+  })
+
+  test('finds a local Policy description and stays quiet about foreign ones', () => {
+    const ir = {
+      domain: 'crm.example.dev',
+      policies: {
+        mayManage: { ref: mayManage, expression: { allOf: [] }, description: 'Owns it.' },
+        silent: { ref: { ...mayManage, name: 'silent' }, expression: { allOf: [] } },
+      },
+    } as unknown as SchemaIR
+    expect(policyDescription(ir, mayManage)).toBe('Owns it.')
+    expect(policyDescription(ir, { ...mayManage, name: 'silent' })).toBeUndefined()
+    expect(policyDescription(ir, isAdmin)).toBeUndefined()
+  })
 })

@@ -11,7 +11,7 @@ import { decodePolicyCheck, indexPolicies, policyCheckLeaves, policyLabel } from
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-const TRIGGER_TONE: Record<string, string> = {
+export const TRIGGER_TONE: Record<string, string> = {
   emerald: 'text-success',
   sky: 'text-schema-node',
   amber: 'text-warning',

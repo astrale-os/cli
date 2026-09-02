@@ -4,6 +4,7 @@ import {
   BilledTo,
   Invoice,
   IssuedFrom,
+  mayManageInvoice,
   Payment,
   ProcessedBy,
   SettledBy,
@@ -61,6 +62,7 @@ export const StudioE2ESchema = defineSchema('crm.studio-demo.astrale.ai', {
       target: 'domain',
     }),
   },
+  policies: { mayManageInvoice },
   core: { nodes: { platform: platformTeam }, edges: [] },
 })
 

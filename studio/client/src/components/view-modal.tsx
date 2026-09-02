@@ -23,6 +23,7 @@ import { api } from '@/lib/api'
 import { useViewRuntime } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
+import { DescriptionText } from './studio-kit'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from './ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
 
@@ -152,7 +153,9 @@ export function ViewModal({
           <div className="min-w-0">
             <DialogTitle className="truncate text-sm font-semibold">{view.slug}</DialogTitle>
             {view.description && (
-              <p className="truncate text-xs text-muted-foreground">{view.description}</p>
+              <DescriptionText className="truncate text-xs text-muted-foreground">
+                {view.description}
+              </DescriptionText>
             )}
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
