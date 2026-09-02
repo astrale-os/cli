@@ -1,6 +1,9 @@
 /**
  * Header entry point for submitting comment threads to the local agent. The
  * conversation itself lives in the dockable work panel.
+ *
+ * The elapsed counter is exported: the bottom dock has no header button to carry
+ * it, and a turn has to be timed the same way wherever the studio shows it.
  */
 import type { AgentRun } from '@shared/types'
 
@@ -56,8 +59,8 @@ function useElapsedMs(startIso?: string, endIso?: string, active?: boolean): num
   return Math.max(0, end - start)
 }
 
-/** Isolate the per-second tick from the rest of the header. */
-function RunElapsed({ run, className }: { run?: AgentRun | null; className?: string }) {
+/** Isolate the per-second tick from whatever holds it. */
+export function RunElapsed({ run, className }: { run?: AgentRun | null; className?: string }) {
   const active = isRunActive(run)
   const elapsed = useElapsedMs(run?.createdAt, run?.finishedAt, active)
   if (elapsed == null) return null

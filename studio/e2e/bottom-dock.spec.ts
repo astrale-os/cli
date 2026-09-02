@@ -42,6 +42,60 @@ async function goBottom(page: Page): Promise<void> {
   await expect(dock(page)).toBeVisible()
 }
 
+/**
+ * Answer the conversation endpoints as a server with a working harness does.
+ *
+ * This fixture has no harness at all, which leaves two dock states out of reach:
+ * a composer you can type in, and a turn in flight. Both are stubbed at the
+ * boundary the client actually reads — the snapshot GET, whose `available` and
+ * `run` are what every other piece of the panel derives its state from.
+ */
+async function stubAgent(page: Page, { running = false } = {}): Promise<void> {
+  const chatId = 'chat-live'
+  const startedAt = new Date(Date.now() - 92_000).toISOString()
+  const run = running
+    ? {
+        id: 'run-live',
+        domainId: 'fixture',
+        chatId,
+        harness: 'claude',
+        status: 'running',
+        createdAt: startedAt,
+        summary: 'Rename the Invoice class',
+        targetCommentIds: [],
+        events: [],
+      }
+    : null
+
+  await page.route('**/api/domain/*/agent**', (route) => {
+    const tail = new URL(route.request().url()).pathname.split('/agent')[1] ?? ''
+    if (tail === '')
+      return route.fulfill({
+        json: { chatId, harness: 'claude', available: true, run, conversation: { turns: 1 } },
+      })
+    if (tail === '/chats')
+      return route.fulfill({
+        json: {
+          chats: [
+            {
+              id: chatId,
+              title: 'Rename the Invoice class',
+              harness: 'claude',
+              turns: 1,
+              createdAt: startedAt,
+              updatedAt: startedAt,
+              status: running ? 'running' : 'idle',
+              queued: [],
+            },
+          ],
+          activeId: chatId,
+        },
+      })
+    if (tail === '/history') return route.fulfill({ json: [] })
+    return route.continue()
+  })
+}
+
 test('the bottom dock floats over the view instead of taking room from it', async ({ page }) => {
   await goBottom(page)
 
@@ -76,6 +130,9 @@ test('at rest the bar is one line and carries nothing it cannot act on', async (
   await openDock(page)
   await expect(page.getByRole('button', { name: 'Where the panel sits' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
+  // and the badge button goes: opened, the tab strip is the way to the threads,
+  // and two controls for one move is one too many
+  await expect(page.getByRole('button', { name: 'Open comments' })).toHaveCount(0)
 })
 
 test('the paperclip goes straight to the file picker, and shows what it took', async ({ page }) => {
@@ -191,4 +248,98 @@ test('the threads on the composer are one chip that counts them, and opens them'
   for (const id of made) {
     expect((await request.post(url, { data: { action: 'delete', id } })).ok()).toBe(true)
   }
+})
+
+test('a closed dock still says the agent is working', async ({ page }) => {
+  await stubAgent(page, { running: true })
+  await goBottom(page)
+
+  // closed, this bar is the whole agent on screen — the header has no
+  // "Agent working…" button while the dock is where the composer lives.
+  // First read of the turn on a cold fixture: the snapshot lands behind the
+  // server's first introspection, so give it more than the default budget.
+  const working = page.getByTestId('dock-activity')
+  await expect(working).toBeVisible({ timeout: 15_000 })
+  await expect(working).toContainText('1m')
+  await expect(page.getByTestId('agent-dock')).toHaveAttribute('aria-busy', 'true')
+  await expect(page.getByRole('button', { name: 'Stop the agent' })).toBeVisible()
+  // and it says all that without growing past a bar
+  expect(await dockHeight(page)).toBeLessThan(ONE_LINE)
+
+  // opened, the transcript above reports the turn in full — the bar goes back to
+  // being a composer and stops repeating it
+  await openDock(page)
+  await expect(working).toHaveCount(0)
+  await expect(page.getByTestId('agent-dock')).not.toHaveAttribute('aria-busy', 'true')
+})
+
+test('the comments tab shows threads alone, and gives the draft back on the way out', async ({
+  page,
+}) => {
+  // a harness, so the field is one you can actually type in
+  await stubAgent(page)
+  await goBottom(page)
+  // the upload below queues behind the server's first introspection
+  await expect(page.locator('.react-flow__node').first()).toBeVisible()
+  await openDock(page)
+
+  await composer(page).fill('half a sentence')
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page.getByRole('button', { name: 'Attach a document' }).click(),
+  ])
+  await chooser.setFiles({
+    name: 'notes.md',
+    mimeType: 'text/markdown',
+    buffer: Buffer.from('# Notes\n'),
+  })
+  const chip = page.getByRole('button', { name: 'Remove notes.md' })
+  await expect(chip).toBeVisible()
+
+  // the threads are a reading surface: nothing to write with, nothing attached
+  await dock(page).getByRole('button', { name: 'Comments', exact: true }).click()
+  await expect(composer(page)).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Attach a document' })).toHaveCount(0)
+  await expect(chip).toHaveCount(0)
+
+  // and the message was only ever put down, never dropped
+  await dock(page).getByRole('button', { name: 'Agent', exact: true }).click()
+  await expect(composer(page)).toHaveValue('half a sentence')
+  await expect(chip).toBeVisible()
+
+  await chip.click()
+  await expect(chip).toHaveCount(0)
+})
+
+test('the dock stops at the window, and keeps its tab strip inside', async ({ page }) => {
+  // a harness, so there is a field to overfill
+  await stubAgent(page)
+  await goBottom(page)
+  await openDock(page)
+
+  // a message long enough that the conversation, the composer and the header
+  // together want more room than the window has
+  await composer(page).fill(Array.from({ length: 40 }, (_, i) => `line ${i + 1}`).join('\n'))
+
+  const tabs = dock(page).getByRole('button', { name: 'Comments', exact: true })
+  const viewport = page.viewportSize()!
+  // Read both rectangles in one browser frame: filling the auto-growing textarea
+  // moves the dock upward, so two protocol round-trips can otherwise compare the
+  // dock's old position with the tab's new one.
+  const bounds = await tabs.evaluate((tab) => {
+    const dock = tab.closest('[data-testid="agent-dock"]')
+    if (!(dock instanceof HTMLElement)) throw new Error('agent dock not found')
+    const box = dock.getBoundingClientRect()
+    const tabsBox = tab.getBoundingClientRect()
+    return { boxTop: box.top, boxBottom: box.bottom, tabsTop: tabsBox.top }
+  })
+
+  // it grows upward, so this is what stops it climbing over the app header
+  expect(bounds.boxTop).toBeGreaterThanOrEqual(0)
+  expect(bounds.boxBottom).toBeLessThanOrEqual(viewport.height)
+  // and the strip is INSIDE the dock, not scrolled off the top of it — the tab
+  // strip's own scrollIntoView will drag a hidden-overflow box if it is allowed to
+  expect(bounds.tabsTop).toBeGreaterThanOrEqual(bounds.boxTop)
+  await expect(tabs).toBeInViewport()
+  await expect(page.getByRole('button', { name: 'Close the chat' })).toBeInViewport()
 })
