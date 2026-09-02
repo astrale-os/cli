@@ -24,6 +24,22 @@ import { stoppers, workspaceRoot } from '../workspace-state'
  *  must start/end alphanumeric. Also guards the filesystem target (no `/`, no `..`, no leading dot). */
 const SLUG = /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/
 
+/**
+ * Which create-astrale-domain to scaffold with — NOT `@latest`.
+ *
+ * `latest` is the scaffolder's last STABLE release, and it is a generation
+ * behind: it writes a domain against `@astrale-os/sdk` 0.4.x, whose schema lives
+ * in `@astrale-os/kernel-core` and which has no `@astrale-os/sdk/schema` at all.
+ * Studio — and every domain in a real workspace — is on the 0.5 line, so a
+ * domain created that way opened on an empty canvas: nothing could read it.
+ *
+ * A RANGE rather than the `beta` dist-tag, because a tag resolves to exactly one
+ * version and npm environments commonly quarantine very recent releases (a few
+ * days old); asking for `@beta` then fails outright, while a range simply takes
+ * the newest version actually being served.
+ */
+const SCAFFOLDER = '>=0.3.0-beta.0'
+
 export interface CreateDomainResult {
   ok: boolean
   id?: string
@@ -82,7 +98,7 @@ export async function createDomain(
   //    `--instance` stamps the active instance into the managed prod target.
   const scaffoldArgs = [
     '--yes',
-    'create-astrale-domain@latest',
+    `create-astrale-domain@${SCAFFOLDER}`,
     name,
     '--yes',
     ...(instance ? ['--instance', instance] : []),
