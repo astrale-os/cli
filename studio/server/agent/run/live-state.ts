@@ -1,9 +1,9 @@
 /**
  * live-state.ts — the in-memory run of each open chat.
  *
- * Keyed by CHAT, not by domain: tabs are independent, so a turn running in one
- * says nothing about whether another may start. Chat ids are uuids, so one map
- * safely spans every domain the studio serves.
+ * Keyed by CHAT: tabs are independent, so a turn running in one says nothing about
+ * whether another may start. Chat ids are uuids, so one map safely spans every
+ * workspace this process could serve.
  */
 import type { AgentRun } from '../../../shared/types'
 import type { StoredChat } from '../chats'
@@ -92,10 +92,11 @@ export async function waitUntilIdle(chatId: string, timeoutMs = 15_000): Promise
   return true
 }
 
-export function hydrateRun(domainId: string, root: string, chat: StoredChat): void {
+/** Load a chat's last run from the machine-wide agent store, once per process. */
+export function hydrateRun(root: string, chat: StoredChat): void {
   if (hydrated.has(chat.id) || runs.has(chat.id)) return
   hydrated.add(chat.id)
-  const last = readLastRun(domainId, root, chat)
+  const last = readLastRun(root, chat)
   if (last) runs.set(chat.id, last)
 }
 

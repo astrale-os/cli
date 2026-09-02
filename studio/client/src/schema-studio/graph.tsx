@@ -1,3 +1,3 @@
 import './focus.css'
 
-export { CanvasCommentPin, GroupNode, schemaNodeTypes } from './graph/nodes'
+export { GroupNode, schemaNodeTypes } from './graph/nodes'

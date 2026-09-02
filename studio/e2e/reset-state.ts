@@ -13,6 +13,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const FIXTURE = fileURLToPath(new URL('./fixture/', import.meta.url))
+const STUDIO = fileURLToPath(new URL('../', import.meta.url))
+const TEST_ASTRALE_HOME = join(STUDIO, 'test-results', 'astrale-home')
 const WRITTEN_BY_THE_SUITE = [
   'layout.json',
   'visibility.json',
@@ -31,6 +33,9 @@ async function resetDomainState(dir: string): Promise<void> {
 }
 
 export default async function resetFixtureState(): Promise<void> {
+  // Chats and workspace UI now live in the machine home. The E2E server points this
+  // explicit test-only directory at ASTRALE_HOME, so clearing it cannot touch user data.
+  await rm(TEST_ASTRALE_HOME, { force: true, recursive: true })
   // the workspace fixture and the peer domain it imports
   await resetDomainState(FIXTURE)
   await resetDomainState(join(FIXTURE, 'peer'))

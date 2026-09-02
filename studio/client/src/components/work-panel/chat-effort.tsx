@@ -58,18 +58,10 @@ function EffortBars({
   )
 }
 
-export function ChatEffortPicker({
-  domainId,
-  chat,
-  harness,
-}: {
-  domainId: string
-  chat?: ChatInfo
-  harness?: HarnessStatus
-}) {
+export function ChatEffortPicker({ chat, harness }: { chat?: ChatInfo; harness?: HarnessStatus }) {
   const [open, setOpen] = useState(false)
-  const { data: loadout } = useLoadout(domainId, chat?.id)
-  const { update } = useChatMutations(domainId)
+  const { data: loadout } = useLoadout(chat?.id)
+  const { update } = useChatMutations()
 
   if (!chat) return null
   // Until the ACP probe lands, the agent's declared ladder stands in for the

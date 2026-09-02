@@ -7,10 +7,12 @@ import { setHarnessGateway } from './agent/harness/gateway/config'
 import { getHarness } from './agent/harness/selection'
 import { handleApi } from './api'
 import { registerDomain, unregisterDomain } from './domain'
+import { initWorkspaceState } from './workspace-state'
 
 const roots: string[] = []
 const domainIds: string[] = []
 const originalHarness = process.env.DOMAIN_STUDIO_HARNESS
+const originalHome = process.env.ASTRALE_HOME
 let restoreLoadout: (() => void) | undefined
 
 afterEach(() => {
@@ -18,6 +20,8 @@ afterEach(() => {
   restoreLoadout = undefined
   if (originalHarness === undefined) delete process.env.DOMAIN_STUDIO_HARNESS
   else process.env.DOMAIN_STUDIO_HARNESS = originalHarness
+  if (originalHome === undefined) delete process.env.ASTRALE_HOME
+  else process.env.ASTRALE_HOME = originalHome
   while (domainIds.length) unregisterDomain(domainIds.pop()!)
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
@@ -37,6 +41,8 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   )
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
+  process.env.ASTRALE_HOME = join(root, '.astrale')
+  initWorkspaceState(root)
 
   process.env.DOMAIN_STUDIO_HARNESS = 'claude'
   const harness = getHarness()
@@ -49,16 +55,13 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   restoreLoadout = () => {
     harness.loadout = originalLoadout
   }
-  setHarnessGateway(root, {
-    scope: 'domain',
-    config: {
-      enabled: true,
-      baseUrl: 'https://gateway.example/v1/models/test',
-      auth: { mode: 'host' },
-    },
+  setHarnessGateway({
+    enabled: true,
+    baseUrl: 'https://gateway.example/v1/models/test',
+    auth: { mode: 'host' },
   })
 
-  const url = new URL(`http://127.0.0.1/api/domain/${encodeURIComponent(handle.id)}/agent/loadout`)
+  const url = new URL('http://127.0.0.1/api/agent/loadout')
   const response = await handleApi(new Request(url), url, () => {})
   expect(response?.status).toBe(200)
   const body = await response!.json()

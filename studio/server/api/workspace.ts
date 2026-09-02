@@ -1,9 +1,11 @@
+import { agentWorkspace } from '../agent/workspace'
 /** Workspace-wide routes that do not require a DomainHandle. */
 import { invalidate } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
 import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
 import { asJsonRecord, asString } from '../json'
 import { updateSettings } from '../state/settings'
+import { readWorkspaceUiState, updateWorkspaceUiState } from '../state/workspace-ui'
 import { settingsRoot, studioSettings } from '../studio-settings'
 import { buildCatalog } from '../workspace/catalog'
 import { createDomain } from '../workspace/create'
@@ -32,6 +34,17 @@ export async function handleWorkspaceRoute(
       configFile: handle.configFile,
     }))
     return json(domains)
+  }
+
+  if (path === '/api/workspace/state') {
+    const root = agentWorkspace().uiRoot
+    if (req.method === 'GET') return json(readWorkspaceUiState(root))
+    if (req.method === 'POST') {
+      const body = await readJsonRecord(req)
+      if (body.action !== 'update') return badRequest('unknown workspace state action')
+      return json(updateWorkspaceUiState(root, body.state))
+    }
+    return badRequest('GET or POST')
   }
 
   if (path === '/api/workspace/create' && req.method === 'POST') {

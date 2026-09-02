@@ -20,18 +20,23 @@ import {
   useDisplayRun,
 } from '@/lib/agent'
 import { api, qk } from '@/lib/api'
-import { useComments } from '@/lib/hooks'
+import { useWorkspaceComments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { Button } from './ui/button'
 
 /** Open threads whose last entry isn't the agent — the ones a submit would answer. */
-function useAwaitingCount(domainId?: string): number {
-  const { data } = useComments(domainId)
-  return (data?.comments ?? []).filter(
-    (comment) => comment.status === 'open' && comment.thread.at(-1)?.role !== 'author',
-  ).length
+function useAwaitingCount(): number {
+  const { data } = useWorkspaceComments()
+  return data.reduce(
+    (total, entry) =>
+      total +
+      (entry.store?.comments ?? []).filter(
+        (comment) => comment.status === 'open' && comment.thread.at(-1)?.role !== 'author',
+      ).length,
+    0,
+  )
 }
 
 /** Compact elapsed duration: 3s · 1m 23s · 1h 04m. */
@@ -75,12 +80,11 @@ export function RunElapsed({ run, className }: { run?: AgentRun | null; classNam
 }
 
 export function AgentSubmitButton() {
-  const domainId = useUI((state) => state.domainId)
   const openAgentPanel = useUI((state) => state.setPanelTab)
-  const snapshot = useAgentSnapshot(domainId)
-  const run = useDisplayRun(domainId)
+  const snapshot = useAgentSnapshot()
+  const run = useDisplayRun()
   const setRun = useAgentLive((state) => state.setRun)
-  const awaiting = useAwaitingCount(domainId)
+  const awaiting = useAwaitingCount()
   const [busy, setBusy] = useState(false)
   const queryClient = useQueryClient()
 
@@ -92,10 +96,9 @@ export function AgentSubmitButton() {
   const connecting = link === 'connecting'
 
   const submit = async () => {
-    if (!domainId) return
     setBusy(true)
     try {
-      const result = await api.agentSubmit(domainId)
+      const result = await api.agentSubmit()
       // this button only shows on an idle chat, so a submit either runs or fails
       // — there is no turn for the threads to queue behind
       if (result.error) toast.error(result.error)
@@ -107,7 +110,7 @@ export function AgentSubmitButton() {
       toast.error(String(error))
     } finally {
       setBusy(false)
-      queryClient.invalidateQueries({ queryKey: qk.agent(domainId) })
+      queryClient.invalidateQueries({ queryKey: qk.agent() })
     }
   }
 

@@ -1,6 +1,7 @@
 /** Schema-anchored review comment routes and agent reply merge. */
 import type { ThreadEntry } from '../../shared/types'
 
+import { isConcreteAnchorRef } from '../../shared/comment-anchors'
 import { getBundle } from '../cache'
 import { schemaRefs } from '../introspect/schema-refs'
 import { asJsonRecord, asString, asStringArray } from '../json'
@@ -53,10 +54,13 @@ export async function handleCommentRoute(context: DomainRouteContext): Promise<R
       return json(markOrphans(root, [...valid]))
     }
     if (body.action === 'create') {
+      const anchorRefs = decodeAnchorRefs(body.anchorRefs)
+      if (anchorRefs.length === 0 || anchorRefs.some((anchor) => !isConcreteAnchorRef(anchor)))
+        return badRequest('a concrete domain element is required')
       const bundle = await getBundle(id)
       const comment = upsertComment(root, {
         anchors: asStringArray(body.anchors) ?? [],
-        anchorRefs: decodeAnchorRefs(body.anchorRefs),
+        anchorRefs,
         text: asString(body.text),
         firstRole:
           body.firstRole === 'author' ? 'author' : body.firstRole === 'user' ? 'user' : undefined,

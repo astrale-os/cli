@@ -139,7 +139,7 @@ export function NodeAccess({
                   <div className="flex items-center gap-1.5 text-[12px]">
                     <Glyph className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                     <span className="font-medium">{name}</span>
-                    <MethodAuthBadge method={method} />
+                    <MethodAuthBadge method={method} domainId={bundle.domainId} />
                     {method.static && <Chip tone="default">static</Chip>}
                     {owner !== cls.name && (
                       <span className="text-[11px] text-muted-foreground">from {owner}</span>

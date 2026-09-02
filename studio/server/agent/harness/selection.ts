@@ -14,8 +14,7 @@
  * get Codex there and Opus back home.
  *
  * That preference lives in the studio's settings, which are global — so the harness
- * is too, and neither call below takes a domain root. Invoking one still does: the
- * gateway credentials it runs with are that domain's.
+ * is too, and so are the gateway credentials it runs with: nothing below takes a root.
  */
 import type { AgentEffort, StudioSettings } from '../../../shared/types'
 import type { AgentHarness } from './adapter'
@@ -28,7 +27,7 @@ import { getHarnessById, hasHarness, listHarnesses } from './registry'
 export interface HarnessSelection {
   id: string
   locked: boolean
-  source: 'environment' | 'domain' | 'default' | 'fallback'
+  source: 'environment' | 'starred' | 'default' | 'fallback'
   /** the starred harness, when it is NOT `id` because it is missing on this machine */
   preferred?: string
 }
@@ -45,7 +44,7 @@ export type HarnessConfigurationResult =
   | { ok: true; configuration: HarnessConfiguration }
   | { ok: false; error: string }
 
-/** Per-turn overrides a chat carries — each one outranks the domain preference. */
+/** Per-turn overrides a chat carries — each one outranks the machine preference. */
 export interface HarnessOverrides {
   model?: string
   effort?: AgentEffort
@@ -82,7 +81,7 @@ export function getHarnessSelection(): HarnessSelection {
       // Nothing answered anywhere. Stay on the star rather than invent a second
       // wrong answer — `harnesses` in the status says no agent is installed.
     }
-    return { id: preferred, locked: false, source: 'domain' }
+    return { id: preferred, locked: false, source: 'starred' }
   }
   return { id: installedHarnessId() ?? LAST_RESORT, locked: false, source: 'default' }
 }
@@ -95,12 +94,11 @@ export function getHarness(): AgentHarness {
  * Resolve one adapter and every option used to invoke it.
  *
  * `overrides` are the chat's own picks: each tab may run a different model and a
- * different reasoning level, and only falls back to the domain's starred model
+ * different reasoning level, and only falls back to the machine's starred model
  * when it pins none. An unpinned EFFORT stays unpinned all the way down — the
  * agent then runs at whatever level its own configuration is set to.
  */
 export async function resolveHarnessConfiguration(
-  root: string,
   harness = getHarness(),
   overrides?: HarnessOverrides,
 ): Promise<HarnessConfigurationResult> {
@@ -113,7 +111,7 @@ export async function resolveHarnessConfiguration(
     undefined
   const environment =
     harness.capabilities.gateway === 'anthropic'
-      ? await resolveHarnessEnv(root)
+      ? await resolveHarnessEnv()
       : { ok: true as const, env: {} }
   if (!environment.ok) return { ok: false, error: environment.error }
   return {

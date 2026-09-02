@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 
 test('Chromium exposes a fresh inert popup until its opener is severed and navigation begins', async ({
   page,

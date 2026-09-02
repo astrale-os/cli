@@ -1,8 +1,10 @@
 /**
- * store.ts — the gateway for Studio-owned persistence under
- * `<domain>/.domain-studio/`. It rejects every target outside that directory.
- * Explicit user-requested domain edits (for example environment files or
- * workspace creation) belong to their own feature boundary, not this state store.
+ * store.ts — the gateway for Studio-owned persistence. Under a domain that is
+ * `<domain>/.domain-studio/`; under the studio's home on this machine (see home.ts)
+ * it is the folder itself, since nothing else lives there. It rejects every target
+ * outside that directory. Explicit user-requested domain edits (for example
+ * environment files or workspace creation) belong to their own feature boundary, not
+ * this state store.
  */
 import {
   existsSync,
@@ -16,12 +18,14 @@ import {
 } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 
+import { isMachineStateRoot } from '../home'
 import { parseJson, type JsonDecoder } from '../json'
 
 export const DOT = '.domain-studio'
 
-export function dotDir(domainRoot: string): string {
-  return join(domainRoot, DOT)
+/** The state folder of a root: the dotted folder of a domain, the folder itself on the machine. */
+export function dotDir(root: string): string {
+  return isMachineStateRoot(root) ? resolve(root) : join(root, DOT)
 }
 
 function assertInsideDot(domainRoot: string, target: string): string {
@@ -42,7 +46,9 @@ function assertInsideDot(domainRoot: string, target: string): string {
   } catch {
     physicalDomainRoot = resolve(domainRoot)
   }
-  const physicalRoot = resolve(physicalDomainRoot, DOT)
+  const physicalRoot = isMachineStateRoot(domainRoot)
+    ? physicalDomainRoot
+    : resolve(physicalDomainRoot, DOT)
   const relativeTarget = relative(root, abs)
   const parts = relativeTarget === '' ? [] : relativeTarget.split(sep)
   let prefix = root

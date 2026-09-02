@@ -83,10 +83,9 @@ export type AgentRunStatus =
    *  it, but the CONVERSATION is preserved, so the next submit resumes it. */
   | 'interrupted'
 
-/** One agent turn for a domain: the live transcript + outcome. */
+/** One agent turn in the workspace: the live transcript + outcome. */
 export interface AgentRun {
   id: string
-  domainId: string
   /** the chat tab this turn belongs to — turns never cross chats */
   chatId: string
   harness: string
@@ -141,8 +140,8 @@ export interface AgentSubmitResult {
   error?: string
 }
 
-/** The ongoing, resumable conversation for a domain and selected harness.
- *  Survives studio restarts (persisted on disk). */
+/** The ongoing, resumable conversation of a chat and its harness.
+ *  Survives studio restarts (persisted in the studio's home on this machine). */
 export interface ConversationInfo {
   /** a resumable session exists → the next submit continues it (vs. starting fresh) */
   active: boolean
@@ -156,7 +155,7 @@ export interface ConversationInfo {
 export const DEFAULT_CHAT_TITLE = 'New chat'
 
 /**
- * One persistent chat tab in a domain — Studio's unit of conversation.
+ * One persistent machine-wide chat tab — Studio's unit of conversation.
  *
  * A chat is bound to its harness for life: the native session id, the transcript
  * and the resume semantics all belong to that one agent. Choosing the other
@@ -169,7 +168,7 @@ export interface ChatInfo {
   title: string
   /** fixed at creation; see the fork rule above */
   harness: string
-  /** per-chat model override WITHIN its harness; absent ⇒ the domain default */
+  /** per-chat model override WITHIN its harness; absent ⇒ the starred model */
   model?: string
   /** per-chat reasoning level; absent ⇒ whatever the agent itself is set to */
   effort?: AgentEffort
@@ -179,6 +178,10 @@ export interface ChatInfo {
   turns: number
   createdAt: string
   updatedAt: string
+  /** workspace where the conversation was first opened */
+  workspace?: string
+  /** domains that workspace held at creation, for orientation in global history */
+  origins?: string[]
   /** set when this chat was forked off another harness's chat */
   origin?: ChatOrigin
   /** this chat's own execution state — tabs run independently of each other */
@@ -203,7 +206,7 @@ export type ChatStatus = 'idle' | AgentRunStatus
 
 export interface ChatList {
   chats: ChatInfo[]
-  /** the tab the domain opens on; always one of `chats` */
+  /** the tab this workspace opens on; always one of the machine-wide `chats` */
   activeId: string
 }
 
@@ -239,7 +242,7 @@ export interface HarnessPresence {
 }
 
 /**
- * The agent a domain's next chat opens on, and every agent detected beside it.
+ * The agent the next chat opens on, and every agent detected beside it.
  *
  * Nothing here is a setting: the default follows the preferred model (starred in
  * the composer), and `harnesses` is pure diagnostics — Settings lists it so you
@@ -255,7 +258,7 @@ export interface HarnessStatus extends HarnessPresence {
   harnesses: HarnessPresence[]
   /** an environment/CLI override owns the selection, so nothing in the GUI moves it */
   locked: boolean
-  source: 'environment' | 'domain' | 'default' | 'fallback'
+  source: 'environment' | 'starred' | 'default' | 'fallback'
   /** the starred agent, when it is NOT this one because it is missing here */
   preferred?: string
 }
@@ -281,7 +284,7 @@ export interface HarnessModelCatalog {
   models: HarnessModelOption[]
 }
 
-/** Diagnostics reported by a disposable ACP session for a domain's cwd. */
+/** Diagnostics reported by a disposable ACP session opened on the workspace root. */
 export interface HarnessLoadout {
   /** ACP initialization and session creation both succeeded. */
   ok: boolean
@@ -300,7 +303,7 @@ export interface HarnessLoadout {
   effort?: AgentEffort
   /** The reasoning ladder THIS model exposes — empty/absent ⇒ it has none. */
   efforts?: HarnessEffortOption[]
-  /** Domain root passed to `session/new`. */
+  /** Workspace root passed to `session/new`. */
   cwd?: string
   /** ACP protocol version negotiated during initialization. */
   protocolVersion?: number
@@ -327,9 +330,9 @@ export interface HarnessEffortOption {
   description?: string
 }
 
-/** Domain-attributable agent spend — accumulated from this studio's own runs on
- *  this domain (NOT machine-wide). Stored at `.domain-studio/usage.json`. */
-export interface DomainUsage {
+/** Agent spend accumulated from Studio's own runs on this machine (NOT the
+ *  harness's complete machine-wide usage). Stored beside the global chats in the home. */
+export interface AgentUsage {
   /** runs that reported usage (succeeded or not — a failed turn still costs) */
   runs: number
   /** cumulative tokens (input + output + cache) across those runs */
@@ -347,7 +350,7 @@ export interface AgentRunSnapshot {
   chatId: string
   harness: string
   available: boolean
-  /** the active or most-recent run for this domain (null if none yet) */
+  /** the active or most-recent run of this chat (null if none yet) */
   run: AgentRun | null
   /** the resumable conversation behind the runs (turns, whether one is live) */
   conversation: ConversationInfo
@@ -370,14 +373,11 @@ export interface HarnessGatewayConfig {
   auth: HarnessGatewayAuth
 }
 
-/** The layered harness-gateway config for a domain. */
+/** The harness-gateway config of this machine. */
 export interface HarnessGatewayState {
-  /** per-domain override (`.domain-studio/harness-gateway.json`); null ⇒ inherits global */
-  local: HarnessGatewayConfig | null
-  /** studio-wide default — applies to every domain that has no local override */
-  global: HarnessGatewayConfig | null
+  /** what is saved, enabled or not; null when nothing was ever saved */
+  config: HarnessGatewayConfig | null
   /** the config that actually takes effect, else null */
   effective: HarnessGatewayConfig | null
-  /** which layer `effective` came from */
-  source: 'domain' | 'global' | 'none'
+  source: 'machine' | 'none'
 }

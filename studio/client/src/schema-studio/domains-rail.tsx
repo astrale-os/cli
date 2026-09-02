@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import { Check, ChevronDown, ChevronRight, PanelLeftClose, Plus } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, PanelLeftClose, Plus } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
 import { useWorkspace } from '@/lib/hooks'
@@ -9,15 +9,12 @@ import { anchorData, domainAnchorRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { useRailCollapse } from './sidebar'
-import { useCanvasDomains } from './workspace/canvas-selection'
 
 /**
  * The rail's title bar and the rows under it.
  *
- * The workspace's domains are the rail's first level — which one you are working in, and
- * which ones the canvas draws. It reads at the same height as the work panel's tab bar on
- * the other side of the screen, because it answers the same kind of question: what am I
- * looking at.
+ * The workspace's domains are the rail's first level. It reads at the same height as the
+ * work panel's tab bar on the other side of the screen because both navigate what is shown.
  */
 export function DomainsRailHeader() {
   // The composer it opens is centred over the whole studio, so it is mounted at
@@ -57,46 +54,49 @@ export interface DomainRowProps {
   origin: string
   /** Which domain's threads a comment dropped on this row belongs to. */
   domainId: string
-  /** The domain everything else in the studio is about. */
-  active: boolean
-  onActivate: () => void
+  /** Selected only inside a mono-domain section such as Core or Process. */
+  selected?: boolean
+  onSelect?: () => void
   /** Present only where the rail carries a hierarchy under the row. */
   expanded?: boolean
   onToggleExpanded?: () => void
-  /** Present only where a canvas composes several domains at once. */
-  checked?: boolean
-  onToggleChecked?: () => void
+  /** Present only where the schema canvas can show or hide this domain. */
+  visible?: boolean
+  onToggleVisible?: () => void
   /** Something is selected inside a collapsed hierarchy. */
   showSelectionIndicator?: boolean
 }
 
-/** One domain: check it onto the canvas, click its name to work in it. */
+/**
+ * One domain. In the schema rail, the eye is the only state-changing control: it says
+ * whether the canvas draws the domain. Mono-domain sections instead select a row locally.
+ */
 export function DomainRow({
   origin,
   domainId,
-  active,
-  onActivate,
+  selected,
+  onSelect,
   expanded,
   onToggleExpanded,
-  checked,
-  onToggleChecked,
+  visible,
+  onToggleVisible,
   showSelectionIndicator,
 }: DomainRowProps) {
   return (
-    // The accent spine identifies the active domain. Marked as a tree row so a press on
-    // its padding reads as part of the row, not as "nothing here" on the rail behind it.
+    // Marked as a tree row so targeting mode can attach a thread to the whole domain.
     // It carries NO `data-domain-id`: that stamp means "this domain is on screen" to the
     // ask layer, and the rail lists domains the canvas does not draw. The owner rides on
     // the ANCHOR instead, which is a different claim — whose threads, not what is drawn.
     <div
       data-tree-row=""
       {...anchorData(domainAnchorRef(origin), origin, domainId)}
-      aria-current={active ? 'true' : undefined}
+      aria-current={selected ? 'true' : undefined}
       className={cn(
-        'group relative flex items-center gap-1.5 px-2 py-2 transition-colors',
-        active
+        'group relative flex min-h-10 items-center gap-1.5 px-2 py-1.5 transition-colors',
+        selected
           ? 'bg-accent before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-primary'
           : 'hover:bg-accent/60',
+        visible === false && 'text-muted-foreground/65',
       )}
     >
       {onToggleExpanded && (
@@ -106,7 +106,7 @@ export function DomainRow({
           title={expanded ? 'Collapse domain' : 'Expand domain'}
           aria-label={`${expanded ? 'Collapse' : 'Expand'} ${origin}`}
           aria-expanded={expanded}
-          className="-ml-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+          className="-mx-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
         >
           {expanded ? (
             <ChevronDown className="h-3.5 w-3.5" />
@@ -116,48 +116,54 @@ export function DomainRow({
         </button>
       )}
 
-      {onToggleChecked && (
+      {!onToggleExpanded && onToggleVisible && <span aria-hidden className="h-[18px] w-[18px]" />}
+
+      {onSelect ? (
         <button
           type="button"
-          role="checkbox"
-          aria-checked={checked}
-          aria-label={`${checked ? 'Remove' : 'Add'} ${origin} ${checked ? 'from' : 'to'} the canvas`}
-          title={
-            checked
-              ? active
-                ? 'Remove from canvas — you keep working in it'
-                : 'Remove from canvas'
-              : 'Add to canvas'
-          }
-          onClick={onToggleChecked}
+          onClick={onSelect}
+          title={`Show ${origin} in this section`}
           className={cn(
-            'grid h-4 w-4 shrink-0 place-items-center rounded border transition-colors',
-            checked
-              ? 'border-primary bg-primary text-primary-foreground hover:border-primary/70 hover:bg-primary/85'
-              : 'border-input text-transparent hover:border-primary/60',
+            'min-w-0 flex-1 truncate text-left text-[12px]',
+            selected ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground',
           )}
         >
-          <Check className="h-2.5 w-2.5" />
+          {origin}
         </button>
+      ) : (
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate text-[12px] font-medium',
+            visible === false ? 'text-muted-foreground/65' : 'text-foreground',
+          )}
+        >
+          {origin}
+        </span>
       )}
-
-      <button
-        type="button"
-        onClick={onActivate}
-        title={`Work in ${origin}`}
-        className={cn(
-          'min-w-0 flex-1 truncate text-left text-[12px]',
-          active ? 'font-semibold text-foreground' : 'font-medium text-muted-foreground',
-        )}
-      >
-        {origin}
-      </button>
 
       {showSelectionIndicator && (
         <span
           className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
           title="Selected element in collapsed domain"
         />
+      )}
+
+      {onToggleVisible && (
+        <button
+          type="button"
+          aria-pressed={visible}
+          aria-label={`${visible ? 'Hide' : 'Show'} ${origin} on the canvas`}
+          title={`${visible ? 'Hide' : 'Show'} on canvas`}
+          onClick={onToggleVisible}
+          className={cn(
+            'grid h-7 w-7 shrink-0 place-items-center rounded-md border transition-all',
+            visible
+              ? 'border-primary/25 bg-primary/12 text-primary shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--color-primary)_8%,transparent)] hover:bg-primary/20'
+              : 'border-transparent text-muted-foreground/55 hover:border-border hover:bg-accent hover:text-foreground',
+          )}
+        >
+          {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+        </button>
       )}
 
       <AnchorButton
@@ -170,30 +176,35 @@ export function DomainRow({
 }
 
 /**
- * The plain reading of the same list, for the canvases that show ONE domain at a time:
- * no checkbox — there is no composition to make. `children` is whatever that canvas puts
- * under the domain it is about.
+ * A local selector for sections that can read exactly one domain. This selection affects
+ * only the section that owns it; it never changes the agent, comments or schema canvas.
  */
-export function DomainPicker({ children }: { children?: ReactNode }) {
+export function DomainPicker({
+  selectedId,
+  onSelect,
+  children,
+}: {
+  selectedId?: string
+  onSelect: (domainId: string) => void
+  children?: ReactNode
+}) {
   const { data: domains } = useWorkspace()
-  const domainId = useUI((state) => state.domainId)
-  const { requestActivate } = useCanvasDomains()
 
   return (
     <div data-testid="domains-rail">
       {(domains ?? []).map((domain) => {
-        const active = domain.id === domainId
+        const selected = domain.id === selectedId
         return (
           <section key={domain.id}>
             <DomainRow
               origin={domain.origin}
               domainId={domain.id}
-              active={active}
-              onActivate={() => requestActivate(domain.id, domain.origin)}
+              selected={selected}
+              onSelect={() => onSelect(domain.id)}
             />
             {/* Nested, not partitioned: what hangs under a domain is one more level of the
                 same tree, so it is indented under the name instead of boxed off from it. */}
-            {active && children && <div className="pl-3">{children}</div>}
+            {selected && children && <div className="pl-3">{children}</div>}
           </section>
         )
       })}

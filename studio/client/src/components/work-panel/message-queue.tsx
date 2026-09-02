@@ -46,20 +46,18 @@ export function firstLine(text: string): string {
 }
 
 export function MessageQueue({
-  domainId,
   chatId,
   queued,
   pending,
   running,
 }: {
-  domainId: string
   chatId?: string
   queued: QueuedMessage[]
   pending: PendingMessage[]
   /** a turn is in flight — what the queue is waiting on */
   running: boolean
 }) {
-  const { edit, remove, move, sendNow } = useQueueMutations(domainId, chatId)
+  const { edit, remove, move, sendNow } = useQueueMutations(chatId)
   if (!queued.length && !pending.length) return null
 
   const count = queued.length + pending.length

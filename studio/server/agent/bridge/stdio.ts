@@ -34,13 +34,43 @@ const config = configFromArgv()
 const BASE = config.base || process.env.DOMAIN_STUDIO_BRIDGE_URL || ''
 const TOKEN = config.token || process.env.DOMAIN_STUDIO_BRIDGE_TOKEN || ''
 
+/** How every tool names a domain of the workspace. */
+const DOMAIN_PARAM = {
+  type: 'string',
+  description:
+    'a domain of the workspace, by origin (e.g. "crm.example.dev") or by the path list_domains gave',
+} as const
+
 const TOOLS = [
+  {
+    name: 'list_domains',
+    description:
+      'List every domain in the workspace: origin, path (relative to your working directory), and how many open threads wait in each. Call this to find where to work.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    route: 'domains',
+  },
   {
     name: 'list_open_threads',
     description:
-      'List the open comment threads that are awaiting your reply (id, anchor, file, latest message). Call this first to see what to address.',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      'List every open comment thread (id, domain, path, anchor, file, latest message, and whether it is waiting on agent or user). Pass `domain` to see one domain only.',
+    inputSchema: {
+      type: 'object',
+      properties: { domain: DOMAIN_PARAM },
+      additionalProperties: false,
+    },
     route: 'threads',
+  },
+  {
+    name: 'get_domain_context',
+    description:
+      'The context of one domain: the documents the user attached (with their paths) and the saved context notes.',
+    inputSchema: {
+      type: 'object',
+      properties: { domain: DOMAIN_PARAM },
+      required: ['domain'],
+      additionalProperties: false,
+    },
+    route: 'context',
   },
   {
     name: 'reply_to_thread',
@@ -93,10 +123,11 @@ const TOOLS = [
   {
     name: 'raise_question',
     description:
-      'Open a NEW question thread anchored to a schema element (ref like "class.Monitor.property.url") when you need the user to decide something. Pass `options` for a multiple-choice question — the user picks one or answers freely.',
+      'Open a NEW question thread in one domain, anchored to a schema element (ref like "class.Monitor.property.url") when you need the user to decide something. Pass `options` for a multiple-choice question — the user picks one or answers freely.',
     inputSchema: {
       type: 'object',
       properties: {
+        domain: DOMAIN_PARAM,
         ref: {
           type: 'string',
           description: 'anchor ref, e.g. "class.Order" or "module.inventory/inventory"',
@@ -112,7 +143,7 @@ const TOOLS = [
           description: '2–5 short choices the user can pick from',
         },
       },
-      required: ['ref', 'text'],
+      required: ['domain', 'ref', 'text'],
       additionalProperties: false,
     },
     route: 'raise_question',

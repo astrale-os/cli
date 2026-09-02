@@ -14,7 +14,6 @@ import {
 } from '@/lib/comment-drafts'
 import { relativeTime } from '@/lib/format'
 import { useCommentMutations } from '@/lib/hooks'
-import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
 import { Markdown } from './markdown'
@@ -48,8 +47,8 @@ function useDraft(key: string): [string, (value: string) => void, () => void] {
 }
 
 /** Who wrote an entry: you, or the local agent (named after the harness handling it). */
-function useSpeaker(domainId: string): (role: ThreadEntry['role']) => string {
-  const harness = useAgentSnapshot(domainId).data?.harness
+function useSpeaker(): (role: ThreadEntry['role']) => string {
+  const harness = useAgentSnapshot().data?.harness
   const agent = harness ? harness.charAt(0).toUpperCase() + harness.slice(1) : 'Agent'
   return (role) => (role === 'author' ? agent : 'You')
 }
@@ -76,13 +75,12 @@ export function EntryText({
   entryId,
   text,
 }: {
-  domainId?: string
+  domainId: string
   commentId: string
   entryId: string
   text: string
 }) {
-  const activeDomainId = useUI((s) => s.domainId)
-  const { edit } = useCommentMutations(domainId ?? activeDomainId ?? '')
+  const { edit } = useCommentMutations(domainId)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(text)
 
@@ -223,7 +221,7 @@ export function ChoiceOptions({
 
 /** The entries of one thread: who said what, in order. */
 function Entries({ domainId, comment }: { domainId: string; comment: Comment }) {
-  const speaker = useSpeaker(domainId)
+  const speaker = useSpeaker()
   return (
     <div className="space-y-2.5">
       {comment.thread.map((entry, index) => {

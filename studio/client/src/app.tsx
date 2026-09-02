@@ -9,7 +9,7 @@ import {
   Settings,
   Workflow,
 } from 'lucide-react'
-import { lazy, type ReactNode, Suspense, useEffect } from 'react'
+import { lazy, type ReactNode, Suspense, useEffect, useMemo } from 'react'
 
 import { AgentSubmitButton } from '@/components/agent-activity'
 import { AskLayer } from '@/components/ask-popover'
@@ -27,7 +27,7 @@ import { useWorkspace } from '@/lib/hooks'
 import { type SectionKey, useUI } from '@/lib/store'
 import { useStudioEventSync } from '@/lib/studio-events'
 import { cn } from '@/lib/utils'
-import { ActivateDomainDialog } from '@/schema-studio/activate-domain-dialog'
+import { useWorkspaceUiSync } from '@/lib/workspace-ui'
 import { useCanvasSelectionSync } from '@/schema-studio/workspace/canvas-selection'
 import { ProcessSection } from '@/sections/process'
 
@@ -42,7 +42,15 @@ const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
   { key: 'process', label: 'Process', icon: Workflow },
 ]
 
-function SectionRouter({ section, domainId }: { section: SectionKey; domainId: string }) {
+function SectionRouter({
+  section,
+  domainId,
+  onDomainChange,
+}: {
+  section: SectionKey
+  domainId?: string
+  onDomainChange: (domainId: string) => void
+}) {
   switch (section) {
     // Schema, Core and Tests are three readings of one domain — the same lazily-loaded
     // studio, asked for a different canvas.
@@ -57,11 +65,11 @@ function SectionRouter({ section, domainId }: { section: SectionKey; domainId: s
             </div>
           }
         >
-          <LazySchemaSection domainId={domainId} mode={section} />
+          <LazySchemaSection domainId={domainId} onDomainChange={onDomainChange} mode={section} />
         </Suspense>
       )
     case 'process':
-      return <ProcessSection domainId={domainId} />
+      return <ProcessSection domainId={domainId} onDomainChange={onDomainChange} />
   }
 }
 
@@ -107,10 +115,12 @@ function IconAction({
 
 export function App() {
   const { data: domains } = useWorkspace()
-  const domainId = useUI((s) => s.domainId)
+  const workspaceUiReady = useWorkspaceUiSync()
   const section = useUI((s) => s.section)
-  const setDomain = useUI((s) => s.setDomain)
+  const sectionDomainId = useUI((s) => s.readerDomainId)
+  const selectionDomainId = useUI((s) => s.selectionDomainId)
   const setSection = useUI((s) => s.setSection)
+  const setSectionDomainId = useUI((s) => s.setReaderDomain)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
   const setSettingsOpen = useUI((s) => s.setSettingsOpen)
   const commentMode = useUI((s) => s.commentMode)
@@ -118,27 +128,32 @@ export function App() {
   const panelSide = useUI((s) => s.panelSide)
   const toggleCommentMode = useUI((s) => s.toggleCommentMode)
   const toggleAskMode = useUI((s) => s.toggleAskMode)
+  const clearSelection = useUI((s) => s.clearSelection)
   const setRun = useAgentLive((s) => s.setRun)
+  const validIds = useMemo(() => new Set((domains ?? []).map((domain) => domain.id)), [domains])
+  const scopedDomainId =
+    (sectionDomainId && validIds.has(sectionDomainId) ? sectionDomainId : undefined) ??
+    (selectionDomainId && validIds.has(selectionDomainId) ? selectionDomainId : undefined) ??
+    domains?.[0]?.id
 
-  // pick the first domain once the workspace loads
+  // A concrete canvas selection hands its owner to the local readers. Their picker
+  // can then diverge without creating a workspace-wide active-domain concept.
   useEffect(() => {
-    if (!domainId && domains && domains.length) {
-      let last: string | null = null
-      try {
-        last = localStorage.getItem('studio.lastDomain')
-      } catch {}
-      setDomain(last && domains.some((d) => d.id === last) ? last : domains[0].id)
-    }
-  }, [domains, domainId, setDomain])
+    if (selectionDomainId && validIds.has(selectionDomainId)) setSectionDomainId(selectionDomainId)
+  }, [selectionDomainId, validIds])
+
+  const changeSectionDomain = (domainId: string) => {
+    setSectionDomainId(domainId)
+    clearSelection()
+  }
 
   useStudioEventSync()
-  // The domains rail lives inside the section, so the invariant it depends on — the canvas
-  // always holds the active domain — is kept here, where every section can see it.
-  useCanvasSelectionSync()
+  // Keep the canvas visibility set aligned with the domains the watcher still exposes.
+  useCanvasSelectionSync(workspaceUiReady)
 
   // keep the merge-forward agent store in sync with the authoritative snapshot —
   // recovers the terminal run state if an `agent-run` frame was ever missed.
-  const { data: agentSnap } = useAgentSnapshot(domainId)
+  const { data: agentSnap } = useAgentSnapshot()
   useEffect(() => {
     if (agentSnap?.run) setRun(agentSnap.run)
   }, [agentSnap, setRun])
@@ -161,7 +176,7 @@ export function App() {
     return () => window.removeEventListener('keydown', h)
   }, [toggleCommentMode, toggleAskMode])
 
-  if (!domains) {
+  if (!domains || !workspaceUiReady) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
         Connecting to studio…
@@ -176,7 +191,7 @@ export function App() {
           {/* what you are looking at — which DOMAIN is the rail's question, not this bar's */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <InstanceSwitcher />
-            {domainId && <UpdatesBadge domainId={domainId} />}
+            {scopedDomainId && <UpdatesBadge domainId={scopedDomainId} />}
           </div>
 
           {/* where you are */}
@@ -242,13 +257,17 @@ export function App() {
           )}
         >
           <main className="relative min-h-0 flex-1 overflow-hidden">
-            {domainId ? (
-              <SectionRouter section={section} domainId={domainId} />
+            {domains.length > 0 || section === 'schema' ? (
+              <SectionRouter
+                section={section}
+                domainId={scopedDomainId}
+                onDomainChange={changeSectionDomain}
+              />
             ) : (
               <EmptyWorkspace empty={domains.length === 0} />
             )}
           </main>
-          {domainId && <WorkPanel domainId={domainId} />}
+          <WorkPanel />
         </div>
       </div>
 
@@ -257,7 +276,6 @@ export function App() {
       <CommentDraftPopover />
       <AskLayer />
       <SettingsDialog />
-      <ActivateDomainDialog />
       <NewDomainDialog />
     </TooltipProvider>
   )

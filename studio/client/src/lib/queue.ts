@@ -25,39 +25,37 @@ export function landChat(chats: ChatList | undefined, chat: ChatInfo): ChatList 
 }
 
 /** Everything you can do to a message that has not been sent yet. */
-export function useQueueMutations(domainId?: string, chatId?: string) {
+export function useQueueMutations(chatId?: string) {
   const queryClient = useQueryClient()
   const setRun = useAgentLive((state) => state.setRun)
   const land = (chat: ChatInfo) =>
-    queryClient.setQueryData<ChatList>(qk.chats(domainId ?? ''), (current) =>
-      landChat(current, chat),
-    )
+    queryClient.setQueryData<ChatList>(qk.chats, (current) => landChat(current, chat))
 
   const edit = useMutation({
     mutationFn: (input: { messageId: string; text: string }) =>
-      api.editQueued(domainId!, chatId!, input.messageId, input.text),
+      api.editQueued(chatId!, input.messageId, input.text),
     onSuccess: land,
     onError: (error) => toast.error(`Could not edit the queued message — ${String(error)}`),
   })
   const remove = useMutation({
-    mutationFn: (messageId: string) => api.removeQueued(domainId!, chatId!, messageId),
+    mutationFn: (messageId: string) => api.removeQueued(chatId!, messageId),
     onSuccess: land,
     onError: (error) => toast.error(`Could not delete the queued message — ${String(error)}`),
   })
   const move = useMutation({
     mutationFn: (input: { messageId: string; direction: 'up' | 'down' }) =>
-      api.moveQueued(domainId!, chatId!, input.messageId, input.direction),
+      api.moveQueued(chatId!, input.messageId, input.direction),
     onSuccess: land,
     onError: (error) => toast.error(`Could not reorder the queue — ${String(error)}`),
   })
   // Promoting stops the turn in progress, so both the conversation and the strip
   // move at once — neither is derivable from the run this call answers with.
   const sendNow = useMutation({
-    mutationFn: (messageId: string) => api.sendQueued(domainId!, chatId!, messageId),
+    mutationFn: (messageId: string) => api.sendQueued(chatId!, messageId),
     onSuccess: (result) => {
       if (result.run) setRun(result.run)
-      void queryClient.invalidateQueries({ queryKey: qk.agent(domainId ?? '', chatId) })
-      void queryClient.invalidateQueries({ queryKey: qk.chats(domainId ?? '') })
+      void queryClient.invalidateQueries({ queryKey: qk.agent(chatId) })
+      void queryClient.invalidateQueries({ queryKey: qk.chats })
     },
     onError: (error) => toast.error(`Could not send that message now — ${String(error)}`),
   })

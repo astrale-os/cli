@@ -22,7 +22,7 @@ import { api, qk } from '@/lib/api'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
 import { threadsAwaitingAgent } from '@/lib/comments'
 import { labelOf, noAgentNotice, presenceOf } from '@/lib/harnesses'
-import { useComments, useDocuments, useHarness } from '@/lib/hooks'
+import { useHarness, useWorkspace, useWorkspaceComments, useWorkspaceDocuments } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -32,7 +32,7 @@ import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
 import { DockActivity } from './dock-activity'
-import { AttachButton, CHIP, DocumentChips, useDocumentMutations } from './documents'
+import { AttachButton, CHIP, DocumentChips } from './documents'
 import { HandoffChip } from './handoff-chip'
 import { MessageQueue, type PendingMessage } from './message-queue'
 
@@ -59,11 +59,11 @@ const PROMPT = 'Message the agent…'
  * the transcript is what unfolds above it. Docked left or right they stack, and
  * this is that stack.
  */
-export function AgentTab({ domainId }: { domainId: string }) {
+export function AgentTab() {
   return (
-    <AgentDropZone domainId={domainId} className="relative flex h-full min-h-0 flex-col">
-      <AgentTranscript domainId={domainId} />
-      <AgentComposer domainId={domainId} />
+    <AgentDropZone className="relative flex h-full min-h-0 flex-col">
+      <AgentTranscript />
+      <AgentComposer />
     </AgentDropZone>
   )
 }
@@ -74,44 +74,50 @@ export function AgentTab({ domainId }: { domainId: string }) {
  * to open.
  */
 export function AgentDropZone({
-  domainId,
   children,
   ...rest
 }: {
-  domainId: string
   className?: string
   ref?: React.Ref<HTMLDivElement>
   children: ReactNode
 } & React.HTMLAttributes<HTMLDivElement>) {
-  const { upload } = useDocumentMutations(domainId)
+  const { data: domains = [] } = useWorkspace()
+  const queryClient = useQueryClient()
+
+  const upload = async (files: File[]) => {
+    if (domains.length !== 1) {
+      toast.info('Choose a domain with the paperclip before attaching documents.')
+      return
+    }
+    const domain = domains[0]!
+    try {
+      const added = await api.uploadDocuments(domain.id, files)
+      await queryClient.invalidateQueries({ queryKey: qk.documents(domain.id) })
+      toast.success(`Added ${added.length} document${added.length === 1 ? '' : 's'}`)
+    } catch (error) {
+      toast.error(String(error))
+    }
+  }
 
   return (
-    <DropZone
-      {...rest}
-      onFiles={(files) =>
-        upload.mutate(files, {
-          onSuccess: (added) =>
-            toast.success(`Added ${added.length} document${added.length === 1 ? '' : 's'}`),
-        })
-      }
-    >
+    <DropZone {...rest} onFiles={(files) => void upload(files)}>
       {children}
     </DropZone>
   )
 }
 
 /** The chat tabs and the turns under them — everything but the composer. */
-export function AgentTranscript({ domainId }: { domainId: string }) {
-  const { data: chats } = useChats(domainId)
+export function AgentTranscript() {
+  const { data: chats } = useChats()
   const activeId = chats?.activeId
   const openChats = chats?.chats ?? []
   const chat = chatOf(openChats, activeId)
   const origin = chat?.origin
   const sourceOpen = origin ? openChats.some((entry) => entry.id === origin.chatId) : false
-  const { select, forgetOrigin } = useChatMutations(domainId)
-  const { data: harness } = useHarness(domainId)
-  const turns = useAgentTurns(domainId, activeId)
-  const run = useDisplayRun(domainId, activeId)
+  const { select, forgetOrigin } = useChatMutations()
+  const { data: harness } = useHarness()
+  const turns = useAgentTurns(activeId)
+  const run = useDisplayRun(activeId)
   const scroller = useRef<HTMLDivElement>(null)
 
   // follow the conversation: a new turn, a new message or a new activity line all
@@ -125,7 +131,7 @@ export function AgentTranscript({ domainId }: { domainId: string }) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <ChatTabs domainId={domainId} chats={openChats} activeId={activeId} harness={harness} />
+      <ChatTabs chats={openChats} activeId={activeId} harness={harness} />
 
       {/* type=scroll: the bar shows while scrolling and fades out — a chat should not
           carry a permanent gutter down its side. */}
@@ -148,7 +154,7 @@ export function AgentTranscript({ domainId }: { domainId: string }) {
                 onResume={() =>
                   // a refused resume answers 200 with an error field; without
                   // this the button would look like it did nothing at all
-                  void api.agentResume(domainId, activeId).then(
+                  void api.agentResume(activeId).then(
                     (result) => {
                       if (result.error) toast.error(`Could not continue — ${result.error}`)
                     },
@@ -187,12 +193,19 @@ function needsDivider(previous: AgentRun | undefined, turn: AgentRun): boolean {
  * a document — a turn answers every open thread, and that is the server's rule
  * (agent/run/preparation.ts), not a choice made here.
  */
-function TurnPayload({ domainId }: { domainId: string }) {
-  const { data: docs } = useDocuments(domainId)
-  const { data: store } = useComments(domainId)
+function TurnPayload() {
+  const { data: documentGroups } = useWorkspaceDocuments()
+  const { data: commentGroups } = useWorkspaceComments()
   const setPanelTab = useUI((state) => state.setPanelTab)
-  const awaiting = threadsAwaitingAgent(store?.comments).length
-  if (!docs?.length && !awaiting) return null
+  const awaiting = commentGroups.reduce(
+    (total, group) => total + threadsAwaitingAgent(group.store?.comments).length,
+    0,
+  )
+  const documents = documentGroups.reduce(
+    (total, group) => total + (group.documents?.length ?? 0),
+    0,
+  )
+  if (!documents && !awaiting) return null
 
   return (
     <div className="flex flex-wrap items-center gap-1 px-2 pb-1.5 pt-2">
@@ -212,7 +225,7 @@ function TurnPayload({ domainId }: { domainId: string }) {
           </span>
         </button>
       )}
-      <DocumentChips domainId={domainId} />
+      <DocumentChips />
     </div>
   )
 }
@@ -282,13 +295,11 @@ function LinkStatus({
  * a prop: typing in it is what opens the conversation above it.
  */
 export function AgentComposer({
-  domainId,
   bar,
   expanded,
   onFocus,
   trailing,
 }: {
-  domainId: string
   /** Be the dock's bar: one line, in the frame you were given, drawing none of its own. */
   bar?: boolean
   /** Bar only — the conversation above is open, so the row can afford the rest of itself. */
@@ -297,10 +308,10 @@ export function AgentComposer({
   /** An extra control for the row — the dock's own way back to the comment threads. */
   trailing?: ReactNode
 }) {
-  const { data: chats } = useChats(domainId)
+  const { data: chats } = useChats()
   const chat = chatOf(chats?.chats ?? [], chats?.activeId)
-  const { data: harness } = useHarness(domainId)
-  const run = useDisplayRun(domainId, chats?.activeId)
+  const { data: harness } = useHarness()
+  const run = useDisplayRun(chats?.activeId)
   const chatId = chat?.id
   // the draft lives in the store: re-docking the panel unmounts the composer, and a
   // half-written message must survive that
@@ -309,11 +320,11 @@ export function AgentComposer({
   const [pending, setPending] = useState<PendingSend[]>([])
   const ticket = useRef(0)
   const field = useRef<HTMLTextAreaElement>(null)
-  const snapshot = useAgentSnapshot(domainId, chatId)
+  const snapshot = useAgentSnapshot(chatId)
   const setRun = useAgentLive((state) => state.setRun)
   const dropRun = useAgentLive((state) => state.dropRun)
-  const { data: store } = useComments(domainId)
-  const { data: docs } = useDocuments(domainId)
+  const { data: commentGroups } = useWorkspaceComments()
+  const { data: documentGroups } = useWorkspaceDocuments()
   const qc = useQueryClient()
   const active = isRunActive(run)
   // Three states, not two: an agent Studio has not REACHED yet is not an agent
@@ -330,13 +341,20 @@ export function AgentComposer({
   // Open threads and attached documents are themselves something to send: with either,
   // an empty composer is a valid submit that carries them as they are. Mirrors the
   // server's own rule (agent/run/preparation.ts), which only rejects an empty turn.
-  const awaiting = threadsAwaitingAgent(store?.comments).length
+  const awaiting = commentGroups.reduce(
+    (total, group) => total + threadsAwaitingAgent(group.store?.comments).length,
+    0,
+  )
+  const documentCount = documentGroups.reduce(
+    (total, group) => total + (group.documents?.length ?? 0),
+    0,
+  )
   // Not while a turn runs, though — they go with whatever turn starts next, so an
   // empty composer would queue a blank message to say so. And not before the chips
   // are on screen: a resting bar shows one line, so a send button on an empty field
   // would be a turn nobody could see.
   const payloadShowing = !bar || !!expanded
-  const carriesPayload = payloadShowing && !active && (awaiting > 0 || (docs?.length ?? 0) > 0)
+  const carriesPayload = payloadShowing && !active && (awaiting > 0 || documentCount > 0)
   const sendsPayload = carriesPayload && !text.trim()
   const sendable = !!text.trim() || carriesPayload
   const canSend = available && sendable
@@ -367,7 +385,7 @@ export function AgentComposer({
   // than a refetch later — the refresh below reconciles either way.
   const landQueued = (message: QueuedMessage) => {
     if (!chatId) return
-    qc.setQueryData<ChatList>(qk.chats(domainId), (current) =>
+    qc.setQueryData<ChatList>(qk.chats, (current) =>
       current
         ? {
             ...current,
@@ -398,7 +416,7 @@ export function AgentComposer({
   const carriedLabel =
     awaiting > 0
       ? `${awaiting} open thread${awaiting === 1 ? '' : 's'}`
-      : `${docs?.length ?? 0} document${(docs?.length ?? 0) === 1 ? '' : 's'}`
+      : `${documentCount} document${documentCount === 1 ? '' : 's'}`
 
   const send = () => {
     if (!canSend) return
@@ -409,7 +427,6 @@ export function AgentComposer({
         ? null
         : pendingRun({
             id,
-            domainId,
             chatId,
             harness: chat?.harness ?? '',
             message,
@@ -425,10 +442,10 @@ export function AgentComposer({
       else setPending((current) => current.filter((row) => row.id !== id))
     }
     const refresh = () => {
-      qc.invalidateQueries({ queryKey: qk.agent(domainId, chatId) })
-      qc.invalidateQueries({ queryKey: qk.chats(domainId) })
+      qc.invalidateQueries({ queryKey: qk.agent(chatId) })
+      qc.invalidateQueries({ queryKey: qk.chats })
     }
-    void api.agentSubmit(domainId, message, chatId).then(
+    void api.agentSubmit(message, chatId).then(
       (result) => {
         // the real turn takes the shown one's place first, so nothing blinks out
         // between the two — `drop` then finds none of ours left to take back
@@ -483,11 +500,11 @@ export function AgentComposer({
       type="button"
       onClick={() =>
         void api
-          .agentCancel(domainId, chatId)
+          .agentCancel(chatId)
           .catch((error) => toast.error(`Could not stop the agent — ${String(error)}`))
           // the turn settles a moment after the abort lands; ask the
           // server rather than waiting on the frame that says so
-          .finally(() => qc.invalidateQueries({ queryKey: qk.agent(domainId, chatId) }))
+          .finally(() => qc.invalidateQueries({ queryKey: qk.agent(chatId) }))
       }
       title="Stop the agent"
       aria-label="Stop the agent"
@@ -562,13 +579,12 @@ export function AgentComposer({
         {payloadShowing && (
           <>
             <MessageQueue
-              domainId={domainId}
               chatId={chatId}
               queued={chat?.queued ?? NO_QUEUE}
               pending={pending.filter((entry) => entry.chatId === chatId)}
               running={active}
             />
-            <TurnPayload domainId={domainId} />
+            <TurnPayload />
           </>
         )}
         {/* below the payload and above the field: the last thing read before the
@@ -586,7 +602,7 @@ export function AgentComposer({
             foot; the controls then centre among THEMSELVES, or the model's 11px label
             would sit a third of a line below the icons it shares the row with */}
         <div className="flex items-end gap-1 px-2 py-2">
-          <AttachButton domainId={domainId} onPicked={() => field.current?.focus()} />
+          <AttachButton onPicked={() => field.current?.focus()} />
           {!payloadShowing && linkMark}
           {composed}
           <div className="flex shrink-0 items-center gap-1">
@@ -601,8 +617,8 @@ export function AgentComposer({
               />
             )}
             {/* the meter sits before the model, in reading order: how hard, on what */}
-            {expanded && <ChatEffortPicker domainId={domainId} chat={chat} harness={harness} />}
-            {expanded && <ChatModelPicker domainId={domainId} chat={chat} harness={harness} />}
+            {expanded && <ChatEffortPicker chat={chat} harness={harness} />}
+            {expanded && <ChatModelPicker chat={chat} harness={harness} />}
             {trailing}
             {/* a running turn keeps Stop within reach even on the resting bar; Send
                 only shows once there is something to send, or the bar gains a button
@@ -617,7 +633,6 @@ export function AgentComposer({
   return (
     <div className="shrink-0 px-3 pb-3 pt-2">
       <MessageQueue
-        domainId={domainId}
         chatId={chatId}
         queued={chat?.queued ?? NO_QUEUE}
         // one composer serves every tab, so a send still on the wire must not
@@ -626,7 +641,7 @@ export function AgentComposer({
         running={active}
       />
       <ComposerFrame>
-        <TurnPayload domainId={domainId} />
+        <TurnPayload />
         {link !== 'ready' && (
           <LinkStatus
             link={link}
@@ -637,11 +652,11 @@ export function AgentComposer({
         )}
         {composed}
         <div className="flex items-center gap-1 px-2 pb-2">
-          <AttachButton domainId={domainId} onPicked={() => field.current?.focus()} />
+          <AttachButton onPicked={() => field.current?.focus()} />
           <div className="ml-auto flex items-center gap-1.5">
             {/* the meter sits before the model, in reading order: how hard, on what */}
-            <ChatEffortPicker domainId={domainId} chat={chat} harness={harness} />
-            <ChatModelPicker domainId={domainId} chat={chat} harness={harness} />
+            <ChatEffortPicker chat={chat} harness={harness} />
+            <ChatModelPicker chat={chat} harness={harness} />
             {trailing}
             {/* Stop and Send are both live while a turn runs: one ends what the
                 agent is doing, the other lines up what it does next, and needing

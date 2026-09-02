@@ -98,6 +98,7 @@ export function classIcon(bundle: StudioSchemaBundle, className: string): string
 }
 
 export interface CoreNodeData extends Record<string, unknown> {
+  domainId: string
   path: string
   className: string
   title: string
@@ -126,6 +127,7 @@ export function buildCoreGraph(
   core: StudioCore,
   bundle: StudioSchemaBundle,
   hues: Map<string, number>,
+  domainId: string,
   options: CoreGraphOptions = {},
 ): { nodes: Node[]; edges: Edge[] } {
   const ids = new Set(core.nodes.map((n) => nodeAnchor(n.path)))
@@ -137,6 +139,7 @@ export function buildCoreGraph(
       type: 'coreNode',
       position: { x: 0, y: 0 },
       data: {
+        domainId,
         path: n.path,
         className: n.className,
         title: displayName(n),
@@ -166,6 +169,7 @@ export function buildCoreGraph(
       selectable: false,
       focusable: false,
       data: {
+        domainId,
         path,
         className: domainEndpoint ? 'Domain' : 'External',
         title: domainEndpoint ? core.domain : lastSeg(path),

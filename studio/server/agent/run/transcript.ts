@@ -11,26 +11,13 @@ import {
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../../json'
 import { listState, readJson, removeState, writeJson } from '../../state/store'
 
-/** Written before Studio had chat tabs; adopted by the chat migrated from it. */
-const LEGACY_LAST_RUN_FILE = '.cache/agent/last-run.json'
-const RUNS_DIR = '.cache/agent/runs'
-const runFile = (id: string) => `${RUNS_DIR}/${id}.json`
-const lastRunFile = (chatId: string) => `.cache/agent/last-run/${chatId}.json`
-
-/** A transcript on disk, which predates `chatId` when written by an older Studio. */
-type StoredRun = Omit<AgentRun, 'chatId'> & { chatId?: string }
-
 /**
- * Which chat a stored transcript belongs to.
- *
- * Turns written before tabs existed carry no chat id: the tab migrated from that
- * harness's old conversation adopts them, so upgrading Studio keeps the history
- * visible instead of opening on an empty chat.
+ * Transcripts live beside the machine-global chats they belong to in the Studio home:
+ * one file per terminal run, and one "last run" pointer per chat.
  */
-function belongsToChat(run: StoredRun, chat: StoredChat): boolean {
-  if (run.chatId) return run.chatId === chat.id
-  return !!chat.adoptsLegacyRuns && run.harness === chat.harness
-}
+const RUNS_DIR = 'runs'
+const runFile = (id: string) => `${RUNS_DIR}/${id}.json`
+const lastRunFile = (chatId: string) => `last-run/${chatId}.json`
 
 const RUN_STATUSES = new Set<AgentRun['status']>([
   'queued',
@@ -133,10 +120,10 @@ function decodePrompt(value: unknown): AgentPromptSnapshot | undefined {
   }
 }
 
-function decodeAgentRun(value: unknown): StoredRun | undefined {
+function decodeAgentRun(value: unknown): AgentRun | undefined {
   const record = asJsonRecord(value)
   const id = asString(record?.id)
-  const domainId = asString(record?.domainId)
+  const chatId = asString(record?.chatId)
   const harness = asString(record?.harness)
   const status = asString(record?.status)
   const createdAt = asString(record?.createdAt)
@@ -144,7 +131,7 @@ function decodeAgentRun(value: unknown): StoredRun | undefined {
   const targetCommentIds = asStringArray(record?.targetCommentIds)
   if (
     !id ||
-    !domainId ||
+    !chatId ||
     !harness ||
     !status ||
     !RUN_STATUSES.has(status as AgentRun['status']) ||
@@ -170,12 +157,10 @@ function decodeAgentRun(value: unknown): StoredRun | undefined {
   const liveReplies = asFiniteNumber(record.liveReplies)
   const merge = decodeMergeResult(record.merge)
   const prompt = decodePrompt(record.prompt)
-  const chatId = asString(record.chatId)
   return {
     id,
-    domainId,
+    chatId,
     harness,
-    ...(chatId === undefined ? {} : { chatId }),
     status: status as AgentRun['status'],
     createdAt,
     summary,
@@ -206,12 +191,10 @@ export function persistRun(root: string, run: AgentRun, transcript = false): voi
 }
 
 /** Rehydrate a chat's latest run and reconcile one orphaned by a Studio restart. */
-export function readLastRun(domainId: string, root: string, chat: StoredChat): AgentRun | null {
-  const stored =
-    readJson(root, lastRunFile(chat.id), decodeAgentRun, null) ??
-    (chat.adoptsLegacyRuns ? readJson(root, LEGACY_LAST_RUN_FILE, decodeAgentRun, null) : null)
-  if (!stored || stored.domainId !== domainId || !belongsToChat(stored, chat)) return null
-  const last: AgentRun = { ...stored, chatId: chat.id }
+export function readLastRun(root: string, chat: StoredChat): AgentRun | null {
+  const stored = readJson(root, lastRunFile(chat.id), decodeAgentRun, null)
+  if (!stored || stored.chatId !== chat.id) return null
+  const last: AgentRun = { ...stored }
   if (last.status === 'running' || last.status === 'queued') {
     last.status = 'interrupted'
     last.finishedAt = last.finishedAt ?? new Date().toISOString()
@@ -223,14 +206,13 @@ export function readLastRun(domainId: string, root: string, chat: StoredChat): A
 }
 
 /** Every stored transcript of one chat, oldest first. */
-function chatRuns(domainId: string, root: string, chat: StoredChat): AgentRun[] {
+function chatRuns(root: string, chat: StoredChat): AgentRun[] {
   const runs: AgentRun[] = []
   for (const file of listState(root, RUNS_DIR)) {
     if (!file.endsWith('.json')) continue
     try {
       const run = readJson(root, `${RUNS_DIR}/${file}`, decodeAgentRun, null)
-      if (run && run.domainId === domainId && belongsToChat(run, chat))
-        runs.push({ ...run, chatId: chat.id })
+      if (run && run.chatId === chat.id) runs.push(run)
     } catch {
       // One unreadable transcript must not hide the rest of the conversation.
     }
@@ -248,26 +230,21 @@ function chatRuns(domainId: string, root: string, chat: StoredChat): AgentRun[] 
  * whole handoff markdown) and nothing reads it here — the activity drawer inspects
  * the CURRENT run, which still carries it.
  */
-export function readRunHistory(
-  domainId: string,
-  root: string,
-  chat: StoredChat,
-  limit = 40,
-): AgentRun[] {
+export function readRunHistory(root: string, chat: StoredChat, limit = 40): AgentRun[] {
   const boundedLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 40
-  return chatRuns(domainId, root, chat)
+  return chatRuns(root, chat)
     .slice(-boundedLimit)
     .map(({ prompt: _prompt, ...turn }) => turn)
 }
 
 /** The full transcript a fork summarizes — prompts included would be pure weight. */
-export function readChatTranscript(domainId: string, root: string, chat: StoredChat): AgentRun[] {
-  return chatRuns(domainId, root, chat)
+export function readChatTranscript(root: string, chat: StoredChat): AgentRun[] {
+  return chatRuns(root, chat)
 }
 
 /** Erase a closed tab's transcripts; a deleted chat leaves nothing to re-read. */
-export function deleteChatRuns(domainId: string, root: string, chat: StoredChat): void {
-  for (const run of chatRuns(domainId, root, chat)) {
+export function deleteChatRuns(root: string, chat: StoredChat): void {
+  for (const run of chatRuns(root, chat)) {
     try {
       removeState(root, runFile(run.id))
     } catch {

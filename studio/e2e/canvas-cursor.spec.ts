@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 
 /**
  * The canvas is ONE draggable surface, so it wears ONE cursor. React Flow ships a cursor per

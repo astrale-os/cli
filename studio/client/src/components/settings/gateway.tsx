@@ -10,11 +10,8 @@ import { useHarnessGateway } from '@/lib/hooks'
 import { embeddedStudio, GatewayAuthFields, type GatewayAuthMode } from './gateway-auth'
 import { GatewayHeading, GatewayTextField } from './gateway-fields'
 import { validateGatewayDraft } from './gateway-validation'
-import { SettingsHint } from './hint'
 
 interface GatewaySaveInput {
-  domainId: string
-  scope: 'domain' | 'global'
   config: {
     enabled: boolean
     baseUrl: string
@@ -23,18 +20,10 @@ interface GatewaySaveInput {
   }
 }
 
-/** Per-domain or global Anthropic-compatible gateway configuration. */
-export function HarnessGatewaySettings({
-  domainId,
-  harness,
-}: {
-  domainId?: string
-  harness?: HarnessStatus
-}) {
+/** Machine-wide Anthropic-compatible gateway configuration. */
+export function HarnessGatewaySettings({ harness }: { harness?: HarnessStatus }) {
   const anthropic = harness?.capabilities.gateway === 'anthropic'
-  const { data: gateway, isFetching: gatewayFetching } = useHarnessGateway(
-    anthropic ? domainId : undefined,
-  )
+  const { data: gateway, isFetching: gatewayFetching } = useHarnessGateway(anthropic)
   const queryClient = useQueryClient()
 
   const [enabled, setEnabled] = useState(false)
@@ -43,20 +32,18 @@ export function HarnessGatewaySettings({
   const [mode, setMode] = useState<GatewayAuthMode>(embeddedStudio ? 'host' : 'mint')
   const [instance, setInstance] = useState('')
   const [token, setToken] = useState('')
-  const [applyToAll, setApplyToAll] = useState(false)
   const [reveal, setReveal] = useState(false)
 
   useEffect(() => {
-    const effective = gateway?.local ?? gateway?.global ?? null
-    setEnabled(effective?.enabled ?? false)
-    setBaseUrl(effective?.baseUrl ?? '')
-    setModel(effective?.model ?? '')
-    setMode(effective?.auth.mode ?? (embeddedStudio ? 'host' : 'mint'))
-    setInstance(effective?.auth.mode === 'mint' ? (effective.auth.instance ?? '') : '')
-    setToken(effective?.auth.mode === 'token' ? effective.auth.token : '')
-    setApplyToAll(gateway?.local == null && gateway?.global != null)
+    const config = gateway?.config
+    setEnabled(config?.enabled ?? false)
+    setBaseUrl(config?.baseUrl ?? '')
+    setModel(config?.model ?? '')
+    setMode(config?.auth.mode ?? (embeddedStudio ? 'host' : 'mint'))
+    setInstance(config?.auth.mode === 'mint' ? (config.auth.instance ?? '') : '')
+    setToken(config?.auth.mode === 'token' ? config.auth.token : '')
     setReveal(false)
-  }, [domainId, gateway])
+  }, [gateway])
 
   const buildAuth = (): HarnessGatewayAuth => {
     if (mode === 'token') return { mode: 'token', token: token.trim() }
@@ -66,22 +53,21 @@ export function HarnessGatewaySettings({
   const validationError = validateGatewayDraft(enabled, baseUrl, mode, token)
 
   const save = useMutation({
-    mutationFn: (input: GatewaySaveInput) =>
-      api.setHarnessGateway(input.domainId, input.scope, input.config),
-    onSuccess: (_, input) => {
-      queryClient.invalidateQueries({ queryKey: qk.harnessGateway(input.domainId) })
-      queryClient.invalidateQueries({ queryKey: qk.loadout(input.domainId) })
-      toast.success(input.scope === 'global' ? 'Saved for all domains' : 'Saved for this domain')
+    mutationFn: (input: GatewaySaveInput) => api.setHarnessGateway(input.config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.harnessGateway })
+      queryClient.invalidateQueries({ queryKey: qk.loadout() })
+      toast.success('Machine gateway saved')
     },
     onError: (error) => toast.error(String(error)),
   })
 
   const reset = useMutation({
-    mutationFn: (id: string) => api.clearHarnessGateway(id, 'domain'),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: qk.harnessGateway(id) })
-      queryClient.invalidateQueries({ queryKey: qk.loadout(id) })
-      toast.success('Override removed — inheriting the default')
+    mutationFn: api.clearHarnessGateway,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.harnessGateway })
+      queryClient.invalidateQueries({ queryKey: qk.loadout() })
+      toast.success('Gateway configuration cleared')
     },
     onError: (error) => toast.error(String(error)),
   })
@@ -100,11 +86,7 @@ export function HarnessGatewaySettings({
 
   const source = gateway?.source ?? 'none'
   const sourceLabel =
-    source === 'domain'
-      ? 'active for this domain'
-      : source === 'global'
-        ? 'inherited from the studio-wide default'
-        : 'off — the harness uses its own Claude Code auth'
+    source === 'machine' ? 'active on this machine' : 'off — the harness uses its own auth'
 
   return (
     <div>
@@ -149,29 +131,12 @@ export function HarnessGatewaySettings({
           </div>
         )}
 
-        <label className="flex cursor-pointer items-center gap-2 border-t pt-2.5 text-[12px]">
-          <input
-            type="checkbox"
-            checked={applyToAll}
-            onChange={(event) => setApplyToAll(event.target.checked)}
-            className="h-3.5 w-3.5 accent-primary"
-          />
-          <span className="flex items-center gap-1.5">
-            Apply to all domains
-            <SettingsHint text="Save as the studio-wide default for every domain (and clear this domain's own override so it inherits it). Off ⇒ this setting applies to THIS domain only. Either way it never leaks outside the studio." />
-          </span>
-        </label>
-
         <div className="flex items-center gap-2 pt-0.5">
           <button
             type="button"
-            disabled={
-              !domainId || !gateway || gatewayFetching || !!validationError || save.isPending
-            }
+            disabled={!gateway || gatewayFetching || !!validationError || save.isPending}
             onClick={() =>
               save.mutate({
-                domainId: domainId!,
-                scope: applyToAll ? 'global' : 'domain',
                 config: {
                   enabled,
                   baseUrl: baseUrl.trim(),
@@ -182,21 +147,17 @@ export function HarnessGatewaySettings({
             }
             className="rounded-md bg-primary px-2.5 py-1 text-[12px] font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {save.isPending
-              ? 'Saving…'
-              : applyToAll
-                ? 'Save for all domains'
-                : 'Save for this domain'}
+            {save.isPending ? 'Saving…' : 'Save for this machine'}
           </button>
-          {gateway?.local != null && (
+          {gateway?.config != null && (
             <button
               type="button"
               disabled={gatewayFetching || reset.isPending}
-              onClick={() => reset.mutate(domainId!)}
+              onClick={() => reset.mutate()}
               className="rounded-md px-2.5 py-1 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-              title="Remove this domain's override and inherit the studio-wide default (or default auth)"
+              title="Remove the machine gateway configuration and use the harness default auth"
             >
-              Reset to default
+              Clear
             </button>
           )}
         </div>

@@ -14,8 +14,6 @@ import { qk } from '@/lib/api'
 
 import { ChatModelPicker, starPlacement } from './chat-model'
 
-const DOMAIN = 'shop'
-
 const chat: ChatInfo = {
   id: 'chat-1',
   title: 'New chat',
@@ -34,7 +32,7 @@ const harness: HarnessStatus = {
   ok: true,
   message: 'Detected',
   locked: false,
-  source: 'domain',
+  source: 'starred',
   capabilities: {
     effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'],
     accessLevels: ['workspace', 'full'],
@@ -63,11 +61,11 @@ function render(
   current = chat,
 ): string {
   const client = new QueryClient()
-  if (seed.catalog) client.setQueryData(qk.models(DOMAIN), seed.catalog)
-  if (seed.loadout) client.setQueryData(qk.loadout(DOMAIN, current.id), seed.loadout)
+  if (seed.catalog) client.setQueryData(qk.models, seed.catalog)
+  if (seed.loadout) client.setQueryData(qk.loadout(current.id), seed.loadout)
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <ChatModelPicker domainId={DOMAIN} chat={current} harness={harness} />
+      <ChatModelPicker chat={current} harness={harness} />
     </QueryClientProvider>,
   )
 }
@@ -154,7 +152,7 @@ test('with nothing starred, the star still says where a new chat opens', () => {
 
 test('a starred model is the star, whichever agent it belongs to', () => {
   const starred = { harness: 'codex', model: 'gpt-5.6-sol' }
-  const placement = starPlacement(status(CODEX, { source: 'domain' }), starred, 'gpt-5.6-sol')
+  const placement = starPlacement(status(CODEX, { source: 'starred' }), starred, 'gpt-5.6-sol')
   expect(placement.shown).toEqual(starred)
   expect(placement.remembered).toBeNull()
 })

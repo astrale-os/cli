@@ -11,7 +11,6 @@ import { AgentComposer } from './agent-tab'
 /** The field itself, not any of the buttons around it. */
 const fieldIsShut = (html: string) => /<textarea[^>]*\sdisabled=""/.test(html)
 
-const DOMAIN = 'billing'
 const CHAT = 'chat-1'
 
 const chat: ChatInfo = {
@@ -82,12 +81,12 @@ function render(
   as: { bar?: boolean; expanded?: boolean } = {},
 ): string {
   const client = new QueryClient()
-  client.setQueryData<ChatList>(qk.chats(DOMAIN), { chats: [chat], activeId: CHAT })
-  if (snapshot) client.setQueryData(qk.agent(DOMAIN, CHAT), snapshot)
-  if (harness) client.setQueryData(qk.harness(DOMAIN), harness)
+  client.setQueryData<ChatList>(qk.chats, { chats: [chat], activeId: CHAT })
+  if (snapshot) client.setQueryData(qk.agent(CHAT), snapshot)
+  if (harness) client.setQueryData(qk.harness, harness)
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <AgentComposer domainId={DOMAIN} {...as} />
+      <AgentComposer {...as} />
     </QueryClientProvider>,
   )
 }

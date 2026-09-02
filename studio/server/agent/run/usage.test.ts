@@ -17,7 +17,6 @@ afterEach(() => {
 function run(values: Partial<AgentRun>): AgentRun {
   return {
     id: crypto.randomUUID(),
-    domainId: 'test',
     chatId: 'chat',
     harness: 'mock',
     status: 'succeeded',
@@ -29,7 +28,7 @@ function run(values: Partial<AgentRun>): AgentRun {
   }
 }
 
-test('records only reported usage and accumulates domain totals', () => {
+test('records only reported usage and accumulates machine totals', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-agent-usage-'))
   roots.push(root)
   recordRun(root, run({}))

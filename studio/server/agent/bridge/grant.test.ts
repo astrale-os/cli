@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { DomainHandle } from '../../domain'
+import type { AgentWorkspace } from '../workspace'
 
 import { startBridge } from './grant'
 
@@ -25,11 +26,25 @@ function domain(root: string, id: string): DomainHandle {
   }
 }
 
+function workspace(root: string, handle: DomainHandle): AgentWorkspace {
+  return {
+    root,
+    stateRoot: join(root, 'machine-agent'),
+    uiRoot: join(root, 'machine-ui'),
+    key: idFor(root),
+    domains: [handle],
+  }
+}
+
+function idFor(root: string): string {
+  return root.split('/').at(-1) ?? 'workspace'
+}
+
 test('keeps its bearer out of the harness command line', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-bridge-'))
   roots.push(root)
 
-  const bridge = startBridge(domain(root, 'test-domain'), () => {})
+  const bridge = startBridge(workspace(root, domain(root, 'test-domain')), () => {})
   const server = bridge.mcpServers[0]!
   const configPath = server.args?.at(-1)
   expect(server.name).toBe('domain-studio')
@@ -41,7 +56,7 @@ test('keeps its bearer out of the harness command line', () => {
     token: string
   }
   expect(server.args?.join(' ')).not.toContain(config.token)
-  expect(config.base).toContain('/api/domain/test-domain/agent/bridge')
+  expect(config.base).toContain('/api/agent/bridge')
   expect(existsSync(configPath!)).toBe(true)
   expect(statSync(configPath!).mode & 0o777).toBe(0o600)
 
@@ -52,7 +67,7 @@ test('keeps its bearer out of the harness command line', () => {
 test('does not let an in-process tool replace its scoped bearer', async () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-bridge-invoke-'))
   roots.push(root)
-  const bridge = startBridge(domain(root, 'test-domain'), () => {})
+  const bridge = startBridge(workspace(root, domain(root, 'test-domain')), () => {})
   const server = bridge.mcpServers[0]!
 
   await expect(server.invoke?.('list_open_threads', { token: 'forged' })).resolves.toEqual({

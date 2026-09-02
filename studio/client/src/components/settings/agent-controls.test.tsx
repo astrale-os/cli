@@ -40,7 +40,7 @@ const status: HarnessStatus = {
   ...claude,
   harnesses: [claude, codex],
   locked: false,
-  source: 'domain',
+  source: 'starred',
 }
 
 test('Settings reports every local agent, detected or not', () => {

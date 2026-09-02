@@ -1,6 +1,6 @@
-import type { EnvName } from '@shared/types'
+import type { CommentStore, DocMeta, DomainSummary, EnvName } from '@shared/types'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -26,7 +26,9 @@ const DEFER_CEILING_MS = 5_000
  * these reads — one ACP session per installed agent.
  */
 export function useSchemaSettled(): boolean {
-  const domainId = useUI((state) => state.domainId)
+  const selectedDomainId = useUI((state) => state.selectionDomainId)
+  const workspace = useQuery({ queryKey: qk.workspace, queryFn: api.workspace })
+  const domainId = selectedDomainId ?? workspace.data?.[0]?.id
   const bundle = useQuery({ ...bundleQueryOptions(domainId ?? ''), enabled: !!domainId })
   const anatomy = useQuery({ ...anatomyQueryOptions(domainId ?? ''), enabled: !!domainId })
   const [expiredDomainId, setExpiredDomainId] = useState<string>()
@@ -92,52 +94,52 @@ export function useUpdates(id?: string) {
   })
 }
 
-export function useAgentSession(id?: string, chatId?: string) {
+export function useAgentSession(chatId?: string, enabled = true) {
   return useQuery({
-    queryKey: qk.agentSession(id ?? '', chatId),
-    queryFn: () => api.agentSession(id!, chatId),
-    enabled: !!id,
+    queryKey: qk.agentSession(chatId),
+    queryFn: () => api.agentSession(chatId),
+    enabled,
   })
 }
-export function useAgentSystemPrompt(id?: string) {
+export function useAgentSystemPrompt(enabled = true) {
   return useQuery({
-    queryKey: qk.agentSystemPrompt(id ?? ''),
-    queryFn: () => api.agentSystemPrompt(id!),
-    enabled: !!id,
+    queryKey: qk.agentSystemPrompt,
+    queryFn: api.agentSystemPrompt,
+    enabled,
     staleTime: 300_000,
   })
 }
 
-export function useHarness(id?: string) {
+export function useHarness(enabled = true) {
   return useQuery({
-    queryKey: qk.harness(id ?? ''),
-    queryFn: () => api.harness(id!),
-    enabled: !!id,
+    queryKey: qk.harness,
+    queryFn: api.harness,
+    enabled,
     staleTime: 15_000,
   })
 }
-export function useHarnessGateway(id?: string) {
+export function useHarnessGateway(enabled = true) {
   return useQuery({
-    queryKey: qk.harnessGateway(id ?? ''),
-    queryFn: () => api.harnessGateway(id!),
-    enabled: !!id,
+    queryKey: qk.harnessGateway,
+    queryFn: api.harnessGateway,
+    enabled,
   })
 }
-export function useLoadout(id?: string, chatId?: string, enabled = true) {
+export function useLoadout(chatId?: string, enabled = true) {
   // Probes the chat's own local harness — behind the canvas, and cached for a
   // while. `enabled` is for the caller that must not probe before it knows WHICH
   // chat: the key carries the chat id, so a render that has not learned it yet
   // would spend a whole ACP session on a query nothing reads again.
   const settled = useSchemaSettled()
   return useQuery({
-    queryKey: qk.loadout(id ?? '', chatId),
-    queryFn: () => api.loadout(id!, false, chatId),
-    enabled: enabled && !!id && settled,
+    queryKey: qk.loadout(chatId),
+    queryFn: () => api.loadout(false, chatId),
+    enabled: enabled && settled,
     staleTime: 60_000,
   })
 }
-export function useUsage(id?: string) {
-  return useQuery({ queryKey: qk.usage(id ?? ''), queryFn: () => api.usage(id!), enabled: !!id })
+export function useUsage(enabled = true) {
+  return useQuery({ queryKey: qk.usage, queryFn: api.usage, enabled })
 }
 export function useEnv(id?: string, env: EnvName = 'dev', enabled = true) {
   // refetches on any domain SSE (env.ts edits invalidate 'env') — see useInvalidateDomain
@@ -153,6 +155,30 @@ export function useComments(id?: string) {
     queryFn: () => api.comments(id!),
     enabled: !!id,
   })
+}
+
+export interface WorkspaceDomainComments {
+  domain: DomainSummary
+  store?: CommentStore
+}
+
+/** Every domain's comments, retaining the owner needed for mutations and navigation. */
+export function useWorkspaceComments(): {
+  data: WorkspaceDomainComments[]
+  isLoading: boolean
+} {
+  const workspace = useWorkspace()
+  const domains = workspace.data ?? []
+  const results = useQueries({
+    queries: domains.map((domain) => ({
+      queryKey: qk.comments(domain.id),
+      queryFn: () => api.comments(domain.id),
+    })),
+  })
+  return {
+    data: domains.map((domain, index) => ({ domain, store: results[index]?.data })),
+    isLoading: workspace.isLoading || results.some((result) => result.isLoading),
+  }
 }
 export function useSettings() {
   return useQuery({ queryKey: qk.settings, queryFn: api.settings })
@@ -173,6 +199,30 @@ export function useDocuments(id?: string) {
     queryFn: () => api.documents(id!),
     enabled: !!id,
   })
+}
+
+export interface WorkspaceDomainDocuments {
+  domain: DomainSummary
+  documents?: DocMeta[]
+}
+
+/** Every domain's attached context, retaining where each document is stored. */
+export function useWorkspaceDocuments(): {
+  data: WorkspaceDomainDocuments[]
+  isLoading: boolean
+} {
+  const workspace = useWorkspace()
+  const domains = workspace.data ?? []
+  const results = useQueries({
+    queries: domains.map((domain) => ({
+      queryKey: qk.documents(domain.id),
+      queryFn: () => api.documents(domain.id),
+    })),
+  })
+  return {
+    data: domains.map((domain, index) => ({ domain, documents: results[index]?.data })),
+    isLoading: workspace.isLoading || results.some((result) => result.isLoading),
+  }
 }
 
 /** Invalidate every query for a domain (used by the SSE bridge). Memoized so its

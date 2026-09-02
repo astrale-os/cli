@@ -28,13 +28,11 @@ export function decodeAnchorRef(value: unknown): AnchorRef | undefined {
   const record = asJsonRecord(value)
   const ref = asString(record?.ref)
   const kind = record?.kind
-  if (!ref || !['schema', 'section', 'file', 'free'].includes(String(kind))) return undefined
+  if (!ref || !['schema', 'section', 'file'].includes(String(kind))) return undefined
   const file = asString(record?.file)
   const startLine = asFiniteNumber(record?.startLine)
   const endLine = asFiniteNumber(record?.endLine)
   const label = asString(record?.label)
-  const x = asFiniteNumber(record?.x)
-  const y = asFiniteNumber(record?.y)
   return {
     ref,
     kind: kind as AnchorRef['kind'],
@@ -42,8 +40,6 @@ export function decodeAnchorRef(value: unknown): AnchorRef | undefined {
     ...(startLine === undefined ? {} : { startLine }),
     ...(endLine === undefined ? {} : { endLine }),
     ...(label === undefined ? {} : { label }),
-    ...(x === undefined ? {} : { x }),
-    ...(y === undefined ? {} : { y }),
   }
 }
 
@@ -393,6 +389,28 @@ function normalizePastedEntry(e: PastedThreadEntry): ThreadEntry {
   return entry
 }
 
+export interface MergeOptions {
+  /** live loop: skip ONLY the texts already applied live this run, per comment id */
+  skipByComment?: Map<string, Set<string>>
+  /** manual paste: dedupe author replies against the whole thread (a re-paste with
+   *  regenerated ids would otherwise duplicate) — there are no live replies to scope to */
+  dedupeAuthorText?: boolean
+}
+
+/**
+ * The machine-state reply an agent pasted — the LAST ```json``` block of its text.
+ * Throws when there is none, or when it is not the annotate shape.
+ */
+export function parseReplyBlock(pastedText: string): PastedStore {
+  const block = extractLastJsonBlock(pastedText)
+  if (block == null) {
+    throw new Error('no machine-state json block found in pasted text')
+  }
+  const parsed = decodePastedStore(parseJson(block))
+  if (!parsed) throw new Error('invalid machine-state json block')
+  return parsed
+}
+
 /**
  * Merge an agent-pasted machine-state reply (annotate shape) into the store.
  * - LAST ```json``` block is parsed.
@@ -404,20 +422,22 @@ export function mergeReply(
   root: string,
   currentRenderFingerprint: string,
   pastedText: string,
-  opts?: {
-    /** live loop: skip ONLY the texts already applied live this run, per comment id */
-    skipByComment?: Map<string, Set<string>>
-    /** manual paste: dedupe author replies against the whole thread (a re-paste with
-     *  regenerated ids would otherwise duplicate) — there are no live replies to scope to */
-    dedupeAuthorText?: boolean
-  },
+  opts?: MergeOptions,
 ): import('../../shared/types').MergeResult {
-  const block = extractLastJsonBlock(pastedText)
-  if (block == null) {
-    throw new Error('no machine-state json block found in pasted text')
-  }
-  const parsed = decodePastedStore(parseJson(block))
-  if (!parsed) throw new Error('invalid machine-state json block')
+  return mergeParsedReply(root, currentRenderFingerprint, parseReplyBlock(pastedText), opts)
+}
+
+/**
+ * Merge an already-parsed reply into ONE store. A turn that briefed several domains
+ * parses the block once and applies it to each of them: every store keeps the entries
+ * whose ids it holds and reports the rest as unknown.
+ */
+export function mergeParsedReply(
+  root: string,
+  currentRenderFingerprint: string,
+  parsed: PastedStore,
+  opts?: MergeOptions,
+): import('../../shared/types').MergeResult {
   const pastedComments = Array.isArray(parsed.comments) ? parsed.comments : []
 
   const store = readComments(root)

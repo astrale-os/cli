@@ -20,12 +20,14 @@ import {
 // ── right panel: the selected node's detail ─────────────────────────────────
 
 export function CoreDetail({
+  domainId,
   core,
   bundle,
   selectedPath,
   children,
   commentable = true,
 }: {
+  domainId: string
   core: StudioCore
   bundle: StudioSchemaBundle
   selectedPath: string | null
@@ -69,6 +71,7 @@ export function CoreDetail({
     <div className="h-full overflow-y-auto">
       {commentable ? (
         <Commentable
+          domainId={domainId}
           anchor={{ ref: nodeAnchor(node.path), kind: 'section' }}
           excerpt={`${displayName(node)} (${node.className})`}
           className="block"

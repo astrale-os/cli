@@ -1,21 +1,25 @@
+import type { WorkspaceSchemaUiState } from '@shared/types'
+
 import { create } from 'zustand'
 
 import type { WorkspacePoint } from './geometry'
 
 export type { WorkspacePoint, WorkspaceSize } from './geometry'
 
-interface PersistedWorkspaceState {
+interface PersistedWorkspaceState extends WorkspaceSchemaUiState {
   /** The domains the canvas draws. There is no second list: on the canvas or not. */
-  selectedDomainIds: string[]
+  visibleDomainIds: string[]
   /**
    * Whether a reader has ever composed this canvas. An empty selection is a legitimate
    * state — you took the last domain off — and only this tells it apart from a studio
-   * that has never been opened, whose canvas opens on the domain you work in.
+   * that has never been opened, whose canvas opens on the first discovered domain.
    */
   initialized: boolean
   domainPositions: Record<string, WorkspacePoint>
   externalPositions: Record<string, WorkspacePoint>
   collapsedModules: Record<string, string[]>
+  /** Visible domain trees explicitly unfolded in the rail. */
+  expandedDomainIds: string[]
   /** External frames the reader unfolded — see `expandedExternals` in the projection. */
   expandedExternals: string[]
 }
@@ -29,81 +33,22 @@ interface WorkspaceCanvasState extends PersistedWorkspaceState {
   ensureExternalPositions: (positions: Record<string, WorkspacePoint>) => void
   resetWorkspaceFrames: () => void
   toggleModule: (domainId: string, path: string) => void
+  toggleDomainExpanded: (domainId: string) => void
   toggleExternalExpanded: (origin: string) => void
 }
 
-const STORAGE_KEY = 'studio.schemaWorkspace.v1'
-
 const EMPTY: PersistedWorkspaceState = {
-  selectedDomainIds: [],
+  visibleDomainIds: [],
   initialized: false,
   domainPositions: {},
   externalPositions: {},
   collapsedModules: {},
+  expandedDomainIds: [],
   expandedExternals: [],
 }
 
 export function uniqueDomainIds(ids: string[]): string[] {
   return [...new Set(ids.filter(Boolean))]
-}
-
-/**
- * What the canvas draws once you go and work in another domain.
- *
- * A canvas of one domain FOLLOWS you — that is the ordinary studio, and leaving the old
- * domain behind on screen would compose a workspace nobody asked for. A canvas of several
- * was composed on purpose, so the new domain joins it and nothing is taken away.
- *
- * The domain you leave is never put back on the canvas: taking it off was a choice, and
- * it outlives the fact that you happened to be working in it.
- */
-export function selectionForActiveDomain(
-  selectedDomainIds: string[],
-  nextActiveDomainId: string,
-): string[] {
-  const selected = uniqueDomainIds(selectedDomainIds)
-  if (selected.length <= 1) return [nextActiveDomainId]
-  if (!selected.includes(nextActiveDomainId)) selected.push(nextActiveDomainId)
-  return selected
-}
-
-/**
- * A canvas that used to carry two lists — what it held, and what of that it drew — now
- * carries one. What the reader had put away was not on screen, so it comes back off the
- * canvas rather than on it: the first paint after the upgrade is the last one they saw.
- */
-export function migrateSelection(value: {
-  selectedDomainIds?: string[]
-  hiddenDomainIds?: string[]
-}): string[] {
-  const hidden = new Set(value.hiddenDomainIds ?? [])
-  return uniqueDomainIds(value.selectedDomainIds ?? []).filter((id) => !hidden.has(id))
-}
-
-function load(): PersistedWorkspaceState {
-  try {
-    const value = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null') as Partial<
-      PersistedWorkspaceState & { hiddenDomainIds: string[] }
-    > | null
-    if (!value) return EMPTY
-    return {
-      selectedDomainIds: migrateSelection(value),
-      // A stored canvas has been composed by definition, whatever the upgrade left in it.
-      initialized: true,
-      domainPositions: value.domainPositions ?? {},
-      externalPositions: value.externalPositions ?? {},
-      collapsedModules: value.collapsedModules ?? {},
-      expandedExternals: value.expandedExternals ?? [],
-    }
-  } catch {
-    return EMPTY
-  }
-}
-
-function persist(state: PersistedWorkspaceState): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch {}
 }
 
 /**
@@ -116,48 +61,45 @@ function samePoint(current: WorkspacePoint | undefined, next: WorkspacePoint): b
   return current !== undefined && current.x === next.x && current.y === next.y
 }
 
-function persisted(state: WorkspaceCanvasState): PersistedWorkspaceState {
+export function schemaWorkspaceSnapshot(
+  state = useSchemaWorkspace.getState(),
+): WorkspaceSchemaUiState {
   return {
-    selectedDomainIds: state.selectedDomainIds,
+    visibleDomainIds: state.visibleDomainIds,
     initialized: state.initialized,
     domainPositions: state.domainPositions,
     externalPositions: state.externalPositions,
     collapsedModules: state.collapsedModules,
+    expandedDomainIds: state.expandedDomainIds,
     expandedExternals: state.expandedExternals,
   }
 }
 
-const initial = load()
-
 export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
-  ...initial,
+  ...EMPTY,
   replaceDomains: (ids) =>
-    set((state) => {
-      const selectedDomainIds = uniqueDomainIds(ids)
-      persist({ ...persisted(state), selectedDomainIds, initialized: true })
-      return { selectedDomainIds, initialized: true }
+    set(() => {
+      const visibleDomainIds = uniqueDomainIds(ids)
+      return { visibleDomainIds, initialized: true }
     }),
   toggleDomain: (id) =>
     set((state) => {
-      const selected = new Set(state.selectedDomainIds)
+      const selected = new Set(state.visibleDomainIds)
       if (selected.has(id)) selected.delete(id)
       else selected.add(id)
-      const selectedDomainIds = [...selected]
-      persist({ ...persisted(state), selectedDomainIds, initialized: true })
-      return { selectedDomainIds, initialized: true }
+      const visibleDomainIds = [...selected]
+      return { visibleDomainIds, initialized: true }
     }),
   setDomainPosition: (id, position) =>
     set((state) => {
       if (samePoint(state.domainPositions[id], position)) return state
       const domainPositions = { ...state.domainPositions, [id]: position }
-      persist({ ...persisted(state), domainPositions })
       return { domainPositions }
     }),
   setExternalPosition: (origin, position) =>
     set((state) => {
       if (samePoint(state.externalPositions[origin], position)) return state
       const externalPositions = { ...state.externalPositions, [origin]: position }
-      persist({ ...persisted(state), externalPositions })
       return { externalPositions }
     }),
   ensureDomainPositions: (positions) =>
@@ -170,7 +112,6 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
         changed = true
       }
       if (!changed) return state
-      persist({ ...persisted(state), domainPositions })
       return { domainPositions }
     }),
   ensureExternalPositions: (positions) =>
@@ -183,12 +124,10 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
         changed = true
       }
       if (!changed) return state
-      persist({ ...persisted(state), externalPositions })
       return { externalPositions }
     }),
   resetWorkspaceFrames: () =>
-    set((state) => {
-      persist({ ...persisted(state), domainPositions: {}, externalPositions: {} })
+    set(() => {
       return { domainPositions: {}, externalPositions: {} }
     }),
   toggleModule: (domainId, path) =>
@@ -197,8 +136,15 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       if (current.has(path)) current.delete(path)
       else current.add(path)
       const collapsedModules = { ...state.collapsedModules, [domainId]: [...current] }
-      persist({ ...persisted(state), collapsedModules })
       return { collapsedModules }
+    }),
+  toggleDomainExpanded: (domainId) =>
+    set((state) => {
+      const current = new Set(state.expandedDomainIds)
+      if (current.has(domainId)) current.delete(domainId)
+      else current.add(domainId)
+      const expandedDomainIds = [...current]
+      return { expandedDomainIds }
     }),
   toggleExternalExpanded: (origin) =>
     set((state) => {
@@ -206,7 +152,19 @@ export const useSchemaWorkspace = create<WorkspaceCanvasState>((set) => ({
       if (current.has(origin)) current.delete(origin)
       else current.add(origin)
       const expandedExternals = [...current]
-      persist({ ...persisted(state), expandedExternals })
       return { expandedExternals }
     }),
 }))
+
+/** Install the server-owned state without replacing the store's actions. */
+export function hydrateSchemaWorkspace(state: WorkspaceSchemaUiState): void {
+  useSchemaWorkspace.setState({
+    visibleDomainIds: uniqueDomainIds(state.visibleDomainIds),
+    initialized: state.initialized,
+    domainPositions: state.domainPositions,
+    externalPositions: state.externalPositions,
+    collapsedModules: state.collapsedModules,
+    expandedDomainIds: uniqueDomainIds(state.expandedDomainIds),
+    expandedExternals: state.expandedExternals,
+  })
+}

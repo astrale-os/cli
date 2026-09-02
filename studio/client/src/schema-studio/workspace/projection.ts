@@ -462,7 +462,7 @@ export function composeWorkspaceCanvas(
         expandParent: false,
         // Every domain on the canvas is furniture you can move. A drag edits the layout
         // of the domain the node belongs to — `onNodeDragStop` reads that owner off the
-        // node — so there is nothing for the ACTIVE domain to privilege here.
+        // node — so there is no selected or otherwise privileged domain here.
         draggable: true,
         selectable: true,
         focusable: true,

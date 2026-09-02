@@ -1,24 +1,24 @@
 /**
- * usage.ts — domain-attributable agent spend. Accumulates tokens + USD from THIS
- * studio's own agent runs on THIS domain (not the selected harness's machine-wide
- * usage, which is out of scope here). Stored at
- * `.domain-studio/usage.json`; surfaced read-only in the Settings dialog.
+ * usage.ts — agent spend attributable to Studio's own runs on this machine.
+ * Accumulates tokens + USD (not the harness's complete machine-wide usage, which is
+ * out of scope here). Stored as `usage.json` beside the global chats in the Studio
+ * home; surfaced read-only in the Settings dialog.
  */
-import type { AgentRun, DomainUsage } from '../../../shared/types'
+import type { AgentRun, AgentUsage } from '../../../shared/types'
 
 import { asFiniteNumber, asJsonRecord, asString } from '../../json'
 import { readJson, writeJson } from '../../state/store'
 
 const PATH = 'usage.json'
 
-const EMPTY: DomainUsage = { runs: 0, tokens: 0, costUsd: 0 }
+const EMPTY: AgentUsage = { runs: 0, tokens: 0, costUsd: 0 }
 
 function nonNegative(value: unknown): number | undefined {
   const number = asFiniteNumber(value)
   return number !== undefined && number >= 0 ? number : undefined
 }
 
-function decodeUsage(value: unknown): DomainUsage | undefined {
+function decodeUsage(value: unknown): AgentUsage | undefined {
   const record = asJsonRecord(value)
   if (!record) return undefined
   const runs = nonNegative(record.runs)
@@ -37,7 +37,7 @@ function decodeUsage(value: unknown): DomainUsage | undefined {
   }
 }
 
-export function readUsage(root: string): DomainUsage {
+export function readUsage(root: string): AgentUsage {
   return readJson(root, PATH, decodeUsage, { ...EMPTY })
 }
 
@@ -55,7 +55,7 @@ export function recordRun(root: string, run: AgentRun): void {
       lastRunAt: run.finishedAt ?? new Date().toISOString(),
       lastTokens: run.tokens,
       lastCostUsd: run.costUsd,
-    } satisfies DomainUsage)
+    } satisfies AgentUsage)
   } catch {
     /* usage is best-effort */
   }

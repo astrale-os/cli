@@ -107,7 +107,7 @@ export function GatewayAuthFields({
             </button>
           </div>
           <p className="text-[10px] leading-relaxed text-muted-foreground">
-            Stored locally in .domain-studio. It will stop working when the token expires.
+            Stored locally under ~/.astrale/studio. It will stop working when the token expires.
           </p>
         </div>
       )}

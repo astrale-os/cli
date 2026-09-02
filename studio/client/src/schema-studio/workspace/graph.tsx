@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { api, qk } from '@/lib/api'
 import { hasAnyUnsentDraft } from '@/lib/comment-drafts'
-import { useCatalog, useComments, useWorkspace } from '@/lib/hooks'
+import { useCatalog, useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { decodeFlowNodeId } from '@/lib/targets'
 import { cn } from '@/lib/utils'
@@ -38,15 +38,7 @@ import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-ro
 import { type CanvasBox, revealViewport, viewportForNodes } from '../fit'
 import { type EdgeFocus, edgeTypes } from '../floating-edge'
 import { type Geometry, normalizeContainerLayout } from '../geometry'
-import { CanvasCommentPin } from '../graph'
-import {
-  commentNodes,
-  neighborSet,
-  relationshipEdgeIds,
-  schemaCanvasCommentGroups,
-  schemaCanvasFallbackComments,
-  selectedRelationshipContext,
-} from '../graph/structure'
+import { neighborSet, relationshipEdgeIds, selectedRelationshipContext } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
 import { CLASS_H, CLASS_W, DOCK_CLEARANCE, VIEW_HUE, moduleTint } from '../palette'
 import { workspaceExternalNodeId, workspaceExternalOrigin } from './external-frames'
@@ -70,7 +62,7 @@ import { useSchemaWorkspace } from './store'
 const MIN_ZOOM = 0.08
 
 /**
- * The nodes a reveal request has to bring into view: a class of the active domain, or the
+ * The nodes a reveal request has to bring into view: an explicitly owned class, or the
  * frame an imported domain is drawn as — one box each.
  *
  * A RELATIONSHIP is the other shape this takes. It selects in the same `class.` namespace as
@@ -151,13 +143,11 @@ export function WorkspaceSchemaGraph({
   const [fitRequest, setFitRequest] = useState(0)
   const { data: catalog } = useCatalog()
   const { data: workspace } = useWorkspace()
-  const activeDomainId = useUI((state) => state.domainId) ?? domains[0]?.input.summary.id ?? ''
   const selected = useUI((state) => state.selectedClass)
   const selectionDomainId = useUI((state) => state.selectionDomainId)
-  // What the reader picked, and where it lives. A selection with no owner yet (nothing
-  // clicked since load) reads as the active domain's — that is what ⌘K and the comments
-  // tab select into.
-  const selectionDomain = selectionDomainId ?? activeDomainId
+  // Every real selection carries its owner. The first drawn domain is only a harmless
+  // qualification fallback while no selection exists; it drives no global UI state.
+  const selectionDomain = selectionDomainId ?? domains[0]?.input.summary.id ?? ''
   const focusId = useUI((state) => state.focusId)
   // the floating dock sits over the bottom of the view: keep the controls above it
   const panelSide = useUI((state) => state.panelSide)
@@ -194,7 +184,6 @@ export function WorkspaceSchemaGraph({
   )
   const { commitLayout, discardLayout } = useLayoutCommitter()
   const queryClient = useQueryClient()
-  const { data: commentStore } = useComments(activeDomainId)
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   const fittedNodes = useRef('')
   // The domains a running reorganize still waits on — see the projection effect below.
@@ -219,7 +208,7 @@ export function WorkspaceSchemaGraph({
 
   // One gesture, the whole canvas: discard EVERY hand-placed position — the geometry inside
   // each domain (the record on disk) and the frames those domains sit in (the record in the
-  // workspace store) — and let ELK and the frame packer lay it out again, the exact path a
+  // machine-side workspace record) — and let ELK and the frame packer lay it out again, the exact path a
   // cold canvas takes. Framing the result is left to the projection effect below: the two
   // halves land on different schedules, and only it can see when the second one has.
   const reorganize = useCallback(async () => {
@@ -261,12 +250,12 @@ export function WorkspaceSchemaGraph({
   const [edges, setEdges] = useState<Edge[]>(projection.edges)
 
   // While a drag is in flight the canvas OWNS the frame anchors: `onNodeDragStop` reads each
-  // one off the painted frame and writes it to the workspace store, which re-composes the
+  // one off the painted frame and writes it to machine-side workspace state, which re-composes the
   // projection around it. Adopting that echo would repaint every node from the geometry of
   // record — still one drag behind, since its own projection lands a tick later — and flash
   // the dropped node back to where the drag started. So a projection is adopted only when
-  // something the canvas does NOT already paint has changed: the prepared domains, which
-  // domain is active, or the catalog. The frame anchors alone are never news to it.
+  // something the canvas does NOT already paint has changed: the prepared domain set,
+  // expanded external frames, or the catalog. The frame anchors alone are never news to it.
   const adopted = useRef<{
     domains: WorkspaceDomainProjection[]
     catalog: typeof catalog
@@ -500,17 +489,6 @@ export function WorkspaceSchemaGraph({
     [edges, focusNodeId, selectedEdgeContext],
   )
 
-  // Canvas-pinned comments belong to the active domain — they are anchored to
-  // `section.schema`, which is per domain, not per workspace.
-  const canvasCommentNodes = useMemo(
-    () => commentNodes(schemaCanvasCommentGroups(commentStore?.comments)),
-    [commentStore?.comments],
-  )
-  const canvasFallbackComments = useMemo(
-    () => schemaCanvasFallbackComments(commentStore?.comments),
-    [commentStore?.comments],
-  )
-
   const displayNodes = useMemo(() => {
     const mapped = nodes.map((node) => {
       const focusable = node.type === 'classNode' || node.type === 'viewNode'
@@ -523,8 +501,8 @@ export function WorkspaceSchemaGraph({
         ) || undefined
       return node.className === cls ? node : { ...node, className: cls }
     })
-    return canvasCommentNodes.length ? [...mapped, ...canvasCommentNodes] : mapped
-  }, [nodes, sets, focusNodeId, selectedEdgeContext, canvasCommentNodes])
+    return mapped
+  }, [nodes, sets, focusNodeId, selectedEdgeContext])
 
   const displayEdges = useMemo(
     () =>
@@ -653,13 +631,6 @@ export function WorkspaceSchemaGraph({
           )}
 
           <Panel position="top-right" className="flex items-center gap-1.5">
-            {canvasFallbackComments.length > 0 && (
-              <CanvasCommentPin
-                threads={canvasFallbackComments}
-                anchor={{ ref: 'section.schema', kind: 'section' }}
-                excerpt="Schema canvas"
-              />
-            )}
             <CanvasToolbar>
               <CanvasIconToggle
                 icon={<Spline />}

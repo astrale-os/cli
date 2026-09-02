@@ -8,10 +8,9 @@
  * exactly why the bar as a whole has to open the dock. Were it only the field,
  * this fixture could never reach the tabs or the control that docks it elsewhere.
  */
-import type { Page } from '@playwright/test'
 import type { AgentRun } from '@shared/types'
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from './test'
 
 /** Anything taller than this is a panel, not a bar. */
 const BAR_CEILING = 120
@@ -63,7 +62,6 @@ async function stubAgent(
   const run = running
     ? {
         id: 'run-live',
-        domainId: 'fixture',
         chatId,
         harness: 'claude',
         status: 'running',
@@ -74,7 +72,7 @@ async function stubAgent(
       }
     : null
 
-  await page.route('**/api/domain/*/agent**', (route) => {
+  await page.route('**/api/agent**', (route) => {
     const tail = new URL(route.request().url()).pathname.split('/agent')[1] ?? ''
     if (tail === '')
       return route.fulfill({
@@ -142,7 +140,7 @@ test('at rest the bar is one line and carries nothing it cannot act on', async (
   await expect(page.getByRole('button', { name: 'Open comments' })).toHaveCount(0)
 })
 
-test('the paperclip goes straight to the file picker, and shows what it took', async ({ page }) => {
+test('the paperclip chooses a domain, then shows what it took', async ({ page }) => {
   await goBottom(page)
   // an upload queues behind the server's first introspection, and a cold fixture
   // spends most of the test budget on it — let the canvas say that is done
@@ -152,18 +150,21 @@ test('the paperclip goes straight to the file picker, and shows what it took', a
   // to open it, the assertion below would be testing that instead.
   await openDock(page)
 
-  // one click, one meaning — no menu standing between the clip and the picker
+  // A multi-domain workspace has no implicit attachment owner. The paperclip asks once,
+  // then the chosen domain's button opens the native picker.
+  await page.getByRole('button', { name: 'Attach a document to a domain' }).click()
+  await expect(page.getByText('Attach to domain')).toBeVisible()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: 'Attach a document' }).click(),
+    page.getByRole('button', { name: 'Attach a document to fixture' }).click(),
   ])
-  await expect(page.locator('[data-radix-popper-content-wrapper]')).toHaveCount(0)
 
   await chooser.setFiles({
     name: 'notes.md',
     mimeType: 'text/markdown',
     buffer: Buffer.from('# Notes\n'),
   })
+  await expect(page.getByText('Attach to domain')).toHaveCount(0)
   // what the agent was given is on the composer, not behind anything
   const chip = page.getByRole('button', { name: 'Remove notes.md' })
   await expect(chip).toBeVisible()
@@ -234,7 +235,12 @@ test('the threads on the composer are one chip that counts them, and opens them'
   const made: string[] = []
   for (const text of ['Rename this class', 'And split that module']) {
     const created = await request.post(url, {
-      data: { action: 'create', anchors: ['class.Company'], anchorRefs: [], text },
+      data: {
+        action: 'create',
+        anchors: ['class.Company'],
+        anchorRefs: [{ ref: 'class.Company', kind: 'schema' }],
+        text,
+      },
     })
     expect(created.ok()).toBe(true)
     made.push(((await created.json()) as { id: string }).id)
@@ -249,6 +255,11 @@ test('the threads on the composer are one chip that counts them, and opens them'
   await expect(dock(page).getByRole('button', { name: /Rename this class/ })).toHaveCount(0)
 
   await chip.click()
+  const fixtureThreads = dock(page).getByTestId('comments-domain-fixture')
+  await expect(
+    fixtureThreads.getByRole('heading', { name: 'crm.studio-demo.astrale.ai' }),
+  ).toBeVisible()
+  await expect(fixtureThreads.getByLabel('2 open threads')).toBeVisible()
   await expect(dock(page).getByText('Rename this class')).toBeVisible()
   await expect(dock(page).getByText('And split that module')).toBeVisible()
 
@@ -291,9 +302,10 @@ test('the comments tab shows threads alone, and gives the draft back on the way 
   await openDock(page)
 
   await composer(page).fill('half a sentence')
+  await page.getByRole('button', { name: 'Attach a document to a domain' }).click()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: 'Attach a document' }).click(),
+    page.getByRole('button', { name: 'Attach a document to fixture' }).click(),
   ])
   await chooser.setFiles({
     name: 'notes.md',
@@ -306,7 +318,7 @@ test('the comments tab shows threads alone, and gives the draft back on the way 
   // the threads are a reading surface: nothing to write with, nothing attached
   await dock(page).getByRole('button', { name: 'Comments', exact: true }).click()
   await expect(composer(page)).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Attach a document' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Attach a document/ })).toHaveCount(0)
   await expect(chip).toHaveCount(0)
 
   // and the message was only ever put down, never dropped
@@ -364,7 +376,6 @@ function longTurn(paragraphs: number): AgentRun {
   ).join('\n\n')
   return {
     id: 'run-long',
-    domainId: 'fixture',
     chatId: CHAT_ID,
     harness: 'claude',
     status: 'succeeded',

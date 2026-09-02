@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { dockWorkspacePanel, expect, test } from './test'
 
 /**
  * Comment / Ask mode calls out what the next click would pin to.
@@ -16,8 +16,9 @@ const NODE = '.react-flow__node[data-id="workspace:fixture:class.Ticket"]'
 
 test('comment mode paints the relationship under the pointer, and lets go on Esc', async ({
   page,
+  request,
 }) => {
-  await page.addInitScript(() => localStorage.setItem('studio.panelSide', 'left'))
+  await dockWorkspacePanel(request, 'left')
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
   await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
@@ -58,7 +59,7 @@ test('comment mode paints the relationship under the pointer, and lets go on Esc
 
   // ── in comment mode, the line under the pointer says where the pin would land ──
   await page.keyboard.press('c')
-  await expect(page.getByText('Comment mode — click anything to comment')).toBeVisible()
+  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
   await page.mouse.move(over.x + 1, over.y)
   await expect.poll(paint).toEqual({ stroke: primary, width: '4px' })
 
@@ -75,6 +76,6 @@ test('comment mode paints the relationship under the pointer, and lets go on Esc
   await page.mouse.move(over.x, over.y)
   await expect.poll(paint).toEqual({ stroke: primary, width: '4px' })
   await page.keyboard.press('Escape')
-  await expect(page.getByText('Comment mode — click anything to comment')).toHaveCount(0)
+  await expect(page.getByText('Comment mode — choose a domain element')).toHaveCount(0)
   await expect.poll(paint).toEqual(atRest)
 })

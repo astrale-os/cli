@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { dockWorkspacePanel, expect, test, type Locator, type Page } from './test'
 
 /**
  * Searching for a RELATIONSHIP and getting an answer on the canvas.
@@ -36,13 +36,14 @@ async function insidePane(page: Page, locator: Locator): Promise<boolean> {
 
 test('⌘K finds a relationship, brings it into view and paints it over its two ends', async ({
   page,
+  request,
 }) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
   // Dock the work panel to a side and collapse it, so the canvas owns the window: where the
   // panel lives is another spec's subject, and a floating dock over the pane is not this one's.
-  await page.addInitScript(() => localStorage.setItem('studio.panelSide', 'left'))
+  await dockWorkspacePanel(request, 'left')
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
   await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
@@ -71,7 +72,9 @@ test('⌘K finds a relationship, brings it into view and paints it over its two 
   await page.keyboard.type(RELATIONSHIP)
   // listed as a relationship, with the two classes it runs between
   await expect(
-    page.getByRole('option', { name: `${RELATIONSHIP} (Company → Subscription)` }),
+    page.getByRole('option', {
+      name: `${RELATIONSHIP} (crm.studio-demo.astrale.ai · Company → Subscription)`,
+    }),
   ).toBeVisible()
   await page.keyboard.press('Enter')
   await expect(page.getByPlaceholder('Search the schema…')).toHaveCount(0)

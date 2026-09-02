@@ -3,8 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import type { AgentWorkspace } from './workspace'
+
 import { registerDomain, unregisterDomain } from '../domain'
 import { updateSettings } from '../state/settings'
+import { settingsRoot } from '../studio-settings'
 import { initWorkspaceState } from '../workspace-state'
 import { runAsk } from './ask'
 import { activeChat, createChat, recordChatTurn, setActiveChat } from './chats'
@@ -15,6 +18,7 @@ const envBefore = {
   harness: process.env.DOMAIN_STUDIO_HARNESS,
   model: process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL,
   session: process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION,
+  astraleHome: process.env.ASTRALE_HOME,
 }
 
 function restore(name: keyof typeof envBefore, variable: string): void {
@@ -27,6 +31,7 @@ afterEach(() => {
   restore('harness', 'DOMAIN_STUDIO_HARNESS')
   restore('model', 'DOMAIN_STUDIO_MOCK_EXPECT_MODEL')
   restore('session', 'DOMAIN_STUDIO_MOCK_EXPECT_SESSION')
+  restore('astraleHome', 'ASTRALE_HOME')
   while (domainIds.length) unregisterDomain(domainIds.pop()!)
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
@@ -48,22 +53,30 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   domainIds.push(handle.id)
   // Studio settings are global; point that global at this test's root.
   initWorkspaceState(root)
+  process.env.ASTRALE_HOME = join(root, '.astrale')
+  const workspace: AgentWorkspace = {
+    root,
+    stateRoot: join(root, '.machine-agent'),
+    uiRoot: join(root, '.machine-ui'),
+    key: 'ask-workspace',
+    domains: [handle],
+  }
 
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-selected-model'
   process.env.DOMAIN_STUDIO_MOCK_EXPECT_SESSION = 'mock-parent-session'
-  updateSettings(root, { agentModel: { harness: 'mock', model: 'mock-selected-model' } })
-  const chat = activeChat(root, 'mock')
-  recordChatTurn(root, chat.id, { sessionId: 'mock-parent-session', turns: 2 })
+  updateSettings(settingsRoot(), { agentModel: { harness: 'mock', model: 'mock-selected-model' } })
+  const chat = activeChat(workspace.stateRoot, 'mock', undefined, workspace.uiRoot)
+  recordChatTurn(workspace.stateRoot, chat.id, { sessionId: 'mock-parent-session', turns: 2 })
   // A second tab on another agent must not lend Ask its session id.
-  const other = createChat(root, { harness: 'claude' })
-  recordChatTurn(root, other.id, { sessionId: 'claude-other-session', turns: 4 })
-  setActiveChat(root, chat.id)
+  const other = createChat(workspace.stateRoot, { harness: 'claude' })
+  recordChatTurn(workspace.stateRoot, other.id, { sessionId: 'claude-other-session', turns: 4 })
+  setActiveChat(workspace.stateRoot, chat.id, workspace.uiRoot)
 
   const deltas: string[] = []
   const result = await runAsk(
-    handle,
-    { question: 'Which context is active?' },
+    workspace,
+    { question: 'Which context is active?', domainId: handle.id },
     new AbortController().signal,
     (delta) => deltas.push(delta),
   )

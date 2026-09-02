@@ -21,13 +21,18 @@ export interface AskParts {
   question: string
   ir: SchemaIR | null
   overlay?: SchemaOverlay
+  /** the domain the element lives in, so the answer reads the right repo */
+  domain?: { origin: string; path: string }
 }
 
 /** Build one focused side-question prompt. */
 export function buildAskPrompt(parts: AskParts): string {
   const target = describeAnchor(parts.anchorRef, parts.ir, parts.overlay)
   const named = parts.excerpt && parts.excerpt !== parts.anchorRef ? ` (${parts.excerpt})` : ''
-  const lines = [`Quick question about \`${parts.anchorRef}\`${named} in this domain.`]
+  const where = parts.domain
+    ? ` in the domain \`${parts.domain.origin}\` (at \`${parts.domain.path}\`)`
+    : ' in this workspace'
+  const lines = [`Quick question about \`${parts.anchorRef}\`${named}${where}.`]
   if (target) lines.push('', 'Target:', target)
   lines.push('', `Question: ${parts.question.trim()}`)
   return lines.join('\n')

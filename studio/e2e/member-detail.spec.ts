@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from './test'
 
 /**
  * A Class's detail panel reads as two flat lists and one line of ancestry.
@@ -14,11 +14,9 @@ import { expect, type Locator, type Page, test } from '@playwright/test'
  */
 
 async function openInvoice(page: Page): Promise<Locator> {
-  await page.addInitScript(() => localStorage.setItem('studio.panelSide', 'left'))
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
   await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
-  await page.getByRole('button', { name: 'Collapse the panel' }).click()
   const node = page.getByText('Invoice', { exact: true }).first()
   await expect(node).toBeVisible()
   await node.click()
@@ -160,7 +158,7 @@ test('the targeting ring draws whole on the first and the last row of a list', a
   const rows = panel.locator('[data-member-list]').first().locator(':scope > [data-anchor-ref]')
 
   await page.keyboard.press('c')
-  await expect(page.getByText('Comment mode — click anything to comment')).toBeVisible()
+  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
 
   // where the ring lands versus where its list stops clipping
   const ringWithinClip = (row: Locator) =>

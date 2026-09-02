@@ -23,14 +23,13 @@ export function NodeCommentPin({
   excerpt,
   className,
 }: {
-  domainId?: string
+  domainId: string
   anchorRef: string
   kind: AnchorKind
   excerpt: string
   className?: string
 }) {
-  const activeDomainId = useUI((s) => s.domainId)
-  const ownerDomainId = domainId ?? activeDomainId ?? ''
+  const ownerDomainId = domainId
   const { openThreads, orphaned } = useAnchorThreads(anchorRef, ownerDomainId)
   const myId = useId()
   const openRef = useUI((s) => s.openAnchorRef)

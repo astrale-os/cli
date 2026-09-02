@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { api, qk } from '@/lib/api'
-import { useHarness, useSettings } from '@/lib/hooks'
+import { useHarness, useSettings, useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 
 import { AgentDetails, AgentSettings } from './agent'
@@ -34,22 +34,23 @@ interface SettingsSaveInput {
 }
 
 /**
- * The studio's settings. `StudioSettings` is one file for the whole workspace — how hard
+ * The studio's settings. `StudioSettings` is one file for the whole machine — how hard
  * the agent thinks, which model it opens on, how long extraction may take — so none of it
  * moves when you change the domain you work in.
  *
- * A few rows below still belong to ONE domain, because what they configure does: which
- * harness that domain talks to, its gateway credentials, its .env files. They say so.
+ * The environment editor still belongs to one domain, so it carries its own explicit picker.
  */
 export function SettingsDialog() {
   const open = useUI((state) => state.settingsOpen)
   const setOpen = useUI((state) => state.setSettingsOpen)
-  const domainId = useUI((state) => state.domainId)
+  const selectionDomainId = useUI((state) => state.selectionDomainId)
   const { data: settings } = useSettings()
-  const { data: harness } = useHarness(open ? domainId : undefined)
+  const { data: domains = [] } = useWorkspace()
+  const { data: harness } = useHarness(open)
   const queryClient = useQueryClient()
   const [values, setValues] = useState<Record<string, string>>({})
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [envDomainId, setEnvDomainId] = useState<string>()
   const detailsStartRef = useRef<HTMLDivElement>(null)
 
   const changeOpen = (nextOpen: boolean) => {
@@ -67,6 +68,15 @@ export function SettingsDialog() {
       ),
     )
   }, [settings])
+
+  useEffect(() => {
+    if (!open) return
+    const valid = new Set(domains.map((domain) => domain.id))
+    if (envDomainId && valid.has(envDomainId)) return
+    setEnvDomainId(
+      selectionDomainId && valid.has(selectionDomainId) ? selectionDomainId : domains[0]?.id,
+    )
+  }, [domains, envDomainId, open, selectionDomainId])
 
   useLayoutEffect(() => {
     if (detailsOpen) detailsStartRef.current?.scrollIntoView({ block: 'start' })
@@ -103,7 +113,7 @@ export function SettingsDialog() {
       <DialogContent className="w-[calc(100%-2rem)] max-w-xl">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Studio-wide — saved to .domain-studio/settings.json</DialogDescription>
+          <DialogDescription>Machine-wide — saved under ~/.astrale/studio</DialogDescription>
         </DialogHeader>
         <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen} className="contents">
           <div className="-mx-1 max-h-[60vh] space-y-5 overflow-y-auto px-1">
@@ -118,10 +128,25 @@ export function SettingsDialog() {
                   values={values}
                   onChange={(key, value) => setValues((current) => ({ ...current, [key]: value }))}
                 />
-                <EnvEditor domainId={domainId} />
-                <HarnessGatewaySettings domainId={domainId} harness={harness} />
+                <div className="space-y-2">
+                  <label className="flex items-center gap-3 px-1 text-[12px] text-muted-foreground">
+                    <span>Environment domain</span>
+                    <select
+                      value={envDomainId ?? ''}
+                      onChange={(event) => setEnvDomainId(event.target.value || undefined)}
+                      className="ml-auto max-w-64 rounded-md border bg-card px-2 py-1 text-[12px] text-foreground outline-none focus:border-primary"
+                    >
+                      {domains.map((domain) => (
+                        <option key={domain.id} value={domain.id}>
+                          {domain.origin}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {envDomainId && <EnvEditor domainId={envDomainId} />}
+                </div>
+                <HarnessGatewaySettings harness={harness} />
                 <AgentDetails
-                  domainId={open ? domainId : undefined}
                   settings={settings}
                   harness={harness}
                   values={values}

@@ -170,54 +170,27 @@ describe('chat tabs', () => {
   test('a stored active id that no longer exists falls back to a real tab', () => {
     const dir = root()
     const chat = activeChat(dir, 'claude')
-    writeJson(dir, '.cache/agent/chats.json', {
-      version: 2,
-      activeId: 'ghost',
-      chats: [chat],
-    })
+    writeJson(dir, 'active-chat.json', { activeId: 'ghost' })
     expect(ensureChats(dir, 'claude').activeId).toBe(chat.id)
   })
 
-  test('migrates the pre-tabs store into one adopting tab per harness', () => {
-    const dir = root()
-    writeJson(dir, '.cache/agent/session.json', {
-      version: 1,
-      conversations: {
-        claude: { sessionId: 'claude-session', turns: 4, updatedAt: 'then' },
-        codex: { sessionId: 'codex-thread', turns: 1, updatedAt: 'then' },
-      },
-    })
+  test('machine-global chats keep an independent active pointer per workspace', () => {
+    const machine = root()
+    const workspaceA = root()
+    const workspaceB = root()
+    const first = activeChat(machine, 'claude', { workspace: '/work/a' }, workspaceA)
+    const second = createChat(machine, { harness: 'codex', workspace: '/work/b' }, workspaceB)
 
-    const chats = ensureChats(dir, 'claude').chats
-    expect(chats).toHaveLength(2)
-    expect(
-      chats.map((chat) => [chat.harness, chat.sessionId, chat.turns, chat.adoptsLegacyRuns]),
-    ).toEqual([
-      ['claude', 'claude-session', 4, true],
-      ['codex', 'codex-thread', 1, true],
-    ])
-    // the migration is persisted, so the ids stay stable for those transcripts
-    expect(
-      readJson(dir, '.cache/agent/chats.json', (v) => v as { chats: unknown[] }, null)?.chats,
-    ).toHaveLength(2)
-  })
-
-  test('migrates the oldest flat single-session shape too', () => {
-    const dir = root()
-    writeJson(dir, '.cache/agent/session.json', {
-      harness: 'claude',
-      sessionId: 'legacy-session',
-      turns: 6,
-    })
-    expect(ensureChats(dir, 'codex').chats).toEqual([
-      expect.objectContaining({ harness: 'claude', sessionId: 'legacy-session', turns: 6 }),
-    ])
-  })
-
-  test('rejects a store written by a newer Studio rather than dropping its chats', () => {
-    const dir = root()
-    writeJson(dir, '.cache/agent/chats.json', { version: 3, activeId: '', chats: [] })
-    expect(() => ensureChats(dir, 'claude').chats).toThrow(/unsupported agent chat store version/)
+    expect(ensureChats(machine, 'claude', undefined, workspaceA)).toEqual(
+      expect.objectContaining({
+        activeId: first.id,
+        chats: expect.arrayContaining([
+          expect.objectContaining({ id: first.id }),
+          expect.objectContaining({ id: second.id }),
+        ]),
+      }),
+    )
+    expect(ensureChats(machine, 'claude', undefined, workspaceB).activeId).toBe(second.id)
   })
 
   test('an empty session id clears rather than stores a blank conversation', () => {
@@ -297,13 +270,12 @@ describe('queued messages', () => {
 
     const store = readJson<Record<string, unknown> | null>(
       dir,
-      '.cache/agent/chats.json',
+      `chats/${chat.id}.json`,
       (value) => value as Record<string, unknown>,
       null,
     )!
-    const chats = store.chats as Record<string, unknown>[]
-    chats[0]!.queue = [{ id: 'kept', text: 'kept' }, { text: 'no id' }, 'nonsense']
-    writeJson(dir, '.cache/agent/chats.json', store)
+    store.queue = [{ id: 'kept', text: 'kept' }, { text: 'no id' }, 'nonsense']
+    writeJson(dir, `chats/${chat.id}.json`, store)
 
     expect(texts(dir, chat.id)).toEqual(['kept'])
   })

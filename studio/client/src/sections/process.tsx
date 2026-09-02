@@ -57,7 +57,13 @@ function viewTargets(views: ViewInfo[]): string[] {
   return out
 }
 
-export function ProcessSection({ domainId }: { domainId: string }) {
+export function ProcessSection({
+  domainId,
+  onDomainChange,
+}: {
+  domainId?: string
+  onDomainChange: (domainId: string) => void
+}) {
   const bundleQ = useBundle(domainId)
   const anatomyQ = useAnatomy(domainId)
   const setSection = useUI((s) => s.setSection)
@@ -116,17 +122,28 @@ export function ProcessSection({ domainId }: { domainId: string }) {
   const uiTargets = useMemo(() => viewTargets(views), [views])
 
   const gotoClass = (name: string) => {
+    if (!domainId) return
     setSection('schema')
-    focusClass(`class.${name}`)
+    focusClass(`class.${name}`, domainId)
   }
   const gotoViews = () => {
     setSection('schema')
-    setPanelOverlay('views')
+    setPanelOverlay('views', domainId)
+  }
+
+  if (!domainId) {
+    return (
+      <ProcessLayout selectedId={domainId} onDomainChange={onDomainChange}>
+        <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+          This workspace has no domain yet.
+        </div>
+      </ProcessLayout>
+    )
   }
 
   if (bundleQ.isLoading || anatomyQ.isLoading) {
     return (
-      <ProcessLayout>
+      <ProcessLayout selectedId={domainId} onDomainChange={onDomainChange}>
         <div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
           Loading…
         </div>
@@ -135,7 +152,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
   }
 
   return (
-    <ProcessLayout>
+    <ProcessLayout selectedId={domainId} onDomainChange={onDomainChange}>
       <SectionShell
         title="Process"
         subtitle="Actions and workflows implementing callable contracts"
@@ -213,6 +230,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
                             key={fn.name}
                             fn={fn}
                             origin={ir.domain}
+                            domainId={domainId}
                             onClick={
                               fn.ownerKind === 'class' ? () => gotoClass(fn.owner) : undefined
                             }
@@ -236,12 +254,20 @@ export function ProcessSection({ domainId }: { domainId: string }) {
  * work FROM — so it carries the same domains rail as the schema studio, or switching
  * domains would mean leaving the section first.
  */
-function ProcessLayout({ children }: { children: ReactNode }) {
+function ProcessLayout({
+  selectedId,
+  onDomainChange,
+  children,
+}: {
+  selectedId?: string
+  onDomainChange: (domainId: string) => void
+  children: ReactNode
+}) {
   return (
     <div className="flex h-full min-h-0">
       <ModulesSidebar header={<DomainsRailHeader />}>
         <ScrollArea className="h-full">
-          <DomainPicker />
+          <DomainPicker selectedId={selectedId} onSelect={onDomainChange} />
         </ScrollArea>
       </ModulesSidebar>
       <div className="min-h-0 min-w-0 flex-1">{children}</div>
@@ -249,7 +275,17 @@ function ProcessLayout({ children }: { children: ReactNode }) {
   )
 }
 
-function FnRow({ fn, origin, onClick }: { fn: Fn; origin: string; onClick?: () => void }) {
+function FnRow({
+  fn,
+  origin,
+  domainId,
+  onClick,
+}: {
+  fn: Fn
+  origin: string
+  domainId: string
+  onClick?: () => void
+}) {
   const glyph =
     fn.link?.kind === 'workflow'
       ? { icon: Workflow, tone: 'fuchsia' }
@@ -273,7 +309,7 @@ function FnRow({ fn, origin, onClick }: { fn: Fn; origin: string; onClick?: () =
       title={
         <span className="flex items-center gap-1.5">
           <span className="font-semibold">{fn.name}</span>
-          <MethodAuthBadge method={fn.method} interactive={!onClick} />
+          <MethodAuthBadge method={fn.method} domainId={domainId} interactive={!onClick} />
           {/* the policies this callable checks — the shield's hover card proves them on demo data */}
           <PolicyChips method={fn.method} origin={origin} />
           {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}

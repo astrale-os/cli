@@ -9,6 +9,7 @@ import type { AskResult } from './harness/adapter'
 
 import { registerDomain, unregisterDomain } from '../domain'
 import { updateSettings } from '../state/settings'
+import { settingsRoot } from '../studio-settings'
 import { initWorkspaceState } from '../workspace-state'
 import { markHandoffDelivered } from './chats'
 import { getHarnessById } from './harness/registry'
@@ -16,6 +17,7 @@ import { handleAgentRoute } from './routes'
 import { cancelRun, listChats } from './run/coordinator'
 import { persistRun } from './run/transcript'
 import { NdjsonChannel } from './stream'
+import { agentWorkspace } from './workspace'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -23,6 +25,7 @@ const previousEnv = {
   DOMAIN_STUDIO_HARNESS: process.env.DOMAIN_STUDIO_HARNESS,
   DOMAIN_STUDIO_MOCK_MODE: process.env.DOMAIN_STUDIO_MOCK_MODE,
   DOMAIN_STUDIO_MOCK_DELAY_MS: process.env.DOMAIN_STUDIO_MOCK_DELAY_MS,
+  ASTRALE_HOME: process.env.ASTRALE_HOME,
 }
 
 afterEach(() => {
@@ -49,12 +52,14 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   )
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
+  process.env.ASTRALE_HOME = join(root, '.astrale')
+  initWorkspaceState(root)
   return handle
 }
 
 async function route(rest: string, method = 'GET', body: JsonRecord = {}, search = '') {
-  const handle = fixture()
-  const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}${search}`)
+  fixture()
+  const url = new URL(`http://127.0.0.1/api${rest}${search}`)
   const req = new Request(url, {
     method,
     ...(method === 'POST'
@@ -64,7 +69,7 @@ async function route(rest: string, method = 'GET', body: JsonRecord = {}, search
         }
       : {}),
   })
-  return handleAgentRoute({ req, url, rest, body, handle, notify: () => {} })
+  return handleAgentRoute({ req, url, rest, body, notify: () => {} })
 }
 
 test('owns harness status and prompt routes behind one agent boundary', async () => {
@@ -102,10 +107,10 @@ test('harness status reports every local agent, not just the one in use', async 
 
 test('a chat pins its own reasoning level, and the turn carries it', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
-  const handle = fixture()
-  const chatId = listChats(handle.id).activeId
+  fixture()
+  const chatId = listChats().activeId
   const patch = async (effort: string) => {
-    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}/agent/chats`)
+    const url = new URL('http://127.0.0.1/api/agent/chats')
     const body = { action: 'update', chatId, effort }
     return (await (
       await handleAgentRoute({
@@ -113,7 +118,6 @@ test('a chat pins its own reasoning level, and the turn carries it', async () =>
         url,
         rest: '/agent/chats',
         body,
-        handle,
         notify: () => {},
       })
     )?.json()) as { effort?: string }
@@ -128,11 +132,10 @@ test('a chat pins its own reasoning level, and the turn carries it', async () =>
 })
 
 test('serves the bounded persisted conversation history', async () => {
-  const handle = fixture()
-  const chatId = listChats(handle.id).activeId
+  fixture()
+  const chatId = listChats().activeId
   const saved = (id: string, createdAt: string): AgentRun => ({
     id,
-    domainId: handle.id,
     chatId,
     harness: 'codex',
     status: 'succeeded',
@@ -142,16 +145,15 @@ test('serves the bounded persisted conversation history', async () => {
     targetCommentIds: [],
     events: [],
   })
-  persistRun(handle.root, saved('older', '2026-08-20T01:00:00.000Z'), true)
-  persistRun(handle.root, saved('newer', '2026-08-20T02:00:00.000Z'), true)
+  persistRun(agentWorkspace().stateRoot, saved('older', '2026-08-20T01:00:00.000Z'), true)
+  persistRun(agentWorkspace().stateRoot, saved('newer', '2026-08-20T02:00:00.000Z'), true)
 
-  const url = new URL(`http://127.0.0.1/api/domain/${handle.id}/agent/history?limit=1`)
+  const url = new URL('http://127.0.0.1/api/agent/history?limit=1')
   const response = await handleAgentRoute({
     req: new Request(url),
     url,
     rest: '/agent/history',
     body: {},
-    handle,
     notify: () => {},
   })
 
@@ -263,15 +265,15 @@ test('an NDJSON channel never enqueues after cancellation', () => {
 
 test('a session id is checked against the chat that owns it, not the domain default', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
-  const handle = fixture()
+  fixture()
   const call = async (rest: string, body: JsonRecord) => {
-    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const url = new URL(`http://127.0.0.1/api${rest}`)
     const req = new Request(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    return handleAgentRoute({ req, url, rest, body, handle, notify: () => {} })
+    return handleAgentRoute({ req, url, rest, body, notify: () => {} })
   }
 
   // a Codex tab in a domain whose default agent is something else entirely
@@ -352,15 +354,15 @@ test('the model catalog lists every harness, available or not', async () => {
 
 test('picking a model of another agent forks a brand-new chat carrying it', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
-  const handle = fixture()
+  fixture()
   const call = async (rest: string, body: JsonRecord) => {
-    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const url = new URL(`http://127.0.0.1/api${rest}`)
     const req = new Request(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    return handleAgentRoute({ req, url, rest, body, handle, notify: () => {} })
+    return handleAgentRoute({ req, url, rest, body, notify: () => {} })
   }
 
   // an existing Codex tab: the fork must NOT reuse it
@@ -385,22 +387,21 @@ test('picking a model of another agent forks a brand-new chat carrying it', asyn
   expect(forked.id).not.toBe(existing.id)
   expect(forked.origin?.chatId).toBe(source.id)
 
-  const url = new URL(`http://127.0.0.1/api/domain/${handle.id}/agent/chats`)
+  const url = new URL('http://127.0.0.1/api/agent/chats')
   const list = (await (
     await handleAgentRoute({
       req: new Request(url),
       url,
       rest: '/agent/chats',
       body: {},
-      handle,
       notify: () => {},
     })
   )?.json()) as { chats: { id: string }[]; activeId: string }
-  // the seeded tab plus all three: forking added a chat, it did not move into one
+  // the two opened tabs plus the fork: forking added a chat, it did not move into one
   expect(list.chats.map((chat) => chat.id)).toEqual(
     expect.arrayContaining([existing.id, source.id, forked.id]),
   )
-  expect(list.chats).toHaveLength(4)
+  expect(list.chats).toHaveLength(3)
   expect(list.activeId).toBe(forked.id)
 })
 
@@ -437,18 +438,16 @@ test('the catalog ticks Studio default model, and falls back when the harness dr
 
     // a domain that starred a slug the agent has since renamed falls back to
     // Studio's default, not to whatever that machine is configured with
-    const starred = fixture()
-    // Studio settings are global; point that global at this fixture's root.
-    initWorkspaceState(starred.root)
-    updateSettings(starred.root, { agentModel: { harness: 'claude', model: 'opus' } })
-    const staleUrl = new URL(`http://127.0.0.1/api/domain/${starred.id}/agent/models`)
+    fixture()
+    // Studio settings are global on this test machine.
+    updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus' } })
+    const staleUrl = new URL('http://127.0.0.1/api/agent/models')
     const stale = (await (
       await handleAgentRoute({
         req: new Request(staleUrl),
         url: staleUrl,
         rest: '/agent/models',
         body: {},
-        handle: starred,
         notify: () => {},
       })
     )?.json()) as { harness: string; defaultModel?: string }[]
@@ -478,15 +477,15 @@ test('the catalog ticks Studio default model, and falls back when the harness dr
 
 test('a chat origin can only be forgotten before it reaches the agent', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
-  const handle = fixture()
+  fixture()
   const call = async (rest: string, body: JsonRecord) => {
-    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const url = new URL(`http://127.0.0.1/api${rest}`)
     const req = new Request(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    return handleAgentRoute({ req, url, rest, body, handle, notify: () => {} })
+    return handleAgentRoute({ req, url, rest, body, notify: () => {} })
   }
 
   const source = (await (
@@ -494,7 +493,6 @@ test('a chat origin can only be forgotten before it reaches the agent', async ()
   )?.json()) as { id: string }
   const turn: AgentRun = {
     id: 'turn-1',
-    domainId: handle.id,
     chatId: source.id,
     harness: 'mock',
     status: 'succeeded',
@@ -504,7 +502,7 @@ test('a chat origin can only be forgotten before it reaches the agent', async ()
     targetCommentIds: [],
     events: [],
   }
-  persistRun(handle.root, turn, true)
+  persistRun(agentWorkspace().stateRoot, turn, true)
   const forked = (await (
     await call('/agent/chats', { action: 'switch-harness', chatId: source.id, harness: 'codex' })
   )?.json()) as { id: string; origin?: { summary: string } }
@@ -517,35 +515,35 @@ test('a chat origin can only be forgotten before it reaches the agent', async ()
   expect(forgotten.origin).toBeUndefined()
 
   // the conversation it was forked from keeps its own tab and its transcript
-  const chats = listChats(handle.id)
+  const chats = listChats()
   expect(chats.chats.map((chat) => chat.id)).toContain(source.id)
   expect(chats.chats.find((chat) => chat.id === forked.id)?.origin).toBeUndefined()
 
   const delivered = (await (
     await call('/agent/chats', { action: 'switch-harness', chatId: source.id, harness: 'codex' })
   )?.json()) as { id: string; origin?: { summary: string } }
-  markHandoffDelivered(handle.root, delivered.id)
+  markHandoffDelivered(agentWorkspace().stateRoot, delivered.id)
 
   const refused = await call('/agent/chats', { action: 'forget-origin', chatId: delivered.id })
   expect(refused?.status).toBe(400)
   expect(await refused?.text()).toContain('already sent to the agent')
-  expect(listChats(handle.id).chats.find((chat) => chat.id === delivered.id)?.origin).toBeDefined()
+  expect(listChats().chats.find((chat) => chat.id === delivered.id)?.origin).toBeDefined()
 })
 
 test('the queue route parks a message behind a turn and hands back the tab', async () => {
   process.env.DOMAIN_STUDIO_HARNESS = 'mock'
   process.env.DOMAIN_STUDIO_MOCK_MODE = 'normal'
   process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = '5000'
-  const handle = fixture()
+  fixture()
   const events: StudioEvent[] = []
   const call = async (rest: string, body: JsonRecord) => {
-    const url = new URL(`http://127.0.0.1/api/domain/${handle.id}${rest}`)
+    const url = new URL(`http://127.0.0.1/api${rest}`)
     const req = new Request(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    return handleAgentRoute({ req, url, rest, body, handle, notify: (event) => events.push(event) })
+    return handleAgentRoute({ req, url, rest, body, notify: (event) => events.push(event) })
   }
   const submit = async (message: string) =>
     (await (await call('/agent/submit', { message }))?.json()) as AgentSubmitResult
@@ -579,5 +577,5 @@ test('the queue route parks a message behind a turn and hands back the tab', asy
   expect(unknownAction?.status).toBe(400)
   expect(await unknownAction?.json()).toEqual({ error: 'unknown queue action: shuffle' })
 
-  expect(cancelRun(handle.id)).toBe(true)
+  expect(cancelRun()).toBe(true)
 })

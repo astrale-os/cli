@@ -16,13 +16,12 @@ import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 /** Open threads for an anchor, which are the only ones represented in the interface. */
 export function useAnchorThreads(
   ref: string,
-  ownerDomainId?: string,
+  ownerDomainId: string,
 ): {
   openThreads: Comment[]
   orphaned: boolean
 } {
-  const activeDomainId = useUI((s) => s.domainId)
-  const { data } = useComments(ownerDomainId ?? activeDomainId)
+  const { data } = useComments(ownerDomainId)
   const threads = (data?.comments ?? []).filter((c) => c.anchorRefs.some((r) => r.ref === ref))
   const openThreads = openCommentThreads(threads)
   const orphaned = openThreads.some((c) => c.orphaned)
@@ -79,11 +78,10 @@ export function AnchorButton({
   anchorRef: AnchorRef
   excerpt: string
   className?: string
-  domainId?: string
+  domainId: string
 }) {
   const myId = useId()
-  const activeDomainId = useUI((s) => s.domainId)
-  const ownerDomainId = domainId ?? activeDomainId ?? ''
+  const ownerDomainId = domainId
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
   const openKey = anchorKey(ownerDomainId, anchorRef.ref)

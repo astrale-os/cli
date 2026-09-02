@@ -17,7 +17,6 @@ function event(kind: AgentEvent['kind'], text: string, target?: string): AgentEv
 function run(extra: Partial<AgentRun>): AgentRun {
   return {
     id: crypto.randomUUID(),
-    domainId: 'billing',
     chatId: 'chat-1',
     harness: 'claude',
     status: 'succeeded',

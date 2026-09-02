@@ -81,7 +81,6 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
  */
 export function pendingRun(input: {
   id: string
-  domainId: string
   chatId: string
   harness: string
   /** what was typed; empty when the turn only carries documents and threads */
@@ -90,7 +89,6 @@ export function pendingRun(input: {
 }): AgentRun {
   return {
     id: input.id,
-    domainId: input.domainId,
     chatId: input.chatId,
     harness: input.harness,
     // not `running`: nothing runs until the server says it reserved the chat
@@ -124,13 +122,13 @@ export function harnessLink(available: boolean | undefined, failed = false): Har
 }
 
 /** Initial snapshot for one chat (harness availability + most-recent run). */
-export function useAgentSnapshot(id?: string, chatId?: string) {
-  const active = useActiveChatId(id)
+export function useAgentSnapshot(chatId?: string) {
+  const active = useActiveChatId()
   const chat = chatId ?? active
   return useQuery({
-    queryKey: qk.agent(id ?? '', chat),
-    queryFn: () => api.agentSnapshot(id!, chat),
-    enabled: !!id && !!chat,
+    queryKey: qk.agent(chat),
+    queryFn: () => api.agentSnapshot(chat),
+    enabled: !!chat,
     // The SSE stream is how a finished turn normally lands, and it has no replay:
     // a frame emitted while the socket was down is gone for good. While the SERVER
     // still says a turn is in flight, keep asking — otherwise the one frame that
@@ -149,15 +147,15 @@ export function useAgentSnapshot(id?: string, chatId?: string) {
 }
 
 /** One chat's conversation: past turns from disk, with the live one appended. */
-export function useAgentTurns(domainId?: string, chatId?: string): AgentRun[] {
-  const active = useActiveChatId(domainId)
+export function useAgentTurns(chatId?: string): AgentRun[] {
+  const active = useActiveChatId()
   const chat = chatId ?? active
   const history = useQuery({
-    queryKey: qk.agentHistory(domainId ?? '', chat),
-    queryFn: () => api.agentHistory(domainId!, chat),
-    enabled: !!domainId && !!chat,
+    queryKey: qk.agentHistory(chat),
+    queryFn: () => api.agentHistory(chat),
+    enabled: !!chat,
   })
-  const current = useDisplayRun(domainId, chat)
+  const current = useDisplayRun(chat)
   const past = history.data ?? NO_RUNS
   return useMemo(() => {
     if (!current) return past
@@ -193,11 +191,11 @@ export function reconcileRun(live: AgentRun | undefined, stored: AgentRun | null
 }
 
 /** The run to display for a chat: the live (SSE) copy, corrected by the server. */
-export function useDisplayRun(domainId?: string, chatId?: string): AgentRun | null {
-  const active = useActiveChatId(domainId)
+export function useDisplayRun(chatId?: string): AgentRun | null {
+  const active = useActiveChatId()
   const chat = chatId ?? active
   const live = useAgentLive((s) => (chat ? s.runs[chat] : undefined))
-  const snap = useAgentSnapshot(domainId, chat)
+  const snap = useAgentSnapshot(chat)
   const stored = snap.data?.run ?? null
   return useMemo(() => reconcileRun(live, stored), [live, stored])
 }

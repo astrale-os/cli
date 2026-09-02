@@ -2,7 +2,6 @@ import type { DomainHandle } from '../domain'
 import type { DomainRouteContext, Notify } from './http'
 
 /** Domain-scoped route composition and the multipart/JSON body boundary. */
-import { handleAgentRoute } from '../agent/routes'
 import { handleCanvasRoute } from './canvas'
 import { handleCommentRoute } from './comments'
 import { handleDocumentMutation, handleDocumentTransport } from './documents'
@@ -41,9 +40,6 @@ export async function handleDomainRoute(input: {
 
   const comment = await handleCommentRoute(context)
   if (comment) return comment
-
-  const agent = await handleAgentRoute(context)
-  if (agent) return agent
 
   const project = await handleProjectRoute(context)
   if (project) return project

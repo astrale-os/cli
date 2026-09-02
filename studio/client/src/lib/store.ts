@@ -1,4 +1,9 @@
-import type { AnchorRef } from '@shared/types'
+import type {
+  AnchorRef,
+  WorkspacePanelUiState,
+  WorkspaceSection,
+  WorkspaceUiState,
+} from '@shared/types'
 
 import { create } from 'zustand'
 
@@ -8,8 +13,8 @@ import { detailRefFor } from './targets'
  *  `mode` decides which composer opens — a persistent comment or an ephemeral ask. */
 export interface CommentDraft {
   mode: 'comment' | 'ask'
-  /** Owning domain of the target; omitted for domain-level surfaces. */
-  domainId?: string
+  /** Owning domain of the target. A draft without one is never created. */
+  domainId: string
   anchor: AnchorRef
   excerpt: string
   x: number
@@ -18,7 +23,7 @@ export interface CommentDraft {
 
 /** The main views of a domain. Talking to the agent and reading comments are NOT
  *  sections — they follow you across every view, from the work panel. */
-export type SectionKey = 'schema' | 'core' | 'tests' | 'process'
+export type SectionKey = WorkspaceSection
 
 const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'tests', 'process']
 
@@ -26,14 +31,14 @@ const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'tests', 'process
 export type Theme = 'system' | 'light' | 'dark'
 
 /** How every canvas draws a relationship: a curve between the cards, or right-angled traces. */
-export type EdgeStyle = 'curved' | 'orthogonal'
+export type EdgeStyle = WorkspaceUiState['edgeStyle']
 
 /** Which half of the work panel is showing. */
-export type PanelTab = 'agent' | 'comments'
+export type PanelTab = WorkspacePanelUiState['tab']
 /** Where the work panel lives. `left` and `right` dock a column beside the view;
  *  `bottom` spends a single composer-shaped bar on it and floats the conversation
  *  over the middle of the screen when you click in. */
-export type PanelSide = 'left' | 'right' | 'bottom'
+export type PanelSide = WorkspacePanelUiState['side']
 
 function loadStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
   try {
@@ -43,15 +48,7 @@ function loadStored<T extends string>(key: string, allowed: readonly T[], fallba
   return fallback
 }
 
-function loadNumber(key: string, fallback: number, min: number, max: number): number {
-  try {
-    const value = Number(localStorage.getItem(key))
-    if (Number.isFinite(value) && value >= min && value <= max) return value
-  } catch {}
-  return fallback
-}
-
-function store(key: string, value: string): void {
+function storeBrowserPreference(key: string, value: string): void {
   try {
     localStorage.setItem(key, value)
   } catch {}
@@ -67,14 +64,15 @@ function paintTheme(theme: Theme): 'light' | 'dark' {
 }
 
 interface UIState {
-  domainId?: string
   section: SectionKey
+  /** Local scope shared by Core/Tests/Process. It never scopes the agent or comments. */
+  readerDomainId?: string
   /** appearance preference, persisted in this browser */
   theme: Theme
   /** the theme actually painted — `system` resolved. Canvas colours that land in
    *  SVG attributes need a real value, not a CSS function. */
   resolvedTheme: 'light' | 'dark'
-  /** edge drawing preference, persisted in this browser; curves unless asked otherwise */
+  /** edge drawing preference, persisted in this workspace's machine-side UI state */
   edgeStyle: EdgeStyle
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
@@ -83,6 +81,9 @@ interface UIState {
   panelSide: PanelSide
   /** panel width in px when docked left/right; the bottom dock has no size to keep */
   panelSize: number
+  /** domains/modules rail furniture, scoped to this scanned workspace */
+  modulesWidth: number
+  modulesCollapsed: boolean
   /** What is typed in the agent composer. It lives here, not in the composer, so that
    *  closing the floating chat — or re-docking the panel — never throws a message away. */
   agentDraft: string
@@ -90,16 +91,18 @@ interface UIState {
   /**
    * Which domain `selectedClass` and `focusId` belong to. A class ref is LOCAL
    * (`class.Order`), and on a workspace canvas the same name exists in several frames —
-   * so the selection carries its owner instead of borrowing the active domain's. Selecting
-   * in a domain no longer makes it active: the canvas draws every domain it holds at equal
-   * standing, and `domainId` answers a different question (see the store's doc on it).
+   * so the selection carries its owner. There is no active-domain fallback.
    */
   selectionDomainId?: string
   /** graph focus: which node is pinned (dims non-neighbors). null = no focus. */
   focusId: string | null
   /** when set, the RIGHT PANEL shows a domain-level overlay (Views / Domains / Integrations
    *  overview) instead of the selected-class detail. Cleared by selecting a class / navigating. */
-  panelOverlay: 'views' | 'domains' | 'integrations' | null
+  panelOverlay: {
+    kind: 'views' | 'domains' | 'integrations'
+    /** Domains and Integrations are local; Views may span the whole canvas. */
+    domainId?: string
+  } | null
   /** comment-mode draft: the floating composer target + screen position */
   commentDraft: CommentDraft | null
   /** Canvas reading mode: direction only (default) or the declared multiplicities. */
@@ -130,33 +133,30 @@ interface UIState {
   /** The new-domain composer, centred over everything: a name, a first message,
    *  and the domain that does not exist yet between them. */
   newDomainOpen: boolean
-  /** A domain the reader asked to work in, waiting on the confirmation that says what
-   *  changes. Null when nothing is pending. */
-  domainSwitchRequest: { id: string; origin: string } | null
-  /** Ask before switching. Turned off from the confirmation itself, remembered here. */
-  confirmDomainSwitch: boolean
   /** A policy another section asked Tests to open on its demo data; Tests takes it and clears it. */
   probePolicy: string | null
   setTheme: (theme: Theme) => void
   setEdgeStyle: (style: EdgeStyle) => void
   /** Go to Tests with this policy selected — the way Process and the detail panel hand one over. */
-  openPolicy: (policy: string) => void
+  openPolicy: (policy: string, domainId?: string) => void
   setProbePolicy: (policy: string | null) => void
-  setDomain: (id?: string) => void
   setSection: (s: SectionKey) => void
+  setReaderDomain: (domainId?: string) => void
   setPanelOpen: (open: boolean) => void
   setPanelTab: (tab: PanelTab) => void
   setPanelSide: (side: PanelSide) => void
   setPanelSize: (size: number) => void
+  setModulesWidth: (width: number) => void
+  setModulesCollapsed: (collapsed: boolean) => void
   setAgentDraft: (text: string) => void
   /** Jump to whatever an anchor points at: the right section, the member that declares
    *  it selected and focused, and the anchor itself recorded in `revealedRef`. */
-  revealAnchor: (ref: string) => void
-  setPanelOverlay: (v: 'views' | 'domains' | 'integrations' | null) => void
-  /** `domainId` names the owner; omitted, the selection belongs to the active domain. */
+  revealAnchor: (ref: string, domainId: string) => void
+  setPanelOverlay: (kind: 'views' | 'domains' | 'integrations' | null, domainId?: string) => void
+  /** `domainId` names the owner; it is required for a real selection. */
   selectClass: (n?: string, domainId?: string) => void
   /** select a class AND pin graph focus to it (toggles focus if same id) */
-  focusClass: (id: string, domainId?: string) => void
+  focusClass: (id: string, domainId: string) => void
   /** Drop the selection and its graph focus — what clicking empty space means. Leaves an
    *  open overlay panel (Views / Domains / Integrations) alone: it is not a selection. */
   clearSelection: () => void
@@ -171,8 +171,6 @@ interface UIState {
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
   setNewDomainOpen: (b: boolean) => void
-  requestDomainSwitch: (request: { id: string; origin: string } | null) => void
-  setConfirmDomainSwitch: (on: boolean) => void
 }
 
 /** `edge.X` selects like a class (both live in the `class.` selection namespace). */
@@ -196,21 +194,19 @@ function revealPan(ref: string): string | null {
 const initialTheme = loadStored('studio.theme', ['system', 'light', 'dark'] as const, 'system')
 // The floating dock is where the panel starts: it costs the view nothing, and a
 // first look at a domain should be the domain, not a column beside it.
-const initialSide = loadStored('studio.panelSide', ['left', 'right', 'bottom'] as const, 'bottom')
-
 export const useUI = create<UIState>((set) => ({
-  section: loadStored('studio.lastSection', SECTION_KEYS, 'schema'),
+  section: 'schema',
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
-  edgeStyle: loadStored('studio.edgeStyle', ['curved', 'orthogonal'] as const, 'curved'),
+  edgeStyle: 'curved',
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
-  panelOpen:
-    initialSide !== 'bottom' &&
-    loadStored('studio.panelOpen', ['yes', 'no'] as const, 'yes') === 'yes',
-  panelTab: loadStored('studio.panelTab', ['agent', 'comments'] as const, 'agent'),
-  panelSide: initialSide,
-  panelSize: loadNumber('studio.panelSize', 360, 260, 900),
+  panelOpen: false,
+  panelTab: 'agent',
+  panelSide: 'bottom',
+  panelSize: 360,
+  modulesWidth: 240,
+  modulesCollapsed: false,
   agentDraft: '',
   focusId: null,
   panelOverlay: null,
@@ -225,15 +221,12 @@ export const useUI = create<UIState>((set) => ({
   paletteOpen: false,
   settingsOpen: false,
   newDomainOpen: false,
-  domainSwitchRequest: null,
-  confirmDomainSwitch:
-    loadStored('studio.confirmDomainSwitch', ['yes', 'no'] as const, 'yes') === 'yes',
   probePolicy: null,
-  openPolicy: (probePolicy) => {
-    store('studio.lastSection', 'tests')
+  openPolicy: (probePolicy, readerDomainId) => {
     set({
       section: 'tests',
       probePolicy,
+      ...(readerDomainId ? { readerDomainId } : {}),
       panelOverlay: null,
       revealedRef: null,
       revealTarget: null,
@@ -242,32 +235,11 @@ export const useUI = create<UIState>((set) => ({
   },
   setProbePolicy: (probePolicy) => set({ probePolicy }),
   setTheme: (theme) => {
-    store('studio.theme', theme)
+    storeBrowserPreference('studio.theme', theme)
     set({ theme, resolvedTheme: paintTheme(theme) })
   },
-  setEdgeStyle: (edgeStyle) => {
-    store('studio.edgeStyle', edgeStyle)
-    set({ edgeStyle })
-  },
-  setDomain: (domainId) => {
-    try {
-      if (domainId) localStorage.setItem('studio.lastDomain', domainId)
-    } catch {}
-    // The SELECTION is deliberately left alone: it carries its own domain now, and the
-    // canvas draws every domain it holds whether or not one of them is active. Only the
-    // things that are genuinely about the active domain are dropped — the domain-level
-    // overlays, and whatever a reveal was pointing at.
-    set({
-      domainId,
-      panelOverlay: null,
-      revealedRef: null,
-      revealTarget: null,
-      openAnchorRef: null,
-      domainSwitchRequest: null,
-    })
-  },
+  setEdgeStyle: (edgeStyle) => set({ edgeStyle }),
   setSection: (section) => {
-    store('studio.lastSection', section)
     // Schema and Core are two canvases over the same domain with DISJOINT selection
     // namespaces (`class.X` vs a core path), so crossing between them starts clean —
     // carrying a class selection into Core would open a detail panel for nothing.
@@ -282,45 +254,35 @@ export const useUI = create<UIState>((set) => ({
         : {}),
     }))
   },
-  setPanelOpen: (panelOpen) => {
-    store('studio.panelOpen', panelOpen ? 'yes' : 'no')
-    set({ panelOpen })
-  },
-  setPanelTab: (panelTab) => {
-    store('studio.panelTab', panelTab)
-    set({ panelTab, panelOpen: true })
-  },
+  setReaderDomain: (readerDomainId) => set({ readerDomainId }),
+  setPanelOpen: (panelOpen) => set({ panelOpen }),
+  setPanelTab: (panelTab) => set({ panelTab, panelOpen: true }),
   setPanelSide: (panelSide) => {
-    store('studio.panelSide', panelSide)
     // Re-docking lands on that side's resting state: a column beside the view for
     // left/right, the bar alone for bottom — nobody moves a panel to then dismiss
     // a modal sitting where they moved it from.
     const panelOpen = panelSide !== 'bottom'
-    store('studio.panelOpen', panelOpen ? 'yes' : 'no')
     set({ panelSide, panelOpen })
   },
-  setPanelSize: (panelSize) => {
-    store('studio.panelSize', String(Math.round(panelSize)))
-    set({ panelSize })
-  },
+  setPanelSize: (panelSize) => set({ panelSize }),
+  setModulesWidth: (modulesWidth) => set({ modulesWidth }),
+  setModulesCollapsed: (modulesCollapsed) => set({ modulesCollapsed }),
   setAgentDraft: (agentDraft) => set({ agentDraft }),
-  revealAnchor: (ref) => {
+  revealAnchor: (ref, domainId) => {
     const section: SectionKey = ref.startsWith('section.')
       ? ((ref.slice('section.'.length).split('.')[0] as SectionKey) ?? 'schema')
       : ref.startsWith('core.')
         ? 'core'
         : 'schema'
     const target = SECTION_KEYS.includes(section) ? section : 'schema'
-    store('studio.lastSection', target)
     // A property or method is revealed INSIDE the member that declares it — selecting
     // the field itself would select a canvas node that does not exist.
     const selection = detailRefFor(ref)
-    set((s) => ({
+    set(() => ({
       section: target,
       panelOverlay: null,
       revealedRef: ref,
-      // revealed from the comments tab, which is the ACTIVE domain's
-      selectionDomainId: s.domainId,
+      selectionDomainId: domainId,
       ...(selection.startsWith('class.') ||
       selection.startsWith('edge.') ||
       selection.startsWith('module.')
@@ -336,10 +298,11 @@ export const useUI = create<UIState>((set) => ({
           : {}),
     }))
   },
-  setPanelOverlay: (panelOverlay) => set({ panelOverlay }),
+  setPanelOverlay: (kind, domainId) =>
+    set({ panelOverlay: kind ? { kind, ...(domainId ? { domainId } : {}) } : null }),
   selectClass: (selectedClass, domainId) =>
     set((s) => {
-      const owner = selectedClass === undefined ? undefined : (domainId ?? s.domainId)
+      const owner = selectedClass === undefined ? undefined : domainId
       if (
         selectedClass === s.selectedClass &&
         owner === s.selectionDomainId &&
@@ -365,7 +328,7 @@ export const useUI = create<UIState>((set) => ({
     }),
   focusClass: (id, domainId) =>
     set((s) => {
-      const owner = domainId ?? s.domainId
+      const owner = domainId
       const same = s.focusId === id && s.selectionDomainId === owner
       return {
         selectedClass: id,
@@ -403,12 +366,46 @@ export const useUI = create<UIState>((set) => ({
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setNewDomainOpen: (newDomainOpen) => set({ newDomainOpen }),
-  requestDomainSwitch: (domainSwitchRequest) => set({ domainSwitchRequest }),
-  setConfirmDomainSwitch: (confirmDomainSwitch) => {
-    store('studio.confirmDomainSwitch', confirmDomainSwitch ? 'yes' : 'no')
-    set({ confirmDomainSwitch })
-  },
 }))
+
+/** The small persistent projection of the UI store; transient selections stay in memory. */
+export function uiWorkspaceSnapshot(state = useUI.getState()): Pick<
+  WorkspaceUiState,
+  'section' | 'edgeStyle' | 'panel' | 'rail'
+> & {
+  readerDomainId: string | null
+} {
+  return {
+    section: state.section,
+    edgeStyle: state.edgeStyle,
+    readerDomainId: state.readerDomainId ?? null,
+    panel: {
+      open: state.panelOpen,
+      tab: state.panelTab,
+      side: state.panelSide,
+      size: Math.min(900, Math.max(260, Math.round(state.panelSize))),
+    },
+    rail: {
+      width: Math.min(560, Math.max(180, Math.round(state.modulesWidth))),
+      collapsed: state.modulesCollapsed,
+    },
+  }
+}
+
+/** Install the server-owned workspace state without disturbing transient interaction state. */
+export function hydrateWorkspaceUi(state: WorkspaceUiState): void {
+  useUI.setState({
+    section: state.section,
+    edgeStyle: state.edgeStyle,
+    readerDomainId: state.readerDomainId,
+    panelOpen: state.panel.side === 'bottom' ? false : state.panel.open,
+    panelTab: state.panel.tab,
+    panelSide: state.panel.side,
+    panelSize: state.panel.size,
+    modulesWidth: state.rail.width,
+    modulesCollapsed: state.rail.collapsed,
+  })
+}
 
 // Following the OS means following it live, not only at boot.
 globalThis.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', () => {

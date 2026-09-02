@@ -1,10 +1,12 @@
 /**
- * chats.ts — the persistent chat tabs of one domain.
+ * chats.ts — the Studio's machine-global persistent chat tabs.
  *
- * A domain holds several conversations at once, the way a workspace holds
- * several chats: each tab keeps its own transcript, its own model, its own
- * harness-native session id and its own execution state. Persisted at
- * `.cache/agent/chats.json`, so the tabs survive a Studio restart.
+ * The machine holds every conversation: each tab keeps its own transcript,
+ * its own model, its own harness-native session id and its own execution state. They
+ * are persisted in the studio's home on this machine — ONE FILE PER CHAT, plus one
+ * active pointer per scanned workspace — so tabs survive a Studio restart and remain
+ * visible from any workspace. Two Studio windows never clobber each other's rows: a
+ * write only ever touches the chat it is about.
  *
  * The one rule that shapes everything here: a chat's HARNESS is fixed at
  * creation. A Claude session id means nothing to Codex, and a transcript
@@ -12,8 +14,7 @@
  * same name — so switching agent forks a new tab (`forkChat`) carrying a
  * summary of the old one, and leaves the original untouched.
  *
- * Every mutation is a synchronous read-modify-write. That is what keeps two
- * tabs running at once from clobbering each other's row: no `await` sits
+ * Every mutation is a synchronous read-modify-write of one file: no `await` sits
  * between the read and the write, so the operation is atomic for this process.
  */
 import { randomUUID } from 'node:crypto'
@@ -22,11 +23,12 @@ import type { AgentEffort, ChatInfo, ChatStatus, QueuedMessage } from '../../sha
 
 import { isAgentEffort } from '../../shared/agent-effort'
 import { DEFAULT_CHAT_TITLE } from '../../shared/types'
-import { asBoolean, asFiniteNumber, asJsonRecord, asString } from '../json'
-import { readJson, writeJson } from '../state/store'
+import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
+import { listState, readJson, removeState, writeJson } from '../state/store'
 
-const CHATS_FILE = '.cache/agent/chats.json'
-const LEGACY_SESSION_FILE = '.cache/agent/session.json'
+const CHATS_DIR = 'chats'
+const chatFile = (id: string) => `${CHATS_DIR}/${id}.json`
+const ACTIVE_FILE = 'active-chat.json'
 
 /** Enough of the old conversation to orient the next agent, not a re-briefing. */
 const MAX_HANDOFF_CHARS = 8000
@@ -66,18 +68,26 @@ export interface StoredChat {
   turns: number
   createdAt: string
   updatedAt: string
+  /** the workspace root this conversation was opened in — where its session can resume */
+  workspace?: string
+  /** the domains the workspace held when the chat opened, by origin */
+  origins?: string[]
   /** carried over from the chat this one was forked from */
   handoff?: ChatHandoff
   /** messages typed while a turn was running, oldest first */
   queue?: QueuedMessage[]
-  /** this chat owns the transcripts written before Studio had tabs (same harness) */
-  adoptsLegacyRuns?: boolean
 }
 
 export interface ChatStore {
-  version: 2
   activeId: string
+  /** every tab, oldest first */
   chats: StoredChat[]
+}
+
+/** What a new chat records about where it was opened. */
+export interface ChatSeed {
+  workspace?: string
+  origins?: string[]
 }
 
 function decodeStoredChat(value: unknown): StoredChat | undefined {
@@ -93,6 +103,8 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const handoff = decodeHandoff(record.handoff)
   const queue = decodeQueue(record.queue)
   const createdAt = asString(record.createdAt) ?? new Date().toISOString()
+  const workspace = asString(record.workspace)
+  const origins = asStringArray(record.origins)
   return {
     id,
     title: asString(record.title) || DEFAULT_TITLE,
@@ -103,9 +115,10 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
     ...(sessionId ? { sessionId } : {}),
+    ...(workspace ? { workspace } : {}),
+    ...(origins?.length ? { origins } : {}),
     ...(handoff ? { handoff } : {}),
     ...(queue.length ? { queue } : {}),
-    ...(asBoolean(record.adoptsLegacyRuns) ? { adoptsLegacyRuns: true } : {}),
   }
 }
 
@@ -136,69 +149,8 @@ function decodeHandoff(value: unknown): ChatHandoff | undefined {
   }
 }
 
-function decodeChatStore(value: unknown): ChatStore | undefined {
-  const record = asJsonRecord(value)
-  if (!record || !Array.isArray(record.chats)) return undefined
-  const version = asFiniteNumber(record.version)
-  if (version !== 2) throw new Error(`unsupported agent chat store version: ${String(version)}`)
-  const chats = record.chats.flatMap((entry) => {
-    const chat = decodeStoredChat(entry)
-    return chat ? [chat] : []
-  })
-  return { version: 2, activeId: asString(record.activeId) ?? '', chats }
-}
-
-/**
- * Adopt the pre-tabs store: one conversation per harness becomes one tab per
- * harness, each keeping its session id, its turn count AND its transcripts —
- * upgrading Studio must not look like the conversation was lost.
- */
-function migrateLegacyChats(root: string): StoredChat[] {
-  const legacy = readJson(root, LEGACY_SESSION_FILE, decodeLegacySessions, [])
-  return legacy.map(({ harness, sessionId, turns, updatedAt }) => ({
-    id: randomUUID(),
-    title: DEFAULT_TITLE,
-    harness,
-    turns,
-    createdAt: updatedAt ?? new Date().toISOString(),
-    updatedAt: updatedAt ?? new Date().toISOString(),
-    adoptsLegacyRuns: true,
-    ...(sessionId ? { sessionId } : {}),
-  }))
-}
-
-interface LegacySession {
-  harness: string
-  sessionId?: string
-  turns: number
-  updatedAt?: string
-}
-
-function decodeLegacySessions(value: unknown): LegacySession[] | undefined {
-  const record = asJsonRecord(value)
-  if (!record) return undefined
-  const read = (harness: string, candidate: unknown): LegacySession[] => {
-    const entry = asJsonRecord(candidate)
-    if (!entry) return []
-    const sessionId = asString(entry.sessionId)
-    if (!sessionId) return []
-    const turns = asFiniteNumber(entry.turns)
-    return [
-      {
-        harness,
-        sessionId,
-        turns: turns !== undefined && Number.isInteger(turns) && turns >= 0 ? turns : 0,
-        ...(asString(entry.updatedAt) === undefined
-          ? {}
-          : { updatedAt: asString(entry.updatedAt) }),
-      },
-    ]
-  }
-  const versioned = asJsonRecord(record.conversations)
-  if (versioned)
-    return Object.entries(versioned).flatMap(([harness, entry]) => read(harness, entry))
-  const harness = asString(record.harness)
-  return harness ? read(harness, record) : []
+function decodeActive(value: unknown): string | undefined {
+  return asString(asJsonRecord(value)?.activeId)
 }
 
 function newChat(harness: string, extra?: Partial<StoredChat>): StoredChat {
@@ -214,14 +166,39 @@ function newChat(harness: string, extra?: Partial<StoredChat>): StoredChat {
   }
 }
 
-function readStore(root: string): ChatStore {
-  const stored = readJson(root, CHATS_FILE, decodeChatStore, null)
-  if (stored) return stored
-  return { version: 2, activeId: '', chats: migrateLegacyChats(root) }
+function readChat(root: string, chatId: string): StoredChat | undefined {
+  return readJson(root, chatFile(chatId), decodeStoredChat, undefined)
 }
 
-function writeStore(root: string, store: ChatStore): void {
-  writeJson(root, CHATS_FILE, store)
+function writeChat(root: string, chat: StoredChat): void {
+  writeJson(root, chatFile(chat.id), chat)
+}
+
+function readActiveId(activeRoot: string): string {
+  return readJson(activeRoot, ACTIVE_FILE, decodeActive, '')
+}
+
+function writeActiveId(activeRoot: string, activeId: string): void {
+  writeJson(activeRoot, ACTIVE_FILE, { activeId })
+}
+
+/** Every tab on disk, oldest first — a corrupt file is skipped, not fatal. */
+function readChats(root: string): StoredChat[] {
+  const chats: StoredChat[] = []
+  for (const file of listState(root, CHATS_DIR)) {
+    if (!file.endsWith('.json')) continue
+    try {
+      const chat = readJson(root, `${CHATS_DIR}/${file}`, decodeStoredChat, undefined)
+      if (chat && `${chat.id}.json` === file) chats.push(chat)
+    } catch {
+      // one unreadable tab must not hide the rest
+    }
+  }
+  return chats.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+}
+
+function readStore(root: string, activeRoot = root): ChatStore {
+  return { activeId: readActiveId(activeRoot), chats: readChats(root) }
 }
 
 /**
@@ -231,18 +208,39 @@ function writeStore(root: string, store: ChatStore): void {
  * ones the next read sees — a tab whose id changed under it would lose its
  * transcript.
  */
-export function ensureChats(root: string, defaultHarness: string): ChatStore {
-  const store = readStore(root)
-  const before = JSON.stringify(store)
-  if (store.chats.length === 0) store.chats.push(newChat(defaultHarness))
-  if (!store.chats.some((chat) => chat.id === store.activeId))
+export function ensureChats(
+  root: string,
+  defaultHarness: string,
+  seed?: ChatSeed,
+  activeRoot = root,
+): ChatStore {
+  const store = readStore(root, activeRoot)
+  if (store.chats.length === 0) {
+    const chat = newChat(defaultHarness, seedFields(seed))
+    writeChat(root, chat)
+    store.chats.push(chat)
+  }
+  if (!store.chats.some((chat) => chat.id === store.activeId)) {
     store.activeId = store.chats[store.chats.length - 1]!.id
-  if (JSON.stringify(store) !== before) writeStore(root, store)
+    writeActiveId(activeRoot, store.activeId)
+  }
   return store
 }
 
-export function activeChat(root: string, defaultHarness: string): StoredChat {
-  const store = ensureChats(root, defaultHarness)
+function seedFields(seed?: ChatSeed): Partial<StoredChat> {
+  return {
+    ...(seed?.workspace ? { workspace: seed.workspace } : {}),
+    ...(seed?.origins?.length ? { origins: [...seed.origins] } : {}),
+  }
+}
+
+export function activeChat(
+  root: string,
+  defaultHarness: string,
+  seed?: ChatSeed,
+  activeRoot = root,
+): StoredChat {
+  const store = ensureChats(root, defaultHarness, seed, activeRoot)
   return store.chats.find((chat) => chat.id === store.activeId)!
 }
 
@@ -251,8 +249,10 @@ export function resolveChat(
   root: string,
   defaultHarness: string,
   chatId?: string,
+  seed?: ChatSeed,
+  activeRoot = root,
 ): StoredChat | undefined {
-  const store = ensureChats(root, defaultHarness)
+  const store = ensureChats(root, defaultHarness, seed, activeRoot)
   if (!chatId) return store.chats.find((chat) => chat.id === store.activeId)
   return store.chats.find((chat) => chat.id === chatId)
 }
@@ -265,10 +265,11 @@ export function createChat(
     model?: string
     effort?: AgentEffort
     handoff?: ChatHandoff
-  },
+  } & ChatSeed,
+  activeRoot = root,
 ): StoredChat {
-  const store = ensureChats(root, input.harness)
   const chat = newChat(input.harness, {
+    ...seedFields(input),
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
@@ -278,9 +279,8 @@ export function createChat(
         }
       : {}),
   })
-  store.chats.push(chat)
-  store.activeId = chat.id
-  writeStore(root, store)
+  writeChat(root, chat)
+  writeActiveId(activeRoot, chat.id)
   return chat
 }
 
@@ -295,21 +295,28 @@ export function forkChat(
   harness: string,
   summary: string,
   model?: string,
+  activeRoot = root,
 ): StoredChat {
-  return createChat(root, {
-    harness,
-    title: source.title === DEFAULT_TITLE ? DEFAULT_TITLE : `${source.title} (${harness})`,
-    ...(model ? { model } : {}),
-    // how hard you asked this work to be thought about is about the work, not
-    // about the agent — it follows, mapped onto whatever ladder it lands on
-    ...(source.effort ? { effort: source.effort } : {}),
-    handoff: {
-      fromChatId: source.id,
-      fromHarness: source.harness,
-      createdAt: new Date().toISOString(),
-      summary,
+  return createChat(
+    root,
+    {
+      harness,
+      title: source.title === DEFAULT_TITLE ? DEFAULT_TITLE : `${source.title} (${harness})`,
+      ...(model ? { model } : {}),
+      // how hard you asked this work to be thought about is about the work, not
+      // about the agent — it follows, mapped onto whatever ladder it lands on
+      ...(source.effort ? { effort: source.effort } : {}),
+      ...(source.workspace ? { workspace: source.workspace } : {}),
+      ...(source.origins ? { origins: source.origins } : {}),
+      handoff: {
+        fromChatId: source.id,
+        fromHarness: source.harness,
+        createdAt: new Date().toISOString(),
+        summary,
+      },
     },
-  })
+    activeRoot,
+  )
 }
 
 /** Apply `patch` to one chat and stamp `updatedAt`; the harness is never patchable. */
@@ -318,12 +325,11 @@ function mutateChat(
   chatId: string,
   patch: (chat: StoredChat) => void,
 ): StoredChat | undefined {
-  const store = readStore(root)
-  const chat = store.chats.find((entry) => entry.id === chatId)
+  const chat = readChat(root, chatId)
   if (!chat) return undefined
   patch(chat)
   chat.updatedAt = new Date().toISOString()
-  writeStore(root, store)
+  writeChat(root, chat)
   return chat
 }
 
@@ -451,15 +457,15 @@ export function takeQueuedMessage(
   chatId: string,
   messageId?: string,
 ): QueuedMessage | undefined {
-  const store = readStore(root)
-  const chat = store.chats.find((entry) => entry.id === chatId)
+  let taken: QueuedMessage | undefined
+  const chat = readChat(root, chatId)
   if (!chat) return undefined
   const queue = chatQueue(chat)
-  const taken = messageId ? queue.find((entry) => entry.id === messageId) : queue[0]
+  taken = messageId ? queue.find((entry) => entry.id === messageId) : queue[0]
   if (!taken) return undefined
-  chat.queue = queue.filter((entry) => entry.id !== taken.id)
+  chat.queue = queue.filter((entry) => entry.id !== taken!.id)
   chat.updatedAt = new Date().toISOString()
-  writeStore(root, store)
+  writeChat(root, chat)
   return taken
 }
 
@@ -490,8 +496,7 @@ export function moveQueuedMessage(
   messageId: string,
   delta: -1 | 1,
 ): boolean {
-  const store = readStore(root)
-  const chat = store.chats.find((entry) => entry.id === chatId)
+  const chat = readChat(root, chatId)
   if (!chat) return false
   const queue = [...chatQueue(chat)]
   const from = queue.findIndex((entry) => entry.id === messageId)
@@ -500,7 +505,7 @@ export function moveQueuedMessage(
   queue.splice(to, 0, queue.splice(from, 1)[0]!)
   chat.queue = queue
   chat.updatedAt = new Date().toISOString()
-  writeStore(root, store)
+  writeChat(root, chat)
   return true
 }
 
@@ -516,13 +521,12 @@ export function clearChatHandoff(
   root: string,
   chatId: string,
 ): 'cleared' | 'delivered' | 'missing' {
-  const store = readStore(root)
-  const chat = store.chats.find((entry) => entry.id === chatId)
+  const chat = readChat(root, chatId)
   if (!chat?.handoff) return 'missing'
   if (chat.handoff.delivered) return 'delivered'
   delete chat.handoff
   chat.updatedAt = new Date().toISOString()
-  writeStore(root, store)
+  writeChat(root, chat)
   return 'cleared'
 }
 
@@ -533,25 +537,23 @@ export function pendingHandoff(chat: StoredChat): string | undefined {
 
 /** Whether a tab is still open — a closed one must stop accreting state. */
 export function chatExists(root: string, chatId: string): boolean {
-  return readStore(root).chats.some((chat) => chat.id === chatId)
+  return readChat(root, chatId) !== undefined
 }
 
-export function setActiveChat(root: string, chatId: string): boolean {
-  const store = readStore(root)
-  if (!store.chats.some((chat) => chat.id === chatId)) return false
-  store.activeId = chatId
-  writeStore(root, store)
+export function setActiveChat(root: string, chatId: string, activeRoot = root): boolean {
+  if (!chatExists(root, chatId)) return false
+  writeActiveId(activeRoot, chatId)
   return true
 }
 
 /** Drop a tab. The last one may go too — the next read seeds a fresh one. */
-export function deleteChat(root: string, chatId: string): boolean {
-  const store = readStore(root)
-  const next = store.chats.filter((chat) => chat.id !== chatId)
-  if (next.length === store.chats.length) return false
-  store.chats = next
-  if (store.activeId === chatId) store.activeId = next[next.length - 1]?.id ?? ''
-  writeStore(root, store)
+export function deleteChat(root: string, chatId: string, activeRoot = root): boolean {
+  if (!chatExists(root, chatId)) return false
+  removeState(root, chatFile(chatId))
+  if (readActiveId(activeRoot) === chatId) {
+    const remaining = readChats(root)
+    writeActiveId(activeRoot, remaining[remaining.length - 1]?.id ?? '')
+  }
   return true
 }
 
@@ -566,6 +568,8 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
     updatedAt: chat.updatedAt,
     status,
     queued: chatQueue(chat),
+    ...(chat.workspace === undefined ? {} : { workspace: chat.workspace }),
+    ...(chat.origins === undefined ? {} : { origins: [...chat.origins] }),
     ...(chat.model === undefined ? {} : { model: chat.model }),
     ...(chat.effort === undefined ? {} : { effort: chat.effort }),
     ...(chat.sessionId === undefined ? {} : { sessionId: chat.sessionId }),

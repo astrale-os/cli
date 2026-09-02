@@ -2,17 +2,19 @@
  * Where the studio's settings live.
  *
  * `state/settings.ts` knows how to read and write a settings.json under a root; this knows
- * WHICH root — the workspace the studio was pointed at, one file for every domain it
- * holds. That is process context, so it is deliberately not the repository's business.
+ * WHICH root — the studio's home on this machine, one file whatever workspace is open.
+ * They are preferences of the tool (how hard the agent thinks, which model it opens on,
+ * how long extraction may take), not properties of a workspace, so they follow the
+ * person rather than the folder.
  */
 import type { StudioSettings } from '../shared/types'
 
+import { studioHome } from './home'
 import { readSettings } from './state/settings'
-import { workspaceRoot } from './workspace-state'
 
-/** The one root studio settings live under. Falls back to the cwd before boot. */
+/** The one root studio settings live under. */
 export function settingsRoot(): string {
-  return workspaceRoot() || process.cwd()
+  return studioHome()
 }
 
 /** The studio's settings. Global: there is no domain to ask for. */

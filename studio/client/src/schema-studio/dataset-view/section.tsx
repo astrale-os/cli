@@ -51,7 +51,13 @@ const fold = (evaluation: PolicyEvaluation): Proofs => ({
  * an object turns that into one verdict. Datasets are extracted on demand and never deployed,
  * so this section reads a separate query and stays alive when a Dataset module is broken.
  */
-export function TestsSection({ domainId }: { domainId: string }) {
+export function TestsSection({
+  domainId,
+  onDomainChange,
+}: {
+  domainId: string
+  onDomainChange: (domainId: string) => void
+}) {
   const { data: bundle, isLoading } = useBundle(domainId)
   const { data: datasets, isLoading: extracting } = useDatasets(domainId)
   const setFocus = useUI((s) => s.setFocus)
@@ -256,7 +262,7 @@ export function TestsSection({ domainId }: { domainId: string }) {
           header={<DomainsRailHeader />}
         >
           <ScrollArea className="h-full">
-            <DomainPicker>
+            <DomainPicker selectedId={domainId} onSelect={onDomainChange}>
               {datasets ? (
                 <DatasetPicker
                   datasets={entries}
@@ -299,6 +305,7 @@ export function TestsSection({ domainId }: { domainId: string }) {
           <ReactFlowProvider key={`${domainId}:${selected?.id ?? ''}`}>
             {core ? (
               <CoreView
+                domainId={domainId}
                 core={core}
                 bundle={bundle}
                 selectedPath={probe ? null : nodePath}
@@ -343,7 +350,13 @@ export function TestsSection({ domainId }: { domainId: string }) {
           nodePath &&
           core && (
             <PanelShell onClose={() => setNodePath(null)}>
-              <CoreDetail core={core} bundle={bundle} selectedPath={nodePath} commentable={false}>
+              <CoreDetail
+                domainId={domainId}
+                core={core}
+                bundle={bundle}
+                selectedPath={nodePath}
+                commentable={false}
+              >
                 {selectedNode && policyIndex && (
                   <NodeAccess
                     bundle={bundle}

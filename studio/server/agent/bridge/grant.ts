@@ -3,8 +3,8 @@ import { chmodSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { StudioEvent } from '../../../shared/types'
-import type { DomainHandle } from '../../domain'
 import type { HarnessMcpServer } from '../harness/adapter'
+import type { AgentWorkspace } from '../workspace'
 
 import { studioCliCommand } from '../../cli'
 import { removeState, statePath, writeJson } from '../../state/store'
@@ -19,7 +19,9 @@ export interface Bridge {
 }
 
 const TOOL_ROUTES: Record<string, string> = {
+  list_domains: 'domains',
   list_open_threads: 'threads',
+  get_domain_context: 'context',
   reply_to_thread: 'reply',
   resolve_thread: 'resolve',
   post_progress: 'progress',
@@ -34,15 +36,23 @@ export function setBridgePort(port: number): void {
 
 const MCP_SERVER = join(import.meta.dir, 'stdio.ts')
 
-/** Mint the run-scoped MCP grant and its secret-bearing configuration file. */
-export function startBridge(handle: DomainHandle, notify: (event: StudioEvent) => void): Bridge {
+/**
+ * Mint the run-scoped MCP grant and its secret-bearing configuration file.
+ *
+ * The file lives in the Studio's machine-global agent folder, never in a domain. Its
+ * bearer is still scoped in memory to the workspace snapshot that minted the run.
+ */
+export function startBridge(
+  workspace: AgentWorkspace,
+  notify: (event: StudioEvent) => void,
+): Bridge {
   const token = randomUUID()
   const fileId = randomUUID()
-  const session = openBridgeSession(handle, token, notify)
-  const base = `http://127.0.0.1:${studioPort}/api/domain/${encodeURIComponent(handle.id)}/agent/bridge`
-  const bridgeRel = `.cache/agent/bridge-${fileId}.json`
-  writeJson(handle.root, bridgeRel, { base, token })
-  const bridgeConfigPath = statePath(handle.root, bridgeRel)
+  const session = openBridgeSession(workspace, token, notify)
+  const base = `http://127.0.0.1:${studioPort}/api/agent/bridge`
+  const bridgeRel = `bridge-${fileId}.json`
+  writeJson(workspace.stateRoot, bridgeRel, { base, token })
+  const bridgeConfigPath = statePath(workspace.stateRoot, bridgeRel)
   chmodSync(bridgeConfigPath, 0o600)
 
   let bridgeCommand: string[]
@@ -87,7 +97,7 @@ export function startBridge(handle: DomainHandle, notify: (event: StudioEvent) =
     dispose: () => {
       session.dispose()
       try {
-        removeState(handle.root, bridgeRel)
+        removeState(workspace.stateRoot, bridgeRel)
       } catch {
         /* best-effort */
       }

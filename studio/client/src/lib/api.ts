@@ -13,7 +13,7 @@ import type {
   DomainCatalogEntry,
   DomainAnatomy,
   DomainSummary,
-  DomainUsage,
+  AgentUsage,
   EnvFileModel,
   EnvName,
   HarnessGatewayConfig,
@@ -34,6 +34,7 @@ import type {
   ViewRuntime,
   ViewSessionResult,
   VisibilityState,
+  WorkspaceUiState,
 } from '@shared/types'
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -62,6 +63,10 @@ function chatQuery(chatId?: string): string {
 
 export const api = {
   workspace: () => get<DomainSummary[]>('/api/workspace'),
+  workspaceState: () => get<WorkspaceUiState>('/api/workspace/state'),
+  updateWorkspaceState: (
+    state: Omit<WorkspaceUiState, 'readerDomainId'> & { readerDomainId: string | null },
+  ) => post<WorkspaceUiState>('/api/workspace/state', { action: 'update', state }),
   createDomain: (name: string) =>
     post<{ ok: boolean; id?: string; origin?: string; error?: string; output: string }>(
       '/api/workspace/create',
@@ -110,95 +115,88 @@ export const api = {
     post<{ ok: true }>(`${d(id)}/comments`, { action: 'delete', id: commentId }),
   mergeReply: (id: string, text: string) => post<MergeResult>(`${d(id)}/comments/merge`, { text }),
 
-  /** Studio-wide, not per domain: one file for the whole workspace. */
+  /** Machine-wide, not per domain or workspace. */
   settings: () => get<StudioSettings>('/api/settings'),
   updateSettings: (settings: Partial<StudioSettings>) =>
     post<StudioSettings>('/api/settings', { action: 'update', settings }),
 
   // Every conversation call names its chat tab; omitting it means the active one.
-  agentSnapshot: (id: string, chatId?: string) =>
-    get<AgentRunSnapshot>(`${d(id)}/agent${chatQuery(chatId)}`),
+  agentSnapshot: (chatId?: string) => get<AgentRunSnapshot>(`/api/agent${chatQuery(chatId)}`),
   /** every terminal turn one chat kept, oldest first — its transcript */
-  agentHistory: (id: string, chatId?: string) =>
-    get<AgentRun[]>(`${d(id)}/agent/history${chatQuery(chatId)}`),
+  agentHistory: (chatId?: string) => get<AgentRun[]>(`/api/agent/history${chatQuery(chatId)}`),
   /** run the message now, or park it behind the turn already running */
-  agentSubmit: (id: string, message?: string, chatId?: string) =>
-    post<AgentSubmitResult>(`${d(id)}/agent/submit`, {
+  agentSubmit: (message?: string, chatId?: string) =>
+    post<AgentSubmitResult>('/api/agent/submit', {
       ...(message ? { message } : {}),
       ...(chatId ? { chatId } : {}),
     }),
   // seamless continue after an interruption — resumes the live session with a bare nudge (no re-briefing)
-  agentResume: (id: string, chatId?: string) =>
-    post<AgentSubmitResult>(`${d(id)}/agent/submit`, {
+  agentResume: (chatId?: string) =>
+    post<AgentSubmitResult>('/api/agent/submit', {
       resume: true,
       ...(chatId ? { chatId } : {}),
     }),
   /** the waiting messages of one chat — each call answers with the tab as it stands */
-  editQueued: (id: string, chatId: string, messageId: string, message: string) =>
-    post<ChatInfo>(`${d(id)}/agent/queue`, { action: 'edit', chatId, id: messageId, message }),
-  removeQueued: (id: string, chatId: string, messageId: string) =>
-    post<ChatInfo>(`${d(id)}/agent/queue`, { action: 'remove', chatId, id: messageId }),
-  moveQueued: (id: string, chatId: string, messageId: string, direction: 'up' | 'down') =>
-    post<ChatInfo>(`${d(id)}/agent/queue`, { action: 'move', chatId, id: messageId, direction }),
+  editQueued: (chatId: string, messageId: string, message: string) =>
+    post<ChatInfo>('/api/agent/queue', { action: 'edit', chatId, id: messageId, message }),
+  removeQueued: (chatId: string, messageId: string) =>
+    post<ChatInfo>('/api/agent/queue', { action: 'remove', chatId, id: messageId }),
+  moveQueued: (chatId: string, messageId: string, direction: 'up' | 'down') =>
+    post<ChatInfo>('/api/agent/queue', { action: 'move', chatId, id: messageId, direction }),
   /** jump one waiting message to the front, stopping the turn in progress for it */
-  sendQueued: (id: string, chatId: string, messageId: string) =>
-    post<AgentSubmitResult>(`${d(id)}/agent/queue`, { action: 'send', chatId, id: messageId }),
-  agentCancel: (id: string, chatId?: string) =>
-    post<{ ok: boolean }>(`${d(id)}/agent/cancel`, chatId ? { chatId } : {}),
-  agentSession: (id: string, chatId?: string) =>
-    get<AgentSessionInfo>(`${d(id)}/agent/session${chatQuery(chatId)}`),
-  setAgentSession: (id: string, harness: string, sessionId: string, chatId?: string) =>
-    post<AgentSessionInfo>(`${d(id)}/agent/session`, {
+  sendQueued: (chatId: string, messageId: string) =>
+    post<AgentSubmitResult>('/api/agent/queue', { action: 'send', chatId, id: messageId }),
+  agentCancel: (chatId?: string) =>
+    post<{ ok: boolean }>('/api/agent/cancel', chatId ? { chatId } : {}),
+  agentSession: (chatId?: string) =>
+    get<AgentSessionInfo>(`/api/agent/session${chatQuery(chatId)}`),
+  setAgentSession: (harness: string, sessionId: string, chatId?: string) =>
+    post<AgentSessionInfo>('/api/agent/session', {
       harness,
       sessionId,
       ...(chatId ? { chatId } : {}),
     }),
-  agentSystemPrompt: (id: string) => get<AgentSystemPromptInfo>(`${d(id)}/agent/prompt/system`),
+  agentSystemPrompt: () => get<AgentSystemPromptInfo>('/api/agent/prompt/system'),
 
-  chats: (id: string) => get<ChatList>(`${d(id)}/agent/chats`),
-  openChat: (id: string, harness?: string) =>
-    post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'open', ...(harness ? { harness } : {}) }),
-  selectChat: (id: string, chatId: string) =>
-    post<ChatList>(`${d(id)}/agent/chats`, { action: 'select', chatId }),
-  closeChat: (id: string, chatId: string) =>
-    post<ChatList>(`${d(id)}/agent/chats`, { action: 'close', chatId }),
-  updateChat: (
-    id: string,
-    chatId: string,
-    patch: { title?: string; model?: string; effort?: string },
-  ) => post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'update', chatId, ...patch }),
+  chats: () => get<ChatList>('/api/agent/chats'),
+  openChat: (harness?: string) =>
+    post<ChatInfo>('/api/agent/chats', { action: 'open', ...(harness ? { harness } : {}) }),
+  selectChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'select', chatId }),
+  closeChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'close', chatId }),
+  updateChat: (chatId: string, patch: { title?: string; model?: string; effort?: string }) =>
+    post<ChatInfo>('/api/agent/chats', { action: 'update', chatId, ...patch }),
   /** fork this chat onto the other agent, carrying a summary of it */
-  switchChatHarness: (id: string, chatId: string, harness: string, model?: string) =>
-    post<ChatInfo>(`${d(id)}/agent/chats`, {
+  switchChatHarness: (chatId: string, harness: string, model?: string) =>
+    post<ChatInfo>('/api/agent/chats', {
       action: 'switch-harness',
       chatId,
       harness,
       ...(model ? { model } : {}),
     }),
   /** drop an unsent fork summary — delivered conversation context is immutable */
-  forgetChatOrigin: (id: string, chatId: string) =>
-    post<ChatInfo>(`${d(id)}/agent/chats`, { action: 'forget-origin', chatId }),
+  forgetChatOrigin: (chatId: string) =>
+    post<ChatInfo>('/api/agent/chats', { action: 'forget-origin', chatId }),
 
-  harness: (id: string) => get<HarnessStatus>(`${d(id)}/agent/harness`),
+  harness: () => get<HarnessStatus>('/api/agent/harness'),
   /** every harness's selectable models — what the composer's picker offers */
-  models: (id: string) => get<HarnessModelCatalog[]>(`${d(id)}/agent/models`),
-  harnessGateway: (id: string) => get<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`),
-  setHarnessGateway: (id: string, scope: 'domain' | 'global', config: HarnessGatewayConfig) =>
-    post<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`, { action: 'set', scope, config }),
-  clearHarnessGateway: (id: string, scope: 'domain' | 'global') =>
-    post<HarnessGatewayState>(`${d(id)}/agent/harness-gateway`, { action: 'clear', scope }),
+  models: () => get<HarnessModelCatalog[]>('/api/agent/models'),
+  harnessGateway: () => get<HarnessGatewayState>('/api/agent/harness-gateway'),
+  setHarnessGateway: (config: HarnessGatewayConfig) =>
+    post<HarnessGatewayState>('/api/agent/harness-gateway', { action: 'set', config }),
+  clearHarnessGateway: () =>
+    post<HarnessGatewayState>('/api/agent/harness-gateway', { action: 'clear' }),
   // EMBED seam: relay a host-supplied delegation token to the server for `host`
   // auth mode. Called by the Astrale GUI glue when the studio runs as an iframe.
-  pushHostToken: (id: string, token: string) =>
-    post<{ ok: boolean }>(`${d(id)}/agent/harness-gateway/host-token`, { token }),
-  loadout: (id: string, refresh = false, chatId?: string) =>
+  pushHostToken: (token: string) =>
+    post<{ ok: boolean }>('/api/agent/harness-gateway/host-token', { token }),
+  loadout: (refresh = false, chatId?: string) =>
     get<HarnessLoadout>(
-      `${d(id)}/agent/loadout?${new URLSearchParams({
+      `/api/agent/loadout?${new URLSearchParams({
         ...(refresh ? { refresh: '1' } : {}),
         ...(chatId ? { chat: chatId } : {}),
       })}`,
     ),
-  usage: (id: string) => get<DomainUsage>(`${d(id)}/agent/usage`),
+  usage: () => get<AgentUsage>('/api/agent/usage'),
 
   env: (id: string, env: EnvName) => get<EnvFileModel>(`${d(id)}/env?env=${env}`),
   setEnv: (id: string, env: EnvName, updates: Record<string, string | null>) =>
@@ -234,6 +232,7 @@ export const api = {
 
 export const qk = {
   workspace: ['workspace'] as const,
+  workspaceState: ['workspace-state'] as const,
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,
   bundle: (id: string) => ['bundle', id] as const,
@@ -247,21 +246,19 @@ export const qk = {
   layout: (id: string) => ['layout', id] as const,
   visibility: (id: string) => ['visibility', id] as const,
   documents: (id: string) => ['documents', id] as const,
-  // Chat-scoped keys nest under the domain, so invalidating `['agent', id]`
-  // still refreshes every open tab of that domain.
-  agent: (id: string, chatId?: string) =>
-    chatId ? (['agent', id, chatId] as const) : (['agent', id] as const),
-  agentHistory: (id: string, chatId?: string) =>
-    chatId ? (['agent-history', id, chatId] as const) : (['agent-history', id] as const),
-  agentSession: (id: string, chatId?: string) =>
-    chatId ? (['agent-session', id, chatId] as const) : (['agent-session', id] as const),
-  agentSystemPrompt: (id: string) => ['agent-system-prompt', id] as const,
-  chats: (id: string) => ['chats', id] as const,
-  models: (id: string) => ['agent-models', id] as const,
-  harness: (id: string) => ['harness', id] as const,
-  harnessGateway: (id: string) => ['harness-gateway', id] as const,
-  loadout: (id: string, chatId?: string) =>
-    chatId ? (['loadout', id, chatId] as const) : (['loadout', id] as const),
-  usage: (id: string) => ['usage', id] as const,
+  // Chat-scoped keys share one machine-wide prefix: invalidating `['agent']`
+  // refreshes every open tab whatever workspace is on screen.
+  agent: (chatId?: string) => (chatId ? (['agent', chatId] as const) : (['agent'] as const)),
+  agentHistory: (chatId?: string) =>
+    chatId ? (['agent-history', chatId] as const) : (['agent-history'] as const),
+  agentSession: (chatId?: string) =>
+    chatId ? (['agent-session', chatId] as const) : (['agent-session'] as const),
+  agentSystemPrompt: ['agent-system-prompt'] as const,
+  chats: ['chats'] as const,
+  models: ['agent-models'] as const,
+  harness: ['harness'] as const,
+  harnessGateway: ['harness-gateway'] as const,
+  loadout: (chatId?: string) => (chatId ? (['loadout', chatId] as const) : (['loadout'] as const)),
+  usage: ['usage'] as const,
   env: (id: string, env: string) => ['env', id, env] as const,
 }

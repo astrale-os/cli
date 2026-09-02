@@ -38,27 +38,19 @@ import { cn } from '@/lib/utils'
 
 import { brandTone } from './chat-tone'
 
-export function ChatModelPicker({
-  domainId,
-  chat,
-  harness,
-}: {
-  domainId: string
-  chat?: ChatInfo
-  harness?: HarnessStatus
-}) {
+export function ChatModelPicker({ chat, harness }: { chat?: ChatInfo; harness?: HarnessStatus }) {
   const [open, setOpen] = useState(false)
   // Warmed by the panel itself the moment a domain is on screen, so by the time
   // this renders the answer is normally already in the cache.
-  const { data: catalog, isFetching } = useModelCatalog(domainId)
-  const { data: loadout } = useLoadout(domainId, chat?.id)
+  const { data: catalog, isFetching } = useModelCatalog()
+  const { data: loadout } = useLoadout(chat?.id)
   const { data: settings } = useSettings()
-  const { update, switchHarness } = useChatMutations(domainId)
-  const prefer = usePreferredModel(domainId)
+  const { update, switchHarness } = useChatMutations()
+  const prefer = usePreferredModel()
 
   if (!chat) return null
   // Two ways to name the running model, and the catalog goes first ON PURPOSE: it
-  // is one query for the whole domain, so it is still warm when you switch tab or
+  // is one query for the whole machine, so it is still warm when you switch tab or
   // land on a fork, while the loadout is a per-chat ACP probe that takes seconds.
   // Reading the slower one first is what made a fresh tab flash the raw slug
   // (`gpt-5.6-luna`) before settling on its label (`GPT-5.6-Luna`).
@@ -162,14 +154,14 @@ export function starPlacement(
 }
 
 /**
- * Star THE model new conversations open on — one for the whole domain.
+ * Star THE model new conversations open on — one for the whole machine.
  *
  * Not one per agent, and not one per domain: a preferred model names its agent too,
  * so starring a Codex model is how the studio stops opening on Claude. Open chats are
  * untouched — a tab that pinned its own model keeps it, and one that pinned none moves
  * with the star.
  */
-function usePreferredModel(domainId: string) {
+function usePreferredModel() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (input: { harness: string; model: string }) =>
@@ -179,17 +171,17 @@ function usePreferredModel(domainId: string) {
     // the harness that just LOST the star (whose default Studio cannot compute here).
     onSuccess: (next, input) => {
       queryClient.setQueryData(qk.settings, next)
-      queryClient.setQueryData<HarnessModelCatalog[]>(qk.models(domainId), (current) =>
+      queryClient.setQueryData<HarnessModelCatalog[]>(qk.models, (current) =>
         current?.map((entry) =>
           entry.harness === input.harness ? { ...entry, defaultModel: input.model } : entry,
         ),
       )
-      queryClient.invalidateQueries({ queryKey: qk.models(domainId) })
+      queryClient.invalidateQueries({ queryKey: qk.models })
       // the composer's label reads the loadout, and an unpinned chat just moved
-      queryClient.invalidateQueries({ queryKey: qk.loadout(domainId) })
+      queryClient.invalidateQueries({ queryKey: qk.loadout() })
       // and the star names an agent, so the selection — and why it is that one —
       // just moved with it
-      queryClient.invalidateQueries({ queryKey: qk.harness(domainId) })
+      queryClient.invalidateQueries({ queryKey: qk.harness })
     },
     onError: (error) => toast.error(`Could not set the preferred model — ${String(error)}`),
   })

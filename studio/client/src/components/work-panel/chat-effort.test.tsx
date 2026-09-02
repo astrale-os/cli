@@ -8,8 +8,6 @@ import { qk } from '@/lib/api'
 
 import { ChatEffortPicker } from './chat-effort'
 
-const DOMAIN = 'shop'
-
 const chat: ChatInfo = {
   id: 'chat-1',
   title: 'New chat',
@@ -28,7 +26,7 @@ const harness: HarnessStatus = {
   ok: true,
   message: 'Detected',
   locked: false,
-  source: 'domain',
+  source: 'starred',
   capabilities: {
     effortLevels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultracode'],
     accessLevels: ['workspace', 'full'],
@@ -56,10 +54,10 @@ const harness: HarnessStatus = {
 
 function render(loadout: HarnessLoadout | undefined, current = chat): string {
   const client = new QueryClient()
-  if (loadout) client.setQueryData(qk.loadout(DOMAIN, current.id), loadout)
+  if (loadout) client.setQueryData(qk.loadout(current.id), loadout)
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
-      <ChatEffortPicker domainId={DOMAIN} chat={current} harness={harness} />
+      <ChatEffortPicker chat={current} harness={harness} />
     </QueryClientProvider>,
   )
 }
