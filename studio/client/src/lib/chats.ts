@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
 import { api, qk } from './api'
+import { useSchemaSettled } from './hooks'
 
 const NO_CHATS: ChatInfo[] = []
 
@@ -108,16 +109,25 @@ export function useChatMutations(domainId?: string) {
 }
 
 /**
- * Every harness's models, fetched only once the picker is open.
+ * Every harness's models — one live ACP probe of each, warmed per domain.
  *
- * Each entry is a live ACP probe of that harness, so this is not something to
- * pay for on every panel mount.
+ * It used to wait for the picker to be opened, on the grounds that probing every
+ * agent is expensive. That paid for itself twice over: the composer's label IS
+ * the catalog (an unpinned chat runs its harness's default model, and only this
+ * knows which), so a panel opened before the answer landed had no model to name.
+ * One probe per domain visit buys a composer that opens already saying it —
+ * `WorkPanel` starts it while you are still looking at the graph.
+ *
+ * Behind the canvas, though, exactly like the loadout beside it: this is the
+ * heaviest read in the studio — an ACP session per installed agent — and the
+ * schema must not queue behind it for a picker nobody has opened yet.
  */
-export function useModelCatalog(domainId?: string, enabled = false) {
+export function useModelCatalog(domainId?: string) {
+  const settled = useSchemaSettled()
   return useQuery({
     queryKey: qk.models(domainId ?? ''),
     queryFn: () => api.models(domainId!),
-    enabled: enabled && !!domainId,
+    enabled: !!domainId && settled,
     staleTime: 60_000,
   })
 }

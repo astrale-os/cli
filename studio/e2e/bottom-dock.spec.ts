@@ -68,8 +68,14 @@ test('at rest the bar is one line and carries nothing it cannot act on', async (
   await expect(page.getByRole('button', { name: 'Send' })).toHaveCount(0)
   await expect(model).toHaveCount(0)
 
+  // opened, the bar affords the row it could not: the tab strip, and the control
+  // that docks the panel elsewhere. Deliberately not the model picker — it names
+  // a model or nothing, so on a machine with no agent installed (CI) there is
+  // nothing for it to name, and asserting it here would pass only where an agent
+  // happens to be on PATH.
   await openDock(page)
-  await expect(model).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Where the panel sits' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Comments', exact: true })).toBeVisible()
 })
 
 test('the paperclip goes straight to the file picker, and shows what it took', async ({ page }) => {
