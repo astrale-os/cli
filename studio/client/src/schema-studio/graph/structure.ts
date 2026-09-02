@@ -84,11 +84,32 @@ export function neighborSet(activeId: string, edges: Edge[]) {
   return { nodeIds, edgeIds }
 }
 
-/** The exact two rendered endpoints of a clicked edge. Relationship classes can fan out into
- * several paths, so the physical edge id—not only its schema class—must drive this highlight. */
-export function selectedRelationshipContext(edgeId: string | null, edges: Edge[]) {
-  if (!edgeId) return null
-  const edge = edges.find((candidate) => candidate.id === edgeId)
-  if (!edge) return null
-  return { edgeId: edge.id, nodeIds: new Set([edge.source, edge.target]) }
+/** Every path a relationship class is drawn as, inside the domain that declares it. A class
+ * can fan out into several — one per pair of endpoint classes it resolves to. */
+export function relationshipEdgeIds(edges: Edge[], domainId: string, name: string): string[] {
+  return edges
+    .filter((edge) => edge.data?.edgeClass === name && edge.data?.ownerDomainId === domainId)
+    .map((edge) => edge.id)
+}
+
+/**
+ * The rendered paths a relationship selection lights up, and the cards they run between.
+ *
+ * Which paths those are depends on how the relationship was picked: clicking ONE line means
+ * that line, while NAMING the relationship (⌘K, the rail, a comment's anchor) means every
+ * line it is drawn as. Both arrive here as physical edge ids — the schema class alone could
+ * not tell the two readings apart.
+ */
+export function selectedRelationshipContext(edgeIds: readonly string[], edges: Edge[]) {
+  if (edgeIds.length === 0) return null
+  const wanted = new Set(edgeIds)
+  const found = new Set<string>()
+  const nodeIds = new Set<string>()
+  for (const edge of edges) {
+    if (!wanted.has(edge.id)) continue
+    found.add(edge.id)
+    nodeIds.add(edge.source)
+    nodeIds.add(edge.target)
+  }
+  return found.size > 0 ? { edgeIds: found, nodeIds } : null
 }

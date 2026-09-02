@@ -227,10 +227,15 @@ body {
   outline-offset: 2px;
   border-radius: var(--radius-md);
 }
+/* `!important` because an edge's colour and weight are DATA here, not styling: the canvas
+   writes `stroke` / `stroke-width` straight onto the path as an inline style (cross-module
+   vs local, inherited, selected — see `projectDomainCanvas`), and an inline declaration
+   outranks any normal rule a stylesheet can write. Without it this block is dead: the line
+   under the pointer stays the grey it was, and nothing says where the pin would land. */
 .react-flow__edge[data-comment-target] .react-flow__edge-path {
   outline: none;
-  stroke-width: 4px;
-  stroke: var(--color-primary);
+  stroke-width: 4px !important;
+  stroke: var(--color-primary) !important;
 }
 
 /* Every edge label is portalled into this shared layer, so no edge can strike through the words

@@ -2,8 +2,10 @@ import type { ReactNode } from 'react'
 
 import { Check, ChevronDown, ChevronRight, PanelLeftClose, Plus } from 'lucide-react'
 
+import { AnchorButton } from '@/components/anchor'
 import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
+import { anchorData, domainAnchorRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import { useRailCollapse } from './sidebar'
@@ -53,6 +55,8 @@ export function DomainsRailHeader() {
 
 export interface DomainRowProps {
   origin: string
+  /** Which domain's threads a comment dropped on this row belongs to. */
+  domainId: string
   /** The domain everything else in the studio is about. */
   active: boolean
   onActivate: () => void
@@ -69,6 +73,7 @@ export interface DomainRowProps {
 /** One domain: check it onto the canvas, click its name to work in it. */
 export function DomainRow({
   origin,
+  domainId,
   active,
   onActivate,
   expanded,
@@ -81,9 +86,11 @@ export function DomainRow({
     // The accent spine identifies the active domain. Marked as a tree row so a press on
     // its padding reads as part of the row, not as "nothing here" on the rail behind it.
     // It carries NO `data-domain-id`: that stamp means "this domain is on screen" to the
-    // ask layer, and the rail lists domains the canvas does not draw.
+    // ask layer, and the rail lists domains the canvas does not draw. The owner rides on
+    // the ANCHOR instead, which is a different claim — whose threads, not what is drawn.
     <div
       data-tree-row=""
+      {...anchorData(domainAnchorRef(origin), origin, domainId)}
       aria-current={active ? 'true' : undefined}
       className={cn(
         'group relative flex items-center gap-1.5 px-2 py-2 transition-colors',
@@ -152,6 +159,12 @@ export function DomainRow({
           title="Selected element in collapsed domain"
         />
       )}
+
+      <AnchorButton
+        domainId={domainId}
+        anchorRef={{ ref: domainAnchorRef(origin), kind: 'section' }}
+        excerpt={origin}
+      />
     </div>
   )
 }
@@ -174,6 +187,7 @@ export function DomainPicker({ children }: { children?: ReactNode }) {
           <section key={domain.id}>
             <DomainRow
               origin={domain.origin}
+              domainId={domain.id}
               active={active}
               onActivate={() => requestActivate(domain.id, domain.origin)}
             />

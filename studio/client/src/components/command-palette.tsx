@@ -75,6 +75,7 @@ export function CommandPalette() {
   const setSection = useUI((s) => s.setSection)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
+  const setFocus = useUI((s) => s.setFocus)
   const revealOnCanvas = useUI((s) => s.revealOnCanvas)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
 
@@ -229,8 +230,12 @@ export function CommandPalette() {
                 className={ITEM_CLS}
                 onSelect={() => {
                   setSection('schema')
+                  // A relationship selects under `class.` like everything else on the canvas,
+                  // but it is a LINE: what the canvas brings into view is the pair of cards it
+                  // runs between, which only the `edge.` ref asks for.
                   selectClass(`class.${e.name}`)
-                  revealOnCanvas(`class.${e.name}`)
+                  setFocus(null)
+                  revealOnCanvas(`edge.${e.name}`)
                   close()
                 }}
               >

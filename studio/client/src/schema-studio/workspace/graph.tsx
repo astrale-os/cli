@@ -8,6 +8,7 @@ import {
   Controls,
   type Edge,
   type EdgeChange,
+  type InternalNode,
   MiniMap,
   type Node,
   type NodeChange,
@@ -34,13 +35,14 @@ import { CanvasIconToggle, CanvasToolbar } from '../canvas-toolbar'
 import { dismissMenusOnCanvasPress } from '../dismiss'
 import { EdgeMarkerDefs } from '../edge-markers'
 import { assignFloatingEdgePorts, SMART_EDGE_PROVIDER_OPTIONS } from '../edge-routing'
-import { viewportForNodes } from '../fit'
+import { type CanvasBox, revealViewport, viewportForNodes } from '../fit'
 import { type EdgeFocus, edgeTypes } from '../floating-edge'
 import { type Geometry, normalizeContainerLayout } from '../geometry'
 import { CanvasCommentPin } from '../graph'
 import {
   commentNodes,
   neighborSet,
+  relationshipEdgeIds,
   schemaCanvasCommentGroups,
   schemaCanvasFallbackComments,
   selectedRelationshipContext,
@@ -63,15 +65,68 @@ import {
 import { reorganizeSettled } from './reorganize'
 import { useSchemaWorkspace } from './store'
 
+/** How far the canvas may be zoomed out — by the wheel, and by a reveal backing off far
+ *  enough to hold a whole relationship. */
+const MIN_ZOOM = 0.08
+
 /**
- * The node a reveal request points at: a class of the active domain, or the frame an
- * imported domain is drawn as. Anything else (an edge, a module) has no single place to
- * pan to.
+ * The nodes a reveal request has to bring into view: a class of the active domain, or the
+ * frame an imported domain is drawn as — one box each.
+ *
+ * A RELATIONSHIP is the other shape this takes. It selects in the same `class.` namespace as
+ * a node (see `revealSelection` in the store) but is drawn as a line, with no box of its own,
+ * so what gets framed is the cards its paths run between. A relationship is looked up FIRST:
+ * finding a path settles what the name means, whereas a class card missing from the store is
+ * ambiguous — it can equally be one this projection has not published yet.
+ *
+ * A DOMAIN is named by origin, and the canvas draws one two ways: as a frame of its own when
+ * the workspace composes it, or as the imported box a domain that only lends types is drawn
+ * as. The composed frame wins — it is the one that holds the domain's actual members.
+ *
+ * A module has nothing to pan to, and returns null so the request is dropped.
  */
-function revealTargetNodeId(domainId: string, target: string): string | null {
-  if (target.startsWith('class.')) return qualifiedNodeId(domainId, target)
-  if (target.startsWith('domain.')) return workspaceExternalNodeId(target.slice('domain.'.length))
-  return null
+function revealTargetNodeIds(
+  domainId: string,
+  target: string,
+  edges: Edge[],
+  composedDomainIdByOrigin: Map<string, string>,
+): string[] | null {
+  if (target.startsWith('domain.')) {
+    const origin = target.slice('domain.'.length)
+    const composed = composedDomainIdByOrigin.get(origin)
+    return [composed ? workspaceDomainNodeId(composed) : workspaceExternalNodeId(origin)]
+  }
+  const name = /^(?:class|edge)\./.exec(target) ? target.slice(target.indexOf('.') + 1) : null
+  if (name === null) return null
+  const paths = relationshipEdgeIds(edges, domainId, name)
+  if (paths.length > 0) {
+    const endpoints = new Set<string>()
+    for (const edge of edges) {
+      if (!paths.includes(edge.id)) continue
+      endpoints.add(edge.source)
+      endpoints.add(edge.target)
+    }
+    return [...endpoints]
+  }
+  // No path drawn for it: an `edge.` target is a relationship the canvas does not hold, a
+  // `class.` one is the card it names — possibly not projected yet, which the caller waits on.
+  return target.startsWith('class.') ? [qualifiedNodeId(domainId, target)] : null
+}
+
+/** A node's box in flow coordinates. Falls back to the declared style — an external frame is
+ *  sized by style rather than measured until it mounts, and that is exactly the case a reveal
+ *  is here to fix — and then to a class card, the canvas's smallest box. */
+function nodeBox(node: InternalNode<Node> | undefined) {
+  if (!node) return null
+  const style = node.style as { width?: number; height?: number } | undefined
+  const width = node.measured.width ?? style?.width ?? CLASS_W
+  const height = node.measured.height ?? style?.height ?? CLASS_H
+  return {
+    x: node.internals.positionAbsolute.x,
+    y: node.internals.positionAbsolute.y,
+    width,
+    height,
+  }
 }
 
 function localNodeRef(id: string): { domainId: string; localId: string } | null {
@@ -86,7 +141,10 @@ export function WorkspaceSchemaGraph({
   domains: WorkspaceDomainProjection[]
   onToggleInherited: () => void
 }) {
-  const { getInternalNode, getViewport, setCenter, setViewport } = useReactFlow()
+  const { getInternalNode, getViewport, setViewport } = useReactFlow()
+  // the pane element itself — a reveal measures it rather than trusting the size the store
+  // was last told (see the reveal effect)
+  const domNode = useStore((state) => state.domNode)
   const paneWidth = useStore((state) => state.width)
   const paneHeight = useStore((state) => state.height)
   const panZoomReady = useStore((state) => state.panZoom !== null)
@@ -123,6 +181,13 @@ export function WorkspaceSchemaGraph({
   const workspaceOrigins = useMemo(
     () => Object.fromEntries((workspace ?? []).map((domain) => [domain.origin, domain.id])),
     [workspace],
+  )
+  // Which domains the canvas draws a frame OF ITS OWN for, by origin — how a `domain.` jump
+  // tells a composed domain from one that is merely imported. Not `workspaceOrigins`: that
+  // one also holds domains the canvas is not drawing, whose frame a jump could never reach.
+  const composedDomainIdByOrigin = useMemo(
+    () => new Map(domains.map((domain) => [domain.input.summary.origin, domain.input.summary.id])),
+    [domains],
   )
   const { commitLayout, discardLayout } = useLayoutCommitter()
   const queryClient = useQueryClient()
@@ -351,56 +416,75 @@ export function WorkspaceSchemaGraph({
   // by sliding the whole graph under the cursor loses the place they were reading.
   useEffect(() => {
     if (!revealTarget || !paneWidth || !paneHeight) return
-    const targetId = revealTargetNodeId(selectionDomain, revealTarget)
+    const targetIds = revealTargetNodeIds(
+      selectionDomain,
+      revealTarget,
+      edges,
+      composedDomainIdByOrigin,
+    )
     // nothing on the canvas stands for it — drop the request rather than leave it pending
-    if (!targetId) {
+    if (!targetIds) {
       revealOnCanvas(null)
       return
     }
-    const node = getInternalNode(targetId)
+    const boxes = targetIds.map((id) => nodeBox(getInternalNode(id)))
     // Not in the store yet — leave the request standing and let the `nodes` dependency
     // below re-run this when it lands. Un-hiding CREATES the node rather than merely
     // scrolling to one, so the wait here is a projection round-trip, not a frame or two.
-    if (!node) return
-    const { x, y, zoom } = getViewport()
-    // An external frame is sized by style rather than measured until it is mounted, and it
-    // is precisely the unmounted case we are here to fix — so fall back to its own box, not
-    // to a class card's.
-    const box = node.style as { width?: number; height?: number } | undefined
-    const cx =
-      node.internals.positionAbsolute.x + (node.measured.width ?? box?.width ?? CLASS_W) / 2
-    const cy =
-      node.internals.positionAbsolute.y + (node.measured.height ?? box?.height ?? CLASS_H) / 2
-    const screenX = cx * zoom + x
-    const screenY = cy * zoom + y
-    const margin = 24
-    const onScreen =
-      screenX > margin &&
-      screenX < paneWidth - margin &&
-      screenY > margin &&
-      screenY < paneHeight - margin
-    if (!onScreen) setCenter(cx, cy, { zoom })
+    if (boxes.some((box) => box === null)) return
+    // MEASURED, not taken from the store: the gesture that asks for a jump also selects, and
+    // selecting opens the detail panel — so the pane is a column narrower than React Flow has
+    // been told yet (its size arrives on a ResizeObserver, a frame behind this effect). Frame
+    // against the stale width and the target lands under the panel, which is a jump that did
+    // nothing. Same reason the viewport is written directly: `setCenter` reads that width too.
+    const pane = domNode?.getBoundingClientRect()
+    const framing = revealViewport(
+      boxes as CanvasBox[],
+      getViewport(),
+      pane?.width ?? paneWidth,
+      pane?.height ?? paneHeight,
+      MIN_ZOOM,
+    )
+    if (framing) setViewport(framing)
     revealOnCanvas(null)
   }, [
     selectionDomain,
     revealTarget,
     // the projection that brings a just-restored frame into the store
     nodes,
+    // the paths a relationship target is resolved against
+    edges,
+    // the frames a domain target is resolved against
+    composedDomainIdByOrigin,
     paneWidth,
     paneHeight,
+    domNode,
     getInternalNode,
     getViewport,
-    setCenter,
+    setViewport,
     revealOnCanvas,
   ])
 
   // ── focus + context, one canvas-wide reading ──
   // `focusId` is a LOCAL ref (`class.Foo`); on this canvas the same class exists in every
   // frame, so it only means anything once qualified with the domain the selection carries.
-  const focusNodeId = focusId ? qualifiedNodeId(selectionDomain, focusId) : null
+  // And only over a node that is actually drawn: a RELATIONSHIP selects under the same
+  // `class.` prefix and a collapsed module swallows the cards it holds, so an unguarded
+  // focus dims the WHOLE canvas against a node that is not on it.
+  const nodeIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes])
+  const focusCandidate = focusId ? qualifiedNodeId(selectionDomain, focusId) : null
+  const focusNodeId = focusCandidate && nodeIds.has(focusCandidate) ? focusCandidate : null
+  // Which paths a relationship selection lights up: the ONE a click picked, or — when it was
+  // named rather than pointed at (⌘K, the rail, a comment's anchor) — every path it is drawn
+  // as, since none of those callers has a physical line in hand.
+  const selectedEdgeIds = useMemo(() => {
+    if (selectedEdgeId) return [selectedEdgeId]
+    if (!selected?.startsWith('class.')) return []
+    return relationshipEdgeIds(edges, selectionDomain, selected.slice('class.'.length))
+  }, [edges, selected, selectedEdgeId, selectionDomain])
   const selectedEdgeContext = useMemo(
-    () => selectedRelationshipContext(selectedEdgeId, edges),
-    [edges, selectedEdgeId],
+    () => selectedRelationshipContext(selectedEdgeIds, edges),
+    [edges, selectedEdgeIds],
   )
   useEffect(() => {
     if (!selectedEdgeId) return
@@ -442,11 +526,7 @@ export function WorkspaceSchemaGraph({
   const displayEdges = useMemo(
     () =>
       edges.map((edge) => {
-        const ownerDomainId = edge.data?.ownerDomainId as string | undefined
-        const edgeClass = edge.data?.edgeClass as string | undefined
-        const isSelected = selectedEdgeId
-          ? edge.id === selectedEdgeId
-          : !!edgeClass && ownerDomainId === selectionDomain && selected === `class.${edgeClass}`
+        const isSelected = selectedEdgeContext?.edgeIds.has(edge.id) === true
         const focus: EdgeFocus | undefined = !sets
           ? undefined
           : sets.edgeIds.has(edge.id)
@@ -474,7 +554,7 @@ export function WorkspaceSchemaGraph({
           return { ...edge, className: cls, data, style: { ...edge.style, strokeWidth: 2.4 } }
         return { ...edge, className: cls, data }
       }),
-    [edges, selected, selectedEdgeId, selectionDomain, sets],
+    [edges, selectedEdgeContext, sets],
   )
   const routedEdges = useMemo(
     () => assignFloatingEdgePorts(nodes, displayEdges),
@@ -518,7 +598,7 @@ export function WorkspaceSchemaGraph({
             // keep a half-written comment open — its own × closes it
             if (!hasAnyUnsentDraft()) setOpenAnchor(null)
           }}
-          minZoom={0.08}
+          minZoom={MIN_ZOOM}
           nodesConnectable={false}
           edgesFocusable
           // React Flow derives an edge's z-index from its endpoints, and a SELECTED node is

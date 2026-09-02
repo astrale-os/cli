@@ -2,6 +2,7 @@ import { type NodeProps } from '@xyflow/react'
 import { ChevronDown, ChevronRight, Globe, Plus } from 'lucide-react'
 import { createContext, type ReactNode, useContext } from 'react'
 
+import { anchorData, domainAnchorRef } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
 import type { GroupNodeData } from '../projection'
@@ -59,9 +60,15 @@ function useWorkspaceNodeActions(): WorkspaceNodeActions {
 function WorkspaceDomainNode({ data }: NodeProps) {
   const domain = data as WorkspaceDomainNodeData
   return (
+    // Targetable as a whole: the frame is the one thing on the canvas that stands for the
+    // DOMAIN, so a comment dropped on it is about the domain rather than about a spot on
+    // the canvas. Nothing it contains is caught by this — React Flow lays every node out as
+    // a flat sibling, so the cards and module boxes drawn inside the frame are not its
+    // descendants and keep resolving to themselves.
     <div
       data-domain-id={domain.domainId}
       data-testid={`workspace-domain-${domain.domainId}`}
+      {...anchorData(domainAnchorRef(domain.origin), domain.origin)}
       className="relative h-full w-full rounded-xl border-2 border-dashed border-muted-foreground/35 bg-foreground/[0.04]"
     >
       {/* The origin sits ON the rule, painted over it in the canvas colour, so the frame
