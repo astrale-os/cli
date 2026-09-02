@@ -45,9 +45,102 @@ const COMPOSITION_FACTORIES: readonly { module: string; name: string }[] = [
   { module: '@astrale-os/sdk', name: 'defineDomain' },
 ]
 
-/** Resolve the composition module imported by config, with the root file as convention. */
+const PROJECT_MODULES = new Set(['@astrale-os/sdk/project', '@astrale-os/sdk'])
+const DEPLOYMENT_MODULES = new Set(['@astrale-os/sdk/deployment', '@astrale-os/sdk'])
+const TESTING_MODULES = new Set(['@astrale-os/sdk/testing'])
+
+/** What `astrale.config.ts` declares through `defineProject`, read statically. */
+export interface ProjectConfigAnalysis {
+  /** Application module of `deployment: deploy({ application })`, resolved to a source file. */
+  readonly applicationFile: string | null
+  /** Dataset module coordinates of `tests: tests({ datasets: [dataset('…')] })`, in order. */
+  readonly datasets: readonly string[]
+}
+
+const NO_PROJECT: ProjectConfigAnalysis = Object.freeze({ applicationFile: null, datasets: [] })
+
+/**
+ * Read the Project declared by `astrale.config.ts` without executing it: the configuration is
+ * the single entry point of a domain, but importing it would load the adapter, the Runtime
+ * and every authored effect. Local `const` bindings are followed; dynamic constructions are
+ * simply not seen.
+ */
+export function analyzeProjectConfig(root: string): ProjectConfigAnalysis {
+  const project = resolve(root)
+  const config = join(project, 'astrale.config.ts')
+  if (!existsSync(config)) return NO_PROJECT
+  const source = addSourceFile(config)
+  if (source === null) return NO_PROJECT
+  for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
+    if (!isSdkCall(call, source, 'defineProject', PROJECT_MODULES)) continue
+    const input = resolveLocalValue(call.getArguments()[0], source)
+    if (!input || !Node.isObjectLiteralExpression(input)) continue
+    return Object.freeze({
+      applicationFile: applicationOf(objectPropertyValue(input, 'deployment'), source, project),
+      datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
+    })
+  }
+  return NO_PROJECT
+}
+
+function applicationOf(node: Node | undefined, source: SourceFile, root: string): string | null {
+  const deployment = resolveLocalValue(node, source)
+  if (!deployment || !Node.isCallExpression(deployment)) return null
+  if (!isSdkCall(deployment, source, 'deploy', DEPLOYMENT_MODULES)) return null
+  const input = resolveLocalValue(deployment.getArguments()[0], source)
+  if (!input || !Node.isObjectLiteralExpression(input)) return null
+  const application = objectPropertyValue(input, 'application')
+  return application ? importedModuleOf(application, source, root) : null
+}
+
+function datasetsOf(node: Node | undefined, source: SourceFile): string[] {
+  const tests = resolveLocalValue(node, source)
+  if (!tests || !Node.isCallExpression(tests)) return []
+  if (!isSdkCall(tests, source, 'tests', TESTING_MODULES)) return []
+  const input = resolveLocalValue(tests.getArguments()[0], source)
+  if (!input || !Node.isObjectLiteralExpression(input)) return []
+  const list = resolveLocalValue(objectPropertyValue(input, 'datasets'), source)
+  if (!list || !Node.isArrayLiteralExpression(list)) return []
+  const paths: string[] = []
+  for (const element of list.getElements()) {
+    const reference = resolveLocalValue(element, source)
+    if (!reference || !Node.isCallExpression(reference)) continue
+    if (!isSdkCall(reference, source, 'dataset', TESTING_MODULES)) continue
+    const argument = reference.getArguments()[0]
+    const literal = argument ? unwrap(argument) : undefined
+    if (!literal) continue
+    if (!Node.isStringLiteral(literal) && !Node.isNoSubstitutionTemplateLiteral(literal)) continue
+    const path = literal.getLiteralValue()
+    if (!paths.includes(path)) paths.push(path)
+  }
+  return paths
+}
+
+/** The module an identifier is imported from (named, aliased or default), resolved inside the root. */
+function importedModuleOf(node: Node, source: SourceFile, root: string): string | null {
+  const value = unwrap(node)
+  if (!Node.isIdentifier(value)) return null
+  const name = value.getText()
+  for (const declaration of source.getImportDeclarations()) {
+    const named = declaration
+      .getNamedImports()
+      .some((entry) => (entry.getAliasNode()?.getText() ?? entry.getName()) === name)
+    if (named || declaration.getDefaultImport()?.getText() === name) {
+      return resolveAuthoredModule(root, source, declaration.getModuleSpecifierValue())
+    }
+  }
+  return null
+}
+
+/**
+ * Resolve the composition module: the Project declared by `astrale.config.ts` first, then the
+ * root `application.ts` / `domain.ts` convention, then the config's own composition import for
+ * projects that predate `defineProject`.
+ */
 export function resolveApplicationEntry(root: string): string | null {
   const project = resolve(root)
+  const declared = analyzeProjectConfig(project).applicationFile
+  if (declared !== null) return declared
   for (const name of COMPOSITION_MODULES) {
     const conventional = join(project, `${name}.ts`)
     if (existsSync(conventional)) return conventional
@@ -206,39 +299,47 @@ function resolveLocalValue(
   return initializer ? resolveLocalValue(initializer, source, seen) : value
 }
 
-function isCompositionCall(call: CallExpression, source: SourceFile): boolean {
+/** True when `call` invokes `name` imported (named, aliased or namespaced) from one of `modules`. */
+function isSdkCall(
+  call: CallExpression,
+  source: SourceFile,
+  name: string,
+  modules: ReadonlySet<string>,
+): boolean {
   const expression = call.getExpression()
   if (Node.isIdentifier(expression)) {
     const localName = expression.getText()
     return source
       .getImportDeclarations()
-      .some((declaration) =>
-        COMPOSITION_FACTORIES.some(
-          (factory) =>
-            declaration.getModuleSpecifierValue() === factory.module &&
-            declaration
-              .getNamedImports()
-              .some(
-                (named) =>
-                  named.getName() === factory.name &&
-                  (named.getAliasNode()?.getText() ?? named.getName()) === localName,
-              ),
-        ),
+      .some(
+        (declaration) =>
+          modules.has(declaration.getModuleSpecifierValue()) &&
+          declaration
+            .getNamedImports()
+            .some(
+              (named) =>
+                named.getName() === name &&
+                (named.getAliasNode()?.getText() ?? named.getName()) === localName,
+            ),
       )
   }
-  if (!Node.isPropertyAccessExpression(expression)) return false
+  if (!Node.isPropertyAccessExpression(expression) || expression.getName() !== name) return false
   const namespace = expression.getExpression()
   if (!Node.isIdentifier(namespace)) return false
   return source
     .getImportDeclarations()
-    .some((declaration) =>
-      COMPOSITION_FACTORIES.some(
-        (factory) =>
-          expression.getName() === factory.name &&
-          declaration.getModuleSpecifierValue() === factory.module &&
-          declaration.getNamespaceImport()?.getText() === namespace.getText(),
-      ),
+    .some(
+      (declaration) =>
+        modules.has(declaration.getModuleSpecifierValue()) &&
+        declaration.getNamespaceImport()?.getText() === namespace.getText(),
     )
+}
+
+/** True when `call` invokes one of the composition factories a domain module may use. */
+function isCompositionCall(call: CallExpression, source: SourceFile): boolean {
+  return COMPOSITION_FACTORIES.some((factory) =>
+    isSdkCall(call, source, factory.name, new Set([factory.module])),
+  )
 }
 
 function objectPropertyValue(object: ObjectLiteralExpression, name: string) {

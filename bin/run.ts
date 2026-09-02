@@ -24,6 +24,8 @@ async function runInternalMode(): Promise<boolean> {
   process.argv.splice(2, 1)
   if (mode === '__studio-server') await import('../studio/server/index')
   else if (mode === '__studio-extractor') await import('../studio/server/introspect/extractor')
+  else if (mode === '__studio-datasets')
+    await import('../studio/server/introspect/dataset-extractor')
   else if (mode === '__studio-bridge') await import('../studio/server/agent/bridge/stdio')
   else if (mode === '__studio-acp-codex') await import('@agentclientprotocol/codex-acp')
   else if (mode === '__studio-acp-claude')

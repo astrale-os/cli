@@ -15,6 +15,7 @@ export type StudioEventEffect =
   | { type: 'invalidate-agent'; domainId: string; chatId?: string }
   | { type: 'invalidate-agent-history'; domainId: string; chatId?: string }
   | { type: 'invalidate-chats'; domainId: string }
+  | { type: 'invalidate-datasets'; domainId: string }
   | { type: 'append-agent-event'; chatId: string; runId: string; event: AgentEvent }
   | { type: 'synchronize-agent-run'; run: AgentRun }
 
@@ -68,6 +69,8 @@ export function studioEventEffects(
         { type: 'invalidate-domain', domainId: event.domainId },
         { type: 'invalidate-workspace' },
       ]
+    case 'datasets':
+      return [{ type: 'invalidate-datasets', domainId: event.domainId }]
     case 'anatomy-diff':
     case 'comments':
     case 'compile-error':
@@ -105,6 +108,9 @@ export function useStudioEventSync(): void {
             break
           case 'invalidate-chats':
             void queryClient.invalidateQueries({ queryKey: qk.chats(effect.domainId) })
+            break
+          case 'invalidate-datasets':
+            void queryClient.invalidateQueries({ queryKey: qk.datasets(effect.domainId) })
             break
           case 'append-agent-event':
             appendEvent(effect.chatId, effect.runId, effect.event)

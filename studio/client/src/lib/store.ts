@@ -18,9 +18,9 @@ export interface CommentDraft {
 
 /** The main views of a domain. Talking to the agent and reading comments are NOT
  *  sections — they follow you across every view, from the work panel. */
-export type SectionKey = 'schema' | 'core' | 'process'
+export type SectionKey = 'schema' | 'core' | 'data' | 'process'
 
-const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'process']
+const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'data', 'process']
 
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'

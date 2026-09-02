@@ -10,6 +10,8 @@ import type { AgentAccess, AgentEvent, AgentRun } from './agent'
 export type StudioEvent =
   | { type: 'schema-diff'; domainId: string; renderFingerprint: string }
   | { type: 'anatomy-diff'; domainId: string }
+  /** a referenced Dataset module or the project configuration changed */
+  | { type: 'datasets'; domainId: string }
   | { type: 'comments'; domainId: string }
   | { type: 'compile-error'; domainId: string; message: string }
   | { type: 'resolving'; domainId: string }
