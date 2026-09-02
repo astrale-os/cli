@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0-beta.70](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.69...cli/v1.0.0-beta.70) (2026-09-02)
+
+
+### Features
+
+* **studio:** inspect and evaluate dataset policies ([#358](https://github.com/astrale-os/cli/issues/358)) ([35cba1e](https://github.com/astrale-os/cli/commit/35cba1ef3d98903bf026587c29ff90ae694b249a))
+* **studio:** make agent workflow workspace-wide ([#362](https://github.com/astrale-os/cli/issues/362)) ([185fa37](https://github.com/astrale-os/cli/commit/185fa3798cb0a5fbdbd137c45b42d0449c6495cc))
+* **studio:** refine class inheritance visualization ([#361](https://github.com/astrale-os/cli/issues/361)) ([cbdca66](https://github.com/astrale-os/cli/commit/cbdca662ea0dfdcd2dc1ef2a3d3d383dc6d8ca38))
+* **studio:** streamline class member details ([#360](https://github.com/astrale-os/cli/issues/360)) ([58eac3e](https://github.com/astrale-os/cli/commit/58eac3ec351f5dcd4c75d4f1b3d4f177412684f7))
+
 ## [1.0.0-beta.69](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.68...cli/v1.0.0-beta.69) (2026-09-02)
 
 
