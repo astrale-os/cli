@@ -70,6 +70,19 @@ Common regressions are:
 Assert call counts at the injected Query, Mutation, and Integration boundaries. Inspect the built
 Worker closure and packed package, because a source-only test cannot prove deploy-time isolation.
 
+## Let the Registry lower Policy Node selectors
+
+Do not duplicate a long list of concrete Classes to optimize an existential Policy. Kernel resolves
+`node(Class)` through the pinned Registry to the active concrete descendants, including installed
+foreign descendants. It resolves `node()` from the active concrete Registry and narrows that set from
+the variable's Edge endpoints when the normalized Policy makes a safe constraint available. The
+backend then evaluates exact label alternatives rather than discovering inheritance per candidate.
+
+Selector choice still follows authorization semantics. `node.exact(Class)` is the smallest extent;
+`node(Class)` can grow as concrete descendants are installed; and `node()` can remain broad when its
+Edge topology does not narrow it. Review the resolved selector extent and Policy plan when a broad
+existential is on a measured hot path, but do not make an exact selector merely to improve a benchmark.
+
 ## Stop before cleverness
 
 Do not add a generic repository, cache, batching framework, persistent catalog, or adapter-specific
