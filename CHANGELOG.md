@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0-beta.67](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.66...cli/v1.0.0-beta.67) (2026-09-02)
+
+
+### Features
+
+* **studio:** name the running model before the chat is opened ([#346](https://github.com/astrale-os/cli/issues/346)) ([368ae56](https://github.com/astrale-os/cli/commit/368ae566ef4c305bdb885670e4b1357134802205))
+* **studio:** open a new domain from a chat composer ([#348](https://github.com/astrale-os/cli/issues/348)) ([33eff69](https://github.com/astrale-os/cli/commit/33eff69c7f156a60cda84058d5563c7a6a9cd319))
+* **studio:** show active agent in bottom dock ([#347](https://github.com/astrale-os/cli/issues/347)) ([dc8872f](https://github.com/astrale-os/cli/commit/dc8872f8354238dcd278ef5fe149261575e60956))
+
+
+### Bug Fixes
+
+* **auth:** extend local operator credentials ([c8384f9](https://github.com/astrale-os/cli/commit/c8384f98c41c51407ec16f734bb78df3e7bba706))
+* **commands:** list views without browser engine ([#344](https://github.com/astrale-os/cli/issues/344)) ([7977f45](https://github.com/astrale-os/cli/commit/7977f45461757c1d0cf5136c163f2d9b265daf3a))
+* **studio:** open on an agent this machine has ([#345](https://github.com/astrale-os/cli/issues/345)) ([956cc6d](https://github.com/astrale-os/cli/commit/956cc6d5cc1614df4bdc435d7212ae7aeaa4e7bc))
+* **studio:** scaffold on the SDK generation Studio can read ([#349](https://github.com/astrale-os/cli/issues/349)) ([473d3b7](https://github.com/astrale-os/cli/commit/473d3b75ed093ff24a1487f1e491355bd95959d9))
+
 ## [1.0.0-beta.66](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.65...cli/v1.0.0-beta.66) (2026-09-01)
 
 
