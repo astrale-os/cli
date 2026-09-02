@@ -88,7 +88,7 @@ export function NewDomainCard({
   const setSection = useUI((state) => state.setSection)
   const setPanelTab = useUI((state) => state.setPanelTab)
   const setAgentDraft = useUI((state) => state.setAgentDraft)
-  const { activate } = useCanvasDomains()
+  const canvas = useCanvasDomains()
 
   const reading = readName(name)
   const busy = phase !== 'idle'
@@ -105,9 +105,9 @@ export function NewDomainCard({
   /** Open the new domain on the conversation the first message started. */
   const land = (id: string, run?: AgentRun) => {
     if (run) setRun(run)
-    void queryClient.invalidateQueries({ queryKey: qk.chats(id) })
-    void queryClient.invalidateQueries({ queryKey: qk.agent(id) })
-    activate(id)
+    void queryClient.invalidateQueries({ queryKey: qk.chats })
+    void queryClient.invalidateQueries({ queryKey: qk.agent() })
+    if (!canvas.visible.has(id)) canvas.toggleOnCanvas(id)
     setSection('schema')
     // the turn is already running — open on it rather than on a canvas that is
     // still being drawn, which is what makes this read as one gesture
@@ -121,7 +121,10 @@ export function NewDomainCard({
       {
         createDomain: api.createDomain,
         uploadDocuments: api.uploadDocuments,
-        submit: (id, text) => api.agentSubmit(id, text),
+        submit: async (_id, text) => {
+          const chat = await api.openChat()
+          return api.agentSubmit(text, chat.id)
+        },
         onPhase: enter,
       },
       { name, message, files },

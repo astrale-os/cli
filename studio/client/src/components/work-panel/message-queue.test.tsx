@@ -15,13 +15,7 @@ const message = (id: string, text: string): QueuedMessage => ({
 function render(queued: QueuedMessage[], pending: PendingMessage[] = [], running = true): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <MessageQueue
-        domainId="billing"
-        chatId="chat-1"
-        queued={queued}
-        pending={pending}
-        running={running}
-      />
+      <MessageQueue chatId="chat-1" queued={queued} pending={pending} running={running} />
     </QueryClientProvider>,
   )
 }

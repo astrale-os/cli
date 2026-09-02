@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { dockWorkspacePanel, expect, test } from './test'
 
 test('loads a canonical schema and opens a class detail', async ({ page, request }) => {
   const pageErrors: string[] = []
@@ -44,18 +44,22 @@ test('loads a canonical schema and opens a class detail', async ({ page, request
   // card the assertions below measure. Docked and collapsed, the fit happens in the pane
   // the card is measured in. Where the panel lives is bottom-dock.spec.ts's subject, not
   // this one's.
-  await page.addInitScript(() => localStorage.setItem('studio.panelSide', 'left'))
+  await dockWorkspacePanel(request, 'left')
 
   await page.goto('/')
-  // The rail names the domain everything else is about — the row carrying `aria-current`.
+  // The rail says what the canvas draws through the eye; it has no active-domain state.
+  const crmRow = page
+    .getByTestId('workspace-domain-tree')
+    .locator('[data-tree-row][data-anchor-ref="domain.crm.studio-demo.astrale.ai"]')
+  await expect(crmRow).toBeVisible()
   await expect(
-    page.locator('[data-testid="workspace-domain-tree"] [aria-current="true"]'),
-  ).toContainText('crm.studio-demo.astrale.ai')
-  // The gear is the ONLY way into per-domain settings — no palette entry, no shortcut —
+    crmRow.getByRole('button', { name: 'Hide crm.studio-demo.astrale.ai on the canvas' }),
+  ).toBeVisible()
+  // The gear is the ONLY way into machine settings — no palette entry, no shortcut —
   // so this opens the dialog rather than just counting the button: a mounted button over
   // an unmounted dialog is exactly the state that made the settings unreachable before.
   await page.getByRole('button', { name: 'Settings' }).click()
-  await expect(page.getByText('Studio-wide — saved to .domain-studio/settings.json')).toBeVisible()
+  await expect(page.getByText('Machine-wide — saved under ~/.astrale/studio')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Fit View' })).toHaveCount(0)

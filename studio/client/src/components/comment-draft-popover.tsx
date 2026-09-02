@@ -13,9 +13,8 @@ import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
  */
 export function CommentDraftPopover() {
   const draft = useUI((s) => s.commentDraft)
-  const activeDomainId = useUI((s) => s.domainId)
   const setCommentDraft = useUI((s) => s.setCommentDraft)
-  const ownerDomainId = draft?.domainId ?? activeDomainId ?? ''
+  const ownerDomainId = draft?.domainId ?? ''
   const { openThreads } = useAnchorThreads(draft?.anchor.ref ?? '__none__', ownerDomainId)
 
   if (!draft) return null

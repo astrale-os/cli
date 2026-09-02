@@ -31,7 +31,6 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const { data: domains } = useWorkspace()
   const { inputs, pending, errors } = useWorkspaceDomainInputs(domainIds, domains)
   const queryClient = useQueryClient()
-  const activeDomainId = useUI((state) => state.domainId)
   const selected = useUI((state) => state.selectedClass)
   const selectionDomainId = useUI((state) => state.selectionDomainId)
   const select = useUI((state) => state.selectClass)
@@ -41,26 +40,20 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const setPanelOverlay = useUI((state) => state.setPanelOverlay)
   const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const collapsedModules = useSchemaWorkspace((state) => state.collapsedModules)
-  const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
+  const visibleDomainIds = useSchemaWorkspace((state) => state.visibleDomainIds)
   const { domains: prepared, ready: preparationReady } = usePreparedWorkspaceDomains(
     inputs,
     collapsedModules,
   )
-  // `prepared` may hold one domain the canvas does not draw — the active one, loaded for
-  // the panels that read it. Same array back when the two lists agree: the graph reads
+  // `prepared` may briefly hold a domain the canvas no longer draws while queries settle.
+  // Same array back when the two lists agree: the graph reads
   // that identity to tell a real change from the echo of its own drag.
   const canvasDomains = useMemo(() => {
-    const selected = new Set(selectedDomainIds)
+    const selected = new Set(visibleDomainIds)
     return prepared.every((domain) => selected.has(domain.input.summary.id))
       ? prepared
       : prepared.filter((domain) => selected.has(domain.input.summary.id))
-  }, [prepared, selectedDomainIds])
-
-  useEffect(() => {
-    if (useUI.getState().panelOverlay && useUI.getState().panelOverlay !== 'views') {
-      setPanelOverlay(null)
-    }
-  }, [setPanelOverlay])
+  }, [prepared, visibleDomainIds])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -110,16 +103,13 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
     }
   }, [inputs, updateVisibility])
 
-  const activeInput = inputs.find((input) => input.summary.id === activeDomainId)
-  // The detail panel answers to the SELECTION, not to the active domain: on a canvas of
-  // several domains, clicking a class in any of them opens that class — the one you
-  // clicked, from the schema that declares it.
-  const selectionInput =
-    inputs.find((input) => input.summary.id === selectionDomainId) ?? activeInput
+  // The detail panel answers to the SELECTION: on a canvas of several domains, clicking
+  // a class in any of them opens that class — the one clicked, from its declaring schema.
+  const selectionInput = inputs.find((input) => input.summary.id === selectionDomainId)
+  const overlayInput = inputs.find((input) => input.summary.id === panelOverlay?.domainId)
   // A module is a grouping, not a member: selecting one rings its box on the canvas and
   // its row in the tree, and that is the whole answer — there is no module to inspect.
   const detail = selected && !isModuleRef(selected) ? selected : undefined
-  const solo = inputs.length === 1
   const ready = preparationReady && inputs.length === domainIds.length
   const providerKey = canvasDomains
     .map((domain) => `${domain.input.summary.id}:${domain.input.bundle.renderFingerprint}`)
@@ -161,28 +151,28 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
           )}
         </div>
 
-        {panelOverlay === 'views' ? (
+        {panelOverlay?.kind === 'views' ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>
-            {solo && activeInput ? (
+            {overlayInput ? (
               <ViewsPanel
-                domainId={activeInput.summary.id}
-                model={buildViewsModel(activeInput.anatomy, activeInput.bundle)}
+                domainId={overlayInput.summary.id}
+                model={buildViewsModel(overlayInput.anatomy, overlayInput.bundle)}
               />
             ) : (
               <WorkspaceViewsPanel inputs={inputs} />
             )}
           </PanelShell>
-        ) : panelOverlay === 'domains' && activeInput ? (
+        ) : panelOverlay?.kind === 'domains' && overlayInput ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>
             <DomainsPanel
-              domainId={activeInput.summary.id}
-              visibility={activeInput.visibility}
-              onToggleHidden={(ref) => toggleHidden(activeInput.summary.id, ref)}
+              domainId={overlayInput.summary.id}
+              visibility={overlayInput.visibility}
+              onToggleHidden={(ref) => toggleHidden(overlayInput.summary.id, ref)}
             />
           </PanelShell>
-        ) : panelOverlay === 'integrations' && activeInput ? (
+        ) : panelOverlay?.kind === 'integrations' && overlayInput ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>
-            <IntegrationsPanel domainId={activeInput.summary.id} />
+            <IntegrationsPanel domainId={overlayInput.summary.id} />
           </PanelShell>
         ) : detail && selectionInput ? (
           <PanelShell onClose={() => select(undefined)}>
@@ -206,7 +196,7 @@ function EmptyCanvas() {
     >
       <p className="text-sm font-medium">No domain on the canvas</p>
       <p className="text-[13px] text-muted-foreground">
-        Check one in the rail to draw its schema here.
+        Use a domain eye in the rail to draw its schema here.
       </p>
     </div>
   )

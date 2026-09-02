@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 
 test('an imported domain is hidden and restored through its persisted visibility state', async ({
   page,
@@ -16,7 +16,7 @@ test('an imported domain is hidden and restored through its persisted visibility
   await expect(externalFrame).toBeVisible()
 
   await page.getByRole('button', { name: 'Search' }).click()
-  await page.getByRole('option', { name: /Imported domains/ }).click()
+  await page.getByRole('option', { name: /Imported domains crm\.studio-demo\.astrale\.ai/ }).click()
   const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
   await expect(panel.getByRole('heading', { name: 'Domains', exact: true })).toBeVisible()
 

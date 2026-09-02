@@ -17,10 +17,10 @@ export async function streamAsk(
   onDelta: (chunk: string) => void,
   signal?: AbortSignal,
 ): Promise<AskStreamResult> {
-  const res = await fetch(`/api/domain/${encodeURIComponent(domainId)}/agent/ask`, {
+  const res = await fetch('/api/agent/ask', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, domainId }),
     signal,
   })
   if (!res.ok || !res.body) {

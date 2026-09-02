@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { dockWorkspacePanel, expect, test, type Page } from './test'
 
 /**
  * Commenting on a DOMAIN.
@@ -6,13 +6,13 @@ import { expect, test, type Page } from '@playwright/test'
  * Every other scope in the hierarchy was targetable — a class, a relationship, a module, a
  * view, the canvas itself — but a domain was not: neither the frame that draws it nor its
  * row in the rail carried an anchor, so a click on either fell through to the generic
- * "somewhere on this canvas" catch-all. And because neither lit up under the pointer, there
- * was nothing to say the click had missed.
+ * canvas background. And because neither lit up under the pointer, there was nothing to say
+ * the click had missed.
  *
  * The two surfaces are checked on DIFFERENT domains on purpose. The rail lists domains the
  * canvas may not be drawing, so its rows carry no `data-domain-id` for the resolver to read —
  * the owner rides on the anchor itself, and getting that wrong files the thread under
- * whichever domain happens to be active.
+ * another domain inferred from unrelated UI state.
  */
 
 const ACTIVE = { origin: 'crm.studio-demo.astrale.ai', id: 'fixture' }
@@ -21,7 +21,7 @@ const PEER = { origin: 'ops.studio-demo.astrale.ai', id: 'peer' }
 /** Enter comment mode and point at something, reporting what would be pinned. */
 async function pointAt(page: Page, x: number, y: number): Promise<string | null> {
   await page.keyboard.press('c')
-  await expect(page.getByText('Comment mode — click anything to comment')).toBeVisible()
+  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
   await page.mouse.move(x, y)
   return page.evaluate(
     () => document.querySelector('[data-comment-target]')?.getAttribute('data-anchor-ref') ?? null,
@@ -47,8 +47,9 @@ async function submit(page: Page, text: string) {
 
 test('a domain takes a comment, from its frame and from its rail row, in its own threads', async ({
   page,
+  request,
 }) => {
-  await page.addInitScript(() => localStorage.setItem('studio.panelSide', 'left'))
+  await dockWorkspacePanel(request, 'left')
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
   await expect(page.getByTestId('workspace-schema-canvas')).toBeVisible()
@@ -74,8 +75,8 @@ test('a domain takes a comment, from its frame and from its rail row, in its own
     .locator(`[data-anchor-ref="domain.${ACTIVE.origin}"]`)
   await expect(activeRow.getByRole('button', { name: /comment/i })).toBeVisible()
 
-  // ── the rail row of a domain that is NOT the one being worked in ──
-  await page.getByRole('checkbox', { name: `Add ${PEER.origin} to the canvas` }).click()
+  // ── the rail row of another domain ──
+  await page.getByRole('button', { name: `Show ${PEER.origin} on the canvas` }).click()
   const peerRow = page
     .getByTestId('workspace-domain-tree')
     .locator(`[data-anchor-ref="domain.${PEER.origin}"]`)
@@ -84,7 +85,7 @@ test('a domain takes a comment, from its frame and from its rail row, in its own
   const row = (await peerRow.boundingBox())!
   expect(await pointAt(page, row.x + 40, row.y + row.height / 2)).toBe(`domain.${PEER.origin}`)
   await page.mouse.click(row.x + 40, row.y + row.height / 2)
-  // filed under the domain the ROW names, not under the one being worked in
+  // filed under the domain the ROW names, not under another visible domain
   expect(await submit(page, 'a note on the imported domain')).toEqual({
     domainId: PEER.id,
     anchorRefs: [{ ref: `domain.${PEER.origin}`, kind: 'section' }],

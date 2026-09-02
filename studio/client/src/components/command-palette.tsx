@@ -1,11 +1,16 @@
+import type { DomainSummary, StudioSchemaBundle } from '@shared/types'
+
+import { useQueries } from '@tanstack/react-query'
 import { Command } from 'cmdk'
 import { AppWindow, ArrowRight, Box, Folder, Globe, Plug, Spline, Tag } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 
-import { useBundle } from '@/lib/hooks'
+import { api, qk } from '@/lib/api'
+import { useWorkspace } from '@/lib/hooks'
 import { type SectionKey, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { folderModules, moduleOfClass } from '@/schema-studio/modules'
+import { useCanvasDomains } from '@/schema-studio/workspace/canvas-selection'
 
 /** The nav sections, mirroring app.tsx's NAV order/labels. */
 const SECTIONS: { key: SectionKey; label: string }[] = [
@@ -69,18 +74,121 @@ function Row({
 const ITEM_CLS =
   'flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-foreground outline-none data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground'
 
+interface SearchIndex {
+  classes: Array<{
+    domainId: string
+    domainLabel: string
+    name: string
+    value: string
+    meta: string
+  }>
+  edges: Array<{ domainId: string; domainLabel: string; name: string; value: string; meta: string }>
+  properties: Array<{
+    domainId: string
+    domainLabel: string
+    id: string
+    owner: string
+    prop: string
+    value: string
+    meta: string
+  }>
+  modules: Array<{
+    domainId: string
+    domainLabel: string
+    path: string
+    firstClass?: string
+    value: string
+    meta: string
+  }>
+}
+
+function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): SearchIndex {
+  const ir = bundle?.ir
+  if (!ir || !bundle) return { classes: [], edges: [], properties: [], modules: [] }
+  const base = { domainId: domain.id, domainLabel: domain.origin }
+
+  const classes = Object.values(ir.classes)
+    .filter((candidate) => candidate.type === 'node')
+    .map((candidate) => {
+      const propCount = Object.keys(candidate.properties).length
+      const methodCount = Object.keys(candidate.methods).length
+      const module = moduleOfClass(bundle, candidate.name)
+      const counts = [
+        propCount > 0 ? `${propCount} propert${propCount === 1 ? 'y' : 'ies'}` : '',
+        methodCount > 0 ? `${methodCount} method${methodCount === 1 ? '' : 's'}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+      return {
+        ...base,
+        name: candidate.name,
+        value: `${domain.origin} class ${candidate.name} ${module} ${counts}`,
+        meta: [domain.origin, module === 'root' ? '' : module, counts].filter(Boolean).join(' · '),
+      }
+    })
+
+  const edges = Object.values(ir.classes)
+    .filter((candidate) => candidate.type === 'edge')
+    .map((edge) => {
+      const [source, target] = edge.endpoints ?? []
+      const sourceType = source?.types.join('|') ?? '?'
+      const targetType = target?.types.join('|') ?? '?'
+      return {
+        ...base,
+        name: edge.name,
+        value: `${domain.origin} edge ${edge.name} ${sourceType} ${targetType} relationship`,
+        meta: `${domain.origin} · ${sourceType} → ${targetType}`,
+      }
+    })
+
+  const properties: SearchIndex['properties'] = []
+  for (const candidate of Object.values(ir.classes)) {
+    if (candidate.type !== 'node') continue
+    for (const [property, schema] of Object.entries(candidate.properties)) {
+      const optional = candidate.required ? !candidate.required.includes(property) : undefined
+      properties.push({
+        ...base,
+        id: `class.${candidate.name}.property.${property}`,
+        owner: candidate.name,
+        prop: property,
+        value: `${domain.origin} ${candidate.name}.${property} property ${propTypeLabel(schema, optional)}`,
+        meta: `${domain.origin} · ${propTypeLabel(schema, optional)}`,
+      })
+    }
+  }
+
+  const modules = folderModules(bundle).map((module) => {
+    const count = module.classes.length + module.edges.length
+    return {
+      ...base,
+      path: module.path,
+      firstClass: module.classes[0],
+      value: `${domain.origin} module ${module.path} ${module.classes.join(' ')} ${module.edges.join(' ')}`,
+      meta: `${domain.origin} · ${count} member${count === 1 ? '' : 's'}`,
+    }
+  })
+
+  return { classes, edges, properties, modules }
+}
+
 export function CommandPalette() {
   const open = useUI((s) => s.paletteOpen)
   const setPaletteOpen = useUI((s) => s.setPaletteOpen)
-  const domainId = useUI((s) => s.domainId)
   const setSection = useUI((s) => s.setSection)
   const selectClass = useUI((s) => s.selectClass)
   const focusClass = useUI((s) => s.focusClass)
   const setFocus = useUI((s) => s.setFocus)
   const revealOnCanvas = useUI((s) => s.revealOnCanvas)
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
-
-  const { data: bundle } = useBundle(domainId)
+  const canvas = useCanvasDomains()
+  const { data: domains = [] } = useWorkspace()
+  const bundles = useQueries({
+    queries: domains.map((domain) => ({
+      queryKey: qk.bundle(domain.id),
+      queryFn: () => api.bundle(domain.id),
+    })),
+    combine: (results) => results.map((result) => result.data),
+  })
 
   // Global Cmd/Ctrl+K toggles the palette. (cmdk's Dialog handles Esc to close.)
   useEffect(() => {
@@ -96,82 +204,26 @@ export function CommandPalette() {
 
   const close = () => setPaletteOpen(false)
 
-  // Build the searchable index from the schema IR (memoised on the bundle).
+  // Build one searchable index over every domain in the scanned workspace.
   const index = useMemo(() => {
-    const ir = bundle?.ir
-    if (!ir || !bundle) {
-      return { classes: [], edges: [], properties: [], modules: [] }
+    const indexes = domains.map((domain, position) => buildDomainIndex(domain, bundles[position]))
+    return {
+      classes: indexes
+        .flatMap((entry) => entry.classes)
+        .sort((a, b) => a.value.localeCompare(b.value)),
+      edges: indexes.flatMap((entry) => entry.edges).sort((a, b) => a.value.localeCompare(b.value)),
+      properties: indexes
+        .flatMap((entry) => entry.properties)
+        .sort((a, b) => a.value.localeCompare(b.value)),
+      modules: indexes
+        .flatMap((entry) => entry.modules)
+        .sort((a, b) => a.value.localeCompare(b.value)),
     }
+  }, [bundles, domains])
 
-    const classes = Object.values(ir.classes)
-      .filter((c) => c.type === 'node')
-      .map((c) => {
-        const propCount = Object.keys(c.properties).length
-        const methodCount = Object.keys(c.methods).length
-        const mod = moduleOfClass(bundle, c.name)
-        const counts = [
-          propCount > 0 ? `${propCount} propert${propCount === 1 ? 'y' : 'ies'}` : '',
-          methodCount > 0 ? `${methodCount} method${methodCount === 1 ? '' : 's'}` : '',
-        ]
-          .filter(Boolean)
-          .join(' · ')
-        return {
-          name: c.name,
-          value: `class ${c.name} ${mod} ${counts}`,
-          meta: [mod === 'root' ? '' : mod, counts].filter(Boolean).join(' · '),
-        }
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-
-    const edges = Object.values(ir.classes)
-      .filter((c) => c.type === 'edge')
-      .map((e) => {
-        const [src, tgt] = e.endpoints ?? []
-        const srcT = src?.types.join('|') ?? '?'
-        const tgtT = tgt?.types.join('|') ?? '?'
-        return {
-          name: e.name,
-          value: `edge ${e.name} ${srcT} ${tgtT} relationship`,
-          meta: `${srcT} → ${tgtT}`,
-        }
-      })
-      .sort((a, b) => a.name.localeCompare(b.name))
-
-    type Prop = {
-      id: string
-      owner: string
-      prop: string
-      value: string
-      meta: string
-    }
-    const properties: Prop[] = []
-    for (const c of Object.values(ir.classes)) {
-      if (c.type !== 'node') continue
-      for (const [prop, schema] of Object.entries(c.properties)) {
-        const optional = c.required ? !c.required.includes(prop) : undefined
-        properties.push({
-          id: `class.${c.name}.property.${prop}`,
-          owner: c.name,
-          prop,
-          value: `${c.name}.${prop} property ${propTypeLabel(schema, optional)}`,
-          meta: propTypeLabel(schema, optional),
-        })
-      }
-    }
-    properties.sort((a, b) => a.value.localeCompare(b.value))
-
-    const modules = folderModules(bundle).map((m) => {
-      const n = m.classes.length + m.edges.length
-      return {
-        path: m.path,
-        firstClass: m.classes[0],
-        value: `module ${m.path} ${m.classes.join(' ')} ${m.edges.join(' ')}`,
-        meta: `${n} member${n === 1 ? '' : 's'}`,
-      }
-    })
-
-    return { classes, edges, properties, modules }
-  }, [bundle])
+  const showDomain = (domainId: string) => {
+    if (!canvas.visible.has(domainId)) canvas.toggleOnCanvas(domainId)
+  }
 
   return (
     <Command.Dialog
@@ -206,12 +258,13 @@ export function CommandPalette() {
           <Command.Group heading="Classes">
             {index.classes.map((c) => (
               <Command.Item
-                key={`class.${c.name}`}
+                key={`${c.domainId}:class.${c.name}`}
                 value={c.value}
                 className={ITEM_CLS}
                 onSelect={() => {
                   setSection('schema')
-                  focusClass(`class.${c.name}`)
+                  showDomain(c.domainId)
+                  focusClass(`class.${c.name}`, c.domainId)
                   revealOnCanvas(`class.${c.name}`)
                   close()
                 }}
@@ -226,15 +279,16 @@ export function CommandPalette() {
           <Command.Group heading="Relationships">
             {index.edges.map((e) => (
               <Command.Item
-                key={`edge.${e.name}`}
+                key={`${e.domainId}:edge.${e.name}`}
                 value={e.value}
                 className={ITEM_CLS}
                 onSelect={() => {
                   setSection('schema')
+                  showDomain(e.domainId)
                   // A relationship selects under `class.` like everything else on the canvas,
                   // but it is a LINE: what the canvas brings into view is the pair of cards it
                   // runs between, which only the `edge.` ref asks for.
-                  selectClass(`class.${e.name}`)
+                  selectClass(`class.${e.name}`, e.domainId)
                   setFocus(null)
                   revealOnCanvas(`edge.${e.name}`)
                   close()
@@ -257,12 +311,13 @@ export function CommandPalette() {
           <Command.Group heading="Properties">
             {index.properties.map((p) => (
               <Command.Item
-                key={p.id}
+                key={`${p.domainId}:${p.id}`}
                 value={p.value}
                 className={ITEM_CLS}
                 onSelect={() => {
                   setSection('schema')
-                  focusClass(`class.${p.owner}`)
+                  showDomain(p.domainId)
+                  focusClass(`class.${p.owner}`, p.domainId)
                   revealOnCanvas(`class.${p.owner}`)
                   close()
                 }}
@@ -286,13 +341,14 @@ export function CommandPalette() {
           <Command.Group heading="Modules">
             {index.modules.map((m) => (
               <Command.Item
-                key={`module.${m.path}`}
+                key={`${m.domainId}:module.${m.path}`}
                 value={m.value}
                 className={ITEM_CLS}
                 onSelect={() => {
                   setSection('schema')
+                  showDomain(m.domainId)
                   if (m.firstClass) {
-                    focusClass(`class.${m.firstClass}`)
+                    focusClass(`class.${m.firstClass}`, m.domainId)
                     revealOnCanvas(`class.${m.firstClass}`)
                   }
                   close()
@@ -305,20 +361,23 @@ export function CommandPalette() {
         )}
 
         <Command.Group heading="Overviews">
-          {OVERVIEWS.map((o) => (
-            <Command.Item
-              key={`overview.${o.key}`}
-              value={`open ${o.label} ${o.key} overview`}
-              className={ITEM_CLS}
-              onSelect={() => {
-                setSection('schema')
-                setPanelOverlay(o.key)
-                close()
-              }}
-            >
-              <Row icon={o.icon} label={o.label} meta="overview" />
-            </Command.Item>
-          ))}
+          {domains.flatMap((domain) =>
+            OVERVIEWS.map((o) => (
+              <Command.Item
+                key={`${domain.id}:overview.${o.key}`}
+                value={`open ${domain.origin} ${o.label} ${o.key} overview`}
+                className={ITEM_CLS}
+                onSelect={() => {
+                  setSection('schema')
+                  showDomain(domain.id)
+                  setPanelOverlay(o.key, domain.id)
+                  close()
+                }}
+              >
+                <Row icon={o.icon} label={o.label} meta={domain.origin} />
+              </Command.Item>
+            )),
+          )}
         </Command.Group>
 
         <Command.Group heading="Go to">

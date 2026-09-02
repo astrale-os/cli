@@ -6,7 +6,6 @@ import { harnessLink, isRunActive, pendingRun, reconcileRun, useAgentLive } from
 
 const run = (patch: Partial<AgentRun> = {}): AgentRun => ({
   id: 'run-1',
-  domainId: 'd',
   chatId: 'c',
   harness: 'claude',
   status: 'running',
@@ -54,7 +53,6 @@ test('either side alone is the answer', () => {
 const submitted = () =>
   pendingRun({
     id: 'pending-1',
-    domainId: 'd',
     chatId: 'c',
     harness: 'claude',
     message: 'do the thing',
@@ -72,7 +70,6 @@ test('a message sent to a free chat is a turn from the keystroke, not a queue en
 test('a turn only carrying documents says so instead of showing an empty message', () => {
   const carried = pendingRun({
     id: 'pending-2',
-    domainId: 'd',
     chatId: 'c',
     harness: 'claude',
     message: '',

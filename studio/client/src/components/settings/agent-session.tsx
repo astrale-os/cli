@@ -11,39 +11,29 @@ import { useAgentSession } from '@/lib/hooks'
 import { SettingsHint } from './hint'
 
 /** Manual conversation ownership for the chat the user is in, and only that one. */
-export function AgentSession({
-  domainId,
-  harness,
-}: {
-  domainId?: string
-  harness?: HarnessStatus
-}) {
-  const chat = useActiveChat(domainId)
-  const { data: session, isFetching } = useAgentSession(domainId, chat?.id)
+export function AgentSession({ harness }: { harness?: HarnessStatus }) {
+  const chat = useActiveChat()
+  const { data: session, isFetching } = useAgentSession(chat?.id)
   const queryClient = useQueryClient()
   const [sessionId, setSessionId] = useState('')
   // The id is only meaningful to the chat's OWN agent, which never changes.
   const chatHarness = chat?.harness ?? harness?.id
 
   useEffect(() => {
-    if (!domainId || !chatHarness || isFetching) {
+    if (!chatHarness || isFetching) {
       setSessionId('')
       return
     }
     setSessionId(session?.sessionId ?? '')
-  }, [domainId, chatHarness, isFetching, session?.sessionId])
+  }, [chatHarness, isFetching, session?.sessionId])
 
   const save = useMutation({
-    mutationFn: (input: {
-      domainId: string
-      harness: string
-      sessionId: string
-      chatId?: string
-    }) => api.setAgentSession(input.domainId, input.harness, input.sessionId, input.chatId),
+    mutationFn: (input: { harness: string; sessionId: string; chatId?: string }) =>
+      api.setAgentSession(input.harness, input.sessionId, input.chatId),
     onSuccess: (saved, input) => {
-      queryClient.setQueryData(qk.agentSession(input.domainId, input.chatId), saved)
-      queryClient.invalidateQueries({ queryKey: qk.agent(input.domainId) })
-      queryClient.invalidateQueries({ queryKey: qk.chats(input.domainId) })
+      queryClient.setQueryData(qk.agentSession(input.chatId), saved)
+      queryClient.invalidateQueries({ queryKey: qk.agent() })
+      queryClient.invalidateQueries({ queryKey: qk.chats })
       toast.success(saved.sessionId ? 'Agent session changed' : 'Agent session cleared')
     },
     onError: (error) => toast.error(String(error)),
@@ -73,7 +63,6 @@ export function AgentSession({
         <button
           type="button"
           disabled={
-            !domainId ||
             !chatHarness ||
             isFetching ||
             sessionId.trim() === (session?.sessionId ?? '') ||
@@ -81,7 +70,6 @@ export function AgentSession({
           }
           onClick={() =>
             save.mutate({
-              domainId: domainId!,
               harness: chatHarness!,
               sessionId: sessionId.trim(),
               ...(chat ? { chatId: chat.id } : {}),

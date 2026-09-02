@@ -30,11 +30,10 @@ export function Commentable({
   excerpt: string
   children: ReactNode
   className?: string
-  domainId?: string
+  domainId: string
 }) {
   const myId = useId()
-  const activeDomainId = useUI((s) => s.domainId)
-  const ownerDomainId = domainId ?? activeDomainId ?? ''
+  const ownerDomainId = domainId
   const openRef = useUI((s) => s.openAnchorRef)
   const openId = useUI((s) => s.openAnchorId)
   const openKey = anchorKey(ownerDomainId, anchor.ref)

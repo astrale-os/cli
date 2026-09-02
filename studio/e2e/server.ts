@@ -13,11 +13,14 @@ const executable = process.execPath
 const cliEntry = join(cliRoot, 'bin', 'astrale.ts')
 const serverEntry = join(studioRoot, 'server', 'index.ts')
 const fixture = join(import.meta.dir, 'fixture')
+const astraleHome = join(studioRoot, 'test-results', 'astrale-home')
 
 const child = Bun.spawn([executable, serverEntry, fixture, '--port', port, '--no-open'], {
   cwd: studioRoot,
   env: {
     ...process.env,
+    // Machine-global Studio state must never make an E2E run read or write the user's home.
+    ASTRALE_HOME: astraleHome,
     DOMAIN_STUDIO_CLI_DESCRIPTOR: JSON.stringify({
       version: 1,
       executable,

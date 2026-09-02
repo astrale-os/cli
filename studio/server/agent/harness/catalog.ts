@@ -35,7 +35,7 @@ async function catalogOf(
 
   // The native catalog, deliberately unfiltered by any Studio override: the
   // picker has to show what could be chosen, not what is chosen.
-  const configuration = await resolveHarnessConfiguration(root, harness)
+  const configuration = await resolveHarnessConfiguration(harness)
   if (!configuration.ok)
     return {
       ...base,
@@ -47,12 +47,12 @@ async function catalogOf(
     ...(signal === undefined ? {} : { signal }),
   })
   const models = loadout.models ?? []
-  // What a NEW chat of this harness runs: the domain's starred model when the star
+  // What a NEW chat of this harness runs: the starred model when the star
   // is on THIS harness (there is only one, across every agent), Studio's default
   // otherwise — `resolveHarnessConfiguration` already ranks those, so the picker's
   // star and the runner never disagree.
   //
-  // Each candidate has to still be in the catalog. A domain that starred a slug
+  // Each candidate has to still be in the catalog. A studio that starred a slug
   // the agent has since renamed (`opus` → `opus[1m]`) falls through to Studio's
   // default rather than to the agent's own pick: a dead setting should not quietly
   // hand the choice back to whatever that machine happens to be configured with.

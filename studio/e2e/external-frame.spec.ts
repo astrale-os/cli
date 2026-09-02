@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './test'
 
 /**
  * An imported domain's frame is furniture you move, exactly like the frame of a domain the
@@ -9,7 +9,10 @@ import { expect, test } from '@playwright/test'
  * as soon as the canvas has an `onNodeClick`, so the cards a frame holds used to swallow
  * the press and leave a dead zone in the middle of the block a reader is trying to move.
  */
-test('an imported domain frame drags from anywhere, member cards included', async ({ page }) => {
+test('an imported domain frame drags from anywhere, member cards included', async ({
+  page,
+  request,
+}) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
 
@@ -19,6 +22,13 @@ test('an imported domain frame drags from anywhere, member cards included', asyn
   })
   await expect(frame).toBeVisible()
   const frameTransform = () => frame.evaluate((el) => (el as HTMLElement).style.transform)
+  const savedPosition = async () => {
+    const response = await request.get('/api/workspace/state')
+    const state = (await response.json()) as {
+      schema: { externalPositions: Record<string, { x: number; y: number }> }
+    }
+    return state.schema.externalPositions['payments.studio-demo.astrale.ai'] ?? null
+  }
 
   // Wait for the fit to bring the whole frame inside the pane instead of assuming it: a
   // point computed from a box that is half off-screen is not a point the mouse can press,
@@ -37,6 +47,11 @@ test('an imported domain frame drags from anywhere, member cards included', asyn
     })
     .toBe(true)
 
+  // Initial layout also travels through the debounced machine-side state. Wait for it so
+  // the post-drag assertion cannot accidentally observe that earlier write.
+  await expect.poll(savedPosition).not.toBeNull()
+  const savedAtRest = JSON.stringify(await savedPosition())
+
   const parked = await frameTransform()
   const member = page.locator('.react-flow__node-extMember').filter({ hasText: 'PaymentProcessor' })
   const memberBox = (await member.boundingBox())!
@@ -49,6 +64,9 @@ test('an imported domain frame drags from anywhere, member cards included', asyn
 
   const moved = await frameTransform()
   expect(moved).not.toBe(parked)
+
+  // A reload must not race the 120ms persistence debounce.
+  await expect.poll(async () => JSON.stringify(await savedPosition())).not.toBe(savedAtRest)
 
   await page.reload()
   await page.getByRole('button', { name: 'Schema', exact: true }).click()

@@ -1,5 +1,3 @@
-import type { AnchorRef, Comment } from '@shared/types'
-
 import { Handle, type NodeProps, Position } from '@xyflow/react'
 import {
   AppWindow,
@@ -10,23 +8,16 @@ import {
   Fingerprint,
   Globe,
   type LucideIcon,
-  MessageSquare,
   Play,
   TriangleAlert,
   Zap,
 } from 'lucide-react'
 import { type CSSProperties, useState } from 'react'
 
-import { ThreadPopover } from '@/components/thread-popover'
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { ViewModal } from '@/components/view-modal'
-import { hasUnsentDraft } from '@/lib/comment-drafts'
-import { openCommentThreads } from '@/lib/comments'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { driftLabel } from '@/lib/views'
-
-import type { CanvasCommentNodeData } from './structure'
 
 import { type KernelRole } from '../inheritance'
 import { NodeCommentPin } from '../node-comment-pin'
@@ -308,18 +299,6 @@ function ExtMemberNode({ data }: NodeProps) {
   )
 }
 
-function CanvasCommentNode({ data }: NodeProps) {
-  const d = data as CanvasCommentNodeData
-  return (
-    <CanvasCommentPin
-      threads={d.comments}
-      anchor={d.anchor}
-      excerpt={d.excerpt}
-      className="nodrag nopan"
-    />
-  )
-}
-
 export const schemaNodeTypes = {
   classNode: ClassNode,
   viewNode: ViewNode,
@@ -327,62 +306,4 @@ export const schemaNodeTypes = {
   moduleNode: GroupNode,
   extDomain: ExtDomainNode,
   extMember: ExtMemberNode,
-  canvasComment: CanvasCommentNode,
-}
-
-export function CanvasCommentPin({
-  threads,
-  anchor,
-  excerpt,
-  className,
-}: {
-  threads: Comment[]
-  anchor: AnchorRef
-  excerpt: string
-  className?: string
-}) {
-  const domainId = useUI((s) => s.domainId) ?? ''
-  const [open, setOpen] = useState(false)
-  const openThreads = openCommentThreads(threads)
-  if (openThreads.length === 0) return null
-  const orphaned = openThreads.some((c) => c.orphaned)
-  return (
-    <Popover modal={false} open={open} onOpenChange={setOpen}>
-      <PopoverAnchor asChild>
-        <button
-          type="button"
-          title="Schema canvas comments"
-          onClick={(e) => {
-            e.stopPropagation()
-            setOpen((v) => !v)
-          }}
-          className={cn(
-            'flex h-6 min-w-6 items-center justify-center gap-1 rounded-full px-1.5 text-[11px] font-semibold ring-2 ring-card transition-colors',
-            'bg-primary text-primary-foreground hover:bg-primary/90',
-            orphaned && 'bg-destructive text-white hover:bg-destructive/90',
-            className,
-          )}
-        >
-          <MessageSquare className="h-3 w-3" />
-          {openThreads.length}
-        </button>
-      </PopoverAnchor>
-      <PopoverContent
-        side="top"
-        align="center"
-        className="w-80"
-        onInteractOutside={(event) => {
-          if (hasUnsentDraft(domainId, anchor.ref, openThreads)) event.preventDefault()
-        }}
-      >
-        <ThreadPopover
-          domainId={domainId}
-          anchor={anchor}
-          excerpt={excerpt}
-          threads={openThreads}
-          onClose={() => setOpen(false)}
-        />
-      </PopoverContent>
-    </Popover>
-  )
 }

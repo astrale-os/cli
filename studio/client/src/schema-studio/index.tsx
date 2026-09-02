@@ -26,23 +26,38 @@ export type SchemaMode = 'schema' | 'core' | 'tests'
  */
 export function SchemaSection({
   domainId,
+  onDomainChange,
   mode = 'schema',
 }: {
-  domainId: string
+  /** Local scope for Core/Tests only; it has no effect on the workspace agent. */
+  domainId?: string
+  onDomainChange: (domainId: string) => void
   mode?: SchemaMode
 }) {
-  const selectedDomainIds = useSchemaWorkspace((state) => state.selectedDomainIds)
-  if (mode === 'core') return <CoreSection domainId={domainId} />
-  if (mode === 'tests') return <TestsSection domainId={domainId} />
-  // What is INTROSPECTED, not what is drawn: the domain you work in is loaded whether or
-  // not the canvas draws it, because the panels that read it — Domains, Integrations, the
-  // detail fallback — answer to the active domain and not to the composition. Which of
-  // these get a frame is the canvas's business, decided from the same store below.
-  return <WorkspaceSchemaSection domainIds={uniqueDomainIds([...selectedDomainIds, domainId])} />
+  const visibleDomainIds = useSchemaWorkspace((state) => state.visibleDomainIds)
+  if (mode === 'core')
+    return domainId ? (
+      <CoreSection domainId={domainId} onDomainChange={onDomainChange} />
+    ) : (
+      <NoDomain />
+    )
+  if (mode === 'tests')
+    return domainId ? (
+      <TestsSection domainId={domainId} onDomainChange={onDomainChange} />
+    ) : (
+      <NoDomain />
+    )
+  return <WorkspaceSchemaSection domainIds={uniqueDomainIds(visibleDomainIds)} />
 }
 
 /** The core (genesis) reading of ONE domain: its data tree, canvas and detail. */
-function CoreSection({ domainId }: { domainId: string }) {
+function CoreSection({
+  domainId,
+  onDomainChange,
+}: {
+  domainId: string
+  onDomainChange: (domainId: string) => void
+}) {
   const { data: bundle, isLoading } = useBundle(domainId)
   const { data: core } = useCore(domainId)
   const setFocus = useUI((s) => s.setFocus)
@@ -93,12 +108,13 @@ function CoreSection({ domainId }: { domainId: string }) {
       ) : (
         <div className="flex-1 flex min-h-0">
           {/* Core reads ONE domain, so its rail is the same list of domains with no
-              canvas composition to make — the genesis tree hangs under the active one. */}
+              canvas composition to make — the genesis tree hangs under the selected one. */}
           <ModulesSidebar onClearSelection={() => setCorePath(null)} header={<DomainsRailHeader />}>
             <ScrollArea className="h-full">
-              <DomainPicker>
+              <DomainPicker selectedId={domainId} onSelect={onDomainChange}>
                 {core && (
                   <CoreTree
+                    domainId={domainId}
                     core={core}
                     bundle={bundle}
                     selectedPath={corePath}
@@ -116,6 +132,7 @@ function CoreSection({ domainId }: { domainId: string }) {
             <ReactFlowProvider key={domainId}>
               {core ? (
                 <CoreView
+                  domainId={domainId}
                   core={core}
                   bundle={bundle}
                   selectedPath={corePath}
@@ -130,11 +147,19 @@ function CoreSection({ domainId }: { domainId: string }) {
           </div>
           {corePath && core && (
             <PanelShell onClose={() => setCorePath(null)}>
-              <CoreDetail core={core} bundle={bundle} selectedPath={corePath} />
+              <CoreDetail domainId={domainId} core={core} bundle={bundle} selectedPath={corePath} />
             </PanelShell>
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+function NoDomain() {
+  return (
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      This workspace has no domain yet.
     </div>
   )
 }

@@ -28,7 +28,7 @@ test('renders canonical Core edges connected to the owning Domain endpoint', () 
     ir: { classes: {} },
   } as StudioSchemaBundle
 
-  const graph = buildCoreGraph(core, bundle, new Map())
+  const graph = buildCoreGraph(core, bundle, new Map(), 'shell')
 
   expect(graph.nodes.map((node) => node.data.path)).toContain('/:shell.astrale.ai')
   expect(graph.nodes.find((node) => node.data.path === '/:shell.astrale.ai')?.data).toMatchObject({

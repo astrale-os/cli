@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { isRunActive, useDisplayRun } from '@/lib/agent'
 import { useActiveChatId, useModelCatalog } from '@/lib/chats'
-import { useComments, useHarness, useLoadout } from '@/lib/hooks'
+import { useHarness, useLoadout, useWorkspaceComments } from '@/lib/hooks'
 import { type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -46,21 +46,25 @@ const SIDES: { side: PanelSide; icon: typeof PanelLeft; label: string; hint: str
  * is one round per visit however the panel is docked — collapsed to a rail
  * included, since that rail is one click from the chat.
  */
-function useWarmAgentSetup(domainId: string): void {
-  const chatId = useActiveChatId(domainId)
-  useHarness(domainId)
-  useModelCatalog(domainId)
+function useWarmAgentSetup(): void {
+  const chatId = useActiveChatId()
+  useHarness()
+  useModelCatalog()
   // The loadout is keyed by chat, so it waits for the tab strip to say which one
   // rather than burning a session on a key the composer will never read.
-  useLoadout(domainId, chatId, !!chatId)
+  useLoadout(chatId, !!chatId)
 }
 
 /** Threads whose last word came from the agent — the ones waiting on you. */
-function useWaitingCount(domainId: string): number {
-  const { data } = useComments(domainId)
-  return (
-    data?.comments.filter((c) => c.status === 'open' && c.thread.at(-1)?.role === 'author')
-      .length ?? 0
+function useWaitingCount(): number {
+  const { data } = useWorkspaceComments()
+  return data.reduce(
+    (total, entry) =>
+      total +
+      (entry.store?.comments.filter(
+        (comment) => comment.status === 'open' && comment.thread.at(-1)?.role === 'author',
+      ).length ?? 0),
+    0,
   )
 }
 
@@ -73,21 +77,17 @@ function useWaitingCount(domainId: string): number {
  * not take space at all: the composer floats over the view, and the conversation
  * grows out of it for as long as you are in it.
  */
-export function WorkPanel({ domainId }: { domainId: string }) {
-  useWarmAgentSetup(domainId)
+export function WorkPanel() {
+  useWarmAgentSetup()
   const side = useUI((s) => s.panelSide)
   const open = useUI((s) => s.panelOpen)
-  if (side === 'bottom') return <FloatingDock domainId={domainId} />
-  return open ? (
-    <ExpandedPanel domainId={domainId} side={side} />
-  ) : (
-    <CollapsedRail domainId={domainId} side={side} />
-  )
+  if (side === 'bottom') return <FloatingDock />
+  return open ? <ExpandedPanel side={side} /> : <CollapsedRail side={side} />
 }
 
-function CollapsedRail({ domainId, side }: { domainId: string; side: DockedSide }) {
+function CollapsedRail({ side }: { side: DockedSide }) {
   const setPanelTab = useUI((s) => s.setPanelTab)
-  const waiting = useWaitingCount(domainId)
+  const waiting = useWaitingCount()
   return (
     <aside
       className={cn(
@@ -132,7 +132,7 @@ function RailButton({
   )
 }
 
-function ExpandedPanel({ domainId, side }: { domainId: string; side: DockedSide }) {
+function ExpandedPanel({ side }: { side: DockedSide }) {
   const size = useUI((s) => s.panelSize)
   const setPanelSize = useUI((s) => s.setPanelSize)
   const setPanelOpen = useUI((s) => s.setPanelOpen)
@@ -147,13 +147,12 @@ function ExpandedPanel({ domainId, side }: { domainId: string; side: DockedSide 
       )}
     >
       <PanelHeader
-        domainId={domainId}
         // a narrow panel can't hold two labelled tabs, a dock control and a close button
         compact={size < 340}
         closeLabel="Collapse the panel"
         onClose={() => setPanelOpen(false)}
       />
-      <PanelContent domainId={domainId} />
+      <PanelContent />
 
       {/* drag handle on the edge that faces the main view */}
       <div
@@ -181,13 +180,13 @@ function ExpandedPanel({ domainId, side }: { domainId: string; side: DockedSide 
  * the whole opening — what grows is the space above it, so the field under the
  * caret never moves. Closing is just that space going back to nothing.
  */
-function FloatingDock({ domainId }: { domainId: string }) {
+function FloatingDock() {
   const open = useUI((s) => s.panelOpen)
   const tab = useUI((s) => s.panelTab)
   const setPanelOpen = useUI((s) => s.setPanelOpen)
   const setPanelTab = useUI((s) => s.setPanelTab)
-  const waiting = useWaitingCount(domainId)
-  const run = useDisplayRun(domainId)
+  const waiting = useWaitingCount()
+  const run = useDisplayRun()
   const box = useRef<HTMLDivElement>(null)
   // Closed, the dock is all the agent has on screen — a running turn has to show
   // on the bar itself. Open it needs nothing: the turn is unfolding right above.
@@ -213,7 +212,6 @@ function FloatingDock({ domainId }: { domainId: string }) {
     // window, and the dock went on to cover the app header.
     <div className="pointer-events-none absolute inset-0 z-30 flex items-end justify-center p-4">
       <AgentDropZone
-        domainId={domainId}
         ref={box}
         data-testid="agent-dock"
         aria-busy={working || undefined}
@@ -260,17 +258,13 @@ function FloatingDock({ domainId }: { domainId: string }) {
             open ? 'h-[min(60vh,480px)]' : 'h-0',
           )}
         >
-          <PanelHeader domainId={domainId} closeLabel="Close the chat" onClose={close} />
+          <PanelHeader closeLabel="Close the chat" onClose={close} />
           {/* A flex column, not a block: the transcript is a flex-1 child and only
               scrolls once something hands it a height. A block let it grow to its
               content instead, the clip above took everything past the box, and a
               long answer ended in nothing — no scrollbar, and no way to its end. */}
           <div className="flex min-h-0 flex-1 flex-col border-t">
-            {tab === 'agent' ? (
-              <AgentTranscript domainId={domainId} />
-            ) : (
-              <CommentsTab domainId={domainId} />
-            )}
+            {tab === 'agent' ? <AgentTranscript /> : <CommentsTab />}
           </div>
         </div>
 
@@ -283,7 +277,6 @@ function FloatingDock({ domainId }: { domainId: string }) {
             the dock, and there would otherwise be nothing on screen. */}
         {(!open || tab === 'agent') && (
           <AgentComposer
-            domainId={domainId}
             bar
             expanded={open}
             // opens on the agent, but never yanks you off the comments you opened it on
@@ -350,19 +343,17 @@ function useDismiss(
 
 /** The tab strip and the panel's own controls — the same row docked or floating. */
 function PanelHeader({
-  domainId,
   compact,
   closeLabel,
   onClose,
 }: {
-  domainId: string
   compact?: boolean
   closeLabel: string
   onClose: () => void
 }) {
   const tab = useUI((s) => s.panelTab)
   const setPanelTab = useUI((s) => s.setPanelTab)
-  const waiting = useWaitingCount(domainId)
+  const waiting = useWaitingCount()
 
   return (
     <header className="flex h-10 shrink-0 items-center gap-1 px-2">
@@ -399,11 +390,11 @@ function PanelHeader({
   )
 }
 
-function PanelContent({ domainId }: { domainId: string }) {
+function PanelContent() {
   const tab = useUI((s) => s.panelTab)
   return (
     <div className="min-h-0 flex-1 border-t">
-      {tab === 'agent' ? <AgentTab domainId={domainId} /> : <CommentsTab domainId={domainId} />}
+      {tab === 'agent' ? <AgentTab /> : <CommentsTab />}
     </div>
   )
 }

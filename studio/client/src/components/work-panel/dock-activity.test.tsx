@@ -10,7 +10,6 @@ import { DockActivity } from './dock-activity'
 function running(ms: number, harness = 'claude'): AgentRun {
   return {
     id: 'run-1',
-    domainId: 'billing',
     chatId: 'chat-1',
     harness,
     status: 'running',

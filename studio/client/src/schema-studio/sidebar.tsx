@@ -1,5 +1,7 @@
 import { PanelLeftOpen } from 'lucide-react'
-import { type ReactNode, createContext, useContext, useState } from 'react'
+import { type ReactNode, createContext, useContext } from 'react'
+
+import { useUI } from '@/lib/store'
 
 /**
  * The modules rail down the left of every schema canvas, with the drag handle that
@@ -8,24 +10,6 @@ import { type ReactNode, createContext, useContext, useState } from 'react'
  */
 const MIN = 180
 const MAX = 560
-const DEFAULT = 240
-const STORAGE_KEY = 'studio.modulesWidth'
-const COLLAPSED_KEY = 'studio.modulesCollapsed'
-
-function storedWidth(): number {
-  try {
-    const value = Number(localStorage.getItem(STORAGE_KEY))
-    if (Number.isFinite(value) && value >= MIN && value <= MAX) return value
-  } catch {}
-  return DEFAULT
-}
-
-function storedCollapsed(): boolean {
-  try {
-    return localStorage.getItem(COLLAPSED_KEY) === '1'
-  } catch {}
-  return false
-}
 
 /**
  * The rail's own close button, offered to whatever header it was given: the header owns
@@ -46,15 +30,10 @@ export function ModulesSidebar({
   /** Called when the rail's empty space is clicked — see `clearOnBackgroundClick`. */
   onClearSelection?: () => void
 }) {
-  const [width, setWidth] = useState(storedWidth)
-  const [collapsed, setCollapsed] = useState(storedCollapsed)
-
-  const setCollapsedPersisted = (value: boolean) => {
-    setCollapsed(value)
-    try {
-      localStorage.setItem(COLLAPSED_KEY, value ? '1' : '0')
-    } catch {}
-  }
+  const width = useUI((state) => state.modulesWidth)
+  const collapsed = useUI((state) => state.modulesCollapsed)
+  const setWidth = useUI((state) => state.setModulesWidth)
+  const setCollapsed = useUI((state) => state.setModulesCollapsed)
 
   // Clicking the rail beside the tree means the same thing as clicking the canvas pane:
   // nothing is selected. A press on a control — or anywhere on a tree row, whose padding
@@ -80,9 +59,6 @@ export function ModulesSidebar({
       document.removeEventListener('pointerup', onUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      try {
-        localStorage.setItem(STORAGE_KEY, String(latest))
-      } catch {}
     }
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
@@ -101,7 +77,7 @@ export function ModulesSidebar({
       >
         <button
           type="button"
-          onClick={() => setCollapsedPersisted(false)}
+          onClick={() => setCollapsed(false)}
           title="Show domains"
           aria-label="Show domains"
           aria-expanded={false}
@@ -123,7 +99,7 @@ export function ModulesSidebar({
       style={{ width }}
       onClick={clearOnBackgroundClick}
     >
-      <CollapseContext.Provider value={{ collapse: () => setCollapsedPersisted(true) }}>
+      <CollapseContext.Provider value={{ collapse: () => setCollapsed(true) }}>
         {header}
       </CollapseContext.Provider>
       <div className="min-h-0 flex-1">{children}</div>

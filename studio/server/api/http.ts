@@ -16,6 +16,16 @@ export interface DomainRouteContext {
   notify: Notify
 }
 
+/** The agent's routes are the workspace's: same envelope, no domain to address. */
+export interface AgentRouteContext {
+  req: Request
+  url: URL
+  /** the path after `/api` — `/agent`, `/agent/chats`, … */
+  rest: string
+  body: JsonRecord
+  notify: Notify
+}
+
 export function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,

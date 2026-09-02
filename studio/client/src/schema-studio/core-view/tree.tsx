@@ -38,6 +38,7 @@ function buildCoreTree(core: StudioCore): CoreTreeNode[] {
 }
 
 function CoreRow({
+  domainId,
   item,
   depth,
   bundle,
@@ -45,6 +46,7 @@ function CoreRow({
   selectedPath,
   onSelect,
 }: {
+  domainId: string
   item: CoreTreeNode
   depth: number
   bundle: StudioSchemaBundle
@@ -82,6 +84,7 @@ function CoreRow({
           <span className="w-4 shrink-0" />
         )}
         <Commentable
+          domainId={domainId}
           anchor={{ ref: nodeAnchor(n.path), kind: 'section' }}
           excerpt={`${displayName(n)} (${n.className})`}
           className="flex-1 min-w-0"
@@ -111,6 +114,7 @@ function CoreRow({
         <div>
           {item.children.map((c) => (
             <CoreRow
+              domainId={domainId}
               key={c.node.path}
               item={c}
               depth={depth + 1}
@@ -127,11 +131,13 @@ function CoreRow({
 }
 
 export function CoreTree({
+  domainId,
   core,
   bundle,
   selectedPath,
   onSelect,
 }: {
+  domainId: string
   core: StudioCore
   bundle: StudioSchemaBundle
   selectedPath: string | null
@@ -152,6 +158,7 @@ export function CoreTree({
       ) : (
         tree.map((c) => (
           <CoreRow
+            domainId={domainId}
             key={c.node.path}
             item={c}
             depth={0}

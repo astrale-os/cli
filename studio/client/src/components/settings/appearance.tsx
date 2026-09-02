@@ -13,7 +13,7 @@ const EDGE_STYLES: { value: EdgeStyle; label: string }[] = [
   { value: 'orthogonal', label: 'Right angles' },
 ]
 
-/** The preferences that never reach settings.json — they belong to this browser. */
+/** Visual preferences: theme follows the browser; canvas geometry follows the workspace. */
 export function AppearanceSettings() {
   const theme = useUI((state) => state.theme)
   const setTheme = useUI((state) => state.setTheme)
@@ -36,7 +36,7 @@ export function AppearanceSettings() {
         </SettingRow>
         <SettingRow
           label="Edges"
-          description="How the Schema and Tests canvases draw a relationship between two cards."
+          description="How this workspace's Schema and Tests canvases draw relationships."
         >
           <SettingSelect
             value={edgeStyle}

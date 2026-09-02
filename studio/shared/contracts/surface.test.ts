@@ -23,6 +23,7 @@ const TARGET_BARREL_EXPORTS = [
   'AgentSessionInfo',
   'AgentSubmitResult',
   'AgentSystemPromptInfo',
+  'AgentUsage',
   'AnchorKind',
   'AnchorRef',
   'BundleError',
@@ -45,7 +46,6 @@ const TARGET_BARREL_EXPORTS = [
   'DomainCatalogEntry',
   'DomainOverview',
   'DomainSummary',
-  'DomainUsage',
   'EnvField',
   'EnvFileModel',
   'EnvName',
@@ -110,6 +110,11 @@ const TARGET_BARREL_EXPORTS = [
   'ViewTargetCandidate',
   'ViewTargetResult',
   'VisibilityState',
+  'WorkspacePanelUiState',
+  'WorkspaceRailUiState',
+  'WorkspaceSchemaUiState',
+  'WorkspaceSection',
+  'WorkspaceUiState',
 ] as const
 
 const TARGET_BARREL_HELPERS = [

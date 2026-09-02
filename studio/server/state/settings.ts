@@ -3,9 +3,8 @@
  *
  * These are preferences of the TOOL — how hard the agent thinks, which model it runs,
  * how long extraction may take — not properties of any one domain, and the studio holds
- * several domains at once. So there is ONE file, at the root the studio was pointed at:
- * `<workspace>/.domain-studio/settings.json`. Pointed at a single domain (the common
- * case), that root IS the domain, and the file is the one that was always there.
+ * several domains at once. So there is ONE machine-global file under
+ * `~/.astrale/studio` (or `ASTRALE_HOME`), whatever workspace is open.
  *
  * Missing keys fall back to DEFAULT_SETTINGS. Surfaced subtly in the UI (command palette
  * + a faint gear) for power users.

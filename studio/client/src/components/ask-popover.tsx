@@ -2,7 +2,6 @@ import { Loader2, Minus, Send, Sparkles, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { type AskEntry, useAsks } from '@/lib/asks'
-import { useUI } from '@/lib/store'
 import { locateTargetElement } from '@/lib/targets'
 import { cn } from '@/lib/utils'
 
@@ -10,8 +9,7 @@ import { Button } from './ui/button'
 import { Popover, PopoverAnchor, PopoverContent } from './ui/popover'
 import { Textarea } from './ui/textarea'
 
-function domainIsRendered(domainId: string, activeDomainId?: string): boolean {
-  if (activeDomainId === domainId) return true
+function domainIsRendered(domainId: string): boolean {
   for (const element of document.querySelectorAll<HTMLElement>('[data-domain-id]')) {
     if (element.dataset.domainId === domainId) return true
   }
@@ -21,8 +19,8 @@ function domainIsRendered(domainId: string, activeDomainId?: string): boolean {
 /** Top-right corner of the ask's target element on screen, or the click point for a
  *  rendered section/canvas anchor. Hidden domains return null instead of leaking a dot
  *  at stale coordinates into the next canvas. */
-function locate(entry: AskEntry, activeDomainId?: string): { x: number; y: number } | null {
-  if (!domainIsRendered(entry.domainId, activeDomainId)) return null
+function locate(entry: AskEntry): { x: number; y: number } | null {
+  if (!domainIsRendered(entry.domainId)) return null
   const el = locateTargetElement(document, entry.domainId, entry.ref)
   if (el) {
     const r = el.getBoundingClientRect()
@@ -219,7 +217,6 @@ function AskDot({ entry, pos }: { entry: AskEntry; pos: { x: number; y: number }
  * green ("answer ready") to bring you back. Mounted once, app-level.
  */
 export function AskLayer() {
-  const activeDomainId = useUI((s) => s.domainId)
   const entries = useAsks((s) => s.entries)
   const list = Object.values(entries)
   const [pos, setPos] = useState<Record<string, { x: number; y: number }>>({})
@@ -239,7 +236,7 @@ export function AskLayer() {
         for (const k of keys.split('|')) {
           const e = cur[k]
           if (!e) continue
-          const p = locate(e, activeDomainId)
+          const p = locate(e)
           if (!p) {
             if (prev[k]) changed = true
             continue
@@ -255,7 +252,7 @@ export function AskLayer() {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [activeDomainId, keys])
+  }, [keys])
 
   return (
     <>{list.map((e) => (pos[e.key] ? <AskDot key={e.key} entry={e} pos={pos[e.key]} /> : null))}</>

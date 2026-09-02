@@ -73,6 +73,7 @@ function CoreNodeCard({ data }: NodeProps) {
       <span className="absolute inset-y-0 left-0 w-[3px]" style={{ background: tint.mark }} />
       {!d.virtual && d.commentable !== false && (
         <NodeCommentPin
+          domainId={d.domainId}
           anchorRef={nodeAnchor(d.path)}
           kind="section"
           excerpt={`${d.title} (${d.className})`}
@@ -131,6 +132,7 @@ export type CoreLayout = 'flow' | 'class'
 // ── canvas ──────────────────────────────────────────────────────────────────
 
 export function CoreView({
+  domainId,
   core,
   bundle,
   selectedPath,
@@ -140,6 +142,7 @@ export function CoreView({
   compact = false,
   commentable = true,
 }: {
+  domainId: string
   core: StudioCore
   bundle: StudioSchemaBundle
   selectedPath: string | null
@@ -168,8 +171,8 @@ export function CoreView({
     [compact, commentable],
   )
   const structure = useMemo(
-    () => buildCoreGraph(core, bundle, hues, graphOptions),
-    [core, bundle, hues, graphOptions],
+    () => buildCoreGraph(core, bundle, hues, domainId, graphOptions),
+    [core, bundle, hues, domainId, graphOptions],
   )
 
   const [nodes, setNodes] = useState<Node[]>([])

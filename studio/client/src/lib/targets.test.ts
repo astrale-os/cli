@@ -79,6 +79,9 @@ test('a domain is a scope in the target hierarchy, keyed by origin', () => {
   expect(anchorKindForRef(ref)).toBe('section')
   expect(anchorKindForRef('module.billing')).toBe('section')
   expect(anchorKindForRef('class.Order')).toBe('schema')
+  expect(anchorKindForRef('function.createOrder')).toBe('schema')
+  expect(anchorKindForRef('core.node./:orders.example.dev:core.root')).toBe('section')
+  expect(anchorKindForRef('integration.request.stripe')).toBe('section')
   // the whole domain IS the target — nothing coarser contains it
   expect(detailRefFor(ref)).toBe(ref)
   // dots in an origin are not field separators

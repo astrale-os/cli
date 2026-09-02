@@ -78,7 +78,6 @@ export function AgentSettings({ harness }: AgentSettingsProps) {
 }
 
 export interface AgentDetailsProps {
-  domainId?: string
   settings?: StudioSettings
   harness?: HarnessStatus
   values: Record<string, string>
@@ -86,27 +85,17 @@ export interface AgentDetailsProps {
 }
 
 /** Power-user agent controls and runtime diagnostics shown only inside Details. */
-export function AgentDetails({
-  domainId,
-  settings,
-  harness,
-  values,
-  setValues,
-}: AgentDetailsProps) {
+export function AgentDetails({ settings, harness, values, setValues }: AgentDetailsProps) {
   // Diagnostics describe the conversation the user is in, not the domain default.
-  const chatId = useActiveChatId(domainId)
-  const {
-    data: loadout,
-    isFetching: loadoutFetching,
-    error: loadoutError,
-  } = useLoadout(domainId, chatId)
-  const { data: usage } = useUsage(domainId)
+  const chatId = useActiveChatId()
+  const { data: loadout, isFetching: loadoutFetching, error: loadoutError } = useLoadout(chatId)
+  const { data: usage } = useUsage()
   const queryClient = useQueryClient()
   const accessLevels = harness?.capabilities.accessLevels ?? [...AGENT_ACCESS_LEVELS]
 
   const refreshLoadout = useMutation({
-    mutationFn: (id: string) => api.loadout(id, true, chatId),
-    onSuccess: (refreshed, id) => queryClient.setQueryData(qk.loadout(id, chatId), refreshed),
+    mutationFn: () => api.loadout(true, chatId),
+    onSuccess: (refreshed) => queryClient.setQueryData(qk.loadout(chatId), refreshed),
     onError: (error) => toast.error(String(error)),
   })
 
@@ -127,7 +116,7 @@ export function AgentDetails({
           />
         </SettingRow>
 
-        <AgentSession domainId={domainId} harness={harness} />
+        <AgentSession harness={harness} />
 
         <AgentLoadout
           loadout={loadout}
@@ -136,8 +125,7 @@ export function AgentDetails({
             loadoutError ? String((loadoutError as Error)?.message ?? loadoutError) : undefined
           }
           usage={usage}
-          domainId={domainId}
-          onRefresh={() => refreshLoadout.mutate(domainId!)}
+          onRefresh={() => refreshLoadout.mutate()}
         />
       </div>
     </div>

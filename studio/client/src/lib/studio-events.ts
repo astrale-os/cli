@@ -7,33 +7,30 @@ import { useAgentLive } from './agent'
 import { qk } from './api'
 import { useInvalidateDomain } from './hooks'
 import { useEventStream } from './sse'
-import { useUI } from './store'
 
 export type StudioEventEffect =
   | { type: 'invalidate-domain'; domainId: string }
   | { type: 'invalidate-workspace' }
-  | { type: 'invalidate-agent'; domainId: string; chatId?: string }
-  | { type: 'invalidate-agent-history'; domainId: string; chatId?: string }
-  | { type: 'invalidate-chats'; domainId: string }
+  | { type: 'invalidate-agent'; chatId?: string }
+  | { type: 'invalidate-agent-history'; chatId?: string }
+  | { type: 'invalidate-chats' }
   | { type: 'invalidate-datasets'; domainId: string }
   | { type: 'append-agent-event'; chatId: string; runId: string; event: AgentEvent }
   | { type: 'synchronize-agent-run'; run: AgentRun }
 
 /** Pure policy table for translating one server event into client synchronizations. */
-export function studioEventEffects(
-  event: StudioEvent,
-  activeDomainId?: string,
-): StudioEventEffect[] {
+export function studioEventEffects(event: StudioEvent): StudioEventEffect[] {
   switch (event.type) {
     case 'hello':
-      return activeDomainId
-        ? [
-            { type: 'invalidate-domain', domainId: activeDomainId },
-            { type: 'invalidate-agent', domainId: activeDomainId },
-            { type: 'invalidate-agent-history', domainId: activeDomainId },
-            { type: 'invalidate-chats', domainId: activeDomainId },
-          ]
-        : []
+      return [
+        ...event.domains.map((domainId): StudioEventEffect => ({
+          type: 'invalidate-domain',
+          domainId,
+        })),
+        { type: 'invalidate-agent' },
+        { type: 'invalidate-agent-history' },
+        { type: 'invalidate-chats' },
+      ]
     case 'workspace':
       return [{ type: 'invalidate-workspace' }]
     case 'agent-event':
@@ -48,14 +45,13 @@ export function studioEventEffects(
     case 'agent-run': {
       const effects: StudioEventEffect[] = [
         { type: 'synchronize-agent-run', run: event.run },
-        { type: 'invalidate-agent', domainId: event.domainId, chatId: event.chatId },
+        { type: 'invalidate-agent', chatId: event.chatId },
         // the tab strip shows each chat's own execution state
-        { type: 'invalidate-chats', domainId: event.domainId },
+        { type: 'invalidate-chats' },
       ]
       if (event.run.status !== 'running' && event.run.status !== 'queued') {
         effects.push({
           type: 'invalidate-agent-history',
-          domainId: event.domainId,
           chatId: event.chatId,
         })
       }
@@ -63,7 +59,7 @@ export function studioEventEffects(
     }
     case 'chats':
       // a queued message moved in another window; nothing else changed
-      return [{ type: 'invalidate-chats', domainId: event.domainId }]
+      return [{ type: 'invalidate-chats' }]
     case 'schema-diff':
       return [
         { type: 'invalidate-domain', domainId: event.domainId },
@@ -88,7 +84,7 @@ export function useStudioEventSync(): void {
 
   const onEvent = useCallback(
     (event: StudioEvent) => {
-      for (const effect of studioEventEffects(event, useUI.getState().domainId)) {
+      for (const effect of studioEventEffects(event)) {
         switch (effect.type) {
           case 'invalidate-domain':
             invalidateDomain(effect.domainId)
@@ -98,16 +94,16 @@ export function useStudioEventSync(): void {
             break
           case 'invalidate-agent':
             void queryClient.invalidateQueries({
-              queryKey: qk.agent(effect.domainId, effect.chatId),
+              queryKey: qk.agent(effect.chatId),
             })
             break
           case 'invalidate-agent-history':
             void queryClient.invalidateQueries({
-              queryKey: qk.agentHistory(effect.domainId, effect.chatId),
+              queryKey: qk.agentHistory(effect.chatId),
             })
             break
           case 'invalidate-chats':
-            void queryClient.invalidateQueries({ queryKey: qk.chats(effect.domainId) })
+            void queryClient.invalidateQueries({ queryKey: qk.chats })
             break
           case 'invalidate-datasets':
             void queryClient.invalidateQueries({ queryKey: qk.datasets(effect.domainId) })

@@ -15,11 +15,11 @@ export type StudioEvent =
   | { type: 'comments'; domainId: string }
   | { type: 'compile-error'; domainId: string; message: string }
   | { type: 'resolving'; domainId: string }
-  | { type: 'agent-run'; domainId: string; chatId: string; run: AgentRun }
+  | { type: 'agent-run'; chatId: string; run: AgentRun }
   /** the tab strip changed for a reason no turn announced — a queued message
    *  added, reordered, edited or dropped in one window, seen in every other */
-  | { type: 'chats'; domainId: string }
-  | { type: 'agent-event'; domainId: string; chatId: string; runId: string; event: AgentEvent }
+  | { type: 'chats' }
+  | { type: 'agent-event'; chatId: string; runId: string; event: AgentEvent }
   | { type: 'hello'; domains: string[] }
   | { type: 'workspace'; domains: string[] }
 
@@ -36,9 +36,9 @@ export interface AgentModelPreference {
 }
 
 /**
- * Studio-wide overrides, stored once at `<workspace>/.domain-studio/settings.json`.
- * These configure the TOOL, not a domain — changing which domain you work in leaves
- * every value here exactly as it was.
+ * Studio-wide overrides, stored once in the studio's home on this machine
+ * (`~/.astrale/studio/settings.json`). These configure the TOOL, not a domain or a
+ * workspace: they follow the person, whatever is open.
  */
 export interface StudioSettings {
   /** workspace = sandboxed edits; full = unrestricted local automation */
@@ -47,7 +47,7 @@ export interface StudioSettings {
   agentModel: AgentModelPreference | null
   /** folder under the domain root scanned for integrations (default 'integrations') */
   integrationsDir: string
-  /** schema/core extraction subprocess timeout in ms (default 20000) */
+  /** schema/core extraction subprocess timeout in ms (default 60000) */
   introspectTimeoutMs: number
   /** how often the per-domain instance status refreshes, ms (default 30000) */
   instancePollMs: number

@@ -46,9 +46,8 @@ function useWorkspaceNodeActions(): WorkspaceNodeActions {
  *
  * It behaves like a module box — it wraps exactly what it holds, and you move it by
  * grabbing it anywhere. It is deliberately INERT to selection: clicking a class inside
- * makes its domain the active one, but the frame does not repaint to say so. Which
- * domain is active is answered once, in the modules rail, instead of every boundary on
- * the canvas changing colour whenever a selection moves.
+ * selects that explicitly owned class, but the frame does not repaint to imply a broader
+ * domain state. Canvas membership is answered once by the eye in the domains rail.
  *
  * The boundary is carried by TWO things, because the canvas is read at every zoom: a
  * 2px dashed rule, which says "edge of a territory" up close, and a neutral wash over

@@ -18,11 +18,13 @@ import { registerDomain, unregisterDomain, type DomainHandle } from '../../domai
 import { readComments, upsertComment } from '../../state/comments'
 import { updateSettings } from '../../state/settings'
 import { listState, stateExists } from '../../state/store'
+import { settingsRoot } from '../../studio-settings'
 import { initWorkspaceState } from '../../workspace-state'
 import { handleBridge } from '../bridge/routes'
 import { activeChat, chatQueue, MAX_QUEUED_MESSAGES, recordChatTurn, resolveChat } from '../chats'
 import { setHarnessGateway } from '../harness/gateway/config'
 import { getHarness } from '../harness/selection'
+import { agentWorkspace } from '../workspace'
 import {
   cancelRun,
   closeChat,
@@ -49,6 +51,7 @@ const envBefore = {
   mode: process.env.DOMAIN_STUDIO_MOCK_MODE,
   delay: process.env.DOMAIN_STUDIO_MOCK_DELAY_MS,
   model: process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL,
+  astraleHome: process.env.ASTRALE_HOME,
 }
 
 function restoreEnv(name: keyof typeof envBefore, variable: string): void {
@@ -62,6 +65,7 @@ afterEach(() => {
   restoreEnv('mode', 'DOMAIN_STUDIO_MOCK_MODE')
   restoreEnv('delay', 'DOMAIN_STUDIO_MOCK_DELAY_MS')
   restoreEnv('model', 'DOMAIN_STUDIO_MOCK_EXPECT_MODEL')
+  restoreEnv('astraleHome', 'ASTRALE_HOME')
   while (domainIds.length) unregisterDomain(domainIds.pop()!)
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
@@ -81,22 +85,24 @@ export default defineApplication({ schema: Test, runtime: {} as never })
   )
   const handle = registerDomain(root)!
   domainIds.push(handle.id)
+  process.env.ASTRALE_HOME = join(root, '.astrale')
+  initWorkspaceState(root)
   return handle
 }
 
-function bridgeFiles(root: string): string[] {
-  const dir = join(root, '.domain-studio', '.cache', 'agent')
-  if (!existsSync(dir)) return []
-  return readdirSync(dir).filter((file) => file.startsWith('bridge-'))
+function bridgeFiles(_root: string): string[] {
+  const root = agentWorkspace().stateRoot
+  if (!existsSync(root)) return []
+  return readdirSync(root).filter((file) => file.startsWith('bridge-'))
 }
 
-async function waitForTerminal(domainId: string, chatId?: string): Promise<AgentRun> {
+async function waitForTerminal(_domainId: string, chatId?: string): Promise<AgentRun> {
   for (let i = 0; i < 200; i++) {
-    const run = (await getSnapshot(domainId, chatId)).run
+    const run = (await getSnapshot(chatId)).run
     if (run && !['queued', 'running'].includes(run.status)) return run
     await Bun.sleep(25)
   }
-  throw new Error(`timed out waiting for ${domainId}`)
+  throw new Error(`timed out waiting for ${_domainId}`)
 }
 
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: string }): T {
@@ -105,13 +111,13 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: string }
 }
 
 /** The tab every submit in these tests lands in. */
-function chatId(handle: DomainHandle): string {
-  return listChats(handle.id).activeId
+function chatId(_handle: DomainHandle): string {
+  return listChats().activeId
 }
 
 /** The messages still waiting behind a chat's turn, oldest first. */
 function queueOf(handle: DomainHandle, chat?: string): string[] {
-  const stored = resolveChat(handle.root, 'mock', chat ?? chatId(handle))
+  const stored = resolveChat(agentWorkspace().stateRoot, 'mock', chat ?? chatId(handle))
   return chatQueue(stored!).map((message) => message.text)
 }
 
@@ -127,17 +133,19 @@ async function waitForDrained(handle: DomainHandle, chat?: string): Promise<void
 
 /** What this chat actually ran, in order. */
 function ranMessages(handle: DomainHandle, chat?: string): (string | undefined)[] {
-  const stored = resolveChat(handle.root, 'mock', chat ?? chatId(handle))!
-  return readRunHistory(handle.id, handle.root, stored).map((run) => run.instruction)
+  const root = agentWorkspace().stateRoot
+  const stored = resolveChat(root, 'mock', chat ?? chatId(handle))!
+  return readRunHistory(root, stored).map((run) => run.instruction)
 }
 
-function conversation(handle: DomainHandle): { sessionId?: string; turns: number } {
-  const chat = activeChat(handle.root, 'mock')
+function conversation(_handle: DomainHandle): { sessionId?: string; turns: number } {
+  const workspace = agentWorkspace()
+  const chat = activeChat(workspace.stateRoot, 'mock', undefined, workspace.uiRoot)
   return { ...(chat.sessionId ? { sessionId: chat.sessionId } : {}), turns: chat.turns }
 }
 
 function seedConversation(handle: DomainHandle, sessionId: string, turns: number): void {
-  recordChatTurn(handle.root, chatId(handle), { sessionId, turns })
+  recordChatTurn(agentWorkspace().stateRoot, chatId(handle), { sessionId, turns })
 }
 
 function useMock(mode = 'normal', delay = '0'): void {
@@ -153,9 +161,9 @@ describe.serial('agent runner invariants', () => {
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-domain-model'
     // Studio settings are global; point that global at this test's root.
     initWorkspaceState(handle.root)
-    updateSettings(handle.root, { agentModel: { harness: 'mock', model: 'mock-domain-model' } })
+    updateSettings(settingsRoot(), { agentModel: { harness: 'mock', model: 'mock-domain-model' } })
 
-    await submitRun(handle, () => {}, { message: 'use the selected model' })
+    await submitRun(() => {}, { message: 'use the selected model' })
     const run = await waitForTerminal(handle.id)
 
     expect(run.status).toBe('succeeded')
@@ -166,13 +174,13 @@ describe.serial('agent runner invariants', () => {
     useMock()
     const handle = fixture()
 
-    const first = submitRun(handle, () => {}, { message: 'first' })
+    const first = submitRun(() => {}, { message: 'first' })
     expect(isRunActive(chatId(handle))).toBe(true)
-    expect(setSessionId(handle.id, undefined, 'hijack')).toMatchObject({ ok: false })
+    expect(setSessionId(undefined, 'hijack')).toMatchObject({ ok: false })
 
     // one turn at a time is the invariant — the second message waits rather than
     // racing it, and nothing about the running turn changes
-    const second = await submitRun(handle, () => {}, { message: 'second' })
+    const second = await submitRun(() => {}, { message: 'second' })
     expect(second.run).toBeUndefined()
     expect(second.queued).toMatchObject({ text: 'second' })
     expect((await first).run?.status).toBe('running')
@@ -189,9 +197,9 @@ describe.serial('agent runner invariants', () => {
     useMock()
     const handle = fixture()
 
-    const pending = submitRun(handle, () => {}, { message: 'cancel setup' })
+    const pending = submitRun(() => {}, { message: 'cancel setup' })
     expect(isRunActive(chatId(handle))).toBe(true)
-    expect(cancelRun(handle.id)).toBe(true)
+    expect(cancelRun()).toBe(true)
     expect(await pending).toEqual({ error: 'agent run canceled during setup' })
     expect(isRunActive(chatId(handle))).toBe(false)
     expect(conversation(handle).sessionId).toBeUndefined()
@@ -202,7 +210,6 @@ describe.serial('agent runner invariants', () => {
     useMock()
     const handle = fixture()
     const started = await submitRun(
-      handle,
       () => {
         throw new Error('listener failed')
       },
@@ -220,18 +227,17 @@ describe.serial('agent runner invariants', () => {
     process.env.DOMAIN_STUDIO_MOCK_EXPECT_MODEL = 'mock-recovery-model'
     // Studio settings are global; point that global at this test's root.
     initWorkspaceState(handle.root)
-    updateSettings(handle.root, { agentModel: { harness: 'mock', model: 'mock-recovery-model' } })
-    setHarnessGateway(handle.root, {
-      scope: 'domain',
-      config: {
-        enabled: true,
-        baseUrl: 'https://gateway.invalid/v1/models/test',
-        auth: { mode: 'host' },
-      },
+    updateSettings(settingsRoot(), {
+      agentModel: { harness: 'mock', model: 'mock-recovery-model' },
+    })
+    setHarnessGateway({
+      enabled: true,
+      baseUrl: 'https://gateway.invalid/v1/models/test',
+      auth: { mode: 'host' },
     })
     seedConversation(handle, 'stale-session', 7)
 
-    const started = await submitRun(handle, () => {}, { message: 'continue safely' })
+    const started = await submitRun(() => {}, { message: 'continue safely' })
     expect(started.run?.harness).toBe('mock')
     const run = await waitForTerminal(handle.id)
 
@@ -261,7 +267,7 @@ describe.serial('agent runner invariants', () => {
     const handle = fixture()
     seedConversation(handle, 'stale-session', 2)
 
-    await submitRun(handle, () => {}, { message: 'continue once' })
+    await submitRun(() => {}, { message: 'continue once' })
     const run = await waitForTerminal(handle.id)
 
     expect(run).toMatchObject({
@@ -285,14 +291,14 @@ describe.serial('agent runner invariants', () => {
     })
     seedConversation(handle, 'stable-session', 2)
 
-    const started = await submitRun(handle, () => {})
+    const started = await submitRun(() => {})
     expect(started.run?.status).toBe('running')
     const bridgeFile = bridgeFiles(handle.root)[0]!
     const { token } = JSON.parse(
-      readFileSync(join(handle.root, '.domain-studio', '.cache', 'agent', bridgeFile), 'utf8'),
+      readFileSync(join(agentWorkspace().stateRoot, bridgeFile), 'utf8'),
     ) as { token: string }
-    expect(cancelRun(handle.id)).toBe(true)
-    expect((await handleBridge(handle, 'threads', { token })).status).toBe(401)
+    expect(cancelRun()).toBe(true)
+    expect((await handleBridge('threads', { token })).status).toBe(401)
     const canceled = await waitForTerminal(handle.id)
 
     expect(canceled.status).toBe('canceled')
@@ -310,7 +316,7 @@ describe.serial('agent runner invariants', () => {
     expect(isRunActive(chatId(handle))).toBe(false)
 
     process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = '0'
-    const retry = await submitRun(handle, () => {}, { message: 'retry' })
+    const retry = await submitRun(() => {}, { message: 'retry' })
     expect(retry.run?.status).toBe('running')
     expect((await waitForTerminal(handle.id)).status).toBe('succeeded')
   })
@@ -325,7 +331,7 @@ describe.serial('agent runner invariants', () => {
     })
     seedConversation(handle, 'stable-session', 4)
 
-    await submitRun(handle, () => {})
+    await submitRun(() => {})
     const thrown = await waitForTerminal(handle.id)
     expect(thrown).toMatchObject({
       status: 'failed',
@@ -341,7 +347,7 @@ describe.serial('agent runner invariants', () => {
     expect(bridgeFiles(handle.root)).toEqual([])
 
     process.env.DOMAIN_STUDIO_MOCK_MODE = 'badblock'
-    await submitRun(handle, () => {})
+    await submitRun(() => {})
     const malformed = await waitForTerminal(handle.id)
     expect(malformed.status).toBe('failed')
     expect(malformed.error).toContain('malformed JSON')
@@ -365,7 +371,7 @@ describe.serial('agent runner invariants', () => {
     })
     expect(readComments(handle.root).comments.map((item) => item.id)).toEqual([comment.id])
 
-    await submitRun(handle, () => {})
+    await submitRun(() => {})
     const run = await waitForTerminal(handle.id)
     expect(run).toMatchObject({
       status: 'succeeded',
@@ -385,12 +391,12 @@ describe.serial('agent runner invariants', () => {
   test('several tabs run at once, each with its own session and transcript', async () => {
     useMock('normal', '150')
     const handle = fixture()
-    const first = listChats(handle.id).activeId
-    const second = unwrap(openChat(handle.id, { harness: 'mock' })).id
+    const first = listChats().activeId
+    const second = unwrap(openChat({ harness: 'mock' })).id
 
     const started = await Promise.all([
-      submitRun(handle, () => {}, { message: 'in the first tab', chatId: first }),
-      submitRun(handle, () => {}, { message: 'in the second tab', chatId: second }),
+      submitRun(() => {}, { message: 'in the first tab', chatId: first }),
+      submitRun(() => {}, { message: 'in the second tab', chatId: second }),
     ])
 
     // neither submit was refused: an open turn belongs to its chat, not the domain
@@ -402,16 +408,22 @@ describe.serial('agent runner invariants', () => {
     expect((await waitForTerminal(handle.id, second)).status).toBe('succeeded')
 
     for (const id of [first, second]) {
-      expect(resolveChat(handle.root, 'mock', id)).toMatchObject({
+      expect(resolveChat(agentWorkspace().stateRoot, 'mock', id)).toMatchObject({
         sessionId: 'mock-session',
         turns: 1,
       })
     }
     expect(
-      readRunHistory(handle.id, handle.root, resolveChat(handle.root, 'mock', first)!),
+      readRunHistory(
+        agentWorkspace().stateRoot,
+        resolveChat(agentWorkspace().stateRoot, 'mock', first)!,
+      ),
     ).toEqual([expect.objectContaining({ instruction: 'in the first tab' })])
     expect(
-      readRunHistory(handle.id, handle.root, resolveChat(handle.root, 'mock', second)!),
+      readRunHistory(
+        agentWorkspace().stateRoot,
+        resolveChat(agentWorkspace().stateRoot, 'mock', second)!,
+      ),
     ).toEqual([expect.objectContaining({ instruction: 'in the second tab' })])
   })
 
@@ -419,41 +431,43 @@ describe.serial('agent runner invariants', () => {
     delete process.env.DOMAIN_STUDIO_HARNESS
     const handle = fixture()
     // nothing starred: the first tab is the agent this machine has
-    expect(unwrap(openChat(handle.id, {})).harness).toBe('claude')
+    expect(unwrap(openChat({})).harness).toBe('claude')
 
     // move the live conversation elsewhere and the next tab follows it — the
     // agent that was live, since nothing states where chats should start
-    expect(unwrap(openChat(handle.id, { harness: 'mock' })).harness).toBe('mock')
-    expect(unwrap(openChat(handle.id, {})).harness).toBe('mock')
+    expect(unwrap(openChat({ harness: 'mock' })).harness).toBe('mock')
+    expect(unwrap(openChat({})).harness).toBe('mock')
 
     // starring one IS that statement, and it outranks the tab you happen to be in
     // Studio settings are global; point that global at this test's root.
     initWorkspaceState(handle.root)
-    updateSettings(handle.root, { agentModel: { harness: 'claude', model: 'opus[1m]' } })
+    updateSettings(settingsRoot(), { agentModel: { harness: 'claude', model: 'opus[1m]' } })
     expect(getHarness().id).toBe('claude')
-    expect(unwrap(openChat(handle.id, {})).harness).toBe('claude')
+    expect(unwrap(openChat({})).harness).toBe('claude')
   })
 
   test('a forked tab keeps the level the work was being thought at', async () => {
     useMock()
-    const handle = fixture()
-    const source = unwrap(updateChat(handle.id, listChats(handle.id).activeId, { effort: 'max' }))
+    fixture()
+    const source = unwrap(updateChat(listChats().activeId, { effort: 'max' }))
     expect(source.effort).toBe('max')
 
-    const forked = unwrap(switchChatHarness(handle.id, source.id, 'claude'))
+    const forked = unwrap(switchChatHarness(source.id, 'claude'))
     expect(forked).toMatchObject({ harness: 'claude', effort: 'max' })
   })
 
   test('switching agent forks a briefed tab and leaves the original conversation alone', async () => {
     useMock()
     const handle = fixture()
-    const source = unwrap(openChat(handle.id, { harness: 'claude' }))
-    recordChatTurn(handle.root, source.id, { sessionId: 'claude-session', turns: 1 })
+    const source = unwrap(openChat({ harness: 'claude' }))
+    recordChatTurn(agentWorkspace().stateRoot, source.id, {
+      sessionId: 'claude-session',
+      turns: 1,
+    })
     persistRun(
-      handle.root,
+      agentWorkspace().stateRoot,
       {
         id: randomUUID(),
-        domainId: handle.id,
         chatId: source.id,
         harness: 'claude',
         status: 'succeeded',
@@ -473,27 +487,30 @@ describe.serial('agent runner invariants', () => {
       true,
     )
 
-    const forked = unwrap(switchChatHarness(handle.id, source.id, 'mock'))
+    const forked = unwrap(switchChatHarness(source.id, 'mock'))
     expect(forked).toMatchObject({
       harness: 'mock',
       turns: 0,
       origin: { chatId: source.id, harness: 'claude', pendingHandoff: true },
     })
     // the conversation it came from keeps its agent, its session and its turns
-    expect(resolveChat(handle.root, 'mock', source.id)).toMatchObject({
+    expect(resolveChat(agentWorkspace().stateRoot, 'mock', source.id)).toMatchObject({
       harness: 'claude',
       sessionId: 'claude-session',
       turns: 1,
     })
     expect(
-      readRunHistory(handle.id, handle.root, resolveChat(handle.root, 'mock', source.id)!),
+      readRunHistory(
+        agentWorkspace().stateRoot,
+        resolveChat(agentWorkspace().stateRoot, 'mock', source.id)!,
+      ),
     ).toHaveLength(1)
 
-    await submitRun(handle, () => {}, { message: 'carry on', chatId: forked.id })
-    expect(listChats(handle.id).chats.find((chat) => chat.id === forked.id)?.origin).toMatchObject({
+    await submitRun(() => {}, { message: 'carry on', chatId: forked.id })
+    expect(listChats().chats.find((chat) => chat.id === forked.id)?.origin).toMatchObject({
       pendingHandoff: false,
     })
-    expect(forgetChatOrigin(handle.id, forked.id)).toEqual({
+    expect(forgetChatOrigin(forked.id)).toEqual({
       ok: false,
       error: 'the transferred context was already sent to the agent',
     })
@@ -503,7 +520,7 @@ describe.serial('agent runner invariants', () => {
     expect(first.prompt?.turnPrompt).toContain('Add a Subscription class')
 
     // delivered once: the next turn resumes the fork's own session instead
-    await submitRun(handle, () => {}, { message: 'and again', chatId: forked.id })
+    await submitRun(() => {}, { message: 'and again', chatId: forked.id })
     const second = await waitForTerminal(handle.id, forked.id)
     expect(second.prompt?.turnPrompt).not.toContain('Transferred conversation')
     expect(second).toMatchObject({ resumed: true, sessionId: 'mock-session' })
@@ -511,8 +528,8 @@ describe.serial('agent runner invariants', () => {
 
   test('refuses to switch a chat onto the agent it already runs', () => {
     useMock()
-    const handle = fixture()
-    expect(switchChatHarness(handle.id, listChats(handle.id).activeId, 'mock')).toEqual({
+    fixture()
+    expect(switchChatHarness(listChats().activeId, 'mock')).toEqual({
       ok: false,
       error: 'this chat already runs mock',
     })
@@ -521,29 +538,29 @@ describe.serial('agent runner invariants', () => {
   test('closing a tab stops its turn and its transcript never comes back', async () => {
     useMock('normal', '5000')
     const handle = fixture()
-    const doomed = unwrap(openChat(handle.id, { harness: 'mock' })).id
+    const doomed = unwrap(openChat({ harness: 'mock' })).id
 
-    await submitRun(handle, () => {}, { message: 'will be closed', chatId: doomed })
+    await submitRun(() => {}, { message: 'will be closed', chatId: doomed })
     expect(isRunActive(doomed)).toBe(true)
-    expect(stateExists(handle.root, `.cache/agent/last-run/${doomed}.json`)).toBe(true)
+    expect(stateExists(agentWorkspace().stateRoot, `last-run/${doomed}.json`)).toBe(true)
 
-    const remaining = unwrap(closeChat(handle.id, doomed))
+    const remaining = unwrap(closeChat(doomed))
     expect(remaining.chats.some((chat) => chat.id === doomed)).toBe(false)
     expect(isRunActive(doomed)).toBe(false)
 
     // the canceled turn settles a moment later — it must not rewrite what it owned
     for (let i = 0; i < 100 && bridgeFiles(handle.root).length > 0; i++) await Bun.sleep(25)
     expect(bridgeFiles(handle.root)).toEqual([])
-    expect(stateExists(handle.root, `.cache/agent/last-run/${doomed}.json`)).toBe(false)
-    expect(listState(handle.root, '.cache/agent/runs')).toEqual([])
+    expect(stateExists(agentWorkspace().stateRoot, `last-run/${doomed}.json`)).toBe(false)
+    expect(listState(agentWorkspace().stateRoot, 'runs')).toEqual([])
   })
   test('a stopped turn holds the queue instead of sending it on', async () => {
     useMock('normal', '5000')
     const handle = fixture()
 
-    await submitRun(handle, () => {}, { message: 'the long one' })
-    expect((await submitRun(handle, () => {}, { message: 'wait for me' })).queued).toBeDefined()
-    expect(cancelRun(handle.id)).toBe(true)
+    await submitRun(() => {}, { message: 'the long one' })
+    expect((await submitRun(() => {}, { message: 'wait for me' })).queued).toBeDefined()
+    expect(cancelRun()).toBe(true)
     expect((await waitForTerminal(handle.id)).status).toBe('canceled')
 
     // stopping is how you take the wheel back: the queue is still yours to send
@@ -557,17 +574,17 @@ describe.serial('agent runner invariants', () => {
     useMock('normal', '5000')
     const handle = fixture()
 
-    await submitRun(handle, () => {}, { message: 'going the wrong way' })
-    await submitRun(handle, () => {}, { message: 'second' })
-    const third = (await submitRun(handle, () => {}, { message: 'third' })).queued!
+    await submitRun(() => {}, { message: 'going the wrong way' })
+    await submitRun(() => {}, { message: 'second' })
+    const third = (await submitRun(() => {}, { message: 'third' })).queued!
     expect(queueOf(handle)).toEqual(['second', 'third'])
 
     process.env.DOMAIN_STUDIO_MOCK_DELAY_MS = '0'
-    const promoted = unwrap(await sendQueuedNow(handle, () => {}, undefined, third.id))
+    const promoted = unwrap(await sendQueuedNow(() => {}, undefined, third.id))
     expect(promoted.run).toMatchObject({ status: 'running', instruction: 'third' })
     // promoting the same message twice is refused BEFORE anything is stopped —
     // the turn it just started keeps running
-    expect(await sendQueuedNow(handle, () => {}, undefined, third.id)).toMatchObject({ ok: false })
+    expect(await sendQueuedNow(() => {}, undefined, third.id)).toMatchObject({ ok: false })
     expect(isRunActive(chatId(handle))).toBe(true)
 
     await waitForDrained(handle)
@@ -583,24 +600,24 @@ describe.serial('agent runner invariants', () => {
     const texts = (result: ReturnType<typeof moveQueued>) =>
       unwrap(result).queued.map((message) => message.text)
 
-    await submitRun(handle, () => {}, { message: 'running' })
-    const one = (await submitRun(handle, () => {}, { message: 'one' })).queued!
-    const two = (await submitRun(handle, () => {}, { message: 'two' })).queued!
-    const three = (await submitRun(handle, () => {}, { message: 'three' })).queued!
+    await submitRun(() => {}, { message: 'running' })
+    const one = (await submitRun(() => {}, { message: 'one' })).queued!
+    const two = (await submitRun(() => {}, { message: 'two' })).queued!
+    const three = (await submitRun(() => {}, { message: 'three' })).queued!
 
-    expect(texts(moveQueued(handle.id, chat, three.id, 'up'))).toEqual(['one', 'three', 'two'])
+    expect(texts(moveQueued(chat, three.id, 'up'))).toEqual(['one', 'three', 'two'])
     // the front of the queue has nowhere earlier to go, and says so
-    expect(moveQueued(handle.id, chat, one.id, 'up')).toMatchObject({ ok: false })
-    expect(texts(editQueued(handle.id, chat, two.id, '  two, revised  '))).toEqual([
+    expect(moveQueued(chat, one.id, 'up')).toMatchObject({ ok: false })
+    expect(texts(editQueued(chat, two.id, '  two, revised  '))).toEqual([
       'one',
       'three',
       'two, revised',
     ])
-    expect(editQueued(handle.id, chat, two.id, '   ')).toMatchObject({ ok: false })
-    expect(texts(dropQueued(handle.id, chat, one.id))).toEqual(['three', 'two, revised'])
-    expect(dropQueued(handle.id, chat, one.id)).toMatchObject({ ok: false })
+    expect(editQueued(chat, two.id, '   ')).toMatchObject({ ok: false })
+    expect(texts(dropQueued(chat, one.id))).toEqual(['three', 'two, revised'])
+    expect(dropQueued(chat, one.id)).toMatchObject({ ok: false })
 
-    expect(cancelRun(handle.id)).toBe(true)
+    expect(cancelRun()).toBe(true)
     await waitForTerminal(handle.id)
   })
 
@@ -608,18 +625,18 @@ describe.serial('agent runner invariants', () => {
     useMock('normal', '5000')
     const handle = fixture()
 
-    await submitRun(handle, () => {}, { message: 'running' })
+    await submitRun(() => {}, { message: 'running' })
     for (let i = 0; i < MAX_QUEUED_MESSAGES; i++)
-      expect((await submitRun(handle, () => {}, { message: `queued ${i}` })).queued).toBeDefined()
-    expect(await submitRun(handle, () => {}, { message: 'one too many' })).toEqual({
+      expect((await submitRun(() => {}, { message: `queued ${i}` })).queued).toBeDefined()
+    expect(await submitRun(() => {}, { message: 'one too many' })).toEqual({
       error: `the queue is full — ${MAX_QUEUED_MESSAGES} messages already wait here`,
     })
     // a bare resume never queues: there is no message to hold on to
-    expect(await submitRun(handle, () => {}, { resume: true })).toEqual({
+    expect(await submitRun(() => {}, { resume: true })).toEqual({
       error: 'a turn is already running in this chat',
     })
 
-    expect(cancelRun(handle.id)).toBe(true)
+    expect(cancelRun()).toBe(true)
     await waitForTerminal(handle.id)
   })
 })

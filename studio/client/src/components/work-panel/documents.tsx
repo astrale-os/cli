@@ -9,6 +9,7 @@ import {
   FileText,
   FileType,
   Hash,
+  Paperclip,
   X,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -17,9 +18,10 @@ import { toast } from 'sonner'
 import { FilePickButton } from '@/components/composer'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Textarea } from '@/components/ui/textarea'
 import { api, qk } from '@/lib/api'
-import { useDocuments } from '@/lib/hooks'
+import { useWorkspace, useWorkspaceDocuments } from '@/lib/hooks'
 import { cn } from '@/lib/utils'
 
 export function fmtSize(bytes: number): string {
@@ -55,24 +57,67 @@ export const isMarkdown = (doc: DocMeta) =>
   doc.type === 'text/markdown' || /\.(md|mdx|markdown)$/i.test(doc.name)
 
 /**
- * The composer's paperclip. One click, one meaning: pick files.
+ * The composer's paperclip. With one domain it picks files directly; with several it
+ * first asks for the explicit owner, because a workspace has no implicit active domain.
  *
  * What has already been given to the agent is not behind it — that is what
  * `DocumentChips` shows, in the composer, where you can see it without asking.
  */
 export function AttachButton({
-  domainId,
   onPicked,
 }: {
-  domainId: string
   /** Give the caret back to the composer — a page with nothing focused reads plain
    *  letters as the global hotkeys, so typing after attaching would toggle Ask mode. */
   onPicked?: () => void
 }) {
+  const { data: domains = [] } = useWorkspace()
+  const [open, setOpen] = useState(false)
+  if (domains.length === 1)
+    return <DomainAttachButton domainId={domains[0]!.id} onPicked={onPicked} />
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={domains.length === 0}
+          title="Attach a document to a domain"
+          aria-label="Attach a document to a domain"
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-64 p-1.5">
+        <p className="px-2 pb-1 pt-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Attach to domain
+        </p>
+        {domains.map((domain) => (
+          <div
+            key={domain.id}
+            className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent"
+          >
+            <span className="min-w-0 flex-1 truncate text-[12px]">{domain.origin}</span>
+            <DomainAttachButton
+              domainId={domain.id}
+              onPicked={() => {
+                setOpen(false)
+                onPicked?.()
+              }}
+            />
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function DomainAttachButton({ domainId, onPicked }: { domainId: string; onPicked?: () => void }) {
   const { upload } = useDocumentMutations(domainId)
   return (
     <FilePickButton
       busy={upload.isPending}
+      label={`Attach a document to ${domainId}`}
       onFiles={(files) => upload.mutate(files)}
       onPicked={onPicked}
     />
@@ -89,14 +134,48 @@ export function AttachButton({
  * Chips only, no row of their own: they share one with the open threads, which the
  * next turn carries just the same.
  */
-export function DocumentChips({ domainId }: { domainId: string }) {
-  const { data: docs } = useDocuments(domainId)
-  const [editing, setEditing] = useState<DocMeta | null>(null)
+export function DocumentChips() {
+  const { data: groups } = useWorkspaceDocuments()
+  const [editing, setEditing] = useState<{ domainId: string; doc: DocMeta } | null>(null)
+
+  return (
+    <>
+      {groups.map((group) => (
+        <DomainDocumentChips
+          key={group.domain.id}
+          domainId={group.domain.id}
+          domainLabel={group.domain.origin}
+          docs={group.documents ?? []}
+          onEdit={(doc) => setEditing({ domainId: group.domain.id, doc })}
+        />
+      ))}
+      {editing && (
+        <EditDialog
+          domainId={editing.domainId}
+          doc={editing.doc}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </>
+  )
+}
+
+function DomainDocumentChips({
+  domainId,
+  domainLabel,
+  docs,
+  onEdit,
+}: {
+  domainId: string
+  domainLabel: string
+  docs: DocMeta[]
+  onEdit: (doc: DocMeta) => void
+}) {
   const { remove } = useDocumentMutations(domainId)
 
   return (
     <>
-      {docs?.map((doc) => {
+      {docs.map((doc) => {
         const kind = kindOf(doc)
         // markdown is the only kind the studio can edit, so for those the chip opens
         // the editor; anything else it can only hand to the browser
@@ -104,7 +183,9 @@ export function DocumentChips({ domainId }: { domainId: string }) {
         const face = (
           <>
             <kind.Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
-            <span className="truncate">{doc.name}</span>
+            <span className="truncate">
+              {domainLabel} · {doc.name}
+            </span>
           </>
         )
         return (
@@ -112,8 +193,8 @@ export function DocumentChips({ domainId }: { domainId: string }) {
             {editable ? (
               <button
                 type="button"
-                onClick={() => setEditing(doc)}
-                title={`Edit ${doc.name}`}
+                onClick={() => onEdit(doc)}
+                title={`Edit ${doc.name} in ${domainLabel}`}
                 className="flex min-w-0 items-center gap-1.5 pr-1"
               >
                 {face}
@@ -123,7 +204,7 @@ export function DocumentChips({ domainId }: { domainId: string }) {
                 href={api.docUrl(domainId, doc.id)}
                 target="_blank"
                 rel="noreferrer"
-                title={`${doc.name} — ${fmtSize(doc.size)}`}
+                title={`${doc.name} in ${domainLabel} — ${fmtSize(doc.size)}`}
                 className="flex min-w-0 items-center gap-1.5 pr-1"
               >
                 {face}
@@ -141,7 +222,6 @@ export function DocumentChips({ domainId }: { domainId: string }) {
           </span>
         )
       })}
-      {editing && <EditDialog domainId={domainId} doc={editing} onClose={() => setEditing(null)} />}
     </>
   )
 }

@@ -7,7 +7,7 @@
  */
 import type { Comment, ContextItem, DocMeta, SchemaRevision, ThreadEntry } from '../../shared/types'
 
-interface CopyParts {
+export interface CopyParts {
   origin: string
   root: string
   /** Studio render fingerprint retained by the handoff machine-state. */
@@ -17,6 +17,12 @@ interface CopyParts {
   userContext: ContextItem[]
   autoContext: ContextItem[]
   documents?: DocMeta[]
+  /**
+   * End with the fenced machine-state block. A turn that briefs several domains at
+   * once closes with ONE block for all of them instead (see prompts/turn.ts), so
+   * each domain's section leaves it out.
+   */
+  machineState?: boolean
 }
 
 function primaryAnchor(comment: Comment): { ref: string; file?: string } | null {
@@ -38,7 +44,7 @@ function formatBytes(n: number): string {
 }
 
 /** annotate machine-state projection of a comment: {id, anchors, status, thread}. */
-function toMachineState(comment: Comment): {
+export function toMachineState(comment: Comment): {
   id: string
   anchors: string[]
   status: 'open' | 'closed'
@@ -62,6 +68,23 @@ function toMachineState(comment: Comment): {
   }
 }
 
+/**
+ * The fenced block an agent replies through when the bridge tools are not there:
+ * every open thread in the annotate shape, to be pasted back with author entries.
+ * `schemaVersion` is the established annotate wire key; it holds a render fingerprint
+ * when the block describes ONE domain, and is omitted when it spans several.
+ */
+export function buildMachineStateBlock(
+  openComments: Comment[],
+  renderFingerprint?: string,
+): string {
+  const machineState = {
+    ...(renderFingerprint === undefined ? {} : { schemaVersion: renderFingerprint }),
+    comments: openComments.map(toMachineState),
+  }
+  return ['```json', JSON.stringify(machineState, null, 2), '```', ''].join('\n')
+}
+
 export function buildCopyMarkdown(parts: CopyParts): string {
   const {
     origin,
@@ -72,6 +95,7 @@ export function buildCopyMarkdown(parts: CopyParts): string {
     userContext,
     autoContext,
     documents = [],
+    machineState = true,
   } = parts
   const lines: string[] = []
 
@@ -155,17 +179,9 @@ export function buildCopyMarkdown(parts: CopyParts): string {
   }
 
   // ── Trailing machine-state block ──
-  // `schemaVersion` is the established annotate wire key. Its value remains the
-  // render fingerprint because it detects anchor/layout drift, not installation
-  // compatibility.
-  const machineState = {
-    schemaVersion: renderFingerprint,
-    comments: openComments.map(toMachineState),
-  }
-  lines.push('```json')
-  lines.push(JSON.stringify(machineState, null, 2))
-  lines.push('```')
-  lines.push('')
+  // Its `schemaVersion` remains the render fingerprint because it detects
+  // anchor/layout drift, not installation compatibility.
+  if (machineState) lines.push(buildMachineStateBlock(openComments, renderFingerprint))
 
   return lines.join('\n')
 }

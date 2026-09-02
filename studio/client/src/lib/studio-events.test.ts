@@ -6,7 +6,6 @@ import { studioEventEffects } from './studio-events'
 
 const run = (status: AgentRun['status']): AgentRun => ({
   id: 'run-1',
-  domainId: 'billing',
   chatId: 'chat-1',
   harness: 'codex',
   status,
@@ -16,14 +15,18 @@ const run = (status: AgentRun['status']): AgentRun => ({
   events: [],
 })
 
-test('reconnect resynchronizes only the current domain and its agent transcript', () => {
-  expect(studioEventEffects({ type: 'hello', domains: ['billing'] }, 'billing')).toEqual([
+test('reconnect resynchronizes every announced domain and the workspace agent', () => {
+  expect(studioEventEffects({ type: 'hello', domains: ['billing'] })).toEqual([
     { type: 'invalidate-domain', domainId: 'billing' },
-    { type: 'invalidate-agent', domainId: 'billing' },
-    { type: 'invalidate-agent-history', domainId: 'billing' },
-    { type: 'invalidate-chats', domainId: 'billing' },
+    { type: 'invalidate-agent' },
+    { type: 'invalidate-agent-history' },
+    { type: 'invalidate-chats' },
   ])
-  expect(studioEventEffects({ type: 'hello', domains: [] })).toEqual([])
+  expect(studioEventEffects({ type: 'hello', domains: [] })).toEqual([
+    { type: 'invalidate-agent' },
+    { type: 'invalidate-agent-history' },
+    { type: 'invalidate-chats' },
+  ])
 })
 
 test('schema and workspace events preserve their distinct invalidation scopes', () => {
@@ -45,9 +48,7 @@ test('schema and workspace events preserve their distinct invalidation scopes', 
 test('a queue change refreshes the strip and nothing else', () => {
   // the queue lives on the chat, so the tab strip is the only thing to resync —
   // no run started, no transcript moved
-  expect(studioEventEffects({ type: 'chats', domainId: 'billing' })).toEqual([
-    { type: 'invalidate-chats', domainId: 'billing' },
-  ])
+  expect(studioEventEffects({ type: 'chats' })).toEqual([{ type: 'invalidate-chats' }])
 })
 
 test('live agent events merge directly and only terminal runs refresh history', () => {
@@ -60,7 +61,6 @@ test('live agent events merge directly and only terminal runs refresh history', 
   expect(
     studioEventEffects({
       type: 'agent-event',
-      domainId: 'billing',
       chatId: 'chat-1',
       runId: 'run-1',
       event,
@@ -69,26 +69,24 @@ test('live agent events merge directly and only terminal runs refresh history', 
   expect(
     studioEventEffects({
       type: 'agent-run',
-      domainId: 'billing',
       chatId: 'chat-1',
       run: run('running'),
     }),
   ).toEqual([
     { type: 'synchronize-agent-run', run: run('running') },
-    { type: 'invalidate-agent', domainId: 'billing', chatId: 'chat-1' },
-    { type: 'invalidate-chats', domainId: 'billing' },
+    { type: 'invalidate-agent', chatId: 'chat-1' },
+    { type: 'invalidate-chats' },
   ])
   expect(
     studioEventEffects({
       type: 'agent-run',
-      domainId: 'billing',
       chatId: 'chat-1',
       run: run('succeeded'),
     }),
   ).toEqual([
     { type: 'synchronize-agent-run', run: run('succeeded') },
-    { type: 'invalidate-agent', domainId: 'billing', chatId: 'chat-1' },
-    { type: 'invalidate-chats', domainId: 'billing' },
-    { type: 'invalidate-agent-history', domainId: 'billing', chatId: 'chat-1' },
+    { type: 'invalidate-agent', chatId: 'chat-1' },
+    { type: 'invalidate-chats' },
+    { type: 'invalidate-agent-history', chatId: 'chat-1' },
   ])
 })

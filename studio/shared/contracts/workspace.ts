@@ -1,9 +1,9 @@
 /**
  * Shared workspace and persisted-state contracts.
  *
- * This module owns the JSON shapes written below `.domain-studio/` and the
- * workspace summaries derived around them. Server stores consume these types;
- * they do not redeclare the persisted state.
+ * This module owns the JSON shapes written below `.domain-studio/`, the machine-side
+ * UI state for one scanned workspace, and workspace summaries derived around them.
+ * Server stores consume these types; they do not redeclare persisted state.
  */
 
 import type { SchemaRevision } from './schema'
@@ -34,7 +34,7 @@ export interface ThreadEntry {
   answer?: string | null
 }
 
-export type AnchorKind = 'schema' | 'section' | 'file' | 'free'
+export type AnchorKind = 'schema' | 'section' | 'file'
 
 export interface AnchorRef {
   ref: string
@@ -43,9 +43,6 @@ export interface AnchorRef {
   startLine?: number
   endLine?: number
   label?: string
-  /** Flow-canvas coordinates for section-level canvas comments. */
-  x?: number
-  y?: number
 }
 
 export interface Comment {
@@ -192,6 +189,50 @@ export interface DomainSummary {
   depsInstalled: boolean
   hasGit: boolean
   configFile: string
+}
+
+/** The Studio surface selected inside one scanned workspace. */
+export type WorkspaceSection = 'schema' | 'core' | 'tests' | 'process'
+
+/** Machine-side canvas composition and geometry for one scanned workspace. */
+export interface WorkspaceSchemaUiState {
+  visibleDomainIds: string[]
+  initialized: boolean
+  domainPositions: Record<string, NodePosition>
+  externalPositions: Record<string, NodePosition>
+  collapsedModules: Record<string, string[]>
+  expandedDomainIds: string[]
+  expandedExternals: string[]
+}
+
+/** Machine-side work-panel placement for one scanned workspace. */
+export interface WorkspacePanelUiState {
+  open: boolean
+  tab: 'agent' | 'comments'
+  side: 'left' | 'right' | 'bottom'
+  size: number
+}
+
+/** Machine-side placement of the domains/modules rail. */
+export interface WorkspaceRailUiState {
+  width: number
+  collapsed: boolean
+}
+
+/**
+ * UI state belongs to the machine, but is isolated by scanned workspace. It is
+ * deliberately not written into any domain: domains only own domain artifacts.
+ */
+export interface WorkspaceUiState {
+  version: 1
+  section: WorkspaceSection
+  /** Local scope of the Core/Tests/Process readers; this is not an active domain. */
+  readerDomainId?: string
+  /** How relationship edges are drawn across the workspace canvases. */
+  edgeStyle: 'curved' | 'orthogonal'
+  panel: WorkspacePanelUiState
+  rail: WorkspaceRailUiState
+  schema: WorkspaceSchemaUiState
 }
 
 export interface NodePosition {

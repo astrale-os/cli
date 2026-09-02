@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import type { DomainHandle } from '../../domain'
+import type { AgentWorkspace } from '../workspace'
 
 import { readComments, upsertComment } from '../../state/comments'
 import { startBridge } from './grant'
@@ -27,18 +28,29 @@ function domain(root: string, id: string): DomainHandle {
   }
 }
 
-test('authorizes one domain and applies live thread mutations', async () => {
+function workspace(root: string, domains: DomainHandle[]): AgentWorkspace {
+  return {
+    root,
+    stateRoot: join(root, 'machine-agent'),
+    uiRoot: join(root, 'machine-ui'),
+    key: 'bridge-workspace',
+    domains,
+  }
+}
+
+test('authorizes one workspace and routes live thread mutations to their domain', async () => {
   const rootA = mkdtempSync(join(tmpdir(), 'studio-bridge-a-'))
   const rootB = mkdtempSync(join(tmpdir(), 'studio-bridge-b-'))
   roots.push(rootA, rootB)
   const domainA = domain(rootA, 'domain-a')
   const domainB = domain(rootB, 'domain-b')
+  const agentWorkspace = workspace(rootA, [domainA, domainB])
   const awaiting = upsertComment(rootA, {
     anchors: ['Test'],
     anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
     text: 'please answer',
   })
-  upsertComment(rootA, {
+  const asked = upsertComment(rootA, {
     anchors: ['Agent question'],
     anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
     text: 'already answered by author',
@@ -46,7 +58,7 @@ test('authorizes one domain and applies live thread mutations', async () => {
   })
 
   const notifications: string[] = []
-  const bridge = startBridge(domainA, (event) =>
+  const bridge = startBridge(agentWorkspace, (event) =>
     notifications.push(`${event.type}:${'domainId' in event ? event.domainId : ''}`),
   )
   const configPath = bridge.mcpServers[0]!.args!.at(-1)!
@@ -55,49 +67,68 @@ test('authorizes one domain and applies live thread mutations', async () => {
   const progress: string[] = []
   bridge.onReply((id, text) => replies.push(`${id}:${text}`))
   bridge.onProgress((text) => progress.push(text))
-  const invalid = await handleBridge(domainA, 'reply', {
+  const invalid = await handleBridge('reply', {
     token: 'wrong',
     commentId: awaiting.id,
     text: 'forged',
   })
-  const crossDomain = await handleBridge(domainB, 'reply', {
-    token,
-    commentId: awaiting.id,
-    text: 'forged',
-  })
-  expect([invalid.status, crossDomain.status]).toEqual([401, 401])
+  expect(invalid.status).toBe(401)
   expect(readComments(rootA).comments[0]!.thread).toHaveLength(1)
 
-  const listed = await handleBridge(domainA, 'threads', { token })
+  const listed = await handleBridge('threads', { token })
   expect(await listed.json()).toEqual({
     threads: [
       {
         id: awaiting.id,
+        domain: 'domain-a',
+        path: '.',
         kind: 'comment',
         anchor: 'class.Test',
         file: null,
         latest: 'please answer',
+        waitingOn: 'agent',
+      },
+      {
+        id: asked.id,
+        domain: 'domain-a',
+        path: '.',
+        kind: 'question',
+        anchor: 'class.Test',
+        file: null,
+        latest: 'already answered by author',
+        waitingOn: 'user',
       },
     ],
   })
 
-  const replied = await handleBridge(domainA, 'reply', {
+  const filtered = await handleBridge('threads', { token, domain: 'domain-b' })
+  expect(await filtered.json()).toEqual({ threads: [] })
+
+  const replied = await handleBridge('reply', {
     token,
     commentId: awaiting.id,
     text: 'done',
     resolve: true,
     closeNote: 'complete',
   })
-  await handleBridge(domainA, 'progress', { token, text: 'working' })
-  const raised = await handleBridge(domainA, 'raise_question', {
+  await handleBridge('progress', { token, text: 'working' })
+  const raised = await handleBridge('raise_question', {
     token,
+    domain: 'domain-a',
     ref: 'class.Test.property.value',
     text: 'Which value?',
     options: ['A', 'B'],
   })
+  const vague = await handleBridge('raise_question', {
+    token,
+    domain: 'domain-a',
+    ref: 'somewhere',
+    text: 'Where?',
+  })
 
   expect(await replied.json()).toEqual({ ok: true, resolved: true })
   expect(await raised.json()).toMatchObject({ ok: true })
+  expect(vague.status).toBe(400)
   const comments = readComments(rootA).comments
   expect(comments[0]).toMatchObject({
     id: awaiting.id,
@@ -108,6 +139,7 @@ test('authorizes one domain and applies live thread mutations', async () => {
   expect(comments.at(-1)).toMatchObject({
     kind: 'question',
     status: 'open',
+    anchorRefs: [{ ref: 'class.Test.property.value', kind: 'schema' }],
     thread: [{ role: 'author', type: 'choice', text: 'Which value?', options: ['A', 'B'] }],
   })
   expect(replies).toEqual([`${awaiting.id}:done`])
@@ -115,7 +147,7 @@ test('authorizes one domain and applies live thread mutations', async () => {
   expect(notifications).toEqual(['comments:domain-a', 'comments:domain-a'])
 
   bridge.dispose()
-  const expired = await handleBridge(domainA, 'threads', { token })
+  const expired = await handleBridge('threads', { token })
   expect(expired.status).toBe(401)
 })
 
@@ -128,13 +160,13 @@ test('returns committed success when UI notification delivery fails', async () =
     anchorRefs: [{ ref: 'class.Test', kind: 'schema' }],
     text: 'reply once',
   })
-  const bridge = startBridge(handle, () => {
+  const bridge = startBridge(workspace(root, [handle]), () => {
     throw new Error('listener failed')
   })
   const configPath = bridge.mcpServers[0]!.args!.at(-1)!
   const { token } = JSON.parse(readFileSync(configPath, 'utf8')) as { token: string }
 
-  const response = await handleBridge(handle, 'reply', {
+  const response = await handleBridge('reply', {
     token,
     commentId: comment.id,
     text: 'committed',

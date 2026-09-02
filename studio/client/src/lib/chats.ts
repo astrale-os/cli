@@ -1,5 +1,5 @@
 /**
- * chats.ts — client state for a domain's chat tabs.
+ * chats.ts — client state for the machine's chat tabs.
  *
  * The server owns the list and which tab is active (they persist across
  * restarts), so everything here is a mirror of `GET /agent/chats` plus the
@@ -17,25 +17,24 @@ import { useSchemaSettled } from './hooks'
 
 const NO_CHATS: ChatInfo[] = []
 
-export function useChats(domainId?: string) {
+export function useChats() {
   return useQuery({
-    queryKey: qk.chats(domainId ?? ''),
-    queryFn: () => api.chats(domainId!),
-    enabled: !!domainId,
+    queryKey: qk.chats,
+    queryFn: api.chats,
   })
 }
 
-export function useChatList(domainId?: string): ChatInfo[] {
-  return useChats(domainId).data?.chats ?? NO_CHATS
+export function useChatList(): ChatInfo[] {
+  return useChats().data?.chats ?? NO_CHATS
 }
 
 /** The tab the user is looking at — undefined only until the first load lands. */
-export function useActiveChatId(domainId?: string): string | undefined {
-  return useChats(domainId).data?.activeId || undefined
+export function useActiveChatId(): string | undefined {
+  return useChats().data?.activeId || undefined
 }
 
-export function useActiveChat(domainId?: string): ChatInfo | undefined {
-  const { data } = useChats(domainId)
+export function useActiveChat(): ChatInfo | undefined {
+  const { data } = useChats()
   return data?.chats.find((chat) => chat.id === data.activeId)
 }
 
@@ -44,16 +43,16 @@ export function chatOf(chats: ChatInfo[], chatId?: string): ChatInfo | undefined
 }
 
 /** Every way the tab strip can change, each landing the server's own answer. */
-export function useChatMutations(domainId?: string) {
+export function useChatMutations() {
   const queryClient = useQueryClient()
-  const setList = (list: ChatList) => queryClient.setQueryData(qk.chats(domainId ?? ''), list)
+  const setList = (list: ChatList) => queryClient.setQueryData(qk.chats, list)
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: qk.chats(domainId ?? '') })
-    void queryClient.invalidateQueries({ queryKey: qk.agent(domainId ?? '') })
+    void queryClient.invalidateQueries({ queryKey: qk.chats })
+    void queryClient.invalidateQueries({ queryKey: qk.agent() })
   }
   const focus = (chat: ChatInfo) => {
     // The server already made the new tab active; mirror that without a round trip.
-    const current = queryClient.getQueryData<ChatList>(qk.chats(domainId ?? ''))
+    const current = queryClient.getQueryData<ChatList>(qk.chats)
     if (current)
       setList({
         chats: [...current.chats.filter((entry) => entry.id !== chat.id), chat],
@@ -63,17 +62,17 @@ export function useChatMutations(domainId?: string) {
   }
 
   const open = useMutation({
-    mutationFn: (harness?: string) => api.openChat(domainId!, harness),
+    mutationFn: (harness?: string) => api.openChat(harness),
     onSuccess: focus,
     onError: (error) => toast.error(`Could not open a chat — ${String(error)}`),
   })
   const select = useMutation({
-    mutationFn: (chatId: string) => api.selectChat(domainId!, chatId),
+    mutationFn: (chatId: string) => api.selectChat(chatId),
     onSuccess: setList,
     onError: (error) => toast.error(String(error)),
   })
   const close = useMutation({
-    mutationFn: (chatId: string) => api.closeChat(domainId!, chatId),
+    mutationFn: (chatId: string) => api.closeChat(chatId),
     onSuccess: (list) => {
       setList(list)
       refresh()
@@ -82,7 +81,7 @@ export function useChatMutations(domainId?: string) {
   })
   const update = useMutation({
     mutationFn: (input: { chatId: string; title?: string; model?: string; effort?: string }) =>
-      api.updateChat(domainId!, input.chatId, {
+      api.updateChat(input.chatId, {
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.model === undefined ? {} : { model: input.model }),
         ...(input.effort === undefined ? {} : { effort: input.effort }),
@@ -92,7 +91,7 @@ export function useChatMutations(domainId?: string) {
   })
   const switchHarness = useMutation({
     mutationFn: (input: { chatId: string; harness: string; model?: string }) =>
-      api.switchChatHarness(domainId!, input.chatId, input.harness, input.model),
+      api.switchChatHarness(input.chatId, input.harness, input.model),
     onSuccess: (chat) => {
       focus(chat)
       toast.success('New chat — the previous conversation was summarized for it, and stays open')
@@ -100,7 +99,7 @@ export function useChatMutations(domainId?: string) {
     onError: (error) => toast.error(`Could not switch agent — ${String(error)}`),
   })
   const forgetOrigin = useMutation({
-    mutationFn: (chatId: string) => api.forgetChatOrigin(domainId!, chatId),
+    mutationFn: (chatId: string) => api.forgetChatOrigin(chatId),
     onSuccess: () => refresh(),
     onError: (error) => toast.error(`Could not delete the transferred context — ${String(error)}`),
   })
@@ -109,25 +108,25 @@ export function useChatMutations(domainId?: string) {
 }
 
 /**
- * Every harness's models — one live ACP probe of each, warmed per domain.
+ * Every harness's models — one live ACP probe of each, warmed for the workspace.
  *
  * It used to wait for the picker to be opened, on the grounds that probing every
  * agent is expensive. That paid for itself twice over: the composer's label IS
  * the catalog (an unpinned chat runs its harness's default model, and only this
  * knows which), so a panel opened before the answer landed had no model to name.
- * One probe per domain visit buys a composer that opens already saying it —
+ * One probe per workspace visit buys a composer that opens already saying it —
  * `WorkPanel` starts it while you are still looking at the graph.
  *
  * Behind the canvas, though, exactly like the loadout beside it: this is the
  * heaviest read in the studio — an ACP session per installed agent — and the
  * schema must not queue behind it for a picker nobody has opened yet.
  */
-export function useModelCatalog(domainId?: string) {
+export function useModelCatalog() {
   const settled = useSchemaSettled()
   return useQuery({
-    queryKey: qk.models(domainId ?? ''),
-    queryFn: () => api.models(domainId!),
-    enabled: !!domainId && settled,
+    queryKey: qk.models,
+    queryFn: api.models,
+    enabled: settled,
     staleTime: 60_000,
   })
 }

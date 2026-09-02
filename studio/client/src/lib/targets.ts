@@ -1,5 +1,7 @@
 import type { AnchorKind } from '@shared/types'
 
+import { concreteAnchorKind } from '@shared/comment-anchors'
+
 /**
  * targets.ts — the ONE place that knows how a comment/ask TARGET is encoded.
  *
@@ -49,13 +51,11 @@ export function anchorKey(domainId: string, ref: string): string {
   return `${domainId}::${ref}`
 }
 
-/** The AnchorKind implied by a ref's namespace (used when stamping a free click). */
+/** The AnchorKind implied by a concrete domain-element ref. */
 export function anchorKindForRef(ref: string): AnchorKind {
-  if (/^(class|edge)\./.test(ref)) return 'schema'
-  // a domain is a SCOPE, like a module or a section — not a schema member
-  if (/^(domain|module|section|view)\./.test(ref)) return 'section'
-  if (ref.startsWith('file.')) return 'file'
-  return 'free'
+  const kind = concreteAnchorKind(ref)
+  if (kind) return kind
+  throw new Error(`unsupported comment anchor: ${ref}`)
 }
 
 /**
@@ -211,7 +211,7 @@ export function locateTargetElement(
  * `domainId` says which domain's thread store the comment belongs in, for surfaces whose
  * OWNER is not the domain they are drawn inside — the rail lists domains the canvas does
  * not draw, so its rows carry no `data-domain-id` (that stamp means "this is on screen" to
- * the ask layer). Left out, the resolver falls back to the domain being worked in.
+ * the ask layer). Left out, the resolver must find an owner in the rendered hierarchy.
  */
 export function anchorData(ref: string, excerpt?: string, domainId?: string) {
   return {

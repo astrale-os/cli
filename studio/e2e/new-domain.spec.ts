@@ -7,9 +7,7 @@
  * something a browser test should set off. What is pinned is the door — what it
  * opens, what it refuses to send, what it does not carry, and that it closes.
  */
-import type { Page } from '@playwright/test'
-
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from './test'
 
 declare global {
   interface Window {

@@ -1,4 +1,4 @@
-import type { DomainUsage, HarnessLoadout } from '@shared/types'
+import type { AgentUsage, HarnessLoadout } from '@shared/types'
 
 import { RefreshCw } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
@@ -37,9 +37,9 @@ const formatTokens = (tokens: number) =>
       ? `${(tokens / 1_000).toFixed(1)}k`
       : String(tokens)
 
-function SystemPrompt({ domainId }: { domainId?: string }) {
+function SystemPrompt() {
   const [open, setOpen] = useState(false)
-  const { data, isLoading, error } = useAgentSystemPrompt(open ? domainId : undefined)
+  const { data, isLoading, error } = useAgentSystemPrompt(open)
   return (
     <div className="space-y-2 px-3 py-2.5 text-[12px]">
       <div className="flex items-center gap-2">
@@ -85,14 +85,12 @@ export function AgentLoadout({
   loading,
   errorMessage,
   usage,
-  domainId,
   onRefresh,
 }: {
   loadout?: HarnessLoadout
   loading: boolean
   errorMessage?: string
-  usage?: DomainUsage
-  domainId?: string
+  usage?: AgentUsage
   onRefresh: () => void
 }) {
   const sourceHint =
@@ -100,7 +98,7 @@ export function AgentLoadout({
 
   return (
     <>
-      <SystemPrompt domainId={domainId} />
+      <SystemPrompt />
       <div className="space-y-2 px-3 py-2.5 text-[12px]">
         <div className="flex items-center gap-1.5 text-[13px]">
           <span>Loaded by the harness</span>
@@ -150,8 +148,8 @@ export function AgentLoadout({
       <div className="space-y-1.5 px-3 py-2.5 text-[12px]">
         <span className="flex items-center gap-1.5 text-[13px]">
           <span>Usage</span>
-          <SettingsHint text="This Studio's agent turns on this domain (succeeded or not). Machine-wide harness totals are out of scope." />
-          <span className="ml-auto text-[11px] text-muted-foreground">this domain</span>
+          <SettingsHint text="Agent turns recorded in this machine-wide Studio history, succeeded or not." />
+          <span className="ml-auto text-[11px] text-muted-foreground">this machine</span>
         </span>
         <MetaRow label="Turns" value={usage?.runs ?? 0} />
         <MetaRow label="Tokens" value={formatTokens(usage?.tokens ?? 0)} />

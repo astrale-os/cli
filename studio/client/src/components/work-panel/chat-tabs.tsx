@@ -35,17 +35,15 @@ const isBusy = (chat: ChatInfo) => chat.status === 'running' || chat.status === 
 const FADE = 20
 
 export function ChatTabs({
-  domainId,
   chats,
   activeId,
   harness,
 }: {
-  domainId: string
   chats: ChatInfo[]
   activeId?: string
   harness?: HarnessStatus
 }) {
-  const { open, select, close, update } = useChatMutations(domainId)
+  const { open, select, close, update } = useChatMutations()
   const strip = useRef<HTMLDivElement>(null)
   const edges = useSideScroll(strip, chats.length)
   const tones = chatTones(chats)

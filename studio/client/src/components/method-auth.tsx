@@ -20,7 +20,7 @@ export const TRIGGER_TONE: Record<string, string> = {
 
 interface MethodAuthProps {
   method?: AuthCallable
-  /** The domain the callable belongs to; absent, the active one. Names its policies. */
+  /** The domain the callable belongs to; absent, the current local reader. Names its policies. */
   domainId?: string
 }
 
@@ -64,9 +64,10 @@ export function MethodAuthBadge({ method, domainId, interactive = true }: Method
 
 /** The policy checks a callable declares, each one written out and one click from its proof. */
 function PolicyChecks({ method, domainId }: MethodAuthProps) {
-  const activeDomainId = useUI((s) => s.domainId)
+  const readerDomainId = useUI((s) => s.readerDomainId)
   const openPolicy = useUI((s) => s.openPolicy)
-  const { data: bundle } = useBundle(domainId ?? activeDomainId)
+  const ownerDomainId = domainId ?? readerDomainId
+  const { data: bundle } = useBundle(ownerDomainId)
   const ir = bundle?.ir ?? null
   const index = useMemo(() => (ir ? indexPolicies(ir) : null), [ir])
   const raw = method?.policy
@@ -110,10 +111,10 @@ function PolicyChecks({ method, domainId }: MethodAuthProps) {
                   <p className="mt-0.5 leading-snug text-muted-foreground">{policy.description}</p>
                 )}
               </div>
-              {policy && (
+              {policy && ownerDomainId && (
                 <button
                   type="button"
-                  onClick={() => openPolicy(key)}
+                  onClick={() => openPolicy(key, ownerDomainId)}
                   title="Prove this policy on the demo data (Tests)"
                   className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/10"
                 >

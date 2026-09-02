@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { studioHome } from '../../../home'
 import { statePath, writeJson } from '../../../state/store'
 import {
   clearHarnessGateway,
@@ -12,26 +13,32 @@ import {
 } from './config'
 
 const roots: string[] = []
+const previousHome = process.env.ASTRALE_HOME
 
 afterEach(() => {
+  if (previousHome === undefined) delete process.env.ASTRALE_HOME
+  else process.env.ASTRALE_HOME = previousHome
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-test('owns normalized per-domain gateway configuration and child environment', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-harness-gateway-'))
+function machine(name: string): string {
+  const root = mkdtempSync(join(tmpdir(), `studio-harness-gateway-${name}-`))
   roots.push(root)
+  process.env.ASTRALE_HOME = join(root, '.astrale')
+  return root
+}
 
-  const state = setHarnessGateway(root, {
-    scope: 'domain',
-    config: {
-      enabled: true,
-      baseUrl: ' https://gateway.example/v1/models/demo ',
-      model: ' demo-model ',
-      auth: { mode: 'token', token: ' secret ' },
-    },
+test('owns normalized machine gateway configuration and child environment', async () => {
+  machine('config')
+
+  const state = setHarnessGateway({
+    enabled: true,
+    baseUrl: ' https://gateway.example/v1/models/demo ',
+    model: ' demo-model ',
+    auth: { mode: 'token', token: ' secret ' },
   })
   expect(state).toMatchObject({
-    source: 'domain',
+    source: 'machine',
     effective: {
       enabled: true,
       baseUrl: 'https://gateway.example/v1/models/demo',
@@ -39,7 +46,7 @@ test('owns normalized per-domain gateway configuration and child environment', a
       auth: { mode: 'token', token: 'secret' },
     },
   })
-  expect(await resolveHarnessEnv(root)).toEqual({
+  expect(await resolveHarnessEnv()).toEqual({
     ok: true,
     env: {
       ANTHROPIC_BASE_URL: 'https://gateway.example/v1/models/demo',
@@ -48,50 +55,43 @@ test('owns normalized per-domain gateway configuration and child environment', a
       ANTHROPIC_SMALL_FAST_MODEL: 'demo-model',
     },
   })
-  expect(statSync(statePath(root, 'harness-gateway.json')).mode & 0o777).toBe(0o600)
+  expect(statSync(statePath(studioHome(), 'harness-gateway.json')).mode & 0o777).toBe(0o600)
 
-  clearHarnessGateway(root, 'domain')
-  expect(getHarnessGatewayState(root).local).toBeNull()
+  clearHarnessGateway()
+  expect(getHarnessGatewayState()).toEqual({ config: null, effective: null, source: 'none' })
 })
 
 test('rejects enabled gateway configurations that cannot authenticate safely', () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-harness-gateway-invalid-'))
-  roots.push(root)
+  machine('invalid')
 
+  expect(() => setHarnessGateway({ enabled: true, baseUrl: '', auth: { mode: 'mint' } })).toThrow(
+    'gateway base URL is required',
+  )
   expect(() =>
-    setHarnessGateway(root, {
-      scope: 'domain',
-      config: { enabled: true, baseUrl: '', auth: { mode: 'mint' } },
-    }),
-  ).toThrow('gateway base URL is required')
-  expect(() =>
-    setHarnessGateway(root, {
-      scope: 'domain',
-      config: { enabled: true, baseUrl: 'file:///tmp/gateway', auth: { mode: 'mint' } },
+    setHarnessGateway({
+      enabled: true,
+      baseUrl: 'file:///tmp/gateway',
+      auth: { mode: 'mint' },
     }),
   ).toThrow('must use http:// or https://')
   expect(() =>
-    setHarnessGateway(root, {
-      scope: 'domain',
-      config: {
-        enabled: true,
-        baseUrl: 'https://gateway.example',
-        auth: { mode: 'token', token: ' ' },
-      },
+    setHarnessGateway({
+      enabled: true,
+      baseUrl: 'https://gateway.example',
+      auth: { mode: 'token', token: ' ' },
     }),
   ).toThrow('static token is required')
 })
 
 test('fails closed for invalid enabled configuration already present on disk', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-harness-gateway-legacy-invalid-'))
-  roots.push(root)
-  writeJson(root, 'harness-gateway.json', {
+  machine('stored-invalid')
+  writeJson(studioHome(), 'harness-gateway.json', {
     enabled: true,
     baseUrl: '',
     auth: { mode: 'mint' },
   })
 
-  expect(await resolveHarnessEnv(root)).toEqual({
+  expect(await resolveHarnessEnv()).toEqual({
     ok: false,
     error: 'gateway base URL is required while enabled',
   })

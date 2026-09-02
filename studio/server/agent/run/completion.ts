@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 
-import type { AgentEvent, StudioEvent } from '../../../shared/types'
+import type { AgentEvent, MergeResult, StudioEvent } from '../../../shared/types'
 import type { PreparedRun } from './preparation'
 
-import { mergeReply } from '../../state/comments'
+import { mergeParsedReply, parseReplyBlock } from '../../state/comments'
 import { chatExists, clearChatSession, recordChatTurn } from '../chats'
 import { emitStudioEvent } from '../notify'
 import { releaseController } from './live-state'
@@ -18,6 +18,45 @@ function stripMachineState(text: string): string {
     .trim()
 }
 
+/**
+ * Merge the agent's final machine-state block into every domain it briefed.
+ *
+ * The block is parsed once; each domain keeps the entries whose ids it holds. An id
+ * no domain knows is unknown for the turn, not for each domain that failed to find it.
+ */
+function mergeAcrossDomains(
+  prepared: PreparedRun,
+  finalText: string,
+  skipByComment: Map<string, Set<string>>,
+): { result: MergeResult; touched: string[] } {
+  const parsed = parseReplyBlock(finalText)
+  const result: MergeResult = { merged: 0, closed: 0, unknownIds: [], schemaMismatch: false }
+  const touched: string[] = []
+  const known = new Set<string>()
+  let unknown: string[] | undefined
+  for (const { handle, renderFingerprint } of prepared.briefed) {
+    const merged = mergeParsedReply(handle.root, renderFingerprint, parsed, { skipByComment })
+    result.merged += merged.merged
+    result.closed += merged.closed
+    if (merged.merged || merged.closed) touched.push(handle.id)
+    const found = (parsed.comments ?? []).flatMap((comment) =>
+      comment.id && !merged.unknownIds.includes(comment.id) ? [comment.id] : [],
+    )
+    for (const id of found) known.add(id)
+    unknown = merged.unknownIds
+    if (merged.pastedSchemaVersion !== undefined)
+      result.pastedSchemaVersion = merged.pastedSchemaVersion
+  }
+  result.unknownIds = (unknown ?? []).filter((id) => !known.has(id))
+  // A block that spans several domains carries no fingerprint; one domain's block does,
+  // and only that one can disagree with the render it was given.
+  result.schemaMismatch =
+    prepared.briefed.length === 1 &&
+    !!result.pastedSchemaVersion &&
+    result.pastedSchemaVersion !== prepared.briefed[0]!.renderFingerprint
+  return { result, touched }
+}
+
 /** Execute and settle one prepared agent run. */
 export async function completeRun(
   prepared: PreparedRun,
@@ -25,13 +64,11 @@ export async function completeRun(
   notify: (event: StudioEvent) => void,
 ): Promise<void> {
   const {
-    domainId,
-    root,
+    workspace,
     chat,
     harness,
     settings,
     resume,
-    renderFingerprint,
     model,
     effort,
     harnessEnv,
@@ -39,6 +76,7 @@ export async function completeRun(
     run,
     promptSnapshot,
   } = prepared
+  const stateRoot = workspace.stateRoot
   const pushEvent = (event: Omit<AgentEvent, 'id' | 'ts'>) => {
     let text = event.text
     if (event.kind === 'message') {
@@ -54,7 +92,6 @@ export async function completeRun(
     run.events.push(stored)
     emitStudioEvent(notify, {
       type: 'agent-event',
-      domainId,
       chatId: chat.id,
       runId: run.id,
       event: stored,
@@ -75,9 +112,9 @@ export async function completeRun(
     const runTurn = (sessionId: string | undefined, firstTurn: boolean) => {
       const prompt = promptSnapshot(sessionId, firstTurn)
       run.prompt = prompt
-      emitStudioEvent(notify, { type: 'agent-run', domainId, chatId: chat.id, run })
+      emitStudioEvent(notify, { type: 'agent-run', chatId: chat.id, run })
       return harness.run({
-        root,
+        root: workspace.root,
         prompt: prompt.turnPrompt,
         appendSystemPrompt: prompt.systemPrompt,
         sessionId,
@@ -96,7 +133,7 @@ export async function completeRun(
     let result = await runTurn(resume, !resume)
     let conversationTurns = resume ? chat.turns : 0
     if (resume && result.resumeRejected && !controller.signal.aborted) {
-      clearChatSession(root, chat.id)
+      clearChatSession(stateRoot, chat.id)
       conversationTurns = 0
       run.sessionId = undefined
       run.resumed = false
@@ -147,16 +184,18 @@ export async function completeRun(
       result.finalText.trim()
     ) {
       try {
-        const merged = mergeReply(root, renderFingerprint, result.finalText, {
-          skipByComment: liveByComment,
-        })
+        const { result: merged, touched } = mergeAcrossDomains(
+          prepared,
+          result.finalText,
+          liveByComment,
+        )
         run.merge = merged
         if (merged.merged || merged.closed)
           pushEvent({
             kind: 'status',
             text: `merged ${merged.merged} repl${merged.merged === 1 ? 'y' : 'ies'}, closed ${merged.closed}`,
           })
-        emitStudioEvent(notify, { type: 'comments', domainId })
+        for (const domainId of touched) emitStudioEvent(notify, { type: 'comments', domainId })
       } catch (error: any) {
         if (/```json/i.test(result.finalText)) {
           replyError = `agent reply block was malformed JSON — reply not merged (${String(error?.message ?? error).slice(0, 80)})`
@@ -178,7 +217,7 @@ export async function completeRun(
     } else run.status = 'succeeded'
 
     if (run.status === 'succeeded' && result.sessionId) {
-      recordChatTurn(root, chat.id, {
+      recordChatTurn(stateRoot, chat.id, {
         sessionId: result.sessionId,
         turns: conversationTurns + 1,
       })
@@ -192,11 +231,14 @@ export async function completeRun(
     releaseController(chat.id, controller)
     bridge.dispose()
     // The spend happened whatever the user did with the tab meanwhile.
-    recordRun(root, run)
+    recordRun(stateRoot, run)
     // The transcript did not: a turn settling after its tab was closed would
     // otherwise recreate the files `closeChat` just removed.
-    if (chatExists(root, chat.id)) persistRun(root, run, true)
-    emitStudioEvent(notify, { type: 'agent-run', domainId, chatId: chat.id, run })
-    emitStudioEvent(notify, { type: 'comments', domainId })
+    if (chatExists(stateRoot, chat.id)) persistRun(stateRoot, run, true)
+    emitStudioEvent(notify, { type: 'agent-run', chatId: chat.id, run })
+    // The agent may have edited or answered anywhere in the workspace: every domain's
+    // threads are worth a second look now.
+    for (const handle of workspace.domains)
+      emitStudioEvent(notify, { type: 'comments', domainId: handle.id })
   }
 }

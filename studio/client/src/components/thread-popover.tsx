@@ -3,8 +3,6 @@ import type { AnchorRef, Comment } from '@shared/types'
 import { X } from 'lucide-react'
 import { useState } from 'react'
 
-import { useUI } from '@/lib/store'
-
 import { NewComment, ThreadView } from './thread'
 import { Button } from './ui/button'
 
@@ -20,14 +18,13 @@ export function ThreadPopover({
   threads,
   onClose,
 }: {
-  domainId?: string
+  domainId: string
   anchor: AnchorRef
   excerpt: string
   threads: Comment[]
   onClose: () => void
 }) {
-  const activeDomainId = useUI((s) => s.domainId)
-  const ownerDomainId = domainId ?? activeDomainId ?? ''
+  const ownerDomainId = domainId
   const [composing, setComposing] = useState(false)
   const hasThreads = threads.length > 0
 
