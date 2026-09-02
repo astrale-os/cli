@@ -1,3 +1,4 @@
+import { ResponseError } from '@astrale-os/sdk/client'
 import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../../connection'
@@ -78,10 +79,10 @@ export default {
       if (!opts.bookmarked) {
         try {
           managed = await withSpinner('Fetching instances', !isMachine(opts), () =>
-            listOwnedInstances(opts, opts.includeRetired ?? false),
+            readAdminInventory(() => listOwnedInstances(opts, opts.includeRetired ?? false)),
           )
         } catch (error) {
-          throw adminInventoryUnavailable(error)
+          throw classifyAdminInventoryError(error)
         }
       }
       if (isMachine(opts)) {
@@ -190,8 +191,20 @@ const ADMIN_INVENTORY_CODES = new Set([
   'ADMIN_DOMAIN_ISSUER_MISSING',
 ])
 
-/** Admin-managed inventory is not available without a deployed Admin Domain + IdP identity. */
-export function adminInventoryUnavailable(cause: unknown): AstraleError {
+const BACKEND_UNAVAILABLE = 5001
+
+/** Retry one idempotent inventory read when the Kernel reports a transient backend failure. */
+export async function readAdminInventory<Value>(read: () => Promise<Value>): Promise<Value> {
+  try {
+    return await read()
+  } catch (cause) {
+    if (!(cause instanceof ResponseError) || cause.code !== BACKEND_UNAVAILABLE) throw cause
+    return read()
+  }
+}
+
+/** Explain why Admin inventory failed without confusing backend faults with absent deployment. */
+export function classifyAdminInventoryError(cause: unknown): AstraleError {
   const code = cause instanceof AstraleError ? cause.code : undefined
   if (code !== undefined && ADMIN_INVENTORY_CODES.has(code)) {
     return new AstraleError(
@@ -200,10 +213,19 @@ export function adminInventoryUnavailable(cause: unknown): AstraleError {
       'Use `astrale instance list --bookmarked` for local kernel bookmarks. Key-backed identities cannot mint an Admin Domain token.',
     )
   }
+  if (cause instanceof ResponseError && cause.code === BACKEND_UNAVAILABLE) {
+    return new AstraleError(
+      'ADMIN_BACKEND_UNAVAILABLE',
+      cause.message,
+      'The Admin authentication backend failed twice. Retry the command; local bookmarks remain available with `astrale instance list --bookmarked`.',
+      { cause },
+    )
+  }
   if (cause instanceof AstraleError) return cause
   return new AstraleError(
-    'ADMIN_INVENTORY_UNAVAILABLE',
+    'ADMIN_INVENTORY_FAILED',
     cause instanceof Error ? cause.message : String(cause),
-    'Use `astrale instance list --bookmarked` for local kernel bookmarks.',
+    'Retry with `--debug`, or inspect local bookmarks with `astrale instance list --bookmarked`.',
+    { cause },
   )
 }
