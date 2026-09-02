@@ -267,6 +267,7 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
 export async function upsertInstance(
   key: string,
   opts: AddInstanceOpts = {},
+  behavior: Readonly<{ activateWhenEmpty?: boolean }> = {},
 ): Promise<{ entry: InstanceEntry; created: boolean }> {
   validateName(key, 'Instance')
   if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
@@ -292,7 +293,7 @@ export async function upsertInstance(
     createdAt: existing?.createdAt ?? new Date().toISOString(),
   }
   store.instances[key] = entry
-  if (!store.active) store.active = key
+  if (!store.active && behavior.activateWhenEmpty !== false) store.active = key
   await writeInstances(store)
   return { entry, created: !existing }
 }
@@ -309,23 +310,28 @@ export async function upsertManagedBookmark(
     url: string
     organizationId?: string
     defaultIdentity?: string
+    activateWhenEmpty?: boolean
   }>,
 ): Promise<{ entry: InstanceEntry; repointedFrom?: string }> {
   const store = await readInstances()
   const previousUrl = store.instances[input.key]?.url
   const url = normalizeInstanceKernelUrl(input.url)
   const domainIssuer = managedShellDomainIssuer(url)
-  const { entry } = await upsertInstance(input.key, {
-    url,
-    issuer: url,
-    slug: input.slug,
-    name: input.slug,
-    kind: 'bookmark',
-    mode: 'remote',
-    ...(domainIssuer === undefined ? {} : { domainIssuer }),
-    ...(input.organizationId ? { organizationId: input.organizationId } : {}),
-    ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
-  })
+  const { entry } = await upsertInstance(
+    input.key,
+    {
+      url,
+      issuer: url,
+      slug: input.slug,
+      name: input.slug,
+      kind: 'bookmark',
+      mode: 'remote',
+      ...(domainIssuer === undefined ? {} : { domainIssuer }),
+      ...(input.organizationId ? { organizationId: input.organizationId } : {}),
+      ...(input.defaultIdentity ? { defaultIdentity: input.defaultIdentity } : {}),
+    },
+    { activateWhenEmpty: input.activateWhenEmpty },
+  )
   return {
     entry,
     ...(previousUrl && previousUrl !== entry.url ? { repointedFrom: previousUrl } : {}),

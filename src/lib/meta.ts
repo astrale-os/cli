@@ -10,6 +10,8 @@
  * outside this issuer-connectivity helper.
  */
 
+import type { JWK } from 'jose'
+
 import { IssuerUnreachableError } from '../errors'
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -44,11 +46,11 @@ export async function fetchJwks(
   jwksUri: string,
   timeoutMs = 5_000,
   fetchImpl: FetchLike = globalThis.fetch,
-): Promise<{ keys: Array<{ kid?: string }> }> {
+): Promise<{ keys: JWK[] }> {
   try {
     const r = await fetchImpl(jwksUri, { signal: AbortSignal.timeout(timeoutMs) })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    return (await r.json()) as { keys: Array<{ kid?: string }> }
+    return (await r.json()) as { keys: JWK[] }
   } catch (e) {
     throw new IssuerUnreachableError(jwksUri, (e as Error).message)
   }
@@ -74,7 +76,7 @@ export async function checkIssuerReachability(
   url: string,
   issuerOverride?: string,
   fetchImpl?: FetchLike,
-): Promise<{ issuer: string; keys: Array<{ kid?: string }> }> {
+): Promise<{ issuer: string; keys: JWK[] }> {
   const discoveryBase = issuerOverride ?? url
   const discovery = await fetchDiscovery(discoveryBase, 5_000, fetchImpl)
   if (issuerOverride !== undefined && discovery.issuer !== issuerOverride) {

@@ -30,6 +30,30 @@ export interface DomainInstallReceipt {
   readonly error?: string
 }
 
+export interface RootIdentityRecipient {
+  readonly kty: 'EC'
+  readonly crv: 'P-256'
+  readonly x: string
+  readonly y: string
+  readonly kid: string
+}
+
+export interface RootIdentityTransfer {
+  readonly format: 'astrale.instance-root-transfer'
+  readonly version: 1
+  readonly requestId: string
+  readonly instance: string
+  readonly issuer: string
+  readonly subject: string
+  readonly recipientThumbprint: string
+  readonly jwe: string
+}
+
+export interface RetrievedRootIdentity {
+  readonly instance: OwnedInstanceInfo
+  readonly transfer: RootIdentityTransfer
+}
+
 export type InvitationState = 'pending' | 'accepted' | 'revoked' | 'expired'
 
 export interface InvitationInfo {

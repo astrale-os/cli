@@ -121,6 +121,11 @@ export async function buildProgram(): Promise<Command> {
           withKernelOptions((await import('../commands/instance/invitation/reconcile')).default),
         ],
       },
+      {
+        name: 'root',
+        description: 'Recover an owned Instance root identity',
+        commands: [withKernelOptions((await import('../commands/instance/root/import')).default)],
+      },
     ],
   })
 

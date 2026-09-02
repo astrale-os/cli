@@ -2,7 +2,7 @@ import { compactDecrypt, CompactEncrypt, type JWK } from 'jose'
 import { z } from 'zod'
 
 import { AstraleError } from '../errors'
-import { acceptKeypair, importKeypair, readKeypair } from '../keys/index'
+import { acceptKeypair, importKeypair, readKeypair, removeKeypair } from '../keys/index'
 import { validateName, validateUrl } from '../lib/validation'
 import {
   atomicWrite,
@@ -151,7 +151,7 @@ export async function importIdentity(
   validateName(name, 'Identity')
   if (options.issuer !== undefined) validateUrl(options.issuer)
 
-  return updateIdentityStore(async (store) => {
+  const imported = await updateIdentityStore(async (store) => {
     const existing = store.identities[name]
     if (existing && !options.replace) throw new Error(`Identity "${name}" already exists`)
     if (existing && (existing.source ?? 'key') !== 'key') {
@@ -169,9 +169,17 @@ export async function importIdentity(
     }
     return {
       next: { ...store, identities: { ...store.identities, [name]: identity } },
-      value: identity,
+      value: { identity, previousSubject: existing?.subject },
     }
   }, options.state)
+
+  if (
+    imported.previousSubject !== undefined &&
+    imported.previousSubject !== imported.identity.subject
+  ) {
+    await removeKeypairIfUnreferenced(imported.previousSubject, options)
+  }
+  return imported.identity
 }
 
 export async function writeIdentityExport(path: string, content: string): Promise<void> {
@@ -180,6 +188,19 @@ export async function writeIdentityExport(path: string, content: string): Promis
 
 function hasVersion(input: unknown): input is { readonly version: unknown } {
   return typeof input === 'object' && input !== null && Object.hasOwn(input, 'version')
+}
+
+async function removeKeypairIfUnreferenced(
+  subject: string,
+  options: IdentityFileOptions,
+): Promise<void> {
+  await updateIdentityStore(async (store) => {
+    const referenced = Object.values(store.identities).some(
+      (identity) => (identity.source ?? 'key') === 'key' && identity.subject === subject,
+    )
+    if (!referenced) await removeKeypair(subject, options.keysDir)
+    return { next: store, value: undefined }
+  }, options.state)
 }
 
 function invalidExport(message: string): AstraleError {

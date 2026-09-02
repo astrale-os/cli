@@ -17,6 +17,7 @@ export {
   isEncryptedIdentityExport,
   writeIdentityExport,
 } from './transfer'
+export { createRootIdentityRecipient, decodeRootIdentityTransfer } from './root-transfer'
 export { acceptProvisionedIdentity, submitIdentityProvision } from './registration'
 export type {
   IdentityProvisionSubmission,
@@ -25,3 +26,4 @@ export type {
 } from './registration'
 export type { Identity, IdentityStore, Registration } from './registry'
 export type { IdentityExport, IdentityFileOptions, IdentityImportOptions } from './transfer'
+export type { RootIdentityRecipientContext, RootIdentityTransferScope } from './root-transfer'

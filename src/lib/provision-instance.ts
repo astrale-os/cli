@@ -2,11 +2,13 @@ import chalk from 'chalk'
 
 import type { KernelCommandOpts } from '../connection'
 import type { AdminTargetCommandOpts } from './admin-target'
+import type { ImportedInstanceRootIdentity } from './instance-root-identity'
 
 import { AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
 import { createOwnedInstance } from './admin-instance'
 import { setActive, upsertManagedBookmark } from './instance'
+import { importInstanceRootIdentity } from './instance-root-identity'
 import { withSpinner } from './log'
 import { isMachine } from './output'
 import { validateSlug } from './validation'
@@ -29,10 +31,28 @@ export type ProvisionResult = {
   repointedFrom?: string
   /** Set when bookmarking/activating the new instance failed (non-fatal). */
   selectionError?: unknown
+  /** Imported root identity; absent when best-effort recovery failed. */
+  rootIdentity?: ImportedInstanceRootIdentity
+  /** Root recovery is deliberately non-fatal to successful provisioning. */
+  rootIdentityError?: unknown
 }
 
 /** Provisioning a child instance runs a multi-step saga. */
 const SAGA_TIMEOUT_MS = '120000'
+
+interface ProvisionDependencies {
+  readonly createOwnedInstance: typeof createOwnedInstance
+  readonly upsertManagedBookmark: typeof upsertManagedBookmark
+  readonly setActive: typeof setActive
+  readonly importInstanceRootIdentity: typeof importInstanceRootIdentity
+}
+
+const provisionDefaults: ProvisionDependencies = {
+  createOwnedInstance,
+  upsertManagedBookmark,
+  setActive,
+  importInstanceRootIdentity,
+}
 
 /**
  * Provision an instance through the admin kernel, then bookmark it and
@@ -46,7 +66,9 @@ const SAGA_TIMEOUT_MS = '120000'
 export async function provisionInstance(
   slug: string,
   opts: ProvisionOpts,
+  dependencies: Partial<ProvisionDependencies> = {},
 ): Promise<ProvisionResult> {
+  const deps = { ...provisionDefaults, ...dependencies }
   validateSlug(slug)
   const authentication = await instanceCreateAuthentication(opts)
   opts = authentication.opts
@@ -65,11 +87,11 @@ export async function provisionInstance(
       `Provisioning instance ${slug}`,
       !machine,
       async () => {
-        const created = await createOwnedInstance(createOpts, slug)
+        const created = await deps.createOwnedInstance(createOpts, slug)
         try {
           // Org id from the create response — authoritative for token scoping
           // (the router's /auth/org is eventually consistent).
-          const bookmarked = await upsertManagedBookmark({
+          const bookmarked = await deps.upsertManagedBookmark({
             key: slug,
             slug,
             url: created.url,
@@ -79,7 +101,7 @@ export async function provisionInstance(
               : {}),
           })
           repointedFrom = bookmarked.repointedFrom
-          await setActive(slug)
+          await deps.setActive(slug)
         } catch (e) {
           selectionError = e
         }
@@ -92,6 +114,18 @@ export async function provisionInstance(
     )
 
   const created = await runProvision()
+  let rootIdentity: ImportedInstanceRootIdentity | undefined
+  let rootIdentityError: unknown
+  try {
+    rootIdentity = await withSpinner(
+      `Importing root identity for ${slug}`,
+      !machine,
+      () => deps.importInstanceRootIdentity(createOpts, created.id, { bookmark: false }),
+      { success: (result) => `Root identity imported: ${result.name}` },
+    )
+  } catch (error) {
+    rootIdentityError = error
+  }
 
   // Warnings go to stderr so machine-readable stdout stays clean.
   const warn = (msg: string) => console.error(chalk.yellow('⚠'), msg)
@@ -102,8 +136,21 @@ export async function provisionInstance(
   } else if (repointedFrom) {
     warn(`Bookmark "${slug}" repointed: ${repointedFrom} → ${created.url}`)
   }
+  if (rootIdentityError !== undefined) {
+    const message =
+      rootIdentityError instanceof Error ? rootIdentityError.message : String(rootIdentityError)
+    warn(`Could not import the Instance root identity: ${message}`)
+    warn(`Recover it later with: astrale instance root import ${slug}`)
+  }
 
-  return { created, slug, repointedFrom, ...(selectionError ? { selectionError } : {}) }
+  return {
+    created,
+    slug,
+    repointedFrom,
+    ...(selectionError ? { selectionError } : {}),
+    ...(rootIdentity === undefined ? {} : { rootIdentity }),
+    ...(rootIdentityError === undefined ? {} : { rootIdentityError }),
+  }
 }
 
 export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {
