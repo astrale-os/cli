@@ -261,7 +261,11 @@ function FloatingDock({ domainId }: { domainId: string }) {
           )}
         >
           <PanelHeader domainId={domainId} closeLabel="Close the chat" onClose={close} />
-          <div className="min-h-0 flex-1 border-t">
+          {/* A flex column, not a block: the transcript is a flex-1 child and only
+              scrolls once something hands it a height. A block let it grow to its
+              content instead, the clip above took everything past the box, and a
+              long answer ended in nothing — no scrollbar, and no way to its end. */}
+          <div className="flex min-h-0 flex-1 flex-col border-t">
             {tab === 'agent' ? (
               <AgentTranscript domainId={domainId} />
             ) : (
