@@ -26,7 +26,14 @@ function fixture(input: {
   listOutput?: unknown
   useDefaultOperationIds?: boolean
   operationId?: (
-    kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
+    kind:
+      | 'create'
+      | 'status'
+      | 'delete'
+      | 'install-domain'
+      | 'invite'
+      | 'retrieve-root'
+      | 'reconcile-invitation',
   ) => string
   invoke?: (target: string, input: unknown) => unknown
   query?: (
@@ -330,6 +337,46 @@ describe('V2 Admin Instance adapter', () => {
       value: { operationId: 'cli.instance.install-domain.test', domain: '@crm-domain' },
     })
     expect(contract.reflection).not.toHaveBeenCalled()
+  })
+
+  test('retrieves a root identity transfer scoped to the exact Instance and recipient', async () => {
+    const recipient = {
+      kty: 'EC' as const,
+      crv: 'P-256' as const,
+      x: 'x'.repeat(43),
+      y: 'y'.repeat(43),
+      kid: 'r'.repeat(43),
+    }
+    const transfer = {
+      format: 'astrale.instance-root-transfer',
+      version: 1,
+      requestId: 'cli.instance.retrieve-root.test',
+      instance: '@instance-node',
+      issuer: 'https://demo.eu.astrale.ai',
+      subject: 's'.repeat(43),
+      recipientThumbprint: recipient.kid,
+      jwe: 'a.b.c.d.e',
+    } as const
+    const contract = fixture({
+      instances: [instanceNode({ issuer: transfer.issuer })],
+      invoke: () => transfer,
+    })
+
+    await expect(
+      (await contract.connect()).retrieveRootIdentity('demo', recipient),
+    ).resolves.toEqual({
+      instance: expect.objectContaining({ id: '@instance-node', issuer: transfer.issuer }),
+      transfer,
+    })
+    expect(contract.calls).toEqual([
+      {
+        target: '@instance-node::retrieveRootIdentity',
+        value: {
+          requestId: 'cli.instance.retrieve-root.test',
+          recipient,
+        },
+      },
+    ])
   })
 
   test('invites through the exact Instance receiver and observes before explicit recovery', async () => {

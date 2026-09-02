@@ -1,3 +1,4 @@
+import type { RootIdentityRecipient } from '../admin/instance'
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminInstances } from '../admin/instance'
@@ -12,6 +13,9 @@ export {
   type InvitationInfo,
   type InvitationState,
   type OwnedInstanceInfo,
+  type RetrievedRootIdentity,
+  type RootIdentityRecipient,
+  type RootIdentityTransfer,
 } from '../admin/instance'
 
 /** Resolve the Admin target and read only the caller-visible Instance inventory. */
@@ -54,6 +58,20 @@ export function statusOwnedInstance(options: AdminConnectionOptions, identifier:
 export function deleteOwnedInstance(options: AdminConnectionOptions, identifier: string) {
   return withAdminClientSession(options, async (context) =>
     (await connectAdminInstances(context)).delete(identifier),
+  )
+}
+
+/** Retrieve one owner's root identity, sealed to a caller-generated ephemeral recipient. */
+export function retrieveOwnedInstanceRootIdentity(
+  options: AdminConnectionOptions,
+  identifier: string,
+  recipient: RootIdentityRecipient,
+) {
+  return withAdminClientSession(options, async (context) =>
+    Object.freeze({
+      ...(await (await connectAdminInstances(context)).retrieveRootIdentity(identifier, recipient)),
+      ...(context.identity === undefined ? {} : { ownerIdentity: context.identity }),
+    }),
   )
 }
 

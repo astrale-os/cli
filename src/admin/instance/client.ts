@@ -16,6 +16,9 @@ import {
   type InstanceInfo,
   type InstanceState,
   type OwnedInstanceInfo,
+  type RetrievedRootIdentity,
+  type RootIdentityRecipient,
+  type RootIdentityTransfer,
 } from './model'
 
 export interface AdminInstanceContext {
@@ -30,13 +33,24 @@ export interface AdminInstanceApi {
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
   invite(identifier: string, email: string, expiresInDays?: number): Promise<InvitationInfo>
+  retrieveRootIdentity(
+    identifier: string,
+    recipient: RootIdentityRecipient,
+  ): Promise<RetrievedRootIdentity>
   statusInvitation(invitation: string): Promise<InvitationInfo>
   reconcileInvitation(invitation: string): Promise<InvitationInfo>
 }
 
 export interface AdminInstanceDependencies {
   readonly operationId?: (
-    kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
+    kind:
+      | 'create'
+      | 'status'
+      | 'delete'
+      | 'install-domain'
+      | 'invite'
+      | 'retrieve-root'
+      | 'reconcile-invitation',
   ) => string
 }
 
@@ -132,6 +146,25 @@ export async function connectAdminInstances(
         throw new TypeError('Admin Instance invitation does not match its requested scope.')
       }
       return invitation
+    },
+    async retrieveRootIdentity(identifier: string, recipient: RootIdentityRecipient) {
+      const instance = await requireInstance(identifier)
+      const requestId = operationId('retrieve-root')
+      const transfer = rootIdentityTransfer(
+        await callAdminMethod(context.session, Path.parse(instance.id), 'retrieveRootIdentity', {
+          requestId,
+          recipient: { ...recipient },
+        }),
+      )
+      if (
+        transfer.requestId !== requestId ||
+        transfer.instance !== instance.id ||
+        transfer.issuer !== instance.issuer ||
+        transfer.recipientThumbprint !== recipient.kid
+      ) {
+        throw new TypeError('Admin root identity transfer does not match its requested scope.')
+      }
+      return Object.freeze({ instance, transfer })
     },
     async statusInvitation(invitation: string) {
       const receiver = invitationReceiver(invitation)
@@ -273,6 +306,49 @@ function domainInstallReceipt(input: unknown): DomainInstallReceipt {
   })
 }
 
+function rootIdentityTransfer(input: unknown): RootIdentityTransfer {
+  const value = record(input, 'Admin root identity transfer')
+  const fields = [
+    'format',
+    'instance',
+    'issuer',
+    'jwe',
+    'recipientThumbprint',
+    'requestId',
+    'subject',
+    'version',
+  ]
+  const keys = Object.keys(value).sort()
+  if (
+    keys.length !== fields.length ||
+    !keys.every((key, index) => key === fields[index]) ||
+    value.format !== 'astrale.instance-root-transfer' ||
+    value.version !== 1
+  ) {
+    throw new TypeError('Admin root identity transfer is invalid.')
+  }
+  const subject = p256Member(value.subject, 'Admin root identity subject')
+  const recipientThumbprint = p256Member(value.recipientThumbprint, 'Admin root identity recipient')
+  const jwe = requiredString(value.jwe, 'Admin root identity JWE')
+  if (jwe.length > 16_384 || jwe.split('.').length !== 5) {
+    throw new TypeError('Admin root identity JWE is invalid.')
+  }
+  const requestId = requiredString(value.requestId, 'Admin root identity request')
+  if (requestId.length > 256) throw new TypeError('Admin root identity request is invalid.')
+  const issuer = optionalHttpUrl(value.issuer, 'Admin root identity issuer')
+  if (issuer === undefined) throw new TypeError('Admin root identity issuer is required.')
+  return Object.freeze({
+    format: 'astrale.instance-root-transfer',
+    version: 1,
+    requestId,
+    instance: requiredNodePath(value.instance, 'Admin root identity Instance'),
+    issuer,
+    subject,
+    recipientThumbprint,
+    jwe,
+  })
+}
+
 interface InvitationSummary {
   readonly id: string
   readonly email: string
@@ -346,6 +422,12 @@ function requiredString(input: unknown, label: string): string {
   return input
 }
 
+function p256Member(input: unknown, label: string): string {
+  const value = requiredString(input, label)
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(value)) throw new TypeError(`${label} is invalid.`)
+  return value
+}
+
 function requiredNodePath(input: unknown, label: string): string {
   const value = requiredString(input, label)
   try {
@@ -383,7 +465,14 @@ function record(input: unknown, label: string): Readonly<Record<string, unknown>
 }
 
 function defaultOperationId(
-  kind: 'create' | 'status' | 'delete' | 'install-domain' | 'invite' | 'reconcile-invitation',
+  kind:
+    | 'create'
+    | 'status'
+    | 'delete'
+    | 'install-domain'
+    | 'invite'
+    | 'retrieve-root'
+    | 'reconcile-invitation',
 ): string {
   return randomOperationId('cli', 'instance', kind)
 }

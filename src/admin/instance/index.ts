@@ -14,4 +14,7 @@ export {
   type InstanceInfo,
   type InstanceState,
   type OwnedInstanceInfo,
+  type RetrievedRootIdentity,
+  type RootIdentityRecipient,
+  type RootIdentityTransfer,
 } from './model'

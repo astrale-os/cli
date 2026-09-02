@@ -147,6 +147,18 @@ describe('identity transfer', () => {
     ).rejects.toThrow('already exists')
     expect(await readFile(privatePath, 'utf-8')).toBe(originalPrivate)
 
+    const nextSubject = await envelope('replacement-subject', 'replacement-subject')
+    await importIdentity(nextSubject, {
+      name: 'operator',
+      replace: true,
+      state: { path: statePath, now },
+      keysDir,
+    })
+    await expect(access(privatePath)).rejects.toThrow()
+    await expect(readKeypair('replacement-subject', keysDir)).resolves.toMatchObject({
+      kid: nextSubject.kid,
+    })
+
     await updateIdentityStore(
       (store) => ({
         next: {

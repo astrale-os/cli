@@ -171,6 +171,8 @@ describe('program composition', () => {
       'instance invitation status',
       'instance invite',
       'instance list',
+      'instance root',
+      'instance root import',
       'instance status',
       'instance use',
       'introspect',
