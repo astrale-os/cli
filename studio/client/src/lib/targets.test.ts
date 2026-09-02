@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
 
 import {
+  anchorData,
   anchorKey,
+  anchorKindForRef,
   decodeFlowNodeId,
+  domainAnchorRef,
   detailRefFor,
   encodeFlowNodeId,
   flowEdgeAnchorRef,
@@ -67,4 +70,30 @@ test('only a field resolves to a different detail view', () => {
   expect(detailRefFor('class.Code')).toBe('class.Code')
   expect(detailRefFor('module.billing')).toBe('module.billing')
   expect(parseMemberFieldRef('section.schema')).toBeNull()
+})
+
+test('a domain is a scope in the target hierarchy, keyed by origin', () => {
+  const ref = domainAnchorRef('crm.studio-demo.astrale.ai')
+  expect(ref).toBe('domain.crm.studio-demo.astrale.ai')
+  // a scope, like a module or a section — not a schema member
+  expect(anchorKindForRef(ref)).toBe('section')
+  expect(anchorKindForRef('module.billing')).toBe('section')
+  expect(anchorKindForRef('class.Order')).toBe('schema')
+  // the whole domain IS the target — nothing coarser contains it
+  expect(detailRefFor(ref)).toBe(ref)
+  // dots in an origin are not field separators
+  expect(parseMemberFieldRef(ref)).toBeNull()
+})
+
+test('an anchor can name the domain whose threads it belongs to', () => {
+  // The rail lists domains the canvas may not draw, so there is no `data-domain-id`
+  // around its rows to fall back on — the owner has to ride on the anchor.
+  expect(anchorData('domain.ops.example.dev', 'ops.example.dev', 'peer')).toEqual({
+    'data-anchor-ref': 'domain.ops.example.dev',
+    'data-anchor-excerpt': 'ops.example.dev',
+    'data-anchor-domain-id': 'peer',
+    'data-commentable': '',
+  })
+  // left out where the surface already sits inside the domain it belongs to
+  expect(anchorData('class.Order', 'Order')['data-anchor-domain-id']).toBeUndefined()
 })

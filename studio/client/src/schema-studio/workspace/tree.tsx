@@ -89,6 +89,7 @@ export function WorkspaceDomainTree({
           <section key={domainId}>
             <DomainRow
               origin={summary.origin}
+              domainId={domainId}
               active={active}
               checked={checked}
               onActivate={() => canvas.requestActivate(domainId, summary.origin)}

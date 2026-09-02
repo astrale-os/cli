@@ -1,5 +1,7 @@
 import type { VisibilityState } from '@shared/types'
 
+import { domainAnchorRef } from '@/lib/targets'
+
 import { memberRefKey } from './modules'
 
 export type Hidden = Record<string, true>
@@ -11,7 +13,8 @@ export const VISIBILITY_DEFAULT: VisibilityState = {
 
 export const classRef = (name: string): string => memberRefKey('class', name)
 export const edgeRef = (name: string): string => memberRefKey('edge', name)
-export const domainRef = (origin: string): string => `domain.${origin}`
+/** Hiding a domain and commenting on one name the SAME thing, so they spell it once. */
+export const domainRef = domainAnchorRef
 
 export function isHidden(ref: string, hidden: Hidden): boolean {
   return hidden[ref] === true

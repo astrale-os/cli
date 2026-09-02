@@ -55,7 +55,11 @@ function resolveDraft(
     const excerpt = (tagged.dataset.anchorExcerpt || tagged.textContent || ref).trim().slice(0, 80)
     return {
       mode,
-      domainId: targetElementDomainId(tagged) ?? scopedDomainId,
+      // An owner stamped ON the anchor wins: the rail's domain rows name a domain the
+      // canvas may not be drawing at all, so there is no `data-domain-id` around them to
+      // read — and falling through to the active domain would file the thread on the
+      // wrong one (see `anchorData`).
+      domainId: tagged.dataset.anchorDomainId ?? targetElementDomainId(tagged) ?? scopedDomainId,
       anchor: { ref, kind: anchorKindForRef(ref) },
       excerpt,
       x,

@@ -169,9 +169,17 @@ function revealSelection(ref: string): string {
   if (ref.startsWith('edge.')) return `class.${ref.slice('edge.'.length)}`
   return ref
 }
+/** A relationship is drawn as a LINE, so there is no node for focus to pin — and pinning it
+ *  on the edge's own name would fade the canvas against a node that is not on it. */
 function revealFocus(ref: string): string | null {
+  if (ref.startsWith('edge.')) return null
   const selection = revealSelection(ref)
   return selection.startsWith('class.') ? selection : null
+}
+/** What the canvas is asked to bring into view. An `edge.` ref stays an edge ref: the canvas
+ *  frames the cards its paths run between, and knows to drop the request if it draws none. */
+function revealPan(ref: string): string | null {
+  return ref.startsWith('edge.') ? ref : revealFocus(ref)
 }
 
 const initialTheme = loadStored('studio.theme', ['system', 'light', 'dark'] as const, 'system')
@@ -290,9 +298,13 @@ export const useUI = create<UIState>((set) => ({
         ? {
             selectedClass: revealSelection(selection),
             focusId: revealFocus(selection),
-            revealTarget: revealFocus(selection),
+            revealTarget: revealPan(selection),
           }
-        : {}),
+        : // A DOMAIN is framed, not selected: the canvas brings its frame into view, and
+          // the detail panel has nothing to open for one — it reads schema members.
+          selection.startsWith('domain.')
+          ? { revealTarget: selection }
+          : {}),
     }))
   },
   setPanelOverlay: (panelOverlay) => set({ panelOverlay }),

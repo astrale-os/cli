@@ -5,11 +5,17 @@ import type { AnchorKind } from '@shared/types'
  *
  * A target is the schema entity (or section) a comment attaches to. Targets form
  * a containment hierarchy, coarsest → finest:
+ *   domain.<origin>                       a whole domain (its frame, its row in the rail)
  *   section.<id>                          a whole tab (the schema canvas, env…)
  *   view.<slug>                           a declared domain view (Views panel rows)
  *   module.<path>                         a file/folder grouping of members
  *   class|edge.<Name>                     a member
  *   class|edge.<Name>.property|method|endpoint.<x>             a member's field
+ *
+ * `domain.` is keyed by ORIGIN, not by the workspace's local id: the origin is the
+ * domain's own name, stable across workspaces and readable by the agent, and the
+ * namespace is already spelled that way by canvas visibility (`domainRef`) and by an
+ * import request (`domain.import.<origin>`).
  *
  * Resolution rule (see comment-mode.tsx): the NEAREST declared scope wins. Every
  * surface stamps the most specific ref it represents via `anchorData()`; the
@@ -46,7 +52,8 @@ export function anchorKey(domainId: string, ref: string): string {
 /** The AnchorKind implied by a ref's namespace (used when stamping a free click). */
 export function anchorKindForRef(ref: string): AnchorKind {
   if (/^(class|edge)\./.test(ref)) return 'schema'
-  if (/^(module|section|view)\./.test(ref)) return 'section'
+  // a domain is a SCOPE, like a module or a section — not a schema member
+  if (/^(domain|module|section|view)\./.test(ref)) return 'section'
   if (ref.startsWith('file.')) return 'file'
   return 'free'
 }
@@ -75,6 +82,11 @@ export function detailRefFor(ref: string): string {
 /** A module only GROUPS members, so the detail panel never opens one. */
 export function isModuleRef(ref: string): boolean {
   return ref.startsWith('module.')
+}
+
+/** The anchor ref for a whole domain. Keyed by origin — see the hierarchy above. */
+export function domainAnchorRef(origin: string): string {
+  return `domain.${origin}`
 }
 
 /** The anchor ref for a schema member (edges live under the `edge.` namespace). */
@@ -193,11 +205,19 @@ export function locateTargetElement(
   return null
 }
 
-/** The data-* trio that makes an element a comment/ask target (read by comment mode). */
-export function anchorData(ref: string, excerpt?: string) {
+/**
+ * The data-* stamps that make an element a comment/ask target (read by comment mode).
+ *
+ * `domainId` says which domain's thread store the comment belongs in, for surfaces whose
+ * OWNER is not the domain they are drawn inside — the rail lists domains the canvas does
+ * not draw, so its rows carry no `data-domain-id` (that stamp means "this is on screen" to
+ * the ask layer). Left out, the resolver falls back to the domain being worked in.
+ */
+export function anchorData(ref: string, excerpt?: string, domainId?: string) {
   return {
     'data-anchor-ref': ref,
     'data-anchor-excerpt': excerpt,
+    'data-anchor-domain-id': domainId,
     'data-commentable': '',
   } as const
 }

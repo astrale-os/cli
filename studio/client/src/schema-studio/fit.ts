@@ -62,3 +62,67 @@ export function viewportForNodes(
     y: paneHeight / 2 - ((minY + maxY) / 2) * zoom,
   }
 }
+
+/** A box in flow coordinates — a class card, a module box, a whole domain frame. */
+export interface CanvasBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Clear of the pane's own edge, so a revealed target never reads as clipped. */
+const REVEAL_MARGIN = 24
+
+/**
+ * Where the viewport has to move for a whole target to read inside the pane — or null when
+ * it already does, and the canvas should be left exactly where the reader put it.
+ *
+ * A target is usually ONE box (a class card, an imported domain's frame) and is panned to at
+ * the zoom already chosen: a jump answers "where is it", not "how close do you want it". A
+ * RELATIONSHIP is the exception — it is a line between two cards, so what has to land in the
+ * pane is the span they define, and a span wider than the pane forces the zoom back just far
+ * enough to hold the whole thing. Never further, and never closer.
+ */
+export function revealViewport(
+  boxes: readonly CanvasBox[],
+  current: CanvasViewport,
+  paneWidth: number,
+  paneHeight: number,
+  minZoom: number,
+): CanvasViewport | null {
+  if (boxes.length === 0 || !paneWidth || !paneHeight) return null
+  const centers = boxes.map((box) => ({ x: box.x + box.width / 2, y: box.y + box.height / 2 }))
+  const shows = (point: { x: number; y: number }) => {
+    const screenX = point.x * current.zoom + current.x
+    const screenY = point.y * current.zoom + current.y
+    return (
+      screenX > REVEAL_MARGIN &&
+      screenX < paneWidth - REVEAL_MARGIN &&
+      screenY > REVEAL_MARGIN &&
+      screenY < paneHeight - REVEAL_MARGIN
+    )
+  }
+  if (centers.every(shows)) return null
+
+  const minX = Math.min(...boxes.map((box) => box.x))
+  const minY = Math.min(...boxes.map((box) => box.y))
+  const maxX = Math.max(...boxes.map((box) => box.x + box.width))
+  const maxY = Math.max(...boxes.map((box) => box.y + box.height))
+  const zoom =
+    boxes.length > 1
+      ? Math.max(
+          minZoom,
+          Math.min(
+            current.zoom,
+            (paneWidth - REVEAL_MARGIN * 2) / Math.max(maxX - minX, 1),
+            (paneHeight - REVEAL_MARGIN * 2) / Math.max(maxY - minY, 1),
+          ),
+        )
+      : current.zoom
+  return {
+    zoom,
+    x: paneWidth / 2 - ((minX + maxX) / 2) * zoom,
+    y: paneHeight / 2 - ((minY + maxY) / 2) * zoom,
+  }
+}
