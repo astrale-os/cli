@@ -136,6 +136,21 @@ function sortTree(node: TreeNode): void {
   node.children.forEach(sortTree)
 }
 
+function moduleLabel(modulePath: string, schemaDir: string): string {
+  if (modulePath === 'root') return schemaDir
+
+  const moduleName = /^modules\/([^/]+)\/classes$/u.exec(modulePath)?.[1]
+  if (!moduleName) return modulePath
+
+  const words = moduleName
+    .replace(/([a-z\d])([A-Z])/gu, '$1 $2')
+    .split(/[-_\s]+/u)
+    .filter(Boolean)
+  if (words.length === 0) return modulePath
+
+  return words.map((word) => word[0]?.toLocaleUpperCase() + word.slice(1)).join(' ')
+}
+
 export function folderModules(bundle: StudioSchemaBundle, schemaDir = 'schema'): FolderModule[] {
   const members = collectMembers(bundle, schemaDir)
   const hues = topHueMap(members)
@@ -144,7 +159,7 @@ export function folderModules(bundle: StudioSchemaBundle, schemaDir = 'schema'):
     const top = value.modulePath.split('/')[0]
     const selected = modules.get(value.modulePath) ?? {
       path: value.modulePath,
-      label: value.modulePath === 'root' ? schemaDir : value.modulePath,
+      label: moduleLabel(value.modulePath, schemaDir),
       hue: hues.get(top) ?? 264,
       classes: [],
       edges: [],

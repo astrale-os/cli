@@ -38,4 +38,35 @@ describe('schema modules', () => {
       ['edge', 'class.owns', 'edge.owns'],
     ])
   })
+
+  test('shows the title-cased module name for the conventional module layout', () => {
+    const conventional = bundle({
+      Invoice: nodeClass('Invoice'),
+      PaymentSchedule: nodeClass('PaymentSchedule'),
+    })
+    conventional.overlay.sourceSpans = {
+      'class.Invoice': {
+        file: 'schema/modules/bill/classes/invoice.ts',
+        startLine: 1,
+        endLine: 4,
+      },
+      'class.PaymentSchedule': {
+        file: 'schema/modules/payment-schedule/classes/payment-schedule.ts',
+        startLine: 1,
+        endLine: 4,
+      },
+    }
+
+    expect(folderModules(conventional).map(({ path, label }) => ({ path, label }))).toEqual([
+      { path: 'modules/bill/classes', label: 'Bill' },
+      { path: 'modules/payment-schedule/classes', label: 'Payment Schedule' },
+    ])
+  })
+
+  test('keeps the full path when the module layout is not recognized', () => {
+    expect(folderModules(fixture).map(({ path, label }) => ({ path, label }))).toEqual([
+      { path: 'identity', label: 'identity' },
+      { path: 'space', label: 'space' },
+    ])
+  })
 })
