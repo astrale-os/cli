@@ -7,7 +7,9 @@ import { toast } from 'sonner'
 
 import { api, qk } from '@/lib/api'
 import { useActiveChatId } from '@/lib/chats'
+import { labelOf, noAgentNotice } from '@/lib/harnesses'
 import { useLoadout, useUsage } from '@/lib/hooks'
+import { cn } from '@/lib/utils'
 
 import { AgentAccessPicker } from './agent-access'
 import { AgentSession } from './agent-session'
@@ -30,6 +32,12 @@ export interface AgentSettingsProps {
  */
 export function AgentSettings({ harness }: AgentSettingsProps) {
   const detected = harness?.harnesses ?? []
+  // The star can name an agent this machine does not have — the setting is kept and
+  // Studio runs one it can (see server/agent/harness/selection.ts). This panel is
+  // where that is not a surprise: it is the list of what is installed.
+  const stranded =
+    harness?.source === 'fallback' && harness.preferred ? labelOf(harness, harness.preferred) : null
+  const missing = noAgentNotice(harness)?.full
 
   return (
     <div>
@@ -43,12 +51,24 @@ export function AgentSettings({ harness }: AgentSettingsProps) {
           detected.map((presence) => <HarnessPresenceRow key={presence.id} presence={presence} />)
         )}
       </div>
-      <p className="mt-1.5 px-1 text-[11px] leading-snug text-muted-foreground">
-        {harness?.locked ? (
+      <p
+        className={cn(
+          'mt-1.5 px-1 text-[11px] leading-snug',
+          missing ? 'text-destructive' : 'text-muted-foreground',
+        )}
+      >
+        {missing ? (
+          missing
+        ) : harness?.locked ? (
           <span className="inline-flex items-center gap-1">
             <Lock className="h-3 w-3 shrink-0" />
             Locked to {harness.label} by --harness. New chats open on it.
           </span>
+        ) : stranded ? (
+          <>
+            Your starred model is {stranded}&apos;s, and {stranded} is not installed here — new
+            chats open on {harness?.label} until it is back. The star is kept, not replaced.
+          </>
         ) : (
           <>New chats open on the model you starred in the composer — star another to move it.</>
         )}

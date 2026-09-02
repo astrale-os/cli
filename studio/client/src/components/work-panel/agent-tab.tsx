@@ -28,7 +28,7 @@ import {
 import { api, qk } from '@/lib/api'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
 import { threadsAwaitingAgent } from '@/lib/comments'
-import { labelOf, presenceOf } from '@/lib/harnesses'
+import { labelOf, noAgentNotice, presenceOf } from '@/lib/harnesses'
 import { useComments, useDocuments, useHarness } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -288,31 +288,43 @@ function LinkStatus({
   link,
   label,
   reason,
+  missing,
 }: {
   link: HarnessLink
   label: string
   /** what the probe reported when it failed — the only real answer to "why not" */
   reason?: string
+  /** no agent AT ALL on this machine — see `noAgentNotice` */
+  missing?: string
 }) {
-  const connecting = link === 'connecting'
+  // `missing` outranks the wait: there is nothing on the other end to connect to,
+  // and a spinner that can never land is worse than the answer.
+  const connecting = link === 'connecting' && !missing
   return (
     <div
       role="status"
       className={cn(
-        'flex items-center gap-1.5 px-3 pt-2 text-[12px]',
+        'flex gap-1.5 px-3 pt-2 text-[12px]',
+        missing ? 'items-start' : 'items-center',
         connecting ? 'text-muted-foreground' : 'text-destructive',
       )}
     >
       {connecting ? (
         <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
       ) : (
-        <TriangleAlert className="h-3 w-3 shrink-0" />
+        <TriangleAlert className={cn('h-3 w-3 shrink-0', missing && 'mt-[3px]')} />
       )}
-      {/* the reason runs long — a spawn failure carries the agent's own stderr —
-          so the row shows what fits and the hover carries the rest */}
-      <span className="min-w-0 flex-1 truncate" title={connecting ? undefined : reason}>
-        {connecting ? `Connecting to ${label}…` : (reason ?? `${label} is not reachable`)}
-      </span>
+      {/* One harness failing is a row with the rest on hover. NO harness at all is
+          not a harness problem, so it gets its full sentence: truncated to "Claude
+          Code is not rea…" it is exactly the line that sends people hunting for a
+          fault in Studio. */}
+      {missing ? (
+        <span className="min-w-0 flex-1 leading-snug">{missing}</span>
+      ) : (
+        <span className="min-w-0 flex-1 truncate" title={connecting ? undefined : reason}>
+          {connecting ? `Connecting to ${label}…` : (reason ?? `${label} is not reachable`)}
+        </span>
+      )}
     </div>
   )
 }
@@ -366,6 +378,9 @@ export function AgentComposer({
   const harnessLabel = labelOf(harness, harnessId) || 'the agent'
   const presence = presenceOf(harness, harnessId)
   const unreachableReason = presence && !presence.ok ? presence.message : undefined
+  // Not "this agent is down" but "there is no agent here" — a different sentence,
+  // and the only one that tells the reader what to actually do.
+  const noAgent = noAgentNotice(harness)
   // Open threads and attached documents are themselves something to send: with either,
   // an empty composer is a valid submit that carries them as they are. Mirrors the
   // server's own rule (agent/run/preparation.ts), which only rejects an empty turn.
@@ -502,8 +517,19 @@ export function AgentComposer({
       // read differently from one moment to the next.
       // Two altitudes, never the same sentence twice: the line above is the state
       // and the reason behind it, the field is only ever what YOU can do about it.
+      // With no agent at all the resting bar is the only thing on screen, and it is
+      // one line — so that line has to carry the whole answer, not a state the
+      // reader then has to hover to act on. `noAgentNotice.full` says it above
+      // wherever there IS a second line; this is the same sentence, shortened to
+      // what fits, and never truncated further by the field's own width.
       placeholder={
-        available ? PROMPT : link === 'connecting' ? 'Connecting…' : `${harnessLabel} unavailable`
+        available
+          ? PROMPT
+          : noAgent
+            ? noAgent.line
+            : link === 'connecting'
+              ? 'Connecting…'
+              : `${harnessLabel} unavailable`
       }
       disabled={!available}
       className={cn(
@@ -535,10 +561,12 @@ export function AgentComposer({
   // What the line above would have said, for the one place that has no line to
   // spare: the icon carries the state, the field's own placeholder carries what
   // it means, and the reason is one hover away. The resting bar is one line.
+  const waiting = link === 'connecting' && !noAgent
   const linkSaid =
-    link === 'connecting'
+    noAgent?.full ??
+    (waiting
       ? `Connecting to ${harnessLabel}…`
-      : (unreachableReason ?? `${harnessLabel} is not reachable`)
+      : (unreachableReason ?? `${harnessLabel} is not reachable`))
   const linkMark = available ? null : (
     <span
       role="status"
@@ -546,10 +574,10 @@ export function AgentComposer({
       aria-label={linkSaid}
       className={cn(
         'grid h-8 w-8 shrink-0 place-items-center',
-        link === 'connecting' ? 'text-muted-foreground' : 'text-destructive',
+        waiting ? 'text-muted-foreground' : 'text-destructive',
       )}
     >
-      {link === 'connecting' ? (
+      {waiting ? (
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
       ) : (
         <TriangleAlert className="h-3.5 w-3.5" />
@@ -558,6 +586,7 @@ export function AgentComposer({
   )
 
   const sendTitle = () => {
+    if (noAgent) return noAgent.full
     if (link === 'connecting') return `Connecting to ${harnessLabel} — nothing can be sent yet`
     if (!available) return unreachableReason ?? `${harnessLabel} is not reachable`
     if (active) return 'Queue for when this turn ends (↵)'
@@ -577,8 +606,9 @@ export function AgentComposer({
       )}
     >
       {/* nothing can leave until the handshake lands, and the button is where the
-          hand already is — so it is the button that spins, not just the row above */}
-      {link === 'connecting' ? (
+          hand already is — so it is the button that spins, not just the row above.
+          Not when there is no agent to hand shake WITH, though: that one never lands */}
+      {waiting ? (
         <Loader2 className="h-4 w-4 animate-spin" />
       ) : active ? (
         <ListPlus className="h-4 w-4" />
@@ -614,7 +644,12 @@ export function AgentComposer({
             caret, because it is the thing that decides whether the caret matters.
             Only once the chat is open — a resting bar has no second line to give */}
         {payloadShowing && link !== 'ready' && (
-          <LinkStatus link={link} label={harnessLabel} reason={unreachableReason} />
+          <LinkStatus
+            link={link}
+            label={harnessLabel}
+            reason={unreachableReason}
+            missing={noAgent?.full}
+          />
         )}
         {/* items-end so a field that grew to several lines keeps the controls at its
             foot; the controls then centre among THEMSELVES, or the model's 11px label
@@ -652,7 +687,12 @@ export function AgentComposer({
       <div className="rounded-xl border bg-card transition-colors focus-within:border-ring">
         <TurnPayload domainId={domainId} />
         {link !== 'ready' && (
-          <LinkStatus link={link} label={harnessLabel} reason={unreachableReason} />
+          <LinkStatus
+            link={link}
+            label={harnessLabel}
+            reason={unreachableReason}
+            missing={noAgent?.full}
+          />
         )}
         {composed}
         <div className="flex items-center gap-1 px-2 pb-2">

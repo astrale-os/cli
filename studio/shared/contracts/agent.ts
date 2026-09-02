@@ -244,13 +244,20 @@ export interface HarnessPresence {
  * Nothing here is a setting: the default follows the preferred model (starred in
  * the composer), and `harnesses` is pure diagnostics — Settings lists it so you
  * can see which agents this machine actually has.
+ *
+ * `source` says WHY this agent, and 'fallback' is the one the GUI has to explain:
+ * the starred model belongs to an agent this machine does not have, so chats open
+ * on one it does. The star itself is untouched — `preferred` names the agent still
+ * holding it, and the selection returns there the moment it is installed.
  */
 export interface HarnessStatus extends HarnessPresence {
   /** every known harness, this one included */
   harnesses: HarnessPresence[]
   /** an environment/CLI override owns the selection, so nothing in the GUI moves it */
   locked: boolean
-  source: 'environment' | 'domain' | 'default'
+  source: 'environment' | 'domain' | 'default' | 'fallback'
+  /** the starred agent, when it is NOT this one because it is missing here */
+  preferred?: string
 }
 
 /**

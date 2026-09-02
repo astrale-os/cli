@@ -172,6 +172,17 @@ export function lastKnownPresence(id: string): boolean | undefined {
   return presence.get(id)
 }
 
+/**
+ * Record what a probe found — the one place `lastKnownPresence` is written.
+ *
+ * `undefined` un-records it: "nobody has asked" is a third answer, and the
+ * selection reads it as one (an unprobed harness is not an absent harness).
+ */
+export function rememberHarnessPresence(id: string, ok: boolean | undefined): void {
+  if (ok === undefined) presence.delete(id)
+  else presence.set(id, ok)
+}
+
 /** Normalize optional rich health probes into one route-facing result. */
 export async function inspectHarnessHealth(
   harness: AgentHarness,
@@ -180,6 +191,6 @@ export async function inspectHarnessHealth(
   const health = harness.health
     ? await harness.health(signal)
     : { ok: await harness.isAvailable(signal), bin: harness.id }
-  if (!signal?.aborted) presence.set(harness.id, health.ok)
+  if (!signal?.aborted) rememberHarnessPresence(harness.id, health.ok)
   return health
 }

@@ -33,9 +33,43 @@ const capabilities = {
   gateway: 'anthropic',
 } as const
 
+/**
+ * This machine as it stands for Claude — with Codex installed beside it.
+ *
+ * That second agent is not decoration: with NO agent at all the composer stops
+ * naming one and says so outright (`noAgentStatus` below), so a fixture holding a
+ * single failing harness would test the wrong sentence.
+ */
 function harnessStatus(ok: boolean, message: string): HarnessStatus {
   const presence = { id: 'claude', label: 'Claude Code', bin: 'claude', ok, message, capabilities }
-  return { ...presence, harnesses: [presence], locked: false, source: 'default' }
+  const codex = {
+    id: 'codex',
+    label: 'Codex',
+    bin: 'codex',
+    ok: true,
+    message: 'Detected',
+    capabilities,
+  }
+  return { ...presence, harnesses: [presence, codex], locked: false, source: 'default' }
+}
+
+/** Neither agent is on this machine — nothing can answer, and nothing will. */
+function noAgentStatus(): HarnessStatus {
+  const absent = (id: string, label: string) => ({
+    id,
+    label,
+    bin: id,
+    ok: false,
+    message: `${label} is not detected. Is it installed and on your PATH?`,
+    capabilities,
+  })
+  const claude = absent('claude', 'Claude Code')
+  return {
+    ...claude,
+    harnesses: [claude, absent('codex', 'Codex')],
+    locked: false,
+    source: 'default',
+  }
 }
 
 /**
@@ -101,6 +135,28 @@ test('an agent that did not answer says what came back instead of just closing',
   expect(html).toContain('Claude Code unavailable')
   expect(fieldIsShut(html)).toBe(true)
   // a wait is over, so nothing spins — this one needs a fix, not patience
+  expect(html).not.toContain('animate-spin')
+})
+
+test('with no agent at all, the composer stops blaming one and says which to install', () => {
+  const html = render(snapshot(false), noAgentStatus())
+
+  // "Claude Code is not reachable" is the line that sent people hunting for a
+  // fault in Studio when the machine simply had no coding agent on it
+  expect(html).toContain('No coding agent found on this machine')
+  expect(html).toContain('Claude Code or Codex')
+  expect(html).toContain('No coding agent found — install Claude Code or Codex')
+  expect(fieldIsShut(html)).toBe(true)
+  // and it is not cut down to a row: this is the one failure worth its two lines
+  expect(html).not.toContain('Claude Code unavailable')
+  expect(html).not.toContain('truncate">Claude Code is not detected')
+})
+
+test('no agent installed outranks the handshake — that wait could never land', () => {
+  const html = render(undefined, noAgentStatus())
+
+  expect(html).toContain('No coding agent found on this machine')
+  expect(html).not.toContain('Connecting to Claude Code…')
   expect(html).not.toContain('animate-spin')
 })
 
