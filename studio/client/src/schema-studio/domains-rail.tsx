@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { Check, ChevronDown, ChevronRight, PanelLeftClose, Plus } from 'lucide-react'
-import { useState } from 'react'
 
-import { CreateDomainDialog } from '@/components/create-domain-dialog'
 import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -20,47 +18,36 @@ import { useCanvasDomains } from './workspace/canvas-selection'
  * looking at.
  */
 export function DomainsRailHeader() {
-  const [createOpen, setCreateOpen] = useState(false)
-  const setSection = useUI((state) => state.setSection)
-  const { activate } = useCanvasDomains()
+  // The composer it opens is centred over the whole studio, so it is mounted at
+  // the app's root (`NewDomainDialog`); the rail only asks for it.
+  const setNewDomainOpen = useUI((state) => state.setNewDomainOpen)
   const rail = useRailCollapse()
 
   return (
-    <>
-      <header className="flex h-10 shrink-0 items-center gap-0.5 border-b px-3">
-        <h2 className="mr-auto text-[13px] font-semibold">Domains</h2>
+    <header className="flex h-10 shrink-0 items-center gap-0.5 border-b px-3">
+      <h2 className="mr-auto text-[13px] font-semibold">Domains</h2>
+      <button
+        type="button"
+        title="New domain"
+        aria-label="New domain"
+        onClick={() => setNewDomainOpen(true)}
+        className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <Plus className="h-4 w-4" />
+      </button>
+      {rail && (
         <button
           type="button"
-          title="New domain"
-          aria-label="New domain"
-          onClick={() => setCreateOpen(true)}
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title="Hide domains"
+          aria-label="Hide domains"
+          aria-expanded
+          onClick={rail.collapse}
+          className="-mr-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          <Plus className="h-4 w-4" />
+          <PanelLeftClose className="h-4 w-4" />
         </button>
-        {rail && (
-          <button
-            type="button"
-            title="Hide domains"
-            aria-label="Hide domains"
-            aria-expanded
-            onClick={rail.collapse}
-            className="-mr-1.5 grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </button>
-        )}
-      </header>
-
-      <CreateDomainDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={(id) => {
-          activate(id)
-          setSection('schema')
-        }}
-      />
-    </>
+      )}
+    </header>
   )
 }
 

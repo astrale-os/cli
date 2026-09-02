@@ -3,6 +3,7 @@ import {
   type LucideIcon,
   MessagesSquare,
   Network,
+  Plus,
   Search,
   Settings,
   Workflow,
@@ -14,6 +15,7 @@ import { AskLayer } from '@/components/ask-popover'
 import { CommandPalette } from '@/components/command-palette'
 import { CommentDraftPopover } from '@/components/comment-draft-popover'
 import { CommentModeOverlay } from '@/components/comment-mode'
+import { NewDomainDialog } from '@/components/create-domain'
 import { InstanceSwitcher } from '@/components/instance-switcher'
 import { SettingsDialog } from '@/components/settings-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/misc'
@@ -240,9 +242,7 @@ export function App() {
             {domainId ? (
               <SectionRouter section={section} domainId={domainId} />
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No domain selected
-              </div>
+              <EmptyWorkspace empty={domains.length === 0} />
             )}
           </main>
           {domainId && <WorkPanel domainId={domainId} />}
@@ -255,6 +255,30 @@ export function App() {
       <AskLayer />
       <SettingsDialog />
       <ActivateDomainDialog />
+      <NewDomainDialog />
     </TooltipProvider>
+  )
+}
+
+/**
+ * Nothing to look at yet. A workspace with no domain in it has exactly one thing
+ * to offer, and the rail that normally offers it is inside a section that cannot
+ * draw — so it is offered here instead.
+ */
+function EmptyWorkspace({ empty }: { empty: boolean }) {
+  const setNewDomainOpen = useUI((s) => s.setNewDomainOpen)
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+      {empty ? 'This workspace has no domain yet.' : 'No domain selected'}
+      {empty && (
+        <button
+          type="button"
+          onClick={() => setNewDomainOpen(true)}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          <Plus className="h-4 w-4" /> New domain
+        </button>
+      )}
+    </div>
   )
 }

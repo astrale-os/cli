@@ -1,19 +1,12 @@
 import type { AgentRun, ChatList, QueuedMessage } from '@shared/types'
-import type { DragEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { useQueryClient } from '@tanstack/react-query'
-import {
-  ArrowUp,
-  ListPlus,
-  Loader2,
-  MessageSquare,
-  Square,
-  TriangleAlert,
-  Upload,
-} from 'lucide-react'
+import { ListPlus, Loader2, MessageSquare, Square, TriangleAlert } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
+import { ComposerField, ComposerFrame, DropZone, SendButton } from '@/components/composer'
 import { ScrollArea } from '@/components/ui/misc'
 import {
   type HarnessLink,
@@ -82,8 +75,6 @@ export function AgentTab({ domainId }: { domainId: string }) {
  */
 export function AgentDropZone({
   domainId,
-  className,
-  ref,
   children,
   ...rest
 }: {
@@ -92,45 +83,20 @@ export function AgentDropZone({
   ref?: React.Ref<HTMLDivElement>
   children: ReactNode
 } & React.HTMLAttributes<HTMLDivElement>) {
-  const [dragging, setDragging] = useState(false)
   const { upload } = useDocumentMutations(domainId)
 
-  const onDrop = (event: DragEvent) => {
-    setDragging(false)
-    const files = [...(event.dataTransfer.files ?? [])]
-    if (!files.length) return
-    event.preventDefault()
-    upload.mutate(files, {
-      onSuccess: (added) =>
-        toast.success(`Added ${added.length} document${added.length === 1 ? '' : 's'}`),
-    })
-  }
-
   return (
-    <div
+    <DropZone
       {...rest}
-      ref={ref}
-      className={className}
-      onDragOver={(event) => {
-        if (Array.from(event.dataTransfer.types).includes('Files')) {
-          event.preventDefault()
-          setDragging(true)
-        }
-      }}
-      onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false)
-      }}
-      onDrop={onDrop}
+      onFiles={(files) =>
+        upload.mutate(files, {
+          onSuccess: (added) =>
+            toast.success(`Added ${added.length} document${added.length === 1 ? '' : 's'}`),
+        })
+      }
     >
       {children}
-      {dragging && (
-        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/75">
-          <div className="flex items-center gap-2 rounded-lg border border-dashed border-primary/50 bg-card px-5 py-3 text-sm font-medium text-primary">
-            <Upload className="h-4 w-4" /> Drop to add
-          </div>
-        </div>
-      )}
-    </div>
+    </DropZone>
   )
 }
 
@@ -481,20 +447,13 @@ export function AgentComposer({
   }
 
   const composed = (
-    <textarea
+    <ComposerField
       ref={field}
       data-agent-composer=""
-      rows={1}
       value={text}
+      onChange={setText}
+      onSubmit={send}
       onFocus={onFocus}
-      onChange={(event) => setText(event.target.value)}
-      onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing) return
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault()
-          send()
-        }
-      }}
       // One prompt, whatever the turn happens to be carrying. The chips above already
       // show the threads and the documents; saying it again here only made the field
       // read differently from one moment to the next.
@@ -515,10 +474,7 @@ export function AgentComposer({
               : `${harnessLabel} unavailable`
       }
       disabled={!available}
-      className={cn(
-        'resize-none bg-transparent text-[14px] leading-relaxed outline-none placeholder:text-muted-foreground',
-        bar ? 'min-w-0 flex-1 px-1 py-1' : 'w-full px-3 pt-2.5',
-      )}
+      className={bar ? 'min-w-0 flex-1 px-1 py-1' : 'w-full px-3 pt-2.5'}
     />
   )
 
@@ -577,28 +533,22 @@ export function AgentComposer({
   }
 
   const submit = (
-    <button
-      type="button"
+    <SendButton
       onClick={send}
       disabled={!canSend}
       title={sendTitle()}
-      aria-label={active ? 'Queue message' : 'Send'}
-      className={cn(
-        'grid h-8 w-8 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90',
-        'disabled:bg-muted disabled:text-muted-foreground',
-      )}
+      label={active ? 'Queue message' : 'Send'}
     >
       {/* nothing can leave until the handshake lands, and the button is where the
           hand already is — so it is the button that spins, not just the row above.
-          Not when there is no agent to hand shake WITH, though: that one never lands */}
+          Not when there is no agent to hand shake WITH, though: that one never
+          lands. Nothing to say is the plain arrow, which is what SendButton draws. */}
       {waiting ? (
         <Loader2 className="h-4 w-4 animate-spin" />
       ) : active ? (
         <ListPlus className="h-4 w-4" />
-      ) : (
-        <ArrowUp className="h-4 w-4" />
-      )}
-    </button>
+      ) : undefined}
+    </SendButton>
   )
 
   // The dock's bar: one line, and on it only what is worth a line. At rest that is
@@ -675,7 +625,7 @@ export function AgentComposer({
         pending={pending.filter((entry) => entry.chatId === chatId)}
         running={active}
       />
-      <div className="rounded-xl border bg-card transition-colors focus-within:border-ring">
+      <ComposerFrame>
         <TurnPayload domainId={domainId} />
         {link !== 'ready' && (
           <LinkStatus
@@ -700,7 +650,7 @@ export function AgentComposer({
             {submit}
           </div>
         </div>
-      </div>
+      </ComposerFrame>
     </div>
   )
 }

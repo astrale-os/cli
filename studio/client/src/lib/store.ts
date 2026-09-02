@@ -122,6 +122,9 @@ interface UIState {
   paletteOpen: boolean
   /** hidden power-user Settings dialog open */
   settingsOpen: boolean
+  /** The new-domain composer, centred over everything: a name, a first message,
+   *  and the domain that does not exist yet between them. */
+  newDomainOpen: boolean
   /** A domain the reader asked to work in, waiting on the confirmation that says what
    *  changes. Null when nothing is pending. */
   domainSwitchRequest: { id: string; origin: string } | null
@@ -156,6 +159,7 @@ interface UIState {
   setCommentDraft: (d: CommentDraft | null) => void
   setPaletteOpen: (b: boolean) => void
   setSettingsOpen: (b: boolean) => void
+  setNewDomainOpen: (b: boolean) => void
   requestDomainSwitch: (request: { id: string; origin: string } | null) => void
   setConfirmDomainSwitch: (on: boolean) => void
 }
@@ -200,6 +204,7 @@ export const useUI = create<UIState>((set) => ({
   askMode: false,
   paletteOpen: false,
   settingsOpen: false,
+  newDomainOpen: false,
   domainSwitchRequest: null,
   confirmDomainSwitch:
     loadStored('studio.confirmDomainSwitch', ['yes', 'no'] as const, 'yes') === 'yes',
@@ -356,6 +361,7 @@ export const useUI = create<UIState>((set) => ({
   setCommentDraft: (commentDraft) => set({ commentDraft }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setNewDomainOpen: (newDomainOpen) => set({ newDomainOpen }),
   requestDomainSwitch: (domainSwitchRequest) => set({ domainSwitchRequest }),
   setConfirmDomainSwitch: (confirmDomainSwitch) => {
     store('studio.confirmDomainSwitch', confirmDomainSwitch ? 'yes' : 'no')

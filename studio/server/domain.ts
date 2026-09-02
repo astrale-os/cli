@@ -29,11 +29,29 @@ export function makeId(root: string): string {
   return basename(resolve(root)).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain'
 }
 
-/** Resolve the Application imported by config, with root application.ts as convention. */
+/**
+ * The module that composes a domain, and the factory it calls.
+ *
+ * Both changed with the SDK — an `application.ts` calling `defineApplication`
+ * became a `domain.ts` calling `defineDomain` — and both shapes are in the wild:
+ * a workspace holds domains scaffolded months apart, and `create-astrale-domain`
+ * only ever emits the current one. Studio reads either, in the order below, so a
+ * freshly scaffolded domain is discovered like any other.
+ */
+const COMPOSITION_MODULES: readonly string[] = ['application', 'domain']
+const COMPOSITION_FACTORIES: readonly { module: string; name: string }[] = [
+  { module: '@astrale-os/sdk/application', name: 'defineApplication' },
+  { module: '@astrale-os/sdk', name: 'defineApplication' },
+  { module: '@astrale-os/sdk', name: 'defineDomain' },
+]
+
+/** Resolve the composition module imported by config, with the root file as convention. */
 export function resolveApplicationEntry(root: string): string | null {
   const project = resolve(root)
-  const conventional = join(project, 'application.ts')
-  if (existsSync(conventional)) return conventional
+  for (const name of COMPOSITION_MODULES) {
+    const conventional = join(project, `${name}.ts`)
+    if (existsSync(conventional)) return conventional
+  }
   const config = join(project, 'astrale.config.ts')
   if (!existsSync(config)) return null
   let source: string
@@ -46,7 +64,7 @@ export function resolveApplicationEntry(root: string): string | null {
     const specifier = match[1]
     if (
       !specifier?.startsWith('.') ||
-      basename(specifier).replace(/\.[^.]+$/u, '') !== 'application'
+      !COMPOSITION_MODULES.includes(basename(specifier).replace(/\.[^.]+$/u, ''))
     ) {
       continue
     }
@@ -57,7 +75,7 @@ export function resolveApplicationEntry(root: string): string | null {
 }
 
 /**
- * Resolve the authored Schema module selected by `defineApplication({ schema })`.
+ * Resolve the authored Schema module selected by the composition's `schema` binding.
  *
  * Application is the composition source of truth, but importing it would also load
  * Runtime, Frontend, integrations, and any authored top-level effects. Studio follows
@@ -70,7 +88,7 @@ export function resolveSchemaEntry(root: string, applicationFile: string): strin
   if (source === null) return null
 
   for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isDefineApplicationCall(call, source)) continue
+    if (!isCompositionCall(call, source)) continue
     const input = resolveLocalValue(call.getArguments()[0], source)
     if (!input || !Node.isObjectLiteralExpression(input)) continue
     const schema = objectPropertyValue(input, 'schema')
@@ -188,38 +206,38 @@ function resolveLocalValue(
   return initializer ? resolveLocalValue(initializer, source, seen) : value
 }
 
-function isDefineApplicationCall(call: CallExpression, source: SourceFile): boolean {
+function isCompositionCall(call: CallExpression, source: SourceFile): boolean {
   const expression = call.getExpression()
   if (Node.isIdentifier(expression)) {
     const localName = expression.getText()
     return source
       .getImportDeclarations()
-      .some(
-        (declaration) =>
-          declaration.getModuleSpecifierValue() === '@astrale-os/sdk/application' &&
-          declaration
-            .getNamedImports()
-            .some(
-              (named) =>
-                named.getName() === 'defineApplication' &&
-                (named.getAliasNode()?.getText() ?? named.getName()) === localName,
-            ),
+      .some((declaration) =>
+        COMPOSITION_FACTORIES.some(
+          (factory) =>
+            declaration.getModuleSpecifierValue() === factory.module &&
+            declaration
+              .getNamedImports()
+              .some(
+                (named) =>
+                  named.getName() === factory.name &&
+                  (named.getAliasNode()?.getText() ?? named.getName()) === localName,
+              ),
+        ),
       )
   }
-  if (
-    !Node.isPropertyAccessExpression(expression) ||
-    expression.getName() !== 'defineApplication'
-  ) {
-    return false
-  }
+  if (!Node.isPropertyAccessExpression(expression)) return false
   const namespace = expression.getExpression()
   if (!Node.isIdentifier(namespace)) return false
   return source
     .getImportDeclarations()
-    .some(
-      (declaration) =>
-        declaration.getModuleSpecifierValue() === '@astrale-os/sdk/application' &&
-        declaration.getNamespaceImport()?.getText() === namespace.getText(),
+    .some((declaration) =>
+      COMPOSITION_FACTORIES.some(
+        (factory) =>
+          expression.getName() === factory.name &&
+          declaration.getModuleSpecifierValue() === factory.module &&
+          declaration.getNamespaceImport()?.getText() === namespace.getText(),
+      ),
     )
 }
 

@@ -93,7 +93,7 @@ export async function createDomain(
     return {
       ok: false,
       error:
-        'Scaffolding did not produce a domain with an Application schema binding. See the log.',
+        'Scaffolding did not produce a domain with a schema binding Studio can read. See the log.',
       output: scaffold.output.slice(-6000),
     }
   }
@@ -113,7 +113,7 @@ export async function createDomain(
   if (!handle) {
     return {
       ok: false,
-      error: 'Scaffold incomplete — config or Application schema binding is missing.',
+      error: 'Scaffold incomplete — the config or the schema binding is missing.',
       output: combine(scaffold, install),
     }
   }

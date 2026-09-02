@@ -361,3 +361,27 @@ body[data-target-mode] .react-flow.react-flow * {
 .react-flow__node {
   font-family: var(--font-sans);
 }
+
+/* The new-domain composer arrives the way the dock's chat opens: a short rise,
+   no bounce. Radix stamps `data-state` on the content it mounts.
+
+   It animates `translate`/`scale`, NOT `transform`: Tailwind v4 centres a fixed
+   dialog with the standalone `translate` property, and the two COMPOSE — a
+   `transform: translate(-50%, …)` keyframe added its own half-width on top of
+   the utility's, so the card flew in from off-screen left before settling. The
+   end frame is the utility's own value, so nothing moves when it hands back. */
+@keyframes studio-rise {
+  from {
+    opacity: 0;
+    translate: -50% calc(-50% + 10px);
+    scale: 0.985;
+  }
+  to {
+    opacity: 1;
+    translate: -50% -50%;
+    scale: 1;
+  }
+}
+[data-studio-rise][data-state='open'] {
+  animation: studio-rise 180ms ease-out;
+}
