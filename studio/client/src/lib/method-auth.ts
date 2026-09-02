@@ -12,7 +12,7 @@ export interface AuthVerdict {
 }
 
 /** The canonical callable authentication surface shared by Methods and Functions. */
-export type AuthCallable = Pick<IrMethod, 'auth'> | Pick<IrFunction, 'auth'>
+export type AuthCallable = Pick<IrMethod, 'auth' | 'policy'> | Pick<IrFunction, 'auth' | 'policy'>
 
 /** Select the exact runtime implementation overlay for one callable coordinate. */
 export function handlerLinkFor(

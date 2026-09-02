@@ -73,3 +73,19 @@
   outline: 2px solid var(--node-tint, var(--color-primary));
   outline-offset: 0;
 }
+
+/* ── core canvas: data cards follow the same grammar, plus a verdict ──
+   A clicked card lifts its neighbours in their own hue (`focus`); a policy paints the cards
+   its proof runs through green (`pass`), or the two it could not connect red (`fail`). The
+   ring sits on the rendered card, where `--node-tint` is declared. */
+.react-flow__node-coreNode.is-related > div {
+  border-color: var(--node-tint);
+}
+.react-flow__node-coreNode.is-pass > div {
+  border-color: var(--color-success);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-success) 18%, transparent);
+}
+.react-flow__node-coreNode.is-fail > div {
+  border-color: var(--color-destructive);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-destructive) 16%, transparent);
+}

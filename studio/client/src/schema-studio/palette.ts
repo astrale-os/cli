@@ -75,3 +75,5 @@ export const MODULE_COLLAPSED_H = 34
 /** Domain frame inset — even on every side. Unlike a module box the frame wears its
  *  origin ON the top edge, so there is no label to reserve room under. */
 export const DOMAIN_PAD = 52
+/** Room the floating agent dock takes at the bottom of a view: canvas controls sit above it. */
+export const DOCK_CLEARANCE = 88

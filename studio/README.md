@@ -147,13 +147,14 @@ URL or override the View handshake.
 ## What it does
 
 The header selects the active instance and domain, switches between the two
-sections, and exposes settings (including the light/dark theme), environment
+sections, and exposes settings (including the light/dark theme and whether the
+canvases draw relationships as curves or right-angled traces), environment
 values, search, comment mode, and the agent loop:
 
 | Section | What it shows |
 |---|---|
 | **Schema** ★ | A module tree, relationship canvas and definition details. The canvas reads as DIRECTION by default and has a Cardinality mode; it also exposes canonical Core data plus the Domains, Views and detected Integrations panels, and can compose multiple workspace domains. |
-| **Data** | The demo Datasets the project references from `astrale.config.ts` (`tests: tests({ datasets })`), extracted on demand through the domain's own SDK and drawn with the Core canvas: a Dataset picker, records grouped by Class, entry points, and a detail panel. Never part of a Build or an installation. |
+| **Tests** | The project's test material, starting with the demo Datasets it references from `astrale.config.ts` (`tests: tests({ datasets })`), extracted on demand through the domain's own SDK and drawn with the Core canvas: a Dataset picker, records grouped by Class, entry points, and a detail panel. Cards carry a name and a class; clicking one lifts what it is wired to and fades the rest, even with the typed edges hidden. The toolbar can gather the cards by class instead of laying them along their edges. The rail also lists the domain's **policies**: picking one paints every proof the Dataset holds in green, and picking a subject and an object (from the panel, or by clicking cards) turns that into one verdict — allowed, with the proof lit, or denied. A card's panel names the policy that guards reading it and the callables its class offers, each check one click from its proof. Never part of a Build or an installation; scenarios will run here next. |
 | **Process** | Canonical Core genesis, standalone Functions, class Methods, their auth/handler links and View entrypoints. |
 
 Views are not a section of their own: they belong to the landscape, listed from

@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { classIcon, displayName, hueMapOf } from '../core-view/model'
 import { moduleTint } from '../palette'
 import { SchemaIcon } from '../schema-icon'
+import { datasetLabel } from './model'
 
 interface ClassGroup {
   className: string
@@ -133,6 +134,9 @@ export function DatasetTree({
     <div className="text-sm py-2">
       <div className="flex items-center gap-1.5 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         <Box className="h-3.5 w-3.5" /> Records
+        <span className="min-w-0 truncate font-normal normal-case tracking-normal">
+          · {datasetLabel(dataset)}
+        </span>
       </div>
       {groups.length === 0 ? (
         <p className="px-3 pt-2 text-[12px] text-muted-foreground">This Dataset holds no Node.</p>

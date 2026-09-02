@@ -11,7 +11,7 @@ import { folderModules, moduleOfClass } from '@/schema-studio/modules'
 const SECTIONS: { key: SectionKey; label: string }[] = [
   { key: 'schema', label: 'Schema' },
   { key: 'core', label: 'Core' },
-  { key: 'data', label: 'Data' },
+  { key: 'tests', label: 'Tests' },
   { key: 'process', label: 'Process' },
 ]
 

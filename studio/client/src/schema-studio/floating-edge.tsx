@@ -6,7 +6,7 @@ import {
   type InternalNode,
   type Node,
   Position,
-  getSmoothStepPath,
+  getBezierPath,
   useInternalNode,
 } from '@xyflow/react'
 import { type RefObject, useLayoutEffect, useRef } from 'react'
@@ -300,6 +300,9 @@ function useEdgeLabelLayout({
 export function FloatingEdge(props: EdgeProps) {
   const { id, source, target, style, data } = props
   const showCardinality = useUI((state) => state.showCardinality)
+  // The reader's choice, canvas-wide: a curve straight between the two ports, or the
+  // right-angled trace the smart router threads between the cards.
+  const curved = useUI((state) => state.edgeStyle) === 'curved'
   const sourceNode = useInternalNode(source)
   const targetNode = useInternalNode(target)
   const d = data as FloatingEdgeData | undefined
@@ -359,20 +362,40 @@ export function FloatingEdge(props: EdgeProps) {
   return (
     <>
       <g ref={pathRef}>
-        <SmartEdge
-          {...props}
-          sourceX={sx}
-          sourceY={sy}
-          targetX={tx}
-          targetY={ty}
-          sourcePosition={sourcePosition}
-          targetPosition={targetPosition}
-          preset="smoothstep"
-          options={SMART_EDGE_RENDER_OPTIONS}
-          style={edgeStyle}
-          label={undefined}
-          interactionWidth={18}
-        />
+        {curved ? (
+          <BaseEdge
+            id={id}
+            path={
+              getBezierPath({
+                sourceX: sx,
+                sourceY: sy,
+                sourcePosition,
+                targetX: tx,
+                targetY: ty,
+                targetPosition,
+              })[0]
+            }
+            markerStart={props.markerStart}
+            markerEnd={props.markerEnd}
+            style={edgeStyle}
+            interactionWidth={18}
+          />
+        ) : (
+          <SmartEdge
+            {...props}
+            sourceX={sx}
+            sourceY={sy}
+            targetX={tx}
+            targetY={ty}
+            sourcePosition={sourcePosition}
+            targetPosition={targetPosition}
+            preset="smoothstep"
+            options={SMART_EDGE_RENDER_OPTIONS}
+            style={edgeStyle}
+            label={undefined}
+            interactionWidth={18}
+          />
+        )}
       </g>
       <EdgeLabelRenderer>
         {label ? (
@@ -416,32 +439,4 @@ function endpointTitle(end: FloatingEdgeEnd, edge?: string): string {
   return `${subject}: ${end.cardinality}`
 }
 
-// Orthogonal "elbow" edge for the structural parent→child tree. The core canvas
-// lays out strictly left→right, so we route from the parent's right edge into the
-// child's left edge (flipping sides if a drag puts the child on the left) — a clean
-// org-chart skeleton that reads apart from the bezier "wiring" of the typed edges.
-export function TreeEdge({ id, source, target, style }: EdgeProps) {
-  const sourceNode = useInternalNode(source)
-  const targetNode = useInternalNode(target)
-  if (!sourceNode || !targetNode) return null
-
-  const sp = sourceNode.internals.positionAbsolute
-  const tp = targetNode.internals.positionAbsolute
-  const sw = sourceNode.measured.width ?? 0
-  const sh = sourceNode.measured.height ?? 0
-  const tw = targetNode.measured.width ?? 0
-  const th = targetNode.measured.height ?? 0
-  const childRight = tp.x >= sp.x
-  const [path] = getSmoothStepPath({
-    sourceX: childRight ? sp.x + sw : sp.x,
-    sourceY: sp.y + sh / 2,
-    sourcePosition: childRight ? Position.Right : Position.Left,
-    targetX: childRight ? tp.x : tp.x + tw,
-    targetY: tp.y + th / 2,
-    targetPosition: childRight ? Position.Left : Position.Right,
-    borderRadius: 16,
-  })
-  return <BaseEdge id={id} path={path} style={style} interactionWidth={18} />
-}
-
-export const edgeTypes = { floating: FloatingEdge, tree: TreeEdge }
+export const edgeTypes = { floating: FloatingEdge }

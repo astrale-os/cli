@@ -18,12 +18,15 @@ export interface CommentDraft {
 
 /** The main views of a domain. Talking to the agent and reading comments are NOT
  *  sections — they follow you across every view, from the work panel. */
-export type SectionKey = 'schema' | 'core' | 'data' | 'process'
+export type SectionKey = 'schema' | 'core' | 'tests' | 'process'
 
-const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'data', 'process']
+const SECTION_KEYS: readonly SectionKey[] = ['schema', 'core', 'tests', 'process']
 
 /** Appearance: an explicit choice, or whatever the OS asks for. */
 export type Theme = 'system' | 'light' | 'dark'
+
+/** How every canvas draws a relationship: a curve between the cards, or right-angled traces. */
+export type EdgeStyle = 'curved' | 'orthogonal'
 
 /** Which half of the work panel is showing. */
 export type PanelTab = 'agent' | 'comments'
@@ -71,6 +74,8 @@ interface UIState {
   /** the theme actually painted — `system` resolved. Canvas colours that land in
    *  SVG attributes need a real value, not a CSS function. */
   resolvedTheme: 'light' | 'dark'
+  /** edge drawing preference, persisted in this browser; curves unless asked otherwise */
+  edgeStyle: EdgeStyle
   /** work panel: the agent conversation and the comment threads, docked beside the view.
    *  Docked bottom there is no column to expand — this is then the floating chat itself. */
   panelOpen: boolean
@@ -130,7 +135,13 @@ interface UIState {
   domainSwitchRequest: { id: string; origin: string } | null
   /** Ask before switching. Turned off from the confirmation itself, remembered here. */
   confirmDomainSwitch: boolean
+  /** A policy another section asked Tests to open on its demo data; Tests takes it and clears it. */
+  probePolicy: string | null
   setTheme: (theme: Theme) => void
+  setEdgeStyle: (style: EdgeStyle) => void
+  /** Go to Tests with this policy selected — the way Process and the detail panel hand one over. */
+  openPolicy: (policy: string) => void
+  setProbePolicy: (policy: string | null) => void
   setDomain: (id?: string) => void
   setSection: (s: SectionKey) => void
   setPanelOpen: (open: boolean) => void
@@ -191,6 +202,7 @@ export const useUI = create<UIState>((set) => ({
   section: loadStored('studio.lastSection', SECTION_KEYS, 'schema'),
   theme: initialTheme,
   resolvedTheme: paintTheme(initialTheme),
+  edgeStyle: loadStored('studio.edgeStyle', ['curved', 'orthogonal'] as const, 'curved'),
   // The bottom dock always starts closed: there, `panelOpen` is a modal over the
   // domain, and reopening one on load would hide the thing you came back to see.
   panelOpen:
@@ -216,9 +228,26 @@ export const useUI = create<UIState>((set) => ({
   domainSwitchRequest: null,
   confirmDomainSwitch:
     loadStored('studio.confirmDomainSwitch', ['yes', 'no'] as const, 'yes') === 'yes',
+  probePolicy: null,
+  openPolicy: (probePolicy) => {
+    store('studio.lastSection', 'tests')
+    set({
+      section: 'tests',
+      probePolicy,
+      panelOverlay: null,
+      revealedRef: null,
+      revealTarget: null,
+      openAnchorRef: null,
+    })
+  },
+  setProbePolicy: (probePolicy) => set({ probePolicy }),
   setTheme: (theme) => {
     store('studio.theme', theme)
     set({ theme, resolvedTheme: paintTheme(theme) })
+  },
+  setEdgeStyle: (edgeStyle) => {
+    store('studio.edgeStyle', edgeStyle)
+    set({ edgeStyle })
   },
   setDomain: (domainId) => {
     try {

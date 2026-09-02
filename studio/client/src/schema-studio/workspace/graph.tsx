@@ -48,7 +48,7 @@ import {
   selectedRelationshipContext,
 } from '../graph/structure'
 import { useLayoutCommitter } from '../layout-commit'
-import { CLASS_H, CLASS_W, VIEW_HUE, moduleTint } from '../palette'
+import { CLASS_H, CLASS_W, DOCK_CLEARANCE, VIEW_HUE, moduleTint } from '../palette'
 import { workspaceExternalNodeId, workspaceExternalOrigin } from './external-frames'
 import { workspaceGeometry, workspaceLayoutUpdate } from './geometry'
 import {
@@ -159,6 +159,9 @@ export function WorkspaceSchemaGraph({
   // tab select into.
   const selectionDomain = selectionDomainId ?? activeDomainId
   const focusId = useUI((state) => state.focusId)
+  // the floating dock sits over the bottom of the view: keep the controls above it
+  const panelSide = useUI((state) => state.panelSide)
+  const dockLift = panelSide === 'bottom' ? { bottom: DOCK_CLEARANCE } : undefined
   const revealTarget = useUI((state) => state.revealTarget)
   const revealOnCanvas = useUI((state) => state.revealOnCanvas)
   const setOpenAnchor = useUI((state) => state.setOpenAnchor)
@@ -611,7 +614,12 @@ export function WorkspaceSchemaGraph({
         >
           <Background gap={20} size={1} color="var(--color-input)" />
           <EdgeMarkerDefs />
-          <Controls showFitView={false} showInteractive={false} position="bottom-left">
+          <Controls
+            showFitView={false}
+            showInteractive={false}
+            position="bottom-left"
+            style={dockLift}
+          >
             <ControlButton
               onClick={() => void reorganize()}
               title="Auto-arrange and center — discards manual positions"
@@ -622,7 +630,7 @@ export function WorkspaceSchemaGraph({
           <MiniMap
             pannable
             zoomable
-            style={{ width: 168, height: 112 }}
+            style={{ width: 168, height: 112, ...dockLift }}
             nodeColor={(node) =>
               node.type === 'classNode'
                 ? moduleTint((node.data as ClassNodeData).hue, scheme).mark

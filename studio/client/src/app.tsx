@@ -1,6 +1,6 @@
 import {
   Boxes,
-  Database,
+  FlaskConical,
   type LucideIcon,
   MessagesSquare,
   Network,
@@ -38,17 +38,17 @@ const LazySchemaSection = lazy(() =>
 const NAV: { key: SectionKey; label: string; icon: LucideIcon }[] = [
   { key: 'schema', label: 'Schema', icon: Network },
   { key: 'core', label: 'Core', icon: Boxes },
-  { key: 'data', label: 'Data', icon: Database },
+  { key: 'tests', label: 'Tests', icon: FlaskConical },
   { key: 'process', label: 'Process', icon: Workflow },
 ]
 
 function SectionRouter({ section, domainId }: { section: SectionKey; domainId: string }) {
   switch (section) {
-    // Schema and Core are two readings of one domain — the same lazily-loaded studio,
-    // asked for a different canvas.
+    // Schema, Core and Tests are three readings of one domain — the same lazily-loaded
+    // studio, asked for a different canvas.
     case 'schema':
     case 'core':
-    case 'data':
+    case 'tests':
       return (
         <Suspense
           fallback={

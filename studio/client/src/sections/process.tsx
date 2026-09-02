@@ -3,7 +3,7 @@ import type { IrFunction, IrMethod, StudioSchemaBundle, ViewInfo } from '@shared
 import { ArrowUpRight, Box, Braces, LayoutTemplate, Sprout, Workflow, Zap } from 'lucide-react'
 import { type ReactNode, useMemo } from 'react'
 
-import { MethodAuthBadge } from '@/components/method-auth'
+import { MethodAuthBadge, PolicyChips } from '@/components/method-auth'
 import {
   Chip,
   EmptyState,
@@ -212,6 +212,7 @@ export function ProcessSection({ domainId }: { domainId: string }) {
                           <FnRow
                             key={fn.name}
                             fn={fn}
+                            origin={ir.domain}
                             onClick={
                               fn.ownerKind === 'class' ? () => gotoClass(fn.owner) : undefined
                             }
@@ -248,7 +249,7 @@ function ProcessLayout({ children }: { children: ReactNode }) {
   )
 }
 
-function FnRow({ fn, onClick }: { fn: Fn; onClick?: () => void }) {
+function FnRow({ fn, origin, onClick }: { fn: Fn; origin: string; onClick?: () => void }) {
   const glyph =
     fn.link?.kind === 'workflow'
       ? { icon: Workflow, tone: 'fuchsia' }
@@ -273,6 +274,8 @@ function FnRow({ fn, onClick }: { fn: Fn; onClick?: () => void }) {
         <span className="flex items-center gap-1.5">
           <span className="font-semibold">{fn.name}</span>
           <MethodAuthBadge method={fn.method} interactive={!onClick} />
+          {/* the policies this callable checks — the shield's hover card proves them on demo data */}
+          <PolicyChips method={fn.method} origin={origin} />
           {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}
           {'static' in fn.method && fn.method.static && <Chip tone="default">static</Chip>}
           {'inheritance' in fn.method && fn.method.inheritance === 'abstract' && (
