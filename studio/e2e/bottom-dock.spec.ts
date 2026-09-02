@@ -9,6 +9,7 @@
  * this fixture could never reach the tabs or the control that docks it elsewhere.
  */
 import type { Page } from '@playwright/test'
+import type { AgentRun } from '@shared/types'
 
 import { expect, test } from '@playwright/test'
 
@@ -16,6 +17,8 @@ import { expect, test } from '@playwright/test'
 const BAR_CEILING = 120
 /** A bar carrying one line of controls and nothing else. */
 const ONE_LINE = 60
+/** The one chat the stubbed server has. */
+const CHAT_ID = 'chat-live'
 
 const dock = (page: Page) => page.getByTestId('agent-dock')
 const composer = (page: Page) => page.locator('[data-agent-composer]')
@@ -45,13 +48,17 @@ async function goBottom(page: Page): Promise<void> {
 /**
  * Answer the conversation endpoints as a server with a working harness does.
  *
- * This fixture has no harness at all, which leaves two dock states out of reach:
- * a composer you can type in, and a turn in flight. Both are stubbed at the
- * boundary the client actually reads — the snapshot GET, whose `available` and
- * `run` are what every other piece of the panel derives its state from.
+ * This fixture has no harness at all, which leaves three dock states out of
+ * reach: a composer you can type in, a turn in flight, and a turn to read back.
+ * All are stubbed at the boundary the client actually reads — the snapshot GET,
+ * whose `available` and `run` are what every other piece of the panel derives
+ * its state from, and the history GET, which is where the transcript comes from.
  */
-async function stubAgent(page: Page, { running = false } = {}): Promise<void> {
-  const chatId = 'chat-live'
+async function stubAgent(
+  page: Page,
+  { running = false, history = [] as AgentRun[] } = {},
+): Promise<void> {
+  const chatId = CHAT_ID
   const startedAt = new Date(Date.now() - 92_000).toISOString()
   const run = running
     ? {
@@ -91,7 +98,7 @@ async function stubAgent(page: Page, { running = false } = {}): Promise<void> {
           activeId: chatId,
         },
       })
-    if (tail === '/history') return route.fulfill({ json: [] })
+    if (tail === '/history') return route.fulfill({ json: history })
     return route.continue()
   })
 }
@@ -342,4 +349,84 @@ test('the dock stops at the window, and keeps its tab strip inside', async ({ pa
   expect(bounds.tabsTop).toBeGreaterThanOrEqual(bounds.boxTop)
   await expect(tabs).toBeInViewport()
   await expect(page.getByRole('button', { name: 'Close the chat' })).toBeInViewport()
+})
+
+/**
+ * A finished turn whose answer is far taller than the dock: sixty paragraphs,
+ * each long enough to wrap, is several screens of prose in a box under 500px.
+ */
+function longTurn(paragraphs: number): AgentRun {
+  const at = new Date(Date.now() - 600_000).toISOString()
+  const text = Array.from(
+    { length: paragraphs },
+    (_, i) =>
+      `Paragraph ${i + 1} of ${paragraphs}: a sentence long enough to wrap onto a second line inside the dock, so that the answer as a whole runs well past the box it is read in.`,
+  ).join('\n\n')
+  return {
+    id: 'run-long',
+    domainId: 'fixture',
+    chatId: CHAT_ID,
+    harness: 'claude',
+    status: 'succeeded',
+    createdAt: at,
+    finishedAt: at,
+    summary: 'Explain the model',
+    instruction: 'Explain the model',
+    targetCommentIds: [],
+    events: [{ id: 'message-1', ts: at, kind: 'message', text }],
+  }
+}
+
+/** Opening is a height transition, and the box going solid behind it another —
+ *  measure only once nothing on the dock still moves. */
+async function settled(page: Page): Promise<void> {
+  await expect
+    .poll(() => dock(page).evaluate((el) => el.getAnimations({ subtree: true }).length))
+    .toBe(0)
+}
+
+/**
+ * A long answer has to scroll INSIDE the dock.
+ *
+ * The conversation is a box of fixed height with its overflow clipped — clipped so
+ * the tab strip's scrollIntoView cannot drag it — and the transcript in it only
+ * scrolls if the box hands it a height. Left to grow to its content it did: the
+ * clip took everything past the box, and the end of every long answer was simply
+ * gone — no scrollbar, and no way to read it.
+ */
+test('a long answer scrolls inside the dock instead of running off its bottom', async ({
+  page,
+}) => {
+  const paragraphs = 60
+  await stubAgent(page, { history: [longTurn(paragraphs)] })
+  await goBottom(page)
+  await openDock(page)
+  await settled(page)
+
+  const transcript = dock(page).locator('[data-radix-scroll-area-viewport]')
+  const end = dock(page).getByText(`Paragraph ${paragraphs} of ${paragraphs}`)
+  await expect(end).toBeAttached()
+
+  // the transcript is what scrolls: taller inside than out
+  await expect
+    .poll(() => transcript.evaluate((el) => el.scrollHeight - el.clientHeight))
+    .toBeGreaterThan(0)
+
+  // and scrolled to the end, the end of the answer is on screen — inside the
+  // transcript, which itself stops above the field
+  await transcript.evaluate((el) => el.scrollTo({ top: el.scrollHeight }))
+  const edges = await end.evaluate((paragraph) => {
+    const box = paragraph.closest('[data-testid="agent-dock"]')
+    const viewport = paragraph.closest('[data-radix-scroll-area-viewport]')
+    const field = box?.querySelector('[data-agent-composer]')
+    if (!box || !viewport || !field) throw new Error('dock, transcript or field not found')
+    return {
+      end: paragraph.getBoundingClientRect().bottom,
+      transcript: viewport.getBoundingClientRect().bottom,
+      field: field.getBoundingClientRect().top,
+    }
+  })
+  expect(edges.end).toBeLessThanOrEqual(edges.transcript)
+  expect(edges.transcript).toBeLessThanOrEqual(edges.field)
+  await expect(end).toBeInViewport()
 })
