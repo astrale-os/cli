@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.69](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.68...cli/v1.0.0-beta.69) (2026-09-02)
+
+
+### Features
+
+* **instance:** import managed root identity ([#354](https://github.com/astrale-os/cli/issues/354)) ([11248b1](https://github.com/astrale-os/cli/commit/11248b198326a4b9ac0d4370267e2eac74e5eec3))
+
+
+### Bug Fixes
+
+* **lib:** shorten studio module labels ([#355](https://github.com/astrale-os/cli/issues/355)) ([33ff547](https://github.com/astrale-os/cli/commit/33ff547e8257a0497929dbd7e12c36472cd8e256))
+* **studio:** let a long agent answer scroll inside the floating dock ([#357](https://github.com/astrale-os/cli/issues/357)) ([c0059e7](https://github.com/astrale-os/cli/commit/c0059e71640979697d6b37cafbd7703aa0acf792))
+
 ## [1.0.0-beta.68](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.67...cli/v1.0.0-beta.68) (2026-09-02)
 
 
