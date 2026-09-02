@@ -9,13 +9,12 @@ import {
   FileText,
   FileType,
   Hash,
-  Loader2,
-  Paperclip,
   X,
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 
+import { FilePickButton } from '@/components/composer'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -29,8 +28,12 @@ export function fmtSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** Map a document to its icon + short kind label (PDF, XLS, MD, …). */
-export function kindOf(doc: DocMeta): { Icon: typeof FileText; label: string } {
+/** Map a document — or a file not yet uploaded as one — to its icon + short
+ *  kind label (PDF, XLS, MD, …). */
+export function kindOf(doc: { name: string; type: string }): {
+  Icon: typeof FileText
+  label: string
+} {
   const name = doc.name.toLowerCase()
   const type = doc.type
   if (/\.pdf$/.test(name) || type === 'application/pdf') return { Icon: FileText, label: 'PDF' }
@@ -66,39 +69,13 @@ export function AttachButton({
    *  letters as the global hotkeys, so typing after attaching would toggle Ask mode. */
   onPicked?: () => void
 }) {
-  const fileRef = useRef<HTMLInputElement>(null)
   const { upload } = useDocumentMutations(domainId)
-  const label = upload.isPending ? 'Uploading…' : 'Attach a document'
-
   return (
-    <>
-      <button
-        type="button"
-        title={label}
-        aria-label={label}
-        disabled={upload.isPending}
-        onClick={() => fileRef.current?.click()}
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
-      >
-        {upload.isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Paperclip className="h-4 w-4" />
-        )}
-      </button>
-      <input
-        ref={fileRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={(event) => {
-          const files = event.target.files ? [...event.target.files] : []
-          event.target.value = ''
-          if (files.length) upload.mutate(files)
-          onPicked?.()
-        }}
-      />
-    </>
+    <FilePickButton
+      busy={upload.isPending}
+      onFiles={(files) => upload.mutate(files)}
+      onPicked={onPicked}
+    />
   )
 }
 

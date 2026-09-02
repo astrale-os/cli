@@ -41,8 +41,10 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > checkout. The target domain's deps must be installed (`pnpm install` at the
 > workspace root) for semantic schema rendering; source-only anatomy remains
 > available when they are missing.
-> Current projects are detected through `astrale.config.ts` and an Application whose
-> `schema` binding resolves to authored source.
+> Current projects are detected through `astrale.config.ts` and a composition
+> module whose `schema` binding resolves to authored source — either the older
+> `application.ts` calling `defineApplication`, or the `domain.ts` calling
+> `defineDomain` that `create-astrale-domain` scaffolds today.
 
 ### Chats
 
@@ -155,6 +157,31 @@ values, search, comment mode, and the agent loop:
 
 Views are not a section of their own: they belong to the landscape, listed from
 the canvas toolbar and opened live through `astrale view`.
+
+### New domains
+
+The `+` on the Domains rail opens one composer in the middle of the screen: a
+name, written like a title, and under it the agent's own field, clip and send
+button. Sending runs the whole order in one gesture —
+`create-astrale-domain <name> --yes` then `pnpm install` in the workspace root,
+the staged files into the new domain's `.domain-studio/context/docs`, and the
+message to its agent as a first turn — and the studio lands on the new domain
+with that turn already running, the chat open on it.
+
+It takes both halves. A name alone will not send: a scaffold nobody asked
+anything of is a folder, and there would be no turn to open the domain on.
+
+Nothing exists before send, which is what the composer is missing compared to
+the panel's: no comment chips (a domain that does not exist has no threads) and
+no model picker (a chat has to exist to have one — a new domain opens on the
+preferred model, and the picker is one click away once it does). A refusal — a
+name already taken, a slug that is not one — leaves the message and the files
+exactly where they were typed. If the domain is created but the briefing is
+not, the studio still goes there and carries the message into its composer.
+
+The name is the slug AND, until someone changes it, the origin: `crm` scaffolds
+`crm.example.dev` and leaves a comment on the origin line saying it is a
+placeholder. A dotted name (`crm.acme.dev`) is taken as the origin itself.
 
 Talking to the agent and reading comment threads are not sections either: they
 live in the **work panel**, dockable left (default), right or bottom and
