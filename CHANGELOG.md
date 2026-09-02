@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.71](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.70...cli/v1.0.0-beta.71) (2026-09-02)
+
+
+### Bug Fixes
+
+* **commands:** retry transient inventory backend failures ([#364](https://github.com/astrale-os/cli/issues/364)) ([12cd96d](https://github.com/astrale-os/cli/commit/12cd96d8f94a6961ccf0515770dcc3b19e97122c))
+
 ## [1.0.0-beta.70](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.69...cli/v1.0.0-beta.70) (2026-09-02)
 
 
