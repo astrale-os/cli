@@ -42,7 +42,48 @@ export default defineApplication({ schema, runtime: {} as never })
   return root
 }
 
+/**
+ * What `create-astrale-domain` emits today: `domain.ts` calling `defineDomain`
+ * from the SDK root, reaching its Schema through the package's own `#schema`
+ * import. Studio read only the older `application.ts` / `defineApplication`
+ * pair, so every freshly scaffolded domain was invisible to it — and creating
+ * one from the studio failed on "Scaffolding did not produce a domain…".
+ */
+function scaffoldedFixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'studio-domain-layout-'))
+  roots.push(root)
+  mkdirSync(join(root, 'schema'), { recursive: true })
+  writeFileSync(
+    join(root, 'package.json'),
+    JSON.stringify({ name: 'scaffolded', imports: { '#schema': './schema/index.ts' } }),
+  )
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    "import { domain } from './domain'\nexport default domain\n",
+  )
+  writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
+  writeFileSync(
+    join(root, 'domain.ts'),
+    `import { defineDomain } from '@astrale-os/sdk'
+import { schema } from '#schema'
+export const domain = defineDomain({ schema, methods: {}, deps: {} })
+`,
+  )
+  return root
+}
+
 describe('SDK V1 project discovery', () => {
+  test('discovers a scaffolded domain.ts / defineDomain composition', () => {
+    const root = scaffoldedFixture()
+    expect(isDomainDir(root)).toBe(true)
+    const handle = registerDomain(root)!
+    domainIds.push(handle.id)
+    expect(basename(handle.applicationFile)).toBe('domain.ts')
+    // and it follows the `#schema` subpath import to the authored module
+    expect(handle.schemaIndex).toBe(join(root, 'schema/index.ts'))
+    expect(handle.schemaDirName).toBe('schema')
+  })
+
   test('discovers the Schema selected by the conventional root Application', () => {
     const root = fixture()
     expect(isDomainDir(root)).toBe(true)
