@@ -1,4 +1,10 @@
-import type { ChatInfo, HarnessLoadout, HarnessModelCatalog, HarnessStatus } from '@shared/types'
+import type {
+  ChatInfo,
+  HarnessLoadout,
+  HarnessModelCatalog,
+  HarnessPresence,
+  HarnessStatus,
+} from '@shared/types'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { expect, test } from 'bun:test'
@@ -6,7 +12,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 
 import { qk } from '@/lib/api'
 
-import { ChatModelPicker } from './chat-model'
+import { ChatModelPicker, starPlacement } from './chat-model'
 
 const DOMAIN = 'shop'
 
@@ -109,4 +115,65 @@ test('a model the catalog does not list falls back to its own slug, never to “
   const html = render({ catalog }, { ...chat, model: 'sonnet-next' })
   expect(html).toContain('sonnet-next')
   expect(html).not.toContain('default model')
+})
+
+/* ------------------------------------------------------------------------- *
+ * Where the one star is drawn — see `starPlacement`.
+ * ------------------------------------------------------------------------- */
+
+function presence(id: string, label: string, ok: boolean): HarnessPresence {
+  return {
+    id,
+    label,
+    bin: id,
+    ok,
+    message: ok ? 'Detected' : 'not detected',
+    capabilities: harness.capabilities,
+  }
+}
+
+const CLAUDE = presence('claude', 'Claude Code', true)
+const CODEX = presence('codex', 'Codex', true)
+
+/** The status the server sends for the agent it decided to open on. */
+function status(running: HarnessPresence, extra: Partial<HarnessStatus> = {}): HarnessStatus {
+  return {
+    ...running,
+    harnesses: [CLAUDE, CODEX],
+    locked: false,
+    source: 'default',
+    ...extra,
+  }
+}
+
+test('with nothing starred, the star still says where a new chat opens', () => {
+  const placement = starPlacement(status(CLAUDE), null, 'opus[1m]')
+  expect(placement.shown).toEqual({ harness: 'claude', model: 'opus[1m]' })
+  expect(placement.remembered).toBeNull()
+})
+
+test('a starred model is the star, whichever agent it belongs to', () => {
+  const starred = { harness: 'codex', model: 'gpt-5.6-sol' }
+  const placement = starPlacement(status(CODEX, { source: 'domain' }), starred, 'gpt-5.6-sol')
+  expect(placement.shown).toEqual(starred)
+  expect(placement.remembered).toBeNull()
+})
+
+test('a star on a missing agent moves to the one that runs — and is kept, not dropped', () => {
+  const starred = { harness: 'claude', model: 'sonnet' }
+  const placement = starPlacement(
+    status(CODEX, { source: 'fallback', preferred: 'claude' }),
+    starred,
+    'gpt-5.6-sol',
+  )
+  // no row of an agent this machine lacks may carry the star: it would offer to
+  // open a chat Studio cannot start
+  expect(placement.shown).toEqual({ harness: 'codex', model: 'gpt-5.6-sol' })
+  // and the setting is untouched, so the picker can say the star is waiting
+  expect(placement.remembered).toEqual(starred)
+})
+
+test('before the catalog lands there is nothing to point at, and nothing is pointed at', () => {
+  expect(starPlacement(status(CLAUDE), null, undefined).shown).toBeNull()
+  expect(starPlacement(undefined, null, 'opus[1m]').shown).toBeNull()
 })

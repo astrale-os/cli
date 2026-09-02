@@ -37,17 +37,28 @@ export function listHarnesses(selected?: string): { id: string; label: string }[
     .map(([id, make]) => ({ id, label: make().label }))
 }
 
+/** The boot sweep, kept so everything that needs an answer waits on the same one. */
+let sweep: Promise<void> | undefined
+
 /**
  * Ask every real harness whether it is installed, and remember the answers.
  *
- * Run once at boot so `lastKnownPresence` has something to say before the first
+ * Started at boot so `lastKnownPresence` has something to say before the first
  * domain is read: a machine with a single agent must open its first chat on that
  * one, and that choice is made synchronously.
+ *
+ * Memoized because starting it is not enough — `/agent/*` AWAITS it. A first chat
+ * is created and persisted on the harness the selection names, so answering that
+ * route before the probes land would write a Claude tab onto a machine that only
+ * has Codex, and no later probe undoes a tab. One sweep per process; the adapters
+ * cache their own handshake, and `harnessStatus` re-probes on every read, so an
+ * agent installed after boot is still picked up.
  */
-export async function probeInstalledHarnesses(): Promise<void> {
-  await Promise.all(
+export function probeInstalledHarnesses(): Promise<void> {
+  sweep ??= Promise.all(
     listHarnesses().map((entry) =>
       inspectHarnessHealth(getHarnessById(entry.id)).catch(() => undefined),
     ),
-  )
+  ).then(() => undefined)
+  return sweep
 }

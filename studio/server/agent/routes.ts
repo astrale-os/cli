@@ -15,7 +15,7 @@ import {
   setHarnessGateway,
 } from './harness/gateway/config'
 import { setHostToken } from './harness/gateway/token'
-import { getHarnessById, listHarnesses } from './harness/registry'
+import { getHarnessById, listHarnesses, probeInstalledHarnesses } from './harness/registry'
 import { getHarness, getHarnessSelection, resolveHarnessConfiguration } from './harness/selection'
 import { emitStudioEvent } from './notify'
 import { buildSystemPrompt } from './prompts/system'
@@ -74,19 +74,28 @@ async function harnessPresence(id: string): Promise<HarnessPresence> {
  * Both are probed on every read: the composer needs each one's reasoning ladder
  * before any of them is chosen, and Settings lists them as pure diagnostics. The
  * adapters cache their own ACP handshake, so this stays one cheap call.
+ *
+ * Probing comes FIRST, and the selection second. The selection is a synchronous
+ * read of the last probe, so asking it before refreshing that would answer from
+ * whatever this process last saw — and the agent that just got uninstalled would
+ * keep being named until some later request happened to correct it.
  */
 async function harnessStatus(): Promise<HarnessStatus> {
+  const detected = await Promise.all(listHarnesses().map((entry) => harnessPresence(entry.id)))
   const selection = getHarnessSelection()
-  const harnesses = await Promise.all(
-    listHarnesses(selection.id).map((entry) => harnessPresence(entry.id)),
-  )
+  // `listHarnesses` hides the mock agent unless it is the one running; when it is,
+  // it belongs in the list too — it is what the reader is looking at.
   const selected =
-    harnesses.find((entry) => entry.id === selection.id) ?? (await harnessPresence(selection.id))
+    detected.find((entry) => entry.id === selection.id) ?? (await harnessPresence(selection.id))
+  const harnesses = detected.includes(selected) ? detected : [...detected, selected]
   return {
     ...selected,
     harnesses,
     locked: selection.locked,
     source: selection.source,
+    // the star, when it is on an agent this machine does not have: the GUI needs it
+    // to say WHICH one it is waiting for, and to keep the star out of the picker
+    ...(selection.preferred === undefined ? {} : { preferred: selection.preferred }),
   }
 }
 
@@ -94,6 +103,11 @@ async function harnessStatus(): Promise<HarnessStatus> {
 export async function handleAgentRoute(input: DomainRouteContext): Promise<Response | null> {
   const { req, url, rest, body, handle, notify } = input
   if (rest !== '/agent' && !rest.startsWith('/agent/')) return null
+  // Nothing here may answer before the boot sweep has said which agents this
+  // machine has: the routes below create the domain's first chat, on the harness
+  // the selection names, and a tab is written once. Memoized — this waits on the
+  // sweep the server already started, and is free afterwards.
+  await probeInstalledHarnesses()
   const id = handle.id
   const root = handle.root
 

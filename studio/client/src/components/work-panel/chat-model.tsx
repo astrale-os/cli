@@ -16,7 +16,12 @@
  * pins nothing already runs the agent's Studio default, so an extra "agent
  * default" row would only be a second name for a model already in the list.
  */
-import type { ChatInfo, HarnessModelCatalog, HarnessStatus } from '@shared/types'
+import type {
+  AgentModelPreference,
+  ChatInfo,
+  HarnessModelCatalog,
+  HarnessStatus,
+} from '@shared/types'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Check, Loader2, Star } from 'lucide-react'
@@ -70,13 +75,8 @@ export function ChatModelPicker({
     loadout?.models?.find((model) => model.id === running)?.label ??
     running
 
-  // The star is filled from the moment there is an answer, starred or not: with
-  // nothing pinned a new chat still opens SOMEWHERE — the domain's agent, on that
-  // agent's default model — and the list should say where.
   const domainDefault = catalog?.find((entry) => entry.harness === harness?.id)?.defaultModel
-  const preferred =
-    settings?.agentModel ??
-    (harness && domainDefault ? { harness: harness.id, model: domainDefault } : null)
+  const { shown, remembered } = starPlacement(harness, settings?.agentModel, domainDefault)
 
   // A process locked to one agent by --harness offers that agent's models, and
   // those of the tab you are in: every other row would open a chat this Studio
@@ -117,7 +117,8 @@ export function ChatModelPicker({
             key={entry.harness}
             entry={entry}
             current={chat}
-            preferred={preferred?.harness === entry.harness ? preferred.model : null}
+            preferred={shown?.harness === entry.harness ? shown.model : null}
+            remembered={remembered?.harness === entry.harness ? remembered.model : null}
             onSelect={(model) => choose(entry, model)}
             onPrefer={(model) => prefer.mutate({ harness: entry.harness, model })}
           />
@@ -125,6 +126,39 @@ export function ChatModelPicker({
       </PopoverContent>
     </Popover>
   )
+}
+
+/**
+ * Where the one star is DRAWN, and where it is being kept.
+ *
+ * The star is filled from the moment there is an answer, starred or not: with
+ * nothing pinned a new chat still opens SOMEWHERE — the studio's agent, on that
+ * agent's default model — and the list should say where.
+ *
+ * Which is also why it cannot sit on an agent this machine does not have: no new
+ * chat opens there, so a star on it would be an offer to open Claude on a laptop
+ * that only has Codex. `source === 'fallback'` is the server saying exactly that
+ * (see server/agent/harness/selection.ts), and the star follows the agent Studio
+ * actually runs.
+ *
+ * Nothing is overwritten, though — the setting still names the missing agent, and
+ * the selection returns to it the day it is installed. `remembered` is that star,
+ * so the picker can say it in the missing agent's own group rather than let it
+ * look thrown away.
+ */
+export function starPlacement(
+  harness: HarnessStatus | undefined,
+  starred: AgentModelPreference | null | undefined,
+  /** what a new chat on the RUNNING agent opens on, from the catalog */
+  runningDefault: string | undefined,
+): { shown: AgentModelPreference | null; remembered: AgentModelPreference | null } {
+  const stranded = harness?.source === 'fallback'
+  const honoured = stranded ? null : starred
+  const running = harness && runningDefault ? { harness: harness.id, model: runningDefault } : null
+  return {
+    shown: honoured ?? running,
+    remembered: (stranded && starred) || null,
+  }
 }
 
 /**
@@ -153,6 +187,9 @@ function usePreferredModel(domainId: string) {
       queryClient.invalidateQueries({ queryKey: qk.models(domainId) })
       // the composer's label reads the loadout, and an unpinned chat just moved
       queryClient.invalidateQueries({ queryKey: qk.loadout(domainId) })
+      // and the star names an agent, so the selection — and why it is that one —
+      // just moved with it
+      queryClient.invalidateQueries({ queryKey: qk.harness(domainId) })
     },
     onError: (error) => toast.error(`Could not set the preferred model — ${String(error)}`),
   })
@@ -162,6 +199,7 @@ function HarnessGroup({
   entry,
   current,
   preferred,
+  remembered,
   onSelect,
   onPrefer,
 }: {
@@ -169,6 +207,8 @@ function HarnessGroup({
   current: ChatInfo
   /** the starred model when the domain's one star is on THIS agent */
   preferred: string | null
+  /** the starred model this agent is holding while it is MISSING from this machine */
+  remembered?: string | null
   onSelect: (model: string) => void
   onPrefer: (model: string) => void
 }) {
@@ -188,6 +228,18 @@ function HarnessGroup({
       {!entry.available && (
         <p className="px-2 pb-1 text-[11px] leading-snug text-muted-foreground">
           {entry.detail ?? 'not available on this machine'}
+        </p>
+      )}
+      {/* The star is drawn on the agent Studio actually opens on, so without this
+          line yours would look thrown away the day you opened the workspace on a
+          machine without this agent. It is kept, and it comes back on its own. */}
+      {remembered && (
+        <p className="flex items-start gap-1.5 px-2 pb-1 text-[11px] leading-snug text-muted-foreground">
+          <Star className="mt-[3px] h-3 w-3 shrink-0 fill-current text-warning" />
+          <span>
+            <span className="text-foreground">{remembered}</span> stays starred — new chats come
+            back to it once {entry.label} is installed here.
+          </span>
         </p>
       )}
       {entry.available && (
