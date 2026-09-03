@@ -154,6 +154,16 @@ test('retired internal domain routes return the stable JSON 404', async () => {
   }
 })
 
+test('Studio does not expose an in-process update mutation', async () => {
+  const handle = fixture()
+  const response = await route(`/api/domain/${encodeURIComponent(handle.id)}/updates/apply`, {
+    method: 'POST',
+  })
+
+  expect(response?.status).toBe(404)
+  expect(await response?.json()).toEqual({ error: 'not found' })
+})
+
 test('workspace dispatch preserves catalog responses and instance request validation', async () => {
   const handle = fixture()
 

@@ -92,7 +92,6 @@ export const api = {
   closeViewSession: (id: string, sessionId: string) =>
     post<{ ok: true }>(`${d(id)}/views/sessions/close`, { sessionId }),
   updates: (id: string) => get<StaleReport>(`${d(id)}/updates`),
-  applyUpdate: (id: string) => post<{ ok: boolean; error: string }>(`${d(id)}/updates/apply`, {}),
 
   comments: (id: string) => get<CommentStore>(`${d(id)}/comments`),
   createComment: (
