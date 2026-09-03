@@ -105,17 +105,21 @@ describe('connection session', () => {
     }
 
     let receivedTimeout = 0
+    let receivedNestedTtl = 0
     await withResolvedClientSession(
       target,
       { timeout: '2500' },
       config,
       async () => undefined,
-      (_target, timeoutMs) => {
+      (_target, timeoutMs, _options, _config, credential) => {
         receivedTimeout = timeoutMs
+        receivedNestedTtl = credential?.nestedTtlSeconds ?? 0
         return { context, close() {} }
       },
+      { principal: 'caller', nestedTtlSeconds: 240 },
     )
     expect(receivedTimeout).toBe(2_500)
+    expect(receivedNestedTtl).toBe(240)
   })
 
   /** @evidence TEST-CLI-CONNECTION-REJECTS-ANONYMOUS-CREDENTIAL-CONFLICT */

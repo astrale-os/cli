@@ -3,6 +3,7 @@ import type { AuthApi } from '@astrale-os/sdk/auth'
 import { describe, expect, mock, test } from 'bun:test'
 import { once } from 'node:events'
 
+import type { withClientSession } from '../../connection'
 import type { ViewServeConfig } from '../view/session'
 
 import { findFreePort } from '../port'
@@ -26,6 +27,76 @@ describe('view session server credentials', () => {
       audience: 'https://kernel.test',
       ttlSeconds: 240,
     })
+  })
+
+  /** @evidence TEST-CLI-SHELL-VIEW-MINTS-CALLER-CREDENTIAL */
+  test('serves a caller-principal credential to a handshake-shell View', async () => {
+    const nonce = 'shell-view'
+    const port = await findFreePort(48_000, 200)
+    if (port === null) throw new Error('test port window exhausted')
+    const mint = mock(async () => 'minted-credential')
+    const connect: typeof withClientSession = async (_options, action, intent) => {
+      expect(intent).toEqual({ principal: 'caller', nestedTtlSeconds: 240 })
+      return action({
+        auth: { mint },
+        target: { kernelIssuer: issuer('https://kernel.test') },
+      } as never)
+    }
+    const config = {
+      session: {
+        id: 'v-shell',
+        pid: 0,
+        port,
+        nonce,
+        pageUrl: `http://127.0.0.1:${port}/`,
+        view: {
+          target: target('/:example.test'),
+          route: {
+            key: 'example.test:view.private',
+            declaration: { target: { kind: 'domain' } },
+            href: 'https://example.test/ui/private',
+            handshake: 'shell',
+            issuer: issuer('https://example.test'),
+            etag: digest('c'),
+            revision: revision('d'),
+          },
+        },
+        createdAt: '2026-08-20T00:00:00.000Z',
+      },
+      kernel: { instance: 'managed', as: 'dispatcher' },
+      proxy: {
+        kernelUrl: 'https://kernel.test',
+        issuer: 'https://kernel.test',
+        direct: true,
+      },
+      transport: {
+        href: 'https://example.test/ui/private',
+        issuer: issuer('https://example.test'),
+        etag: digest('c'),
+        revision: revision('d'),
+      },
+      externalOrigins: [],
+      idleMs: 60_000,
+    } satisfies ViewServeConfig
+    const server = startViewServer(config, { connect })
+    await once(server, 'listening')
+
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, {
+        method: 'POST',
+      })
+
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ token: 'minted-credential', kind: 'minted' })
+      expect(mint).toHaveBeenCalledWith({
+        audience: 'https://kernel.test',
+        ttlSeconds: 240,
+      })
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      })
+    }
   })
 
   /** @evidence TEST-CLI-PLAIN-VIEW-RECEIVES-NO-CREDENTIAL */

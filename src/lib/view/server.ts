@@ -34,7 +34,18 @@ export type PageStatus = { state: string; error?: string; at: string }
 
 type TokenGrant = { token: string; expiresAt: number; kind: 'minted' }
 
-export function startViewServer(config: ViewServeConfig): Server {
+export interface ViewServerDependencies {
+  readonly connect: typeof withClientSession
+}
+
+const DEFAULT_DEPENDENCIES: ViewServerDependencies = Object.freeze({
+  connect: withClientSession,
+})
+
+export function startViewServer(
+  config: ViewServeConfig,
+  dependencies: ViewServerDependencies = DEFAULT_DEPENDENCIES,
+): Server {
   const { session, proxy } = config
   const base = `/s/${session.nonce}`
   const hostDir = viewerDistDir()
@@ -46,14 +57,21 @@ export function startViewServer(config: ViewServeConfig): Server {
   /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
-    grant = await withClientSession(config.kernel, async ({ auth, target }) => {
-      const token = await mintViewCredential(auth, target.kernelIssuer)
-      return {
-        token,
-        expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
-        kind: 'minted' as const,
-      }
-    })
+    grant = await dependencies.connect(
+      config.kernel,
+      async ({ auth, target }) => {
+        const token = await mintViewCredential(auth, target.kernelIssuer)
+        return {
+          token,
+          expiresAt: jwtExpiry(token) ?? Date.now() + FALLBACK_TOKEN_TTL_MS,
+          kind: 'minted' as const,
+        }
+      },
+      {
+        principal: 'caller',
+        nestedTtlSeconds: VIEW_TOKEN_TTL_SECONDS,
+      },
+    )
     return grant
   }
 

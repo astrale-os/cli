@@ -27,7 +27,11 @@ import { log } from '../lib/log'
 import { isMachine } from '../lib/output'
 import { SESSION_ROUTE_STORE } from '../state/session-routes'
 import { bindCredentialIdentity } from './auth'
-import { createCliCredential, validateCredentialSelection } from './credential'
+import {
+  createCliCredential,
+  type CredentialIntent,
+  validateCredentialSelection,
+} from './credential'
 import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -58,12 +62,14 @@ export type ConnectionFactory = (
   timeoutMs: number,
   options: ConnectionOptions,
   config: AstraleConfig,
+  credential?: CredentialIntent,
 ) => OwnedConnection
 
 /** Resolve one ordinary target, run a command action, then close terminally. */
 export async function withClientSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
+  credential: CredentialIntent = {},
 ): Promise<Value> {
   validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
@@ -73,7 +79,15 @@ export async function withClientSession<Value>(
   })
   options = await bindCredentialIdentity(options, target)
   warnMissingExplicitTarget(options, target)
-  return runResolvedClientSession(target, timeoutMs, options, config, action, openConnection)
+  return runResolvedClientSession(
+    target,
+    timeoutMs,
+    options,
+    config,
+    action,
+    openConnection,
+    credential,
+  )
 }
 
 /** Resolve the configured Admin Domain target under the same terminal lifecycle. */
@@ -96,10 +110,11 @@ export async function withResolvedClientSession<Value>(
   config: AstraleConfig,
   action: (context: ConnectionContext) => Promise<Value>,
   open: ConnectionFactory = openConnection,
+  credential: CredentialIntent = {},
 ): Promise<Value> {
   validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
-  return runResolvedClientSession(target, timeoutMs, options, config, action, open)
+  return runResolvedClientSession(target, timeoutMs, options, config, action, open, credential)
 }
 
 async function runResolvedClientSession<Value>(
@@ -109,8 +124,9 @@ async function runResolvedClientSession<Value>(
   config: AstraleConfig,
   action: (context: ConnectionContext) => Promise<Value>,
   open: ConnectionFactory,
+  credential: CredentialIntent = {},
 ): Promise<Value> {
-  const connection = open(target, timeoutMs, options, config)
+  const connection = open(target, timeoutMs, options, config, credential)
   try {
     return await action(connection.context)
   } catch (error) {
@@ -144,9 +160,10 @@ function openConnection(
   timeoutMs: number,
   options: ConnectionOptions,
   config: AstraleConfig,
+  credential: CredentialIntent = {},
 ): OwnedConnection {
   const fetch = target.caFile === undefined ? globalThis.fetch : fetchWithCaFile(target.caFile)
-  const auth = createCliCredential(target, options, config, fetch, timeoutMs)
+  const auth = createCliCredential(target, options, config, fetch, timeoutMs, credential)
   const session = new ClientSession(createClientSessionOptions(target, fetch, auth, timeoutMs))
   const graph = createGraph((call, request) => session.call(call, request))
   const authApi = createAuth((path, input, request) => session.call(call(path, input), request))

@@ -1,5 +1,6 @@
 import chalk from 'chalk'
 
+import type { CredentialIntent } from './credential'
 import type { ConnectionContext } from './session'
 import type { ConnectionOptions } from './target'
 
@@ -33,6 +34,7 @@ export async function runKernelCommand<T>(input: {
   readonly opts: KernelCommandOpts
   readonly label: string
   readonly recovery?: OperationRecovery
+  readonly credential?: CredentialIntent
   readonly fn: (context: ConnectionContext) => Promise<T>
   readonly format?: (
     result: T,
@@ -46,7 +48,7 @@ export async function runKernelCommand<T>(input: {
   const startTime = performance.now()
 
   try {
-    const result = await withClientSession(opts, fn)
+    const result = await withClientSession(opts, fn, input.credential)
     const elapsed = performance.now() - startTime
 
     spin?.succeed(`${label} ${chalk.dim(formatElapsed(elapsed))}`)
