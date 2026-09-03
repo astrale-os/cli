@@ -33,27 +33,53 @@ describe('Admin inventory failures', () => {
     expect(error.hint).toContain('Key-backed identities cannot mint an Admin Domain token')
   })
 
-  test('retries one transient backend failure for the idempotent inventory read', async () => {
+  test('backs off through a bounded transient backend failure window', async () => {
     let attempts = 0
-    const inventory = await readAdminInventory(async () => {
-      attempts += 1
-      if (attempts === 1) throw backendUnavailable()
-      return ['bryan']
-    })
+    const delays: number[] = []
+    const inventory = await readAdminInventory(
+      async () => {
+        attempts += 1
+        if (attempts < 4) throw backendUnavailable()
+        return ['bryan']
+      },
+      {
+        retryDelaysMs: [10, 30, 90, 170],
+        sleep: async (milliseconds) => {
+          delays.push(milliseconds)
+        },
+      },
+    )
 
     expect(inventory).toEqual(['bryan'])
-    expect(attempts).toBe(2)
+    expect(attempts).toBe(4)
+    expect(delays).toEqual([10, 30, 90])
   })
 
-  test('reports a persistent authentication backend failure honestly', async () => {
+  test('exhausts the fixed production retry window before reporting a backend failure', async () => {
     const cause = backendUnavailable()
+    let attempts = 0
+    const delays: number[] = []
 
-    await expect(readAdminInventory(async () => Promise.reject(cause))).rejects.toBe(cause)
+    await expect(
+      readAdminInventory(
+        async () => {
+          attempts += 1
+          throw cause
+        },
+        {
+          sleep: async (milliseconds) => {
+            delays.push(milliseconds)
+          },
+        },
+      ),
+    ).rejects.toBe(cause)
+    expect(attempts).toBe(5)
+    expect(delays).toEqual([100, 300, 900, 1_700])
     const error = classifyAdminInventoryError(cause)
     expect(error.code).toBe('ADMIN_BACKEND_UNAVAILABLE')
     expect(error.message).toBe('Authentication is unavailable.')
-    expect(error.hint).toContain('failed twice')
-    expect(error.hint).toContain('Retry the command')
+    expect(error.hint).toContain('bounded retries')
+    expect(error.hint).toContain('Retry later')
   })
 
   test('does not retry caller or policy errors', async () => {
@@ -61,10 +87,18 @@ describe('Admin inventory failures', () => {
     let attempts = 0
 
     await expect(
-      readAdminInventory(async () => {
-        attempts += 1
-        throw cause
-      }),
+      readAdminInventory(
+        async () => {
+          attempts += 1
+          throw cause
+        },
+        {
+          retryDelaysMs: [10, 30],
+          sleep: async () => {
+            throw new Error('non-transient errors must not sleep')
+          },
+        },
+      ),
     ).rejects.toBe(cause)
     expect(attempts).toBe(1)
   })
