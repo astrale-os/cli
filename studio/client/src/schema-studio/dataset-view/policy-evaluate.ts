@@ -49,7 +49,7 @@ export type PolicyEvaluation =
 /** Proofs are enumerated, so a pathological pattern on a big Dataset stops here. */
 export const PROOF_LIMIT = 2000
 /** Mirrors the public `POLICY_V1_BUDGETS.patternDepth` contract. */
-export const MAX_EXPANDED_POLICY_DEPTH = 8
+const MAX_EXPANDED_POLICY_DEPTH = 8
 
 class Unsupported extends Error {}
 

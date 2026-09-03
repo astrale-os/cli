@@ -4,7 +4,7 @@ import { expect, test } from 'bun:test'
 
 import { indexPolicies, type PolicyPattern } from '@/lib/policy'
 
-import { MAX_EXPANDED_POLICY_DEPTH, evaluatePolicy, groupProofs } from './policy-evaluate'
+import { evaluatePolicy, groupProofs } from './policy-evaluate'
 import { buildDataGraph } from './policy-graph'
 
 const ORIGIN = 'org.example.dev'
@@ -320,7 +320,6 @@ test('accepts total expanded Policy depth 8 and reports depth 9 as unsupported',
   const depthIndex = indexPolicies({ domain: ORIGIN, policies } as never)
   const at = (depth: number) => depthIndex.byKey.get(`${ORIGIN}:policy.Depth${String(depth)}`)!
 
-  expect(MAX_EXPANDED_POLICY_DEPTH).toBe(8)
   expect(
     evaluatePolicy({
       policy: at(8),
