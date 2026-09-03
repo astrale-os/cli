@@ -36,12 +36,12 @@ function currentFixture(): DomainHandle {
   writeFileSync(
     schemaIndex,
     `
-      import { bundle, core, defineSchema, nodeClass, view } from '@astrale-os/sdk/schema'
-      const Named = nodeClass({ properties: {} })
+      import { bundle, classIcon, core, defineSchema, nodeClass, view } from '@astrale-os/sdk/schema'
+      const Named = nodeClass({ icon: classIcon.neutral, properties: {} })
       export const DirectorySchema = defineSchema('directory.runtime.test', {
         classes: { Named },
       })
-      const Document = nodeClass({ extends: [Named], properties: {} })
+      const Document = nodeClass({ extends: [Named], icon: classIcon.neutral, properties: {} })
       const welcome = core.node(Document, {})
       export const schema = defineSchema('documents.runtime.test', {
         dependencies: { directory: DirectorySchema },

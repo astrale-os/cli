@@ -1,5 +1,5 @@
 import { Path } from '@astrale-os/sdk/graph/path'
-import { bundle, defineSchema, func, method, nodeClass } from '@astrale-os/sdk/schema'
+import { bundle, classIcon, defineSchema, func, method, nodeClass } from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
 import { describeCallableFromBundle } from '../call-describe'
@@ -30,8 +30,8 @@ const journal = func({
 })
 const source = defineSchema('host.astrale.ai', {
   classes: {
-    Manager: nodeClass({ methods: { createInstance } }),
-    Instance: nodeClass({ methods: { inspectInstance } }),
+    Manager: nodeClass({ icon: classIcon.neutral, methods: { createInstance } }),
+    Instance: nodeClass({ icon: classIcon.neutral, methods: { inspectInstance } }),
   },
   functions: { journal },
 })
