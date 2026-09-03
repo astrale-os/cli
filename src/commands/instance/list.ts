@@ -192,15 +192,40 @@ const ADMIN_INVENTORY_CODES = new Set([
 ])
 
 const BACKEND_UNAVAILABLE = 5001
+const ADMIN_INVENTORY_RETRY_DELAYS_MS = Object.freeze([100, 300, 900, 1_700])
 
-/** Retry one idempotent inventory read when the Kernel reports a transient backend failure. */
-export async function readAdminInventory<Value>(read: () => Promise<Value>): Promise<Value> {
-  try {
-    return await read()
-  } catch (cause) {
-    if (!(cause instanceof ResponseError) || cause.code !== BACKEND_UNAVAILABLE) throw cause
-    return read()
+type AdminInventoryRetryDependencies = Readonly<{
+  retryDelaysMs?: readonly number[]
+  sleep?: (milliseconds: number) => Promise<void>
+}>
+
+/** Retry the idempotent inventory read through a short, bounded backend recovery window. */
+export async function readAdminInventory<Value>(
+  read: () => Promise<Value>,
+  dependencies: AdminInventoryRetryDependencies = {},
+): Promise<Value> {
+  const retryDelaysMs = dependencies.retryDelaysMs ?? ADMIN_INVENTORY_RETRY_DELAYS_MS
+  const sleep = dependencies.sleep ?? wait
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await read()
+    } catch (cause) {
+      const retryDelayMs = retryDelaysMs[attempt]
+      if (
+        !(cause instanceof ResponseError) ||
+        cause.code !== BACKEND_UNAVAILABLE ||
+        retryDelayMs === undefined
+      ) {
+        throw cause
+      }
+      await sleep(retryDelayMs)
+    }
   }
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 /** Explain why Admin inventory failed without confusing backend faults with absent deployment. */
@@ -217,7 +242,7 @@ export function classifyAdminInventoryError(cause: unknown): AstraleError {
     return new AstraleError(
       'ADMIN_BACKEND_UNAVAILABLE',
       cause.message,
-      'The Admin authentication backend failed twice. Retry the command; local bookmarks remain available with `astrale instance list --bookmarked`.',
+      'The read-only Admin inventory remained unavailable across bounded retries. Retry later; local bookmarks remain available with `astrale instance list --bookmarked`.',
       { cause },
     )
   }
