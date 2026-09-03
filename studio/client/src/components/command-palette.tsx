@@ -1,12 +1,13 @@
-import type { DomainSummary, StudioSchemaBundle } from '@shared/types'
+import type { DomainIntrospectionTiming, DomainSummary, StudioSchemaBundle } from '@shared/types'
 
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Command } from 'cmdk'
-import { AppWindow, ArrowRight, Box, Folder, Globe, Plug, Spline, Tag } from 'lucide-react'
+import { AppWindow, ArrowRight, Box, Folder, Globe, Loader2, Plug, Spline, Tag } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 
 import { api, qk } from '@/lib/api'
 import { useWorkspace } from '@/lib/hooks'
+import { introspectionPhaseLabel } from '@/lib/introspection'
 import { type SectionKey, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 import { folderModules, moduleOfClass } from '@/schema-studio/modules'
@@ -102,6 +103,40 @@ interface SearchIndex {
   }>
 }
 
+type BundleQueryState = { data?: StudioSchemaBundle; isError: boolean }
+
+export const paletteBundleQuery = (domainId: string, open: boolean) => ({
+  queryKey: qk.bundle(domainId),
+  queryFn: () => api.bundle(domainId, 'background'),
+  enabled: open,
+})
+
+export function paletteLoadState(domains: DomainSummary[], results: BundleQueryState[]) {
+  const loaded: DomainSummary[] = []
+  const pending: DomainSummary[] = []
+  const failed: DomainSummary[] = []
+  domains.forEach((domain, index) => {
+    const result = results[index]
+    if (result?.data !== undefined) loaded.push(domain)
+    else if (result?.isError) failed.push(domain)
+    else pending.push(domain)
+  })
+  return { loaded, pending, failed }
+}
+
+function loadingDetail(
+  domains: DomainSummary[],
+  timings: DomainIntrospectionTiming[] | undefined,
+): string {
+  const byDomain = new Map(timings?.map((timing) => [timing.domainId, timing]))
+  const shown = domains.slice(0, 3).map((domain) => {
+    const timing = byDomain.get(domain.id)
+    return `${domain.origin} — ${introspectionPhaseLabel(timing)}`
+  })
+  const remaining = domains.length - shown.length
+  return `${shown.join(' · ')}${remaining > 0 ? ` · +${remaining} more` : ''}`
+}
+
 function buildDomainIndex(domain: DomainSummary, bundle?: StudioSchemaBundle): SearchIndex {
   const ir = bundle?.ir
   if (!ir || !bundle) return { classes: [], edges: [], properties: [], modules: [] }
@@ -182,12 +217,17 @@ export function CommandPalette() {
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
   const canvas = useCanvasDomains()
   const { data: domains = [] } = useWorkspace()
-  const bundles = useQueries({
-    queries: domains.map((domain) => ({
-      queryKey: qk.bundle(domain.id),
-      queryFn: () => api.bundle(domain.id),
-    })),
-    combine: (results) => results.map((result) => result.data),
+  const bundleQueries = useQueries({
+    queries: domains.map((domain) => paletteBundleQuery(domain.id, open)),
+  })
+  const load = paletteLoadState(domains, bundleQueries)
+  const bundles = bundleQueries.map((result) => result.data)
+  const { data: introspection } = useQuery({
+    queryKey: qk.introspection,
+    queryFn: api.introspection,
+    enabled: open && load.pending.length > 0,
+    staleTime: 0,
+    refetchInterval: open && load.pending.length > 0 ? 500 : false,
   })
 
   // Global Cmd/Ctrl+K toggles the palette. (cmdk's Dialog handles Esc to close.)
@@ -249,9 +289,36 @@ export function CommandPalette() {
         />
       </div>
 
+      {load.pending.length > 0 && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-start gap-2 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+        >
+          <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+          <div className="min-w-0">
+            <p className="font-medium text-foreground">
+              Preparing search index · {load.loaded.length}/{domains.length} domains
+            </p>
+            <p
+              className="mt-0.5 truncate"
+              title={loadingDetail(load.pending, introspection?.domains)}
+            >
+              {loadingDetail(load.pending, introspection?.domains)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {load.pending.length === 0 && load.failed.length > 0 && (
+        <div role="status" className="border-b bg-warning/10 px-3 py-2 text-xs text-warning">
+          Search index incomplete · {load.failed.map((domain) => domain.origin).join(', ')} failed
+        </div>
+      )}
+
       <Command.List className="max-h-[60vh] overflow-y-auto overflow-x-hidden p-2">
         <Command.Empty className="py-8 text-center text-sm text-muted-foreground">
-          No results
+          {load.pending.length > 0 ? 'No matches in the domains loaded so far' : 'No results'}
         </Command.Empty>
 
         {index.classes.length > 0 && (

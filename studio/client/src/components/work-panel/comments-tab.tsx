@@ -1,6 +1,6 @@
 import type { Comment } from '@shared/types'
 
-import { MessageSquare } from 'lucide-react'
+import { Loader2, MessageSquare } from 'lucide-react'
 import { useState } from 'react'
 
 import { Chip, EmptyState } from '@/components/studio-kit'
@@ -17,7 +17,7 @@ import { useCanvasDomains } from '@/schema-studio/workspace/canvas-selection'
  * to what it points at and highlights it.
  */
 export function CommentsTab() {
-  const { data: groups, isLoading } = useWorkspaceComments()
+  const { data: groups, isLoading, pending } = useWorkspaceComments({ foreground: true })
   const [openId, setOpenId] = useState<string | null>(null)
   const revealAnchor = useUI((state) => state.revealAnchor)
   const canvas = useCanvasDomains()
@@ -34,6 +34,7 @@ export function CommentsTab() {
     .map(({ domain, store }) => ({ domain, comments: openCommentThreads(store?.comments) }))
     .filter((group) => group.comments.length > 0)
   const commentCount = commentGroups.reduce((total, group) => total + group.comments.length, 0)
+  const waitingFor = groups.filter((group) => group.loading).map((group) => group.domain.origin)
   const reveal = (domainId: string, comment: Comment) => {
     const key = `${domainId}:${comment.id}`
     const next = openId === key ? null : key
@@ -48,7 +49,19 @@ export function CommentsTab() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {commentCount === 0 ? (
+        {commentCount === 0 && pending > 0 ? (
+          <div
+            role="status"
+            className="flex h-full flex-col items-center justify-center gap-1.5 px-4 text-center text-sm text-muted-foreground"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Loading comments…</span>
+            <span className="max-w-full truncate text-[11px]" title={waitingFor.join(', ')}>
+              {waitingFor.slice(0, 3).join(', ')}
+              {waitingFor.length > 3 ? ` and ${waitingFor.length - 3} more` : ''}
+            </span>
+          </div>
+        ) : commentCount === 0 ? (
           <EmptyState
             icon={<MessageSquare />}
             title="No open threads"
@@ -117,6 +130,15 @@ export function CommentsTab() {
                 </div>
               </section>
             ))}
+            {pending > 0 && (
+              <div
+                role="status"
+                className="flex items-center gap-1.5 border-t px-3 py-2 text-[11px] text-muted-foreground"
+              >
+                <Loader2 className="h-3 w-3 animate-spin" /> Checking {pending} more domain
+                {pending === 1 ? '' : 's'}…
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 import type { VisibilityState } from '@shared/types'
 
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ReactFlowProvider } from '@xyflow/react'
 import { AlertTriangle } from 'lucide-react'
 import { useCallback, useEffect, useMemo } from 'react'
@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo } from 'react'
 import { ScrollArea } from '@/components/ui/misc'
 import { api, qk } from '@/lib/api'
 import { useWorkspace } from '@/lib/hooks'
+import { introspectionPhaseLabel } from '@/lib/introspection'
 import { useUI } from '@/lib/store'
 import { isModuleRef } from '@/lib/targets'
 import { buildViewsModel } from '@/lib/views'
@@ -45,6 +46,13 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
     inputs,
     collapsedModules,
   )
+  const { data: introspection } = useQuery({
+    queryKey: qk.introspection,
+    queryFn: api.introspection,
+    enabled: pending,
+    staleTime: 0,
+    refetchInterval: pending ? 500 : false,
+  })
   // `prepared` may briefly hold a domain the canvas no longer draws while queries settle.
   // Same array back when the two lists agree: the graph reads
   // that identity to tell a real change from the echo of its own drag.
@@ -115,7 +123,14 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   const providerKey = canvasDomains
     .map((domain) => `${domain.input.summary.id}:${domain.input.bundle.renderFingerprint}`)
     .join('|')
-
+  const onlyLoadingDomain =
+    domainIds.length === 1 ? domains?.find(({ id }) => id === domainIds[0]) : undefined
+  const loadingTiming = introspection?.domains.find(
+    ({ domainId }) => domainId === onlyLoadingDomain?.id,
+  )
+  const loadingDetail = onlyLoadingDomain
+    ? `${onlyLoadingDomain.origin} · ${pending ? introspectionPhaseLabel(loadingTiming) : 'Laying out the schema for the first time'}`
+    : undefined
   return (
     <div className="flex h-full flex-col" data-testid="workspace-schema-section">
       {(errors.length > 0 || inputs.some((input) => input.bundle.error)) && (
@@ -136,7 +151,7 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
         <div className="relative min-w-0 flex-1">
           {canvasDomains.length === 0 ? (
             composing && domainIds.length > 0 ? (
-              <CanvasLoading domainCount={domainIds.length} />
+              <CanvasLoading domainCount={domainIds.length} detail={loadingDetail} />
             ) : (
               <EmptyCanvas />
             )
@@ -181,13 +196,15 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
 }
 
 /** Loading belongs to the canvas: the domains rail and surrounding Studio stay interactive. */
-function CanvasLoading({ domainCount }: { domainCount: number }) {
+function CanvasLoading({ domainCount, detail }: { domainCount: number; detail?: string }) {
   return (
     <div
+      role="status"
       data-testid="workspace-canvas-loading"
-      className="flex h-full items-center justify-center text-muted-foreground"
+      className="flex h-full flex-col items-center justify-center gap-1.5 text-muted-foreground"
     >
-      {domainCount === 1 ? 'Introspecting schema…' : 'Composing workspace…'}
+      <span>{domainCount === 1 ? 'Introspecting schema…' : 'Composing workspace…'}</span>
+      {detail && <span className="text-xs">{detail}</span>}
     </div>
   )
 }

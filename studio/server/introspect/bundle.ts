@@ -5,6 +5,7 @@
  * statically, so anchors/handler-links survive a mid-edit compile break).
  */
 import type { StudioSchemaBundle } from '../../shared/types'
+import type { IntrospectionTimer } from './timing'
 
 import { type DomainHandle, depsInstalled } from '../domain'
 import { studioSettings } from '../studio-settings'
@@ -12,8 +13,16 @@ import { renderFingerprintOf } from './hash'
 import { buildOverlay } from './overlay'
 import { runtimeExtract } from './runtime'
 
-export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBundle> {
-  const installed = depsInstalled(handle.root)
+export async function buildBundle(
+  handle: DomainHandle,
+  timing?: IntrospectionTimer,
+): Promise<StudioSchemaBundle> {
+  const measured = <T>(phase: 'dependencies' | 'static-overlay' | 'fingerprint', run: () => T) =>
+    timing ? timing.measureSync(phase, run) : run()
+  const measuredAsync = <T>(phase: 'runtime-extract', run: () => Promise<T>) =>
+    timing ? timing.measure(phase, run) : run()
+
+  const installed = measured('dependencies', () => depsInstalled(handle.root))
   let ir = null
   let schemaRoot: unknown | undefined
   let schemaMode: StudioSchemaBundle['schemaMode'] = 'unavailable'
@@ -22,10 +31,8 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
   let extractedBy: StudioSchemaBundle['extractedBy'] = 'runtime-bun'
 
   if (installed) {
-    const r = await runtimeExtract(
-      handle.schemaIndex,
-      handle.root,
-      studioSettings().introspectTimeoutMs,
+    const r = await measuredAsync('runtime-extract', () =>
+      runtimeExtract(handle.schemaIndex, handle.root, studioSettings().introspectTimeoutMs),
     )
     if (r.ok) {
       ir = r.ir
@@ -44,14 +51,17 @@ export async function buildBundle(handle: DomainHandle): Promise<StudioSchemaBun
     }
   }
 
-  const overlay = buildOverlay({ ir, domainRoot: handle.root, schemaDir: handle.schemaDir })
+  const overlay = measured('static-overlay', () =>
+    buildOverlay({ ir, domainRoot: handle.root, schemaDir: handle.schemaDir }),
+  )
   if (ir) handle.origin = ir.domain
-  const renderFingerprint =
+  const renderFingerprint = measured('fingerprint', () =>
     schemaRoot !== undefined
       ? renderFingerprintOf(schemaRoot)
       : ir
         ? renderFingerprintOf(ir)
-        : 'sha-none'
+        : 'sha-none',
+  )
 
   return {
     domainId: handle.id,

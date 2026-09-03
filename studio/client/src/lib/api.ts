@@ -22,6 +22,7 @@ import type {
   HarnessModelCatalog,
   HarnessStatus,
   InstancesState,
+  IntrospectionStatus,
   StudioSettings,
   LayoutState,
   MergeResult,
@@ -77,7 +78,11 @@ export const api = {
   switchInstance: (name: string) =>
     post<{ ok: boolean; active: string | null; output: string }>('/api/instances/use', { name }),
 
-  bundle: (id: string) => get<StudioSchemaBundle>(`${d(id)}/bundle`),
+  bundle: (id: string, priority: 'reader' | 'background' = 'reader') =>
+    get<StudioSchemaBundle>(
+      `${d(id)}/bundle${priority === 'background' ? '?priority=background' : ''}`,
+    ),
+  introspection: () => get<IntrospectionStatus>('/api/workspace/introspection'),
   core: (id: string) => get<StudioCore>(`${d(id)}/core`),
   anatomy: (id: string) => get<DomainAnatomy>(`${d(id)}/anatomy`),
   viewRuntime: (id: string, slug: string) =>
@@ -234,6 +239,7 @@ export const qk = {
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,
   bundle: (id: string) => ['bundle', id] as const,
+  introspection: ['workspace-introspection'] as const,
   core: (id: string) => ['core', id] as const,
   datasets: (id: string) => ['datasets', id] as const,
   anatomy: (id: string) => ['anatomy', id] as const,

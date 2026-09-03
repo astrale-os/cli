@@ -25,20 +25,28 @@ const DEFER_CEILING_MS = 5_000
  * Exported for the model catalog, which lives in `chats.ts` and is the heaviest of
  * these reads — one ACP session per installed agent.
  */
-export function useSchemaSettled(): boolean {
+export function useSchemaSettled(enabled = true): boolean {
   const selectedDomainId = useUI((state) => state.selectionDomainId)
   const workspace = useQuery({ queryKey: qk.workspace, queryFn: api.workspace })
   const domainId = selectedDomainId ?? workspace.data?.[0]?.id
-  const bundle = useQuery({ ...bundleQueryOptions(domainId ?? ''), enabled: !!domainId })
-  const anatomy = useQuery({ ...anatomyQueryOptions(domainId ?? ''), enabled: !!domainId })
+  const bundle = useQuery({
+    ...bundleQueryOptions(domainId ?? ''),
+    enabled: enabled && !!domainId,
+  })
+  const anatomy = useQuery({
+    ...anatomyQueryOptions(domainId ?? ''),
+    enabled: enabled && !!domainId,
+  })
   const [expiredDomainId, setExpiredDomainId] = useState<string>()
   useEffect(() => {
-    if (!domainId) return undefined
+    if (!enabled || !domainId) return undefined
     const timer = setTimeout(() => setExpiredDomainId(domainId), DEFER_CEILING_MS)
     return () => clearTimeout(timer)
-  }, [domainId])
+  }, [domainId, enabled])
   const settled = (q: { data?: unknown; isError: boolean }) => q.data !== undefined || q.isError
-  return !domainId || expiredDomainId === domainId || (settled(bundle) && settled(anatomy))
+  return (
+    !enabled || !domainId || expiredDomainId === domainId || (settled(bundle) && settled(anatomy))
+  )
 }
 
 export function useWorkspace() {
@@ -160,24 +168,51 @@ export function useComments(id?: string) {
 export interface WorkspaceDomainComments {
   domain: DomainSummary
   store?: CommentStore
+  loading: boolean
 }
 
+export interface WorkspaceResourceOptions {
+  /** The resource is on screen now; do not wait behind the selected schema. */
+  foreground?: boolean
+}
+
+export const workspaceResourceEnabled = (foreground: boolean, schemaSettled: boolean) =>
+  foreground || schemaSettled
+
 /** Every domain's comments, retaining the owner needed for mutations and navigation. */
-export function useWorkspaceComments(): {
+export function useWorkspaceComments(options: WorkspaceResourceOptions = {}): {
   data: WorkspaceDomainComments[]
   isLoading: boolean
+  pending: number
 } {
   const workspace = useWorkspace()
   const domains = workspace.data ?? []
+  const schemaSettled = useSchemaSettled(options.foreground !== true)
+  const enabled = workspaceResourceEnabled(options.foreground === true, schemaSettled)
   const results = useQueries({
     queries: domains.map((domain) => ({
       queryKey: qk.comments(domain.id),
       queryFn: () => api.comments(domain.id),
+      enabled,
     })),
   })
+  const pending = enabled
+    ? results.filter((result) => result.data === undefined && !result.isError).length
+    : 0
   return {
-    data: domains.map((domain, index) => ({ domain, store: results[index]?.data })),
-    isLoading: workspace.isLoading || results.some((result) => result.isLoading),
+    data: domains.map((domain, index) => ({
+      domain,
+      store: results[index]?.data,
+      loading: enabled && results[index]?.data === undefined && !results[index]?.isError,
+    })),
+    // A background read never owns another surface's loader. Once any comment
+    // store is usable the tab renders it progressively rather than blanking all.
+    isLoading:
+      workspace.isLoading ||
+      (enabled &&
+        results.length > 0 &&
+        results.every((result) => result.data === undefined && !result.isError)),
+    pending,
   }
 }
 export function useSettings() {
@@ -204,24 +239,41 @@ export function useDocuments(id?: string) {
 export interface WorkspaceDomainDocuments {
   domain: DomainSummary
   documents?: DocMeta[]
+  loading: boolean
 }
 
 /** Every domain's attached context, retaining where each document is stored. */
-export function useWorkspaceDocuments(): {
+export function useWorkspaceDocuments(options: WorkspaceResourceOptions = {}): {
   data: WorkspaceDomainDocuments[]
   isLoading: boolean
+  pending: number
 } {
   const workspace = useWorkspace()
   const domains = workspace.data ?? []
+  const schemaSettled = useSchemaSettled(options.foreground !== true)
+  const enabled = workspaceResourceEnabled(options.foreground === true, schemaSettled)
   const results = useQueries({
     queries: domains.map((domain) => ({
       queryKey: qk.documents(domain.id),
       queryFn: () => api.documents(domain.id),
+      enabled,
     })),
   })
+  const pending = enabled
+    ? results.filter((result) => result.data === undefined && !result.isError).length
+    : 0
   return {
-    data: domains.map((domain, index) => ({ domain, documents: results[index]?.data })),
-    isLoading: workspace.isLoading || results.some((result) => result.isLoading),
+    data: domains.map((domain, index) => ({
+      domain,
+      documents: results[index]?.data,
+      loading: enabled && results[index]?.data === undefined && !results[index]?.isError,
+    })),
+    isLoading:
+      workspace.isLoading ||
+      (enabled &&
+        results.length > 0 &&
+        results.every((result) => result.data === undefined && !result.isError)),
+    pending,
   }
 }
 
