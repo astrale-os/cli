@@ -14,6 +14,7 @@ import {
 } from '../src/lib/view/external-open-intent'
 import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
 import { installOpenIntentHandler } from '../src/lib/view/open-intent'
+import { accessibleIframeAdapter, viewTitle } from './frame'
 import { createViewTokenBroker, type ViewToken } from './token'
 
 /**
@@ -90,14 +91,18 @@ function errorMessage(error: unknown): string {
   return String(error)
 }
 
+function showPlacement(view: ResolvedView): void {
+  el('view-label').textContent = `/:${view.route.key}`
+  el('target-label').textContent = view.target
+  document.title = viewTitle(view.route.key)
+}
+
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
   const hostCapabilities = viewHostCapabilities(cfg.externalOrigins)
   const route = cfg.view.route
-  el('view-label').textContent = `/:${route.key}`
-  el('target-label').textContent = cfg.view.target
+  showPlacement(cfg.view)
   el('identity-label').textContent = [cfg.identity, cfg.instance].filter(Boolean).join(' @ ')
-  document.title = `astrale view — ${route.key}`
 
   report('mounting')
   let tokens: ReturnType<typeof createViewTokenBroker> | null = null
@@ -122,7 +127,7 @@ async function main(): Promise<void> {
       },
       envelopeTransport: 'http',
     },
-    adapter: createIframeShellAdapter(),
+    adapter: accessibleIframeAdapter(createIframeShellAdapter()),
   })
   await shell.init()
 
@@ -158,8 +163,7 @@ async function main(): Promise<void> {
     },
     mount,
     opened: (selected) => {
-      el('view-label').textContent = `/:${selected.route.key}`
-      el('target-label').textContent = selected.target
+      showPlacement(selected)
       el('error').style.display = 'none'
     },
     failed: showIntentError,

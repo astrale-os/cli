@@ -27,6 +27,18 @@ afterEach(async () => {
 })
 
 describe('viewer asset resolution', () => {
+  test('provides the host language and sufficient contrast for secondary labels', async () => {
+    const source = await readFile(
+      join(import.meta.dirname, '..', '..', '..', 'viewer', 'index.html'),
+      'utf8',
+    )
+
+    expect(source).toContain('<html lang="en">')
+    expect(
+      contrast(sourceColor(source, 'body', 'background'), sourceColor(source, '.dim')),
+    ).toBeGreaterThanOrEqual(4.5)
+  })
+
   test('keeps long placement labels from widening the mounted View viewport', async () => {
     const source = await readFile(
       join(import.meta.dirname, '..', '..', '..', 'viewer', 'index.html'),
@@ -174,3 +186,30 @@ describe('viewer asset resolution', () => {
     }
   })
 })
+
+function sourceColor(source: string, selector: string, property = 'color'): string {
+  const blocks = source.matchAll(new RegExp(`${escapeRegExp(selector)}\\s*\\{([^}]*)\\}`, 'g'))
+  for (const block of blocks) {
+    const color = block[1].match(new RegExp(`${property}:\\s*(#[0-9a-f]{6})`, 'i'))?.[1]
+    if (color) return color
+  }
+  throw new Error(`Missing ${property} for ${selector}`)
+}
+
+function contrast(first: string, second: string): number {
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a)
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+function luminance(hex: string): number {
+  const channels = hex
+    .slice(1)
+    .match(/../g)!
+    .map((channel) => Number.parseInt(channel, 16) / 255)
+    .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}

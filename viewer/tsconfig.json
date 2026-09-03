@@ -9,5 +9,5 @@
     "noEmit": true,
     "types": []
   },
-  "include": ["main.ts"]
+  "include": ["main.ts", "frame.ts"]
 }
