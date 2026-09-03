@@ -41,7 +41,7 @@ function dependencies(
     confirmCreate: mock(async () => true),
     promptSlug: mock(async () => 'new-instance'),
     provision: mock(async (slug) => ({
-      created: { url: `https://${slug}.eu.astrale.ai`, organizationId: `org_${slug}` },
+      created: instance(slug),
       slug,
     })),
     ...overrides,
@@ -138,7 +138,7 @@ describe('setup owned-instance reconciliation', () => {
   test('does not report setup fixed when provisioning could not select the instance', async () => {
     const deps = dependencies({
       provision: mock(async (slug) => ({
-        created: { url: `https://${slug}.eu.astrale.ai`, organizationId: `org_${slug}` },
+        created: instance(slug),
         slug,
         selectionError: new Error('instances.json is read-only'),
       })),
@@ -163,6 +163,31 @@ describe('setup owned-instance reconciliation', () => {
     expect((caught as AstraleError).message).toContain('instances.json is read-only')
     expect((caught as AstraleError).hint).toContain('astrale instance use new-instance')
     expect(logged.join('\n')).not.toContain('https://new-instance.eu.astrale.ai')
+  })
+
+  test('keeps setup pending when creation returns a resumable receipt', async () => {
+    const pending = {
+      ...instance('new-instance', 'provisioning'),
+      operationId: 'cli.instance.create.retained',
+      phase: 'create-host-child',
+      url: '',
+    }
+    const deps = dependencies({
+      provision: mock(async (slug) => ({ created: pending, slug })),
+    })
+    const originalWarn = console.warn
+    const originalLog = console.log
+    console.warn = mock(() => {})
+    console.log = mock(() => {})
+
+    try {
+      await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
+    } finally {
+      console.warn = originalWarn
+      console.log = originalLog
+    }
+
+    expect(deps.adopt).not.toHaveBeenCalled()
   })
 
   test('does not create a duplicate while an owned instance is provisioning or failed', async () => {
