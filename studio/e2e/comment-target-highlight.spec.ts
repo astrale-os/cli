@@ -14,7 +14,7 @@ import { dockWorkspacePanel, expect, test } from './test'
 const EDGE = '.react-flow__edge[data-id*="edge-MessageOn__"]'
 const NODE = '.react-flow__node[data-id="workspace:fixture:class.Ticket"]'
 
-test('comment mode paints the relationship under the pointer, and lets go on Esc', async ({
+test('comment mode paints its target until the comment is sent, and lets go on Esc', async ({
   page,
   request,
 }) => {
@@ -72,10 +72,45 @@ test('comment mode paints the relationship under the pointer, and lets go on Esc
   // the line it left goes back to the colour the canvas gave it
   expect(await paint()).toEqual(atRest)
 
+  // Clicking hands the call-out to the composer: the note still visibly points to
+  // this node even though targeting mode itself has ended.
+  await page.mouse.click(nodeBox.x + nodeBox.width / 2, nodeBox.y + nodeBox.height / 2)
+  const composer = page.getByPlaceholder('Note for the agent…')
+  await expect(composer).toBeVisible()
+  await expect(node).toHaveAttribute('data-comment-draft-target', '')
+  await expect.poll(() => node.evaluate((el) => getComputedStyle(el).outlineColor)).toBe(primary)
+
+  // A new note is just a field: speaker initials belong to messages already sent.
+  const newComment = page.locator('[data-new-comment-composer]')
+  await expect(newComment).toBeVisible()
+  await expect(newComment.getByText('Y', { exact: true })).toHaveCount(0)
+
+  await composer.fill('Keep this target visible')
+  const posted = page.waitForRequest(
+    (request) =>
+      request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/comments'),
+  )
+  await page.getByRole('button', { name: 'Comment', exact: true }).click()
+  await posted
+  await expect(composer).toHaveCount(0)
+  await expect(node).not.toHaveAttribute('data-comment-draft-target', '')
+
+  // Opening the now-existing thread still identifies its speaker.
+  await node.locator('button[title="View comments"]').click()
+  const thread = page
+    .locator('[data-radix-popper-content-wrapper]')
+    .filter({ hasText: 'Keep this target visible' })
+  await expect(thread.getByText('You', { exact: true })).toBeVisible()
+  await expect(thread.getByText('Y', { exact: true })).toBeVisible()
+  await thread.getByRole('button', { name: 'Close' }).click()
+
   // Leaving the mode drops the call-out with it.
+  await page.keyboard.press('c')
+  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
   await page.mouse.move(over.x, over.y)
   await expect.poll(paint).toEqual({ stroke: primary, width: '4px' })
   await page.keyboard.press('Escape')
   await expect(page.getByText('Comment mode — choose a domain element')).toHaveCount(0)
-  await expect.poll(paint).toEqual(atRest)
+  await expect.poll(async () => (await paint())?.stroke).toBe(atRest!.stroke)
+  await expect.poll(async () => (await paint())?.width).not.toBe('4px')
 })
