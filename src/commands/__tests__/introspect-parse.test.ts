@@ -1,7 +1,15 @@
 import type { DomainBundle, DomainInfo } from '@astrale-os/sdk/client/schema'
 
 import { ResponseError } from '@astrale-os/sdk/client'
-import { bundle, defineSchema, func, method, nodeClass, schema } from '@astrale-os/sdk/schema'
+import {
+  bundle,
+  classIcon,
+  defineSchema,
+  func,
+  method,
+  nodeClass,
+  schema,
+} from '@astrale-os/sdk/schema'
 import { describe, expect, test } from 'bun:test'
 
 import { introspectCommand, parseIntrospectTarget } from '../introspect'
@@ -9,6 +17,7 @@ import { introspectCommand, parseIntrospectTarget } from '../introspect'
 const source = defineSchema('host.astrale.ai', {
   classes: {
     Manager: nodeClass({
+      icon: classIcon.neutral,
       methods: {
         createInstance: method({
           auth: 'authenticated',

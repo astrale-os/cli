@@ -1,5 +1,6 @@
 import * as sdk from '@astrale-os/sdk/schema'
 import {
+  classIcon,
   core,
   defineSchema,
   edgeClass,
@@ -34,11 +35,14 @@ const rename = method({
   auth: 'authorized',
 })
 
-const Named = nodeClass({ properties: { title: string } })
+const Named = nodeClass({ icon: classIcon.neutral, properties: { title: string } })
 const dependency = defineSchema('shared.example.dev', { classes: { Named } })
+const documentIcon = classIcon.svg(
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 2h12l4 4v16H4z"/></svg>',
+)
 const Document = nodeClass({
   description: 'A document.',
-  icon: '<svg />',
+  icon: documentIcon,
   extends: [Named],
   properties: { slug: property(string, { description: 'Stable slug.' }) },
   methods: { rename },
@@ -91,7 +95,7 @@ describe('canonical Schema projection', () => {
     expect(extraction.status).toBe('admitted')
     expect(extraction.revision).toMatch(/^sha256:[0-9a-f]{64}$/)
     expect(extraction.ir.classes.Document).toMatchObject({
-      icon: '<svg />',
+      icon: documentIcon,
       extendsRefs: [namedRef],
       properties: { slug: { type: 'string' } },
       required: ['slug'],
