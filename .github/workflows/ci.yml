@@ -93,6 +93,7 @@ jobs:
         run: |
           node dist/astrale.js --version
           node dist/astrale.js --help >/dev/null
+          node scripts/verify-public-exports.mjs
 
   studio-browser:
     name: Studio browser smoke

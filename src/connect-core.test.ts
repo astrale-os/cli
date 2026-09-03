@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 
+import type { AdminConnectionOptions, ConnectionContext } from './connect-core'
+
 import * as compatibility from './connect-core'
 
 describe('connect-core compatibility barrel', () => {
@@ -18,6 +20,7 @@ describe('connect-core compatibility barrel', () => {
       compatibility.resolveInstanceTarget,
       compatibility.readConfig,
       compatibility.resolveCredential,
+      compatibility.withAdminClientSession,
       compatibility.fetchWithCaFile,
       compatibility.createPaths,
       compatibility.loginViaIdp,
@@ -34,5 +37,14 @@ describe('connect-core compatibility barrel', () => {
     expect(compatibility.IdpRefreshTransientError).toBeTypeOf('function')
     expect(compatibility.IdpOrgMembershipError).toBeTypeOf('function')
     expect(compatibility.paths.home).toBeTypeOf('string')
+  })
+
+  test('exposes the complete typed Admin session seam', () => {
+    const connect: <Value>(
+      options: AdminConnectionOptions,
+      action: (context: ConnectionContext) => Promise<Value>,
+    ) => Promise<Value> = compatibility.withAdminClientSession
+
+    expect(connect).toBe(compatibility.withAdminClientSession)
   })
 })
