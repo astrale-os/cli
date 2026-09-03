@@ -45,6 +45,19 @@ frontend/            router, browser entry, styles, assets
 Project graph nodes into explicit UI models before rendering. Keep raw canonical values and client
 sessions out of leaf presentation components.
 
+## Read and action boundaries
+
+A Class read or traversal Policy narrows an existing principal capability; it does not grant that
+capability. Direct graph hooks therefore require the caller to hold the exact Class `read` or
+`traverse` authority in addition to satisfying its Policy. Do not grant broad graph authority merely
+to make a dynamic member View render. Expose a caller-scoped Action or Workflow that returns the
+smallest UI projection when ordinary members should observe records through Domain authority.
+
+An instance Action only needs the receiver's admitted identity. When a read Action returns a node ID
+instead of a readable bound node, validate it as a `NodeId` and pass `{ id }` to `useAction.run`.
+The Kernel resolves the receiver Class and applies callable authentication and Policy. Do not forge a
+`BoundNode`, and do not add a direct Class-read grant just to construct an Action receiver.
+
 ## State handling
 
 Every real View should make these states intentional when applicable:
