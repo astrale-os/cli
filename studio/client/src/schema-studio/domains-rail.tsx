@@ -89,6 +89,7 @@ export function DomainRow({
     // the ANCHOR instead, which is a different claim — whose threads, not what is drawn.
     <div
       data-tree-row=""
+      data-comment-outline-inset=""
       {...anchorData(domainAnchorRef(origin), origin, domainId)}
       aria-current={selected ? 'true' : undefined}
       className={cn(
@@ -148,6 +149,12 @@ export function DomainRow({
         />
       )}
 
+      <AnchorButton
+        domainId={domainId}
+        anchorRef={{ ref: domainAnchorRef(origin), kind: 'section' }}
+        excerpt={origin}
+      />
+
       {onToggleVisible && (
         <button
           type="button"
@@ -165,12 +172,6 @@ export function DomainRow({
           {visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
         </button>
       )}
-
-      <AnchorButton
-        domainId={domainId}
-        anchorRef={{ ref: domainAnchorRef(origin), kind: 'section' }}
-        excerpt={origin}
-      />
     </div>
   )
 }

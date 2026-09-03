@@ -66,7 +66,11 @@ export function SchemaDetail({
   const classViews = local && !isEdge ? viewsForClass(viewsModel, name) : []
 
   return (
-    <div className="h-full overflow-y-auto" {...anchorData(refBase, name)}>
+    <div
+      data-comment-outline-inset=""
+      className="h-full overflow-y-auto"
+      {...anchorData(refBase, name)}
+    >
       <div className="space-y-6 px-5 py-5">
         <header className="space-y-3">
           <div className="flex items-start gap-3 pr-8">

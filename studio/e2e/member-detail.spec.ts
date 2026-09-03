@@ -206,3 +206,47 @@ test('the targeting ring draws whole on the first and the last row of a list', a
 
   await page.keyboard.press('Escape')
 })
+
+test('the targeting ring draws inside every edge of the Class detail panel', async ({ page }) => {
+  const panel = await openInvoice(page)
+  const detail = panel.locator(':scope > [data-anchor-ref="class.Invoice"]')
+  const box = (await detail.boundingBox())!
+
+  await page.keyboard.press('c')
+  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
+  // Stay in the panel's left padding, clear of the more specific property/method targets.
+  await page.mouse.move(box.x + 4, box.y + box.height / 2)
+  await expect(detail).toHaveAttribute('data-comment-target', '')
+
+  const ring = await detail.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const offset = parseFloat(style.outlineOffset)
+    const width = parseFloat(style.outlineWidth)
+    const bounds = element.getBoundingClientRect()
+    return {
+      style: style.outlineStyle,
+      offset,
+      width,
+      top: bounds.top - offset - width,
+      right: bounds.right + offset + width,
+      bottom: bounds.bottom + offset + width,
+      left: bounds.left - offset - width,
+      bounds: {
+        top: bounds.top,
+        right: bounds.right,
+        bottom: bounds.bottom,
+        left: bounds.left,
+      },
+    }
+  })
+
+  expect(ring.style).toBe('solid')
+  expect(ring.width).toBeGreaterThan(0)
+  expect(ring.offset).toBe(-ring.width)
+  expect(ring.top).toBeGreaterThanOrEqual(ring.bounds.top - 0.01)
+  expect(ring.right).toBeLessThanOrEqual(ring.bounds.right + 0.01)
+  expect(ring.bottom).toBeLessThanOrEqual(ring.bounds.bottom + 0.01)
+  expect(ring.left).toBeGreaterThanOrEqual(ring.bounds.left - 0.01)
+
+  await page.keyboard.press('Escape')
+})
