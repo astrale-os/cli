@@ -3,7 +3,7 @@ import type { DomainIntrospectionTiming, DomainSummary, StudioSchemaBundle } fro
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { Command } from 'cmdk'
 import { AppWindow, ArrowRight, Box, Folder, Globe, Loader2, Plug, Spline, Tag } from 'lucide-react'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { api, qk } from '@/lib/api'
 import { useWorkspace } from '@/lib/hooks'
@@ -101,6 +101,75 @@ interface SearchIndex {
     value: string
     meta: string
   }>
+}
+
+interface CachedDomainIndex {
+  revision: string
+  value: SearchIndex
+}
+
+const emptySearchIndex = (): SearchIndex => ({
+  classes: [],
+  edges: [],
+  properties: [],
+  modules: [],
+})
+
+/**
+ * Keep schema indexing tied to schema revisions, not component renders.
+ *
+ * The live phase indicator refreshes every 500 ms while bundles are pending. It
+ * renders this component too, but it must not rebuild and re-sort every loaded
+ * Domain's search entries. A Domain is indexed once per render fingerprint; the
+ * combined index only changes when the workspace or one of those fingerprints does.
+ */
+export class PaletteSearchIndexCache {
+  private readonly domains = new Map<string, CachedDomainIndex>()
+  private revision?: string
+  private value = emptySearchIndex()
+
+  build(domains: DomainSummary[], bundles: Array<StudioSchemaBundle | undefined>): SearchIndex {
+    const revision = JSON.stringify(
+      domains.map((domain, index) => [
+        domain.id,
+        domain.origin,
+        bundles[index]?.renderFingerprint ?? null,
+      ]),
+    )
+    if (revision === this.revision) {
+      return this.value
+    }
+
+    const active = new Set(domains.map(({ id }) => id))
+    for (const domainId of this.domains.keys()) {
+      if (!active.has(domainId)) this.domains.delete(domainId)
+    }
+
+    const indexes = domains.map((domain, index) => {
+      const bundle = bundles[index]
+      if (!bundle) return emptySearchIndex()
+      const domainRevision = `${domain.origin}\0${bundle.renderFingerprint}`
+      const cached = this.domains.get(domain.id)
+      if (cached?.revision === domainRevision) return cached.value
+      const value = buildDomainIndex(domain, bundle)
+      this.domains.set(domain.id, { revision: domainRevision, value })
+      return value
+    })
+    this.value = {
+      classes: indexes
+        .flatMap((entry) => entry.classes)
+        .sort((a, b) => a.value.localeCompare(b.value)),
+      edges: indexes.flatMap((entry) => entry.edges).sort((a, b) => a.value.localeCompare(b.value)),
+      properties: indexes
+        .flatMap((entry) => entry.properties)
+        .sort((a, b) => a.value.localeCompare(b.value)),
+      modules: indexes
+        .flatMap((entry) => entry.modules)
+        .sort((a, b) => a.value.localeCompare(b.value)),
+    }
+    this.revision = revision
+    return this.value
+  }
 }
 
 type BundleQueryState = { data?: StudioSchemaBundle; isError: boolean }
@@ -217,6 +286,8 @@ export function CommandPalette() {
   const setPanelOverlay = useUI((s) => s.setPanelOverlay)
   const canvas = useCanvasDomains()
   const { data: domains = [] } = useWorkspace()
+  const indexCache = useRef<PaletteSearchIndexCache | null>(null)
+  if (!indexCache.current) indexCache.current = new PaletteSearchIndexCache()
   const bundleQueries = useQueries({
     queries: domains.map((domain) => paletteBundleQuery(domain.id, open)),
   })
@@ -244,22 +315,8 @@ export function CommandPalette() {
 
   const close = () => setPaletteOpen(false)
 
-  // Build one searchable index over every domain in the scanned workspace.
-  const index = useMemo(() => {
-    const indexes = domains.map((domain, position) => buildDomainIndex(domain, bundles[position]))
-    return {
-      classes: indexes
-        .flatMap((entry) => entry.classes)
-        .sort((a, b) => a.value.localeCompare(b.value)),
-      edges: indexes.flatMap((entry) => entry.edges).sort((a, b) => a.value.localeCompare(b.value)),
-      properties: indexes
-        .flatMap((entry) => entry.properties)
-        .sort((a, b) => a.value.localeCompare(b.value)),
-      modules: indexes
-        .flatMap((entry) => entry.modules)
-        .sort((a, b) => a.value.localeCompare(b.value)),
-    }
-  }, [bundles, domains])
+  // Build once per Domain schema revision, not once per loading-phase poll.
+  const index = indexCache.current.build(domains, bundles)
 
   const showDomain = (domainId: string) => {
     if (!canvas.visible.has(domainId)) canvas.toggleOnCanvas(domainId)
