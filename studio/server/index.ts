@@ -14,7 +14,6 @@ import { dirname, join, resolve } from 'node:path'
 import { setBridgePort } from './agent/bridge/grant'
 import { probeInstalledHarnesses } from './agent/harness/registry'
 import { handleApi } from './api'
-import { buildGap } from './cache'
 import { resolveTarget } from './detect'
 import { allDomains } from './domain'
 import { bootDomain } from './lifecycle'
@@ -38,7 +37,9 @@ for (let i = 0; i < argv.length; i++) {
 }
 if (!target) target = process.cwd()
 
+const discoveryStarted = performance.now()
 const domains = resolveTarget(target)
+const discoveryMs = Math.round((performance.now() - discoveryStarted) * 10) / 10
 if (!domains.length) {
   console.error(`\n  ✗ No Astrale domains found at ${target}`)
   console.error(
@@ -48,6 +49,9 @@ if (!domains.length) {
 }
 
 console.log(`\n  Domain Studio — ${domains.length} domain(s)`)
+if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+  console.log(`    timing workspace discovery=${discoveryMs}ms`)
+}
 
 const watchRoot = target.endsWith('astrale.config.ts') ? dirname(resolve(target)) : resolve(target)
 initWorkspaceState(watchRoot) // where `create new` scaffolds + the create endpoint reads
@@ -71,6 +75,7 @@ let workspaceReady = false
  */
 const BOOT_CONCURRENCY = 2
 async function indexWorkspace(): Promise<void> {
+  const indexingStarted = performance.now()
   console.log(`  indexing ${domains.length} domain(s)\n`)
   const queue = [...domains]
   let done = 0
@@ -79,7 +84,6 @@ async function indexWorkspace(): Promise<void> {
     `${String(++done).padStart(String(domains.length).length)}/${domains.length}`
   const worker = async (): Promise<void> => {
     for (let h = queue.shift(); h; h = queue.shift()) {
-      await buildGap() // a reader's own domain comes first
       try {
         const { origin, depsInstalled, renderFingerprint, stop } = await bootDomain(h, {
           background: true,
@@ -102,11 +106,6 @@ async function indexWorkspace(): Promise<void> {
   )
   broadcast({ type: 'workspace', domains: allDomains().map((domain) => domain.id) })
 
-  // Ask each local agent whether it is here, before anything needs the answer: a
-  // domain with no chat yet opens on the harness this machine actually has, and
-  // that decision is made from synchronous code (see harness/selection).
-  void probeInstalledHarnesses()
-
   // Keep the registry in sync with the workspace — pick up domains added/removed at
   // runtime. Started only once the initial set is live: it boots what `stoppers` does
   // not hold yet, and would otherwise re-boot every domain still being indexed.
@@ -115,7 +114,8 @@ async function indexWorkspace(): Promise<void> {
 
   console.log(
     `\n  ✓ workspace indexed — every canvas opens from cache now` +
-      `${failed > 0 ? ` (${failed} failed, see above)` : ''}\n`,
+      `${failed > 0 ? ` (${failed} failed, see above)` : ''}` +
+      `${process.env.DOMAIN_STUDIO_TIMINGS === '1' ? ` — ${Math.round(performance.now() - indexingStarted)}ms` : ''}\n`,
   )
   // Flip readiness only after the progress block and its completion message have
   // been written. The supervising CLI cannot interleave its final success inside
@@ -257,4 +257,9 @@ if (open) {
 }
 
 // The port is open; everything below fills in behind it.
+// Start the agent probes first. They are logically independent from schema
+// introspection, but both launch subprocesses; giving ACP the first scheduling
+// turn prevents CPU-heavy background extraction from stretching "Connecting…"
+// across the whole workspace index.
+void probeInstalledHarnesses()
 void indexWorkspace()

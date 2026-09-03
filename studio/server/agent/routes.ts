@@ -107,11 +107,13 @@ async function harnessStatus(): Promise<HarnessStatus> {
 export async function handleAgentRoute(input: AgentRouteContext): Promise<Response | null> {
   const { req, url, rest, body, notify } = input
   if (rest !== '/agent' && !rest.startsWith('/agent/')) return null
+  const routeStarted = performance.now()
   // Nothing here may answer before the boot sweep has said which agents this
   // machine has: the routes below create the workspace's first chat, on the harness
   // the selection names, and a tab is written once. Memoized — this waits on the
   // sweep the server already started, and is free afterwards.
   await probeInstalledHarnesses()
+  const sweepReady = performance.now()
   const workspace = agentWorkspace()
   const root = workspace.root
 
@@ -121,7 +123,15 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
   const chatBody = asString(body.chatId) || undefined
 
   if (rest === '/agent') {
-    if (req.method === 'GET') return json(await getSnapshot(chatParam))
+    if (req.method === 'GET') {
+      const snapshot = await getSnapshot(chatParam)
+      if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+        console.log(
+          `    timing agent snapshot total=${Math.round((performance.now() - routeStarted) * 10) / 10}ms sweep-wait=${Math.round((sweepReady - routeStarted) * 10) / 10}ms snapshot=${Math.round((performance.now() - sweepReady) * 10) / 10}ms`,
+        )
+      }
+      return json(snapshot)
+    }
     return badRequest('use /agent/submit or /agent/cancel')
   }
   if (rest === '/agent/chats') {

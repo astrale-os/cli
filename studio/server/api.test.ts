@@ -172,6 +172,17 @@ test('workspace dispatch preserves catalog responses and instance request valida
   expect(await invalidInstance?.json()).toEqual({ error: 'name is required' })
 })
 
+test('workspace exposes live introspection queue and per-phase timings', async () => {
+  const response = await route('/api/workspace/introspection')
+  expect(response?.status).toBe(200)
+  expect(await response?.json()).toMatchObject({
+    concurrency: 2,
+    active: expect.any(Array),
+    queued: { reader: expect.any(Array), background: expect.any(Array) },
+    domains: expect.any(Array),
+  })
+})
+
 test('multipart document upload remains ahead of JSON parsing and raw download keeps its media type', async () => {
   const handle = fixture()
   const base = `/api/domain/${encodeURIComponent(handle.id)}`

@@ -55,10 +55,23 @@ let sweep: Promise<void> | undefined
  * agent installed after boot is still picked up.
  */
 export function probeInstalledHarnesses(): Promise<void> {
-  sweep ??= Promise.all(
-    listHarnesses().map((entry) =>
-      inspectHarnessHealth(getHarnessById(entry.id)).catch(() => undefined),
-    ),
-  ).then(() => undefined)
+  if (!sweep) {
+    const started = performance.now()
+    sweep = Promise.all(
+      listHarnesses().map(async (entry) => {
+        const probeStarted = performance.now()
+        await inspectHarnessHealth(getHarnessById(entry.id)).catch(() => undefined)
+        if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+          console.log(
+            `    timing acp ${entry.id}=${Math.round((performance.now() - probeStarted) * 10) / 10}ms`,
+          )
+        }
+      }),
+    ).then(() => {
+      if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+        console.log(`    timing acp sweep=${Math.round((performance.now() - started) * 10) / 10}ms`)
+      }
+    })
+  }
   return sweep
 }

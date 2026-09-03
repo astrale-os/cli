@@ -39,7 +39,7 @@ import {
   titleChatFromMessage,
   type ChatSeed,
 } from '../chats'
-import { inspectHarnessHealth } from '../harness/adapter'
+import { inspectHarnessHealth, lastKnownPresence } from '../harness/adapter'
 import { getHarnessById, hasHarness } from '../harness/registry'
 import { getHarness, getHarnessSelection } from '../harness/selection'
 import { emitStudioEvent } from '../notify'
@@ -269,6 +269,14 @@ export async function getSnapshot(chatId?: string): Promise<AgentRunSnapshot> {
   // The tab's own agent, not the default: a Codex chat is unavailable when Codex
   // is missing, whatever a NEW conversation would open with.
   const harness = getHarnessById(chat.harness)
+  const knownAvailability = lastKnownPresence(harness.id)
+  // The route already waited for the process-wide boot sweep, so a real ACP
+  // harness normally has a trustworthy answer here. Only an unavailable agent
+  // is refreshed in the background: its 15 s client retry can discover a new
+  // install without making the snapshot wait on another subprocess handshake.
+  let available = knownAvailability
+  if (available === undefined) available = (await inspectHarnessHealth(harness)).ok
+  else if (!available) void inspectHarnessHealth(harness).catch(() => undefined)
   hydrateRun(workspace.stateRoot, chat)
   const conversation: ConversationInfo = {
     active: !!chat.sessionId,
@@ -278,7 +286,7 @@ export async function getSnapshot(chatId?: string): Promise<AgentRunSnapshot> {
   return {
     chatId: chat.id,
     harness: chat.harness,
-    available: (await inspectHarnessHealth(harness)).ok,
+    available,
     run: currentRun(chat.id) ?? null,
     conversation,
   }
