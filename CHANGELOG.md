@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.75](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.74...cli/v1.0.0-beta.75) (2026-09-03)
+
+
+### Bug Fixes
+
+* **commands:** bound Admin inventory recovery ([#372](https://github.com/astrale-os/cli/issues/372)) ([02e6ac9](https://github.com/astrale-os/cli/commit/02e6ac96c4bd4b74b4a2e679a16dc01d465b5adf))
+
 ## [1.0.0-beta.74](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.73...cli/v1.0.0-beta.74) (2026-09-03)
 
 
