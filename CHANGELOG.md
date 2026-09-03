@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.74](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.73...cli/v1.0.0-beta.74) (2026-09-03)
+
+
+### Bug Fixes
+
+* **host:** make viewer shell accessible ([#370](https://github.com/astrale-os/cli/issues/370)) ([3a7e54a](https://github.com/astrale-os/cli/commit/3a7e54ad4ed855e08507bb5a075152e1f031f95b))
+
 ## [1.0.0-beta.73](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.72...cli/v1.0.0-beta.73) (2026-09-03)
 
 
