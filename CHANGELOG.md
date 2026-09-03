@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0-beta.77](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.76...cli/v1.0.0-beta.77) (2026-09-03)
+
+
+### Bug Fixes
+
+* **studio:** keep comment target outlines visible ([#384](https://github.com/astrale-os/cli/issues/384)) ([06908ad](https://github.com/astrale-os/cli/commit/06908adbe570458c0082353e85fed3832f841fba))
+* **studio:** keep startup loading responsive ([#387](https://github.com/astrale-os/cli/issues/387)) ([6eec91b](https://github.com/astrale-os/cli/commit/6eec91ba5669b70b7412e5b09471ffc47f1c1c39))
+* **studio:** make comment entries immutable ([#386](https://github.com/astrale-os/cli/issues/386)) ([74fd64c](https://github.com/astrale-os/cli/commit/74fd64cb75658707b25cd73a5e6fe9eb2c6adb46))
+* **studio:** show the caret in the new-domain name field ([#388](https://github.com/astrale-os/cli/issues/388)) ([a865502](https://github.com/astrale-os/cli/commit/a865502d7c36c0ddf6e83f41ac679cb3883be66f))
+
 ## [1.0.0-beta.76](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.75...cli/v1.0.0-beta.76) (2026-09-03)
 
 
