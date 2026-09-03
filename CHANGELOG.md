@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-beta.78](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.77...cli/v1.0.0-beta.78) (2026-09-03)
+
+
+### Bug Fixes
+
+* **studio:** make updates an explicit restart workflow ([#392](https://github.com/astrale-os/cli/issues/392)) ([62ee37b](https://github.com/astrale-os/cli/commit/62ee37b14600561e02d0b6386065e2e7befbcff1))
+* **studio:** target new-domain creation briefs ([#390](https://github.com/astrale-os/cli/issues/390)) ([e038d0a](https://github.com/astrale-os/cli/commit/e038d0a837f229528c5f5e5904b36f683ee96260))
+
+
+### Performance Improvements
+
+* **commands:** remove CLI startup from Studio views ([#393](https://github.com/astrale-os/cli/issues/393)) ([a0b3a82](https://github.com/astrale-os/cli/commit/a0b3a8226631e45deb97e7a2c9099aa6036d5890))
+* **studio:** memoize command palette index ([#389](https://github.com/astrale-os/cli/issues/389)) ([441b166](https://github.com/astrale-os/cli/commit/441b1661fa337bc4d916f8372ecf5262d4bf0cea))
+
 ## [1.0.0-beta.77](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.76...cli/v1.0.0-beta.77) (2026-09-03)
 
 
