@@ -31,14 +31,13 @@ builder over copied low-level property or class keys:
 
 ```ts
 import { NodeId } from '@astrale-os/sdk/graph/node'
-import { Path } from '@astrale-os/sdk/graph/path'
 import { defineMutation } from '@astrale-os/sdk/mutation'
 
 export const renameVisit = defineMutation({
   id: 'field-visit.rename',
   change(mutation, input: { readonly visit: NodeId; readonly title: string }) {
     mutation.updateNode({
-      node: Path.id(input.visit),
+      node: input.visit,
       class: Work.classes.FieldVisit,
       props: { set: { title: input.title } },
     })

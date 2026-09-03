@@ -41,8 +41,6 @@ phased workflow below; an existing public scaffold already satisfies its foundat
   read `references/datasets.md`.
 - Write tests, fixtures, demo flows, or smoke-test scenarios: read `references/simulating.md`.
 - Diagnose a failing live domain or runtime drift: read `references/debugging.md`.
-- Classify repeated author friction, propose an SDK linter rule, or record API/SDK DX improvements:
-  read `references/dx-feedback.md`.
 
 ## New Domain Creation Workflow
 
@@ -63,7 +61,7 @@ order and load a reference only when its phase begins.
    finished.
 6. **Completion:** Read `references/simulating.md`; invoke every public Action and Workflow definition
    with representative success and applicable refusal inputs, then run focused tests, typecheck, lint,
-   build, and package. Read `references/dx-feedback.md` only after reusable authoring friction is observed.
+   build, and package.
 
 Read `references/migration.md`, `references/performance.md`, and `references/debugging.md` only when the
 domain's lifecycle or current problem calls for them.
