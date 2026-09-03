@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.76](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.75...cli/v1.0.0-beta.76) (2026-09-03)
+
+
+### Bug Fixes
+
+* **commands:** open installed domain views in studio ([#376](https://github.com/astrale-os/cli/issues/376)) ([0bd30b8](https://github.com/astrale-os/cli/commit/0bd30b85a51a86d1f6f2901adb3bf24ce0260e2a))
+* **studio:** clamp class descriptions ([#381](https://github.com/astrale-os/cli/issues/381)) ([3f77317](https://github.com/astrale-os/cli/commit/3f77317c6886abfb143693ab05362e7062892494))
+* **studio:** keep anatomy aligned with bundle retries ([#383](https://github.com/astrale-os/cli/issues/383)) ([eb182cd](https://github.com/astrale-os/cli/commit/eb182cd63433276c6c064be10f8465a8d3ed434b))
+* **studio:** keep comment targets visible while composing ([#380](https://github.com/astrale-os/cli/issues/380)) ([4375b0b](https://github.com/astrale-os/cli/commit/4375b0b687102d6733056185c3f60f34f49e9606))
+* **studio:** keep domain visibility updates on canvas ([#382](https://github.com/astrale-os/cli/issues/382)) ([1b23577](https://github.com/astrale-os/cli/commit/1b23577e9e3fc831979d823769cba97e90542939))
+* **studio:** report readiness after indexing ([#378](https://github.com/astrale-os/cli/issues/378)) ([592322b](https://github.com/astrale-os/cli/commit/592322b5da2ed6d0f4622e783997d36bfc9ddc52))
+
 ## [1.0.0-beta.75](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.74...cli/v1.0.0-beta.75) (2026-09-03)
 
 
