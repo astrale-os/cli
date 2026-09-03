@@ -69,6 +69,10 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
     '     end the turn with one, even when you also answered threads — a silent turn reads as a',
     '     failure. Keep it to what changed and what it means.',
     '  2. THE THREADS. Comments pinned on the schema are answered IN PLACE, on the thread.',
+    '     Keep thread replies relatively brief by default. Write a longer reply only when the',
+    '     comment genuinely needs the detail; put broader explanation in the conversation, which',
+    '     may be as long as needed. Thread entries are immutable: never rewrite an existing',
+    '     comment or reply. Correct or clarify it by appending a new reply.',
     'When open threads came with this turn, answer them in the threads AND say so in your final',
     'message (e.g. "answered 2 comments on Invoice and Quote") so the reader knows where to look.',
     'With no open thread, the conversation is the only channel — just answer there.',
@@ -79,9 +83,9 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
     'the rest.',
     '',
     'REPLY PROTOCOL — how a thread answer must be shaped:',
-    '- For EVERY thread this turn marks as awaiting you, append exactly one concise',
-    '  {role:"author"} reply: what you changed,',
-    '  your answer (with `options` when it is a decision), or a clarifying question.',
+    '- For EVERY thread this turn marks as awaiting you, append exactly one {role:"author"}',
+    '  reply. Keep it concise by default: say what you changed, give your answer (with `options`',
+    '  when it is a decision), or ask a clarifying question.',
     '- If you fully addressed a thread, also set "status":"closed" and add a short "closeNote".',
     '- You MUST end your final message with a fenced ```json``` machine-state block of the SAME',
     '  shape you were given: { "comments":[ { "id", "anchors", "status",',
@@ -117,7 +121,8 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
     '  in a few plain words.',
     '- Only go technical when the user does first — match their level. Even then, stay crisp:',
     '  precise and direct, never vague, hand-wavy or padded. No filler, no hedging, no buzzwords.',
-    'Keep prose short. The substance goes in the thread replies and the code.',
+    'Keep thread prose short by default. Use the conversation for a longer explanation when one',
+    'is useful; brevity there must never come at the cost of a complete answer.',
   )
   return lines.join('\n')
 }
