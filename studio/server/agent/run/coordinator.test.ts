@@ -446,6 +446,28 @@ describe.serial('agent runner invariants', () => {
     expect(unwrap(openChat({})).harness).toBe('claude')
   })
 
+  test('a chat opened for a fresh domain carries its exact target into the first prompt', async () => {
+    useMock()
+    const handle = fixture()
+    const workspace = agentWorkspace()
+    const chat = unwrap(openChat({ harness: 'mock', newDomainId: handle.id }))
+
+    expect(chat.newDomain).toEqual({
+      id: handle.id,
+      origin: handle.origin ?? handle.id,
+      path: '.',
+    })
+
+    await submitRun(() => {}, { chatId: chat.id, message: 'Model invoices and payments.' })
+    const run = await waitForTerminal(handle.id, chat.id)
+
+    expect(run.prompt?.turnPrompt).toContain('## Newly created domain')
+    expect(run.prompt?.turnPrompt).toContain(`**Origin:** \`${chat.newDomain?.origin}\``)
+    expect(run.prompt?.turnPrompt).toContain(`**Repo:** \`${chat.newDomain?.path}\``)
+    expect(run.prompt?.turnPrompt).toContain('## User creation brief')
+    expect(resolveChat(workspace.stateRoot, 'mock', chat.id)?.newDomain).toEqual(chat.newDomain)
+  })
+
   test('a forked tab keeps the level the work was being thought at', async () => {
     useMock()
     fixture()

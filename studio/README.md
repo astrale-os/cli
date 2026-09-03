@@ -170,8 +170,10 @@ button. Sending runs the whole order in one gesture —
 last stable release is a generation behind and writes domains nothing here can
 render),
 the staged files into the new domain's `.domain-studio/context/docs`, and the
-message to its agent as a first turn — and the studio lands on the new domain
-with that turn already running, the chat open on it.
+message to its agent as a first turn. That chat opens with a **New domain** chip
+naming the exact origin and repo path; the agent receives the same target plus
+the message explicitly framed as this domain's creation brief. The studio lands
+on the new domain with that turn already running.
 
 It takes both halves. A name alone will not send: a scaffold nobody asked
 anything of is a folder, and there would be no turn to open the domain on.

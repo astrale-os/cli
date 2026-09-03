@@ -19,7 +19,13 @@
  */
 import { randomUUID } from 'node:crypto'
 
-import type { AgentEffort, ChatInfo, ChatStatus, QueuedMessage } from '../../shared/types'
+import type {
+  AgentEffort,
+  ChatInfo,
+  ChatStatus,
+  NewDomainContext,
+  QueuedMessage,
+} from '../../shared/types'
 
 import { isAgentEffort } from '../../shared/agent-effort'
 import { DEFAULT_CHAT_TITLE } from '../../shared/types'
@@ -74,6 +80,8 @@ export interface StoredChat {
   origins?: string[]
   /** carried over from the chat this one was forked from */
   handoff?: ChatHandoff
+  /** domain this chat was opened to build immediately after scaffolding */
+  newDomain?: NewDomainContext
   /** messages typed while a turn was running, oldest first */
   queue?: QueuedMessage[]
 }
@@ -101,6 +109,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const effort = isAgentEffort(record.effort) ? record.effort : undefined
   const sessionId = asString(record.sessionId)
   const handoff = decodeHandoff(record.handoff)
+  const newDomain = decodeNewDomain(record.newDomain)
   const queue = decodeQueue(record.queue)
   const createdAt = asString(record.createdAt) ?? new Date().toISOString()
   const workspace = asString(record.workspace)
@@ -118,8 +127,17 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
     ...(workspace ? { workspace } : {}),
     ...(origins?.length ? { origins } : {}),
     ...(handoff ? { handoff } : {}),
+    ...(newDomain ? { newDomain } : {}),
     ...(queue.length ? { queue } : {}),
   }
+}
+
+function decodeNewDomain(value: unknown): NewDomainContext | undefined {
+  const record = asJsonRecord(value)
+  const id = asString(record?.id)
+  const origin = asString(record?.origin)
+  const path = asString(record?.path)
+  return id && origin && path ? { id, origin, path } : undefined
 }
 
 /** Queued messages read back from disk — a malformed entry is dropped, not fatal. */
@@ -265,6 +283,7 @@ export function createChat(
     model?: string
     effort?: AgentEffort
     handoff?: ChatHandoff
+    newDomain?: NewDomainContext
   } & ChatSeed,
   activeRoot = root,
 ): StoredChat {
@@ -278,6 +297,7 @@ export function createChat(
           handoff: { ...input.handoff, summary: input.handoff.summary.slice(0, MAX_HANDOFF_CHARS) },
         }
       : {}),
+    ...(input.newDomain ? { newDomain: { ...input.newDomain } } : {}),
   })
   writeChat(root, chat)
   writeActiveId(activeRoot, chat.id)
@@ -583,5 +603,6 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
           },
         }
       : {}),
+    ...(chat.newDomain ? { newDomain: { ...chat.newDomain } } : {}),
   }
 }
