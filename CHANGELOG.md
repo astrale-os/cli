@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.79](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.78...cli/v1.0.0-beta.79) (2026-09-03)
+
+
+### Features
+
+* **lib:** expose Admin client session ([#374](https://github.com/astrale-os/cli/issues/374)) ([f8d91a6](https://github.com/astrale-os/cli/commit/f8d91a6bdf77b297d0e1813d9654ef1cab887baa))
+
+
+### Bug Fixes
+
+* **lib:** resume admin provisioning operations ([#395](https://github.com/astrale-os/cli/issues/395)) ([8cd6907](https://github.com/astrale-os/cli/commit/8cd6907096923b34a95b771a7f6b198b29ef0f31))
+
 ## [1.0.0-beta.78](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.77...cli/v1.0.0-beta.78) (2026-09-03)
 
 
