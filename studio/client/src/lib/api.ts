@@ -162,8 +162,12 @@ export const api = {
   agentSystemPrompt: () => get<AgentSystemPromptInfo>('/api/agent/prompt/system'),
 
   chats: () => get<ChatList>('/api/agent/chats'),
-  openChat: (harness?: string) =>
-    post<ChatInfo>('/api/agent/chats', { action: 'open', ...(harness ? { harness } : {}) }),
+  openChat: (harness?: string, newDomainId?: string) =>
+    post<ChatInfo>('/api/agent/chats', {
+      action: 'open',
+      ...(harness ? { harness } : {}),
+      ...(newDomainId ? { newDomainId } : {}),
+    }),
   selectChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'select', chatId }),
   closeChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'close', chatId }),
   updateChat: (chatId: string, patch: { title?: string; model?: string; effort?: string }) =>

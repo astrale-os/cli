@@ -44,7 +44,7 @@ import { getHarnessById, hasHarness } from '../harness/registry'
 import { getHarness, getHarnessSelection } from '../harness/selection'
 import { emitStudioEvent } from '../notify'
 import { summarizeChatTranscript } from '../transfer'
-import { agentWorkspace, domainOrigin } from '../workspace'
+import { agentWorkspace, domainOrigin, domainRelativePath, findDomain } from '../workspace'
 import { completeRun } from './completion'
 import {
   attachCancellation,
@@ -148,16 +148,32 @@ function withChat<T>(
   return { ok: true, value: run(workspace, chat) }
 }
 
-export function openChat(input: { harness?: string; title?: string }): ChatResult<ChatInfo> {
+export function openChat(input: {
+  harness?: string
+  title?: string
+  newDomainId?: string
+}): ChatResult<ChatInfo> {
   const workspace = agentWorkspace()
   const harness = input.harness?.trim().toLowerCase() || newChatHarness(workspace)
   if (!hasHarness(harness)) return { ok: false, error: `unknown harness: ${harness}` }
+  const newDomain = input.newDomainId ? findDomain(workspace, input.newDomainId) : undefined
+  if (input.newDomainId && !newDomain)
+    return { ok: false, error: `unknown domain: ${input.newDomainId}` }
   const chat = createChat(
     workspace.stateRoot,
     {
       harness,
       ...seedOf(workspace),
       ...(input.title === undefined ? {} : { title: input.title }),
+      ...(newDomain
+        ? {
+            newDomain: {
+              id: newDomain.id,
+              origin: domainOrigin(newDomain),
+              path: domainRelativePath(workspace, newDomain),
+            },
+          }
+        : {}),
     },
     workspace.uiRoot,
   )

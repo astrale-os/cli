@@ -2,6 +2,7 @@ import type {
   Comment,
   ContextItem,
   DocMeta,
+  NewDomainContext,
   SchemaIR,
   SchemaOverlay,
   SchemaRevision,
@@ -36,6 +37,8 @@ export interface TurnParts {
   domains: DomainTurnParts[]
   firstTurn: boolean
   message?: string
+  /** present only when this first turn is the creation brief for a fresh scaffold */
+  newDomain?: NewDomainContext
 }
 
 /** A domain earns a briefing when the turn carries something of it. */
@@ -81,15 +84,30 @@ export function buildTurnPrompt(parts: TurnParts): string {
   const briefed = briefedDomains(parts.domains)
   const awaiting = briefed.flatMap((domain) => domain.awaitingThreads)
   const hasThreads = awaiting.length > 0
-  const header = parts.firstTurn
-    ? hasThreads
-      ? '> New session. The thread pointers and context below are your orientation — implement the open threads and reply by id.'
-      : '> New session. Follow the direct instruction below; use the context below and read each domain’s schema/ when needed.'
-    : hasThreads
-      ? '> Follow-up turn in the SAME session. The schema files are current (incl. your prior edits); the threads below were added or updated since your last reply — implement and answer them.'
-      : '> Follow-up turn in the SAME session. The schema files are current (incl. your prior edits). Follow the direct instruction below.'
+  const header = parts.newDomain
+    ? '> New session. Domain Studio has just scaffolded the domain below. Build it from the user’s creation brief.'
+    : parts.firstTurn
+      ? hasThreads
+        ? '> New session. The thread pointers and context below are your orientation — implement the open threads and reply by id.'
+        : '> New session. Follow the direct instruction below; use the context below and read each domain’s schema/ when needed.'
+      : hasThreads
+        ? '> Follow-up turn in the SAME session. The schema files are current (incl. your prior edits); the threads below were added or updated since your last reply — implement and answer them.'
+        : '> Follow-up turn in the SAME session. The schema files are current (incl. your prior edits). Follow the direct instruction below.'
   const message = parts.message?.trim()
-  const instruction = message ? ['', '## Direct instruction', '', message] : []
+  const creation = parts.newDomain
+    ? [
+        '',
+        '## Newly created domain',
+        '',
+        `- **Origin:** \`${parts.newDomain.origin}\``,
+        `- **Repo:** \`${parts.newDomain.path}\``,
+        '',
+        `The user’s creation brief below applies specifically to this domain. Work inside \`${parts.newDomain.path}\`, load the **astrale-domain** skill first, and follow its **New Domain Creation Workflow**.`,
+      ]
+    : []
+  const instruction = message
+    ? ['', parts.newDomain ? '## User creation brief' : '## Direct instruction', '', message]
+    : []
   const sections = briefed.map((domain) => {
     const anchors = resolveThreadAnchors(domain.awaitingThreads, domain.overlay)
     const body = buildCopyMarkdown({
@@ -109,7 +127,16 @@ export function buildTurnPrompt(parts: TurnParts): string {
   // says which domain it belongs to on its own. No `schemaVersion` — that fingerprint is
   // per domain, and each domain's own header already carries it.
   const fallback = hasThreads ? ['', buildMachineStateBlock(awaiting)] : []
-  return [header, ...instruction, '', workspaceDigest(parts), '', ...sections, ...fallback]
+  return [
+    header,
+    ...creation,
+    ...instruction,
+    '',
+    workspaceDigest(parts),
+    '',
+    ...sections,
+    ...fallback,
+  ]
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
 }

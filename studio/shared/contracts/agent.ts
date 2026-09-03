@@ -184,10 +184,22 @@ export interface ChatInfo {
   origins?: string[]
   /** set when this chat was forked off another harness's chat */
   origin?: ChatOrigin
+  /** set when this conversation was opened as a newly scaffolded domain's creation brief */
+  newDomain?: NewDomainContext
   /** this chat's own execution state — tabs run independently of each other */
   status: ChatStatus
   /** messages typed while a turn was running, in the order they will be sent */
   queued: QueuedMessage[]
+}
+
+/** The newly scaffolded domain a chat's first user message was opened to build. */
+export interface NewDomainContext {
+  /** registry id used to keep the target unambiguous */
+  id: string
+  /** authored domain origin shown to the user and agent */
+  origin: string
+  /** repo path relative to the workspace root */
+  path: string
 }
 
 /** Where a forked chat came from, and the briefing it was opened with. */

@@ -86,6 +86,7 @@ const TARGET_BARREL_EXPORTS = [
   'LayoutState',
   'MergeResult',
   'MethodInheritance',
+  'NewDomainContext',
   'NodePosition',
   'QueuedMessage',
   'RememberedViewTarget',

@@ -141,12 +141,14 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
       const title = asString(body.title)
       const model = asString(body.model)
       const effort = asString(body.effort)
+      const newDomainId = asString(body.newDomainId)
       switch (asString(body.action) ?? 'open') {
         case 'open':
           return chatJson(
             openChat({
               ...(harness === undefined ? {} : { harness }),
               ...(title === undefined ? {} : { title }),
+              ...(newDomainId === undefined ? {} : { newDomainId }),
             }),
           )
         case 'select':

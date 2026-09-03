@@ -122,8 +122,8 @@ export function NewDomainCard({
       {
         createDomain: api.createDomain,
         uploadDocuments: api.uploadDocuments,
-        submit: async (_id, text) => {
-          const chat = await api.openChat()
+        submit: async (id, text) => {
+          const chat = await api.openChat(undefined, id)
           return api.agentSubmit(text, chat.id)
         },
         onPhase: enter,
