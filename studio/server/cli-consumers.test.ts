@@ -5,8 +5,14 @@ import { join } from 'node:path'
 
 import type { StaleReport, StudioSchemaBundle, ViewInfo } from '../shared/types'
 
+import {
+  studioActiveInstanceName,
+  type StudioViewTargetQuery,
+  type StudioViewTargetQueryResult,
+} from '../../src/lib/view/studio-runtime'
 import { STUDIO_CLI_DESCRIPTOR_ENV } from './cli'
-import { activeInstanceName, listInstances, setActiveInstance } from './instances/active'
+import { listInstances, setActiveInstance } from './instances/active'
+import { clearViewPreparations, rememberViewPreparation } from './views/preparation'
 import { readRememberedTarget } from './views/selection-repository'
 import { launchViewSession } from './views/session'
 import { listViewTargets } from './views/target'
@@ -27,6 +33,7 @@ const priorDescriptor = process.env[STUDIO_CLI_DESCRIPTOR_ENV]
 const roots: string[] = []
 
 afterEach(() => {
+  clearViewPreparations()
   if (priorDescriptor === undefined) delete process.env[STUDIO_CLI_DESCRIPTOR_ENV]
   else process.env[STUDIO_CLI_DESCRIPTOR_ENV] = priorDescriptor
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
@@ -91,14 +98,12 @@ process.exit(response.exitCode ?? 0)
   }
 }
 
-const activeArgs = ['instance', 'active', '--json']
 const bookmarkedArgs = ['instance', 'list', '--bookmarked', '--json']
 const managedArgs = ['instance', 'list', '--admin-only', '--json']
 
 describe('instance CLI orchestration', () => {
-  test('reads active/list from the exact CLI and merges bookmarks with managed instances', async () => {
+  test('merges bookmarked and managed instances from the exact CLI', async () => {
     const fake = installFakeCli([
-      { args: activeArgs, responses: [{ stdout: { name: 'local' } }] },
       {
         args: bookmarkedArgs,
         responses: [
@@ -128,7 +133,6 @@ describe('instance CLI orchestration', () => {
       },
     ])
 
-    expect(await activeInstanceName()).toBe('local')
     expect(await listInstances()).toEqual({
       active: 'staging',
       instances: [
@@ -159,42 +163,46 @@ describe('instance CLI orchestration', () => {
         .calls()
         .map((call) => call.args.join(' '))
         .sort(),
-    ).toEqual([activeArgs, bookmarkedArgs, managedArgs].map((args) => args.join(' ')).sort())
+    ).toEqual([bookmarkedArgs, managedArgs].map((args) => args.join(' ')).sort())
   })
 
   test('uses the exact non-interactive instance switch flags and re-reads CLI-owned state', async () => {
     const useArgs = ['instance', 'use', 'staging', '--adopt-default', '--skip-jwks-check']
     const fake = installFakeCli([
       { args: useArgs, responses: [{ stdout: 'Now using staging.\n' }] },
-      { args: activeArgs, responses: [{ stdout: { name: 'staging' } }] },
     ])
 
-    expect(await setActiveInstance('staging')).toEqual({
+    expect(
+      await setActiveInstance('staging', { activeInstanceName: async () => 'staging' }),
+    ).toEqual({
       ok: true,
       active: 'staging',
       output: 'Now using staging.',
     })
-    expect(fake.calls().map((call) => call.args)).toEqual([useArgs, activeArgs])
+    expect(fake.calls().map((call) => call.args)).toEqual([useArgs])
   })
 
-  test('does not invent active state from malformed or failed CLI output', async () => {
-    const fake = installFakeCli([
-      {
-        args: activeArgs,
-        responses: [
-          { stdout: 'not-json' },
-          {
-            stdout: { name: 'must-not-be-used' },
-            stderr: 'Instance store is unavailable.',
-            exitCode: 7,
-          },
-        ],
-      },
-    ])
-
-    expect(await activeInstanceName()).toBeNull()
-    expect(await activeInstanceName()).toBeNull()
-    expect(fake.calls().map((call) => call.args)).toEqual([activeArgs, activeArgs])
+  test('reads active state in-process and invalidates the long-lived memo first', async () => {
+    let resets = 0
+    expect(
+      await studioActiveInstanceName({
+        resetInstancesMemo: () => {
+          resets++
+        },
+        getActive: async () => ({ name: 'local' }) as never,
+      }),
+    ).toBe('local')
+    expect(
+      await studioActiveInstanceName({
+        resetInstancesMemo: () => {
+          resets++
+        },
+        getActive: async () => {
+          throw new Error('unavailable')
+        },
+      }),
+    ).toBeNull()
+    expect(resets).toBe(2)
   })
 })
 
@@ -359,20 +367,31 @@ const targetQuery = {
 }
 
 describe('View CLI orchestration', () => {
-  test('queries exact target coordinates and preserves malformed/nonzero failures', async () => {
-    const fake = installFakeCli([
-      {
-        args: queryArgs,
-        responses: [
-          { stdout: targetQuery },
-          { stdout: { graph: { nodes: 'invalid' } } },
-          { stderr: { message: 'Instance is offline.' }, exitCode: 7 },
-        ],
-      },
-    ])
+  test('queries exact target coordinates once and preserves malformed/nonzero failures', async () => {
+    const calls: Array<{
+      instance: string
+      queries: readonly StudioViewTargetQuery[]
+      timeoutMs: number
+    }> = []
+    const responses: Array<Omit<StudioViewTargetQueryResult, 'definition'>> = [
+      { ok: true, value: targetQuery, detail: '' },
+      { ok: true, value: { graph: { nodes: 'invalid' } }, detail: '' },
+      { ok: false, value: null, detail: 'Instance is offline.' },
+    ]
+    const query = async (
+      instance: string,
+      queries: readonly StudioViewTargetQuery[],
+      timeoutMs: number,
+    ): Promise<StudioViewTargetQueryResult[]> => {
+      calls.push({ instance, queries, timeoutMs })
+      const response = responses.shift()!
+      return queries.map(({ definition }) => ({ definition, ...response }))
+    }
 
     expect(
-      await listViewTargets(fake.root, 'issues.example.dev', view, bundle, 'staging', 2000),
+      await listViewTargets('/workspace', 'issues.example.dev', view, bundle, 'staging', 2000, {
+        query,
+      }),
     ).toEqual({
       status: 'available',
       items: [
@@ -389,43 +408,47 @@ describe('View CLI orchestration', () => {
       truncated: false,
     })
     expect(
-      await listViewTargets(fake.root, 'issues.example.dev', view, bundle, 'staging', 2000),
+      await listViewTargets('/workspace', 'issues.example.dev', view, bundle, 'staging', 2000, {
+        query,
+      }),
     ).toMatchObject({ status: 'unavailable', items: [] })
     expect(
-      await listViewTargets(fake.root, 'issues.example.dev', view, bundle, 'staging', 2000),
+      await listViewTargets('/workspace', 'issues.example.dev', view, bundle, 'staging', 2000, {
+        query,
+      }),
     ).toMatchObject({ status: 'unavailable', reason: 'Instance is offline.' })
-    expect(fake.calls().map((call) => call.args)).toEqual([queryArgs, queryArgs, queryArgs])
+    expect(calls).toEqual([
+      { instance: 'staging', queries: [{ definition: queryArgs[2], limit: 201 }], timeoutMs: 2000 },
+      { instance: 'staging', queries: [{ definition: queryArgs[2], limit: 201 }], timeoutMs: 2000 },
+      { instance: 'staging', queries: [{ definition: queryArgs[2], limit: 201 }], timeoutMs: 2000 },
+    ])
   })
 
   test('launches against the selected target, trusts route.href, and remembers the target', async () => {
-    const launchArgs = [
-      'view',
-      '/:issues.example.dev:view.issue-detail',
-      '--target',
-      '@issue-1',
-      '--no-open',
-      '--json',
-      '-i',
-      'staging',
-    ]
-    const fake = installFakeCli([
-      { args: activeArgs, responses: [{ stdout: { name: 'staging' } }] },
-      { args: queryArgs, responses: [{ stdout: targetQuery }] },
-      {
-        args: launchArgs,
-        responses: [
+    const fake = installFakeCli([])
+    const preparation = rememberViewPreparation({
+      root: fake.root,
+      origin: 'issues.example.dev',
+      slug: view.slug,
+      instance: 'staging',
+      targetRequired: true,
+      targets: {
+        status: 'available',
+        items: [
           {
-            stdout: {
-              session: {
-                id: 'v-a1b2',
-                pageUrl: 'http://127.0.0.1:4419/s/nonce/',
-                view: { route: { href: 'https://shell.example.dev/views/issue-1' } },
-              },
-            },
+            id: 'issue-1',
+            ref: '@issue-1',
+            className: 'Issue',
+            classOrigin: 'issues.example.dev',
+            label: 'First issue',
           },
         ],
+        selected: null,
+        stale: null,
+        truncated: false,
       },
-    ])
+    })
+    const opened: unknown[] = []
 
     expect(
       await launchViewSession(
@@ -433,8 +456,20 @@ describe('View CLI orchestration', () => {
         'issues.example.dev',
         view,
         bundle,
-        { targetId: 'issue-1' },
+        { preparationId: preparation.id, targetId: 'issue-1' },
         2000,
+        {
+          activeInstance: async () => 'staging',
+          serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
+          open: async (input) => {
+            opened.push(input)
+            return {
+              id: 'v-a1b2',
+              pageUrl: 'http://127.0.0.1:4419/s/nonce/',
+              view: { route: { href: 'https://shell.example.dev/views/issue-1' } },
+            } as never
+          },
+        },
       ),
     ).toEqual({
       status: 'ready',
@@ -455,63 +490,70 @@ describe('View CLI orchestration', () => {
       classOrigin: 'issues.example.dev',
       label: 'First issue',
     })
-    expect(fake.calls().map((call) => call.args)).toEqual([activeArgs, queryArgs, launchArgs])
-  })
-
-  test('does not expose a session when the CLI payload is malformed or exits nonzero', async () => {
-    const standalone = { slug: 'dashboard', kind: 'unknown' } satisfies ViewInfo
-    const launchArgs = [
-      'view',
-      '/:issues.example.dev:view.dashboard',
-      '--no-open',
-      '--json',
-      '-i',
-      'staging',
-    ]
-    const fake = installFakeCli([
+    expect(opened).toEqual([
       {
-        args: activeArgs,
-        responses: [{ stdout: { name: 'staging' } }, { stdout: { name: 'staging' } }],
-      },
-      {
-        args: launchArgs,
-        responses: [
-          { stdout: { session: { id: 'v-no-route', pageUrl: 'http://127.0.0.1/' } } },
-          {
-            stdout: {
-              session: {
-                id: 'v-must-not-open',
-                pageUrl: 'http://127.0.0.1/forbidden',
-                view: { route: { href: 'https://shell.example.dev/forbidden' } },
-              },
-            },
-            stderr: 'Permission denied.',
-            exitCode: 7,
-          },
-        ],
+        viewPath: '/:issues.example.dev:view.issue-detail',
+        targetRef: '@issue-1',
+        instance: 'staging',
+        timeoutMs: 20_000,
+        serveRuntime: { file: '/cli/astrale', args: [] },
       },
     ])
+    expect(fake.calls()).toEqual([])
+  })
+
+  test('does not expose a malformed session or a failed direct runtime launch', async () => {
+    const standalone = { slug: 'dashboard', kind: 'unknown' } satisfies ViewInfo
+    const fake = installFakeCli([])
+    const preparation = rememberViewPreparation({
+      root: fake.root,
+      origin: 'issues.example.dev',
+      slug: standalone.slug,
+      instance: 'staging',
+      targetRequired: false,
+      targets: {
+        status: 'available',
+        items: [],
+        selected: null,
+        stale: null,
+        truncated: false,
+      },
+    })
 
     const malformed = await launchViewSession(
       fake.root,
       'issues.example.dev',
       standalone,
       null,
-      {},
+      { preparationId: preparation.id },
       2000,
+      {
+        activeInstance: async () => 'staging',
+        serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
+        open: async () => ({ id: 'v-no-route', pageUrl: 'http://127.0.0.1/', view: {} }) as never,
+      },
     )
     expect(malformed.status).toBe('unavailable')
     if (malformed.status !== 'unavailable')
       throw new Error('expected the malformed session to fail')
-    expect(malformed.reason).toContain('v-no-route')
+    expect(malformed.reason).toContain('invalid session')
     expect(
-      await launchViewSession(fake.root, 'issues.example.dev', standalone, null, {}, 2000),
+      await launchViewSession(
+        fake.root,
+        'issues.example.dev',
+        standalone,
+        null,
+        { preparationId: preparation.id },
+        2000,
+        {
+          activeInstance: async () => 'staging',
+          serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
+          open: async () => {
+            throw new Error('Permission denied.')
+          },
+        },
+      ),
     ).toEqual({ status: 'unavailable', reason: 'Permission denied.' })
-    expect(fake.calls().map((call) => call.args)).toEqual([
-      activeArgs,
-      launchArgs,
-      activeArgs,
-      launchArgs,
-    ])
+    expect(fake.calls()).toEqual([])
   })
 })

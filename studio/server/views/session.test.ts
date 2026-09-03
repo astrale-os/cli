@@ -1,33 +1,74 @@
 import { describe, expect, test } from 'bun:test'
 
-import { conciseCliFailure, readyViewSession, viewSessionArgs } from './session'
+import type { ViewInfo } from '../../shared/types'
 
-describe('view session command', () => {
-  test('opens the installed ViewPath without rejected placement overrides', () => {
-    const args = viewSessionArgs('issues.astrale.ai', 'issue-detail', 'staging', '@issue-1')
-    expect(args).toEqual([
-      'view',
-      '/:issues.astrale.ai:view.issue-detail',
-      '--target',
-      '@issue-1',
-      '--no-open',
-      '--json',
-      '-i',
-      'staging',
-    ])
-    expect(args).not.toContain('--view-url')
-    expect(args).not.toContain('--handshake')
-  })
+import { conciseCliFailure, launchViewSession, readyViewSession } from './session'
 
-  test('omits --target for a standalone view', () => {
-    expect(viewSessionArgs('issues.astrale.ai', 'dashboard', 'local')).toEqual([
-      'view',
-      '/:issues.astrale.ai:view.dashboard',
-      '--no-open',
-      '--json',
-      '-i',
-      'local',
+describe('view session runtime', () => {
+  test('opens the canonical ViewPath from the exact prepared instance', async () => {
+    const view = { slug: 'dashboard', kind: 'unknown' } satisfies ViewInfo
+    const opened: unknown[] = []
+    const result = await launchViewSession(
+      '/workspace',
+      'issues.astrale.ai',
+      view,
+      null,
+      { preparationId: 'prepared' },
+      2000,
+      {
+        activeInstance: async () => 'local',
+        serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
+        readPreparation: () => ({
+          id: 'prepared',
+          root: '/workspace',
+          origin: 'issues.astrale.ai',
+          slug: 'dashboard',
+          instance: 'local',
+          targetRequired: false,
+          targets: {
+            status: 'available',
+            items: [],
+            selected: null,
+            stale: null,
+            truncated: false,
+          },
+          expiresAt: Date.now() + 60_000,
+        }),
+        open: async (input) => {
+          opened.push(input)
+          return {
+            id: 'v-a1b2',
+            pid: 123,
+            port: 4419,
+            nonce: 'nonce',
+            pageUrl: 'http://127.0.0.1:4419/s/nonce/',
+            view: {
+              target: '/:issues.astrale.ai',
+              handshake: 'none',
+              route: {
+                href: 'https://issues.example/ui/dashboard',
+                key: 'issues.astrale.ai:view.dashboard',
+              },
+            },
+            createdAt: '2026-09-03T00:00:00.000Z',
+          } as never
+        },
+      },
+    )
+
+    expect(opened).toEqual([
+      {
+        viewPath: '/:issues.astrale.ai:view.dashboard',
+        instance: 'local',
+        timeoutMs: 20_000,
+        serveRuntime: { file: '/cli/astrale', args: [] },
+      },
     ])
+    expect(result).toMatchObject({
+      status: 'ready',
+      sessionId: 'v-a1b2',
+      target: null,
+    })
   })
 
   test('reads the verified placement URL from the current CLI session route', () => {

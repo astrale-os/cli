@@ -51,7 +51,6 @@ export function ViewModal({
   const runtimeQuery = useViewRuntime(domainId, view.slug, open)
   const runtime = runtimeQuery.data
   const [targetId, setTargetId] = useState('')
-  const [attempt, setAttempt] = useState(0)
   const [restarting, setRestarting] = useState(false)
   const [session, setSession] = useState<SessionState>({ phase: 'idle' })
   const initializedFor = useRef('')
@@ -84,7 +83,10 @@ export function ViewModal({
     let openedSessionId: string | null = null
     setSession({ phase: 'launching' })
     void api
-      .launchView(domainId, view.slug, targetId ? { targetId } : {})
+      .launchView(domainId, view.slug, {
+        preparationId: runtime.preparationId,
+        ...(targetId ? { targetId } : {}),
+      })
       .then((result) => {
         if (result.status === 'ready') {
           openedSessionId = result.sessionId
@@ -106,7 +108,7 @@ export function ViewModal({
       disposed = true
       if (openedSessionId) void api.closeViewSession(domainId, openedSessionId)
     }
-  }, [attempt, domainId, launchReady, runtime?.instance, targetId, view.slug])
+  }, [domainId, launchReady, runtime?.instance, runtime?.preparationId, targetId, view.slug])
 
   useEffect(() => {
     if (session.phase !== 'ready') return
@@ -129,7 +131,6 @@ export function ViewModal({
     setSession({ phase: 'idle' })
     try {
       await runtimeQuery.refetch()
-      setAttempt((value) => value + 1)
     } catch (error) {
       setSession({
         phase: 'error',

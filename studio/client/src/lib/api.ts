@@ -87,7 +87,7 @@ export const api = {
   anatomy: (id: string) => get<DomainAnatomy>(`${d(id)}/anatomy`),
   viewRuntime: (id: string, slug: string) =>
     get<ViewRuntime>(`${d(id)}/views/${encodeURIComponent(slug)}/runtime`),
-  launchView: (id: string, slug: string, request: { targetId?: string }) =>
+  launchView: (id: string, slug: string, request: { preparationId: string; targetId?: string }) =>
     post<ViewSessionResult>(`${d(id)}/views/${encodeURIComponent(slug)}/session`, request),
   closeViewSession: (id: string, sessionId: string) =>
     post<{ ok: true }>(`${d(id)}/views/sessions/close`, { sessionId }),
