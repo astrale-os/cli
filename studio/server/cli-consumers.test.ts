@@ -10,7 +10,7 @@ import { activeInstanceName, listInstances, setActiveInstance } from './instance
 import { readRememberedTarget } from './views/selection-repository'
 import { launchViewSession } from './views/session'
 import { listViewTargets } from './views/target'
-import { applyUpdates, getUpdates } from './workspace/updates'
+import { getUpdates } from './workspace/updates'
 
 interface FakeResponse {
   stdout?: unknown
@@ -199,9 +199,8 @@ describe('instance CLI orchestration', () => {
 })
 
 describe('workspace update CLI orchestration', () => {
-  test('accepts stale exit 10 and applies updates in the domain root', async () => {
+  test('accepts stale exit 10 and checks updates in the domain root', async () => {
     const checkArgs = ['update', '--check', '--json']
-    const applyArgs = ['update', '--yes']
     const fake = installFakeCli([
       {
         args: checkArgs,
@@ -227,10 +226,6 @@ describe('workspace update CLI orchestration', () => {
           },
         ],
       },
-      {
-        args: applyArgs,
-        responses: [{ stdout: 'CLI updated.\n', stderr: 'SDK updated.\n' }],
-      },
     ])
     const domainRoot = realpathSync(fake.root)
 
@@ -250,40 +245,7 @@ describe('workspace update CLI orchestration', () => {
         outdated: [{ pkg: '@astrale-os/sdk', current: '0.5.0', latest: '0.6.0' }],
       },
     })
-    expect(await applyUpdates(domainRoot)).toEqual({ ok: true, error: '' })
-    expect(fake.calls()).toEqual([
-      { args: checkArgs, cwd: domainRoot },
-      { args: applyArgs, cwd: domainRoot },
-    ])
-  })
-
-  test('reports only the verdict: warnings are not failures, failures are one line', async () => {
-    const applyArgs = ['update', '--yes']
-    const fake = installFakeCli([
-      {
-        args: applyArgs,
-        responses: [
-          {
-            stdout: '  @astrale-os SDK packages are up to date\n',
-            stderr:
-              'UPDATE_PACKAGE_MANAGED: This Astrale process is not the official standalone executable.\n',
-          },
-          {
-            stderr:
-              'SKILL_UPDATE_FAILED: The CLI was updated, but its embedded skills could not be applied.\n  hint: Retry with `astrale skills configure`.\n',
-            exitCode: 1,
-          },
-        ],
-      },
-    ])
-    const domainRoot = realpathSync(fake.root)
-
-    expect(await applyUpdates(domainRoot)).toEqual({ ok: true, error: '' })
-    expect(await applyUpdates(domainRoot)).toEqual({
-      ok: false,
-      error:
-        'SKILL_UPDATE_FAILED: The CLI was updated, but its embedded skills could not be applied.',
-    })
+    expect(fake.calls()).toEqual([{ args: checkArgs, cwd: domainRoot }])
   })
 
   test('accepts an older CLI report without a skills axis during binary replacement', async () => {
