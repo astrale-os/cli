@@ -51,6 +51,7 @@ console.log(`\n  Domain Studio — ${domains.length} domain(s)`)
 
 const watchRoot = target.endsWith('astrale.config.ts') ? dirname(resolve(target)) : resolve(target)
 initWorkspaceState(watchRoot) // where `create new` scaffolds + the create endpoint reads
+let workspaceReady = false
 
 /**
  * Bring every domain online WITHOUT holding the port shut.
@@ -70,9 +71,7 @@ initWorkspaceState(watchRoot) // where `create new` scaffolds + the create endpo
  */
 const BOOT_CONCURRENCY = 2
 async function indexWorkspace(): Promise<void> {
-  // The URL is already printed above, so this counter is what tells the reader that
-  // the canvas of a domain not yet on the list is still coming — and when it isn't.
-  console.log(`  indexing ${domains.length} domain(s) — the URL already works\n`)
+  console.log(`  indexing ${domains.length} domain(s)\n`)
   const queue = [...domains]
   let done = 0
   let failed = 0
@@ -101,10 +100,6 @@ async function indexWorkspace(): Promise<void> {
   await Promise.all(
     Array.from({ length: Math.min(BOOT_CONCURRENCY, queue.length) }, () => worker()),
   )
-  console.log(
-    `\n  ✓ workspace indexed — every canvas opens from cache now` +
-      `${failed > 0 ? ` (${failed} failed, see above)` : ''}\n`,
-  )
   broadcast({ type: 'workspace', domains: allDomains().map((domain) => domain.id) })
 
   // Ask each local agent whether it is here, before anything needs the answer: a
@@ -117,6 +112,15 @@ async function indexWorkspace(): Promise<void> {
   // not hold yet, and would otherwise re-boot every domain still being indexed.
   if (existsSync(watchRoot) && statSync(watchRoot).isDirectory())
     watchWorkspace(watchRoot, stoppers)
+
+  console.log(
+    `\n  ✓ workspace indexed — every canvas opens from cache now` +
+      `${failed > 0 ? ` (${failed} failed, see above)` : ''}\n`,
+  )
+  // Flip readiness only after the progress block and its completion message have
+  // been written. The supervising CLI cannot interleave its final success inside
+  // the domain list anymore.
+  workspaceReady = true
 }
 
 const DIST = process.env.DOMAIN_STUDIO_DIST || join(import.meta.dir, '..', 'client', 'dist')
@@ -204,6 +208,11 @@ const server = Bun.serve({
   idleTimeout: 255,
   async fetch(req) {
     const url = new URL(req.url)
+    if (url.pathname === '/api/ready')
+      return new Response(null, {
+        status: workspaceReady ? 204 : 503,
+        headers: { 'cache-control': 'no-store' },
+      })
     if (url.pathname === '/api/events') return sseResponse(allDomains().map((d) => d.id))
     const apiRes = await handleApi(req, url, broadcast)
     if (apiRes) return apiRes
