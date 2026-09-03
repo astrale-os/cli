@@ -103,8 +103,6 @@ export const api = {
   ) => post<Comment>(`${d(id)}/comments`, { action: 'create', ...body }),
   replyComment: (id: string, commentId: string, entry: Omit<ThreadEntry, 'id'>) =>
     post<Comment>(`${d(id)}/comments`, { action: 'reply', id: commentId, entry }),
-  editComment: (id: string, commentId: string, entryId: string, text: string) =>
-    post<Comment>(`${d(id)}/comments`, { action: 'edit', id: commentId, entryId, text }),
   setCommentStatus: (
     id: string,
     commentId: string,

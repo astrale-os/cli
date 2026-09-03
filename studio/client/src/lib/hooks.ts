@@ -258,12 +258,6 @@ export function useCommentMutations(id: string) {
         api.replyComment(id, v.commentId, v.entry),
       onSuccess: inval,
     }),
-    edit: useMutation({
-      onError,
-      mutationFn: (v: { commentId: string; entryId: string; text: string }) =>
-        api.editComment(id, v.commentId, v.entryId, v.text),
-      onSuccess: inval,
-    }),
     setStatus: useMutation({
       onError,
       mutationFn: (v: { commentId: string; status: 'open' | 'closed'; closeNote?: string }) =>

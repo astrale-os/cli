@@ -9,7 +9,6 @@ import {
   addThreadEntry,
   decodeAnchorRefs,
   deleteComment,
-  editThreadEntry,
   markOrphans,
   mergeReply,
   readComments,
@@ -79,16 +78,7 @@ export async function handleCommentRoute(context: DomainRouteContext): Promise<R
       notify({ type: 'comments', domainId: id })
       return comment ? json(comment) : notFound()
     }
-    if (body.action === 'edit') {
-      const comment = editThreadEntry(
-        root,
-        asString(body.id) ?? '',
-        asString(body.entryId) ?? '',
-        asString(body.text) ?? '',
-      )
-      notify({ type: 'comments', domainId: id })
-      return comment ? json(comment) : notFound()
-    }
+    if (body.action === 'edit') return badRequest('comment entries cannot be edited')
     if (body.action === 'status') {
       const status =
         body.status === 'closed' ? 'closed' : body.status === 'open' ? 'open' : undefined

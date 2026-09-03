@@ -1,6 +1,6 @@
 import type { AnchorRef, Comment, ThreadEntry } from '@shared/types'
 
-import { Check, Pencil, Trash2 } from 'lucide-react'
+import { Check, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -65,80 +65,6 @@ function Avatar({ role, name }: { role: ThreadEntry['role']; name: string }) {
     >
       {name.trim().charAt(0) || '?'}
     </span>
-  )
-}
-
-/** A thread entry's text with inline editing — hover reveals a pencil. */
-export function EntryText({
-  domainId,
-  commentId,
-  entryId,
-  text,
-}: {
-  domainId: string
-  commentId: string
-  entryId: string
-  text: string
-}) {
-  const { edit } = useCommentMutations(domainId)
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(text)
-
-  const save = () => {
-    const value = draft.trim()
-    if (!value || edit.isPending) return
-    edit.mutate({ commentId, entryId, text: value }, { onSuccess: () => setEditing(false) })
-  }
-
-  if (editing) {
-    return (
-      <div className="mt-1 space-y-1.5">
-        <Textarea
-          autoFocus
-          className="min-h-16 text-[13px]"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              setDraft(text)
-              setEditing(false)
-            }
-          }}
-        />
-        <div className="flex justify-end gap-1">
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={() => {
-              setDraft(text)
-              setEditing(false)
-            }}
-          >
-            Cancel
-          </Button>
-          <Button size="xs" disabled={!draft.trim() || edit.isPending} onClick={save}>
-            Save
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="group/entry relative">
-      <Markdown text={text} />
-      <button
-        type="button"
-        title="Edit"
-        onClick={() => {
-          setDraft(text)
-          setEditing(true)
-        }}
-        className="absolute right-0 top-0 inline-flex h-5 w-5 items-center justify-center rounded text-transparent transition-colors group-hover/entry:bg-card group-hover/entry:text-muted-foreground hover:!text-foreground"
-      >
-        <Pencil className="h-3 w-3" />
-      </button>
-    </div>
   )
 }
 
@@ -244,12 +170,7 @@ function Entries({ domainId, comment }: { domainId: string; comment: Comment }) 
                 )}
               </div>
               <div className="text-[13px] leading-snug">
-                <EntryText
-                  domainId={domainId}
-                  commentId={comment.id}
-                  entryId={entry.id}
-                  text={entry.text}
-                />
+                <Markdown text={entry.text} />
               </div>
               {entry.type === 'choice' &&
                 entry.options &&
