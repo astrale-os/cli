@@ -115,4 +115,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(views, /defineFrontend/)
   assert.match(views, /astrale-frontend-design/)
   assert.match(views, /Do not depend directly on Shell or\s+Shell-React packages/)
+  assert.match(views, /Class read or traversal Policy narrows an existing principal capability/)
+  assert.match(views, /validate it as a `NodeId` and pass `\{ id \}` to `useAction\.run`/)
+  assert.match(views, /Do not forge a\s+`BoundNode`/)
 })
