@@ -70,11 +70,17 @@ describe('the Class detail panel', () => {
     expect(html).not.toContain('>Inherited<')
   })
 
-  test('a closed method shows only its name and static status', () => {
+  test('clamps the Class description to three lines by default', () => {
     const html = render('class.Invoice')
     const descriptionAt = html.indexOf('An invoice contract.')
     expect(descriptionAt).toBeGreaterThan(-1)
-    expect(html.slice(descriptionAt - 180, descriptionAt)).toContain('italic')
+    const descriptionMarkup = html.slice(descriptionAt - 300, descriptionAt)
+    expect(descriptionMarkup).toContain('italic')
+    expect(descriptionMarkup).toContain('line-clamp-3')
+  })
+
+  test('a closed method shows only its name and static status', () => {
+    const html = render('class.Invoice')
     expect(html).toContain('settle</span>')
     expect(html).toContain('search</span><span class="inline-flex')
     expect(html).toContain('>static</span>')

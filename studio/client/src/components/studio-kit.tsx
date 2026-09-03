@@ -80,10 +80,7 @@ export function Surface({ className, ...props }: React.HTMLAttributes<HTMLDivEle
 }
 
 /** Domain-authored prose, visually distinct from structural labels and values. */
-export function DescriptionText({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLParagraphElement>) {
+export function DescriptionText({ className, ...props }: React.ComponentPropsWithRef<'p'>) {
   return <p data-description="" className={cn('italic', className)} {...props} />
 }
 

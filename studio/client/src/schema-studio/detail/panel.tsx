@@ -2,6 +2,7 @@ import type { IrClassRef, StudioSchemaBundle } from '@shared/types'
 
 import { classRefKey, parseClassRefKey } from '@shared/types'
 import { Box, MousePointerClick, Spline } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import { AnchorButton } from '@/components/anchor'
 import { Chip, DescriptionText, EmptyState, Group, IconTile } from '@/components/studio-kit'
@@ -57,6 +58,7 @@ export function SchemaDetail({
   const memberKind = isEdge ? 'edge' : 'class'
   const refBase = local ? schemaMemberRef(memberKind, name) : `class.${classRefKey(ref)}`
   const span = local ? bundle.overlay.sourceSpans[refBase] : undefined
+  const description = span?.doc ?? member.description
   // Own members first, inherited after them under the Class that declares each — one
   // list per kind, so the panel answers "what does it have" before "where from".
   const lists = memberLists(bundle, name, member, local && !isEdge)
@@ -89,10 +91,8 @@ export function SchemaDetail({
                   className="ml-auto"
                 />
               </div>
-              {(span?.doc ?? member.description) && (
-                <DescriptionText className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-                  {span?.doc ?? member.description}
-                </DescriptionText>
+              {description && (
+                <ClassDescription key={`${refBase}:${description}`} description={description} />
               )}
             </div>
           </div>
@@ -179,6 +179,53 @@ export function SchemaDetail({
           <EmptyState title="No properties or methods" hint="This Class declares no own members." />
         )}
       </div>
+    </div>
+  )
+}
+
+function ClassDescription({ description }: { description: string }) {
+  const descriptionId = useId()
+  const descriptionRef = useRef<HTMLParagraphElement>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [overflowing, setOverflowing] = useState(false)
+
+  useEffect(() => {
+    if (expanded) return
+
+    const element = descriptionRef.current
+    if (!element) return
+
+    const measure = () => setOverflowing(element.scrollHeight > element.clientHeight + 1)
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    measure()
+
+    return () => observer.disconnect()
+  }, [description, expanded])
+
+  return (
+    <div className="mt-1">
+      <DescriptionText
+        ref={descriptionRef}
+        id={descriptionId}
+        className={cn(
+          'text-[13px] leading-relaxed text-muted-foreground',
+          !expanded && 'line-clamp-3',
+        )}
+      >
+        {description}
+      </DescriptionText>
+      {overflowing && (
+        <button
+          type="button"
+          aria-controls={descriptionId}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+          className="mt-1 rounded-sm text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
     </div>
   )
 }
