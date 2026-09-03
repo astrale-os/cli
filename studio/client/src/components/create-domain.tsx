@@ -2,12 +2,13 @@
  * create-domain.tsx — how a domain begins.
  *
  * It begins as a conversation. The rail's plus opens one composer in the middle
- * of the screen: a name written like a title, and under it the same field, the
- * same clip and the same send button the agent has everywhere else in the
- * studio — because that is what this is. Pressing send scaffolds the domain
- * under the name that was typed and hands the message straight to the agent
- * working in it, so the first turn of a new domain is a first turn like any
- * other, and the studio lands on it already running.
+ * of the screen: a name written like a title — from the left edge, where the
+ * message under it starts — and under it the same field, the same clip and the
+ * same send button the agent has everywhere else in the studio, because that is
+ * what this is. Pressing send scaffolds the domain under the name that was
+ * typed and hands the message straight to the agent working in it, so the first
+ * turn of a new domain is a first turn like any other, and the studio lands on
+ * it already running.
  *
  * What is NOT here is as deliberate: no comment chips (a domain that does not
  * exist has no threads), no model picker (a chat has to exist to have one — the
@@ -156,8 +157,13 @@ export function NewDomainCard({
   return (
     <div data-testid="new-domain" className="flex w-full flex-col items-center gap-4">
       {/* The name, written like the title of the thing being made — and the only
-          thing said about it is what is wrong with it. */}
-      <div className="flex w-full flex-col items-center gap-1">
+          thing said about it is what is wrong with it. It is set from the left,
+          on the message's own text edge (the frame's border plus its padding):
+          a centred title drew the caret through the middle of the prompt, and
+          hiding the caret instead made a click into the field look like nothing
+          had happened. Left-aligned, the caret arrives where a caret belongs —
+          before the first letter — and the prompt lifts a shade to say so. */}
+      <div className="flex w-full flex-col gap-1 px-[13px]">
         <input
           // biome-ignore lint/a11y/noAutofocus: the name is the first thing to write
           autoFocus
@@ -177,13 +183,7 @@ export function NewDomainCard({
             event.preventDefault()
             if (reading.valid) field.current?.focus()
           }}
-          className={cn(
-            'w-full bg-transparent text-center font-mono text-[26px] font-semibold tracking-tight outline-none placeholder:text-muted-foreground/40 disabled:opacity-60',
-            // A centred empty field puts the caret in the MIDDLE of the prompt it
-            // is showing — a bar through the word. Nothing typed, nothing to
-            // point at: the caret arrives with the first letter.
-            !name && 'caret-transparent',
-          )}
+          className="w-full bg-transparent font-mono text-[26px] font-semibold tracking-tight outline-none placeholder:text-muted-foreground/40 focus:placeholder:text-muted-foreground/70 disabled:opacity-60"
         />
         <p className="h-4 text-[11.5px] text-destructive">{reading.error}</p>
       </div>
@@ -250,7 +250,7 @@ export function NewDomainCard({
         // line only says WHICH of the three steps that spinner is on — and says
         // nothing at rest, where the composer explains itself. Its height is held
         // either way, so the card does not move when the send begins.
-        <p aria-live="polite" className="min-h-4 text-center text-[12px] text-muted-foreground">
+        <p aria-live="polite" className="min-h-4 px-[13px] text-[12px] text-muted-foreground">
           {progress(phase, reading.slug, files.length)}
         </p>
       )}
