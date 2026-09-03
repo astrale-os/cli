@@ -39,7 +39,12 @@ const bundles = new Map<string, StudioSchemaBundle>()
  * indexing the same domain — four subprocesses bundling identical sources.
  */
 const building = new Map<string, Promise<StudioSchemaBundle>>()
-const anatomies = new Map<string, Promise<DomainAnatomy>>()
+interface AnatomyCacheEntry {
+  /** Exact bundle generation whose canonical Views were projected into this anatomy. */
+  bundle: StudioSchemaBundle | null
+  value: Promise<DomainAnatomy>
+}
+const anatomies = new Map<string, AnatomyCacheEntry>()
 /** Demo Datasets, extracted on demand; they follow the bundle (revision) and the tests/ tree. */
 const datasets = new Map<string, Promise<StudioDatasets>>()
 
@@ -327,17 +332,34 @@ export async function getBundle(
 export async function getAnatomy(id: string, rebuild = false): Promise<DomainAnatomy | null> {
   const h = getDomain(id)
   if (!h) return null
-  if (!rebuild && anatomies.has(id)) return anatomies.get(id)!
-  const anatomy = Promise.all([resolveClientPackage(h.root, rebuild), getBundle(id, rebuild)]).then(
-    ([client, bundle]) =>
-      buildAnatomy({
-        root: h.root,
-        schemaDirName: h.schemaDirName,
-        clientDir: client.status === 'available' ? client.sourceDir : undefined,
-        canonicalViews: bundle?.ir?.format === 'astrale.dsl' ? (bundle.ir.views ?? {}) : undefined,
-      }),
+
+  // Anatomy contains the bundle's canonical Views. Reuse it only while the exact
+  // bundle generation that produced it still stands; a transient extraction
+  // failure may expire and heal without any file-watcher invalidation.
+  const heldBundle = bundles.get(id)
+  const heldAnatomy = anatomies.get(id)
+  if (!rebuild && heldBundle && stillStands(heldBundle) && heldAnatomy?.bundle === heldBundle) {
+    return heldAnatomy.value
+  }
+
+  const [client, bundle] = await Promise.all([
+    resolveClientPackage(h.root, rebuild),
+    getBundle(id, rebuild),
+  ])
+  // Concurrent anatomy readers can both have joined the same bundle build. Let
+  // the first projection win instead of repeating the synchronous source walk.
+  const current = anatomies.get(id)
+  if (!rebuild && current?.bundle === bundle) return current.value
+
+  const anatomy = Promise.resolve().then(() =>
+    buildAnatomy({
+      root: h.root,
+      schemaDirName: h.schemaDirName,
+      clientDir: client.status === 'available' ? client.sourceDir : undefined,
+      canonicalViews: bundle?.ir?.format === 'astrale.dsl' ? (bundle.ir.views ?? {}) : undefined,
+    }),
   )
-  anatomies.set(id, anatomy)
+  anatomies.set(id, { bundle, value: anatomy })
   return anatomy
 }
 
