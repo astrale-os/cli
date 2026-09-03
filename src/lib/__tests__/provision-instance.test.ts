@@ -1,3 +1,4 @@
+import { ResponseError } from '@astrale-os/sdk/client'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 import { provisionInstance } from '../provision-instance'
@@ -57,5 +58,125 @@ describe('managed Instance root import during provisioning', () => {
     expect(setActive).toHaveBeenCalledTimes(1)
     expect(setActive).toHaveBeenCalledWith('demo')
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
+  })
+
+  test('replays one operation until the retained Instance becomes ready', async () => {
+    const pending = {
+      id: '@created-instance',
+      slug: 'demo',
+      operationId: 'cli.instance.create.fixed',
+      url: '',
+      state: 'provisioning' as const,
+      phase: 'reserve-tenant',
+    }
+    const ready = {
+      ...pending,
+      url: 'https://demo.example.test/api',
+      state: 'ready' as const,
+      phase: 'ready',
+    }
+    const createOwnedInstance = mock()
+      .mockResolvedValueOnce(pending)
+      .mockResolvedValueOnce({ ...pending, phase: 'install-shell-root' })
+      .mockResolvedValueOnce(ready)
+    const sleep = mock(async () => {})
+    const upsertManagedBookmark = mock(async () => ({ entry: { url: ready.url } }))
+    const setActive = mock(async () => 'demo')
+    const importInstanceRootIdentity = mock(async () => ({ name: 'demo-root' }) as never)
+
+    const result = await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true },
+      {
+        createOwnedInstance,
+        operationId: () => pending.operationId,
+        now: () => 0,
+        sleep,
+        upsertManagedBookmark,
+        setActive,
+        importInstanceRootIdentity,
+      },
+    )
+
+    expect(result.created).toEqual(ready)
+    expect(createOwnedInstance).toHaveBeenCalledTimes(3)
+    expect(createOwnedInstance.mock.calls).toEqual([
+      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
+      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
+      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
+    ])
+    expect(sleep).toHaveBeenCalledTimes(2)
+    expect(upsertManagedBookmark).toHaveBeenCalledTimes(1)
+    expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
+  })
+
+  test('recovers a generic server failure by replaying the same operation', async () => {
+    const ready = {
+      id: '@created-instance',
+      slug: 'demo',
+      operationId: 'cli.instance.create.fixed',
+      url: 'https://demo.example.test/api',
+      state: 'ready' as const,
+    }
+    const createOwnedInstance = mock()
+      .mockRejectedValueOnce(new ResponseError(5000, 'Internal failure.', 'request-1' as never))
+      .mockResolvedValueOnce(ready)
+    const sleep = mock(async () => {})
+
+    const result = await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true },
+      {
+        createOwnedInstance,
+        operationId: () => ready.operationId,
+        now: () => 0,
+        sleep,
+        upsertManagedBookmark: async () => ({ entry: { url: ready.url } }),
+        setActive: async () => 'demo',
+        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+      },
+    )
+
+    expect(result.created).toEqual(ready)
+    expect(createOwnedInstance).toHaveBeenCalledTimes(2)
+    expect(createOwnedInstance.mock.calls[0]?.[2]).toBe(ready.operationId)
+    expect(createOwnedInstance.mock.calls[1]?.[2]).toBe(ready.operationId)
+    expect(sleep).toHaveBeenCalledTimes(1)
+  })
+
+  test('returns the nonterminal receipt without bookmarking when the recovery window ends', async () => {
+    const pending = {
+      id: '@created-instance',
+      slug: 'demo',
+      operationId: 'cli.instance.create.fixed',
+      url: '',
+      state: 'provisioning' as const,
+      phase: 'create-host-child',
+    }
+    const createOwnedInstance = mock(async () => pending)
+    const upsertManagedBookmark = mock()
+    const setActive = mock()
+    const importInstanceRootIdentity = mock()
+    let now = 0
+
+    const result = await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true },
+      {
+        createOwnedInstance,
+        operationId: () => pending.operationId,
+        now: () => (now += 10 * 60_000),
+        sleep: async () => {},
+        upsertManagedBookmark,
+        setActive,
+        importInstanceRootIdentity,
+      },
+    )
+
+    expect(result).toEqual({ created: pending, slug: 'demo' })
+    expect(createOwnedInstance).toHaveBeenCalledTimes(1)
+    expect(upsertManagedBookmark).not.toHaveBeenCalled()
+    expect(setActive).not.toHaveBeenCalled()
+    expect(importInstanceRootIdentity).not.toHaveBeenCalled()
   })
 })

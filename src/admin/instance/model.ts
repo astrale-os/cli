@@ -4,6 +4,7 @@ export type InstanceState = 'provisioning' | 'ready' | 'deleting' | 'failed' | '
 export interface InstanceInfo {
   readonly id: string
   readonly slug: string
+  readonly operationId?: string
   readonly url: string
   readonly issuer?: string
   readonly hostId?: string

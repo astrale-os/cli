@@ -28,7 +28,7 @@ export interface AdminInstanceContext {
 
 export interface AdminInstanceApi {
   list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
-  create(slug: string): Promise<InstanceInfo>
+  create(slug: string, requestedOperationId?: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
   delete(identifier: string): Promise<InstanceInfo>
   installDomain(identifier: string, domain: string): Promise<DomainInstallReceipt>
@@ -105,9 +105,9 @@ export async function connectAdminInstances(
 
   return Object.freeze({
     list,
-    async create(slug: string) {
+    async create(slug: string, requestedOperationId?: string) {
       const input = Object.freeze({
-        operationId: operationId('create'),
+        operationId: requestedOperationId ?? operationId('create'),
         slug,
       })
       return instanceFromSummary(
@@ -241,6 +241,7 @@ function instanceFromNode(node: Node): OwnedInstanceInfo {
   return instanceFromSummary({
     id: Path.id(node.id).raw,
     slug: node.props[property.slug],
+    operationId: node.props[property.operationId],
     url: node.props[property.url],
     issuer: node.props[property.issuer],
     organizationId: node.props[property.organizationId],
@@ -259,6 +260,9 @@ function instanceFromSummary(input: unknown): InstanceInfo {
   return Object.freeze({
     id: requiredNodePath(value.id, 'Admin Instance id'),
     slug: requiredString(value.slug, 'Admin Instance slug'),
+    ...(value.operationId === undefined
+      ? {}
+      : { operationId: requiredString(value.operationId, 'Admin Instance operation id') }),
     url: optionalStringValue(value.url) ?? '',
     ...(issuer === undefined ? {} : { issuer }),
     ...(value.hostId === undefined
