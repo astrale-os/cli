@@ -216,12 +216,14 @@ body {
   background-clip: content-box;
 }
 
-/* Comment / ask targeting: outline whatever the next click would pin to. An edge
-   gets its own line thickened instead — a box around it would cover its neighbours
-   and you could not tell which relationship the pin would land on.
+/* Comment / ask targeting: outline whatever the next click would pin to. A comment
+   draft keeps the same paint until its composer closes. An edge gets its own line
+   thickened instead — a box around it would cover its neighbours and you could not
+   tell which relationship the pin would land on.
    `data-revealed` shares the outline on purpose: opening a thread from the comments
    panel points at an element the same way targeting one does. */
 [data-comment-target]:not(.react-flow__edge),
+[data-comment-draft-target]:not(.react-flow__edge),
 [data-revealed] {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
@@ -232,7 +234,8 @@ body {
    vs local, inherited, selected — see `projectDomainCanvas`), and an inline declaration
    outranks any normal rule a stylesheet can write. Without it this block is dead: the line
    under the pointer stays the grey it was, and nothing says where the pin would land. */
-.react-flow__edge[data-comment-target] .react-flow__edge-path {
+.react-flow__edge[data-comment-target] .react-flow__edge-path,
+.react-flow__edge[data-comment-draft-target] .react-flow__edge-path {
   outline: none;
   stroke-width: 4px !important;
   stroke: var(--color-primary) !important;
@@ -396,6 +399,7 @@ body[data-target-mode] .react-flow.react-flow * {
    its sides on every one: only a stray line or two survived the card's `overflow: hidden`.
    Rows in a list wear the ring inside their own box instead, where nothing can cut it. */
 [data-member-list] > [data-comment-target],
+[data-member-list] > [data-comment-draft-target],
 [data-member-list] > [data-revealed] {
   outline-offset: -2px;
 }

@@ -419,34 +419,31 @@ export function NewComment({
   }
 
   return (
-    <div className="flex gap-2">
-      <Avatar role="user" name="You" />
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <Textarea
-          // biome-ignore lint/a11y/noAutofocus: the composer IS the point of this popover
-          autoFocus={autoFocus}
-          className="min-h-16 text-[13px]"
-          placeholder="Note for the agent…"
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-        />
-        <div className="flex justify-end gap-1">
-          {onCancel && (
-            <Button
-              size="xs"
-              variant="ghost"
-              onClick={() => {
-                clearText()
-                onCancel()
-              }}
-            >
-              Cancel
-            </Button>
-          )}
-          <Button size="xs" disabled={!text.trim() || create.isPending} onClick={submit}>
-            Comment
+    <div className="space-y-1.5" data-new-comment-composer>
+      <Textarea
+        // biome-ignore lint/a11y/noAutofocus: the composer IS the point of this popover
+        autoFocus={autoFocus}
+        className="min-h-16 text-[13px]"
+        placeholder="Note for the agent…"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+      />
+      <div className="flex justify-end gap-1">
+        {onCancel && (
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => {
+              clearText()
+              onCancel()
+            }}
+          >
+            Cancel
           </Button>
-        </div>
+        )}
+        <Button size="xs" disabled={!text.trim() || create.isPending} onClick={submit}>
+          Comment
+        </Button>
       </div>
     </div>
   )

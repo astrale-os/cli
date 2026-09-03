@@ -37,6 +37,7 @@ function resolveDraft(
       // read — and falling through to unrelated selection state would file the thread
       // on the wrong one (see `anchorData`).
       domainId,
+      targetElement: tagged,
       anchor: { ref, kind: anchorKindForRef(ref) },
       excerpt,
       x,
@@ -56,6 +57,7 @@ function resolveDraft(
       return {
         mode,
         domainId,
+        targetElement: node,
         anchor: { ref, kind: 'schema' },
         excerpt: ref.slice(6),
         x,
@@ -66,6 +68,7 @@ function resolveDraft(
       return {
         mode,
         domainId,
+        targetElement: node,
         anchor: { ref, kind: 'section' },
         excerpt: path,
         x,
@@ -84,6 +87,7 @@ function resolveDraft(
       return {
         mode,
         domainId,
+        targetElement: edge,
         anchor: { ref, kind: 'schema' },
         excerpt: ref.slice(5),
         x,
@@ -159,6 +163,10 @@ export function CommentModeOverlay() {
           useAsks.getState().start(draft.domainId, draft.anchor, draft.excerpt, draft.x, draft.y),
         )
       } else {
+        // Hand the hover call-out to the composer before leaving targeting mode. Its
+        // own lifecycle removes this marker when the popover closes, so the element
+        // stays visibly tied to the note while it is being written.
+        draft.targetElement.setAttribute('data-comment-draft-target', '')
         requestAnimationFrame(() => setCommentDraft(draft))
       }
     }
