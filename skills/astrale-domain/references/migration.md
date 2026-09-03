@@ -15,6 +15,21 @@ Removing or renaming a property, Class, Edge, Policy, callable, or origin does n
 Treat it as an explicit compatibility and data-migration design. Do not conceal it in Core data,
 Runtime initialization, a Provider, or an undocumented repair Action.
 
+Before reinstalling a Schema that removes a Class (Node or Edge), delete every existing instance of
+that Class. The Kernel refuses the reinstall with `DATA_MIGRATION_REQUIRED` while incompatible data
+remains.
+
+An Edge Class whose affected endpoint cardinality is `1` cannot be deleted immediately. Perform the
+change in stages:
+
+1. publish and install an intermediate Schema revision that loosens the endpoint cardinality from
+   `1` to optional (`0..1`);
+2. delete every existing instance of the Edge Class; and
+3. publish and install the final Schema revision that removes the Edge Class.
+
+Qualify each installed revision before proceeding to the next stage. Do not bypass the intermediate
+revision or treat `DATA_MIGRATION_REQUIRED` as a transient installation failure.
+
 ## Migration owner
 
 Treat first-class Migration authoring as unavailable unless the installed SDK exposes a public
