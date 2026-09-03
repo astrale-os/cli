@@ -111,18 +111,10 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
   // its row in the tree, and that is the whole answer — there is no module to inspect.
   const detail = selected && !isModuleRef(selected) ? selected : undefined
   const ready = preparationReady && inputs.length === domainIds.length
+  const composing = (pending || !ready) && errors.length === 0
   const providerKey = canvasDomains
     .map((domain) => `${domain.input.summary.id}:${domain.input.bundle.renderFingerprint}`)
     .join('|')
-
-  if ((pending || !ready) && errors.length === 0) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        {/* `inputs` is still empty here, so the count of domains ASKED for is what knows */}
-        {domainIds.length === 1 ? 'Introspecting schema…' : 'Composing workspace…'}
-      </div>
-    )
-  }
 
   return (
     <div className="flex h-full flex-col" data-testid="workspace-schema-section">
@@ -143,7 +135,11 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
 
         <div className="relative min-w-0 flex-1">
           {canvasDomains.length === 0 ? (
-            <EmptyCanvas />
+            composing && domainIds.length > 0 ? (
+              <CanvasLoading domainCount={domainIds.length} />
+            ) : (
+              <EmptyCanvas />
+            )
           ) : (
             <ReactFlowProvider key={providerKey}>
               <WorkspaceSchemaGraph domains={canvasDomains} onToggleInherited={toggleInherited} />
@@ -180,6 +176,18 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
           </PanelShell>
         ) : null}
       </div>
+    </div>
+  )
+}
+
+/** Loading belongs to the canvas: the domains rail and surrounding Studio stay interactive. */
+function CanvasLoading({ domainCount }: { domainCount: number }) {
+  return (
+    <div
+      data-testid="workspace-canvas-loading"
+      className="flex h-full items-center justify-center text-muted-foreground"
+    >
+      {domainCount === 1 ? 'Introspecting schema…' : 'Composing workspace…'}
     </div>
   )
 }
