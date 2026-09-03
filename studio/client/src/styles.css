@@ -229,6 +229,14 @@ body {
   outline-offset: 2px;
   border-radius: var(--radius-md);
 }
+/* Full-height panels and rail rows meet a clipping boundary: an outside outline loses
+   whichever sides cross that boundary (the detail panel's viewport edge, or the first
+   row's scroll viewport). Pull their ring into the surface so all four sides remain visible. */
+[data-comment-outline-inset][data-comment-target],
+[data-comment-outline-inset][data-comment-draft-target],
+[data-comment-outline-inset][data-revealed] {
+  outline-offset: -2px;
+}
 /* `!important` because an edge's colour and weight are DATA here, not styling: the canvas
    writes `stroke` / `stroke-width` straight onto the path as an inline style (cross-module
    vs local, inherited, selected — see `projectDomainCanvas`), and an inline declaration
