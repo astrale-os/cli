@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.73](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.72...cli/v1.0.0-beta.73) (2026-09-03)
+
+
+### Bug Fixes
+
+* **templates:** teach View authority boundaries ([#368](https://github.com/astrale-os/cli/issues/368)) ([d4630ee](https://github.com/astrale-os/cli/commit/d4630eed7d7066641b10ea671e9f7cf61d729e00))
+
 ## [1.0.0-beta.72](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.71...cli/v1.0.0-beta.72) (2026-09-03)
 
 
