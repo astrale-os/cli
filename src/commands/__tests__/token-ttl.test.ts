@@ -3,7 +3,7 @@ import type { AuthApi, Identity, IssuerId, MintedCredential } from '@astrale-os/
 import { describe, expect, mock, test } from 'bun:test'
 
 import { AstraleError } from '../../errors'
-import { issueToken, parseTtl } from '../token'
+import { issueToken, parseTtl, tokenCommand, tokenCredentialIntent } from '../token'
 
 describe('parseTtl', () => {
   test('keeps ordinary tokens short beneath the one-hour local operator proof', () => {
@@ -19,6 +19,31 @@ describe('parseTtl', () => {
 
   test('admits a positive integer', () => {
     expect(parseTtl('90')).toBe(90)
+  })
+
+  test('requests a caller-principal carrier for the complete nested token lifetime', () => {
+    expect(tokenCredentialIntent(240)).toEqual({
+      principal: 'caller',
+      nestedTtlSeconds: 240,
+    })
+  })
+
+  test('passes the admitted token lifetime into the command credential intent', async () => {
+    const runs: unknown[] = []
+
+    await tokenCommand(
+      { ttl: '90', raw: true },
+      {
+        runKernelCommand: (async (input: unknown) => {
+          runs.push(input)
+        }) as never,
+      },
+    )
+
+    expect(runs).toHaveLength(1)
+    expect(runs[0]).toMatchObject({
+      credential: { principal: 'caller', nestedTtlSeconds: 90 },
+    })
   })
 })
 

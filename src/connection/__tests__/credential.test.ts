@@ -1,6 +1,6 @@
 import type { SessionAuth } from '@astrale-os/sdk/client/session'
 
-import { issuer, type IssuerId } from '@astrale-os/sdk/auth'
+import { credential, issuer, type IssuerId } from '@astrale-os/sdk/auth'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -12,6 +12,7 @@ import type { AstraleConfig } from '../../lib/config'
 import { persistKeypair, signAs } from '../../keys/index'
 import { bindCredentialIdentity } from '../auth'
 import { createCliCredential, createConnectionCredential } from '../credential'
+import { nestedCredentialCarrierTtlSeconds } from '../lifetime'
 
 const SOURCE = issuer.accept('https://kernel.example')
 const TARGET_CALL = Object.freeze({
@@ -168,6 +169,77 @@ describe('connection credential', () => {
     }
   })
 
+  test('raises the destination carrier lifetime for a nested credential', () => {
+    const ttlSeconds = nestedCredentialCarrierTtlSeconds(30_000, 240)
+    expect(ttlSeconds).toBe(275)
+    expect(
+      createCliCredential(
+        { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
+        {},
+        config,
+        undefined,
+        30_000,
+        { principal: 'caller', nestedTtlSeconds: 240 },
+      )?.ttlSeconds,
+    ).toBe(275)
+    expect(() => nestedCredentialCarrierTtlSeconds(30_000, 0)).toThrow(TypeError)
+    expect(() => nestedCredentialCarrierTtlSeconds(30_000, Number.MAX_SAFE_INTEGER)).toThrow(
+      TypeError,
+    )
+  })
+
+  /** @evidence TEST-CLI-CONNECTION-CALLER-PRINCIPAL-SKIPS-DOMAIN-EXCHANGE */
+  test('preserves the selected human principal for nested credentials on a managed target', async () => {
+    const domainIssuer = issuer.accept('https://admin.example')
+    const source = token(Math.ceil(Date.now() / 1_000) + 600, 'dispatcher')
+    let fetches = 0
+    let minimumRemainingSeconds = 0
+    const auth = createCliCredential(
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE, domainIssuer },
+      { as: 'dispatcher' },
+      config,
+      async () => {
+        fetches += 1
+        throw new Error('Domain exchange must remain untouched')
+      },
+      30_000,
+      { principal: 'caller', nestedTtlSeconds: 240 },
+      async (options) => {
+        minimumRemainingSeconds = options.minimumRemainingSeconds ?? 0
+        return source
+      },
+    )
+    if (auth === undefined) throw new Error('expected authenticated credential')
+
+    const resolved = await auth.resolve(TARGET_CALL, new AbortController().signal)
+    if (resolved.credential === undefined) throw new Error('expected source credential')
+    const claims = credential.inspect(resolved.credential).claims
+
+    expect(auth.ttlSeconds).toBe(275)
+    expect(minimumRemainingSeconds).toBe(275)
+    expect(resolved).toMatchObject({ credential: source, delegate: { ttlSeconds: 275 } })
+    expect(claims.sub).toBe('dispatcher')
+    expect(JSON.stringify(claims)).not.toContain(domainIssuer)
+    expect(fetches).toBe(0)
+  })
+
+  test('rejects nested issuance through a Domain principal', () => {
+    expect(() =>
+      createCliCredential(
+        {
+          url: `${SOURCE}/invoke`,
+          kernelIssuer: SOURCE,
+          domainIssuer: issuer.accept('https://admin.example'),
+        },
+        {},
+        config,
+        undefined,
+        30_000,
+        { nestedTtlSeconds: 240 } as never,
+      ),
+    ).toThrow('Nested credential issuance requires the caller principal')
+  })
+
   test('rejects a long command before dispatch when its source bearer is too short', async () => {
     const expiresAt = Math.ceil(Date.now() / 1_000) + 120
     const auth = createConnectionCredential(SOURCE, { resolve: async () => token(expiresAt) }, 185)
@@ -267,11 +339,11 @@ describe('connection credential', () => {
   })
 })
 
-function token(exp: number): string {
+function token(exp: number, sub = 'principal'): string {
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url')
   return `${encode({ alg: 'EdDSA', typ: 'JWT' })}.${encode({
     iss: SOURCE,
-    sub: 'principal',
+    sub,
     aud: SOURCE,
     exp,
   })}.signature`

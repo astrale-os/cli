@@ -1,6 +1,6 @@
 import { issuer, type AuthApi, type IssuerId, type MintedCredential } from '@astrale-os/sdk/auth'
 
-import type { KernelCommandOpts } from '../connection'
+import type { CredentialIntent, KernelCommandOpts } from '../connection'
 import type { CommandDefinition } from '../program/index'
 
 import { runKernelCommand } from '../connection'
@@ -23,7 +23,16 @@ export type TokenOpts = KernelCommandOpts & {
 
 const DEFAULT_TOKEN_TTL_SECONDS = 4 * 60
 
-export async function tokenCommand(opts: TokenOpts): Promise<void> {
+export interface TokenCommandDependencies {
+  readonly runKernelCommand: typeof runKernelCommand
+}
+
+const DEFAULT_DEPENDENCIES: TokenCommandDependencies = Object.freeze({ runKernelCommand })
+
+export async function tokenCommand(
+  opts: TokenOpts,
+  dependencies: TokenCommandDependencies = DEFAULT_DEPENDENCIES,
+): Promise<void> {
   const commandOpts: TokenOpts = opts.for && !opts.as ? { ...opts, as: opts.for } : opts
   let ttl: number
   try {
@@ -31,9 +40,10 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
   } catch (error) {
     failInput(error, opts)
   }
-  await runKernelCommand<string>({
+  await dependencies.runKernelCommand<string>({
     opts: commandOpts,
     label: 'Minting token',
+    credential: tokenCredentialIntent(ttl),
     fn: async (ctx) => {
       const audience =
         commandOpts.audience === undefined
@@ -52,6 +62,11 @@ export async function tokenCommand(opts: TokenOpts): Promise<void> {
       process.stdout.write(`${token}\n`)
     },
   })
+}
+
+/** Preserve the selected caller and enough parent lifetime for the requested token. */
+export function tokenCredentialIntent(ttlSeconds: number): CredentialIntent {
+  return Object.freeze({ principal: 'caller', nestedTtlSeconds: ttlSeconds })
 }
 
 /** Issue either a top-level Kernel credential or an external-audience delegation. */

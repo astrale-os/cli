@@ -10,7 +10,11 @@ import { AstraleError } from '../errors'
 import { remainingCredentialLifetimeSeconds } from '../lib/credential-lifetime'
 import { resolveCredential, resolvePersistedIdpSourceIdentity } from './auth'
 import { createExchangeCredentialResolver } from './exchange'
-import { exchangeCredentialTtlSeconds, invocationCredentialTtlSeconds } from './lifetime'
+import {
+  exchangeCredentialTtlSeconds,
+  invocationCredentialTtlSeconds,
+  nestedCredentialCarrierTtlSeconds,
+} from './lifetime'
 import { registrationKeyForTarget } from './target'
 
 const DELEGATION_TTL_SECONDS = 60
@@ -20,6 +24,13 @@ export interface SourceCredentialResolver {
   cacheIdentity?(): Promise<Readonly<{ issuer: string; subject: string }> | undefined>
   resolve(audience: IssuerId, signal: AbortSignal): Promise<string>
 }
+
+/** A nested credential can only be issued through the authenticated caller. */
+export type CredentialIntent =
+  | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
+  | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
+
+type CredentialResolver = typeof resolveCredential
 
 /** Resolve source authority; an omitted Session delegation preserves exact current authority. */
 export function createConnectionCredential(
@@ -58,8 +69,8 @@ function sourceBoundDelegationTtl(input: string, requestedTtlSeconds: number): n
     if (remaining < requestedTtlSeconds) {
       throw new AstraleError(
         'CREDENTIAL_LIFETIME_INSUFFICIENT',
-        'The selected credential cannot cover the requested command timeout.',
-        `Use a fresh identity session or a shorter --timeout; ${Math.max(0, remaining)} seconds remain but ${requestedTtlSeconds} are required.`,
+        'The selected credential cannot cover the requested operation lifetime.',
+        `Use a fresh identity session or shorten the requested timeout or token lifetime; ${Math.max(0, remaining)} seconds remain but ${requestedTtlSeconds} are required.`,
       )
     }
     return Math.max(1, Math.min(requestedTtlSeconds, remaining))
@@ -77,17 +88,29 @@ export function createCliCredential(
   config: AstraleConfig,
   fetch: Fetch = globalThis.fetch,
   timeoutMs = 30_000,
+  intent: CredentialIntent = {},
+  resolveSource: CredentialResolver = resolveCredential,
 ): SessionAuth | undefined {
+  if (intent.nestedTtlSeconds !== undefined && intent.principal !== 'caller') {
+    throw new TypeError('Nested credential issuance requires the caller principal.')
+  }
   validateCredentialSelection(options)
   if (options.anonymous === true) return undefined
+  const useDomainPrincipal =
+    target.domainIssuer !== undefined &&
+    options.creds === undefined &&
+    intent.principal !== 'caller'
+  const ttlSeconds =
+    intent.nestedTtlSeconds === undefined
+      ? invocationCredentialTtlSeconds(timeoutMs)
+      : nestedCredentialCarrierTtlSeconds(timeoutMs, intent.nestedTtlSeconds)
   const authOptions = Object.freeze({
     ...(options.as === undefined ? {} : { as: options.as }),
     ...(options.creds === undefined ? {} : { creds: options.creds }),
     ...(target.defaultIdentity === undefined ? {} : { defaultIdentity: target.defaultIdentity }),
-    minimumRemainingSeconds:
-      target.domainIssuer === undefined
-        ? invocationCredentialTtlSeconds(timeoutMs)
-        : exchangeCredentialTtlSeconds(timeoutMs),
+    minimumRemainingSeconds: useDomainPrincipal
+      ? exchangeCredentialTtlSeconds(timeoutMs)
+      : ttlSeconds,
   })
   const source: SourceCredentialResolver = {
     async cacheIdentity() {
@@ -95,7 +118,7 @@ export function createCliCredential(
     },
     async resolve(audience, signal) {
       requireLive(signal)
-      const credential = await resolveCredential(
+      const credential = await resolveSource(
         authOptions,
         config,
         audience,
@@ -105,16 +128,14 @@ export function createCliCredential(
       return credential
     },
   }
-  const effective =
-    target.domainIssuer === undefined || options.creds !== undefined
-      ? source
-      : createExchangeCredentialResolver(
-          { ...target, domainIssuer: target.domainIssuer },
-          source,
-          fetch,
-          timeoutMs,
-        )
-  const ttlSeconds = invocationCredentialTtlSeconds(timeoutMs)
+  const effective = useDomainPrincipal
+    ? createExchangeCredentialResolver(
+        { ...target, domainIssuer: target.domainIssuer },
+        source,
+        fetch,
+        timeoutMs,
+      )
+    : source
   return createConnectionCredential(target.kernelIssuer, effective, ttlSeconds)
 }
 
