@@ -2,9 +2,9 @@ import type { StudioCore, StudioSchemaBundle } from '@shared/types'
 
 import { expect, test } from 'bun:test'
 
-import { indexPolicies } from '@/lib/policy'
+import { indexPolicies, type PolicyPattern } from '@/lib/policy'
 
-import { evaluatePolicy, groupProofs } from './policy-evaluate'
+import { MAX_EXPANDED_POLICY_DEPTH, evaluatePolicy, groupProofs } from './policy-evaluate'
 import { buildDataGraph } from './policy-graph'
 
 const ORIGIN = 'org.example.dev'
@@ -290,6 +290,48 @@ test('a reference to an undeclared policy is reported, not thrown', () => {
   expect(result).toEqual({
     status: 'unsupported',
     reason: 'references a policy this domain does not declare: Missing',
+  })
+})
+
+test('accepts total expanded Policy depth 8 and reports depth 9 as unsupported', () => {
+  let pattern: PolicyPattern = {
+    source: { kind: 'subject' },
+    class: ref('class', 'owns'),
+    target: { kind: 'object' },
+  }
+  for (let depth = 1; depth < 4; depth++) {
+    pattern = depth % 2 === 0 ? { allOf: [pattern] } : { anyOf: [pattern] }
+  }
+  const policies: Record<string, unknown> = {
+    Depth4: { ref: ref('policy', 'Depth4'), expression: { match: pattern } },
+  }
+  let previous = 'Depth4'
+  for (let depth = 5; depth <= 9; depth++) {
+    const name = `Depth${String(depth)}`
+    policies[name] = {
+      ref: ref('policy', name),
+      expression:
+        depth % 2 === 0
+          ? { allOf: [ref('policy', previous)] }
+          : { anyOf: [ref('policy', previous)] },
+    }
+    previous = name
+  }
+  const depthIndex = indexPolicies({ domain: ORIGIN, policies } as never)
+  const at = (depth: number) => depthIndex.byKey.get(`${ORIGIN}:policy.Depth${String(depth)}`)!
+
+  expect(MAX_EXPANDED_POLICY_DEPTH).toBe(8)
+  expect(
+    evaluatePolicy({
+      policy: at(8),
+      index: depthIndex,
+      graph,
+      probe: { subject: 'ada', object: { kind: 'node', id: 'g1' } },
+    }).status,
+  ).toBe('ok')
+  expect(evaluatePolicy({ policy: at(9), index: depthIndex, graph })).toEqual({
+    status: 'unsupported',
+    reason: 'expanded policy depth 9 exceeds 8',
   })
 })
 

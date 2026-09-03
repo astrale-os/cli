@@ -48,7 +48,8 @@ export type PolicyEvaluation =
 
 /** Proofs are enumerated, so a pathological pattern on a big Dataset stops here. */
 export const PROOF_LIMIT = 2000
-const MAX_COMPOSITION_DEPTH = 8
+/** Mirrors the public `POLICY_V1_BUDGETS.patternDepth` contract. */
+export const MAX_EXPANDED_POLICY_DEPTH = 8
 
 class Unsupported extends Error {}
 
@@ -273,26 +274,51 @@ function resolveRefs(refs: Policy['ref'][], context: Context): Policy[] {
   })
 }
 
+function patternDepth(pattern: PolicyPattern): number {
+  if ('source' in pattern) return 1
+  if ('exists' in pattern) return 1 + patternDepth(pattern.exists.where)
+  const children = 'allOf' in pattern ? pattern.allOf : pattern.anyOf
+  return 1 + Math.max(0, ...children.map(patternDepth))
+}
+
+function expandedPolicyDepth(
+  policy: Policy,
+  context: Context,
+  visiting = new Set<string>(),
+): number {
+  const key = schemaRefKey(policy.ref)
+  if (visiting.has(key)) throw new Unsupported('policy composition is cyclic')
+  if ('match' in policy.expression) return patternDepth(policy.expression.match)
+  const nested = new Set(visiting)
+  nested.add(key)
+  const refs = 'allOf' in policy.expression ? policy.expression.allOf : policy.expression.anyOf
+  return (
+    1 +
+    Math.max(
+      0,
+      ...resolveRefs(refs, context).map((child) => expandedPolicyDepth(child, context, nested)),
+    )
+  )
+}
+
 function* solvePolicies(
   policies: Policy[],
   at: number,
   bindings: Bindings,
   edges: number[],
   context: Context,
-  depth: number,
 ): Generator<Solution> {
   if (at === policies.length) {
     yield { bindings, edges }
     return
   }
-  for (const solution of solveExpression(policies[at], bindings, context, depth)) {
+  for (const solution of solveExpression(policies[at], bindings, context)) {
     yield* solvePolicies(
       policies,
       at + 1,
       solution.bindings,
       [...edges, ...solution.edges],
       context,
-      depth,
     )
   }
 }
@@ -301,9 +327,7 @@ function* solveExpression(
   policy: Policy,
   bindings: Bindings,
   context: Context,
-  depth: number,
 ): Generator<Solution> {
-  if (depth > MAX_COMPOSITION_DEPTH) throw new Unsupported('policy composition is too deep')
   const scope = schemaRefKey(policy.ref)
   const expression = policy.expression
   if ('match' in expression) {
@@ -311,18 +335,11 @@ function* solveExpression(
     return
   }
   if ('allOf' in expression) {
-    yield* solvePolicies(
-      resolveRefs(expression.allOf, context),
-      0,
-      bindings,
-      [],
-      context,
-      depth + 1,
-    )
+    yield* solvePolicies(resolveRefs(expression.allOf, context), 0, bindings, [], context)
     return
   }
   for (const alternative of resolveRefs(expression.anyOf, context)) {
-    yield* solveExpression(alternative, bindings, context, depth + 1)
+    yield* solveExpression(alternative, bindings, context)
   }
 }
 
@@ -338,7 +355,21 @@ export function evaluatePolicy(input: {
   guardedEdges?: readonly string[]
 }): PolicyEvaluation {
   const { policy, index, graph, probe, guardedEdges } = input
-  const guard = policyGuard(policy, index)
+  const context: Context = { index, graph }
+  let guard: ReturnType<typeof policyGuard>
+  try {
+    const depth = expandedPolicyDepth(policy, context)
+    if (depth > MAX_EXPANDED_POLICY_DEPTH) {
+      return {
+        status: 'unsupported',
+        reason: `expanded policy depth ${String(depth)} exceeds ${String(MAX_EXPANDED_POLICY_DEPTH)}`,
+      }
+    }
+    guard = policyGuard(policy, index)
+  } catch (error) {
+    if (error instanceof Unsupported) return { status: 'unsupported', reason: error.message }
+    throw error
+  }
   const base = new Map<string, string>()
   if (probe?.subject) base.set('subject', probe.subject)
 
@@ -363,7 +394,6 @@ export function evaluatePolicy(input: {
     objects.push(null)
   }
 
-  const context: Context = { index, graph }
   const proofs: PolicyProof[] = []
   const seen = new Set<string>()
   let truncated = false
@@ -376,7 +406,7 @@ export function evaluatePolicy(input: {
         if (!edge) continue
         bindings = bind(bind(bindings, 'source', edge.from), 'target', edge.to)
       }
-      for (const solution of solveExpression(policy, bindings, context, 0)) {
+      for (const solution of solveExpression(policy, bindings, context)) {
         const subject = solution.bindings.get('subject') ?? null
         const boundObject = solution.bindings.get('object')
         const proofObject: PolicyObject | null =
