@@ -107,10 +107,10 @@ async function ensureBun(): Promise<void> {
 }
 
 /**
- * Poll a URL until it answers (any HTTP response = up), the deadline passes, or
- * `abort` fires. Aborting must also clear the pending retry timer: a live timer
- * keeps the event loop — and therefore the whole CLI — alive long after we
- * stopped caring about the answer.
+ * Poll a URL until it answers successfully, the deadline passes, or `abort`
+ * fires. Aborting must also clear the pending retry timer: a live timer keeps
+ * the event loop — and therefore the whole CLI — alive long after we stopped
+ * caring about the answer.
  */
 export async function waitForHttp(
   url: string,
@@ -120,11 +120,13 @@ export async function waitForHttp(
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline && abort?.aborted !== true) {
     try {
-      await fetch(url, { signal: AbortSignal.timeout(1000) })
-      return true
+      const response = await fetch(url, { signal: AbortSignal.timeout(1000) })
+      if (response.ok) return true
     } catch {
-      await delay(150, abort)
+      // Connection failures are retried on the same cadence as non-ready HTTP
+      // responses below.
     }
+    await delay(150, abort)
   }
   return false
 }
@@ -310,9 +312,11 @@ Examples:
         log.dim(`  port ${STUDIO_PORT_BASE} busy (another studio?) — using ${studioPort}`)
       }
       const displayUrl = `http://localhost:${studioPort}`
-      // The studio server binds 127.0.0.1, so we PROBE IPv4 explicitly — `localhost`
-      // can resolve to ::1 first, which a 127.0.0.1-only listener won't answer.
-      const probeUrl = `http://127.0.0.1:${studioPort}/`
+      // The studio server binds 127.0.0.1, so we PROBE IPv4 explicitly —
+      // `localhost` can resolve to ::1 first, which a 127.0.0.1-only listener
+      // won't answer. This endpoint stays unavailable until initial indexing is
+      // complete, even though the UI's port is deliberately bound earlier.
+      const probeUrl = `http://127.0.0.1:${studioPort}/api/ready`
 
       // Supervise the child processes. Each runs in its OWN process group
       // (detached) so one group signal tears down the whole tree — Vite, the
@@ -454,15 +458,17 @@ Examples:
         serverChild.once('exit', (code) => res(code ?? 0)),
       )
 
-      if (!isMachine(opts)) log.step(`Starting Domain Studio${dev ? ' (dev)' : ''} — ${displayUrl}`)
-      // The server binds its port before it indexes anything, so this is a wait on a
-      // process starting up — seconds — not on a workspace being introspected, which
-      // now happens behind the open port. A server that gives up first (no domain
-      // found, a lost port) ends the wait right there instead: it already told the
-      // user why, and the terminal is theirs again immediately. We open the browser
-      // once it actually answers.
+      if (!isMachine(opts))
+        log.step(
+          `Starting Domain Studio${dev ? ' (dev)' : ''} — ${displayUrl}  (indexing the workspace…)`,
+        )
+      // The server binds before indexing so the UI can still serve early, but the
+      // readiness endpoint only succeeds after every initial domain has settled.
+      // This keeps the progress block and the final ready message in chronological
+      // order. A server that gives up first ends the wait immediately instead of
+      // holding the terminal for the full indexing budget.
       const readiness = await awaitStudioReadiness(
-        (abort) => waitForHttp(probeUrl, 60_000, abort),
+        (abort) => waitForHttp(probeUrl, 180_000, abort),
         serverDone,
       )
       if (readiness === 'exited') {
@@ -481,13 +487,11 @@ Examples:
       if (isMachine(opts)) {
         output({ url: displayUrl, port: studioPort, mode: dev ? 'dev' : 'prod', workspace }, opts)
       } else {
-        // "Serving", not "finished". The server answers as soon as it is listening and
-        // indexes the workspace behind that — so this must not read as a promise that
-        // every canvas is ready. The server's own `n/N` lines below say when they are.
-        log.success(`Domain Studio serving${dev ? ' (dev — live reload)' : ''}`)
+        if (ready) log.success(`Domain Studio ready${dev ? ' (dev — live reload)' : ''}`)
+        else
+          log.warn('Domain Studio is still indexing — the URL will become ready when it finishes.')
         log.dim(`  ${workspace}`)
         log.dim(`  → ${displayUrl}`)
-        if (!ready) log.warn('Still starting — open the URL above once the server answers.')
       }
       if (ready && opts.open === true) openBrowser(displayUrl)
 
