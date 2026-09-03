@@ -43,8 +43,11 @@ export interface PreparedWorkspaceState {
 /**
  * Which projections this render may draw.
  *
- * Never the ones prepared for another SELECTION: a same-sized workspace of different domains
- * would draw the previous one's canvas under the new one's name.
+ * Never a domain prepared for a different selection: a same-sized workspace of different
+ * domains would otherwise draw the previous canvas under the new one's name. Domains shared by
+ * both selections are already valid, though, so keep that intersection on screen while the new
+ * composition is prepared. This is what makes an eye toggle change the canvas without blanking
+ * the whole schema section.
  *
  * A re-projection of the SAME selection is a different matter — a drag persisted, a class
  * hidden, a module collapsed all rebuild the projection, and until the new one lands the
@@ -53,14 +56,30 @@ export interface PreparedWorkspaceState {
  * itself, which is how a drop threw away the pan and zoom the reader had set.
  */
 export function preparedWorkspaceStatus(
-  expectedSelection: string,
-  expectedCount: number,
+  expectedDomainIds: string[],
   state: PreparedWorkspaceState,
 ): { domains: WorkspaceDomainProjection[]; ready: boolean } {
+  const expectedSelection = expectedDomainIds.join('::')
   const matches = state.selection !== null && state.selection === expectedSelection
+  if (matches) {
+    return {
+      // Keep the exact array identity: the graph uses it to recognize layout-write echoes.
+      domains: state.domains,
+      ready: state.domains.length === expectedDomainIds.length,
+    }
+  }
+
+  const preparedById = new Map(
+    state.domains.map((domain) => [domain.input.summary.id, domain] as const),
+  )
+  const domains = expectedDomainIds.flatMap((id) => {
+    const domain = preparedById.get(id)
+    return domain ? [domain] : []
+  })
+
   return {
-    domains: matches ? state.domains : [],
-    ready: matches && state.domains.length === expectedCount,
+    domains,
+    ready: state.selection !== null && domains.length === expectedDomainIds.length,
   }
 }
 
@@ -138,5 +157,8 @@ export function usePreparedWorkspaceDomains(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preparationKey])
 
-  return preparedWorkspaceStatus(workspaceSelectionKey(inputs), inputs.length, state)
+  return preparedWorkspaceStatus(
+    inputs.map((input) => input.summary.id),
+    state,
+  )
 }

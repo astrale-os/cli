@@ -4,25 +4,57 @@ import type { WorkspaceDomainProjection } from './projection'
 
 import { evictStaleProjections, preparedWorkspaceStatus } from './use-prepared-domains'
 
-const drawn = {} as WorkspaceDomainProjection
+function projection(id: string): WorkspaceDomainProjection {
+  return { input: { summary: { id } } } as WorkspaceDomainProjection
+}
+
+const drawn = projection('some-domain')
 
 test('a same-sized workspace never renders projections prepared for the prior selection', () => {
   expect(
-    preparedWorkspaceStatus('other-domain', 1, { selection: 'some-domain', domains: [drawn] }),
+    preparedWorkspaceStatus(['other-domain'], {
+      selection: 'some-domain',
+      domains: [drawn],
+    }),
   ).toEqual({ domains: [], ready: false })
+})
+
+test('removing a domain retains every projection still on the canvas', () => {
+  const removed = projection('removed-domain')
+
+  expect(
+    preparedWorkspaceStatus(['some-domain'], {
+      selection: 'some-domain::removed-domain',
+      domains: [drawn, removed],
+    }),
+  ).toEqual({ domains: [drawn], ready: true })
+})
+
+test('adding a domain keeps the current canvas visible until the addition is prepared', () => {
+  expect(
+    preparedWorkspaceStatus(['some-domain', 'added-domain'], {
+      selection: 'some-domain',
+      domains: [drawn],
+    }),
+  ).toEqual({ domains: [drawn], ready: false })
 })
 
 // A drag persisted, a class hidden, a module collapsed: the projection is rebuilt for the
 // SAME domains. Handing back an empty canvas there unmounts React Flow, and what remounts
 // has lost the viewport — which is how a drop used to re-frame the whole graph.
 test('a re-projection of the same selection keeps the canvas already on screen', () => {
-  expect(
-    preparedWorkspaceStatus('some-domain', 1, { selection: 'some-domain', domains: [drawn] }),
-  ).toEqual({ domains: [drawn], ready: true })
+  const domains = [drawn]
+  const status = preparedWorkspaceStatus(['some-domain'], {
+    selection: 'some-domain',
+    domains,
+  })
+
+  expect(status).toEqual({ domains: [drawn], ready: true })
+  expect(status.domains).toBe(domains)
 })
 
 test('nothing prepared yet is never ready, not even for an empty workspace', () => {
-  expect(preparedWorkspaceStatus('', 0, { selection: null, domains: [] })).toEqual({
+  expect(preparedWorkspaceStatus([], { selection: null, domains: [] })).toEqual({
     domains: [],
     ready: false,
   })
