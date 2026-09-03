@@ -40,7 +40,10 @@ export function InstanceSwitcher() {
     try {
       const r = await api.switchInstance(name)
       if (r.ok) {
-        await qc.invalidateQueries({ queryKey: qk.instances })
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: qk.instances }),
+          qc.invalidateQueries({ queryKey: ['view-runtime'] }),
+        ])
         toast.success(`Switched to ${r.active ?? name}`)
         setOpen(false)
       } else {

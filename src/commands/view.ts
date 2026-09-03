@@ -49,7 +49,7 @@ import { snapshotText, waitForSettledSnapshot } from '../lib/view/snapshot'
  * Design + protocol details: VIEW_CLI_SPEC.md at the workspace root.
  */
 
-type ViewOpts = KernelCommandOpts &
+export type ViewOpts = KernelCommandOpts &
   RawOutputOpts & {
     target?: string
     view?: string
@@ -64,6 +64,8 @@ type ViewOpts = KernelCommandOpts &
     close?: string | boolean
     all?: boolean
     allowExternalOrigin?: string[]
+    /** Internal Studio host override; ordinary CLI calls resolve their own executable. */
+    serveRuntime?: { file: string; args: string[] }
   }
 
 const VIEW_PORT_BASE = 4419
@@ -242,7 +244,10 @@ async function startSession(
     identity,
     target,
   }))
-  const [instances, runtime] = await Promise.all([readInstances(), resolveServeRuntime()])
+  const [instances, runtime] = await Promise.all([
+    readInstances(),
+    opts.serveRuntime ? Promise.resolve(opts.serveRuntime) : resolveServeRuntime(),
+  ])
   return withViewPortAllocationLock(() =>
     startSessionLocked(
       view,

@@ -78,8 +78,8 @@ export function useViewRuntime(id?: string, slug?: string, enabled = true) {
     queryKey: qk.viewRuntime(id ?? '', slug ?? ''),
     queryFn: () => api.viewRuntime(id!, slug!),
     enabled: enabled && !!id && !!slug,
-    staleTime: 2000,
-    refetchInterval: enabled ? 10_000 : false,
+    staleTime: 60_000,
+    refetchInterval: false,
   })
 }
 /** Declared views cross-referenced with the schema + client routes (binding + drift). */

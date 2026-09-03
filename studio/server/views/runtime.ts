@@ -6,7 +6,14 @@ import type {
 } from '../../shared/types'
 
 import { activeInstanceName } from '../instances/active'
+import { rememberViewPreparation } from './preparation'
 import { listViewTargets, viewDefinitionBindings } from './target'
+
+interface ViewRuntimeDependencies {
+  activeInstance: typeof activeInstanceName
+  listTargets: typeof listViewTargets
+  rememberPreparation: typeof rememberViewPreparation
+}
 
 export async function getViewRuntime(
   root: string,
@@ -14,12 +21,20 @@ export async function getViewRuntime(
   view: ViewInfo,
   bundle: StudioSchemaBundle | null,
   timeoutMs: number,
+  dependencies: Partial<ViewRuntimeDependencies> = {},
 ): Promise<ViewRuntime> {
-  const instance = await activeInstanceName()
+  const instance = await (dependencies.activeInstance ?? activeInstanceName)()
   const targetRequired = viewDefinitionBindings(origin, view, bundle).length > 0
   const targets = targetRequired
     ? instance
-      ? await listViewTargets(root, origin, view, bundle, instance, timeoutMs)
+      ? await (dependencies.listTargets ?? listViewTargets)(
+          root,
+          origin,
+          view,
+          bundle,
+          instance,
+          timeoutMs,
+        )
       : ({
           status: 'unavailable',
           items: [],
@@ -36,5 +51,13 @@ export async function getViewRuntime(
         truncated: false,
       } satisfies ViewTargetResult)
 
-  return { slug: view.slug, instance, targetRequired, targets }
+  const preparation = (dependencies.rememberPreparation ?? rememberViewPreparation)({
+    root,
+    origin,
+    slug: view.slug,
+    instance,
+    targetRequired,
+    targets,
+  })
+  return { slug: view.slug, preparationId: preparation.id, instance, targetRequired, targets }
 }

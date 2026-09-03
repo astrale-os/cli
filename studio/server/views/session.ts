@@ -4,33 +4,21 @@ import type {
   ViewSessionResult,
   ViewTargetCandidate,
 } from '../../shared/types'
-import type { StudioCliDecoder } from '../cli'
 
-import { decodeJsonObject, runStudioCliJson } from '../cli'
+import { closeStudioViewSession, openStudioViewSession } from '../../../src/lib/view/studio-runtime'
+import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
+import { readViewPreparation } from './preparation'
 import { rememberTarget } from './selection-repository'
-import { listViewTargets, viewDefinitionBindings } from './target'
 
 export { conciseCliFailure } from '../cli'
 
-interface AstraleResult<T> {
-  ok: boolean
-  data: T | null
-  detail: string
-}
-
-let viewSessionCommandTail: Promise<void> = Promise.resolve()
-
-export function viewSessionArgs(
-  origin: string,
-  slug: string,
-  instance: string,
-  targetRef?: string,
-): string[] {
-  const args = ['view', `/:${assertOrigin(origin)}:view.${assertViewSlug(slug)}`]
-  if (targetRef) args.push('--target', targetRef)
-  args.push('--no-open', '--json', '-i', instance)
-  return args
+interface ViewSessionDependencies {
+  activeInstance: typeof activeInstanceName
+  close: typeof closeStudioViewSession
+  open: typeof openStudioViewSession
+  readPreparation: typeof readViewPreparation
+  serveRuntime: typeof studioViewServeRuntime
 }
 
 interface OpenedViewPayload {
@@ -38,29 +26,6 @@ interface OpenedViewPayload {
     id?: string
     pageUrl?: string
     view?: { route?: { href?: string } }
-  }
-}
-
-function decodeOpenedViewPayload(value: unknown): OpenedViewPayload | null {
-  const payload = decodeJsonObject(value)
-  if (!payload) return null
-  const session = decodeJsonObject(payload.session)
-  if (!session) return null
-  const view = decodeJsonObject(session.view)
-  const route = decodeJsonObject(view?.route)
-  if (
-    typeof session.id !== 'string' ||
-    typeof session.pageUrl !== 'string' ||
-    typeof route?.href !== 'string'
-  ) {
-    return null
-  }
-  return {
-    session: {
-      id: session.id,
-      pageUrl: session.pageUrl,
-      view: { route: { href: route.href } },
-    },
   }
 }
 
@@ -84,18 +49,39 @@ export async function launchViewSession(
   root: string,
   origin: string,
   view: ViewInfo,
-  bundle: StudioSchemaBundle | null,
-  request: { targetId?: unknown },
+  _bundle: StudioSchemaBundle | null,
+  request: { preparationId?: unknown; targetId?: unknown },
   timeoutMs: number,
+  dependencies: Partial<ViewSessionDependencies> = {},
 ): Promise<ViewSessionResult> {
-  const instance = await activeInstanceName()
+  const preparationId =
+    typeof request.preparationId === 'string' ? request.preparationId.trim() : ''
+  const readPreparation = dependencies.readPreparation ?? readViewPreparation
+  const preparation = preparationId
+    ? readPreparation(preparationId, { root, origin, slug: view.slug })
+    : null
+  if (!preparation) {
+    return {
+      status: 'unavailable',
+      reason: 'The view preparation expired. Refresh the view and try again.',
+    }
+  }
+
+  const instance = preparation.instance
   if (!instance) return { status: 'unavailable', reason: 'No active Astrale instance.' }
+  const currentInstance = await (dependencies.activeInstance ?? activeInstanceName)()
+  if (currentInstance !== instance) {
+    return {
+      status: 'unavailable',
+      reason: 'The active instance changed. Refresh the view and try again.',
+    }
+  }
 
   let target: ViewTargetCandidate | null = null
-  if (viewDefinitionBindings(origin, view, bundle).length > 0) {
+  if (preparation.targetRequired) {
     const targetId = typeof request.targetId === 'string' ? request.targetId.trim() : ''
     if (!targetId) return { status: 'unavailable', reason: 'Select a target before opening.' }
-    const targets = await listViewTargets(root, origin, view, bundle, instance, timeoutMs)
+    const targets = preparation.targets
     if (targets.status !== 'available') {
       return { status: 'unavailable', reason: targets.reason ?? 'Targets could not be queried.' }
     }
@@ -108,26 +94,41 @@ export async function launchViewSession(
     }
   }
 
-  const opened = await runViewSessionCommand<OpenedViewPayload>(
-    viewSessionArgs(origin, view.slug, instance, target?.ref),
-    Math.max(20_000, timeoutMs + 12_000),
-    decodeOpenedViewPayload,
-  )
-  const session = opened.ok ? readyViewSession(opened.data, target) : null
-  if (!session) {
+  let opened: OpenedViewPayload | null = null
+  try {
+    opened = {
+      session: await (dependencies.open ?? openStudioViewSession)({
+        viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
+        ...(target ? { targetRef: target.ref } : {}),
+        instance,
+        timeoutMs: Math.max(20_000, timeoutMs + 12_000),
+        serveRuntime: (dependencies.serveRuntime ?? studioViewServeRuntime)(),
+      }),
+    }
+  } catch (error) {
     return {
       status: 'unavailable',
-      reason: opened.detail || '`astrale view` could not start the preview session.',
+      reason:
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : '`astrale view` could not start the preview session.',
     }
+  }
+  const session = readyViewSession(opened, target)
+  if (!session) {
+    return { status: 'unavailable', reason: '`astrale view` returned an invalid session.' }
   }
 
   if (target) rememberTarget(root, instance, view.slug, target)
   return session
 }
 
-export async function closeViewSession(sessionId: string): Promise<{ ok: true }> {
+export async function closeViewSession(
+  sessionId: string,
+  dependencies: Pick<Partial<ViewSessionDependencies>, 'close'> = {},
+): Promise<{ ok: true }> {
   if (!/^v-[0-9a-f]+$/.test(sessionId)) return { ok: true }
-  await runViewSessionCommand(['view', '--close', sessionId, '--json'], 6000, decodeJsonObject)
+  await (dependencies.close ?? closeStudioViewSession)(sessionId)
   return { ok: true }
 }
 
@@ -141,26 +142,8 @@ function assertViewSlug(value: string): string {
   return value
 }
 
-function runViewSessionCommand<T>(
-  args: string[],
-  timeoutMs: number,
-  decoder: StudioCliDecoder<T>,
-): Promise<AstraleResult<T>> {
-  const command = viewSessionCommandTail.then(
-    () => runAstraleJson(args, timeoutMs, decoder),
-    () => runAstraleJson(args, timeoutMs, decoder),
-  )
-  viewSessionCommandTail = command.then(
-    () => undefined,
-    () => undefined,
-  )
-  return command
-}
-
-async function runAstraleJson<T>(
-  args: string[],
-  timeoutMs: number,
-  decoder: StudioCliDecoder<T>,
-): Promise<AstraleResult<T>> {
-  return runStudioCliJson(args, decoder, { timeoutMs })
+function studioViewServeRuntime(): { file: string; args: string[] } {
+  const [file, ...args] = studioCliCommand([])
+  if (!file) throw new Error('The Studio CLI runtime is unavailable.')
+  return { file, args }
 }
