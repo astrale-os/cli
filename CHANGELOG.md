@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.72](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.71...cli/v1.0.0-beta.72) (2026-09-03)
+
+
+### Bug Fixes
+
+* **commands:** preserve caller for nested credentials ([#366](https://github.com/astrale-os/cli/issues/366)) ([b256678](https://github.com/astrale-os/cli/commit/b25667818e91010d0ea334c2efce6213fafb84c7))
+
 ## [1.0.0-beta.71](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.70...cli/v1.0.0-beta.71) (2026-09-02)
 
 
