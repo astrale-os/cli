@@ -4,6 +4,7 @@ import { Path } from '@astrale-os/sdk/graph/path'
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
+const bundleMock = mock(async (_origin: unknown): Promise<unknown> => installedDomain)
 const abMock = mock(async (_args: string[]) => ({
   ok: true,
   data: { snapshot: '- button "Ready" [ref=e1]' },
@@ -18,12 +19,12 @@ mock.module('../../connection', () => ({
   withClientSession: async (
     _opts: unknown,
     run: (ctx: {
-      session: { viewsFor: typeof viewsForMock }
+      session: { viewsFor: typeof viewsForMock; schema: { bundle: typeof bundleMock } }
       target: { url: string; kernelIssuer: string }
     }) => Promise<unknown>,
   ) =>
     run({
-      session: { viewsFor: viewsForMock },
+      session: { viewsFor: viewsForMock, schema: { bundle: bundleMock } },
       target: { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' },
     }),
 }))
@@ -37,6 +38,7 @@ mock.module('../../lib/browser', () => ({
 
 beforeEach(() => {
   viewsForMock.mockClear()
+  bundleMock.mockClear()
   abMock.mockClear()
   findAgentBrowserMock.mockClear()
 })
@@ -68,6 +70,45 @@ const resolved = [
     declaration: { target: { kind: 'domain' as const } },
   }),
 ]
+
+const installedDomain = {
+  domain: {
+    origin: 'ai-gateway.astrale.ai',
+    revision: resolved[1].revision,
+    publication: {
+      origin: 'ai-gateway.astrale.ai',
+      identity: {
+        issuer: resolved[1].issuer,
+        subject: 'ai-gateway.astrale.ai',
+      },
+      revision: resolved[1].revision,
+      etag: resolved[1].etag,
+    },
+    bindings: {
+      callables: [],
+      views: resolved.map(({ key, href, handshake, iframe }) => ({
+        view: key,
+        href,
+        handshake,
+        ...(iframe === undefined ? {} : { iframe }),
+      })),
+    },
+  },
+  bundle: {
+    root: {
+      views: {
+        chat: {
+          ref: { origin: 'ai-gateway.astrale.ai', kind: 'view', name: 'chat' },
+          ...resolved[0].declaration,
+        },
+        model: {
+          ref: { origin: 'ai-gateway.astrale.ai', kind: 'view', name: 'model' },
+          ...resolved[1].declaration,
+        },
+      },
+    },
+  },
+}
 
 describe('view session resolution', () => {
   test('registers the development origin and deletes both legacy override flags', async () => {
@@ -137,17 +178,39 @@ describe('view session resolution', () => {
     expect(abMock).not.toHaveBeenCalled()
   })
 
-  test('resolves an explicit ViewPath against its Domain owner when no target is supplied', async () => {
+  test('resolves an explicit Domain ViewPath from its installed bundle without reading a node', async () => {
     const { resolveSession } = await import('../view')
-    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
 
     const result = await resolveSession('/:ai-gateway.astrale.ai:view.model', {})
 
-    expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('/:ai-gateway.astrale.ai')
+    expect(bundleMock).toHaveBeenCalledWith('ai-gateway.astrale.ai')
+    expect(viewsForMock).not.toHaveBeenCalled()
     expect(result.view).toEqual({
       target: Path.parse('/:ai-gateway.astrale.ai').raw,
       route: resolved[1],
     })
+  })
+
+  test('keeps explicit target resolution on View.resolve', async () => {
+    const { resolveSession } = await import('../view')
+    viewsForMock.mockImplementationOnce(async () => ({ views: resolved }))
+
+    const result = await resolveSession('/:ai-gateway.astrale.ai:view.chat', {
+      target: '@model-id',
+    })
+
+    expect(bundleMock).not.toHaveBeenCalled()
+    expect(String(viewsForMock.mock.calls[0]?.[0])).toBe('@model-id')
+    expect(result.view).toEqual({ target: Path.parse('@model-id').raw, route: resolved[0] })
+  })
+
+  test('requires a target for an installed definition view', async () => {
+    const { resolveSession } = await import('../view')
+
+    await expect(resolveSession('/:ai-gateway.astrale.ai:view.chat', {})).rejects.toMatchObject({
+      code: 'VIEW_TARGET_REQUIRED',
+    })
+    expect(viewsForMock).not.toHaveBeenCalled()
   })
 })
 

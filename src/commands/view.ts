@@ -12,7 +12,6 @@ import type { CommandDefinition } from '../program/index'
 
 import { expandSelfInPath, withClientSession } from '../connection'
 import { AstraleError } from '../errors'
-import { readIdentities } from '../identity/index'
 import { ab, AGENT_BROWSER_REPO, BROWSER_DIR, findAgentBrowser } from '../lib/browser'
 import { readInstances } from '../lib/instance'
 import { fatal, log, withSpinner } from '../lib/log'
@@ -27,10 +26,10 @@ import {
   candidateSlug,
   parseViewSpec,
   pickCandidate,
+  resolveInstalledDomainView,
   resolveViewCandidates,
   selectedView,
   type ViewCandidate,
-  viewOwnerTarget,
 } from '../lib/view/resolve'
 import { ensureViewerAssets } from '../lib/view/server'
 import {
@@ -90,9 +89,12 @@ export async function resolveSession(
   if (parsed.kind === 'view' && opts.view) {
     fatal(new Error('An explicit ViewPath cannot be combined with --view <slug>'))
   }
-  const targetInput =
-    parsed.kind === 'target' ? parsed.path : (opts.target ?? viewOwnerTarget(parsed.path))
   const { target, candidates } = await withClientSession(opts, async (context) => {
+    if (parsed.kind === 'view' && opts.target === undefined) {
+      const candidate = await resolveInstalledDomainView(context, parsed.path)
+      return { target: String(candidate.target), candidates: [candidate] }
+    }
+    const targetInput = parsed.kind === 'target' ? parsed.path : opts.target!
     const { path: target } = await expandSelfInPath(targetInput, context)
     return { target, candidates: await resolveViewCandidates(context, target) }
   })
@@ -236,22 +238,18 @@ async function startSession(
   transport?: ViewTransport,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
-  const kernelTarget = await withClientSession(
-    opts,
-    async ({ target: connectionTarget }) => connectionTarget,
-  )
-  const [instances, identities, runtime] = await Promise.all([
-    readInstances(),
-    readIdentities(),
-    resolveServeRuntime(),
-  ])
+  const connection = await withClientSession(opts, async ({ identity, target }) => ({
+    identity,
+    target,
+  }))
+  const [instances, runtime] = await Promise.all([readInstances(), resolveServeRuntime()])
   return withViewPortAllocationLock(() =>
     startSessionLocked(
       view,
       opts,
-      kernelTarget,
+      connection.target,
       instances.active,
-      identities.default,
+      connection.identity,
       runtime,
       transport,
     ),
@@ -316,7 +314,7 @@ async function startSessionLocked(
   opts: ViewOpts,
   kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
   activeInstance: string | undefined,
-  defaultIdentity: string | undefined,
+  selectedIdentity: string | undefined,
   runtime: { file: string; args: string[] },
   transport: ViewTransport | undefined,
 ): Promise<ViewSessionRecord> {
@@ -337,7 +335,7 @@ async function startSessionLocked(
     pageUrl: `http://127.0.0.1:${port}/s/${nonce}/`,
     view,
     instance: opts.instance ?? (opts.url ? opts.url : activeInstance),
-    identity: opts.creds ? '(pre-signed creds)' : (opts.as ?? defaultIdentity),
+    identity: opts.creds ? '(pre-signed creds)' : selectedIdentity,
     createdAt: new Date().toISOString(),
   }
   const serveConfig = createViewServeConfig(record, opts, kernelTarget, transport)
@@ -588,11 +586,13 @@ export default {
   ],
   afterHelpText: `
 What it does:
-  Renders ONE view — no GUI, no cookies, no WorkOS. It resolves the view on the
-  kernel, starts a loopback session server that supplies the shell handshake (real
-  handshake via @astrale-os/shell, token minted from YOUR CLI identity, kernel
-  calls proxied), and opens the page headless in agent-browser. Driving stays
-  agent-browser's job; auth follows --as/--creds/-i like any kernel command.
+  Renders ONE view — no GUI, no cookies, no WorkOS. Target-bound views resolve on
+  the kernel; an explicit Domain view resolves from authenticated installation
+  introspection. It then starts a loopback session server that supplies the shell
+  handshake (real handshake via @astrale-os/shell, token minted from YOUR CLI
+  identity, kernel calls proxied), and opens the page headless in agent-browser.
+  Driving stays agent-browser's job; auth follows --as/--creds/-i like any kernel
+  command.
 
   A session stays up ~30 min idle (heartbeat while the page is open). The view
   gets exactly what the GUI would hand it: one target-bound resolved placement,
