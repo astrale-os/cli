@@ -95,6 +95,44 @@ test('it arrives centred, and is centred the whole way in', async ({ page }) => 
   expect(Math.max(...centres) - Math.min(...centres)).toBeLessThanOrEqual(1)
 })
 
+test('a click on the name shows where the name will go', async ({ page }) => {
+  await open(page)
+  const name = page.getByLabel('Domain name')
+  const message = page.locator('[data-new-domain-composer]')
+  const styleOf = (element: HTMLElement) => {
+    const own = getComputedStyle(element)
+    return {
+      caret: own.caretColor,
+      align: own.textAlign,
+      prompt: getComputedStyle(element, '::placeholder').color,
+      // where the first letter lands — the box, less its own border and padding
+      edge:
+        element.getBoundingClientRect().left +
+        parseFloat(own.borderLeftWidth) +
+        parseFloat(own.paddingLeft),
+    }
+  }
+
+  // leave the name for the message, then come back to it by clicking — the
+  // gesture the caret used to answer with nothing at all
+  await message.click()
+  const atRest = await name.evaluate(styleOf)
+  await name.click()
+  await expect(name).toBeFocused()
+  const focused = await name.evaluate(styleOf)
+
+  // the caret is drawn, and drawn before the prompt rather than through it: the
+  // name is set from the left, on the edge the message under it starts from
+  expect(focused.caret).not.toBe('rgba(0, 0, 0, 0)')
+  expect(focused.caret).not.toBe('transparent')
+  expect(['left', 'start']).toContain(focused.align)
+  const messageEdge = (await message.evaluate(styleOf)).edge
+  expect(Math.abs(focused.edge - messageEdge)).toBeLessThanOrEqual(1)
+
+  // and the prompt lifts a shade, so the field is seen to be waiting
+  expect(focused.prompt).not.toBe(atRest.prompt)
+})
+
 test('Enter on the name goes to the message rather than sending', async ({ page }) => {
   await open(page)
   await page.getByLabel('Domain name').fill('billing')
