@@ -178,13 +178,17 @@ The CLI is connect-only: it does not build or run domains. The SDK's
 astrale domain install crm.example -i staging
 astrale domain install https://crm.example --direct -i staging
 astrale domain uninstall crm.example -i staging
+astrale domain uninstall app.example shared.example --destructive -i staging
 ```
 
 A replacement cannot change an installed Domain issuer. If that identity
 change is intentional, uninstall the origin first and then install it again.
-Uninstall removes the installed Domain but never deletes business data. It
-requires typing the exact origin interactively (or `--yes` in automation), and
-is refused by the Kernel while dependents or business data remain.
+Uninstall accepts one or more origins and removes the complete selected set atomically, so
+dependencies inside that set are allowed. Safe mode is the default and never deletes application
+data. `--destructive` deletes application facts whose concrete Class belongs to a selected Domain;
+it does not cascade into unselected Domains. Surviving dependents and surviving foreign Edges that
+reference selected Nodes still block the complete operation. Type the canonical Domain list
+interactively, or pass `--yes` in automation.
 
 Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
 JWKS with that exact CA. If two bookmarks point to the same normalized URL with
