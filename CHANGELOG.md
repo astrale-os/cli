@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.82](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.81...cli/v1.0.0-beta.82) (2026-09-04)
+
+
+### Bug Fixes
+
+* **commands:** preserve caller for direct lifecycle ([#401](https://github.com/astrale-os/cli/issues/401)) ([fbd77d7](https://github.com/astrale-os/cli/commit/fbd77d7d463bee296dfc9e5a2b4ee54639922411))
+
 ## [1.0.0-beta.81](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.80...cli/v1.0.0-beta.81) (2026-09-04)
 
 
