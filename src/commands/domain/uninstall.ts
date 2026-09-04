@@ -32,7 +32,7 @@ type UninstallResult = {
 /** Public Kernel uninstall syscall input for one canonical non-empty Domain set. */
 export function uninstallCallInput(
   origins: readonly [string, ...string[]],
-  destructive = false,
+  mode: 'safe' | 'destructive' = 'safe',
   operation: string = crypto.randomUUID(),
 ): Readonly<{
   operation: string
@@ -42,7 +42,7 @@ export function uninstallCallInput(
   return Object.freeze({
     operation,
     domains: canonicalOrigins(origins),
-    data: Object.freeze({ mode: destructive ? 'destructive' : 'safe' }),
+    data: Object.freeze({ mode }),
   })
 }
 
@@ -103,7 +103,7 @@ Examples:
         (await session.call(
           createPathCall(
             Path.project(K.functions.uninstall.ref).raw,
-            uninstallCallInput(selected, opts.destructive),
+            uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe'),
           ),
         )) as UninstallResult,
       format: (result, formatOpts, machine) => {

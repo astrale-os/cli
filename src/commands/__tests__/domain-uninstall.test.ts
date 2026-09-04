@@ -7,13 +7,17 @@ const cliRoot = join(import.meta.dir, '../../..')
 
 describe('domain uninstall', () => {
   test('sends the public Kernel uninstall request', () => {
-    expect(uninstallCallInput(['grc.example'], false, 'op-1')).toEqual({
+    expect(uninstallCallInput(['grc.example'], 'safe', 'op-1')).toEqual({
       operation: 'op-1',
       domains: ['grc.example'],
       data: { mode: 'safe' },
     })
     expect(
-      uninstallCallInput(['shared.example', 'app.example', 'shared.example'], true, 'op-2'),
+      uninstallCallInput(
+        ['shared.example', 'app.example', 'shared.example'],
+        'destructive',
+        'op-2',
+      ),
     ).toEqual({
       operation: 'op-2',
       domains: ['app.example', 'shared.example'],
