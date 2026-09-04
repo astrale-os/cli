@@ -130,6 +130,8 @@ astrale call @self::deactivate
 
 ```bash
 astrale instance create my-app
+astrale instance create development --host astrale-kernel-bryan
+astrale instance root import development --host astrale-kernel-bryan --yes
 astrale instance invite my-app person@example.com
 astrale instance invitation status @invitation-id
 astrale instance status my-app
@@ -163,8 +165,15 @@ are identified by terminal `state: "deleted"`. The optional `issuer` is present 
 retained exact evidence. Unreachable does not mean retired. Add `--admin-only` when local bookmarks
 should be omitted from the machine-readable envelope.
 
+With `instance create --host`, the selected Host bookmark's caller creates or reconnects one exact
+child directly, without Admin or WorkOS. The CLI imports its sealed root identity, verifies live
+JWKS, and adds `<host>-<slug>` with `<host>-<slug>-root` as the default caller. It preserves the active
+instance. The same child slug on different Hosts has distinct bookmarks and keys. Root recovery
+requires `--yes` in automation and refuses conflicting bookmarks or IdP-backed identities.
+
 The CLI is connect-only: it does not build or run domains. The SDK's
-`astrale-domain` binary owns `dev`, `prod`, `build`, and deploy workflows.
+`astrale-domain` binary owns `dev`, `build`, `deploy`, and test workflows. Project Environments select
+exact deployment and optional installation targets; they do not use the CLI's active instance.
 
 `astrale domain install` has two modes:
 

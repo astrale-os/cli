@@ -32,11 +32,12 @@ deprecated. If a package-managed copy is still on `PATH`, remove it with that
 package manager, run the installer above, and verify that `command -v astrale`
 resolves to `~/.astrale/bin/astrale` (or your explicit `ASTRALE_INSTALL_DIR`).
 
-Generated Domains using `@astrale-os/adapter-astrale` consume the private
-companion automatically: `pnpm dev` creates temporary public ingress, runs the
-local Worker and optional frontend, reconciles the active development instance,
-and starts a local View host. Developers never invoke `astrale-cloudflared`
-directly and need no Cloudflare account.
+Generated Project Environments deploy remotely with either adapter. `pnpm dev`
+watches `development`; `pnpm dev staging` selects another Environment. The
+Environment declares its deployment and optional Kernel installation target.
+The Astrale adapter uses Services on the configured instance; the Cloudflare
+adapter uses the author's Cloudflare account. Domain development runs no local
+Worker or ingress. Stopping orchestration leaves deployment and installation alive.
 
 ## Quickstart
 
@@ -60,6 +61,18 @@ If you already have a kernel URL, create a local bookmark:
 astrale instance bookmark staging --url https://kernel.example.com
 astrale instance use staging
 ```
+
+Kernel developers can create or reconnect a child through a Host bookmark:
+
+```bash
+astrale instance create development --host astrale-kernel-bryan
+astrale get @self -i astrale-kernel-bryan-development
+astrale instance root import development --host astrale-kernel-bryan --yes
+```
+
+Child bookmarks and root identities are Host-qualified, so identical child
+slugs on different Kernels do not collide. This flow uses the selected Host's
+caller directly and does not change the active CLI instance.
 
 ## Agent Browser
 

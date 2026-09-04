@@ -301,13 +301,13 @@ describe('help contract — admin target surface is registered', () => {
     expect(adminUse?.helpInformation()).not.toContain('--issuer <url>')
   })
 
-  test('instance create delegates infrastructure placement to Admin', async () => {
+  test('instance create keeps Admin provisioning and adds an explicit direct Host target', async () => {
     const program = await buildProgram()
     const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
     const help = instanceCreate?.helpInformation() ?? ''
 
-    expect(help).toContain('Provision an instance through the Admin control plane')
-    expect(help).not.toContain('Host')
+    expect(help).toContain('Provision an instance through Admin or a selected Kernel Host')
+    expect(help).toContain('--host <bookmark>')
     expect(help).not.toContain('Fleet')
     expect(help).not.toContain('--host-id')
     expect(help).not.toContain('--no-use')
