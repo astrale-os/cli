@@ -7,9 +7,17 @@ const cliRoot = join(import.meta.dir, '../../..')
 
 describe('domain uninstall', () => {
   test('sends the public Kernel uninstall request', () => {
-    expect(uninstallCallInput('grc.example', 'op-1')).toEqual({
+    expect(uninstallCallInput(['grc.example'], false, 'op-1')).toEqual({
       operation: 'op-1',
-      origin: 'grc.example',
+      domains: ['grc.example'],
+      data: { mode: 'safe' },
+    })
+    expect(
+      uninstallCallInput(['shared.example', 'app.example', 'shared.example'], true, 'op-2'),
+    ).toEqual({
+      operation: 'op-2',
+      domains: ['app.example', 'shared.example'],
+      data: { mode: 'destructive' },
     })
   })
 
@@ -33,7 +41,7 @@ describe('domain uninstall', () => {
     })
   })
 
-  test('states that uninstall never deletes business data', async () => {
+  test('explains safe and destructive multi-Domain semantics', async () => {
     const proc = Bun.spawn({
       cmd: ['bun', join(cliRoot, 'bin/astrale.ts'), 'domain', 'uninstall', '--help'],
       stdout: 'pipe',
@@ -47,7 +55,9 @@ describe('domain uninstall', () => {
 
     expect(exitCode).toBe(0)
     expect(stderr).toBe('')
-    expect(stdout).toContain('Uninstall never deletes business data.')
-    expect(stdout).toContain('business data still uses its schema')
+    expect(stdout).toContain('<origins...>')
+    expect(stdout).toContain('Safe mode is the default and never deletes application data.')
+    expect(stdout).toContain('--destructive')
+    expect(stdout).toContain('does not cascade into unselected Domains')
   })
 })
