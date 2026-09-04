@@ -96,30 +96,38 @@ Examples:
       fatal(error, opts)
     }
 
-    await runKernelCommand<UninstallResult>({
-      opts,
-      label: `Uninstalling ${selected.length === 1 ? 'domain' : 'domains'} ${selected.join(', ')}`,
-      fn: async ({ session }) =>
-        (await session.call(
-          createPathCall(
-            Path.project(K.functions.uninstall.ref).raw,
-            uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe'),
-          ),
-        )) as UninstallResult,
-      format: (result, formatOpts, machine) => {
-        if (machine) {
-          output(result, formatOpts)
-          return
-        }
-        const removed = result.transitions.map(({ intent }) => intent.origin)
-        log.success(
-          `${removed.length === 1 ? 'Domain' : 'Domains'} uninstalled: ${removed.join(', ')}`,
-        )
-        log.dim(`  operation: ${result.operation}`)
-      },
-    })
+    await runKernelCommand<UninstallResult>(uninstallKernelCommand(selected, opts))
   },
 } satisfies CommandDefinition
+
+export function uninstallKernelCommand(
+  selected: readonly [string, ...string[]],
+  opts: UninstallOpts,
+): Parameters<typeof runKernelCommand<UninstallResult>>[0] {
+  return {
+    opts,
+    label: `Uninstalling ${selected.length === 1 ? 'domain' : 'domains'} ${selected.join(', ')}`,
+    credential: { principal: 'caller' as const },
+    fn: async ({ session }) =>
+      (await session.call(
+        createPathCall(
+          Path.project(K.functions.uninstall.ref).raw,
+          uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe'),
+        ),
+      )) as UninstallResult,
+    format: (result, formatOpts, machine) => {
+      if (machine) {
+        output(result, formatOpts)
+        return
+      }
+      const removed = result.transitions.map(({ intent }) => intent.origin)
+      log.success(
+        `${removed.length === 1 ? 'Domain' : 'Domains'} uninstalled: ${removed.join(', ')}`,
+      )
+      log.dim(`  operation: ${result.operation}`)
+    },
+  }
+}
 
 async function confirmUninstall(
   origins: readonly [string, ...string[]],

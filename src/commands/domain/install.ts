@@ -441,6 +441,7 @@ export async function installDirect(
     opts,
     label: `Installing domain from ${url} (operation ${operation})`,
     recovery: { operation, retry },
+    credential: { principal: 'caller' },
     fn: async ({ session }) =>
       session.schema.install(directInstallCallInput(url, operation, opts.token)),
     format: (result, fmtOpts, isRaw) => {
