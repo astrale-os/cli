@@ -1,4 +1,4 @@
-import type { InstallRequest, InstallResult, OperationId } from '@astrale-os/sdk/client/schema'
+import type { InstallRequest, InstallResult } from '@astrale-os/sdk/client/schema'
 
 import chalk from 'chalk'
 
@@ -23,6 +23,7 @@ import { isMachine, output } from '../../lib/output'
 import { dangerPanel } from '../../lib/panel'
 import { confirmWithInput, promptText, selectFrom } from '../../lib/prompt'
 import { isHttpUrl } from '../../lib/validation'
+import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
 export function directInstallCallInput(
   url: string,
@@ -75,23 +76,8 @@ export function directInstallPresentation(
   })
 }
 
-const OPERATION_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u
-
-function acceptOperationId(input: unknown): OperationId {
-  if (typeof input !== 'string' || !OPERATION_ID_PATTERN.test(input)) {
-    throw new AstraleError(
-      'INVALID_FLAG',
-      '--operation must be a canonical lowercase UUIDv4.',
-      'Omit --operation for a fresh install; use it only with the exact UUID printed for recovery.',
-    )
-  }
-  return input as OperationId
-}
-
-function createOperationId(): OperationId {
-  return acceptOperationId(globalThis.crypto.randomUUID())
-}
+const acceptOperationId = (input: unknown) => acceptDomainOperationId(input, 'install')
+const createOperationId = () => createDomainOperationId('install')
 
 type InstallOpts = KernelCommandOpts &
   AdminTargetCommandOpts & {
