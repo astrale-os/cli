@@ -128,6 +128,9 @@ async function main(): Promise<void> {
       envelopeTransport: 'http',
     },
     adapter: accessibleIframeAdapter(createIframeShellAdapter()),
+    // `astrale view` is explicit host approval of the exact installed route;
+    // Shell has already rejected invalid or unsupported iframe requirements.
+    iframePolicy: () => true,
   })
   await shell.init()
 
