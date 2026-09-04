@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.83](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.82...cli/v1.0.0-beta.83) (2026-09-04)
+
+
+### Bug Fixes
+
+* **connection:** resolve [@self](https://github.com/self) as the selected caller ([#403](https://github.com/astrale-os/cli/issues/403)) ([58a0628](https://github.com/astrale-os/cli/commit/58a0628452c5157d13d7394d658c9e9acbc179c3))
+
 ## [1.0.0-beta.82](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.81...cli/v1.0.0-beta.82) (2026-09-04)
 
 
