@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.80](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.79...cli/v1.0.0-beta.80) (2026-09-04)
+
+
+### Bug Fixes
+
+* **view:** admit installed iframe requirements ([#397](https://github.com/astrale-os/cli/issues/397)) ([5d2cddd](https://github.com/astrale-os/cli/commit/5d2cddd58fdd8f425482cfbdb0f35dcba1290073))
+
 ## [1.0.0-beta.79](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.78...cli/v1.0.0-beta.79) (2026-09-03)
 
 
