@@ -296,8 +296,9 @@ export default {
   afterHelpText: `
 Behavior:
   Keeps three things current, in order. (1) The CLI toolchain: updates official
-  standalone installs; the CLI, pinned private provider, license, and metadata
-  are checksum-verified and replaced as one recoverable cohort; externally managed
+  standalone installs; the CLI is checksum-verified and replaced together with
+  its install metadata. Explicit historical releases retain their original
+  verified toolchain. Externally managed
   processes are directed to the standalone installer and never overwritten. (2) The Astrale
   agent skills: aligns an existing cohort with the exact CLI release, repairs
   inconsistent installs, and verifies the result. If skills are absent, an

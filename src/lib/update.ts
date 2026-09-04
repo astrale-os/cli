@@ -56,7 +56,8 @@ const ManifestBaseSchema = z.object({
   repo: z.string().min(1).optional(),
 })
 
-const LegacyUpdateManifestSchema = ManifestBaseSchema.extend({
+// The original single-binary shape remains understood by released CLIs.
+const SingleBinaryUpdateManifestSchema = ManifestBaseSchema.extend({
   schemaVersion: z.undefined().optional(),
   binaryVersion: z.string().min(1).optional(),
   assets: z.record(
@@ -80,7 +81,7 @@ const CohortUpdateManifestSchema = ManifestBaseSchema.extend({
 
 export const UpdateManifestSchema = z.union([
   CohortUpdateManifestSchema,
-  LegacyUpdateManifestSchema,
+  SingleBinaryUpdateManifestSchema,
 ])
 
 export type UpdateManifest = z.infer<typeof UpdateManifestSchema>
@@ -424,7 +425,7 @@ export async function updateAstrale(
     await extractTarGz(
       archive,
       tmp,
-      cohortManifest ? ['astrale', 'astrale-cloudflared', 'LICENSE.cloudflared'] : undefined,
+      cohortManifest ? ['astrale', 'astrale-cloudflared', 'LICENSE.cloudflared'] : ['astrale'],
     )
     const nextBin = join(tmp, 'astrale')
     await chmod(nextBin, 0o755)

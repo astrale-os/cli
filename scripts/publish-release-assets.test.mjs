@@ -36,10 +36,8 @@ async function completeFixture() {
   await writeFile(
     join(directory, 'manifest.json'),
     JSON.stringify({
-      schemaVersion: 2,
       version: '1.0.0-beta.35',
       binaryVersion: '1.0.0-beta.35',
-      cloudflaredVersion: '2026.8.2',
       channel: 'beta',
       repo: 'astrale-os/cli',
       assets: Object.fromEntries(entries),
@@ -259,7 +257,6 @@ describe('release asset publication', () => {
     await validateCliReleaseClosure(directory, assets, {
       version: '1.0.0-beta.35',
       binaryVersion: '1.0.0-beta.35',
-      cloudflaredVersion: '2026.8.2',
       channel: 'beta',
       repo: 'astrale-os/cli',
     })
@@ -276,10 +273,31 @@ describe('release asset publication', () => {
     await validateCliReleaseClosure(directory, assets, {
       version: 'main-1234567890ab',
       binaryVersion: '1.0.0-beta.35',
-      cloudflaredVersion: '2026.8.2',
       channel: 'canary',
       repo: 'astrale-os/cli',
     })
+  })
+
+  it('admits historical v2 recovery but rejects mixed or incomplete manifest formats', async () => {
+    const directory = await completeFixture()
+    const assets = await fixtureAssets(directory)
+    const path = join(directory, 'manifest.json')
+    const manifest = JSON.parse(await readFile(path, 'utf8'))
+    manifest.cloudflaredVersion = '2026.8.2'
+    await writeFile(path, JSON.stringify(manifest))
+    await assert.rejects(
+      validateCliReleaseClosure(directory, assets),
+      /must not declare cloudflaredVersion/u,
+    )
+    manifest.schemaVersion = 2
+    await writeFile(path, JSON.stringify(manifest))
+    await validateCliReleaseClosure(directory, assets, { cloudflaredVersion: '2026.8.2' })
+    delete manifest.cloudflaredVersion
+    await writeFile(path, JSON.stringify(manifest))
+    await assert.rejects(
+      validateCliReleaseClosure(directory, assets),
+      /field is invalid: cloudflaredVersion/u,
+    )
   })
 
   it('rejects checksum and manifest closures that disagree with platform archives', async () => {
@@ -321,7 +339,7 @@ describe('release asset publication', () => {
     const schemaManifest = JSON.parse(
       await readFile(join(schemaDirectory, 'manifest.json'), 'utf8'),
     )
-    delete schemaManifest.schemaVersion
+    schemaManifest.schemaVersion = 3
     await writeFile(join(schemaDirectory, 'manifest.json'), JSON.stringify(schemaManifest))
     await assert.rejects(
       validateCliReleaseClosure(schemaDirectory, schemaAssets),
