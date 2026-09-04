@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 
-import { uninstallCallInput } from '../domain/uninstall'
+import { uninstallCallInput, uninstallKernelCommand } from '../domain/uninstall'
 
 const cliRoot = join(import.meta.dir, '../../..')
 
@@ -22,6 +22,12 @@ describe('domain uninstall', () => {
       operation: 'op-2',
       domains: ['app.example', 'shared.example'],
       data: { mode: 'destructive' },
+    })
+  })
+
+  test('preserves the caller principal for the lifecycle syscall', () => {
+    expect(uninstallKernelCommand(['grc.example'], { yes: true }).credential).toEqual({
+      principal: 'caller',
     })
   })
 
