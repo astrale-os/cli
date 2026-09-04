@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.81](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.80...cli/v1.0.0-beta.81) (2026-09-04)
+
+
+### Features
+
+* **commands:** support multi-domain destructive uninstall ([#399](https://github.com/astrale-os/cli/issues/399)) ([a080abb](https://github.com/astrale-os/cli/commit/a080abbaf7e2d871617d3bf657989e128559ab59))
+
 ## [1.0.0-beta.80](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.79...cli/v1.0.0-beta.80) (2026-09-04)
 
 
