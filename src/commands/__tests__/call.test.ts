@@ -64,6 +64,7 @@ describe('call command dry run', () => {
     let rendered: unknown
     let presentationOptions: unknown
     const context = {
+      self: async () => ({ id: 'alice' }),
       auth: {
         async whoami() {
           return { id: 'alice' }
