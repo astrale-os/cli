@@ -227,10 +227,12 @@ jobs:
             printf '{\n'
             if test -n '${{ steps.cohort.outputs.cloudflared_version }}'; then
               printf '  "schemaVersion": 2,\n'
-              printf '  "cloudflaredVersion": "%s",\n' '${{ steps.cohort.outputs.cloudflared_version }}'
             fi
             printf '  "version": "%s",\n' '${{ steps.meta.outputs.version }}'
             printf '  "binaryVersion": "%s",\n' '${{ steps.meta.outputs.binary_version }}'
+            if test -n '${{ steps.cohort.outputs.cloudflared_version }}'; then
+              printf '  "cloudflaredVersion": "%s",\n' '${{ steps.cohort.outputs.cloudflared_version }}'
+            fi
             printf '  "channel": "%s",\n' '${{ steps.meta.outputs.channel }}'
             printf '  "repo": "%s",\n' '${{ github.repository }}'
             printf '  "assets": {\n'
