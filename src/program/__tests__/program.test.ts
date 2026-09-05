@@ -301,13 +301,19 @@ describe('help contract — admin target surface is registered', () => {
     expect(adminUse?.helpInformation()).not.toContain('--issuer <url>')
   })
 
-  test('instance create delegates infrastructure placement to Admin', async () => {
+  test('public instance commands expose no Kernel operator target', async () => {
     const program = await buildProgram()
     const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
     const help = instanceCreate?.helpInformation() ?? ''
 
-    expect(help).toContain('Provision an instance through the Admin control plane')
-    expect(help).not.toContain('Host')
+    expect(help).toContain('Provision an instance through Admin')
+    expect(help).not.toContain('--host')
+    expect(help).not.toContain('Kernel Host')
+    const root = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'root')
+      ?.commands.find((command) => command.name() === 'import')
+    expect(root?.helpInformation()).not.toContain('--host')
     expect(help).not.toContain('Fleet')
     expect(help).not.toContain('--host-id')
     expect(help).not.toContain('--no-use')

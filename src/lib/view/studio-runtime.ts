@@ -97,7 +97,7 @@ export async function openStudioViewSession(
   // The Studio E2E server can boot directly, before the CLI has generated its embedded Viewer
   // archive. Load the command owner only when a View is actually opened; the module then remains
   // cached in this long-lived process for every subsequent launch.
-  const { resolveSession, startDevelopmentViewSession } = await import('../../commands/view')
+  const { resolveSession, startViewSession } = await import('../../commands/view')
   resetInstancesMemo()
   const options: ViewOpts = {
     instance: input.instance,
@@ -110,7 +110,7 @@ export async function openStudioViewSession(
   }
   const { view } = await resolveSession(input.viewPath, options)
   if (!view) throw new Error('View resolution completed without a selected view')
-  return startDevelopmentViewSession(view, options)
+  return startViewSession(view, options)
 }
 
 /** Close a session through the same CLI-owned lifecycle used by `astrale view --close`. */

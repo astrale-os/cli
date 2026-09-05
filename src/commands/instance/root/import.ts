@@ -85,7 +85,7 @@ Examples:
       log.dim(`  subject: ${imported.identity.subject}`)
       log.dim(`  issuer: ${imported.identity.issuer}`)
       log.dim(
-        `  verification: ${imported.verification === 'live-jwks' ? 'live JWKS' : 'Host-sealed material'}`,
+        `  verification: ${imported.verification === 'live-jwks' ? 'live JWKS' : 'sealed root transfer'}`,
       )
     } catch (error) {
       await formatKernelError(error, isMachine(opts), undefined, opts.debug)

@@ -32,11 +32,12 @@ deprecated. If a package-managed copy is still on `PATH`, remove it with that
 package manager, run the installer above, and verify that `command -v astrale`
 resolves to `~/.astrale/bin/astrale` (or your explicit `ASTRALE_INSTALL_DIR`).
 
-Generated Domains using `@astrale-os/adapter-astrale` consume the private
-companion automatically: `pnpm dev` creates temporary public ingress, runs the
-local Worker and optional frontend, reconciles the active development instance,
-and starts a local View host. Developers never invoke `astrale-cloudflared`
-directly and need no Cloudflare account.
+Generated Project Environments deploy remotely with either adapter. `pnpm dev`
+watches `development`; `pnpm dev staging` selects another Environment. The
+Environment declares its deployment and optional Kernel installation target.
+The Astrale adapter uses Services on the configured instance; the Cloudflare
+adapter uses the author's Cloudflare account. Domain development runs no local
+Worker or ingress. Stopping orchestration leaves deployment and installation alive.
 
 ## Quickstart
 
@@ -134,6 +135,12 @@ Main command groups:
 | Context | `status`, `whoami`, `use` |
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
+
+`astrale view --refresh <id>` re-resolves an open View against its retained
+instance and identity, then reloads the existing tab without changing its URL.
+If resolution fails, the previous placement remains available. Use
+`astrale view --sessions` to find session IDs and `astrale view --close <id>`
+to stop only that local session; neither command removes a deployment.
 
 ## Path Syntax
 

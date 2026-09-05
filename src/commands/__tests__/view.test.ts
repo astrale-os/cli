@@ -1,7 +1,7 @@
 import type { ResolvedView } from '@astrale-os/shell'
 
 import { Path } from '@astrale-os/sdk/graph/path'
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 
 const viewsForMock = mock(async (_target: unknown): Promise<unknown> => ({ views: [] }))
 const bundleMock = mock(async (_origin: unknown): Promise<unknown> => installedDomain)
@@ -111,11 +111,38 @@ const installedDomain = {
 }
 
 describe('view session resolution', () => {
-  test('registers the development origin and deletes both legacy override flags', async () => {
+  test('reports a missing installed View through the structured command error boundary', async () => {
+    const command = (await import('../view')).default
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const exited = new Error('fixture exit')
+    const exit = spyOn(process, 'exit').mockImplementation(() => {
+      throw exited
+    })
+    try {
+      await expect(
+        command.action('/:ai-gateway.astrale.ai:view.absent', {
+          open: false,
+          json: true,
+        }),
+      ).rejects.toBe(exited)
+      expect(exit).toHaveBeenCalledWith(1)
+      expect(stderr).toHaveBeenCalledTimes(1)
+      expect(JSON.parse(String(stderr.mock.calls[0]![0]))).toMatchObject({
+        error: 'VIEW_NOT_FOUND',
+        message: 'View "absent" is not installed for ai-gateway.astrale.ai',
+      })
+      expect(abMock).not.toHaveBeenCalled()
+    } finally {
+      exit.mockRestore()
+      stderr.mockRestore()
+    }
+  })
+
+  test('does not expose local development or legacy placement overrides', async () => {
     const command = (await import('../view')).default
     const flags = command.options?.map((option) => option.flags) ?? []
 
-    expect(flags).toContain('--development-local-url <origin>')
+    expect(flags).not.toContain('--development-local-url <origin>')
     expect(flags).not.toContain('--view-url <url>')
     expect(flags).not.toContain('--handshake <mode>')
   })
@@ -228,78 +255,6 @@ describe('view capture timing', () => {
 })
 
 describe('view session runtime', () => {
-  test('proves a local transport before creating session state and threads the witness once', async () => {
-    const { startDevelopmentViewSession } = await import('../view')
-    const selected: ResolvedView = {
-      target: Path.parse('/:ai-gateway.astrale.ai').raw,
-      route: resolved[0],
-    }
-    const witness = {
-      href: 'http://127.0.0.1:8787/ui/chat',
-      issuer: resolved[0].issuer,
-      revision: resolved[0].revision,
-      etag: resolved[0].etag,
-    }
-    const signal = new AbortController().signal
-    const order: string[] = []
-    const record = {
-      id: 'v-proof',
-      pid: 0,
-      port: 4419,
-      nonce: 'proof',
-      pageUrl: 'http://127.0.0.1:4419/s/proof/',
-      view: selected,
-      createdAt: '2026-08-26T00:00:00.000Z',
-    }
-    const prove = mock(async () => {
-      order.push('prove')
-      return witness
-    })
-    const start = mock(async () => {
-      order.push('start')
-      return record
-    })
-
-    await expect(
-      startDevelopmentViewSession(
-        selected,
-        { developmentLocalUrl: 'http://127.0.0.1:8787' },
-        { prove, start, signal: () => signal },
-      ),
-    ).resolves.toBe(record)
-
-    expect(prove).toHaveBeenCalledWith(selected, 'http://127.0.0.1:8787', signal)
-    expect(start).toHaveBeenCalledWith(
-      selected,
-      { developmentLocalUrl: 'http://127.0.0.1:8787' },
-      witness,
-    )
-    expect(order).toEqual(['prove', 'start'])
-  })
-
-  test('a failed local proof creates no session state', async () => {
-    const { startDevelopmentViewSession } = await import('../view')
-    const selected: ResolvedView = {
-      target: Path.parse('/:ai-gateway.astrale.ai').raw,
-      route: resolved[0],
-    }
-    const prove = mock(async () => {
-      throw new Error('local Publication unavailable')
-    })
-    const start = mock(async () => {
-      throw new Error('must not start')
-    })
-
-    await expect(
-      startDevelopmentViewSession(
-        selected,
-        { developmentLocalUrl: 'http://127.0.0.1:8787' },
-        { prove, start },
-      ),
-    ).rejects.toThrow('local Publication unavailable')
-    expect(start).not.toHaveBeenCalled()
-  })
-
   test('builds one serve config with the admitted operator origin grant', async () => {
     const { createViewServeConfig } = await import('../view')
     const record = {
@@ -312,21 +267,14 @@ describe('view session runtime', () => {
       createdAt: '2026-08-26T00:00:00.000Z',
     }
 
-    const transport = {
-      href: 'http://127.0.0.1:8787/ui/chat',
-      issuer: resolved[0].issuer,
-      revision: resolved[0].revision,
-      etag: resolved[0].etag,
-    }
     const config = createViewServeConfig(
       record,
       { allowExternalOrigin: ['https://connect.nango.dev/'] },
       { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' },
-      transport,
     )
 
     expect(config.session).toBe(record)
-    expect(config.transport).toEqual(transport)
+    expect(config).not.toHaveProperty('transport')
     expect(config.externalOrigins).toEqual(['https://connect.nango.dev'])
     expect(config.proxy).toEqual({
       kernelUrl: 'https://kernel.test',
