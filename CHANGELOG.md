@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.85](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.84...cli/v1.0.0-beta.85) (2026-09-05)
+
+
+### Bug Fixes
+
+* **deps:** consume released HTTP service error handling ([#409](https://github.com/astrale-os/cli/issues/409)) ([6ed123c](https://github.com/astrale-os/cli/commit/6ed123cc00df9480daf12111b3317108efd9f807))
+
 ## [1.0.0-beta.84](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.83...cli/v1.0.0-beta.84) (2026-09-05)
 
 
