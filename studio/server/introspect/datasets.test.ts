@@ -124,6 +124,7 @@ describe('Dataset envelope', () => {
         },
       ],
     },
+    references: {},
     variables: { parent: { node: 'parent' }, all: { nodes: ['parent', 'peer'] } },
   }
 
@@ -149,6 +150,7 @@ describe('Dataset envelope', () => {
         },
       ],
       edges: [{ from: 'parent', to: 'peer', edgeName: 'contains' }],
+      references: {},
       variables: { parent: ['parent'], all: ['parent', 'peer'] },
     })
   })

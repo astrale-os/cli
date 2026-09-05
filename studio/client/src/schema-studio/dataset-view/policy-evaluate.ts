@@ -22,6 +22,7 @@ import {
   type PolicyTerm,
   type PolicyVariable,
   policyGuard,
+  variableClass,
 } from '@/lib/policy'
 
 import type { DataEdge, DataGraph } from './policy-graph'
@@ -72,7 +73,57 @@ const discover = (
 
 /** Variables are local to the policy that declares them; reserved terms are shared. */
 const termKey = (term: PolicyTerm, scope: string): string =>
-  term.kind === 'variable' ? `${scope}#${term.id}` : term.kind
+  term.kind === 'variable'
+    ? `${scope}#${term.id}`
+    : term.kind === 'ref'
+      ? `ref:${schemaRefKey(term.ref)}`
+      : term.kind
+
+function bindReferences(
+  terms: readonly PolicyTerm[],
+  bindings: Bindings,
+  graph: DataGraph,
+): Bindings {
+  let result = bindings
+  for (const term of terms) {
+    if (term.kind !== 'ref') continue
+    const key = schemaRefKey(term.ref)
+    const id = graph.references.get(key)
+    if (id === undefined || !graph.classOf.has(id))
+      throw new Unsupported(`Dataset has no explicit reference for ${key}`)
+    result = bind(result, termKey(term, ''), id)
+  }
+  return result
+}
+
+function matchesVariable(graph: DataGraph, id: string, variable: PolicyVariable): boolean {
+  if (!graph.classOf.has(id)) return false
+  const cls = variableClass(variable)
+  if (cls === undefined) return true
+  return 'class' in variable
+    ? graph.classOf.get(id) === graph.nameOf(cls)
+    : graph.isInstance(id, cls)
+}
+
+function* solveSameNode(
+  terms: { left: PolicyTerm; right: PolicyTerm },
+  bindings: Bindings,
+  scope: string,
+  graph: DataGraph,
+): Generator<Solution> {
+  bindings = bindReferences([terms.left, terms.right], bindings, graph)
+  const leftKey = termKey(terms.left, scope)
+  const rightKey = termKey(terms.right, scope)
+  const left = bindings.get(leftKey)
+  const right = bindings.get(rightKey)
+  const candidates = left !== undefined ? [left] : right !== undefined ? [right] : graph.nodeIds
+  for (const id of candidates) {
+    if (!graph.classOf.has(id) || (right !== undefined && right !== id)) continue
+    const first = discover(graph, bindings, leftKey, id)
+    const bound = first && discover(graph, first, rightKey, id)
+    if (bound) yield { bindings: bound, edges: [] }
+  }
+}
 
 const otherEnd = (edge: DataEdge, node: string): string =>
   edge.from === node ? edge.to : edge.from
@@ -121,6 +172,7 @@ function* solveStep(
   scope: string,
   graph: DataGraph,
 ): Generator<Solution> {
+  bindings = bindReferences([step.source, step.target], bindings, graph)
   const sourceKey = termKey(step.source, scope)
   const targetKey = termKey(step.target, scope)
   const source = bindings.get(sourceKey)
@@ -216,7 +268,7 @@ function* bindFree(
   }
   const variable = variables[at]
   for (const id of graph.nodeIds) {
-    if (!graph.isInstance(id, variable.class)) continue
+    if (!matchesVariable(graph, id, variable)) continue
     yield* bindFree(
       variables,
       at + 1,
@@ -233,7 +285,9 @@ function* solvePattern(
   scope: string,
   graph: DataGraph,
 ): Generator<Solution> {
-  if ('allOf' in pattern) {
+  if ('sameNode' in pattern) {
+    yield* solveSameNode(pattern.sameNode, bindings, scope, graph)
+  } else if ('allOf' in pattern) {
     yield* solveAll(pattern.allOf, 0, bindings, [], scope, graph)
   } else if ('anyOf' in pattern) {
     for (const alternative of pattern.anyOf)
@@ -246,7 +300,7 @@ function* solvePattern(
       for (const variable of nodes) {
         const id = solution.bindings.get(termKey(variable.variable, scope))
         if (id === undefined) free.push(variable)
-        else if (!graph.isInstance(id, variable.class)) {
+        else if (!matchesVariable(graph, id, variable)) {
           admitted = false
           break
         }
@@ -295,6 +349,28 @@ function* solvePolicies(
       depth,
     )
   }
+}
+
+/** Missing fixture identity makes the whole simulation unavailable, including unvisited branches. */
+function requireReferences(policy: Policy, context: Context, seen = new Set<string>()): void {
+  const key = schemaRefKey(policy.ref)
+  if (seen.has(key)) return
+  seen.add(key)
+  const visit = (pattern: PolicyPattern): void => {
+    if ('sameNode' in pattern)
+      bindReferences([pattern.sameNode.left, pattern.sameNode.right], new Map(), context.graph)
+    else if ('source' in pattern)
+      bindReferences([pattern.source, pattern.target], new Map(), context.graph)
+    else if ('exists' in pattern) visit(pattern.exists.where)
+    else ('allOf' in pattern ? pattern.allOf : pattern.anyOf).forEach(visit)
+  }
+  if ('match' in policy.expression) visit(policy.expression.match)
+  else
+    for (const child of resolveRefs(
+      'allOf' in policy.expression ? policy.expression.allOf : policy.expression.anyOf,
+      context,
+    ))
+      requireReferences(child, context, seen)
 }
 
 function* solveExpression(
@@ -368,6 +444,7 @@ export function evaluatePolicy(input: {
   const seen = new Set<string>()
   let truncated = false
   try {
+    requireReferences(policy, context)
     search: for (const object of objects) {
       let bindings: Bindings = base
       if (object?.kind === 'node') bindings = bind(bindings, 'object', object.id)

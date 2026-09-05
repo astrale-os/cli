@@ -19,6 +19,7 @@ import {
   type PolicyTerm,
   isEdgeStep,
   policyLabel,
+  variableClass,
 } from '@/lib/policy'
 import { cn } from '@/lib/utils'
 
@@ -46,8 +47,14 @@ function TermChip({
       </span>
     )
   }
+  if (term.kind === 'ref')
+    return (
+      <span className="rounded-md bg-muted px-1.5 py-px font-medium">
+        {term.ref.kind} {policyLabel(term.ref, origin)}
+      </span>
+    )
   const reserved: Record<
-    Exclude<PolicyTerm, { kind: 'variable' }>['kind'],
+    Exclude<PolicyTerm, { kind: 'variable' | 'ref' }>['kind'],
     [string, ReactNode, string]
   > = {
     subject: ['Subject', <UserRound key="s" className="h-3 w-3" />, 'bg-primary/10 text-primary'],
@@ -78,7 +85,10 @@ function collectVariables(pattern: PolicyPattern, into: Map<number, IrSchemaRef>
   if ('allOf' in pattern) pattern.allOf.forEach((p) => collectVariables(p, into))
   else if ('anyOf' in pattern) pattern.anyOf.forEach((p) => collectVariables(p, into))
   else if ('exists' in pattern) {
-    for (const node of pattern.exists.nodes) into.set(node.variable.id, node.class)
+    for (const node of pattern.exists.nodes) {
+      const cls = variableClass(node)
+      if (cls) into.set(node.variable.id, cls)
+    }
     collectVariables(pattern.exists.where, into)
   }
 }
@@ -143,7 +153,12 @@ export function PatternWords({
   }
   if ('exists' in pattern) {
     const names = pattern.exists.nodes
-      .map((node) => anInstance(policyLabel(node.class, origin)))
+      .map((node) => {
+        const cls = variableClass(node)
+        return cls
+          ? `${anInstance(policyLabel(cls, origin))}${'class' in node ? ' (exact class)' : ''}`
+          : 'a Node'
+      })
       .join(', ')
     return (
       <Lines label={`there is ${names} such that`}>
@@ -156,6 +171,14 @@ export function PatternWords({
       </Lines>
     )
   }
+  if ('sameNode' in pattern)
+    return (
+      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+        <TermChip term={pattern.sameNode.left} variables={variables} origin={origin} />
+        <span className="text-muted-foreground">is the same Node as</span>
+        <TermChip term={pattern.sameNode.right} variables={variables} origin={origin} />
+      </div>
+    )
   if (!isEdgeStep(pattern)) return null
   const twoWay = undirected?.(pattern.class) === true
   const repeat = pattern.repeat

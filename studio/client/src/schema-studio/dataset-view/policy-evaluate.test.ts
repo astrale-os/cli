@@ -2,7 +2,7 @@ import type { StudioCore, StudioSchemaBundle } from '@shared/types'
 
 import { expect, test } from 'bun:test'
 
-import { indexPolicies } from '@/lib/policy'
+import { decodePolicy, decodePolicyCheck, indexPolicies } from '@/lib/policy'
 
 import { evaluatePolicy, groupProofs } from './policy-evaluate'
 import { buildDataGraph } from './policy-graph'
@@ -302,4 +302,53 @@ test('groups proofs per subject and object', () => {
   )!
   expect([...g2.edges]).toEqual([0, 2])
   expect(matches.length).toBe(5)
+})
+
+test('proves Node identity without edges and requires explicit Dataset references', () => {
+  const fixed = { origin: ORIGIN, kind: 'core' as const, name: 'owner' }
+  const equality = { sameNode: { left: { kind: 'subject' }, right: { kind: 'object' } } }
+  const policy = decodePolicy(ORIGIN, 'Self', { expression: { match: equality } })!
+  const index = indexPolicies({ domain: ORIGIN, policies: {} })
+  const graph = buildDataGraph(core, bundle)
+  const result = evaluatePolicy({
+    policy,
+    index,
+    graph,
+    probe: { subject: 'ada', object: { kind: 'node', id: 'ada' } },
+  })
+  expect(result).toMatchObject({
+    status: 'ok',
+    proofs: [{ subject: 'ada', edges: [], nodes: ['ada'] }],
+  })
+  expect(
+    evaluatePolicy({
+      policy,
+      index,
+      graph,
+      probe: { subject: 'missing', object: { kind: 'node', id: 'missing' } },
+    }),
+  ).toMatchObject({ status: 'ok', proofs: [] })
+  const referenced = decodePolicy(ORIGIN, 'Fixed', {
+    expression: {
+      match: {
+        allOf: [
+          equality,
+          { sameNode: { left: { kind: 'object' }, right: { kind: 'ref', ref: fixed } } },
+        ],
+      },
+    },
+  })!
+  expect(evaluatePolicy({ policy: referenced, index, graph })).toMatchObject({
+    status: 'unsupported',
+  })
+  const explicit = buildDataGraph(core, bundle, { [`${ORIGIN}:core.owner`]: 'ada' })
+  expect(evaluatePolicy({ policy: referenced, index, graph: explicit })).toMatchObject({
+    status: 'ok',
+    proofs: [{ subject: 'ada', edges: [] }],
+  })
+  expect(
+    decodePolicyCheck({
+      sameNode: { left: { kind: 'input', field: 'group' }, right: { kind: 'ref', ref: fixed } },
+    }),
+  ).toBeDefined()
 })

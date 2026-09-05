@@ -1,3 +1,4 @@
+import { Path } from '@astrale-os/sdk/graph/path'
 /**
  * datasets.ts — the demo Datasets a project references from `astrale.config.ts`.
  *
@@ -20,7 +21,7 @@ import type {
 } from '../../shared/types'
 import type { DomainHandle } from '../domain'
 
-import { parseClassRefKey } from '../../shared/types'
+import { parseClassRefKey, schemaRefKey } from '../../shared/types'
 import { studioCliCommand } from '../cli'
 import { analyzeProjectConfig, depsInstalled } from '../domain'
 import { asJsonArray, asJsonRecord, asString, asStringArray, parseJson } from '../json'
@@ -44,6 +45,7 @@ export interface DatasetJson {
     }[]
   }
   variables: Record<string, string[]>
+  references: Record<string, string>
 }
 
 export type DatasetExtractResult =
@@ -66,7 +68,8 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
   const nodes = asJsonArray(graph?.nodes)
   const edges = asJsonArray(graph?.edges)
   const variables = asJsonRecord(record.variables)
-  if (!id || !origin || !revision || !nodes || !edges || !variables) return undefined
+  const references = asJsonRecord(record.references)
+  if (!id || !origin || !revision || !nodes || !edges || !variables || !references) return undefined
 
   const decodedNodes: DatasetJson['graph']['nodes'] = []
   for (const entry of nodes) {
@@ -97,6 +100,21 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
     else if (many) decodedVariables[name] = many
     else return undefined
   }
+  const decodedReferences: Record<string, string> = {}
+  const nodeIds = new Set(decodedNodes.map(({ id }) => id))
+  for (const [path, value] of Object.entries(references)) {
+    if (typeof value !== 'string' || !nodeIds.has(value)) return undefined
+    try {
+      const { anchor, steps } = Path.parse(path).ast
+      const step = steps[0]
+      if (anchor.kind !== 'domain' || steps.length !== 1 || step?.kind !== 'projection')
+        return undefined
+      const { kind, name } = step.projection
+      decodedReferences[schemaRefKey({ origin: anchor.origin, kind, name })] = value
+    } catch {
+      return undefined
+    }
+  }
   const title = asString(record.title)
   const description = asString(record.description)
   return {
@@ -106,6 +124,7 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
     domain: { origin, revision },
     graph: { nodes: decodedNodes, edges: decodedEdges },
     variables: decodedVariables,
+    references: decodedReferences,
   }
 }
 
@@ -193,6 +212,7 @@ export function projectDataset(
     nodes,
     edges,
     variables: dataset.variables,
+    references: dataset.references,
   }
 }
 
