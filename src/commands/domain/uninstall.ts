@@ -12,10 +12,12 @@ import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 import { dangerPanel } from '../../lib/panel'
 import { confirmWithInput } from '../../lib/prompt'
+import { acceptDomainOperationId, createDomainOperationId } from './operation'
 
 type UninstallOpts = KernelCommandOpts & {
   readonly yes?: boolean
   readonly destructive?: boolean
+  readonly operation?: string
   readonly ci?: boolean
   readonly noPrompt?: boolean
 }
@@ -60,6 +62,8 @@ Behavior:
   Edge that references a selected Node blocks the whole operation.
 
   Type the exact canonical Domain list to confirm, or pass --yes in automation.
+  A fresh operation id is generated automatically. Use --operation only to
+  retry or recover this exact uninstall after an outcome-unknown failure.
 
   Use this before reinstalling only when an immutable Domain property (such as
   its issuer) intentionally changed. Ordinary compatible upgrades should use
@@ -69,6 +73,7 @@ Examples:
   $ astrale domain uninstall grc.example -i staging
   $ astrale domain uninstall app.example shared.example --destructive
   $ astrale domain uninstall grc.example -i staging --yes --json
+  $ astrale domain uninstall grc.example --operation 139137b5-af47-47ce-92b2-b64a2b0c63d7 --yes
 `,
   arguments: [
     {
@@ -87,32 +92,45 @@ Examples:
       flags: '--yes',
       description: 'Confirm the complete Domain uninstall without prompting',
     },
+    {
+      flags: '--operation <uuid>',
+      description: 'Reuse an exact uninstall operation id for explicit retry/recovery',
+    },
   ],
   action: async (origins: [string, ...string[]], opts: UninstallOpts) => {
     const selected = canonicalOrigins(origins)
+    let operation: string
     try {
+      operation =
+        opts.operation === undefined
+          ? createDomainOperationId('uninstall')
+          : acceptDomainOperationId(opts.operation, 'uninstall')
       await confirmUninstall(selected, opts)
     } catch (error) {
       fatal(error, opts)
     }
 
-    await runKernelCommand<UninstallResult>(uninstallKernelCommand(selected, opts))
+    await runKernelCommand<UninstallResult>(uninstallKernelCommand(selected, opts, operation))
   },
 } satisfies CommandDefinition
 
 export function uninstallKernelCommand(
   selected: readonly [string, ...string[]],
   opts: UninstallOpts,
+  operation: string = opts.operation === undefined
+    ? createDomainOperationId('uninstall')
+    : acceptDomainOperationId(opts.operation, 'uninstall'),
 ): Parameters<typeof runKernelCommand<UninstallResult>>[0] {
   return {
     opts,
-    label: `Uninstalling ${selected.length === 1 ? 'domain' : 'domains'} ${selected.join(', ')}`,
+    label: `Uninstalling ${selected.length === 1 ? 'domain' : 'domains'} ${selected.join(', ')} (operation ${operation})`,
+    recovery: { operation, retry: uninstallRetry(selected, operation, opts) },
     credential: { principal: 'caller' as const },
     fn: async ({ session }) =>
       (await session.call(
         createPathCall(
           Path.project(K.functions.uninstall.ref).raw,
-          uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe'),
+          uninstallCallInput(selected, opts.destructive ? 'destructive' : 'safe', operation),
         ),
       )) as UninstallResult,
     format: (result, formatOpts, machine) => {
@@ -127,6 +145,18 @@ export function uninstallKernelCommand(
       log.dim(`  operation: ${result.operation}`)
     },
   }
+}
+
+function uninstallRetry(
+  origins: readonly [string, ...string[]],
+  operation: string,
+  opts: UninstallOpts,
+): string {
+  const destructive = opts.destructive ? ' --destructive' : ''
+  const url = opts.url === undefined ? '' : ` --url ${opts.url}`
+  const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
+  const identity = opts.as === undefined ? '' : ` --as ${opts.as}`
+  return `astrale domain uninstall ${origins.join(' ')}${destructive} --operation ${operation} --yes${url}${instance}${identity}`
 }
 
 async function confirmUninstall(
