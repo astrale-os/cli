@@ -124,7 +124,7 @@ describe('Dataset envelope', () => {
         },
       ],
     },
-    references: {},
+    references: { '/:datasets.studio.test:core.parent': 'parent' },
     variables: { parent: { node: 'parent' }, all: { nodes: ['parent', 'peer'] } },
   }
 
@@ -150,7 +150,7 @@ describe('Dataset envelope', () => {
         },
       ],
       edges: [{ from: 'parent', to: 'peer', edgeName: 'contains' }],
-      references: {},
+      references: { 'datasets.studio.test:core.parent': 'parent' },
       variables: { parent: ['parent'], all: ['parent', 'peer'] },
     })
   })

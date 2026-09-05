@@ -1,4 +1,3 @@
-import { Path } from '@astrale-os/sdk/graph/path'
 /**
  * datasets.ts — the demo Datasets a project references from `astrale.config.ts`.
  *
@@ -21,7 +20,7 @@ import type {
 } from '../../shared/types'
 import type { DomainHandle } from '../domain'
 
-import { parseClassRefKey, schemaRefKey } from '../../shared/types'
+import { parseClassRefKey, parseSchemaRefKey, schemaRefKey } from '../../shared/types'
 import { studioCliCommand } from '../cli'
 import { analyzeProjectConfig, depsInstalled } from '../domain'
 import { asJsonArray, asJsonRecord, asString, asStringArray, parseJson } from '../json'
@@ -104,16 +103,9 @@ export function decodeDatasetJson(value: unknown): DatasetJson | undefined {
   const nodeIds = new Set(decodedNodes.map(({ id }) => id))
   for (const [path, value] of Object.entries(references)) {
     if (typeof value !== 'string' || !nodeIds.has(value)) return undefined
-    try {
-      const { anchor, steps } = Path.parse(path).ast
-      const step = steps[0]
-      if (anchor.kind !== 'domain' || steps.length !== 1 || step?.kind !== 'projection')
-        return undefined
-      const { kind, name } = step.projection
-      decodedReferences[schemaRefKey({ origin: anchor.origin, kind, name })] = value
-    } catch {
-      return undefined
-    }
+    const ref = path.startsWith('/:') ? parseSchemaRefKey(path.slice(2)) : undefined
+    if (!ref || /[/:\s]/u.test(ref.origin) || /[/:\s]/u.test(ref.name)) return undefined
+    decodedReferences[schemaRefKey(ref)] = value
   }
   const title = asString(record.title)
   const description = asString(record.description)
