@@ -153,9 +153,10 @@ function uninstallRetry(
   opts: UninstallOpts,
 ): string {
   const destructive = opts.destructive ? ' --destructive' : ''
+  const url = opts.url === undefined ? '' : ` --url ${opts.url}`
   const instance = opts.instance === undefined ? '' : ` -i ${opts.instance}`
   const identity = opts.as === undefined ? '' : ` --as ${opts.as}`
-  return `astrale domain uninstall ${origins.join(' ')}${destructive} --operation ${operation} --yes${instance}${identity}`
+  return `astrale domain uninstall ${origins.join(' ')}${destructive} --operation ${operation} --yes${url}${instance}${identity}`
 }
 
 async function confirmUninstall(

@@ -36,6 +36,7 @@ describe('domain uninstall', () => {
     const request: unknown[] = []
     const command = uninstallKernelCommand(['app.example', 'shared.example'], {
       destructive: true,
+      url: 'https://kernel.example.test/api',
       instance: 'staging',
       as: 'operator',
       operation,
@@ -46,7 +47,8 @@ describe('domain uninstall', () => {
       operation,
       retry:
         `astrale domain uninstall app.example shared.example --destructive ` +
-        `--operation ${operation} --yes -i staging --as operator`,
+        `--operation ${operation} --yes --url https://kernel.example.test/api ` +
+        `-i staging --as operator`,
     })
     await command.fn({
       session: {
