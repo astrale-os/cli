@@ -123,3 +123,14 @@ jobs:
         run: pnpm --dir studio exec playwright install --with-deps chromium
       - name: Run Studio browser smoke
         run: pnpm --dir studio test:e2e
+      - name: Retain failed browser evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: studio-browser-failures
+          path: |
+            studio/test-results/**/*.png
+            studio/test-results/**/trace.zip
+            studio/test-results/**/error-context.md
+          retention-days: 7
+          if-no-files-found: ignore
