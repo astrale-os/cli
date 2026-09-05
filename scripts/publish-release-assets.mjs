@@ -148,10 +148,11 @@ export async function validateCliReleaseClosure(directory, assets, expected = {}
   } catch (cause) {
     throw new Error('release manifest is not valid JSON', { cause })
   }
-  if (manifest.schemaVersion !== 2) {
+  if (manifest.schemaVersion !== undefined) {
     throw new Error('release manifest schemaVersion is invalid')
   }
-  for (const field of ['version', 'binaryVersion', 'cloudflaredVersion', 'channel', 'repo']) {
+  const fields = ['version', 'binaryVersion', 'channel', 'repo']
+  for (const field of fields) {
     if (typeof manifest[field] !== 'string' || manifest[field].length === 0) {
       throw new Error(`release manifest field is invalid: ${field}`)
     }
@@ -312,20 +313,12 @@ async function main(argv) {
   }
   const version = process.env.VERSION
   const binaryVersion = process.env.BINARY_VERSION
-  const cloudflaredVersion = process.env.CLOUDFLARED_VERSION
   const channel = process.env.CHANNEL
   const repository = process.env.GITHUB_REPOSITORY
   const expectedCommit = process.env.EXPECTED_COMMIT
-  if (
-    !version ||
-    !binaryVersion ||
-    !cloudflaredVersion ||
-    !channel ||
-    !repository ||
-    !expectedCommit
-  ) {
+  if (!version || !binaryVersion || !channel || !repository || !expectedCommit) {
     throw new TypeError(
-      'VERSION, BINARY_VERSION, CLOUDFLARED_VERSION, CHANNEL, GITHUB_REPOSITORY, and EXPECTED_COMMIT are required',
+      'VERSION, BINARY_VERSION, CHANNEL, GITHUB_REPOSITORY, and EXPECTED_COMMIT are required',
     )
   }
   await publishReleaseAssets({
@@ -337,7 +330,6 @@ async function main(argv) {
     expectedManifest: {
       version,
       binaryVersion,
-      cloudflaredVersion,
       channel,
       repo: repository,
     },
