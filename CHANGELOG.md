@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.84](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.83...cli/v1.0.0-beta.84) (2026-09-05)
+
+
+### Bug Fixes
+
+* **commands:** expose uninstall operation recovery ([#406](https://github.com/astrale-os/cli/issues/406)) ([d50688e](https://github.com/astrale-os/cli/commit/d50688ef7a3e0905c84c1271b53e19cedbdb5d64))
+
 ## [1.0.0-beta.83](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.82...cli/v1.0.0-beta.83) (2026-09-04)
 
 
