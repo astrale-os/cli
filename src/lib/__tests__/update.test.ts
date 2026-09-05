@@ -11,7 +11,7 @@ import {
   packageManagedUpdateError,
   readInstallMetadata,
   releaseBase,
-  replaceStandaloneCohort,
+  replaceStandaloneBinary,
   shouldUpdate,
   updateAstrale,
   writeInstallMetadata,
@@ -25,18 +25,13 @@ async function makeFakeRelease(
   version: string,
   options: {
     binaryVersion?: string
-    cloudflaredVersion?: string
-    legacyManifest?: boolean
-    singleBinaryManifest?: boolean
     omitBinary?: boolean
-    omitCloudflared?: boolean
-    omitLicense?: boolean
+    extraFile?: boolean
   } = {},
 ): Promise<string> {
   const release = join(root, 'release')
   const payload = join(root, 'payload')
   const binaryVersion = options.binaryVersion ?? version
-  const cohort = !options.legacyManifest && !options.singleBinaryManifest
   await mkdir(release, { recursive: true })
   await mkdir(payload, { recursive: true })
   if (options.omitBinary) {
@@ -48,17 +43,7 @@ async function makeFakeRelease(
     )
     await chmod(join(payload, 'astrale'), 0o755)
   }
-  const cloudflaredVersion = options.cloudflaredVersion ?? '2026.8.2'
-  if (cohort && !options.omitCloudflared) {
-    await writeFile(
-      join(payload, 'astrale-cloudflared'),
-      `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "cloudflared version ${cloudflaredVersion} (fixture)"; exit 0; fi\necho cloudflared\n`,
-    )
-    await chmod(join(payload, 'astrale-cloudflared'), 0o755)
-  }
-  if (cohort && !options.omitLicense) {
-    await writeFile(join(payload, 'LICENSE.cloudflared'), 'Apache License 2.0 fixture\n')
-  }
+  if (options.extraFile) await writeFile(join(payload, 'extra'), 'unexpected archive member')
 
   const asset = join(release, 'astrale-darwin-arm64.tar.gz')
   const tar = Bun.spawn([
@@ -68,8 +53,7 @@ async function makeFakeRelease(
     '-czf',
     asset,
     ...(options.omitBinary ? ['README'] : ['astrale']),
-    ...(cohort && !options.omitCloudflared ? ['astrale-cloudflared'] : []),
-    ...(cohort && !options.omitLicense ? ['LICENSE.cloudflared'] : []),
+    ...(options.extraFile ? ['extra'] : []),
   ])
   expect(await tar.exited).toBe(0)
   const shaProc = Bun.spawn(['shasum', '-a', '256', asset], { stdout: 'pipe' })
@@ -80,22 +64,16 @@ async function makeFakeRelease(
     join(release, 'manifest.json'),
     JSON.stringify(
       {
-        ...(cohort ? { schemaVersion: 2 } : {}),
         version,
         binaryVersion: options.binaryVersion ?? binaryVersion,
-        ...(cohort ? { cloudflaredVersion } : {}),
         channel: 'alpha',
         repo: 'astrale-os/cli',
-        assets: options.legacyManifest
-          ? {
-              'darwin-arm64': 'astrale-darwin-arm64.tar.gz',
-            }
-          : {
-              'darwin-arm64': {
-                name: 'astrale-darwin-arm64.tar.gz',
-                sha256: sha,
-              },
-            },
+        assets: {
+          'darwin-arm64': {
+            name: 'astrale-darwin-arm64.tar.gz',
+            sha256: sha,
+          },
+        },
       },
       null,
       2,
@@ -107,44 +85,22 @@ async function makeFakeRelease(
 async function makeInstall(
   root: string,
   version: string,
-  options: { binaryVersion?: string; cloudflared?: false | string; license?: boolean } = {},
+  options: { binaryVersion?: string } = {},
 ): Promise<{ meta: InstallMetadata; path: string; execution: UpdateExecution }> {
   const bin = join(root, 'bin', 'astrale')
-  const cloudflaredVersion =
-    options.cloudflared === false ? undefined : (options.cloudflared ?? '2026.8.2')
   await mkdir(join(root, 'bin'), { recursive: true })
   await writeFile(
     bin,
-    `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi\necho old\n`,
+    `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "${options.binaryVersion ?? version}"; exit 0; fi\necho old\n`,
   )
   await chmod(bin, 0o755)
-  if (cloudflaredVersion) {
-    await writeFile(
-      join(root, 'bin', 'astrale-cloudflared'),
-      `#!/usr/bin/env sh\nif [ "$1" = "--version" ]; then echo "cloudflared version ${cloudflaredVersion} (fixture)"; exit 0; fi\n`,
-    )
-    await chmod(join(root, 'bin', 'astrale-cloudflared'), 0o755)
-  }
   const path = join(root, 'home', 'install.json')
-  if (options.license !== false && cloudflaredVersion) {
-    await mkdir(join(root, 'home', 'licenses'), { recursive: true })
-    await writeFile(join(root, 'home', 'licenses', 'cloudflared.txt'), 'installed license\n')
-  }
   const meta: InstallMetadata = {
     method: 'script',
     channel: 'alpha',
     version,
     repo: 'astrale-os/cli',
     bin,
-    ...(cloudflaredVersion
-      ? {
-          cohort: {
-            schemaVersion: 2 as const,
-            binaryVersion: options.binaryVersion ?? version,
-            cloudflaredVersion,
-          },
-        }
-      : {}),
   }
   await writeInstallMetadata(meta, path)
   return { meta, path, execution: { kind: 'standalone', executable: bin } }
@@ -359,54 +315,29 @@ describe('updateAstrale', () => {
     }
   })
 
-  test('supports legacy string asset manifests', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0', { legacyManifest: true })
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const check = await updateAstrale({
-        check: true,
-        currentVersion: '1.0.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-
-      expect(check).toMatchObject({
-        status: 'available',
-        latestVersion: '1.1.0',
-      })
-
-      const result = await updateAstrale({
-        currentVersion: '1.0.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-
-      expect(result).toMatchObject({
-        status: 'updated',
-        currentVersion: '1.1.0',
-      })
-      const versionProc = Bun.spawn([meta.bin, '--version'], { stdout: 'pipe' })
-      expect(await new Response(versionProc.stdout).text()).toBe('1.1.0\n')
-      expect(await versionProc.exited).toBe(0)
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
   test('single-binary updates clear cohort metadata without probing or replacing retained files', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-single-'))
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const companion = join(root, 'bin', 'astrale-cloudflared')
     const license = join(root, 'home', 'licenses', 'cloudflared.txt')
+    await mkdir(join(root, 'home', 'licenses'), { recursive: true })
     await writeFile(companion, 'unusable retained provider')
+    await writeFile(license, 'retained license')
+    await writeFile(
+      path,
+      JSON.stringify({
+        ...meta,
+        cohort: {
+          schemaVersion: 2,
+          binaryVersion: '1.0.0',
+          cloudflaredVersion: '2026.8.2',
+        },
+      }),
+    )
     const before = await Promise.all(
       [meta.bin, companion, license, path].map((file) => readFile(file)),
     )
-    const release = await makeFakeRelease(root, '1.1.0', { singleBinaryManifest: true })
+    const release = await makeFakeRelease(root, '1.1.0')
     // A current release carries its digest, with no checksum-list fallback needed.
     await rm(join(release, 'sha256sums.txt'))
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
@@ -431,7 +362,7 @@ describe('updateAstrale', () => {
         status: 'updated',
         currentVersion: '1.1.0',
       })
-      expect((await readInstallMetadata(path))?.cohort).toBeUndefined()
+      expect(JSON.parse(await readFile(path, 'utf8')).cohort).toBeUndefined()
       expect(await Promise.all([companion, license].map((file) => readFile(file)))).toEqual(
         before.slice(1, 3),
       )
@@ -441,15 +372,10 @@ describe('updateAstrale', () => {
     }
   })
 
-  test('single-binary manifest cannot admit an archive with companion files', async () => {
+  test('rejects unexpected archive members before replacing the installation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-closure-'))
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
-    const release = await makeFakeRelease(root, '1.1.0')
-    const manifestPath = join(release, 'manifest.json')
-    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
-    delete manifest.schemaVersion
-    delete manifest.cloudflaredVersion
-    await writeFile(manifestPath, JSON.stringify(manifest))
+    const release = await makeFakeRelease(root, '1.1.0', { extraFile: true })
     const before = await Promise.all([meta.bin, path].map((file) => readFile(file)))
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
     try {
@@ -468,7 +394,7 @@ describe('updateAstrale', () => {
     }
   })
 
-  test('updates the exact executable cohort, license, and install metadata', async () => {
+  test('updates the executable and install metadata', async () => {
     const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0')
@@ -489,139 +415,10 @@ describe('updateAstrale', () => {
       const versionProc = Bun.spawn([meta.bin, '--version'], { stdout: 'pipe' })
       expect(await new Response(versionProc.stdout).text()).toBe('1.1.0\n')
       expect(await versionProc.exited).toBe(0)
-      const cloudflaredProc = Bun.spawn([join(root, 'bin', 'astrale-cloudflared'), '--version'], {
-        stdout: 'pipe',
-      })
-      expect(await new Response(cloudflaredProc.stdout).text()).toContain(
-        'cloudflared version 2026.8.2',
-      )
-      expect(await cloudflaredProc.exited).toBe(0)
-      expect(await readFile(join(root, 'home', 'licenses', 'cloudflared.txt'), 'utf8')).toBe(
-        'Apache License 2.0 fixture\n',
-      )
       const updatedMeta = JSON.parse(await readFile(path, 'utf8')) as InstallMetadata
       expect(updatedMeta.version).toBe('1.1.0')
-      expect(updatedMeta.cohort).toEqual({
-        schemaVersion: 2,
-        binaryVersion: '1.1.0',
-        cloudflaredVersion: '2026.8.2',
-      })
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('check reports repair without writing and the real update repairs a legacy missing sibling', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.1.0', {
-      cloudflared: false,
-      license: false,
-    })
-    const release = await makeFakeRelease(root, '1.1.0')
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const check = await updateAstrale({
-        check: true,
-        currentVersion: '1.1.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-      expect(check).toMatchObject({ status: 'repair-available', currentVersion: '1.1.0' })
-      await expect(readFile(join(root, 'bin', 'astrale-cloudflared'))).rejects.toMatchObject({
-        code: 'ENOENT',
-      })
-
-      const repaired = await updateAstrale({
-        currentVersion: '1.1.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-      expect(repaired).toMatchObject({ status: 'repaired', currentVersion: '1.1.0' })
-      expect(await readFile(meta.bin, 'utf8')).toContain('echo "1.1.0"')
-      const cloudflaredProc = Bun.spawn([join(root, 'bin', 'astrale-cloudflared'), '--version'], {
-        stdout: 'pipe',
-      })
-      expect(await new Response(cloudflaredProc.stdout).text()).toContain(
-        'cloudflared version 2026.8.2',
-      )
-      expect(await cloudflaredProc.exited).toBe(0)
-      expect(await readFile(join(root, 'home', 'licenses', 'cloudflared.txt'), 'utf8')).toBe(
-        'Apache License 2.0 fixture\n',
-      )
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('same-version repair finishes a cohort whose install metadata commit was interrupted', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-    const { path, meta, execution } = await makeInstall(root, '1.1.0')
-    await writeInstallMetadata({ ...meta, cohort: undefined }, path)
-    const release = await makeFakeRelease(root, '1.1.0')
-    process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    try {
-      const check = await updateAstrale({
-        check: true,
-        currentVersion: '1.1.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-      expect(check).toMatchObject({ status: 'repair-available' })
-
-      await updateAstrale({
-        currentVersion: '1.1.0',
-        platform: { os: 'darwin', arch: 'arm64' },
-        installPath: path,
-        execution,
-      })
-      const repaired = JSON.parse(await readFile(path, 'utf8')) as InstallMetadata
-      expect(repaired.cohort).toEqual({
-        schemaVersion: 2,
-        binaryVersion: '1.1.0',
-        cloudflaredVersion: '2026.8.2',
-      })
-    } finally {
-      delete process.env.ASTRALE_UPDATE_BASE
-    }
-  })
-
-  test('a cohort archive missing its provider or license leaves the installed cohort unchanged', async () => {
-    for (const omission of [{ omitCloudflared: true }, { omitLicense: true }]) {
-      const root = await mkdtemp(join(tmpdir(), 'astrale-update-test-'))
-      const { path, meta, execution } = await makeInstall(root, '1.0.0')
-      const release = await makeFakeRelease(root, '1.1.0', omission)
-      process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-      const cloudflared = join(root, 'bin', 'astrale-cloudflared')
-      const license = join(root, 'home', 'licenses', 'cloudflared.txt')
-      const before = await Promise.all([
-        readFile(meta.bin, 'utf8'),
-        readFile(cloudflared, 'utf8'),
-        readFile(license, 'utf8'),
-        readFile(path, 'utf8'),
-      ])
-      try {
-        await expect(
-          updateAstrale({
-            currentVersion: '1.0.0',
-            platform: { os: 'darwin', arch: 'arm64' },
-            installPath: path,
-            execution,
-          }),
-        ).rejects.toThrow(/archive closure/u)
-        expect(
-          await Promise.all([
-            readFile(meta.bin, 'utf8'),
-            readFile(cloudflared, 'utf8'),
-            readFile(license, 'utf8'),
-            readFile(path, 'utf8'),
-          ]),
-        ).toEqual(before)
-      } finally {
-        delete process.env.ASTRALE_UPDATE_BASE
-      }
     }
   })
 
@@ -630,11 +427,7 @@ describe('updateAstrale', () => {
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0', { omitBinary: true })
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    const cloudflared = join(root, 'bin', 'astrale-cloudflared')
-    const license = join(root, 'home', 'licenses', 'cloudflared.txt')
     const beforeBinary = await readFile(meta.bin, 'utf8')
-    const beforeCloudflared = await readFile(cloudflared, 'utf8')
-    const beforeLicense = await readFile(license, 'utf8')
     const beforeMetadata = await readFile(path, 'utf8')
     try {
       await expect(
@@ -647,8 +440,6 @@ describe('updateAstrale', () => {
       ).rejects.toThrow()
 
       expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(cloudflared, 'utf8')).toBe(beforeCloudflared)
-      expect(await readFile(license, 'utf8')).toBe(beforeLicense)
       expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE
@@ -660,11 +451,7 @@ describe('updateAstrale', () => {
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0')
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    const cloudflared = join(root, 'bin', 'astrale-cloudflared')
-    const license = join(root, 'home', 'licenses', 'cloudflared.txt')
     const beforeBinary = await readFile(meta.bin, 'utf8')
-    const beforeCloudflared = await readFile(cloudflared, 'utf8')
-    const beforeLicense = await readFile(license, 'utf8')
     const beforeMetadata = await readFile(path, 'utf8')
     try {
       await expect(
@@ -676,8 +463,8 @@ describe('updateAstrale', () => {
             execution,
           },
           {
-            replaceStandaloneCohort: (input) =>
-              replaceStandaloneCohort(input, {
+            replaceStandaloneBinary: (input) =>
+              replaceStandaloneBinary(input, {
                 rename: async (
                   from: Parameters<typeof rename>[0],
                   to: Parameters<typeof rename>[1],
@@ -695,8 +482,6 @@ describe('updateAstrale', () => {
       ).rejects.toThrow('injected binary commit failure')
 
       expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(cloudflared, 'utf8')).toBe(beforeCloudflared)
-      expect(await readFile(license, 'utf8')).toBe(beforeLicense)
       expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE
@@ -708,11 +493,7 @@ describe('updateAstrale', () => {
     const { path, meta, execution } = await makeInstall(root, '1.0.0')
     const release = await makeFakeRelease(root, '1.1.0')
     process.env.ASTRALE_UPDATE_BASE = `file://${release}`
-    const cloudflared = join(root, 'bin', 'astrale-cloudflared')
-    const license = join(root, 'home', 'licenses', 'cloudflared.txt')
     const beforeBinary = await readFile(meta.bin, 'utf8')
-    const beforeCloudflared = await readFile(cloudflared, 'utf8')
-    const beforeLicense = await readFile(license, 'utf8')
     const beforeMetadata = await readFile(path, 'utf8')
     try {
       await expect(
@@ -732,8 +513,6 @@ describe('updateAstrale', () => {
       ).rejects.toThrow('injected metadata write failure')
 
       expect(await readFile(meta.bin, 'utf8')).toBe(beforeBinary)
-      expect(await readFile(cloudflared, 'utf8')).toBe(beforeCloudflared)
-      expect(await readFile(license, 'utf8')).toBe(beforeLicense)
       expect(await readFile(path, 'utf8')).toBe(beforeMetadata)
     } finally {
       delete process.env.ASTRALE_UPDATE_BASE

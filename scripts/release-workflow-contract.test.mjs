@@ -80,7 +80,6 @@ describe('release workflow contract', () => {
       (step) => step.name === 'Publish channel release',
     )
     assert.equal(channel.env.BINARY_VERSION, '${{ steps.meta.outputs.binary_version }}')
-    assert.equal(channel.env.CLOUDFLARED_VERSION, '${{ steps.cohort.outputs.cloudflared_version }}')
     assert.match(channel.run, /gh api --method PATCH/)
     assert.match(channel.run, /gh api --method POST/)
     assert.match(channel.run, /git\/refs\/tags\/\$CHANNEL/)
@@ -108,10 +107,6 @@ describe('release workflow contract', () => {
     assert.equal(toolingCheckouts.length, 1)
     assert.equal(toolingCheckouts[0].with.ref, '${{ github.workflow_sha }}')
     assert.equal(immutable.env.BINARY_VERSION, '${{ steps.meta.outputs.binary_version }}')
-    assert.equal(
-      immutable.env.CLOUDFLARED_VERSION,
-      '${{ steps.cohort.outputs.cloudflared_version }}',
-    )
     assert.equal(immutable.env.CHANNEL, '${{ steps.meta.outputs.channel }}')
     assert.match(
       immutable.run,
@@ -149,11 +144,6 @@ describe('release workflow contract', () => {
     )
     assert.deepEqual(platforms.sort(), ['darwin-arm64', 'darwin-x64', 'linux-arm64', 'linux-x64'])
     const build = binary.jobs.build.steps.find((step) => step.name === 'Build binary').run
-    const recovery = binary.jobs.build.steps.find(
-      (step) => step.name === 'Recover historical release companion',
-    )
-    const acquire = recovery.run
-    assert.equal(recovery.if, "hashFiles('cloudflared.lock.json') != ''")
     const source = binary.jobs.build.steps.find((step) => step.id === 'source')
     const pack = binary.jobs.build.steps.find((step) => step.name === 'Package asset').run
     assert.equal(binary.env.BUN_VERSION, '1.4.0')
@@ -169,19 +159,7 @@ describe('release workflow contract', () => {
       build,
       /--define '__ASTRALE_SOURCE_REVISION__="\$\{\{ steps\.source\.outputs\.sha \}\}"'/,
     )
-    assert.match(acquire, /node scripts\/acquire-cloudflared\.mjs/)
-    assert.match(acquire, /matrix\.target_os.*matrix\.target_arch/s)
-    assert.match(acquire, /require\('\.\/cloudflared\.lock\.json'\)\.version/u)
-    assert.match(acquire, /"cloudflared version \$expected "/u)
-    assert.match(
-      pack,
-      /node scripts\/package-release-asset\.mjs \\\n\s+dist\/astrale dist\/astrale-cloudflared licenses\/cloudflared\.txt "\$asset\.tar\.gz"/,
-    )
-    assert.match(pack, /if test -f cloudflared\.lock\.json; then/u)
-    assert.match(
-      pack,
-      /else\n\s+node scripts\/package-release-asset\.mjs dist\/astrale "\$asset.tar.gz"/u,
-    )
+    assert.match(pack, /node scripts\/package-release-asset\.mjs dist\/astrale "\$asset.tar.gz"/u)
     assert.deepEqual(
       pack
         .split('\n')
@@ -193,35 +171,18 @@ describe('release workflow contract', () => {
       ],
     )
     assert.match(pack, /cmp dist\/astrale dist\/archive-check\/astrale/)
-    assert.match(pack, /cmp dist\/astrale-cloudflared dist\/archive-check\/astrale-cloudflared/)
-    assert.match(pack, /cmp licenses\/cloudflared\.txt dist\/archive-check\/LICENSE\.cloudflared/)
     assert.match(pack, /test -x dist\/archive-check\/astrale/)
-    assert.match(pack, /test -x dist\/archive-check\/astrale-cloudflared/)
-    assert.match(pack, /test ! -x dist\/archive-check\/LICENSE\.cloudflared/)
     assert.doesNotMatch(pack, /viewer/)
   })
 
-  it('publishes single-binary releases while preserving explicit historical tag recovery', () => {
+  it('publishes only the single-executable release format', () => {
     const manifest = binary.jobs.publish.steps.find(
       (step) => step.name === 'Generate update manifest',
     ).run
-    const cohort = binary.jobs.publish.steps.find(
-      (step) => step.name === 'Resolve historical release companion',
-    )
-    assert.equal(existsSync('cloudflared.lock.json'), false)
-    assert.equal(existsSync('scripts/acquire-cloudflared.mjs'), false)
-    assert.equal(existsSync('licenses/cloudflared.txt'), false)
-    assert.equal(cohort.if, "hashFiles('cloudflared.lock.json') != ''")
-    assert.match(cohort.run, /cloudflared\.lock\.json/)
-    assert.match(manifest, /"schemaVersion": 2/)
-    assert.match(manifest, /"cloudflaredVersion"/)
-    assert.match(manifest, /steps\.cohort\.outputs\.cloudflared_version/)
-    assert.match(
-      manifest,
-      /if test -n '\$\{\{ steps\.cohort\.outputs\.cloudflared_version \}\}'; then/u,
-    )
+    assert.doesNotMatch(manifest, /schemaVersion/u)
     assert.match(manifest, /"binaryVersion"/u)
     assert.match(manifest, /"sha256"/u)
+    assert.doesNotMatch(readFileSync('.github/workflows/cli-release.yml', 'utf8'), /cloudflared/iu)
   })
 
   it('generates ignored embedded assets before source verification', () => {
@@ -313,9 +274,6 @@ describe('release workflow contract', () => {
     assert.match(publishedQualification.run, /gh release download "\$CHANNEL"/)
     assert.match(publishedQualification.run, /astrale-linux-x64\.tar\.gz/)
     assert.match(publishedQualification.run, /scripts\/qualification\/skills-update-e2e\.mjs/)
-    assert.match(publishedQualification.run, /astrale-cloudflared.*--version/s)
-    assert.match(publishedQualification.run, /if test -f cloudflared\.lock\.json; then/u)
-    assert.match(publishedQualification.run, /LICENSE\.cloudflared/)
     assert.equal(
       publishedQualification.env.ASTRALE_E2E_SOURCE_REVISION,
       '${{ steps.source.outputs.sha }}',
@@ -327,13 +285,10 @@ describe('release workflow contract', () => {
     assert.equal(publishNode.with['node-version-file'], '.nvmrc')
   })
 
-  it('installs one executable with historical compatibility and delegates skill configuration', () => {
+  it('installs one executable and delegates skill configuration', () => {
     const installer = read('install.sh')
     assert.doesNotMatch(installer, /install -m 0644 .*viewer/)
-    assert.match(installer, /install -m 0755 "\$tmp\/astrale-cloudflared"/)
-    assert.match(installer, /install -m 0644 "\$tmp\/LICENSE\.cloudflared"/)
-    assert.match(installer, /expected_archive_files="astrale"/u)
-    assert.match(installer, /if \[ "\$schema_version" = 2 \]; then/u)
+    assert.match(installer, /"\$archive_files" = "astrale"/u)
     assert.match(installer, /exec "\$install_dir\/astrale" skills configure --source install/)
     assert.match(installer, /<\/dev\/tty >\/dev\/tty 2>&1/)
     assert.doesNotMatch(installer, /astrale" skills update --json/)

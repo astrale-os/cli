@@ -108,8 +108,8 @@ beta channel by default. Use `--check`,
 `--no-skills` is the explicit opt-out.
 
 Existing standalone CLIs can update directly to the single-binary release format.
-Explicitly selected historical releases still install their original verified
-toolchain. Old companion files are left untouched when upgrading; current Project
+Retired two-binary releases are no longer installation or recovery targets.
+Old companion files are left untouched when upgrading; current Project
 development does not use them. See [release compatibility](docs/release.md#compatibility).
 
 An old package-managed or source build never overwrites files it does not own.

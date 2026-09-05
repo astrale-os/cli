@@ -178,91 +178,27 @@ main() {
   download "$base/manifest.json" "$tmp/manifest.json"
   verify_checksum "$tmp/$asset" "$tmp/sha256sums.txt"
 
-  # The single-binary format is understood by already installed CLIs. V2 is
-  # retained only to install explicitly selected historical releases.
+  # Keep the single-binary wire format understood by existing installations.
   schema_version="$(sed -n 's/^[[:space:]]*"schemaVersion"[[:space:]]*:[[:space:]]*\([^,}]*\).*/\1/p' "$tmp/manifest.json" | tr -d '[:space:]')"
-  cloudflared_version="$(json_string_field "$tmp/manifest.json" cloudflaredVersion)"
-  case "$schema_version" in
-    '')
-      [ -z "$cloudflared_version" ] || error "Unexpected companion in a single-binary release manifest."
-      expected_archive_files="astrale"
-      ;;
-    2)
-      [ -n "$cloudflared_version" ] || error "Release manifest is missing cloudflaredVersion."
-      expected_archive_files="astrale
-astrale-cloudflared
-LICENSE.cloudflared"
-      ;;
-    *) error "Unsupported release manifest schemaVersion." ;;
-  esac
+  [ -z "$schema_version" ] || error "Unsupported release manifest schemaVersion. Install a current release."
   archive_files="$(tar -tzf "$tmp/$asset")" || error "Could not inspect $asset."
-  [ "$archive_files" = "$expected_archive_files" ] || error "Release archive has an invalid toolchain closure."
+  [ "$archive_files" = "astrale" ] || error "Release archive has an invalid archive closure."
   tar -xzf "$tmp/$asset" -C "$tmp"
   binary_version="$(json_string_field "$tmp/manifest.json" binaryVersion)"
   [ -n "$binary_version" ] || error "Release manifest is missing binaryVersion."
   [ "$("$tmp/astrale" --version)" = "$binary_version" ] || error "astrale version does not match the release manifest."
-  if [ "$schema_version" = 2 ]; then
-    cloudflared_reported="$("$tmp/astrale-cloudflared" --version)"
-    case "$cloudflared_reported" in
-      "cloudflared version $cloudflared_version "*|"cloudflared version $cloudflared_version") ;;
-      *) error "astrale-cloudflared version does not match the release manifest." ;;
-    esac
-  fi
-
   bin="$install_dir/astrale"
   rm -f "$bin.next"
   if [ -f "$bin" ]; then cp "$bin" "$bin.previous"; had_bin=1; else rm -f "$bin.previous"; had_bin=0; fi
   install -m 0755 "$tmp/astrale" "$bin.next"
 
-  if [ "$schema_version" = 2 ]; then
-    cloudflared="$install_dir/astrale-cloudflared"
-    license_dir="$metadata_dir/licenses"
-    license="$license_dir/cloudflared.txt"
-    mkdir -p "$license_dir"
-
-    rm -f "$cloudflared.next" "$license.next"
-    if [ -f "$cloudflared" ]; then
-      cp "$cloudflared" "$cloudflared.previous"
-      had_cloudflared=1
-    else
-      rm -f "$cloudflared.previous"
-      had_cloudflared=0
-    fi
-    if [ -f "$license" ]; then
-      cp "$license" "$license.previous"
-      had_license=1
-    else
-      rm -f "$license.previous"
-      had_license=0
-    fi
-    install -m 0755 "$tmp/astrale-cloudflared" "$cloudflared.next"
-    install -m 0644 "$tmp/LICENSE.cloudflared" "$license.next"
-  fi
-
-  rollback_cohort() {
+  rollback_binary() {
     if [ "$had_bin" -eq 1 ]; then cp "$bin.previous" "$bin" && chmod 0755 "$bin"; else rm -f "$bin"; fi
-    [ "$schema_version" = 2 ] || return 0
-    if [ "$had_cloudflared" -eq 1 ]; then
-      cp "$cloudflared.previous" "$cloudflared" && chmod 0755 "$cloudflared"
-    else
-      rm -f "$cloudflared"
-    fi
-    if [ "$had_license" -eq 1 ]; then
-      cp "$license.previous" "$license" && chmod 0644 "$license"
-    else
-      rm -f "$license"
-    fi
   }
 
-  if [ "$schema_version" = 2 ]; then
-    if ! mv "$license.next" "$license" || ! mv "$cloudflared.next" "$cloudflared"; then
-      rollback_cohort
-      error "Could not commit the Astrale toolchain; the previous installation was restored."
-    fi
-  fi
   if ! mv "$bin.next" "$bin"; then
-    rollback_cohort
-    error "Could not commit the Astrale toolchain; the previous installation was restored."
+    rollback_binary
+    error "Could not commit the Astrale executable; the previous installation was restored."
   fi
 
   installed_version="$("$bin" --version)"
@@ -276,12 +212,6 @@ LICENSE.cloudflared"
   escaped_version="$(json_escape "$release_version")"
   escaped_repo="$(json_escape "$repo")"
   escaped_bin="$(json_escape "$bin")"
-  escaped_binary_version="$(json_escape "$binary_version")"
-  escaped_cloudflared_version="$(json_escape "$cloudflared_version")"
-  cohort_metadata=""
-  if [ "$schema_version" = 2 ]; then
-    cohort_metadata="\"cohort\": {\"schemaVersion\": 2, \"binaryVersion\": \"$escaped_binary_version\", \"cloudflaredVersion\": \"$escaped_cloudflared_version\"},"
-  fi
   metadata_next="$metadata_dir/install.json.next"
   cat > "$metadata_next" <<EOF
 {
@@ -290,19 +220,15 @@ LICENSE.cloudflared"
   "version": "$escaped_version",
   "repo": "$escaped_repo",
   "bin": "$escaped_bin",
-  $cohort_metadata
   "installedAt": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 }
 EOF
 
   if ! mv "$metadata_next" "$metadata_dir/install.json"; then
-    rollback_cohort
+    rollback_binary
     error "Could not commit Astrale install metadata; the previous installation was restored."
   fi
   rm -f "$bin.previous"
-  if [ "$schema_version" = 2 ]; then
-    rm -f "$cloudflared.previous" "$license.previous"
-  fi
   release_install_lock
 
   success "installed $release_version to $bin"

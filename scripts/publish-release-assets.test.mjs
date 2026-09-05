@@ -278,26 +278,14 @@ describe('release asset publication', () => {
     })
   })
 
-  it('admits historical v2 recovery but rejects mixed or incomplete manifest formats', async () => {
+  it('rejects unsupported release formats', async () => {
     const directory = await completeFixture()
-    const assets = await fixtureAssets(directory)
-    const path = join(directory, 'manifest.json')
-    const manifest = JSON.parse(await readFile(path, 'utf8'))
-    manifest.cloudflaredVersion = '2026.8.2'
-    await writeFile(path, JSON.stringify(manifest))
-    await assert.rejects(
-      validateCliReleaseClosure(directory, assets),
-      /must not declare cloudflaredVersion/u,
-    )
+    const manifestPath = join(directory, 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
     manifest.schemaVersion = 2
-    await writeFile(path, JSON.stringify(manifest))
-    await validateCliReleaseClosure(directory, assets, { cloudflaredVersion: '2026.8.2' })
-    delete manifest.cloudflaredVersion
-    await writeFile(path, JSON.stringify(manifest))
-    await assert.rejects(
-      validateCliReleaseClosure(directory, assets),
-      /field is invalid: cloudflaredVersion/u,
-    )
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    const assets = await fixtureAssets(directory)
+    await assert.rejects(validateCliReleaseClosure(directory, assets), /schemaVersion is invalid/u)
   })
 
   it('rejects checksum and manifest closures that disagree with platform archives', async () => {

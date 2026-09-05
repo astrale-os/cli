@@ -197,7 +197,7 @@ export async function cliStale(
         current: running,
       }
     }
-    if (r.status === 'updated' || r.status === 'repaired') {
+    if (r.status === 'updated') {
       return {
         stale: false,
         managed: false,
@@ -207,10 +207,10 @@ export async function cliStale(
       }
     }
     return {
-      stale: r.status === 'available' || r.status === 'repair-available',
+      stale: r.status === 'available',
       managed: false,
       current: r.currentVersion,
-      latest: r.status === 'repair-available' ? r.currentVersion : r.latestVersion,
+      latest: r.latestVersion,
       channel: r.channel,
     }
   } catch (error) {
@@ -295,10 +295,9 @@ export default {
   ],
   afterHelpText: `
 Behavior:
-  Keeps three things current, in order. (1) The CLI toolchain: updates official
+  Keeps three things current, in order. (1) The CLI: updates official
   standalone installs; the CLI is checksum-verified and replaced together with
-  its install metadata. Explicit historical releases retain their original
-  verified toolchain. Externally managed
+  its install metadata. Externally managed
   processes are directed to the standalone installer and never overwritten. (2) The Astrale
   agent skills: aligns an existing cohort with the exact CLI release, repairs
   inconsistent installs, and verifies the result. If skills are absent, an
@@ -386,12 +385,6 @@ Examples:
         log.success(`Updated astrale ${result.previousVersion} -> ${result.currentVersion}`)
         log.dim(`  channel: ${result.channel}`)
         log.dim(`  binary: ${result.bin}`)
-      } else if (result.status === 'repaired') {
-        log.success(`Repaired Astrale toolchain ${result.currentVersion}`)
-        log.dim(`  binary: ${result.bin}`)
-      } else if (result.status === 'repair-available') {
-        log.info(`Astrale toolchain repair available: ${result.currentVersion}`)
-        anyAvailable = true
       } else if (result.status === 'managed') {
         const warning = packageManagedUpdateError(result.executable)
         log.warn(

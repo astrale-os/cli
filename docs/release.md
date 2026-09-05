@@ -51,13 +51,9 @@ native smoke mismatch fails `CLI Release` before publication.
 
 ## Compatibility
 
-The installer and updater retain schema-v2 support for explicitly selected
-historical releases. Their original companion and license are still verified
-and committed transactionally; same-version repair still works for those releases.
-Historical release recovery checks out the immutable source tag. Only tags
-containing `cloudflared.lock.json` execute their own pinned acquisition and
-three-file packaging scripts. This is exercised compatibility, not the current
-development runtime.
+Compatibility is forward-only: an existing standalone installation can upgrade
+to a current single-binary release. The current installer, updater, and release
+workflow do not install, repair, or reconstruct retired two-binary releases.
 
 Upgrading a historical CLI to a current release replaces the CLI and clears the
 obsolete cohort metadata. It does not delete a retained companion or license:

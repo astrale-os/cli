@@ -118,20 +118,6 @@ jobs:
           ./dist/astrale --version
           ./dist/astrale --help >/dev/null
           ./dist/astrale skills status --json >/dev/null
-      # Only historical source tags carry this pin and acquisition script.
-      - name: Recover historical release companion
-        if: hashFiles('cloudflared.lock.json') != ''
-        run: |
-          set -eu
-          node scripts/acquire-cloudflared.mjs \
-            '${{ matrix.target_os }}-${{ matrix.target_arch }}' \
-            dist/astrale-cloudflared
-          expected=$(node -p "require('./cloudflared.lock.json').version")
-          reported=$(./dist/astrale-cloudflared --version)
-          case "$reported" in
-            "cloudflared version $expected "*|"cloudflared version $expected") ;;
-            *) exit 1 ;;
-          esac
       - name: Qualify skill update with the built binary
         env:
           ASTRALE_E2E_CLI: ./dist/astrale
@@ -149,25 +135,13 @@ jobs:
         run: |
           set -eu
           asset="astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}"
-          if test -f cloudflared.lock.json; then
-            node scripts/package-release-asset.mjs \
-              dist/astrale dist/astrale-cloudflared licenses/cloudflared.txt "$asset.tar.gz"
-            printf 'astrale\nastrale-cloudflared\nLICENSE.cloudflared\n' > dist/archive-entries
-          else
-            node scripts/package-release-asset.mjs dist/astrale "$asset.tar.gz"
-            printf 'astrale\n' > dist/archive-entries
-          fi
+          node scripts/package-release-asset.mjs dist/astrale "$asset.tar.gz"
+          printf 'astrale\n' > dist/archive-entries
           tar -tzf "$asset.tar.gz" | cmp - dist/archive-entries
           mkdir -p dist/archive-check
           tar -xzf "$asset.tar.gz" -C dist/archive-check
           cmp dist/astrale dist/archive-check/astrale
           test -x dist/archive-check/astrale
-          if test -f cloudflared.lock.json; then
-            cmp dist/astrale-cloudflared dist/archive-check/astrale-cloudflared
-            cmp licenses/cloudflared.txt dist/archive-check/LICENSE.cloudflared
-            test -x dist/archive-check/astrale-cloudflared
-            test ! -x dist/archive-check/LICENSE.cloudflared
-          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}
@@ -210,10 +184,6 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: |
           node scripts/resolve-cli-release.mjs
-      - id: cohort
-        name: Resolve historical release companion
-        if: hashFiles('cloudflared.lock.json') != ''
-        run: echo "cloudflared_version=$(node -p "require('./cloudflared.lock.json').version")" >> "$GITHUB_OUTPUT"
       - name: Generate checksums
         run: |
           set -eu
@@ -225,14 +195,8 @@ jobs:
           cd release-assets
           {
             printf '{\n'
-            if test -n '${{ steps.cohort.outputs.cloudflared_version }}'; then
-              printf '  "schemaVersion": 2,\n'
-            fi
             printf '  "version": "%s",\n' '${{ steps.meta.outputs.version }}'
             printf '  "binaryVersion": "%s",\n' '${{ steps.meta.outputs.binary_version }}'
-            if test -n '${{ steps.cohort.outputs.cloudflared_version }}'; then
-              printf '  "cloudflaredVersion": "%s",\n' '${{ steps.cohort.outputs.cloudflared_version }}'
-            fi
             printf '  "channel": "%s",\n' '${{ steps.meta.outputs.channel }}'
             printf '  "repo": "%s",\n' '${{ github.repository }}'
             printf '  "assets": {\n'
@@ -255,7 +219,6 @@ jobs:
           TAG: ${{ steps.meta.outputs.immutable_tag }}
           VERSION: ${{ steps.meta.outputs.version }}
           BINARY_VERSION: ${{ steps.meta.outputs.binary_version }}
-          CLOUDFLARED_VERSION: ${{ steps.cohort.outputs.cloudflared_version }}
           CHANNEL: ${{ steps.meta.outputs.channel }}
           EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
@@ -274,7 +237,6 @@ jobs:
           CHANNEL: ${{ steps.meta.outputs.channel }}
           VERSION: ${{ steps.meta.outputs.version }}
           BINARY_VERSION: ${{ steps.meta.outputs.binary_version }}
-          CLOUDFLARED_VERSION: ${{ steps.cohort.outputs.cloudflared_version }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
           EXPECTED_COMMIT: ${{ steps.source.outputs.sha }}
         run: |
@@ -320,15 +282,6 @@ jobs:
           GH_TOKEN='' GITHUB_TOKEN='' \
           ASTRALE_E2E_CLI="$qualification_dir/astrale" \
             node scripts/qualification/skills-update-e2e.mjs
-          if test -f cloudflared.lock.json; then
-            expected=$(node -p "require('./cloudflared.lock.json').version")
-            reported=$("$qualification_dir/astrale-cloudflared" --version)
-            case "$reported" in
-              "cloudflared version $expected "*|"cloudflared version $expected") ;;
-              *) exit 1 ;;
-            esac
-            test -s "$qualification_dir/LICENSE.cloudflared"
-          fi
       - name: Release summary
         run: |
           cat <<EOF >> "$GITHUB_STEP_SUMMARY"

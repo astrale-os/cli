@@ -21,7 +21,7 @@ const platforms = [
   { os: 'linux', arch: 'x64', unameS: 'Linux', unameM: 'x86_64' },
 ]
 
-function fixture({ historical = true } = {}) {
+function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'astrale-install-script-'))
   const release = join(root, 'release')
   const payload = join(root, 'payload')
@@ -34,27 +34,14 @@ function fixture({ historical = true } = {}) {
     join(payload, 'astrale'),
     '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.0.0-beta.test; exit 0; fi\nprintf "%s\\n" "$*" >> "$ASTRALE_TEST_INVOCATIONS"\n',
   )
-  writeFileSync(
-    join(payload, 'astrale-cloudflared'),
-    '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "cloudflared version 2026.8.2 (fixture)"; exit 0; fi\n',
-  )
   chmodSync(join(payload, 'astrale'), 0o755)
-  chmodSync(join(payload, 'astrale-cloudflared'), 0o755)
-  writeFileSync(join(payload, 'LICENSE.cloudflared'), 'historical provider license fixture\n')
 
   const checksums = []
   const assets = {}
   for (const { os, arch } of platforms) {
     const name = `astrale-${os}-${arch}.tar.gz`
     const path = join(release, name)
-    execFileSync('tar', [
-      '-C',
-      payload,
-      '-czf',
-      path,
-      'astrale',
-      ...(historical ? ['astrale-cloudflared', 'LICENSE.cloudflared'] : []),
-    ])
+    execFileSync('tar', ['-C', payload, '-czf', path, 'astrale'])
     const sha256 = execFileSync('shasum', ['-a', '256', path], { encoding: 'utf8' }).split(
       /\s+/u,
     )[0]
@@ -66,7 +53,6 @@ function fixture({ historical = true } = {}) {
     join(release, 'manifest.json'),
     JSON.stringify(
       {
-        ...(historical ? { schemaVersion: 2, cloudflaredVersion: '2026.8.2' } : {}),
         version: '1.0.0-beta.test',
         binaryVersion: '1.0.0-beta.test',
         channel: 'beta',
@@ -119,55 +105,8 @@ function runInstaller(environment) {
   })
 }
 
-test('historical installer compatibility places one verified cohort on all four platforms', () => {
-  const owner = fixture()
-  try {
-    for (const platform of platforms) {
-      const name = `${platform.os}-${platform.arch}`
-      const environment = installEnvironment(owner, platform, name)
-      const installed = runInstaller(environment)
-      assert.equal(installed.status, 0, `${name}: ${installed.stderr}`)
-      assert.equal(
-        execFileSync(join(environment.install, 'astrale'), ['--version'], { encoding: 'utf8' }),
-        '1.0.0-beta.test\n',
-      )
-      assert.match(
-        execFileSync(join(environment.install, 'astrale-cloudflared'), ['--version'], {
-          encoding: 'utf8',
-        }),
-        /cloudflared version 2026\.8\.2/u,
-      )
-      assert.equal(
-        readFileSync(join(environment.state, 'licenses', 'cloudflared.txt'), 'utf8'),
-        'historical provider license fixture\n',
-      )
-      assert.equal(statSync(join(environment.install, 'astrale')).mode & 0o777, 0o755)
-      assert.equal(statSync(join(environment.install, 'astrale-cloudflared')).mode & 0o777, 0o755)
-      assert.equal(
-        statSync(join(environment.state, 'licenses', 'cloudflared.txt')).mode & 0o777,
-        0o644,
-      )
-      const metadata = JSON.parse(readFileSync(join(environment.state, 'install.json'), 'utf8'))
-      assert.equal(metadata.version, '1.0.0-beta.test')
-      assert.deepEqual(metadata.cohort, {
-        schemaVersion: 2,
-        binaryVersion: '1.0.0-beta.test',
-        cloudflaredVersion: '2026.8.2',
-      })
-      assert.match(installed.stdout, /Skill setup skipped\. Run: astrale skills configure/u)
-      assert.equal(existsSync(environment.invocations), false)
-      assert.equal(
-        statSync(join(environment.install, '.astrale-install.lock'), { throwIfNoEntry: false }),
-        undefined,
-      )
-    }
-  } finally {
-    rmSync(owner.root, { recursive: true, force: true })
-  }
-})
-
 test('current installer places only astrale on all four platforms without a companion', () => {
-  const owner = fixture({ historical: false })
+  const owner = fixture()
   try {
     for (const platform of platforms) {
       const environment = installEnvironment(owner, platform, `${platform.os}-${platform.arch}`)
@@ -190,7 +129,7 @@ test('current installer places only astrale on all four platforms without a comp
 })
 
 test('single-binary migration preserves inert companion files and rolls back on metadata failure', () => {
-  const owner = fixture({ historical: false })
+  const owner = fixture()
   try {
     const environment = installEnvironment(owner, platforms[0], 'migration')
     mkdirSync(environment.install, { recursive: true })
@@ -235,42 +174,8 @@ test('single-binary migration preserves inert companion files and rolls back on 
   }
 })
 
-test('installer migrates an existing one-binary script install into the cohort', () => {
-  const owner = fixture()
-  try {
-    const environment = installEnvironment(owner, platforms[0], 'legacy')
-    mkdirSync(environment.install, { recursive: true })
-    mkdirSync(environment.state, { recursive: true })
-    const binary = join(environment.install, 'astrale')
-    writeFileSync(binary, '#!/bin/sh\necho legacy\n', { mode: 0o755 })
-    writeFileSync(
-      join(environment.state, 'install.json'),
-      `${JSON.stringify({
-        method: 'script',
-        channel: 'beta',
-        version: 'legacy',
-        repo: 'astrale-os/cli',
-        bin: binary,
-      })}\n`,
-    )
-
-    const installed = runInstaller(environment)
-    assert.equal(installed.status, 0, installed.stderr)
-    assert.equal(execFileSync(binary, ['--version'], { encoding: 'utf8' }), '1.0.0-beta.test\n')
-    assert.equal(statSync(join(environment.install, 'astrale-cloudflared')).isFile(), true)
-    assert.equal(statSync(join(environment.state, 'licenses', 'cloudflared.txt')).isFile(), true)
-    assert.equal(
-      JSON.parse(readFileSync(join(environment.state, 'install.json'), 'utf8')).cohort
-        .schemaVersion,
-      2,
-    )
-  } finally {
-    rmSync(owner.root, { recursive: true, force: true })
-  }
-})
-
 test('current installer rejects corrupt downloads and unsupported or mixed manifest formats before replacement', () => {
-  const owner = fixture({ historical: false })
+  const owner = fixture()
   try {
     const environment = installEnvironment(owner, platforms[0], 'invalid-current')
     assert.equal(runInstaller(environment).status, 0)
@@ -281,8 +186,7 @@ test('current installer rejects corrupt downloads and unsupported or mixed manif
     const original = JSON.parse(readFileSync(manifestPath, 'utf8'))
     for (const [extra, message] of [
       [{ schemaVersion: 3 }, /Unsupported release manifest schemaVersion/u],
-      [{ schemaVersion: 2 }, /missing cloudflaredVersion/u],
-      [{ cloudflaredVersion: '2026.8.2' }, /Unexpected companion/u],
+      [{ schemaVersion: 2 }, /Unsupported release manifest schemaVersion/u],
       [{ binaryVersion: 'not-the-compiled-version' }, /version does not match/u],
     ]) {
       writeFileSync(manifestPath, JSON.stringify({ ...original, ...extra }, null, 2))
@@ -341,7 +245,7 @@ test('installer excludes a live writer, recovers a dead owner, and fails closed 
   }
 })
 
-test('installer rejects an archive outside the exact cohort closure before replacing files', () => {
+test('installer rejects an archive outside the exact archive closure before replacing files', () => {
   const owner = fixture()
   try {
     const environment = installEnvironment(owner, platforms[0], 'closure')
@@ -350,8 +254,8 @@ test('installer rejects an archive outside the exact cohort closure before repla
     const asset = join(owner.release, 'astrale-darwin-arm64.tar.gz')
     const payload = join(owner.root, 'bad-payload')
     mkdirSync(payload)
-    writeFileSync(join(payload, 'astrale'), 'unexpected')
-    execFileSync('tar', ['-C', payload, '-czf', asset, 'astrale'])
+    writeFileSync(join(payload, 'extra'), 'unexpected')
+    execFileSync('tar', ['-C', payload, '-czf', asset, 'extra'])
     const sha256 = execFileSync('shasum', ['-a', '256', asset], { encoding: 'utf8' }).split(
       /\s+/u,
     )[0]
@@ -367,41 +271,8 @@ test('installer rejects an archive outside the exact cohort closure before repla
 
     const rejected = runInstaller(environment)
     assert.notEqual(rejected.status, 0)
-    assert.match(rejected.stderr, /invalid toolchain closure/u)
+    assert.match(rejected.stderr, /invalid archive closure/u)
     assert.deepEqual(readFileSync(join(environment.install, 'astrale')), installed)
-  } finally {
-    rmSync(owner.root, { recursive: true, force: true })
-  }
-})
-
-test('installer restores the prior cohort when metadata cannot commit', () => {
-  const owner = fixture()
-  try {
-    const environment = installEnvironment(owner, platforms[0], 'rollback')
-    assert.equal(runInstaller(environment).status, 0)
-    const binary = join(environment.install, 'astrale')
-    const cloudflared = join(environment.install, 'astrale-cloudflared')
-    const license = join(environment.state, 'licenses', 'cloudflared.txt')
-    const metadata = join(environment.state, 'install.json')
-    writeFileSync(binary, 'prior binary\n')
-    writeFileSync(cloudflared, 'prior provider\n')
-    writeFileSync(license, 'prior license\n')
-    const before = [binary, cloudflared, license, metadata].map((path) => readFileSync(path))
-
-    const rejected = runInstaller({
-      ...environment,
-      env: { ...environment.env, ASTRALE_TEST_FAIL_METADATA: '1' },
-    })
-    assert.notEqual(rejected.status, 0)
-    assert.match(rejected.stderr, /metadata.*previous installation was restored/u)
-    assert.deepEqual(
-      [binary, cloudflared, license, metadata].map((path) => readFileSync(path)),
-      before,
-    )
-    assert.equal(
-      statSync(join(environment.install, '.astrale-install.lock'), { throwIfNoEntry: false }),
-      undefined,
-    )
   } finally {
     rmSync(owner.root, { recursive: true, force: true })
   }
