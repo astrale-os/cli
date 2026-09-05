@@ -60,6 +60,7 @@ export type ViewOpts = KernelCommandOpts &
     screenshot?: string
     sessions?: boolean
     close?: string | boolean
+    refresh?: string
     all?: boolean
     allowExternalOrigin?: string[]
     /** Internal Studio host override; ordinary CLI calls resolve their own executable. */
@@ -265,8 +266,8 @@ export function createViewServeConfig(
     session: record,
     kernel: {
       url: opts.url,
-      instance: opts.instance,
-      as: opts.as,
+      instance: opts.instance ?? (opts.url === undefined ? record.instance : undefined),
+      as: opts.creds ? undefined : (opts.as ?? record.identity),
       creds: opts.creds,
       timeout: opts.timeout,
     },
@@ -522,6 +523,25 @@ async function sessionsCommand(opts: ViewOpts): Promise<void> {
   }
 }
 
+async function refreshCommand(opts: ViewOpts): Promise<void> {
+  const session = (await listSessions()).find((session) => session.id === opts.refresh)
+  if (session === undefined) {
+    throw new AstraleError('VIEW_NOT_FOUND', `No view session "${opts.refresh}".`)
+  }
+  const response = await fetch(`${session.pageUrl}refresh`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) {
+    throw new AstraleError(
+      'VIEW_REFRESH_FAILED',
+      'Could not refresh the View; its previous placement is retained.',
+    )
+  }
+  if (isMachine(opts)) output({ session, state: 'refreshing' }, opts)
+  else log.success(`Refreshed ${session.id} — ${session.pageUrl}`)
+}
+
 export default {
   name: 'view',
   description: 'Open one view in a local browser shell your agent can drive',
@@ -546,6 +566,10 @@ export default {
     { flags: '--snapshot', description: 'Print an accessibility snapshot once the view is up' },
     { flags: '--screenshot <file>', description: 'Save a screenshot once the view is up' },
     { flags: '--sessions', description: 'List active view sessions' },
+    {
+      flags: '--refresh <id>',
+      description: 'Re-resolve and reload an open View in its existing tab',
+    },
     {
       flags: '--close [id]',
       description: 'Close a view session (bare: the only open one; with --all: every session)',
@@ -578,8 +602,10 @@ Examples:
   $ astrale view /:integrations.astrale.ai:view.application --allow-external-origin https://connect.nango.dev https://connect.composio.dev
   $ astrale view --list
   $ astrale view --sessions ; astrale view --close --all
+  $ astrale view --refresh v-abc123
 `,
   action: async (spec: string | undefined, opts: ViewOpts) => {
+    if (opts.refresh !== undefined) return refreshCommand(opts)
     if (opts.close !== undefined) return closeCommand(opts)
     if (opts.sessions) return sessionsCommand(opts)
     if (opts.list && !spec) return sessionsCommand(opts)

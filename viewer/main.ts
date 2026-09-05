@@ -31,12 +31,14 @@ type Config = {
   instance: string | null
   sessionId: string
   externalOrigins: readonly string[]
+  revision: number
 }
 
-const HEARTBEAT_MS = 5 * 60_000
+const HEARTBEAT_MS = 1_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
 const base = location.pathname.replace(/\/+$/, '')
+let revision: number | undefined
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(base + path, init)
@@ -50,7 +52,13 @@ function report(state: string, error?: string): void {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ state, error }),
     keepalive: true,
-  }).catch(() => {})
+  })
+    .then(async (response) => {
+      if (!response.ok) return
+      const next = (await response.json()) as { revision: number }
+      if (revision !== undefined && next.revision !== revision) location.reload()
+    })
+    .catch(() => {})
 }
 
 function el(id: string): HTMLElement {
@@ -97,6 +105,7 @@ function showPlacement(view: ResolvedView): void {
 
 async function main(): Promise<void> {
   const cfg = await j<Config>('/config.json')
+  revision = cfg.revision
   const hostCapabilities = viewHostCapabilities(cfg.externalOrigins)
   const route = cfg.view.route
   showPlacement(cfg.view)

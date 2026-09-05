@@ -12,7 +12,8 @@ import type { ViewServeConfig } from './session'
 import { withClientSession } from '../../connection'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
-import { removeSessionFiles } from './session'
+import { refreshViewPlacement } from './refresh'
+import { removeSessionFiles, saveRecord } from './session'
 
 export { ensureViewerAssets, viewerDistDir } from './assets'
 
@@ -36,6 +37,7 @@ type TokenGrant = { token: string; expiresAt: number; kind: 'minted' }
 
 export interface ViewServerDependencies {
   readonly connect: typeof withClientSession
+  readonly persist?: typeof saveRecord
 }
 
 const DEFAULT_DEPENDENCIES: ViewServerDependencies = Object.freeze({
@@ -53,6 +55,17 @@ export function startViewServer(
   let status: PageStatus = { state: 'waiting', at: new Date().toISOString() }
   let grant: TokenGrant | null = null
   let lastActivity = Date.now()
+  let revision = 0
+  let refreshing: Promise<void> | undefined
+
+  async function refresh(): Promise<void> {
+    const view = await refreshViewPlacement(config, dependencies.connect)
+    await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, view })
+    session.view = view
+    grant = null
+    revision += 1
+    status = { state: 'waiting', at: new Date().toISOString() }
+  }
 
   /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
   async function freshGrant(): Promise<TokenGrant> {
@@ -120,6 +133,7 @@ export function startViewServer(
         instance: session.instance ?? null,
         sessionId: session.id,
         externalOrigins: config.externalOrigins,
+        revision,
       })
       return
     }
@@ -137,7 +151,16 @@ export function startViewServer(
       if (body && typeof body.state === 'string' && body.state !== 'alive') {
         status = { state: body.state, error: asString(body.error), at: new Date().toISOString() }
       }
-      res.writeHead(204).end()
+      json(res, 200, { revision })
+      return
+    }
+    if (sub === '/refresh' && req.method === 'POST') {
+      // Concurrent requests share one resolution; a failed resolution retains the last good View.
+      refreshing ??= refresh().finally(() => {
+        refreshing = undefined
+      })
+      await refreshing
+      json(res, 200, { revision })
       return
     }
     if (sub === '/state' && req.method === 'GET') {

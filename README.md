@@ -136,6 +136,12 @@ Main command groups:
 | Management | `admin`, `instance`, `identity`, `auth`, `idp`, `update` |
 | Agent | `browser`, `skills` |
 
+`astrale view --refresh <id>` re-resolves an open View against its retained
+instance and identity, then reloads the existing tab without changing its URL.
+If resolution fails, the previous placement remains available. Use
+`astrale view --sessions` to find session IDs and `astrale view --close <id>`
+to stop only that local session; neither command removes a deployment.
+
 ## Path Syntax
 
 ```
