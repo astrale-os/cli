@@ -10,7 +10,7 @@ set -eu
 # Optional environment:
 #   ASTRALE_INSTALL_DIR  install directory (default: ~/.astrale/bin)
 #   ASTRALE_VERSION      exact release tag/version to install (for example 0.4.0-alpha.7)
-#   ASTRALE_CHANNEL      release channel when ASTRALE_VERSION is unset (alpha|beta|rc|canary|stable)
+#   ASTRALE_CHANNEL      release channel when ASTRALE_VERSION is unset (latest|alpha|beta|rc|canary|stable)
 #   ASTRALE_REPO         GitHub repo override (default: astrale-os/cli)
 #   ASTRALE_DOWNLOAD_BASE  direct asset base URL override
 
@@ -86,7 +86,7 @@ resolve_download_base() {
     return
   fi
 
-  channel="${ASTRALE_CHANNEL:-beta}"
+  channel="${ASTRALE_CHANNEL:-latest}"
   printf 'https://github.com/%s/releases/download/%s' "$repo" "$channel"
 }
 
@@ -244,7 +244,7 @@ LICENSE.cloudflared"
   fi
 
   installed_version="$("$bin" --version)"
-  channel="${ASTRALE_CHANNEL:-beta}"
+  channel="${ASTRALE_CHANNEL:-latest}"
   repo="${ASTRALE_REPO:-astrale-os/cli}"
   release_version="$(json_string_field "$tmp/manifest.json" version)"
   release_channel="$(json_string_field "$tmp/manifest.json" channel)"

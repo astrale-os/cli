@@ -16,8 +16,10 @@ default: the public `astrale` executable and its private, release-pinned
 at `~/.astrale/licenses/cloudflared.txt`. The CLI executable contains the CLI,
 [Domain Studio](studio/README.md), its Bun 1.4 runtime, the viewer, and the
 Astrale skills. Running the CLI, Studio, viewer, and Astrale skill manager does
-not require Node, npm, npx, or a separate Bun install. During the prerelease
-period, it follows the beta channel by default.
+not require Node, npm, npx, or a separate Bun install. It follows the `latest`
+channel by default: the explicitly promoted release,
+which may still have a `-beta.N` version. Use `ASTRALE_CHANNEL=beta` to opt into
+every beta release.
 
 Optional installer environment:
 
@@ -104,7 +106,7 @@ astrale update
 companion, license, and install metadata as one cohort, then invokes the new CLI
 to install, update, or repair the skills embedded in that exact release. A
 same-version update repairs a missing or mismatched companion. It follows the
-beta channel by default. Use `--check`,
+`latest` channel by default. Use `--check`,
 `--channel <channel>`, or `--version <version>` to control the release target;
 `--no-skills` is the explicit opt-out.
 
@@ -269,3 +271,9 @@ astrale-dev <command>   # execs `bun <workspace>/cli/bin/astrale.ts` of the
 It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
+
+## Releases
+
+Beta releases continue independently of the customer-facing `latest` channel.
+See [release operations](docs/release.md#promote-an-existing-release-to-latest) for the
+agent-ready preview, promotion, verification, and rollback commands.
