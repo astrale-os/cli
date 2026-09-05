@@ -1,6 +1,6 @@
 import type { Input } from '@astrale-os/sdk/client'
 import type { ClientSession, SessionRequestOptions } from '@astrale-os/sdk/client/session'
-import type { ClassRef } from '@astrale-os/sdk/schema'
+import type { ClassRef, MethodKey } from '@astrale-os/sdk/schema'
 
 import { call } from '@astrale-os/sdk/client'
 import { Path } from '@astrale-os/sdk/graph/path'
@@ -12,6 +12,7 @@ function classRef(name: string): ClassRef {
   return Object.freeze({ origin, kind: 'class', name }) as ClassRef
 }
 
+const Fleet = classRef('Fleet')
 const Domain = classRef('Domain')
 const Instance = classRef('Instance')
 const Invitation = classRef('Invitation')
@@ -20,6 +21,7 @@ export const AdminContract = Object.freeze({
   origin,
   fleet: Path.parse('/:admin.astrale.ai:core.fleet'),
   classes: Object.freeze({
+    Fleet,
     Domain,
     Instance,
     Invitation,
@@ -55,7 +57,7 @@ export const AdminContract = Object.freeze({
 export function callAdminMethod(
   session: ClientSession,
   receiver: Path,
-  method: string,
+  method: MethodKey,
   input: Input,
   options?: SessionRequestOptions,
 ): Promise<unknown> {

@@ -236,14 +236,14 @@ Self-reference:
 Examples:
   $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
   $ astrale call /:blog.acme.com:class.Author:list limit=10
-  $ astrale call '@self::deactivate'
+  $ astrale call '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances'
   $ astrale call /:kernel.astrale.ai:function.journal --data '{"limit":5}' --json
 `,
   arguments: [
     {
       name: 'path',
       description:
-        'Operation path (e.g., /:kernel.astrale.ai:class.Identity:whois or /node::method)',
+        'Operation path (e.g., /:kernel.astrale.ai:class.Identity:whois or @node::domain.example:class.Resource.method.rename)',
     },
     { name: 'params...', description: 'Params as key=value pairs', required: false },
   ],
