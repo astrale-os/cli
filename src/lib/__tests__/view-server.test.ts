@@ -69,12 +69,6 @@ describe('view session server credentials', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
-      transport: {
-        href: 'https://example.test/ui/private',
-        issuer: issuer('https://example.test'),
-        etag: digest('c'),
-        revision: revision('d'),
-      },
       externalOrigins: [],
       idleMs: 60_000,
     } satisfies ViewServeConfig
@@ -131,12 +125,6 @@ describe('view session server credentials', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
-      transport: {
-        href: 'http://127.0.0.1:8787/ui/public',
-        issuer: issuer('https://example.test'),
-        etag: digest('a'),
-        revision: revision('b'),
-      },
       externalOrigins: ['https://connect.nango.dev'],
       idleMs: 60_000,
     } satisfies ViewServeConfig
@@ -146,15 +134,12 @@ describe('view session server credentials', () => {
     try {
       const configResponse = await fetch(`http://127.0.0.1:${port}/s/${nonce}/config.json`)
       expect(configResponse.status).toBe(200)
-      expect(await configResponse.json()).toMatchObject({
+      const served = await configResponse.json()
+      expect(served).not.toHaveProperty('transport')
+      expect(served).toMatchObject({
         sessionId: 'v-plain',
         externalOrigins: ['https://connect.nango.dev'],
-        transport: {
-          href: 'http://127.0.0.1:8787/ui/public',
-          issuer: 'https://example.test',
-          etag: digest('a'),
-          revision: revision('b'),
-        },
+        view: config.session.view,
       })
 
       const response = await fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, {

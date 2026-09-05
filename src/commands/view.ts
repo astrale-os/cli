@@ -1,4 +1,4 @@
-import type { ResolvedView, ViewTransport } from '@astrale-os/shell'
+import type { ResolvedView } from '@astrale-os/shell'
 
 import chalk from 'chalk'
 import { randomBytes } from 'node:crypto'
@@ -19,7 +19,6 @@ import { isMachine, output, type RawOutputOpts } from '../lib/output'
 import { findFreePort } from '../lib/port'
 import { run, spawnHandle } from '../lib/proc'
 import { promptSelect } from '../lib/prompt'
-import { proveDevelopmentViewTransport } from '../lib/view/development/publication'
 import { admitExternalOpenOrigins } from '../lib/view/external-open-origins'
 import { withViewPortAllocationLock } from '../lib/view/port-allocation'
 import {
@@ -54,7 +53,6 @@ export type ViewOpts = KernelCommandOpts &
     target?: string
     view?: string
     list?: boolean
-    developmentLocalUrl?: string
     headed?: boolean
     browser?: boolean
     open?: boolean
@@ -73,7 +71,6 @@ const VIEW_PORT_SPAN = 20
 const IDLE_MS = 30 * 60_000
 const READY_TIMEOUT_MS = 8000
 const STATE_TIMEOUT_MS = 25_000
-const DEVELOPMENT_PUBLICATION_TIMEOUT_MS = 10_000
 const POLL_MS = 250
 /** Dedicated agent-browser profile for view sessions (no cookies involved). */
 const VIEW_PROFILE = `${BROWSER_DIR}/_view`
@@ -234,10 +231,9 @@ async function newerThan(dir: string, mtimeMs: number): Promise<boolean> {
 }
 
 /** Spawn the detached session server (the CLI re-invoking itself) and wait for it. */
-async function startSession(
+export async function startViewSession(
   view: ResolvedView,
   opts: ViewOpts,
-  transport?: ViewTransport,
 ): Promise<ViewSessionRecord> {
   await ensureViewerAssets()
   const connection = await withClientSession(opts, async ({ identity, target }) => ({
@@ -256,41 +252,17 @@ async function startSession(
       instances.active,
       connection.identity,
       runtime,
-      transport,
     ),
   )
-}
-
-interface DevelopmentSessionDependencies {
-  readonly prove: typeof proveDevelopmentViewTransport
-  readonly start: typeof startSession
-  readonly signal: () => AbortSignal
-}
-
-/** Prove the optional local transport before creating any persistent session state. */
-export async function startDevelopmentViewSession(
-  view: ResolvedView,
-  opts: ViewOpts,
-  dependencies: Partial<DevelopmentSessionDependencies> = {},
-): Promise<ViewSessionRecord> {
-  const prove = dependencies.prove ?? proveDevelopmentViewTransport
-  const start = dependencies.start ?? startSession
-  if (opts.developmentLocalUrl === undefined) return start(view, opts)
-  const signal =
-    dependencies.signal ?? (() => AbortSignal.timeout(DEVELOPMENT_PUBLICATION_TIMEOUT_MS))
-  const transport = await prove(view, opts.developmentLocalUrl, signal())
-  return start(view, opts, transport)
 }
 
 export function createViewServeConfig(
   record: ViewSessionRecord,
   opts: Pick<ViewOpts, 'allowExternalOrigin' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'>,
   kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
-  transport?: ViewTransport,
 ): ViewServeConfig {
   return {
     session: record,
-    ...(transport === undefined ? {} : { transport }),
     kernel: {
       url: opts.url,
       instance: opts.instance,
@@ -321,7 +293,6 @@ async function startSessionLocked(
   activeInstance: string | undefined,
   selectedIdentity: string | undefined,
   runtime: { file: string; args: string[] },
-  transport: ViewTransport | undefined,
 ): Promise<ViewSessionRecord> {
   const port = await findFreePort(VIEW_PORT_BASE, VIEW_PORT_SPAN)
   if (port === null) {
@@ -343,7 +314,7 @@ async function startSessionLocked(
     identity: opts.creds ? '(pre-signed creds)' : selectedIdentity,
     createdAt: new Date().toISOString(),
   }
-  const serveConfig = createViewServeConfig(record, opts, kernelTarget, transport)
+  const serveConfig = createViewServeConfig(record, opts, kernelTarget)
 
   await saveServeConfig(serveConfig)
   const logFd = await openSessionLog(id)
@@ -569,10 +540,6 @@ export default {
     },
     { flags: '--view <slug>', description: 'Pick a view when the target resolves several' },
     { flags: '--list', description: 'Resolve and print the candidate views; do not open' },
-    {
-      flags: '--development-local-url <origin>',
-      description: 'Internal: use an exact proven loopback transport for Domain development',
-    },
     { flags: '--headed', description: 'Visible agent-browser window' },
     { flags: '--browser', description: 'Open in the system default browser instead' },
     { flags: '--no-open', description: 'Start the session and print the URL only' },
@@ -632,7 +599,9 @@ Examples:
       process.exit(1)
     }
 
-    const { view, candidates } = await resolveSession(spec, opts)
+    const { view, candidates } = await resolveSession(spec, opts).catch((error) =>
+      fatal(error, opts),
+    )
     if (opts.list) {
       if (isMachine(opts)) output(candidates, opts)
       else if (candidates.length === 0) log.dim('No views resolve here.')
@@ -647,9 +616,7 @@ Examples:
     }
     if (!view) throw new Error('View resolution completed without a selected view')
 
-    const record = await startDevelopmentViewSession(view, opts).catch((error) =>
-      fatal(error, opts),
-    )
+    const record = await startViewSession(view, opts).catch((error) => fatal(error, opts))
 
     let mode: 'agent' | 'system' | 'none' = 'none'
     if (wantsAgentBrowser) {
