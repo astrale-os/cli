@@ -291,7 +291,7 @@ function FnRow({
       ? { icon: Workflow, tone: 'fuchsia' }
       : fn.link?.kind === 'action'
         ? { icon: Zap, tone: 'violet' }
-        : 'inheritance' in fn.method
+        : 'abstract' in fn.method
           ? methodGlyph(fn.method)
           : { icon: Zap, tone: 'violet' }
   const Glyph = glyph.icon
@@ -314,9 +314,7 @@ function FnRow({
           <PolicyChips method={fn.method} origin={origin} />
           {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}
           {'static' in fn.method && fn.method.static && <Chip tone="default">static</Chip>}
-          {'inheritance' in fn.method && fn.method.inheritance === 'abstract' && (
-            <Chip tone="fn">contract</Chip>
-          )}
+          {'abstract' in fn.method && fn.method.abstract && <Chip tone="fn">contract</Chip>}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {fn.link?.unlinked && <Chip tone="default">unlinked</Chip>}
         </span>

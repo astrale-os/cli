@@ -85,7 +85,6 @@ const TARGET_BARREL_EXPORTS = [
   'JsonSchema',
   'LayoutState',
   'MergeResult',
-  'MethodInheritance',
   'NewDomainContext',
   'NodePosition',
   'QueuedMessage',

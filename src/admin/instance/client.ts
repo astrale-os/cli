@@ -4,6 +4,7 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
+import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
@@ -72,7 +73,7 @@ export async function connectAdminInstances(
     const output = await callAdminMethod(
       context.session,
       AdminContract.fleet,
-      'listInstances',
+      MethodKey.of(AdminContract.classes.Fleet, 'listInstances'),
       options.includeRetired === true ? { includeRetired: true } : {},
     )
     if (!Array.isArray(output)) throw new TypeError('Admin Instance inventory is invalid.')
@@ -97,9 +98,14 @@ export async function connectAdminInstances(
     identifier: string,
   ): Promise<InstanceInfo> => {
     const instance = await requireInstance(identifier)
-    const output = await callAdminMethod(context.session, Path.parse(instance.id), method, {
-      operationId: operationId(method),
-    })
+    const output = await callAdminMethod(
+      context.session,
+      Path.parse(instance.id),
+      MethodKey.of(AdminContract.classes.Instance, method),
+      {
+        operationId: operationId(method),
+      },
+    )
     return instanceFromSummary(output)
   }
 
@@ -111,7 +117,12 @@ export async function connectAdminInstances(
         slug,
       })
       return instanceFromSummary(
-        await callAdminMethod(context.session, AdminContract.fleet, 'createInstance', input),
+        await callAdminMethod(
+          context.session,
+          AdminContract.fleet,
+          MethodKey.of(AdminContract.classes.Fleet, 'createInstance'),
+          input,
+        ),
       )
     },
     status: (identifier: string) => invokeInstance('status', identifier),
@@ -121,7 +132,7 @@ export async function connectAdminInstances(
       const output = await callAdminMethod(
         context.session,
         Path.parse(instance.id),
-        'installDomain',
+        MethodKey.of(AdminContract.classes.Instance, 'installDomain'),
         {
           operationId: operationId('install-domain'),
           domain: Path.parse(domain).raw,
@@ -132,11 +143,16 @@ export async function connectAdminInstances(
     async invite(identifier: string, email: string, expiresInDays?: number) {
       const instance = await requireInstance(identifier)
       const invitation = memberInstanceInvitationFromSummary(
-        await callAdminMethod(context.session, Path.parse(instance.id), 'inviteUser', {
-          operationId: operationId('invite'),
-          email,
-          ...(expiresInDays === undefined ? {} : { expiresInDays }),
-        }),
+        await callAdminMethod(
+          context.session,
+          Path.parse(instance.id),
+          MethodKey.of(AdminContract.classes.Instance, 'inviteUser'),
+          {
+            operationId: operationId('invite'),
+            email,
+            ...(expiresInDays === undefined ? {} : { expiresInDays }),
+          },
+        ),
         'Admin Instance invitation does not match its requested scope.',
       )
       if (
@@ -151,10 +167,15 @@ export async function connectAdminInstances(
       const instance = await requireInstance(identifier)
       const requestId = operationId('retrieve-root')
       const transfer = rootIdentityTransfer(
-        await callAdminMethod(context.session, Path.parse(instance.id), 'retrieveRootIdentity', {
-          requestId,
-          recipient: { ...recipient },
-        }),
+        await callAdminMethod(
+          context.session,
+          Path.parse(instance.id),
+          MethodKey.of(AdminContract.classes.Instance, 'retrieveRootIdentity'),
+          {
+            requestId,
+            recipient: { ...recipient },
+          },
+        ),
       )
       if (
         transfer.requestId !== requestId ||
@@ -169,7 +190,12 @@ export async function connectAdminInstances(
     async statusInvitation(invitation: string) {
       const receiver = invitationReceiver(invitation)
       return instanceInvitationFromSummary(
-        await callAdminMethod(context.session, receiver, 'status', {}),
+        await callAdminMethod(
+          context.session,
+          receiver,
+          MethodKey.of(AdminContract.classes.Invitation, 'status'),
+          {},
+        ),
         receiver,
         'status',
       )
@@ -177,9 +203,14 @@ export async function connectAdminInstances(
     async reconcileInvitation(invitation: string) {
       const receiver = invitationReceiver(invitation)
       return instanceInvitationFromSummary(
-        await callAdminMethod(context.session, receiver, 'reconcile', {
-          operationId: operationId('reconcile-invitation'),
-        }),
+        await callAdminMethod(
+          context.session,
+          receiver,
+          MethodKey.of(AdminContract.classes.Invitation, 'reconcile'),
+          {
+            operationId: operationId('reconcile-invitation'),
+          },
+        ),
         receiver,
         'reconciliation',
       )

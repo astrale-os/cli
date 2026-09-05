@@ -1,4 +1,5 @@
 import { invocation } from '@astrale-os/sdk/invocation'
+import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { AdminContract, callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
@@ -10,7 +11,7 @@ const result = await withAdminClientSession({}, async ({ session }) => {
   return callAdminMethod(
     session,
     AdminContract.fleet,
-    'publishDomain',
+    MethodKey('admin.astrale.ai:class.Fleet.method.publishDomain'),
     {
       operationId,
       origin: required('ASTRALE_E2E_DOMAIN_ORIGIN'),

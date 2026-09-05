@@ -47,7 +47,7 @@ export interface PropertyEntry {
 export interface MethodEntry {
   name: string
   method: IrMethod
-  overridden: boolean
+  declaredLocally: boolean
   owner?: MemberOwner
 }
 
@@ -72,7 +72,7 @@ export function memberLists(
   const methods: MethodEntry[] = Object.entries(member.methods).map(([name, method]) => ({
     name,
     method,
-    overridden: false,
+    declaredLocally: false,
   }))
   if (!withInherited) return { properties, methods }
 
@@ -89,8 +89,8 @@ export function memberLists(
     for (const [name, schema, optional] of group.props) {
       properties.push({ name, schema, optional, owner })
     }
-    for (const { name, method, overridden } of group.methods) {
-      methods.push({ name, method, overridden, owner })
+    for (const { name, method, declaredLocally } of group.methods) {
+      methods.push({ name, method, declaredLocally, owner })
     }
   }
   return { properties, methods }

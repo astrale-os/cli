@@ -1,4 +1,5 @@
 import { invocation } from '@astrale-os/sdk/invocation'
+import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { AdminContract, callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
@@ -10,7 +11,7 @@ const result = await withAdminClientSession({}, async ({ session }) => {
   return callAdminMethod(
     session,
     AdminContract.fleet,
-    'provisionHost',
+    MethodKey('admin.astrale.ai:class.Fleet.method.provisionHost'),
     {
       id: required('ASTRALE_E2E_HOST_ID'),
       operationId,

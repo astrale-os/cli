@@ -12,7 +12,7 @@ const method = (name: string, input: IrMethod['input'] = { type: 'object' }): Ir
   input,
   output: { mode: 'value', schema: { type: 'boolean' } },
   static: false,
-  inheritance: 'default',
+  abstract: false,
 })
 
 const identity = classRef('kernel.astrale.ai', 'Identity')
@@ -64,7 +64,8 @@ describe('the Class detail panel', () => {
     expect(at('class.Document.property.reference')).toBeLessThan(
       at('class.kernel.astrale.ai:class.Identity.property.sub'),
     )
-    expect(at('class.Invoice.method.settle')).toBeLessThan(at('class.Document.method.archive'))
+    expect(at('class.Invoice.method.settle')).toBeGreaterThan(-1)
+    expect(at('class.Document.method.archive')).toBe(-1)
     // `Document.reference`, the base named in front of the member
     expect(html).toContain('Document.</span>reference')
     expect(html).not.toContain('>Inherited<')

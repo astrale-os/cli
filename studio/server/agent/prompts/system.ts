@@ -58,7 +58,7 @@ export function buildSystemPrompt(options: { bridge: boolean }): string {
     'working in a domain costs YOU friction — a confusing or missing Astrale API/error, stale',
     'docs or skills, or a bug that forced a workaround — FILE a DX issue as part of the task, per',
     'the **astrale-cli** skill’s “Reporting DX Issues” section: dedup against open issues first, then',
-    'use `astrale --ci --no-prompt call "@$ASTRALE_ISSUES_PROJECT_ID::createIssue" -i admin',
+    'use `astrale --ci --no-prompt call "@$ASTRALE_ISSUES_PROJECT_ID::issues.astrale.ai:class.Project.method.createIssue" -i admin',
     '  --data \'{"title":"<one line>","description":"<evidence>","priority":2}\' --json`.',
     'ASTRALE_ISSUES_PROJECT_ID must name the destination Project. It is best-effort and non-blocking',
     '— never let filing one derail the user’s task — and mention the returned Issue Node ID and',

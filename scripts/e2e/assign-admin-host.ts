@@ -1,5 +1,6 @@
 import { Path } from '@astrale-os/sdk/graph/path'
 import { invocation } from '@astrale-os/sdk/invocation'
+import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { callAdminMethod } from '../../src/admin/contract.js'
 import { withAdminClientSession } from '../../src/connection/session.js'
@@ -13,7 +14,7 @@ const result = await withAdminClientSession({}, async ({ session }) => {
   return callAdminMethod(
     session,
     host,
-    'assignPrincipal',
+    MethodKey('admin.astrale.ai:class.Host.method.assignPrincipal'),
     { operationId, principal },
     {
       idempotencyKey: invocation.acceptIdempotencyKey(transportKey),

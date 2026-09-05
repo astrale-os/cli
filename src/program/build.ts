@@ -213,9 +213,9 @@ Path syntax:
   /:origin                       Domain root
   /:origin:class.Name            Class node
   /:origin:class.Name:method     Static callable
-  <nodePath>::method             Instance method dispatch — double colon ::
+  <nodePath>::<domain>:class.<Class>.method.<name>  Exact instance Method
   @nodeId                        Reference a node by its UID
-  @nodeId::method                Instance method on a node by UID
+  @nodeId::<domain>:class.<Class>.method.<name>    Exact Method by node UID
 
 Examples:
   $ astrale studio
