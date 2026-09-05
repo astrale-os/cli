@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.86](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.85...cli/v1.0.0-beta.86) (2026-09-05)
+
+
+### Bug Fixes
+
+* **commands:** keep kernel operations in operator tooling ([#405](https://github.com/astrale-os/cli/issues/405)) ([7d222f7](https://github.com/astrale-os/cli/commit/7d222f7205a5b54b9fc6c386358c83475d7e96ae))
+* ship single-binary CLI releases without a tunnel companion ([#407](https://github.com/astrale-os/cli/issues/407)) ([104e7d5](https://github.com/astrale-os/cli/commit/104e7d51fb8f11c497a86ab5de2ea9a138c265b1))
+
 ## [1.0.0-beta.85](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.84...cli/v1.0.0-beta.85) (2026-09-05)
 
 
