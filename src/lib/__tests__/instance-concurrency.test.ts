@@ -78,23 +78,4 @@ describe('bookmark registry write ownership', () => {
     expect(result.code).not.toBe(0)
     expect(await readFile(path, 'utf8')).toBe('{corrupt')
   })
-
-  test('checks exact-target conflicts under the mutation lock', async () => {
-    const home = await fixture()
-    expect(
-      (
-        await command(
-          home,
-          `await registry.upsertInstance('host-child', {url:'https://first.test', issuer:'https://first.test'});`,
-        )
-      ).code,
-    ).toBe(0)
-    const before = await readFile(join(home, 'instances.json'), 'utf8')
-    const result = await command(
-      home,
-      `await registry.upsertInstance('host-child', {url:'https://other.test', issuer:'https://other.test'}, {requireSameTarget:true});`,
-    )
-    expect(result.code).not.toBe(0)
-    expect(await readFile(join(home, 'instances.json'), 'utf8')).toBe(before)
-  })
 })

@@ -279,7 +279,7 @@ export async function addInstance(key: string, opts: AddInstanceOpts = {}): Prom
 export async function upsertInstance(
   key: string,
   opts: AddInstanceOpts = {},
-  behavior: Readonly<{ activateWhenEmpty?: boolean; requireSameTarget?: boolean }> = {},
+  behavior: Readonly<{ activateWhenEmpty?: boolean }> = {},
 ): Promise<{ entry: InstanceEntry; created: boolean }> {
   validateName(key, 'Instance')
   if (RESERVED_SLUGS.has(key)) throw new ReservedSlugError(key)
@@ -292,14 +292,6 @@ export async function upsertInstance(
 
     const existing = store.instances[key]
     const normalizedIssuer = opts.issuer ? normalizeInstanceKernelUrl(opts.issuer) : undefined
-    if (
-      behavior.requireSameTarget &&
-      existing &&
-      (existing.url !== normalizedUrl ||
-        (existing.issuer !== undefined && existing.issuer !== normalizedIssuer))
-    ) {
-      throw new AstraleError('HOST_BOOKMARK_CONFLICT', `Bookmark ${key} belongs to another Kernel.`)
-    }
     const normalizedDomainIssuer = opts.domainIssuer
       ? normalizeIssuerUrl(opts.domainIssuer)
       : undefined

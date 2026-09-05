@@ -6,7 +6,6 @@ import type { CommandDefinition } from '../../../program'
 
 import { formatKernelError } from '../../../connection/errors'
 import { AstraleError } from '../../../errors'
-import { HOST_OPTION, provisionHostChild } from '../../../host/provision'
 import { findOwnedInstance, listOwnedInstancesWithIdentity } from '../../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS } from '../../../lib/admin-target'
 import { importInstanceRootIdentity } from '../../../lib/instance-root-identity'
@@ -21,7 +20,6 @@ type ImportRootOpts = KernelCommandOpts &
     readonly yes?: boolean
     readonly ci?: boolean
     readonly noPrompt?: boolean
-    readonly host?: string
   }
 
 export default {
@@ -30,7 +28,6 @@ export default {
   arguments: [{ name: 'instance', description: 'Owned Instance slug or id', required: true }],
   options: [
     ...ADMIN_TARGET_OPTIONS,
-    HOST_OPTION,
     { flags: '--yes', description: 'Skip the typed recovery confirmation' },
   ],
   afterHelpText: `
@@ -41,22 +38,12 @@ Behavior:
   IdP-backed identity is never overwritten. The Instance bookmark keeps the
   human Admin identity as its default and is not made active.
 
-  With --host, retrieves an existing child directly from that Kernel Host.
-  The bookmark is <host>-<slug>, with <host>-<slug>-root as its default caller.
-  The transferred root must match the live child's published keys.
-
 Examples:
   $ astrale instance root import demo
   $ astrale instance root import demo --yes
-  $ astrale instance root import development --host astrale-kernel-bryan --yes
 `,
   action: async (identifier: string, opts: ImportRootOpts) => {
     try {
-      if (opts.host !== undefined) {
-        await confirmRecovery(`${opts.host}-${identifier}`, opts)
-        output(await provisionHostChild(identifier, opts.host, opts, true), opts)
-        return
-      }
       const inventory = await listOwnedInstancesWithIdentity(opts)
       const instance = findOwnedInstance(inventory.instances, identifier)
       if (instance === undefined) {
@@ -98,7 +85,7 @@ Examples:
       log.dim(`  subject: ${imported.identity.subject}`)
       log.dim(`  issuer: ${imported.identity.issuer}`)
       log.dim(
-        `  verification: ${imported.verification === 'live-jwks' ? 'live JWKS' : 'Host-sealed material'}`,
+        `  verification: ${imported.verification === 'live-jwks' ? 'live JWKS' : 'sealed root transfer'}`,
       )
     } catch (error) {
       await formatKernelError(error, isMachine(opts), undefined, opts.debug)
@@ -113,9 +100,7 @@ async function confirmRecovery(slug: string, opts: ImportRootOpts): Promise<void
     throw new AstraleError(
       'CONFIRMATION_REQUIRED',
       `Importing the root identity for Instance "${slug}" requires explicit confirmation.`,
-      opts.host
-        ? 'Re-run the same --host command with --yes.'
-        : `Re-run with --yes: astrale instance root import ${slug} --yes`,
+      `Re-run with --yes: astrale instance root import ${slug} --yes`,
     )
   }
   const warning = dangerPanel('ROOT IDENTITY RECOVERY', [

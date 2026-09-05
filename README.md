@@ -62,18 +62,6 @@ astrale instance bookmark staging --url https://kernel.example.com
 astrale instance use staging
 ```
 
-Kernel developers can create or reconnect a child through a Host bookmark:
-
-```bash
-astrale instance create development --host astrale-kernel-bryan
-astrale get @self -i astrale-kernel-bryan-development
-astrale instance root import development --host astrale-kernel-bryan --yes
-```
-
-Child bookmarks and root identities are Host-qualified, so identical child
-slugs on different Kernels do not collide. This flow uses the selected Host's
-caller directly and does not change the active CLI instance.
-
 ## Agent Browser
 
 `astrale browser` prepares an authenticated GUI session for your coding agent.

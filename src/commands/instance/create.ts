@@ -2,7 +2,6 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { HOST_OPTION, provisionHostChild } from '../../host/provision'
 import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
 import { isMachine, output } from '../../lib/output'
 import { promptText } from '../../lib/prompt'
@@ -21,17 +20,12 @@ function slugError(value: string): true | string {
 
 export default {
   name: 'create',
-  description: 'Provision an instance through Admin or a selected Kernel Host',
+  description: 'Provision an instance through Admin',
   afterHelpText: `
 Behavior:
   Requests a new Instance from the configured Admin Domain. The caller must be
   logged in with WorkOS. Admin owns infrastructure placement. The new instance
   becomes the active instance.
-
-  With --host, uses that Host bookmark's caller directly (no Admin or WorkOS
-  requirement). Creates or reconnects the exact child, verifies its root key,
-  and adds <host>-<slug> with <host>-<slug>-root as its default identity.
-  The active instance is unchanged. The same slug may exist on different Hosts.
 
   Run with no slug in a terminal and it prompts for one (validated live). With
   no TTY — or --ci / --no-prompt — the slug argument is required up front, so
@@ -40,11 +34,10 @@ Behavior:
 Examples:
   $ astrale auth login
   $ astrale instance create demo
-  $ astrale instance create development --host astrale-kernel-bryan
 `,
   arguments: [{ name: 'id', description: 'Instance slug', required: false }],
-  options: [...ADMIN_TARGET_OPTIONS, HOST_OPTION],
-  action: async (id: string | undefined, opts: ProvisionOpts & { host?: string }) => {
+  options: [...ADMIN_TARGET_OPTIONS],
+  action: async (id: string | undefined, opts: ProvisionOpts) => {
     try {
       // Prompt for the slug when omitted, with live validation. A terminal the
       // CLI may not question — piped, --ci / --no-prompt, CI — makes promptText
@@ -62,10 +55,6 @@ Examples:
         )
       }
 
-      if (opts.host !== undefined) {
-        output(await provisionHostChild(id, opts.host, opts), opts)
-        return
-      }
       const { created } = await provisionInstance(id, opts)
 
       if (isMachine(opts)) {

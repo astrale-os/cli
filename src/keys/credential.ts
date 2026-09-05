@@ -3,21 +3,9 @@ import { importJWK, SignJWT, type JWK } from 'jose'
 import { IdentityKeyMissingError } from '../errors'
 import { KEYS_DIR } from '../state/index'
 import { inferAlg } from './algorithm'
-import { fileExists, keypairPaths, persistKeypair, readKeypair } from './pair'
+import { fileExists, keypairPaths, readKeypair } from './pair'
 
-const DEFAULT_MANAGER_ISSUER = 'http://localhost:4400/host'
-const LOCAL_OPERATOR_CREDENTIAL_TTL_SECONDS = 60 * 60
-
-type AuthOptions = {
-  readonly issuer?: string
-  readonly subject?: string
-  readonly kid?: string
-}
-
-export type AuthBinding = {
-  readonly credential: string
-  readonly publicKey: { readonly jwk: JWK }
-}
+const IDENTITY_CREDENTIAL_TTL_SECONDS = 60 * 60
 
 async function loadSigningMaterial(
   subject: string,
@@ -48,67 +36,24 @@ async function signIdentityCredential(options: {
     .setIssuer(options.issuer)
     .setSubject(options.subject)
     .setAudience(options.audience)
-    .setExpirationTime(`${LOCAL_OPERATOR_CREDENTIAL_TTL_SECONDS}s`)
+    .setExpirationTime(`${IDENTITY_CREDENTIAL_TTL_SECONDS}s`)
     .sign(privateKey)
-}
-
-export async function persistAuth(
-  keysDir: string = KEYS_DIR,
-  opts?: AuthOptions,
-): Promise<AuthBinding> {
-  const issuer = opts?.issuer ?? DEFAULT_MANAGER_ISSUER
-  const subject = opts?.subject ?? 'manager'
-  const kid = opts?.kid ?? `${subject}-key`
-  const { privateJwk, publicJwk } = await persistKeypair(subject, { keysDir, kid })
-  const credential = await signIdentityCredential({
-    privateJwk,
-    kid,
-    issuer,
-    subject,
-    audience: issuer,
-  })
-  return { credential, publicKey: { jwk: publicJwk } }
-}
-
-export async function loadAuth(
-  keysDir: string = KEYS_DIR,
-  opts?: AuthOptions,
-): Promise<AuthBinding> {
-  const issuer = opts?.issuer ?? DEFAULT_MANAGER_ISSUER
-  const subject = opts?.subject ?? 'manager'
-  const { privateJwk, publicJwk, kid } = await loadSigningMaterial(subject, keysDir)
-  const credential = await signIdentityCredential({
-    privateJwk,
-    kid,
-    issuer,
-    subject,
-    audience: issuer,
-  })
-  return { credential, publicKey: { jwk: publicJwk } }
-}
-
-export async function resolveAuth(
-  keysDir: string = KEYS_DIR,
-  opts?: AuthOptions,
-): Promise<AuthBinding> {
-  const subject = opts?.subject ?? 'manager'
-  const { privatePath } = keypairPaths(subject, keysDir)
-  return (await fileExists(privatePath)) ? loadAuth(keysDir, opts) : persistAuth(keysDir, opts)
 }
 
 export async function signAs(
   subject: string,
   keysDir: string = KEYS_DIR,
-  opts?: { readonly issuer?: string; readonly audience?: string; readonly subject?: string },
+  opts: { readonly issuer: string; readonly audience?: string; readonly subject?: string },
 ): Promise<string> {
-  const issuer = opts?.issuer ?? DEFAULT_MANAGER_ISSUER
-  const audience = opts?.audience ?? issuer
+  const issuer = opts.issuer
+  if (!issuer) throw new TypeError('Signing an identity credential requires its issuer.')
+  const audience = opts.audience ?? issuer
   const { privateJwk, kid } = await loadSigningMaterial(subject, keysDir)
   return signIdentityCredential({
     privateJwk,
     kid,
     issuer,
-    subject: opts?.subject ?? subject,
+    subject: opts.subject ?? subject,
     audience,
   })
 }
