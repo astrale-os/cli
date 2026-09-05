@@ -284,6 +284,16 @@ export function parsePolicyCheck(value: unknown): ParsedPolicyCheck | undefined 
 
 // ── reading ─────────────────────────────────────────────────────────────────
 
+/** Compact complete expression, with parentheses preserving nested conjunctions/disjunctions. */
+export function policyCheckLabel(check: PolicyCheck, origin?: string): string {
+  if ('check' in check)
+    return `${origin ? policyLabel(check.check, origin) : check.check.name} on ${policyObjectLabel(check.object, 'receiver')}`
+  if ('sameNode' in check)
+    return `${policyObjectLabel(check.sameNode.left, 'receiver')} is the same Node as ${policyObjectLabel(check.sameNode.right, 'receiver')}`
+  const items = 'allOf' in check ? check.allOf : check.anyOf
+  return `(${items.map((item) => policyCheckLabel(item, origin)).join('allOf' in check ? ' and ' : ' or ')})`
+}
+
 /** Every `check` a callable's policy expression bottoms out in, in source order. */
 export function policyCheckLeaves(check: PolicyCheck): PolicyCheckLeaf[] {
   if ('allOf' in check) return check.allOf.flatMap(policyCheckLeaves)

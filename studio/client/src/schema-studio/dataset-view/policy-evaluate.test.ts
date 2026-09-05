@@ -2,7 +2,7 @@ import type { StudioCore, StudioSchemaBundle } from '@shared/types'
 
 import { expect, test } from 'bun:test'
 
-import { decodePolicy, decodePolicyCheck, indexPolicies } from '@/lib/policy'
+import { decodePolicy, decodePolicyCheck, indexPolicies, policyCheckLabel } from '@/lib/policy'
 
 import { evaluatePolicy, groupProofs } from './policy-evaluate'
 import { buildDataGraph } from './policy-graph'
@@ -346,9 +346,11 @@ test('proves Node identity without edges and requires explicit Dataset reference
     status: 'ok',
     proofs: [{ subject: 'ada', edges: [] }],
   })
-  expect(
-    decodePolicyCheck({
-      sameNode: { left: { kind: 'input', field: 'group' }, right: { kind: 'ref', ref: fixed } },
-    }),
-  ).toBeDefined()
+  const guard = decodePolicyCheck({
+    sameNode: { left: { kind: 'input', field: 'group' }, right: { kind: 'ref', ref: fixed } },
+  })!
+  expect(policyCheckLabel(guard)).toBe('input.group is the same Node as core owner')
+  expect(policyCheckLabel({ allOf: [guard, { anyOf: [guard, guard] }] })).toBe(
+    '(input.group is the same Node as core owner and (input.group is the same Node as core owner or input.group is the same Node as core owner))',
+  )
 })
