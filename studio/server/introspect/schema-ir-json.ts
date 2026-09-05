@@ -50,7 +50,8 @@ function isMethod(value: unknown): value is IrMethod {
     isJsonSchema(record.input) &&
     isOutput(record.output) &&
     typeof record.static === 'boolean' &&
-    ['default', 'abstract', 'sealed'].includes(String(record.inheritance))
+    typeof record.abstract === 'boolean' &&
+    !Object.hasOwn(record, 'inheritance')
   )
 }
 

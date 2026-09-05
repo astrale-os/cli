@@ -291,7 +291,7 @@ export function MethodRow({
           <span
             className={cn(
               'min-w-0 flex-1 truncate text-[13px] font-medium leading-5',
-              entry.overridden && 'text-muted-foreground line-through',
+              entry.declaredLocally && 'text-muted-foreground line-through',
             )}
           >
             <OwnerPrefix owner={entry.owner} />
@@ -299,9 +299,8 @@ export function MethodRow({
           </span>
           {/* compact method facts only — the contract itself waits for the click */}
           {entry.method.static && <Chip tone="outline">static</Chip>}
-          {entry.method.inheritance === 'sealed' && <Chip tone="warning">sealed</Chip>}
-          {entry.method.inheritance === 'abstract' && <Chip tone="fn">contract</Chip>}
-          {entry.overridden && <Chip tone="default">overridden</Chip>}
+          {entry.method.abstract && <Chip tone="fn">contract</Chip>}
+          {entry.declaredLocally && <Chip tone="default">declared locally</Chip>}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {unlinked && <Chip tone="default">unlinked</Chip>}
         </button>
