@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.87](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.86...cli/v1.0.0-beta.87) (2026-09-05)
+
+
+### Features
+
+* **commands:** display and simulate sameNode policies in Studio ([#414](https://github.com/astrale-os/cli/issues/414)) ([a0c6a70](https://github.com/astrale-os/cli/commit/a0c6a70f69e8daf1224a1e38e87cc9b9b0bfdbe6))
+
 ## [1.0.0-beta.86](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.85...cli/v1.0.0-beta.86) (2026-09-05)
 
 
