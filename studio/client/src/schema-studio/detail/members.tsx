@@ -482,6 +482,13 @@ function PolicyTree({
   owner: string
   check: ParsedPolicyCheck
 }) {
+  if (check.kind === 'sameNode')
+    return (
+      <span>
+        {policyObjectLabel(check.left, owner)} is the same Node as{' '}
+        {policyObjectLabel(check.right, owner)}
+      </span>
+    )
   if (check.kind === 'check') {
     return (
       <div>
