@@ -301,3 +301,47 @@ test('installer restores the prior cohort when metadata cannot commit', () => {
     rmSync(owner.root, { recursive: true, force: true })
   }
 })
+
+test('bare installs resolve latest and retain its channel; explicit beta still works', (t) => {
+  const owner = fixture()
+  t.after(() => rmSync(owner.root, { recursive: true, force: true }))
+  const curl = join(owner.fakeBin, 'curl')
+  // The real installer builds the URL; intercept only transport, without network access.
+  writeFileSync(
+    curl,
+    '#!/bin/sh\nprintf "%s\\n" "$2" >> "$ASTRALE_TEST_URLS"\ncp "$ASTRALE_TEST_RELEASE/${2##*/}" "$4"\n',
+  )
+  chmodSync(curl, 0o755)
+  for (const channel of ['latest', 'beta']) {
+    const manifestPath = join(owner.release, 'manifest.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    writeFileSync(manifestPath, JSON.stringify({ ...manifest, channel }, null, 2))
+    const target = installEnvironment(owner, platforms[0], channel)
+    delete target.env.ASTRALE_DOWNLOAD_BASE
+    delete target.env.ASTRALE_VERSION
+    delete target.env.ASTRALE_CHANNEL
+    if (channel === 'beta') target.env.ASTRALE_CHANNEL = 'beta'
+    const urls = join(owner.root, `urls-${channel}`)
+    const result = spawnSync('sh', ['install.sh'], {
+      encoding: 'utf8',
+      env: {
+        ...target.env,
+        ASTRALE_TEST_URLS: urls,
+        ASTRALE_TEST_RELEASE: owner.release,
+      },
+    })
+    assert.equal(result.status, 0, result.stderr)
+    assert.ok(
+      readFileSync(urls, 'utf8')
+        .trim()
+        .split('\n')
+        .every((url) =>
+          url.startsWith(`https://github.com/astrale-os/cli/releases/download/${channel}/`),
+        ),
+    )
+    assert.equal(
+      JSON.parse(readFileSync(join(target.state, 'install.json'), 'utf8')).channel,
+      channel,
+    )
+  }
+})

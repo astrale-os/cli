@@ -171,14 +171,14 @@ describe('update helpers', () => {
     ).toEqual({ kind: 'package-managed', executable: '/opt/homebrew/bin/node' })
   })
 
-  test('defaults missing install metadata to the beta channel', () => {
-    expect(DEFAULT_UPDATE_CHANNEL).toBe('beta')
+  test('defaults missing install metadata to the latest channel', () => {
+    expect(DEFAULT_UPDATE_CHANNEL).toBe('latest')
     expect(
       InstallMetadataSchema.parse({
         method: 'script',
         bin: '/tmp/astrale',
       }).channel,
-    ).toBe('beta')
+    ).toBe('latest')
   })
 
   test('directs externally managed processes to the standalone installer', () => {

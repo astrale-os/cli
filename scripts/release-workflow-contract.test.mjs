@@ -348,9 +348,9 @@ describe('release workflow contract', () => {
     }
   })
 
-  it('defaults standalone installs to beta while retaining the channel override', () => {
+  it('defaults standalone installs to latest while retaining the channel override', () => {
     const installer = read('install.sh')
-    assert.equal(installer.match(/\$\{ASTRALE_CHANNEL:-beta\}/g)?.length, 2)
+    assert.equal(installer.match(/\$\{ASTRALE_CHANNEL:-latest\}/g)?.length, 2)
     assert.doesNotMatch(installer, /\$\{ASTRALE_CHANNEL:-alpha\}/)
   })
 

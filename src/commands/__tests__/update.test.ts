@@ -53,7 +53,7 @@ describe('CLI update staleness', () => {
       {},
       {
         update: async ({ channel }) => {
-          expect(channel).toBe('beta')
+          expect(channel).toBe('latest')
           return {
             status: 'up-to-date',
             currentVersion: '1.0.0-beta.0',

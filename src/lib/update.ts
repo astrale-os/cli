@@ -22,7 +22,7 @@ import { replaceStandaloneCohort } from './standalone-cohort'
 export { replaceStandaloneCohort, type StandaloneCohortReplacement } from './standalone-cohort'
 
 const DEFAULT_REPO = 'astrale-os/cli'
-export const DEFAULT_UPDATE_CHANNEL = 'beta'
+export const DEFAULT_UPDATE_CHANNEL = 'latest'
 
 export const InstallMetadataSchema = z.object({
   method: z.literal('script'),
