@@ -46,6 +46,12 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > `application.ts` calling `defineApplication`, or the `domain.ts` calling
 > `defineDomain` that `create-astrale-domain` scaffolds today.
 
+### View identities
+
+Studio's canonical View preview snapshots local CLI identity names when it opens. **Switch &
+reload** authenticates the selected caller and reloads only the preview; failure keeps the current
+preview usable. It changes no CLI default or Kernel permission. Reopen to pick up new identities.
+
 ### Chats
 
 A domain holds several conversations at once, as tabs above the agent panel.
