@@ -3,16 +3,11 @@
 Read when a Domain owns people who sign in, invites existing business users, or assigns group access.
 Shell owns the shared User/Group contract; the business Domain owns its concrete users and their lifecycle.
 
-## Check the installed contract first
+## Prerequisites
 
-This guide targets the redesign in [Shell #187](https://github.com/astrale-os/shell/pull/187) and
-[Admin #247](https://github.com/astrale-os/admin/pull/247), still drafts at review on 2026-09-06.
-Check their released packages and installed revisions before using the new methods; source is not deployment proof.
-
-- Require the existing-node Register contract and working derived `instance_of` Policy traversal
-  (Kernel #644 and #712). Install coherent Shell/consumer revisions as described in `migration.md`.
-- Old `setupAdmin`/`setupMember`, provisioning-based registration, and Space helpers are not this
-  onboarding path. Do not revive them as a fallback when the new installation or invitation fails.
+Use compatible Shell and SDK packages, with Shell installed on the target instance. This guide uses
+static `User.invite`, `Group.assignUser`/`unassignUser`, and registration of existing nodes. Check the
+installed callable contracts before running examples; coordinate dependency upgrades using `migration.md`.
 
 ## One business user, three separate transitions
 
@@ -137,8 +132,8 @@ astrale call /:shell.astrale.ai:class.Group:assignUser \
 These Shell handlers require exact `@NodeId` inputs; responses contain bare IDs. Resolve Core member/admin
 on the target instance first, rather than sending group labels or IDs copied from another Kernel.
 
-For local-key testing, first check `astrale identity register --help` exposes `--node`. The older
-`--class`/`--props` command provisions a new node and must not be used to register an existing Employee.
+For local-key testing, use a CLI whose `astrale identity register --help` exposes `--node`.
+Register the existing Employee ID; do not create another node to attach login credentials.
 
 ```sh
 # Only with the existing-node registration CLI and an authorized operator.

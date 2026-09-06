@@ -165,7 +165,7 @@ export const issueNotClosable = error({
 ```
 
 - Registration keys supply stable codes; declarations own fixed safe messages and details contracts.
-  They live under Schema source, but are not yet installed Schema members or generated-client alternatives.
+  Keeping them under Schema source does not make them installed Schema members or generated-client alternatives.
 - Preserve structured dependency failures; map only recognized expected errors. Unexpected exceptions
   remain defects, not invalid input or successful error-shaped output.
 

@@ -99,9 +99,8 @@ then treat the observation as authorization.
 - Edge Policies receive the admitted `source`/`target`. Constrain whichever endpoint owns access;
   do not re-match the candidate Edge just to repeat its Class and endpoint guarantees.
 
-The checked public DSL (`kernel-dsl` `0.2.0-beta.30`) exposes `check(policy, object)`, not arbitrary
-named `parameters`. Several checks on `self`/input references can express independent requirements,
-but are not a substitute for a joint multi-object predicate; verify a newer API before authoring one.
+`check(policy, object)` checks one object. Combining checks on `self` and input references expresses
+independent requirements, not a joint relationship between those objects. Do not substitute one for the other.
 
 ## Composition consumes a budget
 
@@ -168,7 +167,7 @@ conditional or permissive fake cannot prove authorization.
 
 For direct-capability success, inspect the exact requested and materialized Function capability.
 For Policy-admitted success, verify the intended caller Grant and absence of a direct-use bypass;
-do not manufacture a capability just to satisfy a qualification checklist.
+do not add a capability merely to make an access test pass.
 
 Keep each denial criterion proportional to its claim. A mutating denial needs an independent no-effect
 observation; a read-only denial does not need invented graph assertions. When testing revocation,
