@@ -32,6 +32,7 @@ type Config = {
   sessionId: string
   externalOrigins: readonly string[]
   revision: number
+  identities?: readonly string[]
 }
 
 const HEARTBEAT_MS = 1_000
@@ -41,7 +42,14 @@ const base = location.pathname.replace(/\/+$/, '')
 let revision: number | undefined
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(base + path, init)
+  const res = await fetch(base + path, {
+    ...init,
+    headers: {
+      ...init?.headers,
+      'x-astrale-view-host': '1',
+      ...(revision === undefined ? {} : { 'x-astrale-view-revision': String(revision) }),
+    },
+  })
   if (!res.ok) throw new Error(`${path} → ${res.status}: ${await res.text()}`)
   return res.json() as Promise<T>
 }
@@ -110,6 +118,36 @@ async function main(): Promise<void> {
   const route = cfg.view.route
   showPlacement(cfg.view)
   el('identity-label').textContent = [cfg.identity, cfg.instance].filter(Boolean).join(' @ ')
+  if (cfg.identities?.length) {
+    const form = el('identity-form') as HTMLFormElement
+    const select = el('identity-select') as HTMLSelectElement
+    const button = el('identity-switch') as HTMLButtonElement
+    for (const name of cfg.identities)
+      select.add(new Option(name, name, false, name === cfg.identity))
+    form.hidden = false
+    button.disabled = true
+    select.onchange = () => {
+      button.disabled = select.value === cfg.identity
+    }
+    form.onsubmit = (event) => {
+      event.preventDefault()
+      select.disabled = button.disabled = true
+      button.textContent = 'Switching…'
+      el('frame').inert = true
+      void j('/identity', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ identity: select.value }),
+      })
+        .then(() => location.reload())
+        .catch((error: unknown) => {
+          showIntentError(error)
+          select.disabled = button.disabled = false
+          button.textContent = 'Switch & reload'
+          el('frame').inert = false
+        })
+    }
+  }
 
   report('mounting')
   let tokens: ReturnType<typeof createViewTokenBroker> | null = null

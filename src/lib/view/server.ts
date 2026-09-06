@@ -57,6 +57,21 @@ export function startViewServer(
   let lastActivity = Date.now()
   let revision = 0
   let refreshing: Promise<void> | undefined
+  let switching = false
+
+  async function switchIdentity(identity: string): Promise<void> {
+    const kernel = { ...config.kernel, as: identity, creds: undefined }
+    const candidate = { ...config, kernel }
+    const view = await refreshViewPlacement(candidate, dependencies.connect)
+    const nextGrant = view.route.handshake === 'shell' ? await mintGrant(kernel) : null
+    await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, identity, view })
+    config.kernel = kernel
+    session.identity = identity
+    session.view = view
+    grant = nextGrant
+    revision += 1
+    status = { state: 'waiting', at: new Date().toISOString() }
+  }
 
   async function refresh(): Promise<void> {
     const view = await refreshViewPlacement(config, dependencies.connect)
@@ -70,9 +85,24 @@ export function startViewServer(
   /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
-    grant = await dependencies.connect(
-      config.kernel,
+    const started = revision
+    const fresh = await mintGrant(config.kernel)
+    if (started !== revision)
+      throw new Error('View session changed; reload before requesting credentials.')
+    grant = fresh
+    return fresh
+  }
+
+  async function mintGrant(kernel: ViewServeConfig['kernel']): Promise<TokenGrant> {
+    return dependencies.connect(
+      kernel,
       async ({ auth, target }) => {
+        if (
+          config.identities?.length &&
+          (target.kernelIssuer !== proxy.issuer || target.url !== proxy.kernelUrl)
+        ) {
+          throw new Error('The session bookmark now points to another Kernel. Open a new View.')
+        }
         const token = await mintViewCredential(auth, target.kernelIssuer)
         return {
           token,
@@ -85,7 +115,6 @@ export function startViewServer(
         nestedTtlSeconds: VIEW_TOKEN_TTL_SECONDS,
       },
     )
-    return grant
   }
 
   const server = createServer((req, res) => {
@@ -112,6 +141,26 @@ export function startViewServer(
     }
     const sub = url.pathname.slice(base.length) || '/'
 
+    // Identity authority belongs to the loopback host, never the embedded View.
+    // A custom header prevents cross-origin simple requests; no preflight is admitted here.
+    if (config.identities?.length && ['/identity', '/token', '/config.json'].includes(sub)) {
+      const address = server.address()
+      const origin =
+        typeof address === 'object' && address !== null ? `http://127.0.0.1:${address.port}` : ''
+      if (
+        req.headers.host !== new URL(origin).host ||
+        (req.headers.origin !== undefined && req.headers.origin !== origin) ||
+        req.headers['x-astrale-view-host'] !== '1'
+      ) {
+        json(res, 403, { error: 'This operation is restricted to the View host.' })
+        return
+      }
+      if (sub !== '/config.json' && req.headers['x-astrale-view-revision'] !== String(revision)) {
+        json(res, 409, { error: 'View session changed; reload before continuing.' })
+        return
+      }
+    }
+
     if (sub === '/k' || sub.startsWith('/k/')) {
       await proxyKernel(req, res, sub.slice('/k'.length), url.search)
       return
@@ -134,16 +183,50 @@ export function startViewServer(
         sessionId: session.id,
         externalOrigins: config.externalOrigins,
         revision,
+        ...(config.identities ? { identities: config.identities } : {}),
       })
       return
     }
     if (sub === '/token' && req.method === 'POST') {
+      if (switching) {
+        json(res, 409, { error: 'Identity switch in progress.' })
+        return
+      }
       if (session.view.route.handshake !== 'shell') {
         json(res, 403, { error: 'plain views have no Astrale credential privilege' })
         return
       }
       const fresh = await freshGrant()
       json(res, 200, { token: fresh.token, expiresAt: fresh.expiresAt, kind: fresh.kind })
+      return
+    }
+    if (sub === '/identity' && req.method === 'POST') {
+      const body = await readJson(req)
+      const identity = body?.identity
+      if (
+        typeof identity !== 'string' ||
+        !config.identities?.includes(identity) ||
+        config.kernel.creds
+      ) {
+        json(res, 403, { error: 'Identity was not allowed for this View session.' })
+        return
+      }
+      if (switching || refreshing) {
+        json(res, 409, { error: 'View session update in progress.' })
+        return
+      }
+      // The body may have arrived after another page finished switching.
+      if (req.headers['x-astrale-view-revision'] !== String(revision)) {
+        json(res, 409, { error: 'View session changed; reload before continuing.' })
+        return
+      }
+      switching = true
+      try {
+        await switchIdentity(identity)
+        json(res, 200, { revision })
+      } finally {
+        switching = false
+      }
       return
     }
     if (sub === '/status' && req.method === 'POST') {
@@ -155,6 +238,10 @@ export function startViewServer(
       return
     }
     if (sub === '/refresh' && req.method === 'POST') {
+      if (switching) {
+        json(res, 409, { error: 'Identity switch in progress.' })
+        return
+      }
       // Concurrent requests share one resolution; a failed resolution retains the last good View.
       refreshing ??= refresh().finally(() => {
         refreshing = undefined
@@ -267,14 +354,18 @@ function joinUrl(baseUrl: string, suffix: string): string {
 }
 
 function json(res: ServerResponse, code: number, body: unknown): void {
-  res.writeHead(code, { 'content-type': 'application/json' })
+  res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' })
   res.end(JSON.stringify(body))
 }
 
 async function serveAsset(res: ServerResponse, file: string, contentType: string): Promise<void> {
   try {
     const content = await readFile(file)
-    res.writeHead(200, { 'content-type': contentType, 'cache-control': 'no-store' })
+    res.writeHead(200, {
+      'content-type': contentType,
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+    })
     res.end(content)
   } catch {
     res.writeHead(404).end()

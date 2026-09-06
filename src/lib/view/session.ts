@@ -43,6 +43,8 @@ export type ViewServeConfig = {
   proxy: { kernelUrl: string; issuer: string; caFile?: string; direct: boolean }
   /** Exact HTTPS origins the operator consented to open from this View session. */
   externalOrigins: readonly string[]
+  /** Local identities explicitly allowed by the operator for this View session. */
+  identities?: readonly string[]
   idleMs: number
 }
 

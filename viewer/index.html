@@ -30,6 +30,7 @@
       }
       header {
         display: flex;
+        flex-wrap: wrap;
         gap: 12px;
         align-items: center;
         min-width: 0;
@@ -78,6 +79,39 @@
       .dim {
         color: #80808c;
       }
+      #identity-form:not([hidden]) {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+      }
+      #identity-select,
+      #identity-switch {
+        font: inherit;
+        padding: 4px 6px;
+        border: 1px solid #80808c;
+        border-radius: 4px;
+        background: #18181e;
+        color: #e8e8f0;
+        min-width: 0;
+      }
+      #identity-select {
+        max-width: 16rem;
+        flex: 1;
+      }
+      #identity-switch {
+        flex: none;
+        cursor: pointer;
+      }
+      #identity-switch:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #identity-select:focus-visible,
+      #identity-switch:focus-visible {
+        outline: 2px solid #80bfff;
+        outline-offset: 2px;
+      }
       #error {
         display: none;
         padding: 10px;
@@ -106,8 +140,19 @@
       <span id="view-label"></span>
       <span id="target-label" class="dim"></span>
       <span id="identity-label" class="dim" style="margin-left: auto"></span>
+      <form id="identity-form" hidden>
+        <label for="identity-select">Identity</label>
+        <select id="identity-select"></select>
+        <button
+          id="identity-switch"
+          type="submit"
+          title="Reloads the View; unsaved changes are lost"
+        >
+          Switch &amp; reload
+        </button>
+      </form>
     </header>
-    <div id="error"></div>
+    <div id="error" role="alert"></div>
     <div id="frame"></div>
     <script type="module" src="./main.js"></script>
   </body>
