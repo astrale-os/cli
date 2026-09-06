@@ -15,6 +15,13 @@ recreate resolved Definition shapes.
 Use a node Class for an independently identifiable thing with properties and behavior. Use an edge
 Class for a meaningful relationship between typed endpoints.
 
+Shared object contracts use abstract Classes (`nodeClass({ abstract: true, ... })`), not a separate
+interface declaration kind. Create concrete descendants, not instances of the abstract Class.
+
+SDK-authored node Classes declare an icon: prefer `classIcon.lucide` with data from
+`@astrale-os/sdk/schema/icons`, or `classIcon.svg` for custom SVG. `classIcon.neutral` explicitly shows
+no glyph. Do not import React icons into Schema.
+
 - Put a fact on a node when it describes that thing regardless of a relationship.
 - Put a fact on an Edge when it describes the relationship: role, confidence, applicability,
   effective date, ordering, or coverage.
@@ -36,7 +43,8 @@ One exported `stateMachine` is the authority for a finite lifecycle. Persist it 
 do not copy its states or events into sibling enums or transition Rules.
 
 ```ts
-import { nodeClass, stateProperty } from '@astrale-os/sdk/schema'
+import { classIcon, nodeClass, stateProperty } from '@astrale-os/sdk/schema'
+import { CircleAlert } from '@astrale-os/sdk/schema/icons'
 import { stateMachine } from '@astrale-os/sdk/state'
 
 export const lifecycle = stateMachine({
@@ -45,6 +53,7 @@ export const lifecycle = stateMachine({
 })
 
 export const Issue = nodeClass({
+  icon: classIcon.lucide(CircleAlert),
   properties: { status: stateProperty(lifecycle) },
 })
 ```
@@ -53,6 +62,15 @@ Mutable presentation text is not a stable identity. Node identity is canonical a
 URLs and caller-assigned paths are not semantic node identifiers.
 
 ## Behavior ownership
+
+- Group declarations under `schema/modules/<module>/`, with applicable `classes/`, `policies/`,
+  `functions/`, `errors/`, `types/`, `states/`, `core/`, and `views/`. Do not manufacture empty directories.
+- `classes/` includes node and edge Classes; `functions/` includes Methods and top-level Functions.
+  Keep one declaration per file and curated facades; reserve root kinds for genuinely shared declarations.
+- `types/` owns portable values, not Policies. Keep `policy: ({ check, self }) => check(mayEdit, self)`
+  inline with its callable; reusable graph predicates belong in `policies/`.
+- Infer composition types from authored values where possible, rather than maintaining an interface
+  that repeats Schema fields. Do not cast away a genuine published-declaration or admission problem.
 
 Put behavior on the Class whose invariant changes. A receiver-bound callable is appropriate when an
 existing node is the subject of the change. Use a top-level callable for a Domain operation without a
@@ -101,5 +119,5 @@ frontend composition, not to Class properties or callable handlers.
 - Are required properties truly invariant and optional properties truly absent sometimes?
 - Are node identities opaque rather than encoded paths?
 - Does each callable have the correct receiver and authentication/Policy declaration?
-- Is every visible Class given a stable icon when the language supports it?
+- Does each node Class explicitly declare an appropriate icon?
 - Is Core limited to stable installation reference data?

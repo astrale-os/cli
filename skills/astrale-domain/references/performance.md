@@ -33,16 +33,16 @@ builder over copied low-level property or class keys:
 import { NodeId } from '@astrale-os/sdk/graph/node'
 import { defineMutation } from '@astrale-os/sdk/mutation'
 
-export const renameVisit = defineMutation({
+export const renameVisit = defineMutation<typeof schema>()((domain) => ({
   id: 'field-visit.rename',
-  change(mutation, input: { readonly visit: NodeId; readonly title: string }) {
+  build(input: { readonly visit: NodeId; readonly title: string }, mutation) {
     mutation.updateNode({
       node: input.visit,
-      class: Work.classes.FieldVisit,
+      class: domain.classes.FieldVisit,
       props: { set: { title: input.title } },
     })
   },
-})
+}))
 ```
 
 Place current-state safety conditions in `mutation.expect`; a Query followed by a Mutation is not an

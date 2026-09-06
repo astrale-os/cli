@@ -18,7 +18,7 @@ recreate any of these gates inside an Action or Workflow.
 
 Humans authenticate as distinct identities and gain application access through Schema Policy over
 business graph facts. When Shell owns the human-facing User, observe that exact User and write only
-the application Domain's membership or business facts. Do not provision a shadow User or grant a
+the application Domain's membership or business facts. Do not create a shadow User or grant a
 human dynamic `can_*` authority to make acceptance pass.
 
 Dependency Function authority is installation-owned. The calling Domain's Application explicitly
@@ -26,7 +26,8 @@ declares each exact protected foreign or Kernel Function in `requirements({ func
 Kernel installation then owns materializing authority for the installed Domain principal. Do not
 grant the invoking human direct `can_*` authority as a substitute, and do not confuse a Schema
 dependency with capability. An Action that uses `client.auth.register(...)`, for example, requires
-the exact resolved Kernel `provision` callable.
+the exact resolved Kernel `register` callable. Select the intended caller/Domain Kernel session
+explicitly; the ordinary `client` is caller-only.
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'
@@ -92,6 +93,12 @@ Do not catch an unknown provider, transport, or programmer defect merely to repo
 input. Preserve the stable error family owned by the boundary that rejected the value.
 
 ## Policy and admission evidence
+
+Successful root invocation proves the operation can execute, not that an application user's Policy
+works. Test with distinct registered principals and the actual role/membership facts the product
+uses. Listing a local CLI identity does not prove it is registered or authorized on the target Kernel.
+When a native Domain owns identity or group lifecycle, use its current public registration and role
+operations; verify the installed dependency version instead of copying an old bootstrap recipe.
 
 For protected behavior, test anonymous rejection, authenticated-but-unauthorized rejection, Policy
 rejection, and success as separate cases. Denials must prove the Action, Workflow steps, Providers,

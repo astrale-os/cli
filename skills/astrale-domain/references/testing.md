@@ -31,7 +31,7 @@ const client: QueryClient = {
   },
 }
 
-await executeQuery(client, visitsByOwner, { owner })
+await executeQuery(client, domain, visitsByOwner, { owner })
 expect(calls).toHaveLength(1)
 ```
 
@@ -51,7 +51,7 @@ const client: MutationClient = {
   },
 }
 
-await executeMutation(client, createVisit, input)
+await executeMutation(client, domain, createVisit, input)
 expect(submitted).toMatchObject({ format: 'astrale.graph.mutation', version: 'v3' })
 ```
 
@@ -61,10 +61,11 @@ before it is not part of that transaction.
 
 ## Actions and Workflows
 
-Actions have no Step API. Before completion, invoke every exposed Action and Workflow definition with
-representative success and applicable refusal inputs. Prove each selected Query, Mutation,
-Integration, output, step order, and effect. Binding metadata, lower-level AST checks, or one tested
-handler cannot stand in for an unexecuted public callable.
+Actions have no Step API. For a complete Domain delivery, exercise the exposed Action and Workflow
+definitions with representative success and applicable refusal inputs. For a focused change, exercise
+the affected callables and their dependent invariants. Binding metadata, lower-level AST checks, or
+one tested handler cannot stand in for an unexecuted public callable. Compute expected business
+results independently of the implementation; tests that reuse the same calculation only prove agreement.
 
 The current inline runner gives structure and observability. It does not prove durable replay,
 exactly-once effects, compensation, or crash recovery. Never claim those guarantees from an in-memory
@@ -86,10 +87,16 @@ code never imports `tests/`. How to author a Dataset worth reading: `datasets.md
 
 ## Live acceptance
 
-At least one acceptance journey should use packed or published packages outside every source
-workspace, a clean Kernel data root, real credentials, and the deployment adapter the product ships.
+For deployment or integration claims, exercise a representative journey on the intended Kernel with
+real credentials and the deployment adapter the product ships. For package/release qualification,
+also use a packed or published consumer outside the source workspace. A local Kernel is not a
+prerequisite for a managed-remote application test. Isolate destructive lifecycle scenarios from
+shared instances and record exact deployed and installed revisions.
+
 Observe installation and invocation through public Client APIs. Keep authentication, authority,
-Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct.
+Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct. Report what
+was locally tested, remotely observed, and not exercised separately. Keep durable regression tests
+with their production owner; keep situational logs, credentials, and proof tooling out of delivery.
 
 Cleanup must converge from partial lifecycle states: neither Domain installed, only dependencies
 installed, or the complete closure installed. Establish exact Domain presence with a public
@@ -118,12 +125,7 @@ claim unsupported or dishonest.
 
 ### Bound convergence
 
-Before stabilization, freeze scenario semantics, exact package cohort, and acceptance boundaries. A
-new issue is first retained and classified; it does not automatically expand the current scenario or
-trigger new Lab machinery. Interrupt a frozen run only when a defect blocks an existing criterion or
-makes its evidence dishonest.
-
-Track the phase reached, recurring defect classes, new blocker classes, and owner regression proof.
-If several new Lab-owned blockers repeat at the same phase, stop tactical patching and review that
-boundary. Establish correctness before optimizing latency, tokens, or cost, and compare only runs with
-the same scenario and package cohort.
+Keep the scenario's product claim and package versions explicit. Classify newly found issues without
+automatically expanding the test framework or the task. If a defect invalidates the claim, retain
+the reproduction and fix it at its owner; otherwise track it separately. Do not add more scenarios
+or tooling merely to accumulate evidence already supplied by an existing test.

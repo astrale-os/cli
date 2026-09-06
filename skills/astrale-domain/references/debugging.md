@@ -31,9 +31,11 @@ fallback or anonymous/Via bypass to make a test pass.
 
 For a nested Kernel call, inspect the installed Domain's requested and materialized capabilities
 before changing auth mode or Policy. Successful remote `Function.admit` followed by `Access denied`
-before the expected Kernel syscall is evidence of a missing protected-callable requirement, not a
-reason to grant the human dynamic authority. Repeat the same call only after the exact
-installation-owned capability is materialized, then observe effects independently.
+before the expected Kernel syscall suggests a nested authority problem; it does not identify which
+edge or traversal failed. Check exact requirements, materialized capabilities, the selected
+caller/Domain authority mode, and the deployed Kernel revision. Do not grant the human dynamic
+authority to conceal the failure. After correcting the proven cause, repeat the call and observe
+effects independently.
 
 Treat authentication and registration journal inputs as secret unless their redaction is independently
 proven. Do not retain or display a complete journal record merely to learn the phase: proof JWTs,

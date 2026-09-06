@@ -1,6 +1,6 @@
 ---
 name: astrale-domain
-description: "Author Astrale domains end to end. Use when creating, editing, reviewing, productionizing, migrating, optimizing, securing, simulating, or debugging a domain; modeling schema; implementing Actions and Workflows; integrating external APIs; choosing native Astrale domains; designing views; or reasoning about Policy, authentication, kernel, migrations, core data, demo Datasets, sample data, and live/runtime drift. For full creation, builds, prototypes, or POCs, follow the phased workflow across references; for focused existing-domain work, route to the relevant reference."
+description: "Create, modify, test, migrate, or debug Astrale Domains: Schema, Policies, Action/Workflow runtime, integrations, Views, Datasets, and deployment. For a new Domain follow the phased workflow; for focused work load only the relevant references."
 ---
 
 # Astrale Domain
@@ -56,12 +56,13 @@ order and load a reference only when its phase begins.
    `references/policies.md`. If an external system is involved, also read `references/integrations.md`.
 4. **Views:** When the Domain owns a browser surface, read `references/views.md` before designing or
    implementing it. Views are Schema declarations, not fields on the SDK Domain definition.
-5. **Demo data:** Unless told otherwise, author at least one Dataset under `tests/`, referenced from
-   `astrale.config.ts`. Read `references/datasets.md` first. A Domain without its Dataset is not
-   finished.
-6. **Completion:** Read `references/testing.md`; invoke every public Action and Workflow definition
-   with representative success and applicable refusal inputs, then run focused tests, typecheck, lint,
-   build, and package.
+5. **Demo data:** For a Domain with a meaningful sample graph, author a small Dataset under `tests/`,
+   referenced from `astrale.config.ts`. Read `references/datasets.md` first; do not invent graph data
+   for an API-only Domain or expand a focused edit into unrelated demo work.
+6. **Completion:** Read `references/testing.md`; exercise the delivered public callables with
+   representative success and applicable refusal inputs, then run the relevant tests, typecheck,
+   lint, and build. Verify packaging when delivering a consumable package and live behavior when
+   claiming deployment or integration success.
 
 Read `references/migration.md`, `references/performance.md`, and `references/debugging.md` only when the
 domain's lifecycle or current problem calls for them.
@@ -70,6 +71,5 @@ domain's lifecycle or current problem calls for them.
 
 1. Inspect the current repo or scaffold before trusting API syntax from memory.
 2. For live behavior, use `references/debugging.md` and prove the deployed/installed/runtime path before treating source edits as effective.
-3. When a change touches the Schema — a class, edge, property, state, or policy — update the
-   Domain's Datasets in the same change, unless told otherwise: they must still admit, and still
-   show every case and every policy. Read `references/datasets.md`.
+3. When a Schema change affects existing Datasets, keep them valid and representative in the same
+   change. Read `references/datasets.md`; examples complement tests rather than exhaust every case.

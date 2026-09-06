@@ -2,6 +2,23 @@
 
 Schema evolution and data migration are distinct decisions.
 
+## Preserve product semantics
+
+- Pin the source revision and map Schema, public operations, calculations, lifecycle rules,
+  authorization, and observable errors to target owners. Preserve the rule, not its old implementation.
+- Remove hooks, permission masks, duplicate validation, and compatibility APIs only when their
+  behavior is absorbed or removal is decided explicitly. A no-op shim is not equivalent behavior.
+- Keep a compact ledger: source owner, target owner, disposition (equivalent, intentionally changed,
+  client decision, out of scope, or platform blocker), reason, and evidence.
+- Separate intentional deviations from regressions. A blocker needs reproduction on exact SDK/Kernel
+  versions, not a remembered limitation; never silently weaken a rule to close the ledger.
+- For an evolving source, retain the last reviewed commit and review each new head's diff against
+  the map. Update affected owners/tests instead of restarting the audit or ignoring new rules.
+- For stored legacy paths, retain a durable old-reference → new-ID map; rewrite endpoints and stored
+  references, detect missing/ambiguous entries, and reuse target IDs on retry rather than duplicating data.
+- Add link compatibility only when consumers need it. Separate client decisions and usage notes from
+  internal platform investigations and ephemeral qualification evidence.
+
 ## Additive evolution
 
 Prefer additions that preserve origin and existing Definition keys: optional properties, new Classes,
