@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-beta.88](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.87...cli/v1.0.0-beta.88) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** register existing Identity nodes without provisioning ([#418](https://github.com/astrale-os/cli/issues/418))
+
+### Features
+
+* **commands:** register existing Identity nodes without provisioning ([#418](https://github.com/astrale-os/cli/issues/418)) ([1ec2033](https://github.com/astrale-os/cli/commit/1ec203352415780bb6e0387e3a40569a8a0732f8))
+
 ## [1.0.0-beta.87](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.86...cli/v1.0.0-beta.87) (2026-09-05)
 
 
