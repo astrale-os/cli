@@ -19,11 +19,53 @@ Record the source SHA, package versions, Schema origin/revision, Build/Release d
 serving URL, installed revision, caller identity coordinates, and callable key. Do not use a serving
 URL as Schema identity or assume the newest deployment is installed.
 
+## Issuer, Domain origin, and URL are different coordinates
+
+Use this distinction when discovery, authentication, or routing fails; ordinary Domain code should
+use SDK bindings rather than reconstruct these coordinates.
+
+| Coordinate | Selects | Example |
+| --- | --- | --- |
+| `kernel: IssuerId` | Canonical Kernel security authority | `https://host.example/api` |
+| `origin: DomainOrigin` | Semantic Domain | `projects.example` |
+| `invocationUrl` | Concrete network resource | `https://host.example/api/invoke` |
+| `transportOrigin` | Browser origin: scheme, host, port | `https://host.example` |
+
+- Never normalize an issuer with `new URL(kernel).origin`: it drops the identity-bearing `/api`.
+  Derive Kernel protocol endpoints through SDK helpers, not a separately configurable invocation URL.
+- Keep independent URLs for bundles, external discovery, provider routes, callbacks, and probes.
+  A Router may proxy a Kernel without changing its canonical issuer.
+- Authentication identifies an exact `(iss, sub)` pair, not a Domain origin. The verified Publication
+  binds semantic origin, issuer/subject, and concrete endpoints; compare those rather than hostnames alone.
+- One Kernel can publish intrinsic `kernel.astrale.ai` and host installed `projects.example` at the same
+  issuer. Select the installed product by its Domain origin, not the intrinsic Publication's origin.
+
+## Follow an invocation only when diagnosing transport
+
+```text
+installed-Domain binding → source Kernel → local result
+                                       ↘ verified protocol redirect → destination
+                                         subsequent calls may reuse the learned route/credential
+```
+
+- The SDK session owns discovery, delegation transport, redirect admission, and credential reuse.
+  Do not assume every call performs separate delegate/exchange requests; local and warm calls differ.
+- A protocol redirect carries a destination credential, not permission to forward the original token
+  to any URL. Only the pinned source may redirect; a destination redirect is rejected.
+- Route reuse is partitioned by source, target, credential, delegation, and expected Schema revision.
+  Changing identity must not reuse another caller's credential; route artifacts are confidential.
+- Cached routes expire with their admitted lifetime/credential. An admitted stale-route or route-miss
+  failure can trigger bounded source recovery; business refusals and arbitrary timeouts are not retry signals.
+- A revision mismatch requires a coherent installed binding/deployment, not stripping revision checks.
+  Compare safe route and Publication metadata; never log credentials to investigate a cache issue.
+
 ## Classify admission failures
 
 - Authentication failure: credential/session evidence was not admitted.
-- Authority failure: caller lacks callable `can_use` authority.
-- Policy failure: authenticated and authorized caller does not satisfy Schema Policy.
+- Callable authority failure: inspect the installed executor and the caller's complete Grant separately;
+  missing caller `can_use` alone is not a diagnosis because callable Policy can supply caller authority.
+- Policy refusal: establish which check failed and whether another authority branch applies. See
+  `policies.md`; a Policy is not universally an additional gate after direct capability.
 - Input failure: callable validation rejected input before execution.
 
 Confirm denied calls caused no Action, Workflow step, Provider, or graph effect. Never add a handler

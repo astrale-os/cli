@@ -3,18 +3,55 @@
 Read when declaring callable authentication or authorization, using a Schema Policy, or admitting an
 external value.
 
-## Keep the three gates distinct
+## Authentication mode is not the authorization rule
 
 The Schema owns all callable admission intent:
 
-- `anonymous` permits a call without an authenticated identity;
+- `anonymous` permits no credential, but does not downgrade an invalid supplied credential to anonymous;
 - `authenticated` requires a verified identity;
-- `authorized` requires both authentication and Kernel callable authority;
-- an `authorized` callable may additionally declare a Policy over the subject, receiver, input
-  references, Core values, and graph facts.
+- `authorized` requires the installed executor and complete caller Grant admission described below;
+- only `authorized` may declare a callable Policy. `authenticated` does not add a `can_use` or Policy gate.
 
-Authentication is not callable authority, and callable authority is not Policy satisfaction. Do not
-recreate any of these gates inside an Action or Workflow.
+Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
+a protected operation merely because its handler can access Domain-owned data.
+
+## Function admission: executor AND caller authority
+
+The principal identifies who is calling; the Grant expresses whose authority is exercised, including
+its unions, intersections, and restrictions. Delegation does not turn the caller into the Domain owner.
+
+For a non-Root caller, an authorized Function requires both:
+
+1. The installed executor owns the exact Function or has its direct `can_use` capability.
+2. The complete caller Grant passes the Function-use branch (Root, exact owner, or direct `can_use`),
+   OR the Function's declared Policy check passes over that complete Grant. Missing Policy supplies no alternative.
+
+- The executor is not the human caller. For an inherited Method, ownership follows the resolved
+  Function's accepted installation, not the receiver Class's Domain or a business `ownedBy` Edge.
+- Direct Function use and callable Policy are alternatives, not successive checks. A failed Policy
+  does not revoke an independently valid use Grant; test Policy refusals without that bypass authority.
+- Evaluate each branch against the whole Grant: identities inside an intersection cannot satisfy
+  half through `can_use` and half through Policy. A Kernel Root caller is an explicit admission bypass.
+
+## Graph access is a separate decision
+
+- Invoking `Project.rename` does not grant direct Query/Mutation access to Project nodes. Conversely,
+  a permitted graph read is not proof that the caller may invoke a Function operating on that record.
+- For an exact Class `read`/`traverse` operation with a Policy, the complete Grant can pass through
+  capability, Class ownership, or Policy; the compiler does not also require a direct principal capability.
+- Without that observation Policy, the principal still needs Class ownership or the exact operation
+  capability; the Grant-side observation gate is neutral. No Policy does not mean globally public data.
+- Current Class effects (`create`/`update`/`delete`) use principal authority and the complete Grant's
+  capability/owner branch, not callable Policy matching. Domain-owned writes still need correct callable admission.
+- Read authority also permits traversal; traversal alone does not permit property reads. Test what
+  the caller can observe, not just whether one isolated `traverse` Policy matches.
+
+## Declare the business rule at its owner
+
+- Give each match Policy a `description` stating who may do what and through which business relation.
+  Keep it in the module's `policies/`, never `types/`; place its callable check inline in that callable declaration.
+- `policy.allOf(...)` / `policy.anyOf(...)` currently accept Policy operands, not description options.
+  Describe the constituent match Policies; do not add unsupported metadata or duplicate patterns for a label.
 
 Humans authenticate as distinct identities and gain application access through Schema Policy over
 business graph facts. When Shell owns the human-facing User, observe that exact User and write only
@@ -64,6 +101,10 @@ then treat the observation as authorization.
 - Edge Policies receive the admitted `source`/`target`. Constrain whichever endpoint owns access;
   do not re-match the candidate Edge just to repeat its Class and endpoint guarantees.
 
+The checked public DSL (`kernel-dsl` `0.2.0-beta.30`) exposes `check(policy, object)`, not arbitrary
+named `parameters`. Several checks on `self`/input references can express independent requirements,
+but are not a substitute for a joint multi-object predicate; verify a newer API before authoring one.
+
 ## Composition consumes a budget
 
 - Budgets apply after named-policy expansion and branch normalization, not per helper file.
@@ -106,7 +147,7 @@ the authoritative gate because graph and authority state can change after the ob
 ## Admit each trust boundary once
 
 - The Kernel verifies credentials and establishes the caller.
-- The Kernel admits callable authority and evaluates the pinned Schema Policy.
+- The Kernel admits callable authority using the pinned Schema and complete Grant branches.
 - The SDK validates callable input and output against the pinned Domain.
 - An Integration owns structural admission of an external provider response.
 - Runtime `initialize` owns environment admission and Provider construction.
@@ -122,8 +163,8 @@ uses. Listing a local CLI identity does not prove it is registered or authorized
 When a native Domain owns identity or group lifecycle, use its current public registration and role
 operations; verify the installed dependency version instead of copying an old bootstrap recipe.
 
-For protected behavior, test anonymous rejection, authenticated-but-unauthorized rejection, Policy
-rejection, and success as separate cases. Denials must prove the Action, Workflow steps, Providers,
+For protected behavior, test missing identity, no caller-authority branch, Policy refusal without
+direct-use bypass, and success as applicable. Denials must prove the Action, Workflow steps, Providers,
 and graph effects did not run. Use a real Kernel admission path for this evidence; a handler-local
 conditional or permissive fake cannot prove authorization.
 

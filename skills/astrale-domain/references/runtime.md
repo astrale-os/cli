@@ -9,6 +9,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   Register one exact `functions` collection; do not maintain parallel handler registries or path dispatch.
 - One callable, Query, or Mutation per owner file; keep its projection helpers there unless reused.
   Use business submodules and curated layer facades, not a generic repository or decoder layer.
+- Name files by intent: `read-project.ts`, `list-project-services.ts`, `archive-project.ts`, not
+  `record.ts`, `get.ts`, or a catch-all `queries.ts`. A longer descriptive name beats an ambiguous one.
 - Import the aggregate Schema as a type. Use the invocation's resolved `domain` for Classes/Properties;
   focused error, value, and StateMachine facades may supply runtime-safe values.
 - An Action owns one semantic asynchronous operation. A Workflow owns multiple observations/effects,
@@ -18,6 +20,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
 
 ## Authority and inputs
 
+- Use public SDK bindings/executors, not hand-built endpoints, tokens, or routing. Transport is
+  transparent to business code; consult `debugging.md` only when diagnosing discovery or invocation.
 - Prefer direct `query`/`mutate`: they use Domain authority (`graph.self`). Use `graph.caller` or
   `graph.union` only for their deliberately different authority semantics, not for style.
 - The ordinary `client` is caller-only; select `kernel.self` explicitly for Domain-owned platform calls.
@@ -31,6 +35,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
 
 ## Queries: observe and project
 
+- Name the business observation, not an authorization promise: `listProjectServices`, not
+  `listAuthorizedServices`. `listServicesByOwner` is valid for an explicit business filter, not implicit access control.
 - Author `defineQuery<typeof schema>()((domain) => ({ build, project, ... }))` with canonical `Query`
   builders from `@astrale-os/sdk/query`. Read once and project that result rather than fetching every node again.
 - Schema-admitted properties need no second validator. If projection is not inferred, use a narrow

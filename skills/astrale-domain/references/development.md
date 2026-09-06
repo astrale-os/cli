@@ -3,6 +3,9 @@
 Start from the generated project and the installed SDK's public exports, not remembered syntax.
 The SDK owns building/deploying the Domain; the Astrale CLI owns instances, identities, and live calls.
 
+Use the adapter and SDK session abstractions; do not configure a parallel token or endpoint pipeline.
+Issuer, Publication, and redirect internals belong in `debugging.md` when the normal path fails.
+
 ## Scaffold and dependencies
 
 ```sh

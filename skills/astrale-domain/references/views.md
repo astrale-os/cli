@@ -74,7 +74,7 @@ export function useCloseIssue() {
 ## Read, mutate, and refresh
 
 - `useQuery`/`useMutation` operate with the browser caller's authority, unlike runtime Domain executors.
-  Class `read`/`traverse` Policy narrows existing capability; it does not grant that capability.
+  Callable access does not imply graph access: Class operation authority is evaluated separately; see `policies.md`.
 - Use a caller-scoped Function returning a minimal projection when members should read through Domain
   authority. Do not grant broad graph rights merely to make a direct query render.
 - Instance `useAction.run` accepts `{ id: NodeId }`; a returned ID does not require a second Class read
@@ -83,6 +83,8 @@ export function useCloseIssue() {
   then narrow costly refreshes; optimistic UI does not prove persistence and must recover on refusal.
 - Distinguish loading, empty, missing target, auth failure, expected error, and pending mutation.
   Preserve editable input on failure; show safe actionable refusal details, not transport internals.
+- Keep IDs, digests, SHAs, and technical Paths out of product labels and fallback text; show business
+  names or a meaningful unavailable state. Reserve technical coordinates for explicitly developer-facing diagnostics.
 
 ## Use Astrale UI
 

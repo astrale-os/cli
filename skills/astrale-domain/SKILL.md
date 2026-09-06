@@ -40,7 +40,8 @@ phased workflow below; an existing public scaffold already satisfies its foundat
 - Author or update demo data — the Datasets under `tests/` the Studio draws and proves policies on:
   read `references/datasets.md`.
 - Write tests, fixtures, demo flows, or smoke-test scenarios: read `references/testing.md`.
-- Diagnose a failing live domain or runtime drift: read `references/debugging.md`.
+- Diagnose a failing live domain, issuer/discovery confusion, invocation routing, or runtime drift:
+  read `references/debugging.md`.
 
 ## New Domain Creation Workflow
 
