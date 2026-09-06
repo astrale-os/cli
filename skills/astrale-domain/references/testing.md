@@ -1,4 +1,4 @@
-# Simulating and testing
+# Testing
 
 Read when writing Domain fixtures, focused tests, demos, or live acceptance journeys.
 

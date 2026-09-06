@@ -1,4 +1,4 @@
-# Implementing
+# Runtime
 
 The Schema declares callable identity, input/output, receiver, authentication mode, and Policy. SDK
 Runtime authoring implements that contract as either an Action or a Workflow. Authors do not maintain

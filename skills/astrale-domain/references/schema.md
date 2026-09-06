@@ -1,4 +1,4 @@
-# Modeling
+# Schema
 
 Model the business world and its invariants, not a storage layout or anticipated UI. Every Class,
 Edge, Policy, callable, View, and Core value has one semantic owner.

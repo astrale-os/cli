@@ -1,4 +1,4 @@
-# Security
+# Policies
 
 Read when declaring callable authentication or authorization, using a Schema Policy, or admitting an
 external value.
@@ -91,7 +91,7 @@ the authoritative gate because graph and authority state can change after the ob
 Do not catch an unknown provider, transport, or programmer defect merely to report invalid caller
 input. Preserve the stable error family owned by the boundary that rejected the value.
 
-## Security evidence
+## Policy and admission evidence
 
 For protected behavior, test anonymous rejection, authenticated-but-unauthorized rejection, Policy
 rejection, and success as separate cases. Denials must prove the Action, Workflow steps, Providers,
