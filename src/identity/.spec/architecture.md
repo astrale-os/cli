@@ -17,11 +17,15 @@ directly to the `platform-manager` Kernel, and reaches a child only through a ma
 child-audience Management carrier. The carrier's outer subject is not the child's effective
 principal; authenticated child `Identity.whoami` owns that projection.
 
-Identity registration always prepares one self-proven atomic Provision request. Direct registration
-submits it to Kernel Auth only when the selected caller already owns the target Class authority. An
+Identity registration prepares a primary self credential and a Register request for an explicit
+existing Node. It never allocates a Node or changes business properties. Direct registration
+submits it to Kernel Auth under the selected caller's authority. An
 explicit `--via <callable>` instead sends those exact bytes through the Domain that owns an
 application Identity Class. The Domain callable owns admission and effect authority; CLI admits only
-the prepared binding from the response before persisting its target-bound `(issuer, subject)`.
+the selected Node and expected Authentication from the response before persisting its target-bound
+`(issuer, subject)`. A local cached registration never substitutes for verifying a newly selected Node.
+The stable request key includes the Kernel, Node, derived issuer and publication key slot; retrying
+registration cannot create a duplicate business object.
 
 ```mermaid
 flowchart LR

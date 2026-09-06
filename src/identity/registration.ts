@@ -1,10 +1,9 @@
-import type { Authentication, ProvisionRequest } from '@astrale-os/sdk/auth'
+import type { Authentication, RegisterRequest } from '@astrale-os/sdk/auth'
 import type { Call } from '@astrale-os/sdk/client'
-import type { LocalBinding } from '@astrale-os/sdk/graph'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 
 import { issuer } from '@astrale-os/sdk/auth'
 import { call } from '@astrale-os/sdk/client'
-import { NodeId } from '@astrale-os/sdk/graph/node'
 import { Path } from '@astrale-os/sdk/graph/path'
 
 export interface IdentityRegistrationResult {
@@ -13,17 +12,17 @@ export interface IdentityRegistrationResult {
   readonly nodeId?: string
 }
 
-export interface ProvisionedIdentityRegistration extends IdentityRegistrationResult {
+export interface RegisteredIdentity extends IdentityRegistrationResult {
   readonly nodeId: string
 }
 
-export interface IdentityProvisionSubmission {
-  readonly request: ProvisionRequest
-  readonly binding: LocalBinding
+export interface IdentityRegistrationSubmission {
+  readonly request: RegisterRequest
+  readonly nodeId: NodeId
   readonly expectedAuthentication: Authentication
   readonly via?: string
   readonly direct: {
-    provision(request: ProvisionRequest): Promise<unknown>
+    register(request: RegisterRequest): Promise<unknown>
   }
   readonly callable: {
     call(call: Call): Promise<unknown>
@@ -31,45 +30,41 @@ export interface IdentityProvisionSubmission {
 }
 
 /** Submit one prepared request either directly or through its explicit Domain authority owner. */
-export async function submitIdentityProvision(
-  input: IdentityProvisionSubmission,
-): Promise<ProvisionedIdentityRegistration> {
+export async function submitIdentityRegistration(
+  input: IdentityRegistrationSubmission,
+): Promise<RegisteredIdentity> {
   const result =
     input.via === undefined
-      ? await input.direct.provision(input.request)
+      ? await input.direct.register(input.request)
       : await input.callable.call(
-          // Client admits the portable value before transport. ProvisionRequest is the
+          // Client admits the portable value before transport. RegisterRequest is the
           // stricter semantic type but does not declare the portable Object index signature.
           call(Path.parse(input.via), input.request as unknown as Call['input']),
         )
-  return acceptProvisionedIdentity(result, input.binding, input.expectedAuthentication)
+  return acceptRegisteredIdentity(result, input.nodeId, input.expectedAuthentication)
 }
 
-/** Admit only the exact binding the CLI prepared; remote callables remain untrusted input. */
-export function acceptProvisionedIdentity(
+/** Admit only the selected existing Node; remote callables remain untrusted input. */
+export function acceptRegisteredIdentity(
   value: unknown,
-  binding: LocalBinding,
+  nodeId: NodeId,
   expectedAuthentication: Authentication,
-): ProvisionedIdentityRegistration {
-  const result = record(value, 'Provision result')
-  const createdNodes = record(result.createdNodes, 'Provision result created Nodes')
-  const nodeId = NodeId(text(createdNodes[binding], 'Provisioned Identity Node'))
-  const identities = array(result.identities, 'Provision result identities')
+): RegisteredIdentity {
+  const result = record(value, 'Register result')
+  const identities = array(result.identities, 'Register result identities')
   const matches = identities.filter((candidate) => {
     if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate))
       return false
     return (candidate as Record<string, unknown>).id === nodeId
   })
   if (matches.length !== 1) {
-    throw new TypeError(
-      'Provision result must contain exactly one Identity for the prepared binding.',
-    )
+    throw new TypeError('Register result must contain exactly one Identity for the selected Node.')
   }
-  const identity = record(matches[0], 'Provision result identity')
-  const iss = issuer.accept(text(identity.iss, 'Provisioned Identity issuer'))
-  const sub = text(identity.sub, 'Provisioned Identity subject')
+  const identity = record(matches[0], 'Register result identity')
+  const iss = issuer.accept(text(identity.iss, 'Registered Identity issuer'))
+  const sub = text(identity.sub, 'Registered Identity subject')
   if (iss !== expectedAuthentication.iss || sub !== expectedAuthentication.sub) {
-    throw new TypeError('Provision result substituted the prepared Authentication.')
+    throw new TypeError('Register result substituted the prepared Authentication.')
   }
   return Object.freeze({
     iss,

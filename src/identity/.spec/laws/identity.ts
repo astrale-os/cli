@@ -46,7 +46,7 @@ export const CLI_IDENTITY_IMPORT_ORDERED = defineLaw({
 export const CLI_IDENTITY_REGISTRATION_AUTHORITY = defineLaw({
   id: 'CLI-IDENTITY-REGISTRATION-AUTHORITY',
   statement:
-    'Identity registration binds one self-proven Provision request and exact Authentication to the selected Kernel; direct submission uses caller authority, while explicit Domain-mediated submission sends the same request to the named callable and persists only its admitted prepared binding and Authentication.',
+    'Identity registration binds a primary self credential and an existing Node to the selected Kernel without creating business state; direct submission uses caller authority, while optional Domain-mediated submission sends the same Register request to the named callable and persists only the selected Node and expected Authentication from its admitted result.',
   tests: [
     {
       file: '__tests__/registration.test.ts',
