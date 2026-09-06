@@ -18,36 +18,21 @@ AST.
 
 - Use one Query when one graph observation answers the question.
 - Use a composite Query for a closed set of dependent reads with one final projection.
-- Bound every cursor chain and reject repeated cursors.
+- Declare complete pagination when completeness is required; let the SDK bound and validate cursors.
 - Project from the returned graph instead of re-reading each returned node.
 - Treat an absent visible node as unavailable; do not infer that it does not exist.
 
 Query execution owns remote response admission and pagination. A local projection should remain pure.
 
+Do not replace several observations with a composite expecting one network round trip: ordinary
+leaves still execute separately. A supported collection union can combine compatible Class collections;
+measure the actual calls rather than inferring batching from one `query(...)` in the handler.
+
 ## Write one invariant as one Mutation
 
-Use `defineMutation` from `@astrale-os/sdk/mutation` for one atomic graph document. Prefer the rich
-builder over copied low-level property or class keys:
-
-```ts
-import { NodeId } from '@astrale-os/sdk/graph/node'
-import { defineMutation } from '@astrale-os/sdk/mutation'
-
-export const renameVisit = defineMutation({
-  id: 'field-visit.rename',
-  change(mutation, input: { readonly visit: NodeId; readonly title: string }) {
-    mutation.updateNode({
-      node: input.visit,
-      class: Work.classes.FieldVisit,
-      props: { set: { title: input.title } },
-    })
-  },
-})
-```
-
-Place current-state safety conditions in `mutation.expect`; a Query followed by a Mutation is not an
-atomic read-modify-write. Keep related node and Edge writes in the same Mutation when they form one
-invariant.
+One bounded Mutation avoids per-item round trips only when all writes belong to one atomic invariant.
+Its operations are not sequential commands: combine updates to one target and keep independently
+raceable facts as preconditions. `runtime.md` covers the effect-set and pre-state constraints.
 
 ## Choose Action versus Workflow by semantics
 

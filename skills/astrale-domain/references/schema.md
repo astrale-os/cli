@@ -1,4 +1,4 @@
-# Modeling
+# Schema
 
 Model the business world and its invariants, not a storage layout or anticipated UI. Every Class,
 Edge, Policy, callable, View, and Core value has one semantic owner.
@@ -14,6 +14,13 @@ recreate resolved Definition shapes.
 
 Use a node Class for an independently identifiable thing with properties and behavior. Use an edge
 Class for a meaningful relationship between typed endpoints.
+
+Shared object contracts use abstract Classes (`nodeClass({ abstract: true, ... })`), not a separate
+interface declaration kind. Create concrete descendants, not instances of the abstract Class.
+
+SDK-authored node Classes declare an icon: prefer `classIcon.lucide` with data from
+`@astrale-os/sdk/schema/icons`, or `classIcon.svg` for custom SVG. `classIcon.neutral` explicitly shows
+no glyph. Do not import React icons into Schema.
 
 - Put a fact on a node when it describes that thing regardless of a relationship.
 - Put a fact on an Edge when it describes the relationship: role, confidence, applicability,
@@ -36,7 +43,8 @@ One exported `stateMachine` is the authority for a finite lifecycle. Persist it 
 do not copy its states or events into sibling enums or transition Rules.
 
 ```ts
-import { nodeClass, stateProperty } from '@astrale-os/sdk/schema'
+import { classIcon, nodeClass, stateProperty } from '@astrale-os/sdk/schema'
+import { CircleAlert } from '@astrale-os/sdk/schema/icons'
 import { stateMachine } from '@astrale-os/sdk/state'
 
 export const lifecycle = stateMachine({
@@ -45,6 +53,7 @@ export const lifecycle = stateMachine({
 })
 
 export const Issue = nodeClass({
+  icon: classIcon.lucide(CircleAlert),
   properties: { status: stateProperty(lifecycle) },
 })
 ```
@@ -53,6 +62,15 @@ Mutable presentation text is not a stable identity. Node identity is canonical a
 URLs and caller-assigned paths are not semantic node identifiers.
 
 ## Behavior ownership
+
+- Group declarations under `schema/modules/<module>/`, with applicable `classes/`, `policies/`,
+  `functions/`, `errors/`, `types/`, `states/`, `core/`, and `views/`. Do not manufacture empty directories.
+- `classes/` includes node and edge Classes; `functions/` includes Methods and top-level Functions.
+  Keep one declaration per file and curated facades; reserve root kinds for genuinely shared declarations.
+- `types/` owns portable values, not Policies. Keep `policy: ({ check, self }) => check(mayEdit, self)`
+  inline with its callable; reusable graph predicates belong in `policies/`.
+- Infer composition types from authored values where possible, rather than maintaining an interface
+  that repeats Schema fields. Do not cast away a genuine published-declaration or admission problem.
 
 Put behavior on the Class whose invariant changes. A receiver-bound callable is appropriate when an
 existing node is the subject of the change. Use a top-level callable for a Domain operation without a
@@ -68,19 +86,9 @@ Schema Policy owns authorization predicates. Keep authentication mode, callable 
 as distinct gates. Policy may refer to the authenticated subject, receiver, Core Groups, and graph
 facts supported by the language. Do not move caller admission into Action/Workflow code.
 
-An existential Policy variable must declare the intended Node extent:
-
-- `node()` starts from every active concrete Node Class in the pinned Registry. Use it when the Edge
-  topology, rather than a named Class family, defines the witness.
-- `node(Class)` includes that Class when concrete and every active concrete descendant. This includes
-  descendants installed from dependency and foreign Domains, so use it only for a genuine “is-a”
-  business rule.
-- `node.exact(Class)` includes only the exact concrete Class. An exact abstract Class has an empty
-  extent.
-
-Use the narrowest form whose semantics are correct. When migrating an existing Policy whose Class
-binder was exact, preserve its behavior with `node.exact(Class)` unless descendant inheritance is an
-intentional product decision.
+`node(Class)` includes concrete descendants, including foreign installed descendants; it is not an
+exact-Class check. Use `node.exact(Class)` to retain exact matching. Read `policies.md` for connected
+proofs, direct-dependency references, and expanded-expression budgets.
 
 ## Core data
 
@@ -88,18 +96,11 @@ Use Core for stable Domain-owned reference facts needed immediately after instal
 well-known Group. Do not use Core as demo data, mutable product state, a post-install hook, or a hidden
 migration mechanism.
 
+Reinstalling does not turn a Core declaration into an application-data migration. A projected Core
+node keeps its ID only while its projected Path and Class stay unchanged; changing its Class can
+allocate a new ID, so consumers should resolve the ref rather than cache an installation's ID forever.
+
 ## Views
 
 Schema Views declare semantic view identities. Frontend routing and Shell handshake belong to the SDK
 frontend composition, not to Class properties or callable handlers.
-
-## Review checklist
-
-- Can every concept be named in business language?
-- Does every relationship have typed endpoints, direction, and cardinality?
-- Are relationship-owned facts on the Edge?
-- Are required properties truly invariant and optional properties truly absent sometimes?
-- Are node identities opaque rather than encoded paths?
-- Does each callable have the correct receiver and authentication/Policy declaration?
-- Is every visible Class given a stable icon when the language supports it?
-- Is Core limited to stable installation reference data?
