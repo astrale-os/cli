@@ -101,6 +101,8 @@ export default defineProject({
   uses `installation.instance` by default; this is not the CLI's active-instance fallback.
 - For deploy-only, omit `installation` and set `astrale({ instance: 'services-host', ... })`.
   `--deploy-only` skips installation for one command without changing the configured deployment target.
+- When changing a shared Schema dependency, do not let each project's watcher install independently.
+  Stage candidates deploy-only and install the coherent root set together; follow `migration.md`.
 - Application already contains Runtime and frontend. `entrypoints.runtime` only overrides the
   conventional loadable Runtime file; do not repeat those definitions in Project or adapter options.
 - Keep the Domain signing identity stable and gitignored; it is distinct from the human CLI identity.

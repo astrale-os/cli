@@ -9,6 +9,38 @@ new Edges, and new callables. Rebuild and verify that the new Schema revision di
 callable/Class keys remain stable. Reinstall through the public installation path and prove existing
 data remains valid.
 
+Adding syntax is not necessarily compatible with existing data: a new required property or an Edge
+with minimum cardinality `1` can invalidate existing nodes. Introduce an optional form, backfill,
+then install the tightened contract; a default in application code is not a persisted backfill.
+
+## Upgrade the dependency closure together
+
+- If B depends on A@r1, installing A@r2 alone leaves B incoherent, even when A's change looks additive.
+  B pins an exact Schema revision, not an npm semver range or whichever A happens to be active.
+- Update B's Schema dependency to A@r2 and rebuild B; B now has a new revision too. Repeat for all
+  affected reverse dependents, including C → B → A. A manifest edit without rebuilt artifacts is insufficient.
+- Deploy the coherent candidates first without installing them individually (`--deploy-only`). Then
+  submit A, B, and affected consumers as explicit roots of one multi-Domain installation.
+- A dependency embedded in B's bundle is not automatically installed as a root. Sequential single-Domain
+  installs can fail in either order; do not uninstall B or discard data to bypass revision coherence.
+
+```ts
+// Operator script; client is already authenticated to the intended Kernel.
+import { createOperationId } from '@astrale-os/sdk/client/schema'
+
+const request = {
+  operation: createOperationId(),
+  domains: [
+    { publication: { url: 'https://a.example/publication' } },
+    { publication: { url: 'https://b.example/publication' } },
+  ],
+} as const
+await client.schema.install(request)
+```
+
+Retain the operation ID and exact request when recovering an uncertain install outcome; do not create
+a fresh operation merely because the first call timed out. Inspect both installed revisions afterward.
+
 ## Breaking evolution
 
 Removing or renaming a property, Class, Edge, Policy, callable, or origin does not migrate stored data.
@@ -19,8 +51,8 @@ Before reinstalling a Schema that removes a Class (Node or Edge), delete every e
 that Class. The Kernel refuses the reinstall with `DATA_MIGRATION_REQUIRED` while incompatible data
 remains.
 
-An Edge Class whose affected endpoint cardinality is `1` cannot be deleted immediately. Perform the
-change in stages:
+Deleting the only required Edge first violates the currently installed cardinality; removing its
+Class first leaves data in a retired Class. To remove a `1` relationship while retaining its nodes:
 
 1. publish and install an intermediate Schema revision that loosens the endpoint cardinality from
    `1` to optional (`0..1`);
@@ -29,6 +61,8 @@ change in stages:
 
 Qualify each installed revision before proceeding to the next stage. Do not bypass the intermediate
 revision or treat `DATA_MIGRATION_REQUIRED` as a transient installation failure.
+If other Domains depend on this Schema, rebuild and install their coherent revisions at both Schema
+stages above. Deploying the final revision does not make the intermediate data cleanup legal.
 
 ## Migration owner
 

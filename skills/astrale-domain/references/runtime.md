@@ -26,8 +26,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   caller admission already happened; do not repeat input parsing or implement role checks in handlers.
 - Public inputs may accept `Path` for convenient locators; return canonical record IDs. Internally pass
   `NodeId` directly where accepted, without `Path.id(id)`, and do not maintain parallel path/id APIs.
-- Use resolved definitions or their refs where the API accepts them, not reconstructed locator strings.
-  A Class ref names its definition node, not its instances; a callable ref is not a Method receiver.
+- Use resolved definitions or their refs where accepted, not reconstructed locator strings. Position
+  matters: a Query Class source selects instances, while a projected Class Path names the definition node.
 
 ## Queries: observe and project
 
@@ -37,8 +37,25 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   Schema-derived type; do not build a decoder, use `any`, or invent defaults for required values.
 - Keep checks the observation does not establish: missing/hidden nodes and unexpected Classes for
   arbitrary Path lookups. Absence from a caller-visible query is not proof of global nonexistence.
-- Let the SDK executor own response admission and pagination. A composite Query groups dependent
-  observations, not a transaction; use `executeQuery` only when a script/test already owns the Client.
+- A plain `defineQuery` executes one page. For a complete collection, declare `pagination.maximumPages`
+  and project the completed pages, or use `defineCollectionQuery`; never treat the first page as complete.
+- The SDK rejects a repeated cursor or exhausted page bound instead of returning a partial collection.
+  Continuations and composite leaves are separate reads, not a shared point-in-time snapshot.
+
+### Query mistakes that change the answer
+
+- `Query.from({ nodes: [A, B] })` is a union, not an intersection. Class sources include concrete
+  descendants; use an exact-Class filter when subclasses must not qualify.
+- After `expand`, the default node binding is the reached node. Retain the earlier binding and select
+  it explicitly to return the original records filtered by related facts; incoming traversal does not swap Edge endpoints.
+- Property predicates currently offer `equals` and `isPresent`, not SQL ranges, substring search, or
+  arbitrary callbacks. Equality does not coerce; `null` is present, and missing is not equal to `null`.
+- Filtering one page in JavaScript is not a complete server-side search. If a predicate cannot be
+  expressed, use a bounded complete read or change the product/query design; report the cost honestly.
+- `page.size` and cursor are delivery options, not fields in `.select()` or the QueryAST. Ordering is
+  one terminal Property order with explicit unranked placement and identity tie-breaks, not arbitrary multi-sort.
+- A value projection can omit records whose properties the caller cannot read. Reference-only results
+  prove identity visibility, not permission to fetch properties; changing projection can change the result set.
 
 ## Mutations: preserve the atomic invariant
 
@@ -50,6 +67,16 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   the target state and emits the stale-state precondition, so do not duplicate either.
 - Omit `project` when the canonical Mutation result suffices; otherwise return the needed created IDs or
   committed outcome. Do not revalidate MutationResult or claim success before the commit resolves.
+- Operations are an effect set, not a program: updating the same node twice rejects instead of applying
+  sequential updates. Merge its property changes into one update; sibling effects cannot see each other's writes.
+- All conditions observe the common pre-state. An Edge created in the Mutation cannot satisfy a sibling
+  precondition or grant authority for another effect; use create bindings to reference new nodes, not future Paths.
+- `expect.query` compares the complete ordered identity selection, not “contains” or a page. Truncated
+  evidence cannot prove that no other related nodes exist; condition reads also need their own authority.
+- Creates are not upserts, and deleting a missing target is not a successful no-op. After an uncertain
+  network outcome, observe the result before retrying; a thrown request alone does not prove rollback.
+- Structural precondition limits are available through `MutationAST.limits`; backend execution limits
+  are separate. Never auto-chunk a rejected Mutation: that changes one atomic invariant into partial commits.
 
 ## One composed example
 

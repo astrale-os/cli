@@ -86,19 +86,9 @@ Schema Policy owns authorization predicates. Keep authentication mode, callable 
 as distinct gates. Policy may refer to the authenticated subject, receiver, Core Groups, and graph
 facts supported by the language. Do not move caller admission into Action/Workflow code.
 
-An existential Policy variable must declare the intended Node extent:
-
-- `node()` starts from every active concrete Node Class in the pinned Registry. Use it when the Edge
-  topology, rather than a named Class family, defines the witness.
-- `node(Class)` includes that Class when concrete and every active concrete descendant. This includes
-  descendants installed from dependency and foreign Domains, so use it only for a genuine “is-a”
-  business rule.
-- `node.exact(Class)` includes only the exact concrete Class. An exact abstract Class has an empty
-  extent.
-
-Use the narrowest form whose semantics are correct. When migrating an existing Policy whose Class
-binder was exact, preserve its behavior with `node.exact(Class)` unless descendant inheritance is an
-intentional product decision.
+`node(Class)` includes concrete descendants, including foreign installed descendants; it is not an
+exact-Class check. Use `node.exact(Class)` to retain exact matching. Read `policies.md` for connected
+proofs, direct-dependency references, and expanded-expression budgets.
 
 ## Core data
 
@@ -106,18 +96,11 @@ Use Core for stable Domain-owned reference facts needed immediately after instal
 well-known Group. Do not use Core as demo data, mutable product state, a post-install hook, or a hidden
 migration mechanism.
 
+Reinstalling does not turn a Core declaration into an application-data migration. A projected Core
+node keeps its ID only while its projected Path and Class stay unchanged; changing its Class can
+allocate a new ID, so consumers should resolve the ref rather than cache an installation's ID forever.
+
 ## Views
 
 Schema Views declare semantic view identities. Frontend routing and Shell handshake belong to the SDK
 frontend composition, not to Class properties or callable handlers.
-
-## Review checklist
-
-- Can every concept be named in business language?
-- Does every relationship have typed endpoints, direction, and cardinality?
-- Are relationship-owned facts on the Edge?
-- Are required properties truly invariant and optional properties truly absent sometimes?
-- Are node identities opaque rather than encoded paths?
-- Does each callable have the correct receiver and authentication/Policy declaration?
-- Does each node Class explicitly declare an appropriate icon?
-- Is Core limited to stable installation reference data?

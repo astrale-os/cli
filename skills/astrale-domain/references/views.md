@@ -30,6 +30,8 @@ export const frontend = defineFrontend({
   Wrap projected Query/Mutation hooks in `<DomainProvider schema={schema}>`; keep the application's router.
 - `useDomain(schema)` returns a verified installed binding and may suspend. Pass its resolved callable
   to `useAction`; do not reconstruct method keys, forge bound nodes, or resolve another client per component.
+- A local frontend compiled against a newer Schema can fail binding against an older installation.
+  Compare both revisions and update the coherent deployment; reloading or casting the binding cannot fix it.
 
 ```tsx
 // frontend/src/main.tsx — router and schema are the application's existing owners.

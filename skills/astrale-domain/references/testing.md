@@ -18,48 +18,24 @@ Use the smallest real boundary that proves the behavior:
 Do not create a general fake Kernel. It becomes a second implementation of authority, visibility,
 transactions, paging, and error semantics, while still proving none of them.
 
-## Query example
+## Exercise the owner, not its registration
 
-```ts
-import { executeQuery, type QueryClient } from '@astrale-os/sdk/query'
+Use `executeQuery(client, domain, recipe, input)` / `executeMutation(client, domain, recipe, input)`
+with narrow capability doubles. They exercise SDK recipe realization and projection; invoking a
+hand-copied builder or merely asserting an AST version bypasses the behavior being delivered.
 
-const calls: unknown[] = []
-const client: QueryClient = {
-  async query(ast, options) {
-    calls.push({ ast, options })
-    return { result: { kind: 'nodes', nodes: [] }, page: {} }
-  },
-}
-
-await executeQuery(client, domain, visitsByOwner, { owner })
-expect(calls).toHaveLength(1)
-```
-
-Keep the double at the SDK's injected capability boundary. Do not duplicate Client routing or Kernel
-response admission in the fixture.
-
-## Mutation example
-
-```ts
-import { executeMutation, type MutationClient } from '@astrale-os/sdk/mutation'
-
-let submitted: unknown
-const client: MutationClient = {
-  async mutate(document) {
-    submitted = document
-    return emptyMutationResult
-  },
-}
-
-await executeMutation(client, domain, createVisit, input)
-expect(submitted).toMatchObject({ format: 'astrale.graph.mutation', version: 'v3' })
-```
-
-Assert the complete invariant-bearing operation: node creation, required Edges, preconditions, and
-the absence of unintended writes. A Mutation definition owns one atomic document; a read performed
-before it is not part of that transaction.
+Assert the invariant-bearing operations and absence of unintended writes, not only call counts.
+A constructed stale-state precondition proves authoring; only transaction execution proves it rejects
+a concurrent edit without partial writes.
 
 ## Actions and Workflows
+
+Use a fixture that crosses a page boundary for a “complete collection” claim; a tiny dataset cannot
+detect first-page truncation. Check a repeated cursor and an exhausted bound reject without publishing
+partial business output, rather than merely asserting that `.query` was called.
+
+For a read→Rule→Mutation flow, change the guarded fact between observation and commit. The Rule's
+unit test cannot prove the Mutation rejects stale state; use the actual Kernel transaction for that claim.
 
 Actions have no Step API. For a complete Domain delivery, exercise the exposed Action and Workflow
 definitions with representative success and applicable refusal inputs. For a focused change, exercise

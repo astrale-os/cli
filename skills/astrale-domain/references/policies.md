@@ -53,6 +53,28 @@ The Runtime implements `Project.rename` as an Action or Workflow. The implementa
 the caller, authority, Client, and receiver admitted for that callable. It must not query a role and
 then treat the observation as authorization.
 
+## Reuse without changing what is checked
+
+- Named `policy.allOf(...)` / `policy.anyOf(...)` composition reuses local Policies; cycles and foreign named
+  Policy refs are rejected. A dependency's presence does not make its named Policy locally composable.
+- A local Policy may traverse Classes/Edges or use projected objects from exact direct dependencies.
+  A foreign Policy ref used as an object names that Policy's graph node; it does not execute that Policy.
+- Every normalized alternative must connect the subject and the protected object/endpoints. An OR
+  branch saying only “caller belongs to a group” is not a resource-scoped proof; disconnected branches reject.
+- Edge Policies receive the admitted `source`/`target`. Constrain whichever endpoint owns access;
+  do not re-match the candidate Edge just to repeat its Class and endpoint guarantees.
+
+## Composition consumes a budget
+
+- Budgets apply after named-policy expansion and branch normalization, not per helper file.
+  AND multiplies alternatives: `(A OR B OR C) AND (D OR E OR F)` creates 9 branches, over the current limit of 8.
+- Current DSL limits include expanded depth 4, 6 graph predicates per branch, 4 variables per `exists`,
+  repetition maximum 3, and 4 referenced Domains. Callable checks also cap depth at 4 and leaves/branches at 8.
+- Refactoring into named helpers does not reset those budgets. Simplify the actual proof topology
+  when `PL_BUDGET` rejects; do not move authorization into a handler or drop an alternative to compile.
+- These are Schema admission ceilings, not guaranteed runtime scan capacity. Verify the installed
+  DSL's limits before relying on a boundary value; a bounded repeat is not unbounded group ancestry.
+
 ## Scope existential Node witnesses deliberately
 
 Policy Node selectors are authorization scope, not a typing convenience. `node()` can be witnessed by
