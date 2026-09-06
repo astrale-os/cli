@@ -5,7 +5,11 @@ import type {
   ViewTargetCandidate,
 } from '../../shared/types'
 
-import { closeStudioViewSession, openStudioViewSession } from '../../../src/lib/view/studio-runtime'
+import {
+  closeStudioViewSession,
+  openStudioViewSession,
+  studioViewIdentityNames,
+} from '../../../src/lib/view/studio-runtime'
 import { studioCliCommand } from '../cli'
 import { activeInstanceName } from '../instances/active'
 import { readViewPreparation } from './preparation'
@@ -18,6 +22,7 @@ interface ViewSessionDependencies {
   close: typeof closeStudioViewSession
   open: typeof openStudioViewSession
   readPreparation: typeof readViewPreparation
+  identityNames: typeof studioViewIdentityNames
   serveRuntime: typeof studioViewServeRuntime
 }
 
@@ -96,11 +101,15 @@ export async function launchViewSession(
 
   let opened: OpenedViewPayload | null = null
   try {
+    // Studio is a local operator workbench. Snapshot names only; the CLI host
+    // retains credentials and verifies the selected identity against this Kernel.
+    const identities = await (dependencies.identityNames ?? studioViewIdentityNames)()
     opened = {
       session: await (dependencies.open ?? openStudioViewSession)({
         viewPath: `/:${assertOrigin(origin)}:view.${assertViewSlug(view.slug)}`,
         ...(target ? { targetRef: target.ref } : {}),
         instance,
+        allowIdentity: identities,
         timeoutMs: Math.max(20_000, timeoutMs + 12_000),
         serveRuntime: (dependencies.serveRuntime ?? studioViewServeRuntime)(),
       }),
