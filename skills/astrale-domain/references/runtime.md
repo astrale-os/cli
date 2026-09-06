@@ -90,22 +90,29 @@ export const closeIssueMutation = defineMutation<typeof schema>()((domain) => ({
   project: () => true,
 }))
 
+// rules/issue/can-close-issue.ts — pure eligibility over admitted observations, not authorization.
+export function canCloseIssue(issue: { status: StateOf<typeof lifecycle> } | undefined): boolean {
+  return issue?.status === 'open'
+}
+
 // functions/issue/close-issue.ts
 import { defineWorkflow } from '@astrale-os/sdk/workflow'
+import { canCloseIssue } from '#rules/issue'
+import { issueNotClosable } from '#schema/modules/issue/errors'
 
 export const closeIssue = defineWorkflow<typeof schema>()(
   'Issue.close',
-  async ({ self, query, mutate, step }) => {
+  { errors: { ISSUE_NOT_CLOSABLE: issueNotClosable } },
+  async ({ self, query, mutate, step, error }) => {
     const issue = await step.run('read-issue', () => query(readIssue, { self }))
-    if (issue === undefined) return false
-    if (issue.status === 'closed') return true // Explicit idempotent product behavior.
+    if (!canCloseIssue(issue)) throw error('ISSUE_NOT_CLOSABLE', { issueId: self })
     return step.run('close-issue', () => mutate(closeIssueMutation, { self }))
   },
 )
 ```
 
-The receiver supplies Class admission, the Query only projects, and the Mutation guards concurrent
-state change. Returning false/idempotent true is this example's contract, not a universal refusal policy.
+The Query projects, the imported Rule decides eligibility, and the Workflow maps refusal to its
+declared error. Policy owns authorization; the Mutation still guards state changes after the read.
 
 ## Expected errors
 
@@ -113,17 +120,15 @@ state change. Returning false/idempotent true is this example's contract, not a 
   `errors/`. Each callable imports that focused facade and registers only its applicable alternatives.
 
 ```ts
-// schema/modules/issue/errors/issue-closed.ts
+// schema/modules/issue/errors/issue-not-closable.ts
 import { error } from '@astrale-os/sdk/schema'
 import { z } from 'zod'
 
-export const issueClosed = error({
+export const issueNotClosable = error({
   family: 'CONFLICT',
-  message: 'The issue is closed.',
+  message: 'The issue is unavailable or cannot be closed.',
   details: z.strictObject({ issueId: z.string() }),
 })
-// Callable options: { errors: { ISSUE_CLOSED: issueClosed } }
-// Handler refusal: throw error('ISSUE_CLOSED', { issueId: self })
 ```
 
 - Registration keys supply stable codes; declarations own fixed safe messages and details contracts.
@@ -138,11 +143,18 @@ export const issueClosed = error({
 
 ```ts
 import { defineApplication, requirements } from '@astrale-os/sdk/application'
-import { K } from '@astrale-os/sdk/schema'
+import { K, schema as language } from '@astrale-os/sdk/schema'
+import { schema } from '#schema'
+
+// Schema declares dependencies: { kernel: KernelSchema, messaging: MessagingSchema }.
+// Resolve that exact declared dependency, not a separately chosen foreign version.
+const Messaging = language.resolve(schema).dependencies.messaging
 
 export const application = defineApplication({
   schema, runtime,
-  requirements: requirements({ functions: [K.functions.query, K.functions.mutate] }),
+  requirements: requirements({
+    functions: [K.functions.query, K.functions.mutate, Messaging.functions.send],
+  }),
 })
 ```
 
