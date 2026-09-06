@@ -53,18 +53,16 @@ For a non-Root caller, an authorized Function requires both:
 - `policy.allOf(...)` / `policy.anyOf(...)` currently accept Policy operands, not description options.
   Describe the constituent match Policies; do not add unsupported metadata or duplicate patterns for a label.
 
-Humans authenticate as distinct identities and gain application access through Schema Policy over
-business graph facts. When Shell owns the human-facing User, observe that exact User and write only
-the application Domain's membership or business facts. Do not create a shadow User or grant a
-human dynamic `can_*` authority to make acceptance pass.
+Read `users.md` for Shell User subclasses, registration, and membership. Business graph ownership
+does not justify a shadow User or manual writes to Shell's membership/authority pair.
 
-Dependency Function authority is installation-owned. The calling Domain's Application explicitly
-declares each exact protected foreign or Kernel Function in `requirements({ functions: [...] })`;
-Kernel installation then owns materializing authority for the installed Domain principal. Do not
-grant the invoking human direct `can_*` authority as a substitute, and do not confuse a Schema
-dependency with capability. An Action that uses `client.auth.register(...)`, for example, requires
-the exact resolved Kernel `register` callable. Select the intended caller/Domain Kernel session
-explicitly; the ordinary `client` is caller-only.
+Direct dependency capabilities are installation-owned: request exact Functions when the integration
+requires direct use, not indiscriminately for every `authorized` dependency. A Policy-admitted call
+must not receive a direct `can_use` that bypasses its intended restriction; Shell's user/group methods are one example.
+
+Kernel calls such as `auth.register(...)` still require their exact capability and internal authority.
+Select the caller/Domain session explicitly; the ordinary `client` is caller-only. A Schema dependency
+is not a capability, and granting the human rights is not a substitute for Domain-owned execution.
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'
@@ -168,9 +166,9 @@ direct-use bypass, and success as applicable. Denials must prove the Action, Wor
 and graph effects did not run. Use a real Kernel admission path for this evidence; a handler-local
 conditional or permissive fake cannot prove authorization.
 
-For a cross-Domain success, independently inspect installation evidence and require the exact foreign
-callable under both requested and materialized capabilities before attributing the result to the
-installed Domain edge.
+For direct-capability success, inspect the exact requested and materialized Function capability.
+For Policy-admitted success, verify the intended caller Grant and absence of a direct-use bypass;
+do not manufacture a capability just to satisfy a qualification checklist.
 
 Keep each denial criterion proportional to its claim. A mutating denial needs an independent no-effect
 observation; a read-only denial does not need invented graph assertions. When testing revocation,

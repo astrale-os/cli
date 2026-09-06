@@ -171,8 +171,8 @@ export const issueNotClosable = error({
 
 ## Installation requirements
 
-- A Schema dependency pins definitions; it does not grant capability. Declare exact protected Kernel
-  and foreign Functions in Application `requirements`; nested calls can otherwise fail after outer admission.
+- A Schema dependency pins definitions, not capability. Declare exact Kernel/foreign Functions when
+  direct use is intended; do not give Policy-admitted calls a bypass capability. See `policies.md` and `users.md`.
 
 ```ts
 import { defineApplication, requirements } from '@astrale-os/sdk/application'
@@ -181,6 +181,7 @@ import { schema } from '#schema'
 
 // Schema declares dependencies: { kernel: KernelSchema, messaging: MessagingSchema }.
 // Resolve that exact declared dependency, not a separately chosen foreign version.
+// This example intentionally requests direct use of Messaging.send, not Policy-limited admission.
 const Messaging = language.resolve(schema).dependencies.messaging
 
 export const application = defineApplication({
