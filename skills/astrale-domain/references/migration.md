@@ -13,6 +13,20 @@ Adding syntax is not necessarily compatible with existing data: a new required p
 with minimum cardinality `1` can invalidate existing nodes. Introduce an optional form, backfill,
 then install the tightened contract; a default in application code is not a persisted backfill.
 
+## Production changes: expand, migrate, contract
+
+For production data, prefer staged compatibility over an immediately breaking change:
+
+1. Expand the Schema to accept both representations. Deploy readers that understand both and writers
+   that produce the new form; keep old-data reads working throughout the transition.
+2. Move every producer off the old form, including older deployments, jobs, imports, and clients.
+   Migrate existing data in bounded, restart-safe batches without overwriting concurrent updates.
+3. Verify no old representation remains and no active producer can recreate it. Only then tighten
+   the Schema and remove compatibility code; a rollback must not reintroduce an incompatible writer.
+
+For local iteration with disposable data, a direct change or deliberate reset may suffice. Do not
+impose a production rollout on every experiment, or treat production data as disposable.
+
 ## Upgrade the dependency closure together
 
 - If B depends on A@r1, installing A@r2 alone leaves B incoherent, even when A's change looks additive.
