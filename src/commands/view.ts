@@ -63,6 +63,7 @@ export type ViewOpts = KernelCommandOpts &
     refresh?: string
     all?: boolean
     allowExternalOrigin?: string[]
+    allowIdentity?: string[]
     /** Internal Studio host override; ordinary CLI calls resolve their own executable. */
     serveRuntime?: { file: string; args: string[] }
   }
@@ -259,9 +260,18 @@ export async function startViewSession(
 
 export function createViewServeConfig(
   record: ViewSessionRecord,
-  opts: Pick<ViewOpts, 'allowExternalOrigin' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'>,
+  opts: Pick<
+    ViewOpts,
+    'allowExternalOrigin' | 'allowIdentity' | 'as' | 'creds' | 'instance' | 'timeout' | 'url'
+  >,
   kernelTarget: { url: string; kernelIssuer: string; caFile?: string },
 ): ViewServeConfig {
+  if (opts.allowIdentity?.length && (opts.creds || !record.identity)) {
+    throw new AstraleError(
+      'INVALID_OPTION',
+      'Identity switching requires a named CLI identity, not --creds.',
+    )
+  }
   return {
     session: record,
     kernel: {
@@ -278,6 +288,9 @@ export function createViewServeConfig(
       direct: isPublicHttps(kernelTarget.url) && !kernelTarget.caFile,
     },
     externalOrigins: admitExternalOpenOrigins(opts.allowExternalOrigin),
+    ...(opts.allowIdentity?.length
+      ? { identities: [...new Set([record.identity!, ...opts.allowIdentity])] }
+      : {}),
     idleMs: IDLE_MS,
   }
 }
@@ -566,6 +579,10 @@ export default {
     { flags: '--snapshot', description: 'Print an accessibility snapshot once the view is up' },
     { flags: '--screenshot <file>', description: 'Save a screenshot once the view is up' },
     { flags: '--sessions', description: 'List active view sessions' },
+    {
+      flags: '--allow-identity <name...>',
+      description: 'Allow switching to these local identities in the viewer (reloads the View)',
+    },
     {
       flags: '--refresh <id>',
       description: 'Re-resolve and reload an open View in its existing tab',
