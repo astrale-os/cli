@@ -404,6 +404,31 @@ describe('V2 Admin Instance adapter', () => {
     ])
   })
 
+  test.each([
+    'pending',
+    'accepted',
+    'registering',
+    'registered',
+    'completed',
+    'cancelled',
+    'expired',
+    'failed',
+  ])(
+    'observes the exact current Invitation state %s without collapsing progress into completion',
+    async (state) => {
+      const summary = {
+        id: '@invitation-node',
+        email: 'person@example.com',
+        state,
+        access: 'member',
+        instance: '@instance-node',
+        createdAt: '2026-09-07T00:00:00.000Z',
+      } as const
+      const api = await fixture({ invoke: () => summary }).connect()
+      await expect(api.statusInvitation('@invitation-node')).resolves.toEqual(summary)
+    },
+  )
+
   test('invites through the exact Instance receiver and observes before explicit recovery', async () => {
     const summary = {
       id: '@invitation-node',

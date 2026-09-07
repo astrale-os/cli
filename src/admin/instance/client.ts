@@ -400,7 +400,16 @@ interface InvitationSummary {
 function invitationFromSummary(input: unknown): InvitationSummary {
   const value = record(input, 'Admin Invitation summary')
   const state = value.state
-  if (state !== 'pending' && state !== 'accepted' && state !== 'revoked' && state !== 'expired') {
+  if (
+    state !== 'pending' &&
+    state !== 'accepted' &&
+    state !== 'registering' &&
+    state !== 'registered' &&
+    state !== 'completed' &&
+    state !== 'cancelled' &&
+    state !== 'expired' &&
+    state !== 'failed'
+  ) {
     throw new TypeError('Admin Invitation state is invalid.')
   }
   const access = value.access

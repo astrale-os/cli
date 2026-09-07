@@ -55,7 +55,15 @@ export interface RetrievedRootIdentity {
   readonly transfer: RootIdentityTransfer
 }
 
-export type InvitationState = 'pending' | 'accepted' | 'revoked' | 'expired'
+export type InvitationState =
+  | 'pending'
+  | 'accepted'
+  | 'registering'
+  | 'registered'
+  | 'completed'
+  | 'cancelled'
+  | 'expired'
+  | 'failed'
 
 export interface InvitationInfo {
   readonly id: string
