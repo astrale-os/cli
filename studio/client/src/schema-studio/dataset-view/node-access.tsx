@@ -25,7 +25,7 @@ import {
 
 import type { PolicyObject } from './policy-evaluate'
 
-import { inheritedGroupsOfClass, resolveClass } from '../inheritance'
+import { resolveClass } from '../inheritance'
 import { classRefOf } from './policy-graph'
 import { checkObjectWords } from './policy-words'
 
@@ -76,24 +76,13 @@ export function NodeAccess({
     [bundle, ir, node.className],
   )
   const read = cls?.policies?.read
-  const callables = useMemo(() => {
-    if (!cls) return []
-    const own = Object.entries(cls.methods).map(([name, method]) => ({
-      name,
-      method,
-      owner: cls.name,
-    }))
-    // inherited groups only resolve for local classes; an imported class shows its own
-    const inherited =
-      cls.origin === ir?.domain
-        ? inheritedGroupsOfClass(bundle, cls.name).flatMap((group) =>
-            group.methods
-              .filter((m) => !m.overridden)
-              .map((m) => ({ name: m.name, method: m.method, owner: group.owner })),
-          )
-        : []
-    return [...own, ...inherited]
-  }, [bundle, cls, ir?.domain])
+  const callables = useMemo(
+    () =>
+      Object.entries(cls?.methods ?? {})
+        .filter(([, method]) => !method.abstract && !method.static)
+        .map(([name, method]) => ({ name, method, owner: cls!.name })),
+    [cls],
+  )
 
   if (!ir || !cls) return null
 

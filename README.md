@@ -151,9 +151,9 @@ to stop only that local session; neither command removes a deployment.
 /domain                        Domain node
 /domain/class.Name             Class node
 /:domain:class.Name:method     Static method (semantic domain path)
-<nodePath>::method             Instance method dispatch
+<nodePath>::<domain>:class.<Class>.method.<name>             Instance method dispatch
 @nodeId                        Reference a node by UID
-@nodeId::method                Instance method on a node by UID
+@nodeId::<domain>:class.<Class>.method.<name>                Instance method on a node by UID
 ```
 
 The full grammar and examples are in `astrale --help`.

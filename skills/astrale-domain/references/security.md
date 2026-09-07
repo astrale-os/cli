@@ -25,8 +25,8 @@ Dependency Function authority is installation-owned. The calling Domain's Applic
 declares each exact protected foreign or Kernel Function in `requirements({ functions: [...] })`;
 Kernel installation then owns materializing authority for the installed Domain principal. Do not
 grant the invoking human direct `can_*` authority as a substitute, and do not confuse a Schema
-dependency with capability. An Action that uses `client.auth.register(...)`, for example, requires
-the exact resolved Kernel `provision` callable.
+dependency with capability. An Action that uses `kernel.auth.register(...)`, for example, requires
+the exact resolved `K.functions.register` callable.
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'

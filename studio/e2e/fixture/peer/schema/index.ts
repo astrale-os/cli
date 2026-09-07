@@ -1,13 +1,15 @@
-import { defineSchema, edgeClass, nodeClass, valueSchema } from '@astrale-os/sdk/schema'
+import { classIcon, defineSchema, edgeClass, nodeClass, valueSchema } from '@astrale-os/sdk/schema'
 
 const string = valueSchema<string>()({ type: 'string' })
 
 const Company = nodeClass({
+  icon: classIcon.neutral,
   description: 'The operating company used to verify homonymous multi-domain targeting.',
   properties: { legalName: string },
 })
 
 const Region = nodeClass({
+  icon: classIcon.neutral,
   description: 'An operating region managed by the Ops domain.',
   properties: { name: string },
 })

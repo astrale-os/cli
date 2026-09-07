@@ -281,10 +281,7 @@ function projectMethod(name: string, value: unknown): IrMethod {
   return {
     ...projectFunction(name, declaration),
     static: declaration.static === true,
-    inheritance:
-      declaration.inheritance === 'abstract' || declaration.inheritance === 'sealed'
-        ? declaration.inheritance
-        : 'default',
+    abstract: declaration.abstract === true,
   }
 }
 

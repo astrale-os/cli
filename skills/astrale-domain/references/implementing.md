@@ -31,11 +31,11 @@ export const renameVisit = defineAction<typeof schema, typeof integrations>()(
 
 - A receiver-bound Action receives `self` as a canonical `NodeId`.
 - A top-level or static callable has no `self`.
-- Protected callables receive an authenticated caller and non-null bound Client session.
-- Anonymous callables may receive an anonymous caller and null Client.
-- Default `query` and `mutate` use the admitted union authority. Select `graph.self` for Domain-owned facts,
-  `graph.caller` for caller-only authority, and `graph.union` only deliberately. They are absent when
-  an anonymous invocation has no bound Client.
+- Protected callables receive authenticated `caller` evidence and bound `kernel` sessions.
+- An unauthenticated anonymous invocation has null `kernel`, `graph`, and `dependencies`.
+- Default `query`, `mutate`, and `kernel` use the installed Domain authority (`self`). Select
+  `graph.caller` or `kernel.caller` for the incoming caller Grant, and `union` deliberately when the
+  operation needs both. `dependencies.alias.invoke` forwards the incoming caller Grant.
 - `execution` owns cancellation, deadline, background work, and request-body access.
 - `domain` is the exact resolved Domain loaded from the deployed Build; it is not the authored
   Schema and must not be reconstructed at module scope.
@@ -124,9 +124,15 @@ export const application = defineApplication({
 })
 ```
 
-Use the public resolved callable—never a forged key—and keep the Provider caller-bound with
-`execution.invoke(reference(domain, domain.functions.send), input)`. Verify the exact callable in
-requested and materialized capabilities; dependency closure, typing, and build do not prove authority.
+Use the public resolved callable. In a handler, call
+`dependencies.messaging.invoke((messaging) => messaging.functions.send, input)`; an instance Method
+also takes its NodeId before input. Providers use their invocation-scoped typed `invoke` capability.
+For explicit authority selection, use `kernel.caller.invoke(reference(domain, declaration), input)`.
+References automatically retain the full callable key and declaring revision; no `expect` or
+`schemaExpectation` option is needed. An instance reference requires the exact declaring Class,
+not a descendant. Raw instance paths use the entire key, such as
+`@id::files.example:class.Resource.method.rename`; raw revision is optional.
+Verify requested and materialized capabilities separately from dependency closure and typing.
 
 ## Kernel callable requirements
 
@@ -156,7 +162,7 @@ export const application = defineApplication({
 })
 ```
 
-Add other exact Kernel callables, such as `K.functions.register` for `client.auth.register(...)`,
+Add other exact Kernel callables, such as `K.functions.register` for `kernel.auth.register(...)`,
 only when used. Keep requirements in inert Application composition: do not create a `requirements/`
 layer, forge keys, or grant the invoking human `can_use`. Inspect requested and materialized
 capabilities after installation; typecheck, lint, build, and outer callable admission do not prove a
@@ -217,9 +223,9 @@ export const closeIssue = defineMutation<typeof schema>()((domain) => ({
 Inside an Action or Workflow, use the context's `query(definition, input)` and
 `mutate(definition, input)` executors. `executeQuery(client, ...)` and `executeMutation(client, ...)`
 remain the lower-level APIs for tests, scripts, and consumers that already own a Client.
-Direct `client` access in a handler is reserved for genuine admitted Kernel capabilities that are
-not graph Query or Mutation operations; declare each protected callable requirement and do not use
-the Client as alternate graph plumbing.
+Use the handler's `kernel` session for admitted Kernel capabilities outside graph Query or Mutation
+operations; declare each protected callable requirement. Keep reusable graph operations on their
+Query and Mutation executors.
 
 A read followed by a write is not automatically atomic. If safety depends on current graph state,
 encode the predicate as a Mutation precondition. Several commits or any external call make the

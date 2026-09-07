@@ -44,7 +44,7 @@ describe('Class inheritance', () => {
             input: { type: 'object', properties: {} },
             output: { mode: 'value', schema: { type: 'string' } },
             static: true,
-            inheritance: 'default',
+            abstract: false,
           },
         },
       }),
@@ -54,13 +54,14 @@ describe('Class inheritance', () => {
     expect(classTier(fixture, external)).toBe('external')
     expect(classTier(fixture, kernel)).toBe('kernel')
     const groups = inheritedGroupsOfClass(fixture, 'Document')
+    expect(groups.flatMap((group) => group.methods)).toEqual([])
     expect(groups.map((group) => [group.owner, group.tier])).toEqual([
       ['Named', 'external'],
       ['Identity', 'kernel'],
     ])
   })
 
-  test('deduplicates transitive members and marks local overrides', () => {
+  test('retains abstract obligations and excludes concrete parent Methods', () => {
     const base = classRef('local.example.dev', 'Base')
     const fixture = bundle({
       Base: nodeClass('Base', {
@@ -71,7 +72,7 @@ describe('Class inheritance', () => {
             input: { type: 'object', properties: {} },
             output: { mode: 'value', schema: {} },
             static: false,
-            inheritance: 'default',
+            abstract: true,
           },
         },
       }),
@@ -83,7 +84,7 @@ describe('Class inheritance', () => {
             input: { type: 'object', properties: {} },
             output: { mode: 'value', schema: {} },
             static: false,
-            inheritance: 'default',
+            abstract: false,
           },
         },
       }),
@@ -91,8 +92,33 @@ describe('Class inheritance', () => {
     expect(inheritedGroupsOfClass(fixture, 'Document')[0]).toMatchObject({
       owner: 'Base',
       props: [['title', { type: 'string' }, true]],
-      methods: [{ name: 'rename', overridden: true }],
+      methods: [{ name: 'rename', declaredLocally: true }],
     })
+  })
+
+  test('preserves distinct contract origins through concrete intermediates and diamonds', () => {
+    const abstractMethod = {
+      name: 'run',
+      input: {},
+      output: { mode: 'value' as const, schema: {} },
+      static: false,
+      abstract: true,
+    }
+    const ref = (name: string) => classRef('local.example.dev', name)
+    const fixture = bundle({
+      Left: nodeClass('Left', { methods: { run: abstractMethod } }),
+      Right: nodeClass('Right', { methods: { run: abstractMethod } }),
+      Middle: nodeClass('Middle', {
+        extendsRefs: [ref('Left'), ref('Right')],
+        methods: { run: { ...abstractMethod, abstract: false } },
+      }),
+      Child: nodeClass('Child', { extendsRefs: [ref('Middle'), ref('Left')] }),
+    })
+    expect(
+      inheritedGroupsOfClass(fixture, 'Child')
+        .flatMap((group) => group.methods.map(({ name }) => `${group.owner}.${name}`))
+        .sort(),
+    ).toEqual(['Left.run', 'Right.run'])
   })
 
   test('reads Kernel roles off the whole chain, not just the declared parents', () => {
