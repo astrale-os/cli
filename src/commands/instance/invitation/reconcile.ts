@@ -27,7 +27,7 @@ Recovery:
         () => reconcileOwnedInvitation(opts, id),
         {
           success: (result) =>
-            result.state === 'accepted'
+            result.state === 'completed'
               ? `Instance access ready for ${result.email}`
               : `Invitation is ${result.state}`,
         },
