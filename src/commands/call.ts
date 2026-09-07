@@ -66,6 +66,7 @@ export async function callCommand(
   >({
     opts,
     label: path,
+    credential: { principal: 'callable', path: Path.parse(path) },
     fn: async (ctx) => {
       const expanded = await expandSelfInCall(path, expansionParams, ctx)
       const request = createPathCall(
@@ -218,7 +219,9 @@ Behavior:
   (ignored on a TTY). --dry-run admits the Path and prints the call
   input offline without resolving an instance; @self still requires
   authenticated expansion. Remote-bound functions auto-mint a
-  worker-scoped credential; --creds overrides it.
+  worker-scoped credential from the callable Domain's installed Publication,
+  preserving your authority. Kernel calls retain your principal; --creds
+  overrides automatic exchange.
 
   Streaming binary bodies are consumed while the Client session remains live,
   then presented through the same --output, --raw, and --json paths as buffered

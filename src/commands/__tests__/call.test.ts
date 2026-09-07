@@ -86,6 +86,7 @@ describe('call command dry run', () => {
       {
         async runKernelCommand(input) {
           connections += 1
+          expect(input.credential).toMatchObject({ principal: 'callable' })
           const result = await input.fn(context)
           await input.format?.(result, input.opts, true)
         },
