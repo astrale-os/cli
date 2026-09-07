@@ -3,6 +3,7 @@ import type { ViewSessionRecord } from './session'
 
 import { withClientSession } from '../../connection'
 import { prepareQuery } from '../../graph'
+import { readIdentities } from '../../identity/index'
 import { getActive, resetInstancesMemo } from '../instance'
 import { closeSession, listSessions } from './session'
 
@@ -23,12 +24,18 @@ export interface OpenStudioViewSessionInput {
   targetRef?: string
   instance: string
   timeoutMs: number
+  allowIdentity?: readonly string[]
   serveRuntime: { file: string; args: string[] }
 }
 
 interface StudioActiveInstanceDependencies {
   getActive: typeof getActive
   resetInstancesMemo: typeof resetInstancesMemo
+}
+
+/** Snapshot local identity names without exposing keys or upstream credentials to Studio. */
+export async function studioViewIdentityNames(): Promise<readonly string[]> {
+  return Object.keys((await readIdentities()).identities).sort()
 }
 
 /**
@@ -103,6 +110,7 @@ export async function openStudioViewSession(
     instance: input.instance,
     timeout: String(input.timeoutMs),
     target: input.targetRef,
+    allowIdentity: input.allowIdentity ? [...input.allowIdentity] : undefined,
     open: false,
     json: true,
     ci: true,

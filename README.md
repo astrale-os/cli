@@ -145,6 +145,17 @@ If resolution fails, the previous placement remains available. Use
 `astrale view --sessions` to find session IDs and `astrale view --close <id>`
 to stop only that local session; neither command removes a deployment.
 
+To compare callers, opt into a session-local identity picker:
+
+```bash
+astrale view /:app.example:view.application -i staging --as alice --allow-identity bob charlie
+```
+
+The viewer offers the initial identity and the explicitly allowed local names. **Switch & reload**
+re-resolves the same View/target and mints a fresh credential before reloading the entire page
+(unsaved changes are lost). Failure leaves the previous session usable. This does not change CLI
+defaults, register identities, or grant permissions. It cannot be combined with `--creds`.
+
 ## Path Syntax
 
 ```
