@@ -143,6 +143,7 @@ function fixture(identities?: boolean): ViewServeConfig {
 type IdentityHooks = {
   identities?: false
   mint?: (identity: string) => Promise<string>
+  exchange?: (identity: string) => Promise<string>
   resolve?: (identity: string) => Promise<void>
   persist?: () => Promise<void>
 }
@@ -167,7 +168,11 @@ async function setupIdentityView(hooks: IdentityHooks) {
     const identity = options.as!
     callers.push(identity)
     return action({
-      target: { url: config.proxy.kernelUrl, kernelIssuer: config.proxy.issuer },
+      target: {
+        url: config.proxy.kernelUrl,
+        kernelIssuer: config.proxy.issuer,
+        ...(hooks.exchange ? { domainIssuer: 'https://managed.test' } : {}),
+      },
       session: {
         viewsFor: async () => {
           await hooks.resolve?.(identity)
@@ -179,6 +184,10 @@ async function setupIdentityView(hooks: IdentityHooks) {
   }
   const server = startViewServer(config, {
     connect,
+    exchange: async (options) => ({
+      token: await hooks.exchange!(options.as!),
+      expiresAt: Date.now() + 240_000,
+    }),
     persist: async (record) => {
       await hooks.persist?.()
       records.push(record.identity!)
@@ -210,6 +219,34 @@ async function setupIdentityView(hooks: IdentityHooks) {
 }
 
 describe('View identity switching', () => {
+  test('exchanges the selected managed identity before committing the switch', () => {
+    const exchanged: string[] = []
+    return withIdentityView(
+      {
+        exchange: async (identity) => {
+          exchanged.push(identity)
+          return `credential-${identity}`
+        },
+        mint: async () => {
+          throw new Error('Managed identities must use exchange')
+        },
+      },
+      async ({ request, records }) => {
+        expect(await (await request('token')).json()).toMatchObject({
+          token: 'credential-alice',
+          kind: 'exchanged',
+        })
+        expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
+        expect(await (await request('token', 1)).json()).toMatchObject({
+          token: 'credential-bob',
+          kind: 'exchanged',
+        })
+        expect(exchanged).toEqual(['alice', 'bob'])
+        expect(records).toEqual(['bob'])
+      },
+    )
+  })
+
   test('re-resolves and mints as the selected identity while invalidating the old page', () =>
     withIdentityView({}, async ({ request, callers, records }) => {
       expect(await (await request('token')).json()).toMatchObject({ token: 'credential-alice' })
@@ -240,7 +277,7 @@ describe('View identity switching', () => {
     })
   })
 
-  test.each(['resolve', 'mint', 'persist'] as const)(
+  test.each(['resolve', 'mint', 'exchange', 'persist'] as const)(
     'retains the working identity if %s fails',
     (phase) =>
       withIdentityView(
@@ -295,27 +332,32 @@ describe('View identity switching', () => {
       }
     }))
 
-  test('does not cache a delayed credential from the previous identity', () => {
-    const started = Promise.withResolvers<void>()
-    const delayed = Promise.withResolvers<string>()
-    return withIdentityView(
-      {
-        mint: (identity) => {
-          if (identity !== 'alice') return Promise.resolve('credential-bob')
-          started.resolve()
-          return delayed.promise
+  test.each(['mint', 'exchange'] as const)(
+    'does not cache a delayed %s credential from the previous identity',
+    (phase) => {
+      const started = Promise.withResolvers<void>()
+      const delayed = Promise.withResolvers<string>()
+      return withIdentityView(
+        {
+          [phase]: (identity: string) => {
+            if (identity !== 'alice') return Promise.resolve('credential-bob')
+            started.resolve()
+            return delayed.promise
+          },
         },
-      },
-      async ({ request }) => {
-        const old = request('token')
-        await started.promise
-        expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
-        delayed.resolve('credential-alice')
-        expect((await old).status).toBe(502)
-        expect(await (await request('token', 1)).json()).toMatchObject({ token: 'credential-bob' })
-      },
-    ).finally(() => delayed.resolve('credential-alice'))
-  })
+        async ({ request }) => {
+          const old = request('token')
+          await started.promise
+          expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
+          delayed.resolve('credential-alice')
+          expect((await old).status).toBe(502)
+          expect(await (await request('token', 1)).json()).toMatchObject({
+            token: 'credential-bob',
+          })
+        },
+      ).finally(() => delayed.resolve('credential-alice'))
+    },
+  )
 
   test('blocks other session updates while switching identity', () => {
     const started = Promise.withResolvers<void>()

@@ -271,12 +271,15 @@ describe('help contract — IdP/auth surface is registered', () => {
     identityRegister?.outputHelp()
 
     expect(identityRegister?.description()).toBe(
-      'Register an existing local key identity through one atomic provision',
+      'Register a local key identity on an existing Identity Node',
     )
     expect(help).toContain('Existing local identity name')
     expect(help).toContain('astrale identity create alice')
     expect(help).toContain('Register never creates or replaces the')
     expect(help).not.toContain('Atomically provision a local key identity')
+    expect(help).toContain('--node <nodePath>')
+    expect(help).not.toContain('--class')
+    expect(help).not.toContain('--props')
   })
 })
 

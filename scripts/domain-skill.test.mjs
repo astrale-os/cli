@@ -73,7 +73,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(implementing, /still return Kernel `2004` when these\s+requirements are absent/)
   assert.match(
     implementing,
-    /`K\.functions\.provision` for `client\.auth\.provision\(\.\.\.\)`,\s+only when used/,
+    /`K\.functions\.register` for `client\.auth\.register\(\.\.\.\)`,\s+only when used/,
   )
   assert.match(implementing, /materialize `can_use` authority\s+for the Domain principal/)
   assert.match(
@@ -93,7 +93,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(development, /`build` returns before declared secrets are loaded/)
   assert.match(development, /declare `zod` directly in the\s+Domain manifest/)
   assert.match(development, /Do not create a\s+top-level `requirements\/` source tree/)
-  assert.match(debugging, /Treat authentication and provision journal inputs as secret/)
+  assert.match(debugging, /Treat authentication and registration journal inputs as secret/)
   assert.match(entrypoint, /invoke every public Action and Workflow definition/)
   assert.match(entrypoint, /representative success and applicable refusal inputs/)
   assert.match(simulating, /Binding metadata, lower-level AST checks/)
