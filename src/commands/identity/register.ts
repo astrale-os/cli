@@ -1,9 +1,9 @@
-import type { IssuerId, JsonWebKey, ProvisionRequest } from '@astrale-os/sdk/auth'
+import type { IssuerId, JsonWebKey, RegisterRequest } from '@astrale-os/sdk/auth'
 import type { ClassKey as ClassKeyValue } from '@astrale-os/sdk/graph/class'
 import type { JWK } from 'jose'
 
-import { provision, jwk } from '@astrale-os/sdk/auth'
-import { LocalBinding } from '@astrale-os/sdk/graph'
+import { register, jwk } from '@astrale-os/sdk/auth'
+import { LocalAlias } from '@astrale-os/sdk/graph'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { MutationAST } from '@astrale-os/sdk/mutation'
 import { importJWK, SignJWT } from 'jose'
@@ -16,7 +16,7 @@ import type { CommandDefinition } from '../../program/index'
 import { registrationKeyForTarget, runKernelCommand } from '../../connection'
 import { AstraleError, IdentityKeypairIncompleteError } from '../../errors'
 import { classKey } from '../../graph'
-import { getIdentity, setRegistration, submitIdentityProvision } from '../../identity/index'
+import { getIdentity, setRegistration, submitIdentityRegistration } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
 import { derivedIdempotencyKey } from '../../lib/idempotency'
 import { fatal, log } from '../../lib/log'
@@ -34,7 +34,7 @@ async function readJwk(path: string): Promise<JWK> {
 
 export default {
   name: 'register',
-  description: 'Register an existing local key identity through one atomic provision',
+  description: 'Register an existing local key identity through one atomic registration',
   afterHelpText: `
 Prerequisite:
   Create the local key identity first. Register never creates or replaces the
@@ -44,25 +44,25 @@ Prerequisite:
 
 Behavior:
   Uses the existing local keypair to create one Node through Mutation V3 and
-  designates it as a self-proven Identity in the same atomic Auth.provision
+  designates it as a self-proven Identity in the same atomic Auth.register
   request. --class is required; --props must use fully-qualified Property keys
   owned by that Class.
 
   By default the authenticated caller submits the request directly to Kernel
-  Auth.provision. Use --via for an application-owned identity Class: the CLI
+  Auth.register. Use --via for an application-owned identity Class: the CLI
   sends the exact self-proven request through that Domain callable, then admits
   its result and stores the same target-bound registration. The callable owns
   authorization; the CLI never receives installed Domain authority.
 
   The Kernel assigns each Node ID; callers do not choose a storage path. The
-  CLI binds the key proof to the exact provision fingerprint and target Kernel
+  CLI binds the key proof to the exact register fingerprint and target Kernel
   audience, then caches the returned (issuer, subject) for subsequent calls.
 
 Example:
   $ astrale identity register alice --class /:accounts.example:class.User \
       --props '{"accounts.example:class.User.property.name":"Alice"}' -i staging
   $ astrale identity register responder --class /:ops.example:class.Operator \
-      --via /:ops.example:function.provisionOperator -i staging
+      --via /:ops.example:function.registerOperator -i staging
 `,
   arguments: [{ name: 'name', description: 'Existing local identity name', required: true }],
   options: [
@@ -120,7 +120,7 @@ Example:
             return existing
           }
 
-          const prepared = await prepareIdentityProvision({
+          const prepared = await prepareIdentityRegistration({
             name,
             classPath,
             properties,
@@ -128,7 +128,7 @@ Example:
             publicKey,
             kernelIssuer: target.kernelIssuer,
           })
-          const registered = await submitIdentityProvision({
+          const registered = await submitIdentityRegistration({
             request: prepared.request,
             binding: prepared.binding,
             expectedAuthentication: prepared.authentication,
@@ -163,8 +163,8 @@ export function formatIdentityRegistration(
   log.dim(`  sub=${result.sub}`)
 }
 
-/** Build and self-prove one exact canonical provision request for the target Kernel. */
-export async function prepareIdentityProvision(input: {
+/** Build and self-prove one exact canonical register request for the target Kernel. */
+export async function prepareIdentityRegistration(input: {
   readonly name: string
   readonly classPath: ClassKeyValue
   readonly properties: ReturnType<typeof normalizeProperties>
@@ -172,17 +172,17 @@ export async function prepareIdentityProvision(input: {
   readonly publicKey: JsonWebKey
   readonly kernelIssuer: IssuerId
 }): Promise<{
-  readonly binding: ReturnType<typeof LocalBinding>
-  readonly request: ProvisionRequest
+  readonly binding: ReturnType<typeof LocalAlias>
+  readonly request: RegisterRequest
   readonly authentication: { readonly iss: IssuerId; readonly sub: 'self' }
 }> {
-  const binding = LocalBinding('identity')
+  const binding = LocalAlias('identity')
   const mutation = MutationAST.build((builder) => {
     builder.createNode({ as: binding, class: input.classPath, props: input.properties })
     return undefined
   })
   const registrationKey = await derivedIdempotencyKey('identity-register', input.name)
-  const unsigned = provision.accept({
+  const unsigned = register.accept({
     idempotencyKey: registrationKey,
     mutation,
     identities: [
@@ -194,13 +194,13 @@ export async function prepareIdentityProvision(input: {
       },
     ],
   })
-  const fingerprint = await provision.fingerprint(unsigned)
-  const issuer = await provision.selfIssuer(input.kernelIssuer, input.publicKey)
-  const proof = await mintProvisionProof(input.privateKey, issuer, input.kernelIssuer, fingerprint)
+  const fingerprint = await register.fingerprint(unsigned)
+  const issuer = await register.selfIssuer(input.kernelIssuer, input.publicKey)
+  const proof = await mintRegisterProof(input.privateKey, issuer, input.kernelIssuer, fingerprint)
   return {
     binding,
     authentication: Object.freeze({ iss: issuer, sub: 'self' }),
-    request: provision.accept({
+    request: register.accept({
       idempotencyKey: registrationKey,
       mutation,
       identities: [
@@ -213,14 +213,14 @@ export async function prepareIdentityProvision(input: {
   }
 }
 
-async function mintProvisionProof(
+async function mintRegisterProof(
   privateKey: JWK,
   issuer: string,
   audience: string,
   fingerprint: string,
 ): Promise<string> {
   const key = await importJWK(privateKey, 'ES256')
-  return new SignJWT({ provision: fingerprint })
+  return new SignJWT({ register: fingerprint })
     .setProtectedHeader({ alg: 'ES256', ...(privateKey.kid ? { kid: privateKey.kid } : {}) })
     .setIssuer(issuer)
     .setSubject('self')

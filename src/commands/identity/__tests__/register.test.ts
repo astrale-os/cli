@@ -1,4 +1,4 @@
-import { issuer, jwk, provision } from '@astrale-os/sdk/auth'
+import { issuer, jwk, register } from '@astrale-os/sdk/auth'
 import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
 import { afterEach, expect, mock, test } from 'bun:test'
 import { exportJWK, generateKeyPair, jwtVerify } from 'jose'
@@ -9,7 +9,7 @@ import { join } from 'node:path'
 
 import { classKey } from '../../../graph'
 import { keypairPaths } from '../../../keys'
-import { formatIdentityRegistration, prepareIdentityProvision } from '../register'
+import { formatIdentityRegistration, prepareIdentityRegistration } from '../register'
 
 const cliRoot = join(import.meta.dir, '../../../..')
 const temporaryRoots: string[] = []
@@ -204,7 +204,7 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     'accounts.example:class.User.property.name': 'Alice',
   })
 
-  const prepared = await prepareIdentityProvision({
+  const prepared = await prepareIdentityRegistration({
     name: 'alice',
     classPath,
     properties,
@@ -213,7 +213,7 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     kernelIssuer,
   })
   const longName = 'identity'.repeat(32)
-  const longFirst = await prepareIdentityProvision({
+  const longFirst = await prepareIdentityRegistration({
     name: longName,
     classPath,
     properties,
@@ -221,7 +221,7 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     publicKey: publicJwk,
     kernelIssuer,
   })
-  const longReplay = await prepareIdentityProvision({
+  const longReplay = await prepareIdentityRegistration({
     name: longName,
     classPath,
     properties,
@@ -259,13 +259,13 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
   expect(typeof credentials?.proof).toBe('string')
   if (typeof credentials?.proof !== 'string') throw new TypeError('Expected compact JWT proof')
 
-  const expectedFingerprint = await provision.fingerprint(prepared.request)
-  const expectedIssuer = await provision.selfIssuer(kernelIssuer, publicJwk)
+  const expectedFingerprint = await register.fingerprint(prepared.request)
+  const expectedIssuer = await register.selfIssuer(kernelIssuer, publicJwk)
   const verified = await jwtVerify(credentials.proof, publicKey, {
     algorithms: ['ES256'],
     issuer: expectedIssuer,
     subject: 'self',
     audience: kernelIssuer,
   })
-  expect(verified.payload.provision).toBe(expectedFingerprint)
+  expect(verified.payload.register).toBe(expectedFingerprint)
 })

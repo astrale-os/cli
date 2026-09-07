@@ -18,15 +18,15 @@ recreate any of these gates inside an Action or Workflow.
 
 Humans authenticate as distinct identities and gain application access through Schema Policy over
 business graph facts. When Shell owns the human-facing User, observe that exact User and write only
-the application Domain's membership or business facts. Do not provision a shadow User or grant a
+the application Domain's membership or business facts. Do not register a shadow User or grant a
 human dynamic `can_*` authority to make acceptance pass.
 
 Dependency Function authority is installation-owned. The calling Domain's Application explicitly
 declares each exact protected foreign or Kernel Function in `requirements({ functions: [...] })`;
 Kernel installation then owns materializing authority for the installed Domain principal. Do not
 grant the invoking human direct `can_*` authority as a substitute, and do not confuse a Schema
-dependency with capability. An Action that uses `client.auth.provision(...)`, for example, requires
-the exact resolved Kernel `provision` callable.
+dependency with capability. An Action that uses `client.auth.register(...)`, for example, requires
+the exact resolved Kernel `register` callable.
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'

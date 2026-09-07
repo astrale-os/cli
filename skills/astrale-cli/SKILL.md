@@ -198,7 +198,7 @@ Reinstall only when installation or Schema intent changes.
 
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`
 creates a local key identity. Registering a key identity on a Kernel is an
-atomic provision operation and requires the exact Node Class. Registration
+atomic registration operation and requires the exact Node Class. Registration
 never creates or replaces the local identity or its keypair:
 
 ```bash
@@ -211,7 +211,7 @@ astrale identity register alice \
 
 The Kernel assigns Node IDs. They are returned by reads and creation results
 and can be reused through the `@node-id` Path form; do not derive application
-meaning from their contents. The proof is bound to the exact provision
+meaning from their contents. The proof is bound to the exact registration
 fingerprint and target Kernel audience.
 For an application-owned Identity Class, direct Kernel submission is correctly
 denied unless the caller owns that Class. Name the Domain's authorizing
@@ -222,7 +222,7 @@ through it and stores only the admitted target-bound result:
 astrale identity register operator \
   --class /:operations.example:class.Operator \
   --props '{"operations.example:class.Operator.property.name":"Operator"}' \
-  --via /:operations.example:function.provisionOperator \
+  --via /:operations.example:function.registerOperator \
   -i staging
 ```
 

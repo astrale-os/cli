@@ -1,5 +1,5 @@
-import type { Authentication, ProvisionRequest, ProvisionResult } from '@astrale-os/sdk/auth'
-import type { LocalBinding } from '@astrale-os/sdk/mutation'
+import type { Authentication, RegisterRequest, RegisterResult } from '@astrale-os/sdk/auth'
+import type { LocalAlias } from '@astrale-os/sdk/mutation'
 
 interface RegistrationAuthority {
   prepareSelfProven(input: {
@@ -8,14 +8,14 @@ interface RegistrationAuthority {
     readonly properties: Readonly<Record<string, unknown>>
     readonly kernelIssuer: string
   }): Promise<{
-    readonly binding: LocalBinding
-    readonly request: ProvisionRequest
+    readonly binding: LocalAlias
+    readonly request: RegisterRequest
     readonly authentication: Authentication
   }>
   call(input: {
     readonly target: string
-    readonly request: ProvisionRequest
-  }): Promise<ProvisionResult>
+    readonly request: RegisterRequest
+  }): Promise<RegisterResult>
   persist(input: {
     readonly identity: string
     readonly targetKey: string
@@ -24,7 +24,7 @@ interface RegistrationAuthority {
   }): Promise<void>
 }
 
-/** Application Identity Classes are provisioned only through their explicit authority owner. */
+/** Application Identity Classes are registered only through their explicit authority owner. */
 export async function registerThroughDomain(
   authority: RegistrationAuthority,
   input: {
@@ -41,17 +41,17 @@ export async function registerThroughDomain(
   const nodeId = result.createdNodes[prepared.binding]
   const matches = result.identities.filter((candidate) => candidate.id === nodeId)
   if (nodeId === undefined || matches.length !== 1) {
-    throw new Error('Provision result omitted or substituted the prepared binding.')
+    throw new Error('Register result omitted or substituted the prepared binding.')
   }
   const identity = matches[0]
   if (identity.iss === undefined || identity.sub === undefined) {
-    throw new Error('Provision result omitted the prepared Authentication.')
+    throw new Error('Register result omitted the prepared Authentication.')
   }
   if (
     identity.iss !== prepared.authentication.iss ||
     identity.sub !== prepared.authentication.sub
   ) {
-    throw new Error('Provision result substituted the prepared Authentication.')
+    throw new Error('Register result substituted the prepared Authentication.')
   }
   await authority.persist({
     identity: input.identity,

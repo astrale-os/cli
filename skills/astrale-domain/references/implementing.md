@@ -156,7 +156,7 @@ export const application = defineApplication({
 })
 ```
 
-Add other exact Kernel callables, such as `K.functions.provision` for `client.auth.provision(...)`,
+Add other exact Kernel callables, such as `K.functions.register` for `client.auth.register(...)`,
 only when used. Keep requirements in inert Application composition: do not create a `requirements/`
 layer, forge keys, or grant the invoking human `can_use`. Inspect requested and materialized
 capabilities after installation; typecheck, lint, build, and outer callable admission do not prove a

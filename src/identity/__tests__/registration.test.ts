@@ -1,27 +1,27 @@
-import type { ProvisionRequest } from '@astrale-os/sdk/auth'
+import type { RegisterRequest } from '@astrale-os/sdk/auth'
 
 import { issuer } from '@astrale-os/sdk/auth'
-import { LocalBinding } from '@astrale-os/sdk/graph'
+import { LocalAlias } from '@astrale-os/sdk/graph'
 import { expect, test } from 'bun:test'
 
-import { acceptProvisionedIdentity, submitIdentityProvision } from '../registration'
+import { acceptRegisteredIdentity, submitIdentityRegistration } from '../registration'
 
 /** @evidence TEST-CLI-IDENTITY-REGISTER-DOMAIN-MEDIATED */
 test('submits the exact self-proven request through an explicit Domain callable', async () => {
-  const binding = LocalBinding('identity')
+  const binding = LocalAlias('identity')
   const request = selfProvenRequest(binding)
   const expectedAuthentication = selfAuthentication()
   const calls: unknown[] = []
   let directCalls = 0
-  const result = await submitIdentityProvision({
+  const result = await submitIdentityRegistration({
     binding,
     request,
     expectedAuthentication,
-    via: '/:ops.example:function.provisionOperator',
+    via: '/:ops.example:function.registerOperator',
     direct: {
-      async provision() {
+      async register() {
         directCalls += 1
-        throw new Error('direct provision must not run')
+        throw new Error('direct register must not run')
       },
     },
     callable: {
@@ -41,7 +41,7 @@ test('submits the exact self-proven request through an explicit Domain callable'
   expect(directCalls).toBe(0)
   expect(calls).toHaveLength(1)
   expect(JSON.parse(JSON.stringify(calls[0]))).toEqual({
-    target: '/:ops.example:function.provisionOperator',
+    target: '/:ops.example:function.registerOperator',
     input: JSON.parse(JSON.stringify(request)),
   })
   expect(result).toEqual({
@@ -52,18 +52,18 @@ test('submits the exact self-proven request through an explicit Domain callable'
 })
 
 test('submits directly through caller authority without invoking a Domain callable', async () => {
-  const binding = LocalBinding('identity')
+  const binding = LocalAlias('identity')
   const request = selfProvenRequest(binding)
-  const directRequests: ProvisionRequest[] = []
+  const directRequests: RegisterRequest[] = []
   let callableCalls = 0
-  const result = await submitIdentityProvision({
+  const result = await submitIdentityRegistration({
     binding,
     request,
     expectedAuthentication: selfAuthentication(),
     direct: {
-      async provision(candidate) {
+      async register(candidate) {
         directRequests.push(candidate)
-        return selfProvisionResult()
+        return selfRegisterResult()
       },
     },
     callable: {
@@ -84,14 +84,14 @@ test('submits directly through caller authority without invoking a Domain callab
 })
 
 test('rejects a callable result that substitutes or duplicates the prepared Identity', () => {
-  const binding = LocalBinding('identity')
+  const binding = LocalAlias('identity')
   const expectedAuthentication = selfAuthentication()
   const substituted = {
     createdNodes: { identity: 'operator-node' },
     identities: [{ id: 'different-node', iss: 'https://identity.example', sub: 'self' }],
   }
-  expect(() => acceptProvisionedIdentity(substituted, binding, expectedAuthentication)).toThrow(
-    'Provision result must contain exactly one Identity for the prepared binding.',
+  expect(() => acceptRegisteredIdentity(substituted, binding, expectedAuthentication)).toThrow(
+    'Register result must contain exactly one Identity for the prepared binding.',
   )
 
   const duplicate = {
@@ -101,8 +101,8 @@ test('rejects a callable result that substitutes or duplicates the prepared Iden
       { id: 'operator-node', iss: 'https://identity.example', sub: 'self' },
     ],
   }
-  expect(() => acceptProvisionedIdentity(duplicate, binding, expectedAuthentication)).toThrow(
-    'Provision result must contain exactly one Identity for the prepared binding.',
+  expect(() => acceptRegisteredIdentity(duplicate, binding, expectedAuthentication)).toThrow(
+    'Register result must contain exactly one Identity for the prepared binding.',
   )
 
   const substitutedAuthentication = {
@@ -110,30 +110,30 @@ test('rejects a callable result that substitutes or duplicates the prepared Iden
     identities: [{ id: 'operator-node', iss: 'https://attacker.example', sub: 'attacker' }],
   }
   expect(() =>
-    acceptProvisionedIdentity(substitutedAuthentication, binding, expectedAuthentication),
-  ).toThrow('Provision result substituted the prepared Authentication.')
+    acceptRegisteredIdentity(substitutedAuthentication, binding, expectedAuthentication),
+  ).toThrow('Register result substituted the prepared Authentication.')
 })
 
-test('rejects the removed binding-keyed provision result shape', () => {
+test('rejects the removed binding-keyed register result shape', () => {
   expect(() =>
-    acceptProvisionedIdentity(
+    acceptRegisteredIdentity(
       {
         createdNodes: { identity: 'operator-node' },
         identities: {
           identity: { issuer: 'https://identity.example', subject: 'self' },
         },
       },
-      LocalBinding('identity'),
+      LocalAlias('identity'),
       selfAuthentication(),
     ),
-  ).toThrow('Provision result identities must be an array.')
+  ).toThrow('Register result identities must be an array.')
 })
 
 function selfAuthentication() {
   return Object.freeze({ iss: issuer.accept('https://identity.example'), sub: 'self' as const })
 }
 
-function selfProvisionResult() {
+function selfRegisterResult() {
   return {
     createdNodes: { identity: 'operator-node' },
     identities: [
@@ -143,7 +143,7 @@ function selfProvisionResult() {
   }
 }
 
-function selfProvenRequest(binding: ReturnType<typeof LocalBinding>): ProvisionRequest {
+function selfProvenRequest(binding: ReturnType<typeof LocalAlias>): RegisterRequest {
   return {
     idempotencyKey: `identity-register.${'a'.repeat(64)}`,
     mutation: {
@@ -163,5 +163,5 @@ function selfProvenRequest(binding: ReturnType<typeof LocalBinding>): ProvisionR
         },
       },
     ],
-  } as unknown as ProvisionRequest
+  } as unknown as RegisterRequest
 }

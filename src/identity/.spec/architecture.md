@@ -17,7 +17,7 @@ directly to the `platform-manager` Kernel, and reaches a child only through a ma
 child-audience Management carrier. The carrier's outer subject is not the child's effective
 principal; authenticated child `Identity.whoami` owns that projection.
 
-Identity registration always prepares one self-proven atomic Provision request. Direct registration
+Identity registration always prepares one self-proven atomic Register request. Direct registration
 submits it to Kernel Auth only when the selected caller already owns the target Class authority. An
 explicit `--via <callable>` instead sends those exact bytes through the Domain that owns an
 application Identity Class. The Domain callable owns admission and effect authority; CLI admits only
