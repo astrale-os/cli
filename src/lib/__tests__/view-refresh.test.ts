@@ -103,7 +103,7 @@ describe('in-place View refresh', () => {
   })
 })
 
-function fixture(identities?: boolean): ViewServeConfig {
+function fixture(identities?: boolean, external = true): ViewServeConfig {
   return {
     session: {
       id: 'v-refresh',
@@ -119,7 +119,9 @@ function fixture(identities?: boolean): ViewServeConfig {
           key: 'app.test:view.item',
           href: 'https://app.test/old',
           handshake: identities === undefined ? 'none' : 'shell',
-          issuer: 'https://app.test' as ViewServeConfig['session']['view']['route']['issuer'],
+          issuer: (external
+            ? 'https://app.test'
+            : 'https://kernel.test') as ViewServeConfig['session']['view']['route']['issuer'],
           etag: `sha256:${'a'.repeat(64)}`,
           revision:
             `sha256:${'b'.repeat(64)}` as ViewServeConfig['session']['view']['route']['revision'],
@@ -143,8 +145,8 @@ function fixture(identities?: boolean): ViewServeConfig {
 type IdentityHooks = {
   identities?: false
   mint?: (identity: string) => Promise<string>
-  exchange?: (identity: string) => Promise<string>
-  resolve?: (identity: string) => Promise<void>
+  exchange?: (identity: string, issuer: string) => Promise<string>
+  resolve?: (identity: string) => Promise<void | ViewServeConfig['session']['view']['route']>
   persist?: () => Promise<void>
 }
 
@@ -161,7 +163,7 @@ async function withIdentityView(
 }
 
 async function setupIdentityView(hooks: IdentityHooks) {
-  const config = fixture(hooks.identities !== false)
+  const config = fixture(hooks.identities !== false, hooks.exchange !== undefined)
   const callers: string[] = []
   const records: string[] = []
   const connect: typeof withClientSession = async (options, action) => {
@@ -175,8 +177,8 @@ async function setupIdentityView(hooks: IdentityHooks) {
       },
       session: {
         viewsFor: async () => {
-          await hooks.resolve?.(identity)
-          return { views: [config.session.view.route] }
+          const resolved = await hooks.resolve?.(identity)
+          return { views: [resolved ?? config.session.view.route] }
         },
       },
       auth: { mint: () => hooks.mint?.(identity) ?? Promise.resolve(`credential-${identity}`) },
@@ -184,8 +186,8 @@ async function setupIdentityView(hooks: IdentityHooks) {
   }
   const server = startViewServer(config, {
     connect,
-    exchange: async (options) => ({
-      token: await hooks.exchange!(options.as!),
+    exchange: async (options, target) => ({
+      token: await hooks.exchange!(options.as!, target.domainIssuer!),
       expiresAt: Date.now() + 240_000,
     }),
     persist: async (record) => {
@@ -219,6 +221,42 @@ async function setupIdentityView(hooks: IdentityHooks) {
 }
 
 describe('View identity switching', () => {
+  test('uses the newly resolved View issuer on identity switch and refresh', () => {
+    const route = fixture(true).session.view.route
+    let next = route
+    const exchanged: string[] = []
+    return withIdentityView(
+      {
+        resolve: async () => next,
+        exchange: async (identity, issuer) => {
+          const token = `${identity}:${issuer}`
+          exchanged.push(token)
+          return token
+        },
+      },
+      async ({ request }) => {
+        expect(await (await request('token')).json()).toMatchObject({
+          token: 'alice:https://app.test',
+        })
+        next = { ...route, issuer: 'https://new-app.test' as typeof route.issuer }
+        expect((await request('identity', 0, { identity: 'bob' })).status).toBe(200)
+        expect(await (await request('token', 1)).json()).toMatchObject({
+          token: 'bob:https://new-app.test',
+        })
+        next = { ...route, issuer: 'https://refreshed-app.test' as typeof route.issuer }
+        expect((await request('refresh', 1)).status).toBe(200)
+        expect(await (await request('token', 2)).json()).toMatchObject({
+          token: 'bob:https://refreshed-app.test',
+        })
+        expect(exchanged).toEqual([
+          'alice:https://app.test',
+          'bob:https://new-app.test',
+          'bob:https://refreshed-app.test',
+        ])
+      },
+    )
+  })
+
   test('exchanges the selected managed identity before committing the switch', () => {
     const exchanged: string[] = []
     return withIdentityView(
