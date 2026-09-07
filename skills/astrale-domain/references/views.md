@@ -73,12 +73,17 @@ export function useCloseIssue() {
 
 ## Read, mutate, and refresh
 
-- `useQuery`/`useMutation` operate with the browser caller's authority, unlike runtime Domain executors.
-  Callable access does not imply graph access: Class operation authority is evaluated separately; see `policies.md`.
-- For a mounted Domain View, the host supplies the exchanged Domain-principal session while retaining the
-  human caller in its Grant. Keep ordinary reads as direct Queries so Class Policies govern visibility; see `debugging.md`.
-- Do not add a proxy Function merely to cross that authority boundary. A projection Function is appropriate
-  only when aggregation or a deliberately different business contract is itself the product behavior.
+Choose the boundary from product semantics; callable access and direct graph access remain separate:
+
+| Intended contract | Use |
+| --- | --- |
+| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query; commonly a Domain-principal session carrying the caller Grant |
+| Give an actor that owns the Class or holds its exact capability direct graph access | Direct Query with that actor as principal |
+| Expose a calculated, aggregated, redacted, or graph-independent stable result | Function with explicit callable admission; implement it as an Action or Workflow as appropriate |
+
+The host owns exchange and refresh for a Domain-principal session; View code keeps using the supplied client.
+See `policies.md` for both authority planes and `debugging.md` for exchange mechanics.
+
 - Instance `useAction.run` accepts `{ id: NodeId }`; a returned ID does not require a second Class read
   or a fabricated `BoundNode`. Validate only genuinely untrusted raw values entering that boundary.
 - After a successful call, refresh affected observations. Start with supported invalidation options,

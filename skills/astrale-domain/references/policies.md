@@ -49,9 +49,8 @@ For a non-Root caller, an authorized Function requires both:
 - Every Class graph operation admits two independent authority planes. The selected session principal must
   be Kernel Root, own the Class, or hold its exact operation capability; the complete Grant must separately
   pass by capability, ownership, or a declared `read`/`traverse` Policy.
-- A Class Policy affects only the Grant plane; it never gives the selected principal Class authority. For a
-  Domain-owned View, use the Domain exchange credential: the Domain principal closes ownership while the
-  carried human Grant is evaluated by the Policy. No Policy makes that Grant plane neutral, not data public.
+- A Class Policy affects only the Grant plane; it never gives the selected principal Class authority. No
+  Policy makes the Grant plane neutral, not data public. Choose the intended View boundary in `views.md`.
 - Current Class effects (`create`/`update`/`delete`) do not evaluate Class observation Policies. For a
   non-Root principal, effect closure requires principal capability/ownership and complete-Grant
   capability/ownership. If initiated through a callable, callable admission remains a separate outer gate.

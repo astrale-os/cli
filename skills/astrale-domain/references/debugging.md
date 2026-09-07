@@ -51,8 +51,8 @@ installed-Domain binding → source Kernel → local result
 - The SDK session owns discovery, delegation transport, redirect admission, and credential reuse.
   Do not assume every call performs separate delegate/exchange requests; local and warm calls differ.
 - A Domain token exchange changes the authenticated principal to that Domain's installed identity while
-  carrying the verified source credential as its Grant. This is the normal mounted-View shape: owner on the
-  principal plane, human Policy evidence on the Grant plane; it is not impersonation or a privileged read proxy.
+  carrying the verified source credential as its Grant. When a host chooses this View shape, ownership closes
+  the principal plane and the human remains the Policy subject on the Grant plane; this is not impersonation.
 - A protocol redirect carries a destination credential, not permission to forward the original token
   to any URL. Only the pinned source may redirect; a destination redirect is rejected.
 - Route reuse is partitioned by source, target, credential, delegation, and expected Schema revision.
