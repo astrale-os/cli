@@ -228,23 +228,6 @@ export function addThreadEntry(
   return comment
 }
 
-/** Edit the text of a single thread entry in place (the studio is single-user). */
-export function editThreadEntry(
-  root: string,
-  id: string,
-  entryId: string,
-  text: string,
-): Comment | null {
-  const store = readComments(root)
-  const comment = store.comments.find((c) => c.id === id)
-  if (!comment) return null
-  const entry = comment.thread.find((e) => e.id === entryId)
-  if (!entry) return null
-  entry.text = text
-  persist(root, store)
-  return comment
-}
-
 export function setStatus(
   root: string,
   id: string,

@@ -13,13 +13,13 @@ import { Eye, ShieldCheck, Zap } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { MethodAuthBadge } from '@/components/method-auth'
+import { PolicyCheckTree } from '@/components/policy-check-tree'
 import { Chip } from '@/components/studio-kit'
 import { methodGlyph } from '@/lib/friendly'
 import {
   type PolicyCheckLeaf,
   type PolicyIndex,
   decodePolicyCheck,
-  policyCheckLeaves,
   policyLabel,
 } from '@/lib/policy'
 
@@ -132,8 +132,6 @@ export function NodeAccess({
               const Glyph = glyph.icon ?? Zap
               const check =
                 method.policy === undefined ? undefined : decodePolicyCheck(method.policy)
-              const leaves = check ? policyCheckLeaves(check) : []
-              const composed = check && !('check' in check)
               return (
                 <div key={`${owner}.${name}`} className="px-2.5 py-1.5">
                   <div className="flex items-center gap-1.5 text-[12px]">
@@ -145,22 +143,19 @@ export function NodeAccess({
                       <span className="text-[11px] text-muted-foreground">from {owner}</span>
                     )}
                   </div>
-                  {leaves.length > 0 && (
-                    <div className="mt-1 flex flex-wrap items-center gap-1 pl-5">
-                      {composed && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {'allOf' in check ? 'all of' : 'any of'}
-                        </span>
-                      )}
-                      {leaves.map((leaf, i) => (
-                        <PolicyButton
-                          key={i}
-                          leaf={leaf}
-                          index={index}
-                          self={node.path}
-                          onProbe={onProbe}
-                        />
-                      ))}
+                  {check && (
+                    <div className="mt-1 pl-5 text-[11px]">
+                      <PolicyCheckTree
+                        check={check}
+                        renderCheck={(leaf) => (
+                          <PolicyButton
+                            leaf={leaf}
+                            index={index}
+                            self={node.path}
+                            onProbe={onProbe}
+                          />
+                        )}
+                      />
                     </div>
                   )}
                   {method.policy !== undefined && !check && (

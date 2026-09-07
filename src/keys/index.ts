@@ -9,6 +9,5 @@ export {
   readKeypair,
   removeKeypair,
 } from './pair'
-export { loadAuth, persistAuth, resolveAuth, signAs } from './credential'
+export { signAs } from './credential'
 export type { Keypair, KeypairInput, KeypairPaths } from './pair'
-export type { AuthBinding } from './credential'

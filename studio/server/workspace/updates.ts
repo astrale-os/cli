@@ -11,7 +11,7 @@
  */
 import type { StaleReport } from '../../shared/types'
 
-import { decodeJsonObject, runStudioCliJson, runStudioCliText } from '../cli'
+import { decodeJsonObject, runStudioCliJson } from '../cli'
 
 const NOT_STALE: StaleReport = {
   stale: false,
@@ -83,24 +83,4 @@ function decodeStaleReport(value: unknown): StaleReport | null {
     },
     sdk: { stale: sdk.stale, inProject: sdk.inProject, outdated },
   }
-}
-
-export interface UpdateApplyResult {
-  ok: boolean
-  /** One-line reason when the run failed; empty on success. */
-  error: string
-}
-
-/**
- * Apply the update behind the header "Update" chip — `astrale update --yes`, run
- * in the domain root. The CLI does the work non-interactively and resiliently
- * (binary + skills + SDK deps; a binary that can't self-update warns but doesn't
- * block the others). We keep only the verdict: the transcript is CLI chatter the
- * badge has no use for, and its warnings (e.g. a package-managed binary) are not
- * failures. A failure collapses to one concise line for a toast.
- */
-export async function applyUpdates(root: string): Promise<UpdateApplyResult> {
-  const result = await runStudioCliText(['update', '--yes'], { cwd: root })
-  if (result.ok) return { ok: true, error: '' }
-  return { ok: false, error: result.detail || `astrale update exited ${result.exitCode}` }
 }

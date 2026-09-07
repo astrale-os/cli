@@ -130,6 +130,8 @@ astrale call @self::deactivate
 
 ```bash
 astrale instance create my-app
+astrale instance create development --host astrale-kernel-bryan
+astrale instance root import development --host astrale-kernel-bryan --yes
 astrale instance invite my-app person@example.com
 astrale instance invitation status @invitation-id
 astrale instance status my-app
@@ -163,8 +165,15 @@ are identified by terminal `state: "deleted"`. The optional `issuer` is present 
 retained exact evidence. Unreachable does not mean retired. Add `--admin-only` when local bookmarks
 should be omitted from the machine-readable envelope.
 
+With `instance create --host`, the selected Host bookmark's caller creates or reconnects one exact
+child directly, without Admin or WorkOS. The CLI imports its sealed root identity, verifies live
+JWKS, and adds `<host>-<slug>` with `<host>-<slug>-root` as the default caller. It preserves the active
+instance. The same child slug on different Hosts has distinct bookmarks and keys. Root recovery
+requires `--yes` in automation and refuses conflicting bookmarks or IdP-backed identities.
+
 The CLI is connect-only: it does not build or run domains. The SDK's
-`astrale-domain` binary owns `dev`, `prod`, `build`, and deploy workflows.
+`astrale-domain` binary owns `dev`, `build`, `deploy`, and test workflows. Project Environments select
+exact deployment and optional installation targets; they do not use the CLI's active instance.
 
 `astrale domain install` has two modes:
 
@@ -178,13 +187,17 @@ The CLI is connect-only: it does not build or run domains. The SDK's
 astrale domain install crm.example -i staging
 astrale domain install https://crm.example --direct -i staging
 astrale domain uninstall crm.example -i staging
+astrale domain uninstall app.example shared.example --destructive -i staging
 ```
 
 A replacement cannot change an installed Domain issuer. If that identity
 change is intentional, uninstall the origin first and then install it again.
-Uninstall removes the installed Domain but never deletes business data. It
-requires typing the exact origin interactively (or `--yes` in automation), and
-is refused by the Kernel while dependents or business data remain.
+Uninstall accepts one or more origins and removes the complete selected set atomically, so
+dependencies inside that set are allowed. Safe mode is the default and never deletes application
+data. `--destructive` deletes application facts whose concrete Class belongs to a selected Domain;
+it does not cascade into unselected Domains. Surviving dependents and surviving foreign Edges that
+reference selected Nodes still block the complete operation. Type the canonical Domain list
+interactively, or pass `--yes` in automation.
 
 Bookmarks retain their own TLS trust (`--ca`). `instance use` probes OIDC and
 JWKS with that exact CA. If two bookmarks point to the same normalized URL with
@@ -197,31 +210,28 @@ Reinstall only when installation or Schema intent changes.
 ## Identity And Delegation
 
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`
-creates a local key identity. Registering a key identity on a Kernel is an
-atomic registration operation and requires the exact Node Class. Registration
-never creates or replaces the local identity or its keypair:
+creates a local key identity. Registration targets an existing Identity Node;
+it never creates a Node, changes business properties, assigns a Group, or replaces
+the local identity or its keypair:
 
 ```bash
 astrale identity create alice
 astrale identity register alice \
-  --class /:accounts.example:class.User \
-  --props '{"accounts.example:class.User.property.name":"Alice"}' \
+  --node @existing-user-id \
   -i staging
 ```
 
 The Kernel assigns Node IDs. They are returned by reads and creation results
 and can be reused through the `@node-id` Path form; do not derive application
-meaning from their contents. The proof is bound to the exact registration
-fingerprint and target Kernel audience.
-For an application-owned Identity Class, direct Kernel submission is correctly
-denied unless the caller owns that Class. Name the Domain's authorizing
-registration callable explicitly; the CLI sends the same self-proven request
-through it and stores only the admitted target-bound result:
+meaning from their contents. The primary self credential is signed for the target
+Kernel audience. Register checks the caller's authority on the existing Node.
+When a Domain callable supplies that authority, optionally name it with `--via`;
+the CLI sends the same request and verifies the returned Node and Authentication.
+No Domain callback is required when the direct caller already has authority:
 
 ```bash
 astrale identity register operator \
-  --class /:operations.example:class.Operator \
-  --props '{"operations.example:class.Operator.property.name":"Operator"}' \
+  --node @existing-operator-id \
   --via /:operations.example:function.registerOperator \
   -i staging
 ```

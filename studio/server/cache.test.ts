@@ -1,8 +1,24 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import type { StudioSchemaBundle } from '../shared/types'
 
-import { decodeBundleCacheEntry, stillStands } from './cache'
+import { decodeBundleCacheEntry, getAnatomy, getBundle, invalidate, stillStands } from './cache'
+import { registerDomain, unregisterDomain } from './domain'
+
+const roots: string[] = []
+const domainIds: string[] = []
+
+afterEach(() => {
+  while (domainIds.length) {
+    const id = domainIds.pop()!
+    invalidate(id, 'all')
+    unregisterDomain(id)
+  }
+  while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
+})
 
 function entry(): Record<string, unknown> {
   return {
@@ -145,3 +161,59 @@ test('a failed bundle stands briefly, then asks to be retried', () => {
 test('a failed bundle with no readable timestamp is retried rather than trusted', () => {
   expect(stillStands(failed('not a date'))).toBe(false)
 })
+
+function temporaryDomain(): { id: string; root: string; schemaIndex: string } {
+  const root = mkdtempSync(join(tmpdir(), 'studio-anatomy-cache-'))
+  roots.push(root)
+  const schemaIndex = join(root, 'schema/index.ts')
+  mkdirSync(join(root, 'schema'), { recursive: true })
+  writeFileSync(join(root, 'package.json'), '{"type":"module"}\n')
+  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+  writeFileSync(
+    join(root, 'application.ts'),
+    `import { defineApplication } from '@astrale-os/sdk/application'
+import { schema } from './schema/index.js'
+export const application = defineApplication({ schema, runtime: {} as never })
+`,
+  )
+  writeFileSync(
+    schemaIndex,
+    `throw new Error('temporary extraction failure')
+export const schema = {}
+`,
+  )
+  const sdk = realpathSync(join(import.meta.dir, '../../node_modules/@astrale-os/sdk'))
+  const scope = join(root, 'node_modules', '@astrale-os')
+  mkdirSync(scope, { recursive: true })
+  symlinkSync(sdk, join(scope, 'sdk'), 'dir')
+  const handle = registerDomain(root)
+  if (!handle) throw new Error('temporary cache domain was not registered')
+  domainIds.push(handle.id)
+  return { id: handle.id, root, schemaIndex }
+}
+
+test('anatomy follows a bundle that heals after a temporary extraction failure', async () => {
+  const domain = temporaryDomain()
+  expect((await getAnatomy(domain.id))?.views).toEqual([])
+
+  const failedBundle = await getBundle(domain.id)
+  if (!failedBundle) throw new Error('temporary cache domain has no bundle')
+  expect(failedBundle.error?.message).toContain('temporary extraction failure')
+
+  // Expire the in-memory failure and change the source so the persisted failed
+  // bundle has a different key. Both reads below must then join the same retry.
+  failedBundle.extractedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+  writeFileSync(
+    domain.schemaIndex,
+    `import { defineSchema, view } from '@astrale-os/sdk/schema'
+export const schema = defineSchema('anatomy-cache.studio.test', {
+  views: { application: view({ target: 'domain' }) },
+})
+`,
+  )
+
+  const [bundle, anatomy] = await Promise.all([getBundle(domain.id), getAnatomy(domain.id)])
+  expect(bundle?.error).toBeNull()
+  expect(bundle?.ir?.views).toHaveProperty('application')
+  expect(anatomy?.views).toContainEqual(expect.objectContaining({ slug: 'application' }))
+}, 30_000)

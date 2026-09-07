@@ -248,6 +248,8 @@ export interface ViewTargetResult {
 /** Full launch context shown before Studio asks `astrale view` to resolve and open the View. */
 export interface ViewRuntime {
   slug: string
+  /** Opaque, short-lived handle for the exact instance and target candidates shown below. */
+  preparationId: string
   instance: string | null
   targetRequired: boolean
   targets: ViewTargetResult
@@ -375,6 +377,8 @@ export interface StudioDataset {
   revision: string
   /** false when the current schema bundle carries another revision (stale until re-extracted) */
   schemaMatch: boolean
+  /** Canonical Schema reference key → explicitly associated Dataset Node id. */
+  references: Record<string, string>
   /** `path` is the Dataset Node id; `className` is the local Class name or the exact imported key */
   nodes: StudioCoreNode[]
   edges: StudioCoreEdge[]

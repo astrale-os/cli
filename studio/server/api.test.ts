@@ -154,6 +154,16 @@ test('retired internal domain routes return the stable JSON 404', async () => {
   }
 })
 
+test('Studio does not expose an in-process update mutation', async () => {
+  const handle = fixture()
+  const response = await route(`/api/domain/${encodeURIComponent(handle.id)}/updates/apply`, {
+    method: 'POST',
+  })
+
+  expect(response?.status).toBe(404)
+  expect(await response?.json()).toEqual({ error: 'not found' })
+})
+
 test('workspace dispatch preserves catalog responses and instance request validation', async () => {
   const handle = fixture()
 
@@ -170,6 +180,17 @@ test('workspace dispatch preserves catalog responses and instance request valida
   })
   expect(invalidInstance?.status).toBe(400)
   expect(await invalidInstance?.json()).toEqual({ error: 'name is required' })
+})
+
+test('workspace exposes live introspection queue and per-phase timings', async () => {
+  const response = await route('/api/workspace/introspection')
+  expect(response?.status).toBe(200)
+  expect(await response?.json()).toMatchObject({
+    concurrency: 2,
+    active: expect.any(Array),
+    queued: { reader: expect.any(Array), background: expect.any(Array) },
+    domains: expect.any(Array),
+  })
 })
 
 test('multipart document upload remains ahead of JSON parsing and raw download keeps its media type', async () => {

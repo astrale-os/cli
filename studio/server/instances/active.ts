@@ -1,5 +1,6 @@
 import type { InstanceInfo, InstancesState } from '../../shared/types'
 
+import { studioActiveInstanceName } from '../../../src/lib/view/studio-runtime'
 import { decodeJsonObject, runStudioCliJson, runStudioCliText } from '../cli'
 
 async function astraleJson(args: string[]): Promise<Record<string, unknown> | null> {
@@ -11,13 +12,12 @@ function records(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.map(decodeJsonObject).filter((item) => item !== null) : []
 }
 
-async function activeName(): Promise<string | null> {
-  const active = await astraleJson(['instance', 'active', '--json'])
-  return typeof active?.name === 'string' ? active.name : null
-}
-
 /** The CLI-owned global active instance. */
-export const activeInstanceName = activeName
+export const activeInstanceName = (): Promise<string | null> => studioActiveInstanceName()
+
+interface ActiveInstanceDependencies {
+  activeInstanceName: typeof activeInstanceName
+}
 
 export async function listInstances(): Promise<InstancesState> {
   // Each of these spawns the CLI — an 85 MB executable — and the header asks for the
@@ -28,7 +28,7 @@ export async function listInstances(): Promise<InstancesState> {
     astraleJson(['instance', 'list', '--bookmarked', '--json']),
     astraleJson(['instance', 'list', '--admin-only', '--json']),
   ])
-  const active = typeof local?.active === 'string' ? local.active : await activeName()
+  const active = typeof local?.active === 'string' ? local.active : await activeInstanceName()
   const instances: InstanceInfo[] = []
   for (const bookmark of records(local?.bookmarks)) {
     if (typeof bookmark.name !== 'string') continue
@@ -61,6 +61,7 @@ export async function listInstances(): Promise<InstancesState> {
 
 export async function setActiveInstance(
   name: string,
+  dependencies: Partial<ActiveInstanceDependencies> = {},
 ): Promise<{ ok: boolean; active: string | null; output: string }> {
   const result = await runStudioCliText([
     'instance',
@@ -72,7 +73,7 @@ export async function setActiveInstance(
   const combined = `${result.stdout}\n${result.stderr}`.trim()
   return {
     ok: result.ok,
-    active: await activeName(),
+    active: await (dependencies.activeInstanceName ?? activeInstanceName)(),
     output: (combined || result.detail).slice(-1000),
   }
 }

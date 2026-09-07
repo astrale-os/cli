@@ -92,28 +92,6 @@ describe('CLI update staleness', () => {
     })
   })
 
-  test('reports a same-version toolchain repair as stale without inventing a later version', async () => {
-    const result = await cliStale(
-      {},
-      {
-        update: async () => ({
-          status: 'repair-available',
-          currentVersion: '1.0.0-beta.0',
-          channel: 'beta',
-          bin: '/opt/astrale/bin/astrale',
-        }),
-      },
-    )
-
-    expect(result).toEqual({
-      stale: true,
-      managed: false,
-      current: '1.0.0-beta.0',
-      latest: '1.0.0-beta.0',
-      channel: 'beta',
-    })
-  })
-
   test('does not misclassify a script update failure as package-managed', async () => {
     const result = await cliStale(
       {},

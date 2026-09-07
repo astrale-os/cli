@@ -29,17 +29,23 @@ describe('view session server credentials', () => {
     })
   })
 
-  /** @evidence TEST-CLI-SHELL-VIEW-MINTS-CALLER-CREDENTIAL */
-  test('serves a caller-principal credential to a handshake-shell View', async () => {
+  test.each([false, true])('serves View credentials (exchange: %s)', async (managed) => {
     const nonce = 'shell-view'
     const port = await findFreePort(48_000, 200)
     if (port === null) throw new Error('test port window exhausted')
     const mint = mock(async () => 'minted-credential')
+    const exchange = mock(async () => ({
+      token: 'exchanged-credential',
+      expiresAt: Date.now() + 240_000,
+    }))
     const connect: typeof withClientSession = async (_options, action, intent) => {
       expect(intent).toEqual({ principal: 'caller', nestedTtlSeconds: 240 })
       return action({
         auth: { mint },
-        target: { kernelIssuer: issuer('https://kernel.test') },
+        target: {
+          kernelIssuer: issuer('https://kernel.test'),
+          ...(managed ? { domainIssuer: issuer('https://shell.test') } : {}),
+        },
       } as never)
     }
     const config = {
@@ -69,16 +75,10 @@ describe('view session server credentials', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
-      transport: {
-        href: 'https://example.test/ui/private',
-        issuer: issuer('https://example.test'),
-        etag: digest('c'),
-        revision: revision('d'),
-      },
       externalOrigins: [],
       idleMs: 60_000,
     } satisfies ViewServeConfig
-    const server = startViewServer(config, { connect })
+    const server = startViewServer(config, { connect, exchange })
     await once(server, 'listening')
 
     try {
@@ -87,11 +87,21 @@ describe('view session server credentials', () => {
       })
 
       expect(response.status).toBe(200)
-      expect(await response.json()).toMatchObject({ token: 'minted-credential', kind: 'minted' })
-      expect(mint).toHaveBeenCalledWith({
-        audience: 'https://kernel.test',
-        ttlSeconds: 240,
-      })
+      expect(await response.json()).toMatchObject(
+        managed
+          ? { token: 'exchanged-credential', kind: 'exchanged' }
+          : { token: 'minted-credential', kind: 'minted' },
+      )
+      if (managed) {
+        expect(mint).not.toHaveBeenCalled()
+        expect(exchange).toHaveBeenCalledWith(config.kernel, {
+          kernelIssuer: 'https://kernel.test',
+          domainIssuer: 'https://shell.test',
+        })
+      } else {
+        expect(exchange).not.toHaveBeenCalled()
+        expect(mint).toHaveBeenCalledWith({ audience: 'https://kernel.test', ttlSeconds: 240 })
+      }
     } finally {
       await new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()))
@@ -131,12 +141,6 @@ describe('view session server credentials', () => {
         issuer: 'https://kernel.test',
         direct: true,
       },
-      transport: {
-        href: 'http://127.0.0.1:8787/ui/public',
-        issuer: issuer('https://example.test'),
-        etag: digest('a'),
-        revision: revision('b'),
-      },
       externalOrigins: ['https://connect.nango.dev'],
       idleMs: 60_000,
     } satisfies ViewServeConfig
@@ -146,15 +150,12 @@ describe('view session server credentials', () => {
     try {
       const configResponse = await fetch(`http://127.0.0.1:${port}/s/${nonce}/config.json`)
       expect(configResponse.status).toBe(200)
-      expect(await configResponse.json()).toMatchObject({
+      const served = await configResponse.json()
+      expect(served).not.toHaveProperty('transport')
+      expect(served).toMatchObject({
         sessionId: 'v-plain',
         externalOrigins: ['https://connect.nango.dev'],
-        transport: {
-          href: 'http://127.0.0.1:8787/ui/public',
-          issuer: 'https://example.test',
-          etag: digest('a'),
-          revision: revision('b'),
-        },
+        view: config.session.view,
       })
 
       const response = await fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, {

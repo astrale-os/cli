@@ -1,11 +1,9 @@
 import type { IssuerId, JsonWebKey, RegisterRequest } from '@astrale-os/sdk/auth'
-import type { ClassKey as ClassKeyValue } from '@astrale-os/sdk/graph/class'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 import type { JWK } from 'jose'
 
 import { register, jwk } from '@astrale-os/sdk/auth'
-import { LocalAlias } from '@astrale-os/sdk/graph'
-import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
-import { MutationAST } from '@astrale-os/sdk/mutation'
+import { Path } from '@astrale-os/sdk/graph/path'
 import { importJWK, SignJWT } from 'jose'
 import { readFile } from 'node:fs/promises'
 
@@ -15,7 +13,6 @@ import type { CommandDefinition } from '../../program/index'
 
 import { registrationKeyForTarget, runKernelCommand } from '../../connection'
 import { AstraleError, IdentityKeypairIncompleteError } from '../../errors'
-import { classKey } from '../../graph'
 import { getIdentity, setRegistration, submitIdentityRegistration } from '../../identity/index'
 import { fileExists, keypairPaths } from '../../keys/index'
 import { derivedIdempotencyKey } from '../../lib/idempotency'
@@ -23,8 +20,7 @@ import { fatal, log } from '../../lib/log'
 import { output } from '../../lib/output'
 
 type RegisterOpts = KernelCommandOpts & {
-  class?: string
-  props?: string
+  node?: string
   via?: string
 }
 
@@ -34,7 +30,7 @@ async function readJwk(path: string): Promise<JWK> {
 
 export default {
   name: 'register',
-  description: 'Register an existing local key identity through one atomic registration',
+  description: 'Register a local key identity on an existing Identity Node',
   afterHelpText: `
 Prerequisite:
   Create the local key identity first. Register never creates or replaces the
@@ -43,36 +39,30 @@ Prerequisite:
   $ astrale identity create alice
 
 Behavior:
-  Uses the existing local keypair to create one Node through Mutation V3 and
-  designates it as a self-proven Identity in the same atomic Auth.register
-  request. --class is required; --props must use fully-qualified Property keys
-  owned by that Class.
+  --node @node-id selects an existing Identity Node. This command never creates
+  a Node, changes business properties, or assigns a Group. Create the business
+  object separately, then register its returned Node ID.
 
   By default the authenticated caller submits the request directly to Kernel
-  Auth.register. Use --via for an application-owned identity Class: the CLI
-  sends the exact self-proven request through that Domain callable, then admits
+  Auth.register. Use --via when a Domain callable supplies the required authority.
+  The CLI sends the exact self-proven request through that callable, then admits
   its result and stores the same target-bound registration. The callable owns
   authorization; the CLI never receives installed Domain authority.
 
-  The Kernel assigns each Node ID; callers do not choose a storage path. The
-  CLI binds the key proof to the exact register fingerprint and target Kernel
-  audience, then caches the returned (issuer, subject) for subsequent calls.
+  The primary self proof is signed for the target Kernel audience. A stable
+  request key allows retrying the same registration without creating anything.
+  The result must match the selected Node and expected (issuer, subject).
 
 Example:
-  $ astrale identity register alice --class /:accounts.example:class.User \
-      --props '{"accounts.example:class.User.property.name":"Alice"}' -i staging
-  $ astrale identity register responder --class /:ops.example:class.Operator \
+  $ astrale identity register alice --node @existing-user-id -i staging
+  $ astrale identity register responder --node @existing-operator-id \
       --via /:ops.example:function.registerOperator -i staging
 `,
   arguments: [{ name: 'name', description: 'Existing local identity name', required: true }],
   options: [
     {
-      flags: '--class <classPath>',
-      description: 'Exact Class of the identity-bearing Node (required)',
-    },
-    {
-      flags: '--props <json>',
-      description: 'Fully-qualified canonical properties for the new Node',
+      flags: '--node <nodePath>',
+      description: 'Existing Identity Node as @node-id (required)',
     },
     {
       flags: '--via <callablePath>',
@@ -81,7 +71,8 @@ Example:
   ],
   action: async (name: string, opts: RegisterOpts) => {
     try {
-      if (!opts.class) throw new TypeError('Missing required flag: --class <classPath>')
+      if (!opts.node) throw new TypeError('Missing required flag: --node <nodePath>')
+      const nodeId = registrationNodeId(opts.node)
       const identity = await getIdentity(name)
       if ((identity.source ?? 'key') !== 'key') {
         throw new AstraleError(
@@ -106,31 +97,21 @@ Example:
 
       const privateKey = await readJwk(privatePath)
       const publicKey = jwk.acceptPublic(await readJwk(publicPath))
-      const classPath = classKey(opts.class, '--class')
-      const properties = normalizeProperties(opts.props ? JSON.parse(opts.props) : {})
 
       await runKernelCommand<IdentityRegistrationResult>({
         opts,
         label: `Register "${name}"`,
         fn: async ({ auth, session, target }) => {
           const registrationKey = registrationKeyForTarget(target)
-          const existing = identity.registrations?.[registrationKey]
-          if (existing) {
-            log.warn(`"${name}" is already registered on "${registrationKey}"`)
-            return existing
-          }
-
           const prepared = await prepareIdentityRegistration({
-            name,
-            classPath,
-            properties,
+            nodeId,
             privateKey,
             publicKey,
             kernelIssuer: target.kernelIssuer,
           })
           const registered = await submitIdentityRegistration({
             request: prepared.request,
-            binding: prepared.binding,
+            nodeId,
             expectedAuthentication: prepared.authentication,
             ...(opts.via === undefined ? {} : { via: opts.via }),
             direct: auth,
@@ -163,64 +144,53 @@ export function formatIdentityRegistration(
   log.dim(`  sub=${result.sub}`)
 }
 
-/** Build and self-prove one exact canonical register request for the target Kernel. */
+export function registrationNodeId(input: string): NodeId {
+  const { anchor, steps } = Path.parse(input).ast
+  if (anchor.kind !== 'id' || steps.length !== 0 || input === '@self') {
+    throw new TypeError('--node requires an explicit existing @node-id.')
+  }
+  return anchor.id
+}
+
+/** Prove a key for one existing Node; registration never allocates graph state. */
 export async function prepareIdentityRegistration(input: {
-  readonly name: string
-  readonly classPath: ClassKeyValue
-  readonly properties: ReturnType<typeof normalizeProperties>
+  readonly nodeId: NodeId
   readonly privateKey: JWK
   readonly publicKey: JsonWebKey
   readonly kernelIssuer: IssuerId
 }): Promise<{
-  readonly binding: ReturnType<typeof LocalAlias>
   readonly request: RegisterRequest
   readonly authentication: { readonly iss: IssuerId; readonly sub: 'self' }
 }> {
-  const binding = LocalAlias('identity')
-  const mutation = MutationAST.build((builder) => {
-    builder.createNode({ as: binding, class: input.classPath, props: input.properties })
-    return undefined
-  })
-  const registrationKey = await derivedIdempotencyKey('identity-register', input.name)
-  const unsigned = register.accept({
-    idempotencyKey: registrationKey,
-    mutation,
-    identities: [
-      {
-        identity: { created: binding },
-        authentication: {
-          credentials: { publicKey: input.publicKey, proof: 'pending-proof' },
-        },
-      },
-    ],
-  })
-  const fingerprint = await register.fingerprint(unsigned)
   const issuer = await register.selfIssuer(input.kernelIssuer, input.publicKey)
-  const proof = await mintRegisterProof(input.privateKey, issuer, input.kernelIssuer, fingerprint)
+  const registrationKey = await derivedIdempotencyKey(
+    'identity-register',
+    JSON.stringify([input.kernelIssuer, input.nodeId, issuer, input.publicKey.kid ?? null]),
+  )
+  const proof = await mintRegistrationProof(input.privateKey, issuer, input.kernelIssuer)
   return {
-    binding,
     authentication: Object.freeze({ iss: issuer, sub: 'self' }),
-    request: register.accept({
+    request: {
       idempotencyKey: registrationKey,
-      mutation,
       identities: [
         {
-          identity: { created: binding },
-          authentication: { credentials: { publicKey: input.publicKey, proof } },
+          id: input.nodeId,
+          mode: 'self',
+          publicKey: input.publicKey,
+          credential: proof,
         },
       ],
-    }),
+    },
   }
 }
 
-async function mintRegisterProof(
+async function mintRegistrationProof(
   privateKey: JWK,
   issuer: string,
   audience: string,
-  fingerprint: string,
 ): Promise<string> {
   const key = await importJWK(privateKey, 'ES256')
-  return new SignJWT({ register: fingerprint })
+  return new SignJWT({})
     .setProtectedHeader({ alg: 'ES256', ...(privateKey.kid ? { kid: privateKey.kid } : {}) })
     .setIssuer(issuer)
     .setSubject('self')

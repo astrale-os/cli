@@ -27,8 +27,8 @@ function fixture(config: string): DomainHandle {
   writeFileSync(
     join(root, 'schema/index.ts'),
     `
-      import { defineSchema, edgeClass, nodeClass } from '@astrale-os/sdk/schema'
-      export const Item = nodeClass({ properties: {} })
+      import { classIcon, defineSchema, edgeClass, nodeClass } from '@astrale-os/sdk/schema'
+      export const Item = nodeClass({ icon: classIcon.neutral, properties: {} })
       export const contains = edgeClass.directed({
         source: { as: 'parent', accepts: [Item], outgoing: '0..*' },
         target: { as: 'child', accepts: [Item], incoming: '0..1' },
@@ -124,6 +124,7 @@ describe('Dataset envelope', () => {
         },
       ],
     },
+    references: { '/:datasets.studio.test:core.parent': 'parent' },
     variables: { parent: { node: 'parent' }, all: { nodes: ['parent', 'peer'] } },
   }
 
@@ -149,6 +150,7 @@ describe('Dataset envelope', () => {
         },
       ],
       edges: [{ from: 'parent', to: 'peer', edgeName: 'contains' }],
+      references: { 'datasets.studio.test:core.parent': 'parent' },
       variables: { parent: ['parent'], all: ['parent', 'peer'] },
     })
   })

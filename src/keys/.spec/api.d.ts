@@ -1,16 +1,5 @@
 import type { JWK } from 'jose'
 
-type AuthOptions = {
-  readonly issuer?: string
-  readonly subject?: string
-  readonly kid?: string
-}
-
-export type AuthBinding = {
-  readonly credential: string
-  readonly publicKey: { readonly jwk: JWK }
-}
-
 export type KeypairPaths = {
   readonly privatePath: string
   readonly publicPath: string
@@ -57,17 +46,11 @@ export function importKeypair(
 
 export function removeKeypair(subject: string, keysDir?: string): Promise<void>
 
-export function persistAuth(keysDir?: string, opts?: AuthOptions): Promise<AuthBinding>
-
-export function loadAuth(keysDir?: string, opts?: AuthOptions): Promise<AuthBinding>
-
-export function resolveAuth(keysDir?: string, opts?: AuthOptions): Promise<AuthBinding>
-
 export function signAs(
   subject: string,
-  keysDir?: string,
-  opts?: {
-    readonly issuer?: string
+  keysDir: string | undefined,
+  opts: {
+    readonly issuer: string
     readonly audience?: string
     readonly subject?: string
   },

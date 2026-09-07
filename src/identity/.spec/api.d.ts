@@ -1,6 +1,6 @@
 import type { Authentication, RegisterRequest } from '@astrale-os/sdk/auth'
 import type { Call } from '@astrale-os/sdk/client'
-import type { LocalAlias } from '@astrale-os/sdk/graph'
+import type { NodeId } from '@astrale-os/sdk/graph/node'
 import type { JWK } from 'jose'
 
 import type {
@@ -42,14 +42,14 @@ export interface IdentityRegistrationResult {
   readonly nodeId?: string
 }
 
-/** A fresh admitted register response always identifies its created Node. */
-export interface RegisteredIdentityRegistration extends IdentityRegistrationResult {
+/** An admitted registration response identifies the selected existing Node. */
+export interface RegisteredIdentity extends IdentityRegistrationResult {
   readonly nodeId: string
 }
 
 export interface IdentityRegistrationSubmission {
   readonly request: RegisterRequest
-  readonly binding: LocalAlias
+  readonly nodeId: NodeId
   readonly expectedAuthentication: Authentication
   readonly via?: string
   readonly direct: {
@@ -63,14 +63,14 @@ export interface IdentityRegistrationSubmission {
 /** Submit one prepared request either directly or through its explicit Domain authority owner. */
 export function submitIdentityRegistration(
   input: IdentityRegistrationSubmission,
-): Promise<RegisteredIdentityRegistration>
+): Promise<RegisteredIdentity>
 
-/** Admit only the exact binding the CLI prepared; remote callables remain untrusted input. */
+/** Admit only the selected existing Node; remote callables remain untrusted input. */
 export function acceptRegisteredIdentity(
   value: unknown,
-  binding: LocalAlias,
+  nodeId: NodeId,
   expectedAuthentication: Authentication,
-): RegisteredIdentityRegistration
+): RegisteredIdentity
 
 export function readIdentities(): Promise<IdentityStore>
 

@@ -131,6 +131,25 @@ test('a chat pins its own reasoning level, and the turn carries it', async () =>
   expect(await patch('')).not.toHaveProperty('effort')
 })
 
+test('a new chat resolves and exposes the domain its creation brief targets', async () => {
+  process.env.DOMAIN_STUDIO_HARNESS = 'mock'
+  const handle = fixture()
+  const url = new URL('http://127.0.0.1/api/agent/chats')
+  const body = { action: 'open', newDomainId: handle.id }
+  const response = await handleAgentRoute({
+    req: new Request(url, { method: 'POST' }),
+    url,
+    rest: '/agent/chats',
+    body,
+    notify: () => {},
+  })
+
+  expect(response?.status).toBe(200)
+  expect(await response?.json()).toMatchObject({
+    newDomain: { id: handle.id, origin: handle.origin ?? handle.id, path: '.' },
+  })
+})
+
 test('serves the bounded persisted conversation history', async () => {
   fixture()
   const chatId = listChats().activeId

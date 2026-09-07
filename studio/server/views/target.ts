@@ -4,22 +4,20 @@ import type {
   ViewTargetCandidate,
   ViewTargetResult,
 } from '../../shared/types'
-import type { StudioCliDecoder } from '../cli'
 
-import { decodeJsonObject, runStudioCliJson } from '../cli'
+import { queryStudioViewTargets } from '../../../src/lib/view/studio-runtime'
+import { decodeJsonObject } from '../cli'
 import { reconcileRememberedTarget, targetFromRow, type RawTargetRow } from './model'
 import { readRememberedTarget } from './selection-repository'
 
 const TARGET_LIMIT = 200
 
-interface AstraleResult<T> {
-  ok: boolean
-  data: T | null
-  detail: string
-}
-
 interface RawQueryResult {
   graph?: { nodes?: RawTargetRow[] }
+}
+
+interface ViewTargetDependencies {
+  query: typeof queryStudioViewTargets
 }
 
 function decodeTargetRow(value: unknown): RawTargetRow | null {
@@ -47,6 +45,7 @@ export async function listViewTargets(
   bundle: StudioSchemaBundle | null,
   instance: string,
   timeoutMs: number,
+  dependencies: Partial<ViewTargetDependencies> = {},
 ): Promise<ViewTargetResult> {
   const bindings = viewDefinitionBindings(origin, view, bundle)
   if (bindings.length === 0) {
@@ -59,26 +58,28 @@ export async function listViewTargets(
     }
   }
 
-  const queried = await Promise.all(
-    bindings.map(async (binding) => {
-      const definition = targetDefinition(binding.className, binding.classOrigin)
-      const result = await runAstraleJson<RawQueryResult>(
-        [
-          'query',
-          '--class',
-          definition,
-          '--limit',
-          String(TARGET_LIMIT + 1),
-          '--json',
-          '-i',
-          instance,
-        ],
-        timeoutMs,
-        decodeQueryResult,
-      )
-      return { binding, result }
-    }),
+  const query = dependencies.query ?? queryStudioViewTargets
+  const results = await query(
+    instance,
+    bindings.map((binding) => ({
+      definition: targetDefinition(binding.className, binding.classOrigin),
+      limit: TARGET_LIMIT + 1,
+    })),
+    timeoutMs,
   )
+  const queried = bindings.map((binding, index) => {
+    const result = results[index]
+    const data =
+      result?.value === null || result?.value === undefined ? null : decodeQueryResult(result.value)
+    return {
+      binding,
+      result: {
+        ok: result?.ok === true && data !== null,
+        data,
+        detail: result?.detail ?? '',
+      },
+    }
+  })
   const successes = queried.filter(
     (item) => item.result.ok && Array.isArray(item.result.data?.graph?.nodes),
   )
@@ -211,12 +212,4 @@ function assertOrigin(value: string): string {
 function assertSchemaName(value: string): string {
   if (!/^[A-Za-z_$][\w$]*$/.test(value)) throw new Error(`Invalid class name: ${value}`)
   return value
-}
-
-async function runAstraleJson<T>(
-  args: string[],
-  timeoutMs: number,
-  decoder: StudioCliDecoder<T>,
-): Promise<AstraleResult<T>> {
-  return runStudioCliJson(args, decoder, { timeoutMs })
 }

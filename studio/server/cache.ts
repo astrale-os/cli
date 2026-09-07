@@ -9,6 +9,8 @@ import { join, relative } from 'node:path'
 
 import type {
   DomainAnatomy,
+  IntrospectionPriority,
+  IntrospectionStatus,
   SchemaOverlay,
   StudioCore,
   StudioDatasets,
@@ -23,7 +25,13 @@ import { buildBundle } from './introspect/bundle'
 import { isCanonicalDomainSchemaV1 } from './introspect/canonical-schema'
 import { buildCore } from './introspect/core'
 import { buildDatasets } from './introspect/datasets'
+import { introspectionScheduler, type ScheduledWork } from './introspect/scheduler'
 import { decodeSchemaIR } from './introspect/schema-ir-json'
+import {
+  IntrospectionTimer,
+  introspectionTimings,
+  recordIntrospectionPhase,
+} from './introspect/timing'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString } from './json'
 import { hashAnatomyFiles } from './state/baseline'
 import { readJson, writeJson } from './state/store'
@@ -38,8 +46,18 @@ const bundles = new Map<string, StudioSchemaBundle>()
  * asks for `/bundle`, `/anatomy` and `/core` at once, and the boot may still be
  * indexing the same domain — four subprocesses bundling identical sources.
  */
-const building = new Map<string, Promise<StudioSchemaBundle>>()
-const anatomies = new Map<string, Promise<DomainAnatomy>>()
+interface RunningBundle {
+  readonly work: ScheduledWork<StudioSchemaBundle>
+  readonly timing: IntrospectionTimer
+}
+
+const building = new Map<string, RunningBundle>()
+interface AnatomyCacheEntry {
+  /** Exact bundle generation whose canonical Views were projected into this anatomy. */
+  bundle: StudioSchemaBundle | null
+  value: Promise<DomainAnatomy>
+}
+const anatomies = new Map<string, AnatomyCacheEntry>()
 /** Demo Datasets, extracted on demand; they follow the bundle (revision) and the tests/ tree. */
 const datasets = new Map<string, Promise<StudioDatasets>>()
 
@@ -257,87 +275,120 @@ export function stillStands(bundle: StudioSchemaBundle): boolean {
   return Number.isFinite(extractedAt) && Date.now() - extractedAt < FAILED_BUNDLE_TTL_MS
 }
 
-/**
- * Background indexing steps aside for a reader.
- *
- * The schema itself is extracted in a subprocess, but hashing the domain's files
- * and composing its ts-morph overlay run HERE, on the thread that answers HTTP —
- * a few hundred milliseconds per domain, back to back for a whole workspace. A
- * build somebody is waiting on says so; the boot loop asks for a gap before it
- * picks up its next domain, and the reader's canvas is not stuck behind an
- * indexing pass it does not care about.
- */
-let awaitedBuilds = 0
-const gapWaiters: (() => void)[] = []
-
-/** Resolves as soon as no reader is waiting on a bundle of their own. */
-export function buildGap(): Promise<void> {
-  if (awaitedBuilds === 0) return Promise.resolve()
-  return new Promise((resolve) => gapWaiters.push(resolve))
-}
-
 export async function getBundle(
   id: string,
   rebuild = false,
-  /** Startup indexing: nobody is on the other end of this one. */
-  background = false,
+  /** Startup/search indexing yields to the Domain a reader is actually viewing. */
+  priority: IntrospectionPriority = 'reader',
 ): Promise<StudioSchemaBundle | null> {
   const h = getDomain(id)
   if (!h) return null
   const held = bundles.get(id)
   if (!rebuild && held && stillStands(held)) return held
 
-  if (!background) awaitedBuilds++
-  try {
-    // A plain read joins whatever build is already running; a rebuild is a demand
-    // for fresh sources, so it starts its own — later readers then join THAT one.
-    const running = building.get(id)
-    if (!rebuild && running) return await running
+  // A plain read joins whatever build is already running; a rebuild is a demand
+  // for fresh sources, so it starts its own — later readers then join THAT one.
+  const running = building.get(id)
+  if (!rebuild && running) {
+    if (priority === 'reader') {
+      running.work.promote()
+      running.timing.promote()
+    }
+    return await running.work.promise
+  }
 
-    const run = (async (): Promise<StudioSchemaBundle> => {
-      const keyBefore = bundleCacheKey(h.root, h.schemaDirName, h.applicationFile)
-      if (!rebuild) {
-        const cached = readCachedBundle(h.root, keyBefore)
-        if (cached && stillStands(cached)) {
-          if (cached.ir) h.origin = cached.ir.domain
-          bundles.set(id, cached)
-          return cached
+  const timing = new IntrospectionTimer(id, priority)
+  const work = introspectionScheduler.schedule(
+    id,
+    priority,
+    async (): Promise<StudioSchemaBundle> => {
+      try {
+        const keyBefore = timing.measureSync('cache-key', () =>
+          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+        )
+        if (!rebuild) {
+          const cached = timing.measureSync('cache-read', () => readCachedBundle(h.root, keyBefore))
+          if (cached && stillStands(cached)) {
+            if (cached.ir) h.origin = cached.ir.domain
+            bundles.set(id, cached)
+            timing.finish('disk-cache')
+            return cached
+          }
         }
+        const bundle = await buildBundle(h, timing)
+        bundles.set(id, bundle)
+        const keyAfter = timing.measureSync('cache-key', () =>
+          bundleCacheKey(h.root, h.schemaDirName, h.applicationFile),
+        )
+        if (keyAfter === keyBefore) {
+          timing.measureSync('cache-write', () => writeCachedBundle(h.root, keyAfter, bundle))
+        }
+        timing.finish('built')
+        return bundle
+      } catch (error) {
+        timing.fail(error)
+        throw error
       }
-      const b = await buildBundle(h)
-      bundles.set(id, b)
-      const keyAfter = bundleCacheKey(h.root, h.schemaDirName, h.applicationFile)
-      if (keyAfter === keyBefore) writeCachedBundle(h.root, keyAfter, b)
-      return b
-    })()
+    },
+    (waitMs) => timing.start(waitMs),
+  )
 
-    building.set(id, run)
-    try {
-      return await run
-    } finally {
-      if (building.get(id) === run) building.delete(id)
-    }
+  const current = { work, timing }
+  building.set(id, current)
+  try {
+    return await work.promise
   } finally {
-    if (!background && --awaitedBuilds === 0) {
-      for (const wake of gapWaiters.splice(0)) wake()
-    }
+    if (building.get(id) === current) building.delete(id)
+  }
+}
+
+export function introspectionStatus(): IntrospectionStatus {
+  const queue = introspectionScheduler.snapshot()
+  return {
+    concurrency: queue.concurrency,
+    active: [...queue.active],
+    queued: {
+      reader: [...queue.queued.reader],
+      background: [...queue.queued.background],
+    },
+    domains: introspectionTimings(),
   }
 }
 
 export async function getAnatomy(id: string, rebuild = false): Promise<DomainAnatomy | null> {
   const h = getDomain(id)
   if (!h) return null
-  if (!rebuild && anatomies.has(id)) return anatomies.get(id)!
-  const anatomy = Promise.all([resolveClientPackage(h.root, rebuild), getBundle(id, rebuild)]).then(
-    ([client, bundle]) =>
-      buildAnatomy({
-        root: h.root,
-        schemaDirName: h.schemaDirName,
-        clientDir: client.status === 'available' ? client.sourceDir : undefined,
-        canonicalViews: bundle?.ir?.format === 'astrale.dsl' ? (bundle.ir.views ?? {}) : undefined,
-      }),
-  )
-  anatomies.set(id, anatomy)
+
+  // Anatomy contains the bundle's canonical Views. Reuse it only while the exact
+  // bundle generation that produced it still stands; a transient extraction
+  // failure may expire and heal without any file-watcher invalidation.
+  const heldBundle = bundles.get(id)
+  const heldAnatomy = anatomies.get(id)
+  if (!rebuild && heldBundle && stillStands(heldBundle) && heldAnatomy?.bundle === heldBundle) {
+    return heldAnatomy.value
+  }
+
+  const [client, bundle] = await Promise.all([
+    resolveClientPackage(h.root, rebuild),
+    getBundle(id, rebuild),
+  ])
+  // Concurrent anatomy readers can both have joined the same bundle build. Let
+  // the first projection win instead of repeating the synchronous source walk.
+  const current = anatomies.get(id)
+  if (!rebuild && current?.bundle === bundle) return current.value
+
+  const anatomy = Promise.resolve().then(() => {
+    const started = performance.now()
+    const result = buildAnatomy({
+      root: h.root,
+      schemaDirName: h.schemaDirName,
+      clientDir: client.status === 'available' ? client.sourceDir : undefined,
+      canonicalViews: bundle?.ir?.format === 'astrale.dsl' ? (bundle.ir.views ?? {}) : undefined,
+    })
+    recordIntrospectionPhase(id, 'anatomy', performance.now() - started)
+    return result
+  })
+  anatomies.set(id, { bundle, value: anatomy })
   return anatomy
 }
 

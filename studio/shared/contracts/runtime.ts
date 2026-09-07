@@ -7,6 +7,42 @@
 
 import type { AgentAccess, AgentEvent, AgentRun } from './agent'
 
+export type IntrospectionPriority = 'reader' | 'background'
+export type IntrospectionPhase =
+  | 'queued'
+  | 'cache-key'
+  | 'cache-read'
+  | 'dependencies'
+  | 'runtime-extract'
+  | 'static-overlay'
+  | 'fingerprint'
+  | 'cache-write'
+  | 'anatomy'
+  | 'complete'
+
+/** Live and most-recent timings for one Domain's schema preparation. */
+export interface DomainIntrospectionTiming {
+  domainId: string
+  priority: IntrospectionPriority
+  status: 'queued' | 'running' | 'complete' | 'failed'
+  phase: IntrospectionPhase
+  queuedAt: string
+  startedAt?: string
+  completedAt?: string
+  elapsedMs: number
+  phasesMs: Partial<Record<IntrospectionPhase, number>>
+  result?: 'disk-cache' | 'built' | 'failed'
+  error?: string
+}
+
+/** Process-wide introspection queue and the latest run observed for each Domain. */
+export interface IntrospectionStatus {
+  concurrency: number
+  active: string[]
+  queued: { reader: string[]; background: string[] }
+  domains: DomainIntrospectionTiming[]
+}
+
 export type StudioEvent =
   | { type: 'schema-diff'; domainId: string; renderFingerprint: string }
   | { type: 'anatomy-diff'; domainId: string }

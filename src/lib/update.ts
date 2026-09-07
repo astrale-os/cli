@@ -17,9 +17,9 @@ import { z } from 'zod'
 import { AstraleError } from '../errors'
 import { INSTALL_PATH } from '../state/index'
 import { run } from './proc'
-import { replaceStandaloneCohort } from './standalone-cohort'
+import { replaceStandaloneBinary } from './standalone-binary'
 
-export { replaceStandaloneCohort, type StandaloneCohortReplacement } from './standalone-cohort'
+export { replaceStandaloneBinary, type StandaloneBinaryReplacement } from './standalone-binary'
 
 const DEFAULT_REPO = 'astrale-os/cli'
 export const DEFAULT_UPDATE_CHANNEL = 'beta'
@@ -30,13 +30,6 @@ export const InstallMetadataSchema = z.object({
   version: z.string().min(1).optional(),
   repo: z.string().min(1).default(DEFAULT_REPO),
   bin: z.string().min(1),
-  cohort: z
-    .object({
-      schemaVersion: z.literal(2),
-      binaryVersion: z.string().min(1),
-      cloudflaredVersion: z.string().min(1),
-    })
-    .optional(),
   installedAt: z.string().optional(),
 })
 
@@ -44,10 +37,7 @@ export type InstallMetadata = z.infer<typeof InstallMetadataSchema>
 
 const ManifestAssetSchema = z.object({
   name: z.string().min(1),
-  sha256: z
-    .string()
-    .regex(/^[a-fA-F0-9]{64}$/)
-    .optional(),
+  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/),
 })
 
 const ManifestBaseSchema = z.object({
@@ -56,32 +46,14 @@ const ManifestBaseSchema = z.object({
   repo: z.string().min(1).optional(),
 })
 
-const LegacyUpdateManifestSchema = ManifestBaseSchema.extend({
+// The original single-binary shape remains understood by released CLIs.
+const SingleBinaryUpdateManifestSchema = ManifestBaseSchema.extend({
   schemaVersion: z.undefined().optional(),
-  binaryVersion: z.string().min(1).optional(),
-  assets: z.record(
-    z.string(),
-    z.union([
-      ManifestAssetSchema,
-      z
-        .string()
-        .min(1)
-        .transform((name) => ({ name })),
-    ]),
-  ),
-})
-
-const CohortUpdateManifestSchema = ManifestBaseSchema.extend({
-  schemaVersion: z.literal(2),
   binaryVersion: z.string().min(1),
-  cloudflaredVersion: z.string().min(1),
-  assets: z.record(z.string(), ManifestAssetSchema.required({ sha256: true })),
+  assets: z.record(z.string(), ManifestAssetSchema),
 })
 
-export const UpdateManifestSchema = z.union([
-  CohortUpdateManifestSchema,
-  LegacyUpdateManifestSchema,
-])
+export const UpdateManifestSchema = SingleBinaryUpdateManifestSchema
 
 export type UpdateManifest = z.infer<typeof UpdateManifestSchema>
 
@@ -131,20 +103,8 @@ export type UpdateResult =
       channel: string
     }
   | {
-      status: 'repair-available'
-      currentVersion: string
-      channel: string
-      bin: string
-    }
-  | {
       status: 'updated'
       previousVersion: string
-      currentVersion: string
-      channel: string
-      bin: string
-    }
-  | {
-      status: 'repaired'
       currentVersion: string
       channel: string
       bin: string
@@ -338,11 +298,11 @@ export function shouldUpdate(currentVersion: string, manifestVersion: string): b
 }
 
 interface UpdateDependencies {
-  readonly replaceStandaloneCohort: typeof replaceStandaloneCohort
+  readonly replaceStandaloneBinary: typeof replaceStandaloneBinary
   readonly writeInstallMetadata: typeof writeInstallMetadata
 }
 
-const defaultUpdateDependencies = Object.freeze({ replaceStandaloneCohort, writeInstallMetadata })
+const defaultUpdateDependencies = Object.freeze({ replaceStandaloneBinary, writeInstallMetadata })
 
 export async function updateAstrale(
   req: UpdateRequest,
@@ -375,9 +335,7 @@ export async function updateAstrale(
     )
   }
 
-  const installPath = req.installPath ?? INSTALL_PATH
-  const repair = await cohortNeedsRepair(meta, installPath, manifest)
-  if (!shouldUpdate(currentVersion, manifest.version) && !repair) {
+  if (!shouldUpdate(currentVersion, manifest.version)) {
     return {
       status: 'up-to-date',
       currentVersion,
@@ -387,14 +345,6 @@ export async function updateAstrale(
   }
 
   if (req.check) {
-    if (!shouldUpdate(currentVersion, manifest.version) && repair) {
-      return {
-        status: 'repair-available',
-        currentVersion,
-        channel: manifest.channel,
-        bin: meta.bin,
-      }
-    }
     return {
       status: 'available',
       currentVersion,
@@ -407,8 +357,7 @@ export async function updateAstrale(
   try {
     const archive = join(tmp, asset.name)
     await downloadToFile(`${base}/${asset.name}`, archive)
-    const manifestChecksum = 'sha256' in asset ? asset.sha256 : undefined
-    const expected = manifestChecksum ?? (await fetchChecksum(base, asset.name))
+    const expected = asset.sha256
     const actual = await sha256File(archive)
     if (actual !== expected.toLowerCase()) {
       throw new AstraleError(
@@ -418,33 +367,14 @@ export async function updateAstrale(
       )
     }
 
-    const cohortManifest = manifest.schemaVersion === 2
-    const cloudflaredVersion =
-      manifest.schemaVersion === 2 ? manifest.cloudflaredVersion : undefined
-    await extractTarGz(
-      archive,
-      tmp,
-      cohortManifest ? ['astrale', 'astrale-cloudflared', 'LICENSE.cloudflared'] : undefined,
-    )
+    await extractTarGz(archive, tmp, ['astrale'])
     const nextBin = join(tmp, 'astrale')
     await chmod(nextBin, 0o755)
-    await smokeVersion(nextBin, manifest.binaryVersion ?? manifest.version)
-    const nextCloudflared = cohortManifest ? join(tmp, 'astrale-cloudflared') : undefined
-    const nextLicense = cohortManifest ? join(tmp, 'LICENSE.cloudflared') : undefined
-    const installedLicense = cohortManifest
-      ? join(dirname(installPath), 'licenses', 'cloudflared.txt')
-      : undefined
-    if (nextCloudflared && cloudflaredVersion) {
-      await chmod(nextCloudflared, 0o755)
-      await smokeCloudflaredVersion(nextCloudflared, cloudflaredVersion)
-    }
+    await smokeVersion(nextBin, manifest.binaryVersion)
 
-    const replacement = await update.replaceStandaloneCohort({
+    const replacement = await update.replaceStandaloneBinary({
       installedBinary: meta.bin,
       nextBinary: nextBin,
-      nextCloudflared,
-      installedLicense,
-      nextLicense,
     })
     try {
       await update.writeInstallMetadata(
@@ -452,15 +382,6 @@ export async function updateAstrale(
           ...meta,
           channel: manifest.channel,
           version: manifest.version,
-          ...(manifest.schemaVersion === 2
-            ? {
-                cohort: {
-                  schemaVersion: 2 as const,
-                  binaryVersion: manifest.binaryVersion,
-                  cloudflaredVersion: manifest.cloudflaredVersion,
-                },
-              }
-            : { cohort: undefined }),
           installedAt: new Date().toISOString(),
         },
         req.installPath,
@@ -471,27 +392,20 @@ export async function updateAstrale(
       } catch (rollbackError) {
         throw new AggregateError(
           [error, rollbackError],
-          'Standalone update metadata commit and cohort rollback both failed.',
+          'Standalone update metadata commit and binary rollback both failed.',
         )
       }
       throw error
     }
     await replacement.finalize()
 
-    return repair && currentVersion === manifest.version
-      ? {
-          status: 'repaired',
-          currentVersion: manifest.version,
-          channel: manifest.channel,
-          bin: meta.bin,
-        }
-      : {
-          status: 'updated',
-          previousVersion: currentVersion,
-          currentVersion: manifest.version,
-          channel: manifest.channel,
-          bin: meta.bin,
-        }
+    return {
+      status: 'updated',
+      previousVersion: currentVersion,
+      currentVersion: manifest.version,
+      channel: manifest.channel,
+      bin: meta.bin,
+    }
   } finally {
     await rm(tmp, { recursive: true, force: true })
   }
@@ -515,20 +429,6 @@ async function downloadToFile(url: string, path: string): Promise<void> {
   if (!res.ok) throw new Error(`GET ${url} failed: HTTP ${res.status}`)
   const bytes = new Uint8Array(await res.arrayBuffer())
   await writeFile(path, bytes)
-}
-
-async function fetchChecksum(base: string, assetName: string): Promise<string> {
-  const raw = await readUrlText(`${base}/sha256sums.txt`)
-  for (const line of raw.split(/\r?\n/)) {
-    const [sha, file] = line.trim().split(/\s+/, 2)
-    if (!sha || !file) continue
-    if (file.replace(/^\*/, '') === assetName && /^[a-fA-F0-9]{64}$/.test(sha)) return sha
-  }
-  throw new AstraleError(
-    'UPDATE_CHECKSUM_NOT_FOUND',
-    `Checksum entry not found for ${assetName}.`,
-    `Release base: ${base}`,
-  )
 }
 
 async function sha256File(path: string): Promise<string> {
@@ -564,42 +464,5 @@ async function smokeVersion(bin: string, expectedVersion: string): Promise<void>
   const actual = stdout.trim()
   if (actual !== expectedVersion) {
     throw new Error(`Updated binary reported version ${actual}, expected ${expectedVersion}`)
-  }
-}
-
-async function smokeCloudflaredVersion(bin: string, expectedVersion: string): Promise<void> {
-  const { code, stdout, stderr } = await run(bin, ['--version'])
-  if (code !== 0) throw new Error(`Updated cloudflared failed --version: ${stderr.trim()}`)
-  const actual = /cloudflared version ([^\s]+)/u.exec(stdout.trim())?.[1]
-  if (actual !== expectedVersion) {
-    throw new Error(
-      `Updated cloudflared reported version ${actual ?? '<invalid>'}, expected ${expectedVersion}`,
-    )
-  }
-}
-
-async function cohortNeedsRepair(
-  meta: InstallMetadata,
-  installPath: string,
-  manifest: UpdateManifest,
-): Promise<boolean> {
-  if (manifest.schemaVersion !== 2) return false
-  if (
-    meta.cohort?.schemaVersion !== 2 ||
-    meta.cohort.binaryVersion !== manifest.binaryVersion ||
-    meta.cohort.cloudflaredVersion !== manifest.cloudflaredVersion
-  ) {
-    return true
-  }
-  const cloudflared = join(dirname(meta.bin), 'astrale-cloudflared')
-  const license = join(dirname(installPath), 'licenses', 'cloudflared.txt')
-  try {
-    const [, licenseBytes] = await Promise.all([
-      smokeCloudflaredVersion(cloudflared, manifest.cloudflaredVersion),
-      readFile(license),
-    ])
-    return licenseBytes.length === 0
-  } catch {
-    return true
   }
 }

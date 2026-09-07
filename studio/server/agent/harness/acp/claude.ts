@@ -14,6 +14,8 @@ import { acpAgentCommand } from './command'
 import { probeAcpHealth, probeAcpLoadout } from './probe'
 
 const DEFAULT_BIN = process.env.DOMAIN_STUDIO_CLAUDE_BIN || 'claude'
+const HEALTH_OK_TTL_MS = 5 * 60_000
+const HEALTH_FAILED_TTL_MS = 15_000
 
 /** Claude Code harness backed exclusively by its bundled ACP agent server. */
 export class AcpClaudeHarness implements AgentHarness {
@@ -29,6 +31,7 @@ export class AcpClaudeHarness implements AgentHarness {
   } as const
 
   private healthCache?: { at: number; health: HarnessHealth }
+  private healthInFlight?: Promise<HarnessHealth>
   private loadoutCache?: { at: number; key: string; data: HarnessLoadout }
 
   constructor(
@@ -46,10 +49,22 @@ export class AcpClaudeHarness implements AgentHarness {
 
   async health(signal?: AbortSignal): Promise<HarnessHealth> {
     const now = Date.now()
-    if (this.healthCache && now - this.healthCache.at < 30_000) return this.healthCache.health
-    const health = await probeAcpHealth(this.acpOptions(), signal)
-    if (!signal?.aborted) this.healthCache = { at: now, health }
-    return health
+    const ttl = this.healthCache?.health.ok ? HEALTH_OK_TTL_MS : HEALTH_FAILED_TTL_MS
+    if (this.healthCache && now - this.healthCache.at < ttl) return this.healthCache.health
+    if (!signal && this.healthInFlight) return this.healthInFlight
+
+    const probe = probeAcpHealth(this.acpOptions(), signal).then((health) => {
+      if (!signal?.aborted) this.healthCache = { at: Date.now(), health }
+      return health
+    })
+    if (signal) return probe
+
+    this.healthInFlight = probe
+    try {
+      return await probe
+    } finally {
+      if (this.healthInFlight === probe) this.healthInFlight = undefined
+    }
   }
 
   async isAvailable(signal?: AbortSignal): Promise<boolean> {

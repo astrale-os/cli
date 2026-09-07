@@ -20,7 +20,7 @@ function slugError(value: string): true | string {
 
 export default {
   name: 'create',
-  description: 'Provision an instance through the Admin control plane',
+  description: 'Provision an instance through Admin',
   afterHelpText: `
 Behavior:
   Requests a new Instance from the configured Admin Domain. The caller must be

@@ -12,14 +12,14 @@ afterEach(() => {
   while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true })
 })
 
-function fakeAcpAgent(root: string): string[] {
+function fakeAcpAgent(root: string, fixedLog?: string): string[] {
   const file = join(root, 'fake-acp-agent.ts')
   writeFileSync(
     file,
     `import { appendFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 
-const log = process.env.FAKE_ACP_LOG
+const log = ${fixedLog ? JSON.stringify(fixedLog) : 'process.env.FAKE_ACP_LOG'}
 const provider = process.env.FAKE_ACP_PROVIDER || 'codex'
 const mode = process.env.FAKE_ACP_MODE || 'normal'
 const effortId = provider === 'codex' ? 'reasoning_effort' : 'effort'
@@ -290,6 +290,33 @@ async function waitForExit(pid: number): Promise<boolean> {
 }
 
 describe('ACP harness adapter', () => {
+  for (const [name, create] of [
+    [
+      'Codex',
+      (root: string, log: string) =>
+        new AcpCodexHarness('/opt/codex-test', fakeAcpAgent(root, log)),
+    ],
+    [
+      'Claude',
+      (root: string, log: string) =>
+        new AcpClaudeHarness('/opt/claude-test', fakeAcpAgent(root, log)),
+    ],
+  ] as const) {
+    test(`${name} coalesces concurrent health reads and reuses the successful probe`, async () => {
+      const root = temporaryRoot(`studio-acp-${name.toLowerCase()}-health-cache-`)
+      const log = join(root, 'acp.jsonl')
+      const harness = create(root, log)
+
+      const [first, joined] = await Promise.all([harness.health(), harness.health()])
+      expect(first.ok).toBe(true)
+      expect(joined).toEqual(first)
+      expect(readLog(log).filter(({ type }) => type === 'boot')).toHaveLength(1)
+
+      expect((await harness.health()).ok).toBe(true)
+      expect(readLog(log).filter(({ type }) => type === 'boot')).toHaveLength(1)
+    })
+  }
+
   test('probes agent and model diagnostics through a disposable ACP session without prompting', async () => {
     const root = temporaryRoot('studio-acp-probe-')
     const log = join(root, 'acp.jsonl')

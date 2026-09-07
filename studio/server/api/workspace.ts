@@ -1,6 +1,6 @@
 import { agentWorkspace } from '../agent/workspace'
 /** Workspace-wide routes that do not require a DomainHandle. */
-import { invalidate } from '../cache'
+import { introspectionStatus, invalidate } from '../cache'
 import { allDomains, depsInstalled } from '../domain'
 import { activeInstanceName, listInstances, setActiveInstance } from '../instances/active'
 import { asJsonRecord, asString } from '../json'
@@ -45,6 +45,10 @@ export async function handleWorkspaceRoute(
       return json(updateWorkspaceUiState(root, body.state))
     }
     return badRequest('GET or POST')
+  }
+
+  if (path === '/api/workspace/introspection' && req.method === 'GET') {
+    return json(introspectionStatus())
   }
 
   if (path === '/api/workspace/create' && req.method === 'POST') {

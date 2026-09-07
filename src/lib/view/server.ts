@@ -12,7 +12,9 @@ import type { ViewServeConfig } from './session'
 import { withClientSession } from '../../connection'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
-import { removeSessionFiles } from './session'
+import { exchangeViewCredential } from './exchange-credential'
+import { refreshViewPlacement } from './refresh'
+import { removeSessionFiles, saveRecord } from './session'
 
 export { ensureViewerAssets, viewerDistDir } from './assets'
 
@@ -32,10 +34,12 @@ const IDLE_SWEEP_MS = 60_000
 
 export type PageStatus = { state: string; error?: string; at: string }
 
-type TokenGrant = { token: string; expiresAt: number; kind: 'minted' }
+type TokenGrant = { token: string; expiresAt: number; kind: 'minted' | 'exchanged' }
 
 export interface ViewServerDependencies {
   readonly connect: typeof withClientSession
+  readonly exchange?: typeof exchangeViewCredential
+  readonly persist?: typeof saveRecord
 }
 
 const DEFAULT_DEPENDENCIES: ViewServerDependencies = Object.freeze({
@@ -53,13 +57,31 @@ export function startViewServer(
   let status: PageStatus = { state: 'waiting', at: new Date().toISOString() }
   let grant: TokenGrant | null = null
   let lastActivity = Date.now()
+  let revision = 0
+  let refreshing: Promise<void> | undefined
 
-  /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
+  async function refresh(): Promise<void> {
+    const view = await refreshViewPlacement(config, dependencies.connect)
+    await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, view })
+    session.view = view
+    grant = null
+    revision += 1
+    status = { state: 'waiting', at: new Date().toISOString() }
+  }
+
+  /** Issue a caller-scoped bearer; raw CLI credentials never enter the browser session. */
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
     grant = await dependencies.connect(
       config.kernel,
-      async ({ auth, target }) => {
+      async ({ auth, target, identity }) => {
+        if (target.domainIssuer !== undefined && config.kernel.creds === undefined) {
+          const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
+            { ...config.kernel, ...(identity === undefined ? {} : { as: identity }) },
+            target,
+          )
+          return { ...exchanged, kind: 'exchanged' as const }
+        }
         const token = await mintViewCredential(auth, target.kernelIssuer)
         return {
           token,
@@ -114,13 +136,13 @@ export function startViewServer(
     if (sub === '/config.json' && req.method === 'GET') {
       json(res, 200, {
         view: session.view,
-        transport: config.transport,
         kernelUrl: proxy.direct ? proxy.kernelUrl : `${base}/k`,
         kernelIssuer: proxy.issuer,
         identity: session.identity ?? null,
         instance: session.instance ?? null,
         sessionId: session.id,
         externalOrigins: config.externalOrigins,
+        revision,
       })
       return
     }
@@ -138,7 +160,16 @@ export function startViewServer(
       if (body && typeof body.state === 'string' && body.state !== 'alive') {
         status = { state: body.state, error: asString(body.error), at: new Date().toISOString() }
       }
-      res.writeHead(204).end()
+      json(res, 200, { revision })
+      return
+    }
+    if (sub === '/refresh' && req.method === 'POST') {
+      // Concurrent requests share one resolution; a failed resolution retains the last good View.
+      refreshing ??= refresh().finally(() => {
+        refreshing = undefined
+      })
+      await refreshing
+      json(res, 200, { revision })
       return
     }
     if (sub === '/state' && req.method === 'GET') {

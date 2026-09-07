@@ -1,12 +1,15 @@
+import { ClientError, ResponseError, TransportError } from '@astrale-os/sdk/client'
 import chalk from 'chalk'
 
+import type { InstanceInfo } from '../admin/instance'
 import type { KernelCommandOpts } from '../connection'
 import type { AdminTargetCommandOpts } from './admin-target'
 import type { ImportedInstanceRootIdentity } from './instance-root-identity'
 
-import { AuthError } from '../errors'
+import { AstraleError, AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
 import { createOwnedInstance } from './admin-instance'
+import { randomOperationId } from './idempotency'
 import { setActive, upsertManagedBookmark } from './instance'
 import { importInstanceRootIdentity } from './instance-root-identity'
 import { withSpinner } from './log'
@@ -25,7 +28,7 @@ export type ProvisionOpts = KernelCommandOpts &
 /** The created instance plus the local-bookmark side effects of provisioning. */
 export type ProvisionResult = {
   /** The raw admin-kernel response — the stable machine surface for `--json`. */
-  created: { url: string; organizationId?: string }
+  created: InstanceInfo
   slug: string
   /** Set when an existing bookmark of the same name was repointed to a new kernel. */
   repointedFrom?: string
@@ -39,12 +42,17 @@ export type ProvisionResult = {
 
 /** Provisioning a child instance runs a multi-step saga. */
 const SAGA_TIMEOUT_MS = '120000'
+const PROVISION_WINDOW_MS = 10 * 60_000
+const RETRY_DELAY_MS = 1_000
 
 interface ProvisionDependencies {
   readonly createOwnedInstance: typeof createOwnedInstance
   readonly upsertManagedBookmark: typeof upsertManagedBookmark
   readonly setActive: typeof setActive
   readonly importInstanceRootIdentity: typeof importInstanceRootIdentity
+  readonly operationId: () => string
+  readonly now: () => number
+  readonly sleep: (milliseconds: number) => Promise<void>
 }
 
 const provisionDefaults: ProvisionDependencies = {
@@ -52,6 +60,9 @@ const provisionDefaults: ProvisionDependencies = {
   upsertManagedBookmark,
   setActive,
   importInstanceRootIdentity,
+  operationId: () => randomOperationId('cli', 'instance', 'create'),
+  now: Date.now,
+  sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 }
 
 /**
@@ -76,18 +87,43 @@ export async function provisionInstance(
   const machine = isMachine(opts)
   let repointedFrom: string | undefined
   let selectionError: unknown = null
-  // The global 30s default doesn't just fail the CLIENT: the disconnect kills
-  // the worker's request mid-saga and leaves TORN state (slug taken, routing
-  // live, no instance node — unrecoverable by retry). Default to a saga-sized
-  // timeout; an explicit --timeout still wins.
+  // Keep each Workflow invocation inside the platform's request window. The
+  // same durable operation is replayed when Admin returns a provisioning receipt.
   const createOpts = instanceCreateOptions(opts)
+  const operationId = deps.operationId()
+  const deadline = deps.now() + PROVISION_WINDOW_MS
 
   const runProvision = () =>
     withSpinner(
       `Provisioning instance ${slug}`,
       !machine,
       async () => {
-        const created = await deps.createOwnedInstance(createOpts, slug)
+        let pending: InstanceInfo | undefined
+        let created: InstanceInfo
+        while (true) {
+          if (pending !== undefined && deps.now() >= deadline) return pending
+          try {
+            created = await deps.createOwnedInstance(createOpts, slug, operationId)
+          } catch (error) {
+            if (!retryableCreate(error) || deps.now() >= deadline) {
+              if (pending !== undefined) return pending
+              throw error
+            }
+            await deps.sleep(RETRY_DELAY_MS)
+            continue
+          }
+          if (created.state === 'ready') break
+          if (created.state !== 'provisioning') {
+            throw new AstraleError(
+              'INSTANCE_PROVISION_FAILED',
+              created.error ?? `Instance ${JSON.stringify(slug)} is ${created.state}.`,
+              'Run `astrale instance list` to inspect it.',
+            )
+          }
+          pending = created
+          if (deps.now() >= deadline) return created
+          await deps.sleep(RETRY_DELAY_MS)
+        }
         try {
           // Org id from the create response — authoritative for token scoping
           // (the router's /auth/org is eventually consistent).
@@ -109,11 +145,14 @@ export async function provisionInstance(
       },
       {
         success: (created) =>
-          `Instance provisioned: ${slug} ${chalk.dim(`(${created.url})${selectionError ? '' : ' · active'}`)}`,
+          created.state === 'ready'
+            ? `Instance provisioned: ${slug} ${chalk.dim(`(${created.url})${selectionError ? '' : ' · active'}`)}`
+            : `Instance provisioning continues: ${slug} ${chalk.dim(`(${created.phase ?? 'pending'} · ${created.operationId ?? operationId})`)}`,
       },
     )
 
   const created = await runProvision()
+  if (created.state !== 'ready') return { created, slug }
   let rootIdentity: ImportedInstanceRootIdentity | undefined
   let rootIdentityError: unknown
   try {
@@ -155,6 +194,14 @@ export async function provisionInstance(
 
 export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {
   return { ...opts, timeout: opts.timeout ?? SAGA_TIMEOUT_MS }
+}
+
+function retryableCreate(error: unknown): boolean {
+  if (error instanceof TransportError) return true
+  if (error instanceof ResponseError) return error.code === 5000
+  if (!(error instanceof ClientError)) return false
+  const failure = (error as ClientError & { readonly failure?: unknown }).failure
+  return failure === 'timeout' || failure === 'closed'
 }
 
 async function instanceCreateAuthentication(opts: ProvisionOpts): Promise<{

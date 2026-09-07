@@ -38,7 +38,11 @@ export async function bootDomain(
   } catch {
     /* best-effort */
   }
-  const bundle = await getBundle(handle.id, false, options.background === true)
+  const bundle = await getBundle(
+    handle.id,
+    false,
+    options.background === true ? 'background' : 'reader',
+  )
   if (!loadBaseline(handle.root))
     captureBaseline(
       handle.root,

@@ -15,6 +15,9 @@ export interface CommentDraft {
   mode: 'comment' | 'ask'
   /** Owning domain of the target. A draft without one is never created. */
   domainId: string
+  /** Exact surface clicked in targeting mode. Kept transiently so the composer can
+   *  leave that surface highlighted until it closes. */
+  targetElement: HTMLElement
   anchor: AnchorRef
   excerpt: string
   x: number

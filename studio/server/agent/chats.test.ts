@@ -81,6 +81,22 @@ describe('chat tabs', () => {
     expect(resolveChat(dir, 'claude', claude.id)?.sessionId).toBe('claude-session')
   })
 
+  test('persists the new-domain context and exposes it on the chat', () => {
+    const dir = root()
+    const chat = createChat(dir, {
+      harness: 'codex',
+      newDomain: { id: 'billing', origin: 'billing.example.dev', path: './billing' },
+    })
+
+    const stored = resolveChat(dir, 'claude', chat.id)!
+    expect(stored.newDomain).toEqual({
+      id: 'billing',
+      origin: 'billing.example.dev',
+      path: './billing',
+    })
+    expect(chatInfo(stored, 'idle').newDomain).toEqual(stored.newDomain)
+  })
+
   test('forking carries a briefing to the new tab and leaves the source untouched', () => {
     const dir = root()
     const source = activeChat(dir, 'claude')

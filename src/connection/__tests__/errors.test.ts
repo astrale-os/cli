@@ -391,6 +391,10 @@ describe('formatKernelError', () => {
     expect(details.join('\n')).toContain('installed issuer: https://old.example')
     expect(details.join('\n')).toContain('replacement issuer: https://new.example')
     expect(details.join('\n')).toContain('astrale domain uninstall grc.example')
+    expect(details.join('\n')).toContain(
+      'Safe uninstall refuses surviving dependents or owned data.',
+    )
+    expect(details.join('\n')).toContain('astrale domain uninstall grc.example --destructive')
   })
 
   test('explains a private Domain source without exposing transport diagnostics', async () => {

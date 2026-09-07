@@ -75,7 +75,7 @@ const TOOLS = [
   {
     name: 'reply_to_thread',
     description:
-      'Post a reply to one comment thread so the user sees it live. Say what you changed, answer a question, or ask one back. Pass `options` (a short list of concrete choices) to turn the reply into a multiple-choice question the user can pick from (or answer freely). Set resolve=true with a short closeNote ONLY when fully handled — never resolve a question you just asked.',
+      'Post a concise reply to one comment thread so the user sees it live; only make it longer when the comment genuinely needs the detail. Say what you changed, answer a question, or ask one back. Pass `options` (a short list of concrete choices) to turn the reply into a multiple-choice question the user can pick from (or answer freely). Set resolve=true with a short closeNote ONLY when fully handled — never resolve a question you just asked.',
     inputSchema: {
       type: 'object',
       properties: {

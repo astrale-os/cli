@@ -146,7 +146,9 @@ export function schemaUpgradeHint(details: SchemaUpgradeDetails): string {
   return (
     `${explanation} If this change is intentional, first run ` +
     `\`astrale domain uninstall ${target}\`, then install it again. ` +
-    'The Kernel refuses uninstall while dependents or business data remain; uninstall never deletes business data.'
+    `Safe uninstall refuses surviving dependents or owned data. Use ` +
+    `\`astrale domain uninstall ${target} --destructive\` only if that owned data should be deleted; ` +
+    'surviving dependents and foreign references still block it.'
   )
 }
 

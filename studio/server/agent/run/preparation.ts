@@ -153,7 +153,13 @@ export async function prepareRun(
     bareResume && !firstTurn
       ? buildResumePrompt()
       : (firstTurn ? handoff : '') +
-        buildTurnPrompt({ workspaceRoot: workspace.root, domains, firstTurn, message })
+        buildTurnPrompt({
+          workspaceRoot: workspace.root,
+          domains,
+          firstTurn,
+          message,
+          ...(firstTurn && chat.turns === 0 && chat.newDomain ? { newDomain: chat.newDomain } : {}),
+        })
   const systemPrompt = buildSystemPrompt({ bridge: bridge.enabled })
   const promptSnapshot = (
     sessionId: string | undefined,

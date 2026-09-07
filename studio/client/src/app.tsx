@@ -135,6 +135,7 @@ export function App() {
     (sectionDomainId && validIds.has(sectionDomainId) ? sectionDomainId : undefined) ??
     (selectionDomainId && validIds.has(selectionDomainId) ? selectionDomainId : undefined) ??
     domains?.[0]?.id
+  const scopedDomain = domains?.find((domain) => domain.id === scopedDomainId)
 
   // A concrete canvas selection hands its owner to the local readers. Their picker
   // can then diverge without creating a workspace-wide active-domain concept.
@@ -191,7 +192,9 @@ export function App() {
           {/* what you are looking at — which DOMAIN is the rail's question, not this bar's */}
           <div className="flex min-w-0 flex-1 items-center gap-1">
             <InstanceSwitcher />
-            {scopedDomainId && <UpdatesBadge domainId={scopedDomainId} />}
+            {scopedDomain ? (
+              <UpdatesBadge domainId={scopedDomain.id} domainPath={scopedDomain.path} />
+            ) : null}
           </div>
 
           {/* where you are */}

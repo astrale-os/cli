@@ -15,3 +15,12 @@ test('embedded agents receive the current SDK and frontend skill contracts', () 
   expect(prompt).not.toContain('initialTags')
   expect(prompt).not.toContain('schema/ runtime/ views/')
 })
+
+test('embedded agents keep immutable thread replies brief and move detail to conversation', () => {
+  const prompt = buildSystemPrompt({ bridge: false })
+
+  expect(prompt).toContain('Keep thread replies relatively brief by default')
+  expect(prompt).toContain('may be as long as needed')
+  expect(prompt).toContain('Thread entries are immutable')
+  expect(prompt).toContain('Correct or clarify it by appending a new reply')
+})

@@ -22,6 +22,7 @@ import type {
   HarnessModelCatalog,
   HarnessStatus,
   InstancesState,
+  IntrospectionStatus,
   StudioSettings,
   LayoutState,
   MergeResult,
@@ -77,17 +78,20 @@ export const api = {
   switchInstance: (name: string) =>
     post<{ ok: boolean; active: string | null; output: string }>('/api/instances/use', { name }),
 
-  bundle: (id: string) => get<StudioSchemaBundle>(`${d(id)}/bundle`),
+  bundle: (id: string, priority: 'reader' | 'background' = 'reader') =>
+    get<StudioSchemaBundle>(
+      `${d(id)}/bundle${priority === 'background' ? '?priority=background' : ''}`,
+    ),
+  introspection: () => get<IntrospectionStatus>('/api/workspace/introspection'),
   core: (id: string) => get<StudioCore>(`${d(id)}/core`),
   anatomy: (id: string) => get<DomainAnatomy>(`${d(id)}/anatomy`),
   viewRuntime: (id: string, slug: string) =>
     get<ViewRuntime>(`${d(id)}/views/${encodeURIComponent(slug)}/runtime`),
-  launchView: (id: string, slug: string, request: { targetId?: string }) =>
+  launchView: (id: string, slug: string, request: { preparationId: string; targetId?: string }) =>
     post<ViewSessionResult>(`${d(id)}/views/${encodeURIComponent(slug)}/session`, request),
   closeViewSession: (id: string, sessionId: string) =>
     post<{ ok: true }>(`${d(id)}/views/sessions/close`, { sessionId }),
   updates: (id: string) => get<StaleReport>(`${d(id)}/updates`),
-  applyUpdate: (id: string) => post<{ ok: boolean; error: string }>(`${d(id)}/updates/apply`, {}),
 
   comments: (id: string) => get<CommentStore>(`${d(id)}/comments`),
   createComment: (
@@ -103,8 +107,6 @@ export const api = {
   ) => post<Comment>(`${d(id)}/comments`, { action: 'create', ...body }),
   replyComment: (id: string, commentId: string, entry: Omit<ThreadEntry, 'id'>) =>
     post<Comment>(`${d(id)}/comments`, { action: 'reply', id: commentId, entry }),
-  editComment: (id: string, commentId: string, entryId: string, text: string) =>
-    post<Comment>(`${d(id)}/comments`, { action: 'edit', id: commentId, entryId, text }),
   setCommentStatus: (
     id: string,
     commentId: string,
@@ -159,8 +161,12 @@ export const api = {
   agentSystemPrompt: () => get<AgentSystemPromptInfo>('/api/agent/prompt/system'),
 
   chats: () => get<ChatList>('/api/agent/chats'),
-  openChat: (harness?: string) =>
-    post<ChatInfo>('/api/agent/chats', { action: 'open', ...(harness ? { harness } : {}) }),
+  openChat: (harness?: string, newDomainId?: string) =>
+    post<ChatInfo>('/api/agent/chats', {
+      action: 'open',
+      ...(harness ? { harness } : {}),
+      ...(newDomainId ? { newDomainId } : {}),
+    }),
   selectChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'select', chatId }),
   closeChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'close', chatId }),
   updateChat: (chatId: string, patch: { title?: string; model?: string; effort?: string }) =>
@@ -236,6 +242,7 @@ export const qk = {
   catalog: ['catalog'] as const,
   instances: ['instances'] as const,
   bundle: (id: string) => ['bundle', id] as const,
+  introspection: ['workspace-introspection'] as const,
   core: (id: string) => ['core', id] as const,
   datasets: (id: string) => ['datasets', id] as const,
   anatomy: (id: string) => ['anatomy', id] as const,

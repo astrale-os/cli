@@ -1,7 +1,7 @@
 /**
- * Temporary compatibility surface for the observed `@astrale-os/connect-host`
- * consumer. Keep this file as re-exports only: CLI state and connection owners
- * remain authoritative, and no Kernel Client implementation type is exposed.
+ * Curated connection surface for repository-owned host and operator tooling.
+ * Keep this file as re-exports only: CLI state, authentication, and connection
+ * owners remain authoritative, and Kernel implementation types stay private.
  */
 
 export { getDefault, getIdentity, readIdentities } from './identity/registry'
@@ -29,6 +29,10 @@ export {
   IdpRefreshTransientError,
   resolveCredential,
 } from './connection/auth'
+
+export { withAdminClientSession } from './connection/session'
+export type { ConnectionContext } from './connection/session'
+export type { AdminConnectionOptions } from './connection/target'
 
 export { loginViaIdp, resolveIdpName } from './lib/login-flow'
 export type { DeviceVerification, LoginFlowOpts, LoginResult } from './lib/login-flow'

@@ -4,9 +4,9 @@
  *   anatomy fileset   → anatomy-diff
  * The studio is read-only, so this only ever pushes; the client refetches.
  */
-import chokidar, { type FSWatcher } from 'chokidar'
-import { existsSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import chokidar, { type FSWatcher as ChokidarWatcher } from 'chokidar'
+import { existsSync, watch as watchFs } from 'node:fs'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 
 import type { DomainHandle } from './domain'
 
@@ -49,8 +49,78 @@ export function affectsBundle(handle: DomainHandle, path: string): boolean {
   )
 }
 
+export interface DomainWatchChannels {
+  schema: boolean
+  anatomy: boolean
+  datasets: boolean
+}
+
+const inside = (path: string, root: string): boolean =>
+  root === '.' || path === root || path.startsWith(`${root}/`)
+
+/** Route one native recursive-watch event to the same three channels as Chokidar. */
+export function domainWatchChannels(handle: DomainHandle, path: string): DomainWatchChannels {
+  const absolute = resolve(path)
+  const rel = relative(handle.root, absolute).split('\\').join('/')
+  if (!rel || rel === '..' || rel.startsWith('../')) {
+    return { schema: false, anatomy: false, datasets: false }
+  }
+  return {
+    schema: absolute === resolve(handle.applicationFile) || inside(rel, handle.schemaDirName),
+    anatomy: ANATOMY_PATHS.some((candidate) => inside(rel, candidate)),
+    datasets:
+      absolute === resolve(handle.configFile) || rel === 'tests' || rel.startsWith('tests/'),
+  }
+}
+
+interface DomainWatchHandlers {
+  schema(): void
+  anatomy(path: string): void
+  datasets(): void
+}
+
+function domainWatchHandlers(handle: DomainHandle): DomainWatchHandlers {
+  let schemaTimer: ReturnType<typeof setTimeout> | undefined
+  let anatomyTimer: ReturnType<typeof setTimeout> | undefined
+  let datasetsTimer: ReturnType<typeof setTimeout> | undefined
+  return {
+    datasets: () => {
+      clearTimeout(datasetsTimer)
+      datasetsTimer = setTimeout(() => {
+        invalidateDatasets(handle.id)
+        broadcast({ type: 'datasets', domainId: handle.id })
+      }, 150)
+    },
+    schema: () => {
+      clearTimeout(schemaTimer)
+      schemaTimer = setTimeout(async () => {
+        // Origin and View declarations are part of the current schema, so schema
+        // edits invalidate both render surfaces.
+        invalidate(handle.id, 'all')
+        broadcast({ type: 'resolving', domainId: handle.id })
+        const bundle = await getBundle(handle.id, true)
+        if (bundle?.error)
+          broadcast({ type: 'compile-error', domainId: handle.id, message: bundle.error.message })
+        broadcast({
+          type: 'schema-diff',
+          domainId: handle.id,
+          renderFingerprint: bundle?.renderFingerprint ?? 'sha-none',
+        })
+        broadcast({ type: 'anatomy-diff', domainId: handle.id })
+      }, 150)
+    },
+    anatomy: (path) => {
+      clearTimeout(anatomyTimer)
+      anatomyTimer = setTimeout(() => {
+        invalidate(handle.id, affectsBundle(handle, path) ? 'all' : 'anatomy')
+        broadcast({ type: 'anatomy-diff', domainId: handle.id })
+      }, 150)
+    },
+  }
+}
+
 /**
- * Domains take their watchers ONE AT A TIME.
+ * Chokidar fallback domains take their watchers ONE AT A TIME.
  *
  * Attaching a domain's watchers walks its authored tree and registers a watch per
  * directory — hundreds, for a domain with a large `ui/` or `client/src`. A dozen
@@ -60,7 +130,7 @@ export function affectsBundle(handle: DomainHandle, path: string): boolean {
  */
 let attachQueue: Promise<void> = Promise.resolve()
 
-function ready(watcher: FSWatcher): Promise<void> {
+function ready(watcher: ChokidarWatcher): Promise<void> {
   return new Promise((resolve) => {
     watcher.once('ready', () => resolve())
     watcher.once('error', () => resolve())
@@ -68,11 +138,49 @@ function ready(watcher: FSWatcher): Promise<void> {
 }
 
 export function watchDomain(handle: DomainHandle): () => void {
+  const started = performance.now()
+  const handlers = domainWatchHandlers(handle)
+
+  // Bun/modern Node expose the OS recursive watcher on macOS, Windows and Linux.
+  // It subscribes without crawling every authored directory first — the crawl is
+  // what made a large Domain stop the HTTP loop for tens of seconds. Keep the
+  // Chokidar path below for filesystems/runtimes that reject recursive watching.
+  try {
+    const watcher = watchFs(handle.root, { recursive: true }, (_event, filename) => {
+      if (filename === null) {
+        handlers.schema()
+        handlers.anatomy(handle.root)
+        handlers.datasets()
+        return
+      }
+      const name = String(filename)
+      const path = isAbsolute(name) ? name : join(handle.root, name)
+      if (ignored(path)) return
+      const channels = domainWatchChannels(handle, path)
+      if (channels.schema) handlers.schema()
+      if (channels.anatomy) handlers.anatomy(path)
+      if (channels.datasets) handlers.datasets()
+    })
+    watcher.on('error', (error) =>
+      console.error(`  Domain Studio — native watcher failed for ${handle.id}:`, error),
+    )
+    if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+      console.log(
+        `    timing watcher ${handle.id} native=${Math.round((performance.now() - started) * 10) / 10}ms`,
+      )
+    }
+    return () => watcher.close()
+  } catch {
+    // Recursive watching is not available on every filesystem/runtime. Its
+    // portable fallback retains the existing event semantics.
+  }
+
   let closed = false
-  const open: FSWatcher[] = []
+  const open: ChokidarWatcher[] = []
 
   const attach = async (): Promise<void> => {
     if (closed) return
+    const fallbackStarted = performance.now()
     const schemaW = chokidar.watch([handle.applicationFile, handle.schemaDir], {
       ignoreInitial: true,
       ignored,
@@ -89,8 +197,13 @@ export function watchDomain(handle: DomainHandle): () => void {
       { ignoreInitial: true, ignored },
     )
     open.push(schemaW, anatomyW, datasetsW)
-    listen(handle, schemaW, anatomyW, datasetsW)
+    listen(handlers, schemaW, anatomyW, datasetsW)
     await Promise.all([ready(schemaW), ready(anatomyW), ready(datasetsW)])
+    if (process.env.DOMAIN_STUDIO_TIMINGS === '1') {
+      console.log(
+        `    timing watcher ${handle.id} fallback=${Math.round((performance.now() - fallbackStarted) * 10) / 10}ms`,
+      )
+    }
     if (closed) for (const w of open) void w.close()
   }
 
@@ -105,47 +218,12 @@ export function watchDomain(handle: DomainHandle): () => void {
 }
 
 function listen(
-  handle: DomainHandle,
-  schemaW: FSWatcher,
-  anatomyW: FSWatcher,
-  datasetsW: FSWatcher,
+  handlers: DomainWatchHandlers,
+  schemaW: ChokidarWatcher,
+  anatomyW: ChokidarWatcher,
+  datasetsW: ChokidarWatcher,
 ): void {
-  let st: ReturnType<typeof setTimeout> | undefined
-  let at: ReturnType<typeof setTimeout> | undefined
-  let dt: ReturnType<typeof setTimeout> | undefined
-
-  datasetsW.on('all', () => {
-    clearTimeout(dt)
-    dt = setTimeout(() => {
-      invalidateDatasets(handle.id)
-      broadcast({ type: 'datasets', domainId: handle.id })
-    }, 150)
-  })
-
-  schemaW.on('all', () => {
-    clearTimeout(st)
-    st = setTimeout(async () => {
-      // Origin and View declarations are part of the current schema, so schema
-      // edits invalidate both render surfaces.
-      invalidate(handle.id, 'all')
-      broadcast({ type: 'resolving', domainId: handle.id })
-      const b = await getBundle(handle.id, true)
-      if (b?.error)
-        broadcast({ type: 'compile-error', domainId: handle.id, message: b.error.message })
-      broadcast({
-        type: 'schema-diff',
-        domainId: handle.id,
-        renderFingerprint: b?.renderFingerprint ?? 'sha-none',
-      })
-      broadcast({ type: 'anatomy-diff', domainId: handle.id })
-    }, 150)
-  })
-
-  anatomyW.on('all', (_event, path) => {
-    clearTimeout(at)
-    at = setTimeout(() => {
-      invalidate(handle.id, affectsBundle(handle, path) ? 'all' : 'anatomy')
-      broadcast({ type: 'anatomy-diff', domainId: handle.id })
-    }, 150)
-  })
+  datasetsW.on('all', handlers.datasets)
+  schemaW.on('all', handlers.schema)
+  anatomyW.on('all', (_event, path) => handlers.anatomy(path))
 }

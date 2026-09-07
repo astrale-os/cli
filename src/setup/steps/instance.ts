@@ -142,6 +142,10 @@ export async function ensureOwnedInstance(
   }
 
   const { created, selectionError } = await deps.provision(slug)
+  if (created.state !== 'ready') {
+    reportNotReady([created])
+    return 'skipped'
+  }
   if (selectionError) {
     const detail = selectionError instanceof Error ? selectionError.message : String(selectionError)
     throw new AstraleError(

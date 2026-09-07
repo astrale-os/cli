@@ -38,6 +38,7 @@ export const AdminContract = Object.freeze({
     }),
     instance: Object.freeze({
       slug: PropertyKey.of(Instance, 'slug'),
+      operationId: PropertyKey.of(Instance, 'provisioningOperationId'),
       url: PropertyKey.of(Instance, 'url'),
       issuer: PropertyKey.of(Instance, 'childIssuer'),
       organizationId: PropertyKey.of(Instance, 'organizationId'),

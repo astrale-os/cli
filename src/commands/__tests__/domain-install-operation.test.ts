@@ -28,6 +28,7 @@ describe('direct domain install operation identity', () => {
     const create = mock(() => GENERATED)
     const requests: unknown[] = []
     let recovery: unknown
+    let credential: unknown
 
     await installDirect(
       'https://crm.test',
@@ -36,6 +37,7 @@ describe('direct domain install operation identity', () => {
         createOperationId: create,
         runKernelCommand: async (input) => {
           recovery = input.recovery
+          credential = input.credential
           requests.push(
             await input.fn({
               session: { schema: { install: async (input: unknown) => input } },
@@ -56,6 +58,7 @@ describe('direct domain install operation identity', () => {
       operation: GENERATED,
       retry: `astrale domain install https://crm.test --direct --operation ${GENERATED}`,
     })
+    expect(credential).toEqual({ principal: 'caller' })
   })
 
   test('accepts an explicit operation only as the exact retry identity', async () => {

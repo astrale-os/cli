@@ -2,6 +2,7 @@ packages:
   - '.'
   - 'studio'
   - 'studio/e2e/fixture'
+  - 'studio/e2e/fixture/peer'
 
 # The published CLI and its private Studio fixture must consume declared
 # package versions rather than being linked together implicitly.

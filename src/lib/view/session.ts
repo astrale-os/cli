@@ -1,4 +1,4 @@
-import type { ResolvedView, ViewTransport } from '@astrale-os/shell'
+import type { ResolvedView } from '@astrale-os/shell'
 
 import { closeSync, fchmodSync, openSync } from 'node:fs'
 import { chmod, mkdir, readdir, readFile, rm } from 'node:fs/promises'
@@ -31,8 +31,6 @@ export type ViewSessionRecord = {
 /** Everything the detached `view __serve` process needs, written before spawn. */
 export type ViewServeConfig = {
   session: ViewSessionRecord
-  /** Owner-local alternate document for this exact verified View placement. */
-  transport?: ViewTransport
   /** Kernel passthrough opts, re-resolved server-side for token mints. */
   kernel: { url?: string; instance?: string; as?: string; creds?: string; timeout?: string }
   /**

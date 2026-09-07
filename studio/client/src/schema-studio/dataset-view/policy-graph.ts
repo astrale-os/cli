@@ -24,6 +24,7 @@ export interface DataEdge {
 
 export interface DataGraph {
   origin: string
+  references: ReadonlyMap<string, string>
   nodeIds: string[]
   /** node id → the class name the Dataset gave it */
   classOf: Map<string, string>
@@ -58,7 +59,11 @@ const push = <T>(map: Map<string, T[]>, key: string, value: T) => {
   else map.set(key, [value])
 }
 
-export function buildDataGraph(core: StudioCore, bundle: StudioSchemaBundle): DataGraph {
+export function buildDataGraph(
+  core: StudioCore,
+  bundle: StudioSchemaBundle,
+  references: Readonly<Record<string, string>> = {},
+): DataGraph {
   const origin = core.domain
   const classOf = new Map(core.nodes.map((node) => [node.path, node.className]))
   const nodeIds = core.nodes.map((node) => node.path)
@@ -123,6 +128,7 @@ export function buildDataGraph(core: StudioCore, bundle: StudioSchemaBundle): Da
 
   return {
     origin,
+    references: new Map(Object.entries(references)),
     nodeIds,
     classOf,
     edges,

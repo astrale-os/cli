@@ -44,9 +44,31 @@ describe('resolveSelfIdAuthenticated', () => {
 })
 
 describe('expandSelfInCall', () => {
+  test('uses the selected caller for both receiver and parameters, not the exchanged Domain', async () => {
+    let resolutions = 0
+    const callContext = {
+      auth: { whoami: async () => ({ id: 'shell-domain-id' }) },
+      self: async () => {
+        resolutions += 1
+        return { id: 'caller-id' }
+      },
+      target: { slug: 'child' },
+    } as ConnectionContext
+
+    const expanded = await expandSelfInCall('@self::resolveHome', { owner: '@self' }, callContext)
+    expect(expanded.path).toBe('@caller-id::resolveHome')
+    expect(expanded.parameters).toEqual({ owner: '@caller-id' })
+    expect(expanded.meta?.slug).toBe('child')
+    expect(resolutions).toBe(1)
+
+    await expandSelfInCall('@explicit-user::resolveHome', {}, callContext)
+    expect(resolutions).toBe(1)
+  })
+
   test('expands only top-level string values after local parameter admission', async () => {
     const callContext = {
-      auth: { whoami: async () => ({ id: 'caller-id' }) },
+      auth: { whoami: async () => ({ id: 'shell-domain-id' }) },
+      self: async () => ({ id: 'caller-id' }),
       target: {},
     } as ConnectionContext
     const expanded = await expandSelfInCall(

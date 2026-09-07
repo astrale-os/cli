@@ -35,6 +35,7 @@ import { DockActivity } from './dock-activity'
 import { AttachButton, CHIP, DocumentChips } from './documents'
 import { HandoffChip } from './handoff-chip'
 import { MessageQueue, type PendingMessage } from './message-queue'
+import { NewDomainChip } from './new-domain-chip'
 
 /** Turns more than an hour apart get a date between them; a burst does not. */
 const HOUR = 60 * 60 * 1000
@@ -137,6 +138,7 @@ export function AgentTranscript() {
           carry a permanent gutter down its side. */}
       <ScrollArea ref={scroller} type="scroll" className="min-h-0 flex-1">
         <div className="space-y-4 px-3 py-3">
+          {chat?.newDomain ? <NewDomainChip domain={chat.newDomain} /> : null}
           {origin && (
             <HandoffChip
               origin={origin}
@@ -168,7 +170,9 @@ export function AgentTranscript() {
             <p className="px-2 py-6 text-center text-[12px] text-muted-foreground">
               {chat?.origin
                 ? 'Continue the work below — the summary above goes with your first message.'
-                : 'No turns yet. Describe the change you want below.'}
+                : chat?.newDomain
+                  ? 'Describe how this new domain should evolve below.'
+                  : 'No turns yet. Describe the change you want below.'}
             </p>
           )}
         </div>

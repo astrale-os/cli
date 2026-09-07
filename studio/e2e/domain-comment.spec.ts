@@ -72,14 +72,39 @@ test('a domain takes a comment, from its frame and from its rail row, in its own
   // renders once a thread exists, so its presence IS the round trip.
   const activeRow = page
     .getByTestId('workspace-domain-tree')
-    .locator(`[data-anchor-ref="domain.${ACTIVE.origin}"]`)
-  await expect(activeRow.getByRole('button', { name: /comment/i })).toBeVisible()
+    .locator(`[data-tree-row][data-anchor-ref="domain.${ACTIVE.origin}"]`)
+  const activeComment = activeRow.getByRole('button', { name: /comment/i })
+  const activeEye = activeRow.getByRole('button', {
+    name: `Hide ${ACTIVE.origin} on the canvas`,
+  })
+  await expect(activeComment).toBeVisible()
+
+  // The comment badge occupies the slot BEFORE visibility. The eye therefore stays in
+  // the rail's last column, aligned with rows that have no comment at all.
+  const peerRow = page
+    .getByTestId('workspace-domain-tree')
+    .locator(`[data-tree-row][data-anchor-ref="domain.${PEER.origin}"]`)
+  const peerEye = peerRow.getByRole('button', { name: `Show ${PEER.origin} on the canvas` })
+  const commentBox = (await activeComment.boundingBox())!
+  const activeEyeBox = (await activeEye.boundingBox())!
+  const peerEyeBox = (await peerEye.boundingBox())!
+  expect(commentBox.x + commentBox.width).toBeLessThanOrEqual(activeEyeBox.x)
+  expect(activeEyeBox.x).toBeCloseTo(peerEyeBox.x, 1)
+
+  // The first row sits flush against the rail's scroll viewport, so its targeting ring
+  // must be inset too; otherwise the top and side strokes are clipped away.
+  await page.keyboard.press('c')
+  await expect(page.getByText('Comment mode — choose a domain element')).toBeVisible()
+  const activeRowBox = (await activeRow.boundingBox())!
+  await page.mouse.move(activeRowBox.x + 40, activeRowBox.y + activeRowBox.height / 2)
+  await expect(activeRow).toHaveAttribute('data-comment-target', '')
+  await expect
+    .poll(() => activeRow.evaluate((element) => getComputedStyle(element).outlineOffset))
+    .toBe('-2px')
+  await page.keyboard.press('Escape')
 
   // ── the rail row of another domain ──
   await page.getByRole('button', { name: `Show ${PEER.origin} on the canvas` }).click()
-  const peerRow = page
-    .getByTestId('workspace-domain-tree')
-    .locator(`[data-anchor-ref="domain.${PEER.origin}"]`)
   await expect(peerRow).toBeVisible()
   await peerRow.scrollIntoViewIfNeeded()
   const row = (await peerRow.boundingBox())!

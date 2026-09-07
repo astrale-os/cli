@@ -9,7 +9,7 @@ Start from the public scaffold and keep it load-bearing:
 
 ```sh
 npx create-astrale-domain@beta contacts \
-  --yes --adapter astrale --frontend react \
+  --yes --adapter astrale --frontend react --instance development \
   --origin contacts.example.dev --dir contacts --no-link
 ```
 
@@ -90,45 +90,52 @@ Integrations and Providers for environment-backed behavior.
 
 ## Development session
 
-With the managed `astrale` adapter, the generated command is the complete development journey:
+Both adapters use the same remote-first Project development journey:
 
 ```sh
 pnpm dev
+pnpm dev staging
+pnpm dev --environment staging --as developer
 ```
 
-It resolves the configured instance or the Astrale CLI's active instance, acquires the CLI-shipped
-private Quick Tunnel, starts the Worker and optional Vite frontend with hot reload, verifies one
-exact local/public Release, reconciles its Kernel installation, and starts a non-opening local View
-host when the Domain declares a View. No Cloudflare account, separate tunnel command, copied URL, or
-manual development install is part of this path. The official standalone Astrale installer owns the
-pinned `astrale-cloudflared` companion; do not install or discover a separate ambient binary.
+The generated script supplies `development` only when no arguments are given. The SDK CLI itself
+requires an explicit Environment for `dev` and `deploy`. Select targets in `defineProject`:
 
-The printed Domain, Runtime, Public, Installed, View, and Ready coordinates are the session's live
-evidence. A runtime-only Domain skips Vite and View startup without warning. Source, runtime,
-declared-secret, and frontend changes retain the last good Release until a replacement verifies;
-configuration changes explicitly ask for a command restart.
-
-Stopping closes the View host, Worker/Vite, and owned Quick Tunnel, but deliberately retains the
-Kernel installation and a non-secret local reconciliation record. On the next `pnpm dev`, a changed
-Quick issuer is replaced only when that record still matches fresh Kernel introspection; drift
-fails safely with the exact manual uninstall command instead of risking another installation.
-Use stable ingress before putting continuity-bearing collaborative data into a development Domain:
-
-```sh
-pnpm dev --host https://contacts-dev.example --port 8787
+```ts
+export default defineProject({
+  application,
+  environments: {
+    development: {
+      deployment: astrale({ signingIdentity: '.astrale/identity.json' }),
+      installation: { instance: 'development' },
+    },
+  },
+})
 ```
 
-An explicit host is externally owned and its installation remains after stop. It must already route
-to the strict local Worker port. The command starts no companion and never creates or deletes that
-ingress.
+Development builds and deploys remotely, verifies the Publication, reconciles the optional
+installation, opens an applicable default View, and serializes subsequent source changes. The
+Application already contains the Runtime; `entrypoints.runtime` only overrides its conventional
+loadable module path. Do not repeat Runtime in Project configuration.
 
-Each real project root and environment owns an independent session, OS-allocated ports, public
-origin, and lifecycle. A second local lock excludes another session targeting the same instance and
-Domain origin, including from a different project. Different target coordinates may run together;
-a duplicate owner fails before ingress or Kernel mutation.
+The Astrale adapter deploys through Services on `installation.instance` by default. For deploy-only
+operation, omit `installation` and set the adapter's `instance` explicitly. The Cloudflare adapter
+uses the author's Cloudflare account and needs no Kernel when installation is omitted. A command-scoped
+`--deploy-only` suppresses installation without changing the Environment's configured deployment target.
+No active-instance fallback selects a Project target.
 
-The direct `cloudflare` adapter intentionally remains provider-local: `pnpm dev` starts only its
-local Worker and optional Vite frontend. It does not own a Kernel, public ingress, or installation.
+Stopping closes local orchestration and its View session, leaving deployment and installation alive.
+Build errors do not replace the deployed candidate; a provider-side failure after publication can
+still affect the remote Service. Do not equate retained local evidence with automatic provider rollback.
+Configuration changes require an explicit restart.
+
+Each project root and Environment has its own session lock. An installation-target lock additionally
+excludes another local checkout targeting the same configured instance and Domain origin. Distinct
+Environments may run together when their provider and installation targets are distinct; naming two
+Environments differently is not sufficient to isolate deliberately identical provider resources.
+
+Domain development needs no local Worker or ingress. Kernel developers separately run the Kernel
+Host's named-profile lifecycle with stable managed ingress when remote Services must call their Kernel.
 
 ## Qualify before deployment
 
@@ -186,8 +193,8 @@ Application -> Build -> Release -> adapter deployment -> Kernel installation
 ```
 
 - `pnpm build` proves provider-neutral compilation and adapter preparation.
-- managed `pnpm dev` owns only the disposable development installation described above.
-- `pnpm prod` performs the configured provider deployment and returns observed deployment evidence.
+- `pnpm dev [environment]` watches and redeploys one Environment, reconciling its optional installation.
+- `pnpm run deploy production` performs one configured deployment and optional installation.
 - `astrale domain publish --origin <origin> --name <name> --public-url <url>` registers that
   observed deployment in the Admin catalog when product distribution requires it.
 - `astrale domain install <url> --direct -i <instance>` installs the deployed Release on one Kernel.

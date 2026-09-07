@@ -41,7 +41,7 @@ export type ResolveSelfIdDependencies = {
   readonly whoami?: (context: ConnectionContext) => Promise<AuthenticatedSelf>
 }
 
-/** Resolve @self only from the effective principal authenticated by the selected Kernel. */
+/** Resolve @self from the selected caller, not the Domain used for graph access. */
 export async function resolveSelfIdAuthenticated(
   context: ConnectionContext,
   dependencies: ResolveSelfIdDependencies = {},
@@ -58,9 +58,9 @@ export async function resolveSelfIdAuthenticated(
     : { id: resolved.id, slug: resolved.slug }
 }
 
-async function whoamiSelfId({ auth, target }: ConnectionContext): Promise<AuthenticatedSelf> {
+async function whoamiSelfId({ self, target }: ConnectionContext): Promise<AuthenticatedSelf> {
   return {
-    ...(await auth.whoami()),
+    ...(await self()),
     ...(target.slug === undefined ? {} : { slug: target.slug }),
   }
 }

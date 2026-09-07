@@ -47,6 +47,8 @@ export interface ConnectionContext {
   readonly session: ClientSession
   readonly graph: GraphApi
   readonly auth: AuthApi
+  /** Resolve the selected identity before any Domain credential exchange. */
+  readonly self: () => Promise<{ readonly id: string }>
   readonly target: ConnectionTarget
   /** Local identity label selected for this session; absent for raw credentials or anonymous use. */
   readonly identity?: string
@@ -172,6 +174,15 @@ function openConnection(
       session,
       graph,
       auth: authApi,
+      self: () =>
+        withResolvedClientSession(
+          target,
+          options,
+          config,
+          (caller) => caller.auth.whoami(),
+          openConnection,
+          { principal: 'caller' },
+        ),
       target,
       ...(options.as === undefined ? {} : { identity: options.as }),
     }),

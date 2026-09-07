@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+
 import { hasUnsentDraft } from '@/lib/comment-drafts'
 import { useUI } from '@/lib/store'
 
@@ -16,6 +18,13 @@ export function CommentDraftPopover() {
   const setCommentDraft = useUI((s) => s.setCommentDraft)
   const ownerDomainId = draft?.domainId ?? ''
   const { openThreads } = useAnchorThreads(draft?.anchor.ref ?? '__none__', ownerDomainId)
+  const targetElement = draft?.targetElement
+
+  useEffect(() => {
+    if (!targetElement) return
+    targetElement.setAttribute('data-comment-draft-target', '')
+    return () => targetElement.removeAttribute('data-comment-draft-target')
+  }, [targetElement])
 
   if (!draft) return null
 

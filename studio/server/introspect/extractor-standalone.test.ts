@@ -43,8 +43,8 @@ function aliasDomain(): { readonly root: string; readonly schema: string } {
   symlinkSync(sdk, join(scope, 'sdk'), 'dir')
   writeFileSync(
     join(schemaDirectory, 'document.ts'),
-    `import { nodeClass } from '@astrale-os/sdk/schema'
-export const Document = nodeClass({ properties: {} })
+    `import { classIcon, nodeClass } from '@astrale-os/sdk/schema'
+export const Document = nodeClass({ icon: classIcon.neutral, properties: {} })
 `,
   )
   const schema = join(schemaDirectory, 'index.ts')

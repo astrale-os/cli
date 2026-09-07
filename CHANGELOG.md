@@ -1,5 +1,121 @@
 # Changelog
 
+## [1.0.0-beta.88](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.87...cli/v1.0.0-beta.88) (2026-09-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **commands:** register existing Identity nodes without provisioning ([#418](https://github.com/astrale-os/cli/issues/418))
+
+### Features
+
+* **commands:** register existing Identity nodes without provisioning ([#418](https://github.com/astrale-os/cli/issues/418)) ([1ec2033](https://github.com/astrale-os/cli/commit/1ec203352415780bb6e0387e3a40569a8a0732f8))
+
+## [1.0.0-beta.87](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.86...cli/v1.0.0-beta.87) (2026-09-05)
+
+
+### Features
+
+* **commands:** display and simulate sameNode policies in Studio ([#414](https://github.com/astrale-os/cli/issues/414)) ([a0c6a70](https://github.com/astrale-os/cli/commit/a0c6a70f69e8daf1224a1e38e87cc9b9b0bfdbe6))
+
+## [1.0.0-beta.86](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.85...cli/v1.0.0-beta.86) (2026-09-05)
+
+
+### Bug Fixes
+
+* **commands:** keep kernel operations in operator tooling ([#405](https://github.com/astrale-os/cli/issues/405)) ([7d222f7](https://github.com/astrale-os/cli/commit/7d222f7205a5b54b9fc6c386358c83475d7e96ae))
+* ship single-binary CLI releases without a tunnel companion ([#407](https://github.com/astrale-os/cli/issues/407)) ([104e7d5](https://github.com/astrale-os/cli/commit/104e7d51fb8f11c497a86ab5de2ea9a138c265b1))
+
+## [1.0.0-beta.85](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.84...cli/v1.0.0-beta.85) (2026-09-05)
+
+
+### Bug Fixes
+
+* **deps:** consume released HTTP service error handling ([#409](https://github.com/astrale-os/cli/issues/409)) ([6ed123c](https://github.com/astrale-os/cli/commit/6ed123cc00df9480daf12111b3317108efd9f807))
+
+## [1.0.0-beta.84](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.83...cli/v1.0.0-beta.84) (2026-09-05)
+
+
+### Bug Fixes
+
+* **commands:** expose uninstall operation recovery ([#406](https://github.com/astrale-os/cli/issues/406)) ([d50688e](https://github.com/astrale-os/cli/commit/d50688ef7a3e0905c84c1271b53e19cedbdb5d64))
+
+## [1.0.0-beta.83](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.82...cli/v1.0.0-beta.83) (2026-09-04)
+
+
+### Bug Fixes
+
+* **connection:** resolve [@self](https://github.com/self) as the selected caller ([#403](https://github.com/astrale-os/cli/issues/403)) ([58a0628](https://github.com/astrale-os/cli/commit/58a0628452c5157d13d7394d658c9e9acbc179c3))
+
+## [1.0.0-beta.82](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.81...cli/v1.0.0-beta.82) (2026-09-04)
+
+
+### Bug Fixes
+
+* **commands:** preserve caller for direct lifecycle ([#401](https://github.com/astrale-os/cli/issues/401)) ([fbd77d7](https://github.com/astrale-os/cli/commit/fbd77d7d463bee296dfc9e5a2b4ee54639922411))
+
+## [1.0.0-beta.81](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.80...cli/v1.0.0-beta.81) (2026-09-04)
+
+
+### Features
+
+* **commands:** support multi-domain destructive uninstall ([#399](https://github.com/astrale-os/cli/issues/399)) ([a080abb](https://github.com/astrale-os/cli/commit/a080abbaf7e2d871617d3bf657989e128559ab59))
+
+## [1.0.0-beta.80](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.79...cli/v1.0.0-beta.80) (2026-09-04)
+
+
+### Bug Fixes
+
+* **view:** admit installed iframe requirements ([#397](https://github.com/astrale-os/cli/issues/397)) ([5d2cddd](https://github.com/astrale-os/cli/commit/5d2cddd58fdd8f425482cfbdb0f35dcba1290073))
+
+## [1.0.0-beta.79](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.78...cli/v1.0.0-beta.79) (2026-09-03)
+
+
+### Features
+
+* **lib:** expose Admin client session ([#374](https://github.com/astrale-os/cli/issues/374)) ([f8d91a6](https://github.com/astrale-os/cli/commit/f8d91a6bdf77b297d0e1813d9654ef1cab887baa))
+
+
+### Bug Fixes
+
+* **lib:** resume admin provisioning operations ([#395](https://github.com/astrale-os/cli/issues/395)) ([8cd6907](https://github.com/astrale-os/cli/commit/8cd6907096923b34a95b771a7f6b198b29ef0f31))
+
+## [1.0.0-beta.78](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.77...cli/v1.0.0-beta.78) (2026-09-03)
+
+
+### Bug Fixes
+
+* **studio:** make updates an explicit restart workflow ([#392](https://github.com/astrale-os/cli/issues/392)) ([62ee37b](https://github.com/astrale-os/cli/commit/62ee37b14600561e02d0b6386065e2e7befbcff1))
+* **studio:** target new-domain creation briefs ([#390](https://github.com/astrale-os/cli/issues/390)) ([e038d0a](https://github.com/astrale-os/cli/commit/e038d0a837f229528c5f5e5904b36f683ee96260))
+
+
+### Performance Improvements
+
+* **commands:** remove CLI startup from Studio views ([#393](https://github.com/astrale-os/cli/issues/393)) ([a0b3a82](https://github.com/astrale-os/cli/commit/a0b3a8226631e45deb97e7a2c9099aa6036d5890))
+* **studio:** memoize command palette index ([#389](https://github.com/astrale-os/cli/issues/389)) ([441b166](https://github.com/astrale-os/cli/commit/441b1661fa337bc4d916f8372ecf5262d4bf0cea))
+
+## [1.0.0-beta.77](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.76...cli/v1.0.0-beta.77) (2026-09-03)
+
+
+### Bug Fixes
+
+* **studio:** keep comment target outlines visible ([#384](https://github.com/astrale-os/cli/issues/384)) ([06908ad](https://github.com/astrale-os/cli/commit/06908adbe570458c0082353e85fed3832f841fba))
+* **studio:** keep startup loading responsive ([#387](https://github.com/astrale-os/cli/issues/387)) ([6eec91b](https://github.com/astrale-os/cli/commit/6eec91ba5669b70b7412e5b09471ffc47f1c1c39))
+* **studio:** make comment entries immutable ([#386](https://github.com/astrale-os/cli/issues/386)) ([74fd64c](https://github.com/astrale-os/cli/commit/74fd64cb75658707b25cd73a5e6fe9eb2c6adb46))
+* **studio:** show the caret in the new-domain name field ([#388](https://github.com/astrale-os/cli/issues/388)) ([a865502](https://github.com/astrale-os/cli/commit/a865502d7c36c0ddf6e83f41ac679cb3883be66f))
+
+## [1.0.0-beta.76](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.75...cli/v1.0.0-beta.76) (2026-09-03)
+
+
+### Bug Fixes
+
+* **commands:** open installed domain views in studio ([#376](https://github.com/astrale-os/cli/issues/376)) ([0bd30b8](https://github.com/astrale-os/cli/commit/0bd30b85a51a86d1f6f2901adb3bf24ce0260e2a))
+* **studio:** clamp class descriptions ([#381](https://github.com/astrale-os/cli/issues/381)) ([3f77317](https://github.com/astrale-os/cli/commit/3f77317c6886abfb143693ab05362e7062892494))
+* **studio:** keep anatomy aligned with bundle retries ([#383](https://github.com/astrale-os/cli/issues/383)) ([eb182cd](https://github.com/astrale-os/cli/commit/eb182cd63433276c6c064be10f8465a8d3ed434b))
+* **studio:** keep comment targets visible while composing ([#380](https://github.com/astrale-os/cli/issues/380)) ([4375b0b](https://github.com/astrale-os/cli/commit/4375b0b687102d6733056185c3f60f34f49e9606))
+* **studio:** keep domain visibility updates on canvas ([#382](https://github.com/astrale-os/cli/issues/382)) ([1b23577](https://github.com/astrale-os/cli/commit/1b23577e9e3fc831979d823769cba97e90542939))
+* **studio:** report readiness after indexing ([#378](https://github.com/astrale-os/cli/issues/378)) ([592322b](https://github.com/astrale-os/cli/commit/592322b5da2ed6d0f4622e783997d36bfc9ddc52))
+
 ## [1.0.0-beta.75](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.74...cli/v1.0.0-beta.75) (2026-09-03)
 
 

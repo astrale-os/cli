@@ -37,8 +37,19 @@ test('an empty name has nothing to correct, and nothing to send', () => {
 
   expect(html).not.toContain('lowercase')
   expect(html).toContain('disabled=""')
-  // a centred empty field would draw the caret THROUGH the prompt it shows
-  expect(html).toContain('caret-transparent')
+})
+
+test('the name is written from the left, so the caret sits before the prompt, not through it', () => {
+  const html = render()
+  const name = html.match(/<input[^>]*aria-label="Domain name"[^>]*>/)?.[0] ?? ''
+
+  expect(name).not.toBe('')
+  // a centred title put the caret through the middle of "domain name"; hiding the
+  // caret made a click into the field look like nothing had happened
+  expect(name).not.toContain('text-center')
+  expect(name).not.toContain('caret-transparent')
+  // and the prompt answers the focus, so the field is seen to be waiting
+  expect(name).toContain('focus:placeholder:')
 })
 
 test('at rest it explains nothing: a name and a message are their own instructions', () => {

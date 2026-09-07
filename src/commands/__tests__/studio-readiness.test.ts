@@ -51,6 +51,21 @@ test('a server that answers is reported ready', async () => {
   }
 })
 
+test('a server is not ready until its endpoint returns a successful status', async () => {
+  let probes = 0
+  const server = Bun.serve({
+    port: 0,
+    hostname: '127.0.0.1',
+    fetch: () => new Response(null, { status: ++probes === 1 ? 503 : 204 }),
+  })
+  try {
+    expect(await waitForHttp(`http://127.0.0.1:${server.port}/`, 10_000)).toBe(true)
+    expect(probes).toBe(2)
+  } finally {
+    server.stop(true)
+  }
+})
+
 test('a probe that exhausts its budget while the server lives reports a timeout', async () => {
   const readiness = await awaitStudioReadiness(
     (abort) => waitForHttp(DEAD_URL, 1, abort),

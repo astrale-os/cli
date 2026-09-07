@@ -209,6 +209,29 @@ describe('V2 Admin Instance adapter', () => {
     })
   })
 
+  test('replays creation with the retained operation id from Admin', async () => {
+    const pending = {
+      id: '@instance-node',
+      slug: 'demo',
+      operationId: 'cli.instance.create.retained',
+      state: 'provisioning',
+      phase: 'publish-instance-route',
+      createdAt: '2026-08-12T00:00:00.000Z',
+      updatedAt: '2026-08-12T00:00:00.000Z',
+    }
+    const contract = fixture({ invoke: () => pending })
+
+    await expect(
+      (await contract.connect()).create('demo', pending.operationId),
+    ).resolves.toMatchObject(pending)
+    expect(contract.calls).toEqual([
+      {
+        target: '/:admin.astrale.ai:core.fleet::createInstance',
+        value: { operationId: pending.operationId, slug: 'demo' },
+      },
+    ])
+  })
+
   test('refreshes and deletes through the resolved Instance receiver', async () => {
     const contract = fixture({
       instances: [instanceNode()],

@@ -36,10 +36,8 @@ async function completeFixture() {
   await writeFile(
     join(directory, 'manifest.json'),
     JSON.stringify({
-      schemaVersion: 2,
       version: '1.0.0-beta.35',
       binaryVersion: '1.0.0-beta.35',
-      cloudflaredVersion: '2026.8.2',
       channel: 'beta',
       repo: 'astrale-os/cli',
       assets: Object.fromEntries(entries),
@@ -259,7 +257,6 @@ describe('release asset publication', () => {
     await validateCliReleaseClosure(directory, assets, {
       version: '1.0.0-beta.35',
       binaryVersion: '1.0.0-beta.35',
-      cloudflaredVersion: '2026.8.2',
       channel: 'beta',
       repo: 'astrale-os/cli',
     })
@@ -276,10 +273,19 @@ describe('release asset publication', () => {
     await validateCliReleaseClosure(directory, assets, {
       version: 'main-1234567890ab',
       binaryVersion: '1.0.0-beta.35',
-      cloudflaredVersion: '2026.8.2',
       channel: 'canary',
       repo: 'astrale-os/cli',
     })
+  })
+
+  it('rejects unsupported release formats', async () => {
+    const directory = await completeFixture()
+    const manifestPath = join(directory, 'manifest.json')
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+    manifest.schemaVersion = 2
+    await writeFile(manifestPath, JSON.stringify(manifest))
+    const assets = await fixtureAssets(directory)
+    await assert.rejects(validateCliReleaseClosure(directory, assets), /schemaVersion is invalid/u)
   })
 
   it('rejects checksum and manifest closures that disagree with platform archives', async () => {
@@ -321,7 +327,7 @@ describe('release asset publication', () => {
     const schemaManifest = JSON.parse(
       await readFile(join(schemaDirectory, 'manifest.json'), 'utf8'),
     )
-    delete schemaManifest.schemaVersion
+    schemaManifest.schemaVersion = 3
     await writeFile(join(schemaDirectory, 'manifest.json'), JSON.stringify(schemaManifest))
     await assert.rejects(
       validateCliReleaseClosure(schemaDirectory, schemaAssets),

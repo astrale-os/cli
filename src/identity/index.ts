@@ -22,7 +22,7 @@ export { acceptRegisteredIdentity, submitIdentityRegistration } from './registra
 export type {
   IdentityRegistrationSubmission,
   IdentityRegistrationResult,
-  RegisteredIdentityRegistration,
+  RegisteredIdentity,
 } from './registration'
 export type { Identity, IdentityStore, Registration } from './registry'
 export type { IdentityExport, IdentityFileOptions, IdentityImportOptions } from './transfer'
