@@ -45,6 +45,7 @@ describe('Class inheritance', () => {
             output: { mode: 'value', schema: { type: 'string' } },
             static: true,
             abstract: false,
+            executable: true,
           },
         },
       }),
@@ -73,6 +74,7 @@ describe('Class inheritance', () => {
             output: { mode: 'value', schema: {} },
             static: false,
             abstract: true,
+            executable: false,
           },
         },
       }),
@@ -85,6 +87,7 @@ describe('Class inheritance', () => {
             output: { mode: 'value', schema: {} },
             static: false,
             abstract: false,
+            executable: true,
           },
         },
       }),
@@ -103,6 +106,7 @@ describe('Class inheritance', () => {
       output: { mode: 'value' as const, schema: {} },
       static: false,
       abstract: true,
+      executable: false,
     }
     const ref = (name: string) => classRef('local.example.dev', name)
     const fixture = bundle({
@@ -110,7 +114,7 @@ describe('Class inheritance', () => {
       Right: nodeClass('Right', { methods: { run: abstractMethod } }),
       Middle: nodeClass('Middle', {
         extendsRefs: [ref('Left'), ref('Right')],
-        methods: { run: { ...abstractMethod, abstract: false } },
+        methods: { run: { ...abstractMethod, abstract: false, executable: true } },
       }),
       Child: nodeClass('Child', { extendsRefs: [ref('Middle'), ref('Left')] }),
     })

@@ -62,6 +62,8 @@ export interface IrCallable {
 export interface IrMethod extends IrCallable {
   static: boolean
   abstract: boolean
+  /** Local executable declaration; independent of the inherited contract flag. */
+  executable: boolean
 }
 
 /** Standalone DSL callable projected without inventing a receiver. */

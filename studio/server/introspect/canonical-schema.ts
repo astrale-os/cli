@@ -259,7 +259,7 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
     methods: Object.fromEntries(
       entriesOf(declaration.methods).map(([methodName, raw]) => [
         methodName,
-        projectMethod(methodName, raw),
+        projectMethod(methodName, raw, declaration.abstract === true),
       ]),
     ),
     ...(kind === 'edge' ? edgeFields(declaration) : {}),
@@ -276,12 +276,13 @@ function projectClass(origin: string, name: string, value: unknown): IrClass {
   }
 }
 
-function projectMethod(name: string, value: unknown): IrMethod {
+function projectMethod(name: string, value: unknown, ownerAbstract: boolean): IrMethod {
   const declaration = asRecord(value) ?? {}
   return {
     ...projectFunction(name, declaration),
     static: declaration.static === true,
     abstract: declaration.abstract === true,
+    executable: declaration.abstract !== true || !ownerAbstract,
   }
 }
 

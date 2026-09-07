@@ -13,6 +13,7 @@ const method = (name: string, input: IrMethod['input'] = { type: 'object' }): Ir
   output: { mode: 'value', schema: { type: 'boolean' } },
   static: false,
   abstract: false,
+  executable: true,
 })
 
 const identity = classRef('kernel.astrale.ai', 'Identity')

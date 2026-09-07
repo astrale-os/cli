@@ -296,7 +296,8 @@ function FnRow({
           : { icon: Zap, tone: 'violet' }
   const Glyph = glyph.icon
   const calls = fn.link?.kernelCalls ?? []
-  const contractOnly = fn.link && !fn.link.implemented
+  const contractOnly =
+    (!('executable' in fn.method) || fn.method.executable) && fn.link && !fn.link.implemented
   return (
     <Row
       onClick={onClick}

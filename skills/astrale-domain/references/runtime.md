@@ -228,3 +228,7 @@ export const downloadDocumentRoute = route(downloadDocument, {
   receiver: 'documentId',
 })
 ```
+
+A locally declared Method with `abstract: true` on a concrete Class requires an Action or Workflow
+just like any other executable Method. Its descendants must declare their own implementations;
+there is no handler fallback. A missing handler rejects the Runtime before it can serve calls.
