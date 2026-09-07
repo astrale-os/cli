@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.92](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.91...cli/v1.0.0-beta.92) (2026-09-07)
+
+
+### Bug Fixes
+
+* **call:** exchange through the installed callable domain ([#430](https://github.com/astrale-os/cli/issues/430)) ([532c14c](https://github.com/astrale-os/cli/commit/532c14c7cec40b9dcd63ea420bf99cf4732b2681))
+
 ## [1.0.0-beta.91](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.90...cli/v1.0.0-beta.91) (2026-09-07)
 
 
