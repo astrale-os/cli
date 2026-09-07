@@ -30,6 +30,7 @@ try {
   if (scenario === 'ensure') {
     const session = await ensureFreshSession('alice', {
       audience,
+      organizationId: process.env.DRIVER_EXPECTED_ORG,
       minimumRemainingSeconds,
       resolveOrganizationId,
     })

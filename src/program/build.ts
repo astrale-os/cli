@@ -106,6 +106,7 @@ export async function buildProgram(): Promise<Command> {
       (await import('../commands/instance/bookmark')).default,
       (await import('../commands/instance/forget')).default,
       withKernelOptions((await import('../commands/instance/create')).default),
+      withKernelOptions((await import('../commands/instance/activate')).default),
       withKernelOptions((await import('../commands/instance/delete')).default),
       withKernelOptions((await import('../commands/instance/invite')).default),
       withKernelOptions((await import('../commands/instance/status')).default),

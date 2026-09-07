@@ -8,6 +8,7 @@ import type { ImportedInstanceRootIdentity } from './instance-root-identity'
 
 import { AstraleError, AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
+import { activateInstance, type InstanceActivation } from './activate-instance'
 import { createOwnedInstance } from './admin-instance'
 import { randomOperationId } from './idempotency'
 import { setActive, upsertManagedBookmark } from './instance'
@@ -38,6 +39,8 @@ export type ProvisionResult = {
   rootIdentity?: ImportedInstanceRootIdentity
   /** Root recovery is deliberately non-fatal to successful provisioning. */
   rootIdentityError?: unknown
+  /** Human access is independent of provisioning and optional root recovery. */
+  access?: InstanceActivation | { readonly status: 'pending'; readonly code: string }
 }
 
 /** Provisioning a child instance runs a multi-step saga. */
@@ -50,6 +53,7 @@ interface ProvisionDependencies {
   readonly upsertManagedBookmark: typeof upsertManagedBookmark
   readonly setActive: typeof setActive
   readonly importInstanceRootIdentity: typeof importInstanceRootIdentity
+  readonly activateInstance: typeof activateInstance
   readonly operationId: () => string
   readonly now: () => number
   readonly sleep: (milliseconds: number) => Promise<void>
@@ -60,6 +64,7 @@ const provisionDefaults: ProvisionDependencies = {
   upsertManagedBookmark,
   setActive,
   importInstanceRootIdentity,
+  activateInstance,
   operationId: () => randomOperationId('cli', 'instance', 'create'),
   now: Date.now,
   sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
@@ -137,7 +142,6 @@ export async function provisionInstance(
               : {}),
           })
           repointedFrom = bookmarked.repointedFrom
-          await deps.setActive(slug)
         } catch (e) {
           selectionError = e
         }
@@ -146,13 +150,34 @@ export async function provisionInstance(
       {
         success: (created) =>
           created.state === 'ready'
-            ? `Instance provisioned: ${slug} ${chalk.dim(`(${created.url})${selectionError ? '' : ' · active'}`)}`
+            ? `Instance provisioned: ${slug} ${chalk.dim(`(${created.url})`)}`
             : `Instance provisioning continues: ${slug} ${chalk.dim(`(${created.phase ?? 'pending'} · ${created.operationId ?? operationId})`)}`,
       },
     )
 
   const created = await runProvision()
   if (created.state !== 'ready') return { created, slug }
+  let access: NonNullable<ProvisionResult['access']>
+  try {
+    access = await deps.activateInstance(created, opts)
+  } catch (cause) {
+    access = {
+      status: 'pending',
+      code: cause instanceof AstraleError ? cause.code : 'OWNER_ACTIVATION_UNAVAILABLE',
+    }
+    console.error(
+      chalk.yellow(
+        `⚠ Instance provisioned, but human access is pending. Run: astrale instance activate ${slug} --as ${opts.as ?? '<WorkOS identity>'}`,
+      ),
+    )
+  }
+  if (access.status === 'completed' && !selectionError) {
+    try {
+      await deps.setActive(slug)
+    } catch (cause) {
+      selectionError = cause
+    }
+  }
   let rootIdentity: ImportedInstanceRootIdentity | undefined
   let rootIdentityError: unknown
   try {
@@ -185,6 +210,7 @@ export async function provisionInstance(
   return {
     created,
     slug,
+    access,
     repointedFrom,
     ...(selectionError ? { selectionError } : {}),
     ...(rootIdentity === undefined ? {} : { rootIdentity }),

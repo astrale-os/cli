@@ -161,6 +161,7 @@ describe('program composition', () => {
       'idp remove',
       'idp show',
       'instance',
+      'instance activate',
       'instance active',
       'instance bookmark',
       'instance create',

@@ -53,6 +53,13 @@ astrale status
 astrale get @self --json
 ```
 
+Creation activates and verifies the selected WorkOS owner's access before selecting the new
+instance. If activation is interrupted, the instance and bookmark remain available; resume with
+`astrale instance activate my-app --as <identity>`. JSON creation output separates provisioning
+`state` from `access.status`. An explicit Admin `--creds` bearer cannot produce a child-audience
+primary proof: creation reports pending access until an IdP identity activates it. Root recovery
+is independent and never substitutes for the human owner's access.
+
 If you already have a kernel URL, create a local bookmark:
 
 ```bash

@@ -25,7 +25,8 @@ export default {
 Behavior:
   Requests a new Instance from the configured Admin Domain. The caller must be
   logged in with WorkOS. Admin owns infrastructure placement. The new instance
-  becomes the active instance.
+  becomes active after its owner access is activated and verified. If activation
+  is interrupted, resume it with instance activate; the instance is not recreated.
 
   Run with no slug in a terminal and it prompts for one (validated live). With
   no TTY — or --ci / --no-prompt — the slug argument is required up front, so
@@ -55,10 +56,10 @@ Examples:
         )
       }
 
-      const { created } = await provisionInstance(id, opts)
+      const { created, access } = await provisionInstance(id, opts)
 
       if (isMachine(opts)) {
-        output(created, opts)
+        output({ ...created, ...(access === undefined ? {} : { access }) }, opts)
         return
       }
     } catch (e) {

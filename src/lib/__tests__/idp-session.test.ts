@@ -17,6 +17,37 @@ afterEach(async () => {
 })
 
 describe('ensureFreshSession', () => {
+  test('refreshes a cached audience token when its explicit owner organization changed', async () => {
+    const server = rotationServer()
+    try {
+      await writeIdpConfig(server.url)
+      const stale = unsignedJwt({ aud: AUD, exp: futureEpoch(), org_id: 'old-organization' })
+      await writeSession({
+        access_token: stale,
+        expires_at: future(),
+        tokens: {
+          [AUD]: { access_token: stale, expires_at: future() },
+        },
+      })
+      const options = {
+        DRIVER_AUDIENCE: AUD,
+        DRIVER_EXPECTED_ORG: 'new-organization',
+      }
+      const [result, concurrent] = await Promise.all([
+        runDriver('ensure', options),
+        runDriver('ensure', options),
+      ])
+      expect(result.ok).toBe(true)
+      expect(concurrent.ok).toBe(true)
+      expect(concurrent.token).toBe(result.token)
+      expect((await runDriver('ensure', options)).token).toBe(result.token)
+      expect(server.refreshCount()).toBe(1)
+      expect(server.lastOrganizationId()).toBe('new-organization')
+      expect(result.token).not.toBe(stale)
+    } finally {
+      await server.stop()
+    }
+  })
   test('returns a fresh session without touching the IdP or the org hint', async () => {
     const server = rotationServer()
     try {
@@ -156,36 +187,47 @@ describe('ensureFreshSession', () => {
     }
   })
 
-  test('rescues an invalid_grant raced by a non-locking winner that saved a rotated session', async () => {
-    const winnerToken = unsignedJwt({ aud: AUD, exp: futureEpoch() })
-    const server = rotationServer({
-      beforeRespond: async () => {
-        // Simulate an old, non-locking CLI that already exchanged the token
-        // and persisted the rotated session before our request landed.
-        await writeSession({
-          access_token: winnerToken,
-          expires_at: future(),
-          refresh_token: 'rt-winner',
-          updatedAt: new Date(Date.now() + 1000).toISOString(),
-        })
-        return Response.json(
-          { error: 'invalid_grant', error_description: 'Refresh token already exchanged.' },
-          { status: 400 },
+  test.each([
+    [undefined, true],
+    ['winner-org', true],
+    ['other-org', false],
+  ] as const)(
+    'rescues a rotated session only when explicit organization %s matches (accepted: %s)',
+    async (organizationId, accepted) => {
+      const winnerToken = unsignedJwt({ aud: AUD, exp: futureEpoch(), org_id: 'winner-org' })
+      const server = rotationServer({
+        beforeRespond: async () => {
+          // Simulate an old, non-locking CLI that already exchanged the token
+          // and persisted the rotated session before our request landed.
+          await writeSession({
+            access_token: winnerToken,
+            expires_at: future(),
+            refresh_token: 'rt-winner',
+            updatedAt: new Date(Date.now() + 1000).toISOString(),
+          })
+          return Response.json(
+            { error: 'invalid_grant', error_description: 'Refresh token already exchanged.' },
+            { status: 400 },
+          )
+        },
+      })
+      try {
+        await writeIdpConfig(server.url)
+        await writeSession({ expires_at: past() })
+
+        const result = await runDriver(
+          'ensure',
+          organizationId ? { DRIVER_EXPECTED_ORG: organizationId } : {},
         )
-      },
-    })
-    try {
-      await writeIdpConfig(server.url)
-      await writeSession({ expires_at: past() })
 
-      const result = await runDriver('ensure')
-
-      expect(result.ok).toBe(true)
-      expect(result.token).toBe(winnerToken)
-    } finally {
-      await server.stop()
-    }
-  })
+        expect(result.ok).toBe(accepted)
+        if (accepted) expect(result.token).toBe(winnerToken)
+        else expect(result.token).toBeUndefined()
+      } finally {
+        await server.stop()
+      }
+    },
+  )
 
   test('reports a missing session when it is deleted while waiting for the lock', async () => {
     const server = rotationServer()
@@ -348,7 +390,11 @@ function rotationServer(opts?: {
       lastClientId = form.get('client_id') ?? undefined
       lastOrgId = form.get('organization_id') ?? undefined
       return Response.json({
-        access_token: unsignedJwt({ aud: AUD, exp: futureEpoch() }),
+        access_token: unsignedJwt({
+          aud: AUD,
+          exp: futureEpoch(),
+          ...(lastOrgId === undefined ? {} : { org_id: lastOrgId }),
+        }),
         refresh_token: current,
         token_type: 'Bearer',
         expires_in: 3600,

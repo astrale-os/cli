@@ -43,12 +43,24 @@ function dependencies(
     provision: mock(async (slug) => ({
       created: instance(slug),
       slug,
+      access: { status: 'completed' as const, user: 'owner' },
     })),
     ...overrides,
   }
 }
 
 describe('setup owned-instance reconciliation', () => {
+  test('does not claim setup fixed while the created owner access is pending', async () => {
+    const deps = dependencies({
+      provision: mock(async (slug) => ({
+        created: instance(slug),
+        slug,
+        access: { status: 'pending' as const, code: 'OWNER_ACTIVATION_UNAVAILABLE' },
+      })),
+    })
+    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
+    expect(deps.adopt).not.toHaveBeenCalled()
+  })
   test('silently adopts the sole owned ready instance', async () => {
     const ready = instance('only')
     const failed = instance('old-attempt', 'failed')
@@ -244,6 +256,19 @@ describe('setup owned-instance reconciliation', () => {
 })
 
 describe('owned-instance adoption', () => {
+  test('does not select an existing instance when its owner cannot be activated', async () => {
+    const activate = mock(async () => {})
+    await expect(
+      adoptOwnedInstance(instance('existing'), 'manager', {
+        upsert: async () => ({ entry: {} }),
+        activate,
+        activateOwner: async () => {
+          throw new AstraleError('OWNER_ACTIVATION_REJECTED', 'Rejected')
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'OWNER_ACTIVATION_REJECTED' })
+    expect(activate).not.toHaveBeenCalled()
+  })
   test('persists the owner organization before activating the bookmark', async () => {
     const owned = instance('existing')
     const calls: unknown[][] = []
@@ -258,6 +283,10 @@ describe('owned-instance adoption', () => {
         }),
         activate: mock(async (...args) => {
           calls.push(['activate', ...args])
+        }),
+        activateOwner: mock(async (...args) => {
+          calls.push(['activateOwner', ...args])
+          return { status: 'completed' as const, user: 'owner' }
         }),
       })
     } finally {
@@ -275,6 +304,7 @@ describe('owned-instance adoption', () => {
           defaultIdentity: 'manager',
         },
       ],
+      ['activateOwner', owned, { as: 'manager' }],
       ['activate', 'existing'],
     ])
   })

@@ -10,6 +10,42 @@ afterEach(() => {
 })
 
 describe('managed Instance root import during provisioning', () => {
+  test('confirms human activation before selecting the instance, independently of Root import', async () => {
+    const events: string[] = []
+    const created = {
+      id: '@instance',
+      slug: 'demo',
+      url: 'https://demo.example/api',
+      state: 'ready' as const,
+    }
+    const result = await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true },
+      {
+        createOwnedInstance: async () => created,
+        upsertManagedBookmark: async () => {
+          events.push('bookmark')
+          return { entry: { url: created.url } }
+        },
+        activateInstance: async (instance) => {
+          expect(instance).toBe(created)
+          events.push('activate')
+          return { status: 'completed', user: 'owner' }
+        },
+        setActive: async () => {
+          events.push('select')
+          return 'demo'
+        },
+        importInstanceRootIdentity: async () => {
+          events.push('root')
+          return { name: 'demo-root' } as never
+        },
+      },
+    )
+    expect(events).toEqual(['bookmark', 'activate', 'select', 'root'])
+    expect(result.access).toEqual({ status: 'completed', user: 'owner' })
+  })
+
   test('uses the exact created Instance and does not fail creation when root recovery fails', async () => {
     const created = {
       id: '@created-instance',
@@ -55,8 +91,8 @@ describe('managed Instance root import during provisioning', () => {
       url: created.url,
       organizationId: created.organizationId,
     })
-    expect(setActive).toHaveBeenCalledTimes(1)
-    expect(setActive).toHaveBeenCalledWith('demo')
+    expect(setActive).not.toHaveBeenCalled()
+    expect(result.access).toEqual({ status: 'pending', code: 'OWNER_ACTIVATION_IDENTITY_REQUIRED' })
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
   })
 
