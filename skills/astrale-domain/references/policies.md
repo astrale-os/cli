@@ -46,12 +46,12 @@ For a non-Root caller, an authorized Function requires both:
 
 - Invoking `Project.rename` does not grant direct Query/Mutation access to Project nodes. Conversely,
   a permitted graph read is not proof that the caller may invoke a Function operating on that record.
-- For an exact Class `read`/`traverse` operation with a Policy, the complete Grant can pass through
-  capability, Class ownership, or Policy; the compiler does not also require a direct capability from the
-  selected graph session's principal.
-- Without that observation Policy, the selected graph session's principal still needs Class ownership or
-  the exact operation capability; the Grant-side observation gate is neutral. No Policy does not mean
-  globally public data.
+- Every Class graph operation admits two independent authority planes. The selected session principal must
+  be Kernel Root, own the Class, or hold its exact operation capability; the complete Grant must separately
+  pass by capability, ownership, or a declared `read`/`traverse` Policy.
+- A Class Policy affects only the Grant plane; it never gives the selected principal Class authority. For a
+  Domain-owned View, use the Domain exchange credential: the Domain principal closes ownership while the
+  carried human Grant is evaluated by the Policy. No Policy makes that Grant plane neutral, not data public.
 - Current Class effects (`create`/`update`/`delete`) do not evaluate Class observation Policies. For a
   non-Root principal, effect closure requires principal capability/ownership and complete-Grant
   capability/ownership. If initiated through a callable, callable admission remains a separate outer gate.

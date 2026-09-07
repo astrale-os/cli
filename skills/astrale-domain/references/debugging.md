@@ -50,6 +50,9 @@ installed-Domain binding → source Kernel → local result
 
 - The SDK session owns discovery, delegation transport, redirect admission, and credential reuse.
   Do not assume every call performs separate delegate/exchange requests; local and warm calls differ.
+- A Domain token exchange changes the authenticated principal to that Domain's installed identity while
+  carrying the verified source credential as its Grant. This is the normal mounted-View shape: owner on the
+  principal plane, human Policy evidence on the Grant plane; it is not impersonation or a privileged read proxy.
 - A protocol redirect carries a destination credential, not permission to forward the original token
   to any URL. Only the pinned source may redirect; a destination redirect is rejected.
 - Route reuse is partitioned by source, target, credential, delegation, and expected Schema revision.
@@ -62,6 +65,8 @@ installed-Domain binding → source Kernel → local result
 ## Classify admission failures
 
 - Authentication failure: credential/session evidence was not admitted.
+- Graph authority failure: inspect the selected session principal and complete Grant independently. A valid
+  human Policy match cannot compensate for a principal that neither owns nor may operate on the Class.
 - Callable authority failure: inspect the installed executor and the caller's complete Grant separately;
   missing caller `can_use` alone is not a diagnosis because callable Policy can supply caller authority.
 - Policy refusal: establish which check failed and whether another authority branch applies. See

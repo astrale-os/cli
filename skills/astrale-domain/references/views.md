@@ -75,8 +75,10 @@ export function useCloseIssue() {
 
 - `useQuery`/`useMutation` operate with the browser caller's authority, unlike runtime Domain executors.
   Callable access does not imply graph access: Class operation authority is evaluated separately; see `policies.md`.
-- Use a caller-scoped Function returning a minimal projection when members should read through Domain
-  authority. Do not grant broad graph rights merely to make a direct query render.
+- For a mounted Domain View, the host supplies the exchanged Domain-principal session while retaining the
+  human caller in its Grant. Keep ordinary reads as direct Queries so Class Policies govern visibility; see `debugging.md`.
+- Do not add a proxy Function merely to cross that authority boundary. A projection Function is appropriate
+  only when aggregation or a deliberately different business contract is itself the product behavior.
 - Instance `useAction.run` accepts `{ id: NodeId }`; a returned ID does not require a second Class read
   or a fabricated `BoundNode`. Validate only genuinely untrusted raw values entering that boundary.
 - After a successful call, refresh affected observations. Start with supported invalidation options,
