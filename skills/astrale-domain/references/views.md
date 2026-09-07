@@ -77,11 +77,11 @@ Choose the boundary from product semantics; callable access and direct graph acc
 
 | Intended contract | Use |
 | --- | --- |
-| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query; commonly a Domain-principal session carrying the caller Grant |
+| Expose graph records, filtered per candidate by Class `read`/`traverse` Policies | Direct Query with the supplied session; Policy evaluates the complete Grant |
 | Give an actor that owns the Class or holds its exact capability direct graph access | Direct Query with that actor as principal |
 | Expose a calculated, aggregated, redacted, or graph-independent stable result | Function with explicit callable admission; implement it as an Action or Workflow as appropriate |
 
-The host owns exchange and refresh for a Domain-principal session; View code keeps using the supplied client.
+The host owns session selection, exchange, and refresh; View code keeps using the supplied client.
 See `policies.md` for both authority planes and `debugging.md` for exchange mechanics.
 
 - Instance `useAction.run` accepts `{ id: NodeId }`; a returned ID does not require a second Class read

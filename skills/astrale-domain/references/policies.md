@@ -11,43 +11,47 @@ Kernel Runtime defines and evaluates those semantics against the pinned installa
   propagates authentication failure instead of falling back to anonymous;
 - `authenticated` requires an authenticated actor;
 - `authorized` requires an authenticated actor. The principal of the active installed Kernel registration
-  bypasses the remaining callable gate; every other caller requires the installed executor and complete
-  caller Grant admission described below;
+  bypasses the remaining callable gate; every other caller requires effective caller-principal authority
+  and complete caller Grant admission described below;
 - only `authorized` may declare a callable Policy. `authenticated` does not add a `can_use` or Policy gate.
 - Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
   a protected operation merely because its handler can access Domain-owned data.
 
-## Function admission: executor AND caller authority
+## Function admission: caller principal AND complete Grant
 
-- The caller `principal` is the Identity directly established by authentication. Its complete Grant is the
-  authority expression evaluated for the invocation, including unions, intersections, and restrictions.
-  Both remain distinct from the installed executor; delegation does not turn the caller into the Domain owner.
+The caller `principal` is the Identity established by authentication. Its effective Identity profile
+and the credential's complete Grant are separate inputs. Do not derive caller authority from the executor.
 
 For a non-Root caller, an authorized Function requires both:
 
-1. The installed executor owns the exact Function or has its direct `can_use` capability.
-2. The complete caller Grant passes the Function-use branch (a carried Kernel Root Identity, exact Function
-   owner, or direct `can_use`), OR the Function's declared Policy check passes over that complete Grant.
-   Missing Policy supplies no alternative.
+1. The caller's own Identity profile supplies `can_use` or exact Function ownership. Evaluate live
+   `extends_with`, `constrained_by`, and `excluded_from` composition with deny-wins: a User may inherit
+   `can_use` from a Group without an individual capability Edge. An unrelated capable Identity merely
+   carried in the credential cannot supply this principal ceiling.
+2. The complete caller Grant passes the intrinsic Root/Function-owner branch OR the declared callable
+   Policy. Missing Policy supplies no alternative. `can_use` is no longer an intrinsic Grant bypass;
+   giving the caller that capability does not defeat a business Policy.
 
-- The executor is not the human caller. For an inherited Method, ownership follows the resolved
-  Function's accepted installation, not the receiver Class's Domain or a business `ownedBy` Edge.
-- Direct Function use and callable Policy are alternatives, not successive checks. A failed Policy
-  does not revoke an independently valid use Grant; test Policy refusals without that bypass authority.
-- Evaluate each branch against the whole Grant: identities inside an intersection cannot satisfy
-  half through `can_use` and half through Policy. A caller whose direct principal is the active installed
-  Kernel Root is an explicit admission bypass; a Root Identity carried inside another principal's Grant
-  remains part of the ordinary Function-use branch.
+- The executor never replaces the caller principal. For an inherited Method, exact Function ownership
+  follows its executable declaring installation, not the receiver Class or a business `ownedBy` Edge.
+- Evaluate each alternative over the whole Grant. Identities inside an intersection cannot combine
+  intrinsic ownership from one branch with Policy satisfaction from another. A carried Root Identity
+  remains inside the Grant branch; only the authenticated installed Kernel Root takes the outer shortcut.
+- A Policy `subject` is an evaluated Grant Identity, not necessarily the authenticated principal.
+- Protected Kernel syscalls explicitly attach `canUseSyscall` to their exact Function or Method. That
+  Policy checks the complete Grant's `can_use`; resource checks inside the syscall remain independent.
+  Capability-only callable admission must likewise be declared explicitly, not inferred from `can_use`.
 
 ## Graph access is a separate decision
 
 - Invoking `Project.rename` does not grant direct Query/Mutation access to Project nodes. Conversely,
   a permitted graph read is not proof that the caller may invoke a Function operating on that record.
-- Every Class graph operation admits two independent authority planes. The selected session principal must
-  be Kernel Root, own the Class, or hold its exact operation capability; the complete Grant must separately
-  pass by capability, ownership, or a declared `read`/`traverse` Policy.
-- A Class Policy affects only the Grant plane; it never gives the selected principal Class authority. No
-  Policy makes the Grant plane neutral, not data public. Choose the intended View boundary in `views.md`.
+- With a declared Class `read`/`traverse` Policy, observation admission needs no additional principal
+  Class capability: the complete Grant passes through capability, ownership, or that Policy. Class
+  capability/ownership therefore remains an alternative to observation Policy, unlike Function `can_use`.
+- Without an observation Policy, the selected principal must own or hold the exact Class capability
+  (or be Kernel Root); the Grant plane is neutral. This does not make data public. The outer Query
+  Function gate still applies in both cases. Choose the intended View boundary in `views.md`.
 - Current Class effects (`create`/`update`/`delete`) do not evaluate Class observation Policies. For a
   non-Root principal, effect closure requires principal capability/ownership and complete-Grant
   capability/ownership. If initiated through a callable, callable admission remains a separate outer gate.
@@ -63,11 +67,12 @@ For a non-Root caller, an authorized Function requires both:
   Describe the constituent match Policies; do not add unsupported metadata or duplicate patterns for a label.
 - Read `users.md` for Shell User subclasses, registration, and membership. Business graph ownership
   does not justify a shadow User or manual writes to Shell's membership/authority pair.
-- Request an exact foreign Function when the Domain invokes it through Domain-owned (`self`/`union`)
-  direct-use authority. Installation materializes `can_use` for that Domain principal; this is distinct
-  from the protected Function's executor gate.
-- Do not request direct use for a caller-session Policy-admitted call merely because the dependency is
-  `authorized`: that capability bypasses Policy. Shell's user/group methods are one example.
+- Declare the exact protected foreign Function in Application requirements when calling as the Domain,
+  including Policy-admitted Shell methods. Installation supplies the Domain principal's capability;
+  the carried Grant must still satisfy the callable's intrinsic or Policy branch.
+- For a human-principal session, inspect the human's effective group profile instead. Domain requirements
+  do not grant that human authority, and a missing direct User capability is not a reason to duplicate
+  rights already supplied through `extends_with`.
 - Kernel calls such as `auth.register(...)` require exact Function usability and must independently satisfy
   their credential, target, and graph/Schema admission. Select the caller/Domain session explicitly; a Schema
   dependency is not a capability, and granting the human rights is not Domain-owned execution.
@@ -103,6 +108,9 @@ export const rename = method({
 - Inside a match or callable object expression, `ref(...)` may name a projected Class, Function, Policy, View,
   or Core node from the local Domain or an exact direct dependency. Referencing a dependency Policy this way
   compares or traverses its projected graph node; it does not evaluate that Policy.
+- Method refs require a compatible SDK/DSL: `ref(methodHandle)` or `ref(() => methodHandle)` names an
+  exact concrete declaring Method, static or instance. Abstract slots and inherited aliases are not
+  Function projections; reference the executable declaration from the local or direct-dependency owner.
 - Every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
   Edge-Policy branch references `source`, `target`, or both. The `subject`, every referenced protected term,
   and every scoped existential variable must form one connected proof graph. A branch saying only “caller
@@ -139,10 +147,11 @@ export const rename = method({
 
 - Root success proves executability, not an application user's Policy. Test distinct registered principals
   with real business facts; a local CLI identity need not be registered or authorized on the target Kernel.
-- Test applicable credential failure, executor denial, caller/Policy denial without a direct-use alternative,
-  and success through the real Kernel path. For denials, prove reachable handlers, steps, Providers, and graph
-  effects did not run; earlier Runtime initialization is outside that assertion.
-- For direct-capability success, inspect requested and materialized Function capability for the Domain principal.
-  For Policy success, prove the intended caller Grant and absence of a bypass branch; inspect executor separately.
+- Test credential failure, principal-profile denial, inherited Group capability success, and business
+  Policy denial despite valid principal `can_use`. Keep Root/owner alternatives out of a test claiming Policy enforcement.
+  For denials, prove reachable handlers, steps, Providers, and graph effects did not run; earlier Runtime
+  initialization is outside that assertion.
+- Inspect requested/materialized capabilities for Domain callers and live group composition for human
+  callers. Prove the carried Grant independently, including relevant constraints, exclusions, and revocation.
 - Keep evidence proportional: mutating denial needs an independent no-effect read, read-only denial does not.
   Test revocation by removing the business fact and repeating the same operation while the Domain stays installed.

@@ -111,9 +111,10 @@ export const schema = defineSchema('work.example', {
 - Unassigning removes that direct pair, not Authentication or every other access path. Memberships
   may precede registration; removing `member` alone is not a permanent ban on owner-authorized readmission.
 
-Shell's three methods above are intentionally Policy-admitted. Do not add direct `can_use` requirements
-for them: that bypasses their caller Policy. Declare Kernel Query/Mutate/Register capabilities only as
-needed, and protect the business callable before it invokes Shell as the Domain. See `policies.md`.
+Shell's three methods above require both effective caller-principal Function authority and their
+caller Policy. A Domain calling them declares the exact Method requirements; a human may inherit
+capabilities through `extends_with`. Neither bypasses the Policy. Declare Kernel Query/Mutate/Register
+capabilities as needed, and protect the business callable before it invokes Shell. See `policies.md`.
 
 ## Inspect and exercise the installed surface
 

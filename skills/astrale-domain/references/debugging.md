@@ -51,8 +51,9 @@ installed-Domain binding → source Kernel → local result
 - The SDK session owns discovery, delegation transport, redirect admission, and credential reuse.
   Do not assume every call performs separate delegate/exchange requests; local and warm calls differ.
 - A Domain token exchange changes the authenticated principal to that Domain's installed identity while
-  carrying the verified source credential as its Grant. When a host chooses this View shape, ownership closes
-  the principal plane and the human remains the Policy subject on the Grant plane; this is not impersonation.
+  carrying the verified source credential as its Grant. This changes principal capabilities/ownership;
+  Policies still evaluate the complete carried Grant. Class observation Policies do not require such an
+  exchange merely to supply principal Class authority; use the session selected by the host.
 - A protocol redirect carries a destination credential, not permission to forward the original token
   to any URL. Only the pinned source may redirect; a destination redirect is rejected.
 - Route reuse is partitioned by source, target, credential, delegation, and expected Schema revision.
@@ -66,12 +67,13 @@ installed-Domain binding → source Kernel → local result
 ## Classify admission failures
 
 - Authentication failure: credential/session evidence was not admitted.
-- Graph authority failure: inspect the selected session principal and complete Grant independently. A valid
-  human Policy match cannot compensate for a principal that neither owns nor may operate on the Class.
-- Callable authority failure: inspect the installed executor and the caller's complete Grant separately;
-  missing caller `can_use` alone is not a diagnosis because callable Policy can supply caller authority.
-- Policy refusal: establish which check failed and whether another authority branch applies. See
-  `policies.md`; a Policy is not universally an additional gate after direct capability.
+- Graph authority failure: distinguish observation with a Class Policy, observation without one, and
+  effects. Their principal/Grant rules differ; see `policies.md` before adding Class capabilities.
+- Callable authority failure: inspect the authenticated principal's effective profile and the carried Grant
+  separately. Missing direct `can_use` may be satisfied through groups; a passing callable Policy cannot
+  compensate for a failed principal ceiling. The installed executor never substitutes for that principal.
+- Policy refusal: distinguish Function Root/owner alternatives from Class capability/owner alternatives;
+  Function `can_use` does not bypass a business Policy. Check the deployed Kernel's semantics first.
 - Input failure: callable validation rejected input before execution.
 
 Confirm denied calls caused no Action, Workflow step, Provider, or graph effect. Never add a handler
