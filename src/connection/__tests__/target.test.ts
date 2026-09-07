@@ -4,7 +4,11 @@ import { describe, expect, test } from 'bun:test'
 import type { AstraleConfig } from '../../lib/config'
 import type { InstanceStore } from '../../lib/instance'
 
-import { resolveAdminConnectionTarget, resolveConnectionTarget } from '../target'
+import {
+  registrationKeyForTarget,
+  resolveAdminConnectionTarget,
+  resolveConnectionTarget,
+} from '../target'
 
 const config: AstraleConfig = {
   issuer: 'https://cli.example',
@@ -31,6 +35,22 @@ const instances: InstanceStore = {
 }
 
 describe('connection target', () => {
+  test('shares registrations across aliases and transports only for the same Kernel issuer', () => {
+    const kernelIssuer = issuer.accept('https://kernel.example/issuer')
+    const original = { slug: 'first', url: 'https://kernel.example/api', kernelIssuer }
+    const alias = { slug: 'second', url: 'https://proxy.example/invoke', kernelIssuer }
+    const direct = { url: 'https://kernel.example/issuer', kernelIssuer }
+    expect(registrationKeyForTarget(original)).toBe(kernelIssuer)
+    expect(registrationKeyForTarget(alias)).toBe(registrationKeyForTarget(original))
+    expect(registrationKeyForTarget(direct)).toBe(registrationKeyForTarget(original))
+    expect(
+      registrationKeyForTarget({
+        ...original,
+        kernelIssuer: issuer.accept('https://other.example'),
+      }),
+    ).not.toBe(kernelIssuer)
+  })
+
   /** @evidence TEST-CLI-CONNECTION-SELECTS-EXACT-TARGET */
   test('preserves URL, bookmark, active, managed, and Admin target semantics', async () => {
     expect(

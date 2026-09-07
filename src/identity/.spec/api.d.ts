@@ -103,7 +103,7 @@ export function upsertIdpIdentity(
 
 export function setRegistration(
   name: string,
-  instanceSlug: string,
+  kernelIssuer: string,
   registration: Registration,
 ): Promise<void>
 
