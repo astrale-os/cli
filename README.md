@@ -60,6 +60,12 @@ astrale instance bookmark staging --url https://kernel.example.com
 astrale instance use staging
 ```
 
+Local key registrations are scoped to the Kernel issuer, not a bookmark name or transport URL.
+Aliases for the same issuer share a registration; different issuers remain isolated. Registrations
+retained under old bookmark keys must be re-recorded with `astrale identity register <name>
+--node @existing-user -i <instance>` using an authorized caller. This reuses the existing identity
+and keypair; do not create a replacement User or key. No alias-based credential fallback is used.
+
 ## Agent Browser
 
 `astrale browser` prepares an authenticated GUI session for your coding agent.

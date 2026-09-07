@@ -42,7 +42,7 @@ export interface TargetDependencies {
 
 /** Stable local identity-registration key for the exact selected source Kernel. */
 export function registrationKeyForTarget(target: ConnectionTarget): string {
-  return target.slug ?? target.url
+  return target.kernelIssuer
 }
 
 /** Resolve the existing URL / instance / active precedence into one exact source Kernel. */
