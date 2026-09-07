@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.93](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.92...cli/v1.0.0-beta.93) (2026-09-07)
+
+
+### Bug Fixes
+
+* **view:** scope credentials to the mounted domain ([#433](https://github.com/astrale-os/cli/issues/433)) ([dcef73e](https://github.com/astrale-os/cli/commit/dcef73e9ecbab2f61970a4aa02432035cd6b0f48))
+
 ## [1.0.0-beta.92](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.91...cli/v1.0.0-beta.92) (2026-09-07)
 
 
