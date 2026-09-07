@@ -40,15 +40,15 @@ configured instance.
 
 ```bash
 API_TOKEN="$API_TOKEN" jq -n '{name:"API_TOKEN",value:env.API_TOKEN}' | \
-  astrale call "@$SERVICE_NODE_ID::setSecret" -i "$TARGET" --json
+  astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.setSecret" -i "$TARGET" --json
 unset API_TOKEN
 
-astrale call "@$SERVICE_NODE_ID::secrets" -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::deleteSecret" name=API_TOKEN -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::setSchedule" \
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.secrets" -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.deleteSecret" name=API_TOKEN -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.setSchedule" \
   --data '{"crons":["0 * * * *"]}' -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::schedules" -i "$TARGET" --json
-astrale call "@$SERVICE_NODE_ID::logs" tail=100 -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.schedules" -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.logs" tail=100 -i "$TARGET" --json
 ```
 
 ## View and delete
@@ -56,7 +56,7 @@ astrale call "@$SERVICE_NODE_ID::logs" tail=100 -i "$TARGET" --json
 ```bash
 astrale view /:services.astrale.ai:view.application -i "$TARGET" --browser
 
-astrale call "@$SERVICE_NODE_ID::delete" -i "$TARGET" --json
+astrale call "@$SERVICE_NODE_ID::services.astrale.ai:class.CloudflareWorker.method.delete" -i "$TARGET" --json
 ```
 
 Deletion removes provider deployment, schedules, secrets, routing/certificate resources, and the

@@ -22,10 +22,14 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
 
 - Use public SDK bindings/executors, not hand-built endpoints, tokens, or routing. Transport is
   transparent to business code; consult `debugging.md` only when diagnosing discovery or invocation.
-- Prefer direct `query`/`mutate`: they use Domain authority (`graph.self`). Use `graph.caller` or
-  `graph.union` only for their deliberately different authority semantics, not for style.
-- The ordinary `client` is caller-only; select `kernel.self` explicitly for Domain-owned platform calls.
-  Anonymous invocations without a bound Client have no graph executors.
+- Default `query`, `mutate`, and `kernel` use the installed Domain authority (`self`). Select
+  `graph.caller` or `kernel.caller` for the incoming caller Grant, and `union` deliberately when both
+  are needed. `dependencies.alias.invoke` forwards the incoming caller Grant.
+- Protected callables receive authenticated `caller` evidence and bound `kernel` sessions.
+  An unauthenticated anonymous invocation has null `kernel`, `graph`, and `dependencies`.
+- Use the handler's `kernel` session for admitted Kernel capabilities outside graph operations;
+  keep reusable graph operations on Query/Mutation executors. `executeQuery(client, ...)` and
+  `executeMutation(client, ...)` remain lower-level APIs for consumers that already own a Client.
 - `self` is the admitted receiver's `NodeId`; static/top-level callables have no receiver. The SDK validates
   callable input before the handler and output afterward; do not repeat parsing or implement role checks there.
 - Public inputs may accept `Path` for convenient locators; return canonical record IDs. Internally pass
@@ -195,8 +199,15 @@ export const application = defineApplication({
 
 - Add `K.functions.register` when using an admitted `auth.register(...)` capability. Inspect requested
   and materialized authority for the Domain principal; do not grant the human rights to conceal a gap.
-- Foreign calls use a consumer-owned Integration/Provider and the exact dependency callable.
-  Read `integrations.md`; do not import a foreign handler or claim atomicity across Domains.
+- Call an exact dependency with
+  `dependencies.messaging.invoke((messaging) => messaging.functions.send, input)`; an instance Method
+  also takes its NodeId before input. Providers use their invocation-scoped typed `invoke` capability.
+  Read `integrations.md` for consumer-owned Integrations/Providers; do not import a foreign handler
+  or claim atomicity across Domains.
+- For explicit authority selection, use `kernel.caller.invoke(reference(domain, declaration), input)`.
+  References retain the full callable key and declaring revision; no `expect` or `schemaExpectation` option
+  is needed. An instance reference requires the exact declaring Class, not a descendant. Raw instance
+  paths use the entire key, such as `@id::files.example:class.Resource.method.rename`; raw revision is optional.
 
 ## Optional native HTTP routes
 

@@ -31,7 +31,7 @@ const ir: SchemaIR = {
           input: {},
           output: { mode: 'value', schema: {} },
           static: false,
-          inheritance: 'default',
+          abstract: false,
           auth: 'authorized',
         },
       },

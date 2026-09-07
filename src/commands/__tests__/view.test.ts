@@ -276,6 +276,15 @@ describe('view session runtime', () => {
     expect(config.session).toBe(record)
     expect(config).not.toHaveProperty('transport')
     expect(config.externalOrigins).toEqual(['https://connect.nango.dev'])
+    expect(config.identities).toBeUndefined()
+    const named = { ...record, identity: 'alice' }
+    const target = { url: 'https://kernel.test', kernelIssuer: 'https://kernel.test' }
+    expect(
+      createViewServeConfig(named, { allowIdentity: ['bob', 'alice', 'bob'] }, target).identities,
+    ).toEqual(['alice', 'bob'])
+    expect(() =>
+      createViewServeConfig(named, { allowIdentity: ['bob'], creds: 'opaque' }, target),
+    ).toThrow('requires a named CLI identity')
     expect(config.proxy).toEqual({
       kernelUrl: 'https://kernel.test',
       issuer: 'https://kernel.test',

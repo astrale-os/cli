@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0-beta.89](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.88...cli/v1.0.0-beta.89) (2026-09-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **call:** qualify method targets and inspect abstract inheritance ([#413](https://github.com/astrale-os/cli/issues/413))
+
+### Features
+
+* **call:** qualify method targets and inspect abstract inheritance ([#413](https://github.com/astrale-os/cli/issues/413)) ([245a0d3](https://github.com/astrale-os/cli/commit/245a0d310b9c100d9b22aec316537019a4bf946c))
+* **commands:** switch allowed View identities with a full reload ([#416](https://github.com/astrale-os/cli/issues/416)) ([d689eb8](https://github.com/astrale-os/cli/commit/d689eb8b1c85f49deccb2b9746844169ae4a0a43))
+
+
+### Bug Fixes
+
+* **lib:** use caller-scoped Domain exchange for managed views ([#421](https://github.com/astrale-os/cli/issues/421)) ([fda6ea1](https://github.com/astrale-os/cli/commit/fda6ea12cebb47e49668e923c1d3443df84dd8ee))
+
 ## [1.0.0-beta.88](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.87...cli/v1.0.0-beta.88) (2026-09-06)
 
 

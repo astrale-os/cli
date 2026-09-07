@@ -109,11 +109,11 @@ Use canonical Kernel Paths:
 | Domain root | `/:notes.example.dev` |
 | Class | `/:notes.example.dev:class.Note` |
 | Static callable | `/:notes.example.dev:class.Note:list` |
-| Instance callable | `@node-id::archive` |
+| Instance callable | `@node-id::notes.example.dev:class.Note.method.archive` |
 | Node ID | `@node-id` |
 | Active caller shorthand | `@self` |
 
-Static dispatch uses one colon before the method. Instance dispatch uses `::`.
+Static dispatch uses one colon before the method. Instance dispatch uses `::` followed by the complete Domain-qualified Method key.
 `@self` is expanded by the CLI before signing when it appears at the head of a
 call Path or a bare `key=@self` value. It is not rewritten inside `--data`,
 stdin JSON, URLs, or arbitrary substrings.
@@ -121,7 +121,7 @@ stdin JSON, URLs, or arbitrary substrings.
 ```bash
 astrale get @self --json
 astrale call /:blog.example:class.Author:list limit=10
-astrale call @self::deactivate
+astrale call /:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances
 ```
 
 ## Instances And Domains

@@ -16,7 +16,9 @@ test('DX filing uses the Project receiver and current machine-mode call shape', 
     file: true,
   })
 
-  expect(prompt).toContain('"@$ASTRALE_ISSUES_PROJECT_ID::createIssue"')
+  expect(prompt).toContain(
+    '"@$ASTRALE_ISSUES_PROJECT_ID::issues.astrale.ai:class.Project.method.createIssue"',
+  )
   expect(prompt).toContain('astrale --ci --no-prompt call')
   expect(prompt).toContain('"description"')
   expect(prompt).toContain('"priority":2')

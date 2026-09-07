@@ -57,7 +57,9 @@ describe('describeCallableFromBundle', () => {
   test('finds one instance method when the receiver Path is not a Class projection', () => {
     expect(
       describeCallableFromBundle(
-        Path.parse('/:host.astrale.ai:core.manager::inspectInstance'),
+        Path.parse(
+          '/:host.astrale.ai:core.manager::host.astrale.ai:class.Manager.method.inspectInstance',
+        ),
         installed,
       ),
     ).toMatchObject({

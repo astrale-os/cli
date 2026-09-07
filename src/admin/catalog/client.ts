@@ -3,6 +3,7 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
+import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
@@ -96,13 +97,18 @@ export async function connectAdminCatalog(
       let entry = existing
       if (registryChanged) {
         entry = domainFromSummary(
-          await callAdminMethod(context.session, AdminContract.fleet, 'publishDomain', {
-            operationId: operationId('publish'),
-            origin: input.origin,
-            name: input.name,
-            discoveryUrl: input.url,
-            ...(description === undefined ? {} : { description }),
-          }),
+          await callAdminMethod(
+            context.session,
+            AdminContract.fleet,
+            MethodKey.of(AdminContract.classes.Fleet, 'publishDomain'),
+            {
+              operationId: operationId('publish'),
+              origin: input.origin,
+              name: input.name,
+              discoveryUrl: input.url,
+              ...(description === undefined ? {} : { description }),
+            },
+          ),
           existing?.installByDefault === true,
         )
       }
@@ -113,10 +119,15 @@ export async function connectAdminCatalog(
         (entry.installByDefault ?? false) !== input.installByDefault
       if (defaultChanged) {
         entry = domainFromSummary(
-          await callAdminMethod(context.session, Path.parse(entry.id), 'configureDefault', {
-            operationId: operationId('configure-default'),
-            enabled: input.installByDefault,
-          }),
+          await callAdminMethod(
+            context.session,
+            Path.parse(entry.id),
+            MethodKey.of(AdminContract.classes.Domain, 'configureDefault'),
+            {
+              operationId: operationId('configure-default'),
+              enabled: input.installByDefault,
+            },
+          ),
           input.installByDefault === true,
         )
       }

@@ -46,7 +46,7 @@ function methodSig(name: string, m: IrMethod | IrFunction): string {
         : propType(m.output.schema)
   const tags = [
     'static' in m && m.static ? 'static' : '',
-    'inheritance' in m && m.inheritance === 'abstract' ? 'abstract' : '',
+    'abstract' in m && m.abstract ? 'abstract' : '',
     m.auth ?? '',
   ].filter(Boolean)
   return `${name}(${params})→${output}${tags.length ? ` [${tags.join(',')}]` : ''}`

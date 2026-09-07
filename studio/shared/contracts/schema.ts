@@ -29,8 +29,6 @@ export function isNodePathSchema(schema: JsonSchema): boolean {
   return schema.$ref === NODE_PATH_SCHEMA_ID && Object.hasOwn(schema, 'x-astrale-path')
 }
 
-export type MethodInheritance = 'default' | 'abstract' | 'sealed'
-
 /** Portable form of the DSL-owned canonical schema revision. */
 export type SchemaRevision = `sha256:${string}`
 
@@ -63,7 +61,7 @@ export interface IrCallable {
 
 export interface IrMethod extends IrCallable {
   static: boolean
-  inheritance: MethodInheritance
+  abstract: boolean
 }
 
 /** Standalone DSL callable projected without inventing a receiver. */

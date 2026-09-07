@@ -54,3 +54,19 @@ test('the Domain skill router reaches existing reference files without orphaned 
     assert.ok(references.includes(`references/${name}`), `unreachable guide: ${name}`)
   }
 })
+
+test('the reorganized guides retain current authority and exact Method semantics', () => {
+  const runtime = readFileSync(join(root, 'references', 'runtime.md'), 'utf8')
+  const schema = readFileSync(join(root, 'references', 'schema.md'), 'utf8')
+  const policies = readFileSync(join(root, 'references', 'policies.md'), 'utf8')
+  assert.match(
+    runtime,
+    /Default `query`, `mutate`, and `kernel` use the installed Domain authority/,
+  )
+  assert.match(runtime, /`graph.caller` or `kernel.caller`/)
+  assert.match(runtime, /dependencies.messaging.invoke/)
+  assert.match(runtime, /no `expect` or `schemaExpectation` option/)
+  assert.match(schema, /Only abstract Method obligations are inherited/)
+  assert.match(schema, /Instance Methods require an instance of their exact declaring Class/)
+  assert.match(policies, /`kernel.auth.register\(\.\.\.\)` requires `K.functions.register`/)
+})

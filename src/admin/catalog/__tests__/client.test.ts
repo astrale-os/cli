@@ -169,7 +169,7 @@ describe('V2 Admin Domain catalog adapter', () => {
     ).resolves.toMatchObject({ changed: true, isNew: true, entry: { installByDefault: true } })
     expect(contract.calls).toEqual([
       {
-        target: '/:admin.astrale.ai:core.fleet::publishDomain',
+        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.publishDomain',
         value: {
           operationId: 'cli.domain.publish.test',
           origin: 'crm.acme.dev',
@@ -178,7 +178,7 @@ describe('V2 Admin Domain catalog adapter', () => {
         },
       },
       {
-        target: '@crm-domain::configureDefault',
+        target: '@crm-domain::admin.astrale.ai:class.Domain.method.configureDefault',
         value: {
           operationId: 'cli.domain.configure-default.test',
           enabled: true,

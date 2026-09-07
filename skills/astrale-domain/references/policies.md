@@ -32,8 +32,8 @@ For a non-Root caller, an authorized Function requires both:
    Policy. Missing Policy supplies no alternative. `can_use` is no longer an intrinsic Grant bypass;
    giving the caller that capability does not defeat a business Policy.
 
-- The executor never replaces the caller principal. For an inherited Method, exact Function ownership
-  follows its executable declaring installation, not the receiver Class or a business `ownedBy` Edge.
+- The executor never replaces the caller principal. Exact Method ownership follows its executable declaring
+  installation, not a business `ownedBy` Edge; instance receivers must have the exact declaring Class.
 - Evaluate each alternative over the whole Grant. Identities inside an intersection cannot combine
   intrinsic ownership from one branch with Policy satisfaction from another. A carried Root Identity
   remains inside the Grant branch; only the authenticated installed Kernel Root takes the outer shortcut.
@@ -73,8 +73,8 @@ For a non-Root caller, an authorized Function requires both:
 - For a human-principal session, inspect the human's effective group profile instead. Domain requirements
   do not grant that human authority, and a missing direct User capability is not a reason to duplicate
   rights already supplied through `extends_with`.
-- Kernel calls such as `auth.register(...)` require exact Function usability and must independently satisfy
-  their credential, target, and graph/Schema admission. Select the caller/Domain session explicitly; a Schema
+- `kernel.auth.register(...)` requires `K.functions.register` and must independently satisfy
+  its credential, target, and graph/Schema admission. Select the caller/Domain session explicitly; a Schema
   dependency is not a capability, and granting the human rights is not Domain-owned execution.
 
 ```ts

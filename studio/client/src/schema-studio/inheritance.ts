@@ -16,7 +16,7 @@ export interface InheritedGroup {
   resolved: boolean
   origin?: string
   props: [name: string, schema: JsonSchema, optional: boolean][]
-  methods: { name: string; method: IrMethod; overridden: boolean }[]
+  methods: { name: string; method: IrMethod; declaredLocally: boolean }[]
 }
 
 export function resolveClass(
@@ -97,7 +97,6 @@ export function inheritedGroupsOfClass(
   const ownProperties = new Set(Object.keys(selected.properties))
   const ownMethods = new Set(Object.keys(selected.methods))
   const claimedProperties = new Set(ownProperties)
-  const claimedMethods = new Set<string>()
   const visited = new Set<string>([classRefKey(selected.ref)])
   const queue = (selected.extendsRefs ?? []).map((ref) => ({ ref, depth: 1 }))
   const groups: InheritedGroup[] = []
@@ -118,10 +117,9 @@ export function inheritedGroupsOfClass(
           [name, value, !(owner?.required ?? []).includes(name)] as InheritedGroup['props'][number],
       )
     const methods = Object.entries(owner?.methods ?? {})
-      .filter(([name]) => !claimedMethods.has(name))
-      .map(([name, method]) => ({ name, method, overridden: ownMethods.has(name) }))
+      .filter(([, method]) => method.abstract)
+      .map(([name, method]) => ({ name, method, declaredLocally: ownMethods.has(name) }))
     for (const [name] of props) claimedProperties.add(name)
-    for (const { name } of methods) claimedMethods.add(name)
     groups.push({
       owner: ref.name,
       ref,
