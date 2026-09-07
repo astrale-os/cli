@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.90](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.89...cli/v1.0.0-beta.90) (2026-09-07)
+
+
+### Bug Fixes
+
+* **commands:** scope key registrations to the Kernel issuer ([#425](https://github.com/astrale-os/cli/issues/425)) ([6f1a4aa](https://github.com/astrale-os/cli/commit/6f1a4aaff64a697d64becea996b2509fd947cdd1))
+
 ## [1.0.0-beta.89](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.88...cli/v1.0.0-beta.89) (2026-09-07)
 
 
