@@ -461,6 +461,7 @@ describe('View CLI orchestration', () => {
         {
           activeInstance: async () => 'staging',
           serveRuntime: () => ({ file: '/cli/astrale', args: [] }),
+          identityNames: async () => ['alice', 'bob'],
           open: async (input) => {
             opened.push(input)
             return {
@@ -495,6 +496,7 @@ describe('View CLI orchestration', () => {
         viewPath: '/:issues.example.dev:view.issue-detail',
         targetRef: '@issue-1',
         instance: 'staging',
+        allowIdentity: ['alice', 'bob'],
         timeoutMs: 20_000,
         serveRuntime: { file: '/cli/astrale', args: [] },
       },
