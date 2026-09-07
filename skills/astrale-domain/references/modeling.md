@@ -59,8 +59,13 @@ existing node is the subject of the change. Use a top-level callable for a Domai
 receiver. Staticness belongs to Schema metadata; Runtime still implements the callable uniformly as an
 Action or Workflow.
 
-Abstract inheritance may share stable meaning between Classes, but do not create inheritance merely
-for code reuse. Prefer composition and typed Edges when the relationship is not genuinely “is-a.”
+Only abstract Method obligations are inherited. Use `abstract: true` on the Method; each concrete
+Class declares its own matching implementation. Concrete parent Methods are not executable on a
+child, even through a concrete intermediate Class. Properties and structural Class relationships
+remain inherited. Instance Methods require an instance of their exact declaring Class; static
+Methods also stay on that Class. Share handler logic with ordinary functions and keep each exposed
+Method's declaration and Policy with its Class. Prefer composition and typed Edges when the
+relationship is not an “is-a” relation.
 
 ## Policies
 

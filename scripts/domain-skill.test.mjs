@@ -58,10 +58,13 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(implementing, /Action context has no `step`/)
   assert.match(implementing, /graph\.self\.query\(readVisit/)
   assert.match(implementing, /graph\.self\.mutate\(recordForecast/)
-  assert.match(implementing, /Default `query` and `mutate` use the admitted union authority/)
   assert.match(
     implementing,
-    /Select `graph\.self` for Domain-owned facts,\s+`graph\.caller` for caller-only authority, and `graph\.union` only deliberately/,
+    /Default `query`, `mutate`, and `kernel` use the installed Domain authority/,
+  )
+  assert.match(
+    implementing,
+    /`graph\.caller` or `kernel\.caller` for the incoming caller Grant, and `union` deliberately/,
   )
   assert.match(implementing, /`domain` is the exact resolved Domain/)
   assert.match(
@@ -73,7 +76,7 @@ test('the shipped Domain skill teaches the current SDK authoring boundary', () =
   assert.match(implementing, /still return Kernel `2004` when these\s+requirements are absent/)
   assert.match(
     implementing,
-    /`K\.functions\.register` for `client\.auth\.register\(\.\.\.\)`,\s+only when used/,
+    /`K\.functions\.register` for `kernel\.auth\.register\(\.\.\.\)`,\s+only when used/,
   )
   assert.match(implementing, /materialize `can_use` authority\s+for the Domain principal/)
   assert.match(
