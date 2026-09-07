@@ -12,6 +12,7 @@ import type { ViewServeConfig } from './session'
 import { withClientSession } from '../../connection'
 import { fetchWithCaFile } from '../ca-fetch'
 import { viewerDistDir } from './assets'
+import { exchangeViewCredential } from './exchange-credential'
 import { refreshViewPlacement } from './refresh'
 import { removeSessionFiles, saveRecord } from './session'
 
@@ -33,10 +34,11 @@ const IDLE_SWEEP_MS = 60_000
 
 export type PageStatus = { state: string; error?: string; at: string }
 
-type TokenGrant = { token: string; expiresAt: number; kind: 'minted' }
+type TokenGrant = { token: string; expiresAt: number; kind: 'minted' | 'exchanged' }
 
 export interface ViewServerDependencies {
   readonly connect: typeof withClientSession
+  readonly exchange?: typeof exchangeViewCredential
   readonly persist?: typeof saveRecord
 }
 
@@ -67,12 +69,19 @@ export function startViewServer(
     status = { state: 'waiting', at: new Date().toISOString() }
   }
 
-  /** Mint one TTL-bound credential; raw CLI credentials never enter the browser session. */
+  /** Issue a caller-scoped bearer; raw CLI credentials never enter the browser session. */
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
     grant = await dependencies.connect(
       config.kernel,
-      async ({ auth, target }) => {
+      async ({ auth, target, identity }) => {
+        if (target.domainIssuer !== undefined && config.kernel.creds === undefined) {
+          const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
+            { ...config.kernel, ...(identity === undefined ? {} : { as: identity }) },
+            target,
+          )
+          return { ...exchanged, kind: 'exchanged' as const }
+        }
         const token = await mintViewCredential(auth, target.kernelIssuer)
         return {
           token,
