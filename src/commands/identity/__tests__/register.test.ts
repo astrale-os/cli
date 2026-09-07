@@ -1,5 +1,5 @@
-import { issuer, jwk, provision } from '@astrale-os/sdk/auth'
-import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
+import { issuer, jwk, register } from '@astrale-os/sdk/auth'
+import { NodeId } from '@astrale-os/sdk/graph/node'
 import { afterEach, expect, mock, test } from 'bun:test'
 import { exportJWK, generateKeyPair, jwtVerify } from 'jose'
 import { mkdtemp, readFile, rm, unlink } from 'node:fs/promises'
@@ -7,9 +7,12 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { classKey } from '../../../graph'
 import { keypairPaths } from '../../../keys'
-import { formatIdentityRegistration, prepareIdentityProvision } from '../register'
+import {
+  formatIdentityRegistration,
+  prepareIdentityRegistration,
+  registrationNodeId,
+} from '../register'
 
 const cliRoot = join(import.meta.dir, '../../../..')
 const temporaryRoots: string[] = []
@@ -63,8 +66,8 @@ test('reports a missing local identity before connecting to Kernel', async () =>
       'identity',
       'register',
       'missing',
-      '--class',
-      '/:accounts.example:class.User',
+      '--node',
+      '@existing-user-id',
       '--url',
       observer.url,
       '--json',
@@ -104,8 +107,8 @@ test('rejects an IdP identity before using a colliding local keypair or Kernel',
       'identity',
       'register',
       'workos-user',
-      '--class',
-      '/:accounts.example:class.User',
+      '--node',
+      '@existing-user-id',
       '--url',
       observer.url,
       '--json',
@@ -139,8 +142,8 @@ test('reports an incomplete keypair exactly before connecting to Kernel', async 
       'identity',
       'register',
       'alice',
-      '--class',
-      '/:accounts.example:class.User',
+      '--node',
+      '@existing-user-id',
       '--url',
       observer.url,
       '--json',
@@ -190,7 +193,7 @@ test('emits exactly one structured value for machine registration output', () =>
   expect(logs).toEqual([])
 })
 
-test('builds one exact Mutation V3 identity birth bound to a self proof', async () => {
+test('registers only the selected existing Node with a verifiable primary self proof', async () => {
   const { privateKey, publicKey } = await generateKeyPair('ES256', { extractable: true })
   const privateJwk = { ...(await exportJWK(privateKey)), alg: 'ES256', kid: 'alice-key' }
   const publicJwk = jwk.acceptPublic({
@@ -199,73 +202,47 @@ test('builds one exact Mutation V3 identity birth bound to a self proof', async 
     kid: 'alice-key',
   })
   const kernelIssuer = issuer.accept('https://kernel.example')
-  const classPath = classKey('/:accounts.example:class.User', '--class')
-  const properties = normalizeProperties({
-    'accounts.example:class.User.property.name': 'Alice',
-  })
-
-  const prepared = await prepareIdentityProvision({
-    name: 'alice',
-    classPath,
-    properties,
+  const input = {
+    nodeId: NodeId('existing-user-id'),
     privateKey: privateJwk,
     publicKey: publicJwk,
     kernelIssuer,
-  })
-  const longName = 'identity'.repeat(32)
-  const longFirst = await prepareIdentityProvision({
-    name: longName,
-    classPath,
-    properties,
-    privateKey: privateJwk,
-    publicKey: publicJwk,
-    kernelIssuer,
-  })
-  const longReplay = await prepareIdentityProvision({
-    name: longName,
-    classPath,
-    properties,
-    privateKey: privateJwk,
-    publicKey: publicJwk,
-    kernelIssuer,
-  })
-
-  expect(String(prepared.binding)).toBe('identity')
+  }
+  const prepared = await prepareIdentityRegistration(input)
+  const replay = await prepareIdentityRegistration(input)
   expect(prepared.request.idempotencyKey).toMatch(/^identity-register\.[a-f0-9]{64}$/u)
-  expect(longFirst.request.idempotencyKey).toBe(longReplay.request.idempotencyKey)
-  expect(longFirst.request.idempotencyKey.length).toBeLessThanOrEqual(128)
-  expect(JSON.parse(JSON.stringify(prepared.request.mutation))).toEqual({
-    format: 'astrale.graph.mutation',
-    version: 'v3',
-    preconditions: [],
-    operations: [
-      {
-        op: 'node.create',
-        as: 'identity',
-        class: 'accounts.example:class.User',
-        props: { 'accounts.example:class.User.property.name': 'Alice' },
-      },
-    ],
-  })
+  expect(prepared.request.idempotencyKey).toBe(replay.request.idempotencyKey)
+  for (const change of [
+    { nodeId: NodeId('another-user') },
+    { kernelIssuer: issuer.accept('https://other.example') },
+  ]) {
+    const other = await prepareIdentityRegistration({ ...input, ...change })
+    expect(other.request.idempotencyKey).not.toBe(prepared.request.idempotencyKey)
+  }
+  expect(Object.keys(prepared.request).sort()).toEqual(['idempotencyKey', 'identities'])
 
   const designation = prepared.request.identities[0]
-  expect(designation.identity).toEqual({ created: prepared.binding })
-  const authentication = designation.authentication
-  const credentials =
-    authentication !== undefined && 'credentials' in authentication
-      ? authentication.credentials
-      : undefined
-  expect(credentials?.publicKey).toEqual(publicJwk)
-  expect(typeof credentials?.proof).toBe('string')
-  if (typeof credentials?.proof !== 'string') throw new TypeError('Expected compact JWT proof')
-
-  const expectedFingerprint = await provision.fingerprint(prepared.request)
-  const expectedIssuer = await provision.selfIssuer(kernelIssuer, publicJwk)
-  const verified = await jwtVerify(credentials.proof, publicKey, {
+  expect(designation).toEqual({
+    id: input.nodeId,
+    mode: 'self',
+    publicKey: publicJwk,
+    credential: expect.any(String),
+  })
+  const expectedIssuer = await register.selfIssuer(kernelIssuer, publicJwk)
+  const verified = await jwtVerify(designation.credential, publicKey, {
     algorithms: ['ES256'],
     issuer: expectedIssuer,
     subject: 'self',
     audience: kernelIssuer,
   })
-  expect(verified.payload.provision).toBe(expectedFingerprint)
+  expect(Object.keys(verified.payload).sort()).toEqual(['aud', 'exp', 'iat', 'iss', 'sub'])
+  expect(verified.protectedHeader.kid).toBe(publicJwk.kid)
+  expect(verified.payload.exp! - verified.payload.iat!).toBe(300)
+})
+
+test('requires an explicit Node ID, not a class, callable or caller shorthand', () => {
+  expect(registrationNodeId('@existing-user-id')).toBe(NodeId('existing-user-id'))
+  for (const value of ['@self', '/:accounts.example:class.User', '@user::whoami', 'user']) {
+    expect(() => registrationNodeId(value)).toThrow()
+  }
 })

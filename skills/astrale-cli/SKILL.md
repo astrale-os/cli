@@ -210,32 +210,29 @@ Reinstall only when installation or Schema intent changes.
 ## Identity And Delegation
 
 `astrale auth login` stores an IdP-backed identity. `astrale identity create`
-creates a local key identity. Registering a key identity on a Kernel is an
-atomic provision operation and requires the exact Node Class. Registration
-never creates or replaces the local identity or its keypair:
+creates a local key identity. Registration targets an existing Identity Node;
+it never creates a Node, changes business properties, assigns a Group, or replaces
+the local identity or its keypair:
 
 ```bash
 astrale identity create alice
 astrale identity register alice \
-  --class /:accounts.example:class.User \
-  --props '{"accounts.example:class.User.property.name":"Alice"}' \
+  --node @existing-user-id \
   -i staging
 ```
 
 The Kernel assigns Node IDs. They are returned by reads and creation results
 and can be reused through the `@node-id` Path form; do not derive application
-meaning from their contents. The proof is bound to the exact provision
-fingerprint and target Kernel audience.
-For an application-owned Identity Class, direct Kernel submission is correctly
-denied unless the caller owns that Class. Name the Domain's authorizing
-registration callable explicitly; the CLI sends the same self-proven request
-through it and stores only the admitted target-bound result:
+meaning from their contents. The primary self credential is signed for the target
+Kernel audience. Register checks the caller's authority on the existing Node.
+When a Domain callable supplies that authority, optionally name it with `--via`;
+the CLI sends the same request and verifies the returned Node and Authentication.
+No Domain callback is required when the direct caller already has authority:
 
 ```bash
 astrale identity register operator \
-  --class /:operations.example:class.Operator \
-  --props '{"operations.example:class.Operator.property.name":"Operator"}' \
-  --via /:operations.example:function.provisionOperator \
+  --node @existing-operator-id \
+  --via /:operations.example:function.registerOperator \
   -i staging
 ```
 

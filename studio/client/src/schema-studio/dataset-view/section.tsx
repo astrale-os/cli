@@ -118,8 +118,8 @@ export function TestsSection({
   const selected = ready.find((entry) => entry.id === datasetId) ?? ready[0] ?? null
   const core = useMemo(() => (selected ? datasetCore(selected) : null), [selected])
   const graph = useMemo(
-    () => (core && bundle ? buildDataGraph(core, bundle) : null),
-    [core, bundle],
+    () => (core && bundle ? buildDataGraph(core, bundle, selected?.references) : null),
+    [core, bundle, selected],
   )
 
   const policy = probe && policyIndex ? (policyIndex.byKey.get(probe.policyKey) ?? null) : null
