@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.91](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.90...cli/v1.0.0-beta.91) (2026-09-07)
+
+
+### Bug Fixes
+
+* **instance:** admit current invitation lifecycle states ([#428](https://github.com/astrale-os/cli/issues/428)) ([87b1b57](https://github.com/astrale-os/cli/commit/87b1b5731ceabbf390673423314f2e7687b226d9))
+
 ## [1.0.0-beta.90](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.89...cli/v1.0.0-beta.90) (2026-09-07)
 
 
