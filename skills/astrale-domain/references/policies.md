@@ -1,7 +1,6 @@
 # Policies
 
-Read when declaring callable authentication or authorization, using a Schema Policy, or admitting an
-external value.
+Read when declaring callable authentication or authorization, or using a Schema Policy.
 
 ## Authentication mode is not the authorization rule
 
@@ -15,16 +14,14 @@ Kernel Runtime defines and evaluates those semantics against the pinned installa
   bypasses the remaining callable gate; every other caller requires the installed executor and complete
   caller Grant admission described below;
 - only `authorized` may declare a callable Policy. `authenticated` does not add a `can_use` or Policy gate.
-
-Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
-a protected operation merely because its handler can access Domain-owned data.
+- Do not recreate these gates inside an Action or Workflow, or use `authenticated` as a shortcut for
+  a protected operation merely because its handler can access Domain-owned data.
 
 ## Function admission: executor AND caller authority
 
-The caller `principal` is the Identity directly established by authentication. The complete caller Grant
-is the effective authority expression evaluated for the invocation, including its unions, intersections,
-and restrictions. Runtime keeps both distinct from the installed executor; delegation does not turn the
-caller into the Domain owner.
+- The caller `principal` is the Identity directly established by authentication. Its complete Grant is the
+  authority expression evaluated for the invocation, including unions, intersections, and restrictions.
+  Both remain distinct from the installed executor; delegation does not turn the caller into the Domain owner.
 
 For a non-Root caller, an authorized Function requires both:
 
@@ -64,20 +61,16 @@ For a non-Root caller, an authorized Function requires both:
   in the module's `policies/`, never `types/`; place a callable's check inline in its declaration.
 - `policy.allOf(...)` / `policy.anyOf(...)` currently accept Policy operands, not description options.
   Describe the constituent match Policies; do not add unsupported metadata or duplicate patterns for a label.
-
-Read `users.md` for Shell User subclasses, registration, and membership. Business graph ownership
-does not justify a shadow User or manual writes to Shell's membership/authority pair.
-
-Request an exact foreign Function when the Domain must invoke it through Domain-owned (`self`/`union`)
-direct-use authority. Installation materializes `can_use` for the requesting installed Domain principal;
-on the foreign invocation, that authority supplies the caller Function-use branch and is distinct from
-the protected Function's executor gate. Do not request it for a caller-session Policy-admitted call merely
-because the dependency is `authorized`: direct caller use bypasses Policy. Shell's user/group methods are one example.
-
-For a non-Root caller, Kernel calls such as `auth.register(...)` require exact Function usability, and the
-request must independently satisfy Register's credential, target, and graph/schema admission rules. Select
-the caller/Domain session explicitly; the ordinary `client` is caller-only. A Schema dependency is not a
-capability, and granting the human rights is not a substitute for Domain-owned execution.
+- Read `users.md` for Shell User subclasses, registration, and membership. Business graph ownership
+  does not justify a shadow User or manual writes to Shell's membership/authority pair.
+- Request an exact foreign Function when the Domain invokes it through Domain-owned (`self`/`union`)
+  direct-use authority. Installation materializes `can_use` for that Domain principal; this is distinct
+  from the protected Function's executor gate.
+- Do not request direct use for a caller-session Policy-admitted call merely because the dependency is
+  `authorized`: that capability bypasses Policy. Shell's user/group methods are one example.
+- Kernel calls such as `auth.register(...)` require exact Function usability and must independently satisfy
+  their credential, target, and graph/Schema admission. Select the caller/Domain session explicitly; a Schema
+  dependency is not a capability, and granting the human rights is not Domain-owned execution.
 
 ```ts
 import { method, policy } from '@astrale-os/sdk/schema'
@@ -99,11 +92,8 @@ export const rename = method({
 })
 ```
 
-Runtime dispatches `Project.rename` as an Action or Workflow. Its SDK context includes the loaded Domain,
-validated input, authenticated caller and `caller.authority`, caller-only Client, explicit Kernel and graph
-authority partitions, configured Integration clients, execution controls, declared-error helpers, and `self`
-for an instance Method. These are execution facilities, not a second authorization decision; handler code
-must not replace Kernel admission with a role lookup.
+- Runtime dispatches `Project.rename` as an Action or Workflow. Its context facilities are not a second
+  authorization decision; handler code must not replace Kernel admission with a role lookup.
 
 ## Reuse without changing what is checked
 
@@ -121,10 +111,9 @@ must not replace Kernel admission with a role lookup.
   the admitted `source` and `target`. Constrain whichever endpoint owns access. A Policy Edge predicate is an
   existence test; do not use it as a surrogate identity check for the candidate Edge.
 
-Each `check(policy, object)` evaluates one named Policy against one protected object. Combining checks on
-`self` and input references expresses independent requirements, not a joint relationship between those
-objects. Use callable `sameNode(left, right)` when exact Node equality is intended; separate Policy checks
-do not express an arbitrary joint relationship.
+- Each `check(policy, object)` evaluates one Policy against one protected object. Checks on `self` and input
+  refs are independent requirements, not a relationship between those objects; use callable `sameNode(...)`
+  for exact Node equality.
 
 ## Composition consumes a budget
 
@@ -140,70 +129,20 @@ do not express an arbitrary joint relationship.
 
 ## Scope existential Node witnesses deliberately
 
-Policy Node selectors are authorization scope, not a typing convenience. `node()` can be witnessed by
-any active concrete Node Class that satisfies the Policy topology. `node(Class)` ranges over all active
-concrete Classes satisfying `Class`: the Class itself when concrete, plus active concrete descendants,
-including descendants supplied by other installed Domains. `node.exact(Class)` can be witnessed only by
-that exact concrete Class; an abstract exact selector is empty.
-
-`node.exact(Class)` restricts exact Class membership; it does not test Node identity. Use `sameNode(...)`
-for Node identity equality. Prefer `node.exact(Class)` when authorization depends on exact Class membership,
-`node(Class)` when concrete descendants must inherit the path, and `node()` only when the connected Edge
-constraints fully express the intended boundary. Test each intentionally broad selector with an allowed
-witness and a connected but unauthorized witness from outside the intended family. For polymorphic
-selectors, include a concrete descendant in the success evidence.
-
-## Use Policy probes only as observations
-
-The bound authenticated Client API may evaluate a Policy for presentation or diagnostics:
-
-```ts
-const allowed = await client.auth.can({
-  policy: Work.policies.mayRenameProject.ref,
-  object: projectId,
-})
-```
-
-This boolean is a factual snapshot only: it neither changes nor grants authority nor reserves a future
-decision. The protected callable remains the authoritative gate because graph and authority state can
-change after the observation.
-
-## Keep trust-boundary ownership explicit
-
-- The Kernel verifies credentials and establishes the caller.
-- The Kernel closes callable admission against its pinned Registry snapshot and independently validates
-  invocation input/output against the resolved callable contract.
-- The serving SDK independently validates handler input/output against the callable loaded from its pinned Release.
-- Provider implementations must structurally admit unknown external responses before returning Integration
-  output values; Integration generics are not automatically runtime-validated.
-- The Domain Runtime's `initialize(environment, ...)` callback must validate its unknown environment and
-  construct Providers; the SDK then validates the exact Provider envelope and declared Integration coverage.
-
-Do not catch an unknown provider, transport, or programmer defect merely to report invalid caller
-input. Preserve the stable error family owned by the boundary that rejected the value.
+- Policy Node selectors define authorization scope, not types. `node()` accepts any matching active concrete
+  Node Class; `node(Class)` also accepts its active concrete descendants, including foreign ones;
+  `node.exact(Class)` accepts only that exact concrete Class and is empty for an abstract Class.
+- `node.exact(Class)` does not test Node identity; use `sameNode(...)`. Test every intentionally broad selector
+  with an allowed witness and a connected unauthorized witness; include a descendant for polymorphic success.
 
 ## Policy and admission evidence
 
-Successful root invocation proves the operation can execute, not that an application user's Policy
-works. Test with distinct registered principals and the actual role/membership facts the product
-uses. Listing a local CLI identity does not prove it is registered or authorized on the target Kernel.
-When a native Domain owns identity or group lifecycle, use its current public registration and role
-operations; verify the installed dependency version instead of copying an old bootstrap recipe.
-
-For protected behavior, test absent and invalid credentials as applicable, executor-gate denial, caller
-denial where the complete caller Function-use branch and Policy are both false, Policy refusal with no
-caller Function-use alternative (carried Kernel Root, exact Function ownership, or direct `can_use`), and
-success. For each denial, prove that every downstream boundary reachable by that operation—handler
-dispatch, Workflow steps, Integration/Provider operations, and graph mutations as applicable—did not run.
-Runtime initialization that occurred before invocation is outside this assertion. Use a real Kernel admission
-path for this evidence; a handler-local conditional or permissive fake cannot prove authorization.
-
-For Domain-owned direct-capability success, inspect the exact requested and materialized Function capability
-for the installed Domain principal. For Policy-admitted success, verify the intended caller Grant and that
-the complete caller Function-use branch is false. Inspect the executor gate separately against the exact
-Function's installed ownership or direct executor use.
-
-Keep each denial criterion proportional to its claim. A mutating denial needs an independent no-effect
-observation through a separately authorized read path; a read-only denial does not need invented graph
-assertions. When testing revocation, remove the business fact, repeat the same protected operation while
-the Domain remains installed, and observe the denial independently.
+- Root success proves executability, not an application user's Policy. Test distinct registered principals
+  with real business facts; a local CLI identity need not be registered or authorized on the target Kernel.
+- Test applicable credential failure, executor denial, caller/Policy denial without a direct-use alternative,
+  and success through the real Kernel path. For denials, prove reachable handlers, steps, Providers, and graph
+  effects did not run; earlier Runtime initialization is outside that assertion.
+- For direct-capability success, inspect requested and materialized Function capability for the Domain principal.
+  For Policy success, prove the intended caller Grant and absence of a bypass branch; inspect executor separately.
+- Keep evidence proportional: mutating denial needs an independent no-effect read, read-only denial does not.
+  Test revocation by removing the business fact and repeating the same operation while the Domain stays installed.

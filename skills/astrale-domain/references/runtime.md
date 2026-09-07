@@ -26,8 +26,8 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   `graph.union` only for their deliberately different authority semantics, not for style.
 - The ordinary `client` is caller-only; select `kernel.self` explicitly for Domain-owned platform calls.
   Anonymous invocations without a bound Client have no graph executors.
-- `self` is the admitted receiver's `NodeId`; static/top-level callables have no receiver. Input and
-  caller admission already happened; do not repeat input parsing or implement role checks in handlers.
+- `self` is the admitted receiver's `NodeId`; static/top-level callables have no receiver. The SDK validates
+  callable input before the handler and output afterward; do not repeat parsing or implement role checks there.
 - Public inputs may accept `Path` for convenient locators; return canonical record IDs. Internally pass
   `NodeId` directly where accepted, without `Path.id(id)`, and do not maintain parallel path/id APIs.
 - Use resolved definitions or their refs where accepted, not reconstructed locator strings. Position

@@ -59,8 +59,9 @@ installed-Domain binding → source Kernel → local result
   Changing identity must not reuse another caller's credential; route artifacts are confidential.
 - Cached routes expire with their admitted lifetime/credential. An admitted stale-route or route-miss
   failure can trigger bounded source recovery; business refusals and arbitrary timeouts are not retry signals.
-- A revision mismatch requires a coherent installed binding/deployment, not stripping revision checks.
-  Compare safe route and Publication metadata; never log credentials to investigate a cache issue.
+- Kernel admission uses the installed Registry contract while the serving SDK validates the handler against
+  its deployed Release. A mismatch requires coherent installation/deployment, not stripped revision checks;
+  compare safe route and Publication metadata without logging credentials.
 
 ## Classify admission failures
 
