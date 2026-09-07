@@ -6,6 +6,9 @@ Before adding vocabulary, check whether another Astrale Domain already owns it. 
 Domain when its identity and lifecycle are genuinely authoritative; do not copy its Classes or
 recreate its callable contracts locally for convenience.
 
+For sign-in users and shared groups, use Shell's public contract; read `users.md` for concrete
+subclasses, existing-node registration, invitation, and the traversal agreement Shell needs.
+
 ## Graph-level dependency
 
 Declare a Schema dependency only when the local graph directly refers to foreign Classes, Edges,

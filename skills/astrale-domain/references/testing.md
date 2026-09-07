@@ -1,4 +1,4 @@
-# Simulating and testing
+# Testing
 
 Read when writing Domain fixtures, focused tests, demos, or live acceptance journeys.
 
@@ -18,53 +18,30 @@ Use the smallest real boundary that proves the behavior:
 Do not create a general fake Kernel. It becomes a second implementation of authority, visibility,
 transactions, paging, and error semantics, while still proving none of them.
 
-## Query example
+## Exercise the owner, not its registration
 
-```ts
-import { executeQuery, type QueryClient } from '@astrale-os/sdk/query'
+Use `executeQuery(client, domain, recipe, input)` / `executeMutation(client, domain, recipe, input)`
+with narrow capability doubles. They exercise SDK recipe realization and projection; invoking a
+hand-copied builder or merely asserting an AST version bypasses the behavior being delivered.
 
-const calls: unknown[] = []
-const client: QueryClient = {
-  async query(ast, options) {
-    calls.push({ ast, options })
-    return { result: { kind: 'nodes', nodes: [] }, page: {} }
-  },
-}
-
-await executeQuery(client, visitsByOwner, { owner })
-expect(calls).toHaveLength(1)
-```
-
-Keep the double at the SDK's injected capability boundary. Do not duplicate Client routing or Kernel
-response admission in the fixture.
-
-## Mutation example
-
-```ts
-import { executeMutation, type MutationClient } from '@astrale-os/sdk/mutation'
-
-let submitted: unknown
-const client: MutationClient = {
-  async mutate(document) {
-    submitted = document
-    return emptyMutationResult
-  },
-}
-
-await executeMutation(client, createVisit, input)
-expect(submitted).toMatchObject({ format: 'astrale.graph.mutation', version: 'v3' })
-```
-
-Assert the complete invariant-bearing operation: node creation, required Edges, preconditions, and
-the absence of unintended writes. A Mutation definition owns one atomic document; a read performed
-before it is not part of that transaction.
+Assert the invariant-bearing operations and absence of unintended writes, not only call counts.
+A constructed stale-state precondition proves authoring; only transaction execution proves it rejects
+a concurrent edit without partial writes.
 
 ## Actions and Workflows
 
-Actions have no Step API. Before completion, invoke every exposed Action and Workflow definition with
-representative success and applicable refusal inputs. Prove each selected Query, Mutation,
-Integration, output, step order, and effect. Binding metadata, lower-level AST checks, or one tested
-handler cannot stand in for an unexecuted public callable.
+Use a fixture that crosses a page boundary for a “complete collection” claim; a tiny dataset cannot
+detect first-page truncation. Check a repeated cursor and an exhausted bound reject without publishing
+partial business output, rather than merely asserting that `.query` was called.
+
+For a read→Rule→Mutation flow, change the guarded fact between observation and commit. The Rule's
+unit test cannot prove the Mutation rejects stale state; use the actual Kernel transaction for that claim.
+
+Actions have no Step API. For a complete Domain delivery, exercise the exposed Action and Workflow
+definitions with representative success and applicable refusal inputs. For a focused change, exercise
+the affected callables and their dependent invariants. Binding metadata, lower-level AST checks, or
+one tested handler cannot stand in for an unexecuted public callable. Compute expected business
+results independently of the implementation; tests that reuse the same calculation only prove agreement.
 
 The current inline runner gives structure and observability. It does not prove durable replay,
 exactly-once effects, compensation, or crash recovery. Never claim those guarantees from an in-memory
@@ -86,10 +63,16 @@ code never imports `tests/`. How to author a Dataset worth reading: `datasets.md
 
 ## Live acceptance
 
-At least one acceptance journey should use packed or published packages outside every source
-workspace, a clean Kernel data root, real credentials, and the deployment adapter the product ships.
+For deployment or integration claims, exercise a representative journey on the intended Kernel with
+real credentials and the deployment adapter the product ships. For package/release qualification,
+also use a packed or published consumer outside the source workspace. A local Kernel is not a
+prerequisite for a managed-remote application test. Isolate destructive lifecycle scenarios from
+shared instances and record exact deployed and installed revisions.
+
 Observe installation and invocation through public Client APIs. Keep authentication, authority,
-Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct.
+Policy, handler, Provider, persistence, update, uninstall, and cleanup evidence distinct. Report what
+was locally tested, remotely observed, and not exercised separately. Keep durable regression tests
+with their production owner; keep situational logs, credentials, and proof tooling out of delivery.
 
 Cleanup must converge from partial lifecycle states: neither Domain installed, only dependencies
 installed, or the complete closure installed. Establish exact Domain presence with a public
@@ -118,12 +101,7 @@ claim unsupported or dishonest.
 
 ### Bound convergence
 
-Before stabilization, freeze scenario semantics, exact package cohort, and acceptance boundaries. A
-new issue is first retained and classified; it does not automatically expand the current scenario or
-trigger new Lab machinery. Interrupt a frozen run only when a defect blocks an existing criterion or
-makes its evidence dishonest.
-
-Track the phase reached, recurring defect classes, new blocker classes, and owner regression proof.
-If several new Lab-owned blockers repeat at the same phase, stop tactical patching and review that
-boundary. Establish correctness before optimizing latency, tokens, or cost, and compare only runs with
-the same scenario and package cohort.
+Keep the scenario's product claim and package versions explicit. Classify newly found issues without
+automatically expanding the test framework or the task. If a defect invalidates the claim, retain
+the reproduction and fix it at its owner; otherwise track it separately. Do not add more scenarios
+or tooling merely to accumulate evidence already supplied by an existing test.
