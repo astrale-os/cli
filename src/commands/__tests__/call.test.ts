@@ -86,7 +86,7 @@ describe('call command dry run', () => {
       {
         async runKernelCommand(input) {
           connections += 1
-          expect(input.credential).toMatchObject({ principal: 'callable' })
+          expect(input.credential).toEqual({ principal: 'caller' })
           const result = await input.fn(context)
           await input.format?.(result, input.opts, true)
         },
@@ -105,6 +105,22 @@ describe('call command dry run', () => {
     })
     expect(presentationOptions).toMatchObject({ dryRun: true, json: true })
   })
+})
+
+test('ordinary calls select credentials for their executable Domain', async () => {
+  let selected: unknown
+  await callCommand(
+    '@worker::services.example:class.Worker.method.logs',
+    ['tail=1'],
+    { json: true },
+    {
+      async runKernelCommand(input) {
+        selected = input.credential
+      },
+      output() {},
+    },
+  )
+  expect(selected).toMatchObject({ principal: 'callable' })
 })
 
 function plainCall(value: unknown): unknown {
