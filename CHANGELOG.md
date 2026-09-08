@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.96](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.95...cli/v1.0.0-beta.96) (2026-09-08)
+
+
+### Bug Fixes
+
+* **lib:** replace existing agent skill directories automatically ([#442](https://github.com/astrale-os/cli/issues/442)) ([c010817](https://github.com/astrale-os/cli/commit/c01081719bf8575fba5bb47a9e8e7dd326e7f023))
+
 ## [1.0.0-beta.95](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.94...cli/v1.0.0-beta.95) (2026-09-08)
 
 
