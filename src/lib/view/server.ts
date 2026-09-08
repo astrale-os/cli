@@ -65,7 +65,7 @@ export function startViewServer(
     const kernel = { ...config.kernel, as: identity, creds: undefined }
     const candidate = { ...config, kernel }
     const view = await refreshViewPlacement(candidate, dependencies.connect)
-    const nextGrant = view.route.handshake === 'shell' ? await mintGrant(kernel) : null
+    const nextGrant = view.route.handshake === 'shell' ? await mintGrant(kernel, view) : null
     await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, identity, view })
     config.kernel = kernel
     session.identity = identity
@@ -88,14 +88,17 @@ export function startViewServer(
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
     const started = revision
-    const fresh = await mintGrant(config.kernel)
+    const fresh = await mintGrant(config.kernel, session.view)
     if (started !== revision)
       throw new Error('View session changed; reload before requesting credentials.')
     grant = fresh
     return fresh
   }
 
-  async function mintGrant(kernel: ViewServeConfig['kernel']): Promise<TokenGrant> {
+  async function mintGrant(
+    kernel: ViewServeConfig['kernel'],
+    view: ViewServeConfig['session']['view'],
+  ): Promise<TokenGrant> {
     return dependencies.connect(
       kernel,
       async ({ auth, target, identity }) => {
@@ -105,10 +108,11 @@ export function startViewServer(
         ) {
           throw new Error('The session bookmark now points to another Kernel. Open a new View.')
         }
-        if (target.domainIssuer !== undefined && kernel.creds === undefined) {
+        // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
+        if (view.route.issuer !== target.kernelIssuer && kernel.creds === undefined) {
           const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
             { ...kernel, ...(identity === undefined ? {} : { as: identity }) },
-            target,
+            { ...target, domainIssuer: view.route.issuer },
           )
           return { ...exchanged, kind: 'exchanged' as const }
         }

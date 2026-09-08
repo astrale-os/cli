@@ -29,7 +29,12 @@ describe('view session server credentials', () => {
     })
   })
 
-  test.each([false, true])('serves View credentials (exchange: %s)', async (managed) => {
+  test.each([
+    { managed: true, external: true, explicit: false },
+    { managed: false, external: true, explicit: false },
+    { managed: true, external: false, explicit: false },
+    { managed: true, external: true, explicit: true },
+  ])('binds credentials to the mounted View (%j)', async ({ managed, external, explicit }) => {
     const nonce = 'shell-view'
     const port = await findFreePort(48_000, 200)
     if (port === null) throw new Error('test port window exhausted')
@@ -62,14 +67,17 @@ describe('view session server credentials', () => {
             declaration: { target: { kind: 'domain' } },
             href: 'https://example.test/ui/private',
             handshake: 'shell',
-            issuer: issuer('https://example.test'),
+            issuer: issuer(external ? 'https://example.test' : 'https://kernel.test'),
             etag: digest('c'),
             revision: revision('d'),
           },
         },
         createdAt: '2026-08-20T00:00:00.000Z',
       },
-      kernel: { instance: 'managed', as: 'dispatcher' },
+      kernel: {
+        instance: 'managed',
+        ...(explicit ? { creds: 'explicit-caller-proof' } : { as: 'dispatcher' }),
+      },
       proxy: {
         kernelUrl: 'https://kernel.test',
         issuer: 'https://kernel.test',
@@ -88,15 +96,15 @@ describe('view session server credentials', () => {
 
       expect(response.status).toBe(200)
       expect(await response.json()).toMatchObject(
-        managed
+        external && !explicit
           ? { token: 'exchanged-credential', kind: 'exchanged' }
           : { token: 'minted-credential', kind: 'minted' },
       )
-      if (managed) {
+      if (external && !explicit) {
         expect(mint).not.toHaveBeenCalled()
         expect(exchange).toHaveBeenCalledWith(config.kernel, {
           kernelIssuer: 'https://kernel.test',
-          domainIssuer: 'https://shell.test',
+          domainIssuer: 'https://example.test',
         })
       } else {
         expect(exchange).not.toHaveBeenCalled()

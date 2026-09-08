@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.0.0-beta.93](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.92...cli/v1.0.0-beta.93) (2026-09-07)
+
+
+### Bug Fixes
+
+* **view:** scope credentials to the mounted domain ([#433](https://github.com/astrale-os/cli/issues/433)) ([dcef73e](https://github.com/astrale-os/cli/commit/dcef73e9ecbab2f61970a4aa02432035cd6b0f48))
+
+## [1.0.0-beta.92](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.91...cli/v1.0.0-beta.92) (2026-09-07)
+
+
+### Bug Fixes
+
+* **call:** exchange through the installed callable domain ([#430](https://github.com/astrale-os/cli/issues/430)) ([532c14c](https://github.com/astrale-os/cli/commit/532c14c7cec40b9dcd63ea420bf99cf4732b2681))
+
+## [1.0.0-beta.91](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.90...cli/v1.0.0-beta.91) (2026-09-07)
+
+
+### Bug Fixes
+
+* **instance:** admit current invitation lifecycle states ([#428](https://github.com/astrale-os/cli/issues/428)) ([87b1b57](https://github.com/astrale-os/cli/commit/87b1b5731ceabbf390673423314f2e7687b226d9))
+
+## [1.0.0-beta.90](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.89...cli/v1.0.0-beta.90) (2026-09-07)
+
+
+### Bug Fixes
+
+* **commands:** scope key registrations to the Kernel issuer ([#425](https://github.com/astrale-os/cli/issues/425)) ([6f1a4aa](https://github.com/astrale-os/cli/commit/6f1a4aaff64a697d64becea996b2509fd947cdd1))
+
 ## [1.0.0-beta.89](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.88...cli/v1.0.0-beta.89) (2026-09-07)
 
 

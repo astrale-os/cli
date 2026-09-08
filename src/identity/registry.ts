@@ -155,7 +155,7 @@ export async function upsertIdpIdentity(
 
 export async function setRegistration(
   name: string,
-  instanceSlug: string,
+  kernelIssuer: string,
   registration: Registration,
 ): Promise<void> {
   await updateIdentityStore((store) => {
@@ -163,7 +163,7 @@ export async function setRegistration(
     if (!entry) throw new Error(`Identity "${name}" not found`)
     const identity: Identity = {
       ...entry,
-      registrations: { ...entry.registrations, [instanceSlug]: registration },
+      registrations: { ...entry.registrations, [kernelIssuer]: registration },
     }
     return {
       next: { ...store, identities: { ...store.identities, [name]: identity } },

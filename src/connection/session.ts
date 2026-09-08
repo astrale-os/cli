@@ -27,6 +27,7 @@ import { log } from '../lib/log'
 import { isMachine } from '../lib/output'
 import { SESSION_ROUTE_STORE } from '../state/session-routes'
 import { bindCredentialIdentity } from './auth'
+import { callableOrigin, resolveCallableTarget } from './callable-target'
 import {
   createCliCredential,
   type CredentialIntent,
@@ -128,6 +129,26 @@ async function runResolvedClientSession<Value>(
   open: ConnectionFactory,
   credential: CredentialIntent = {},
 ): Promise<Value> {
+  if (credential.principal === 'callable') {
+    const origin = callableOrigin(credential.path)
+    if (
+      options.creds !== undefined ||
+      options.anonymous === true ||
+      origin === undefined ||
+      origin === 'kernel.astrale.ai'
+    ) {
+      credential = { principal: 'caller' }
+    } else {
+      const discovery = open(target, timeoutMs, options, config, { principal: 'caller' })
+      try {
+        target = await resolveCallableTarget(target, origin, discovery.context.session.schema)
+      } finally {
+        discovery.close()
+      }
+      credential =
+        target.domainIssuer === undefined ? { principal: 'caller' } : { principal: 'domain' }
+    }
+  }
   const connection = open(target, timeoutMs, options, config, credential)
   try {
     return await action(connection.context)

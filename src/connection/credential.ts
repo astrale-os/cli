@@ -1,5 +1,6 @@
 import type { Fetch } from '@astrale-os/sdk/client'
 import type { SessionAuth } from '@astrale-os/sdk/client/session'
+import type { Path } from '@astrale-os/sdk/graph/path'
 
 import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
@@ -29,6 +30,7 @@ export interface SourceCredentialResolver {
 export type CredentialIntent =
   | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
   | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
+  | Readonly<{ principal: 'callable'; path: Path; nestedTtlSeconds?: never }>
 
 type CredentialResolver = typeof resolveCredential
 
@@ -91,6 +93,9 @@ export function createCliCredential(
   intent: CredentialIntent = {},
   resolveSource: CredentialResolver = resolveCredential,
 ): SessionAuth | undefined {
+  if (intent.principal === 'callable') {
+    throw new TypeError('Callable credentials require installed Domain resolution.')
+  }
   if (intent.nestedTtlSeconds !== undefined && intent.principal !== 'caller') {
     throw new TypeError('Nested credential issuance requires the caller principal.')
   }

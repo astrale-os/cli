@@ -24,9 +24,9 @@ export function createInvitationStatusCommand(
     afterHelpText: `
 Behavior:
   Observes the durable Admin Invitation without refreshing WorkOS, waiting for
-  acceptance, reconciling access, or changing state. "accepted" means the
-  invited user and Instance access are materialized. "pending" means access is
-  not materialized yet; provider and Queue internals remain private.
+  acceptance, reconciling access, or changing state. "completed" means the
+  invited user and Instance access are materialized. "accepted", "registering"
+  and "registered" are intermediate states, not completed access.
 
   The sender and Fleet administrators can inspect the Invitation. Its claimed
   user can inspect it after acceptance. Email ownership alone grants no access.
