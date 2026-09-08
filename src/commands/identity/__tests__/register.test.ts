@@ -56,49 +56,27 @@ async function observeConnections() {
   }
 }
 
-test.each(['foreign', 'explicit', 'kernel', 'direct'] as const)(
-  'registration %s preserves the selected callable credential authority',
-  async (mode) => {
-    const root = await mkdtemp(join(tmpdir(), 'astrale-register-principal-'))
-    temporaryRoots.push(root)
-    const created = await runCli(root, ['identity', 'create', 'alice', '--json'])
-    expect(created.exitCode, created.stderr).toBe(0)
-    const child = Bun.spawn(
-      ['bun', join(import.meta.dir, 'fixtures/register-principal.ts'), mode],
-      {
-        env: { ...process.env, ASTRALE_HOME: root, NO_UPDATE_NOTIFIER: '1' },
-        stdout: 'pipe',
-        stderr: 'pipe',
-      },
-    )
-    const [exit, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ])
-    expect(exit, stderr).toBe(0)
-    const result = JSON.parse(stdout)
-    if (mode === 'foreign') {
-      expect(result).toEqual({
-        effectiveIssuer: 'https://registration.example',
-        inspected: ['registration.example'],
-        principals: [{ principal: 'caller' }, { principal: 'domain' }],
-      })
-    } else if (mode === 'direct') {
-      expect(result).toEqual({
-        effectiveIssuer: 'https://shell.example',
-        inspected: [],
-        principals: [{}],
-      })
-    } else {
-      expect(result).toEqual({
-        effectiveIssuer: 'https://shell.example',
-        inspected: [],
-        principals: [{ principal: 'caller' }],
-      })
-    }
-  },
-)
+test('selects callable authority only for registration via a callable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'astrale-register-principal-'))
+  temporaryRoots.push(root)
+  const created = await runCli(root, ['identity', 'create', 'alice', '--json'])
+  expect(created.exitCode, created.stderr).toBe(0)
+  const child = Bun.spawn(['bun', join(import.meta.dir, 'fixtures/register-principal.ts')], {
+    env: { ...process.env, ASTRALE_HOME: root, NO_UPDATE_NOTIFIER: '1' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [exit, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ])
+  expect(exit, stderr).toBe(0)
+  expect(JSON.parse(stdout)).toEqual([
+    { principal: 'callable', path: '/:registration.example:function.registerIdentity' },
+    null,
+  ])
+})
 
 test('reports a missing local identity before connecting to Kernel', async () => {
   const root = await mkdtemp(join(tmpdir(), 'astrale-register-missing-'))
