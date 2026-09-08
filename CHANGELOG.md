@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.94](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.93...cli/v1.0.0-beta.94) (2026-09-08)
+
+
+### Features
+
+* **studio:** distinguish Method contracts from local execution ([#424](https://github.com/astrale-os/cli/issues/424)) ([9043e0c](https://github.com/astrale-os/cli/commit/9043e0c897fc40d24a2797554791438824e4ccfb))
+
+
+### Bug Fixes
+
+* align Studio project discovery and update CLI tooling ([#438](https://github.com/astrale-os/cli/issues/438)) ([7509d76](https://github.com/astrale-os/cli/commit/7509d76e32523dec0a04b8c8cae2df7c83e514db))
+
 ## [1.0.0-beta.93](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.92...cli/v1.0.0-beta.93) (2026-09-07)
 
 
