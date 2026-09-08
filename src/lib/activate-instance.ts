@@ -26,32 +26,32 @@ export async function activateInstance(
   options: Options,
 ): Promise<InstanceActivation> {
   if (options.creds)
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_IDENTITY_REQUIRED',
       'Select the WorkOS identity with --as; an Admin bearer cannot activate a child audience.',
     )
   if (instance.state !== 'ready' || !instance.organizationId)
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_NOT_READY',
       'The Instance is not ready for owner activation.',
     )
   const identities = await readIdentities()
   const name = options.as ?? identities.default
   if (identities.identities[name]?.source !== 'idp')
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_IDENTITY_REQUIRED',
       'Owner activation requires a WorkOS identity.',
     )
   const admin = await resolveAdminTarget(options, await readConfig())
   const target = new URL(instance.issuer ?? instance.url)
   if (target.protocol !== 'https:' || target.href !== `${target.origin}/api`)
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_TARGET_INVALID',
       'The Instance has no canonical HTTPS Kernel audience.',
     )
   const endpoint = new URL('/v1/owner-activation', admin.domainIssuer)
   if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password)
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_TARGET_INVALID',
       'Admin activation requires a configured HTTPS Domain issuer.',
     )
@@ -66,7 +66,7 @@ export async function activateInstance(
       })
       const token = accessTokenForAudience(session, target.href)
       if (!token)
-        throw activationError(
+        throw new AstraleError(
           'OWNER_ACTIVATION_IDENTITY_REQUIRED',
           'No primary credential for the Instance audience is available.',
         )
@@ -115,14 +115,14 @@ export async function activateOwner(
       body: JSON.stringify({ instanceOrigin: input.instanceOrigin }),
     })
   } catch {
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_UNAVAILABLE',
       'The Instance exists, but owner access could not be confirmed.',
     )
   }
   if (response.status !== 200) {
     await response.body?.cancel()
-    throw activationError(
+    throw new AstraleError(
       response.status === 503
         ? 'OWNER_ACTIVATION_UNAVAILABLE'
         : response.status === 401
@@ -131,57 +131,17 @@ export async function activateOwner(
       'Admin could not confirm this owner activation.',
     )
   }
-  const result = completion.safeParse(await readCompletion(response))
+  const result = completion.safeParse(await response.json().catch(() => undefined))
   if (!result.success)
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_PROTOCOL_INVALID',
       'Admin returned an invalid activation receipt.',
     )
   const observed = await input.whoami(token, signal)
   if (observed !== result.data.user)
-    throw activationError(
+    throw new AstraleError(
       'OWNER_ACTIVATION_IDENTITY_MISMATCH',
       'The activated owner does not match the authenticated Instance identity.',
     )
   return result.data
-}
-
-function activationError(code: string, message: string): AstraleError {
-  return new AstraleError(code, message)
-}
-
-async function readCompletion(response: Response): Promise<unknown> {
-  if (!response.body)
-    throw activationError(
-      'OWNER_ACTIVATION_PROTOCOL_INVALID',
-      'Admin returned no activation receipt.',
-    )
-  const reader = response.body.getReader()
-  const bytes = new Uint8Array(4096)
-  let size = 0
-  try {
-    while (true) {
-      const next = await reader.read()
-      if (next.done) break
-      if (size + next.value.byteLength > bytes.length) {
-        await reader.cancel().catch(() => undefined)
-        throw activationError(
-          'OWNER_ACTIVATION_PROTOCOL_INVALID',
-          'Admin returned an oversized activation receipt.',
-        )
-      }
-      bytes.set(next.value, size)
-      size += next.value.byteLength
-    }
-    return JSON.parse(
-      new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, size)),
-    ) as unknown
-  } catch {
-    throw activationError(
-      'OWNER_ACTIVATION_PROTOCOL_INVALID',
-      'Admin returned an invalid activation receipt.',
-    )
-  } finally {
-    reader.releaseLock()
-  }
 }

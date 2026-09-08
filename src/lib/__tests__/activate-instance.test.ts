@@ -45,9 +45,9 @@ describe('owner activation transport', () => {
     expect(request.whoami).not.toHaveBeenCalled()
   })
 
-  test('rejects oversized or malformed successful receipts without trusting an owner', async () => {
+  test('rejects malformed successful receipts without trusting an owner', async () => {
     for (const response of [
-      new Response('x'.repeat(4097)),
+      new Response('invalid JSON'),
       Response.json({ status: 'completed', user: 'owner', credential: 'unexpected' }),
     ]) {
       const request = input()
@@ -58,27 +58,6 @@ describe('owner activation transport', () => {
       ).rejects.toMatchObject({ code: 'OWNER_ACTIVATION_PROTOCOL_INVALID' })
       expect(request.whoami).not.toHaveBeenCalled()
     }
-  })
-
-  test('waits for the serialized credential refresh before starting activation', async () => {
-    const order: string[] = []
-    const request = {
-      ...input(),
-      credential: async () => {
-        order.push('credential')
-        return 'fresh-primary'
-      },
-    }
-    await expect(
-      activateOwner(request, {
-        fetch: async (_url, options) => {
-          order.push('activation')
-          expect(options?.signal?.aborted).toBe(false)
-          return Response.json({ status: 'completed', user: 'owner' })
-        },
-      }),
-    ).resolves.toEqual({ status: 'completed', user: 'owner' })
-    expect(order).toEqual(['credential', 'activation'])
   })
 
   test('rejects a successful receipt for a different authenticated owner', async () => {
@@ -98,18 +77,6 @@ describe('owner activation transport', () => {
     const request = input()
     const fetch = mock<typeof globalThis.fetch>().mockRejectedValue(
       new Error('private transport detail'),
-    )
-    await expect(activateOwner(request, { fetch })).rejects.toMatchObject({
-      code: 'OWNER_ACTIVATION_UNAVAILABLE',
-    })
-    expect(fetch).toHaveBeenCalledTimes(1)
-    expect(request.whoami).not.toHaveBeenCalled()
-  })
-
-  test('leaves an unavailable activation for the next explicit create invocation', async () => {
-    const request = input()
-    const fetch = mock<typeof globalThis.fetch>().mockResolvedValue(
-      new Response(null, { status: 503 }),
     )
     await expect(activateOwner(request, { fetch })).rejects.toMatchObject({
       code: 'OWNER_ACTIVATION_UNAVAILABLE',

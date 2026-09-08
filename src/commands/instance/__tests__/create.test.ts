@@ -2,7 +2,8 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 
 import type { ProvisionResult } from '../../../lib/provision-instance'
 
-import { createInstanceCreateCommand } from '../create'
+import * as provisioning from '../../../lib/provision-instance'
+import command from '../create'
 
 const originalExitCode = process.exitCode
 afterEach(() => {
@@ -34,14 +35,16 @@ test.each([
       operationId: 'same-operation',
       state,
     }
-    const provisionInstance = mock(async (): Promise<ProvisionResult> => ({
-      created,
-      slug: 'demo',
-      access,
-    }))
+    const provisionInstance = spyOn(provisioning, 'provisionInstance').mockImplementation(
+      async (): Promise<ProvisionResult> => ({
+        created,
+        slug: 'demo',
+        access,
+      }),
+    )
     const options = { json: true, as: 'creator' }
 
-    await createInstanceCreateCommand({ provisionInstance }).action('demo', options)
+    await command.action('demo', options)
 
     expect(provisionInstance).toHaveBeenCalledWith('demo', options)
     expect(Number(process.exitCode)).toBe(exitCode)

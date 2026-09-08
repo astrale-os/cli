@@ -68,7 +68,7 @@ function defaultDependencies(ctx: SetupContext): InstanceSetupDependencies {
       withSpinner('Checking for existing instances', !setupCtx.machine, () =>
         listOwnedInstancesWithIdentity(setupCtx.opts),
       ),
-    adopt: (info, identity) => adoptOwnedInstance(info, identity),
+    adopt: adoptOwnedInstance,
     selectReady: (instances) =>
       selectFrom(
         'No active instance. Pick one:',
