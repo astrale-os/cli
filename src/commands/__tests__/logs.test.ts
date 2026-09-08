@@ -18,11 +18,55 @@ describe('buildJournalInput', () => {
     ).toEqual({
       topics: { exact: ['op:function.failed'], prefixes: ['security.'] },
       principal: 'caller',
-      since: '2026-08-10T00:00:00Z',
-      until: '2026-08-11T00:00:00Z',
+      since: '2026-08-10T00:00:00.000Z',
+      until: '2026-08-11T00:00:00.000Z',
       cursor: 'opaque-next',
       limit: 50,
     })
+  })
+
+  test.each([
+    ['2026-09-08T19:40:00Z', '2026-09-08T19:40:00.000Z'],
+    ['2026-09-08T19:40:00.1Z', '2026-09-08T19:40:00.100Z'],
+    ['2026-09-08T19:40:00.1200Z', '2026-09-08T19:40:00.120Z'],
+    ['2026-09-08T19:40:00.123Z', '2026-09-08T19:40:00.123Z'],
+    ['2024-03-01T00:30:00+01:00', '2024-02-29T23:30:00.000Z'],
+    ['2024-02-29T23:30:00.123-01:00', '2024-03-01T00:30:00.123Z'],
+  ])('canonicalizes both bounds without changing the instant: %s', (input, canonical) => {
+    expect(buildJournalInput({ since: input, until: input })).toEqual({
+      since: canonical,
+      until: canonical,
+      limit: 200,
+    })
+    expect(Date.parse(canonical)).toBe(Date.parse(input))
+  })
+
+  test.each([
+    '2026-02-30T00:00:00Z',
+    '2025-02-29T00:00:00Z',
+    '2026-09-08T24:00:00Z',
+    '2026-09-08T19:40:00',
+    '2026-09-08T19:40:00+24:00',
+    '2026-09-08T19:40:00.1234Z',
+    '2026-09-08T19:40:00.0001Z',
+  ])('rejects invalid or unrepresentable bounds: %s', (input) => {
+    expect(() => buildJournalInput({ since: input })).toThrow('--since')
+    expect(() => buildJournalInput({ until: input })).toThrow('--until')
+  })
+
+  test('compares bounds by their instants after timezone normalization', () => {
+    expect(
+      buildJournalInput({
+        since: '2026-09-08T21:40:00+02:00',
+        until: '2026-09-08T19:40:00Z',
+      }),
+    ).toEqual({ since: '2026-09-08T19:40:00.000Z', until: '2026-09-08T19:40:00.000Z', limit: 200 })
+    expect(() =>
+      buildJournalInput({
+        since: '2026-09-08T19:40:00.001Z',
+        until: '2026-09-08T21:40:00+02:00',
+      }),
+    ).toThrow('--since')
   })
 
   test('defaults only the finite limit and rejects invalid values', () => {

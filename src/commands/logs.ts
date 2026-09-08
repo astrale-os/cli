@@ -1,6 +1,7 @@
 import { Path } from '@astrale-os/sdk/graph/path'
 import { K } from '@astrale-os/sdk/schema'
 import chalk from 'chalk'
+import { z } from 'zod'
 
 import type { ConnectionContext, KernelCommandOpts } from '../connection'
 import type { Column, ListProjection } from '../lib/output'
@@ -62,7 +63,9 @@ export interface JournalInput {
   readonly limit: number
 }
 
-const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/
+const ISO_TIMESTAMP = z.iso.datetime({ offset: true })
+const MILLISECOND_TIMESTAMP =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3}0*)?(?:Z|[+-]\d{2}:\d{2})$/
 const CURSOR_TOKEN = /^[A-Za-z0-9._:+=/-]{8,}$/
 
 /** Map flags to the exact public journal syscall input without legacy glob/sequence lowering. */
@@ -94,10 +97,12 @@ export function buildJournalInput(opts: LogsOpts): JournalInput {
 function timestampFlag(name: string, raw: string | undefined): string | undefined {
   const value = nonEmpty(raw)
   if (value === undefined) return undefined
-  if (!ISO_TIMESTAMP.test(value) || Number.isNaN(Date.parse(value))) {
-    throw new TypeError(`${name} must be an ISO-8601 timestamp (e.g. 2026-08-19T16:51:10.049Z)`)
+  if (!ISO_TIMESTAMP.safeParse(value).success || !MILLISECOND_TIMESTAMP.test(value)) {
+    throw new TypeError(
+      `${name} must be a valid ISO-8601 timestamp with a timezone and at most millisecond precision (e.g. 2026-08-19T16:51:10.049Z)`,
+    )
   }
-  return value
+  return new Date(value).toISOString()
 }
 
 function cursorFlag(raw: string): string {
@@ -339,8 +344,10 @@ export default {
   afterHelpText: `
 Behavior:
   Calls the public Kernel journal syscall and emits its { records, cursor }
-  page. Topic selection is exact or prefix-based; cursors and timestamps are
-  opaque strings owned by the journal backend. --follow reuses one Client Session
+  page. Topic selection is exact or prefix-based; cursors are opaque backend tokens.
+  Timestamps accept ISO-8601 with a timezone and millisecond precision; offsets
+  are converted to canonical UTC (e.g. 2026-08-19T16:51:10.000Z).
+  --follow reuses one Client Session
   and advances only with the returned cursor. With --json, follow output is
   NDJSON with one complete admitted record per line; YAML follow is unsupported.
 
