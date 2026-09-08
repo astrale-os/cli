@@ -35,6 +35,7 @@ export async function mutateCommand(opts: MutateOpts): Promise<void> {
   await runKernelCommand<MutationResult>({
     opts,
     label: 'Mutate',
+    credential: { principal: 'graph' },
     fn: ({ graph }) => graph.mutate(mutation),
     format: (result, format, machine) => {
       if (machine || format.format !== undefined) output(result, format)

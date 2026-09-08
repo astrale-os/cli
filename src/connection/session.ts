@@ -26,7 +26,7 @@ import { readConfig } from '../lib/config'
 import { log } from '../lib/log'
 import { isMachine } from '../lib/output'
 import { SESSION_ROUTE_STORE } from '../state/session-routes'
-import { bindCredentialIdentity } from './auth'
+import { bindCredentialIdentity, usesKernelSigningIdentity } from './auth'
 import { callableOrigin, resolveCallableTarget } from './callable-target'
 import {
   createCliCredential,
@@ -129,6 +129,14 @@ async function runResolvedClientSession<Value>(
   open: ConnectionFactory,
   credential: CredentialIntent = {},
 ): Promise<Value> {
+  if (credential.principal === 'graph') {
+    const direct =
+      options.creds !== undefined ||
+      options.anonymous === true ||
+      target.domainIssuer === undefined ||
+      (await usesKernelSigningIdentity(options, target, config))
+    credential = { principal: direct ? 'caller' : 'domain' }
+  }
   if (credential.principal === 'callable') {
     const origin = callableOrigin(credential.path)
     if (

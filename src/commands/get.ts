@@ -32,6 +32,7 @@ export async function getCommand(target: string, opts: GetOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: `Node ${target}`,
+    credential: { principal: 'graph' },
     fn: async (context) => {
       const { path, meta } = await expandSelfInPath(target, context)
       const resolved = meta === undefined ? parsed : Path.parse(path)

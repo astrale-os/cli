@@ -31,6 +31,7 @@ export type CredentialIntent =
   | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
   | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
   | Readonly<{ principal: 'callable'; path: Path; nestedTtlSeconds?: never }>
+  | Readonly<{ principal: 'graph'; nestedTtlSeconds?: never }>
 
 type CredentialResolver = typeof resolveCredential
 
@@ -93,8 +94,8 @@ export function createCliCredential(
   intent: CredentialIntent = {},
   resolveSource: CredentialResolver = resolveCredential,
 ): SessionAuth | undefined {
-  if (intent.principal === 'callable') {
-    throw new TypeError('Callable credentials require installed Domain resolution.')
+  if (intent.principal === 'callable' || intent.principal === 'graph') {
+    throw new TypeError('Surface credentials require session principal resolution.')
   }
   if (intent.nestedTtlSeconds !== undefined && intent.principal !== 'caller') {
     throw new TypeError('Nested credential issuance requires the caller principal.')
