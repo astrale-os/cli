@@ -10,19 +10,16 @@ const input = () => ({
 })
 
 describe('owner activation transport', () => {
-  test('retries the same target then verifies the human owner, without sending a credential in JSON', async () => {
+  test('finalizes the exact target then verifies its human owner, without a credential in JSON', async () => {
     const request = input()
-    const fetch = mock<typeof globalThis.fetch>()
-      .mockResolvedValueOnce(
-        Response.json({ code: 'OWNER_ACTIVATION_UNAVAILABLE' }, { status: 503 }),
-      )
-      .mockResolvedValueOnce(Response.json({ status: 'completed', user: 'owner' }))
-    const sleep = mock(async () => {})
-    expect(await activateOwner(request, { fetch, sleep, now: () => 0 })).toEqual({
+    const fetch = mock<typeof globalThis.fetch>().mockResolvedValueOnce(
+      Response.json({ status: 'completed', user: 'owner' }),
+    )
+    expect(await activateOwner(request, { fetch })).toEqual({
       status: 'completed',
       user: 'owner',
     })
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(fetch).toHaveBeenCalledTimes(1)
     for (const [url, options] of fetch.mock.calls) {
       expect(url).toBe(request.endpoint)
       expect(options).toMatchObject({
@@ -41,9 +38,9 @@ describe('owner activation transport', () => {
     const fetch = mock<typeof globalThis.fetch>().mockResolvedValue(
       new Response(null, { status: 401 }),
     )
-    await expect(
-      activateOwner(request, { fetch, sleep: async () => {}, now: () => 0 }),
-    ).rejects.toMatchObject({ code: 'OWNER_ACTIVATION_REJECTED' })
+    await expect(activateOwner(request, { fetch })).rejects.toMatchObject({
+      code: 'OWNER_ACTIVATION_REJECTED',
+    })
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(request.whoami).not.toHaveBeenCalled()
   })
@@ -57,32 +54,31 @@ describe('owner activation transport', () => {
       await expect(
         activateOwner(request, {
           fetch: mock<typeof globalThis.fetch>().mockResolvedValue(response),
-          sleep: async () => {},
-          now: () => 0,
         }),
       ).rejects.toMatchObject({ code: 'OWNER_ACTIVATION_PROTOCOL_INVALID' })
       expect(request.whoami).not.toHaveBeenCalled()
     }
   })
 
-  test('starts the transport budget after serialized credential refresh completes', async () => {
-    let now = 0
+  test('waits for the serialized credential refresh before starting activation', async () => {
+    const order: string[] = []
     const request = {
       ...input(),
       credential: async () => {
-        now = 180000
+        order.push('credential')
         return 'fresh-primary'
       },
     }
     await expect(
       activateOwner(request, {
-        fetch: mock<typeof globalThis.fetch>().mockResolvedValue(
-          Response.json({ status: 'completed', user: 'owner' }),
-        ),
-        sleep: async () => {},
-        now: () => now,
+        fetch: async (_url, options) => {
+          order.push('activation')
+          expect(options?.signal?.aborted).toBe(false)
+          return Response.json({ status: 'completed', user: 'owner' })
+        },
       }),
     ).resolves.toEqual({ status: 'completed', user: 'owner' })
+    expect(order).toEqual(['credential', 'activation'])
   })
 
   test('rejects a successful receipt for a different authenticated owner', async () => {
@@ -93,28 +89,31 @@ describe('owner activation transport', () => {
           fetch: mock<typeof globalThis.fetch>().mockResolvedValue(
             Response.json({ status: 'completed', user: 'owner' }),
           ),
-          sleep: async () => {},
-          now: () => 0,
         },
       ),
     ).rejects.toMatchObject({ code: 'OWNER_ACTIVATION_IDENTITY_MISMATCH' })
   })
 
-  test('bounds unknown outcome recovery without recreating an Instance', async () => {
-    let now = 0
+  test('returns an unknown activation outcome after one request, without an opaque retry', async () => {
     const request = input()
     const fetch = mock<typeof globalThis.fetch>().mockRejectedValue(
       new Error('private transport detail'),
     )
-    await expect(
-      activateOwner(request, {
-        fetch,
-        sleep: async () => {
-          now = 120001
-        },
-        now: () => now,
-      }),
-    ).rejects.toMatchObject({ code: 'OWNER_ACTIVATION_UNAVAILABLE' })
+    await expect(activateOwner(request, { fetch })).rejects.toMatchObject({
+      code: 'OWNER_ACTIVATION_UNAVAILABLE',
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(request.whoami).not.toHaveBeenCalled()
+  })
+
+  test('leaves an unavailable activation for the next explicit create invocation', async () => {
+    const request = input()
+    const fetch = mock<typeof globalThis.fetch>().mockResolvedValue(
+      new Response(null, { status: 503 }),
+    )
+    await expect(activateOwner(request, { fetch })).rejects.toMatchObject({
+      code: 'OWNER_ACTIVATION_UNAVAILABLE',
+    })
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(request.whoami).not.toHaveBeenCalled()
   })

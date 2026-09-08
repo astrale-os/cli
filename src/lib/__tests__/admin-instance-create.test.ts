@@ -7,13 +7,13 @@ const ready = {
   slug: 'demo',
   url: 'https://demo.example.test/api',
   state: 'ready' as const,
+  operationId: 'retained-operation',
 }
 
 describe('Admin Instance create recovery', () => {
-  test('returns an existing ready Instance', () => {
+  test('replays a ready Instance receipt instead of treating visibility as owner access', () => {
     expect(planInstanceCreate([ready], 'demo', 'new-operation')).toEqual({
-      kind: 'ready',
-      instance: ready,
+      operationId: ready.operationId,
     })
   })
 
@@ -24,20 +24,30 @@ describe('Admin Instance create recovery', () => {
         'demo',
         'new-operation',
       ),
-    ).toEqual({ kind: 'create', operationId: 'retained-operation' })
+    ).toEqual({ operationId: 'retained-operation' })
   })
 
   test('uses the caller operation only when no durable Instance exists', () => {
     expect(planInstanceCreate([], 'demo', 'new-operation')).toEqual({
-      kind: 'create',
       operationId: 'new-operation',
     })
   })
 
-  test('reports old receipts and terminal Instances without inventing recovery', () => {
-    expect(() => planInstanceCreate([{ ...ready, state: 'provisioning' }], 'demo')).toThrow(
-      'has no operation id',
-    )
+  test('refuses missing receipts and terminal Instances without creating a replacement', () => {
+    for (const state of ['ready', 'provisioning'] as const) {
+      expect(() =>
+        planInstanceCreate([{ ...ready, state, operationId: undefined }], 'demo'),
+      ).toThrow('has no retained creation operation id')
+    }
     expect(() => planInstanceCreate([{ ...ready, state: 'failed' }], 'demo')).toThrow('is failed')
+  })
+
+  test('does not arbitrarily select a receipt when several visible Instances share the slug', () => {
+    expect(() =>
+      planInstanceCreate(
+        [ready, { ...ready, id: '@another', operationId: 'other-operation' }],
+        'demo',
+      ),
+    ).toThrow('More than one visible Admin Instance')
   })
 })

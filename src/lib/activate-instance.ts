@@ -89,7 +89,7 @@ export async function activateInstance(
   })
 }
 
-/** One transport boundary shared by create and explicit activation; no credential is retained. */
+/** Finalize one retained owner, then verify it. A new create invocation owns recovery. */
 export async function activateOwner(
   input: {
     readonly endpoint: string
@@ -97,69 +97,53 @@ export async function activateOwner(
     readonly credential: () => Promise<string>
     readonly whoami: (credential: string, signal: AbortSignal) => Promise<string>
   },
-  dependencies: {
-    fetch: Fetch
-    now: () => number
-    sleep: (milliseconds: number) => Promise<void>
-  } = {
-    fetch: globalThis.fetch,
-    now: Date.now,
-    sleep: (milliseconds: number) =>
-      new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
-  },
+  dependencies: { fetch: Fetch } = { fetch: globalThis.fetch },
 ): Promise<InstanceActivation> {
   const token = await input.credential()
-  // Token rotation has its own locked lifecycle; the activation transport budget starts afterward.
-  const deadline = dependencies.now() + 120000
+  // Token rotation has its own locked lifecycle; start the request budget afterward.
   const signal = AbortSignal.timeout(120000)
-  while (!signal.aborted && dependencies.now() < deadline) {
-    let response: Response
-    try {
-      response = await dependencies.fetch(input.endpoint, {
-        method: 'POST',
-        redirect: 'error',
-        credentials: 'omit',
-        cache: 'no-store',
-        referrerPolicy: 'no-referrer',
-        signal,
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ instanceOrigin: input.instanceOrigin }),
-      })
-    } catch {
-      if (signal.aborted) break
-      await dependencies.sleep(1000)
-      continue
-    }
-    if (response.status === 503) {
-      await response.body?.cancel()
-      await dependencies.sleep(1000)
-      continue
-    }
-    if (response.status !== 200) {
-      await response.body?.cancel()
-      throw activationError(
-        response.status === 401 ? 'OWNER_ACTIVATION_REJECTED' : 'OWNER_ACTIVATION_PROTOCOL_INVALID',
-        'Admin could not admit this owner activation.',
-      )
-    }
-    const result = completion.safeParse(await readCompletion(response))
-    if (!result.success)
-      throw activationError(
-        'OWNER_ACTIVATION_PROTOCOL_INVALID',
-        'Admin returned an invalid activation receipt.',
-      )
-    const observed = await input.whoami(token, signal)
-    if (observed !== result.data.user)
-      throw activationError(
-        'OWNER_ACTIVATION_IDENTITY_MISMATCH',
-        'The activated owner does not match the authenticated Instance identity.',
-      )
-    return result.data
+  let response: Response
+  try {
+    response = await dependencies.fetch(input.endpoint, {
+      method: 'POST',
+      redirect: 'error',
+      credentials: 'omit',
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      signal,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ instanceOrigin: input.instanceOrigin }),
+    })
+  } catch {
+    throw activationError(
+      'OWNER_ACTIVATION_UNAVAILABLE',
+      'The Instance exists, but owner access could not be confirmed.',
+    )
   }
-  throw activationError(
-    'OWNER_ACTIVATION_UNAVAILABLE',
-    'The Instance exists, but owner activation could not be confirmed; retry instance activate.',
-  )
+  if (response.status !== 200) {
+    await response.body?.cancel()
+    throw activationError(
+      response.status === 503
+        ? 'OWNER_ACTIVATION_UNAVAILABLE'
+        : response.status === 401
+          ? 'OWNER_ACTIVATION_REJECTED'
+          : 'OWNER_ACTIVATION_PROTOCOL_INVALID',
+      'Admin could not confirm this owner activation.',
+    )
+  }
+  const result = completion.safeParse(await readCompletion(response))
+  if (!result.success)
+    throw activationError(
+      'OWNER_ACTIVATION_PROTOCOL_INVALID',
+      'Admin returned an invalid activation receipt.',
+    )
+  const observed = await input.whoami(token, signal)
+  if (observed !== result.data.user)
+    throw activationError(
+      'OWNER_ACTIVATION_IDENTITY_MISMATCH',
+      'The activated owner does not match the authenticated Instance identity.',
+    )
+  return result.data
 }
 
 function activationError(code: string, message: string): AstraleError {

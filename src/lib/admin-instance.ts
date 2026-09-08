@@ -1,7 +1,7 @@
-import type { InstanceInfo, OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
+import type { OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance'
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
-import { connectAdminInstances, findOwnedInstance } from '../admin/instance'
+import { connectAdminInstances } from '../admin/instance'
 import { withAdminClientSession } from '../connection'
 import { AstraleError } from '../errors'
 
@@ -50,13 +50,13 @@ export function createOwnedInstance(
   return withAdminClientSession(options, async (context) => {
     const instances = await connectAdminInstances(context)
     const plan = planInstanceCreate(await instances.list(), slug, operationId)
-    return plan.kind === 'ready' ? plan.instance : instances.create(slug, plan.operationId)
+    // Inventory is caller-visible, not proof of creation ownership. Even ready
+    // Instances must replay their receipt so Admin verifies its actor and input.
+    return instances.create(slug, plan.operationId)
   })
 }
 
-type InstanceCreatePlan =
-  | Readonly<{ kind: 'ready'; instance: InstanceInfo }>
-  | Readonly<{ kind: 'create'; operationId?: string }>
+type InstanceCreatePlan = Readonly<{ operationId?: string }>
 
 /** @internal Resolve creation from durable caller-visible Admin state. */
 export function planInstanceCreate(
@@ -64,17 +64,24 @@ export function planInstanceCreate(
   slug: string,
   operationId?: string,
 ): InstanceCreatePlan {
-  const existing = findOwnedInstance(inventory, slug)
-  if (existing?.state === 'ready') return Object.freeze({ kind: 'ready', instance: existing })
-  if (existing?.state === 'provisioning') {
+  const candidates = inventory.filter((instance) => instance.slug === slug)
+  if (candidates.length > 1) {
+    throw new AstraleError(
+      'INSTANCE_RECOVERY_AMBIGUOUS',
+      `More than one visible Admin Instance matches slug ${JSON.stringify(slug)}.`,
+      'Inspect their creation receipts before retrying; no operation was selected.',
+    )
+  }
+  const existing = candidates[0]
+  if (existing?.state === 'ready' || existing?.state === 'provisioning') {
     if (existing.operationId === undefined) {
       throw new AstraleError(
         'INSTANCE_RECOVERY_UNAVAILABLE',
-        `Instance ${JSON.stringify(slug)} is provisioning but its Admin receipt has no operation id.`,
-        'Upgrade the Admin Domain, then retry the same command.',
+        `Instance ${JSON.stringify(slug)} has no retained creation operation id.`,
+        'Inspect its Admin creation receipt before retrying; no new instance was requested.',
       )
     }
-    return Object.freeze({ kind: 'create', operationId: existing.operationId })
+    return Object.freeze({ operationId: existing.operationId })
   }
   if (existing !== undefined) {
     throw new AstraleError(
@@ -83,7 +90,7 @@ export function planInstanceCreate(
       'Run `astrale instance list` to inspect it.',
     )
   }
-  return Object.freeze({ kind: 'create', ...(operationId === undefined ? {} : { operationId }) })
+  return Object.freeze(operationId === undefined ? {} : { operationId })
 }
 
 /** Refresh one exact caller-visible Instance through its V2 receiver Method. */

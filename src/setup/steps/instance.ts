@@ -4,7 +4,6 @@ import type { OwnedInstanceInfo } from '../../lib/admin-instance'
 import type { SetupContext, SetupStep } from '../types'
 
 import { AstraleError } from '../../errors'
-import { activateInstance } from '../../lib/activate-instance'
 import { listOwnedInstancesWithIdentity } from '../../lib/admin-instance'
 import { normalizeInstanceKernelUrl, setActive, upsertManagedBookmark } from '../../lib/instance'
 import { readLocalStatus } from '../../lib/local-status'
@@ -29,7 +28,6 @@ export type InstanceSetupDependencies = {
 export type OwnedInstanceAdoptionDependencies = {
   upsert: typeof upsertManagedBookmark
   activate: (slug: string) => Promise<unknown>
-  activateOwner: typeof activateInstance
 }
 
 /** Print the click-inviting hero for a freshly-active instance. */
@@ -45,9 +43,7 @@ export async function adoptOwnedInstance(
   deps: OwnedInstanceAdoptionDependencies = {
     upsert: upsertManagedBookmark,
     activate: setActive,
-    activateOwner: activateInstance,
   },
-  options: SetupContext['opts'] = {},
 ): Promise<void> {
   const { repointedFrom } = await deps.upsert({
     key: info.slug,
@@ -55,10 +51,6 @@ export async function adoptOwnedInstance(
     url: info.url,
     ...(info.organizationId ? { organizationId: info.organizationId } : {}),
     ...(defaultIdentity ? { defaultIdentity } : {}),
-  })
-  await deps.activateOwner(info, {
-    ...options,
-    ...(defaultIdentity ? { as: defaultIdentity } : {}),
   })
   await deps.activate(info.slug)
   if (repointedFrom) {
@@ -76,7 +68,7 @@ function defaultDependencies(ctx: SetupContext): InstanceSetupDependencies {
       withSpinner('Checking for existing instances', !setupCtx.machine, () =>
         listOwnedInstancesWithIdentity(setupCtx.opts),
       ),
-    adopt: (info, identity) => adoptOwnedInstance(info, identity, undefined, ctx.opts),
+    adopt: (info, identity) => adoptOwnedInstance(info, identity),
     selectReady: (instances) =>
       selectFrom(
         'No active instance. Pick one:',
@@ -163,7 +155,9 @@ export async function ensureOwnedInstance(
     )
   }
   if (access?.status !== 'completed') {
-    log.warn(`Instance exists, but owner access is pending. Run: astrale instance activate ${slug}`)
+    log.warn(
+      `Instance "${slug}" exists, but owner access is pending. Rerun instance create with the same Admin target options and the creator's WorkOS identity (--as, not --creds).`,
+    )
     return 'skipped'
   }
   hero(slug, created.url)

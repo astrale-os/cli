@@ -1,15 +1,57 @@
 import { ResponseError } from '@astrale-os/sdk/client'
+import { invocation } from '@astrale-os/sdk/invocation'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { provisionInstance } from '../provision-instance'
 
 const originalError = console.error
+const temporary: string[] = []
 
-afterEach(() => {
+afterEach(async () => {
   console.error = originalError
+  await Promise.all(temporary.splice(0).map((path) => rm(path, { recursive: true, force: true })))
 })
 
 describe('managed Instance root import during provisioning', () => {
+  test('stops a rejected creation receipt before activation, bookmark or Root recovery', async () => {
+    const refused = new ResponseError(
+      4001,
+      'Creation receipt actor mismatch.',
+      invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'receipt-attempt' }),
+    )
+    const createOwnedInstance = mock(async () => {
+      throw refused
+    })
+    const upsertManagedBookmark = mock()
+    const setActive = mock()
+    const activateInstance = mock()
+    const importInstanceRootIdentity = mock()
+    await expect(
+      provisionInstance(
+        'demo',
+        { creds: 'caller-proof', ci: true },
+        {
+          createOwnedInstance,
+          upsertManagedBookmark,
+          setActive,
+          activateInstance,
+          importInstanceRootIdentity,
+        },
+      ),
+    ).rejects.toBe(refused)
+    expect(createOwnedInstance).toHaveBeenCalledTimes(1)
+    for (const effect of [
+      upsertManagedBookmark,
+      setActive,
+      activateInstance,
+      importInstanceRootIdentity,
+    ]) {
+      expect(effect).not.toHaveBeenCalled()
+    }
+  })
   test('confirms human activation before selecting the instance, independently of Root import', async () => {
     const events: string[] = []
     const created = {
@@ -42,7 +84,7 @@ describe('managed Instance root import during provisioning', () => {
         },
       },
     )
-    expect(events).toEqual(['bookmark', 'activate', 'select', 'root'])
+    expect(events).toEqual(['activate', 'bookmark', 'select', 'root'])
     expect(result.access).toEqual({ status: 'completed', user: 'owner' })
   })
 
@@ -73,6 +115,7 @@ describe('managed Instance root import during provisioning', () => {
         upsertManagedBookmark,
         setActive,
         importInstanceRootIdentity,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
     )
 
@@ -90,9 +133,10 @@ describe('managed Instance root import during provisioning', () => {
       slug: 'demo',
       url: created.url,
       organizationId: created.organizationId,
+      activateWhenEmpty: false,
     })
-    expect(setActive).not.toHaveBeenCalled()
-    expect(result.access).toEqual({ status: 'pending', code: 'OWNER_ACTIVATION_IDENTITY_REQUIRED' })
+    expect(setActive).toHaveBeenCalledTimes(1)
+    expect(result.access).toEqual({ status: 'completed', user: 'owner' })
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
   })
 
@@ -131,6 +175,7 @@ describe('managed Instance root import during provisioning', () => {
         upsertManagedBookmark,
         setActive,
         importInstanceRootIdentity,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
     )
 
@@ -155,7 +200,13 @@ describe('managed Instance root import during provisioning', () => {
       state: 'ready' as const,
     }
     const createOwnedInstance = mock()
-      .mockRejectedValueOnce(new ResponseError(5000, 'Internal failure.', 'request-1' as never))
+      .mockRejectedValueOnce(
+        new ResponseError(
+          5000,
+          'Internal failure.',
+          invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
+        ),
+      )
       .mockResolvedValueOnce(ready)
     const sleep = mock(async () => {})
 
@@ -170,6 +221,7 @@ describe('managed Instance root import during provisioning', () => {
         upsertManagedBookmark: async () => ({ entry: { url: ready.url } }),
         setActive: async () => 'demo',
         importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
     )
 
@@ -215,4 +267,88 @@ describe('managed Instance root import during provisioning', () => {
     expect(setActive).not.toHaveBeenCalled()
     expect(importInstanceRootIdentity).not.toHaveBeenCalled()
   })
+
+  test.each(['empty', 'same-name-active'] as const)(
+    'keeps %s local selection intact on interrupted access and resumes the same receipt in a fresh process',
+    async (initial) => {
+      const directory = await mkdtemp(join(tmpdir(), 'astrale-create-access-'))
+      temporary.push(directory)
+      const path = join(directory, 'instances.json')
+      const store =
+        initial === 'empty'
+          ? { active: '', instances: {} }
+          : {
+              active: 'demo',
+              instances: {
+                demo: {
+                  url: 'https://old.example/api',
+                  issuer: 'https://old.example/api',
+                  kind: 'bookmark',
+                },
+              },
+            }
+      const original = JSON.stringify(store)
+      await writeFile(path, original)
+      const module = new URL('../provision-instance.ts', import.meta.url).href
+      const plans = new URL('../admin-instance.ts', import.meta.url).href
+      const activation = new URL('../activate-instance.ts', import.meta.url).href
+      const source = `
+      import assert from 'node:assert/strict';
+      import { provisionInstance } from ${JSON.stringify(module)};
+      import { planInstanceCreate } from ${JSON.stringify(plans)};
+      import { activateOwner } from ${JSON.stringify(activation)};
+      const instance = { id: '@retained-instance', slug: 'demo', operationId: 'retained-operation',
+        state: 'ready', url: 'https://new.example/api', organizationId: 'org_child' };
+      const result = await provisionInstance('demo', { creds: 'test-admin', ci: true }, {
+        createOwnedInstance: async (_options, slug, freshOperation) => {
+          assert.equal(planInstanceCreate([instance], slug, freshOperation).operationId, instance.operationId);
+          return instance;
+        },
+        activateInstance: async () => activateOwner({ endpoint: 'https://admin.example/v1/owner-activation',
+          instanceOrigin: 'https://new.example', credential: async () => 'test-child',
+          whoami: async () => 'reserved-owner' }, { fetch: async () => {
+            if (process.env.CASE_PHASE === 'lost') throw new Error('response lost');
+            return Response.json({status:'completed', user:'reserved-owner'});
+          } }),
+        importInstanceRootIdentity: async () => { throw new Error('optional Root import unavailable'); },
+      });
+      process.stdout.write(JSON.stringify({id:result.created.id, operation:result.created.operationId,
+        access:result.access, selectionError:result.selectionError !== undefined}));
+    `
+      const run = async (phase: string) => {
+        const child = Bun.spawn([process.execPath, '--eval', source], {
+          env: { ...process.env, ASTRALE_HOME: directory, CASE_PHASE: phase },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        })
+        const [code, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ])
+        expect(code).toBe(0)
+        return { result: JSON.parse(stdout), stderr }
+      }
+      const interrupted = await run('lost')
+      expect(interrupted.result).toMatchObject({
+        id: '@retained-instance',
+        operation: 'retained-operation',
+        access: { status: 'pending' },
+      })
+      expect(interrupted.stderr).toContain('Instance "demo" exists')
+      expect(interrupted.stderr).toContain('same Admin target options')
+      expect(await readFile(path, 'utf8')).toBe(original)
+      const resumed = await run('complete')
+      expect(resumed.result).toEqual({
+        id: '@retained-instance',
+        operation: 'retained-operation',
+        access: { status: 'completed', user: 'reserved-owner' },
+        selectionError: false,
+      })
+      const selected = JSON.parse(await readFile(path, 'utf8'))
+      expect(selected.active).toBe('demo')
+      expect(selected.instances.demo.url).toBe('https://new.example/api')
+      expect(selected.instances.demo.organizationId).toBe('org_child')
+    },
+  )
 })
