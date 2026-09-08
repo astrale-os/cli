@@ -64,7 +64,12 @@ test('the reorganized guides retain current authority and exact Method semantics
     /Default `query`, `mutate`, and `kernel` use the installed Domain authority/,
   )
   assert.match(runtime, /`graph.caller` or `kernel.caller`/)
-  assert.match(runtime, /dependencies.messaging.invoke/)
+  assert.match(runtime, /dependencies\.messaging\.caller\.invoke/)
+  assert.match(runtime, /Dependencies have no default `invoke`/)
+  for (const authority of ['caller', 'self', 'union']) {
+    assert.ok(runtime.includes(`.${authority}.invoke`))
+  }
+  assert.doesNotMatch(runtime, /dependencies\.\w+\.invoke/)
   assert.match(runtime, /no `expect` or `schemaExpectation` option/)
   assert.match(schema, /Only abstract Method obligations are inherited/)
   assert.match(schema, /A concrete Class can declare `abstract: true`/)
