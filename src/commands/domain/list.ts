@@ -4,10 +4,11 @@ import type { KernelCommandOpts } from '../../connection'
 import type { ListProjection, RawOutputOpts } from '../../lib/output'
 import type { CommandDefinition } from '../../program/index'
 
+import { formatKernelError } from '../../connection/errors'
 import { listAdminDomains, type DomainInfo } from '../../lib/admin-domain'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fetchDomainPublication } from '../../lib/domain-publication'
-import { fatal, withSpinner } from '../../lib/log'
+import { withSpinner } from '../../lib/log'
 import { isMachine, presentList } from '../../lib/output'
 
 type ListOpts = KernelCommandOpts &
@@ -120,7 +121,8 @@ Examples:
         domainProjection,
       )
     } catch (e) {
-      fatal(e)
+      await formatKernelError(e, isMachine(opts), undefined, opts.debug)
+      process.exit(1)
     }
   },
 } satisfies CommandDefinition
