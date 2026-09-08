@@ -17,6 +17,7 @@ import {
   IdpSessionNoRefreshTokenError,
 } from '../lib/idp-session'
 import { KEYS_DIR } from '../state/index'
+import { registrationKeyForTarget } from './target'
 
 export type KeyIdentityAuthOptions = {
   issuer: string
@@ -219,6 +220,25 @@ export function resolveKeyIdentityAuthOptions(
     subject: registration?.sub,
     audience,
   }
+}
+
+/** Select a Kernel-native signing identity, not a privilege inferred from its local name. */
+export async function usesKernelSigningIdentity(
+  opts: Pick<ConnectionOptions, 'as'>,
+  target: ConnectionTarget,
+  config: AstraleConfig,
+): Promise<boolean> {
+  const name = opts.as ?? target.defaultIdentity
+  const identity = name === undefined ? await getDefault() : await getIdentity(name)
+  return (
+    (identity.source ?? 'key') === 'key' &&
+    resolveKeyIdentityAuthOptions(
+      identity,
+      config,
+      target.kernelIssuer,
+      registrationKeyForTarget(target),
+    ).issuer === target.kernelIssuer
+  )
 }
 
 function systemIdentityIssuer(identity: Identity, audience: string, config: AstraleConfig): string {

@@ -68,7 +68,7 @@ export async function callCommand(
     label: path,
     credential: opts.dryRun
       ? { principal: 'caller' }
-      : { principal: 'callable', path: Path.parse(path) },
+      : { strategy: 'callable', path: Path.parse(path) },
     fn: async (ctx) => {
       const expanded = await expandSelfInCall(path, expansionParams, ctx)
       const request = createPathCall(

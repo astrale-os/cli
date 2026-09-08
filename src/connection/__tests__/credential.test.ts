@@ -240,6 +240,25 @@ describe('connection credential', () => {
     ).toThrow('Nested credential issuance requires the caller principal')
   })
 
+  test('rejects unresolved selection before constructing a credential resolver', () => {
+    for (const selection of [
+      { strategy: 'graph' },
+      { strategy: 'callable', path: Path.parse('/:example.dev:function.call') },
+    ] as const) {
+      expect(() =>
+        createCliCredential(
+          { url: SOURCE, kernelIssuer: SOURCE },
+          {},
+          config,
+          undefined,
+          30_000,
+          // @ts-expect-error Selection must become a caller/Domain intent before this boundary.
+          selection,
+        ),
+      ).toThrow('Credential selection must be resolved before credential creation')
+    }
+  })
+
   test('rejects a long command before dispatch when its source bearer is too short', async () => {
     const expiresAt = Math.ceil(Date.now() / 1_000) + 120
     const auth = createConnectionCredential(SOURCE, { resolve: async () => token(expiresAt) }, 185)

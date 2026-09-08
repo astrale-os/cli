@@ -120,7 +120,7 @@ test('ordinary calls select credentials for their executable Domain', async () =
       output() {},
     },
   )
-  expect(selected).toMatchObject({ principal: 'callable' })
+  expect(selected).toMatchObject({ strategy: 'callable' })
 })
 
 function plainCall(value: unknown): unknown {

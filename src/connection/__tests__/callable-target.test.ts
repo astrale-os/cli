@@ -74,7 +74,7 @@ describe('callable credential ownership', () => {
         expect(fixture.closed).toEqual([0])
       },
       fixture.open,
-      { principal: 'callable', path: Path.parse(path) },
+      { strategy: 'callable', path: Path.parse(path) },
     )
     expect(fixture.inspected).toEqual(['services.example'])
     expect(fixture.opened.map((entry) => entry.credential)).toEqual([
@@ -94,7 +94,7 @@ describe('callable credential ownership', () => {
         expect(context.target.domainIssuer).toBeUndefined()
       },
       fixture.open,
-      { principal: 'callable', path: Path.parse(paths[0]!) },
+      { strategy: 'callable', path: Path.parse(paths[0]!) },
     )
     expect(fixture.opened[1]?.credential).toEqual({ principal: 'caller' })
   })
@@ -112,7 +112,7 @@ describe('callable credential ownership', () => {
         config,
         async () => undefined,
         fixture.open,
-        { principal: 'callable', path: Path.parse(path) },
+        { strategy: 'callable', path: Path.parse(path) },
       )
       expect(fixture.inspected).toEqual([])
       expect(fixture.opened).toHaveLength(1)
@@ -133,7 +133,7 @@ describe('callable credential ownership', () => {
           invoked = true
         },
         fixture.open,
-        { principal: 'callable', path: Path.parse(paths[1]!) },
+        { strategy: 'callable', path: Path.parse(paths[1]!) },
       ),
     ).rejects.toBe(failure)
     expect(invoked).toBe(false)

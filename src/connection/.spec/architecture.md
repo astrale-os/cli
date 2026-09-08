@@ -12,6 +12,21 @@ into ClientSession as an opaque credential; connection does not authorize Domain
 carried Grant must be exactly the caller proof. Fresh or cached credentials that add Domain self or
 any other authority are rejected rather than forwarded to the Kernel.
 
+Credential selection belongs to the session boundary, not to the credential issuer.
+`CredentialSelection` accepts an explicit caller/Domain `CredentialIntent`, or a mutually exclusive
+`strategy: 'callable' | 'graph'`. A callable strategy discovers the exact executable Domain and
+then chooses caller or Domain emission. Only `get`, `query`, and `mutate` opt into graph selection:
+a key identity whose effective signing issuer equals the exact target Kernel keeps its source
+credential; IdP identities, hosted `/iss/…` users, and foreign Domain keys retain the configured
+Domain exchange. Target-specific registration metadata takes precedence over the identity issuer.
+This is a selection rule, not a Root privilege check, and does not change default sessions.
+
+`ConnectionFactory` and `createCliCredential` accept only the resolved emission intent; no strategy
+reaches credential construction. `caller` means preserving the source credential, not asserting
+its authenticated issuer: an explicit Domain token remains that token. Explicit credentials and
+anonymous mode never trigger identity lookup or an additional exchange. Nested issuance remains
+available only through an explicitly selected caller intent. No fallback retries authorization.
+
 ```mermaid
 flowchart LR
   F[CLI flags and local state] --> T[Connection target]
