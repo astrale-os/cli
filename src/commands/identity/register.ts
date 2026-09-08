@@ -100,6 +100,9 @@ Example:
 
       await runKernelCommand<IdentityRegistrationResult>({
         opts,
+        ...(opts.via === undefined
+          ? {}
+          : { credential: { principal: 'callable', path: Path.parse(opts.via) } as const }),
         label: `Register "${name}"`,
         fn: async ({ auth, session, target }) => {
           const registrationKey = registrationKeyForTarget(target)

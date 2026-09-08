@@ -56,6 +56,28 @@ async function observeConnections() {
   }
 }
 
+test('selects callable authority only for registration via a callable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'astrale-register-principal-'))
+  temporaryRoots.push(root)
+  const created = await runCli(root, ['identity', 'create', 'alice', '--json'])
+  expect(created.exitCode, created.stderr).toBe(0)
+  const child = Bun.spawn(['bun', join(import.meta.dir, 'fixtures/register-principal.ts')], {
+    env: { ...process.env, ASTRALE_HOME: root, NO_UPDATE_NOTIFIER: '1' },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [exit, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ])
+  expect(exit, stderr).toBe(0)
+  expect(JSON.parse(stdout)).toEqual([
+    { principal: 'callable', path: '/:registration.example:function.registerIdentity' },
+    null,
+  ])
+})
+
 test('reports a missing local identity before connecting to Kernel', async () => {
   const root = await mkdtemp(join(tmpdir(), 'astrale-register-missing-'))
   temporaryRoots.push(root)
