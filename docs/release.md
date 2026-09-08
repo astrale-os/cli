@@ -1,8 +1,8 @@
 # CLI release lifecycle
 
 The CLI v1 is distributed only as a standalone executable through GitHub
-Releases. The legacy `@astrale-os/cli` npm package is frozen and deprecated; it
-must never be published again.
+Releases. The `@astrale-os/cli` npm package is deprecated and must never be
+published again.
 
 Each current platform archive contains exactly one standalone `astrale`
 executable. Project development deploys remotely; Kernel Host owns its own
@@ -84,6 +84,6 @@ also exercise this migration using their newly built executable.
   other than the person who started it.
 - npm Trusted Publishing is revoked. Package publishing requires an interactive
   human with 2FA and rejects granular tokens; the `beta` dist-tag is absent and
-  every accidentally published beta is deprecated.
+  every published version is deprecated.
 - `.github/CODEOWNERS` documents release ownership, and the release contract
   tests detect policy drift; neither is currently a merge requirement.

@@ -36,7 +36,14 @@ function aliasDomain(): string {
     join(root, 'package.json'),
     JSON.stringify({ name: 'grc', type: 'module', imports: { '#schema': './schema/index.ts' } }),
   )
-  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import application from './application.js'
+export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+`,
+  )
   writeFileSync(join(root, 'schema/index.ts'), 'export const schema = {}\n')
   writeFileSync(
     join(root, 'application.ts'),

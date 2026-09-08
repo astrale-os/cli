@@ -8,7 +8,7 @@ deliberately installed Astrale Application.
 1. Inspect and test the source.
 2. Build the canonical SDK Application and Cloudflare artifact.
 3. Deploy provider compute through Services.
-4. Admit the returned Publication metadata and prove Services performed no Kernel installation.
+4. Admit the returned provider evidence and prove Services performed no Kernel installation.
 5. If the user requested a managed deploy, let `@astrale-os/adapter-astrale` wait for readiness and
    install once on its configured Kernel. For a low-level deploy, use `astrale domain install`
    explicitly.
