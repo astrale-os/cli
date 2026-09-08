@@ -25,6 +25,7 @@ import {
 const string = valueSchema<string>()({ type: 'string' })
 const boolean = valueSchema<boolean>()({ type: 'boolean' })
 const rename = method({
+  abstract: true,
   input: valueSchema<{ title: string }>()({
     type: 'object',
     properties: { title: { type: 'string' } },
@@ -104,6 +105,8 @@ describe('canonical Schema projection', () => {
       },
       methods: {
         rename: {
+          abstract: true,
+          executable: true,
           input: { required: ['title'] },
           auth: 'authorized',
           output: { mode: 'value', schema: { type: 'boolean' } },

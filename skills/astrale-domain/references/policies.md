@@ -109,8 +109,8 @@ export const rename = method({
   or Core node from the local Domain or an exact direct dependency. Referencing a dependency Policy this way
   compares or traverses its projected graph node; it does not evaluate that Policy.
 - Method refs require a compatible SDK/DSL: `ref(methodHandle)` or `ref(() => methodHandle)` names an
-  exact concrete declaring Method, static or instance. Abstract slots and inherited aliases are not
-  Function projections; reference the executable declaration from the local or direct-dependency owner.
+  exact executable declaring Method, static or instance, including `abstract: true` on a concrete
+  Class. Contract-only Methods on abstract Classes and inherited aliases are not Function projections; reference the executable declaration from the local or direct-dependency owner.
 - Every normalized branch must use exactly one target mode. A Node-Policy branch references `object`; an
   Edge-Policy branch references `source`, `target`, or both. The `subject`, every referenced protected term,
   and every scoped existential variable must form one connected proof graph. A branch saying only “caller

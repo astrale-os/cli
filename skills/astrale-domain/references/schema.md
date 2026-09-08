@@ -77,13 +77,18 @@ existing node is the subject of the change. Use a top-level callable for a Domai
 receiver. Staticness belongs to Schema metadata; Runtime still implements the callable uniformly as an
 Action or Workflow.
 
-Only abstract Method obligations are inherited. Use `abstract: true` on the Method; each concrete
-Class declares its own matching implementation. Concrete parent Methods are not executable on a
-child, even through a concrete intermediate Class. Properties and structural Class relationships
-remain inherited. Instance Methods require an instance of their exact declaring Class; static
-Methods also stay on that Class. Share handler logic with ordinary functions and keep each exposed
-Method's declaration and Policy with its Class. Prefer composition and typed Edges when the
-relationship is not an “is-a” relation.
+Only abstract Method obligations are inherited. `abstract: true` on a Method requires every concrete
+descendant to declare a matching Method locally. A concrete Class can declare `abstract: true` and
+must provide its own Action or Workflow; that Method may have its own Policy. On an abstract Class,
+an abstract Method is a contract only, with no handler or Policy. An intermediate implementation
+using `abstract: false` does not remove the obligation for later concrete descendants.
+
+Instance Methods require an instance of their exact declaring Class; static Methods also stay on
+that Class. Parent handlers and Policies are never inherited. Resolved `methods` collections contain
+local declarations; inspect `extends` for ancestor contracts. Use `method.executable` to identify
+local callables, independently of `method.abstract`. Properties and structural Class relationships
+remain inherited. Share handler logic through ordinary functions and declare each exposed Method
+and its Policy on its Class. Prefer composition when the relationship is not an “is-a” relation.
 
 ## Policies
 

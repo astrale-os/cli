@@ -53,7 +53,7 @@ export function friendlyType(
 
 /** Abstract contracts and concrete operations have distinct glyphs. */
 export function methodGlyph(method: IrMethod): { icon: LucideIcon; tone: string } {
-  if (method.abstract) return { icon: Puzzle, tone: 'fn' }
+  if (!method.executable) return { icon: Puzzle, tone: 'fn' }
   return { icon: Zap, tone: 'primary' }
 }
 

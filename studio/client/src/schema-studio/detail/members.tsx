@@ -269,7 +269,7 @@ export function MethodRow({
   }, [revealedNow])
   const revealed = useRevealedAnchor(mref)
 
-  const contractOnly = link && !link.implemented
+  const contractOnly = entry.method.executable && link && !link.implemented
   const unlinked = link?.unlinked
 
   return (

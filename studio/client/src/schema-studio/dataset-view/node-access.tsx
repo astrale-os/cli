@@ -79,7 +79,7 @@ export function NodeAccess({
   const callables = useMemo(
     () =>
       Object.entries(cls?.methods ?? {})
-        .filter(([, method]) => !method.abstract && !method.static)
+        .filter(([, method]) => method.executable && !method.static)
         .map(([name, method]) => ({ name, method, owner: cls!.name })),
     [cls],
   )
