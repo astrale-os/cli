@@ -335,7 +335,7 @@ describe('release workflow contract', () => {
     const readme = read('README.md')
     const update = read('src/lib/update.ts')
     assert.match(guide, /distributed only as a standalone executable/)
-    assert.match(guide, /must never be published again/)
+    assert.match(guide, /must never be\s+published again/)
     assert.match(guide, /Every push to\s+`main` runs \*\*Release Please\*\*/)
     assert.match(guide, /No manual dispatch or environment approval gates that\s+pull request/)
     assert.match(guide, /protected `cli-release` publication job/)
