@@ -61,7 +61,12 @@
     "test:skills-e2e": "pnpm run assets:ensure && node scripts/qualification/skills-update-e2e.mjs",
     "test:studio": "pnpm --dir studio test",
     "test:watch": "pnpm run assets:ensure && bun test --watch src",
-    "qualification:ui-search": "bun scripts/qualification/ui-search-provider.ts"
+    "qualification:ui-search": "bun scripts/qualification/ui-search-provider.ts",
+    "setup": "bash scripts/agent_setup/setup.sh",
+    "setup:codex": "AGENT_HARNESSES=codex bash scripts/agent_setup/setup.sh",
+    "setup:claude": "AGENT_HARNESSES=claude bash scripts/agent_setup/setup.sh",
+    "check:agent-setup": "bash scripts/agent_setup/verify.sh",
+    "test:agent-setup": "node --test scripts/agent_setup/*.test.cjs"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.70.0",
