@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.95](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.94...cli/v1.0.0-beta.95) (2026-09-08)
+
+
+### Bug Fixes
+
+* **studio:** align Shell with the contractual Method SDK ([#440](https://github.com/astrale-os/cli/issues/440)) ([0599dc9](https://github.com/astrale-os/cli/commit/0599dc9000ab0e78d4fba35e9382a5c5bede326e))
+
 ## [1.0.0-beta.94](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.93...cli/v1.0.0-beta.94) (2026-09-08)
 
 
