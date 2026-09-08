@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.98](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.97...cli/v1.0.0-beta.98) (2026-09-08)
+
+
+### Bug Fixes
+
+* **connection:** honor short timeouts for explicit credentials ([#453](https://github.com/astrale-os/cli/issues/453)) ([eb2fecd](https://github.com/astrale-os/cli/commit/eb2fecd156f13f753107d942eddad5863963edb6))
+
 ## [1.0.0-beta.97](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.96...cli/v1.0.0-beta.97) (2026-09-08)
 
 
