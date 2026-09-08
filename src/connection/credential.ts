@@ -13,6 +13,7 @@ import { resolveCredential, resolvePersistedIdpSourceIdentity } from './auth'
 import { createExchangeCredentialResolver } from './exchange'
 import {
   exchangeCredentialTtlSeconds,
+  explicitCredentialTtlSeconds,
   invocationCredentialTtlSeconds,
   nestedCredentialCarrierTtlSeconds,
 } from './lifetime'
@@ -107,7 +108,9 @@ export function createCliCredential(
     intent.principal !== 'caller'
   const ttlSeconds =
     intent.nestedTtlSeconds === undefined
-      ? invocationCredentialTtlSeconds(timeoutMs)
+      ? options.creds === undefined
+        ? invocationCredentialTtlSeconds(timeoutMs)
+        : explicitCredentialTtlSeconds(timeoutMs)
       : nestedCredentialCarrierTtlSeconds(timeoutMs, intent.nestedTtlSeconds)
   const authOptions = Object.freeze({
     ...(options.as === undefined ? {} : { as: options.as }),

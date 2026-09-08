@@ -240,6 +240,36 @@ describe('connection credential', () => {
     ).toThrow('Nested credential issuance requires the caller principal')
   })
 
+  test('uses a 30-second explicit bearer for a five-second command without extending its authority', async () => {
+    const bearer = token(Math.ceil(Date.now() / 1_000) + 30)
+    const auth = createCliCredential(
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
+      { creds: bearer },
+      config,
+      undefined,
+      5_000,
+    )
+    if (auth === undefined) throw new Error('expected authenticated credential')
+    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).resolves.toEqual({
+      credential: bearer,
+      delegate: { ttlSeconds: 10 },
+    })
+  })
+
+  test('still rejects an explicit bearer that cannot cover a short command and its receipt margin', async () => {
+    const auth = createCliCredential(
+      { url: `${SOURCE}/invoke`, kernelIssuer: SOURCE },
+      { creds: token(Math.ceil(Date.now() / 1_000) + 8) },
+      config,
+      undefined,
+      5_000,
+    )
+    if (auth === undefined) throw new Error('expected authenticated credential')
+    await expect(auth.resolve(TARGET_CALL, new AbortController().signal)).rejects.toMatchObject({
+      code: 'CREDENTIAL_LIFETIME_INSUFFICIENT',
+    })
+  })
+
   test('rejects a long command before dispatch when its source bearer is too short', async () => {
     const expiresAt = Math.ceil(Date.now() / 1_000) + 120
     const auth = createConnectionCredential(SOURCE, { resolve: async () => token(expiresAt) }, 185)
