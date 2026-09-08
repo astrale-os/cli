@@ -41,10 +41,15 @@ Vite directly via `STUDIO_VITE_PORT`.)
 > checkout. The target domain's deps must be installed (`pnpm install` at the
 > workspace root) for semantic schema rendering; source-only anatomy remains
 > available when they are missing.
-> Current projects are detected through `astrale.config.ts` and a composition
-> module whose `schema` binding resolves to authored source — either the older
-> `application.ts` calling `defineApplication`, or the `domain.ts` calling
-> `defineDomain` that `create-astrale-domain` scaffolds today.
+> Projects are discovered exclusively through the default-exported `defineProject`
+> in `astrale.config.ts`. Studio follows the Project's `application` binding
+> to a `defineApplication` module, then its `schema` binding to authored source.
+> Deployment targets belong to `environments`; Studio does not execute the adapters.
+> Test datasets come from the same Project's `tests: tests({ datasets: [...] })`.
+> Module filenames are unrestricted; there is no conventional-file or legacy
+> `defineDomain` fallback. Existing projects must migrate to `defineProject`.
+> Configuration is analyzed statically without executing adapters or runtime code;
+> local bindings and SDK import aliases are supported, dynamic construction is not.
 
 ### View identities
 

@@ -70,7 +70,7 @@ function fixture(config: string): DomainHandle {
 describe('Dataset references', () => {
   test('are read from defineProject in the configuration, in order, without executing it', () => {
     const handle = fixture(`
-      import { deploy, runtime } from '@astrale-os/sdk/deployment'
+      import { cloudflare } from '@astrale-os/adapter-cloudflare'
       import { defineProject } from '@astrale-os/sdk/project'
       import { dataset as ref, tests } from '@astrale-os/sdk/testing'
       import { application } from './application.js'
@@ -85,7 +85,8 @@ describe('Dataset references', () => {
         ],
       })
       export default defineProject({
-        deployment: deploy({ application, entrypoint: runtime('./runtime.ts'), adapter: {} as never }),
+        application,
+        environments: { development: { deployment: cloudflare({}) } },
         tests: resources,
       })
     `)
@@ -170,7 +171,7 @@ describe('Dataset extraction', () => {
     const handle = fixture(
       `import { defineProject } from '@astrale-os/sdk/project'
       import { dataset, tests } from '@astrale-os/sdk/testing'
-      export default defineProject({ deployment: {} as never, tests: tests({ datasets: [
+      export default defineProject({ application: {} as never, environments: {}, tests: tests({ datasets: [
         dataset('./tests/datasets/demo.ts'),
         dataset('./tests/datasets/broken.ts'),
         dataset('./tests/datasets/missing.ts'),

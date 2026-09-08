@@ -132,7 +132,7 @@ assert.equal(
   '1.4.0',
   'CLI must pin the local Bun 1.4 runtime',
 )
-assert.equal(cliManifest.packageManager, 'pnpm@12.0.0', 'CLI must pin the qualification pnpm')
+assert.equal(cliManifest.packageManager, 'pnpm@12.1.0', 'CLI must pin the qualification pnpm')
 assert.equal(cliManifest.private, true, 'standalone-only CLI package must remain private')
 assert.equal(cliManifest.publishConfig, undefined, 'standalone-only CLI must not be publishable')
 assert.equal(

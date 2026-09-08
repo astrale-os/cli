@@ -178,6 +178,14 @@ export const frontend = defineFrontend({
 test('canonical Bundle views reject static schema and route-only identities', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-canonical-view-authority-'))
   roots.push(root)
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import { application } from './application.js'
+export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+`,
+  )
   mkdirSync(join(root, 'schema'), { recursive: true })
   writeFileSync(
     join(root, 'schema', 'index.ts'),

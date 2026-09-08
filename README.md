@@ -26,9 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/astrale-os/cli/main/install.sh | AS
 ```
 
 The CLI is distributed only as this standalone executable; the npm package is
-deprecated. If a package-managed copy is still on `PATH`, remove it with that
-package manager, run the installer above, and verify that `command -v astrale`
-resolves to `~/.astrale/bin/astrale` (or your explicit `ASTRALE_INSTALL_DIR`).
+deprecated.
 
 Generated Project Environments deploy remotely with either adapter. `pnpm dev`
 watches `development`; `pnpm dev staging` selects another Environment. The
@@ -165,8 +163,8 @@ defaults, register identities, or grant permissions. It cannot be combined with 
 ## Path Syntax
 
 ```
-/domain                        Domain node
-/domain/class.Name             Class node
+/:domain                       Domain node
+/:domain:class.Name            Class node
 /:domain:class.Name:method     Static method (semantic domain path)
 <nodePath>::<domain>:class.<Class>.method.<name>             Instance method dispatch
 @nodeId                        Reference a node by UID
@@ -262,25 +260,27 @@ Global skills live under `~/.agents/skills`. Their ecosystem-compatible lock is
 
 ## Development
 
-Contributors use Node.js 26.7.0 by default and pnpm 12.0.0. Release executables
+Contributors use Node.js 26.7.0 by default and pnpm 12.1.0. Release executables
 are compiled and qualified with Bun 1.4.0.
 
 ```bash
-# From the workspace root
-pnpm install
+# From a standalone clone of this repository
+./setup.sh
 
 # Run directly with Bun
-bun cli/bin/astrale.ts <command>
+bun bin/astrale.ts <command>
 
 # Build the CLI
-pnpm -C cli build
+pnpm build
 ```
 
+Inside the Astrale umbrella workspace, run `./scripts/setup.sh` from that workspace root instead.
+
 The first source command that needs embedded Skills, Studio, or Viewer assets
-generates `cli/src/generated/embedded-assets.ts` automatically. Its input digest
-is cached under `cli/node_modules/.cache/astrale-cli`, so unchanged commands are
+generates `src/generated/embedded-assets.ts` automatically. Its input digest
+is cached under `node_modules/.cache/astrale-cli`, so unchanged commands are
 fast. The generated archive is local build output: do not commit it. Run
-`pnpm -C cli assets:ensure` to prepare it explicitly.
+`pnpm assets:ensure` to prepare it explicitly.
 
 ### Testing local changes live: `astrale-dev`
 
