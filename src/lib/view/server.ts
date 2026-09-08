@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 
 import type { ViewServeConfig } from './session'
 
@@ -133,15 +134,18 @@ export function startViewServer(
   const server = createServer((req, res) => {
     lastActivity = Date.now()
     void route(req, res).catch((error: unknown) => {
+      if (res.destroyed) return
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : new Error(String(error)))
+        return
+      }
       const message = error instanceof Error ? error.message : String(error)
       // CORS headers even on failures — the caller may be the cross-origin
       // view iframe, and an opaque error reads as a network failure there.
-      if (!res.headersSent) {
-        res.writeHead(502, {
-          'content-type': 'application/json',
-          ...corsHeaders(req.headers.origin),
-        })
-      }
+      res.writeHead(502, {
+        'content-type': 'application/json',
+        ...corsHeaders(req.headers.origin),
+      })
       res.end(JSON.stringify({ error: message }))
     })
   })
@@ -293,19 +297,30 @@ export function startViewServer(
     // Response bodies still stream through.
     const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
     const body = hasBody ? Buffer.concat(await collect(req)) : undefined
-    const upstream = await proxyFetch(target, {
-      method: req.method,
-      headers,
-      ...(body !== undefined ? { body } : {}),
-    } as RequestInit)
-    const responseHeaders: Record<string, string> = corsHeaders(origin)
-    const contentType = upstream.headers.get('content-type')
-    if (contentType) responseHeaders['content-type'] = contentType
-    res.writeHead(upstream.status, responseHeaders)
-    if (upstream.body) {
-      Readable.fromWeb(upstream.body as unknown as WebReadableStream).pipe(res)
-    } else {
-      res.end()
+    const controller = new AbortController()
+    const abort = () => {
+      if (!res.writableFinished) controller.abort()
+    }
+    res.once('close', abort)
+    if (res.destroyed) abort()
+    try {
+      const upstream = await proxyFetch(target, {
+        method: req.method,
+        headers,
+        signal: controller.signal,
+        ...(body !== undefined ? { body } : {}),
+      } as RequestInit)
+      const responseHeaders: Record<string, string> = corsHeaders(origin)
+      const contentType = upstream.headers.get('content-type')
+      if (contentType) responseHeaders['content-type'] = contentType
+      res.writeHead(upstream.status, responseHeaders)
+      if (upstream.body) {
+        await pipeline(Readable.fromWeb(upstream.body as unknown as WebReadableStream), res)
+      } else {
+        res.end()
+      }
+    } finally {
+      res.off('close', abort)
     }
   }
 
