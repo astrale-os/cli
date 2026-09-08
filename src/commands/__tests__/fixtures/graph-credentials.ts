@@ -5,8 +5,7 @@ import { Path } from '@astrale-os/sdk/graph/path'
 import { mock } from 'bun:test'
 import assert from 'node:assert/strict'
 
-import type { CredentialIntent } from '../../../connection/credential'
-import type { ConnectionContext } from '../../../connection/session'
+import type { ConnectionContext, CredentialSelection } from '../../../connection/session'
 import type { ConnectionOptions } from '../../../connection/target'
 import type { AstraleConfig } from '../../../lib/config'
 
@@ -33,9 +32,9 @@ const config: AstraleConfig = {
 }
 const actors = [
   { name: 'operator', issuer: KERNEL, key: true, native: true },
-  { name: 'employee', issuer: `${KERNEL}/self/employee`, key: true },
+  { name: 'employee', issuer: `${KERNEL}/iss/employee`, key: true },
   { name: 'application', issuer: 'https://application.example', key: true },
-  { name: 'registered', issuer: `${KERNEL}/self/registered`, key: true, registered: true },
+  { name: 'registered', issuer: `${KERNEL}/iss/registered`, key: true, registered: true },
   { name: 'human', issuer: 'https://idp.example', key: false },
   { name: 'kernel-idp', issuer: KERNEL, key: false },
 ] as const
@@ -97,7 +96,7 @@ mock.module('../../../connection', () => ({
   withSelfHint: async (action: () => Promise<unknown>) => action(),
   async runKernelCommand(run: {
     opts: ConnectionOptions
-    credential?: CredentialIntent
+    credential?: CredentialSelection
     fn(context: ConnectionContext): Promise<unknown>
   }) {
     const target = await resolveConnectionTarget(run.opts, config, {

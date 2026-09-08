@@ -48,7 +48,7 @@ export async function queryCommand(sources: string[], opts: QueryOpts): Promise<
   await runKernelCommand({
     opts,
     label: 'Query',
-    credential: { principal: 'graph' },
+    credential: { strategy: 'graph' },
     fn: async (context) => {
       const expanded = await Promise.all(sources.map((source) => expandSelfInPath(source, context)))
       const meta: SelfExpansionMeta | undefined = expanded.find(

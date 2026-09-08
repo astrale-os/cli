@@ -1,6 +1,5 @@
 import type { Fetch } from '@astrale-os/sdk/client'
 import type { SessionAuth } from '@astrale-os/sdk/client/session'
-import type { Path } from '@astrale-os/sdk/graph/path'
 
 import { credential, type IssuerId } from '@astrale-os/sdk/auth'
 
@@ -26,12 +25,10 @@ export interface SourceCredentialResolver {
   resolve(audience: IssuerId, signal: AbortSignal): Promise<string>
 }
 
-/** A nested credential can only be issued through the authenticated caller. */
+/** Credential emission after selection: retain the source or exchange through the target Domain. */
 export type CredentialIntent =
-  | Readonly<{ principal?: 'domain'; nestedTtlSeconds?: never }>
-  | Readonly<{ principal: 'caller'; nestedTtlSeconds?: number }>
-  | Readonly<{ principal: 'callable'; path: Path; nestedTtlSeconds?: never }>
-  | Readonly<{ principal: 'graph'; nestedTtlSeconds?: never }>
+  | Readonly<{ principal?: 'domain'; strategy?: never; nestedTtlSeconds?: never }>
+  | Readonly<{ principal: 'caller'; strategy?: never; nestedTtlSeconds?: number }>
 
 type CredentialResolver = typeof resolveCredential
 
@@ -94,8 +91,8 @@ export function createCliCredential(
   intent: CredentialIntent = {},
   resolveSource: CredentialResolver = resolveCredential,
 ): SessionAuth | undefined {
-  if (intent.principal === 'callable' || intent.principal === 'graph') {
-    throw new TypeError('Surface credentials require session principal resolution.')
+  if (intent.strategy !== undefined) {
+    throw new TypeError('Credential selection must be resolved before credential creation.')
   }
   if (intent.nestedTtlSeconds !== undefined && intent.principal !== 'caller') {
     throw new TypeError('Nested credential issuance requires the caller principal.')

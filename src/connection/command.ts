@@ -1,7 +1,6 @@
 import chalk from 'chalk'
 
-import type { CredentialIntent } from './credential'
-import type { ConnectionContext } from './session'
+import type { ConnectionContext, CredentialSelection } from './session'
 import type { ConnectionOptions } from './target'
 
 import { formatElapsed } from '../lib/format'
@@ -34,7 +33,7 @@ export async function runKernelCommand<T>(input: {
   readonly opts: KernelCommandOpts
   readonly label: string
   readonly recovery?: OperationRecovery
-  readonly credential?: CredentialIntent
+  readonly credential?: CredentialSelection
   readonly fn: (context: ConnectionContext) => Promise<T>
   readonly format?: (
     result: T,

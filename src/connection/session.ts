@@ -5,6 +5,7 @@ import type {
   SessionAuth,
   SessionRouteStore,
 } from '@astrale-os/sdk/client/session'
+import type { Path } from '@astrale-os/sdk/graph/path'
 
 import { createAuth } from '@astrale-os/sdk/auth'
 import { call } from '@astrale-os/sdk/client'
@@ -37,6 +38,17 @@ import { resolveAdminConnectionTarget, resolveConnectionTarget } from './target'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAXIMUM_ROUTE_AGE_MS = 5 * 60_000
+
+/** A command selects authority; only caller/Domain emission reaches the credential resolver. */
+export type CredentialSelection =
+  | CredentialIntent
+  | Readonly<{ strategy: 'graph'; principal?: never; nestedTtlSeconds?: never }>
+  | Readonly<{
+      strategy: 'callable'
+      path: Path
+      principal?: never
+      nestedTtlSeconds?: never
+    }>
 
 function warnMissingExplicitTarget(options: ConnectionOptions, target: ConnectionTarget): void {
   if (options.instance !== undefined || options.url !== undefined) return
@@ -72,7 +84,7 @@ export type ConnectionFactory = (
 export async function withClientSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
-  credential: CredentialIntent = {},
+  credential: CredentialSelection = {},
 ): Promise<Value> {
   validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
@@ -113,7 +125,7 @@ export async function withResolvedClientSession<Value>(
   config: AstraleConfig,
   action: (context: ConnectionContext) => Promise<Value>,
   open: ConnectionFactory = openConnection,
-  credential: CredentialIntent = {},
+  credential: CredentialSelection = {},
 ): Promise<Value> {
   validateCredentialSelection(options)
   const timeoutMs = resolveTimeoutMs(options.timeout)
@@ -127,18 +139,18 @@ async function runResolvedClientSession<Value>(
   config: AstraleConfig,
   action: (context: ConnectionContext) => Promise<Value>,
   open: ConnectionFactory,
-  credential: CredentialIntent = {},
+  selection: CredentialSelection = {},
 ): Promise<Value> {
-  if (credential.principal === 'graph') {
+  let credential: CredentialIntent
+  if (selection.strategy === 'graph') {
     const direct =
       options.creds !== undefined ||
       options.anonymous === true ||
       target.domainIssuer === undefined ||
       (await usesKernelSigningIdentity(options, target, config))
     credential = { principal: direct ? 'caller' : 'domain' }
-  }
-  if (credential.principal === 'callable') {
-    const origin = callableOrigin(credential.path)
+  } else if (selection.strategy === 'callable') {
+    const origin = callableOrigin(selection.path)
     if (
       options.creds !== undefined ||
       options.anonymous === true ||
@@ -156,6 +168,8 @@ async function runResolvedClientSession<Value>(
       credential =
         target.domainIssuer === undefined ? { principal: 'caller' } : { principal: 'domain' }
     }
+  } else {
+    credential = selection
   }
   const connection = open(target, timeoutMs, options, config, credential)
   try {

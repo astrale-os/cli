@@ -2,6 +2,23 @@ import type { IssuerId } from '@astrale-os/sdk/auth'
 import type { AuthApi } from '@astrale-os/sdk/auth'
 import type { Call, GraphApi } from '@astrale-os/sdk/client'
 import type { ClientSession } from '@astrale-os/sdk/client/session'
+import type { Path } from '@astrale-os/sdk/graph/path'
+
+/** Resolved emission mode; caller preserves the source, Domain exchanges through its issuer. */
+export type CredentialIntent =
+  | Readonly<{ principal?: 'domain'; strategy?: never; nestedTtlSeconds?: never }>
+  | Readonly<{ principal: 'caller'; strategy?: never; nestedTtlSeconds?: number }>
+
+/** Selection strategies are resolved by the session before credential emission. */
+export type CredentialSelection =
+  | CredentialIntent
+  | Readonly<{ strategy: 'graph'; principal?: never; nestedTtlSeconds?: never }>
+  | Readonly<{
+      strategy: 'callable'
+      path: Path
+      principal?: never
+      nestedTtlSeconds?: never
+    }>
 
 /** Existing CLI connection flags accepted by Kernel-touching commands. */
 export interface ConnectionOptions {
@@ -66,6 +83,7 @@ export function createPathCall(path: string, input: unknown): Call
 export function withClientSession<Value>(
   options: ConnectionOptions,
   action: (context: ConnectionContext) => Promise<Value>,
+  credential?: CredentialSelection,
 ): Promise<Value>
 
 /** Resolve the configured Admin Domain target under the same scoped lifecycle. */
@@ -101,6 +119,7 @@ export function withSelfHint<Value>(
 export function runKernelCommand<Value>(input: {
   readonly opts: KernelCommandOpts
   readonly label: string
+  readonly credential?: CredentialSelection
   readonly fn: (context: ConnectionContext) => Promise<Value>
   readonly format?: (
     result: Value,
