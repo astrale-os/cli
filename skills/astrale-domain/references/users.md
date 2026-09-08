@@ -6,7 +6,7 @@ Shell owns the shared User/Group contract; the business Domain owns its concrete
 ## Prerequisites
 
 Use compatible Shell and SDK packages, with Shell installed on the target instance. This guide uses
-static `User.invite`, `Group.assignUser`/`unassignUser`, and registration of existing nodes. Check the
+static `User.invite`, `Group.assignMember`/`unassignMember`, and registration of existing nodes. Check the
 installed callable contracts before running examples; coordinate dependency upgrades using `migration.md`.
 
 ## One business user, three separate transitions
@@ -21,8 +21,9 @@ create Employee extends Shell.User → same node, initially without Authenticati
   Employee. Mere contacts need not become identities. Add business properties to the concrete subclass.
 - Create through the Domain's ordinary Mutation, without `iss`/`sub`. Register attaches Authentication
   to that existing node; it does not create the person, change their profile, or assign a group.
-- `displayName` and `email` are optional profile data, not authentication evidence. Editing an email
-  does not change the bound identity; invitation destination is an explicit, separate argument.
+- Shell.User does not declare `displayName` or `email`; the business Class may add them when needed.
+  These are profile data, not authentication evidence. Editing an email does not change the bound
+  identity; invitation destination is an explicit, separate argument.
 
 ## Allow Shell to traverse the membership endpoints
 
@@ -100,10 +101,15 @@ export const schema = defineSchema('work.example', {
 
 ## Use Shell's group operations
 
-- `Group.assignUser({ user, group })` maintains both `member_of_group` and Kernel `extends_with`;
-  `unassignUser` removes both. Do not write just one Edge or implement a parallel membership system.
-- The User-Class owner may invite its users and assign them to exact Core `member`; it cannot thereby
-  assign Core `admin` or unassign Core `member`. The Group-Class owner may assign/unassign its own Teams.
+- `Group.assignMember({ member, group })` maintains both `member_of_group` and Kernel `extends_with`;
+  `unassignMember` removes both. `member` accepts a Shell.User or Shell.Group, including concrete
+  descendants; a Class extending only Kernel.Identity is not a Shell membership endpoint.
+  Do not write just one Edge or implement a parallel membership system.
+- Both group methods use the same Policy: the carried Grant must administer a concrete Shell-owned
+  Group, or own the concrete Class of the target Group. Thus the Group-Class owner may assign/unassign
+  its Teams. Owning the member's User Class alone grants no assignment to Core `member` or `admin`.
+- `User.invite` checks the User instead: its Class owner may invite it; Shell administrators may
+  invite concrete Shell-owned Users. Instance administration alone does not authorize foreign Classes.
 - Core `admin` and `member` are independent groups, not an implicit hierarchy. Registration grants
   neither; an explicit admin assignment is privileged, not a default business onboarding step.
 - A Team has no implicit capability profile. Membership may drive business Policies; installation
@@ -116,6 +122,11 @@ caller Policy. A Domain calling them declares the exact Method requirements; a h
 capabilities through `extends_with`. Neither bypasses the Policy. Declare Kernel Query/Mutate/Register
 capabilities as needed, and protect the business callable before it invokes Shell. See `policies.md`.
 
+Use `dependencies.shell.caller.invoke(...)` to preserve the incoming Grant, or
+`dependencies.shell.self.invoke(...)` when an admitted business operation deliberately acts as its
+Domain, for example assigning to its own Team. `.union.invoke(...)` combines both deliberately;
+there is no default dependency `invoke`. The Domain principal still needs the exact Method capability.
+
 ## Inspect and exercise the installed surface
 
 Use an already authorized operator; replace example IDs with returned IDs on the same instance.
@@ -123,15 +134,15 @@ These are static Shell methods, not `@user::invite` or instance Group methods.
 
 ```sh
 astrale introspect /:shell.astrale.ai:class.User:invite -i staging --as operator
-astrale introspect /:shell.astrale.ai:class.Group:assignUser -i staging --as operator
+astrale introspect /:shell.astrale.ai:class.Group:assignMember -i staging --as operator
 astrale call /:shell.astrale.ai:class.User:invite \
   user=@employee-id email=alice@example.com -i staging --as operator
-astrale call /:shell.astrale.ai:class.Group:assignUser \
-  user=@employee-id group=@team-id -i staging --as operator
+astrale call /:shell.astrale.ai:class.Group:assignMember \
+  member=@employee-id group=@team-id -i staging --as operator
 ```
 
-These Shell handlers require exact `@NodeId` inputs; responses contain bare IDs. Keep business references
-as IDs and convert to `@NodeId` at the Shell call boundary. Resolve Core member/admin
+These Shell handlers require exact `@NodeId` reference inputs; group methods return `{}`. Keep business
+references as IDs and convert to `@NodeId` at the Shell call boundary. Resolve Core member/admin
 on the target instance first, rather than sending group labels or IDs copied from another Kernel.
 
 For local-key testing, use a CLI whose `astrale identity register --help` exposes `--node`.
