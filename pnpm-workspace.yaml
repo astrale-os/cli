@@ -33,3 +33,25 @@ allowBuilds:
   esbuild: true
   lightningcss: true
   msgpackr-extract: true
+
+# Published declarations must resolve their own imports in the global virtual store.
+# Remove each version-scoped extension when its upstream manifest is corrected.
+packageExtensions:
+  '@floating-ui/react-dom@2.1.9':
+    peerDependencies:
+      '@types/react': '>=16.8.0 <20'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+  'cmdk@1.1.1':
+    peerDependencies:
+      '@types/react': '^18 || ^19'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+  'lucide-react@1.31.0':
+    peerDependencies:
+      '@types/react': '>=16.8.0 <20'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
