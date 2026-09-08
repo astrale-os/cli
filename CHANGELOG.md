@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.97](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.96...cli/v1.0.0-beta.97) (2026-09-08)
+
+
+### Features
+
+* **ci:** adopt shared cloud agent setup for CLI ([#446](https://github.com/astrale-os/cli/issues/446)) ([e961111](https://github.com/astrale-os/cli/commit/e96111152301a53304edb1708f64e44ae245c1d4))
+
+
+### Bug Fixes
+
+* **commands:** canonicalize journal timestamp bounds ([#452](https://github.com/astrale-os/cli/issues/452)) ([5ed96ff](https://github.com/astrale-os/cli/commit/5ed96ffba863b51441c9a3bd953eea0770ce1e5c))
+* **commands:** complete owner access during instance creation ([#432](https://github.com/astrale-os/cli/issues/432)) ([3947e44](https://github.com/astrale-os/cli/commit/3947e44df328b9c79b07bde7b1e6e2cf02765c27))
+* **commands:** select callable principal for identity registration ([#436](https://github.com/astrale-os/cli/issues/436)) ([2c9d04d](https://github.com/astrale-os/cli/commit/2c9d04d3b930025fd85e3fb944cfa59f834ab2bf))
+* **lib:** close View proxy streams with the local consumer ([#449](https://github.com/astrale-os/cli/issues/449)) ([f2c8020](https://github.com/astrale-os/cli/commit/f2c8020701a7e40b851cadbc82a2fb5a2043cf94))
+
 ## [1.0.0-beta.96](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.95...cli/v1.0.0-beta.96) (2026-09-08)
 
 
