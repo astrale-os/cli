@@ -11,6 +11,7 @@ const method = (name: string): IrMethod => ({
   output: { mode: 'value', schema: { type: 'boolean' } },
   static: false,
   abstract: false,
+  executable: true,
 })
 
 describe('member lists', () => {

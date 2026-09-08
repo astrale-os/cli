@@ -130,7 +130,8 @@ astrale call /:shell.astrale.ai:class.Group:assignUser \
   user=@employee-id group=@team-id -i staging --as operator
 ```
 
-These Shell handlers require exact `@NodeId` inputs; responses contain bare IDs. Resolve Core member/admin
+These Shell handlers require exact `@NodeId` inputs; responses contain bare IDs. Keep business references
+as IDs and convert to `@NodeId` at the Shell call boundary. Resolve Core member/admin
 on the target instance first, rather than sending group labels or IDs copied from another Kernel.
 
 For local-key testing, use a CLI whose `astrale identity register --help` exposes `--node`.

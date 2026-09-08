@@ -32,6 +32,7 @@ const ir: SchemaIR = {
           output: { mode: 'value', schema: {} },
           static: false,
           abstract: false,
+          executable: true,
           auth: 'authorized',
         },
       },

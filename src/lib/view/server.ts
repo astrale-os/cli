@@ -6,6 +6,7 @@ import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 
 import type { ViewServeConfig } from './session'
 
@@ -65,7 +66,7 @@ export function startViewServer(
     const kernel = { ...config.kernel, as: identity, creds: undefined }
     const candidate = { ...config, kernel }
     const view = await refreshViewPlacement(candidate, dependencies.connect)
-    const nextGrant = view.route.handshake === 'shell' ? await mintGrant(kernel) : null
+    const nextGrant = view.route.handshake === 'shell' ? await mintGrant(kernel, view) : null
     await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, identity, view })
     config.kernel = kernel
     session.identity = identity
@@ -88,14 +89,17 @@ export function startViewServer(
   async function freshGrant(): Promise<TokenGrant> {
     if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
     const started = revision
-    const fresh = await mintGrant(config.kernel)
+    const fresh = await mintGrant(config.kernel, session.view)
     if (started !== revision)
       throw new Error('View session changed; reload before requesting credentials.')
     grant = fresh
     return fresh
   }
 
-  async function mintGrant(kernel: ViewServeConfig['kernel']): Promise<TokenGrant> {
+  async function mintGrant(
+    kernel: ViewServeConfig['kernel'],
+    view: ViewServeConfig['session']['view'],
+  ): Promise<TokenGrant> {
     return dependencies.connect(
       kernel,
       async ({ auth, target, identity }) => {
@@ -105,10 +109,11 @@ export function startViewServer(
         ) {
           throw new Error('The session bookmark now points to another Kernel. Open a new View.')
         }
-        if (target.domainIssuer !== undefined && kernel.creds === undefined) {
+        // The admitted mounted Publication owns this protocol, not the bookmark's Domain.
+        if (view.route.issuer !== target.kernelIssuer && kernel.creds === undefined) {
           const exchanged = await (dependencies.exchange ?? exchangeViewCredential)(
             { ...kernel, ...(identity === undefined ? {} : { as: identity }) },
-            target,
+            { ...target, domainIssuer: view.route.issuer },
           )
           return { ...exchanged, kind: 'exchanged' as const }
         }
@@ -129,15 +134,18 @@ export function startViewServer(
   const server = createServer((req, res) => {
     lastActivity = Date.now()
     void route(req, res).catch((error: unknown) => {
+      if (res.destroyed) return
+      if (res.headersSent) {
+        res.destroy(error instanceof Error ? error : new Error(String(error)))
+        return
+      }
       const message = error instanceof Error ? error.message : String(error)
       // CORS headers even on failures — the caller may be the cross-origin
       // view iframe, and an opaque error reads as a network failure there.
-      if (!res.headersSent) {
-        res.writeHead(502, {
-          'content-type': 'application/json',
-          ...corsHeaders(req.headers.origin),
-        })
-      }
+      res.writeHead(502, {
+        'content-type': 'application/json',
+        ...corsHeaders(req.headers.origin),
+      })
       res.end(JSON.stringify({ error: message }))
     })
   })
@@ -289,19 +297,30 @@ export function startViewServer(
     // Response bodies still stream through.
     const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
     const body = hasBody ? Buffer.concat(await collect(req)) : undefined
-    const upstream = await proxyFetch(target, {
-      method: req.method,
-      headers,
-      ...(body !== undefined ? { body } : {}),
-    } as RequestInit)
-    const responseHeaders: Record<string, string> = corsHeaders(origin)
-    const contentType = upstream.headers.get('content-type')
-    if (contentType) responseHeaders['content-type'] = contentType
-    res.writeHead(upstream.status, responseHeaders)
-    if (upstream.body) {
-      Readable.fromWeb(upstream.body as unknown as WebReadableStream).pipe(res)
-    } else {
-      res.end()
+    const controller = new AbortController()
+    const abort = () => {
+      if (!res.writableFinished) controller.abort()
+    }
+    res.once('close', abort)
+    if (res.destroyed) abort()
+    try {
+      const upstream = await proxyFetch(target, {
+        method: req.method,
+        headers,
+        signal: controller.signal,
+        ...(body !== undefined ? { body } : {}),
+      } as RequestInit)
+      const responseHeaders: Record<string, string> = corsHeaders(origin)
+      const contentType = upstream.headers.get('content-type')
+      if (contentType) responseHeaders['content-type'] = contentType
+      res.writeHead(upstream.status, responseHeaders)
+      if (upstream.body) {
+        await pipeline(Readable.fromWeb(upstream.body as unknown as WebReadableStream), res)
+      } else {
+        res.end()
+      }
+    } finally {
+      res.off('close', abort)
     }
   }
 

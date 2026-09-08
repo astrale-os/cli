@@ -21,6 +21,7 @@ function canonicalIr() {
             output: { mode: 'value', schema: { type: 'boolean' } },
             static: false,
             abstract: false,
+            executable: true,
             auth: 'authorized',
           },
         },

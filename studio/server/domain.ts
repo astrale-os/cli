@@ -1,5 +1,5 @@
 /** SDK V1 project discovery and the in-process Studio registry. */
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   Node,
@@ -29,29 +29,14 @@ export function makeId(root: string): string {
   return basename(resolve(root)).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain'
 }
 
-/**
- * The module that composes a domain, and the factory it calls.
- *
- * Both changed with the SDK — an `application.ts` calling `defineApplication`
- * became a `domain.ts` calling `defineDomain` — and both shapes are in the wild:
- * a workspace holds domains scaffolded months apart, and `create-astrale-domain`
- * only ever emits the current one. Studio reads either, in the order below, so a
- * freshly scaffolded domain is discovered like any other.
- */
-const COMPOSITION_MODULES: readonly string[] = ['application', 'domain']
-const COMPOSITION_FACTORIES: readonly { module: string; name: string }[] = [
-  { module: '@astrale-os/sdk/application', name: 'defineApplication' },
-  { module: '@astrale-os/sdk', name: 'defineApplication' },
-  { module: '@astrale-os/sdk', name: 'defineDomain' },
-]
+const APPLICATION_MODULES = new Set(['@astrale-os/sdk/application', '@astrale-os/sdk'])
 
 const PROJECT_MODULES = new Set(['@astrale-os/sdk/project', '@astrale-os/sdk'])
-const DEPLOYMENT_MODULES = new Set(['@astrale-os/sdk/deployment', '@astrale-os/sdk'])
 const TESTING_MODULES = new Set(['@astrale-os/sdk/testing'])
 
 /** What `astrale.config.ts` declares through `defineProject`, read statically. */
 export interface ProjectConfigAnalysis {
-  /** Application module of `deployment: deploy({ application })`, resolved to a source file. */
+  /** Application module of `defineProject({ application })`, resolved to a source file. */
   readonly applicationFile: string | null
   /** Dataset module coordinates of `tests: tests({ datasets: [dataset('…')] })`, in order. */
   readonly datasets: readonly string[]
@@ -71,25 +56,20 @@ export function analyzeProjectConfig(root: string): ProjectConfigAnalysis {
   if (!existsSync(config)) return NO_PROJECT
   const source = addSourceFile(config)
   if (source === null) return NO_PROJECT
-  for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isSdkCall(call, source, 'defineProject', PROJECT_MODULES)) continue
-    const input = resolveLocalValue(call.getArguments()[0], source)
-    if (!input || !Node.isObjectLiteralExpression(input)) continue
-    return Object.freeze({
-      applicationFile: applicationOf(objectPropertyValue(input, 'deployment'), source, project),
-      datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
-    })
-  }
-  return NO_PROJECT
+  const exported = source.getExportAssignments().find((entry) => !entry.isExportEquals())
+  const call = resolveLocalValue(exported?.getExpression(), source)
+  if (!call || !Node.isCallExpression(call)) return NO_PROJECT
+  if (!isSdkCall(call, source, 'defineProject', PROJECT_MODULES)) return NO_PROJECT
+  const input = resolveLocalValue(call.getArguments()[0], source)
+  if (!input || !Node.isObjectLiteralExpression(input)) return NO_PROJECT
+  return Object.freeze({
+    applicationFile: applicationOf(objectPropertyValue(input, 'application'), source, project),
+    datasets: Object.freeze(datasetsOf(objectPropertyValue(input, 'tests'), source)),
+  })
 }
 
 function applicationOf(node: Node | undefined, source: SourceFile, root: string): string | null {
-  const deployment = resolveLocalValue(node, source)
-  if (!deployment || !Node.isCallExpression(deployment)) return null
-  if (!isSdkCall(deployment, source, 'deploy', DEPLOYMENT_MODULES)) return null
-  const input = resolveLocalValue(deployment.getArguments()[0], source)
-  if (!input || !Node.isObjectLiteralExpression(input)) return null
-  const application = objectPropertyValue(input, 'application')
+  const application = resolveLocalValue(node, source)
   return application ? importedModuleOf(application, source, root) : null
 }
 
@@ -132,39 +112,9 @@ function importedModuleOf(node: Node, source: SourceFile, root: string): string 
   return null
 }
 
-/**
- * Resolve the composition module: the Project declared by `astrale.config.ts` first, then the
- * root `application.ts` / `domain.ts` convention, then the config's own composition import for
- * projects that predate `defineProject`.
- */
+/** Resolve only the Application declared by the exported Project. */
 export function resolveApplicationEntry(root: string): string | null {
-  const project = resolve(root)
-  const declared = analyzeProjectConfig(project).applicationFile
-  if (declared !== null) return declared
-  for (const name of COMPOSITION_MODULES) {
-    const conventional = join(project, `${name}.ts`)
-    if (existsSync(conventional)) return conventional
-  }
-  const config = join(project, 'astrale.config.ts')
-  if (!existsSync(config)) return null
-  let source: string
-  try {
-    source = readFileSync(config, 'utf8')
-  } catch {
-    return null
-  }
-  for (const match of source.matchAll(/\bfrom\s+['"]([^'"]+)['"]/gu)) {
-    const specifier = match[1]
-    if (
-      !specifier?.startsWith('.') ||
-      !COMPOSITION_MODULES.includes(basename(specifier).replace(/\.[^.]+$/u, ''))
-    ) {
-      continue
-    }
-    const selected = resolveSourceFile(project, specifier)
-    if (selected !== null) return selected
-  }
-  return null
+  return analyzeProjectConfig(root).applicationFile
 }
 
 /**
@@ -181,7 +131,7 @@ export function resolveSchemaEntry(root: string, applicationFile: string): strin
   if (source === null) return null
 
   for (const call of source.getDescendantsOfKind(SyntaxKind.CallExpression)) {
-    if (!isCompositionCall(call, source)) continue
+    if (!isSdkCall(call, source, 'defineApplication', APPLICATION_MODULES)) continue
     const input = resolveLocalValue(call.getArguments()[0], source)
     if (!input || !Node.isObjectLiteralExpression(input)) continue
     const schema = objectPropertyValue(input, 'schema')
@@ -249,10 +199,6 @@ export function depsInstalled(root: string): boolean {
   } catch {
     return false
   }
-}
-
-function resolveSourceFile(root: string, specifier: string): string | null {
-  return sourceCandidates(resolve(root, specifier)).find(isFile) ?? null
 }
 
 function addSourceFile(file: string): SourceFile | null {
@@ -333,13 +279,6 @@ function isSdkCall(
         modules.has(declaration.getModuleSpecifierValue()) &&
         declaration.getNamespaceImport()?.getText() === namespace.getText(),
     )
-}
-
-/** True when `call` invokes one of the composition factories a domain module may use. */
-function isCompositionCall(call: CallExpression, source: SourceFile): boolean {
-  return COMPOSITION_FACTORIES.some((factory) =>
-    isSdkCall(call, source, factory.name, new Set([factory.module])),
-  )
 }
 
 function objectPropertyValue(object: ObjectLiteralExpression, name: string) {

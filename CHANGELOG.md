@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.0.0-beta.96](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.95...cli/v1.0.0-beta.96) (2026-09-08)
+
+
+### Bug Fixes
+
+* **lib:** replace existing agent skill directories automatically ([#442](https://github.com/astrale-os/cli/issues/442)) ([c010817](https://github.com/astrale-os/cli/commit/c01081719bf8575fba5bb47a9e8e7dd326e7f023))
+
+## [1.0.0-beta.95](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.94...cli/v1.0.0-beta.95) (2026-09-08)
+
+
+### Bug Fixes
+
+* **studio:** align Shell with the contractual Method SDK ([#440](https://github.com/astrale-os/cli/issues/440)) ([0599dc9](https://github.com/astrale-os/cli/commit/0599dc9000ab0e78d4fba35e9382a5c5bede326e))
+
+## [1.0.0-beta.94](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.93...cli/v1.0.0-beta.94) (2026-09-08)
+
+
+### Features
+
+* **studio:** distinguish Method contracts from local execution ([#424](https://github.com/astrale-os/cli/issues/424)) ([9043e0c](https://github.com/astrale-os/cli/commit/9043e0c897fc40d24a2797554791438824e4ccfb))
+
+
+### Bug Fixes
+
+* align Studio project discovery and update CLI tooling ([#438](https://github.com/astrale-os/cli/issues/438)) ([7509d76](https://github.com/astrale-os/cli/commit/7509d76e32523dec0a04b8c8cae2df7c83e514db))
+
+## [1.0.0-beta.93](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.92...cli/v1.0.0-beta.93) (2026-09-07)
+
+
+### Bug Fixes
+
+* **view:** scope credentials to the mounted domain ([#433](https://github.com/astrale-os/cli/issues/433)) ([dcef73e](https://github.com/astrale-os/cli/commit/dcef73e9ecbab2f61970a4aa02432035cd6b0f48))
+
 ## [1.0.0-beta.92](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.91...cli/v1.0.0-beta.92) (2026-09-07)
 
 

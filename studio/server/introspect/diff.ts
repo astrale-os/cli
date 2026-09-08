@@ -34,7 +34,7 @@ function callableContract(m: IrMethod | IrFunction): unknown {
   return {
     input: m.input,
     output: m.output,
-    ...('static' in m ? { static: m.static, abstract: m.abstract } : {}),
+    ...('static' in m ? { static: m.static, abstract: m.abstract, executable: m.executable } : {}),
     auth: m.auth,
     policy: m.policy,
   }

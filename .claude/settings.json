@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|fork",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/agent_setup/claude_session_start.sh\"",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -66,7 +66,7 @@ test('a method is one line closed and the whole contract open', async ({ page })
 
   // closed: the name, at the height of a property row, and nothing more — not the
   // inputs, not the return, not the Policy
-  await expect(settle.getByRole('button', { name: /settle/ })).toHaveText('settle')
+  await expect(settle.getByRole('button', { name: /settle/ })).toHaveText('settlecontract')
   await expect(settle).not.toContainText('amount')
   await expect(settle).not.toContainText('Yes / no')
   await expect(panel.locator('[data-method-detail]')).toHaveCount(0)
