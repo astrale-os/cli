@@ -32,8 +32,10 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   `executeMutation(client, ...)` remain lower-level APIs for consumers that already own a Client.
 - `self` is the admitted receiver's `NodeId`; static/top-level callables have no receiver. The SDK validates
   callable input before the handler and output afterward; do not repeat parsing or implement role checks there.
-- Public inputs may accept `Path` for convenient locators; return canonical record IDs. Internally pass
-  `NodeId` directly where accepted, without `Path.id(id)`, and do not maintain parallel path/id APIs.
+- For business references, default to canonical record IDs in public inputs and outputs for simplicity.
+  Pass `NodeId` directly to Queries/Mutations where accepted. Use `Path` only when the developer explicitly
+  requests it or a called API contract requires it; convert at that call boundary, without maintaining
+  parallel path/id APIs.
 - Use resolved definitions or their refs where accepted, not reconstructed locator strings. Position
   matters: a Query Class source selects instances, while a projected Class Path names the definition node.
 
@@ -45,8 +47,9 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   builders from `@astrale-os/sdk/query`. Read once and project that result rather than fetching every node again.
 - Schema-admitted properties need no second validator. If projection is not inferred, use a narrow
   Schema-derived type; do not build a decoder, use `any`, or invent defaults for required values.
-- Keep checks the observation does not establish: missing/hidden nodes and unexpected Classes for
-  arbitrary Path lookups. Absence from a caller-visible query is not proof of global nonexistence.
+- An ID alone does not prove existence, visibility, or Class. Keep checks for supplied references that
+  the admitted contract or observation does not already establish. Absence from a caller-visible query
+  is not proof of global nonexistence.
 - A plain `defineQuery` executes one page. For a complete collection, declare `pagination.maximumPages`
   and project the completed pages, or use `defineCollectionQuery`; never treat the first page as complete.
 - The SDK rejects a repeated cursor or exhausted page bound instead of returning a partial collection.
