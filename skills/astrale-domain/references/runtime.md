@@ -24,7 +24,9 @@ input/output, receiver, auth, and Policy; runtime implements that admitted contr
   transparent to business code; consult `debugging.md` only when diagnosing discovery or invocation.
 - Default `query`, `mutate`, and `kernel` use the installed Domain authority (`self`). Select
   `graph.caller` or `kernel.caller` for the incoming caller Grant, and `union` deliberately when both
-  are needed. `dependencies.alias.invoke` forwards the incoming caller Grant.
+  are needed. Dependencies have no default `invoke`: choose `dependencies.alias.caller.invoke`,
+  `.self.invoke`, or `.union.invoke`. These select the incoming Grant, the Domain alone, or their union;
+  the Domain signs the outgoing callback and remains its authenticated principal.
 - Protected callables receive authenticated `caller` evidence and bound `kernel` sessions.
   An unauthenticated anonymous invocation has null `kernel`, `graph`, and `dependencies`.
 - Use the handler's `kernel` session for admitted Kernel capabilities outside graph operations;
@@ -203,7 +205,8 @@ export const application = defineApplication({
 - Add `K.functions.register` when using an admitted `auth.register(...)` capability. Inspect requested
   and materialized authority for the Domain principal; do not grant the human rights to conceal a gap.
 - Call an exact dependency with
-  `dependencies.messaging.invoke((messaging) => messaging.functions.send, input)`; an instance Method
+  `dependencies.messaging.caller.invoke((messaging) => messaging.functions.send, input)` to preserve
+  the incoming Grant; an instance Method
   also takes its NodeId before input. Providers use their invocation-scoped typed `invoke` capability.
   Read `integrations.md` for consumer-owned Integrations/Providers; do not import a foreign handler
   or claim atomicity across Domains.
