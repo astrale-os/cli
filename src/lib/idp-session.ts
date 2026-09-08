@@ -1,6 +1,7 @@
 import { withFileLock } from '../state/index'
 import {
   accessTokenForAudience,
+  decodeTokenClaims,
   classifyRefreshFailure,
   idpSessionPath,
   OAuthTokenError,
@@ -68,7 +69,7 @@ export async function ensureFreshSession(
   const minimumRemainingMs = minimumLifetimeMs(opts.minimumRemainingSeconds)
   const session = await readIdpSession(identityName)
   if (!session) throw new IdpSessionMissingError(identityName)
-  if (accessTokenForAudience(session, opts.audience, minimumRemainingMs)) return session
+  if (sessionServes(session, opts.audience, minimumRemainingMs, opts.organizationId)) return session
   if (!session.refresh_token) throw new IdpSessionNoRefreshTokenError(identityName)
 
   return withFileLock(idpSessionLockPath(identityName), async () => {
@@ -76,7 +77,8 @@ export async function ensureFreshSession(
     // already rotated the session — using its result is the whole point.
     const current = await readIdpSession(identityName)
     if (!current) throw new IdpSessionMissingError(identityName)
-    if (accessTokenForAudience(current, opts.audience, minimumRemainingMs)) return current
+    if (sessionServes(current, opts.audience, minimumRemainingMs, opts.organizationId))
+      return current
 
     // Org resolution order: explicit > bookmarked-at-create > router lookup.
     const bookmarkOrg =
@@ -87,10 +89,16 @@ export async function ensureFreshSession(
         ? await (opts.resolveOrganizationId ?? fetchOrgHint)(opts.audience)
         : undefined)
     try {
-      return await refreshSession(identityName, current, {
+      const refreshed = await refreshSession(identityName, current, {
         audience: opts.audience,
         organizationId,
       })
+      if (
+        opts.organizationId &&
+        !sessionServes(refreshed, opts.audience, minimumRemainingMs, opts.organizationId)
+      )
+        throw new Error('IdP did not issue a usable token for the required organization.')
+      return refreshed
     } catch (e) {
       // A bookmarked org can go stale (instance deleted/recreated elsewhere).
       // On an org rejection, retry once with the router's view and let the
@@ -114,6 +122,7 @@ export async function ensureFreshSession(
         current,
         opts.audience,
         minimumRemainingMs,
+        opts.organizationId,
         e,
       )
       if (rescued) return rescued
@@ -134,13 +143,28 @@ async function rescueAfterInvalidGrant(
   seen: IdpSession,
   audience: string | undefined,
   minimumRemainingMs: number,
+  organizationId: string | undefined,
   error: unknown,
 ): Promise<IdpSession | undefined> {
   if (!(error instanceof OAuthTokenError) || error.code !== 'invalid_grant') return undefined
   const latest = await readIdpSession(identityName).catch(() => null)
   if (!latest || latest.updatedAt === seen.updatedAt) return undefined
-  if (!accessTokenForAudience(latest, audience, minimumRemainingMs)) return undefined
+  if (!sessionServes(latest, audience, minimumRemainingMs, organizationId)) return undefined
   return latest
+}
+
+/** Explicit target organization is part of the requested session, including cache and rescue hits. */
+function sessionServes(
+  session: IdpSession,
+  audience: string | undefined,
+  minimumRemainingMs: number,
+  organizationId?: string,
+): boolean {
+  const token = accessTokenForAudience(session, audience, minimumRemainingMs)
+  return (
+    token !== undefined &&
+    (organizationId === undefined || decodeTokenClaims(token)?.org_id === organizationId)
+  )
 }
 
 function minimumLifetimeMs(input: number | undefined): number {

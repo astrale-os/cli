@@ -20,12 +20,17 @@ function slugError(value: string): true | string {
 
 export default {
   name: 'create',
-  description: 'Provision an instance through Admin',
+  description: 'Create an instance through Admin and verify owner access',
   afterHelpText: `
 Behavior:
   Requests a new Instance from the configured Admin Domain. The caller must be
   logged in with WorkOS. Admin owns infrastructure placement. The new instance
-  becomes the active instance.
+  becomes active after its owner access is finalized and verified. If finalization
+  is interrupted, rerun the same create command with the same Admin target options
+  (--admin, --admin-url, --domain-issuer) and creator's WorkOS identity (--as).
+  Admin verifies and resumes its retained creation receipt; the Instance and
+  reserved owner are not recreated.
+  An unfinished journey returns a nonzero exit status with the retained receipt.
 
   Run with no slug in a terminal and it prompts for one (validated live). With
   no TTY — or --ci / --no-prompt — the slug argument is required up front, so
@@ -55,10 +60,14 @@ Examples:
         )
       }
 
-      const { created } = await provisionInstance(id, opts)
+      const { created, access, selectionError } = await provisionInstance(id, opts)
+
+      if (created.state !== 'ready' || access?.status !== 'completed' || selectionError) {
+        process.exitCode = 1
+      }
 
       if (isMachine(opts)) {
-        output(created, opts)
+        output({ ...created, ...(access === undefined ? {} : { access }) }, opts)
         return
       }
     } catch (e) {

@@ -43,12 +43,24 @@ function dependencies(
     provision: mock(async (slug) => ({
       created: instance(slug),
       slug,
+      access: { status: 'completed' as const, user: 'owner' },
     })),
     ...overrides,
   }
 }
 
 describe('setup owned-instance reconciliation', () => {
+  test('does not claim setup fixed while the created owner access is pending', async () => {
+    const deps = dependencies({
+      provision: mock(async (slug) => ({
+        created: instance(slug),
+        slug,
+        access: { status: 'pending' as const, code: 'OWNER_ACTIVATION_UNAVAILABLE' },
+      })),
+    })
+    await expect(ensureOwnedInstance(ctx, deps)).resolves.toBe('skipped')
+    expect(deps.adopt).not.toHaveBeenCalled()
+  })
   test('silently adopts the sole owned ready instance', async () => {
     const ready = instance('only')
     const failed = instance('old-attempt', 'failed')

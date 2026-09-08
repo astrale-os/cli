@@ -141,7 +141,7 @@ export async function ensureOwnedInstance(
     return 'skipped'
   }
 
-  const { created, selectionError } = await deps.provision(slug)
+  const { created, selectionError, access } = await deps.provision(slug)
   if (created.state !== 'ready') {
     reportNotReady([created])
     return 'skipped'
@@ -153,6 +153,12 @@ export async function ensureOwnedInstance(
       `Instance "${slug}" was provisioned, but the CLI could not select it: ${detail}`,
       `Fix local CLI storage, then run \`astrale instance use ${slug}\`.`,
     )
+  }
+  if (access?.status !== 'completed') {
+    log.warn(
+      `Instance "${slug}" exists, but owner access is pending. Rerun instance create with the same Admin target options and the creator's WorkOS identity (--as, not --creds).`,
+    )
+    return 'skipped'
   }
   hero(slug, created.url)
   return 'fixed'

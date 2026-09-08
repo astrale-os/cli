@@ -309,7 +309,7 @@ describe('help contract — admin target surface is registered', () => {
     const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
     const help = instanceCreate?.helpInformation() ?? ''
 
-    expect(help).toContain('Provision an instance through Admin')
+    expect(help).toContain('Create an instance through Admin and verify owner access')
     expect(help).not.toContain('--host')
     expect(help).not.toContain('Kernel Host')
     const root = program.commands

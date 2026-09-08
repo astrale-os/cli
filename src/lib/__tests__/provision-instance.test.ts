@@ -1,4 +1,5 @@
 import { ResponseError } from '@astrale-os/sdk/client'
+import { invocation } from '@astrale-os/sdk/invocation'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 
 import { provisionInstance } from '../provision-instance'
@@ -10,6 +11,42 @@ afterEach(() => {
 })
 
 describe('managed Instance root import during provisioning', () => {
+  test('confirms human activation before selecting the instance, independently of Root import', async () => {
+    const events: string[] = []
+    const created = {
+      id: '@instance',
+      slug: 'demo',
+      url: 'https://demo.example/api',
+      state: 'ready' as const,
+    }
+    const result = await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true },
+      {
+        createOwnedInstance: async () => created,
+        upsertManagedBookmark: async () => {
+          events.push('bookmark')
+          return { entry: { url: created.url } }
+        },
+        activateInstance: async (instance) => {
+          expect(instance).toBe(created)
+          events.push('activate')
+          return { status: 'completed', user: 'owner' }
+        },
+        setActive: async () => {
+          events.push('select')
+          return 'demo'
+        },
+        importInstanceRootIdentity: async () => {
+          events.push('root')
+          return { name: 'demo-root' } as never
+        },
+      },
+    )
+    expect(events).toEqual(['activate', 'bookmark', 'select', 'root'])
+    expect(result.access).toEqual({ status: 'completed', user: 'owner' })
+  })
+
   test('uses the exact created Instance and does not fail creation when root recovery fails', async () => {
     const created = {
       id: '@created-instance',
@@ -37,6 +74,7 @@ describe('managed Instance root import during provisioning', () => {
         upsertManagedBookmark,
         setActive,
         importInstanceRootIdentity,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
     )
 
@@ -54,9 +92,10 @@ describe('managed Instance root import during provisioning', () => {
       slug: 'demo',
       url: created.url,
       organizationId: created.organizationId,
+      activateWhenEmpty: false,
     })
     expect(setActive).toHaveBeenCalledTimes(1)
-    expect(setActive).toHaveBeenCalledWith('demo')
+    expect(result.access).toEqual({ status: 'completed', user: 'owner' })
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
   })
 
@@ -95,6 +134,7 @@ describe('managed Instance root import during provisioning', () => {
         upsertManagedBookmark,
         setActive,
         importInstanceRootIdentity,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
     )
 
@@ -119,7 +159,13 @@ describe('managed Instance root import during provisioning', () => {
       state: 'ready' as const,
     }
     const createOwnedInstance = mock()
-      .mockRejectedValueOnce(new ResponseError(5000, 'Internal failure.', 'request-1' as never))
+      .mockRejectedValueOnce(
+        new ResponseError(
+          5000,
+          'Internal failure.',
+          invocation.acceptInvocationId({ source: 'https://admin.example/api', id: 'request-1' }),
+        ),
+      )
       .mockResolvedValueOnce(ready)
     const sleep = mock(async () => {})
 
@@ -134,6 +180,7 @@ describe('managed Instance root import during provisioning', () => {
         upsertManagedBookmark: async () => ({ entry: { url: ready.url } }),
         setActive: async () => 'demo',
         importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
     )
 
@@ -178,5 +225,33 @@ describe('managed Instance root import during provisioning', () => {
     expect(upsertManagedBookmark).not.toHaveBeenCalled()
     expect(setActive).not.toHaveBeenCalled()
     expect(importInstanceRootIdentity).not.toHaveBeenCalled()
+  })
+
+  test('keeps bookmarks and selection untouched when owner access is pending', async () => {
+    const created = {
+      id: '@instance',
+      slug: 'demo',
+      url: 'https://demo.example/api',
+      state: 'ready' as const,
+    }
+    const upsertManagedBookmark = mock()
+    const setActive = mock()
+    const result = await provisionInstance(
+      'demo',
+      { creds: 'admin', ci: true },
+      {
+        createOwnedInstance: async () => created,
+        activateInstance: async () => {
+          throw new Error('response lost')
+        },
+        upsertManagedBookmark,
+        setActive,
+        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+      },
+    )
+    expect(result.created).toBe(created)
+    expect(result.access).toEqual({ status: 'pending', code: 'OWNER_ACTIVATION_UNAVAILABLE' })
+    expect(upsertManagedBookmark).not.toHaveBeenCalled()
+    expect(setActive).not.toHaveBeenCalled()
   })
 })

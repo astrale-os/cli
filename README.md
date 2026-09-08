@@ -51,6 +51,16 @@ astrale status
 astrale get @self --json
 ```
 
+Creation finalizes and verifies the selected WorkOS owner's access before bookmarking or selecting
+the instance. If interrupted, rerun your original `instance create` command with the same slug,
+Admin target options (`--admin`, `--admin-url`, `--domain-issuer`) and creator identity. Admin checks
+the original creation receipt and resumes the same Instance and reserved User. Existing bookmarks
+and selection remain untouched until human access succeeds. JSON separates provisioning `state`
+from `access.status`; unfinished creation/access returns a nonzero exit status. An explicit Admin
+`--creds` bearer cannot produce a child-audience proof: replace it with `--as <identity>` for the
+creator's WorkOS identity while retaining the same Admin target options.
+Root recovery is independent and never substitutes for the human owner's access.
+
 If you already have a kernel URL, create a local bookmark:
 
 ```bash

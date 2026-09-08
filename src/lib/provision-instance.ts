@@ -8,6 +8,7 @@ import type { ImportedInstanceRootIdentity } from './instance-root-identity'
 
 import { AstraleError, AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
+import { activateInstance, type InstanceActivation } from './activate-instance'
 import { createOwnedInstance } from './admin-instance'
 import { randomOperationId } from './idempotency'
 import { setActive, upsertManagedBookmark } from './instance'
@@ -32,12 +33,14 @@ export type ProvisionResult = {
   slug: string
   /** Set when an existing bookmark of the same name was repointed to a new kernel. */
   repointedFrom?: string
-  /** Set when bookmarking/activating the new instance failed (non-fatal). */
+  /** Set when local bookmarking/selection failed; the creation receipt is retained. */
   selectionError?: unknown
   /** Imported root identity; absent when best-effort recovery failed. */
   rootIdentity?: ImportedInstanceRootIdentity
   /** Root recovery is deliberately non-fatal to successful provisioning. */
   rootIdentityError?: unknown
+  /** Human access is independent of provisioning and optional root recovery. */
+  access?: InstanceActivation | { readonly status: 'pending'; readonly code: string }
 }
 
 /** Provisioning a child instance runs a multi-step saga. */
@@ -50,6 +53,7 @@ interface ProvisionDependencies {
   readonly upsertManagedBookmark: typeof upsertManagedBookmark
   readonly setActive: typeof setActive
   readonly importInstanceRootIdentity: typeof importInstanceRootIdentity
+  readonly activateInstance: typeof activateInstance
   readonly operationId: () => string
   readonly now: () => number
   readonly sleep: (milliseconds: number) => Promise<void>
@@ -60,16 +64,15 @@ const provisionDefaults: ProvisionDependencies = {
   upsertManagedBookmark,
   setActive,
   importInstanceRootIdentity,
+  activateInstance,
   operationId: () => randomOperationId('cli', 'instance', 'create'),
   now: Date.now,
   sleep: (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
 }
 
 /**
- * Provision an instance through the admin kernel, then bookmark it and
- * make it the active target. Extracted from `instance create` so `astrale
- * setup` provisions through the exact same saga (auth assertion → create →
- * bookmark → set-active).
+ * Resume Admin's creation receipt, finalize and verify the owner's child access,
+ * then bookmark and select it. Setup creation uses this same journey.
  *
  * Presentation is deliberately minimal here (a spinner + a one-line success);
  * the caller renders anything richer — `setup` follows this with a hero panel.
@@ -124,35 +127,59 @@ export async function provisionInstance(
           if (deps.now() >= deadline) return created
           await deps.sleep(RETRY_DELAY_MS)
         }
-        try {
-          // Org id from the create response — authoritative for token scoping
-          // (the router's /auth/org is eventually consistent).
-          const bookmarked = await deps.upsertManagedBookmark({
-            key: slug,
-            slug,
-            url: created.url,
-            ...(created.organizationId ? { organizationId: created.organizationId } : {}),
-            ...(authentication.defaultIdentity
-              ? { defaultIdentity: authentication.defaultIdentity }
-              : {}),
-          })
-          repointedFrom = bookmarked.repointedFrom
-          await deps.setActive(slug)
-        } catch (e) {
-          selectionError = e
-        }
         return created
       },
       {
         success: (created) =>
           created.state === 'ready'
-            ? `Instance provisioned: ${slug} ${chalk.dim(`(${created.url})${selectionError ? '' : ' · active'}`)}`
+            ? `Instance provisioned: ${slug} ${chalk.dim(`(${created.url})`)}`
             : `Instance provisioning continues: ${slug} ${chalk.dim(`(${created.phase ?? 'pending'} · ${created.operationId ?? operationId})`)}`,
       },
     )
 
   const created = await runProvision()
-  if (created.state !== 'ready') return { created, slug }
+  if (created.state !== 'ready') {
+    console.error(
+      chalk.yellow(
+        `Instance "${slug}" is retained. Rerun your original instance create command with the same Admin target options and creator identity.`,
+      ),
+    )
+    return { created, slug }
+  }
+  let access: NonNullable<ProvisionResult['access']>
+  try {
+    access = await deps.activateInstance(created, opts)
+  } catch (cause) {
+    access = {
+      status: 'pending',
+      code: cause instanceof AstraleError ? cause.code : 'OWNER_ACTIVATION_UNAVAILABLE',
+    }
+    console.error(
+      chalk.yellow(
+        `⚠ Instance "${slug}" exists, but human access is pending. Rerun your original instance create command with the same Admin target options and the creator's WorkOS identity (--as, not --creds).`,
+      ),
+    )
+  }
+  if (access.status === 'completed') {
+    try {
+      // Never repoint an already-active bookmark before the exact human access
+      // was verified. The retained Admin receipt, not local state, owns recovery.
+      const bookmarked = await deps.upsertManagedBookmark({
+        key: slug,
+        slug,
+        url: created.url,
+        activateWhenEmpty: false,
+        ...(created.organizationId ? { organizationId: created.organizationId } : {}),
+        ...(authentication.defaultIdentity
+          ? { defaultIdentity: authentication.defaultIdentity }
+          : {}),
+      })
+      repointedFrom = bookmarked.repointedFrom
+      await deps.setActive(slug)
+    } catch (cause) {
+      selectionError = cause
+    }
+  }
   let rootIdentity: ImportedInstanceRootIdentity | undefined
   let rootIdentityError: unknown
   try {
@@ -181,10 +208,14 @@ export async function provisionInstance(
     warn(`Could not import the Instance root identity: ${message}`)
     warn(`Recover it later with: astrale instance root import ${slug}`)
   }
+  if (!machine && access.status === 'completed' && !selectionError) {
+    console.log(`Instance ready: ${slug} ${chalk.dim(`(${created.url})`)}`)
+  }
 
   return {
     created,
     slug,
+    access,
     repointedFrom,
     ...(selectionError ? { selectionError } : {}),
     ...(rootIdentity === undefined ? {} : { rootIdentity }),
