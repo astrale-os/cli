@@ -1,6 +1,6 @@
 {
   "name": "@astrale-os/cli",
-  "version": "1.0.0-beta.93",
+  "version": "1.0.0-beta.96",
   "private": true,
   "description": "Astrale CLI — connect to existing Astrale kernels",
   "keywords": [
@@ -61,7 +61,12 @@
     "test:skills-e2e": "pnpm run assets:ensure && node scripts/qualification/skills-update-e2e.mjs",
     "test:studio": "pnpm --dir studio test",
     "test:watch": "pnpm run assets:ensure && bun test --watch src",
-    "qualification:ui-search": "bun scripts/qualification/ui-search-provider.ts"
+    "qualification:ui-search": "bun scripts/qualification/ui-search-provider.ts",
+    "setup": "bash scripts/agent_setup/setup.sh",
+    "setup:codex": "AGENT_HARNESSES=codex bash scripts/agent_setup/setup.sh",
+    "setup:claude": "AGENT_HARNESSES=claude bash scripts/agent_setup/setup.sh",
+    "check:agent-setup": "bash scripts/agent_setup/verify.sh",
+    "test:agent-setup": "node --test scripts/agent_setup/*.test.cjs"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.70.0",
@@ -80,8 +85,8 @@
   },
   "devDependencies": {
     "@astrale-os/ox": ">=0.1.3 <1.0.0",
-    "@astrale-os/sdk": "0.5.0-beta.123",
-    "@astrale-os/shell": "0.5.0-beta.16",
+    "@astrale-os/sdk": "0.5.0-beta.131",
+    "@astrale-os/shell": "0.5.0-beta.18",
     "@astrale/commitlint-config": "jsr:~2.0.1",
     "@commitlint/cli": "21.2.2",
     "@commitlint/config-conventional": "21.2.2",
@@ -114,5 +119,5 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@12.0.0"
+  "packageManager": "pnpm@12.1.0"
 }

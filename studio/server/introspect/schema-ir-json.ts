@@ -51,6 +51,7 @@ function isMethod(value: unknown): value is IrMethod {
     isOutput(record.output) &&
     typeof record.static === 'boolean' &&
     typeof record.abstract === 'boolean' &&
+    typeof record.executable === 'boolean' &&
     !Object.hasOwn(record, 'inheritance')
   )
 }

@@ -18,9 +18,11 @@ function project(nested: boolean) {
   writeFileSync(join(root, 'package.json'), '{}\n')
   writeFileSync(
     join(root, 'astrale.config.ts'),
-    nested
-      ? "import application from './domain/application.js'\nexport default { application }\n"
-      : 'export default {}\n',
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import { application } from '${nested ? './domain/application.js' : './application.js'}'
+export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+`,
   )
   writeFileSync(join(owner, 'application.ts'), 'export const application = {}\n')
   writeFileSync(

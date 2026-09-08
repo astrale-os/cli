@@ -14,14 +14,14 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
+import { withFileLock } from '../skills/lock'
 import {
   astraleSkillAgents,
   checkAstraleSkills,
   computeSkillTreeHash,
   syncAstraleSkills,
   type AstraleSkillSourceSnapshot,
-} from '../skills'
-import { withFileLock } from '../skills/lock'
+} from '../skills/sync'
 
 const temporaryRoots: string[] = []
 
@@ -185,6 +185,69 @@ describe('Astrale skill reconciliation', () => {
     })
     expect(await readlink(join(target.home, '.claude', 'skills', 'astrale-cli'))).toBe(
       '../../.agents/skills/astrale-cli',
+    )
+  })
+
+  for (const installed of [false, true]) {
+    test(`replaces existing agent copies without retaining their contents (${installed ? 'repair' : 'install'})`, async () => {
+      const source = await makeSource(['astrale-cli', 'astrale-domain'])
+      const target = await makeHome()
+      const dependencies = {
+        home: target.home,
+        lockPath: target.lockPath,
+        resolveSource: async () => source.snapshot,
+        agents: ['claude-code', 'codex'],
+      }
+      if (installed) await syncAstraleSkills(dependencies)
+      for (const agent of ['.claude', '.codex']) {
+        for (const skill of source.snapshot.skills) {
+          const path = join(target.home, agent, 'skills', skill.name)
+          await rm(path, { force: true })
+          await mkdir(join(path, 'references'), { recursive: true })
+          await writeFile(join(path, 'SKILL.md'), 'old local copy\n')
+          await writeFile(join(path, 'references', 'local.md'), 'local-only contents\n')
+        }
+      }
+
+      expect(await syncAstraleSkills(dependencies)).toEqual({
+        status: installed ? 'repaired' : 'installed',
+      })
+      for (const agent of ['.claude', '.codex']) {
+        for (const skill of source.snapshot.skills) {
+          const path = join(target.home, agent, 'skills', skill.name)
+          expect(await readlink(path)).toBe(`../../.agents/skills/${skill.name}`)
+          expect(await readFile(join(path, 'SKILL.md'), 'utf8')).toBe(
+            await readFile(join(source.root, skill.name, 'SKILL.md'), 'utf8'),
+          )
+          await expect(lstat(join(path, 'references', 'local.md'))).rejects.toMatchObject({
+            code: 'ENOENT',
+          })
+        }
+      }
+      expect(await filesystemSnapshot(target.root)).not.toContain('local-only contents')
+      expect(await syncAstraleSkills(dependencies)).toEqual({ status: 'unchanged' })
+    })
+  }
+
+  test('an agent skills directory pointing at the canonical directory is not deleted', async () => {
+    const source = await makeSource(['astrale-cli'])
+    const target = await makeHome()
+    await mkdir(join(target.home, '.agents', 'skills'), { recursive: true })
+    await mkdir(join(target.home, '.claude'), { recursive: true })
+    await symlink('../.agents/skills', join(target.home, '.claude', 'skills'))
+
+    await syncAstraleSkills({
+      home: target.home,
+      lockPath: target.lockPath,
+      resolveSource: async () => source.snapshot,
+      agents: ['claude-code'],
+    })
+
+    expect(
+      await readFile(join(target.home, '.claude', 'skills', 'astrale-cli', 'SKILL.md'), 'utf8'),
+    ).toBe(await readFile(join(source.root, 'astrale-cli', 'SKILL.md'), 'utf8'))
+    expect((await lstat(join(target.home, '.agents', 'skills', 'astrale-cli'))).isDirectory()).toBe(
+      true,
     )
   })
 

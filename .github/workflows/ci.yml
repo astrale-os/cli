@@ -17,6 +17,31 @@ env:
   BUN_VERSION: 1.4.0
 
 jobs:
+  agent-setup:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out the reviewed agent setup standard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: astrale-os/config
+          ref: 44a82ad206a383378fd63334c84009615e42dbb4
+          path: .agent-setup-source
+          sparse-checkout: agent-setup
+          persist-credentials: false
+      - name: Check shared agent setup copies
+        run: bash .agent-setup-source/agent-setup/sync.sh --check .
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Check agent setup without repository dependencies
+        run: |
+          find scripts/agent_setup -name '*.sh' -print0 | xargs -0 -n 1 bash -n
+          node --test .agent-setup-source/agent-setup/*.test.cjs scripts/agent_setup/repo.test.cjs
+
   ui-search-contract:
     uses: ./.github/workflows/ui-search-contract.yml
     with:
