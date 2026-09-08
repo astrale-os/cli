@@ -25,8 +25,8 @@ astrale call /:services.astrale.ai:class.CloudflareWorker:deploy \
   -i "$TARGET" --json < deploy.json
 ```
 
-This deploys provider compute and returns optional canonical Published Application metadata. It
-does not install a Domain. If installation is desired, use the normal explicit command:
+This deploys provider compute and returns provider evidence. It does not install a Domain. If
+installation is desired, use the normal explicit command:
 
 ```bash
 astrale domain install "$PUBLISHED_APPLICATION_URL" --direct -i "$CONSUMER_INSTANCE"

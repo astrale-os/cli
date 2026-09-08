@@ -51,8 +51,9 @@ Kernel-touching commands share `--format`, `--json`, `--raw`, `--url`,
 applicable. The CLI creates one public Kernel `Call`, and its Client session owns
 remote routing, fresh credentials, and one safe stale-route retry.
 
-`astrale ui` is local project tooling and never takes Kernel, instance, identity,
-or credential options.
+`astrale ui` is local project tooling and takes no Kernel, instance, identity,
+or credential options, except `astrale ui request`, which is an authenticated
+Kernel command and takes the shared Kernel options.
 
 Use `--anonymous` to omit a caller credential even when a local or bookmark-default identity exists.
 It cannot be combined with `--as` or `--creds`; required callables reject anonymous requests.
@@ -88,9 +89,10 @@ replacement is intentional. `--dry-run` leaves project files and the lock
 unchanged. Use `astrale ui search <free-text> --json` to receive a short ranked candidate list with
 exact demo code and its `command` or runtime `packageImport`.
 
-Use `astrale ui request <free-text>` when search does not satisfy the need. Human mode opens one
-prefilled public GitHub issue form and still requires submission; `--json` returns the same draft
-URL without opening a browser. The CLI does not receive a GitHub or managed-agent credential.
+Use `astrale ui request <free-text>` when search does not satisfy the need. It calls
+`/:ui.astrale.ai:function.request` on the selected instance with one bounded intent (1-512
+characters) and prints the returned receipt: `{ state: "submitted", requestId, collaborationUrl }`
+or `{ state: "pending" | "outcome-unknown" | "failed" | "conflict", requestId }`.
 
 Patterns, blocks, and themes are application-owned source after installation. A
 theme is copied to `components/astrale/theme/` and activated through one relative
@@ -159,7 +161,7 @@ instances (key-backed identities have no Admin token). Use
 `astrale instance list --bookmarked`.
 
 Fleet administrators may add `--include-retired` to the ordinary Admin inventory. The default
-continues to exclude retired tombstones; included retired Instances use the same output shape and
+excludes retired tombstones; included retired Instances use the same output shape and
 are identified by terminal `state: "deleted"`. The optional `issuer` is present only when Admin has
 retained exact evidence. Unreachable does not mean retired. Add `--admin-only` when local bookmarks
 should be omitted from the machine-readable envelope.
@@ -185,7 +187,7 @@ Use an authorized human identity for the import; `development-root` is available
 Instance calls after recovery. Root success proves execution, not an application user's access Policy.
 
 The CLI is connect-only: it does not build or run domains. The SDK's
-`astrale-domain` binary owns `dev`, `build`, `deploy`, and test workflows. Project Environments select
+`astrale-domain` binary owns `dev`, `build`, `deploy`, `lint`, `package`, and test workflows. Project Environments select
 exact deployment and optional installation targets; they do not use the CLI's active instance.
 
 `astrale domain install` has two modes:
@@ -270,7 +272,7 @@ astrale call /:notes.example:class.Note:list --creds "$TOKEN" -i staging
 `get` reads one exact canonical Node:
 
 ```json
-{ "id": "node-id", "class": "/:notes.example:class.Note", "props": {} }
+{ "id": "node-id", "class": "notes.example:class.Note", "props": {} }
 ```
 
 The structured Node result is exactly `{ id, class, props }`.
@@ -338,7 +340,7 @@ astrale mutate --file mutation.v3.json
 ## Calls
 
 `astrale call` creates one Path-targeted Call. Input priority is `--data`,
-piped stdin, `key=value`, then `{}`. `--dry-run` admits the Path and prints
+`key=value`, piped stdin, then `{}`. `--dry-run` admits the Path and prints
 the call input. Value, binary, and stream results are handled explicitly, and
 `--output` writes binary data. A streaming binary is drained with backpressure
 while the command-scoped Client session is live, then presented through the same
@@ -373,7 +375,7 @@ Use `--principal`, `--since`, `--until`, or an opaque `--cursor` as needed.
 Structured output retains the admitted `correlation` object, including invocation root and
 parent identifiers, and includes `correlationId` as a projection of `invocationId`.
 With `--json`, `--follow` emits NDJSON with one complete admitted record per line; combining
-`--yaml` with `--follow` is rejected.
+`--format yaml` with `--follow` is rejected.
 
 ## Views And Browser Sessions
 

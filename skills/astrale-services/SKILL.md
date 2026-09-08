@@ -15,5 +15,5 @@ installs or uninstalls that Application on a consumer Kernel.
   the selected consumer Kernel, verify it end to end, and hand back exact calls: read
   [references/deployer-agent.md](references/deployer-agent.md).
 - Deploy artifacts, operate a service, manage secrets/schedules/logs, delete, or open the GUI: read [references/workflows.md](references/workflows.md).
-- Understand the Service class, deploy payload, Publication evidence, and result shape: read
+- Understand the Service class, deploy payload, and result shape: read
   [references/schema.md](references/schema.md).

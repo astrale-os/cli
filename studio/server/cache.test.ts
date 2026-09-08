@@ -168,7 +168,14 @@ function temporaryDomain(): { id: string; root: string; schemaIndex: string } {
   const schemaIndex = join(root, 'schema/index.ts')
   mkdirSync(join(root, 'schema'), { recursive: true })
   writeFileSync(join(root, 'package.json'), '{"type":"module"}\n')
-  writeFileSync(join(root, 'astrale.config.ts'), 'export default {}\n')
+  writeFileSync(
+    join(root, 'astrale.config.ts'),
+    `import { defineProject } from '@astrale-os/sdk/project'
+import { cloudflare } from '@astrale-os/adapter-cloudflare'
+import { application } from './application.js'
+export default defineProject({ application, environments: { development: { deployment: cloudflare({}) } } })
+`,
+  )
   writeFileSync(
     join(root, 'application.ts'),
     `import { defineApplication } from '@astrale-os/sdk/application'
