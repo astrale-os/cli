@@ -5,7 +5,11 @@ import { AdminInstanceNotFoundError } from '../../admin/instance'
 import { formatKernelError } from '../../connection/errors'
 import { deleteOwnedInstance } from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
-import { clearActive, readInstances, removeInstance, resolveInstanceKey } from '../../lib/instance'
+import {
+  readInstances,
+  removeDeletedInstanceBookmark,
+  resolveInstanceKey,
+} from '../../lib/instance'
 import { log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 
@@ -24,7 +28,7 @@ Behavior:
   projection. A same-name local bookmark is removed after the delete succeeds
   unless --keep-bookmark is passed.
 `,
-  arguments: [{ name: 'id', description: 'Instance slug', required: true }],
+  arguments: [{ name: 'id', description: 'Instance slug or Node ID', required: true }],
   options: [
     ...ADMIN_TARGET_OPTIONS,
     { flags: '--keep-bookmark', description: 'Do not remove a same-name local bookmark' },
@@ -40,12 +44,9 @@ Behavior:
         { success: (deleted) => `Deleted instance: ${deleted.slug}` },
       )
 
-      if (!opts.keepBookmark) {
-        const store = await readInstances()
-        const key = resolveInstanceKey(store, id)
-        if (key) await removeInstance(key)
+      if (!opts.keepBookmark && result.state === 'deleted') {
+        await removeDeletedInstanceBookmark(result)
       }
-      await clearActive(id)
 
       if (isMachine(opts)) {
         output(result, opts)
