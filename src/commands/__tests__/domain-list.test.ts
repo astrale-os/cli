@@ -1,5 +1,6 @@
 import { defineSchema, schema as schemaApi } from '@astrale-os/sdk/schema'
 import { afterAll, describe, expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 
 import type { DomainInfo } from '../../lib/admin-domain'
 
@@ -129,5 +130,57 @@ describe('domain list — canonical Publication check', () => {
       checkError:
         'Domain origin mismatch: deployed=deployed.example.dev expected=catalog.example.dev',
     })
+  })
+})
+
+describe('domain list — command failures', () => {
+  // Isolate the dependency replacement from other commands sharing the catalog module.
+  function run(failure: string, debug = false) {
+    return Bun.spawnSync(
+      [
+        process.execPath,
+        '-e',
+        `
+      import { mock } from 'bun:test'
+      import { ResponseError } from '@astrale-os/sdk/client'
+      globalThis.fetch = async () => { throw new Error('Unexpected network access') }
+      mock.module(${JSON.stringify(fileURLToPath(new URL('../../lib/admin-domain.ts', import.meta.url)))}, () => ({
+        listAdminDomains: async () => { throw ${failure} },
+      }))
+      const { default: command } = await import(${JSON.stringify(fileURLToPath(new URL('../domain/list.ts', import.meta.url)))})
+      await command.action({ json: true, debug: ${debug} })
+    `,
+      ],
+      { cwd: fileURLToPath(new URL('../../../', import.meta.url)), stdout: 'pipe', stderr: 'pipe' },
+    )
+  }
+
+  test('retains a known Query rejection and its admitted reason in machine output', () => {
+    const result = run(
+      `new ResponseError(1003, 'Query input is invalid.', { source: 'https://admin.test', id: 'catalog-list' }, { code: 'QUERY_INPUT_INVALID', details: { phase: 'plan', issue: 'QUERY_DEFINITION_UNRESOLVED', path: '/source/terms/0' } })`,
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout.toString()).toBe('')
+    expect(JSON.parse(result.stderr.toString())).toEqual({
+      error: 'RESPONSE_ERROR',
+      code: 1003,
+      message: 'Query input is invalid.',
+      reason: {
+        code: 'QUERY_INPUT_INVALID',
+        details: { phase: 'plan', issue: 'QUERY_DEFINITION_UNRESOLVED', path: '/source/terms/0' },
+      },
+    })
+  })
+
+  test.each([false, true])('exposes internal diagnostics only with debug=%s', (debug) => {
+    const result = run(`new Error('catalog diagnostic detail')`, debug)
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout.toString()).toBe('')
+    const stderr = result.stderr.toString()
+    expect(JSON.parse(stderr.split('\n')[0]!)).toEqual({
+      error: 'UNEXPECTED_ERROR',
+      message: 'The CLI encountered an unexpected internal failure.',
+    })
+    expect(stderr.includes('catalog diagnostic detail')).toBe(debug)
   })
 })
