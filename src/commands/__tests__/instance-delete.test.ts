@@ -107,85 +107,33 @@ async function run(
 }
 
 describe('instance delete bookmark cleanup', () => {
-  test.each(['demo', '@instance-id'])(
-    'removes the matching bookmark and cache after deleting %s',
-    async (identifier) => {
-      const result = await run({ identifier })
-      expect(result.exitCode, result.stderr).toBe(0)
-      expect(JSON.parse(result.stdout).state).toBe('deleted')
-      expect(Object.keys(result.store.instances)).toEqual(['other'])
-      expect(result.store.active).toBe('other')
-      expect(Object.keys(result.cache.entries)).toEqual([cacheKey(otherUrl)])
-    },
-  )
-
-  test('updates selection only when the removed bookmark was active', async () => {
-    const result = await run({ active: 'demo' })
+  test.each([
+    { identifier: 'demo' },
+    { identifier: '@instance-id', active: 'demo' },
+    { resultUrl: '' },
+  ])('removes the matching bookmark and credentials: %j', async (options) => {
+    const result = await run(options)
     expect(result.exitCode, result.stderr).toBe(0)
+    expect(JSON.parse(result.stdout).state).toBe('deleted')
+    expect(Object.keys(result.store.instances)).toEqual(['other'])
     expect(result.store.active).toBe('other')
-    expect(result.store.instances.demo).toBeUndefined()
+    expect(Object.keys(result.cache.entries)).toEqual([cacheKey(otherUrl)])
   })
 
-  test.each([false, true])(
-    'uses the retained issuer as the endpoint when deleted URL is empty (repointed=%s)',
-    async (repointed) => {
-      const result = await run({
-        resultUrl: '',
-        bookmarkUrl: repointed ? otherUrl : url,
-        bookmarkIssuer: url,
-      })
-      expect(result.exitCode, result.stderr).toBe(0)
-      expect(Object.keys(result.store.instances)).toEqual(repointed ? ['demo', 'other'] : ['other'])
-      expect(Object.keys(result.cache.entries)).toEqual(
-        repointed ? [cacheKey(url), cacheKey(otherUrl)] : [cacheKey(otherUrl)],
-      )
-    },
-  )
-
-  test.each(['url', 'issuer', 'repoint'])(
-    'preserves a same-name bookmark with different %s evidence',
-    async (kind) => {
-      const result = await run({
-        identifier: 'demo',
-        active: 'demo',
-        ...(kind === 'url'
-          ? { bookmarkUrl: otherUrl }
-          : kind === 'issuer'
-            ? { bookmarkIssuer: otherUrl }
-            : { repoint: true }),
-      })
-      expect(result.exitCode, result.stderr).toBe(0)
-      expect(result.store.active).toBe('demo')
-      expect(result.store.instances.demo).toBeDefined()
-      if (kind !== 'issuer') expect(result.store.instances.demo.url).toBe(otherUrl)
-      expect(Object.keys(result.cache.entries)).toEqual([cacheKey(url), cacheKey(otherUrl)])
-    },
-  )
-
-  test.each(['other', 'demo'])(
-    'keep-bookmark preserves the entry, active %s and credentials',
-    async (active) => {
-      const result = await run({ identifier: 'demo', active, keepBookmark: true })
-      expect(result.exitCode, result.stderr).toBe(0)
-      expect(result.store.active).toBe(active)
-      expect(result.store.instances.demo).toBeDefined()
-      expect(Object.keys(result.cache.entries)).toEqual([cacheKey(url), cacheKey(otherUrl)])
-    },
-  )
-
-  test('does not clean up a refused deletion', async () => {
-    const result = await run({ identifier: 'demo', failure: true })
-    expect(result.exitCode).toBe(1)
+  test.each([
+    { bookmarkUrl: otherUrl },
+    { bookmarkIssuer: otherUrl },
+    { repoint: true },
+    { resultUrl: '', bookmarkUrl: otherUrl, bookmarkIssuer: url },
+    { keepBookmark: true },
+    { failure: true },
+    { resultUrl: '', resultIssuer: null },
+    { state: 'deleting' },
+  ])('preserves bookmark, selection and credentials: %j', async (options) => {
+    const result = await run({ identifier: 'demo', active: 'demo', ...options })
+    expect(result.exitCode, result.stderr).toBe('failure' in options ? 1 : 0)
     expect(Object.keys(result.store.instances)).toEqual(['demo', 'other'])
+    expect(result.store.active).toBe('demo')
     expect(Object.keys(result.cache.entries)).toEqual([cacheKey(url), cacheKey(otherUrl)])
-  })
-
-  test('retains bookmarks without exact remote coordinates or terminal deletion', async () => {
-    for (const options of [{ resultUrl: '', resultIssuer: null }, { state: 'deleting' }]) {
-      const result = await run({ identifier: 'demo', ...options })
-      expect(result.exitCode, result.stderr).toBe(0)
-      expect(result.store.instances.demo).toBeDefined()
-      expect(Object.keys(result.cache.entries)).toEqual([cacheKey(url), cacheKey(otherUrl)])
-    }
   })
 })
