@@ -3,8 +3,8 @@
 From a standalone CLI checkout (no runtime required beforehand):
 
 ```bash
-AGENT_HARNESSES=codex bash scripts/setup/agent/setup.sh
-AGENT_HARNESSES=codex bash scripts/setup/agent/verify.sh
+AGENT_HARNESSES=codex bash scripts/setup/setup.sh
+AGENT_HARNESSES=codex bash scripts/setup/verify.sh
 ```
 
 Use `claude` for Claude or `codex,claude` for both. Setup installs Node from `.nvmrc`,
@@ -24,7 +24,7 @@ It does not build a release executable, link the source CLI globally, or deploy 
 Development installs use `STANDALONE=true pnpm install --no-frozen-lockfile --prefer-offline`.
 They report lockfile changes and preserve branch/HEAD. CI and release installs remain frozen.
 The old README's `./setup.sh` did not exist on main; its caller now points to this entry point.
-No legacy agent setup scripts or Conductor configuration remained in this revision.
+Conductor now uses the unified entry point in local tool-check mode.
 The CLI's product command `astrale setup` is unrelated and remains intact.
 
 ## Tools and skills
@@ -46,7 +46,7 @@ Run source commands with `bun bin/astrale.ts`; the released global `astrale` is 
 ## Cloud
 
 - Codex: select `astrale-os/cli`, disable container caching, use only Setup:
-  `AGENT_HARNESSES=codex bash scripts/setup/agent/setup.sh`. No Maintenance script.
+  `AGENT_HARNESSES=codex bash scripts/setup/setup.sh`. No Maintenance script.
 - Claude: select `astrale-os/cli`, leave environment Setup empty. The committed SessionStart
   hook handles `startup|resume|clear|fork`, installing and verifying once per physical checkout.
   Only successful verification creates its marker. Subsequent hooks only restore paths through
@@ -64,7 +64,7 @@ Record initial installation and prepared-checkout reuse as separate results.
 ## Shared standard and checks
 
 Eight files are synchronized unchanged from Config revision
-`49291648ffb6fcff3247a73251c40c8d7574ec35`. The CI `agent-setup` job compares the copies
+`e60ce6abefe47bc7130bb949a8d8794b58d29a9f`. The CI `agent-setup` job compares the copies
 against that pinned source and executes shared and repository tests. Make common changes
 in Config first and sync them; options, pinned Bun preparation, assets, verification and the
 Claude hook are CLI-owned. From the reviewed Config checkout:
@@ -72,7 +72,7 @@ Claude hook are CLI-owned. From the reviewed Config checkout:
 ```bash
 bash agent-setup/sync.sh /path/to/cli
 bash agent-setup/sync.sh --check /path/to/cli
-node --test agent-setup/*.test.cjs /path/to/cli/scripts/setup/agent/*.test.cjs
+node --test agent-setup/*.test.cjs /path/to/cli/scripts/setup/*.test.cjs
 ```
 
 ## Validation
@@ -86,3 +86,32 @@ not installed. Lint and all CLI/Viewer/Studio typechecks passed. The application
 user and a subreaper for process-lifecycle tests. Running that suite as root or with `sleep`
 as container PID 1 invalidates its permission/process-lifecycle expectations.
 Real Codex and Claude Cloud session validation is recorded separately from local results.
+
+## Unified local and cloud preparation
+
+`AGENT_SETUP_TOOLS=install` is the cloud default: reuse working tools and install
+or repair missing ones. `AGENT_SETUP_TOOLS=check`, selected by Conductor, checks
+the caller’s tools and pinned versions without installing global tools, changing
+managed symlinks, rewriting shell profiles, or managing personal skills. Missing
+requirements produce an actionable error. Local agent selection does not trigger
+any skill installation.
+
+Both modes prepare the same checkout dependencies and required product artifacts;
+this is not an offline mode. Repository-local downloads (such as Electron or test
+browsers) remain part of project preparation when applicable. Package-manager
+caches and existing artifact caches are reused. Standalone Git branch/HEAD is
+preserved; no checkout refresh to main is performed.
+
+```bash
+AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh
+AGENT_SETUP_TOOLS=check bash scripts/setup/verify.sh
+```
+
+Conductor’s setup prepares a new worktree; Run checks readiness. Cloud Codex uses
+`AGENT_SETUP_TOOLS=install AGENT_HARNESSES=codex bash scripts/setup/setup.sh` with
+cache disabled and Maintenance empty. Claude environment Setup stays empty; the
+committed hook installs once per checkout remotely and only loads paths locally.
+
+The unified rollout was regression-tested on Ubuntu 24.04. Historical cloud
+results above concern their named revisions; fresh cloud session validation of
+this layout must be recorded separately.

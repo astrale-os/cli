@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/setup/agent/claude_session_start.sh\"",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/setup/claude_session_start.sh\"",
             "timeout": 600
           }
         ]

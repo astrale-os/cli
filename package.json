@@ -62,11 +62,12 @@
     "test:studio": "pnpm --dir studio test",
     "test:watch": "pnpm run assets:ensure && bun test --watch src",
     "qualification:ui-search": "bun scripts/qualification/ui-search-provider.ts",
-    "setup": "bash scripts/setup/agent/setup.sh",
-    "setup:codex": "AGENT_HARNESSES=codex bash scripts/setup/agent/setup.sh",
-    "setup:claude": "AGENT_HARNESSES=claude bash scripts/setup/agent/setup.sh",
-    "check:agent-setup": "bash scripts/setup/agent/verify.sh",
-    "test:agent-setup": "node --test scripts/setup/agent/*.test.cjs"
+    "setup": "bash scripts/setup/setup.sh",
+    "setup:codex": "AGENT_HARNESSES=codex bash scripts/setup/setup.sh",
+    "setup:claude": "AGENT_HARNESSES=claude bash scripts/setup/setup.sh",
+    "check:agent-setup": "bash scripts/setup/verify.sh",
+    "test:agent-setup": "node --test scripts/setup/*.test.cjs",
+    "setup:local": "AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.70.0",

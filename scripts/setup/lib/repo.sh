@@ -17,6 +17,10 @@ cli_check_repo() {
 cli_ensure_bun() {
   local version prefix
   version="$(cli_bun_version)"
+  if [[ "$AGENT_SETUP_TOOLS" == check ]]; then
+    [[ "$(bun --version 2>/dev/null || true)" == "$version" ]] || agent_die "Activate Bun $version on your machine, then rerun setup"
+    return
+  fi
   if [[ "$(bun --version 2>/dev/null || true)" != "$version" ]]; then
     prefix="$AGENT_SETUP_HOME/cli-bun/$version"
     if [[ "$("$prefix/bin/bun" --version 2>/dev/null || true)" != "$version" ]]; then

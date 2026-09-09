@@ -6,7 +6,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 # Local sessions only load paths prepared by an explicit setup.
 if [[ "${CLAUDE_CODE_REMOTE:-}" == true ]]; then
   agent_load_config
-  export AGENT_HARNESSES=claude
+  export AGENT_HARNESSES=claude AGENT_SETUP_TOOLS=install
   command -v flock >/dev/null 2>&1 || agent_die 'Claude Cloud initialization requires flock (util-linux)'
   state="$AGENT_SETUP_HOME/state/claude"
   mkdir -p "$state"

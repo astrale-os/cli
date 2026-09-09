@@ -10,7 +10,7 @@ const packages = ['studio', 'studio/e2e/fixture', 'studio/e2e/fixture/peer']
 function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'cli setup-')))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
-  const scripts = path.join(root, 'scripts/setup/agent')
+  const scripts = path.join(root, 'scripts/setup')
   fs.cpSync(__dirname, scripts, { recursive: true })
   fs.writeFileSync(path.join(root, '.nvmrc'), process.versions.node + '\n')
   fs.writeFileSync(path.join(root, '.bun-version'), '1.4.0\n')
@@ -85,7 +85,7 @@ function success(result) {
 test('the configured local Claude hook only loads prepared paths', (t) => {
   const f = fixture(t)
   const settings = JSON.parse(
-    fs.readFileSync(path.join(__dirname, '../../../.claude/settings.json'), 'utf8'),
+    fs.readFileSync(path.join(__dirname, '../../.claude/settings.json'), 'utf8'),
   )
   const envFile = path.join(f.root, 'claude.env')
   fs.writeFileSync(path.join(f.storage, 'env.sh'), 'export CLI_SETUP_CHECK=ready\n')

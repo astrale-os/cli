@@ -18,7 +18,9 @@ cli_ensure_bun
 agent_install_repo
 # Source commands need the pinned Bun runtime and embedded Skills, Studio and Viewer assets.
 pnpm run assets:ensure
-if [[ "$AGENT_SETUP_ASTRALE_CLI" == 1 ]]; then
+if [[ "$AGENT_SETUP_ASTRALE_CLI" == 1 && "$AGENT_SETUP_TOOLS" == check ]]; then
+  astrale --version >/dev/null 2>&1 || agent_die "Install the published Astrale CLI on your machine, then rerun setup"
+elif [[ "$AGENT_SETUP_ASTRALE_CLI" == 1 ]]; then
   if ! astrale --version >/dev/null 2>&1; then
     if "${ASTRALE_HOME:-$HOME/.astrale}/bin/astrale" --version >/dev/null 2>&1; then
       agent_link "${ASTRALE_HOME:-$HOME/.astrale}/bin/astrale" astrale
