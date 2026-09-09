@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: astrale-os/config
-          ref: 44a82ad206a383378fd63334c84009615e42dbb4
+          ref: 49291648ffb6fcff3247a73251c40c8d7574ec35
           path: .agent-setup-source
           sparse-checkout: agent-setup
           persist-credentials: false
@@ -39,8 +39,8 @@ jobs:
           package-manager-cache: false
       - name: Check agent setup without repository dependencies
         run: |
-          find scripts/agent_setup -name '*.sh' -print0 | xargs -0 -n 1 bash -n
-          node --test .agent-setup-source/agent-setup/*.test.cjs scripts/agent_setup/repo.test.cjs
+          find scripts/setup/agent -name '*.sh' -print0 | xargs -0 -n 1 bash -n
+          node --test .agent-setup-source/agent-setup/*.test.cjs scripts/setup/agent/repo.test.cjs
 
   ui-search-contract:
     uses: ./.github/workflows/ui-search-contract.yml
