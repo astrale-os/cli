@@ -28,10 +28,32 @@ const journal = func({
   input: { type: 'object', properties: {}, additionalProperties: false },
   output: { type: 'object', additionalProperties: true },
 })
+const edit = (field: string) =>
+  method({
+    auth: 'authenticated',
+    input: {
+      type: 'object',
+      properties: { [field]: { type: 'string' } },
+      required: [field],
+      additionalProperties: false,
+    },
+    output: {
+      type: 'object',
+      properties: { [field]: { type: 'string' } },
+      required: [field],
+      additionalProperties: false,
+    },
+  })
 const source = defineSchema('host.astrale.ai', {
   classes: {
-    Manager: nodeClass({ icon: classIcon.neutral, methods: { createInstance } }),
-    Instance: nodeClass({ icon: classIcon.neutral, methods: { inspectInstance } }),
+    Manager: nodeClass({
+      icon: classIcon.neutral,
+      methods: { createInstance, edit: edit('slug') },
+    }),
+    Instance: nodeClass({
+      icon: classIcon.neutral,
+      methods: { inspectInstance, edit: edit('body') },
+    }),
   },
   functions: { journal },
 })
@@ -58,7 +80,7 @@ describe('describeCallableFromBundle', () => {
     expect(
       describeCallableFromBundle(
         Path.parse(
-          '/:host.astrale.ai:core.manager::host.astrale.ai:class.Manager.method.inspectInstance',
+          '/:host.astrale.ai:core.manager::host.astrale.ai:class.Instance.method.inspectInstance',
         ),
         installed,
       ),
@@ -68,6 +90,51 @@ describe('describeCallableFromBundle', () => {
       method: 'inspectInstance',
       dispatch: 'instance',
     })
+  })
+
+  test.each(['class.Manager', 'core.manager'])(
+    'describes the qualified Method owner independently of receiver %s',
+    (receiver) => {
+      const path = Path.parse(
+        `/:host.astrale.ai:${receiver}::host.astrale.ai:class.Instance.method.edit`,
+      )
+      const described = describeCallableFromBundle(path, installed)
+      expect(described).toMatchObject({
+        path: path.raw,
+        origin: 'host.astrale.ai',
+        class: 'Instance',
+        method: 'edit',
+        dispatch: 'instance',
+      })
+      expect(described?.input).toMatchObject({ required: ['body'] })
+      expect(described?.output).toMatchObject({ mode: 'value', schema: { required: ['body'] } })
+    },
+  )
+
+  test('does not substitute a uniquely named Method from another Class when the qualified owner is absent', () => {
+    expect(
+      describeCallableFromBundle(
+        Path.parse(
+          '/:host.astrale.ai:core.manager::host.astrale.ai:class.Missing.method.inspectInstance',
+        ),
+        installed,
+      ),
+    ).toBeUndefined()
+  })
+
+  test('requires the Method namespace bundle rather than a same-name Class in the receiver namespace', () => {
+    const path = Path.parse(
+      '/:other.astrale.ai:class.Manager::host.astrale.ai:class.Instance.method.edit',
+    )
+    const wrongBundle = bundle.create(
+      defineSchema('other.astrale.ai', {
+        classes: {
+          Manager: nodeClass({ icon: classIcon.neutral, methods: { edit: edit('foreign') } }),
+        },
+      }),
+    )
+    expect(describeCallableFromBundle(path, wrongBundle)).toBeUndefined()
+    expect(describeCallableFromBundle(path, installed)?.input).toMatchObject({ required: ['body'] })
   })
 
   test('reads a standalone Function from the resolved Domain', () => {

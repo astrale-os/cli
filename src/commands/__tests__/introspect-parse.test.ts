@@ -25,6 +25,16 @@ const source = defineSchema('host.astrale.ai', {
           output: { type: 'object', additionalProperties: true },
           static: true,
         }),
+        inspectInstance: method({
+          auth: 'authenticated',
+          input: {
+            type: 'object',
+            properties: { detail: { type: 'boolean' } },
+            required: ['detail'],
+            additionalProperties: false,
+          },
+          output: { type: 'object', additionalProperties: false },
+        }),
       },
     }),
   },
@@ -70,6 +80,43 @@ describe('parseIntrospectTarget', () => {
 
   test('rejects an @id', () => {
     expect(() => parseIntrospectTarget('@abc')).toThrow('not an @id')
+  })
+
+  test('loads the exact qualified Method namespace without reading or validating its receiver', async () => {
+    const target =
+      '/:receiver.example:core.owner::host.astrale.ai:class.Manager.method.inspectInstance'
+    expect(parseIntrospectTarget(target).origin).toBe('host.astrale.ai')
+    const calls: string[] = []
+    let result: unknown
+    await introspectCommand(
+      target,
+      { json: true },
+      {
+        runKernelCommand: (async (input: { fn: (context: unknown) => Promise<unknown> }) => {
+          result = await input.fn({
+            session: {
+              schema: {
+                bundle: async (origin: string) => {
+                  calls.push(origin)
+                  return bundled
+                },
+                inspect: async () => {
+                  throw new Error('Unexpected Domain inspection')
+                },
+              },
+            },
+          })
+        }) as never,
+      },
+    )
+    expect(calls).toEqual(['host.astrale.ai'])
+    expect(result).toMatchObject({
+      path: target,
+      origin: 'host.astrale.ai',
+      class: 'Manager',
+      method: 'inspectInstance',
+      input: { required: ['detail'] },
+    })
   })
 
   test('routes bare, bundle, Method, and Function commands through the current Schema API', async () => {

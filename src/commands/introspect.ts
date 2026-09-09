@@ -1,6 +1,7 @@
 import type { DomainBundle, DomainInfo, SchemaApi } from '@astrale-os/sdk/client/schema'
 
 import { ResponseError } from '@astrale-os/sdk/client'
+import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
 
 import type { KernelCommandOpts } from '../connection'
@@ -116,7 +117,12 @@ export function parseIntrospectTarget(target: string): { origin: string; path: P
   if (path.ast.anchor.kind !== 'domain') {
     throw new AstraleError('NOT_A_DOMAIN', 'introspect requires a Domain-rooted Path or origin.')
   }
-  return { origin: path.ast.anchor.origin, path }
+  const last = path.ast.steps.at(-1)
+  const origin =
+    last?.kind === 'method' && last.dispatch === 'instance'
+      ? ClassKey.ref(last.class).origin
+      : path.ast.anchor.origin
+  return { origin, path }
 }
 
 function isCallablePath(path: Path): boolean {
