@@ -3,8 +3,8 @@
 From a standalone CLI checkout (no runtime required beforehand):
 
 ```bash
-AGENT_HARNESSES=codex bash scripts/agent_setup/setup.sh
-AGENT_HARNESSES=codex bash scripts/agent_setup/verify.sh
+AGENT_HARNESSES=codex bash scripts/setup/agent/setup.sh
+AGENT_HARNESSES=codex bash scripts/setup/agent/verify.sh
 ```
 
 Use `claude` for Claude or `codex,claude` for both. Setup installs Node from `.nvmrc`,
@@ -46,7 +46,7 @@ Run source commands with `bun bin/astrale.ts`; the released global `astrale` is 
 ## Cloud
 
 - Codex: select `astrale-os/cli`, disable container caching, use only Setup:
-  `AGENT_HARNESSES=codex bash scripts/agent_setup/setup.sh`. No Maintenance script.
+  `AGENT_HARNESSES=codex bash scripts/setup/agent/setup.sh`. No Maintenance script.
 - Claude: select `astrale-os/cli`, leave environment Setup empty. The committed SessionStart
   hook handles `startup|resume|clear|fork`, installing and verifying once per physical checkout.
   Only successful verification creates its marker. Subsequent hooks only restore paths through
@@ -64,7 +64,7 @@ Record initial installation and prepared-checkout reuse as separate results.
 ## Shared standard and checks
 
 Eight files are synchronized unchanged from Config revision
-`44a82ad206a383378fd63334c84009615e42dbb4`. The CI `agent-setup` job compares the copies
+`49291648ffb6fcff3247a73251c40c8d7574ec35`. The CI `agent-setup` job compares the copies
 against that pinned source and executes shared and repository tests. Make common changes
 in Config first and sync them; options, pinned Bun preparation, assets, verification and the
 Claude hook are CLI-owned. From the reviewed Config checkout:
@@ -72,7 +72,7 @@ Claude hook are CLI-owned. From the reviewed Config checkout:
 ```bash
 bash agent-setup/sync.sh /path/to/cli
 bash agent-setup/sync.sh --check /path/to/cli
-node --test agent-setup/*.test.cjs /path/to/cli/scripts/agent_setup/*.test.cjs
+node --test agent-setup/*.test.cjs /path/to/cli/scripts/setup/agent/*.test.cjs
 ```
 
 ## Validation

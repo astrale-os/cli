@@ -275,7 +275,7 @@ are compiled and qualified with Bun 1.4.0.
 
 ```bash
 # From a standalone clone of this repository
-AGENT_HARNESSES=codex bash scripts/agent_setup/setup.sh
+AGENT_HARNESSES=codex bash scripts/setup/agent/setup.sh
 
 # Run directly with Bun
 bun bin/astrale.ts <command>
@@ -284,7 +284,7 @@ bun bin/astrale.ts <command>
 pnpm build
 ```
 
-Cloud setup and verification: [agent setup](scripts/agent_setup/README.md).
+Cloud setup and verification: [agent setup](scripts/setup/agent/README.md).
 
 Inside the Astrale umbrella workspace, run `./scripts/setup.sh` from that workspace root instead.
 

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 AGENT_SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-AGENT_REPO_ROOT="$(cd "$AGENT_SETUP_DIR/../.." && pwd -P)"
+AGENT_REPO_ROOT="$(cd "$AGENT_SETUP_DIR/../../.." && pwd -P)"
 AGENT_SETUP_HOME="${AGENT_SETUP_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/astrale-agent-setup}"
 AGENT_BIN="$AGENT_SETUP_HOME/bin"
 AGENT_TOOLS="$AGENT_SETUP_HOME/tools"
