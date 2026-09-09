@@ -33,3 +33,8 @@ allowBuilds:
   esbuild: true
   lightningcss: true
   msgpackr-extract: true
+# Third-party `.d.ts` files reach their peer `@types` packages by walking parent
+# directories, which only works while dependencies live inside the project tree.
+# A machine-level global virtual store relocates them outside it and silently
+# breaks type resolution, so pin the per-project store for this workspace.
+virtualStoreType: project
