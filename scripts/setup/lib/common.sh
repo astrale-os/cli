@@ -3,13 +3,19 @@
 set -euo pipefail
 
 AGENT_SETUP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-AGENT_REPO_ROOT="$(cd "$AGENT_SETUP_DIR/../../.." && pwd -P)"
+AGENT_REPO_ROOT="$(cd "$AGENT_SETUP_DIR/../.." && pwd -P)"
 AGENT_SETUP_HOME="${AGENT_SETUP_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/astrale-agent-setup}"
 AGENT_BIN="$AGENT_SETUP_HOME/bin"
 AGENT_TOOLS="$AGENT_SETUP_HOME/tools"
 AGENT_ENV_FILE="$AGENT_SETUP_HOME/env.sh"
 export AGENT_SETUP_HOME AGENT_BIN AGENT_TOOLS
-export PATH="$AGENT_BIN:$AGENT_TOOLS/bin:${BUN_INSTALL:-$HOME/.bun}/bin:$PATH"
+# Local checks inspect the caller's tools; never shadow them with a managed install.
+export AGENT_SETUP_TOOLS="${AGENT_SETUP_TOOLS:-install}"
+case "$AGENT_SETUP_TOOLS" in
+  install) export PATH="$AGENT_BIN:$AGENT_TOOLS/bin:${BUN_INSTALL:-$HOME/.bun}/bin:$PATH" ;;
+  check) export COREPACK_ENABLE_NETWORK=0 npm_config_manage_package_manager_versions=false ;;
+  *) printf 'AGENT_SETUP_TOOLS must be check or install\n' >&2; exit 1 ;;
+esac
 export CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1
 
 agent_log() { printf '[agent-setup] %s\n' "$*"; }
@@ -29,6 +35,8 @@ agent_load_config() {
 }
 
 agent_resolve_harnesses() {
+  # Local skills remain user-managed, independently of the selected agent.
+  if [[ "$AGENT_SETUP_TOOLS" == check ]]; then export AGENT_HARNESSES=; return; fi
   local requested="${AGENT_HARNESSES:-}" harness codex=0 claude=0
   local -a targets
   if [[ -z "$requested" ]]; then
@@ -61,6 +69,7 @@ agent_check_repo() {
 }
 
 agent_system_install() {
+  [[ "$AGENT_SETUP_TOOLS" != check ]] || agent_die "Install these system dependencies on your machine: $*"
   if [[ "$(uname -s)" != Linux ]] || ! command -v apt-get >/dev/null 2>&1; then
     agent_die "Install these system dependencies, then retry: $*"
   fi
@@ -76,6 +85,10 @@ agent_system_install() {
 }
 
 agent_bootstrap_system() {
+  if [[ "$AGENT_SETUP_TOOLS" == check ]]; then
+    command -v git >/dev/null || agent_die "Install Git on your machine"
+    return
+  fi
   local command_name missing=0
   for command_name in curl git tar gzip unzip; do
     command -v "$command_name" >/dev/null 2>&1 || missing=1
@@ -91,6 +104,7 @@ agent_bootstrap_system() {
 }
 
 agent_link() {
+  [[ "$AGENT_SETUP_TOOLS" != check ]] || return 0
   local target="$1" name="$2"
   [[ "$target" == "$AGENT_BIN/$name" ]] && return 0
   [[ -x "$target" ]] || agent_die "Not executable: $target"
@@ -117,6 +131,10 @@ agent_node_version() {
 agent_ensure_node() {
   local version actual os arch destination archive temporary checksum
   version="$(agent_node_version)"
+  if [[ "$AGENT_SETUP_TOOLS" == check ]]; then
+    [[ "$(node --version 2>/dev/null || true)" == "v$version" ]] || agent_die "Activate Node $version on your machine, then rerun setup"
+    return
+  fi
   actual="$(node --version 2>/dev/null || true)"
   if [[ "$actual" == "v$version" ]] && npm --version >/dev/null 2>&1; then
     agent_link "$(command -v node)" node
@@ -167,6 +185,7 @@ agent_ensure_node() {
 }
 
 agent_npm_install() {
+  [[ "$AGENT_SETUP_TOOLS" != check ]] || agent_die "Tool installation disabled; prepare the required tools on your machine"
   local prefix="$1"
   shift
   # Browser downloads belong to setup_browser_tools.sh, including transitive postinstalls.
@@ -175,6 +194,10 @@ agent_npm_install() {
 }
 
 agent_ensure_bun() {
+  if [[ "$AGENT_SETUP_TOOLS" == check ]]; then
+    bun --version >/dev/null 2>&1 || agent_die "Install Bun on your machine, then rerun setup"
+    return
+  fi
   if bun --version >/dev/null 2>&1; then
     agent_link "$(command -v bun)" bun
     agent_log "Reusing Bun $(bun --version)"
@@ -188,6 +211,10 @@ agent_ensure_bun() {
 
 agent_ensure_cli() {
   local name="$1" package="$2"
+  if [[ "$AGENT_SETUP_TOOLS" == check ]]; then
+    "$name" --version >/dev/null 2>&1 || agent_die "Install $package on your machine, then rerun setup"
+    return
+  fi
   if "$name" --version >/dev/null 2>&1; then
     agent_link "$(command -v "$name")" "$name"
     agent_log "Reusing $name"
@@ -214,6 +241,10 @@ agent_ensure_pnpm() {
   version="$(agent_pnpm_version)"
   # Disable pnpm's implicit version download: this function owns activation and verification.
   export npm_config_manage_package_manager_versions=false
+  if [[ "$AGENT_SETUP_TOOLS" == check ]]; then
+    [[ "$(pnpm --version 2>/dev/null || true)" == "$version" ]] || agent_die "Activate pnpm $version on your machine, then rerun setup"
+    return
+  fi
   if [[ "$(pnpm --version 2>/dev/null || true)" != "$version" ]]; then
     prefix="$AGENT_SETUP_HOME/pnpm/$version"
     if [[ "$("$prefix/bin/pnpm" --version 2>/dev/null || true)" != "$version" ]]; then
@@ -259,6 +290,7 @@ agent_skill_directory() {
 }
 
 agent_ensure_skill() {
+  [[ "$AGENT_SETUP_TOOLS" != check ]] || return 0
   local agent="$1" source="$2" name="$3" destination skills_target
   destination="$(agent_skill_directory "$agent")/$name"
   if node "$AGENT_SETUP_DIR/lib/skill-check.cjs" "$destination" "$name"; then
@@ -279,6 +311,8 @@ agent_environment_reference() {
 }
 
 agent_persist_environment() {
+  # A local worktree must not rewrite machine-wide paths, profiles or agent skills.
+  [[ "$AGENT_SETUP_TOOLS" != check ]] || return 0
   mkdir -p "$AGENT_SETUP_HOME"
   local file line temporary
   temporary="$(mktemp "$AGENT_SETUP_HOME/env.XXXXXX")"
