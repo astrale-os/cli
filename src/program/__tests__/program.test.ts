@@ -142,6 +142,9 @@ describe('program composition', () => {
       'domain list',
       'domain publish',
       'domain uninstall',
+      'fleet',
+      'fleet create',
+      'fleet list',
       'get',
       'identity',
       'identity create',
@@ -287,7 +290,9 @@ describe('help contract — admin target surface is registered', () => {
   test('admin group and admin-target flags are visible', async () => {
     const program = await buildProgram()
     const names = allCommands(program).map((command) => command.name())
-    const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
+    const instanceCreate = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'create')
 
     expect(names).toContain('admin')
     expect(names).toContain('status')
@@ -306,7 +311,9 @@ describe('help contract — admin target surface is registered', () => {
 
   test('public instance commands expose no Kernel operator target', async () => {
     const program = await buildProgram()
-    const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
+    const instanceCreate = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'create')
     const help = instanceCreate?.helpInformation() ?? ''
 
     expect(help).toContain('Create an instance through Admin and verify owner access')
@@ -317,7 +324,7 @@ describe('help contract — admin target surface is registered', () => {
       ?.commands.find((command) => command.name() === 'root')
       ?.commands.find((command) => command.name() === 'import')
     expect(root?.helpInformation()).not.toContain('--host')
-    expect(help).not.toContain('Fleet')
+    expect(help).toContain('--fleet')
     expect(help).not.toContain('--host-id')
     expect(help).not.toContain('--no-use')
     expect(help).not.toContain('Instance.init')

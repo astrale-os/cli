@@ -308,3 +308,28 @@ astrale-dev <command>   # execs `bun <workspace>/cli/bin/astrale.ts` of the
 It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
+
+## Fleet selection
+
+Existing commands keep using the core `default` Fleet when `--fleet` is omitted.
+Use `astrale fleet list` to discover visible Fleets. An explicit unavailable slug or ID
+fails without falling back to another Fleet.
+
+```bash
+astrale fleet create astrale --administrator @<central-shell-group-id> --copy-from default --operation create-astrale
+astrale instance create my-instance --fleet astrale --operation create-my-instance
+astrale instance list --fleet astrale
+astrale domain list --fleet astrale
+```
+
+Creating a Fleet requires central Shell administrator authority and administration of the source
+Fleet. The new Fleet receives an independent catalogue copy; provision its own Host capacity
+before creating Instances. Host capacity is never borrowed from another Fleet.
+For receiver commands, an exact Instance ID or globally unique slug identifies its Fleet;
+Domain installation uses that Instance's catalogue. `--fleet` additionally constrains the target.
+Keep the same `--operation` value when retrying creation. Fleet membership does not transfer
+personal Instance ownership.
+
+Upgrade catalogue readers before introducing multiple Fleets: origins and release digests are
+now scoped to a Fleet. Older CLI versions that query a global catalogue are incompatible with
+that data. Existing direct Instance method contracts and default routes remain supported.

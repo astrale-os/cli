@@ -6,7 +6,11 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { listAdminDomains, type DomainInfo } from '../../lib/admin-domain'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import {
+  ADMIN_TARGET_OPTIONS,
+  FLEET_OPTION,
+  type AdminTargetCommandOpts,
+} from '../../lib/admin-target'
 import { fetchDomainPublication } from '../../lib/domain-publication'
 import { withSpinner } from '../../lib/log'
 import { isMachine, presentList } from '../../lib/output'
@@ -89,6 +93,7 @@ Examples:
 `,
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
     {
       flags: '--check',
       description: "Probe each domain's canonical Publication + schema revision",

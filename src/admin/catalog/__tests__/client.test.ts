@@ -126,25 +126,10 @@ describe('V2 Admin Domain catalog adapter', () => {
         updatedAt: '2026-08-12T00:00:00.000Z',
       },
     ])
-    expect(contract.query).toHaveBeenCalledWith(
-      {
-        format: 'astrale.graph.query',
-        version: 'v6',
-        source: {
-          kind: 'node',
-          terms: [
-            {
-              kind: 'class',
-              class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Domain' },
-            },
-          ],
-          binding: 'n0',
-        },
-        steps: [],
-        select: { kind: 'nodes', binding: 'n0', projection: { kind: 'value' } },
-      },
-      { page: { size: 256 } },
-    )
+    const query = contract.query.mock.calls[0]![0]
+    expect(JSON.stringify(query.source)).toContain('core.fleet')
+    expect(JSON.stringify(query.steps)).toContain('fleet_contains')
+    expect(JSON.stringify(query.steps)).toContain('Domain')
     const [source, edge, options] = contract.neighbors.mock.calls[0]!
     expect(String(source)).toBe('/:admin.astrale.ai:core.fleet')
     expect(edge).toEqual({

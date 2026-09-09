@@ -3,7 +3,11 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { inviteOwnedInstance } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import {
+  ADMIN_TARGET_OPTIONS,
+  FLEET_OPTION,
+  type AdminTargetCommandOpts,
+} from '../../lib/admin-target'
 import { log, withSpinner } from '../../lib/log'
 import { isMachine, output } from '../../lib/output'
 
@@ -35,6 +39,7 @@ Examples:
   ],
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
     { flags: '--expires-in-days <days>', description: 'Invitation lifetime from 1 to 30 days' },
   ],
   action: async (id: string, email: string, opts: InviteOpts) => {

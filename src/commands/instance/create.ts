@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS, FLEET_OPTION } from '../../lib/admin-target'
 import { isMachine, output } from '../../lib/output'
 import { promptText } from '../../lib/prompt'
 import { provisionInstance, type ProvisionOpts } from '../../lib/provision-instance'
@@ -41,7 +41,11 @@ Examples:
   $ astrale instance create demo
 `,
   arguments: [{ name: 'id', description: 'Instance slug', required: false }],
-  options: [...ADMIN_TARGET_OPTIONS],
+  options: [
+    ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
+    { flags: '--operation <id>', description: 'Retry an exact Instance creation operation' },
+  ],
   action: async (id: string | undefined, opts: ProvisionOpts) => {
     try {
       // Prompt for the slug when omitted, with live validation. A terminal the

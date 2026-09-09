@@ -6,7 +6,11 @@ import type { CommandDefinition } from '../../program/index'
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
 import { statusOwnedInstance, type InstanceInfo } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import {
+  ADMIN_TARGET_OPTIONS,
+  FLEET_OPTION,
+  type AdminTargetCommandOpts,
+} from '../../lib/admin-target'
 import { resolveInstance } from '../../lib/instance'
 import { log, withSpinner } from '../../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../../lib/output'
@@ -30,6 +34,7 @@ export default {
   arguments: [{ name: 'id', description: 'Instance slug', required: true }],
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
     { flags: '--bookmarked', description: 'Probe a locally bookmarked kernel connection' },
   ],
   action: async (id: string, opts: StatusOpts) => {

@@ -22,6 +22,7 @@ export type ProvisionOpts = KernelCommandOpts &
     // Programmatic opt-out for callers that drive this command as a function.
     // The matching CLI flags are read from argv by `canPrompt` — Commander
     // keeps root options out of a subcommand's action arguments.
+    operation?: string
     ci?: boolean
     noPrompt?: boolean
   }
@@ -93,7 +94,7 @@ export async function provisionInstance(
   // Keep each Workflow invocation inside the platform's request window. The
   // same durable operation is replayed when Admin returns a provisioning receipt.
   const createOpts = instanceCreateOptions(opts)
-  const operationId = deps.operationId()
+  const operationId = opts.operation ?? deps.operationId()
   const deadline = deps.now() + PROVISION_WINDOW_MS
 
   const runProvision = () =>

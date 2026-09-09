@@ -12,7 +12,11 @@ import {
   type InstanceInfo,
   type OwnedInstanceInfo,
 } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import {
+  ADMIN_TARGET_OPTIONS,
+  FLEET_OPTION,
+  type AdminTargetCommandOpts,
+} from '../../lib/admin-target'
 import { normalizeInstanceKernelUrl, readInstances } from '../../lib/instance'
 import { fatal, log, withSpinner } from '../../lib/log'
 import { isMachine, output, type RawOutputOpts } from '../../lib/output'
@@ -48,6 +52,7 @@ export default {
   description: 'List admin-managed instances and local bookmarks',
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
     { flags: '--bookmarked', description: 'Only show locally bookmarked kernel connections' },
     { flags: '--admin-only', description: 'Only show instances returned by the admin kernel' },
     {
@@ -57,6 +62,13 @@ export default {
   ],
   action: async (opts: ListOpts) => {
     try {
+      if (opts.fleet !== undefined && opts.bookmarked) {
+        throw new AstraleError(
+          'INVALID_FLAG',
+          '--fleet cannot be combined with --bookmarked.',
+          'Fleet selection applies to Admin-managed instances.',
+        )
+      }
       if (opts.includeRetired && opts.bookmarked) {
         throw new AstraleError(
           'INVALID_FLAG',
