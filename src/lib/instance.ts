@@ -375,6 +375,41 @@ export async function removeInstance(key: string): Promise<void> {
   await new ExchangeCredentialCache().deleteKernel(removed.issuer ?? removed.url!)
 }
 
+/** Remove only the bookmark still naming the deleted Admin Instance's exact Kernel. */
+export async function removeDeletedInstanceBookmark(target: {
+  readonly slug: string
+  readonly url: string
+  readonly issuer?: string
+}): Promise<void> {
+  const url = bookmarkCoordinate(target.url)
+  const issuer = bookmarkCoordinate(target.issuer)
+  if ((!url && !issuer) || (target.url && !url) || (target.issuer && !issuer)) return
+
+  const removed = await mutateInstances((store) => {
+    const key = resolveInstanceKey(store, target.slug)
+    const entry = key === null ? undefined : store.instances[key]
+    if (
+      !key ||
+      !entry ||
+      bookmarkCoordinate(entry.url) !== (url ?? issuer) ||
+      (issuer !== undefined && bookmarkCoordinate(entry.issuer ?? entry.url) !== issuer)
+    )
+      return undefined
+
+    delete store.instances[key]
+    if (store.active === key) store.active = Object.keys(store.instances)[0] ?? ''
+    return entry
+  })
+  if (removed) await new ExchangeCredentialCache().deleteKernel(removed.issuer ?? removed.url!)
+}
+
+function bookmarkCoordinate(value: string | undefined): string | undefined {
+  if (!value || !URL.canParse(value)) return undefined
+  const parsed = new URL(value)
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return undefined
+  return normalizeInstanceKernelUrl(value)
+}
+
 export async function setActive(identifier: string): Promise<string> {
   return mutateInstances((store) => {
     const key = resolveInstanceKey(store, identifier)
@@ -385,13 +420,6 @@ export async function setActive(identifier: string): Promise<string> {
     }
     store.active = key
     return key
-  })
-}
-
-export async function clearActive(identifier: string): Promise<void> {
-  await mutateInstances((store) => {
-    if (store.active !== identifier) return
-    store.active = Object.keys(store.instances)[0] ?? ''
   })
 }
 
