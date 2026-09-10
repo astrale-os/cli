@@ -66,58 +66,48 @@ const installed = bundle.create(source)
 const bundled = { domain: info, bundle: installed } satisfies DomainBundle
 
 describe('parseIntrospectTarget', () => {
-  test('accepts a bare origin', () => {
-    const parsed = parseIntrospectTarget('host.astrale.ai')
-    expect(parsed.origin).toBe('host.astrale.ai')
-    expect(parsed.path.ast.steps).toEqual([])
-  })
-
-  test('accepts a Domain-rooted method Path', () => {
-    const parsed = parseIntrospectTarget('/:host.astrale.ai:class.Manager:createInstance')
-    expect(parsed.origin).toBe('host.astrale.ai')
-    expect(parsed.path.ast.steps.at(-1)?.kind).toBe('method')
-  })
-
   test('rejects an @id', () => {
-    expect(() => parseIntrospectTarget('@abc')).toThrow('not an @id')
+    expect(() => parseIntrospectTarget('@abc')).toThrow('a bare @id does not identify a schema')
   })
 
-  test('loads the exact qualified Method namespace without reading or validating its receiver', async () => {
-    const target =
-      '/:receiver.example:core.owner::host.astrale.ai:class.Manager.method.inspectInstance'
-    expect(parseIntrospectTarget(target).origin).toBe('host.astrale.ai')
-    const calls: string[] = []
-    let result: unknown
-    await introspectCommand(
-      target,
-      { json: true },
-      {
-        runKernelCommand: (async (input: { fn: (context: unknown) => Promise<unknown> }) => {
-          result = await input.fn({
-            session: {
-              schema: {
-                bundle: async (origin: string) => {
-                  calls.push(origin)
-                  return bundled
-                },
-                inspect: async () => {
-                  throw new Error('Unexpected Domain inspection')
+  test.each(['/:receiver.example:core.owner', '@observed-node'])(
+    'loads the qualified Method schema without reading or invoking receiver %s',
+    async (receiver) => {
+      const target = `${receiver}::host.astrale.ai:class.Manager.method.inspectInstance`
+      expect(parseIntrospectTarget(target).origin).toBe('host.astrale.ai')
+      const calls: string[] = []
+      let result: unknown
+      await introspectCommand(
+        target,
+        { json: true },
+        {
+          runKernelCommand: (async (input: { fn: (context: unknown) => Promise<unknown> }) => {
+            result = await input.fn({
+              session: {
+                schema: {
+                  bundle: async (origin: string) => {
+                    calls.push(origin)
+                    return bundled
+                  },
+                  inspect: async () => {
+                    throw new Error('Unexpected Domain inspection')
+                  },
                 },
               },
-            },
-          })
-        }) as never,
-      },
-    )
-    expect(calls).toEqual(['host.astrale.ai'])
-    expect(result).toMatchObject({
-      path: target,
-      origin: 'host.astrale.ai',
-      class: 'Manager',
-      method: 'inspectInstance',
-      input: { required: ['detail'] },
-    })
-  })
+            })
+          }) as never,
+        },
+      )
+      expect(calls).toEqual(['host.astrale.ai'])
+      expect(result).toMatchObject({
+        path: target,
+        origin: 'host.astrale.ai',
+        class: 'Manager',
+        method: 'inspectInstance',
+        input: { required: ['detail'] },
+      })
+    },
+  )
 
   test('routes bare, bundle, Method, and Function commands through the current Schema API', async () => {
     const calls: string[] = []

@@ -24,12 +24,13 @@ export function describeCallableFromBundle(
   path: Path,
   input: unknown,
 ): CallableDescription | undefined {
-  if (path.ast.anchor.kind !== 'domain') return undefined
   const last = path.ast.steps.at(-1)
   if (last === undefined) return undefined
   const methodClass =
     last.kind === 'method' && last.dispatch === 'instance' ? ClassKey.ref(last.class) : undefined
-  const origin = methodClass?.origin ?? path.ast.anchor.origin
+  const origin =
+    methodClass?.origin ?? (path.ast.anchor.kind === 'domain' ? path.ast.anchor.origin : undefined)
+  if (origin === undefined) return undefined
   const domain = schema.resolve(bundle.accept(input).root)
   if (domain.origin !== origin) return undefined
 

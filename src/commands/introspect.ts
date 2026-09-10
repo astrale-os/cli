@@ -102,14 +102,7 @@ function isSchemaNotFound(error: unknown): boolean {
 }
 
 export function parseIntrospectTarget(target: string): { origin: string; path: Path } {
-  if (target.startsWith('@')) {
-    throw new AstraleError(
-      'NOT_A_DOMAIN',
-      'introspect requires a Domain origin or Path, not an @id.',
-      'Example: astrale introspect kernel.astrale.ai  or  /:kernel.astrale.ai:class.Identity:whois',
-    )
-  }
-  const raw = target.startsWith('/') ? target : `/:${target}`
+  const raw = target.startsWith('/') || target.startsWith('@') ? target : `/:${target}`
   let path: Path
   try {
     path = Path.parse(raw)
@@ -119,14 +112,17 @@ export function parseIntrospectTarget(target: string): { origin: string; path: P
       error instanceof Error ? error.message : 'Invalid introspect target',
     )
   }
-  if (path.ast.anchor.kind !== 'domain') {
-    throw new AstraleError('NOT_A_DOMAIN', 'introspect requires a Domain-rooted Path or origin.')
-  }
   const last = path.ast.steps.at(-1)
-  const origin =
-    last?.kind === 'method' && last.dispatch === 'instance'
-      ? ClassKey.ref(last.class).origin
-      : path.ast.anchor.origin
+  if (last?.kind === 'method' && last.dispatch === 'instance') {
+    return { origin: ClassKey.ref(last.class).origin, path }
+  }
+  if (path.ast.anchor.kind !== 'domain') {
+    throw new AstraleError(
+      'NOT_A_DOMAIN',
+      'Use a Domain origin or an instance Method Path; a bare @id does not identify a schema.',
+    )
+  }
+  const origin = path.ast.anchor.origin
   return { origin, path }
 }
 
@@ -146,13 +142,15 @@ Behavior:
   (kernel.astrale.ai or /:kernel.astrale.ai) prints its exact revision,
   generation, publication, readiness, capabilities, and bindings. --bundle
   includes the schema bundle. A method or Function Path projects that
-  callable's input/output from the installed bundle.
+  callable's input/output from the installed bundle. Instance Method Paths
+  may start with @id; their qualified Method key selects the schema without
+  reading or invoking the receiver.
 
 Examples:
   $ astrale introspect kernel.astrale.ai
   $ astrale introspect /:kernel.astrale.ai --bundle
   $ astrale introspect /:kernel.astrale.ai:class.Identity:whois
-  $ astrale introspect /:kernel.astrale.ai:function.journal
+  $ astrale introspect @note::notes.example:class.Note.method.archive
 `,
   arguments: [{ name: 'target', description: 'Domain origin or canonical Path' }],
   options: [{ flags: '--bundle', description: 'Include the installed schema bundle' }],
