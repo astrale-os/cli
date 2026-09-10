@@ -11,7 +11,7 @@ import { runKernelCommand } from '../connection'
 import { AstraleError } from '../errors'
 import { failInput } from '../lib/log'
 import { output } from '../lib/output'
-import { describeCallableFromBundle, missingCallableDescription } from './call-describe'
+import { describeCallableFromBundle } from './call-describe'
 
 type IntrospectOpts = KernelCommandOpts & { bundle?: boolean }
 
@@ -43,7 +43,12 @@ export async function introspectCommand(
       if (wantsCallable) {
         const result = await readInstalledDomain(session.schema, origin, true)
         const described = describeCallableFromBundle(path, result.bundle)
-        if (described === undefined) throw missingCallableDescription(path.raw)
+        if (described === undefined)
+          throw new AstraleError(
+            'CALL_DESCRIBE_UNAVAILABLE',
+            `No callable matches ${path.raw} in the installed schema.`,
+            `Inspect installed methods with \`astrale introspect ${origin} --bundle\`.`,
+          )
         return described
       }
       return readInstalledDomain(session.schema, origin, opts.bundle === true)
