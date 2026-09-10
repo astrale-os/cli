@@ -12,7 +12,9 @@ const ready = {
 
 describe('Admin Instance create recovery', () => {
   test('refuses a receipt from another creation operation', () => {
-    expect(() => planInstanceCreate([ready], 'demo', 'other-operation')).toThrow('another creation operation')
+    expect(() => planInstanceCreate([ready], 'demo', 'other-operation')).toThrow(
+      'another creation operation',
+    )
   })
   test('replays a ready Instance receipt instead of treating visibility as owner access', () => {
     expect(planInstanceCreate([ready], 'demo', 'retained-operation')).toEqual({

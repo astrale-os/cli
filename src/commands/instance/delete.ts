@@ -4,7 +4,11 @@ import type { CommandDefinition } from '../../program/index'
 import { AdminInstanceNotFoundError } from '../../admin/instance'
 import { formatKernelError } from '../../connection/errors'
 import { deleteOwnedInstance } from '../../lib/admin-instance'
-import { ADMIN_TARGET_OPTIONS, FLEET_OPTION, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import {
+  ADMIN_TARGET_OPTIONS,
+  FLEET_OPTION,
+  type AdminTargetCommandOpts,
+} from '../../lib/admin-target'
 import {
   readInstances,
   removeDeletedInstanceBookmark,

@@ -77,7 +77,9 @@ export function planInstanceCreate(
     throw new AstraleError(
       'INSTANCE_OPERATION_CONFLICT',
       'This slug belongs to another creation operation.',
-      existing.operationId === undefined ? 'Inspect the Instance in Admin.' : `To recover that request, use --operation ${existing.operationId}.`,
+      existing.operationId === undefined
+        ? 'Inspect the Instance in Admin.'
+        : `To recover that request, use --operation ${existing.operationId}.`,
     )
   if (existing?.state === 'ready' || existing?.state === 'provisioning') {
     if (existing.operationId === undefined) {
