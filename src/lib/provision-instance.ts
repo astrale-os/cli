@@ -232,7 +232,8 @@ export async function provisionInstance(
 /** Admit the exact operation-id grammar exposed by Admin Instance creation. */
 function acceptInstanceCreateOperationId(input: unknown): string {
   if (typeof input !== 'string' || !INSTANCE_CREATE_OPERATION_ID.test(input)) {
-    throw new TypeError(
+    throw new AstraleError(
+      'INVALID_INPUT',
       'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
     )
   }

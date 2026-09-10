@@ -195,9 +195,11 @@ describe('managed Instance root import during provisioning', () => {
           { creds: 'admin-credential', ci: true, operation },
           { createOwnedInstance },
         ),
-      ).rejects.toThrow(
-        'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
-      )
+      ).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+        message:
+          'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
+      })
       expect(createOwnedInstance).not.toHaveBeenCalled()
     }
   })
