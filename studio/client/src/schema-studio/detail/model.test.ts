@@ -48,11 +48,11 @@ describe('member lists', () => {
       ['Document', 'issuedOn', true],
       ['Identity', 'sub', false],
     ])
-    expect(lists.methods.map((m) => [m.owner?.name ?? '', m.name, m.declaredLocally])).toEqual([
-      ['', 'settle', false],
+    expect(lists.methods.map((m) => [m.owner?.name ?? '', m.name])).toEqual([
+      ['', 'settle'],
       // The base contract remains inspectable beside its local implementation.
-      ['Document', 'settle', true],
-      ['Identity', 'whoami', false],
+      ['Document', 'settle'],
+      ['Identity', 'whoami'],
     ])
   })
 

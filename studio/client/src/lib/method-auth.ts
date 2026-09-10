@@ -1,11 +1,11 @@
 import type { HandlerLink, IrCallableAuth, IrFunction, IrMethod } from '@shared/types'
 
-import { Globe, ShieldCheck, type LucideIcon } from 'lucide-react'
+import { Globe, ShieldCheck, UserRound, type LucideIcon } from 'lucide-react'
 
 export interface AuthVerdict {
-  level: 'secured' | 'public'
+  level: 'secured' | 'authenticated' | 'public'
   icon: LucideIcon
-  tone: 'emerald' | 'sky'
+  tone: 'emerald' | 'amber' | 'sky'
   label: string
   blurb: string
   auth: IrCallableAuth
@@ -40,15 +40,22 @@ export function methodAuth(method?: AuthCallable): AuthVerdict | null {
       blurb: 'The callable contract permits anonymous callers.',
     }
   }
+  if (auth === 'authenticated') {
+    return {
+      level: 'authenticated',
+      icon: UserRound,
+      tone: 'amber',
+      label: 'Authenticated',
+      auth,
+      blurb: 'The callable contract requires an authenticated principal.',
+    }
+  }
   return {
     level: 'secured',
     icon: ShieldCheck,
     tone: 'emerald',
-    label: auth === 'authorized' ? 'Authorized' : 'Authenticated',
+    label: 'Authorized',
     auth,
-    blurb:
-      auth === 'authorized'
-        ? 'The callable contract requires authorization.'
-        : 'The callable contract requires an authenticated principal.',
+    blurb: 'The callable contract requires authorization.',
   }
 }

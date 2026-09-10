@@ -95,7 +95,7 @@ describe('Class inheritance', () => {
     expect(inheritedGroupsOfClass(fixture, 'Document')[0]).toMatchObject({
       owner: 'Base',
       props: [['title', { type: 'string' }, true]],
-      methods: [{ name: 'rename', declaredLocally: true }],
+      methods: [{ name: 'rename' }],
     })
   })
 

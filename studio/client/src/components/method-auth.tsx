@@ -19,6 +19,12 @@ export const TRIGGER_TONE: Record<string, string> = {
   rose: 'text-destructive',
 }
 
+const AUTH_TILE_TONE = {
+  emerald: 'bg-success/10 text-success',
+  amber: 'bg-warning/10 text-warning',
+  sky: 'bg-schema-node/10 text-schema-node',
+}
+
 interface MethodAuthProps {
   method?: AuthCallable
   /** The domain the callable belongs to; absent, the current local reader. Names its policies. */
@@ -142,7 +148,7 @@ export function MethodAuthCard({ method, domainId }: MethodAuthProps) {
   return (
     <div className="text-[13px]">
       <div className="flex items-start gap-2.5 p-3">
-        <IconTile tone={v.tone} size="sm">
+        <IconTile tone={AUTH_TILE_TONE[v.tone]} size="sm">
           <Icon />
         </IconTile>
         <div className="min-w-0">
