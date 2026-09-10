@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.0-beta.99](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.98...cli/v1.0.0-beta.99) (2026-09-10)
+
+
+### Features
+
+* **ci:** unify local and cloud setup ([#461](https://github.com/astrale-os/cli/issues/461)) ([60ec8fb](https://github.com/astrale-os/cli/commit/60ec8fb66c06a2bd4618dba8652672b73e497835))
+
+
+### Bug Fixes
+
+* **cli:** describe the exact qualified method owner ([#459](https://github.com/astrale-os/cli/issues/459)) ([6d1acde](https://github.com/astrale-os/cli/commit/6d1acde2fd4e82fa25acabd2eb931190c71ab67a))
+* **commands:** explain method dispatch mismatches ([#465](https://github.com/astrale-os/cli/issues/465)) ([3124dc2](https://github.com/astrale-os/cli/commit/3124dc2da2ff8a5edfe2a37f60516754f9fb3ced))
+* **commands:** explain unavailable graph reads ([#467](https://github.com/astrale-os/cli/issues/467)) ([dafeb93](https://github.com/astrale-os/cli/commit/dafeb9366871fc8336e442ea68cd78cdd584cc61))
+* **commands:** introspect qualified methods on ID receivers ([#466](https://github.com/astrale-os/cli/issues/466)) ([5598645](https://github.com/astrale-os/cli/commit/559864559d6a11d48222dc2bddcee21b48107f16))
+* **commands:** preserve domain catalog failure diagnostics ([#455](https://github.com/astrale-os/cli/issues/455)) ([08008f4](https://github.com/astrale-os/cli/commit/08008f446add7ad848f70605e319e3a7d5580391))
+* **deps:** consume the Worker-safe SDK 0.5.0-beta.136 ([#462](https://github.com/astrale-os/cli/issues/462)) ([d40a1e3](https://github.com/astrale-os/cli/commit/d40a1e3422d5e84a393d554e28b1ae6c8762b9f8))
+* **instance:** clean up matching bookmarks after deletion ([#458](https://github.com/astrale-os/cli/issues/458)) ([ff4cfa1](https://github.com/astrale-os/cli/commit/ff4cfa1b230447393e7d32a07871064a26d98771))
+* **studio:** declare the fixtures' Cloudflare adapter dependency ([#464](https://github.com/astrale-os/cli/issues/464)) ([79a56cb](https://github.com/astrale-os/cli/commit/79a56cb233f2700976b85ba0c2aa6fcda87ace3e))
+
 ## [1.0.0-beta.98](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.97...cli/v1.0.0-beta.98) (2026-09-08)
 
 
