@@ -37,7 +37,7 @@ export function classifyFailure(error: unknown): FailureDiagnostic {
     return simple(
       'NODE_UNAVAILABLE',
       error.message,
-      'If this is a callable Path, use `astrale call` or `astrale introspect`.',
+      'Check the instance and identity (-i/--as). Missing and inaccessible nodes have the same result; a Path also requires access to its intermediate nodes and edges.',
     )
   if (error instanceof PathError) return simple('PATH_INVALID', error.message)
   if (error instanceof AuthValueError) return simple('AUTH_VALUE_INVALID', error.message)
