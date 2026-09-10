@@ -116,12 +116,15 @@ Use canonical Kernel Paths:
 | Active caller shorthand | `@self` |
 
 Static dispatch uses one colon before the method. Instance dispatch uses `::` followed by the complete Domain-qualified Method key.
+Discover methods with `astrale introspect <origin> --bundle`. Introspection can use a Class
+receiver to inspect an instance contract; calling it requires an observed instance Path.
 `@self` is expanded by the CLI before signing when it appears at the head of a
 call Path or a bare `key=@self` value. It is not rewritten inside `--data`,
 stdin JSON, URLs, or arbitrary substrings.
 
 ```bash
 astrale get @self --json
+astrale introspect /:notes.example:class.Note::notes.example:class.Note.method.archive
 astrale call /:blog.example:class.Author:list limit=10
 astrale call /:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances
 ```
