@@ -41,7 +41,13 @@ Examples:
   $ astrale instance create demo
 `,
   arguments: [{ name: 'id', description: 'Instance slug', required: false }],
-  options: [...ADMIN_TARGET_OPTIONS],
+  options: [
+    ...ADMIN_TARGET_OPTIONS,
+    {
+      flags: '--operation <id>',
+      description: 'Reuse an exact create operation id for explicit retry and recovery',
+    },
+  ],
   action: async (id: string | undefined, opts: ProvisionOpts) => {
     try {
       // Prompt for the slug when omitted, with live validation. A terminal the
