@@ -57,6 +57,29 @@ function render(selected: string): string {
 }
 
 describe('the Class detail panel', () => {
+  test('keeps parent contracts readable beside their local implementations', () => {
+    const contractBundle = bundle({
+      Base: nodeClass('Base', {
+        methods: { inspect: { ...method('inspect'), abstract: true, executable: false } },
+      }),
+      Child: nodeClass('Child', {
+        extendsRefs: [classRef('local.example.dev', 'Base')],
+        methods: { inspect: method('inspect') },
+      }),
+    })
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <SchemaDetail bundle={contractBundle} selected="class.Child" />
+      </QueryClientProvider>,
+    )
+    expect(html).toContain('data-anchor-ref="class.Child.method.inspect"')
+    expect(html).toContain('data-anchor-ref="class.Base.method.inspect"')
+    expect(html).toContain('>contract</span>')
+    expect(html).not.toContain('line-through')
+    expect(html).not.toContain('declared locally')
+    expect(html).not.toContain('overridden')
+  })
+
   test('lists own members first and inherited ones after, named by their Class', () => {
     const html = render('class.Invoice')
     const at = (ref: string) => html.indexOf(`data-anchor-ref="${ref}"`)
