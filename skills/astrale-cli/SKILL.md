@@ -295,10 +295,12 @@ unless `--schema` is passed.
 astrale introspect kernel.astrale.ai
 astrale introspect /:kernel.astrale.ai --bundle
 astrale introspect /:kernel.astrale.ai:class.Identity:whois
+astrale introspect @note::notes.example:class.Note.method.archive
 ```
 
-A method or Function Path projects that callable's input/output from the
-installed bundle.
+A method or Function Path projects its input/output from the installed bundle.
+An instance Method's qualified key selects the schema even with an `@id` receiver;
+introspection neither reads nor invokes that receiver. A bare `@id` has no schema origin.
 
 ### `query`
 
