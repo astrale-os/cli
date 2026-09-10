@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.100](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.99...cli/v1.0.0-beta.100) (2026-09-10)
+
+
+### Features
+
+* **commands:** support durable instance create recovery ([#472](https://github.com/astrale-os/cli/issues/472)) ([2414283](https://github.com/astrale-os/cli/commit/241428337eb046f47ee7a7841aebd60a41a70ca7))
+
 ## [1.0.0-beta.99](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.98...cli/v1.0.0-beta.99) (2026-09-10)
 
 
