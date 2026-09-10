@@ -10,7 +10,7 @@ import { AstraleError, AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
 import { activateInstance, type InstanceActivation } from './activate-instance'
 import { createOwnedInstance } from './admin-instance'
-import { randomOperationId } from './idempotency'
+import { idempotencyKey, randomOperationId } from './idempotency'
 import { setActive, upsertManagedBookmark } from './instance'
 import { importInstanceRootIdentity } from './instance-root-identity'
 import { withSpinner } from './log'
@@ -24,6 +24,8 @@ export type ProvisionOpts = KernelCommandOpts &
     // keeps root options out of a subcommand's action arguments.
     ci?: boolean
     noPrompt?: boolean
+    /** Exact durable create operation to replay after an uncertain outcome. */
+    operation?: string
   }
 
 /** The created instance plus the local-bookmark side effects of provisioning. */
@@ -93,7 +95,8 @@ export async function provisionInstance(
   // Keep each Workflow invocation inside the platform's request window. The
   // same durable operation is replayed when Admin returns a provisioning receipt.
   const createOpts = instanceCreateOptions(opts)
-  const operationId = deps.operationId()
+  const operationId =
+    opts.operation === undefined ? deps.operationId() : idempotencyKey(opts.operation)
   const deadline = deps.now() + PROVISION_WINDOW_MS
 
   const runProvision = () =>

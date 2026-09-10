@@ -150,6 +150,50 @@ describe('managed Instance root import during provisioning', () => {
     expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
   })
 
+  test('reuses an explicitly supplied operation across process-level recovery', async () => {
+    const created = {
+      id: '@created-instance',
+      slug: 'demo',
+      operationId: 'lab.instance.create.recovery-01',
+      url: 'https://demo.example.test/api',
+      state: 'ready' as const,
+    }
+    const observedOperationIds: Array<string | undefined> = []
+    const generated = mock(() => 'must-not-be-generated')
+
+    await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true, operation: created.operationId },
+      {
+        createOwnedInstance: async (_options, _slug, operationId) => {
+          observedOperationIds.push(operationId)
+          return created
+        },
+        operationId: generated,
+        upsertManagedBookmark: async () => ({ entry: { url: created.url } }),
+        setActive: async () => 'demo',
+        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
+      },
+    )
+
+    expect(generated).not.toHaveBeenCalled()
+    expect(observedOperationIds).toEqual([created.operationId])
+  })
+
+  test('rejects an invalid explicit operation before contacting Admin', async () => {
+    const createOwnedInstance = mock()
+
+    await expect(
+      provisionInstance(
+        'demo',
+        { creds: 'admin-credential', ci: true, operation: 'contains spaces' },
+        { createOwnedInstance },
+      ),
+    ).rejects.toThrow('Idempotency key must contain 1-128 URL-safe ASCII characters.')
+    expect(createOwnedInstance).not.toHaveBeenCalled()
+  })
+
   test('recovers a generic server failure by replaying the same operation', async () => {
     const ready = {
       id: '@created-instance',
