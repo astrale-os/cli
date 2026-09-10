@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test'
-import { chmod, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import * as fsPromises from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -1233,13 +1234,26 @@ describe('UI source operations', () => {
     const target = path.join(root, 'components/astrale/theme/observatory.css')
     const lockBefore = await readFile(lockPath, 'utf8')
     const cssBefore = await readFile(cssPath, 'utf8')
-    await chmod(lockPath, 0o444)
-
+    const failure = Object.assign(new Error('Lock commit denied'), { code: 'EACCES' })
+    const realWriteFile = fsPromises.writeFile
+    let injected = false
+    let observedMutation = false
+    const write = spyOn(fsPromises, 'writeFile').mockImplementation(async (...args) => {
+      if (args[0] === lockPath && !injected) {
+        injected = true
+        observedMutation =
+          (await Bun.file(target).exists()) && (await readFile(cssPath, 'utf8')) !== cssBefore
+        throw failure
+      }
+      return realWriteFile(...args)
+    })
     try {
-      await expect(addUi(['./observatory.css'], { project: root })).rejects.toBeInstanceOf(Error)
+      await expect(addUi(['./observatory.css'], { project: root })).rejects.toBe(failure)
     } finally {
-      await chmod(lockPath, 0o644)
+      write.mockRestore()
     }
+    expect(injected).toBe(true)
+    expect(observedMutation).toBe(true)
 
     expect(await Bun.file(target).exists()).toBe(false)
     expect(await readFile(cssPath, 'utf8')).toBe(cssBefore)
