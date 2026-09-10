@@ -66,7 +66,6 @@
     "setup:codex": "AGENT_HARNESSES=codex bash scripts/setup/setup.sh",
     "setup:claude": "AGENT_HARNESSES=claude bash scripts/setup/setup.sh",
     "check:agent-setup": "bash scripts/setup/verify.sh",
-    "test:agent-setup": "node --test scripts/setup/*.test.cjs",
     "setup:local": "AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh"
   },
   "dependencies": {

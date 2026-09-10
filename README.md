@@ -286,7 +286,7 @@ pnpm build
 
 Cloud setup and verification: [agent setup](scripts/setup/README.md).
 
-Inside the Astrale umbrella workspace, run `./scripts/setup.sh` from that workspace root instead.
+Inside the Astrale umbrella workspace, run `pnpm setup` from that workspace root instead.
 
 The first source command that needs embedded Skills, Studio, or Viewer assets
 generates `src/generated/embedded-assets.ts` automatically. Its input digest
