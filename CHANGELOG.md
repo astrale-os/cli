@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.102](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.101...cli/v1.0.0-beta.102) (2026-09-10)
+
+
+### Bug Fixes
+
+* **commands:** retain create operation diagnostics ([#476](https://github.com/astrale-os/cli/issues/476)) ([d34b993](https://github.com/astrale-os/cli/commit/d34b99334f6e1f36ebad5467e4369d9d2cab3aec))
+
 ## [1.0.0-beta.101](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.100...cli/v1.0.0-beta.101) (2026-09-10)
 
 
