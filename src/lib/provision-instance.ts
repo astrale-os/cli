@@ -10,7 +10,7 @@ import { AstraleError, AuthError } from '../errors'
 import { readIdentities, type IdentityStore } from '../identity/index'
 import { activateInstance, type InstanceActivation } from './activate-instance'
 import { createOwnedInstance } from './admin-instance'
-import { idempotencyKey, randomOperationId } from './idempotency'
+import { randomOperationId } from './idempotency'
 import { setActive, upsertManagedBookmark } from './instance'
 import { importInstanceRootIdentity } from './instance-root-identity'
 import { withSpinner } from './log'
@@ -49,6 +49,7 @@ export type ProvisionResult = {
 const SAGA_TIMEOUT_MS = '120000'
 const PROVISION_WINDOW_MS = 10 * 60_000
 const RETRY_DELAY_MS = 1_000
+const INSTANCE_CREATE_OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u
 
 interface ProvisionDependencies {
   readonly createOwnedInstance: typeof createOwnedInstance
@@ -96,7 +97,9 @@ export async function provisionInstance(
   // same durable operation is replayed when Admin returns a provisioning receipt.
   const createOpts = instanceCreateOptions(opts)
   const operationId =
-    opts.operation === undefined ? deps.operationId() : idempotencyKey(opts.operation)
+    opts.operation === undefined
+      ? deps.operationId()
+      : acceptInstanceCreateOperationId(opts.operation)
   const deadline = deps.now() + PROVISION_WINDOW_MS
 
   const runProvision = () =>
@@ -224,6 +227,16 @@ export async function provisionInstance(
     ...(rootIdentity === undefined ? {} : { rootIdentity }),
     ...(rootIdentityError === undefined ? {} : { rootIdentityError }),
   }
+}
+
+/** Admit the exact operation-id grammar exposed by Admin Instance creation. */
+function acceptInstanceCreateOperationId(input: unknown): string {
+  if (typeof input !== 'string' || !INSTANCE_CREATE_OPERATION_ID.test(input)) {
+    throw new TypeError(
+      'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
+    )
+  }
+  return input
 }
 
 export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {
