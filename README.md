@@ -311,24 +311,29 @@ by the workspace's `./scripts/init-machine.sh`.
 
 ## Fleet selection
 
-Existing commands keep using the core `default` Fleet when `--fleet` is omitted.
-Use `astrale fleet list` to discover visible Fleets. An explicit unavailable slug or ID
-fails without falling back to another Fleet.
+Omitted `--fleet` keeps using `/:admin.astrale.ai:core.fleet`. The option accepts a Kernel
+path, not a slug, and is available only on `instance create`, `instance list`, `domain list`
+and `domain publish`. There is no Fleet discovery or slug-resolution call behind these commands.
+An invalid path or unavailable target fails without falling back.
+
+Use the generic callable command on your Admin bookmark to discover or create Fleets:
 
 ```bash
-astrale fleet create astrale --administrator @<central-shell-group-id> --copy-from default --operation create-astrale
-astrale instance create my-instance --fleet astrale --operation create-my-instance
-astrale instance list --fleet astrale
-astrale domain list --fleet astrale
+astrale call '/:admin.astrale.ai:class.Fleet:list' -i admin
+astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"/:admin.astrale.ai:core.fleet"}'
+astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
+astrale instance list --fleet '@<fleet-id>'
+astrale domain list --fleet '@<fleet-id>'
 ```
 
 Creating a Fleet requires central Shell administrator authority and administration of the source
 Fleet. The new Fleet receives an independent catalogue copy; provision its own Host capacity
 before creating Instances. Host capacity is never borrowed from another Fleet.
-For receiver commands, an exact Instance ID or globally unique slug identifies its Fleet;
-Domain installation uses that Instance's catalogue. `--fleet` additionally constrains the target.
-Keep the same `--operation` value when retrying creation. Fleet membership does not transfer
-personal Instance ownership.
+
+An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation and
+Domain installation. These commands have no `--fleet` option; installation derives the catalogue
+from the Instance's containment. Keep the same `--operation` value when retrying creation.
+Fleet membership does not transfer personal Instance ownership.
 
 Upgrade catalogue readers before introducing multiple Fleets: origins and release digests are
 now scoped to a Fleet. Older CLI versions that query a global catalogue are incompatible with

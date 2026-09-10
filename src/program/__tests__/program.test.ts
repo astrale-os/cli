@@ -142,9 +142,6 @@ describe('program composition', () => {
       'domain list',
       'domain publish',
       'domain uninstall',
-      'fleet',
-      'fleet create',
-      'fleet list',
       'get',
       'identity',
       'identity create',
@@ -615,4 +612,24 @@ describe('help contract — skill is single-source, not duplicated', () => {
       expect(readFileSync(mirror, 'utf8')).toBe(readFileSync(canonical, 'utf8'))
     },
   )
+})
+
+test('exposes Fleet selection only on the four Fleet-targeted commands', async () => {
+  const program = await buildProgram()
+  expect(program.commands.some((command) => command.name() === 'fleet')).toBe(false)
+  const selected: string[] = []
+  const visit = (commands: typeof program.commands, prefix = '') => {
+    for (const command of commands) {
+      const path = `${prefix}${command.name()}`
+      if (command.options.some((option) => option.long === '--fleet')) selected.push(path)
+      visit(command.commands, `${path} `)
+    }
+  }
+  visit(program.commands)
+  expect(selected.sort()).toEqual([
+    'domain list',
+    'domain publish',
+    'instance create',
+    'instance list',
+  ])
 })

@@ -18,11 +18,7 @@ import {
   resolveOwnedInstanceInContext,
   type OwnedInstanceInfo,
 } from '../../lib/admin-instance'
-import {
-  ADMIN_TARGET_OPTIONS,
-  FLEET_OPTION,
-  type AdminTargetCommandOpts,
-} from '../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fetchDomainPublication } from '../../lib/domain-publication'
 import { getActive } from '../../lib/instance'
 import { canPrompt } from '../../lib/interactive'
@@ -138,7 +134,6 @@ Examples:
   ],
   options: [
     ...ADMIN_TARGET_OPTIONS,
-    FLEET_OPTION,
     {
       flags: '--direct',
       description:
@@ -217,12 +212,11 @@ export async function installViaAdmin(
   try {
     await withAdminClientSession(adminOpts, async (ctx) => {
       const requested = opts.instance ?? (target === undefined ? undefined : await activeSlug())
-      const instances = requested === undefined ? await admin.listInstances(ctx, opts.fleet) : []
+      const instances = requested === undefined ? await admin.listInstances(ctx) : []
       const slug = requested ?? (await resolveTargetSlug(opts, target, interactive, instances))
 
       const match =
-        instances.find((i) => i.slug === slug) ??
-        (await admin.resolveInstance(ctx, slug, opts.fleet))
+        instances.find((i) => i.slug === slug) ?? (await admin.resolveInstance(ctx, slug))
       if (!match) {
         throw new AstraleError(
           'INSTANCE_NOT_MANAGED',
@@ -232,7 +226,7 @@ export async function installViaAdmin(
       }
       assertInstallTargetReady(match)
 
-      const domains = await admin.listDomains(ctx, match.fleetId ?? opts.fleet, match.id)
+      const domains = await admin.listDomains(ctx, match.id)
       const domain = await resolveDomain(domains, target, interactive)
 
       const label = domain.origin

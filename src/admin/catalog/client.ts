@@ -7,7 +7,6 @@ import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
-import { resolveFleet } from '../fleet/client'
 import { readAllNodes, type AdminGraphApi } from '../graph'
 import {
   AdminDomainNotFoundError,
@@ -42,7 +41,7 @@ export async function connectAdminCatalog(
   dependencies: AdminCatalogDependencies = {},
 ): Promise<AdminCatalogApi> {
   const operationId = dependencies.operationId ?? defaultOperationId
-  const fleet = await resolveFleet(context, context.fleet)
+  const fleet = context.fleet === undefined ? AdminContract.fleet : Path.parse(context.fleet)
 
   const list = async (): Promise<DomainInfo[]> => {
     const [nodes, defaultsPage] = await Promise.all([

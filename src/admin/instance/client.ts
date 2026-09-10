@@ -8,11 +8,9 @@ import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
-import { resolveFleet, resourceFleet } from '../fleet/client'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import {
   AdminInstanceNotFoundError,
-  findOwnedInstance,
   type DomainInstallReceipt,
   type InvitationInfo,
   type InstanceInfo,
@@ -69,7 +67,7 @@ export async function connectAdminInstances(
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
   const operationId = dependencies.operationId ?? defaultOperationId
-  const fleet = await resolveFleet(context, context.fleet)
+  const fleet = context.fleet === undefined ? AdminContract.fleet : Path.parse(context.fleet)
 
   const list = async (
     options: Readonly<{ includeRetired?: boolean }> = {},
@@ -91,7 +89,6 @@ export async function connectAdminInstances(
     const direct = directNodePath(identifier)
     let found: OwnedInstanceInfo | undefined
     if (direct !== undefined) found = await readExactInstance(context.graph, direct)
-    else if (context.fleet !== undefined) found = findOwnedInstance(await list(), identifier)
     else {
       const nodes = await readAllNodes(
         context.graph,
@@ -109,16 +106,6 @@ export async function connectAdminInstances(
       found = candidates[0]
     }
     if (found === undefined) throw new AdminInstanceNotFoundError(identifier)
-    if (context.fleet !== undefined && direct !== undefined) {
-      const owner = await resourceFleet(context, found.id)
-      const selected = await readAllNodes(
-        context.graph,
-        Query.from({ nodes: [fleet] }).select({ kind: 'nodes', projection: { kind: 'value' } }),
-        { label: 'Selected Fleet', maximum: 2, maximumPages: 1 },
-      )
-      if (selected.length !== 1 || Path.id(selected[0]!.id).raw !== owner.raw)
-        throw new Error('Instance belongs to another Fleet.')
-    }
     return found
   }
 

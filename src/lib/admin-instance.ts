@@ -104,14 +104,14 @@ export function planInstanceCreate(
 /** Refresh one exact caller-visible Instance through its V2 receiver Method. */
 export function statusOwnedInstance(options: AdminConnectionOptions, identifier: string) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances({ ...context, fleet: options.fleet })).status(identifier),
+    (await connectAdminInstances(context)).status(identifier),
   )
 }
 
 /** Delete one exact caller-visible Instance through its V2 receiver Method. */
 export function deleteOwnedInstance(options: AdminConnectionOptions, identifier: string) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances({ ...context, fleet: options.fleet })).delete(identifier),
+    (await connectAdminInstances(context)).delete(identifier),
   )
 }
 
@@ -123,9 +123,7 @@ export function retrieveOwnedInstanceRootIdentity(
 ) {
   return withAdminClientSession(options, async (context) =>
     Object.freeze({
-      ...(await (
-        await connectAdminInstances({ ...context, fleet: options.fleet })
-      ).retrieveRootIdentity(identifier, recipient)),
+      ...(await (await connectAdminInstances(context)).retrieveRootIdentity(identifier, recipient)),
       ...(context.identity === undefined ? {} : { ownerIdentity: context.identity }),
     }),
   )
@@ -139,29 +137,21 @@ export function inviteOwnedInstance(
   expiresInDays?: number,
 ) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances({ ...context, fleet: options.fleet })).invite(
-      identifier,
-      email,
-      expiresInDays,
-    ),
+    (await connectAdminInstances(context)).invite(identifier, email, expiresInDays),
   )
 }
 
 /** Observe one retained Instance Invitation without reconciling or mutating it. */
 export function statusManagedInvitation(options: AdminConnectionOptions, invitation: string) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances({ ...context, fleet: options.fleet })).statusInvitation(
-      invitation,
-    ),
+    (await connectAdminInstances(context)).statusInvitation(invitation),
   )
 }
 
 /** Reconcile one Invitation sent by the active caller. */
 export function reconcileOwnedInvitation(options: AdminConnectionOptions, invitation: string) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminInstances({ ...context, fleet: options.fleet })).reconcileInvitation(
-      invitation,
-    ),
+    (await connectAdminInstances(context)).reconcileInvitation(invitation),
   )
 }
 
@@ -169,10 +159,9 @@ export function reconcileOwnedInvitation(options: AdminConnectionOptions, invita
 export async function resolveOwnedInstanceInContext(
   context: ConnectionContext,
   identifier: string,
-  fleet?: string,
 ) {
   try {
-    return await (await connectAdminInstances({ ...context, fleet })).require(identifier)
+    return await (await connectAdminInstances(context)).require(identifier)
   } catch (cause) {
     if (cause instanceof AdminInstanceNotFoundError) return undefined
     throw cause

@@ -99,15 +99,6 @@ export async function buildProgram(): Promise<Command> {
   })
 
   registerGroup(program, {
-    name: 'fleet',
-    description: 'Manage central Admin Fleets',
-    commands: [
-      withKernelOptions((await import('../commands/fleet/list')).default),
-      withKernelOptions((await import('../commands/fleet/create')).default),
-    ],
-  })
-
-  registerGroup(program, {
     name: 'instance',
     description: 'Manage admin-provisioned instances and local bookmarks',
     commands: [

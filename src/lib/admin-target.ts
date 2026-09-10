@@ -291,6 +291,6 @@ function requireDomainIssuer(value: string | undefined, label: string): string {
 }
 
 export const FLEET_OPTION = {
-  flags: '--fleet <fleet>',
-  description: 'Fleet slug or ID (default: default)',
+  flags: '--fleet <path>',
+  description: 'Fleet path (default: /:admin.astrale.ai:core.fleet)',
 }

@@ -1,8 +1,8 @@
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminCatalog, type DomainInfo, type PublishDomainInput } from '../admin/catalog'
-import { resourceFleet } from '../admin/fleet/client'
 import { connectAdminInstances, type OwnedInstanceInfo } from '../admin/instance'
+import { resourceFleet } from '../admin/resource-fleet'
 import { withAdminClientSession } from '../connection'
 
 export type { DomainInfo, InstallDomainResult, PublishDomainInput } from '../admin/catalog'
@@ -17,10 +17,9 @@ export function listAdminDomains(options: AdminConnectionOptions): Promise<Domai
 /** Reuse one open Admin session for catalog reads. */
 export async function listAdminDomainsInContext(
   context: ConnectionContext,
-  fleet?: string,
-  instance?: string,
+  instance: string,
 ): Promise<DomainInfo[]> {
-  const selected = instance === undefined ? fleet : (await resourceFleet(context, instance)).raw
+  const selected = (await resourceFleet(context, instance)).raw
   return (await connectAdminCatalog({ ...context, fleet: selected })).list()
 }
 
