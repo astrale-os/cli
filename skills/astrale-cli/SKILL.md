@@ -415,9 +415,11 @@ astrale auth status
 astrale whoami
 ```
 
-Add `--debug` for full Kernel error diagnostics. A missing and an
-authorization-masked graph Node may intentionally be indistinguishable. For
-callable input/output shape, use `astrale introspect <path>`.
+Add `--debug` for full Kernel error diagnostics. Missing and authorization-masked
+Nodes are intentionally indistinguishable. A Path also needs access to its
+intermediate nodes and edges: an observed Node may be readable by `@id` or a
+Class query while its Domain-rooted Path is unavailable. Check `-i` and `--as`;
+this alone does not prove corrupt data. Use `introspect` for callable schemas.
 
 ## Storage
 
