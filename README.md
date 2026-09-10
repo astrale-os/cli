@@ -316,10 +316,10 @@ path, not a slug, and is available only on `instance create`, `instance list`, `
 and `domain publish`. There is no Fleet discovery or slug-resolution call behind these commands.
 An invalid path or unavailable target fails without falling back.
 
-Use the generic callable command on your Admin bookmark to discover or create Fleets:
+Read Fleets directly from the graph and use the generic callable command to create one:
 
 ```bash
-astrale call '/:admin.astrale.ai:class.Fleet:list' -i admin
+astrale query '/:admin.astrale.ai:class.Fleet' -i admin
 astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"/:admin.astrale.ai:core.fleet"}'
 astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
 astrale instance list --fleet '@<fleet-id>'
