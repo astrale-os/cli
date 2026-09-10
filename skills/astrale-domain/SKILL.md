@@ -25,7 +25,7 @@ Load detailed domain knowledge from the references that matches the goal.
 Use this router to load only the references owned by the current task. For new Domains, also use the
 phased workflow below; an existing public scaffold already satisfies its foundation phase.
 
-- Scaffold, deploy, install, or test a domain: read `references/development.md`.
+- Scaffold, deploy, install, test, or configure TypeScript for a domain: read `references/development.md`.
 - Author schema, vocabulary, properties, Class/Edge choices, or review a schema: read `references/schema.md` first. Always read it for schema work.
 - Implement handlers, callable bindings, kernel calls, graph reads/writes, or cross-domain calls: read `references/runtime.md`.
 - Wrap an external API, define an Integration/Provider, receive webhooks, or design side-effect/retry behavior: read `references/integrations.md`.
