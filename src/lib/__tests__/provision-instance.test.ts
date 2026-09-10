@@ -154,7 +154,7 @@ describe('managed Instance root import during provisioning', () => {
     const created = {
       id: '@created-instance',
       slug: 'demo',
-      operationId: 'lab.instance.create.recovery-01',
+      operationId: 'lab:instance.create.recovery-01',
       url: 'https://demo.example.test/api',
       state: 'ready' as const,
     }
@@ -182,16 +182,24 @@ describe('managed Instance root import during provisioning', () => {
   })
 
   test('rejects an invalid explicit operation before contacting Admin', async () => {
-    const createOwnedInstance = mock()
-
-    await expect(
-      provisionInstance(
-        'demo',
-        { creds: 'admin-credential', ci: true, operation: 'contains spaces' },
-        { createOwnedInstance },
-      ),
-    ).rejects.toThrow('Idempotency key must contain 1-128 URL-safe ASCII characters.')
-    expect(createOwnedInstance).not.toHaveBeenCalled()
+    for (const operation of [
+      'contains spaces',
+      '~remote-rejection',
+      '-leading-punctuation',
+      `a${'b'.repeat(256)}`,
+    ]) {
+      const createOwnedInstance = mock()
+      await expect(
+        provisionInstance(
+          'demo',
+          { creds: 'admin-credential', ci: true, operation },
+          { createOwnedInstance },
+        ),
+      ).rejects.toThrow(
+        'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
+      )
+      expect(createOwnedInstance).not.toHaveBeenCalled()
+    }
   })
 
   test('recovers a generic server failure by replaying the same operation', async () => {
