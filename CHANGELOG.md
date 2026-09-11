@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.103](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.102...cli/v1.0.0-beta.103) (2026-09-11)
+
+
+### Features
+
+* **viewer:** grant published external navigation requirements ([#479](https://github.com/astrale-os/cli/issues/479)) ([cd3844a](https://github.com/astrale-os/cli/commit/cd3844a590e63bb6e3c6ea729304580ad52f9fcb))
+
 ## [1.0.0-beta.102](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.101...cli/v1.0.0-beta.102) (2026-09-10)
 
 
