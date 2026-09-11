@@ -66,7 +66,8 @@
     "setup:codex": "AGENT_HARNESSES=codex bash scripts/setup/setup.sh",
     "setup:claude": "AGENT_HARNESSES=claude bash scripts/setup/setup.sh",
     "check:agent-setup": "bash scripts/setup/verify.sh",
-    "setup:local": "AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh"
+    "setup:local": "AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh",
+    "test:viewer:browser": "bun scripts/build-viewer.ts && playwright test --config viewer/playwright.config.ts"
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.70.0",
@@ -90,6 +91,7 @@
     "@astrale/commitlint-config": "jsr:~2.0.1",
     "@commitlint/cli": "21.2.2",
     "@commitlint/config-conventional": "21.2.2",
+    "@playwright/test": "1.62.1",
     "@types/node": "^22.0.0",
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "bun-types": "1.4.0",

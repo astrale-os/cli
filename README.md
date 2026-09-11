@@ -308,3 +308,10 @@ astrale-dev <command>   # execs `bun <workspace>/cli/bin/astrale.ts` of the
 It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
+
+## View external navigation
+
+The View viewer admits external navigation origins declared by the installed View's publication.
+Opening a compatible View needs no provider-specific CLI flag. The existing
+`--allow-external-origin` option remains available for an additional explicit origin grant.
+Browser popup refusal is returned to the View so it can offer a retry.

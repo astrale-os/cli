@@ -44,3 +44,7 @@ pnpm-debug.log*
 
 # Local files
 *.local
+
+# Browser regression output
+**/test-results/
+**/playwright-report/
