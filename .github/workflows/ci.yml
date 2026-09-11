@@ -134,6 +134,8 @@ jobs:
         run: STANDALONE=true pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --dir studio exec playwright install --with-deps chromium
+      - name: Verify published View external navigation
+        run: pnpm test:viewer:browser
       - name: Run Studio browser smoke
         run: pnpm --dir studio test:e2e
       - name: Retain failed browser evidence
@@ -142,6 +144,7 @@ jobs:
         with:
           name: studio-browser-failures
           path: |
+            viewer/test-results/**
             studio/test-results/**/*.png
             studio/test-results/**/trace.zip
             studio/test-results/**/error-context.md
