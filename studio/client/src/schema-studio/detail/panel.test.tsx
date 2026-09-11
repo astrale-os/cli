@@ -48,15 +48,32 @@ fixture.ir!.importedClassesByKey = {
   }),
 }
 
-function render(selected: string): string {
+function render(selected: string, source = fixture): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <SchemaDetail bundle={fixture} selected={selected} />
+      <SchemaDetail bundle={source} selected={selected} />
     </QueryClientProvider>,
   )
 }
 
 describe('the Class detail panel', () => {
+  test('marks an inherited contract method the Class implements as implemented', () => {
+    const html = render(
+      'class.Report',
+      bundle({
+        Base: nodeClass('Base', {
+          methods: { inspect: { ...method('inspect'), abstract: true } },
+        }),
+        Report: nodeClass('Report', {
+          extendsRefs: [classRef('local.example.dev', 'Base')],
+          methods: { inspect: method('inspect') },
+        }),
+      }),
+    )
+    expect(html).toContain('>implemented</span>')
+    expect(html).not.toContain('declared locally')
+  })
+
   test('lists own members first and inherited ones after, named by their Class', () => {
     const html = render('class.Invoice')
     const at = (ref: string) => html.indexOf(`data-anchor-ref="${ref}"`)

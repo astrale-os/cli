@@ -300,7 +300,7 @@ export function MethodRow({
           {/* compact method facts only — the contract itself waits for the click */}
           {entry.method.static && <Chip tone="outline">static</Chip>}
           {entry.method.abstract && <Chip tone="fn">contract</Chip>}
-          {entry.declaredLocally && <Chip tone="default">declared locally</Chip>}
+          {entry.declaredLocally && <Chip tone="default">implemented</Chip>}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {unlinked && <Chip tone="default">unlinked</Chip>}
         </button>
