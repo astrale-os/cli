@@ -309,6 +309,36 @@ It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
 
+## Fleet selection
+
+Omitted `--fleet` keeps using `/:admin.astrale.ai:core.fleet`. The option accepts a Kernel
+path, not a slug, and is available only on `instance create`, `instance list`, `domain list`
+and `domain publish`. There is no Fleet discovery or slug-resolution call behind these commands.
+An invalid path or unavailable target fails without falling back.
+
+Read Fleets directly from the graph and use the generic callable command to create one:
+
+```bash
+astrale query '/:admin.astrale.ai:class.Fleet' -i admin
+astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"/:admin.astrale.ai:core.fleet"}'
+astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
+astrale instance list --fleet '@<fleet-id>'
+astrale domain list --fleet '@<fleet-id>'
+```
+
+Creating a Fleet requires central Shell administrator authority and administration of the source
+Fleet. The new Fleet receives an independent catalogue copy; provision its own Host capacity
+before creating Instances. Host capacity is never borrowed from another Fleet.
+
+An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation and
+Domain installation. These commands have no `--fleet` option; installation derives the catalogue
+from the Instance's containment. Keep the same `--operation` value when retrying creation.
+Fleet membership does not transfer personal Instance ownership.
+
+Upgrade catalogue readers before introducing multiple Fleets: origins and release digests are
+now scoped to a Fleet. Older CLI versions that query a global catalogue are incompatible with
+that data. Existing direct Instance method contracts and default routes remain supported.
+
 ## View external navigation
 
 The View viewer admits external navigation origins declared by the installed View's publication.

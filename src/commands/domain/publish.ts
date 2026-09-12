@@ -6,7 +6,11 @@ import type { CommandDefinition } from '../../program/index'
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
 import { publishAdminDomain } from '../../lib/admin-domain'
-import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
+import {
+  ADMIN_TARGET_OPTIONS,
+  FLEET_OPTION,
+  type AdminTargetCommandOpts,
+} from '../../lib/admin-target'
 import { domainPublicationUrl } from '../../lib/domain-publication'
 import { canPrompt } from '../../lib/interactive'
 import { withSpinner } from '../../lib/log'
@@ -68,6 +72,7 @@ Examples:
 `,
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
     { flags: '--origin <origin>', description: 'Domain addressing origin (e.g. crm.acme.dev)' },
     { flags: '--name <name>', description: 'Registry name / catalog slug (e.g. crm)' },
     { flags: '--public-url <url>', description: 'Public URL the kernel installs the domain from' },

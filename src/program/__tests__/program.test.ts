@@ -287,7 +287,9 @@ describe('help contract — admin target surface is registered', () => {
   test('admin group and admin-target flags are visible', async () => {
     const program = await buildProgram()
     const names = allCommands(program).map((command) => command.name())
-    const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
+    const instanceCreate = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'create')
 
     expect(names).toContain('admin')
     expect(names).toContain('status')
@@ -307,7 +309,9 @@ describe('help contract — admin target surface is registered', () => {
 
   test('public instance commands expose no Kernel operator target', async () => {
     const program = await buildProgram()
-    const instanceCreate = allCommands(program).find((command) => command.name() === 'create')
+    const instanceCreate = program.commands
+      .find((command) => command.name() === 'instance')
+      ?.commands.find((command) => command.name() === 'create')
     const help = instanceCreate?.helpInformation() ?? ''
 
     expect(help).toContain('Create an instance through Admin and verify owner access')
@@ -318,7 +322,7 @@ describe('help contract — admin target surface is registered', () => {
       ?.commands.find((command) => command.name() === 'root')
       ?.commands.find((command) => command.name() === 'import')
     expect(root?.helpInformation()).not.toContain('--host')
-    expect(help).not.toContain('Fleet')
+    expect(help).toContain('--fleet')
     expect(help).not.toContain('--host-id')
     expect(help).not.toContain('--no-use')
     expect(help).not.toContain('Instance.init')
@@ -609,4 +613,24 @@ describe('help contract — skill is single-source, not duplicated', () => {
       expect(readFileSync(mirror, 'utf8')).toBe(readFileSync(canonical, 'utf8'))
     },
   )
+})
+
+test('exposes Fleet selection only on the four Fleet-targeted commands', async () => {
+  const program = await buildProgram()
+  expect(program.commands.some((command) => command.name() === 'fleet')).toBe(false)
+  const selected: string[] = []
+  const visit = (commands: typeof program.commands, prefix = '') => {
+    for (const command of commands) {
+      const path = `${prefix}${command.name()}`
+      if (command.options.some((option) => option.long === '--fleet')) selected.push(path)
+      visit(command.commands, `${path} `)
+    }
+  }
+  visit(program.commands)
+  expect(selected.sort()).toEqual([
+    'domain list',
+    'domain publish',
+    'instance create',
+    'instance list',
+  ])
 })

@@ -99,56 +99,71 @@ describe('managed Instance root import during provisioning', () => {
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
   })
 
-  test('replays one operation until the retained Instance becomes ready', async () => {
-    const pending = {
-      id: '@created-instance',
-      slug: 'demo',
-      operationId: 'cli.instance.create.fixed',
-      url: '',
-      state: 'provisioning' as const,
-      phase: 'reserve-tenant',
-    }
-    const ready = {
-      ...pending,
-      url: 'https://demo.example.test/api',
-      state: 'ready' as const,
-      phase: 'ready',
-    }
-    const createOwnedInstance = mock()
-      .mockResolvedValueOnce(pending)
-      .mockResolvedValueOnce({ ...pending, phase: 'install-shell-root' })
-      .mockResolvedValueOnce(ready)
-    const sleep = mock(async () => {})
-    const upsertManagedBookmark = mock(async () => ({ entry: { url: ready.url } }))
-    const setActive = mock(async () => 'demo')
-    const importInstanceRootIdentity = mock(async () => ({ name: 'demo-root' }) as never)
+  test.each([undefined, '@astrale-fleet'])(
+    'replays one operation in the selected Fleet (%s) until ready',
+    async (fleet) => {
+      const pending = {
+        id: '@created-instance',
+        slug: 'demo',
+        operationId: 'cli.instance.create.fixed',
+        url: '',
+        state: 'provisioning' as const,
+        phase: 'reserve-tenant',
+      }
+      const ready = {
+        ...pending,
+        url: 'https://demo.example.test/api',
+        state: 'ready' as const,
+        phase: 'ready',
+      }
+      const createOwnedInstance = mock()
+        .mockResolvedValueOnce(pending)
+        .mockResolvedValueOnce({ ...pending, phase: 'install-shell-root' })
+        .mockResolvedValueOnce(ready)
+      const sleep = mock(async () => {})
+      const upsertManagedBookmark = mock(async () => ({ entry: { url: ready.url } }))
+      const setActive = mock(async () => 'demo')
+      const importInstanceRootIdentity = mock(async () => ({ name: 'demo-root' }) as never)
 
-    const result = await provisionInstance(
-      'demo',
-      { creds: 'admin-credential', ci: true },
-      {
-        createOwnedInstance,
-        operationId: () => pending.operationId,
-        now: () => 0,
-        sleep,
-        upsertManagedBookmark,
-        setActive,
-        importInstanceRootIdentity,
-        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
-      },
-    )
+      const result = await provisionInstance(
+        'demo',
+        { creds: 'admin-credential', ci: true, ...(fleet === undefined ? {} : { fleet }) },
+        {
+          createOwnedInstance,
+          operationId: () => pending.operationId,
+          now: () => 0,
+          sleep,
+          upsertManagedBookmark,
+          setActive,
+          importInstanceRootIdentity,
+          activateInstance: async () => ({ status: 'completed', user: 'owner' }),
+        },
+      )
 
-    expect(result.created).toEqual(ready)
-    expect(createOwnedInstance).toHaveBeenCalledTimes(3)
-    expect(createOwnedInstance.mock.calls).toEqual([
-      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
-      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
-      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
-    ])
-    expect(sleep).toHaveBeenCalledTimes(2)
-    expect(upsertManagedBookmark).toHaveBeenCalledTimes(1)
-    expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
-  })
+      expect(result.created).toEqual(ready)
+      expect(createOwnedInstance).toHaveBeenCalledTimes(3)
+      expect(createOwnedInstance.mock.calls).toEqual([
+        [
+          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
+          'demo',
+          pending.operationId,
+        ],
+        [
+          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
+          'demo',
+          pending.operationId,
+        ],
+        [
+          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
+          'demo',
+          pending.operationId,
+        ],
+      ])
+      expect(sleep).toHaveBeenCalledTimes(2)
+      expect(upsertManagedBookmark).toHaveBeenCalledTimes(1)
+      expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
+    },
+  )
 
   test('reuses an explicitly supplied operation across process-level recovery', async () => {
     const created = {

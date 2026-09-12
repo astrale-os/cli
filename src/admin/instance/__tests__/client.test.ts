@@ -22,6 +22,7 @@ async function captureRejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 function fixture(input: {
+  fleet?: string
   instances?: readonly Node[]
   listOutput?: unknown
   useDefaultOperationIds?: boolean
@@ -51,9 +52,7 @@ function fixture(input: {
     value: unknown
   }> = []
   const remote = adminSession((target, value) => {
-    if (
-      target === '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances'
-    ) {
+    if (target.endsWith('::admin.astrale.ai:class.Fleet.method.listInstances')) {
       listCalls.push({ target, value })
       if (input.listOutput !== undefined) return input.listOutput
       const includeRetired =
@@ -93,7 +92,7 @@ function fixture(input: {
     listCalls,
     connect: () =>
       connectAdminInstances(
-        { session: remote.session, graph },
+        { session: remote.session, graph, fleet: input.fleet },
         input.useDefaultOperationIds
           ? undefined
           : { operationId: input.operationId ?? ((kind) => `cli.instance.${kind}.test`) },
@@ -102,6 +101,75 @@ function fixture(input: {
 }
 
 describe('V2 Admin Instance adapter', () => {
+  test('resolves a known slug without requiring inventory access to the default Fleet', async () => {
+    const contract = fixture({ instances: [instanceNode({ slug: 'astrale-project' })] })
+    const api = await contract.connect()
+    expect((await api.require('astrale-project')).slug).toBe('astrale-project')
+    expect(contract.listCalls).toHaveLength(0)
+    expect(contract.query.mock.calls[0]?.[0]).toMatchObject({
+      steps: [{ op: 'filter', predicate: { value: 'astrale-project' } }],
+    })
+  })
+  test('uses the exact Instance receiver without reading or checking a selected Fleet', async () => {
+    const contract = fixture({
+      fleet: '@other-fleet',
+      instances: [instanceNode()],
+      invoke: () => instanceSummaryFromNode(instanceNode()),
+    })
+    const api = await contract.connect()
+    expect((await api.status('@instance-node')).id).toBe('@instance-node')
+    expect(contract.query).toHaveBeenCalledTimes(1)
+    expect(contract.listCalls).toHaveLength(0)
+    expect(contract.calls[0]?.target).toBe(
+      '@instance-node::admin.astrale.ai:class.Instance.method.status',
+    )
+  })
+  test.each(['@astrale-fleet', '/:admin.astrale.ai:core.fleet'])(
+    'uses the exact Fleet path %s for list and create without directory discovery',
+    async (fleet) => {
+      const contract = fixture({
+        fleet,
+        listOutput: [],
+        invoke: () => instanceSummaryFromNode(instanceNode()),
+      })
+      const api = await contract.connect()
+      await api.list()
+      await api.create('demo', 'stable-request')
+      expect(contract.listCalls[0]?.target).toBe(
+        `${fleet}::admin.astrale.ai:class.Fleet.method.listInstances`,
+      )
+      expect(contract.calls).toEqual([
+        {
+          target: `${fleet}::admin.astrale.ai:class.Fleet.method.createInstance`,
+          value: { operationId: 'stable-request', slug: 'demo' },
+        },
+      ])
+      expect(contract.query).not.toHaveBeenCalled()
+    },
+  )
+  test.each(['astrale', 'default', ''])(
+    'rejects a Fleet slug or invalid path %s before I/O',
+    async (fleet) => {
+      const contract = fixture({ fleet })
+      await expect(contract.connect()).rejects.toThrow()
+      expect(contract.call).not.toHaveBeenCalled()
+      expect(contract.query).not.toHaveBeenCalled()
+    },
+  )
+  test('does not fall back to the core Fleet when the explicit target fails', async () => {
+    const contract = fixture({
+      fleet: '@missing',
+      invoke: () => {
+        throw new Error('Fleet unavailable')
+      },
+    })
+    const api = await contract.connect()
+    await expect(api.create('demo')).rejects.toThrow('Fleet unavailable')
+    expect(contract.calls).toHaveLength(1)
+    expect(contract.calls[0]?.target).toStartWith('@missing::')
+    expect(contract.listCalls).toHaveLength(0)
+  })
+
   test('lists caller-visible Instances through the one Fleet inventory Method', async () => {
     const contract = fixture({
       instances: [

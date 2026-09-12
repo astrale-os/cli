@@ -87,6 +87,7 @@ export const AdminTargetConfigSchema = z
 export type AdminTargetConfig = z.infer<typeof AdminTargetConfigSchema>
 
 export type AdminTargetCommandOpts = {
+  fleet?: string
   admin?: string
   adminUrl?: string
   domainIssuer?: string
@@ -287,4 +288,9 @@ function requireDomainIssuer(value: string | undefined, label: string): string {
     `${label} has no Domain issuer for token exchange.`,
     'Configure domainIssuer or pass --domain-issuer <url>; there is no legacy token fallback.',
   )
+}
+
+export const FLEET_OPTION = {
+  flags: '--fleet <path>',
+  description: 'Fleet path (default: /:admin.astrale.ai:core.fleet)',
 }

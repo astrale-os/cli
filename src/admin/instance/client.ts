@@ -3,7 +3,7 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { ClassKey } from '@astrale-os/sdk/graph/class'
 import { Path } from '@astrale-os/sdk/graph/path'
-import { Query } from '@astrale-os/sdk/query'
+import { Query, Property } from '@astrale-os/sdk/query'
 import { MethodKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
@@ -11,7 +11,6 @@ import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
 import {
   AdminInstanceNotFoundError,
-  findOwnedInstance,
   type DomainInstallReceipt,
   type InvitationInfo,
   type InstanceInfo,
@@ -23,11 +22,13 @@ import {
 } from './model'
 
 export interface AdminInstanceContext {
+  readonly fleet?: string
   readonly session: ClientSession
   readonly graph: AdminGraphQueryApi
 }
 
 export interface AdminInstanceApi {
+  require(identifier: string): Promise<OwnedInstanceInfo>
   list(options?: Readonly<{ includeRetired?: boolean }>): Promise<OwnedInstanceInfo[]>
   create(slug: string, requestedOperationId?: string): Promise<InstanceInfo>
   status(identifier: string): Promise<InstanceInfo>
@@ -66,13 +67,14 @@ export async function connectAdminInstances(
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
   const operationId = dependencies.operationId ?? defaultOperationId
+  const fleet = context.fleet === undefined ? AdminContract.fleet : Path.parse(context.fleet)
 
   const list = async (
     options: Readonly<{ includeRetired?: boolean }> = {},
   ): Promise<OwnedInstanceInfo[]> => {
     const output = await callAdminMethod(
       context.session,
-      AdminContract.fleet,
+      fleet,
       MethodKey.of(AdminContract.classes.Fleet, 'listInstances'),
       options.includeRetired === true ? { includeRetired: true } : {},
     )
@@ -85,10 +87,24 @@ export async function connectAdminInstances(
 
   const requireInstance = async (identifier: string): Promise<OwnedInstanceInfo> => {
     const direct = directNodePath(identifier)
-    const found =
-      direct === undefined
-        ? findOwnedInstance(await list(), identifier)
-        : await readExactInstance(context.graph, direct)
+    let found: OwnedInstanceInfo | undefined
+    if (direct !== undefined) found = await readExactInstance(context.graph, direct)
+    else {
+      const nodes = await readAllNodes(
+        context.graph,
+        Query.from({ nodes: [AdminContract.classes.Instance] })
+          .filter({
+            predicate: Property(AdminContract.properties.instance.slug).equals(identifier),
+          })
+          .select({ kind: 'nodes', projection: { kind: 'value' } }),
+        { label: 'Instance slug lookup', maximum: 100, maximumPages: 2 },
+      )
+      const candidates = nodes
+        .map(instanceFromNode)
+        .filter((instance) => instance.state !== 'deleted')
+      if (candidates.length > 1) throw new Error('Instance slug is ambiguous.')
+      found = candidates[0]
+    }
     if (found === undefined) throw new AdminInstanceNotFoundError(identifier)
     return found
   }
@@ -111,6 +127,7 @@ export async function connectAdminInstances(
 
   return Object.freeze({
     list,
+    require: requireInstance,
     async create(slug: string, requestedOperationId?: string) {
       const input = Object.freeze({
         operationId: requestedOperationId ?? operationId('create'),
@@ -119,7 +136,7 @@ export async function connectAdminInstances(
       return instanceFromSummary(
         await callAdminMethod(
           context.session,
-          AdminContract.fleet,
+          fleet,
           MethodKey.of(AdminContract.classes.Fleet, 'createInstance'),
           input,
         ),
@@ -290,6 +307,9 @@ function instanceFromSummary(input: unknown): InstanceInfo {
   const issuer = optionalHttpUrl(value.issuer, 'Admin Instance issuer')
   return Object.freeze({
     id: requiredNodePath(value.id, 'Admin Instance id'),
+    ...(value.fleetId === undefined
+      ? {}
+      : { fleetId: requiredNodePath(value.fleetId, 'Admin Fleet id') }),
     slug: requiredString(value.slug, 'Admin Instance slug'),
     ...(value.operationId === undefined
       ? {}

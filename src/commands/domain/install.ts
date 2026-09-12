@@ -13,7 +13,11 @@ import {
   listAdminDomainsInContext,
   type DomainInfo,
 } from '../../lib/admin-domain'
-import { listOwnedInstancesInContext, type OwnedInstanceInfo } from '../../lib/admin-instance'
+import {
+  listOwnedInstancesInContext,
+  resolveOwnedInstanceInContext,
+  type OwnedInstanceInfo,
+} from '../../lib/admin-instance'
 import { ADMIN_TARGET_OPTIONS, type AdminTargetCommandOpts } from '../../lib/admin-target'
 import { fetchDomainPublication } from '../../lib/domain-publication'
 import { getActive } from '../../lib/instance'
@@ -207,21 +211,22 @@ export async function installViaAdmin(
 
   try {
     await withAdminClientSession(adminOpts, async (ctx) => {
-      const instances = await admin.listInstances(ctx)
-      const slug = await resolveTargetSlug(opts, target, interactive, instances)
+      const requested = opts.instance ?? (target === undefined ? undefined : await activeSlug())
+      const instances = requested === undefined ? await admin.listInstances(ctx) : []
+      const slug = requested ?? (await resolveTargetSlug(opts, target, interactive, instances))
 
-      const match = instances.find((i) => i.slug === slug)
+      const match =
+        instances.find((i) => i.slug === slug) ?? (await admin.resolveInstance(ctx, slug))
       if (!match) {
-        const known = instances.map((i) => i.slug).join(', ') || '(none)'
         throw new AstraleError(
           'INSTANCE_NOT_MANAGED',
-          `Instance "${slug}" is not admin-managed (managed: ${known}).`,
+          `Instance "${slug}" is not available through Admin.`,
           `Install the url directly onto it instead: astrale domain install <url> --direct -i ${slug}`,
         )
       }
       assertInstallTargetReady(match)
 
-      const domains = await admin.listDomains(ctx)
+      const domains = await admin.listDomains(ctx, match.id)
       const domain = await resolveDomain(domains, target, interactive)
 
       const label = domain.origin
@@ -312,12 +317,14 @@ async function resolveDomain(
 }
 
 interface AdminInstallDependencies {
+  readonly resolveInstance: typeof resolveOwnedInstanceInContext
   readonly listInstances: typeof listOwnedInstancesInContext
   readonly listDomains: typeof listAdminDomainsInContext
   readonly install: typeof installAdminDomainInContext
 }
 
 const defaultAdminInstallDependencies: AdminInstallDependencies = Object.freeze({
+  resolveInstance: resolveOwnedInstanceInContext,
   listInstances: listOwnedInstancesInContext,
   listDomains: listAdminDomainsInContext,
   install: installAdminDomainInContext,

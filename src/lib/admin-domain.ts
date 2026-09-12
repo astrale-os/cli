@@ -2,6 +2,7 @@ import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminCatalog, type DomainInfo, type PublishDomainInput } from '../admin/catalog'
 import { connectAdminInstances, type OwnedInstanceInfo } from '../admin/instance'
+import { resourceFleet } from '../admin/resource-fleet'
 import { withAdminClientSession } from '../connection'
 
 export type { DomainInfo, InstallDomainResult, PublishDomainInput } from '../admin/catalog'
@@ -9,19 +10,23 @@ export type { DomainInfo, InstallDomainResult, PublishDomainInput } from '../adm
 /** Read the caller-visible V2 Admin Domain catalog. */
 export function listAdminDomains(options: AdminConnectionOptions): Promise<DomainInfo[]> {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminCatalog(context)).list(),
+    (await connectAdminCatalog({ ...context, fleet: options.fleet })).list(),
   )
 }
 
 /** Reuse one open Admin session for catalog reads. */
-export async function listAdminDomainsInContext(context: ConnectionContext): Promise<DomainInfo[]> {
-  return (await connectAdminCatalog(context)).list()
+export async function listAdminDomainsInContext(
+  context: ConnectionContext,
+  instance: string,
+): Promise<DomainInfo[]> {
+  const selected = (await resourceFleet(context, instance)).raw
+  return (await connectAdminCatalog({ ...context, fleet: selected })).list()
 }
 
 /** Publish and optionally configure default installation through V2 receiver Methods. */
 export function publishAdminDomain(options: AdminConnectionOptions, input: PublishDomainInput) {
   return withAdminClientSession(options, async (context) =>
-    (await connectAdminCatalog(context)).publish(input),
+    (await connectAdminCatalog({ ...context, fleet: options.fleet })).publish(input),
   )
 }
 
