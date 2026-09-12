@@ -76,21 +76,29 @@ describe('describeCallableFromBundle', () => {
     expect(described?.input).toMatchObject({ required: ['operationId', 'slug'] })
   })
 
-  test('finds one instance method when the receiver Path is not a Class projection', () => {
-    expect(
-      describeCallableFromBundle(
-        Path.parse(
-          '/:host.astrale.ai:core.manager::host.astrale.ai:class.Instance.method.inspectInstance',
-        ),
-        installed,
-      ),
-    ).toMatchObject({
-      origin: 'host.astrale.ai',
-      class: 'Instance',
-      method: 'inspectInstance',
-      dispatch: 'instance',
-    })
-  })
+  test.each([
+    [
+      '/:host.astrale.ai:class.Instance:inspectInstance',
+      'instance',
+      '/:host.astrale.ai:class.Instance::host.astrale.ai:class.Instance.method.inspectInstance',
+    ],
+    [
+      '/:host.astrale.ai:core.manager::host.astrale.ai:class.Manager.method.createInstance',
+      'static',
+      '/:host.astrale.ai:class.Manager:createInstance',
+    ],
+  ] as const)(
+    'explains wrong dispatch for %s and suggests a resolvable schema Path',
+    (path, dispatch, corrected) => {
+      expect(() => describeCallableFromBundle(Path.parse(path), installed)).toThrow(
+        expect.objectContaining({
+          code: 'CALL_DISPATCH_MISMATCH',
+          hint: expect.stringContaining(corrected),
+        }),
+      )
+      expect(describeCallableFromBundle(Path.parse(corrected), installed)?.dispatch).toBe(dispatch)
+    },
+  )
 
   test.each(['class.Manager', 'core.manager'])(
     'describes the qualified Method owner independently of receiver %s',

@@ -3,14 +3,11 @@ import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
 import {
   createIframeShellAdapter,
   createShell,
+  openExternalBrowserWindow,
   rejectIntent,
   replyToIntent,
 } from '@astrale-os/shell'
 
-import {
-  installExternalOpenIntentHandler,
-  openExternalBrowserWindow,
-} from '../src/lib/view/external-open-intent'
 import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
 import { installOpenIntentHandler } from '../src/lib/view/open-intent'
 import { accessibleIframeAdapter, viewTitle } from './frame'
@@ -176,6 +173,7 @@ async function main(): Promise<void> {
     // `astrale view` is explicit host approval of the exact installed route;
     // Shell has already rejected invalid or unsupported iframe requirements.
     iframePolicy: () => true,
+    externalOpen: (request) => openExternalBrowserWindow(window, request),
   })
   await shell.init()
 
@@ -217,9 +215,6 @@ async function main(): Promise<void> {
     reject: (message, error) => {
       rejectIntent(shell.children, message.envelope.sender.windowId, message, error)
     },
-  })
-  installExternalOpenIntentHandler(shell, {
-    open: (request) => openExternalBrowserWindow(window, request),
   })
 
   // One placement means one mount attempt. Shell-handshake failures remain

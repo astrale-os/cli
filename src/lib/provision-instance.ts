@@ -22,9 +22,10 @@ export type ProvisionOpts = KernelCommandOpts &
     // Programmatic opt-out for callers that drive this command as a function.
     // The matching CLI flags are read from argv by `canPrompt` — Commander
     // keeps root options out of a subcommand's action arguments.
-    operation?: string
     ci?: boolean
     noPrompt?: boolean
+    /** Exact durable create operation to replay after an uncertain outcome. */
+    operation?: string
   }
 
 /** The created instance plus the local-bookmark side effects of provisioning. */
@@ -48,6 +49,7 @@ export type ProvisionResult = {
 const SAGA_TIMEOUT_MS = '120000'
 const PROVISION_WINDOW_MS = 10 * 60_000
 const RETRY_DELAY_MS = 1_000
+const INSTANCE_CREATE_OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u
 
 interface ProvisionDependencies {
   readonly createOwnedInstance: typeof createOwnedInstance
@@ -94,7 +96,10 @@ export async function provisionInstance(
   // Keep each Workflow invocation inside the platform's request window. The
   // same durable operation is replayed when Admin returns a provisioning receipt.
   const createOpts = instanceCreateOptions(opts)
-  const operationId = opts.operation ?? deps.operationId()
+  const operationId =
+    opts.operation === undefined
+      ? deps.operationId()
+      : acceptInstanceCreateOperationId(opts.operation)
   const deadline = deps.now() + PROVISION_WINDOW_MS
 
   const runProvision = () =>
@@ -222,6 +227,17 @@ export async function provisionInstance(
     ...(rootIdentity === undefined ? {} : { rootIdentity }),
     ...(rootIdentityError === undefined ? {} : { rootIdentityError }),
   }
+}
+
+/** Admit the exact operation-id grammar exposed by Admin Instance creation. */
+function acceptInstanceCreateOperationId(input: unknown): string {
+  if (typeof input !== 'string' || !INSTANCE_CREATE_OPERATION_ID.test(input)) {
+    throw new AstraleError(
+      'INVALID_INPUT',
+      'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
+    )
+  }
+  return input
 }
 
 export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {

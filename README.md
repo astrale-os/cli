@@ -286,7 +286,7 @@ pnpm build
 
 Cloud setup and verification: [agent setup](scripts/setup/README.md).
 
-Inside the Astrale umbrella workspace, run `./scripts/setup.sh` from that workspace root instead.
+Inside the Astrale umbrella workspace, run `pnpm setup` from that workspace root instead.
 
 The first source command that needs embedded Skills, Studio, or Viewer assets
 generates `src/generated/embedded-assets.ts` automatically. Its input digest
@@ -338,3 +338,10 @@ Fleet membership does not transfer personal Instance ownership.
 Upgrade catalogue readers before introducing multiple Fleets: origins and release digests are
 now scoped to a Fleet. Older CLI versions that query a global catalogue are incompatible with
 that data. Existing direct Instance method contracts and default routes remain supported.
+
+## View external navigation
+
+The View viewer admits external navigation origins declared by the installed View's publication.
+Opening a compatible View needs no provider-specific CLI flag. The existing
+`--allow-external-origin` option remains available for an additional explicit origin grant.
+Browser popup refusal is returned to the View so it can offer a retry.

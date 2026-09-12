@@ -20,6 +20,13 @@ npx create-astrale-domain@beta issues \
   Declare the chosen adapter only; its transitive implementation adapter is not another direct dependency.
 - Declare libraries source actually imports: exact SDK-compatible `zod`, and frontend UI/React Shell
   packages when used. Zod runtime identity matters; a structurally compatible second copy can fail compilation.
+- Keep the scaffolded `tsconfig.json` as the single TypeScript program for Worker code, Views, and
+  tests: `lib` includes the DOM, `types` is `["node", "vitest/globals"]`, and `skipLibCheck` is
+  `false`. Domain Workers run with `nodejs_compat`, Vitest supplies its globals, `vite.config.ts` and
+  third-party declarations assume Node or the DOM, and `skipLibCheck: false` keeps those declarations
+  verified. Do not narrow `types` to `[]` or split the project per runtime: neither catches a real
+  Worker defect, and the SDK and Kernel already type-check their Worker-facing surface against the
+  Worker environment.
 
 ## Composition and owners
 

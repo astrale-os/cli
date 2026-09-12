@@ -99,55 +99,124 @@ describe('managed Instance root import during provisioning', () => {
     expect(warnings.join('\n')).toContain('astrale instance root import demo')
   })
 
-  test('replays one operation until the retained Instance becomes ready', async () => {
-    const pending = {
+  test.each([undefined, '@astrale-fleet'])(
+    'replays one operation in the selected Fleet (%s) until ready',
+    async (fleet) => {
+      const pending = {
+        id: '@created-instance',
+        slug: 'demo',
+        operationId: 'cli.instance.create.fixed',
+        url: '',
+        state: 'provisioning' as const,
+        phase: 'reserve-tenant',
+      }
+      const ready = {
+        ...pending,
+        url: 'https://demo.example.test/api',
+        state: 'ready' as const,
+        phase: 'ready',
+      }
+      const createOwnedInstance = mock()
+        .mockResolvedValueOnce(pending)
+        .mockResolvedValueOnce({ ...pending, phase: 'install-shell-root' })
+        .mockResolvedValueOnce(ready)
+      const sleep = mock(async () => {})
+      const upsertManagedBookmark = mock(async () => ({ entry: { url: ready.url } }))
+      const setActive = mock(async () => 'demo')
+      const importInstanceRootIdentity = mock(async () => ({ name: 'demo-root' }) as never)
+
+      const result = await provisionInstance(
+        'demo',
+        { creds: 'admin-credential', ci: true, ...(fleet === undefined ? {} : { fleet }) },
+        {
+          createOwnedInstance,
+          operationId: () => pending.operationId,
+          now: () => 0,
+          sleep,
+          upsertManagedBookmark,
+          setActive,
+          importInstanceRootIdentity,
+          activateInstance: async () => ({ status: 'completed', user: 'owner' }),
+        },
+      )
+
+      expect(result.created).toEqual(ready)
+      expect(createOwnedInstance).toHaveBeenCalledTimes(3)
+      expect(createOwnedInstance.mock.calls).toEqual([
+        [
+          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
+          'demo',
+          pending.operationId,
+        ],
+        [
+          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
+          'demo',
+          pending.operationId,
+        ],
+        [
+          expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
+          'demo',
+          pending.operationId,
+        ],
+      ])
+      expect(sleep).toHaveBeenCalledTimes(2)
+      expect(upsertManagedBookmark).toHaveBeenCalledTimes(1)
+      expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  test('reuses an explicitly supplied operation across process-level recovery', async () => {
+    const created = {
       id: '@created-instance',
       slug: 'demo',
-      operationId: 'cli.instance.create.fixed',
-      url: '',
-      state: 'provisioning' as const,
-      phase: 'reserve-tenant',
-    }
-    const ready = {
-      ...pending,
+      operationId: 'lab:instance.create.recovery-01',
       url: 'https://demo.example.test/api',
       state: 'ready' as const,
-      phase: 'ready',
     }
-    const createOwnedInstance = mock()
-      .mockResolvedValueOnce(pending)
-      .mockResolvedValueOnce({ ...pending, phase: 'install-shell-root' })
-      .mockResolvedValueOnce(ready)
-    const sleep = mock(async () => {})
-    const upsertManagedBookmark = mock(async () => ({ entry: { url: ready.url } }))
-    const setActive = mock(async () => 'demo')
-    const importInstanceRootIdentity = mock(async () => ({ name: 'demo-root' }) as never)
+    const observedOperationIds: Array<string | undefined> = []
+    const generated = mock(() => 'must-not-be-generated')
 
-    const result = await provisionInstance(
+    await provisionInstance(
       'demo',
-      { creds: 'admin-credential', ci: true },
+      { creds: 'admin-credential', ci: true, operation: created.operationId },
       {
-        createOwnedInstance,
-        operationId: () => pending.operationId,
-        now: () => 0,
-        sleep,
-        upsertManagedBookmark,
-        setActive,
-        importInstanceRootIdentity,
+        createOwnedInstance: async (_options, _slug, operationId) => {
+          observedOperationIds.push(operationId)
+          return created
+        },
+        operationId: generated,
+        upsertManagedBookmark: async () => ({ entry: { url: created.url } }),
+        setActive: async () => 'demo',
+        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
         activateInstance: async () => ({ status: 'completed', user: 'owner' }),
       },
     )
 
-    expect(result.created).toEqual(ready)
-    expect(createOwnedInstance).toHaveBeenCalledTimes(3)
-    expect(createOwnedInstance.mock.calls).toEqual([
-      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
-      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
-      [expect.objectContaining({ timeout: '120000' }), 'demo', pending.operationId],
-    ])
-    expect(sleep).toHaveBeenCalledTimes(2)
-    expect(upsertManagedBookmark).toHaveBeenCalledTimes(1)
-    expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
+    expect(generated).not.toHaveBeenCalled()
+    expect(observedOperationIds).toEqual([created.operationId])
+  })
+
+  test('rejects an invalid explicit operation before contacting Admin', async () => {
+    for (const operation of [
+      'contains spaces',
+      '~remote-rejection',
+      '-leading-punctuation',
+      `a${'b'.repeat(256)}`,
+    ]) {
+      const createOwnedInstance = mock()
+      await expect(
+        provisionInstance(
+          'demo',
+          { creds: 'admin-credential', ci: true, operation },
+          { createOwnedInstance },
+        ),
+      ).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+        message:
+          'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
+      })
+      expect(createOwnedInstance).not.toHaveBeenCalled()
+    }
   })
 
   test('recovers a generic server failure by replaying the same operation', async () => {

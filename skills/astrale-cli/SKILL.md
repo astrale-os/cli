@@ -116,12 +116,15 @@ Use canonical Kernel Paths:
 | Active caller shorthand | `@self` |
 
 Static dispatch uses one colon before the method. Instance dispatch uses `::` followed by the complete Domain-qualified Method key.
+Discover methods with `astrale introspect <origin> --bundle`. Introspection can use a Class
+receiver to inspect an instance contract; calling it requires an observed instance Path.
 `@self` is expanded by the CLI before signing when it appears at the head of a
 call Path or a bare `key=@self` value. It is not rewritten inside `--data`,
 stdin JSON, URLs, or arbitrary substrings.
 
 ```bash
 astrale get @self --json
+astrale introspect /:notes.example:class.Note::notes.example:class.Note.method.archive
 astrale call /:blog.example:class.Author:list limit=10
 astrale call /:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.listInstances
 ```
@@ -295,10 +298,12 @@ unless `--schema` is passed.
 astrale introspect kernel.astrale.ai
 astrale introspect /:kernel.astrale.ai --bundle
 astrale introspect /:kernel.astrale.ai:class.Identity:whois
+astrale introspect @note::notes.example:class.Note.method.archive
 ```
 
-A method or Function Path projects that callable's input/output from the
-installed bundle.
+A method or Function Path projects its input/output from the installed bundle.
+An instance Method's qualified key selects the schema even with an `@id` receiver;
+introspection neither reads nor invokes that receiver. A bare `@id` has no schema origin.
 
 ### `query`
 
@@ -415,9 +420,11 @@ astrale auth status
 astrale whoami
 ```
 
-Add `--debug` for full Kernel error diagnostics. A missing and an
-authorization-masked graph Node may intentionally be indistinguishable. For
-callable input/output shape, use `astrale introspect <path>`.
+Add `--debug` for full Kernel error diagnostics. Missing and authorization-masked
+Nodes are intentionally indistinguishable. A Path also needs access to its
+intermediate nodes and edges: an observed Node may be readable by `@id` or a
+Class query while its Domain-rooted Path is unavailable. Check `-i` and `--as`;
+this alone does not prove corrupt data. Use `introspect` for callable schemas.
 
 ## Storage
 

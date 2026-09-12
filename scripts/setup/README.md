@@ -1,117 +1,37 @@
-# CLI agent setup
+# Prepare CLI
 
-From a standalone CLI checkout (no runtime required beforehand):
+`scripts/setup/setup.sh` downloads the Config setup archive pinned by version and
+SHA-256 in `setup.lock`. `repo.sh` selects the CLI profile; implementation lives in
+[Config setup](https://github.com/astrale-os/config/tree/main/setup).
 
-```bash
-AGENT_HARNESSES=codex bash scripts/setup/setup.sh
-AGENT_HARNESSES=codex bash scripts/setup/verify.sh
-```
+Setup activates Node, pnpm and Bun from the repository's version declarations,
+installs dependencies at the standalone workspace root and runs `pnpm assets:ensure`.
+That product command prepares Viewer, Studio and embedded skills and reuses its
+asset digest cache. Setup installs no global Astrale CLI, browsers or agent skills.
+It does not build a release executable or deploy anything.
 
-Use `claude` for Claude or `codex,claude` for both. Setup installs Node from `.nvmrc`,
-pnpm from `package.json#packageManager`, and the exact Bun from `.bun-version`.
-The common bootstrap may reuse another Bun initially; CLI preparation activates its pinned
-runtime before building source assets and persists that path for later agent commands.
+- Prepare: `bash scripts/setup/setup.sh`.
+- Verify without download, installation or asset generation: `bash scripts/setup/verify.sh`.
+- Codex: disable cache; Setup `AGENT_HARNESSES=codex bash scripts/setup/setup.sh`;
+  Maintenance empty.
+- Claude: environment Setup empty; committed SessionStart prepares on changed setup
+  inputs, otherwise loads paths. Failed preparation leaves no success marker.
+- Conductor: `AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh` checks existing
+  machine tools at the required versions, then installs dependencies and prepares
+  assets. It may download the pinned archive but never installs machine tools.
+  Local Claude hooks only restore prepared paths.
 
-## Repository preparation
+Verification checks runtime versions, root/Studio tools, asset freshness and
+`bun bin/run.ts --version`. For development use `bun bin/astrale.ts`; the global
+released CLI is unnecessary. Studio browser tests use the dedicated CI job.
 
-`setup_repo.sh --check` checks the standalone Git root, runtime declarations, workspace,
-Studio and both test fixture manifests before installing anything. One root pnpm install
-prepares the four workspace packages, preserving the declared native build allowlist and
-release-age policy. `pnpm assets:ensure` prepares Viewer, Studio and embedded skills for
-source development; its existing digest cache avoids rebuilding unchanged assets on reuse.
-It does not build a release executable, link the source CLI globally, or deploy anything.
+Allow GitHub release downloads, including `release-assets.githubusercontent.com`,
+as well as runtime and package registry hosts. Bootstrap requires Bash, Git, curl,
+tar/gzip and SHA-256 tooling; remote Claude also needs `flock`.
+Dependency installation may update the lockfile; inspect changes before committing.
+In the umbrella workspace, use its root installation instead.
 
-Development installs use `STANDALONE=true pnpm install --no-frozen-lockfile --prefer-offline`.
-They report lockfile changes and preserve branch/HEAD. CI and release installs remain frozen.
-The old README's `./setup.sh` did not exist on main; its caller now points to this entry point.
-Conductor now uses the unified entry point in local tool-check mode.
-The CLI's product command `astrale setup` is unrelated and remains intact.
-
-## Tools and skills
-
-Browser tools/skills and the published Astrale CLI/skills are **disabled by default**, as
-specified by `repo.config.sh`. This repository develops the CLI source; it does not install
-its released executable. No additional global skills should be attributed to this setup
-in a fresh default session. Existing host tools/skills are not removed.
-The distributable skills under `skills/` remain source assets, not global agent installations.
-
-The common optional flags still accept explicit `0`/`1` overrides. Optional tooling is only
-verified when enabled. Studio's existing browser CI job owns its own Playwright dependency
-and Chromium installation; default agent setup does not download browsers.
-
-`verify.sh` installs nothing. It checks Node/pnpm/Bun versions, root and Studio development
-tools, generated assets and the source CLI's `--version`. It does not generate missing assets.
-Run source commands with `bun bin/astrale.ts`; the released global `astrale` is not required.
-
-## Cloud
-
-- Codex: select `astrale-os/cli`, disable container caching, use only Setup:
-  `AGENT_HARNESSES=codex bash scripts/setup/setup.sh`. No Maintenance script.
-- Claude: select `astrale-os/cli`, leave environment Setup empty. The committed SessionStart
-  hook handles `startup|resume|clear|fork`, installing and verifying once per physical checkout.
-  Only successful verification creates its marker. Subsequent hooks only restore paths through
-  `CLAUDE_ENV_FILE`; they do not run pnpm, setup or verification. Local hooks only load paths.
-- Use the existing Astrale Claude environment. Default package-manager access plus `nodejs.org`,
-  `registry.npmjs.org`, `jsr.io`, `npm.jsr.io`, `github.com`, `api.github.com`,
-  `raw.githubusercontent.com`, `codeload.github.com`, and Ubuntu mirrors covers preparation.
-  A fresh Linux machine needs Git, Bash and APT/root or passwordless sudo to bootstrap system
-  prerequisites; Claude initialization also needs `flock` (util-linux).
-
-For cloud validation, inspect the initial shell and active skill inventory, then run verify.
-Do not rerun setup, source env.sh manually or repair PATH: that would mask startup defects.
-Record initial installation and prepared-checkout reuse as separate results.
-
-## Shared standard and checks
-
-Eight files are synchronized unchanged from Config revision
-`e60ce6abefe47bc7130bb949a8d8794b58d29a9f`. The CI `agent-setup` job compares the copies
-against that pinned source and executes shared and repository tests. Make common changes
-in Config first and sync them; options, pinned Bun preparation, assets, verification and the
-Claude hook are CLI-owned. From the reviewed Config checkout:
-
-```bash
-bash agent-setup/sync.sh /path/to/cli
-bash agent-setup/sync.sh --check /path/to/cli
-node --test agent-setup/*.test.cjs /path/to/cli/scripts/setup/*.test.cjs
-```
-
-## Validation
-
-On 2026-09-08, an isolated Ubuntu 24.04 arm64 container passed initial setup,
-readiness verification, repeated setup with cached assets, and the Claude hook's initial
-preparation followed by paths-only reuse with an unchanged success marker. All 18 shared
-and repository setup tests passed on Linux. Browser and published Astrale tools/skills were
-not installed. Lint and all CLI/Viewer/Studio typechecks passed. The application suite passed
-1,553 tests (one workspace-only skip), followed by 51 script tests, using a non-root test
-user and a subreaper for process-lifecycle tests. Running that suite as root or with `sleep`
-as container PID 1 invalidates its permission/process-lifecycle expectations.
-Real Codex and Claude Cloud session validation is recorded separately from local results.
-
-## Unified local and cloud preparation
-
-`AGENT_SETUP_TOOLS=install` is the cloud default: reuse working tools and install
-or repair missing ones. `AGENT_SETUP_TOOLS=check`, selected by Conductor, checks
-the caller’s tools and pinned versions without installing global tools, changing
-managed symlinks, rewriting shell profiles, or managing personal skills. Missing
-requirements produce an actionable error. Local agent selection does not trigger
-any skill installation.
-
-Both modes prepare the same checkout dependencies and required product artifacts;
-this is not an offline mode. Repository-local downloads (such as Electron or test
-browsers) remain part of project preparation when applicable. Package-manager
-caches and existing artifact caches are reused. Standalone Git branch/HEAD is
-preserved; no checkout refresh to main is performed.
-
-```bash
-AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh
-AGENT_SETUP_TOOLS=check bash scripts/setup/verify.sh
-```
-
-Conductor’s setup prepares a new worktree; Run checks readiness. Cloud Codex uses
-`AGENT_SETUP_TOOLS=install AGENT_HARNESSES=codex bash scripts/setup/setup.sh` with
-cache disabled and Maintenance empty. Claude environment Setup stays empty; the
-committed hook installs once per checkout remotely and only loads paths locally.
-
-The unified rollout was regression-tested on Ubuntu 24.04. Historical cloud
-results above concern their named revisions; fresh cloud session validation of
-this layout must be recorded separately.
+CI executes the pinned archive and verifies reuse. Update version and digest together
+only after qualifying a new archive. Validate fresh cloud sessions without manually
+rerunning setup or repairing paths. Run application tests as a non-root user with
+normal process reaping; permission and process-lifecycle assertions depend on this.

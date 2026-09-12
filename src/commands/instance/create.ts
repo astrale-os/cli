@@ -27,7 +27,8 @@ Behavior:
   logged in with WorkOS. Admin owns infrastructure placement. The new instance
   becomes active after its owner access is finalized and verified. If finalization
   is interrupted, rerun the same create command with the same Admin target options
-  (--admin, --admin-url, --domain-issuer) and creator's WorkOS identity (--as).
+  (--admin, --admin-url, --domain-issuer), Fleet (--fleet), operation (--operation)
+  and creator's WorkOS identity (--as).
   Admin verifies and resumes its retained creation receipt; the Instance and
   reserved owner are not recreated.
   An unfinished journey returns a nonzero exit status with the retained receipt.
@@ -44,7 +45,10 @@ Examples:
   options: [
     ...ADMIN_TARGET_OPTIONS,
     FLEET_OPTION,
-    { flags: '--operation <id>', description: 'Retry an exact Instance creation operation' },
+    {
+      flags: '--operation <id>',
+      description: 'Reuse an exact create operation id for explicit retry and recovery',
+    },
   ],
   action: async (id: string | undefined, opts: ProvisionOpts) => {
     try {

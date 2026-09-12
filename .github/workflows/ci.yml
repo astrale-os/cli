@@ -23,24 +23,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check out the reviewed agent setup standard
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: astrale-os/config
-          ref: e60ce6abefe47bc7130bb949a8d8794b58d29a9f
-          path: .agent-setup-source
-          sparse-checkout: agent-setup
-          persist-credentials: false
-      - name: Check shared agent setup copies
-        run: bash .agent-setup-source/agent-setup/sync.sh --check .
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version-file: .nvmrc
-          package-manager-cache: false
-      - name: Check agent setup without repository dependencies
+      - name: Prepare from pinned Config archive and verify reuse
         run: |
-          find scripts/setup -name '*.sh' -print0 | xargs -0 -n 1 bash -n
-          node --test .agent-setup-source/agent-setup/*.test.cjs scripts/setup/repo.test.cjs
+          AGENT_HARNESSES=codex bash scripts/setup/setup.sh
+          AGENT_HARNESSES=codex bash scripts/setup/verify.sh
+          AGENT_HARNESSES=codex bash scripts/setup/setup.sh
+          git diff --exit-code -- pnpm-lock.yaml
 
   ui-search-contract:
     uses: ./.github/workflows/ui-search-contract.yml
@@ -146,6 +134,8 @@ jobs:
         run: STANDALONE=true pnpm install --frozen-lockfile
       - name: Install Chromium
         run: pnpm --dir studio exec playwright install --with-deps chromium
+      - name: Verify published View external navigation
+        run: pnpm test:viewer:browser
       - name: Run Studio browser smoke
         run: pnpm --dir studio test:e2e
       - name: Retain failed browser evidence
@@ -154,6 +144,7 @@ jobs:
         with:
           name: studio-browser-failures
           path: |
+            viewer/test-results/**
             studio/test-results/**/*.png
             studio/test-results/**/trace.zip
             studio/test-results/**/error-context.md

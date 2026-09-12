@@ -297,6 +297,7 @@ describe('help contract — admin target surface is registered', () => {
     expect(program.helpInformation()).toContain('admin')
     expect(instanceCreate?.helpInformation()).toContain('--admin <name>')
     expect(instanceCreate?.helpInformation()).toContain('--admin-url <url>')
+    expect(instanceCreate?.helpInformation()).toContain('--operation <id>')
 
     const adminUse = program.commands
       .find((command) => command.name() === 'admin')
