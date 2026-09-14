@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.104](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.103...cli/v1.0.0-beta.104) (2026-09-14)
+
+
+### Features
+
+* **fleet:** scope existing commands with minimal path selection ([#463](https://github.com/astrale-os/cli/issues/463)) ([aeefa24](https://github.com/astrale-os/cli/commit/aeefa24e128bffe17fa42d605649dbcb81202d05))
+
+
+### Bug Fixes
+
+* **studio:** label implemented inherited contract methods ([#478](https://github.com/astrale-os/cli/issues/478)) ([ccd9209](https://github.com/astrale-os/cli/commit/ccd920901602467b17ee2374854e14a8268e95ce))
+
 ## [1.0.0-beta.103](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.102...cli/v1.0.0-beta.103) (2026-09-11)
 
 
