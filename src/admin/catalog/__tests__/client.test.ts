@@ -37,6 +37,7 @@ function domainNode(id: string, origin: string): Node {
 
 function fixture(input: {
   fleet?: string
+  fleets?: readonly Node[]
   domains?: readonly Node[]
   defaults?: readonly Node[]
   useDefaultOperationIds?: boolean
@@ -53,7 +54,10 @@ function fixture(input: {
   const query = mock(async (_ast: QueryAST) => ({
     result: {
       kind: 'nodes' as const,
-      nodes: (input.domains ?? []).map((value) => ({ kind: 'value' as const, value })),
+      nodes: (JSON.stringify(_ast.source).includes('"name":"Fleet"')
+        ? (input.fleets ?? [fleetNode('default-fleet', 'default')])
+        : (input.domains ?? [])
+      ).map((value) => ({ kind: 'value' as const, value })),
     },
     page: {},
   }))
@@ -127,12 +131,12 @@ describe('V2 Admin Domain catalog adapter', () => {
         updatedAt: '2026-08-12T00:00:00.000Z',
       },
     ])
-    const query = contract.query.mock.calls[0]![0]
-    expect(JSON.stringify(query.source)).toContain('core.fleet')
+    const query = contract.query.mock.calls[1]![0]
+    expect(JSON.stringify(query.source)).toContain('@default-fleet')
     expect(JSON.stringify(query.steps)).toContain('fleet_contains')
     expect(JSON.stringify(query.steps)).toContain('Domain')
     const [source, edge, options] = contract.neighbors.mock.calls[0]!
-    expect(String(source)).toBe('/:admin.astrale.ai:core.fleet')
+    expect(String(source)).toBe('@default-fleet')
     expect(edge).toEqual({
       origin: 'admin.astrale.ai',
       kind: 'class',
@@ -271,4 +275,55 @@ test('scopes catalogue reads to the supplied Fleet path without discovery', asyn
     terms: [{ kind: 'path', path: '@astrale-fleet' }],
   })
   expect(contract.calls).toHaveLength(0)
+})
+
+function fleetNode(id: string, slug?: string): Node {
+  return {
+    id: NodeId(id),
+    class: 'admin.astrale.ai:class.Fleet' as Node['class'],
+    props: normalizeProperties(
+      slug === undefined
+        ? {}
+        : { [PropertyKey('admin.astrale.ai:class.Fleet.property.slug')]: slug },
+    ),
+  }
+}
+
+test('an invisible default never falls back to another visible Fleet', async () => {
+  const contract = fixture({
+    fleets: [fleetNode('astrale', 'astrale')],
+    domains: [domainNode('private', 'private.example')],
+  })
+  await expect((await contract.connect()).list()).resolves.toEqual([])
+  expect(contract.neighbors).not.toHaveBeenCalled()
+})
+
+test.each([
+  { name: 'legacy slug', fleets: [fleetNode('legacy')] },
+  {
+    name: 'duplicate defaults',
+    fleets: [fleetNode('one', 'default'), fleetNode('two', 'default')],
+  },
+])('refuses $name before catalog traversal', async ({ fleets }) => {
+  const contract = fixture({ fleets })
+  await expect((await contract.connect()).list()).rejects.toThrow(/migration|ambiguous/)
+  expect(contract.neighbors).not.toHaveBeenCalled()
+})
+
+test('finds the default on a later Fleet page and uses only its observed ID', async () => {
+  const contract = fixture({})
+  contract.query.mockResolvedValueOnce({
+    result: { kind: 'nodes', nodes: [{ kind: 'value', value: fleetNode('other', 'astrale') }] },
+    page: { next: 'next-fleet-page' },
+  })
+  contract.query.mockResolvedValueOnce({
+    result: {
+      kind: 'nodes',
+      nodes: [{ kind: 'value', value: fleetNode('default-fleet', 'default') }],
+    },
+    page: {},
+  })
+  await (await contract.connect()).list()
+  expect(String(contract.neighbors.mock.calls[0]![0])).toBe('@default-fleet')
+  expect(JSON.stringify(contract.query.mock.calls[2]![0].source)).toContain('@default-fleet')
 })

@@ -313,13 +313,18 @@ by the workspace's `./scripts/init-machine.sh`.
 
 Omitted `--fleet` keeps using `/:admin.astrale.ai:core.fleet`. The option accepts a Kernel
 path, not a slug, and is available only on `instance create`, `instance list`, `domain list`
-and `domain publish`. There is no Fleet discovery or slug-resolution call behind these commands.
-An invalid path or unavailable target fails without falling back.
+and `domain publish`. Explicit Fleet IDs are used directly. Default catalogue reads resolve the
+reserved `default` slug within caller-visible Fleet Nodes, then query that observed ID; namespace
+traversal is not required. No Fleet discovery callable or arbitrary slug input is introduced.
+An invalid path or unavailable target fails without falling back. Default catalogue discovery requires
+the Admin Fleet-slug migration: an unbackfilled Fleet raises an explicit error. An invisible default
+does not select another visible Fleet, and duplicate default slugs fail. This minimum-server-version
+boundary intentionally avoids retaining an inferred legacy-singleton selection contract.
 
 Read Fleets directly from the graph and use the generic callable command to create one:
 
 ```bash
-astrale query '/:admin.astrale.ai:class.Fleet' -i admin
+astrale query --class '/:admin.astrale.ai:class.Fleet' -i admin
 astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"/:admin.astrale.ai:core.fleet"}'
 astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
 astrale instance list --fleet '@<fleet-id>'
