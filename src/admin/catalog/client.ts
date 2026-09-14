@@ -3,7 +3,7 @@ import type { Node } from '@astrale-os/sdk/graph/node'
 
 import { Path } from '@astrale-os/sdk/graph/path'
 import { Query } from '@astrale-os/sdk/query'
-import { MethodKey } from '@astrale-os/sdk/schema'
+import { MethodKey, PropertyKey } from '@astrale-os/sdk/schema'
 
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
@@ -44,10 +44,12 @@ export async function connectAdminCatalog(
   const fleet = context.fleet === undefined ? AdminContract.fleet : Path.parse(context.fleet)
 
   const list = async (): Promise<DomainInfo[]> => {
+    const observedFleet = await catalogFleet(context, fleet)
+    if (observedFleet === undefined) return []
     const [nodes, defaultsPage] = await Promise.all([
       readAllNodes(
         context.graph,
-        Query.from({ nodes: [fleet] })
+        Query.from({ nodes: [observedFleet] })
           .expand({ via: [AdminContract.edges.fleetContains], direction: 'outgoing' })
           .filter({ class: AdminContract.classes.Domain })
           .select({
@@ -60,7 +62,7 @@ export async function connectAdminCatalog(
           maximumPages: MAXIMUM_PAGES,
         },
       ),
-      context.graph.neighbors(fleet, AdminContract.edges.fleetInstallsDomainByDefault, {
+      context.graph.neighbors(observedFleet, AdminContract.edges.fleetInstallsDomainByDefault, {
         direction: 'outgoing',
         page: { size: PAGE_SIZE },
       }),
@@ -139,6 +141,31 @@ export async function connectAdminCatalog(
       })
     },
   })
+}
+
+/** Default reads use the reserved business key, without traversing protected Kernel namespaces. */
+async function catalogFleet(
+  context: AdminCatalogContext,
+  requested: Path,
+): Promise<Path | undefined> {
+  if (requested.raw !== AdminContract.fleet.raw) return requested
+  const fleets = await readAllNodes(
+    context.graph,
+    Query.from({ nodes: [AdminContract.classes.Fleet] }).select({
+      kind: 'nodes',
+      projection: { kind: 'value' },
+    }),
+    { label: 'Admin Fleets', maximum: 10_000, maximumPages: 40 },
+  )
+  const slug = PropertyKey.of(AdminContract.classes.Fleet, 'slug')
+  if (fleets.some((node) => typeof node.props[slug] !== 'string')) {
+    throw new TypeError(
+      'Admin Fleet slug migration is required before using the Fleet-scoped catalog.',
+    )
+  }
+  const defaults = fleets.filter((node) => node.props[slug] === 'default')
+  if (defaults.length > 1) throw new TypeError('Admin default Fleet is ambiguous.')
+  return defaults[0] === undefined ? undefined : Path.id(defaults[0].id)
 }
 
 function domainFromNode(node: Node, installByDefault: boolean): DomainInfo {
