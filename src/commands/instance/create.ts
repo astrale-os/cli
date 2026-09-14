@@ -2,7 +2,7 @@ import type { CommandDefinition } from '../../program/index'
 
 import { formatKernelError } from '../../connection/errors'
 import { AstraleError } from '../../errors'
-import { ADMIN_TARGET_OPTIONS } from '../../lib/admin-target'
+import { ADMIN_TARGET_OPTIONS, FLEET_OPTION } from '../../lib/admin-target'
 import { isMachine, output } from '../../lib/output'
 import { promptText } from '../../lib/prompt'
 import { provisionInstance, type ProvisionOpts } from '../../lib/provision-instance'
@@ -27,7 +27,8 @@ Behavior:
   logged in with WorkOS. Admin owns infrastructure placement. The new instance
   becomes active after its owner access is finalized and verified. If finalization
   is interrupted, rerun the same create command with the same Admin target options
-  (--admin, --admin-url, --domain-issuer) and creator's WorkOS identity (--as).
+  (--admin, --admin-url, --domain-issuer), Fleet (--fleet), operation (--operation)
+  and creator's WorkOS identity (--as).
   Admin verifies and resumes its retained creation receipt; the Instance and
   reserved owner are not recreated.
   An unfinished journey returns a nonzero exit status with the retained receipt.
@@ -43,6 +44,7 @@ Examples:
   arguments: [{ name: 'id', description: 'Instance slug', required: false }],
   options: [
     ...ADMIN_TARGET_OPTIONS,
+    FLEET_OPTION,
     {
       flags: '--operation <id>',
       description: 'Reuse an exact create operation id for explicit retry and recovery',

@@ -20,6 +20,7 @@ const MAXIMUM_DOMAINS = 10_000
 const MAXIMUM_PAGES = Math.ceil(MAXIMUM_DOMAINS / PAGE_SIZE) + 1
 
 export interface AdminCatalogContext {
+  readonly fleet?: string
   readonly session: ClientSession
   readonly graph: AdminGraphApi
 }
@@ -40,29 +41,29 @@ export async function connectAdminCatalog(
   dependencies: AdminCatalogDependencies = {},
 ): Promise<AdminCatalogApi> {
   const operationId = dependencies.operationId ?? defaultOperationId
+  const fleet = context.fleet === undefined ? AdminContract.fleet : Path.parse(context.fleet)
 
   const list = async (): Promise<DomainInfo[]> => {
     const [nodes, defaultsPage] = await Promise.all([
       readAllNodes(
         context.graph,
-        Query.from({ nodes: [AdminContract.classes.Domain] }).select({
-          kind: 'nodes',
-          projection: { kind: 'value' },
-        }),
+        Query.from({ nodes: [fleet] })
+          .expand({ via: [AdminContract.edges.fleetContains], direction: 'outgoing' })
+          .filter({ class: AdminContract.classes.Domain })
+          .select({
+            kind: 'nodes',
+            projection: { kind: 'value' },
+          }),
         {
           label: 'Admin Domain catalog',
           maximum: MAXIMUM_DOMAINS,
           maximumPages: MAXIMUM_PAGES,
         },
       ),
-      context.graph.neighbors(
-        AdminContract.fleet,
-        AdminContract.edges.fleetInstallsDomainByDefault,
-        {
-          direction: 'outgoing',
-          page: { size: PAGE_SIZE },
-        },
-      ),
+      context.graph.neighbors(fleet, AdminContract.edges.fleetInstallsDomainByDefault, {
+        direction: 'outgoing',
+        page: { size: PAGE_SIZE },
+      }),
     ])
     const defaults = await defaultsPage.collect({ maximumPages: MAXIMUM_PAGES })
     if (defaults.cursor !== null)
@@ -99,7 +100,7 @@ export async function connectAdminCatalog(
         entry = domainFromSummary(
           await callAdminMethod(
             context.session,
-            AdminContract.fleet,
+            fleet,
             MethodKey.of(AdminContract.classes.Fleet, 'publishDomain'),
             {
               operationId: operationId('publish'),

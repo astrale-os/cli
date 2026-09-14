@@ -2,6 +2,7 @@
 export type InstanceState = 'provisioning' | 'ready' | 'deleting' | 'failed' | 'deleted'
 
 export interface InstanceInfo {
+  readonly fleetId?: string
   readonly id: string
   readonly slug: string
   readonly operationId?: string
