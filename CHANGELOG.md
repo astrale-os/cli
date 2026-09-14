@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.105](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.104...cli/v1.0.0-beta.105) (2026-09-14)
+
+
+### Bug Fixes
+
+* **catalog:** resolve default Fleet from caller-visible nodes ([#482](https://github.com/astrale-os/cli/issues/482)) ([b9f2cc0](https://github.com/astrale-os/cli/commit/b9f2cc059ca54c838574166066b15c92167b62d9))
+
 ## [1.0.0-beta.104](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.103...cli/v1.0.0-beta.104) (2026-09-14)
 
 
