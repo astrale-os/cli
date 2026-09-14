@@ -325,7 +325,7 @@ Read Fleets directly from the graph and use the generic callable command to crea
 
 ```bash
 astrale query --class '/:admin.astrale.ai:class.Fleet' -i admin
-astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"/:admin.astrale.ai:core.fleet"}'
+astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"@<default-fleet-id>"}'
 astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
 astrale instance list --fleet '@<fleet-id>'
 astrale domain list --fleet '@<fleet-id>'
@@ -334,6 +334,8 @@ astrale domain list --fleet '@<fleet-id>'
 Creating a Fleet requires central Shell administrator authority and administration of the source
 Fleet. The new Fleet receives an independent catalogue copy; provision its own Host capacity
 before creating Instances. Host capacity is never borrowed from another Fleet.
+Use the observed ID of the Fleet whose reserved slug is `default` for `copyFrom`; protected Core
+namespace paths need not be visible to the caller's graph reads.
 
 An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation and
 Domain installation. These commands have no `--fleet` option; installation derives the catalogue
