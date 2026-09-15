@@ -106,6 +106,7 @@ export async function resolveInstalledDomainView(
     href: binding.href,
     handshake: binding.handshake,
     ...(binding.iframe === undefined ? {} : { iframe: binding.iframe }),
+    ...(binding.host === undefined ? {} : { host: binding.host }),
     issuer: publication.identity.issuer,
     etag: publication.etag,
     revision: publication.revision,
