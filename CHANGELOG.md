@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.106](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.105...cli/v1.0.0-beta.106) (2026-09-15)
+
+
+### Bug Fixes
+
+* **viewer:** preserve installed View host requirements ([#485](https://github.com/astrale-os/cli/issues/485)) ([c8042c4](https://github.com/astrale-os/cli/commit/c8042c42d15249b3bab967e675b499d17f799c30))
+
 ## [1.0.0-beta.105](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.104...cli/v1.0.0-beta.105) (2026-09-14)
 
 
