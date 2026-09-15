@@ -61,6 +61,7 @@ test('published requirements grant only each mounted View and isolate its provid
           view,
           revision,
           externalOrigins: [],
+          delegationTtlSeconds: 60,
           kernelUrl: 'https://kernel.example',
           kernelIssuer: 'https://kernel.example',
           identity: 'fixture',

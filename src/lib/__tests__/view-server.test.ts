@@ -7,7 +7,7 @@ import type { withClientSession } from '../../connection'
 import type { ViewServeConfig } from '../view/session'
 
 import { findFreePort } from '../port'
-import { mintViewCredential, startViewServer } from '../view/server'
+import { mintViewCredential, startViewServer, VIEW_DELEGATION_TTL_SECONDS } from '../view/server'
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const
 const target = (value: string) => value as ViewServeConfig['session']['view']['target']
@@ -117,6 +117,82 @@ describe('view session server credentials', () => {
     }
   })
 
+  test('serves concurrent page requests from one mint, then reuses the grant', async () => {
+    const nonce = 'shared-view'
+    const port = await findFreePort(48_000, 200)
+    if (port === null) throw new Error('test port window exhausted')
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const mint = mock(async () => {
+      await held
+      return 'minted-credential'
+    })
+    const connections = mock(() => undefined)
+    const connect: typeof withClientSession = async (_options, action) => {
+      connections()
+      return action({
+        auth: { mint },
+        target: { kernelIssuer: issuer('https://kernel.test') },
+      } as never)
+    }
+    const config = {
+      session: {
+        id: 'v-shared',
+        pid: 0,
+        port,
+        nonce,
+        pageUrl: `http://127.0.0.1:${port}/`,
+        view: {
+          target: target('/:example.test'),
+          route: {
+            key: 'example.test:view.private',
+            declaration: { target: { kind: 'domain' } },
+            href: 'https://example.test/ui/private',
+            handshake: 'shell',
+            issuer: issuer('https://kernel.test'),
+            etag: digest('c'),
+            revision: revision('d'),
+          },
+        },
+        createdAt: '2026-08-20T00:00:00.000Z',
+      },
+      kernel: { instance: 'managed', as: 'dispatcher' },
+      proxy: {
+        kernelUrl: 'https://kernel.test',
+        issuer: 'https://kernel.test',
+        direct: true,
+      },
+      externalOrigins: [],
+      idleMs: 60_000,
+    } satisfies ViewServeConfig
+    const server = startViewServer(config, { connect })
+    await once(server, 'listening')
+
+    try {
+      const token = () => fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, { method: 'POST' })
+      const pending = [token(), token(), token()]
+      release()
+      const bodies = await Promise.all((await Promise.all(pending)).map((one) => one.json()))
+
+      expect(bodies.map((body) => body.token)).toEqual([
+        'minted-credential',
+        'minted-credential',
+        'minted-credential',
+      ])
+      expect(connections).toHaveBeenCalledTimes(1)
+
+      // The grant still covers the View delegation, so a later request mints nothing.
+      await token()
+      expect(connections).toHaveBeenCalledTimes(1)
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()))
+      })
+    }
+  })
+
   /** @evidence TEST-CLI-PLAIN-VIEW-RECEIVES-NO-CREDENTIAL */
   test('refuses to mint a token for a handshake-none View', async () => {
     const nonce = 'plain-view'
@@ -163,6 +239,8 @@ describe('view session server credentials', () => {
       expect(served).toMatchObject({
         sessionId: 'v-plain',
         externalOrigins: ['https://connect.nango.dev'],
+        // The page anticipates against the same delegation the server serves against.
+        delegationTtlSeconds: VIEW_DELEGATION_TTL_SECONDS,
         view: config.session.view,
       })
 

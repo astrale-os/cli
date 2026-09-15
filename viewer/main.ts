@@ -1,5 +1,6 @@
 import type { MountedWindow, ResolvedView } from '@astrale-os/shell'
 
+import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
 import {
   createIframeShellAdapter,
   createShell,
@@ -11,7 +12,6 @@ import {
 import { viewHostCapabilities } from '../src/lib/view/host-capabilities'
 import { installOpenIntentHandler } from '../src/lib/view/open-intent'
 import { accessibleIframeAdapter, viewTitle } from './frame'
-import { createViewTokenBroker, type ViewToken } from './token'
 
 /**
  * The `astrale view` host page: a thin consumer of Shell's exact V2 mount
@@ -28,6 +28,8 @@ type Config = {
   instance: string | null
   sessionId: string
   externalOrigins: readonly string[]
+  /** Delegation every View call must be able to make; the credential threshold derives from it. */
+  delegationTtlSeconds: number
   revision: number
   identities?: readonly string[]
 }
@@ -147,11 +149,20 @@ async function main(): Promise<void> {
   }
 
   report('mounting')
-  let tokens: ReturnType<typeof createViewTokenBroker> | null = null
+  type ViewToken = { token: string; expiresAt: number }
+  const loadToken = async () => {
+    const next = await j<ViewToken>('/token', { method: 'POST' })
+    return { credential: next.token, expiresAt: next.expiresAt }
+  }
+  let tokens: ReturnType<typeof createSessionCredentialProvider> | null = null
   if (route.handshake === 'shell') {
-    tokens = createViewTokenBroker(await j<ViewToken>('/token', { method: 'POST' }), () =>
-      j<ViewToken>('/token', { method: 'POST' }),
-    )
+    tokens = createSessionCredentialProvider({
+      ttlSeconds: cfg.delegationTtlSeconds,
+      mint: loadToken,
+      initial: await loadToken(),
+    })
+    // The page outlives many credentials; anticipate rather than pay on the next user action.
+    tokens.start()
   }
   const kernelUrl = new URL(cfg.kernelUrl, location.href).href
 
@@ -160,8 +171,9 @@ async function main(): Promise<void> {
     session: {
       kernel: cfg.kernelIssuer,
       auth: {
-        ttlSeconds: 3_600,
-        resolve: () => (tokens === null ? {} : tokens.resolve()),
+        ttlSeconds: cfg.delegationTtlSeconds,
+        resolve: async (invoked, signal) =>
+          tokens === null ? {} : tokens.resolve(invoked, signal),
       },
       policy: {
         maximumRouteAgeMs: MAXIMUM_ROUTE_AGE_MS,
@@ -181,14 +193,18 @@ async function main(): Promise<void> {
   let mounted: MountedWindow | null = null
 
   const mount = async (view: ResolvedView): Promise<MountedWindow> => {
+    const held = view.route.handshake === 'shell' ? await tokens!.acquire() : undefined
     const credential =
-      view.route.handshake === 'shell'
-        ? {
-            token: tokens!.current().token,
-            expiresAt: tokens!.current().expiresAt,
-            refresh: () => tokens!.refresh(),
+      held === undefined
+        ? undefined
+        : {
+            token: held.credential,
+            expiresAt: held.expiresAt,
+            refresh: async () => {
+              const next = await tokens!.acquire()
+              return { token: next.credential, expiresAt: next.expiresAt }
+            },
           }
-        : undefined
     return shell.openView({
       host: container,
       view,
