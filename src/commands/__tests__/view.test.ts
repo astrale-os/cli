@@ -111,6 +111,28 @@ const installedDomain = {
 }
 
 describe('view session resolution', () => {
+  test('preserves published host requirements when selecting an explicit installed Domain View', async () => {
+    const { resolveSession } = await import('../view')
+    const host = { navigation: { external: { origins: ['https://provider.example'] } } }
+    bundleMock.mockImplementationOnce(async () => ({
+      ...installedDomain,
+      domain: {
+        ...installedDomain.domain,
+        bindings: {
+          ...installedDomain.domain.bindings,
+          views: installedDomain.domain.bindings.views.map((binding) =>
+            binding.view.endsWith(':view.model')
+              ? { ...binding, handshake: 'shell', host }
+              : binding,
+          ),
+        },
+      },
+    }))
+    const result = await resolveSession('/:ai-gateway.astrale.ai:view.model', {})
+    expect(result.view?.route.host).toEqual(host)
+    expect(viewsForMock).not.toHaveBeenCalled()
+  })
+
   test('reports a missing installed View through the structured command error boundary', async () => {
     const command = (await import('../view')).default
     const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true)
