@@ -7,6 +7,9 @@ import {
   FolderClosed,
   FolderOpen,
   Spline,
+  ShieldCheck,
+  Braces,
+  AppWindow,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -68,7 +71,7 @@ export function ModuleTree({
         <Member
           key={m.selectId}
           m={m}
-          depth={1}
+          depth={0}
           indent={indent}
           selected={selected}
           onSelect={onSelect}
@@ -97,7 +100,9 @@ function Branch({
   const [localOpen, setLocalOpen] = useState(true)
   const moduleId = `module.${node.path}`
   const active = selected === moduleId
-  const hasCanvasModule = node.members.length > 0
+  const hasCanvasModule = node.members.some(
+    (member) => member.kind === 'class' || member.kind === 'edge',
+  )
 
   // A folder with direct schema members owns a canvas module, so its collapse is
   // shared with the canvas. Pure parent folders only control the tree locally.
@@ -111,7 +116,7 @@ function Branch({
   const pad = { paddingLeft: indent + 8 + depth * 12 }
   const FolderIcon = open ? FolderOpen : FolderClosed
   return (
-    <div>
+    <div data-module-path={node.path}>
       <div
         data-tree-row=""
         data-anchor-ref={moduleId}
@@ -201,8 +206,17 @@ function Member({
   // class.X namespace and would collide with a same-named node class.
   const hidden = isHidden(m.ref, controls.hidden)
   const dimmed = hidden
-  const Icon = m.kind === 'edge' ? Spline : Box
-  const color = m.kind === 'edge' ? 'text-schema-edge' : 'text-schema-node'
+  const canvasMember = m.kind === 'class' || m.kind === 'edge'
+  const Icon = { class: Box, edge: Spline, policy: ShieldCheck, function: Braces, view: AppWindow }[
+    m.kind
+  ]
+  const color = {
+    class: 'text-schema-node',
+    edge: 'text-schema-edge',
+    policy: 'text-success',
+    function: 'text-schema-function',
+    view: 'text-schema-view',
+  }[m.kind]
   const ref = useRef<HTMLDivElement>(null)
   // Auto-scroll: when this row becomes the selected one, nudge it into view.
   // 'nearest' only scrolls if it's off-screen, so visible selections don't jump.
@@ -213,14 +227,14 @@ function Member({
     <div
       ref={ref}
       data-tree-row=""
-      data-anchor-ref={m.selectId}
+      data-anchor-ref={m.kind === 'policy' ? undefined : m.ref}
       data-anchor-excerpt={`${m.kind} ${m.name}`}
       className={cn(
         'group flex w-full items-center rounded-md pr-2 hover:bg-accent',
         active && 'bg-accent',
         dimmed && 'opacity-45',
       )}
-      style={{ paddingLeft: indent + 8 + (depth + 1) * 12 + 12 }}
+      style={{ paddingLeft: indent + 26 + depth * 12 }}
       title={`${m.kind} ${m.name}`}
     >
       <button
@@ -238,26 +252,30 @@ function Member({
         )}
         <span className="truncate">{m.name}</span>
       </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          controls.toggleHidden(m.ref)
-        }}
-        title={hidden ? 'Show in canvas' : 'Hide in canvas'}
-        className={cn(
-          'ml-1 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground',
-          hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
-        )}
-      >
-        {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-      </button>
-      <AnchorButton
-        domainId={controls.domainId}
-        anchorRef={{ ref: m.selectId, kind: 'schema' }}
-        excerpt={`${m.kind} ${m.name}`}
-        className="ml-1"
-      />
+      {canvasMember && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            controls.toggleHidden(m.ref)
+          }}
+          title={hidden ? 'Show in canvas' : 'Hide in canvas'}
+          className={cn(
+            'ml-1 shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground',
+            hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          )}
+        >
+          {hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        </button>
+      )}
+      {m.kind !== 'policy' && (
+        <AnchorButton
+          domainId={controls.domainId}
+          anchorRef={{ ref: m.ref, kind: m.kind === 'view' ? 'section' : 'schema' }}
+          excerpt={`${m.kind} ${m.name}`}
+          className="ml-1"
+        />
+      )}
     </div>
   )
 }

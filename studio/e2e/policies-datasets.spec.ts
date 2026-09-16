@@ -5,11 +5,39 @@ import { dockWorkspacePanel, expect, type Page, test } from './test'
 const origin = 'crm.studio-demo.astrale.ai'
 const policyRef = (name: string) => ({ origin, kind: 'policy' as const, name })
 
+test('authored policies share their module folder and root views remain below the folders', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
+  const tree = page.getByTestId('workspace-domain-tree')
+  const billing = tree.locator('[data-module-path="billing"]')
+  await billing.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
+  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
+  await expect(panel.getByRole('heading', { name: 'mayManageInvoice', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Close panel' }).click()
+  const overview = tree.getByRole('button', { name: 'overview', exact: true })
+  const rootView = overview.locator('..')
+  await expect(rootView.locator('xpath=ancestor::*[@data-module-path]')).toHaveCount(0)
+  await overview.click()
+  await expect(panel.getByRole('heading', { name: 'overview', exact: true })).toBeVisible()
+})
+
 async function policyScenario(page: Page) {
   await page.route('**/api/domain/*/bundle', async (route) => {
     const response = await route.fetch()
     const bundle = (await response.json()) as StudioSchemaBundle
     if (bundle.ir?.domain === origin) {
+      for (const [ref, path] of Object.entries({
+        'class.Invoice': 'classes/invoice.ts',
+        'policy.mayManageInvoice': 'policies/may-manage-invoice.ts',
+        'function.closeBilling': 'functions/close-billing.ts',
+      }))
+        bundle.overlay.sourceSpans[ref] = {
+          file: 'schema/modules/billing/' + path,
+          startLine: 1,
+          endLine: 2,
+        }
       bundle.ir.policies.manageBilling = { expression: { allOf: [policyRef('mayManageInvoice')] } }
       bundle.ir.policies.administerBilling = { expression: { anyOf: [policyRef('manageBilling')] } }
       bundle.ir.classes.Invoice!.policies = { read: policyRef('administerBilling') }
@@ -85,11 +113,11 @@ test('schema policies open in the panel and show indirect consumers', async ({ p
   await dockWorkspacePanel(request, 'left')
   await page.goto('/')
   await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
-  const folder = page.getByTestId('schema-policies').first()
-  await expect(
-    folder.getByRole('button', { name: 'mayManageInvoice', exact: true }),
-  ).not.toBeVisible()
-  await folder.locator('summary').click()
+  const tree = page.getByTestId('workspace-domain-tree')
+  const folder = tree.locator('[data-module-path="modules/billing"]')
+  await expect(tree.getByRole('button', { name: 'modules', exact: true })).toHaveCount(0)
+  await expect(folder.getByRole('button', { name: 'Invoice', exact: true })).toBeVisible()
+  await expect(folder.getByRole('button', { name: 'closeBilling', exact: true })).toBeVisible()
   await folder.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
   const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
   await expect(panel.getByRole('heading', { name: 'mayManageInvoice', exact: true })).toBeVisible()
@@ -117,6 +145,12 @@ test('schema policies open in the panel and show indirect consumers', async ({ p
   await method.getByRole('button').first().click()
   await method.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
   await expect(panel.getByRole('heading', { name: 'mayManageInvoice', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Close panel' }).click()
+  await folder.getByRole('button', { name: 'closeBilling', exact: true }).click()
+  await expect(panel.getByRole('heading', { name: 'closeBilling', exact: true })).toBeVisible()
+  await panel.getByRole('button', { name: 'administerBilling', exact: true }).click()
+  await expect(panel.getByRole('heading', { name: 'administerBilling', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Process', exact: true }).click()
   await page.getByRole('button', { name: 'administerBilling', exact: true }).click()

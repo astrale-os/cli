@@ -53,6 +53,43 @@ const ir: SchemaIR = {
 }
 
 describe('source overlay', () => {
+  test('locates registered policies and views in their authored modules, including aliases and inline declarations', () => {
+    const root = mkdtempSync(join(tmpdir(), 'studio-module-overlay-'))
+    roots.push(root)
+    const schemaDir = join(root, 'schema')
+    const moduleDir = join(schemaDir, 'modules/billing')
+    mkdirSync(join(moduleDir, 'policies'), { recursive: true })
+    mkdirSync(join(moduleDir, 'views'), { recursive: true })
+    writeFileSync(
+      join(moduleDir, 'policies/pay.ts'),
+      `import { policy } from '@astrale-os/sdk/schema'
+/** May settle billing. */
+export const declaredPolicy = policy({ expression: {} })`,
+    )
+    writeFileSync(
+      join(moduleDir, 'views/billing.ts'),
+      `import { view } from '@astrale-os/sdk/schema'
+export const declaredView = view({ target: 'domain' })`,
+    )
+    writeFileSync(
+      join(schemaDir, 'index.ts'),
+      `import { defineSchema, view } from '@astrale-os/sdk/schema'
+import { declaredPolicy as guard } from './modules/billing/policies/pay.js'
+import { declaredView } from './modules/billing/views/billing.js'
+export const schema = defineSchema('example.dev', {
+  policies: { MayPay: guard },
+  views: { billing: declaredView, overview: view({ target: 'domain' }) },
+})`,
+    )
+    const spans = buildSourceSpans({ ir: null, domainRoot: root, schemaDir })
+    expect(spans['policy.MayPay']).toMatchObject({
+      file: 'schema/modules/billing/policies/pay.ts',
+      doc: 'May settle billing.',
+    })
+    expect(spans['view.billing']?.file).toBe('schema/modules/billing/views/billing.ts')
+    expect(spans['view.overview']?.file).toBe('schema/index.ts')
+    expect(spans['policy.guard']).toBeUndefined()
+  })
   test('links modular Action and Workflow declarations to exact callables', () => {
     const root = mkdtempSync(join(tmpdir(), 'studio-runtime-overlay-'))
     roots.push(root)

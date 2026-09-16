@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
+import { scanWorkspace } from './detect'
 import {
   analyzeProjectConfig,
   depsInstalled,
@@ -12,6 +13,7 @@ import {
   resolveSchemaEntry,
   unregisterDomain,
 } from './domain'
+import { getDomain } from './domain'
 
 const roots: string[] = []
 const domainIds: string[] = []
@@ -50,6 +52,27 @@ export default defineApplication({ schema, runtime: {} as never })
 }
 
 describe('SDK V1 project discovery', () => {
+  test('same-named projects keep separate identities and handles across rescans and registration order', () => {
+    const source = fixture()
+    const workspace = mkdtempSync(join(tmpdir(), 'studio-duplicate-domains-'))
+    roots.push(workspace)
+    const paths = [join(workspace, 'admin/domain'), join(workspace, 'ui/domain')]
+    for (const path of paths) cpSync(source, path, { recursive: true })
+    const initial = scanWorkspace(workspace)
+    domainIds.push(...initial.map((handle) => handle.id))
+    expect(initial).toHaveLength(2)
+    expect(new Set(initial.map((handle) => handle.id)).size).toBe(2)
+    for (let scan = 0; scan < 3; scan += 1) {
+      for (const handle of scanWorkspace(workspace)) {
+        expect(handle).toBe(initial.find((entry) => entry.root === handle.root)!)
+        expect(getDomain(handle.id)!).toBe(handle)
+      }
+    }
+    for (const handle of initial) unregisterDomain(handle.id)
+    for (const path of paths.toReversed()) {
+      expect(registerDomain(path)?.id).toBe(initial.find((handle) => handle.root === path)?.id)
+    }
+  })
   test('uses only the default-exported Project for Application and datasets', () => {
     const root = fixture(true)
     writeFileSync(

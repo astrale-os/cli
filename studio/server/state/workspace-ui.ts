@@ -1,3 +1,5 @@
+import { basename } from 'node:path'
+
 /** Machine-side UI state for one scanned workspace. */
 import type {
   NodePosition,
@@ -8,6 +10,7 @@ import type {
   WorkspaceUiState,
 } from '../../shared/types'
 
+import { allDomains, type DomainHandle } from '../domain'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { readJson, writeJson } from './store'
 
@@ -125,7 +128,38 @@ function decodeWorkspaceUiState(value: unknown): WorkspaceUiState | undefined {
 }
 
 export function readWorkspaceUiState(root: string): WorkspaceUiState {
-  return readJson(root, FILE, decodeWorkspaceUiState, emptyWorkspaceUiState())
+  return remapWorkspaceDomainIds(
+    readJson(root, FILE, decodeWorkspaceUiState, emptyWorkspaceUiState()),
+    allDomains(),
+  )
+}
+
+/** Keep existing canvas preferences when basename-only IDs become path-qualified IDs. */
+export function remapWorkspaceDomainIds(
+  state: WorkspaceUiState,
+  domains: readonly Pick<DomainHandle, 'id' | 'root'>[],
+): WorkspaceUiState {
+  // The previous registry retained the last project for a duplicated basename.
+  const aliases = new Map(
+    domains.map(({ id, root }) => [basename(root).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain', id]),
+  )
+  const id = (value: string) => aliases.get(value) ?? value
+  const list = (values: string[]) => [...new Set(values.map(id))]
+  const keys = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [id(key), values[id(key)] ?? value]),
+    )
+  return {
+    ...state,
+    ...(state.readerDomainId ? { readerDomainId: id(state.readerDomainId) } : {}),
+    schema: {
+      ...state.schema,
+      visibleDomainIds: list(state.schema.visibleDomainIds),
+      expandedDomainIds: list(state.schema.expandedDomainIds),
+      domainPositions: keys(state.schema.domainPositions),
+      collapsedModules: keys(state.schema.collapsedModules),
+    },
+  }
 }
 
 /** Merge a trusted-boundary patch after decoding each field against the current state. */

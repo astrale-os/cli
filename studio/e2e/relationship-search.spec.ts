@@ -1,3 +1,4 @@
+import { FIXTURE_ID } from './test'
 import { dockWorkspacePanel, expect, test, type Locator, type Page } from './test'
 
 /**
@@ -12,9 +13,12 @@ import { dockWorkspacePanel, expect, test, type Locator, type Page } from './tes
 
 const RELATIONSHIP = 'SubscribedTo'
 /** The two classes `SubscribedTo` runs between, in the fixture's `crm` domain. */
-const ENDPOINTS = ['workspace:fixture:class.Company', 'workspace:fixture:class.Subscription']
+const ENDPOINTS = [
+  `workspace:${FIXTURE_ID}:class.Company`,
+  `workspace:${FIXTURE_ID}:class.Subscription`,
+]
 /** A class deliberately far from either end — zooming into it is what parks the relationship. */
-const ELSEWHERE = 'workspace:fixture:class.Product'
+const ELSEWHERE = `workspace:${FIXTURE_ID}:class.Product`
 
 function node(page: Page, id: string): Locator {
   return page.locator(`.react-flow__node[data-id="${id}"]`)

@@ -1,3 +1,4 @@
+import { FIXTURE_ID } from './test'
 import { dockWorkspacePanel, expect, test } from './test'
 
 /**
@@ -12,7 +13,7 @@ import { dockWorkspacePanel, expect, test } from './test'
  */
 
 const EDGE = '.react-flow__edge[data-id*="edge-MessageOn__"]'
-const NODE = '.react-flow__node[data-id="workspace:fixture:class.Ticket"]'
+const NODE = `.react-flow__node[data-id="workspace:${FIXTURE_ID}:class.Ticket"]`
 
 test('comment mode paints its target until the comment is sent, and lets go on Esc', async ({
   page,

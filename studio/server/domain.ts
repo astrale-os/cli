@@ -1,6 +1,6 @@
 /** SDK V1 project discovery and the in-process Studio registry. */
 import { existsSync, statSync } from 'node:fs'
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import {
   Node,
   Project,
@@ -10,6 +10,7 @@ import {
   type SourceFile,
 } from 'ts-morph'
 
+import { workspaceKey } from './home'
 import { isPackageImportSpecifier, resolvePackageImport } from './package-imports'
 
 export interface DomainHandle {
@@ -26,7 +27,7 @@ export interface DomainHandle {
 const registry = new Map<string, DomainHandle>()
 
 export function makeId(root: string): string {
-  return basename(resolve(root)).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain'
+  return workspaceKey(root)
 }
 
 const APPLICATION_MODULES = new Set(['@astrale-os/sdk/application', '@astrale-os/sdk'])
