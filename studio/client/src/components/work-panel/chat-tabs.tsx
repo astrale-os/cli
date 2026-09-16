@@ -21,6 +21,7 @@ import { Plus, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { hasHarnessLogo, HarnessLogo } from '@/components/harness-logo'
+import { useAgentUnread } from '@/lib/agent-unread'
 import { useChatMutations } from '@/lib/chats'
 import { labelOf } from '@/lib/harnesses'
 import { cn } from '@/lib/utils'
@@ -148,6 +149,7 @@ function Tab({
   onClose?: () => void
 }) {
   const [editing, setEditing] = useState(false)
+  const unread = useAgentUnread((state) => state.receipts[chat.id]?.unread ?? false)
   const field = useRef<HTMLInputElement>(null)
   const tab = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -205,7 +207,7 @@ function Tab({
           // to a screen reader or to anyone who turned motion off
           aria-busy={isBusy(chat) || undefined}
           aria-label={named ? chat.title : harnessLabel}
-          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${isBusy(chat) ? ' — running' : ''}${active ? ' — double-click to rename' : ''}`}
+          title={`${named ? `${chat.title} — ` : ''}${harnessLabel}${chat.model ? ` · ${chat.model}` : ''}${isBusy(chat) ? ' — running' : ''}${unread ? ' — unread reply' : ''}${active ? ' — double-click to rename' : ''}`}
           className="flex h-full min-w-0 items-center gap-1.5 px-2"
         >
           <span className="relative grid h-3.5 w-3.5 shrink-0 place-items-center">
@@ -233,8 +235,14 @@ function Tab({
                 {harnessLabel.slice(0, 2)}
               </span>
             )}
-            {chat.status === 'failed' && (
-              <span className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-destructive" />
+            {(unread || chat.status === 'failed') && (
+              <span
+                aria-label={unread ? 'Unread reply' : 'Agent failed'}
+                className={cn(
+                  'absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full',
+                  chat.status === 'failed' ? 'bg-destructive' : 'bg-success',
+                )}
+              />
             )}
           </span>
           {active && named && (

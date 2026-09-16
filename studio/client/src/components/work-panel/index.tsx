@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { isRunActive, useDisplayRun } from '@/lib/agent'
-import { useActiveChatId, useModelCatalog } from '@/lib/chats'
+import { useUnreadAgentReplies } from '@/lib/agent-unread'
+import { useActiveChatId, useChatMutations, useModelCatalog } from '@/lib/chats'
 import { useHarness, useLoadout, useWorkspaceComments } from '@/lib/hooks'
 import { type PanelSide, useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
@@ -88,6 +89,7 @@ export function WorkPanel() {
 function CollapsedRail({ side }: { side: DockedSide }) {
   const setPanelTab = useUI((s) => s.setPanelTab)
   const waiting = useWaitingCount()
+  const unread = useUnreadAgentReplies()
   return (
     <aside
       className={cn(
@@ -95,9 +97,13 @@ function CollapsedRail({ side }: { side: DockedSide }) {
         side === 'left' ? 'border-r' : 'border-l',
       )}
     >
-      <RailButton label="Agent" onClick={() => setPanelTab('agent')}>
-        <MessageCircle className="h-4 w-4" />
-      </RailButton>
+      {unread.length > 0 ? (
+        <UnreadAgentButton />
+      ) : (
+        <RailButton label="Agent" onClick={() => setPanelTab('agent')}>
+          <MessageCircle className="h-4 w-4" />
+        </RailButton>
+      )}
       <RailButton label="Comments" badge={waiting} onClick={() => setPanelTab('comments')}>
         <MessageSquare className="h-4 w-4" />
       </RailButton>
@@ -191,6 +197,9 @@ function FloatingDock() {
   // Closed, the dock is all the agent has on screen — a running turn has to show
   // on the bar itself. Open it needs nothing: the turn is unfolding right above.
   const working = !open && isRunActive(run)
+  const unread = useUnreadAgentReplies()
+  const attention = !open && unread.length > 0
+  const failed = unread.some((reply) => reply.failed)
 
   const field = useCallback(
     () => box.current?.querySelector<HTMLTextAreaElement>('[data-agent-composer]'),
@@ -215,6 +224,7 @@ function FloatingDock() {
         ref={box}
         data-testid="agent-dock"
         aria-busy={working || undefined}
+        data-agent-notification={attention ? (failed ? 'error' : 'unread') : undefined}
         onPointerDown={(event) => {
           // Anywhere on the resting bar means "open it" — not just the field. An
           // unreachable agent leaves that field disabled, and the bar is the only way
@@ -231,6 +241,11 @@ function FloatingDock() {
           open ? 'bg-card' : 'bg-card/80',
           // a working bar lifts off the canvas a little further
           working && 'ring-[3px] ring-primary/10',
+          attention &&
+            !working &&
+            (failed
+              ? 'border-destructive/60 ring-[3px] ring-destructive/15'
+              : 'border-success/60 ring-[3px] ring-success/15'),
         )}
       >
         {/* The edge breathes for as long as the turn runs — the sign you catch
@@ -286,19 +301,61 @@ function FloatingDock() {
             // Opened, the strip says it better and this would only say it twice.
             trailing={
               open ? undefined : (
-                <RailButton
-                  label="Open comments"
-                  badge={waiting}
-                  onClick={() => setPanelTab('comments')}
-                >
-                  <MessageSquare className="h-4 w-4" />
-                </RailButton>
+                <>
+                  <UnreadAgentButton />
+                  <RailButton
+                    label="Open comments"
+                    badge={waiting}
+                    onClick={() => setPanelTab('comments')}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                  </RailButton>
+                </>
               )
             }
           />
         )}
       </AgentDropZone>
     </div>
+  )
+}
+
+/** The notice opens the chat that owns the reply, including replies from another tab. */
+function UnreadAgentButton() {
+  const unread = useUnreadAgentReplies()
+  const activeId = useActiveChatId()
+  const { select } = useChatMutations()
+  const setPanelTab = useUI((state) => state.setPanelTab)
+  const reply =
+    unread.find((entry) => entry.failed) ??
+    unread.find((entry) => entry.chatId === activeId) ??
+    unread[0]
+  if (!reply) return null
+  const label = reply.failed ? 'Read agent error' : 'Read unread agent reply'
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      data-testid="agent-unread"
+      onClick={() => {
+        if (reply.chatId !== activeId) select.mutate(reply.chatId)
+        setPanelTab('agent')
+      }}
+      className={cn(
+        'relative grid h-8 w-8 shrink-0 place-items-center rounded-md transition-colors hover:bg-accent',
+        reply.failed ? 'text-destructive' : 'text-success',
+      )}
+    >
+      <MessageCircle className="h-4 w-4" />
+      <span
+        aria-hidden
+        className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-current"
+      />
+      <span role="status" className="sr-only">
+        {reply.failed ? 'Agent needs attention' : 'Agent reply ready'}
+      </span>
+    </button>
   )
 }
 
@@ -354,6 +411,7 @@ function PanelHeader({
   const tab = useUI((s) => s.panelTab)
   const setPanelTab = useUI((s) => s.setPanelTab)
   const waiting = useWaitingCount()
+  const unread = useUnreadAgentReplies()
 
   return (
     <header className="flex h-10 shrink-0 items-center gap-1 px-2">
@@ -363,6 +421,7 @@ function PanelHeader({
           onClick={() => setPanelTab('agent')}
           icon={<MessageCircle />}
           label="Agent"
+          badge={unread.length}
           compact={compact}
         />
         <TabButton
