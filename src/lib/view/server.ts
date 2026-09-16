@@ -101,6 +101,12 @@ export function startViewServer(
    * Issue a caller-scoped bearer; raw CLI credentials never enter the browser session. Concurrent
    * page requests share one mint, and a grant is reused until it stops covering the View's own
    * delegation.
+   *
+   * Deliberately never started: this provider is request-scoped behind a client that already
+   * anticipates. The host page holds its own provider and starts it (`viewer/main.ts`), so the
+   * `POST /token` that reaches this server arrives on that page's own threshold timer and never on
+   * a user action. A timer here would instead mint delegations for a page that may have gone away,
+   * and hold the event loop against the server's idle shutdown.
    */
   function createGrantProvider(initial?: TokenGrant): GrantProvider {
     if (initial !== undefined) grantKind = initial.kind
