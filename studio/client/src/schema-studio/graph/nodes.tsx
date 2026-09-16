@@ -145,6 +145,10 @@ export function GroupNode({ data }: NodeProps) {
   const selected = useUI(
     (s) => s.selectionDomainId === d.domainId && s.selectedClass === `module.${d.path}`,
   )
+  // Keep the layout container, but a lone visible card needs no surrounding frame.
+  // A collapsed module still needs its control so the card can be shown again.
+  if (!d.collapsed && d.classCount === 1) return null
+
   const tint = moduleTint(d.hue)
   return (
     <div
@@ -189,9 +193,6 @@ export function GroupNode({ data }: NodeProps) {
           )}
         </button>
         <span className="truncate font-semibold">{d.label}</span>
-        <span className="ml-auto shrink-0 pr-1 text-[11px] tabular-nums opacity-70">
-          {d.classCount}
-        </span>
       </div>
     </div>
   )
