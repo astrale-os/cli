@@ -292,5 +292,5 @@ function requireDomainIssuer(value: string | undefined, label: string): string {
 
 export const FLEET_OPTION = {
   flags: '--fleet <path>',
-  description: 'Fleet path (default: /:admin.astrale.ai:core.fleet)',
+  description: 'Fleet path (otherwise: sole usable Fleet, then authorized default)',
 }

@@ -147,16 +147,19 @@ describe('managed Instance root import during provisioning', () => {
           expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
           'demo',
           pending.operationId,
+          expect.any(Function),
         ],
         [
           expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
           'demo',
           pending.operationId,
+          expect.any(Function),
         ],
         [
           expect.objectContaining({ timeout: '120000', ...(fleet === undefined ? {} : { fleet }) }),
           'demo',
           pending.operationId,
+          expect.any(Function),
         ],
       ])
       expect(sleep).toHaveBeenCalledTimes(2)
@@ -164,6 +167,45 @@ describe('managed Instance root import during provisioning', () => {
       expect(importInstanceRootIdentity).toHaveBeenCalledTimes(1)
     },
   )
+
+  test('pins the resolved Fleet before retrying an uncertain create outcome', async () => {
+    const options: Array<string | undefined> = []
+    const created = {
+      id: '@created-instance',
+      slug: 'demo',
+      state: 'ready' as const,
+      url: 'https://demo.example/api',
+    }
+    await provisionInstance(
+      'demo',
+      { creds: 'admin-credential', ci: true },
+      {
+        createOwnedInstance: async (opts, _slug, _operation, selected) => {
+          options.push(opts.fleet)
+          if (options.length === 1) {
+            selected?.('@shared')
+            throw new ResponseError(
+              5000,
+              'Lost response',
+              invocation.acceptInvocationId({
+                source: 'https://admin.example/api',
+                id: 'lost-response',
+              }),
+            )
+          }
+          expect(opts.fleet).toBe('@shared')
+          return created
+        },
+        sleep: async () => {},
+        now: () => 0,
+        activateInstance: async () => ({ status: 'completed', user: 'owner' }),
+        upsertManagedBookmark: async () => ({ entry: { url: created.url } }),
+        setActive: async () => 'demo',
+        importInstanceRootIdentity: async () => ({ name: 'demo-root' }) as never,
+      },
+    )
+    expect(options).toEqual([undefined, '@shared'])
+  })
 
   test('reuses an explicitly supplied operation across process-level recovery', async () => {
     const created = {

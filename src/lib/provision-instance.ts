@@ -95,7 +95,7 @@ export async function provisionInstance(
   let selectionError: unknown = null
   // Keep each Workflow invocation inside the platform's request window. The
   // same durable operation is replayed when Admin returns a provisioning receipt.
-  const createOpts = instanceCreateOptions(opts)
+  let createOpts = instanceCreateOptions(opts)
   const operationId =
     opts.operation === undefined
       ? deps.operationId()
@@ -112,7 +112,9 @@ export async function provisionInstance(
         while (true) {
           if (pending !== undefined && deps.now() >= deadline) return pending
           try {
-            created = await deps.createOwnedInstance(createOpts, slug, operationId)
+            created = await deps.createOwnedInstance(createOpts, slug, operationId, (fleet) => {
+              createOpts = { ...createOpts, fleet }
+            })
           } catch (error) {
             if (!retryableCreate(error) || deps.now() >= deadline) {
               if (pending !== undefined) return pending
@@ -147,7 +149,7 @@ export async function provisionInstance(
   if (created.state !== 'ready') {
     console.error(
       chalk.yellow(
-        `Instance "${slug}" is retained. Rerun your original instance create command with the same Admin target options and creator identity.`,
+        `Instance "${slug}" is retained. Rerun your original instance create command with --operation ${operationId}${createOpts.fleet === undefined ? '' : ` --fleet '${createOpts.fleet}'`} and the same Admin target options and creator identity.`,
       ),
     )
     return { created, slug }

@@ -9,6 +9,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import type { AdminGraphApi } from '../../graph'
 
 import { adminSession } from '../../__tests__/fixture'
+import { AdminContract } from '../../contract'
 import { connectAdminCatalog } from '../client'
 
 const domainProperties = Object.freeze({
@@ -84,7 +85,7 @@ function fixture(input: {
     calls,
     connect: () =>
       connectAdminCatalog(
-        { session: remote.session, graph, fleet: input.fleet },
+        { session: remote.session, graph, fleet: input.fleet ?? AdminContract.fleet.raw },
         input.useDefaultOperationIds
           ? undefined
           : { operationId: (kind) => `cli.domain.${kind}.test` },

@@ -8,6 +8,7 @@ import { MethodKey, PropertyKey } from '@astrale-os/sdk/schema'
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphApi } from '../graph'
+import { resolveAdminFleet } from '../selection'
 import {
   AdminDomainNotFoundError,
   type DomainInfo,
@@ -40,11 +41,13 @@ export async function connectAdminCatalog(
   context: AdminCatalogContext,
   dependencies: AdminCatalogDependencies = {},
 ): Promise<AdminCatalogApi> {
+  if (context.fleet !== undefined) Path.parse(context.fleet)
   const operationId = dependencies.operationId ?? defaultOperationId
-  const fleet = context.fleet === undefined ? AdminContract.fleet : Path.parse(context.fleet)
+  let selected: Promise<Path> | undefined
+  const fleet = () => (selected ??= resolveAdminFleet(context))
 
   const list = async (): Promise<DomainInfo[]> => {
-    const observedFleet = await catalogFleet(context, fleet)
+    const observedFleet = await catalogFleet(context, await fleet())
     if (observedFleet === undefined) return []
     const [nodes, defaultsPage] = await Promise.all([
       readAllNodes(
@@ -102,7 +105,7 @@ export async function connectAdminCatalog(
         entry = domainFromSummary(
           await callAdminMethod(
             context.session,
-            fleet,
+            await fleet(),
             MethodKey.of(AdminContract.classes.Fleet, 'publishDomain'),
             {
               operationId: operationId('publish'),

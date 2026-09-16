@@ -1,0 +1,122 @@
+import { ClassKey } from '@astrale-os/sdk/graph/class'
+import { NodeId } from '@astrale-os/sdk/graph/node'
+import { normalizeProperties } from '@astrale-os/sdk/graph/properties'
+import { K, PropertyKey } from '@astrale-os/sdk/schema'
+import { expect, mock, test } from 'bun:test'
+
+import type { AdminGraphQueryApi } from '../graph'
+
+import { AdminContract } from '../contract'
+import { connectAdminInstances } from '../instance/client'
+import { resolveAdminFleet } from '../selection'
+import { adminSession } from './fixture'
+
+function fixture(entries: [string, boolean][], explicit?: string) {
+  const nodes = entries.map(([slug]) => ({
+    id: NodeId(slug),
+    class: ClassKey.of(AdminContract.classes.Fleet),
+    props: normalizeProperties({
+      [PropertyKey.of(AdminContract.classes.Fleet, 'slug')]: slug,
+      [K.classes.Named.properties.name.key]: slug,
+    }),
+  }))
+  const query = mock(async () => ({
+    result: {
+      kind: 'nodes' as const,
+      nodes: nodes.map((value) => ({ kind: 'value' as const, value })),
+    },
+    page: {},
+  }))
+  const remote = adminSession((target, input) => {
+    if (target.endsWith(':class.Identity:can')) {
+      expect(input).toMatchObject({ policy: '/:admin.astrale.ai:policy.UseFleet' })
+      return {
+        allowed: entries.find(([id]) => id === (input as { object: string }).object)?.[1] ?? false,
+      }
+    }
+    if (target.endsWith('.method.listInstances')) return []
+    if (target.endsWith('.method.createInstance'))
+      return { id: '@created', slug: 'demo', state: 'ready', url: 'https://demo.test' }
+    throw new Error(`Unexpected call: ${target}`)
+  })
+  return {
+    context: {
+      fleet: explicit,
+      graph: { query } as unknown as AdminGraphQueryApi,
+      session: remote.session,
+    },
+    query,
+    remote,
+  }
+}
+
+test.each([
+  { entries: [['shared', true]], expected: '@shared' },
+  {
+    entries: [
+      ['default', true],
+      ['shared', true],
+    ],
+    expected: '@default',
+  },
+  {
+    entries: [
+      ['default', false],
+      ['shared', true],
+    ],
+    expected: '@shared',
+  },
+  {
+    entries: [
+      ['observer-only', false],
+      ['shared', true],
+    ],
+    expected: '@shared',
+  },
+] as { entries: [string, boolean][]; expected: string }[])(
+  'selects $expected using the native UseFleet decision',
+  async ({ entries, expected }) => {
+    const { context } = fixture(entries)
+    expect(String((await resolveAdminFleet(context, true)).raw)).toBe(expected)
+  },
+)
+
+test.each([
+  { entries: [] },
+  { entries: [['shared', false]] },
+  {
+    entries: [
+      ['shared', true],
+      ['astrale', true],
+    ],
+  },
+] as { entries: [string, boolean][] }[])(
+  'refuses absence or ambiguity without choosing a foreign default ($entries)',
+  async ({ entries }) => {
+    const { context } = fixture(entries)
+    await expect(resolveAdminFleet(context, true)).rejects.toThrow(/No Fleet|Choose a Fleet/)
+  },
+)
+
+test('an explicit receiver bypasses selection, not the callable policy', async () => {
+  const { context, query, remote } = fixture([], '@chosen')
+  expect((await resolveAdminFleet(context, true)).raw).toEqual(expect.stringMatching(/^@chosen$/))
+  expect(query).not.toHaveBeenCalled()
+  expect(remote.call).not.toHaveBeenCalled()
+})
+
+test('retains read-only inventory without claiming creation rights', async () => {
+  const { context } = fixture([['client', false]])
+  expect((await resolveAdminFleet(context)).raw).toEqual(expect.stringMatching(/^@client$/))
+  await expect(resolveAdminFleet(context, true)).rejects.toThrow('No Fleet')
+})
+
+test('the ordinary instance client lists and creates in its sole usable fleet', async () => {
+  const { context, remote } = fixture([['shared', true]])
+  const api = await connectAdminInstances(context)
+  await expect(api.list()).resolves.toEqual([])
+  await expect(api.create('demo', 'create-shared')).resolves.toMatchObject({ id: '@created' })
+  const encoded = JSON.stringify(remote.call.mock.calls)
+  expect(encoded).toContain('@shared::admin.astrale.ai:class.Fleet.method.createInstance')
+  expect(encoded).not.toContain('core.fleet::')
+})
