@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-beta.108](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.107...cli/v1.0.0-beta.108) (2026-09-16)
+
+
+### Bug Fixes
+
+* **admin:** select usable fleets and pin instance creation retries ([#492](https://github.com/astrale-os/cli/issues/492)) ([ebd997b](https://github.com/astrale-os/cli/commit/ebd997bde4b276b2839d29390d6c99eedace8f18))
+* **lib:** require an explicit choice between usable fleets ([#493](https://github.com/astrale-os/cli/issues/493)) ([2e31ee3](https://github.com/astrale-os/cli/commit/2e31ee3bec9e277f393deb1337c4e28a4bdb86b3))
+* **lib:** share one credential across concurrent View token requests ([#489](https://github.com/astrale-os/cli/issues/489)) ([56a3db0](https://github.com/astrale-os/cli/commit/56a3db05f4d59124950079fc42221ae1a08f541d))
+
 ## [1.0.0-beta.107](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.106...cli/v1.0.0-beta.107) (2026-09-16)
 
 
