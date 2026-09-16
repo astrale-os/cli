@@ -54,13 +54,6 @@ test.each([
   { entries: [['shared', true]], expected: '@shared' },
   {
     entries: [
-      ['default', true],
-      ['shared', true],
-    ],
-    expected: '@default',
-  },
-  {
-    entries: [
       ['default', false],
       ['shared', true],
     ],
@@ -83,6 +76,12 @@ test.each([
 
 test.each([
   { entries: [] },
+  {
+    entries: [
+      ['default', true],
+      ['shared', true],
+    ],
+  },
   { entries: [['shared', false]] },
   {
     entries: [
@@ -94,7 +93,7 @@ test.each([
   'refuses absence or ambiguity without choosing a foreign default ($entries)',
   async ({ entries }) => {
     const { context } = fixture(entries)
-    await expect(resolveAdminFleet(context, true)).rejects.toThrow(/No Fleet|Choose a Fleet/)
+    await expect(resolveAdminFleet(context, true)).rejects.toThrow(/No Fleet|Choose one/)
   },
 )
 
@@ -119,4 +118,65 @@ test('the ordinary instance client lists and creates in its sole usable fleet', 
   const encoded = JSON.stringify(remote.call.mock.calls)
   expect(encoded).toContain('@shared::admin.astrale.ai:class.Fleet.method.createInstance')
   expect(encoded).not.toContain('core.fleet::')
+})
+
+test('lists the usable choices and never creates when default is one of several', async () => {
+  const { context, remote } = fixture([
+    ['default', true],
+    ['shared', true],
+    ['observer', false],
+  ])
+  const api = await connectAdminInstances(context)
+  await expect(api.create('demo')).rejects.toMatchObject({
+    code: 'FLEET_SELECTION_REQUIRED',
+    hint: 'Pass --fleet with one of: default (@default), shared (@shared).',
+  })
+  expect(
+    remote.call.mock.calls.every(([request]) =>
+      String(request.target).endsWith(':class.Identity:can'),
+    ),
+  ).toBe(true)
+})
+
+test('checks subsequent pages before automatically selecting a Fleet', async () => {
+  const { context, query } = fixture([
+    ['default', true],
+    ['shared', true],
+  ])
+  const all = await query()
+  query.mockClear()
+  query.mockResolvedValueOnce({
+    ...all,
+    result: { ...all.result, nodes: all.result.nodes.slice(0, 1) },
+    page: { next: 'second' },
+  })
+  query.mockResolvedValueOnce({
+    ...all,
+    result: { ...all.result, nodes: all.result.nodes.slice(1) },
+  })
+  await expect(resolveAdminFleet(context, true)).rejects.toMatchObject({
+    code: 'FLEET_SELECTION_REQUIRED',
+  })
+  expect(query).toHaveBeenCalledTimes(2)
+})
+
+test('bounds concurrent native policy probes without rereading the directory', async () => {
+  const { context, query, remote } = fixture(
+    Array.from({ length: 19 }, (_, i) => [`fleet-${i}`, false]),
+  )
+  let inFlight = 0
+  let peak = 0
+  remote.call.mockImplementation(async () => {
+    peak = Math.max(peak, ++inFlight)
+    await new Promise((resolve) => setTimeout(resolve, 1))
+    --inFlight
+    return { allowed: false }
+  })
+  await expect(resolveAdminFleet(context, true)).rejects.toMatchObject({
+    code: 'FLEET_UNAVAILABLE',
+  })
+  expect(peak).toBeGreaterThan(1)
+  expect(peak).toBeLessThanOrEqual(8)
+  expect(remote.call).toHaveBeenCalledTimes(19)
+  expect(query).toHaveBeenCalledTimes(1)
 })

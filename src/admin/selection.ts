@@ -7,6 +7,7 @@ import { Query } from '@astrale-os/sdk/query'
 import { PropertyKey, K } from '@astrale-os/sdk/schema'
 
 import { AstraleError } from '../errors'
+import { mapBounded } from '../lib/concurrency'
 import { AdminContract } from './contract'
 import { readAllNodes, type AdminGraphQueryApi } from './graph'
 
@@ -28,35 +29,30 @@ export async function resolveAdminFleet(
     context.session.call(call(path, input), options),
   )
   const slugKey = PropertyKey.of(AdminContract.classes.Fleet, 'slug')
-  const fleets = await Promise.all(
-    nodes.map(async (node) => {
-      const slug = node.props[slugKey]
-      const name = node.props[K.classes.Named.properties.name.key]
-      if (typeof slug !== 'string' || typeof name !== 'string')
-        throw new Error('Fleet has no slug or name: migration required.')
-      return {
-        id: node.id,
-        slug,
-        name,
-        usable: await auth.can({
-          policy: { origin: 'admin.astrale.ai', kind: 'policy', name: 'UseFleet' },
-          object: node.id,
-        }),
-      }
-    }),
-  )
-  if (fleets.filter((fleet) => fleet.slug === 'default').length > 1)
-    throw new Error('Multiple default Fleets.')
+  const fleets = await mapBounded(nodes, 8, async (node) => {
+    const slug = node.props[slugKey]
+    const name = node.props[K.classes.Named.properties.name.key]
+    if (typeof slug !== 'string' || typeof name !== 'string')
+      throw new Error('Fleet has no slug or name: migration required.')
+    return {
+      id: node.id,
+      slug,
+      name,
+      usable: await auth.can({
+        policy: { origin: 'admin.astrale.ai', kind: 'policy', name: 'UseFleet' },
+        object: node.id,
+      }),
+    }
+  })
   const usable = fleets.filter((fleet) => fleet.usable)
   const candidates = !creation && usable.length === 0 ? fleets : usable
-  const selected =
-    candidates.length === 1 ? candidates[0] : candidates.find((fleet) => fleet.slug === 'default')
+  const selected = candidates.length === 1 ? candidates[0] : undefined
   if (selected !== undefined) return Path.id(selected.id)
   throw new AstraleError(
     candidates.length === 0 ? 'FLEET_UNAVAILABLE' : 'FLEET_SELECTION_REQUIRED',
     candidates.length === 0
       ? 'No Fleet is available for this operation.'
-      : 'Choose a Fleet for this operation.',
+      : 'Multiple Fleets are available. Choose one for this operation.',
     candidates.length === 0
       ? 'Ask a Fleet administrator for access.'
       : `Pass --fleet with one of: ${candidates.map((fleet) => `${fleet.name} (@${fleet.id})`).join(', ')}.`,

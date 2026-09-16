@@ -313,8 +313,9 @@ by the workspace's `./scripts/init-machine.sh`.
 
 An explicit `--fleet <path>` keeps that exact target; authorization failure never falls back.
 Without it, the CLI reads the visible Fleet graph and checks the native `UseFleet` policy:
-it selects the sole usable Fleet, otherwise the usable Fleet whose reserved slug is `default`.
-If neither rule resolves the target, it asks for `--fleet`; no access is granted implicitly.
+it selects the sole usable Fleet. With multiple usable Fleets, it requires `--fleet` and lists
+the available choices; with none, it asks you to request access. No Fleet name or slug has priority,
+and no access is granted implicitly.
 Instance-only users retain read-only inventory through their visible Fleet when they have no
 usable Fleet. This does not authorize creation.
 
@@ -323,7 +324,12 @@ The option accepts a Kernel path, not a slug, and remains limited to `instance c
 its first call and across retries. Keep both the printed `--operation` and `--fleet` when
 resuming from another process. Policies on each callable remain authoritative if access changes.
 No Fleet discovery callable or wrapper command is introduced. These readers require the existing
-Fleet-slug backfill; missing or duplicate default slugs fail explicitly.
+Fleet-slug backfill; missing names or slugs fail explicitly. An explicit historical `core.fleet`
+catalogue path remains supported while that Core node exists.
+
+An explicit target avoids Fleet discovery entirely. Implicit resolution reads each directory page
+once and checks `UseFleet` with at most eight requests in flight; instance creation reuses the
+resolved target for its inventory, mutation, and retries.
 
 Read Fleets directly from the graph and use the generic callable command to create one:
 
