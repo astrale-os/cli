@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 env:
-  BUN_VERSION: 1.4.0
+  BUN_VERSION: 1.4.2
 
 jobs:
   test:
@@ -115,6 +115,13 @@ jobs:
             --define '__ASTRALE_BUNDLED__=true' \
             --define '__ASTRALE_SOURCE_REVISION__="${{ steps.source.outputs.sha }}"' \
             bin/astrale.ts --outfile dist/astrale
+          if [ "${{ matrix.target_os }}" = darwin ]; then
+            # Bun's built-in ad-hoc signer currently handles ARM64 only.
+            if [ "${{ matrix.target_arch }}" = x64 ]; then
+              codesign --force --sign - dist/astrale
+            fi
+            codesign --verify --strict --verbose=4 dist/astrale
+          fi
           ./dist/astrale --version
           ./dist/astrale --help >/dev/null
           ./dist/astrale skills status --json >/dev/null
@@ -142,6 +149,10 @@ jobs:
           tar -xzf "$asset.tar.gz" -C dist/archive-check
           cmp dist/astrale dist/archive-check/astrale
           test -x dist/archive-check/astrale
+          if [ "${{ matrix.target_os }}" = darwin ]; then
+            codesign --verify --strict --verbose=4 dist/archive-check/astrale
+          fi
+          ./dist/archive-check/astrale --version
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: astrale-${{ matrix.target_os }}-${{ matrix.target_arch }}
