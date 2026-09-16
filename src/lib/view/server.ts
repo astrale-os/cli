@@ -1,7 +1,9 @@
 import type { AuthApi } from '@astrale-os/sdk/auth'
 import type { IssuerId } from '@astrale-os/sdk/auth'
+import type { SessionCredential } from '@astrale-os/sdk/client/session'
 import type { ReadableStream as WebReadableStream } from 'node:stream/web'
 
+import { createSessionCredentialProvider } from '@astrale-os/sdk/client/session'
 import { readFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { join } from 'node:path'
@@ -29,13 +31,20 @@ export { ensureViewerAssets, viewerDistDir } from './assets'
  */
 
 const VIEW_TOKEN_TTL_SECONDS = 4 * 60
-const TOKEN_REFRESH_MARGIN_MS = 60_000
+/**
+ * Delegation the mounted View must always be able to make from its bearer. It is the single
+ * threshold: this server renews the grant once it stops covering that delegation, and the host page
+ * anticipates against the same value from `/config.json`.
+ */
+export const VIEW_DELEGATION_TTL_SECONDS = 60
 const FALLBACK_TOKEN_TTL_MS = VIEW_TOKEN_TTL_SECONDS * 1_000
 const IDLE_SWEEP_MS = 60_000
 
 export type PageStatus = { state: string; error?: string; at: string }
 
-type TokenGrant = { token: string; expiresAt: number; kind: 'minted' | 'exchanged' }
+type GrantKind = 'minted' | 'exchanged'
+type TokenGrant = { token: string; expiresAt: number; kind: GrantKind }
+type GrantProvider = ReturnType<typeof createSessionCredentialProvider>
 
 export interface ViewServerDependencies {
   readonly connect: typeof withClientSession
@@ -56,7 +65,8 @@ export function startViewServer(
   const hostDir = viewerDistDir()
   const proxyFetch = proxy.caFile ? fetchWithCaFile(proxy.caFile) : globalThis.fetch
   let status: PageStatus = { state: 'waiting', at: new Date().toISOString() }
-  let grant: TokenGrant | null = null
+  let grantKind: GrantKind = 'minted'
+  let grants = createGrantProvider()
   let lastActivity = Date.now()
   let revision = 0
   let refreshing: Promise<void> | undefined
@@ -71,7 +81,9 @@ export function startViewServer(
     config.kernel = kernel
     session.identity = identity
     session.view = view
-    grant = nextGrant
+    // A new provider is how the previous identity's grant is invalidated: a mint still in flight
+    // for it can only ever settle into the provider that started it.
+    grants = createGrantProvider(nextGrant ?? undefined)
     revision += 1
     status = { state: 'waiting', at: new Date().toISOString() }
   }
@@ -80,20 +92,32 @@ export function startViewServer(
     const view = await refreshViewPlacement(config, dependencies.connect)
     await (dependencies.persist ?? saveRecord)({ ...session, pid: process.pid, view })
     session.view = view
-    grant = null
+    grants = createGrantProvider()
     revision += 1
     status = { state: 'waiting', at: new Date().toISOString() }
   }
 
-  /** Issue a caller-scoped bearer; raw CLI credentials never enter the browser session. */
-  async function freshGrant(): Promise<TokenGrant> {
-    if (grant && grant.expiresAt - Date.now() > TOKEN_REFRESH_MARGIN_MS) return grant
-    const started = revision
-    const fresh = await mintGrant(config.kernel, session.view)
-    if (started !== revision)
-      throw new Error('View session changed; reload before requesting credentials.')
-    grant = fresh
-    return fresh
+  /**
+   * Issue a caller-scoped bearer; raw CLI credentials never enter the browser session. Concurrent
+   * page requests share one mint, and a grant is reused until it stops covering the View's own
+   * delegation.
+   */
+  function createGrantProvider(initial?: TokenGrant): GrantProvider {
+    if (initial !== undefined) grantKind = initial.kind
+    return createSessionCredentialProvider({
+      ttlSeconds: VIEW_DELEGATION_TTL_SECONDS,
+      mint: async (): Promise<SessionCredential> => {
+        const started = revision
+        const fresh = await mintGrant(config.kernel, session.view)
+        if (started !== revision)
+          throw new Error('View session changed; reload before requesting credentials.')
+        grantKind = fresh.kind
+        return { credential: fresh.token, expiresAt: fresh.expiresAt }
+      },
+      ...(initial === undefined
+        ? {}
+        : { initial: { credential: initial.token, expiresAt: initial.expiresAt } }),
+    })
   }
 
   async function mintGrant(
@@ -199,6 +223,7 @@ export function startViewServer(
         instance: session.instance ?? null,
         sessionId: session.id,
         externalOrigins: config.externalOrigins,
+        delegationTtlSeconds: VIEW_DELEGATION_TTL_SECONDS,
         revision,
         ...(config.identities ? { identities: config.identities } : {}),
       })
@@ -213,8 +238,8 @@ export function startViewServer(
         json(res, 403, { error: 'plain views have no Astrale credential privilege' })
         return
       }
-      const fresh = await freshGrant()
-      json(res, 200, { token: fresh.token, expiresAt: fresh.expiresAt, kind: fresh.kind })
+      const fresh = await grants.acquire()
+      json(res, 200, { token: fresh.credential, expiresAt: fresh.expiresAt, kind: grantKind })
       return
     }
     if (sub === '/identity' && req.method === 'POST') {
