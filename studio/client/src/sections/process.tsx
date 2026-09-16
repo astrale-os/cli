@@ -312,7 +312,11 @@ function FnRow({
           <span className="font-semibold">{fn.name}</span>
           <MethodAuthBadge method={fn.method} domainId={domainId} interactive={!onClick} />
           {/* the policies this callable checks — the shield's hover card proves them on demo data */}
-          <PolicyChips method={fn.method} origin={origin} />
+          <PolicyChips
+            method={fn.method}
+            origin={origin}
+            domainId={onClick ? undefined : domainId}
+          />
           {fn.link && <Chip tone="primary">{fn.link.kind}</Chip>}
           {'static' in fn.method && fn.method.static && <Chip tone="default">static</Chip>}
           {'abstract' in fn.method && fn.method.abstract && <Chip tone="fn">contract</Chip>}

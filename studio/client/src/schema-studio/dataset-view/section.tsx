@@ -321,11 +321,22 @@ export function TestsSection({
                 {!datasets
                   ? 'Extracting datasets…'
                   : entries.length === 0
-                    ? 'No Dataset referenced by this project.'
+                    ? 'No Dataset referenced'
                     : 'No Dataset could be extracted; see the rail for details.'}
               </div>
             )}
           </ReactFlowProvider>
+          {selected?.description && (
+            <aside
+              aria-label="Scenario"
+              className="absolute top-3 left-3 z-10 max-h-[35%] w-80 max-w-[calc(100%-1.5rem)] overflow-y-auto rounded-lg border bg-card/95 p-4 shadow-sm"
+            >
+              <h2 className="text-[13px] font-semibold">{datasetLabel(selected)}</h2>
+              <p className="mt-1.5 whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground">
+                {selected.description}
+              </p>
+            </aside>
+          )}
         </div>
         {probe && policy && guard && usage && policyIndex ? (
           <PanelShell onClose={() => setProbe(null)}>

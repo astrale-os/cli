@@ -11,13 +11,13 @@ import type { IrSchemaRef, StudioCore, StudioSchemaBundle } from '@shared/types'
 import { Check, ShieldCheck, X } from 'lucide-react'
 import { useMemo } from 'react'
 
-import { Chip } from '@/components/studio-kit'
 import { type Policy, type PolicyGuard, type PolicyIndex, type PolicyUsage } from '@/lib/policy'
 import { cn } from '@/lib/utils'
 
 import type { DataGraph } from './policy-graph'
 
 import { resolveClass } from '../inheritance'
+import { PolicyUsageSection } from '../policy-detail'
 import { edgeLabel, nodeLabel, sameObject } from './model'
 import {
   type PolicyEvaluation,
@@ -25,7 +25,7 @@ import {
   type PolicyObject,
   objectKey,
 } from './policy-evaluate'
-import { ExpressionWords, checkObjectWords } from './policy-words'
+import { ExpressionWords } from './policy-words'
 
 const GUARD_LABEL: Record<PolicyGuard, string> = {
   object: 'guards a node',
@@ -181,7 +181,7 @@ export function PolicyPanel({
           <ShieldCheck className="h-6 w-6" />
         </span>
         <div className="min-w-0">
-          <div className="truncate text-[15px] font-semibold">{policy.ref.name}</div>
+          <h2 className="truncate text-[15px] font-semibold">{policy.ref.name}</h2>
           <div className="text-[11px] text-muted-foreground">{GUARD_LABEL[guard]}</div>
         </div>
       </div>
@@ -325,36 +325,7 @@ export function PolicyPanel({
           )}
         </section>
 
-        <section className="space-y-2">
-          <Heading>Used by</Heading>
-          {usage.classes.length === 0 && usage.callables.length === 0 ? (
-            <p className="text-[12px] text-muted-foreground">
-              Declared but not attached to any class or callable yet.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-1.5">
-              {usage.classes.map((use) => (
-                <Chip
-                  key={`${use.className}.${use.operation}`}
-                  tone={use.type === 'edge' ? 'edge' : 'node'}
-                >
-                  {use.className} · {use.operation}
-                </Chip>
-              ))}
-              {usage.callables.map((use, i) => (
-                <Chip
-                  key={i}
-                  tone="fn"
-                  title={use.composed ? 'one check among several' : undefined}
-                >
-                  {use.ownerKind === 'class' ? `${use.owner}.${use.name}` : use.name} ·{' '}
-                  {checkObjectWords(use.object)}
-                  {use.composed ? ' *' : ''}
-                </Chip>
-              ))}
-            </div>
-          )}
-        </section>
+        <PolicyUsageSection usage={usage} onOpen={onOpen} />
       </div>
     </div>
   )

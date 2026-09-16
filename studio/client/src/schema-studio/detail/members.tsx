@@ -5,6 +5,7 @@ import { type HTMLAttributes, type ReactNode, type Ref, useEffect, useState } fr
 
 import { AnchorButton, useRevealedAnchor } from '@/components/anchor'
 import { TRIGGER_TONE } from '@/components/method-auth'
+import { PolicyLink } from '@/components/policy-link'
 import { Chip, DescriptionText, MetaGrid, Row, Surface } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { describe, typeLabel } from '@/lib/format'
@@ -450,7 +451,7 @@ function PolicyCheckText({
         description && 'cursor-help',
       )}
     >
-      <span className="font-mono text-foreground/90">{check.policy.name}</span>
+      <PolicyLink policy={check.policy} domainId={bundle.domainId} className="font-mono" />
       {foreign && (
         <span className="text-muted-foreground">· {originLabel(check.policy.origin)}</span>
       )}

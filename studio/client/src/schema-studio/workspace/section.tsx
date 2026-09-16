@@ -18,6 +18,7 @@ import { DomainsPanel } from '../domains-panel'
 import { DomainsRailHeader } from '../domains-rail'
 import { IntegrationsPanel } from '../integrations-panel'
 import { PanelShell } from '../panel-shell'
+import { SchemaPolicyDetail } from '../policy-detail'
 import { ModulesSidebar } from '../sidebar'
 import { ViewsPanel } from '../views-panel'
 import { toggleVisibilityRef } from '../visibility'
@@ -184,6 +185,13 @@ export function WorkspaceSchemaSection({ domainIds }: { domainIds: string[] }) {
         ) : panelOverlay?.kind === 'integrations' && overlayInput ? (
           <PanelShell onClose={() => setPanelOverlay(null)}>
             <IntegrationsPanel domainId={overlayInput.summary.id} />
+          </PanelShell>
+        ) : detail?.startsWith('policy.') && selectionDomainId ? (
+          <PanelShell onClose={() => select(undefined)}>
+            <SchemaPolicyDetail
+              domainId={selectionDomainId}
+              policyKey={detail.slice('policy.'.length)}
+            />
           </PanelShell>
         ) : detail && selectionInput ? (
           <PanelShell onClose={() => select(undefined)}>

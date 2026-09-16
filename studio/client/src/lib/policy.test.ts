@@ -198,6 +198,79 @@ test('finds where a policy is used: protected classes and checking callables', (
   ])
 })
 
+test('lists ancestor policies and their consumers through diamonds, without conflating origins or looping', () => {
+  const ir = {
+    domain: ORIGIN,
+    policies: {
+      ObserveGroup: observeGroup,
+      Parent: { expression: { allOf: [ref('policy', 'ObserveGroup')] } },
+      OtherParent: { expression: { anyOf: [ref('policy', 'ObserveGroup')] } },
+      Grandparent: {
+        expression: { anyOf: [ref('policy', 'Parent'), ref('policy', 'OtherParent')] },
+      },
+      GreatGrandparent: {
+        expression: { allOf: [ref('policy', 'Grandparent'), ref('policy', 'Cycle')] },
+      },
+      Cycle: { expression: { allOf: [ref('policy', 'GreatGrandparent')] } },
+      Foreign: { expression: { allOf: [ref('policy', 'ObserveGroup', 'elsewhere.dev')] } },
+    },
+    classes: {
+      Group: {
+        name: 'Group',
+        type: 'node',
+        policies: { read: ref('policy', 'Grandparent') },
+        methods: {
+          rename: { policy: { check: ref('policy', 'Parent'), object: { kind: 'self' } } },
+        },
+      },
+      MemberOf: {
+        name: 'MemberOf',
+        type: 'edge',
+        policies: { traverse: ref('policy', 'GreatGrandparent') },
+        methods: {},
+      },
+      Foreign: {
+        name: 'Foreign',
+        type: 'node',
+        policies: { read: ref('policy', 'ObserveGroup', 'elsewhere.dev') },
+        methods: {},
+      },
+    },
+    functions: {
+      create: {
+        policy: {
+          check: ref('policy', 'GreatGrandparent'),
+          object: { kind: 'input', field: 'group' },
+        },
+      },
+    },
+  } as unknown as SchemaIR
+  const usage = policyUsage(ir, decodePolicy(ORIGIN, 'ObserveGroup', observeGroup)!)
+  expect(usage.policies.map(({ ref }) => ref.name)).toEqual([
+    'Parent',
+    'OtherParent',
+    'Grandparent',
+    'GreatGrandparent',
+    'Cycle',
+  ])
+  expect(usage.policies[0]?.via).toEqual([])
+  expect(usage.policies[3]?.via.map((ref) => ref.name)).toEqual(['Grandparent', 'Parent'])
+  expect(
+    usage.classes.map(({ className, operation, via }) => [
+      className,
+      operation,
+      via?.map((ref) => ref.name),
+    ]),
+  ).toEqual([
+    ['Group', 'read', ['Grandparent', 'Parent']],
+    ['MemberOf', 'traverse', ['GreatGrandparent', 'Grandparent', 'Parent']],
+  ])
+  expect(usage.callables.map(({ name, via }) => [name, via?.map((ref) => ref.name)])).toEqual([
+    ['rename', ['Parent']],
+    ['create', ['GreatGrandparent', 'Grandparent', 'Parent']],
+  ])
+})
+
 const mayManage = { origin: 'crm.example.dev', kind: 'policy', name: 'mayManage' } as const
 const isAdmin = { origin: 'kernel.astrale.ai', kind: 'policy', name: 'isAdmin' } as const
 
