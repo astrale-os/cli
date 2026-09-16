@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.111](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.110...cli/v1.0.0-beta.111) (2026-09-16)
+
+
+### Bug Fixes
+
+* **studio:** stabilize discovery and flatten module contents ([#499](https://github.com/astrale-os/cli/issues/499)) ([7625cb7](https://github.com/astrale-os/cli/commit/7625cb72e2c0d3461fa253355957533db3286cb0))
+
 ## [1.0.0-beta.110](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.109...cli/v1.0.0-beta.110) (2026-09-16)
 
 
