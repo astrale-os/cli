@@ -58,6 +58,35 @@ function anatomy(views: DomainAnatomy['views'], origin: string): DomainAnatomy {
 }
 
 describe('workspace projection', () => {
+  test('unselected relationships keep the same weight within and across domain boundaries', () => {
+    const remote = classRef('remote.example.dev', 'Remote')
+    const local = domainBundle('local', 'local.example.dev', {
+      User: nodeClass('User'),
+      Team: nodeClass('Team'),
+      member_of: edgeClass('member_of', [
+        { name: 'user', types: ['User'] },
+        { name: 'team', types: ['Team'] },
+      ]),
+      assigned_to: edgeClass('assigned_to', [
+        { name: 'user', types: ['User'] },
+        { name: 'remote', types: ['Remote'], refs: [remote] },
+      ]),
+    })
+    local.overlay.sourceSpans = {
+      'class.User': { file: 'schema/users/user.ts', startLine: 1, endLine: 2 },
+      'class.Team': { file: 'schema/teams/team.ts', startLine: 1, endLine: 2 },
+    }
+    local.ir!.importsByKey['remote.example.dev:class.Remote'] = {
+      origin: remote.origin,
+      ref: remote,
+      key: 'remote.example.dev:class.Remote',
+    }
+    const result = composeWorkspaceCanvas([prepared(local)])
+    expect(result.edges).toHaveLength(2)
+    expect(result.edges[0]!.style?.strokeWidth).toBe(1.3)
+    expect(result.edges[1]!.style?.strokeWidth).toBe(result.edges[0]!.style?.strokeWidth)
+  })
+
   test("a domain's views arrive as nodes of the domain, bound to what they render", async () => {
     const value = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })
     const input = prepared(value).input

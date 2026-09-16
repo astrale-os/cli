@@ -5,10 +5,33 @@ import { join } from 'node:path'
 
 import { workspaceStateRoot } from '../home'
 import { writeJson } from './store'
-import { emptyWorkspaceUiState, readWorkspaceUiState, updateWorkspaceUiState } from './workspace-ui'
+import {
+  emptyWorkspaceUiState,
+  readWorkspaceUiState,
+  updateWorkspaceUiState,
+  remapWorkspaceDomainIds,
+} from './workspace-ui'
 
 const roots: string[] = []
 const previousHome = process.env.ASTRALE_HOME
+
+test('retains canvas preferences when qualifying domain IDs and preserves already migrated entries', () => {
+  const state = emptyWorkspaceUiState()
+  state.readerDomainId = 'domain'
+  state.schema.visibleDomainIds = ['domain', 'domain-admin']
+  state.schema.expandedDomainIds = ['domain']
+  state.schema.domainPositions = { domain: { x: 1, y: 2 }, 'domain-admin': { x: 3, y: 4 } }
+  state.schema.collapsedModules = { domain: ['billing'] }
+  const migrated = remapWorkspaceDomainIds(state, [
+    { id: 'domain-ui', root: '/workspace/ui/domain' },
+    { id: 'domain-admin', root: '/workspace/admin/domain' },
+  ])
+  expect(migrated.readerDomainId).toBe('domain-admin')
+  expect(migrated.schema.visibleDomainIds).toEqual(['domain-admin'])
+  expect(migrated.schema.expandedDomainIds).toEqual(['domain-admin'])
+  expect(migrated.schema.domainPositions).toEqual({ 'domain-admin': { x: 3, y: 4 } })
+  expect(migrated.schema.collapsedModules).toEqual({ 'domain-admin': ['billing'] })
+})
 
 afterEach(() => {
   if (previousHome === undefined) delete process.env.ASTRALE_HOME

@@ -13,6 +13,7 @@ import { elkLayout } from '../elk-layout'
 import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
 import { isKernelClass, isKernelImplementationClass } from '../inheritance'
 import { moduleOfClass } from '../modules'
+import { EDGE_WIDTH } from '../palette'
 import { projectDomainCanvas } from '../projection'
 import { viewGraph } from '../view-graph'
 import { classRef, domainRef, edgeRef, isHidden } from '../visibility'
@@ -338,7 +339,7 @@ function crossDomainEdges(
             },
             markerStart: markers.markerStart,
             markerEnd: markers.markerEnd,
-            style: { stroke: CROSS_COLOR, strokeWidth: 2.5 },
+            style: { stroke: CROSS_COLOR, strokeWidth: EDGE_WIDTH },
           })
         }
       }
@@ -398,7 +399,7 @@ function inheritanceEdges(
             markerEnd: EDGE_ARROW,
             style: {
               stroke: INHERITANCE_COLOR,
-              strokeWidth: 1.7,
+              strokeWidth: EDGE_WIDTH,
               strokeDasharray: '2 4',
             },
           })

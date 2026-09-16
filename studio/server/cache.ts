@@ -67,9 +67,9 @@ const BUNDLE_CACHE_FILE = '.cache/schema-bundle.json'
  * same sources. The key below hashes the domain's files and this server's own
  * sources — but a shipped standalone has no sources on disk to hash, so there the
  * version is the only thing that can retire a bundle a newer Studio would compose
- * differently. v7: the overlay reads both of its passes out of one ts-morph project.
+ * differently. v8: source locations include registered Policies and Views.
  */
-const BUNDLE_CACHE_VERSION = 7
+const BUNDLE_CACHE_VERSION = 8
 const LOCKFILES = ['bun.lock', 'pnpm-lock.yaml', 'package-lock.json', 'yarn.lock']
 const TOOL_INPUTS = [
   'cache.ts',

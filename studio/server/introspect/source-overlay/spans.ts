@@ -84,7 +84,8 @@ function declarationHelper(call: CallExpression): 'node' | 'edge' | 'function' |
  */
 interface MemberName {
   schemaName: string
-  section: 'class' | 'function'
+  section: 'class' | 'function' | 'policy' | 'view'
+  value: Node
 }
 
 interface MemberNameMap {
@@ -95,16 +96,21 @@ interface MemberNameMap {
 }
 
 /** Stable source coordinate for the value behind a local/imported alias. */
-function memberValueKey(node: Node, seen = new Set<string>()): string | undefined {
+function memberValue(node: Node, seen = new Set<string>()): Node | undefined {
   const value = unwrapExpression(node)
   const key = `${value.getSourceFile().getFilePath()}:${value.getStart()}`
   if (seen.has(key)) return undefined
   seen.add(key)
   if (Node.isIdentifier(value)) {
     const resolved = valueOfIdentifier(value)
-    if (resolved) return memberValueKey(resolved, seen)
+    if (resolved) return memberValue(resolved, seen)
   }
-  return key
+  return value
+}
+
+function memberValueKey(node: Node): string | undefined {
+  const value = memberValue(node)
+  return value ? `${value.getSourceFile().getFilePath()}:${value.getStart()}` : undefined
 }
 
 /** Map each registered member VARIABLE (as referenced in `defineSchema`) to its
@@ -124,6 +130,8 @@ function buildMemberNameMap(files: SourceFile[]): MemberNameMap {
       if (!cfg) continue
       collectSchemaSection(map, cfg, 'classes', 'class')
       collectSchemaSection(map, cfg, 'functions', 'function')
+      collectSchemaSection(map, cfg, 'policies', 'policy')
+      collectSchemaSection(map, cfg, 'views', 'view')
     }
   }
   return map
@@ -134,19 +142,21 @@ function buildMemberNameMap(files: SourceFile[]): MemberNameMap {
 function collectSchemaSection(
   map: MemberNameMap,
   cfg: Node,
-  prop: 'classes' | 'functions',
-  section: 'class' | 'function',
+  prop: 'classes' | 'functions' | 'policies' | 'views',
+  section: MemberName['section'],
 ): void {
   const obj = getObjectProp(cfg, prop)
   if (!obj) return
   for (const p of obj.getProperties()) {
     const schemaName = propertyKey(p)
-    const memberValue = objectPropertyValue(p)
-    if (!schemaName || !memberValue) continue
-    const member = { schemaName, section } satisfies MemberName
-    const valueKey = memberValueKey(memberValue)
+    const declaredValue = objectPropertyValue(p)
+    if (!schemaName || !declaredValue) continue
+    const value = memberValue(declaredValue)
+    if (!value) continue
+    const member = { schemaName, section, value } satisfies MemberName
+    const valueKey = memberValueKey(value)
     if (valueKey) map.byValue.set(valueKey, member)
-    const unwrapped = unwrapExpression(memberValue)
+    const unwrapped = unwrapExpression(declaredValue)
     if (Node.isIdentifier(unwrapped)) map.byIdentifier.set(unwrapped.getText(), member)
   }
 }
@@ -158,7 +168,7 @@ function collectSchemaSection(
 function resolveMemberKind(
   ir: SchemaIR | null,
   name: string,
-  section: 'class' | 'function' | undefined,
+  section: MemberName['section'] | undefined,
   helperKind: 'node' | 'edge' | 'function',
 ): 'class' | 'edge' | 'function' {
   if (section === 'function' || helperKind === 'function') return 'function'
@@ -195,6 +205,15 @@ export function buildSourceSpans(args: {
     .filter((f) => f.getFilePath() === dir || f.getFilePath().startsWith(`${dir}/`))
   // The Domain's `defineSchema` map is authoritative for each member's name.
   const memberNames = buildMemberNameMap(sourceFiles)
+  for (const { schemaName, section, value } of memberNames.byValue.values()) {
+    if (section !== 'policy' && section !== 'view') continue
+    const statement = value.getFirstAncestorByKind(SyntaxKind.VariableStatement)
+    spans[`${section}.${schemaName}`] = makeSpan(
+      relToRoot(domainRoot, value.getSourceFile().getFilePath()),
+      value,
+      statement ?? value,
+    )
+  }
 
   for (const sf of sourceFiles) {
     const fileRel = relToRoot(domainRoot, sf.getFilePath())

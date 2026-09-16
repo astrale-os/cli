@@ -1,3 +1,9 @@
+import { resolve } from 'node:path'
+
+import { workspaceKey } from '../server/home'
+export const FIXTURE_ID = workspaceKey(resolve(import.meta.dirname, 'fixture'))
+export const PEER_ID = workspaceKey(resolve(import.meta.dirname, 'fixture/peer'))
+
 import type { WorkspacePanelUiState, WorkspaceUiState } from '@shared/types'
 
 import {

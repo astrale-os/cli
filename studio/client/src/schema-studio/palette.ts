@@ -77,3 +77,6 @@ export const MODULE_COLLAPSED_H = 34
 export const DOMAIN_PAD = 52
 /** Room the floating agent dock takes at the bottom of a view: canvas controls sit above it. */
 export const DOCK_CLEARANCE = 88
+
+/** Base weight for unselected schema relationships, including external endpoints. */
+export const EDGE_WIDTH = 1.3

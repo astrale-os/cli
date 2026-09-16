@@ -10,7 +10,14 @@ import {
   kernelRolesOfClass,
 } from './inheritance'
 import { folderModules, moduleOfClass } from './modules'
-import { CLASS_H, CLASS_W, MODULE_COLLAPSED_H, MODULE_HEADER, MODULE_PAD } from './palette'
+import {
+  CLASS_H,
+  CLASS_W,
+  EDGE_WIDTH,
+  MODULE_COLLAPSED_H,
+  MODULE_HEADER,
+  MODULE_PAD,
+} from './palette'
 import { type Hidden, classNodeVisible, classRef, edgeVisible, isHidden } from './visibility'
 
 export interface ClassNodeData extends Record<string, unknown> {
@@ -182,7 +189,7 @@ export function projectDomainCanvas(
           markerEnd: markers.markerEnd,
           style: {
             stroke: crossModule ? 'var(--edge-cross)' : 'var(--edge-line)',
-            strokeWidth: crossModule ? 1.6 : 1.3,
+            strokeWidth: EDGE_WIDTH,
           },
         })
       }
@@ -207,7 +214,7 @@ export function projectDomainCanvas(
           markerEnd: EDGE_ARROW,
           style: {
             stroke: 'var(--edge-inherit)',
-            strokeWidth: 1.3,
+            strokeWidth: EDGE_WIDTH,
             strokeDasharray: '2 4',
           },
         })
