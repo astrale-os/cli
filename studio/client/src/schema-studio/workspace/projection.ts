@@ -11,6 +11,7 @@ import type { WorkspaceDomainInput } from './use-domain-inputs'
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from '../edge-markers'
 import { elkLayout } from '../elk-layout'
 import { applyGeometry, geometryOf, packPendingNodes, type Geometry } from '../geometry'
+import { isKernelClass, isKernelImplementationClass } from '../inheritance'
 import { moduleOfClass } from '../modules'
 import { projectDomainCanvas } from '../projection'
 import { viewGraph } from '../view-graph'
@@ -278,6 +279,7 @@ function rememberDependencyFootprint(
       // An imported EDGE is a relationship, not a box: it is already on the canvas as the
       // line between its endpoints, and a card for it would name the same thing twice.
       if (ir.importedClassesByKey[descriptor.key]?.type === 'edge') continue
+      if (isKernelImplementationClass(descriptor.ref)) continue
       index.note({ origin, name, definition: 'class' }, owner.input.summary.id)
     }
   }
@@ -356,12 +358,24 @@ function inheritanceEdges(
   const seen = new Set<string>()
   for (const owner of domains) {
     const ir = owner.input.bundle.ir
-    if (!ir || !owner.input.visibility.showInheritedEdges) continue
+    if (!ir) continue
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node') continue
       const source = localTarget(owner, className)
       if (!source) continue
       for (const parent of definition.extendsRefs ?? []) {
+        if (isKernelClass(parent)) {
+          // Kernel inheritance is expressed by the Class card's semantic role badges. Keep
+          // the meaningful Kernel Class available for inspection, but never draw an
+          // implementation-level inheritance line to it.
+          if (!isKernelImplementationClass(parent)) {
+            for (const target of resolveClass(owner, parent, origins, diagnostics)) {
+              index.connect(target, owner.input.summary.id)
+            }
+          }
+          continue
+        }
+        if (!owner.input.visibility.showInheritedEdges) continue
         for (const target of resolveClass(owner, parent, origins, diagnostics)) {
           if (target.nodeId === source.nodeId) continue
           // A parent in the owner's OWN domain is already drawn by that domain's projection.

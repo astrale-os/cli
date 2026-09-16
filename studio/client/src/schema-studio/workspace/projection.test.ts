@@ -212,6 +212,46 @@ describe('workspace projection', () => {
     )
   })
 
+  test('exposes Kernel Identity for inspection without drawing Kernel inheritance', () => {
+    const identity = classRef('kernel.astrale.ai', 'Identity')
+    const local = domainBundle('local', 'local.example.dev', {
+      User: nodeClass('User', { extendsRefs: [identity] }),
+    })
+    local.ir!.importsByKey = {
+      'kernel.astrale.ai:class.Identity': {
+        origin: identity.origin,
+        ref: identity,
+        key: 'kernel.astrale.ai:class.Identity',
+      },
+    }
+    local.ir!.importedClassesByKey = {
+      'kernel.astrale.ai:class.Identity': nodeClass('Identity', {
+        origin: identity.origin,
+        ref: identity,
+      }),
+    }
+
+    const result = composeWorkspaceCanvas([prepared(local)])
+    const identityNode = result.nodes.find(
+      (node) => node.id === workspaceExternalMemberNodeId(identity.origin, identity.name, 'class'),
+    )
+
+    expect(result.edges.filter((edge) => edge.data?.kind === 'extends')).toEqual([])
+    expect(identityNode).toMatchObject({
+      selectable: true,
+      data: {
+        selectionDomainId: 'local',
+        selectionId: 'class.kernel.astrale.ai:class.Identity',
+      },
+    })
+
+    const withoutInheritance = prepared(local)
+    withoutInheritance.input.visibility.showInheritedEdges = false
+    expect(composeWorkspaceCanvas([withoutInheritance]).nodes).toContainEqual(
+      expect.objectContaining({ id: identityNode!.id }),
+    )
+  })
+
   test('a dependency nothing points at is on the canvas all the same, folded into its frame', () => {
     const settings = classRef('config.example.dev', 'Settings')
     const local = domainBundle('local', 'local.example.dev', { User: nodeClass('User') })

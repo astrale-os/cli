@@ -224,12 +224,11 @@ export function projectExternalFrames(
         id: workspaceExternalMemberNodeId(frame.origin, member.name, member.definition),
         type: 'extMember',
         parentId: frameNodeId,
-        // A member rides with its frame. Unlike a class, it is not ours to place: the frame
+        // A member rides with its frame. Unlike a local class, it is not ours to place: the frame
         // is a fixed list whose height is that list's length, so a moved member would have
         // nowhere to be persisted and would snap back on the next projection. It is
-        // therefore TRANSPARENT to the pointer — React Flow gives every node `pointer-events:
-        // all` (the canvas has an `onNodeClick`), and a card that swallows the press would
-        // leave a dead zone in the middle of the very block the reader is trying to drag.
+        // therefore not draggable. It remains selectable, however: imported Classes are
+        // inspectable and clicking one must open its detail panel.
         //
         // And for the same reason it carries no `extent: 'parent'`, natural as that would
         // look on a card that lives inside a box: there is no drag to bound. It was not
@@ -238,15 +237,17 @@ export function projectExternalFrames(
         // its frame's own origin, dropping the offset below. One visible flash per drop,
         // and the only node on the canvas that had one.
         draggable: false,
-        selectable: false,
+        selectable: true,
         position: { x: 12, y },
         data: {
           name: member.name,
           kind,
           definition: member.definition,
           inert: member.connected !== true,
+          selectionDomainId: frame.ownerDomainIds[0],
+          selectionId: `class.${frame.origin}:class.${member.name}`,
         },
-        style: { width: 192, height: height - 8, pointerEvents: 'none' },
+        style: { width: 192, height: height - 8 },
       })
     })
   }

@@ -557,6 +557,14 @@ export function WorkspaceSchemaGraph({
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_, node) => {
             setSelectedEdgeId(null)
+            const externalSelection = node.data as {
+              selectionDomainId?: string
+              selectionId?: string
+            }
+            if (externalSelection.selectionDomainId && externalSelection.selectionId) {
+              select(externalSelection.selectionDomainId, externalSelection.selectionId)
+              return
+            }
             const target = localNodeRef(node.id)
             if (!target) return
             if (target.localId.startsWith('class.')) select(target.domainId, target.localId)

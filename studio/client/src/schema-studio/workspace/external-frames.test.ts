@@ -65,9 +65,10 @@ test('an external frame moves like a domain frame, as one block', () => {
   expect(frame.draggable).toBe(true)
   // a place, not a thing you open — the same contract a domain frame carries
   expect(frame.selectable).toBe(false)
-  // the block is ONE drag surface: a member rides along instead of swallowing the press
+  // a member rides with its frame, but remains an inspectable selection target
   expect(member.draggable).toBe(false)
-  expect(member.style?.pointerEvents).toBe('none')
+  expect(member.selectable).toBe(true)
+  expect(member.style?.pointerEvents).toBeUndefined()
 })
 
 test('reads an origin back off a frame id and off nothing else', () => {
