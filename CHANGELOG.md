@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.109](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.108...cli/v1.0.0-beta.109) (2026-09-16)
+
+
+### Bug Fixes
+
+* **studio:** hide Kernel implementation classes and suppress Kernel inheritance edges ([#494](https://github.com/astrale-os/cli/issues/494)) ([314d35c](https://github.com/astrale-os/cli/commit/314d35cd6dc5a6e2ea4087408fc6dcff4bb66900))
+* **studio:** simplify module frames ([#496](https://github.com/astrale-os/cli/issues/496)) ([64c5a47](https://github.com/astrale-os/cli/commit/64c5a47c382c2e4ebe045ad148b8d2f521bc5fd1))
+
 ## [1.0.0-beta.108](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.107...cli/v1.0.0-beta.108) (2026-09-16)
 
 
