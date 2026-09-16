@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.110](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.109...cli/v1.0.0-beta.110) (2026-09-16)
+
+
+### Bug Fixes
+
+* **studio:** clarify datasets and policy navigation ([#497](https://github.com/astrale-os/cli/issues/497)) ([7b449fc](https://github.com/astrale-os/cli/commit/7b449fc6670d6425b6706abb6f95351c95fc0fb6))
+
 ## [1.0.0-beta.109](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.108...cli/v1.0.0-beta.109) (2026-09-16)
 
 
