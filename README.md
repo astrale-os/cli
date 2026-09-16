@@ -311,15 +311,19 @@ by the workspace's `./scripts/init-machine.sh`.
 
 ## Fleet selection
 
-Omitted `--fleet` keeps using `/:admin.astrale.ai:core.fleet`. The option accepts a Kernel
-path, not a slug, and is available only on `instance create`, `instance list`, `domain list`
-and `domain publish`. Explicit Fleet IDs are used directly. Default catalogue reads resolve the
-reserved `default` slug within caller-visible Fleet Nodes, then query that observed ID; namespace
-traversal is not required. No Fleet discovery callable or arbitrary slug input is introduced.
-An invalid path or unavailable target fails without falling back. Default catalogue discovery requires
-the Admin Fleet-slug migration: an unbackfilled Fleet raises an explicit error. An invisible default
-does not select another visible Fleet, and duplicate default slugs fail. This minimum-server-version
-boundary intentionally avoids retaining an inferred legacy-singleton selection contract.
+An explicit `--fleet <path>` keeps that exact target; authorization failure never falls back.
+Without it, the CLI reads the visible Fleet graph and checks the native `UseFleet` policy:
+it selects the sole usable Fleet, otherwise the usable Fleet whose reserved slug is `default`.
+If neither rule resolves the target, it asks for `--fleet`; no access is granted implicitly.
+Instance-only users retain read-only inventory through their visible Fleet when they have no
+usable Fleet. This does not authorize creation.
+
+The option accepts a Kernel path, not a slug, and remains limited to `instance create`,
+`instance list`, `domain list` and `domain publish`. Creation pins the resolved Fleet before
+its first call and across retries. Keep both the printed `--operation` and `--fleet` when
+resuming from another process. Policies on each callable remain authoritative if access changes.
+No Fleet discovery callable or wrapper command is introduced. These readers require the existing
+Fleet-slug backfill; missing or duplicate default slugs fail explicitly.
 
 Read Fleets directly from the graph and use the generic callable command to create one:
 

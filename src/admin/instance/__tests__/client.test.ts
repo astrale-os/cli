@@ -92,7 +92,7 @@ function fixture(input: {
     listCalls,
     connect: () =>
       connectAdminInstances(
-        { session: remote.session, graph, fleet: input.fleet },
+        { session: remote.session, graph, fleet: input.fleet ?? AdminContract.fleet.raw },
         input.useDefaultOperationIds
           ? undefined
           : { operationId: input.operationId ?? ((kind) => `cli.instance.${kind}.test`) },

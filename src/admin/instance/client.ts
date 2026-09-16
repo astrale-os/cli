@@ -9,6 +9,7 @@ import { MethodKey } from '@astrale-os/sdk/schema'
 import { randomOperationId } from '../../lib/idempotency'
 import { AdminContract, callAdminMethod } from '../contract'
 import { readAllNodes, type AdminGraphQueryApi } from '../graph'
+import { resolveAdminFleet } from '../selection'
 import {
   AdminInstanceNotFoundError,
   type DomainInstallReceipt,
@@ -66,15 +67,16 @@ export async function connectAdminInstances(
   context: AdminInstanceContext,
   dependencies: AdminInstanceDependencies = {},
 ): Promise<AdminInstanceApi> {
+  if (context.fleet !== undefined) Path.parse(context.fleet)
   const operationId = dependencies.operationId ?? defaultOperationId
-  const fleet = context.fleet === undefined ? AdminContract.fleet : Path.parse(context.fleet)
+  const fleet = (creation = false) => resolveAdminFleet(context, creation)
 
   const list = async (
     options: Readonly<{ includeRetired?: boolean }> = {},
   ): Promise<OwnedInstanceInfo[]> => {
     const output = await callAdminMethod(
       context.session,
-      fleet,
+      await fleet(),
       MethodKey.of(AdminContract.classes.Fleet, 'listInstances'),
       options.includeRetired === true ? { includeRetired: true } : {},
     )
@@ -136,7 +138,7 @@ export async function connectAdminInstances(
       return instanceFromSummary(
         await callAdminMethod(
           context.session,
-          fleet,
+          await fleet(true),
           MethodKey.of(AdminContract.classes.Fleet, 'createInstance'),
           input,
         ),

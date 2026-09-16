@@ -2,6 +2,7 @@ import type { OwnedInstanceInfo, RootIdentityRecipient } from '../admin/instance
 import type { AdminConnectionOptions, ConnectionContext } from '../connection'
 
 import { connectAdminInstances, AdminInstanceNotFoundError } from '../admin/instance'
+import { resolveAdminFleet } from '../admin/selection'
 import { withAdminClientSession } from '../connection'
 import { AstraleError } from '../errors'
 
@@ -46,9 +47,12 @@ export function createOwnedInstance(
   options: AdminConnectionOptions,
   slug: string,
   operationId?: string,
+  onFleetSelected?: (fleet: string) => void,
 ) {
   return withAdminClientSession(options, async (context) => {
-    const instances = await connectAdminInstances({ ...context, fleet: options.fleet })
+    const fleet = (await resolveAdminFleet({ ...context, fleet: options.fleet }, true)).raw
+    onFleetSelected?.(fleet)
+    const instances = await connectAdminInstances({ ...context, fleet })
     const plan = planInstanceCreate(await instances.list(), slug, operationId)
     // Inventory is caller-visible, not proof of creation ownership. Even ready
     // Instances must replay their receipt so Admin verifies its actor and input.
