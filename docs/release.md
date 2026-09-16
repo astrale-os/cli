@@ -18,11 +18,16 @@ stable ingress lifecycle. Neither requires a CLI-bundled tunnel executable.
    and release manifest are ready. Release Please never merges it automatically.
 3. That merge runs **Release Please** again. It creates `cli/v<version>` and
    calls **CLI Release** without another manual dispatch or approval.
-4. **CLI Release** tests and builds the four Bun 1.4.0 toolchains. Each CLI
+4. **CLI Release** tests and builds the four Bun 1.4.2 toolchains. Each CLI
    embeds Studio, viewer assets, and the release's Skills. Current source has no
    provider binary pin, acquisition script, or separate provider license asset.
-5. Approve the protected `cli-release` publication job. It uploads the immutable
-   assets, then advances the requested channel release.
+   Intel macOS builds receive an explicit ad-hoc signature because Bun's built-in
+   signer currently handles ARM64 only. macOS builds must pass strict code-signature
+   verification both before execution and after archive extraction. A failing signature blocks publication; these
+   ad-hoc signatures do not provide Developer ID or Apple notarization.
+5. The protected `cli-release` publication job uploads the immutable assets,
+   then advances the requested channel release. Its environment restricts allowed
+   branches; it currently requires no manual reviewer approval.
 
 Never edit release versions or push release tags manually. `CLI Release` may be
 dispatched directly only to recover an existing version or create an explicit
@@ -80,8 +85,8 @@ also exercise this migration using their newly built executable.
   currently requires zero approvals and no status checks, code-owner review, or
   last-pusher approval.
 - Opening, updating, and finalizing the Release Please pull request requires no
-  environment approval. The `cli-release` publication job requires a reviewer
-  other than the person who started it.
+  environment approval. The `cli-release` publication environment restricts
+  allowed branches and currently has no required reviewer.
 - npm Trusted Publishing is revoked. Package publishing requires an interactive
   human with 2FA and rejects granular tokens; the `beta` dist-tag is absent and
   every published version is deprecated.

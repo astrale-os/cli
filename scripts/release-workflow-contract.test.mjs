@@ -146,7 +146,7 @@ describe('release workflow contract', () => {
     const build = binary.jobs.build.steps.find((step) => step.name === 'Build binary').run
     const source = binary.jobs.build.steps.find((step) => step.id === 'source')
     const pack = binary.jobs.build.steps.find((step) => step.name === 'Package asset').run
-    assert.equal(binary.env.BUN_VERSION, '1.4.0')
+    assert.equal(binary.env.BUN_VERSION, '1.4.2')
     assert.match(source.run, /git rev-parse HEAD/)
     assert.match(build, /bun scripts\/build-embedded-assets\.ts/)
     assert.doesNotMatch(build, /bun scripts\/build-viewer\.ts/)
@@ -154,6 +154,25 @@ describe('release workflow contract', () => {
     assert.doesNotMatch(build, /bun scripts\/generate-embedded-assets\.ts/)
     assert.doesNotMatch(build, /git diff .*src\/generated\/embedded-assets\.ts/)
     assert.match(build, /bun build --compile/)
+    assert.match(
+      build,
+      /if \[ "\$\{\{ matrix\.target_os \}\}" = darwin \]; then[\s\S]*codesign --verify --strict --verbose=4 dist\/astrale\s+fi/u,
+    )
+    assert.match(
+      build,
+      /if \[ "\$\{\{ matrix\.target_arch \}\}" = x64 \]; then\s+codesign --force --sign - dist\/astrale\s+fi/u,
+    )
+    assert.ok(build.indexOf('bun build --compile') < build.indexOf('codesign --force'))
+    assert.ok(build.indexOf('codesign --force') < build.indexOf('codesign --verify'))
+    assert.ok(build.indexOf('codesign --verify') < build.indexOf('./dist/astrale --version'))
+    assert.match(
+      pack,
+      /if \[ "\$\{\{ matrix\.target_os \}\}" = darwin \]; then\s+codesign --verify --strict --verbose=4 dist\/archive-check\/astrale\s+fi/u,
+    )
+    assert.ok(pack.indexOf('tar -xzf') < pack.indexOf('codesign --verify'))
+    assert.ok(
+      pack.indexOf('codesign --verify') < pack.indexOf('./dist/archive-check/astrale --version'),
+    )
     assert.match(build, /--define '__ASTRALE_BUNDLED__=true'/)
     assert.match(
       build,
@@ -339,7 +358,7 @@ describe('release workflow contract', () => {
     assert.match(guide, /Every push to\s+`main` runs \*\*Release Please\*\*/)
     assert.match(guide, /No manual dispatch or environment approval gates that\s+pull request/)
     assert.match(guide, /protected `cli-release` publication job/)
-    assert.match(guide, /Bun\s+1\.4\.0/)
+    assert.match(guide, /Bun\s+1\.4\.2/)
     assert.match(decision, /one consumer distribution/)
     assert.match(decision, /permanently discontinued/)
     assert.match(decision, /Every push to `main` runs Release Please automatically/)
