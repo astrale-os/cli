@@ -381,7 +381,13 @@ export function policyGuard(policy: Policy, index: PolicyIndex): PolicyGuard {
 
 /** Where a policy is used in the schema — which classes it protects, which callables check it. */
 export interface PolicyUsage {
-  classes: { className: string; type: 'node' | 'edge'; operation: 'read' | 'traverse' }[]
+  policies: { ref: IrSchemaRef; via: IrSchemaRef[] }[]
+  classes: {
+    className: string
+    type: 'node' | 'edge'
+    operation: 'read' | 'traverse'
+    via?: IrSchemaRef[]
+  }[]
   callables: {
     owner: string
     ownerKind: 'class' | 'function'
@@ -389,31 +395,60 @@ export interface PolicyUsage {
     object: PolicyCheckObject
     /** the check is one branch of several, so passing it alone may not be enough */
     composed: boolean
+    via?: IrSchemaRef[]
   }[]
 }
 
 export function policyUsage(ir: SchemaIR, policy: Policy): PolicyUsage {
   const key = schemaRefKey(policy.ref)
-  const usage: PolicyUsage = { classes: [], callables: [] }
+  const usage: PolicyUsage = { policies: [], classes: [], callables: [] }
+  const parents = new Map<string, Policy[]>()
+  for (const candidate of indexPolicies(ir).policies) {
+    const expression = candidate.expression
+    if ('match' in expression) continue
+    for (const ref of 'allOf' in expression ? expression.allOf : expression.anyOf) {
+      const child = schemaRefKey(ref)
+      parents.set(child, [...(parents.get(child) ?? []), candidate])
+    }
+  }
+  // Breadth-first traversal retains one shortest explanation per ancestor. Exact keys
+  // and a visited map keep diamonds, cycles and same-named foreign policies distinct.
+  const paths = new Map<string, IrSchemaRef[]>([[key, []]])
+  for (const [child, path] of paths) {
+    for (const parent of parents.get(child) ?? []) {
+      const parentKey = schemaRefKey(parent.ref)
+      if (paths.has(parentKey)) continue
+      usage.policies.push({ ref: parent.ref, via: path })
+      paths.set(parentKey, [parent.ref, ...path])
+    }
+  }
   const collect = (owner: string, ownerKind: 'class' | 'function', name: string, raw: unknown) => {
     const check = raw === undefined ? undefined : decodePolicyCheck(raw)
     if (!check) return
     const leaves = policyCheckLeaves(check)
     for (const leaf of leaves) {
-      if (schemaRefKey(leaf.check) !== key) continue
+      const via = paths.get(schemaRefKey(leaf.check))
+      if (!via) continue
       usage.callables.push({
         owner,
         ownerKind,
         name,
         object: leaf.object,
         composed: 'allOf' in check || 'anyOf' in check,
+        ...(via.length > 0 ? { via } : {}),
       })
     }
   }
   for (const cls of Object.values(ir.classes)) {
     for (const [operation, ref] of Object.entries(cls.policies ?? {})) {
-      if ((operation === 'read' || operation === 'traverse') && schemaRefKey(ref) === key) {
-        usage.classes.push({ className: cls.name, type: cls.type, operation })
+      const via = paths.get(schemaRefKey(ref))
+      if ((operation === 'read' || operation === 'traverse') && via) {
+        usage.classes.push({
+          className: cls.name,
+          type: cls.type,
+          operation,
+          ...(via.length > 0 ? { via } : {}),
+        })
       }
     }
     for (const [name, method] of Object.entries(cls.methods)) {

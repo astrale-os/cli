@@ -5,6 +5,7 @@ import type { WorkspaceDomainProjection } from './projection'
 
 import { DomainRow } from '../domains-rail'
 import { buildModuleTree } from '../modules'
+import { PoliciesTree } from '../policies-tree'
 import { ModuleTree, type ModuleTreeControls } from '../tree'
 import { useCanvasDomains } from './canvas-selection'
 import { useSchemaWorkspace } from './store'
@@ -95,13 +96,21 @@ export function WorkspaceDomainTree({
             {/* No rule and no tint between a domain and its modules: the rail is ONE tree,
                 and the hierarchy is carried by the indent alone. */}
             {visible && !closed && controls && domain && (
-              <ModuleTree
-                root={buildModuleTree(domain.input.bundle)}
-                indent={MODULE_INDENT}
-                selected={selectionDomainId === domainId ? selected : undefined}
-                onSelect={(ref) => select(domainId, ref)}
-                controls={controls}
-              />
+              <>
+                <ModuleTree
+                  root={buildModuleTree(domain.input.bundle)}
+                  indent={MODULE_INDENT}
+                  selected={selectionDomainId === domainId ? selected : undefined}
+                  onSelect={(ref) => select(domainId, ref)}
+                  controls={controls}
+                />
+                <PoliciesTree
+                  bundle={domain.input.bundle}
+                  indent={MODULE_INDENT}
+                  selected={selectionDomainId === domainId ? selected : undefined}
+                  onSelect={(ref) => select(domainId, ref)}
+                />
+              </>
             )}
           </section>
         )

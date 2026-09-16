@@ -5,6 +5,7 @@ import { Box, MousePointerClick, Spline } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { AnchorButton } from '@/components/anchor'
+import { PolicyLink } from '@/components/policy-link'
 import { Chip, DescriptionText, EmptyState, Group, IconTile } from '@/components/studio-kit'
 import { useViewsModel } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
@@ -130,6 +131,19 @@ export function SchemaDetail({
             below is unmistakably the relationship. The heading only cost a row. */}
         {isEdge && (member.endpoints?.length ?? 0) >= 2 && (
           <EdgeRelationship bundle={bundle} endpoints={member.endpoints!} edgeName={name} />
+        )}
+
+        {Object.keys(member.policies ?? {}).length > 0 && (
+          <Group label="Policies">
+            <div className="space-y-1.5 text-[13px]">
+              {Object.entries(member.policies ?? {}).map(([operation, policy]) => (
+                <div key={operation} className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground">{operation}</span>
+                  <PolicyLink policy={policy} domainId={bundle.domainId} />
+                </div>
+              ))}
+            </div>
+          </Group>
         )}
 
         {lists.properties.length > 0 && (
