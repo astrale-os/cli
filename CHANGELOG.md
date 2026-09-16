@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.107](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.106...cli/v1.0.0-beta.107) (2026-09-16)
+
+
+### Bug Fixes
+
+* **ci:** build macOS binaries with valid signatures using Bun 1.4.2 ([#487](https://github.com/astrale-os/cli/issues/487)) ([dec83ae](https://github.com/astrale-os/cli/commit/dec83ae25f60d7fe81a24026c8256fcfd20573dc))
+
 ## [1.0.0-beta.106](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.105...cli/v1.0.0-beta.106) (2026-09-15)
 
 
