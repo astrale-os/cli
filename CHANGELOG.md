@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.112](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.111...cli/v1.0.0-beta.112) (2026-09-17)
+
+
+### Features
+
+* **studio:** surface unread replies and group schema members ([#501](https://github.com/astrale-os/cli/issues/501)) ([0e9099a](https://github.com/astrale-os/cli/commit/0e9099a88c1817e3c350fbc810dd1ad6c81d7886))
+
 ## [1.0.0-beta.111](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.110...cli/v1.0.0-beta.111) (2026-09-16)
 
 
