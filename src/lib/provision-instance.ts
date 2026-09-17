@@ -128,7 +128,7 @@ export async function provisionInstance(
             throw new AstraleError(
               'INSTANCE_PROVISION_FAILED',
               created.error ?? `Instance ${JSON.stringify(slug)} is ${created.state}.`,
-              'Run `astrale instance list` to inspect it.',
+              `Retry with --operation ${created.operationId ?? operationId} and the same Fleet and identity to resume this creation.`,
             )
           }
           pending = created

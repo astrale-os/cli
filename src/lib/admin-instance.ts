@@ -85,7 +85,13 @@ export function planInstanceCreate(
         ? 'Inspect the Instance in Admin.'
         : `To recover that request, use --operation ${existing.operationId}.`,
     )
-  if (existing?.state === 'ready' || existing?.state === 'provisioning') {
+  // Admin owns whether a failed journey can resume from retained effects. A failed
+  // Instance is not proof that its provisioning Operation is terminal.
+  if (
+    existing?.state === 'ready' ||
+    existing?.state === 'provisioning' ||
+    existing?.state === 'failed'
+  ) {
     if (existing.operationId === undefined) {
       throw new AstraleError(
         'INSTANCE_RECOVERY_UNAVAILABLE',
