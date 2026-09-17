@@ -227,8 +227,9 @@ export function projectExternalFrames(
         // A member rides with its frame. Unlike a local class, it is not ours to place: the frame
         // is a fixed list whose height is that list's length, so a moved member would have
         // nowhere to be persisted and would snap back on the next projection. It is
-        // therefore not draggable. It remains selectable, however: imported Classes are
-        // inspectable and clicking one must open its detail panel.
+        // therefore not draggable. Pointer gestures pass through to the frame so React
+        // Flow can drag the whole block. The frame resolves a simple click back to the
+        // member under the pointer, keeping imported Classes inspectable.
         //
         // And for the same reason it carries no `extent: 'parent'`, natural as that would
         // look on a card that lives inside a box: there is no drag to bound. It was not
@@ -247,7 +248,7 @@ export function projectExternalFrames(
           selectionDomainId: frame.ownerDomainIds[0],
           selectionId: `class.${frame.origin}:class.${member.name}`,
         },
-        style: { width: 192, height: height - 8 },
+        style: { width: 192, height: height - 8, pointerEvents: 'none' },
       })
     })
   }

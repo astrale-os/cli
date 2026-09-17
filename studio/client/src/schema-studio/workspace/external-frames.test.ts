@@ -68,7 +68,7 @@ test('an external frame moves like a domain frame, as one block', () => {
   // a member rides with its frame, but remains an inspectable selection target
   expect(member.draggable).toBe(false)
   expect(member.selectable).toBe(true)
-  expect(member.style?.pointerEvents).toBeUndefined()
+  expect(member.style?.pointerEvents).toBe('none')
 })
 
 test('reads an origin back off a frame id and off nothing else', () => {
