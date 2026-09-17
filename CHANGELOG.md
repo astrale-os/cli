@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.113](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.112...cli/v1.0.0-beta.113) (2026-09-17)
+
+
+### Bug Fixes
+
+* resume failed instances through their retained Admin operation ([#503](https://github.com/astrale-os/cli/issues/503)) ([a29ac37](https://github.com/astrale-os/cli/commit/a29ac37d959b20d0ca78821b0be97e0e11c4d965))
+* **studio:** drag external frames through inspectable cards ([#505](https://github.com/astrale-os/cli/issues/505)) ([5f55ee8](https://github.com/astrale-os/cli/commit/5f55ee8379a4d0dc8b49ad0c8d9736322c678aff))
+
 ## [1.0.0-beta.112](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.111...cli/v1.0.0-beta.112) (2026-09-17)
 
 
