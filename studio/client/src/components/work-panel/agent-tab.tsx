@@ -18,6 +18,7 @@ import {
   useAgentTurns,
   useDisplayRun,
 } from '@/lib/agent'
+import { useReadAgentReplies } from '@/lib/agent-unread'
 import { api, qk } from '@/lib/api'
 import { chatOf, useChatMutations, useChats } from '@/lib/chats'
 import { threadsAwaitingAgent } from '@/lib/comments'
@@ -118,6 +119,7 @@ export function AgentTranscript() {
   const { select, forgetOrigin } = useChatMutations()
   const { data: harness } = useHarness()
   const turns = useAgentTurns(activeId)
+  useReadAgentReplies(activeId, turns)
   const run = useDisplayRun(activeId)
   const scroller = useRef<HTMLDivElement>(null)
 

@@ -147,12 +147,20 @@ export function buildModuleTree(bundle: StudioSchemaBundle, schemaDir = 'schema'
   return root
 }
 
+/** The same category order at the domain root and inside every module. */
+const MEMBER_ORDER: Record<MemberKind, number> = {
+  class: 0,
+  view: 1,
+  function: 2,
+  edge: 3,
+  policy: 4,
+}
+
 function sortTree(node: TreeNode): void {
   node.children.sort((left, right) => left.name.localeCompare(right.name))
   node.members.sort(
     (left, right) =>
-      Number(left.kind === 'edge') - Number(right.kind === 'edge') ||
-      left.name.localeCompare(right.name),
+      MEMBER_ORDER[left.kind] - MEMBER_ORDER[right.kind] || left.name.localeCompare(right.name),
   )
   node.children.forEach(sortTree)
 }

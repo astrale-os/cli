@@ -105,4 +105,45 @@ describe('schema modules', () => {
       { path: 'space', label: 'space' },
     ])
   })
+
+  test.each(['schema', 'schema/modules/billing'])(
+    'groups and alphabetizes every category under %s',
+    (directory) => {
+      const value = bundle({
+        Zebra: nodeClass('Zebra'),
+        zRelated: edgeClass('zRelated', []),
+        Alpha: nodeClass('Alpha'),
+        aRelated: edgeClass('aRelated', []),
+      })
+      value.ir!.policies = { zGuard: {}, aGuard: {} }
+      value.ir!.views = {
+        zBoard: { name: 'zBoard', target: { kind: 'domain' } },
+        aBoard: { name: 'aBoard', target: { kind: 'domain' } },
+      }
+      for (const name of ['zRun', 'aRun']) {
+        value.ir!.functions[name] = { name, input: {}, output: { mode: 'value', schema: {} } }
+      }
+      const expected = [
+        'class.Alpha',
+        'class.Zebra',
+        'view.aBoard',
+        'view.zBoard',
+        'function.aRun',
+        'function.zRun',
+        'edge.aRelated',
+        'edge.zRelated',
+        'policy.aGuard',
+        'policy.zGuard',
+      ]
+      for (const ref of expected)
+        value.overlay.sourceSpans[ref] = {
+          file: `${directory}/index.ts`,
+          startLine: 1,
+          endLine: 2,
+        }
+      const tree = buildModuleTree(value)
+      const members = directory === 'schema' ? tree.members : tree.children[0]!.members
+      expect(members.map((member) => member.ref)).toEqual(expected)
+    },
+  )
 })
