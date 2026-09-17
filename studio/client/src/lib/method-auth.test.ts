@@ -1,6 +1,7 @@
 import type { HandlerLink, IrCallableAuth, IrFunction } from '@shared/types'
 
 import { expect, test } from 'bun:test'
+import { Globe, ShieldCheck, UserRound } from 'lucide-react'
 
 import { handlerLinkFor, methodAuth } from './method-auth'
 
@@ -10,14 +11,23 @@ test('renders exact canonical callable authentication', () => {
   expect(methodAuth(callable('anonymous'))).toMatchObject({
     label: 'Anonymous',
     auth: 'anonymous',
+    level: 'public',
+    icon: Globe,
+    tone: 'sky',
   })
   expect(methodAuth(callable('authenticated'))).toMatchObject({
     label: 'Authenticated',
     auth: 'authenticated',
+    level: 'authenticated',
+    icon: UserRound,
+    tone: 'amber',
   })
   expect(methodAuth(callable('authorized'))).toMatchObject({
     label: 'Authorized',
     auth: 'authorized',
+    level: 'secured',
+    icon: ShieldCheck,
+    tone: 'emerald',
   })
   expect(methodAuth()).toBeNull()
 })

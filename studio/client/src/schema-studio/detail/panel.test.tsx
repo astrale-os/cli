@@ -57,21 +57,27 @@ function render(selected: string, source = fixture): string {
 }
 
 describe('the Class detail panel', () => {
-  test('marks an inherited contract method the Class implements as implemented', () => {
-    const html = render(
-      'class.Report',
-      bundle({
-        Base: nodeClass('Base', {
-          methods: { inspect: { ...method('inspect'), abstract: true } },
-        }),
-        Report: nodeClass('Report', {
-          extendsRefs: [classRef('local.example.dev', 'Base')],
-          methods: { inspect: method('inspect') },
-        }),
+  test('keeps parent contracts readable beside their local implementations', () => {
+    const contractBundle = bundle({
+      Base: nodeClass('Base', {
+        methods: { inspect: { ...method('inspect'), abstract: true, executable: false } },
       }),
+      Child: nodeClass('Child', {
+        extendsRefs: [classRef('local.example.dev', 'Base')],
+        methods: { inspect: method('inspect') },
+      }),
+    })
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <SchemaDetail bundle={contractBundle} selected="class.Child" />
+      </QueryClientProvider>,
     )
-    expect(html).toContain('>implemented</span>')
+    expect(html).toContain('data-anchor-ref="class.Child.method.inspect"')
+    expect(html).toContain('data-anchor-ref="class.Base.method.inspect"')
+    expect(html).toContain('>contract</span>')
+    expect(html).not.toContain('line-through')
     expect(html).not.toContain('declared locally')
+    expect(html).not.toContain('overridden')
   })
 
   test('lists own members first and inherited ones after, named by their Class', () => {

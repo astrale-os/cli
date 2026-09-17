@@ -289,19 +289,13 @@ export function MethodRow({
             )}
           />
           <Glyph className={cn('h-3.5 w-3.5 shrink-0', GLYPH_TEXT[glyph.tone])} />
-          <span
-            className={cn(
-              'min-w-0 flex-1 truncate text-[13px] font-medium leading-5',
-              entry.declaredLocally && 'text-muted-foreground line-through',
-            )}
-          >
+          <span className="min-w-0 flex-1 truncate text-[13px] font-medium leading-5">
             <OwnerPrefix owner={entry.owner} />
             {entry.name}
           </span>
           {/* compact method facts only — the contract itself waits for the click */}
           {entry.method.static && <Chip tone="outline">static</Chip>}
           {entry.method.abstract && <Chip tone="fn">contract</Chip>}
-          {entry.declaredLocally && <Chip tone="default">implemented</Chip>}
           {contractOnly && <Chip tone="warning">needs handler</Chip>}
           {unlinked && <Chip tone="default">unlinked</Chip>}
         </button>
@@ -422,6 +416,11 @@ function PolicyLine({
       </div>
       {check ? (
         <PolicyTree bundle={bundle} owner={owner} check={check} />
+      ) : 'abstract' in method &&
+        method.abstract &&
+        'executable' in method &&
+        !method.executable ? (
+        <Note>abstract contract — Policy is declared on the implementation</Note>
       ) : method.auth === 'authorized' ? (
         <div>
           <Note>no Policy pinned</Note>
