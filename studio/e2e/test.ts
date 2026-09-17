@@ -21,6 +21,7 @@ const DEFAULT_WORKSPACE_UI: WorkspaceUiState = {
   version: 1,
   section: 'schema',
   edgeStyle: 'curved',
+  detailWidth: 420,
   panel: { open: false, tab: 'agent', side: 'bottom', size: 360 },
   rail: { width: 240, collapsed: false },
   schema: {

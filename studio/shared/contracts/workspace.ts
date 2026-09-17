@@ -230,6 +230,8 @@ export interface WorkspaceUiState {
   readerDomainId?: string
   /** How relationship edges are drawn across the workspace canvases. */
   edgeStyle: 'curved' | 'orthogonal'
+  /** Width of the shared right-hand detail panel; absent in older saved states. */
+  detailWidth?: number
   panel: WorkspacePanelUiState
   rail: WorkspaceRailUiState
   schema: WorkspaceSchemaUiState
