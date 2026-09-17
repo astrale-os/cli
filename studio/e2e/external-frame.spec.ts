@@ -22,6 +22,11 @@ test('an imported domain frame drags from anywhere, member cards included', asyn
   })
   await expect(frame).toBeVisible()
   const frameTransform = () => frame.evaluate((el) => (el as HTMLElement).style.transform)
+  const framePosition = () =>
+    frame.evaluate((el) => {
+      const transform = new DOMMatrixReadOnly((el as HTMLElement).style.transform)
+      return { x: Math.round(transform.m41), y: Math.round(transform.m42) }
+    })
   const savedPosition = async () => {
     const response = await request.get('/api/workspace/state')
     const state = (await response.json()) as {
@@ -64,12 +69,30 @@ test('an imported domain frame drags from anywhere, member cards included', asyn
 
   const moved = await frameTransform()
   expect(moved).not.toBe(parked)
+  await expect(page.getByRole('button', { name: 'Close panel' })).toHaveCount(0)
 
   // A reload must not race the 120ms persistence debounce.
   await expect.poll(async () => JSON.stringify(await savedPosition())).not.toBe(savedAtRest)
+  const savedAfterDrag = await savedPosition()
+  expect(savedAfterDrag).toEqual(await framePosition())
 
   await page.reload()
   await page.getByRole('button', { name: 'Schema', exact: true }).click()
   await expect(frame).toBeVisible()
-  await expect.poll(frameTransform).not.toBe(parked)
+  await expect.poll(framePosition).toEqual(savedAfterDrag)
+  expect(await savedPosition()).toEqual(savedAfterDrag)
+
+  // A click on the frame header must not accidentally inspect a member.
+  const headerBox = (await frame.boundingBox())!
+  await page.mouse.click(headerBox.x + 15, headerBox.y + 10)
+  await expect(page.getByRole('button', { name: 'Close panel' })).toHaveCount(0)
+
+  // Cards let the frame receive the gesture, but a click must still inspect the card.
+  // Use real coordinates: locator.click() expects the card itself to receive the pointer.
+  const reloadedMember = (await member.boundingBox())!
+  await page.mouse.click(
+    reloadedMember.x + reloadedMember.width / 2,
+    reloadedMember.y + reloadedMember.height / 2,
+  )
+  await expect(page.getByRole('heading', { name: 'PaymentProcessor', exact: true })).toBeVisible()
 })
