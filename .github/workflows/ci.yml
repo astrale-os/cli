@@ -85,8 +85,10 @@ jobs:
       - name: Check public dependency closure
         run: node scripts/verify-public-dependency-boundary.mjs
       - name: Lint
+        if: matrix.node-version == '26'
         run: pnpm lint
       - name: Check formatting
+        if: matrix.node-version == '26'
         run: pnpm format:check
       - name: Typecheck
         run: pnpm typecheck
