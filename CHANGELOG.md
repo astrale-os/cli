@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.114](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.113...cli/v1.0.0-beta.114) (2026-09-17)
+
+
+### Features
+
+* **studio:** resize details and navigate policy consumers ([#506](https://github.com/astrale-os/cli/issues/506)) ([313b658](https://github.com/astrale-os/cli/commit/313b658278ea0bcd250d4255e9657827a022d638))
+
 ## [1.0.0-beta.113](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.112...cli/v1.0.0-beta.113) (2026-09-17)
 
 
