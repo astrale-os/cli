@@ -24,6 +24,8 @@ export type ProvisionOpts = KernelCommandOpts &
     // keeps root options out of a subcommand's action arguments.
     ci?: boolean
     noPrompt?: boolean
+    /** Exact durable create operation to replay after an uncertain outcome. */
+    operation?: string
   }
 
 /** The created instance plus the local-bookmark side effects of provisioning. */
@@ -47,6 +49,7 @@ export type ProvisionResult = {
 const SAGA_TIMEOUT_MS = '120000'
 const PROVISION_WINDOW_MS = 10 * 60_000
 const RETRY_DELAY_MS = 1_000
+const INSTANCE_CREATE_OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u
 
 interface ProvisionDependencies {
   readonly createOwnedInstance: typeof createOwnedInstance
@@ -92,8 +95,11 @@ export async function provisionInstance(
   let selectionError: unknown = null
   // Keep each Workflow invocation inside the platform's request window. The
   // same durable operation is replayed when Admin returns a provisioning receipt.
-  const createOpts = instanceCreateOptions(opts)
-  const operationId = deps.operationId()
+  let createOpts = instanceCreateOptions(opts)
+  const operationId =
+    opts.operation === undefined
+      ? deps.operationId()
+      : acceptInstanceCreateOperationId(opts.operation)
   const deadline = deps.now() + PROVISION_WINDOW_MS
 
   const runProvision = () =>
@@ -106,7 +112,9 @@ export async function provisionInstance(
         while (true) {
           if (pending !== undefined && deps.now() >= deadline) return pending
           try {
-            created = await deps.createOwnedInstance(createOpts, slug, operationId)
+            created = await deps.createOwnedInstance(createOpts, slug, operationId, (fleet) => {
+              createOpts = { ...createOpts, fleet }
+            })
           } catch (error) {
             if (!retryableCreate(error) || deps.now() >= deadline) {
               if (pending !== undefined) return pending
@@ -120,7 +128,7 @@ export async function provisionInstance(
             throw new AstraleError(
               'INSTANCE_PROVISION_FAILED',
               created.error ?? `Instance ${JSON.stringify(slug)} is ${created.state}.`,
-              'Run `astrale instance list` to inspect it.',
+              `Retry with --operation ${created.operationId ?? operationId} and the same Fleet and identity to resume this creation.`,
             )
           }
           pending = created
@@ -141,7 +149,7 @@ export async function provisionInstance(
   if (created.state !== 'ready') {
     console.error(
       chalk.yellow(
-        `Instance "${slug}" is retained. Rerun your original instance create command with the same Admin target options and creator identity.`,
+        `Instance "${slug}" is retained. Rerun your original instance create command with --operation ${operationId}${createOpts.fleet === undefined ? '' : ` --fleet '${createOpts.fleet}'`} and the same Admin target options and creator identity.`,
       ),
     )
     return { created, slug }
@@ -221,6 +229,17 @@ export async function provisionInstance(
     ...(rootIdentity === undefined ? {} : { rootIdentity }),
     ...(rootIdentityError === undefined ? {} : { rootIdentityError }),
   }
+}
+
+/** Admit the exact operation-id grammar exposed by Admin Instance creation. */
+function acceptInstanceCreateOperationId(input: unknown): string {
+  if (typeof input !== 'string' || !INSTANCE_CREATE_OPERATION_ID.test(input)) {
+    throw new AstraleError(
+      'INVALID_INPUT',
+      'Instance create operation id must contain 1-256 Admin-compatible ASCII characters.',
+    )
+  }
+  return input
 }
 
 export function instanceCreateOptions(opts: ProvisionOpts): ProvisionOpts {

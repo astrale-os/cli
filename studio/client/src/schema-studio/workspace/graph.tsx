@@ -133,7 +133,7 @@ export function WorkspaceSchemaGraph({
   domains: WorkspaceDomainProjection[]
   onToggleInherited: () => void
 }) {
-  const { getInternalNode, getViewport, setViewport } = useReactFlow()
+  const { getInternalNode, getViewport, setViewport, screenToFlowPosition } = useReactFlow()
   // the pane element itself — a reveal measures it rather than trusting the size the store
   // was last told (see the reveal effect)
   const domNode = useStore((state) => state.domNode)
@@ -555,8 +555,38 @@ export function WorkspaceSchemaGraph({
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeDragStop={onNodeDragStop}
-          onNodeClick={(_, node) => {
+          onNodeClick={(event, node) => {
             setSelectedEdgeId(null)
+            // External cards let pointer gestures reach their frame. React Flow suppresses
+            // clicks after a drag; a remaining click opens the card at that flow position.
+            // Read live measured positions so this also works after moving or zooming.
+            if (node.type === 'extDomain') {
+              const point = screenToFlowPosition(
+                { x: event.clientX, y: event.clientY },
+                { snapToGrid: false },
+              )
+              const member = nodesRef.current.find((candidate) => {
+                if (candidate.type !== 'extMember' || candidate.parentId !== node.id) return false
+                const box = nodeBox(getInternalNode(candidate.id))
+                return (
+                  box !== null &&
+                  point.x >= box.x &&
+                  point.x <= box.x + box.width &&
+                  point.y >= box.y &&
+                  point.y <= box.y + box.height
+                )
+              })
+              if (!member) return
+              node = member
+            }
+            const externalSelection = node.data as {
+              selectionDomainId?: string
+              selectionId?: string
+            }
+            if (externalSelection.selectionDomainId && externalSelection.selectionId) {
+              select(externalSelection.selectionDomainId, externalSelection.selectionId)
+              return
+            }
             const target = localNodeRef(node.id)
             if (!target) return
             if (target.localId.startsWith('class.')) select(target.domainId, target.localId)

@@ -4,7 +4,13 @@
 setup = "AGENT_SETUP_TOOLS=check bash scripts/setup/setup.sh"
 run_mode = "concurrent"
 
-[scripts.run.agent-setup]
-command = "AGENT_SETUP_TOOLS=check bash scripts/setup/verify.sh"
+# The watch loop is the authoring feedback cycle; `check` is the full gate, which also
+# regenerates the embedded assets and walks the source boundary.
+[scripts.run.watch]
+command = "pnpm test:watch"
 default = true
+icon = "test-tube"
+
+[scripts.run.check]
+command = "pnpm test"
 icon = "test-tube"

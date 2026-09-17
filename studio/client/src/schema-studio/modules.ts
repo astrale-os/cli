@@ -1,7 +1,7 @@
-import type { StudioSchemaBundle } from '@shared/types'
+import { schemaRefKey, type StudioSchemaBundle } from '@shared/types'
 
-/** Schema folders own authored Node and Edge Classes; files remain implementation detail. */
-export type MemberKind = 'class' | 'edge'
+/** Authored declarations share a module folder; technical subfolders stay out of the tree. */
+export type MemberKind = 'class' | 'edge' | 'policy' | 'function' | 'view'
 
 export interface MemberRef {
   name: string
@@ -63,11 +63,19 @@ function schemaLocation(file: string | undefined, schemaDir: string): SchemaLoca
   rest[rest.length - 1] = rest[rest.length - 1].replace(/\.tsx?$/u, '')
   return {
     sourcePath: rest.join('/'),
-    modulePath: rest.length > 1 ? rest.slice(0, -1).join('/') : 'root',
+    modulePath:
+      rest[0] === 'modules' && rest.length > 2
+        ? rest.slice(0, 2).join('/')
+        : rest.length > 1 &&
+            !['classes', 'policies', 'functions', 'views', 'types', 'states', 'errors'].includes(
+              rest[0]!,
+            )
+          ? rest[0]!
+          : 'root',
   }
 }
 
-function collectMembers(bundle: StudioSchemaBundle, schemaDir: string): RawMember[] {
+function collectClasses(bundle: StudioSchemaBundle, schemaDir: string): RawMember[] {
   if (!bundle.ir) return []
   return Object.entries(bundle.ir.classes).map(([name, value]) => {
     const kind: MemberKind = value.type === 'edge' ? 'edge' : 'class'
@@ -81,57 +89,78 @@ function collectMembers(bundle: StudioSchemaBundle, schemaDir: string): RawMembe
 }
 
 function topHueMap(members: readonly RawMember[]): Map<string, number> {
-  const roots = [...new Set(members.map((member) => member.modulePath.split('/')[0]))].sort()
+  const roots = [...new Set(members.map((member) => member.modulePath))].sort()
   return new Map(roots.map((root, index) => [root, moduleHue(index)]))
 }
 
-function member(member: RawMember): MemberRef {
+function member(member: RawMember, origin: string): MemberRef {
   return {
     name: member.name,
     kind: member.kind,
-    selectId: `class.${member.name}`,
+    selectId:
+      member.kind === 'policy'
+        ? `policy.${schemaRefKey({ origin, kind: 'policy', name: member.name })}`
+        : `${member.kind === 'edge' ? 'class' : member.kind}.${member.name}`,
     ref: memberRefKey(member.kind, member.name),
     icon: member.icon,
   }
 }
 
 export function buildModuleTree(bundle: StudioSchemaBundle, schemaDir = 'schema'): TreeNode {
-  const members = collectMembers(bundle, schemaDir)
-  const hues = topHueMap(members)
+  const members = collectClasses(bundle, schemaDir)
+  for (const kind of ['policy', 'function', 'view'] as const) {
+    const declarations =
+      kind === 'policy'
+        ? bundle.ir?.policies
+        : kind === 'function'
+          ? bundle.ir?.functions
+          : bundle.ir?.views
+    for (const name of Object.keys(declarations ?? {})) {
+      members.push({
+        name,
+        kind,
+        ...schemaLocation(bundle.overlay.sourceSpans[`${kind}.${name}`]?.file, schemaDir),
+      })
+    }
+  }
+  const hues = topHueMap(collectClasses(bundle, schemaDir))
   const root: TreeNode = { name: schemaDir, path: '', hue: 0, children: [], members: [] }
   for (const value of members) {
-    const segments = value.modulePath === 'root' ? [] : value.modulePath.split('/')
-    const hue = hues.get(segments[0] ?? 'root') ?? 264
     let node = root
-    if (segments.length === 0) {
-      let schemaRoot = root.children.find((child) => child.path === 'root')
-      if (!schemaRoot) {
-        schemaRoot = { name: schemaDir, path: 'root', hue, children: [], members: [] }
-        root.children.push(schemaRoot)
-      }
-      node = schemaRoot
-    }
-    for (let index = 0; index < segments.length; index += 1) {
-      const path = segments.slice(0, index + 1).join('/')
-      let child = node.children.find((candidate) => candidate.path === path)
+    if (value.modulePath !== 'root') {
+      let child = root.children.find((candidate) => candidate.path === value.modulePath)
       if (!child) {
-        child = { name: segments[index], path, hue, children: [], members: [] }
-        node.children.push(child)
+        child = {
+          name: moduleLabel(value.modulePath, schemaDir),
+          path: value.modulePath,
+          hue: hues.get(value.modulePath) ?? 264,
+          children: [],
+          members: [],
+        }
+        root.children.push(child)
       }
       node = child
     }
-    node.members.push(member(value))
+    node.members.push(member(value, bundle.ir!.domain))
   }
   sortTree(root)
   return root
+}
+
+/** The same category order at the domain root and inside every module. */
+const MEMBER_ORDER: Record<MemberKind, number> = {
+  class: 0,
+  view: 1,
+  function: 2,
+  edge: 3,
+  policy: 4,
 }
 
 function sortTree(node: TreeNode): void {
   node.children.sort((left, right) => left.name.localeCompare(right.name))
   node.members.sort(
     (left, right) =>
-      Number(left.kind === 'edge') - Number(right.kind === 'edge') ||
-      left.name.localeCompare(right.name),
+      MEMBER_ORDER[left.kind] - MEMBER_ORDER[right.kind] || left.name.localeCompare(right.name),
   )
   node.children.forEach(sortTree)
 }
@@ -139,7 +168,7 @@ function sortTree(node: TreeNode): void {
 function moduleLabel(modulePath: string, schemaDir: string): string {
   if (modulePath === 'root') return schemaDir
 
-  const moduleName = /^modules\/([^/]+)\/classes$/u.exec(modulePath)?.[1]
+  const moduleName = /^modules\/([^/]+)$/u.exec(modulePath)?.[1]
   if (!moduleName) return modulePath
 
   const words = moduleName
@@ -152,11 +181,11 @@ function moduleLabel(modulePath: string, schemaDir: string): string {
 }
 
 export function folderModules(bundle: StudioSchemaBundle, schemaDir = 'schema'): FolderModule[] {
-  const members = collectMembers(bundle, schemaDir)
+  const members = collectClasses(bundle, schemaDir)
   const hues = topHueMap(members)
   const modules = new Map<string, FolderModule>()
   for (const value of members) {
-    const top = value.modulePath.split('/')[0]
+    const top = value.modulePath
     const selected = modules.get(value.modulePath) ?? {
       path: value.modulePath,
       label: moduleLabel(value.modulePath, schemaDir),

@@ -4,11 +4,19 @@ import { FlaskConical, ShieldCheck } from 'lucide-react'
 import { useMemo } from 'react'
 
 import { PolicyCheckTree } from '@/components/policy-check-tree'
+import { PolicyLink } from '@/components/policy-link'
 import { Chip, IconTile } from '@/components/studio-kit'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { useBundle } from '@/lib/hooks'
 import { type AuthCallable, methodAuth } from '@/lib/method-auth'
-import { decodePolicyCheck, indexPolicies, policyCheckLabel, policyLabel } from '@/lib/policy'
+import {
+  decodePolicyCheck,
+  indexPolicies,
+  policyCheckLabel,
+  policyLabel,
+  policyObjectLabel,
+  type PolicyCheck,
+} from '@/lib/policy'
 import { useUI } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
@@ -104,7 +112,16 @@ function PolicyChecks({ method, domainId }: MethodAuthProps) {
               <div className="flex items-start gap-2 text-[12px]">
                 <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
                 <div className="min-w-0 flex-1">
-                  <span className="font-medium">{name}</span>
+                  {ownerDomainId ? (
+                    <PolicyLink
+                      policy={leaf.check}
+                      domainId={ownerDomainId}
+                      label={name}
+                      className="font-medium"
+                    />
+                  ) : (
+                    <span className="font-medium">{name}</span>
+                  )}
                   <span className="text-muted-foreground">
                     {' '}
                     on{' '}
@@ -174,14 +191,53 @@ export function MethodAuthCard({ method, domainId }: MethodAuthProps) {
   )
 }
 
-/** Inline pills naming the policies a callable checks — for rows that cannot hold a button. */
-export function PolicyChips({ method, origin }: { method?: AuthCallable; origin?: string }) {
+/** Inline checks; a domain enables links when the surrounding row is not itself a button. */
+export function PolicyChips({
+  method,
+  origin,
+  domainId,
+}: {
+  method?: AuthCallable
+  origin?: string
+  domainId?: string
+}) {
   const raw = method?.policy
   const check = useMemo(() => (raw === undefined ? undefined : decodePolicyCheck(raw)), [raw])
   if (!check) return null
   return (
-    <Chip tone="success" title="policy check — hover the shield for details">
-      {policyCheckLabel(check, origin)}
+    <Chip
+      tone="success"
+      title={domainId ? undefined : 'policy check — hover the shield for details'}
+    >
+      {domainId ? (
+        <LinkedPolicyCheck check={check} domainId={domainId} />
+      ) : (
+        policyCheckLabel(check, origin)
+      )}
     </Chip>
+  )
+}
+
+function LinkedPolicyCheck({ check, domainId }: { check: PolicyCheck; domainId: string }) {
+  if ('check' in check)
+    return (
+      <span>
+        <PolicyLink policy={check.check} domainId={domainId} /> on{' '}
+        {policyObjectLabel(check.object, 'receiver')}
+      </span>
+    )
+  if ('sameNode' in check) return <span>{policyCheckLabel(check)}</span>
+  const items = 'allOf' in check ? check.allOf : check.anyOf
+  return (
+    <span>
+      (
+      {items.map((item, i) => (
+        <span key={i}>
+          {i > 0 && ('allOf' in check ? ' and ' : ' or ')}
+          <LinkedPolicyCheck check={item} domainId={domainId} />
+        </span>
+      ))}
+      )
+    </span>
   )
 }

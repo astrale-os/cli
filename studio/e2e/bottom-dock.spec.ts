@@ -10,6 +10,7 @@
  */
 import type { AgentRun } from '@shared/types'
 
+import { FIXTURE_ID } from './test'
 import { expect, test, type Page } from './test'
 
 /** Anything taller than this is a panel, not a bar. */
@@ -156,7 +157,7 @@ test('the paperclip chooses a domain, then shows what it took', async ({ page })
   await expect(page.getByText('Attach to domain')).toBeVisible()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: 'Attach a document to fixture' }).click(),
+    page.getByRole('button', { name: `Attach a document to ${FIXTURE_ID}` }).click(),
   ])
 
   await chooser.setFiles({
@@ -230,7 +231,7 @@ test('the threads on the composer are one chip that counts them, and opens them'
   request,
 }) => {
   const workspace = (await (await request.get('/api/workspace')).json()) as Array<{ id: string }>
-  const domainId = workspace.find((domain) => domain.id === 'fixture')!.id
+  const domainId = workspace.find((domain) => domain.id === FIXTURE_ID)!.id
   const url = `/api/domain/${encodeURIComponent(domainId)}/comments`
   const made: string[] = []
   for (const text of ['Rename this class', 'And split that module']) {
@@ -255,7 +256,7 @@ test('the threads on the composer are one chip that counts them, and opens them'
   await expect(dock(page).getByRole('button', { name: /Rename this class/ })).toHaveCount(0)
 
   await chip.click()
-  const fixtureThreads = dock(page).getByTestId('comments-domain-fixture')
+  const fixtureThreads = dock(page).getByTestId(`comments-domain-${FIXTURE_ID}`)
   await expect(
     fixtureThreads.getByRole('heading', { name: 'crm.studio-demo.astrale.ai' }),
   ).toBeVisible()
@@ -305,7 +306,7 @@ test('the comments tab shows threads alone, and gives the draft back on the way 
   await page.getByRole('button', { name: 'Attach a document to a domain' }).click()
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: 'Attach a document to fixture' }).click(),
+    page.getByRole('button', { name: `Attach a document to ${FIXTURE_ID}` }).click(),
   ])
   await chooser.setFiles({
     name: 'notes.md',

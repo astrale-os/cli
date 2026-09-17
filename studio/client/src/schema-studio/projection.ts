@@ -3,9 +3,21 @@ import type { Edge, Node } from '@xyflow/react'
 
 import { EDGE_ARROW, edgeMarkers, formatCardinality } from './edge-markers'
 import { localEndpointTargets } from './external'
-import { isKernelClass, type KernelRole, kernelRolesOfClass } from './inheritance'
+import {
+  isKernelClass,
+  isKernelImplementationClass,
+  type KernelRole,
+  kernelRolesOfClass,
+} from './inheritance'
 import { folderModules, moduleOfClass } from './modules'
-import { CLASS_H, CLASS_W, MODULE_COLLAPSED_H, MODULE_HEADER, MODULE_PAD } from './palette'
+import {
+  CLASS_H,
+  CLASS_W,
+  EDGE_WIDTH,
+  MODULE_COLLAPSED_H,
+  MODULE_HEADER,
+  MODULE_PAD,
+} from './palette'
 import { type Hidden, classNodeVisible, classRef, edgeVisible, isHidden } from './visibility'
 
 export interface ClassNodeData extends Record<string, unknown> {
@@ -58,7 +70,14 @@ export function projectDomainCanvas(
 ): DomainProjection {
   const ir = bundle.ir
   if (!ir) return { nodes: [], edges: [] }
-  const modules = folderModules(bundle).filter((module) => module.classes.length > 0)
+  const modules = folderModules(bundle)
+    .map((module) => ({
+      ...module,
+      classes: module.classes.filter(
+        (name) => !isKernelImplementationClass({ origin: ir.domain, kind: 'class', name }),
+      ),
+    }))
+    .filter((module) => module.classes.length > 0)
   const nodes: Node[] = []
 
   for (const module of modules) {
@@ -170,7 +189,7 @@ export function projectDomainCanvas(
           markerEnd: markers.markerEnd,
           style: {
             stroke: crossModule ? 'var(--edge-cross)' : 'var(--edge-line)',
-            strokeWidth: crossModule ? 1.6 : 1.3,
+            strokeWidth: EDGE_WIDTH,
           },
         })
       }
@@ -181,6 +200,7 @@ export function projectDomainCanvas(
     for (const [className, definition] of Object.entries(ir.classes)) {
       if (definition.type !== 'node' || isHidden(classRef(className), hidden)) continue
       for (const parent of definition.extendsRefs ?? []) {
+        if (isKernelClass(parent)) continue
         if (parent.origin !== ir.domain || ir.classes[parent.name]?.type !== 'node') continue
         const source = representative(className)
         const target = representative(parent.name)
@@ -194,7 +214,7 @@ export function projectDomainCanvas(
           markerEnd: EDGE_ARROW,
           style: {
             stroke: 'var(--edge-inherit)',
-            strokeWidth: 1.3,
+            strokeWidth: EDGE_WIDTH,
             strokeDasharray: '2 4',
           },
         })

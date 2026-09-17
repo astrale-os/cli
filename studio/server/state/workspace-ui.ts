@@ -1,3 +1,5 @@
+import { basename } from 'node:path'
+
 /** Machine-side UI state for one scanned workspace. */
 import type {
   NodePosition,
@@ -8,6 +10,7 @@ import type {
   WorkspaceUiState,
 } from '../../shared/types'
 
+import { allDomains, type DomainHandle } from '../domain'
 import { asBoolean, asFiniteNumber, asJsonRecord, asString, asStringArray } from '../json'
 import { readJson, writeJson } from './store'
 
@@ -22,6 +25,7 @@ export function emptyWorkspaceUiState(): WorkspaceUiState {
     version: 1,
     section: 'schema',
     edgeStyle: 'curved',
+    detailWidth: 420,
     panel: { open: false, tab: 'agent', side: 'bottom', size: 360 },
     rail: { width: 240, collapsed: false },
     schema: {
@@ -117,6 +121,7 @@ function decodeWorkspaceUiState(value: unknown): WorkspaceUiState | undefined {
     version: 1,
     section: oneOf(record.section, SECTIONS) ?? fallback.section,
     edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? fallback.edgeStyle,
+    detailWidth: detailWidth(record.detailWidth),
     ...(readerDomainId ? { readerDomainId } : {}),
     panel: panelState(record.panel, fallback.panel),
     rail: railState(record.rail, fallback.rail),
@@ -124,8 +129,44 @@ function decodeWorkspaceUiState(value: unknown): WorkspaceUiState | undefined {
   }
 }
 
+function detailWidth(value: unknown, fallback = 420): number {
+  const width = asFiniteNumber(value)
+  return width === undefined ? fallback : Math.min(900, Math.max(320, Math.round(width)))
+}
+
 export function readWorkspaceUiState(root: string): WorkspaceUiState {
-  return readJson(root, FILE, decodeWorkspaceUiState, emptyWorkspaceUiState())
+  return remapWorkspaceDomainIds(
+    readJson(root, FILE, decodeWorkspaceUiState, emptyWorkspaceUiState()),
+    allDomains(),
+  )
+}
+
+/** Keep existing canvas preferences when basename-only IDs become path-qualified IDs. */
+export function remapWorkspaceDomainIds(
+  state: WorkspaceUiState,
+  domains: readonly Pick<DomainHandle, 'id' | 'root'>[],
+): WorkspaceUiState {
+  // The previous registry retained the last project for a duplicated basename.
+  const aliases = new Map(
+    domains.map(({ id, root }) => [basename(root).replace(/[^a-zA-Z0-9_-]/g, '-') || 'domain', id]),
+  )
+  const id = (value: string) => aliases.get(value) ?? value
+  const list = (values: string[]) => [...new Set(values.map(id))]
+  const keys = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [id(key), values[id(key)] ?? value]),
+    )
+  return {
+    ...state,
+    ...(state.readerDomainId ? { readerDomainId: id(state.readerDomainId) } : {}),
+    schema: {
+      ...state.schema,
+      visibleDomainIds: list(state.schema.visibleDomainIds),
+      expandedDomainIds: list(state.schema.expandedDomainIds),
+      domainPositions: keys(state.schema.domainPositions),
+      collapsedModules: keys(state.schema.collapsedModules),
+    },
+  }
 }
 
 /** Merge a trusted-boundary patch after decoding each field against the current state. */
@@ -140,6 +181,7 @@ export function updateWorkspaceUiState(root: string, patch: unknown): WorkspaceU
     version: 1,
     section: oneOf(record.section, SECTIONS) ?? current.section,
     edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? current.edgeStyle,
+    detailWidth: detailWidth(record.detailWidth, current.detailWidth),
     ...(readerDomainId ? { readerDomainId } : {}),
     panel: panelState(record.panel, current.panel),
     rail: railState(record.rail, current.rail),

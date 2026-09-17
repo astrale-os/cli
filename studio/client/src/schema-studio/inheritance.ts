@@ -4,6 +4,14 @@ import { classRefKey } from '@shared/schema/identity'
 
 const KERNEL_ORIGIN = 'kernel.astrale.ai'
 
+const KERNEL_IMPLEMENTATION_CLASSES = new Set([
+  'Timestamped',
+  'Descriptable',
+  'Named',
+  'Node',
+  'Edge',
+])
+
 export type ClassTier = 'local' | 'kernel' | 'external'
 
 export interface InheritedGroup {
@@ -38,6 +46,11 @@ export function classTier(bundle: StudioSchemaBundle, reference: IrClassRef): Cl
 
 export function isKernelClass(reference: IrClassRef): boolean {
   return reference.origin === KERNEL_ORIGIN
+}
+
+/** Kernel implementation scaffolding that does not belong on Studio's domain canvas. */
+export function isKernelImplementationClass(reference: IrClassRef): boolean {
+  return isKernelClass(reference) && KERNEL_IMPLEMENTATION_CLASSES.has(reference.name)
 }
 
 /** A kernel base that says what a Class IS, rather than what it declares. */

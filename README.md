@@ -271,7 +271,7 @@ Global skills live under `~/.agents/skills`. Their ecosystem-compatible lock is
 ## Development
 
 Contributors use Node.js 26.7.0 by default and pnpm 12.1.0. Release executables
-are compiled and qualified with Bun 1.4.0.
+are compiled and qualified with Bun 1.4.2.
 
 ```bash
 # From a standalone clone of this repository
@@ -308,3 +308,57 @@ astrale-dev <command>   # execs `bun <workspace>/cli/bin/astrale.ts` of the
 It resolves the workspace from your current directory, so each worktree runs its
 own source, and outside a workspace it refuses (use `astrale`). It is installed
 by the workspace's `./scripts/init-machine.sh`.
+
+## Fleet selection
+
+An explicit `--fleet <path>` keeps that exact target; authorization failure never falls back.
+Without it, the CLI reads the visible Fleet graph and checks the native `UseFleet` policy:
+it selects the sole usable Fleet. With multiple usable Fleets, it requires `--fleet` and lists
+the available choices; with none, it asks you to request access. No Fleet name or slug has priority,
+and no access is granted implicitly.
+Instance-only users retain read-only inventory through their visible Fleet when they have no
+usable Fleet. This does not authorize creation.
+
+The option accepts a Kernel path, not a slug, and remains limited to `instance create`,
+`instance list`, `domain list` and `domain publish`. Creation pins the resolved Fleet before
+its first call and across retries. Keep both the printed `--operation` and `--fleet` when
+resuming from another process. Policies on each callable remain authoritative if access changes.
+No Fleet discovery callable or wrapper command is introduced. These readers require the existing
+Fleet-slug backfill; missing names or slugs fail explicitly. An explicit historical `core.fleet`
+catalogue path remains supported while that Core node exists.
+
+An explicit target avoids Fleet discovery entirely. Implicit resolution reads each directory page
+once and checks `UseFleet` with at most eight requests in flight; instance creation reuses the
+resolved target for its inventory, mutation, and retries.
+
+Read Fleets directly from the graph and use the generic callable command to create one:
+
+```bash
+astrale query --class '/:admin.astrale.ai:class.Fleet' -i admin
+astrale call '/:admin.astrale.ai:class.Fleet:create' -i admin --data '{"operationId":"create-astrale","slug":"astrale","name":"Astrale","administrator":"@<central-shell-group-id>","copyFrom":"@<default-fleet-id>"}'
+astrale instance create my-instance --fleet '@<fleet-id>' --operation create-my-instance
+astrale instance list --fleet '@<fleet-id>'
+astrale domain list --fleet '@<fleet-id>'
+```
+
+Creating a Fleet requires central Shell administrator authority and administration of the source
+Fleet. The new Fleet receives an independent catalogue copy; provision its own Host capacity
+before creating Instances. Host capacity is never borrowed from another Fleet.
+Use the observed ID of the Fleet whose reserved slug is `default` for `copyFrom`; protected Core
+namespace paths need not be visible to the caller's graph reads.
+
+An exact Instance ID or globally unique slug is sufficient for status, deletion, invitation and
+Domain installation. These commands have no `--fleet` option; installation derives the catalogue
+from the Instance's containment. Keep the same `--operation` value when retrying creation.
+Fleet membership does not transfer personal Instance ownership.
+
+Upgrade catalogue readers before introducing multiple Fleets: origins and release digests are
+now scoped to a Fleet. Older CLI versions that query a global catalogue are incompatible with
+that data. Existing direct Instance method contracts and default routes remain supported.
+
+## View external navigation
+
+The View viewer admits external navigation origins declared by the installed View's publication.
+Opening a compatible View needs no provider-specific CLI flag. The existing
+`--allow-external-origin` option remains available for an additional explicit origin grant.
+Browser popup refusal is returned to the View so it can offer a retry.

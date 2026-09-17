@@ -96,7 +96,7 @@ export function WorkspaceDomainTree({
                 and the hierarchy is carried by the indent alone. */}
             {visible && !closed && controls && domain && (
               <ModuleTree
-                root={buildModuleTree(domain.input.bundle)}
+                root={buildModuleTree(domain.input.bundle, summary.schemaDir)}
                 indent={MODULE_INDENT}
                 selected={selectionDomainId === domainId ? selected : undefined}
                 onSelect={(ref) => select(domainId, ref)}

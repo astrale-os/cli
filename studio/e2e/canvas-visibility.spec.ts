@@ -1,6 +1,7 @@
+import { PEER_ID } from './test'
 import { expect, test } from './test'
 
-const PEER = { id: 'peer', origin: 'ops.studio-demo.astrale.ai' }
+const PEER = { id: PEER_ID, origin: 'ops.studio-demo.astrale.ai' }
 
 test('domain eyes recompose only the canvas while the schema shell stays mounted', async ({
   page,

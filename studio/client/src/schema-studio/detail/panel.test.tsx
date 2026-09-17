@@ -48,10 +48,10 @@ fixture.ir!.importedClassesByKey = {
   }),
 }
 
-function render(selected: string): string {
+function render(selected: string, source = fixture): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <SchemaDetail bundle={fixture} selected={selected} />
+      <SchemaDetail bundle={source} selected={selected} />
     </QueryClientProvider>,
   )
 }

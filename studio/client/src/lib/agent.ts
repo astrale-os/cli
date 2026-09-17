@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { create } from 'zustand'
 
+import { useAgentUnread } from './agent-unread'
 import { api, qk } from './api'
 import { useActiveChatId } from './chats'
 
@@ -40,7 +41,8 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
   runs: {},
   // merge-forward: the HTTP submit response and the SSE stream race; never let an
   // earlier snapshot of the SAME run regress the event list or the terminal status.
-  setRun: (run) =>
+  setRun: (run) => {
+    useAgentUnread.getState().completed(run)
     set((s) => {
       const cur = s.runs[run.chatId]
       if (cur && cur.id === run.id) {
@@ -49,7 +51,8 @@ export const useAgentLive = create<AgentLiveState>((set) => ({
         return { runs: { ...s.runs, [run.chatId]: { ...cur, ...run, events, status } } }
       }
       return { runs: { ...s.runs, [run.chatId]: run } }
-    }),
+    })
+  },
   dropRun: (chatId, runId) =>
     set((s) => {
       // guarded by id: a real run that already took this one's place stays

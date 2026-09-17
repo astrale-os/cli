@@ -9,6 +9,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import type { AdminGraphApi } from '../../graph'
 
 import { adminSession } from '../../__tests__/fixture'
+import { AdminContract } from '../../contract'
 import { connectAdminCatalog } from '../client'
 
 const domainProperties = Object.freeze({
@@ -36,6 +37,8 @@ function domainNode(id: string, origin: string): Node {
 }
 
 function fixture(input: {
+  fleet?: string
+  fleets?: readonly Node[]
   domains?: readonly Node[]
   defaults?: readonly Node[]
   useDefaultOperationIds?: boolean
@@ -52,7 +55,10 @@ function fixture(input: {
   const query = mock(async (_ast: QueryAST) => ({
     result: {
       kind: 'nodes' as const,
-      nodes: (input.domains ?? []).map((value) => ({ kind: 'value' as const, value })),
+      nodes: (JSON.stringify(_ast.source).includes('"name":"Fleet"')
+        ? (input.fleets ?? [fleetNode('default-fleet', 'default')])
+        : (input.domains ?? [])
+      ).map((value) => ({ kind: 'value' as const, value })),
     },
     page: {},
   }))
@@ -79,7 +85,7 @@ function fixture(input: {
     calls,
     connect: () =>
       connectAdminCatalog(
-        { session: remote.session, graph },
+        { session: remote.session, graph, fleet: input.fleet ?? AdminContract.fleet.raw },
         input.useDefaultOperationIds
           ? undefined
           : { operationId: (kind) => `cli.domain.${kind}.test` },
@@ -126,27 +132,12 @@ describe('V2 Admin Domain catalog adapter', () => {
         updatedAt: '2026-08-12T00:00:00.000Z',
       },
     ])
-    expect(contract.query).toHaveBeenCalledWith(
-      {
-        format: 'astrale.graph.query',
-        version: 'v6',
-        source: {
-          kind: 'node',
-          terms: [
-            {
-              kind: 'class',
-              class: { origin: 'admin.astrale.ai', kind: 'class', name: 'Domain' },
-            },
-          ],
-          binding: 'n0',
-        },
-        steps: [],
-        select: { kind: 'nodes', binding: 'n0', projection: { kind: 'value' } },
-      },
-      { page: { size: 256 } },
-    )
+    const query = contract.query.mock.calls[1]![0]
+    expect(JSON.stringify(query.source)).toContain('@default-fleet')
+    expect(JSON.stringify(query.steps)).toContain('fleet_contains')
+    expect(JSON.stringify(query.steps)).toContain('Domain')
     const [source, edge, options] = contract.neighbors.mock.calls[0]!
-    expect(String(source)).toBe('/:admin.astrale.ai:core.fleet')
+    expect(String(source)).toBe('@default-fleet')
     expect(edge).toEqual({
       origin: 'admin.astrale.ai',
       kind: 'class',
@@ -155,37 +146,40 @@ describe('V2 Admin Domain catalog adapter', () => {
     expect(options).toEqual({ direction: 'outgoing', page: { size: 256 } })
   })
 
-  test('publishes through Fleet then configures the Domain default explicitly', async () => {
-    const contract = fixture({ invoke: () => summary('crm.acme.dev') })
-    const api = await contract.connect()
+  test.each([undefined, '@astrale-fleet'])(
+    'publishes through Fleet %s then configures the Domain default explicitly',
+    async (fleet) => {
+      const contract = fixture({ fleet, invoke: () => summary('crm.acme.dev') })
+      const api = await contract.connect()
 
-    await expect(
-      api.publish({
-        origin: 'crm.acme.dev',
-        name: 'crm',
-        url: 'https://crm.acme.dev',
-        installByDefault: true,
-      }),
-    ).resolves.toMatchObject({ changed: true, isNew: true, entry: { installByDefault: true } })
-    expect(contract.calls).toEqual([
-      {
-        target: '/:admin.astrale.ai:core.fleet::admin.astrale.ai:class.Fleet.method.publishDomain',
-        value: {
-          operationId: 'cli.domain.publish.test',
+      await expect(
+        api.publish({
           origin: 'crm.acme.dev',
           name: 'crm',
-          discoveryUrl: 'https://crm.acme.dev',
+          url: 'https://crm.acme.dev',
+          installByDefault: true,
+        }),
+      ).resolves.toMatchObject({ changed: true, isNew: true, entry: { installByDefault: true } })
+      expect(contract.calls).toEqual([
+        {
+          target: `${fleet ?? '/:admin.astrale.ai:core.fleet'}::admin.astrale.ai:class.Fleet.method.publishDomain`,
+          value: {
+            operationId: 'cli.domain.publish.test',
+            origin: 'crm.acme.dev',
+            name: 'crm',
+            discoveryUrl: 'https://crm.acme.dev',
+          },
         },
-      },
-      {
-        target: '@crm-domain::admin.astrale.ai:class.Domain.method.configureDefault',
-        value: {
-          operationId: 'cli.domain.configure-default.test',
-          enabled: true,
+        {
+          target: '@crm-domain::admin.astrale.ai:class.Domain.method.configureDefault',
+          value: {
+            operationId: 'cli.domain.configure-default.test',
+            enabled: true,
+          },
         },
-      },
-    ])
-  })
+      ])
+    },
+  )
 
   test('uses protocol-safe generated operation ids on the default adapter path', async () => {
     const contract = fixture({
@@ -272,4 +266,65 @@ describe('V2 Admin Domain catalog adapter', () => {
       }),
     ).rejects.toThrow('Admin Domain id is invalid.')
   })
+})
+
+test('scopes catalogue reads to the supplied Fleet path without discovery', async () => {
+  const contract = fixture({ fleet: '@astrale-fleet' })
+  const api = await contract.connect()
+  await api.list()
+  expect(contract.query.mock.calls[0]?.[0].source).toMatchObject({
+    terms: [{ kind: 'path', path: '@astrale-fleet' }],
+  })
+  expect(contract.calls).toHaveLength(0)
+})
+
+function fleetNode(id: string, slug?: string): Node {
+  return {
+    id: NodeId(id),
+    class: 'admin.astrale.ai:class.Fleet' as Node['class'],
+    props: normalizeProperties(
+      slug === undefined
+        ? {}
+        : { [PropertyKey('admin.astrale.ai:class.Fleet.property.slug')]: slug },
+    ),
+  }
+}
+
+test('an invisible default never falls back to another visible Fleet', async () => {
+  const contract = fixture({
+    fleets: [fleetNode('astrale', 'astrale')],
+    domains: [domainNode('private', 'private.example')],
+  })
+  await expect((await contract.connect()).list()).resolves.toEqual([])
+  expect(contract.neighbors).not.toHaveBeenCalled()
+})
+
+test.each([
+  { name: 'legacy slug', fleets: [fleetNode('legacy')] },
+  {
+    name: 'duplicate defaults',
+    fleets: [fleetNode('one', 'default'), fleetNode('two', 'default')],
+  },
+])('refuses $name before catalog traversal', async ({ fleets }) => {
+  const contract = fixture({ fleets })
+  await expect((await contract.connect()).list()).rejects.toThrow(/migration|ambiguous/)
+  expect(contract.neighbors).not.toHaveBeenCalled()
+})
+
+test('finds the default on a later Fleet page and uses only its observed ID', async () => {
+  const contract = fixture({})
+  contract.query.mockResolvedValueOnce({
+    result: { kind: 'nodes', nodes: [{ kind: 'value', value: fleetNode('other', 'astrale') }] },
+    page: { next: 'next-fleet-page' },
+  })
+  contract.query.mockResolvedValueOnce({
+    result: {
+      kind: 'nodes',
+      nodes: [{ kind: 'value', value: fleetNode('default-fleet', 'default') }],
+    },
+    page: {},
+  })
+  await (await contract.connect()).list()
+  expect(String(contract.neighbors.mock.calls[0]![0])).toBe('@default-fleet')
+  expect(JSON.stringify(contract.query.mock.calls[2]![0].source)).toContain('@default-fleet')
 })

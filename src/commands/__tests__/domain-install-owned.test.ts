@@ -69,7 +69,11 @@ async function runInstall(instance: string): Promise<void> {
       json: true,
       noPrompt: true,
     },
-    { listInstances: async () => inventory },
+    {
+      listInstances: async () => inventory,
+      resolveInstance: async (_context, identifier) =>
+        inventory.find((instance) => instance.slug === identifier),
+    },
   )
 }
 
@@ -88,7 +92,7 @@ describe('admin domain install owner boundary', () => {
 
     expect(JSON.parse(stderr)).toMatchObject({
       error: 'INSTANCE_NOT_MANAGED',
-      message: 'Instance "foreign" is not admin-managed (managed: owned).',
+      message: 'Instance "foreign" is not available through Admin.',
     })
     expect(calls).toEqual([])
   })
@@ -163,6 +167,8 @@ describe('admin domain install owner boundary', () => {
         },
         {
           listInstances: async () => inventory,
+          resolveInstance: async (_context, identifier) =>
+            inventory.find((instance) => instance.slug === identifier),
           listDomains: async () => [domain],
           install: async () => {
             throw failure

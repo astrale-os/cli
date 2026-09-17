@@ -1,3 +1,4 @@
+import { FIXTURE_ID, PEER_ID } from './test'
 import { dockWorkspacePanel, expect, test, type Page } from './test'
 
 /**
@@ -15,8 +16,8 @@ import { dockWorkspacePanel, expect, test, type Page } from './test'
  * another domain inferred from unrelated UI state.
  */
 
-const ACTIVE = { origin: 'crm.studio-demo.astrale.ai', id: 'fixture' }
-const PEER = { origin: 'ops.studio-demo.astrale.ai', id: 'peer' }
+const ACTIVE = { origin: 'crm.studio-demo.astrale.ai', id: FIXTURE_ID }
+const PEER = { origin: 'ops.studio-demo.astrale.ai', id: PEER_ID }
 
 /** Enter comment mode and point at something, reporting what would be pinned. */
 async function pointAt(page: Page, x: number, y: number): Promise<string | null> {

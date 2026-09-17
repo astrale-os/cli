@@ -616,7 +616,7 @@ Examples:
   $ astrale view /:crm.example.dev:view.dashboard
   $ astrale view /:agents.astrale.ai:view.agent --target @f00d1234 --as alice
   $ astrale view @customer --snapshot
-  $ astrale view /:integrations.astrale.ai:view.application --allow-external-origin https://connect.nango.dev https://connect.composio.dev
+  $ astrale view /:integrations.astrale.ai:view.application
   $ astrale view --list
   $ astrale view --sessions ; astrale view --close --all
   $ astrale view --refresh v-abc123

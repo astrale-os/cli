@@ -5,6 +5,7 @@ import { Box, MousePointerClick, Spline } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { AnchorButton } from '@/components/anchor'
+import { PolicyLink } from '@/components/policy-link'
 import { Chip, DescriptionText, EmptyState, Group, IconTile } from '@/components/studio-kit'
 import { useViewsModel } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
@@ -15,7 +16,7 @@ import { viewsForClass } from '@/lib/views'
 import { ancestryOfClass, isKernelClass, resolveClass } from '../inheritance'
 import { SchemaIcon } from '../schema-icon'
 import { ViewRow } from '../views-panel'
-import { MemberList, MethodRow, PropertyRow } from './members'
+import { CallableDetail, MemberList, MethodRow, PropertyRow } from './members'
 import { memberLists, originLabel } from './model'
 import { EdgeRelationship } from './relationships'
 
@@ -37,6 +38,40 @@ export function SchemaDetail({
           title="Nothing selected"
           hint="Pick a Class or relationship to inspect its properties, methods, handlers, and Views."
         />
+      </div>
+    )
+  }
+  if (selected.startsWith('function.')) {
+    const name = selected.slice('function.'.length)
+    const callable = ir.functions[name]
+    return callable ? (
+      <div className="h-full overflow-y-auto p-5" {...anchorData(selected, name)}>
+        <h2 className="mb-4 pr-8 text-[15px] font-semibold">{name}</h2>
+        <CallableDetail
+          bundle={bundle}
+          owner={ir.domain}
+          method={callable}
+          doc={bundle.overlay.sourceSpans[selected]?.doc ?? callable.description}
+        />
+      </div>
+    ) : (
+      <EmptyState title="Not found" hint={selected} />
+    )
+  }
+  if (selected.startsWith('view.')) {
+    const name = selected.slice('view.'.length)
+    const view = viewsModel.all.find((entry) => entry.slug === name)
+    return (
+      <div className="h-full overflow-y-auto p-5">
+        <h2 className="mb-4 pr-8 text-[15px] font-semibold">{name}</h2>
+        {ir.views[name]?.description && (
+          <DescriptionText>{ir.views[name].description}</DescriptionText>
+        )}
+        {view ? (
+          <ViewRow domainId={bundle.domainId} view={view} />
+        ) : (
+          <EmptyState title="No view implementation" />
+        )}
       </div>
     )
   }
@@ -130,6 +165,19 @@ export function SchemaDetail({
             below is unmistakably the relationship. The heading only cost a row. */}
         {isEdge && (member.endpoints?.length ?? 0) >= 2 && (
           <EdgeRelationship bundle={bundle} endpoints={member.endpoints!} edgeName={name} />
+        )}
+
+        {Object.keys(member.policies ?? {}).length > 0 && (
+          <Group label="Policies">
+            <div className="space-y-1.5 text-[13px]">
+              {Object.entries(member.policies ?? {}).map(([operation, policy]) => (
+                <div key={operation} className="flex items-baseline gap-2">
+                  <span className="text-muted-foreground">{operation}</span>
+                  <PolicyLink policy={policy} domainId={bundle.domainId} />
+                </div>
+              ))}
+            </div>
+          </Group>
         )}
 
         {lists.properties.length > 0 && (

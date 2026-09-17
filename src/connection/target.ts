@@ -21,6 +21,7 @@ export interface ConnectionOptions {
 }
 
 export interface AdminConnectionOptions extends ConnectionOptions {
+  readonly fleet?: string
   readonly admin?: string
   readonly adminUrl?: string
   readonly domainIssuer?: string
