@@ -56,6 +56,88 @@ async function policyScenario(page: Page) {
   })
 }
 
+test('policy consumers navigate to classes, expanded methods, and functions', async ({ page }) => {
+  await policyScenario(page)
+  await page.goto('/')
+  await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
+  const tree = page.getByTestId('workspace-domain-tree')
+  const openPolicy = () =>
+    tree.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
+  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
+  const usages = panel
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Used by', exact: true }) })
+
+  await openPolicy()
+  const classLink = usages.getByRole('button', { name: 'Invoice', exact: true }).first()
+  const normal = await classLink.evaluate((element) => getComputedStyle(element).color)
+  await classLink.hover()
+  await expect
+    .poll(() => classLink.evaluate((element) => getComputedStyle(element).color))
+    .not.toBe(normal)
+  await expect(classLink).toHaveCSS('text-decoration-line', 'underline')
+  await classLink.click()
+  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
+  const method = panel.locator('[data-anchor-ref="class.Invoice.method.settle"]')
+  await expect(method.locator('[data-method-detail]')).toHaveCount(0)
+
+  await openPolicy()
+  await usages.getByRole('button', { name: 'settle', exact: true }).click()
+  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
+  await expect(method.getByRole('button').first()).toHaveAttribute('aria-expanded', 'true')
+  await expect(method.locator('[data-method-detail]')).toBeInViewport()
+
+  await openPolicy()
+  await usages.getByRole('button', { name: 'closeBilling', exact: true }).click()
+  await expect(panel.getByRole('heading', { name: 'closeBilling', exact: true })).toBeVisible()
+
+  // The same links in Dataset policy details navigate back to the schema.
+  await openPolicy()
+  await panel.getByRole('button', { name: 'Test on a Dataset', exact: true }).click()
+  await usages.getByRole('button', { name: 'settle', exact: true }).click()
+  await expect(panel.getByRole('heading', { name: 'Invoice', exact: true })).toBeVisible()
+  await expect(method.locator('[data-method-detail]')).toBeInViewport()
+})
+
+test('the right detail panel resizes and remembers its width across navigation and reload', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: `Expand ${origin}`, exact: true }).click()
+  const tree = page.getByTestId('workspace-domain-tree')
+  const openPolicy = () =>
+    tree.getByRole('button', { name: 'mayManageInvoice', exact: true }).click()
+  await openPolicy()
+  const panel = page.getByRole('button', { name: 'Close panel' }).locator('..')
+  const width = () => panel.evaluate((element) => element.getBoundingClientRect().width)
+  const start = await width()
+  const handle = page.getByRole('separator', { name: 'Resize detail panel' })
+  const box = (await handle.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 - 100, box.y + box.height / 2, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(width).toBe(start + 100)
+
+  await handle.focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect.poll(width).toBe(start + 120)
+  await expect
+    .poll(async () => (await (await request.get('/api/workspace/state')).json()).detailWidth)
+    .toBe(start + 120)
+  await page.getByRole('button', { name: 'Close panel' }).click()
+  await tree.getByRole('button', { name: 'Invoice', exact: true }).click()
+  await expect.poll(width).toBe(start + 120)
+
+  await page.reload()
+  await openPolicy()
+  await expect.poll(width).toBe(start + 120)
+  await handle.focus()
+  await page.keyboard.press('Home')
+  await expect.poll(width).toBe(320)
+})
+
 test('datasets show only choices in the rail and the selected scenario on the canvas', async ({
   page,
 }) => {

@@ -325,7 +325,7 @@ export function PolicyPanel({
           )}
         </section>
 
-        <PolicyUsageSection usage={usage} onOpen={onOpen} />
+        <PolicyUsageSection usage={usage} onOpen={onOpen} bundle={bundle} />
       </div>
     </div>
   )

@@ -14,10 +14,29 @@ import { resolveClass } from './inheritance'
 export function PolicyUsageSection({
   usage,
   onOpen,
+  bundle,
 }: {
   usage: PolicyUsage
   onOpen: (key: string) => void
+  bundle: StudioSchemaBundle
 }) {
+  const domainId = bundle.domainId
+  const memberLink = (label: string, target: string) => (
+    <button
+      type="button"
+      onClick={() => {
+        const ui = useUI.getState()
+        if (target.includes('.method.')) ui.revealAnchor(target, domainId)
+        else {
+          ui.setSection('schema')
+          ui.selectClass(target, domainId)
+        }
+      }}
+      className="rounded font-medium hover:text-primary hover:underline focus-visible:text-primary focus-visible:underline focus-visible:outline-none"
+    >
+      {label}
+    </button>
+  )
   const link = (ref: IrSchemaRef) => (
     <button
       type="button"
@@ -58,16 +77,26 @@ export function PolicyUsageSection({
           ))}
           {usage.classes.map((use, i) => (
             <div key={i} className="flex flex-wrap items-baseline gap-x-1.5">
-              <span className="font-medium">
-                {use.className} · {use.operation}
+              <span>
+                {memberLink(use.className, `class.${use.className}`)} · {use.operation}
               </span>{' '}
               {via(use.via)}
             </div>
           ))}
           {usage.callables.map((use, i) => (
             <div key={i} className="flex flex-wrap items-baseline gap-x-1.5">
-              <span className="font-medium">
-                {use.ownerKind === 'class' ? `${use.owner}.${use.name}` : use.name}
+              <span>
+                {use.ownerKind === 'class' ? (
+                  <>
+                    {memberLink(use.owner, `class.${use.owner}`)}.
+                    {memberLink(
+                      use.name,
+                      `${bundle.ir?.classes[use.owner]?.type === 'edge' ? 'edge' : 'class'}.${use.owner}.method.${use.name}`,
+                    )}
+                  </>
+                ) : (
+                  memberLink(use.name, `function.${use.name}`)
+                )}
               </span>
               <span className="text-muted-foreground">on {checkObjectWords(use.object)}</span>{' '}
               {via(use.via)}
@@ -155,7 +184,7 @@ function PolicyDetail({ bundle, policyKey }: { bundle: StudioSchemaBundle; polic
             />
           </div>
         </section>
-        <PolicyUsageSection usage={policyUsage(ir, policy)} onOpen={open} />
+        <PolicyUsageSection usage={policyUsage(ir, policy)} onOpen={open} bundle={bundle} />
         <button
           type="button"
           onClick={() => useUI.getState().openPolicy(schemaRefKey(policy.ref), bundle.domainId)}

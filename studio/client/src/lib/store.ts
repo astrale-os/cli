@@ -86,6 +86,7 @@ interface UIState {
   panelSize: number
   /** domains/modules rail furniture, scoped to this scanned workspace */
   modulesWidth: number
+  detailWidth: number
   modulesCollapsed: boolean
   /** What is typed in the agent composer. It lives here, not in the composer, so that
    *  closing the floating chat — or re-docking the panel — never throws a message away. */
@@ -150,6 +151,7 @@ interface UIState {
   setPanelSide: (side: PanelSide) => void
   setPanelSize: (size: number) => void
   setModulesWidth: (width: number) => void
+  setDetailWidth: (width: number) => void
   setModulesCollapsed: (collapsed: boolean) => void
   setAgentDraft: (text: string) => void
   /** Jump to whatever an anchor points at: the right section, the member that declares
@@ -209,6 +211,7 @@ export const useUI = create<UIState>((set) => ({
   panelSide: 'bottom',
   panelSize: 360,
   modulesWidth: 240,
+  detailWidth: 420,
   modulesCollapsed: false,
   agentDraft: '',
   focusId: null,
@@ -269,6 +272,7 @@ export const useUI = create<UIState>((set) => ({
   },
   setPanelSize: (panelSize) => set({ panelSize }),
   setModulesWidth: (modulesWidth) => set({ modulesWidth }),
+  setDetailWidth: (detailWidth) => set({ detailWidth }),
   setModulesCollapsed: (modulesCollapsed) => set({ modulesCollapsed }),
   setAgentDraft: (agentDraft) => set({ agentDraft }),
   revealAnchor: (ref, domainId) => {
@@ -374,13 +378,14 @@ export const useUI = create<UIState>((set) => ({
 /** The small persistent projection of the UI store; transient selections stay in memory. */
 export function uiWorkspaceSnapshot(state = useUI.getState()): Pick<
   WorkspaceUiState,
-  'section' | 'edgeStyle' | 'panel' | 'rail'
+  'section' | 'edgeStyle' | 'panel' | 'rail' | 'detailWidth'
 > & {
   readerDomainId: string | null
 } {
   return {
     section: state.section,
     edgeStyle: state.edgeStyle,
+    detailWidth: Math.min(900, Math.max(320, Math.round(state.detailWidth))),
     readerDomainId: state.readerDomainId ?? null,
     panel: {
       open: state.panelOpen,
@@ -406,6 +411,7 @@ export function hydrateWorkspaceUi(state: WorkspaceUiState): void {
     panelSide: state.panel.side,
     panelSize: state.panel.size,
     modulesWidth: state.rail.width,
+    detailWidth: state.detailWidth ?? 420,
     modulesCollapsed: state.rail.collapsed,
   })
 }

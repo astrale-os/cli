@@ -25,6 +25,7 @@ export function emptyWorkspaceUiState(): WorkspaceUiState {
     version: 1,
     section: 'schema',
     edgeStyle: 'curved',
+    detailWidth: 420,
     panel: { open: false, tab: 'agent', side: 'bottom', size: 360 },
     rail: { width: 240, collapsed: false },
     schema: {
@@ -120,11 +121,17 @@ function decodeWorkspaceUiState(value: unknown): WorkspaceUiState | undefined {
     version: 1,
     section: oneOf(record.section, SECTIONS) ?? fallback.section,
     edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? fallback.edgeStyle,
+    detailWidth: detailWidth(record.detailWidth),
     ...(readerDomainId ? { readerDomainId } : {}),
     panel: panelState(record.panel, fallback.panel),
     rail: railState(record.rail, fallback.rail),
     schema: schemaState(record.schema, fallback.schema),
   }
+}
+
+function detailWidth(value: unknown, fallback = 420): number {
+  const width = asFiniteNumber(value)
+  return width === undefined ? fallback : Math.min(900, Math.max(320, Math.round(width)))
 }
 
 export function readWorkspaceUiState(root: string): WorkspaceUiState {
@@ -174,6 +181,7 @@ export function updateWorkspaceUiState(root: string, patch: unknown): WorkspaceU
     version: 1,
     section: oneOf(record.section, SECTIONS) ?? current.section,
     edgeStyle: oneOf(record.edgeStyle, EDGE_STYLES) ?? current.edgeStyle,
+    detailWidth: detailWidth(record.detailWidth, current.detailWidth),
     ...(readerDomainId ? { readerDomainId } : {}),
     panel: panelState(record.panel, current.panel),
     rail: railState(record.rail, current.rail),
