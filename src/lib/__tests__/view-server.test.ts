@@ -1,4 +1,5 @@
 import type { AuthApi } from '@astrale-os/sdk/auth'
+import type { Server } from 'node:http'
 
 import { describe, expect, mock, test } from 'bun:test'
 import { once } from 'node:events'
@@ -6,7 +7,6 @@ import { once } from 'node:events'
 import type { withClientSession } from '../../connection'
 import type { ViewServeConfig } from '../view/session'
 
-import { findFreePort } from '../port'
 import { mintViewCredential, startViewServer, VIEW_DELEGATION_TTL_SECONDS } from '../view/server'
 
 const digest = (character: string) => `sha256:${character.repeat(64)}` as const
@@ -14,6 +14,12 @@ const target = (value: string) => value as ViewServeConfig['session']['view']['t
 const issuer = (value: string) => value as ViewServeConfig['session']['view']['route']['issuer']
 const revision = (character: string) =>
   digest(character) as ViewServeConfig['session']['view']['route']['revision']
+
+function address(server: Server): string {
+  const value = server.address()
+  if (value === null || typeof value === 'string') throw new Error('Missing HTTP address')
+  return `http://127.0.0.1:${value.port}`
+}
 
 describe('view session server credentials', () => {
   test('mints a proof-bounded credential for the Kernel audience', async () => {
@@ -36,8 +42,6 @@ describe('view session server credentials', () => {
     { managed: true, external: true, explicit: true },
   ])('binds credentials to the mounted View (%j)', async ({ managed, external, explicit }) => {
     const nonce = 'shell-view'
-    const port = await findFreePort(48_000, 200)
-    if (port === null) throw new Error('test port window exhausted')
     const mint = mock(async () => 'minted-credential')
     const exchange = mock(async () => ({
       token: 'exchanged-credential',
@@ -57,9 +61,10 @@ describe('view session server credentials', () => {
       session: {
         id: 'v-shell',
         pid: 0,
-        port,
+        // Let the OS isolate each server from connections pooled by earlier tests.
+        port: 0,
         nonce,
-        pageUrl: `http://127.0.0.1:${port}/`,
+        pageUrl: '',
         view: {
           target: target('/:example.test'),
           route: {
@@ -90,7 +95,7 @@ describe('view session server credentials', () => {
     await once(server, 'listening')
 
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, {
+      const response = await fetch(`${address(server)}/s/${nonce}/token`, {
         method: 'POST',
       })
 
@@ -119,8 +124,6 @@ describe('view session server credentials', () => {
 
   test('serves concurrent page requests from one mint, then reuses the grant', async () => {
     const nonce = 'shared-view'
-    const port = await findFreePort(48_000, 200)
-    if (port === null) throw new Error('test port window exhausted')
     let release!: () => void
     const held = new Promise<void>((resolve) => {
       release = resolve
@@ -141,9 +144,9 @@ describe('view session server credentials', () => {
       session: {
         id: 'v-shared',
         pid: 0,
-        port,
+        port: 0,
         nonce,
-        pageUrl: `http://127.0.0.1:${port}/`,
+        pageUrl: '',
         view: {
           target: target('/:example.test'),
           route: {
@@ -171,7 +174,7 @@ describe('view session server credentials', () => {
     await once(server, 'listening')
 
     try {
-      const token = () => fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, { method: 'POST' })
+      const token = () => fetch(`${address(server)}/s/${nonce}/token`, { method: 'POST' })
       const pending = [token(), token(), token()]
       release()
       const bodies = await Promise.all((await Promise.all(pending)).map((one) => one.json()))
@@ -196,15 +199,13 @@ describe('view session server credentials', () => {
   /** @evidence TEST-CLI-PLAIN-VIEW-RECEIVES-NO-CREDENTIAL */
   test('refuses to mint a token for a handshake-none View', async () => {
     const nonce = 'plain-view'
-    const port = await findFreePort(48_000, 200)
-    if (port === null) throw new Error('test port window exhausted')
     const config = {
       session: {
         id: 'v-plain',
         pid: 0,
-        port,
+        port: 0,
         nonce,
-        pageUrl: `http://127.0.0.1:${port}/`,
+        pageUrl: '',
         view: {
           target: target('/:example.test'),
           route: {
@@ -232,7 +233,7 @@ describe('view session server credentials', () => {
     await once(server, 'listening')
 
     try {
-      const configResponse = await fetch(`http://127.0.0.1:${port}/s/${nonce}/config.json`)
+      const configResponse = await fetch(`${address(server)}/s/${nonce}/config.json`)
       expect(configResponse.status).toBe(200)
       const served = await configResponse.json()
       expect(served).not.toHaveProperty('transport')
@@ -244,7 +245,7 @@ describe('view session server credentials', () => {
         view: config.session.view,
       })
 
-      const response = await fetch(`http://127.0.0.1:${port}/s/${nonce}/token`, {
+      const response = await fetch(`${address(server)}/s/${nonce}/token`, {
         method: 'POST',
       })
 
