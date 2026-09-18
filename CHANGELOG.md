@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0-beta.115](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.114...cli/v1.0.0-beta.115) (2026-09-18)
+
+
+### Bug Fixes
+
+* **ci:** enable Chromium for Studio development ([#512](https://github.com/astrale-os/cli/issues/512)) ([0dcc933](https://github.com/astrale-os/cli/commit/0dcc933c176a054b099d495a12a230de7de3fb5d))
+* **studio:** clarify method contracts and authentication indicators ([#471](https://github.com/astrale-os/cli/issues/471)) ([98700be](https://github.com/astrale-os/cli/commit/98700be59531f9a0f3ffe2ee90d535250b3773f9))
+
 ## [1.0.0-beta.114](https://github.com/astrale-os/cli/compare/cli/v1.0.0-beta.113...cli/v1.0.0-beta.114) (2026-09-17)
 
 
