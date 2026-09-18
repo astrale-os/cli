@@ -10,6 +10,6 @@ Astrale OS is a graph-based operating system. This autonomous repository is the 
 ## Studio and viewer UI
 
 - Reuse `@astrale-os/ui` and its semantic Tailwind tokens before creating custom components or styles.
-- The default CLI cloud setup installs neither browsers nor global browser tools/skills. Do not assume `agent-browser`, `chrome-devtools-cli`, or `webapp-testing` is available.
-- Studio's checked-in Playwright suite (`pnpm --dir studio test:e2e`) is the source of truth for browser regression checks. The dedicated CI job provisions Chromium and runs it; default cloud sessions can rely on that job for browser validation.
-- In a separately prepared environment with browser tools and their skills available, use `agent-browser` for quick UI smoke checks and `chrome-devtools-cli` for deeper diagnosis. Do not add browser installation to the default agent setup.
+- The default CLI cloud setup prepares Chromium, `agent-browser`, `chrome-devtools`, and their corresponding skills, plus the browsers required by the project's Playwright versions.
+- For Studio or Viewer interface changes, launch the application and verify the changed interactions and visible states in Chromium before considering the work complete. Load the `agent-browser` skill for quick UI smoke checks; use the `chrome-devtools-cli` skill for console, network, and deeper browser diagnosis.
+- Use the checked-in Playwright suites (`pnpm --dir studio test:e2e` and `pnpm test:viewer:browser`) for browser regression checks. The dedicated CI job remains an additional check; it does not replace browser verification during development.
