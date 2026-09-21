@@ -3,6 +3,7 @@ import type { AgentRun, ChatInfo } from '../shared/types'
 import { dockWorkspacePanel, expect, test, type Page } from './test'
 
 async function agent(page: Page) {
+  await page.clock.install()
   const createdAt = new Date().toISOString()
   let current: AgentRun = {
     id: 'notification-turn',
@@ -43,7 +44,7 @@ async function agent(page: Page) {
     return route.continue()
   })
   return {
-    complete: (status: 'succeeded' | 'failed' = 'succeeded') => {
+    complete: async (status: 'succeeded' | 'failed' = 'succeeded') => {
       current = {
         ...current,
         status,
@@ -53,6 +54,8 @@ async function agent(page: Page) {
         ],
         ...(status === 'failed' ? { error: 'The agent could not finish.' } : {}),
       }
+      // Exercise the real five-second fallback poll without waiting in wall-clock time.
+      await page.clock.runFor(5_000)
     },
   }
 }
@@ -64,7 +67,7 @@ test('a completed reply stays visible on the closed bar until that conversation 
   await page.goto('/')
   const dock = page.getByTestId('agent-dock')
   await expect(dock).toHaveAttribute('aria-busy', 'true')
-  stub.complete()
+  await stub.complete()
   const notice = page.getByRole('button', { name: 'Read unread agent reply' })
   await expect(notice).toBeVisible({ timeout: 12_000 })
   await expect(dock).toHaveAttribute('data-agent-notification', 'unread')
@@ -93,7 +96,7 @@ test('a reply delivered while its transcript is visible does not leave an unread
   await dockWorkspacePanel(request, 'left')
   await page.goto('/')
   await expect(page.getByRole('button', { name: 'Collapse the panel' })).toBeVisible()
-  stub.complete()
+  await stub.complete()
   await expect(page.getByText('The schema update is ready.', { exact: true })).toBeVisible({
     timeout: 12_000,
   })
@@ -105,7 +108,7 @@ test('an agent failure leaves an attention indicator on the closed bar', async (
   const stub = await agent(page)
   await page.goto('/')
   await expect(page.getByTestId('agent-dock')).toHaveAttribute('aria-busy', 'true')
-  stub.complete('failed')
+  await stub.complete('failed')
   await expect(page.getByRole('button', { name: 'Read agent error' })).toBeVisible({
     timeout: 12_000,
   })
