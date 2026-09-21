@@ -8,6 +8,7 @@ import type { Column, ListProjection } from '../lib/output'
 import type { CommandDefinition } from '../program/index'
 
 import { createPathCall, expandSelfInPath, runKernelCommand } from '../connection'
+import { collectJournal } from '../lib/journal/collect'
 import { failInput } from '../lib/log'
 import { isMachine, output, presentList } from '../lib/output'
 
@@ -24,6 +25,10 @@ type LogsOpts = KernelCommandOpts & {
   limit?: string
   cursor?: string
   follow?: boolean
+  all?: boolean
+  maxPages?: string
+  invocation?: string
+  invocationSource?: string
 }
 
 export interface JournalRecord {
@@ -50,11 +55,19 @@ export interface JournalCorrelation {
 }
 
 export interface JournalPage {
+  readonly frontier?: {
+    readonly id: string
+    readonly first?: number
+    readonly committed: number
+    readonly durable: number
+  }
+  readonly gap?: unknown
   readonly records: readonly JournalRecord[]
   readonly cursor?: string
 }
 
 export interface JournalInput {
+  readonly invocation?: { readonly source: string; readonly id: string }
   readonly topics?: { readonly exact?: readonly string[]; readonly prefixes?: readonly string[] }
   readonly principal?: string
   readonly since?: string
@@ -77,7 +90,13 @@ export function buildJournalInput(opts: LogsOpts): JournalInput {
   if (since !== undefined && until !== undefined && Date.parse(since) > Date.parse(until)) {
     throw new TypeError('--since must be earlier than or equal to --until')
   }
+  if (Boolean(opts.invocation) !== Boolean(opts.invocationSource)) {
+    throw new TypeError('--invocation and --invocation-source must be supplied together')
+  }
   return {
+    ...(opts.invocation === undefined
+      ? {}
+      : { invocation: { source: opts.invocationSource!, id: opts.invocation } }),
     ...(exact === undefined && prefix === undefined
       ? {}
       : {
@@ -122,7 +141,24 @@ export function acceptJournalPage(input: unknown): JournalPage {
   if (input.cursor !== undefined && typeof input.cursor !== 'string') {
     throw new TypeError('Kernel journal cursor must be text')
   }
+  if (
+    input.frontier !== undefined &&
+    (!isRecord(input.frontier) ||
+      typeof input.frontier.id !== 'string' ||
+      !Number.isSafeInteger(input.frontier.committed) ||
+      Number(input.frontier.committed) < 0 ||
+      !Number.isSafeInteger(input.frontier.durable) ||
+      Number(input.frontier.durable) < 0 ||
+      (input.frontier.first !== undefined &&
+        (!Number.isSafeInteger(input.frontier.first) || Number(input.frontier.first) < 1)))
+  ) {
+    throw new TypeError('Kernel journal frontier is invalid')
+  }
   return Object.freeze({
+    ...(input.frontier === undefined
+      ? {}
+      : { frontier: input.frontier as JournalPage['frontier'] }),
+    ...(input.gap === undefined ? {} : { gap: input.gap }),
     records: Object.freeze(records),
     ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
   })
@@ -138,11 +174,30 @@ async function runOnce(opts: LogsOpts): Promise<void> {
   await runKernelCommand({
     opts,
     label: 'Kernel journal',
-    fn: async (context) => fetchPage(context, await resolveLogsOpts(opts, context)),
+    fn: async (context) => {
+      const resolved = await resolveLogsOpts(opts, context)
+      if (!opts.all) return fetchPage(context, resolved)
+      return collectJournal(
+        buildJournalInput(resolved),
+        async (input) =>
+          acceptJournalPage(await context.session.call(createPathCall(JOURNAL_PATH, input))),
+        {
+          maxPages:
+            opts.maxPages === undefined ? 100 : positiveInteger('--max-pages', opts.maxPages),
+        },
+      )
+    },
     format: (page, format) => {
+      if ('error' in page && page.error) process.exitCode = 1
       if (isMachine(format) || format.format !== undefined) output(page, format)
       else {
         presentList([...page.records], format, journalProjection)
+        if ('coverage' in page)
+          process.stderr.write(
+            `  coverage: ${page.coverage.status}${page.coverage.reasons.length ? ` (${page.coverage.reasons.join(', ')})` : ''}\n  until: ${page.coverage.selection.until}\n`,
+          )
+        if ('gap' in page && page.gap !== undefined)
+          process.stderr.write(`  gap: ${JSON.stringify(page.gap)}\n`)
         if (page.cursor) process.stderr.write(`  cursor: ${page.cursor}\n`)
       }
     },
@@ -215,6 +270,13 @@ export function formatFollowRecord(record: JournalRecord): string {
 
 export function validateLogsOpts(opts: LogsOpts): void {
   buildJournalInput(opts)
+  if (opts.all && opts.follow) throw new TypeError('--all and --follow cannot be combined')
+  if (opts.maxPages !== undefined) {
+    positiveInteger('--max-pages', opts.maxPages)
+    if (!opts.all) throw new TypeError('--max-pages requires --all')
+  }
+  if (opts.all && opts.cursor && !opts.until)
+    throw new TypeError('--all with --cursor requires the original --until')
   if (opts.follow && opts.format === 'yaml' && !opts.json && !opts.raw) {
     throw new TypeError('--follow does not support YAML; use --json for an NDJSON stream')
   }
@@ -246,6 +308,7 @@ function acceptRecord(input: unknown, index: number): JournalRecord {
   const correlationId = structuredCorrelationId ?? legacyCorrelationId
   const principal = optionalText(input.principal, index, 'principal')
   return Object.freeze({
+    ...input,
     sequence: input.sequence as number,
     timestamp,
     topic: input.topic,
@@ -343,10 +406,12 @@ export default {
   description: 'Read or follow the authorized Kernel journal',
   afterHelpText: `
 Behavior:
-  Calls the public Kernel journal syscall and emits its { records, cursor }
+  Calls the public Kernel journal syscall and emits its { records, frontier, gap, cursor }
   page. Topic selection is exact or prefix-based; cursors are opaque backend tokens.
   Timestamps accept ISO-8601 with a timezone and millisecond precision; offsets
   are converted to canonical UTC (e.g. 2026-08-19T16:51:10.000Z).
+  --all scans through empty pages in a fixed window (default maximum 100 pages).
+  Its coverage reports gaps and limits; resume with its cursor and original until.
   --follow reuses one Client Session
   and advances only with the returned cursor. With --json, follow output is
   NDJSON with one complete admitted record per line; YAML follow is unsupported.
@@ -362,8 +427,15 @@ Examples:
     { flags: '--topic <topic>', description: 'Match one exact topic' },
     { flags: '--topic-prefix <prefix>', description: 'Match one topic prefix' },
     { flags: '--principal <id>', description: 'Filter by triggering identity ID' },
-    { flags: '--limit <n>', description: `Maximum records (default: ${DEFAULT_LIMIT})` },
+    { flags: '--limit <n>', description: `Maximum records per page (default: ${DEFAULT_LIMIT})` },
     { flags: '--cursor <token>', description: 'Resume from an opaque journal cursor' },
+    {
+      flags: '--all',
+      description: 'Read successive pages in a fixed window, with explicit coverage',
+    },
+    { flags: '--max-pages <n>', description: 'Maximum pages with --all (default: 100)' },
+    { flags: '--invocation <id>', description: 'Filter by root invocation ID' },
+    { flags: '--invocation-source <issuer>', description: 'Issuer of the root invocation' },
     { flags: '--follow', description: 'Poll using returned cursors until interrupted' },
   ],
   action: async (opts: LogsOpts) => {
