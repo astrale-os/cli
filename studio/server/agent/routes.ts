@@ -2,7 +2,7 @@ import type { ChatInfo, HarnessPresence, HarnessStatus } from '../../shared/type
 import type { ChatResult } from './run/coordinator'
 
 import { badRequest, json, notFound, type AgentRouteContext } from '../api/http'
-import { asJsonRecord, asString } from '../json'
+import { asBoolean, asJsonRecord, asString } from '../json'
 import { decodeAnchorRef } from '../state/comments'
 import { type AskRequest, runAsk } from './ask'
 import { handleBridge } from './bridge/routes'
@@ -141,6 +141,7 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
       const title = asString(body.title)
       const model = asString(body.model)
       const effort = asString(body.effort)
+      const fastMode = asBoolean(body.fastMode)
       const newDomainId = asString(body.newDomainId)
       switch (asString(body.action) ?? 'open') {
         case 'open':
@@ -161,6 +162,7 @@ export async function handleAgentRoute(input: AgentRouteContext): Promise<Respon
               ...(title === undefined ? {} : { title }),
               ...(model === undefined ? {} : { model }),
               ...(effort === undefined ? {} : { effort }),
+              ...(fastMode === undefined ? {} : { fastMode }),
             }),
           )
         case 'switch-harness':

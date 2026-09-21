@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { ChevronDown, ChevronRight, Eye, EyeOff, PanelLeftClose, Plus } from 'lucide-react'
 
 import { AnchorButton } from '@/components/anchor'
+import { DomainPackageUpdates } from '@/components/updates-badge'
 import { useWorkspace } from '@/lib/hooks'
 import { useUI } from '@/lib/store'
 import { anchorData, domainAnchorRef } from '@/lib/targets'
@@ -148,6 +149,8 @@ export function DomainRow({
           title="Selected element in collapsed domain"
         />
       )}
+
+      <DomainPackageUpdates domainId={domainId} origin={origin} />
 
       <AnchorButton
         domainId={domainId}

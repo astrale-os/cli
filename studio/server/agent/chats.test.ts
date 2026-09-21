@@ -25,6 +25,7 @@ import {
   resolveChat,
   setActiveChat,
   setChatModel,
+  setChatFastMode,
   setChatSession,
   takeQueuedMessage,
   titleChatFromMessage,
@@ -42,6 +43,16 @@ afterEach(() => {
 })
 
 describe('chat tabs', () => {
+  test('fast mode is a persistent per-chat switch and follows a harness handoff', () => {
+    const dir = root()
+    const source = createChat(dir, { harness: 'codex' })
+    setChatFastMode(dir, source.id, true)
+    const stored = resolveChat(dir, 'codex', source.id)!
+    expect(chatInfo(stored, 'idle').fastMode).toBe(true)
+
+    const forked = forkChat(dir, stored, 'claude', 'continue here')
+    expect(forked.fastMode).toBe(true)
+  })
   test('seeds one chat on the default harness and keeps its id across reads', () => {
     const dir = root()
     const first = activeChat(dir, 'claude')

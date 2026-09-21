@@ -52,6 +52,8 @@ export interface AgentTurnInput {
   model?: string
   /** harness reasoning effort for this turn */
   effort?: AgentEffort
+  /** request the ACP agent's advertised fast service tier */
+  fastMode?: boolean
   /** authority granted to the local harness */
   access?: AgentAccess
   /** generated MCP servers exposing Studio write-back */
@@ -97,6 +99,7 @@ export interface AskInput {
   model?: string
   /** harness reasoning effort for this side question */
   effort?: AgentEffort
+  fastMode?: boolean
   /** authority granted to the local harness */
   access?: AgentAccess
   /** extra env merged into the harness child only — see AgentTurnInput.env */

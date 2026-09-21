@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils'
 
 import { AgentTurn, TurnDivider } from './agent-turn'
 import { ChatEffortPicker } from './chat-effort'
+import { ChatFastToggle } from './chat-fast'
 import { ChatModelPicker } from './chat-model'
 import { ChatTabs } from './chat-tabs'
 import { toneOf } from './chat-tone'
@@ -110,6 +111,7 @@ export function AgentDropZone({
 
 /** The chat tabs and the turns under them — everything but the composer. */
 export function AgentTranscript() {
+  const qc = useQueryClient()
   const { data: chats } = useChats()
   const activeId = chats?.activeId
   const openChats = chats?.chats ?? []
@@ -155,6 +157,20 @@ export function AgentTranscript() {
               {needsDivider(turns[index - 1], turn) && <TurnDivider at={turn.createdAt} />}
               <AgentTurn
                 run={turn}
+                onRetry={
+                  index === turns.length - 1
+                    ? () =>
+                        void api.agentSubmit(turn.instruction, activeId).then(
+                          (result) => {
+                            if (result.run) useAgentLive.getState().setRun(result.run)
+                            if (result.error) toast.error(`Could not retry — ${result.error}`)
+                            qc.invalidateQueries({ queryKey: qk.agent(activeId) })
+                            qc.invalidateQueries({ queryKey: qk.agentHistory(activeId) })
+                          },
+                          (error) => toast.error(`Could not retry — ${String(error)}`),
+                        )
+                    : undefined
+                }
                 onResume={() =>
                   // a refused resume answers 200 with an error field; without
                   // this the button would look like it did nothing at all
@@ -623,6 +639,7 @@ export function AgentComposer({
               />
             )}
             {/* the meter sits before the model, in reading order: how hard, on what */}
+            {expanded && <ChatFastToggle chat={chat} />}
             {expanded && <ChatEffortPicker chat={chat} harness={harness} />}
             {expanded && <ChatModelPicker chat={chat} harness={harness} />}
             {trailing}
@@ -660,6 +677,7 @@ export function AgentComposer({
         <div className="flex items-center gap-1 px-2 pb-2">
           <AttachButton onPicked={() => field.current?.focus()} />
           <div className="ml-auto flex items-center gap-1.5">
+            <ChatFastToggle chat={chat} />
             {/* the meter sits before the model, in reading order: how hard, on what */}
             <ChatEffortPicker chat={chat} harness={harness} />
             <ChatModelPicker chat={chat} harness={harness} />

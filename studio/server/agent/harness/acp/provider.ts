@@ -8,7 +8,10 @@ export interface AcpProviderOptions {
   command: string[]
 }
 
-type AcpInput = Pick<AgentTurnInput | AskInput, 'access' | 'appendSystemPrompt' | 'effort' | 'env'>
+type AcpInput = Pick<
+  AgentTurnInput | AskInput,
+  'access' | 'appendSystemPrompt' | 'effort' | 'env' | 'fastMode'
+>
 
 function parseObject(value: string | undefined, name: string): Record<string, unknown> {
   if (!value) return {}

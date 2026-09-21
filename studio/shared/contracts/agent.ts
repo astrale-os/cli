@@ -172,6 +172,8 @@ export interface ChatInfo {
   model?: string
   /** per-chat reasoning level; absent ⇒ whatever the agent itself is set to */
   effort?: AgentEffort
+  /** ACP fast service tier for subsequent turns in this conversation. */
+  fastMode?: boolean
   /** the harness-native resumable session id backing this chat */
   sessionId?: string
   /** successful turns recorded in this chat */
@@ -315,6 +317,8 @@ export interface HarnessLoadout {
   effort?: AgentEffort
   /** The reasoning ladder THIS model exposes — empty/absent ⇒ it has none. */
   efforts?: HarnessEffortOption[]
+  /** Fast mode exposed by this model's ACP session configuration. */
+  fastMode?: { enabled: boolean; description?: string }
   /** Workspace root passed to `session/new`. */
   cwd?: string
   /** ACP protocol version negotiated during initialization. */

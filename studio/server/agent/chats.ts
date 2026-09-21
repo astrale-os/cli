@@ -70,6 +70,7 @@ export interface StoredChat {
   harness: string
   model?: string
   effort?: AgentEffort
+  fastMode?: boolean
   sessionId?: string
   turns: number
   createdAt: string
@@ -107,6 +108,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
   const turns = asFiniteNumber(record.turns)
   const model = asString(record.model)
   const effort = isAgentEffort(record.effort) ? record.effort : undefined
+  const fastMode = asBoolean(record.fastMode)
   const sessionId = asString(record.sessionId)
   const handoff = decodeHandoff(record.handoff)
   const newDomain = decodeNewDomain(record.newDomain)
@@ -123,6 +125,7 @@ function decodeStoredChat(value: unknown): StoredChat | undefined {
     updatedAt: asString(record.updatedAt) ?? createdAt,
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
+    ...(fastMode === undefined ? {} : { fastMode }),
     ...(sessionId ? { sessionId } : {}),
     ...(workspace ? { workspace } : {}),
     ...(origins?.length ? { origins } : {}),
@@ -282,6 +285,7 @@ export function createChat(
     title?: string
     model?: string
     effort?: AgentEffort
+    fastMode?: boolean
     handoff?: ChatHandoff
     newDomain?: NewDomainContext
   } & ChatSeed,
@@ -292,6 +296,7 @@ export function createChat(
     ...(input.title?.trim() ? { title: input.title.trim() } : {}),
     ...(input.model?.trim() ? { model: input.model.trim() } : {}),
     ...(input.effort ? { effort: input.effort } : {}),
+    ...(input.fastMode === undefined ? {} : { fastMode: input.fastMode }),
     ...(input.handoff
       ? {
           handoff: { ...input.handoff, summary: input.handoff.summary.slice(0, MAX_HANDOFF_CHARS) },
@@ -326,6 +331,7 @@ export function forkChat(
       // how hard you asked this work to be thought about is about the work, not
       // about the agent — it follows, mapped onto whatever ladder it lands on
       ...(source.effort ? { effort: source.effort } : {}),
+      ...(source.fastMode === undefined ? {} : { fastMode: source.fastMode }),
       ...(source.workspace ? { workspace: source.workspace } : {}),
       ...(source.origins ? { origins: source.origins } : {}),
       handoff: {
@@ -394,6 +400,16 @@ export function setChatModel(root: string, chatId: string, model: string): Store
   return mutateChat(root, chatId, (chat) => {
     if (trimmed) chat.model = trimmed
     else delete chat.model
+  })
+}
+
+export function setChatFastMode(
+  root: string,
+  chatId: string,
+  fastMode: boolean,
+): StoredChat | undefined {
+  return mutateChat(root, chatId, (chat) => {
+    chat.fastMode = fastMode
   })
 }
 
@@ -592,6 +608,7 @@ export function chatInfo(chat: StoredChat, status: ChatStatus): ChatInfo {
     ...(chat.origins === undefined ? {} : { origins: [...chat.origins] }),
     ...(chat.model === undefined ? {} : { model: chat.model }),
     ...(chat.effort === undefined ? {} : { effort: chat.effort }),
+    ...(chat.fastMode === undefined ? {} : { fastMode: chat.fastMode }),
     ...(chat.sessionId === undefined ? {} : { sessionId: chat.sessionId }),
     ...(chat.handoff
       ? {

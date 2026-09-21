@@ -45,6 +45,7 @@ export interface PreparedRun {
   briefed: { handle: DomainHandle; renderFingerprint: string }[]
   model?: string
   effort?: AgentEffort
+  fastMode?: boolean
   harnessEnv: Record<string, string>
   bridge: Bridge
   run: AgentRun
@@ -215,6 +216,7 @@ export async function prepareRun(
       })),
       model,
       effort,
+      fastMode: chat.fastMode,
       harnessEnv,
       bridge,
       run,

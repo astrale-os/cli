@@ -33,6 +33,7 @@ import {
   resolveChat,
   setActiveChat,
   setChatEffort,
+  setChatFastMode,
   setChatModel,
   setChatSession,
   takeQueuedMessage,
@@ -231,13 +232,14 @@ export function selectChat(chatId: string): ChatResult<ChatList> {
 
 export function updateChat(
   chatId: string,
-  patch: { title?: string; model?: string; effort?: string },
+  patch: { title?: string; model?: string; effort?: string; fastMode?: boolean },
 ): ChatResult<ChatInfo> {
   return withChat(chatId, (workspace, chat) => {
     // The harness is deliberately absent from this patch: see switchChatHarness.
     if (patch.title !== undefined) renameChat(workspace.stateRoot, chat.id, patch.title)
     if (patch.model !== undefined) setChatModel(workspace.stateRoot, chat.id, patch.model)
     if (patch.effort !== undefined) setChatEffort(workspace.stateRoot, chat.id, patch.effort)
+    if (patch.fastMode !== undefined) setChatFastMode(workspace.stateRoot, chat.id, patch.fastMode)
     return describe(workspace, chatOf(workspace, chat.id) ?? chat)
   })
 }

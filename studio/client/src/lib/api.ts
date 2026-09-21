@@ -64,6 +64,7 @@ function chatQuery(chatId?: string): string {
 
 export const api = {
   workspace: () => get<DomainSummary[]>('/api/workspace'),
+  refreshWorkspace: () => post<{ refreshed: number }>('/api/workspace/refresh', {}),
   workspaceState: () => get<WorkspaceUiState>('/api/workspace/state'),
   updateWorkspaceState: (
     state: Omit<WorkspaceUiState, 'readerDomainId'> & { readerDomainId: string | null },
@@ -169,8 +170,10 @@ export const api = {
     }),
   selectChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'select', chatId }),
   closeChat: (chatId: string) => post<ChatList>('/api/agent/chats', { action: 'close', chatId }),
-  updateChat: (chatId: string, patch: { title?: string; model?: string; effort?: string }) =>
-    post<ChatInfo>('/api/agent/chats', { action: 'update', chatId, ...patch }),
+  updateChat: (
+    chatId: string,
+    patch: { title?: string; model?: string; effort?: string; fastMode?: boolean },
+  ) => post<ChatInfo>('/api/agent/chats', { action: 'update', chatId, ...patch }),
   /** fork this chat onto the other agent, carrying a summary of it */
   switchChatHarness: (chatId: string, harness: string, model?: string) =>
     post<ChatInfo>('/api/agent/chats', {

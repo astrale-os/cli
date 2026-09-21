@@ -1,8 +1,9 @@
 import type { AgentEvent, AgentRun } from '@shared/types'
 
 import { expect, test } from 'bun:test'
+import { renderToStaticMarkup } from 'react-dom/server'
 
-import { activityLabel, compactTarget } from './agent-turn'
+import { activityLabel, AgentTurn, agentAuthFailure, compactTarget } from './agent-turn'
 
 const event = (
   kind: AgentEvent['kind'],
@@ -72,4 +73,47 @@ test('compacting never invents a shortening it cannot afford', () => {
   const flat = `${'a'.repeat(80)}END`
   expect(compactTarget(flat).endsWith('END')).toBe(true)
   expect(compactTarget(flat).length).toBeLessThanOrEqual(44)
+})
+
+test('turns raw Claude and Codex authentication failures into actionable login guidance', () => {
+  expect(
+    agentAuthFailure({
+      ...run([]),
+      status: 'failed',
+      error:
+        'Internal error: Failed to authenticate: OAuth session expired and could not be refreshed',
+    }),
+  ).toEqual({ title: 'Your Claude Code session has expired', command: 'claude auth login' })
+
+  expect(
+    agentAuthFailure({
+      ...run([]),
+      harness: 'codex',
+      status: 'failed',
+      error: 'Authentication required: auth token is invalid',
+    }),
+  ).toEqual({ title: 'Your Codex session has expired', command: 'codex login' })
+})
+
+test('unrelated agent and tool failures retain their original diagnostics', () => {
+  expect(
+    agentAuthFailure({ ...run([]), status: 'failed', error: 'bridge error 401: denied' }),
+  ).toBe(undefined)
+  expect(agentAuthFailure({ ...run([]), status: 'failed', error: 'session not found' })).toBe(
+    undefined,
+  )
+})
+
+test('an expired login renders a clean recovery card instead of ACP internals', () => {
+  const raw =
+    'Internal error: Failed to authenticate: OAuth session expired: [session/query] sessionId=secret'
+  const html = renderToStaticMarkup(
+    <AgentTurn run={{ ...run([]), status: 'failed', error: raw }} onRetry={() => {}} />,
+  )
+
+  expect(html).toContain('Your Claude Code session has expired')
+  expect(html).toContain('claude auth login')
+  expect(html).toContain('I’ve signed in — retry')
+  expect(html).not.toContain('sessionId=secret')
+  expect(html).not.toContain('Internal error')
 })

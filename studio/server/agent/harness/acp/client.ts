@@ -15,7 +15,7 @@ import type { AcpProvider } from './command'
 
 import { effectiveAgentEffort } from '../../../../shared/agent-effort'
 import { childEnvironment, terminateProcessTree } from '../process'
-import { effortConfig, effortValues, modelConfig } from './options'
+import { effortConfig, effortValues, fastConfig, fastValue, modelConfig } from './options'
 import {
   providerEnvironment,
   providerMode,
@@ -475,8 +475,12 @@ async function executeAcp(
     }
 
     let configOptions = setup.configOptions ?? []
-    const setConfig = async (config: acp.SessionConfigOption, category: string, value: string) => {
-      const response = await withProcess(
+    const setConfig = async (
+      config: acp.SessionConfigOption,
+      category: string,
+      value: string | boolean,
+    ) => {
+      const response = await withProcess<acp.SetSessionConfigOptionResponse>(
         context!.request(acp.methods.agent.session.setConfigOption, {
           sessionId: activeSessionId!,
           configId: config.id,
@@ -493,6 +497,9 @@ async function executeAcp(
         throw new Error(`${options.provider} ACP agent did not expose its model selector`)
       await setConfig(config, 'model', input.model)
     }
+    const fast = fastConfig(configOptions)
+    if (fast && input.fastMode !== undefined)
+      await setConfig(fast, 'fast mode', fastValue(fast, input.fastMode))
     // The ladder belongs to the MODEL, so it is read after the model is set — and
     // a level this one does not offer lands on its nearest rung rather than
     // failing the turn. A model with no ladder at all (Haiku) is simply left alone.
