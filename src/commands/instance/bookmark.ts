@@ -28,10 +28,6 @@ export default {
       flags: '--as <identity>',
       description: 'Default identity for this bookmark',
     },
-    {
-      flags: '--operator-identity <identity>',
-      description: 'Existing identity to use automatically for investigations',
-    },
     { flags: '--use', description: 'Set as active instance after bookmarking' },
     { flags: '--skip-probe', description: 'Skip the OIDC + JWKS liveness probe (still recorded)' },
   ],
@@ -43,7 +39,6 @@ export default {
       domainIssuer?: string
       ca?: string
       as?: string
-      operatorIdentity?: string
       use?: boolean
       skipProbe?: boolean
     },
@@ -91,7 +86,6 @@ export default {
         kind: 'bookmark',
         mode: 'remote',
         defaultIdentity: opts.as,
-        operatorIdentity: opts.operatorIdentity,
       })
       log.success(`${created ? 'Bookmarked' : 'Updated bookmark'} "${name}" → ${entry.url}`)
       if (opts.as) log.dim(`  default identity: ${opts.as}`)
